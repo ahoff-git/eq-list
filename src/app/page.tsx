@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -22,7 +25,23 @@ export default function Home() {
     },
   ];
 
-  const monsters = Array.from(new Set(items.flatMap((item) => item.sources)));
+  const [checked, setChecked] = useState<string[]>([]);
+
+  const toggleItem = (name: string) => {
+    setChecked((prev) =>
+      prev.includes(name)
+        ? prev.filter((n) => n !== name)
+        : [...prev, name]
+    );
+  };
+
+  const monsters = Array.from(
+    new Set(
+      items
+        .filter((item) => checked.includes(item.name))
+        .flatMap((item) => item.sources)
+    )
+  );
 
   return (
     <div className={styles.container}>
@@ -30,13 +49,19 @@ export default function Home() {
       <div className={styles.grids}>
         <div className={styles.grid}>
           {items.map((item) => (
-            <div key={item.name} className={styles.card}>
-              <img src={item.image} alt={item.name} className={styles.image} />
-              <div className={styles.name}>{item.name}</div>
-              <div className={styles.quantity}>Need: {item.quantity}</div>
-              <div className={styles.sources}>
-                Dropped by: {item.sources.join(", ")}
-              </div>
+            <div key={item.name} className={styles.itemRow}>
+              <input
+                type="checkbox"
+                checked={checked.includes(item.name)}
+                onChange={() => toggleItem(item.name)}
+              />
+              <img
+                src={item.image}
+                alt={item.name}
+                className={styles.itemImage}
+              />
+              <div className={styles.itemName}>{item.name}</div>
+              <div className={styles.itemQuantity}>Need: {item.quantity}</div>
             </div>
           ))}
         </div>
