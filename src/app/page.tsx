@@ -67,7 +67,7 @@ export default function Home() {
         </div>
         <div className={styles.grid}>
           {monsters.map((monster) => (
-            <div key={monster} className={styles.card}>
+            <div key={monster} className={styles.monster}>
               <div className={styles.name}>{monster}</div>
             </div>
           ))}
