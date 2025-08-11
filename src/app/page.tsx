@@ -3,29 +3,64 @@
 import { useState } from "react";
 import styles from "./page.module.css";
 
-export default function Home() {
-  const items = [
-    {
-      name: "Bone Chips",
-      image: "/items/bone_chips.svg",
-      quantity: 10,
-      sources: ["Decaying Skeleton", "Skeleton Warrior"],
-    },
-    {
-      name: "Spider Silk",
-      image: "/items/spider_silk.svg",
-      quantity: 5,
-      sources: ["Spiderling", "Giant Spider"],
-    },
-    {
-      name: "Orc Scalp",
-      image: "/items/orc_scalp.svg",
-      quantity: 8,
-      sources: ["Orc Warrior", "Orc Centurion"],
-    },
-  ];
+type Item = {
+  name: string;
+  image: string;
+  quantity: number;
+  sources: string[];
+};
 
+type Recipe = {
+  name: string;
+  items: Item[];
+};
+
+const recipes: Recipe[] = [
+  {
+    name: "Tranquilsong Bard Gear",
+    items: [
+      {
+        name: "Bone Chips",
+        image: "/items/bone_chips.svg",
+        quantity: 10,
+        sources: ["Decaying Skeleton", "Skeleton Warrior"],
+      },
+      {
+        name: "Spider Silk",
+        image: "/items/spider_silk.svg",
+        quantity: 5,
+        sources: ["Spiderling", "Giant Spider"],
+      },
+      {
+        name: "Orc Scalp",
+        image: "/items/orc_scalp.svg",
+        quantity: 8,
+        sources: ["Orc Warrior", "Orc Centurion"],
+      },
+    ],
+  },
+];
+
+export default function Home() {
+  const [items, setItems] = useState<Item[]>([]);
   const [checked, setChecked] = useState<string[]>([]);
+  const [selectedRecipe, setSelectedRecipe] = useState<string>("");
+
+  const handleAddRecipe = () => {
+    const recipe = recipes.find((r) => r.name === selectedRecipe);
+    if (!recipe) return;
+
+    setItems((prev) => {
+      const existing = new Set(prev.map((i) => i.name));
+      const updated = [...prev];
+      recipe.items.forEach((item) => {
+        if (!existing.has(item.name)) {
+          updated.push(item);
+        }
+      });
+      return updated;
+    });
+  };
 
   const toggleItem = (name: string) => {
     setChecked((prev) =>
@@ -46,6 +81,22 @@ export default function Home() {
   return (
     <div className={styles.container}>
       <h1 className={styles.title}>EverQuest Item Tracker</h1>
+      <div className={styles.recipeSelector}>
+        <select
+          value={selectedRecipe}
+          onChange={(e) => setSelectedRecipe(e.target.value)}
+        >
+          <option value="">Select a recipe</option>
+          {recipes.map((recipe) => (
+            <option key={recipe.name} value={recipe.name}>
+              {recipe.name}
+            </option>
+          ))}
+        </select>
+        <button onClick={handleAddRecipe} disabled={!selectedRecipe}>
+          Add Recipe
+        </button>
+      </div>
       <div className={styles.grids}>
         <div className={styles.grid}>
           {items.map((item) => (
