@@ -31,22 +31,31 @@
   padding: 1rem;
   text-align: center;
 }
+.itemRow {
+  background-color: rgba(0, 0, 0, 0.6);
+  border: 1px solid #ffd700;
+  border-radius: 8px;
+  padding: 0.5rem;
+  display: grid;
+  grid-template-columns: auto 2rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+}
 
-.image {
-  width: 100%;
-  height: auto;
+.itemImage {
+  width: 2rem;
+  height: 2rem;
+}
+
+.itemName {
+  font-weight: bold;
+}
+
+.itemQuantity {
+  justify-self: end;
 }
 
 .name {
   margin-top: 0.5rem;
   font-weight: bold;
-}
-
-.quantity {
-  margin-top: 0.25rem;
-}
-
-.sources {
-  margin-top: 0.25rem;
-  font-size: 0.875rem;
 }
