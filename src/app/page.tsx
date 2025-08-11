@@ -6,23 +6,23 @@ export default function Home() {
       name: "Bone Chips",
       image: "/items/bone_chips.svg",
       quantity: 10,
-      monster: "Decaying Skeleton",
+      sources: ["Decaying Skeleton", "Skeleton Warrior"],
     },
     {
       name: "Spider Silk",
       image: "/items/spider_silk.svg",
       quantity: 5,
-      monster: "Spiderling",
+      sources: ["Spiderling", "Giant Spider"],
     },
     {
       name: "Orc Scalp",
       image: "/items/orc_scalp.svg",
       quantity: 8,
-      monster: "Orc Warrior",
+      sources: ["Orc Warrior", "Orc Centurion"],
     },
   ];
 
-  const monsters = Array.from(new Set(items.map((item) => item.monster)));
+  const monsters = Array.from(new Set(items.flatMap((item) => item.sources)));
 
   return (
     <div className={styles.container}>
@@ -34,6 +34,9 @@ export default function Home() {
               <img src={item.image} alt={item.name} className={styles.image} />
               <div className={styles.name}>{item.name}</div>
               <div className={styles.quantity}>Need: {item.quantity}</div>
+              <div className={styles.sources}>
+                Dropped by: {item.sources.join(", ")}
+              </div>
             </div>
           ))}
         </div>
