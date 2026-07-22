@@ -38,6 +38,7 @@ const DEFAULT_SETTINGS: Settings = {
     clickThrough: false,
     fontScale: 1,
     showObtained: true,
+    followZone: false,
   },
   debug: false,
 };
@@ -75,6 +76,7 @@ export interface Store {
   updateEntry(id: string, patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note">>): ShoppingList;
   removeEntry(id: string): ShoppingList;
   clearList(): ShoppingList;
+  setQuestRuns(originKey: string, runs: number): ShoppingList;
   updateSettings(patch: DeepPartial<Settings>): Settings;
   /** Apply a loot event; returns the entries it satisfied (for match alerts). */
   applyLoot(event: LootEvent): ShoppingListEntry[];
@@ -87,7 +89,8 @@ export function createStore(userDataDir: string): Store {
   const settingsPath = path.join(userDataDir, "settings.json");
   const bus = new EventEmitter();
 
-  const list: ShoppingList = readJson(listPath, { entries: [] });
+  const list: ShoppingList = readJson(listPath, { entries: [], questRuns: {} });
+  if (!list.questRuns) list.questRuns = {}; // migrate lists saved before quest runs existed
   let settings: Settings = deepMerge(DEFAULT_SETTINGS, readJson<DeepPartial<Settings>>(settingsPath, {}));
 
   function readJson<T>(file: string, fallback: T): T {
@@ -170,6 +173,14 @@ export function createStore(userDataDir: string): Store {
 
     clearList() {
       list.entries = [];
+      list.questRuns = {};
+      return emitList();
+    },
+
+    setQuestRuns(originKey, runs) {
+      const n = Math.max(1, Math.round(runs));
+      if (n <= 1) delete list.questRuns[originKey];
+      else list.questRuns[originKey] = n;
       return emitList();
     },
 

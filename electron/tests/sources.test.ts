@@ -5,7 +5,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupDropsByZone, zoneMatches, splitDropsByCurrentZone } from "../../src/shared/sources";
+import {
+  groupDropsByZone,
+  zoneMatches,
+  splitDropsByCurrentZone,
+  otherSources,
+  sourceZones,
+  isObtainableIn,
+} from "../../src/shared/sources";
 import type { ItemSource } from "../../src/shared/types";
 
 const drops: ItemSource[] = [
@@ -46,4 +53,36 @@ test("splitDropsByCurrentZone puts everything in elsewhere when zone unknown", (
   const { here, elsewhere } = splitDropsByCurrentZone(grouped, null);
   assert.equal(here.length, 0);
   assert.equal(elsewhere.length, 2);
+});
+
+test("otherSources keeps non-drops, deduped by kind+where", () => {
+  const others = otherSources([
+    ...drops,
+    { kind: "vendor", where: "Merchant Bob", detail: "Qeynos" }, // dup of the one in `drops`
+    { kind: "quest", where: "Aviak Talons" },
+  ]);
+  assert.deepEqual(
+    others.map((s) => `${s.kind}:${s.where}`),
+    ["vendor:Merchant Bob", "quest:Aviak Talons"],
+  );
+});
+
+test("sourceZones lists distinct zones across all kinds (case-insensitive)", () => {
+  const zones = sourceZones([
+    { kind: "drop", where: "a gnoll", detail: "Blackburrow" },
+    { kind: "vendor", where: "Bob", detail: "blackburrow" }, // same zone, different case
+    { kind: "drop", where: "a skeleton", detail: "Befallen" },
+    { kind: "quest", where: "Some Quest" }, // no zone
+  ]);
+  assert.deepEqual(zones, ["Blackburrow", "Befallen"]);
+});
+
+test("isObtainableIn matches loosely and ignores zoneless sources", () => {
+  const s: ItemSource[] = [
+    { kind: "drop", where: "a gnoll", detail: "Blackburrow" },
+    { kind: "recipe", where: "Player crafted" }, // no zone
+  ];
+  assert.ok(isObtainableIn(s, "Blackburrow"));
+  assert.ok(!isObtainableIn(s, "Befallen"));
+  assert.ok(!isObtainableIn([{ kind: "recipe", where: "Player crafted" }], "Anywhere"));
 });

@@ -16,7 +16,8 @@
  *  - Tables use eoTable2/eoTable3, never `.wikitable`.
  */
 import { parse, HTMLElement, type Node } from "node-html-parser";
-import type { WikiPage, ItemSource, WikiComponent, SourceKind } from "../../src/shared/types";
+import { WIKI_BASE } from "./api";
+import type { WikiPage, ItemSource, WikiComponent, SourceKind, ItemCard } from "../../src/shared/types";
 
 const ELEMENT_NODE = 1;
 
@@ -233,16 +234,115 @@ function parseWalkthroughTurnIns(section: Section | undefined): WikiComponent[] 
   return [...seen.values()];
 }
 
+// ─── Mob / NPC sections ───────────────────────────────────────────────────────
+
+/**
+ * "Known Loot" on a mob/NPC page: the h2#Known_Loot is followed by a <ul> whose
+ * <li>s each start with the dropped item as `div.hbdiv > a`. The list is nested in
+ * a wrapper div (not a flat section child), so find the heading and take the next
+ * <ul> directly. The embedded tooltip after each link also has anchors, so take
+ * the first anchor in `.hbdiv` specifically.
+ */
+function parseMobLoot(content: HTMLElement): WikiComponent[] {
+  const heading = content.querySelector("#Known_Loot");
+  if (!heading) return [];
+  let list: HTMLElement | null = null;
+  for (let el = heading.nextElementSibling; el; el = el.nextElementSibling) {
+    if (el.tagName === "UL") {
+      list = el;
+      break;
+    }
+  }
+  if (!list) list = (heading.parentNode as HTMLElement | undefined)?.querySelector("ul") ?? null;
+  if (!list) return [];
+
+  const seen = new Map<string, WikiComponent>();
+  for (const li of list.querySelectorAll("li")) {
+    const a = li.querySelector(".hbdiv a") ?? li.querySelector("a");
+    if (!a || !isContentLink(a)) continue;
+    const name = linkName(a);
+    if (name && !seen.has(name)) seen.set(name, { name, qty: 1, wikiPath: linkPath(a) });
+  }
+  return [...seen.values()];
+}
+
+// ─── Item stat card (the wiki's hover tooltip) ──────────────────────────────────
+
+/** True if `el` sits inside a `.hb` tooltip span (i.e. an embedded item card, not the page's own). */
+function isInsideHb(el: HTMLElement): boolean {
+  for (let p = el.parentNode as HTMLElement | null; p; p = p.parentNode as HTMLElement | null) {
+    if (/(^|\s)hb(\s|$)/.test(p.getAttribute?.("class") ?? "")) return true;
+  }
+  return false;
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&#160;|&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+}
+
+/**
+ * The item's own stat card — the `.itemtopbg`(title) + `.itemdata`(stats) block the
+ * wiki shows on hover. Only the page's OWN card counts, so we skip any block nested
+ * in a `.hb` tooltip (mob loot / quest prose embed other items' cards that way).
+ * Text lines come from the `.itemdata` (its icon figure carries no text, so a plain
+ * tag-strip is enough); the icon `src` is absolutized against the wiki.
+ */
+function parseItemCard(content: HTMLElement): ItemCard | undefined {
+  const titleEl = content.querySelectorAll(".itemtitle").find((e) => !isInsideHb(e));
+  const dataEl = content.querySelectorAll(".itemdata").find((e) => !isInsideHb(e));
+  if (!titleEl || !dataEl) return undefined;
+  const title = titleEl.text.trim();
+  if (!title) return undefined;
+
+  const iconSrc = dataEl.querySelector(".itemicon img")?.getAttribute("src");
+  const icon = iconSrc ? (iconSrc.startsWith("http") ? iconSrc : `${WIKI_BASE}${iconSrc}`) : undefined;
+
+  const text = decodeEntities(
+    dataEl.innerHTML
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/?p[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, ""),
+  );
+  const lines = text
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (!lines.length) return undefined;
+
+  return { title, icon, lines };
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export function parseWikiPage(title: string, wikiPath: string, html: string): WikiPage {
   const root = parse(html);
   const content = root.querySelector(".mw-parser-output") ?? root;
   const sections = collectSections(content);
-  const isQuest = !!content.querySelector("table.questTopTable");
   const fetchedAt = new Date().toISOString();
 
-  if (isQuest) {
+  // Classify by the container class unique to each page type. NB: itemtopbg /
+  // itemdata appear on EVERY type (embedded item tooltips), so item is the
+  // fallback only — never key page type off those.
+  if (content.querySelector(".mobStatsBox, .eql-mobpage-stats")) {
+    return {
+      kind: "mob",
+      title,
+      wikiPath,
+      sources: [],
+      components: parseMobLoot(content),
+      rewards: [],
+      fetchedAt,
+    };
+  }
+
+  if (content.querySelector("table.questTopTable")) {
     const walkthrough = sections.find((s) => /walkthrough/i.test(s.id) || /walkthrough/i.test(s.heading));
     const reward = sections.find((s) => /reward/i.test(s.id) || /reward/i.test(s.heading));
     return {
@@ -256,7 +356,11 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
     };
   }
 
-  // Item page (also covers player-craftable items, which carry a recipe).
+  if (content.querySelector("table.zoneTopTable")) {
+    return { kind: "zone", title, wikiPath, sources: [], components: [], rewards: [], fetchedAt };
+  }
+
+  // Item page (fallback — also covers player-craftable items, which carry a recipe).
   const sources: ItemSource[] = [];
   const drops = findSection(sections, "Drops_From");
   if (drops) sources.push(...parseDropsFrom(drops));
@@ -275,5 +379,5 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
     ? "recipe"
     : "item";
 
-  return { kind, title, wikiPath, sources, components, rewards: [], fetchedAt };
+  return { kind, title, wikiPath, sources, components, rewards: [], card: parseItemCard(content), fetchedAt };
 }

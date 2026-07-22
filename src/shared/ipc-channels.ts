@@ -12,6 +12,7 @@ export const CH = {
   listUpdate: "list:update",
   listRemove: "list:remove",
   listClear: "list:clear",
+  listSetRuns: "list:setRuns",
   // settings (invoke)
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
@@ -37,6 +38,8 @@ export const CH = {
   overlaySetClickThrough: "overlay:setClickThrough",
   winRole: "win:role",
   winMinimize: "win:minimize",
+  winHide: "win:hide",
+  winSetOpacity: "win:setOpacity",
   winClose: "win:close",
   winResetPositions: "win:resetPositions",
   // events (main → renderer)
@@ -48,6 +51,7 @@ export const CH = {
   zoneChanged: "evt:zone",
   statsChanged: "evt:stats",
   searchPrefill: "evt:searchPrefill",
+  navCommand: "evt:navCommand",
 } as const;
 
 export type Channel = (typeof CH)[keyof typeof CH];

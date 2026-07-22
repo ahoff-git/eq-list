@@ -32,6 +32,40 @@ export function otherSourceKinds(sources: ItemSource[]): string[] {
   return kinds;
 }
 
+/**
+ * Non-drop sources (vendor / quest / recipe / forage / ground), deduped by
+ * kind+where, order preserved. Drops are shown zone-grouped separately; these are
+ * the "also available from" lines the list expansion colors by kind (so a vendor
+ * reads clearly as "don't kill this").
+ */
+export function otherSources(sources: ItemSource[]): ItemSource[] {
+  const seen = new Set<string>();
+  const out: ItemSource[] = [];
+  for (const s of sources) {
+    if (s.kind === "drop") continue;
+    const key = `${s.kind}|${s.where}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
+/** Distinct zones an item is obtainable in (from any source's `detail`). */
+export function sourceZones(sources: ItemSource[]): string[] {
+  const zones: string[] = [];
+  for (const s of sources) {
+    const z = s.detail?.trim();
+    if (z && !zones.some((existing) => existing.toLowerCase() === z.toLowerCase())) zones.push(z);
+  }
+  return zones;
+}
+
+/** Whether any of an item's sources place it in `zone` (loose zone match). */
+export function isObtainableIn(sources: ItemSource[], zone: string): boolean {
+  return sources.some((s) => !!s.detail && zoneMatches(zone, s.detail));
+}
+
 function normalizeZone(z: string): string {
   return z.toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
 }

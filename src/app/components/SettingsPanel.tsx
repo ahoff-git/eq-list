@@ -1,7 +1,6 @@
 "use client";
 import { useSettings, useWatcherStatus, useAppInfo } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { OVERLAY_HOTKEY } from "@/shared/constants";
 import type { DeepPartial, Settings } from "@/shared/types";
 
 /** Log location, match strictness, overlay look, and the debug toggle. */
@@ -59,7 +58,7 @@ export default function SettingsPanel() {
       </div>
 
       <div className="setting">
-        <label>Overlay opacity — {(settings.overlay.opacity * 100).toFixed(0)}%</label>
+        <label>Window opacity — {(settings.overlay.opacity * 100).toFixed(0)}%</label>
         <input
           type="range"
           min={0.2}
@@ -71,7 +70,7 @@ export default function SettingsPanel() {
       </div>
 
       <div className="setting">
-        <label>Overlay text size — {(settings.overlay.fontScale * 100).toFixed(0)}%</label>
+        <label>Window text size — {(settings.overlay.fontScale * 100).toFixed(0)}%</label>
         <input
           type="range"
           min={0.8}
@@ -83,45 +82,21 @@ export default function SettingsPanel() {
       </div>
 
       <Toggle
-        label="Overlay always on top"
-        checked={settings.overlay.alwaysOnTop}
-        onChange={(v) => patch({ overlay: { alwaysOnTop: v } })}
-      />
-      <Toggle
-        label={`Overlay click-through (ignore mouse) — ${OVERLAY_HOTKEY.label} still hides it`}
-        checked={settings.overlay.clickThrough}
-        onChange={(v) => patch({ overlay: { clickThrough: v } })}
-      />
-      <Toggle
-        label="Keep completed items on the overlay"
+        label="Keep completed items visible"
         checked={settings.overlay.showObtained}
         onChange={(v) => patch({ overlay: { showObtained: v } })}
       />
       <Toggle
-        label="Debug logging"
-        checked={settings.debug}
-        onChange={(v) => patch({ debug: v })}
+        label="Follow your zone (auto-narrow to what's obtainable where you are)"
+        checked={settings.overlay.followZone}
+        onChange={(v) => patch({ overlay: { followZone: v } })}
       />
-      <div className="setting" style={{ paddingTop: 0, borderTop: "none" }}>
-        <div className="row">
-          <button className="btn" onClick={() => api()?.app.openLog()}>
-            Open debug log
-          </button>
-        </div>
-        <span className="hint">
-          Logs are written to a file (open above) as well as the launching terminal. Enable Debug
-          logging, reproduce the issue (e.g. a screengrab), then open the log.
-        </span>
-      </div>
 
       <div className="setting">
-        <label>Windows</label>
-        <div className="row">
-          <button className="btn" onClick={() => api()?.win.resetPositions()}>
-            Reset window positions
-          </button>
-        </div>
-        <span className="hint">Recenter the control window and overlay if they end up off-screen.</span>
+        <span className="hint">
+          Pin (always-on-top), minimize, and hide are on the title bar. Debug logging, the debug log,
+          window reset, and Quit live in the system-tray icon.
+        </span>
       </div>
 
       <div className="setting">

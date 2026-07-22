@@ -6,7 +6,7 @@
 import { ipcMain, dialog, shell, BrowserWindow } from "electron";
 import { CH } from "../src/shared/ipc-channels";
 import { WIKI_BASE } from "./wiki/api";
-import { createOverlayWindow, applyOverlaySettings, getMainWindow, getOverlayWindow } from "./windows";
+import { createMainWindow, applyOverlaySettings, getMainWindow } from "./windows";
 import { resetPositions } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
@@ -37,6 +37,7 @@ export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getC
   ipcMain.handle(CH.listUpdate, (_e, id: string, patch: Partial<ShoppingListEntry>) => store.updateEntry(id, patch));
   ipcMain.handle(CH.listRemove, (_e, id: string) => store.removeEntry(id));
   ipcMain.handle(CH.listClear, () => store.clearList());
+  ipcMain.handle(CH.listSetRuns, (_e, originKey: string, runs: number) => store.setQuestRuns(originKey, runs));
 
   // ── settings ──
   ipcMain.handle(CH.settingsGet, () => store.getSettings());
@@ -87,9 +88,12 @@ export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getC
   ipcMain.handle(CH.appInfo, () => getAppInfo());
   ipcMain.handle(CH.appOpenLog, () => shell.openPath(logFile));
 
-  // ── overlay / window control ──
+  // ── window control ──
+  // "Open overlay" now just surfaces the single app window (kept for the API shape).
   ipcMain.handle(CH.overlayOpen, () => {
-    createOverlayWindow(store.getSettings().overlay);
+    const win = createMainWindow(store.getSettings().overlay);
+    win.show();
+    win.focus();
   });
   ipcMain.handle(CH.overlaySetClickThrough, (_e, enabled: boolean) => {
     store.updateSettings({ overlay: { clickThrough: enabled } });
@@ -97,11 +101,16 @@ export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getC
   });
 
   ipcMain.on(CH.winMinimize, (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
+  // Hide to tray (single-window app): keep the process alive so the tray/hotkey can reshow.
+  ipcMain.on(CH.winHide, (e) => BrowserWindow.fromWebContents(e.sender)?.hide());
+  // Transient opacity (the "full opacity" toggle) — doesn't touch the saved setting.
+  ipcMain.on(CH.winSetOpacity, (e, value: number) =>
+    BrowserWindow.fromWebContents(e.sender)?.setOpacity(Math.max(0.2, Math.min(1, value))),
+  );
   ipcMain.on(CH.winClose, (e) => BrowserWindow.fromWebContents(e.sender)?.close());
-  // Forget saved positions and recenter any open windows (for "lost" windows).
+  // Forget saved position and recenter the window (for a "lost" window).
   ipcMain.handle(CH.winResetPositions, () => {
     resetPositions();
     getMainWindow()?.center();
-    getOverlayWindow()?.center();
   });
 }

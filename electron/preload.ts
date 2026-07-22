@@ -28,6 +28,7 @@ const api: EqlApi = {
     update: (id, patch) => ipcRenderer.invoke(CH.listUpdate, id, patch),
     remove: (id) => ipcRenderer.invoke(CH.listRemove, id),
     clear: () => ipcRenderer.invoke(CH.listClear),
+    setRuns: (originKey, runs) => ipcRenderer.invoke(CH.listSetRuns, originKey, runs),
     onChanged: (cb) => on(CH.listChanged, cb),
   },
   settings: {
@@ -72,6 +73,9 @@ const api: EqlApi = {
   search: {
     onPrefill: (cb) => on(CH.searchPrefill, cb),
   },
+  nav: {
+    onCommand: (cb) => on(CH.navCommand, cb),
+  },
   overlay: {
     open: () => ipcRenderer.invoke(CH.overlayOpen),
     setClickThrough: (enabled) => ipcRenderer.invoke(CH.overlaySetClickThrough, enabled),
@@ -79,6 +83,8 @@ const api: EqlApi = {
   win: {
     role: () => Promise.resolve(role()),
     minimize: () => ipcRenderer.send(CH.winMinimize),
+    hide: () => ipcRenderer.send(CH.winHide),
+    setOpacity: (value) => ipcRenderer.send(CH.winSetOpacity, value),
     close: () => ipcRenderer.send(CH.winClose),
     resetPositions: () => ipcRenderer.invoke(CH.winResetPositions),
   },

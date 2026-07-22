@@ -31,6 +31,12 @@ const log = createLogger("wiki");
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // a week; wiki data changes slowly
 const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
+// Bump whenever parse.ts changes how a page becomes a WikiPage (new page kinds,
+// different sources/components). Cached pages carry the version they were parsed
+// under; a mismatch forces a re-parse, so a parser fix reaches every page instead
+// of being masked by week-old cache entries. (v2: mob/zone classification + loot.)
+const CACHE_VERSION = 2;
+
 // Wiki taxonomy (confirmed against the live wiki). Kept as named constants so a
 // category rename only needs editing here.
 const ZONES_CATEGORY = "Zones";
@@ -159,11 +165,15 @@ export function createWikiClient(cacheDir: string): WikiClient {
   titleIndex.ensureFresh();
   zoneIndex.ensureFresh();
 
-  function readCache(title: string): { page: WikiPage; ageMs: number } | null {
+  function readCache(title: string): { page: WikiPage; ageMs: number; version: number } | null {
     try {
       const raw = fs.readFileSync(fileFor(title), "utf8");
-      const page = JSON.parse(raw) as WikiPage;
-      return { page, ageMs: Date.now() - new Date(page.fetchedAt).getTime() };
+      const parsed = JSON.parse(raw) as { version?: number; page?: WikiPage } & Partial<WikiPage>;
+      // v2+ writes an envelope {version, page}; legacy entries were the bare WikiPage.
+      const enveloped = typeof parsed.version === "number" && !!parsed.page;
+      const page = (enveloped ? parsed.page : (parsed as WikiPage)) as WikiPage;
+      const version = enveloped ? (parsed.version as number) : 1;
+      return { page, ageMs: Date.now() - new Date(page.fetchedAt).getTime(), version };
     } catch {
       return null;
     }
@@ -224,7 +234,9 @@ export function createWikiClient(cacheDir: string): WikiClient {
 
     async getPage(title) {
       const cached = readCache(title);
-      if (cached && cached.ageMs < CACHE_TTL_MS) {
+      // Only a current-version, unexpired entry is a hit; a stale-version entry is
+      // re-parsed (but still kept below as an offline fallback).
+      if (cached && cached.version === CACHE_VERSION && cached.ageMs < CACHE_TTL_MS) {
         log.debug("cache hit", title);
         return cached.page;
       }
@@ -236,7 +248,7 @@ export function createWikiClient(cacheDir: string): WikiClient {
         const outEra = await ensureOutEraSet();
         page.outOfEra = fetched.categories.some((c) => isOutEraCategory(outEra, c));
         try {
-          fs.writeFileSync(fileFor(title), JSON.stringify(page, null, 2), "utf8");
+          fs.writeFileSync(fileFor(title), JSON.stringify({ version: CACHE_VERSION, page }, null, 2), "utf8");
         } catch (e) {
           log.warn("cache write failed", (e as Error).message);
         }

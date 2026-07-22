@@ -11,6 +11,8 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0005: Static-export renderer served over an app:// protocol](./0005-renderer-static-export-and-app-protocol.md)
 - [0006: Fuzzy search over a cached title index](./0006-fuzzy-search-with-title-index.md)
 - [0007: Quests-by-zone via backlinks ∩ Category:Quests](./0007-quests-by-zone-via-backlinks.md)
+- [0008: In-app page navigation with a history stack](./0008-in-app-page-navigation.md)
+- [0009: One translucent window + a system tray](./0009-single-window-with-tray.md)
 
 ## Open Questions
 - Should out-of-era pages be *hidden* (not just badged)? Filtering search results by

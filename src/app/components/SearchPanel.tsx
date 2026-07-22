@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useSettings } from "@/lib/hooks";
+import { useNav } from "@/lib/nav";
+import ItemLink from "./ItemLink";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
 import type { SearchResult, WikiPage, ItemSource } from "@/shared/types";
 
@@ -12,9 +14,11 @@ type Mode = "name" | "zone";
  *  - "Name": fuzzy-find any item / quest / recipe by name.
  *  - "By zone": fuzzy-pick a zone, then list the quests in it.
  * Opening a page lets you add an item, or "Add full quest" to queue all of a
- * quest's turn-ins grouped under the quest.
+ * quest's turn-ins grouped under the quest. The open page and every link within it
+ * are driven by the shared in-app nav (`useNav`), so nothing jumps to the browser.
  */
 export default function SearchPanel({ prefill }: { prefill?: { text: string; n: number } | null }) {
+  const nav = useNav();
   const [mode, setMode] = useState<Mode>("name");
 
   // name mode
@@ -30,7 +34,7 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
   const [quests, setQuests] = useState<SearchResult[]>([]);
   const [loadingQuests, setLoadingQuests] = useState(false);
 
-  // shared page detail
+  // The page currently open in-app (nav.current) is fetched here.
   const [page, setPage] = useState<WikiPage | null>(null);
   const [loadingPage, setLoadingPage] = useState(false);
 
@@ -63,9 +67,34 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
   useEffect(() => {
     if (!prefill) return;
     setMode("name");
-    setPage(null);
+    nav.clear();
     setTerm(prefill.text);
-  }, [prefill]);
+  }, [prefill, nav]);
+
+  // Fetch whatever page the in-app nav points at (from a result, a link, or back/forward).
+  useEffect(() => {
+    const a = api();
+    const title = nav.current;
+    if (!a || !title) {
+      setPage(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingPage(true);
+    setPage(null);
+    void (async () => {
+      const p = await a.wiki.getPage(title);
+      if (!cancelled) {
+        setPage(p);
+        setLoadingPage(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Re-fetch only when the open page changes; `nav`'s other fields are irrelevant here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav.current]);
 
   // Debounced zone suggestions (hidden once a zone is locked in).
   useEffect(() => {
@@ -82,20 +111,11 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
 
   function switchMode(m: Mode) {
     setMode(m);
-    setPage(null);
+    nav.clear();
   }
 
-  async function openPage(title: string) {
-    const a = api();
-    if (!a) return;
-    setLoadingPage(true);
-    setPage(null);
-    try {
-      setPage(await a.wiki.getPage(title));
-    } finally {
-      setLoadingPage(false);
-    }
-  }
+  // Every "open this" in the panel goes through the shared in-app nav.
+  const openPage = nav.openPage;
 
   async function selectZone(title: string) {
     const a = api();
@@ -163,7 +183,7 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
         </label>
       </div>
 
-      {mode === "name" && !page && (
+      {mode === "name" && !nav.current && (
         <>
           <input
             className="field"
@@ -179,11 +199,8 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
           <div className="results">
             {shownResults.map((r, i) => (
               <div className={`result ${i === active ? "active" : ""}`} key={r.wikiPath}>
-                <span className="name">{r.title}</span>
+                <ItemLink title={r.title} className="name" />
                 {r.outOfEra && <span className="badge era-out">era</span>}
-                <button className="btn sm" onClick={() => openPage(r.title)}>
-                  Open
-                </button>
                 <button className="btn sm primary" onClick={() => addOne(r.title, 1, r.wikiPath)}>
                   + Add
                 </button>
@@ -193,7 +210,7 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
         </>
       )}
 
-      {mode === "zone" && !page && (
+      {mode === "zone" && !nav.current && (
         <>
           <input
             className="field"
@@ -228,11 +245,8 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
               <div className="results">
                 {shownQuests.map((q) => (
                   <div className="result" key={q.wikiPath}>
-                    <span className="name">{q.title}</span>
+                    <ItemLink title={q.title} className="name" />
                     {q.outOfEra && <span className="badge era-out">era</span>}
-                    <button className="btn sm" onClick={() => openPage(q.title)}>
-                      Open
-                    </button>
                     <button className="btn sm primary" onClick={() => void addFullQuestByTitle(q.title)}>
                       + Add quest
                     </button>
@@ -246,18 +260,34 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
 
       {loadingPage && <p className="muted" style={{ marginTop: 12 }}>Loading page…</p>}
 
+      {nav.current && !loadingPage && !page && (
+        <div className="page-detail">
+          <div className="row">
+            <button className="btn ghost sm" onClick={() => nav.back()}>
+              ← Back
+            </button>
+            <span className="muted small">Couldn’t load “{nav.current}”.</span>
+          </div>
+        </div>
+      )}
+
       {page && (
         <div className="page-detail">
           <div className="row">
+            <button className="btn ghost sm" title="Back" onClick={() => nav.back()}>
+              ←
+            </button>
+            {nav.canForward && (
+              <button className="btn ghost sm" title="Forward" onClick={() => nav.forward()}>
+                →
+              </button>
+            )}
             <h3>{page.title}</h3>
             <span className={`badge kind-${page.kind}`}>{page.kind}</span>
             {page.outOfEra && <span className="badge era-out">out of era</span>}
             <span className="spacer" />
             <button className="btn ghost sm" title="Open on eqlwiki" onClick={() => api()?.wiki.openInBrowser(page.wikiPath)}>
               ↗ eqlwiki
-            </button>
-            <button className="btn ghost sm" onClick={() => setPage(null)}>
-              ← Back
             </button>
           </div>
 
@@ -268,11 +298,17 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
           )}
 
           <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
-            {page.kind === "quest" ? (
+            {page.kind === "quest" && (
               <button className="btn primary sm" onClick={() => addFullPage(page)}>
                 + Add full quest{page.components.length ? ` (${page.components.length} items)` : ""}
               </button>
-            ) : (
+            )}
+            {page.kind === "mob" && page.components.length > 0 && (
+              <button className="btn primary sm" onClick={() => addFullPage(page)}>
+                + Add all {page.components.length} loot
+              </button>
+            )}
+            {(page.kind === "item" || page.kind === "recipe" || page.kind === "page") && (
               <>
                 <button className="btn primary sm" onClick={() => addItem(page)}>
                   + Add “{page.title}”
@@ -289,13 +325,13 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
           {page.components.length > 0 && (
             <>
               <h4 className="muted small" style={{ marginTop: 12 }}>
-                {page.kind === "quest" ? "Turn-in items" : "Ingredients"}
+                {page.kind === "quest" ? "Turn-in items" : page.kind === "mob" ? "Known loot" : "Ingredients"}
               </h4>
               <ul>
                 {page.components.map((c) => (
                   <li key={c.name}>
                     <span>
-                      {c.qty}× {c.name}
+                      {c.qty}× <ItemLink title={c.name} />
                     </span>
                     <button className="btn ghost sm" onClick={() => addOne(c.name, c.qty, c.wikiPath)}>
                       + Add
@@ -310,6 +346,12 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
             <p className="muted small" style={{ marginTop: 12 }}>
               Couldn’t auto-detect turn-in items for this quest — add them manually from the search box.
             </p>
+          )}
+          {page.kind === "mob" && page.components.length === 0 && (
+            <p className="muted small" style={{ marginTop: 12 }}>No known loot listed — open it on eqlwiki to check.</p>
+          )}
+          {page.kind === "zone" && (
+            <p className="muted small" style={{ marginTop: 12 }}>Zone page — open it on eqlwiki to browse its contents.</p>
           )}
 
           {page.sources.length > 0 && <SourceList sources={page.sources} />}
@@ -337,7 +379,7 @@ function SourceList({ sources }: { sources: ItemSource[] }) {
         {sources.map((s, i) => (
           <li key={i}>
             <span className={`badge kind-${s.kind}`}>{s.kind}</span>
-            <span>{s.where}</span>
+            <ItemLink title={s.where} />
             {s.detail && <span className="muted small">{s.detail}</span>}
           </li>
         ))}

@@ -5,7 +5,7 @@
  *   - loot events     → broadcast raw, then matched entries after the store applies them
  *   - settings changes → overlay restyled + watcher re-targeted when the log path moves
  */
-import { app, BrowserWindow, globalShortcut } from "electron";
+import { app, BrowserWindow, globalShortcut, shell, Tray, Menu, nativeImage } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
@@ -16,8 +16,8 @@ import { createSessionStats } from "./session-stats";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, createOverlayWindow, getMainWindow, getOverlayWindow, applyOverlaySettings } from "./windows";
-import { wasOverlayOpen, setOverlayOpen, beginQuit } from "./window-state";
+import { createMainWindow, getMainWindow, applyOverlaySettings } from "./windows";
+import { resetPositions, beginQuit } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink } from "../src/shared/logging";
@@ -123,6 +123,7 @@ if (!app.requestSingleInstanceLock()) {
     syncDebugFlag(settings);
     broadcast(CH.settingsChanged, settings);
     applyOverlaySettings(settings.overlay);
+    tray?.setContextMenu(buildTrayMenu()); // keep the "Debug logging" checkbox in sync
     // Only re-target the watcher when the log location actually changed.
     if (`${settings.logDir}|${settings.activeLogFile}` !== watchKey) startWatcher();
   });
@@ -142,42 +143,79 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onXp((event) => stats.recordXp(event));
   stats.onChange((snapshot) => broadcast(CH.statsChanged, snapshot));
 
-  // Global hotkey to show/hide the overlay — always works, even when the overlay
-  // is click-through or the game has focus, so the float can never get "stuck".
-  function toggleOverlay(): void {
-    const win = getOverlayWindow();
+  // Global hotkey to show/hide the app window — always works even when the game has
+  // focus, so the float can never get "stuck" behind the game.
+  function toggleWindow(): void {
+    const win = getMainWindow();
     if (win && !win.isDestroyed()) {
-      if (win.isVisible()) {
+      if (win.isVisible() && !win.isMinimized()) {
         win.hide();
-        setOverlayOpen(false);
       } else {
-        win.showInactive(); // don't steal focus from the game
-        setOverlayOpen(true);
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
       }
     } else {
-      createOverlayWindow(store.getSettings().overlay);
+      createMainWindow(store.getSettings().overlay);
     }
   }
-  const overlayReg = globalShortcut.register(OVERLAY_HOTKEY.accelerator, toggleOverlay);
-  if (!overlayReg) log.warn("could not register overlay hotkey:", OVERLAY_HOTKEY.accelerator);
+  const overlayReg = globalShortcut.register(OVERLAY_HOTKEY.accelerator, toggleWindow);
+  if (!overlayReg) log.warn("could not register window hotkey:", OVERLAY_HOTKEY.accelerator);
+
+  // System tray: show/hide + the dev-only options (kept out of the in-app UI).
+  let tray: Tray | null = null;
+  function buildTrayMenu(): Menu {
+    const s = store.getSettings();
+    return Menu.buildFromTemplate([
+      { label: "Show / Hide EQ List", click: () => toggleWindow() },
+      { type: "separator" },
+      {
+        label: "Debug logging",
+        type: "checkbox",
+        checked: s.debug,
+        click: (item) => store.updateSettings({ debug: item.checked }),
+      },
+      { label: "Open debug log", click: () => void shell.openPath(logFile) },
+      {
+        label: "Reset window position",
+        click: () => {
+          resetPositions();
+          const win = getMainWindow() ?? createMainWindow(store.getSettings().overlay);
+          win.center();
+          win.show();
+          win.focus();
+        },
+      },
+      { type: "separator" },
+      { label: "Quit EQ List", click: () => { beginQuit(); app.quit(); } },
+    ]);
+  }
+  function createTray(): void {
+    const iconPath = path.join(app.getAppPath(), "out", "favicon.ico");
+    let image = nativeImage.createFromPath(iconPath);
+    if (image.isEmpty()) image = nativeImage.createEmpty();
+    tray = new Tray(image);
+    tray.setToolTip("EQ List");
+    tray.setContextMenu(buildTrayMenu());
+    tray.on("click", () => toggleWindow());
+  }
   const lookupReg = globalShortcut.register(LOOKUP_HOTKEY.accelerator, () => lookup.open());
   if (!lookupReg) log.warn("could not register lookup hotkey:", LOOKUP_HOTKEY.accelerator);
   appInfo = {
     logFile,
     hotkeys: [
-      { action: "Toggle overlay", label: OVERLAY_HOTKEY.label, registered: overlayReg },
+      { action: "Show / hide window", label: OVERLAY_HOTKEY.label, registered: overlayReg },
       { action: "Screengrab item lookup", label: LOOKUP_HOTKEY.label, registered: lookupReg },
     ],
   };
 
-  createMainWindow();
-  // Reopen the overlay if it was showing when the app last closed.
-  if (wasOverlayOpen()) createOverlayWindow(store.getSettings().overlay);
+  createMainWindow(store.getSettings().overlay);
+  createTray();
   startWatcher();
   log.debug("app ready");
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow(store.getSettings().overlay);
   });
 });
 
@@ -185,7 +223,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", () => beginQuit());
   app.on("will-quit", () => globalShortcut.unregisterAll());
 
+  // Single-window app with a tray: the ✕ hides to tray, so don't quit when the
+  // window closes — the tray (or the hotkey) brings it back. Quit is via the tray.
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") app.quit();
+    /* stay resident in the tray */
   });
 }

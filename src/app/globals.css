@@ -1,9 +1,9 @@
 /*
  * Global styles + a tiny dark design system for the overlay app.
  *
- * The <body> is transparent so the frameless overlay window can be see-through;
- * each route paints its own background on a wrapper (.app is opaque, .overlay is
- * translucent). Colors are tuned for legibility on top of a game window.
+ * The <body> is transparent so the frameless window can be see-through; the app
+ * shell (.app.glass) paints its own translucent background. Colors are tuned for
+ * legibility on top of a game window.
  */
 :root {
   --bg: #0e1013;
@@ -117,29 +117,79 @@ button {
 .era-warning { color: var(--bad); margin-top: 8px; }
 
 .muted { color: var(--text-dim); }
+.link { cursor: pointer; }
+.link:hover { color: var(--accent); text-decoration: underline; }
+
+/* item hover card (the wiki's "hover for stats" tooltip, in-app) */
+.item-link { position: relative; }
+.item-card {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 300px;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+  pointer-events: none; /* a tooltip, not a target — the link's mouseleave closes it */
+  font-size: 12px;
+  color: var(--text);
+  white-space: normal;
+}
+.item-card .ic-head { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+.item-card .ic-icon { border-radius: 4px; flex: none; background: var(--bg-input); }
+.item-card .ic-title { font-weight: 700; color: var(--accent); }
+.item-card .ic-line { color: var(--text-dim); line-height: 1.35; }
 .small { font-size: 12px; }
 .spacer { flex: 1; }
 
-/* ── main control window ─────────────────────────────────────── */
+/* ── app window (single, frameless, translucent "overlay" look) ── */
 .app {
   display: flex;
   flex-direction: column;
   height: 100vh;
   background: var(--bg);
 }
+/* Frameless translucent float: rounded, bordered, blurred; body is transparent so
+   the corners show through. Window-level opacity is applied by the main process. */
+.app.glass {
+  background: rgba(14, 16, 19, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  backdrop-filter: blur(3px);
+}
 .titlebar {
+  -webkit-app-region: drag; /* the titlebar is the window drag handle */
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-raised);
+  background: rgba(23, 26, 31, 0.9);
 }
 .titlebar h1 {
-  font-size: 15px;
+  font-size: 14px;
   letter-spacing: 0.3px;
 }
 .titlebar h1 .mark { color: var(--accent); }
+.win-controls { display: flex; gap: 2px; }
+.no-drag,
+.win-controls { -webkit-app-region: no-drag; }
+.wc {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: 6px;
+}
+.wc:hover { background: var(--bg-input); color: var(--text); }
+.wc.on { color: var(--accent); }
 
 .tabs {
   display: flex;
@@ -259,6 +309,54 @@ button {
 .entry-count .have.met { color: var(--good); }
 .entry-origin { font-size: 11px; color: var(--text-dim); }
 
+/* entry "where to get it" expansion (▸): drops by zone + colored other sources */
+.entry-wrap { display: flex; flex-direction: column; }
+.entry-caret {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  width: 14px;
+  font-size: 0.85em;
+}
+.entry-caret:hover { color: var(--text); }
+.entry-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 8px 7px 30px; /* indent under the entry name */
+}
+.drop-zone,
+.src-line { display: flex; gap: 6px; align-items: baseline; font-size: 0.9em; line-height: 1.4; }
+.src-kind {
+  flex: none;
+  min-width: 40px;
+  text-transform: uppercase;
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.src-kind.k-drop { color: #7fc4ff; }
+.src-kind.k-vendor { color: #c9a0ff; }
+.src-kind.k-quest { color: #ffd479; }
+.src-kind.k-recipe { color: #8fe0a5; }
+.src-kind.k-forage,
+.src-kind.k-ground,
+.src-kind.k-unknown { color: var(--text-dim); }
+.drop-zone .dz-name { color: var(--text-dim); font-weight: 600; white-space: nowrap; }
+.drop-zone.here .dz-name { color: var(--good); }
+.drop-zone .dz-mobs { color: var(--text-dim); }
+.entry-more {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.85em;
+  padding: 1px 0 1px 46px;
+  cursor: pointer;
+}
+
 .empty {
   text-align: center;
   color: var(--text-dim);
@@ -288,6 +386,8 @@ button {
 .group-header:hover { background: #1d222a; }
 .group-header .caret { color: var(--text-dim); width: 12px; }
 .group-label { font-weight: 600; }
+.group-runs { display: inline-flex; align-items: center; gap: 2px; }
+.group-runs .runs-count { font-variant-numeric: tabular-nums; color: var(--accent); min-width: 22px; text-align: center; }
 .group.done .group-label { color: var(--text-dim); text-decoration: line-through; }
 .group-entries {
   display: flex;
@@ -295,6 +395,40 @@ button {
   gap: 4px;
   padding: 6px 8px 8px 22px; /* indent so items read as sub-bullets */
 }
+
+/* ── hunt tab (zones → mobs → needed drops) ──────────────────── */
+.hunt-zone {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.hunt-zone.here { border-color: var(--good); }
+.hunt-zone-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+}
+.hunt-zone.here .hunt-zone-head { color: var(--good); }
+.hunt-zone-head .hz-name { font-weight: 600; }
+.hunt-mob {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 10px 6px 16px;
+  border-top: 1px solid var(--border);
+}
+.hunt-mob .hm-name { font-weight: 500; white-space: nowrap; }
+.hunt-mob .hm-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--text-dim);
+}
+.hunt-item { color: var(--text); }
+.hunt-nosource { margin-top: 14px; }
 
 /* ── session stats ───────────────────────────────────────────── */
 .stat-row {
@@ -395,103 +529,6 @@ kbd {
   background: var(--bad);
 }
 .dot.on { background: var(--good); }
-
-/* ── overlay window ──────────────────────────────────────────── */
-.overlay {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: rgba(14, 16, 19, 0.82);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  backdrop-filter: blur(2px);
-}
-.overlay-header {
-  -webkit-app-region: drag;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: rgba(23, 26, 31, 0.9);
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-  font-weight: 600;
-}
-.overlay-header .mark { color: var(--accent); }
-.overlay-header .no-drag { -webkit-app-region: no-drag; }
-.overlay-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.overlay-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: rgba(23, 26, 31, 0.6);
-}
-.overlay-entry.done { opacity: 0.5; }
-.overlay-entry.flash { animation: flash 1.4s ease-out; }
-.overlay-entry .n { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-dim); }
-.overlay-entry .n .have { color: var(--accent); }
-.overlay-entry .n .have.met { color: var(--good); }
-.overlay-group { display: flex; flex-direction: column; gap: 4px; }
-.overlay-group + .overlay-group { margin-top: 6px; }
-.overlay-group-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.8em;
-  font-weight: 600;
-  color: var(--accent);
-  padding: 3px 4px 1px;
-  opacity: 0.9;
-  cursor: pointer;
-  user-select: none;
-}
-.overlay-group-label:hover { opacity: 1; }
-.overlay-group-label .caret { color: var(--text-dim); font-size: 0.9em; }
-.overlay-group-label .ogl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.overlay-group-label .ogl-count { margin-left: auto; color: var(--text-dim); font-weight: 400; }
-.overlay-zone-bar {
-  padding: 3px 10px;
-  font-size: 0.8em;
-  font-weight: 600;
-  color: var(--accent);
-  background: rgba(23, 26, 31, 0.7);
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.overlay-entry-wrap { display: flex; flex-direction: column; }
-.overlay-entry { cursor: pointer; }
-.overlay-entry .caret { color: var(--text-dim); font-size: 0.75em; width: 10px; }
-.overlay-drops {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 2px 8px 5px 22px; /* indent under the item */
-}
-.overlay-drop-zone { font-size: 0.82em; display: flex; gap: 6px; line-height: 1.3; }
-.overlay-drop-zone .dz-name { color: var(--text-dim); font-weight: 600; white-space: nowrap; }
-.overlay-drop-zone.here .dz-name { color: var(--good); }
-.overlay-drop-zone .dz-mobs { color: var(--text-dim); }
-.overlay-more {
-  align-self: flex-start;
-  background: none;
-  border: none;
-  color: var(--accent);
-  font-size: 0.8em;
-  padding: 1px 0;
-  cursor: pointer;
-}
 
 /* ── screengrab region selector ──────────────────────────────── */
 .select-root {

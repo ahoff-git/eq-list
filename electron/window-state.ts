@@ -28,7 +28,6 @@ type Role = "main" | "overlay";
 interface WindowState {
   main?: Bounds;
   overlay?: Bounds;
-  overlayOpen?: boolean;
 }
 
 // Lazily loaded so we don't touch app.getPath before `ready`.
@@ -92,14 +91,6 @@ export function rememberBounds(role: Role, win: BrowserWindow): void {
   win.on("moved", () => save());
   win.on("resized", () => save());
   win.on("close", () => save(true)); // flush before the window (and maybe the app) goes away
-}
-
-export function setOverlayOpen(open: boolean): void {
-  get().overlayOpen = open;
-  persist();
-}
-export function wasOverlayOpen(): boolean {
-  return !!get().overlayOpen;
 }
 
 /** True once the app has begun quitting — lets close handlers skip "user closed" logic. */

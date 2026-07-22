@@ -19,9 +19,3 @@ _Distribution wiring (needs a host/repo decision):_
   Point the Download link at the hosted installer (e.g. GitHub Releases `latest` —
   set OWNER/REPO), and decide where to host the page + the installer produced by
   `npm run dist` (in `release/`).
-- list should include a kill list for enemies you've selected, and a 'hunt' list to show enemies in that list that drop what you need 
-- should be able to adjust (+/-) how many times you'd like to do the quest, and that number should change how many of the items in that quest you need
-
-- everything under "How to get it" on the search page should be a link to that item in the search page 
-- when searching, clicking the name (or row) should open the page that opens when you click the 'open' button
-- some NPCs or zones are being captures as items. As an example "A Hill Giant" is a monster than you can kill and it has "Known loot" which should be shown

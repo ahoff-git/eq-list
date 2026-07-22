@@ -1,20 +1,18 @@
 /**
- * windows.ts — creates the two windows and knows how to load the renderer.
+ * windows.ts — creates the app's single window and knows how to load the renderer.
  *
- *  main    — normal framed control panel (search, list, settings)
- *  overlay — frameless, transparent, always-on-top float that lights up on drops
+ * There is one window: a frameless, translucent, resizable float (the "overlay"
+ * look) that hosts the whole app (list, hunt, search, session, settings). It can be
+ * pinned always-on-top and hidden to the tray. In dev the renderer is the `next dev`
+ * server; in prod it's the exported bundle served over app:// (see protocol.ts).
  *
- * In dev the renderer is the `next dev` server; in prod it's the exported bundle
- * served over app:// (see protocol.ts). The window's role is passed to the
- * preload via an --eql-role argument.
- *
- * Windows restore their last position (window-state.ts) and are shown without
- * stealing focus — the overlay especially must never yank focus from the game.
- * DevTools only open when EQL_DEVTOOLS is set, not on every dev run.
+ * The window restores its last position (window-state.ts). DevTools only open when
+ * EQL_DEVTOOLS is set, not on every dev run.
  */
 import { BrowserWindow } from "electron";
 import path from "node:path";
-import { savedBounds, rememberBounds, setOverlayOpen, isQuitting } from "./window-state";
+import { savedBounds, rememberBounds } from "./window-state";
+import { CH } from "../src/shared/ipc-channels";
 import type { OverlaySettings } from "../src/shared/types";
 
 const DEV = !!process.env.EQL_DEV;
@@ -31,30 +29,31 @@ function load(win: BrowserWindow, route: string): void {
 }
 
 let mainWindow: BrowserWindow | null = null;
-let overlayWindow: BrowserWindow | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
 }
-export function getOverlayWindow(): BrowserWindow | null {
-  return overlayWindow;
-}
 
-export function createMainWindow(): BrowserWindow {
+export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
+    mainWindow.focus();
     return mainWindow;
   }
   const bounds = savedBounds("main");
   mainWindow = new BrowserWindow({
-    width: 1040,
-    height: 700,
+    width: 460,
+    height: 780,
     ...(bounds ?? {}),
-    minWidth: 720,
-    minHeight: 480,
+    minWidth: 340,
+    minHeight: 420,
     show: false,
+    frame: false,
+    transparent: true,
+    resizable: true,
     title: "EQ List",
-    backgroundColor: "#0e1013",
+    alwaysOnTop: overlay?.alwaysOnTop ?? true,
+    backgroundColor: "#00000000",
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -64,57 +63,21 @@ export function createMainWindow(): BrowserWindow {
     },
   });
   rememberBounds("main", mainWindow);
+  if (overlay) applyOverlaySettings(overlay);
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  // Mouse thumb buttons (and some keyboards) fire browser back/forward as an
+  // app-command; forward it so the renderer can walk its own page history instead
+  // of the OS trying to navigate a non-existent browser.
+  mainWindow.on("app-command", (_e, cmd) => {
+    if (cmd === "browser-backward") mainWindow?.webContents.send(CH.navCommand, "back");
+    else if (cmd === "browser-forward") mainWindow?.webContents.send(CH.navCommand, "forward");
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
   load(mainWindow, "");
   if (process.env.EQL_DEVTOOLS) mainWindow.webContents.openDevTools({ mode: "detach" });
   return mainWindow;
-}
-
-export function createOverlayWindow(overlay: OverlaySettings): BrowserWindow {
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.showInactive(); // re-show (may have been hidden) without taking focus
-    setOverlayOpen(true);
-    return overlayWindow;
-  }
-  const bounds = savedBounds("overlay");
-  overlayWindow = new BrowserWindow({
-    width: 340,
-    height: 480,
-    ...(bounds ?? {}),
-    minWidth: 220,
-    minHeight: 160,
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: true,
-    skipTaskbar: true,
-    alwaysOnTop: overlay.alwaysOnTop,
-    backgroundColor: "#00000000",
-    webPreferences: {
-      preload: PRELOAD,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      additionalArguments: ["--eql-role=overlay"],
-    },
-  });
-  rememberBounds("overlay", overlayWindow);
-  applyOverlaySettings(overlay);
-  // Show without focus so the game keeps input; the overlay is a passive float.
-  overlayWindow.once("ready-to-show", () => {
-    overlayWindow?.showInactive();
-    setOverlayOpen(true);
-  });
-  overlayWindow.on("closed", () => {
-    overlayWindow = null;
-    // Only "user closed it" counts as closed; app-quit should keep it remembered open.
-    if (!isQuitting()) setOverlayOpen(false);
-  });
-  load(overlayWindow, "overlay");
-  return overlayWindow;
 }
 
 /**
@@ -161,12 +124,10 @@ export function createLookupWindow(bounds: { x: number; y: number; width: number
   return win;
 }
 
-/** Push opacity / always-on-top / click-through onto the live overlay window. */
+/** Push opacity / always-on-top onto the live window (the single app window). */
 export function applyOverlaySettings(overlay: OverlaySettings): void {
-  const win = overlayWindow;
+  const win = mainWindow;
   if (!win || win.isDestroyed()) return;
   win.setOpacity(overlay.opacity);
   win.setAlwaysOnTop(overlay.alwaysOnTop, "screen-saver");
-  // forward:true still lets pointer move events through so hover styles work
-  win.setIgnoreMouseEvents(overlay.clickThrough, { forward: true });
 }

@@ -24,14 +24,32 @@ shopping list.
   (quests link a zone as `[[Befallen]]`, `[[Highpass]]`, `[[Highpass_Hold|…]]`, etc.).
   See [ADR 0007](../decisions/0007-quests-by-zone-via-backlinks.md).
 - `electron/wiki/parse.ts` — a **pure** black box: page HTML → normalized `WikiPage`
-  (`sources`, `components`, `rewards`). Encodes the real wiki DOM:
+  (`kind`, `sources`, `components`, `rewards`). Encodes the real wiki DOM:
+  - **Page kind** is decided by a signature container class so NPCs/zones aren't
+    mistaken for items: `.mobStatsBox`/`.eql-mobpage-stats` → `mob`,
+    `table.questTopTable` → `quest`, `table.zoneTopTable` → `zone`, else `item`.
+    (`recipe` is an item page whose sources include a `recipe` kind.)
   - Item pages: fixed `<h2 id="…">` sections; `span.esec` = empty section.
     `Drops_From` (zone `<p>` + `<ul>` of mobs), `Sold_by` (`table.eoTable3`),
     `Related_quests`/`Tradeskill_recipes` (`<ul>` of links), `Player_crafted`
     (`<dl><dd>` "N x item").
   - Quests: `table.questTopTable` (giver/zone), `Reward` `<ul>`, and turn-ins mined
     heuristically from `Walkthrough` (a link counts only when a quantity precedes it).
+  - Mob/NPC pages: `#Known_Loot` heading → the following `<ul>` (which lives inside a
+    wrapper div, so we walk `nextElementSibling` rather than assuming a flat section)
+    → loot items as `components` (deduped, links only). Powers the Hunt tab.
+  - Item stat card (`WikiPage.card`): the page's own `.itemtopbg`(title) + `.itemdata`
+    (icon + stat lines) — the block the wiki shows on hover. Only the page's OWN card
+    counts, so blocks nested in a `.hb` tooltip (embedded loot/prose item cards) are
+    skipped. Drives the in-app hover tooltip (`ItemLink`).
   - Tables use `eoTable2/eoTable3`, never `.wikitable`.
+- **Cache versioning** — `getPage` caches the *parsed* `WikiPage` to disk, so a
+  `parse.ts` change (new page kinds, new fields) would otherwise be masked by
+  week-old entries. Cached pages are stored as `{ version, page }`; `getPage` treats
+  a `CACHE_VERSION` mismatch as a miss and re-parses (a stale entry is still kept as
+  an offline fallback). Bump `CACHE_VERSION` in `index.ts` whenever parser output
+  changes — this is how a classification/parse fix reaches already-visited pages
+  without hard-coding per-page exceptions.
 - `electron/wiki/index.ts` — combines these behind `search()` / `searchZones()` /
   `questsByZone()` / `getPage()`, with a 7-day on-disk JSON cache under
   `userData/wiki-cache` and stale-on-error fallback.

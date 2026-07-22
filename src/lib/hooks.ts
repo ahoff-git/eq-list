@@ -1,7 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import type { ShoppingList, Settings, WatcherStatus, LootEvent, SessionStats, AppInfo } from "@/shared/types";
+import type {
+  ShoppingList,
+  Settings,
+  WatcherStatus,
+  LootEvent,
+  SessionStats,
+  AppInfo,
+  ItemSource,
+  ItemCard,
+  ShoppingListEntry,
+} from "@/shared/types";
 
 /** One-shot app diagnostics (hotkey registration) for the Help section. */
 export function useAppInfo(): AppInfo | null {
@@ -55,7 +65,7 @@ export function useCurrentZone(): string | null {
  */
 
 export function useShoppingList(): ShoppingList {
-  const [list, setList] = useState<ShoppingList>({ entries: [] });
+  const [list, setList] = useState<ShoppingList>({ entries: [], questRuns: {} });
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -96,6 +106,85 @@ export function useLootFeed(limit = 40): LootEvent[] {
     return a.loot.onEvent((e) => setEvents((prev) => [e, ...prev].slice(0, limit)));
   }, [limit]);
   return events;
+}
+
+/**
+ * Fetch the wiki `sources` for a set of list entries, keyed by name. Used by the
+ * Hunt view (who drops what) and the overlay's zone narrowing (what's obtainable
+ * here). Refetches only when the *set* of names changes — `wiki.getPage` is cached,
+ * so this stays cheap. Returns `{}` while there's nothing to fetch.
+ */
+export function useEntrySources(entries: ShoppingListEntry[]): {
+  sources: Record<string, ItemSource[]>;
+  loading: boolean;
+} {
+  const [sources, setSources] = useState<Record<string, ItemSource[]>>({});
+  const [loading, setLoading] = useState(false);
+  const key = entries
+    .map((e) => e.name)
+    .sort()
+    .join("|");
+
+  useEffect(() => {
+    const a = api();
+    if (!a || entries.length === 0) {
+      setSources({});
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    void (async () => {
+      const pairs = await Promise.all(
+        entries.map(async (e) => [e.name, (await a.wiki.getPage(e.name))?.sources ?? []] as const),
+      );
+      if (!cancelled) {
+        setSources(Object.fromEntries(pairs));
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the name set (`key`), not the array identity, to avoid refetching every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return { sources, loading };
+}
+
+// The item stat card, memoized per title across the session — a name can appear in
+// many rows, and hovering should hit the (already cached) page at most once.
+const cardCache = new Map<string, ItemCard | null>();
+
+/**
+ * The hover stat card for a page title, fetched lazily. Pass `null` (e.g. when not
+ * hovering) to fetch nothing. Non-item pages resolve to `null`. See `ItemLink`.
+ */
+export function useItemCard(title: string | null): ItemCard | null {
+  const [card, setCard] = useState<ItemCard | null>(() => (title ? cardCache.get(title) ?? null : null));
+  useEffect(() => {
+    if (!title) {
+      setCard(null);
+      return;
+    }
+    if (cardCache.has(title)) {
+      setCard(cardCache.get(title) ?? null);
+      return;
+    }
+    const a = api();
+    if (!a) return;
+    let cancelled = false;
+    void a.wiki.getPage(title).then((p) => {
+      const c = p?.card ?? null;
+      cardCache.set(title, c);
+      if (!cancelled) setCard(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [title]);
+  return card;
 }
 
 /** Ids of entries that were satisfied by a loot line in the last `durationMs`. */

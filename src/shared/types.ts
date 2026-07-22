@@ -95,7 +95,20 @@ export interface WikiComponent {
   wikiPath?: string;
 }
 
-export type WikiPageKind = "item" | "quest" | "recipe" | "page";
+export type WikiPageKind = "item" | "quest" | "recipe" | "mob" | "zone" | "page";
+
+/**
+ * The item stat card the wiki shows on hover (type, weight, class/race, effects…).
+ * Present only for pages that have their own item block (items/recipes). Powers the
+ * in-app hover tooltip.
+ */
+export interface ItemCard {
+  title: string;
+  /** Absolute URL of the item icon, if any. */
+  icon?: string;
+  /** Stat lines, top to bottom (e.g. "QUEST ITEM", "WT: 1.5 Size: SMALL", "Class: ALL"). */
+  lines: string[];
+}
 
 /** Normalized result of scraping a single wiki page. */
 export interface WikiPage {
@@ -108,6 +121,8 @@ export interface WikiPage {
   components: WikiComponent[];
   /** For quests/recipes: what you get. */
   rewards: string[];
+  /** The item's own stat card (items/recipes), for the hover tooltip. */
+  card?: ItemCard;
   /** True if the page is tagged with an era that isn't live yet (can't obtain). */
   outOfEra?: boolean;
   fetchedAt: string;
@@ -165,6 +180,8 @@ export interface ShoppingListEntry {
 
 export interface ShoppingList {
   entries: ShoppingListEntry[];
+  /** How many times to run each quest/recipe, keyed by origin ("kind:name"). Scales needed counts. */
+  questRuns: Record<string, number>;
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
@@ -175,6 +192,8 @@ export interface OverlaySettings {
   clickThrough: boolean;
   fontScale: number; // 0.8 .. 1.6
   showObtained: boolean; // keep completed items visible
+  /** Auto-narrow the overlay to the zone you're in (from the log) as you travel. */
+  followZone: boolean;
 }
 
 export type MatchMode = "exact" | "contains";
@@ -220,6 +239,8 @@ export interface EqlApi {
     update(id: string, patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note">>): Promise<ShoppingList>;
     remove(id: string): Promise<ShoppingList>;
     clear(): Promise<ShoppingList>;
+    /** Set how many times to run a quest/recipe group (by origin key); scales needs. */
+    setRuns(originKey: string, runs: number): Promise<ShoppingList>;
     onChanged(cb: (list: ShoppingList) => void): Unsubscribe;
   };
   settings: {
@@ -282,6 +303,14 @@ export interface EqlApi {
     /** Fires when a screengrab lookup fills the Search box with OCR'd text. */
     onPrefill(cb: (text: string) => void): Unsubscribe;
   };
+  nav: {
+    /**
+     * Browser back/forward from the mouse thumb buttons or Alt+←/→, forwarded from
+     * the main process (`app-command`). Drives the in-app page history — links
+     * navigate within the app, never straight to the external wiki.
+     */
+    onCommand(cb: (dir: "back" | "forward") => void): Unsubscribe;
+  };
   overlay: {
     open(): Promise<void>;
     setClickThrough(enabled: boolean): Promise<void>;
@@ -290,6 +319,10 @@ export interface EqlApi {
     /** Which window this renderer is: "main" or "overlay". */
     role(): Promise<"main" | "overlay">;
     minimize(): void;
+    /** Hide the window to the tray (the app keeps running; reshow via tray/hotkey). */
+    hide(): void;
+    /** Set the live window opacity (0.2–1), transient — does not change the saved setting. */
+    setOpacity(value: number): void;
     close(): void;
     /** Forget saved positions and recenter windows (for "lost" windows). */
     resetPositions(): Promise<void>;
