@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {
-    "next": "15.4.6",
+    "next": "15.4.10",
     "node-html-parser": "^7.0.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -36,7 +36,7 @@
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "eslint": "^9",
-    "eslint-config-next": "15.4.6",
+    "eslint-config-next": "15.4.10",
     "typescript": "^5",
     "wait-on": "^8.0.1"
   },
