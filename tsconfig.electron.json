@@ -1,0 +1,19 @@
+{
+  "//": "Build config for the Electron main process + preload. The renderer is built by Next (tsconfig.json). Shared, framework-agnostic modules under src/shared are compiled here too so main can import them.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "dist-electron",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["electron/**/*.ts", "src/shared/**/*.ts"],
+  "exclude": ["node_modules", "dist-electron", "out", ".next"]
+}

@@ -20,6 +20,13 @@
 # production
 /build
 
+# electron
+/dist-electron/
+/release/
+
+# log replay output (see scripts/replay-log.mjs)
+/replay-logs/
+
 # misc
 .DS_Store
 *.pem

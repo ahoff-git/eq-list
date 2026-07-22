@@ -1,0 +1,31 @@
+[Mon Jul 20 19:02:11 2026] Welcome to EverQuest!
+[Mon Jul 20 19:02:14 2026] You have entered Everfrost Peaks.
+[Mon Jul 20 19:02:40 2026] You say, 'Hail, a guard'
+[Mon Jul 20 19:03:05 2026] a large rat has been slain by you!
+[Mon Jul 20 19:03:05 2026] You gain experience!!
+[Mon Jul 20 19:03:06 2026] --You have looted a Rusty Long Sword from a large rat's corpse.--
+[Mon Jul 20 19:03:44 2026] a decaying skeleton has been slain by you!
+[Mon Jul 20 19:03:45 2026] --You have looted a Bone Chips from a decaying skeleton's corpse.--
+[Mon Jul 20 19:04:10 2026] It begins to rain.
+[Mon Jul 20 19:04:33 2026] a fire beetle has been slain by you!
+[Mon Jul 20 19:04:34 2026] --You have looted a Fire Beetle Eye from a fire beetle's corpse.--
+[Mon Jul 20 19:05:02 2026] You gain experience!!
+[Mon Jul 20 19:05:20 2026] --You have looted an Aviak Talon from an aviak guard's corpse.--
+[Mon Jul 20 19:05:21 2026] --You have looted an Aviak Talon from an aviak guard's corpse.--
+[Mon Jul 20 19:05:58 2026] You looted a Snake Egg from a water snake's corpse and sold it for 4 copper.
+[Mon Jul 20 19:06:31 2026] a giant bat has been slain by you!
+[Mon Jul 20 19:06:32 2026] --You have looted a Bat Wing from a giant bat's corpse.--
+[Mon Jul 20 19:06:33 2026] --You have looted a Bat Wing from a giant bat's corpse.--
+[Mon Jul 20 19:07:00 2026] You say, 'Hail, Priest of Discord'
+[Mon Jul 20 19:07:45 2026] an orc centurion has been slain by you!
+[Mon Jul 20 19:07:46 2026] --You have looted a Crushbone Belt +2 from an orc centurion's corpse.--
+[Mon Jul 20 19:07:47 2026] You looted a Crushbone Belt +2 from an orc centurion's corpse to create a Crushbone Belt +5.
+[Mon Jul 20 19:08:20 2026] Bristlebane tells you, 'The trickster smiles upon you.'
+[Mon Jul 20 19:08:55 2026] a Skeletal Monk has been slain by you!
+[Mon Jul 20 19:08:56 2026] --You have looted a Shining Metallic Robe from a Skeletal Monk's corpse.--
+[Mon Jul 20 19:09:20 2026] You receive 3 gold from the corpse.
+[Mon Jul 20 19:09:40 2026] --You have looted a Batwing Crunchies from a goblin cook's corpse.--
+[Mon Jul 20 19:10:05 2026] --You have looted a Frosting from a goblin cook's corpse.--
+[Mon Jul 20 19:10:33 2026] You gain experience!!
+[Mon Jul 20 19:10:34 2026] --You have looted a Bone Chips from a decaying skeleton's corpse.--
+[Mon Jul 20 19:11:00 2026] You feel yourself starting to fall asleep.

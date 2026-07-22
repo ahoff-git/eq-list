@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EQ List — loot overlay for EverQuest Legends</title>
+    <style>
+      :root {
+        --bg: #0e1013; --raised: #171a1f; --border: #2a2f38;
+        --text: #e6e8ec; --dim: #99a1ad; --accent: #f0b429;
+        --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        background: radial-gradient(1200px 600px at 50% -10%, #1a1f27, var(--bg));
+        color: var(--text); font-family: var(--font); min-height: 100vh;
+        display: flex; align-items: center; justify-content: center; padding: 32px;
+      }
+      main { max-width: 640px; text-align: center; }
+      .mark { color: var(--accent); }
+      h1 { font-size: 44px; letter-spacing: 0.5px; margin-bottom: 10px; }
+      .tag { color: var(--dim); font-size: 18px; margin-bottom: 28px; line-height: 1.5; }
+      .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }
+      .btn {
+        display: inline-block; padding: 12px 22px; border-radius: 10px; font-size: 16px;
+        font-weight: 600; border: 1px solid var(--border); color: var(--text);
+        background: var(--raised); text-decoration: none; transition: border-color .15s, transform .05s;
+      }
+      .btn:hover { border-color: var(--accent); }
+      .btn:active { transform: translateY(1px); }
+      .btn.primary { background: var(--accent); color: #1a1206; border-color: var(--accent); }
+      .sub { color: var(--dim); font-size: 13px; margin-top: -18px; margin-bottom: 28px; }
+      ul { list-style: none; display: grid; gap: 10px; text-align: left; max-width: 460px; margin: 0 auto; }
+      li { color: var(--dim); padding-left: 26px; position: relative; }
+      li::before { content: "✦"; color: var(--accent); position: absolute; left: 0; }
+      footer { margin-top: 34px; color: var(--dim); font-size: 12px; }
+      a.inline { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1><span class="mark">EQ</span> List</h1>
+      <p class="tag">
+        A floating loot shopping-list overlay for EverQuest Legends. Build a list, and it
+        lights up the moment your items drop — data straight from eqlwiki.com.
+      </p>
+
+      <div class="cta">
+        <!--
+          Download: point this at your hosted installer. If you publish via
+          electron-builder to GitHub Releases (npm run dist -- --publish always),
+          "releases/latest" resolves to the newest build. Replace OWNER/REPO.
+        -->
+        <a class="btn primary" id="download" href="https://github.com/OWNER/REPO/releases/latest">
+          Download for Windows
+        </a>
+        <!-- Launch the installed app via its registered eqlist:// scheme. -->
+        <a class="btn" href="eqlist://open">Launch the app</a>
+      </div>
+      <p class="sub">Windows 10/11 · already installed? “Launch the app” opens it (or focuses it).</p>
+
+      <ul>
+        <li>Fuzzy search for items, quests, and recipes — spelling can be rough.</li>
+        <li>Add a whole quest at once; items group under it on your list.</li>
+        <li>Always-on-top overlay flashes gold when a watched item drops.</li>
+        <li>See who drops an item, by zone — your current zone highlighted.</li>
+        <li>Screengrab lookup (Ctrl+Shift+L) and a live XP/kill session tracker.</li>
+      </ul>
+
+      <footer>
+        Passive and external — reads your EQ log (turn it on in-game with <code>/log on</code>);
+        no memory reading or game hooking.
+      </footer>
+    </main>
+  </body>
+</html>
