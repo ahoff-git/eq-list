@@ -56,6 +56,28 @@ export function setRendererDebug(enabled: boolean): void {
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogSink = (level: LogLevel, parts: unknown[]) => void;
 
+/** One log argument → text: strings as-is, Errors as their stack, everything else as JSON. */
+function formatPart(p: unknown): string {
+  if (typeof p === "string") return p;
+  if (p instanceof Error) return p.stack ?? `${p.name}: ${p.message}`;
+  try {
+    return JSON.stringify(p) ?? String(p);
+  } catch {
+    return String(p); // circular / non-serializable — best effort
+  }
+}
+
+/**
+ * Render log arguments to a single line. Logging one pre-formatted string (rather than
+ * spreading args into console.*) matters because renderer output is bridged to the main
+ * process's terminal via Chromium's `console-message`, which stringifies each arg — a
+ * spread object arrives as "[object Object]". As JSON it stays readable. Shared by the
+ * console call and the file/terminal sinks so every destination reads identically.
+ */
+export function formatLogParts(parts: unknown[]): string {
+  return parts.map(formatPart).join(" ");
+}
+
 // An optional extra destination for emitted logs. The main process points this at
 // a file so debug output is visible even when there's no terminal (double-click /
 // packaged launches). Only whatever passes the console gate reaches the sink.
@@ -68,11 +90,14 @@ export function setLogSink(fn: LogSink | null): void {
 export function createLogger(namespace: string): Logger {
   const tag = `[${namespace}]`;
   const write = (level: LogLevel, args: unknown[]) => {
+    const parts = [tag, ...args];
     // Use console.log for debug/info so they're visible at devtools' DEFAULT level —
-    // console.debug lands in "Verbose", which is hidden unless explicitly enabled.
+    // console.debug lands in "Verbose", which is hidden unless explicitly enabled. Log a
+    // single formatted string (see formatLogParts) so objects survive the renderer→main
+    // console bridge instead of flattening to "[object Object]".
     const fn = level === "warn" ? console.warn : level === "error" ? console.error : console.log;
-    fn(tag, ...args);
-    sink?.(level, [tag, ...args]);
+    fn(formatLogParts(parts));
+    sink?.(level, parts);
   };
   return {
     debug: (...args) => {

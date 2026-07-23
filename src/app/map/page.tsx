@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useCurrentZone, useSettings, useWatcherStatus } from "@/lib/hooks";
+import { usePersistentState } from "@/lib/usePersistentState";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import MapPanel, { type RenderPin } from "../components/MapPanel";
 import PinButton from "../components/PinButton";
 import { useCalibration } from "@/lib/map/useCalibration";
@@ -10,8 +12,6 @@ import { baseZones, findZone, sortZones } from "@/shared/map/zones";
 import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { setRendererDebug } from "@/shared/logging";
-
-const PINS_KEY = "eqlist.map.pins";
 
 /**
  * The sibling map window (route `/map`, opened by the main window's 🗺 button).
@@ -22,7 +22,9 @@ const PINS_KEY = "eqlist.map.pins";
  */
 export default function MapWindow() {
   const currentZone = useCurrentZone();
-  const [override, setOverride] = useState<string | null>(null);
+  // The viewed-zone override persists so reopening the map returns to the zone you were
+  // looking at (blank = follow your current zone).
+  const [override, setOverride] = usePersistentState<string | null>(STORAGE_KEYS.mapZone, null);
   const zoneName = override ?? currentZone ?? "";
   const zone = useMemo(() => (zoneName ? findZone(zoneName, baseZones) : undefined), [zoneName]);
   const zoneOptions = useMemo(() => sortZones(baseZones).filter((z) => z.mapImg), []);
@@ -51,11 +53,14 @@ export default function MapWindow() {
           : [...prev, { id: crypto.randomUUID(), kind: "star", zone: zname, y: loc.y, x: loc.x, title: label }],
       );
     });
+    // Subscribe once — the only "deps" are stable state setters (setOverride/setPins).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The map window has its own always-on-top pin and a key/legend toggle (on by default).
-  const [pinned, setPinned] = useState(true);
-  const [showKey, setShowKey] = useState(true);
+  // The map window has its own always-on-top pin and a key/legend toggle (on by default);
+  // both persist so the window comes back the way you left it.
+  const [pinned, setPinned] = usePersistentState(STORAGE_KEYS.mapPinned, true);
+  const [showKey, setShowKey] = usePersistentState(STORAGE_KEYS.mapShowKey, true);
   useEffect(() => {
     api()?.win.setAlwaysOnTop(pinned);
   }, [pinned]);
@@ -77,32 +82,16 @@ export default function MapWindow() {
   const broadcastPins = room.sharePins;
 
   // ── Pins ──────────────────────────────────────────────────────────────────
-  const [pins, setPins] = useState<MapPin[]>(() => {
-    try {
-      const raw = typeof localStorage !== "undefined" ? localStorage.getItem(PINS_KEY) : null;
-      return raw ? (JSON.parse(raw) as MapPin[]) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [pins, setPins] = usePersistentState<MapPin[]>(STORAGE_KEYS.mapPins, []);
   // The active toolbar tool: a pin kind to drop, "move" to drag pins, or none.
   const [tool, setTool] = useState<PinKind | "move" | null>(null);
   const heldPin = tool && tool !== "move" ? (tool as PinKind) : null;
   const moveMode = tool === "move";
   const [hiddenKinds, setHiddenKinds] = useState<Set<PinKind>>(new Set());
   const [hiddenSharers, setHiddenSharers] = useState<Set<string>>(new Set());
-  const [sharePinsOn, setSharePinsOn] = useState(false);
+  const [sharePinsOn, setSharePinsOn] = usePersistentState(STORAGE_KEYS.mapSharePins, false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
-
-  // Persist pins whenever they change.
-  useEffect(() => {
-    try {
-      localStorage.setItem(PINS_KEY, JSON.stringify(pins));
-    } catch {
-      /* storage may be unavailable; pins are best-effort */
-    }
-  }, [pins]);
 
   // Broadcast (or un-share) pins to peers when connected + sharing.
   useEffect(() => {

@@ -34,10 +34,12 @@ shopping list.
     `Drops_From` (zone `<p>` + `<ul>` of mobs), `Sold_by` (`table.eoTable3`),
     `Related_quests`/`Tradeskill_recipes` (`<ul>` of links), `Player_crafted`
     (`<dl><dd>` "N x item").
-  - Quests: `table.questTopTable` (giver/zone), `Reward` `<ul>` (each line kept as
-    `{text, item?}` — `item` set only when the whole line is one linked item, so a
-    reward weapon is hover/openable but faction/coin lines stay plain), and turn-ins
-    mined heuristically from `Walkthrough` (a link counts only when a quantity precedes it).
+  - Quests: `table.questTopTable` parsed in one walk into giver/zone **sources** plus an
+    info **card** (`Minimum Level` / `Classes` / `Related NPCs` / `Related Zones` — the
+    rows that aren't giver/zone); `Reward` `<ul>` (each line kept as `{text, item?}` —
+    `item` set only when the whole line is one linked item, so a reward weapon is
+    hover/openable but faction/coin lines stay plain); and turn-ins mined heuristically
+    from `Walkthrough` (a link counts only when a quantity precedes it).
   - Mob/NPC pages: loot is gathered from **every** section whose heading contains
     "Loot" (Known / Common / Unique …) — walk each heading (through its `.mw-heading`
     wrapper and whatever div the `<ul>` is nested in) to its `<ul>`s, dedupe by name.
@@ -52,7 +54,10 @@ shopping list.
       ignoring blocks nested in a `.hb` tooltip (those are embedded, not the page's own).
     - **spells**: `.eql-spellpage` description + classes + effect/casting tables.
     - **mobs/NPCs**: the `.mobStatsBox`/`.eql-mobpage-stats` table → **location**
-      (Spawn Zone / Location) + Level/Race/Class/HP/Special, plus the mob portrait.
+      (Spawn Zone / Location) + Level/Race/Class/HP/Special, plus the mob portrait, then
+      **faction impact** (the "Factions" / "Opposing Factions" lists — "None" is dropped).
+    - **quests**: the `questTopTable` info rows (Minimum Level / Classes / Related
+      NPCs & Zones) — the giver/start-zone rows stay as sources, not card lines.
   - Tables use `eoTable2/eoTable3`, never `.wikitable`.
 - **Cache versioning** — `getPage` caches the *parsed* `WikiPage` to disk, so a
   `parse.ts` change (new page kinds, new fields) would otherwise be masked by

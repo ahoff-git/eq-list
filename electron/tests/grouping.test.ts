@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupByOrigin, effectiveNeeded, originKey } from "../../src/shared/grouping";
+import { groupByOrigin, effectiveNeeded, originKey, itemTotals, normalizeItemName } from "../../src/shared/grouping";
 import type { ShoppingListEntry } from "../../src/shared/types";
 
 function entry(p: Partial<ShoppingListEntry> & { name: string }): ShoppingListEntry {
@@ -66,4 +66,22 @@ test("quest runs scale needed counts", () => {
   const [other] = groupByOrigin([entry({ name: "Bone Chips", needed: 2 })], { __other__: 5 });
   assert.equal(other.runs, 1);
   assert.equal(other.needed, 2);
+});
+
+test("itemTotals sums an item across groups, scaled by each group's runs", () => {
+  // The rat-ear example: a recipe (2 ears/pie) run ×2 → 4, plus a quest needing 4 → 8 total.
+  const pie = { kind: "recipe" as const, name: "Rat Ear Pie" };
+  const quest = { kind: "quest" as const, name: "Rat Catcher" };
+  const groups = groupByOrigin(
+    [
+      entry({ name: "Rat Ear", needed: 2, origin: pie }),
+      entry({ name: "Rat Ear", needed: 4, origin: quest }),
+    ],
+    { [originKey(pie)]: 2 },
+  );
+  assert.equal(itemTotals(groups).get(normalizeItemName("Rat Ear")), 8);
+
+  // An item wanted by only one group totals to its own need (so the UI hides the parens).
+  const solo = groupByOrigin([entry({ name: "Bone Chips", needed: 3 })]);
+  assert.equal(itemTotals(solo).get("bone chips"), 3);
 });

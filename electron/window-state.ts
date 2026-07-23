@@ -1,5 +1,5 @@
 /**
- * window-state.ts — remembers window positions and whether the overlay was open,
+ * window-state.ts — remembers window positions and whether the map window was open,
  * persisted to `userData/window-state.json`.
  *
  * Kept separate from settings on purpose: bounds change on every drag/resize, and
@@ -29,6 +29,8 @@ interface WindowState {
   main?: Bounds;
   overlay?: Bounds;
   map?: Bounds;
+  /** Whether the (on-demand) map window was open, so we can reopen it next launch. */
+  mapOpen?: boolean;
 }
 
 // Lazily loaded so we don't touch app.getPath before `ready`.
@@ -97,6 +99,17 @@ export function rememberBounds(role: Role, win: BrowserWindow): void {
 /** True once the app has begun quitting — lets close handlers skip "user closed" logic. */
 export function isQuitting(): boolean {
   return quitting;
+}
+
+/** Remember whether the map window is open (so the next launch can restore it). */
+export function setMapOpen(open: boolean): void {
+  get().mapOpen = open;
+  persist();
+}
+
+/** Whether the map window was open when we last recorded it. */
+export function wasMapOpen(): boolean {
+  return !!get().mapOpen;
 }
 
 /** Called on app before-quit: mark quitting and flush any pending write synchronously. */

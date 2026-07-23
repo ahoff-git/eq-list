@@ -11,7 +11,7 @@
  */
 import { BrowserWindow } from "electron";
 import path from "node:path";
-import { savedBounds, rememberBounds } from "./window-state";
+import { savedBounds, rememberBounds, setMapOpen, isQuitting } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { createLogger } from "../src/shared/logging";
 import type { OverlaySettings } from "../src/shared/types";
@@ -140,10 +140,14 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
   });
   rememberBounds("map", mapWindow);
   pipeRendererConsole(mapWindow, "map");
+  setMapOpen(true); // so the next launch restores it (see main.ts startup)
   if (overlay) mapWindow.setAlwaysOnTop(overlay.alwaysOnTop, "screen-saver");
   mapWindow.once("ready-to-show", () => mapWindow?.show());
   mapWindow.on("closed", () => {
     mapWindow = null;
+    // A user-initiated close forgets the window; a close during app quit keeps the
+    // "was open" flag so we can reopen it next launch.
+    if (!isQuitting()) setMapOpen(false);
   });
   load(mapWindow, "map");
   if (process.env.EQL_DEVTOOLS) mapWindow.webContents.openDevTools({ mode: "detach" });

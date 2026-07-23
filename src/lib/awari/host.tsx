@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { connectToRoom, randomPeerId, ROOM_ID } from "@/lib/awari/net";
 import { useSettings, useCurrentZone, usePlayerLoc } from "@/lib/hooks";
 import { createLogger } from "@/shared/logging";
+import { AWARI_MSG } from "@/shared/types";
 import type { RoomSession } from "@awari/protocol";
 
 const log = createLogger("awari");
@@ -78,7 +79,7 @@ export default function AwariHost() {
     if (!a) return;
     return a.awari.onPublish((payload) => {
       const s = sessionRef.current;
-      if (!s) return void log.debug("publish ignored — not connected to a room", payload);
+      if (!s) return void log.debug("publish ignored - not connected to a room", payload);
       void s.publish({ type: "room" }, payload).catch((e) => log.debug("publish failed:", (e as Error).message));
     });
   }, []);
@@ -88,7 +89,7 @@ export default function AwariHost() {
     const s = sessionRef.current;
     if (!connected || !sharing || !s || !zone || !loc) return;
     void s
-      .publish({ type: "room" }, { kind: "loc", zone, y: loc.y, x: loc.x })
+      .publish({ type: "room" }, { kind: AWARI_MSG.loc, zone, y: loc.y, x: loc.x })
       .catch((e) => log.debug("loc publish failed:", (e as Error).message));
   }, [connected, sharing, zone, loc]);
 

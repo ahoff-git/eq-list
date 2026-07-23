@@ -31,13 +31,17 @@ list, hunt, search, session, settings.
 - **Tabs** (all wrapped in `NavProvider`):
   - `ListPanel` — the shopping list **grouped by the quest/recipe that added each
     item** (collapsible sub-bullets; standalone items fall into "Other"). Grouping is
-    `src/shared/grouping.ts` (`groupByOrigin`). Shows need/have counts and
-    flash-on-match; the entry name navigates in-app, and an ↗ button opens its eqlwiki
-    page in the browser (`wiki.openInBrowser`, host-validated in main). A quest/recipe
-    group has a **×N runs** control (`list.setRuns`) — running a quest twice doubles
-    every turn-in's needed count. `effectiveNeeded(entry, runs)` is the one source of
-    truth for "how many you actually need". A quest/recipe group header also has an
-    **↗ eqlwiki** button. Each entry expands (▸) to a lazy-loaded **"where to get it"** —
+    `src/shared/grouping.ts` (`groupByOrigin`). Entries are keyed by **name + origin**, so
+    the same item can appear under **several headings** (e.g. rat ears wanted by a recipe
+    *and* a quest); each entry shows `have / need` for that group, plus a **"(N total)"**
+    hint (`itemTotals`) when the item is wanted elsewhere too. The entry's **+/− adjust
+    how many you've acquired** (`obtained`); `needed` comes from the turn-in qty × runs.
+    Entries flash on match; the name navigates in-app, and an ↗ button opens its eqlwiki
+    page (`wiki.openInBrowser`, host-validated in main). A quest/recipe group has a
+    **×N runs** control (`list.setRuns`) — running a quest twice doubles every turn-in's
+    needed count. `effectiveNeeded(entry, runs)` is the one source of truth for "how many
+    you actually need". A quest/recipe group header also has an **↗ eqlwiki** button and a
+    ✕ to remove the whole group. Each entry expands (▸) to a lazy-loaded **"where to get it"** —
     drop mobs grouped by zone (current zone first via `splitDropsByCurrentZone`) plus
     color-coded non-drop sources (`otherSources`); mob/source names are in-app links.
   - `HuntPanel` — the **Hunt tab**: inverts "how do I get each needed item" into
@@ -56,9 +60,12 @@ list, hunt, search, session, settings.
     two modes: **By name** (any item/quest/recipe) and **By zone** (fuzzy-pick a zone,
     then list its quests). The open page is whatever `nav.current` points at; a result
     name/row, each **"How to get it"** source, and each component are all in-app links,
-    with ← / → history buttons in the page header. Open a page to add an item,
-    **"Add full quest"** to queue all of a quest's turn-ins, or **"Add all N loot"** on
-    a mob/NPC page to queue its Known Loot (each tagged with the origin). A quest reward
+    with ← / → history buttons in the page header. **Adding is kind-aware and the same
+    from a result row's "+ Add" or the open page** (the result button fetches the page to
+    learn the kind): a **quest**/**recipe** pulls all its turn-ins/ingredients in under
+    that quest/recipe heading, an **item** adds itself, and a mob/NPC page offers **"Add
+    all N loot"** to queue its Known Loot — each entry tagged with the origin so it groups.
+    A recipe also offers **"Add just the crafted item"**. A quest reward
     that's a single item is itself an in-app link (hover for its card); on a mob's stat
     card its **zone** is clickable (opens the map there) and any **coordinate** in its
     Location (e.g. "(1555, -2410)", EQ y,x) opens the map at that zone and drops a marker

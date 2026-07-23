@@ -40,8 +40,10 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // v6: mob cards (location/stats) + loot rarity; v7: loot drop % across all loot
 // sections (Common/Unique); v8: dropRate is percentages only (rarity words dropped);
 // v9: also read the drop % from the `.ddb` drop-data box; v10: use the lowest % in
-// the drop-data box (the real drop chance, not the per-slot figure).)
-const CACHE_VERSION = 10;
+// the drop-data box (the real drop chance, not the per-slot figure); v11: quest info
+// card (Minimum Level / Classes / Related NPCs & Zones) from questTopTable; v12: mob
+// faction impact (Factions / Opposing Factions) appended to the mob card.)
+const CACHE_VERSION = 12;
 
 // Wiki taxonomy (confirmed against the live wiki). Kept as named constants so a
 // category rename only needs editing here.

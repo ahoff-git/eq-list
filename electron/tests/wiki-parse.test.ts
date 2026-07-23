@@ -46,6 +46,13 @@ test("quest page → giver/zone sources, turn-in components, rewards", () => {
   // Rewards are structured; these are coin/faction lines, so none is a linked item.
   assert.equal(typeof p.rewards[0].text, "string");
   assert.ok(p.rewards.every((r) => !r.item));
+  // Quest info card: Minimum Level / Classes (+ Related NPCs/Zones) from questTopTable,
+  // and it must NOT duplicate the giver/start-zone rows (those are sources).
+  assert.ok(p.card, "quest should have an info card");
+  assert.ok(p.card!.lines.some((l) => /^Minimum Level:\s*8$/.test(l)));
+  assert.ok(p.card!.lines.some((l) => /^Classes:\s*All$/.test(l)));
+  assert.ok(p.card!.lines.some((l) => /^Related NPCs:/.test(l)));
+  assert.ok(!p.card!.lines.some((l) => /quest giver|start zone/i.test(l)));
 });
 
 test("spell page → classified as spell with a description/details card", () => {
@@ -82,6 +89,8 @@ test("mob/NPC page → mob kind, Known Loot with rarity, and a location/stats ca
   assert.equal(p.card!.title, "A Hill Giant");
   assert.ok(p.card!.lines.some((l) => /^Location:/.test(l)));
   assert.ok(p.card!.lines.some((l) => /^Level:/.test(l)));
+  // This mob's factions are "None" on both lists, so no faction lines are added.
+  assert.ok(!p.card!.lines.some((l) => /^(Factions|Opposing factions):/.test(l)));
 });
 
 test("mob loot merges all loot sections and reads drop percentages", () => {
@@ -93,6 +102,9 @@ test("mob loot merges all loot sections and reads drop percentages", () => {
   assert.equal(lapis!.dropRate, "4.7%");
   // …and Known Loot's items are merged in too (different section, same list).
   assert.ok(p.components.some((c) => c.name === "Minotaur Battle Axe"));
+  // Faction impact makes it onto the card (real factions here, unlike Hill Giant's "None").
+  assert.ok(p.card!.lines.some((l) => /^Factions:.*Meldrath/.test(l)));
+  assert.ok(p.card!.lines.some((l) => /^Opposing factions:.*Gem Choppers/.test(l)));
 });
 
 test("mob loot drop % from the `.ddb` drop-data box (not just `.drare`)", () => {

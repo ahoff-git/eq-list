@@ -252,9 +252,24 @@ export interface WatcherStatus {
 // ─── Peer networking (awari) ────────────────────────────────────────────────
 
 /**
+ * Discriminator values for awari room payloads, in one place so a sender and the
+ * receiver can't drift (a typo'd literal would silently fail to match — `kind` is a
+ * plain string on the wire). Add a member here when a new feature uses the connection.
+ */
+export const AWARI_MSG = {
+  /** A peer's live location. */
+  loc: "loc",
+  /** A peer's map click (a named marker for everyone viewing that zone). */
+  ping: "ping",
+  /** A peer's shared map pins. */
+  pins: "pins",
+} as const;
+export type AwariMsgKind = (typeof AWARI_MSG)[keyof typeof AWARI_MSG];
+
+/**
  * An app message carried over the awari room. `kind` discriminates the shape
- * (`loc` | `ping` | `pins` today; add more as features use the shared connection).
- * Kept loose so it survives IPC structured-clone and isn't tied to any one feature.
+ * (see `AWARI_MSG`). Kept loose so it survives IPC structured-clone and isn't tied to
+ * any one feature.
  */
 export type AwariPayload = { kind: string; [key: string]: unknown };
 

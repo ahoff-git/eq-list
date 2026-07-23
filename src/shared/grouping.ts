@@ -1,8 +1,10 @@
 /**
  * grouping.ts — organize shopping-list entries under the quest/recipe that added
  * them. Entries carry an `origin` (set when you "add full quest"); everything
- * added on its own falls into a trailing "Other items" group. Pure + testable so
- * the control window and the overlay group identically.
+ * added on its own falls into a trailing "Other items" group. Because entries are
+ * keyed by name + origin (see store.ts), the same item can appear under more than one
+ * group — `itemTotals` sums it across them for the list's "(N total)" hint. Pure +
+ * testable so the control window and the overlay group identically.
  *
  * A quest/recipe group can be run multiple times (`runs`, from list.questRuns) —
  * that scales each entry's needed count. `effectiveNeeded(entry, runs)` is the
@@ -33,6 +35,27 @@ export function originKey(origin: ShoppingListEntry["origin"]): string {
 /** Per-entry count needed, scaled by how many runs its group is set to. */
 export function effectiveNeeded(entry: ShoppingListEntry, runs: number): number {
   return entry.needed * Math.max(1, runs);
+}
+
+/** Normalize an item name for cross-group totalling (wiki names are canonical, so light). */
+export function normalizeItemName(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Total needed of each item across ALL groups (each group scaled by its runs), keyed by
+ * normalized name. The same item can appear under several quest/recipe headings; this is
+ * the grand total the list shows in parentheses (e.g. rat ears "0/4 (8 total)").
+ */
+export function itemTotals(groups: ListGroup[]): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const g of groups) {
+    for (const e of g.entries) {
+      const key = normalizeItemName(e.name);
+      totals.set(key, (totals.get(key) ?? 0) + effectiveNeeded(e, g.runs));
+    }
+  }
+  return totals;
 }
 
 export function groupByOrigin(

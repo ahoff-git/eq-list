@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import { stripArticle } from "../src/shared/log-parser";
+import { originKey } from "../src/shared/grouping";
 import type {
   ShoppingList,
   ShoppingListEntry,
@@ -120,8 +121,14 @@ export function createStore(userDataDir: string): Store {
     return list;
   }
 
+  // Entries are keyed by (name + origin), so the SAME item can live under more than one
+  // quest/recipe heading (e.g. rat ears needed by both a recipe and a quest), each
+  // tracking its own count. Re-adding the same item to the same origin just bumps needed.
   function upsert(name: string, extra: Partial<ShoppingListEntry>): void {
-    const existing = list.entries.find((e) => normalize(e.name) === normalize(name));
+    const key = originKey(extra.origin);
+    const existing = list.entries.find(
+      (e) => normalize(e.name) === normalize(name) && originKey(e.origin) === key,
+    );
     if (existing) {
       if (extra.needed) existing.needed += extra.needed;
       return;

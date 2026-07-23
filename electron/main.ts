@@ -16,11 +16,11 @@ import { createSessionStats } from "./session-stats";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, getMainWindow, getMapWindow, applyOverlaySettings } from "./windows";
-import { resetPositions, beginQuit } from "./window-state";
+import { createMainWindow, createMapWindow, getMainWindow, getMapWindow, applyOverlaySettings } from "./windows";
+import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
-import { createLogger, setLogSink } from "../src/shared/logging";
+import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
 import type { Settings, AppInfo, LocEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -91,8 +91,7 @@ if (!app.requestSingleInstanceLock()) {
   }
   setLogSink((level, parts) => {
     try {
-      const line = parts.map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(" ");
-      fs.appendFileSync(logFile, `${new Date().toISOString()} ${level.toUpperCase()} ${line}\n`);
+      fs.appendFileSync(logFile, `${new Date().toISOString()} ${level.toUpperCase()} ${formatLogParts(parts)}\n`);
     } catch {
       /* best effort */
     }
@@ -238,6 +237,8 @@ if (!app.requestSingleInstanceLock()) {
   };
 
   createMainWindow(store.getSettings().overlay);
+  // Restore the map window if it was open last session.
+  if (wasMapOpen()) createMapWindow(store.getSettings().overlay);
   createTray();
   startWatcher();
   log.debug("app ready");

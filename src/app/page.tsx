@@ -10,6 +10,8 @@ import StatusBar from "./components/StatusBar";
 import LandingView from "./components/LandingView";
 import PinButton from "./components/PinButton";
 import { useShoppingList, useSettings } from "@/lib/hooks";
+import { usePersistentState } from "@/lib/usePersistentState";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY } from "@/shared/constants";
@@ -22,7 +24,7 @@ type Tab = "list" | "hunt" | "search" | "session" | "settings";
  * drag handle and carries the window controls (pin / minimize / hide-to-tray).
  */
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("list");
+  const [tab, setTab] = usePersistentState<Tab>(STORAGE_KEYS.activeTab, "list");
   const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
   // Undetermined until mounted (keeps SSR/first-client render consistent).
   const [inElectron, setInElectron] = useState<boolean | null>(null);
@@ -32,11 +34,13 @@ export default function Home() {
   const sliderOpacity = settings?.overlay.opacity ?? 1;
   // Transient "full opacity" toggle: flip between 100% and the settings slider value.
   const [opaque, setOpaque] = useState(false);
-  // Owned here so the Hunt tab's zone filter survives switching tabs.
-  const [huntZone, setHuntZone] = useState<string | null>(null);
+  // Owned here so the Hunt tab's zone filter survives switching tabs (and, persisted,
+  // reopening the window).
+  const [huntZone, setHuntZone] = usePersistentState<string | null>(STORAGE_KEYS.huntZone, null);
 
-  // Stable so NavProvider's callbacks (and thus `nav`'s identity) don't churn each render.
-  const showSearch = useCallback(() => setTab("search"), []);
+  // Stable so NavProvider's callbacks (and thus `nav`'s identity) don't churn each render
+  // (`setTab` is a stable state setter).
+  const showSearch = useCallback(() => setTab("search"), [setTab]);
 
   useEffect(() => {
     setInElectron(!!api());
@@ -55,7 +59,7 @@ export default function Home() {
       setTab("search");
       setPrefill({ text, n: Date.now() });
     });
-  }, []);
+  }, [setTab]);
 
   if (inElectron === null) return null; // brief pre-mount frame
   if (!inElectron) return <LandingView />;

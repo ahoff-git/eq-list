@@ -134,11 +134,17 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
     }
   }
 
-  async function addFullQuestByTitle(title: string) {
+  // Add by title the way the page buttons do, so a result-list "+ Add" behaves the same
+  // as opening the page: quests/recipes contribute their turn-ins/ingredients (grouped
+  // under the quest/recipe), everything else adds itself. Fetches the page (cached) to
+  // learn the kind; falls back to a shallow add if it can't load.
+  async function addByTitle(title: string, wikiPath?: string) {
     const a = api();
     if (!a) return;
     const p = await a.wiki.getPage(title);
-    if (p) void a.list.addFromPage(p);
+    if (!p) return void a.list.add({ name: title, wikiPath });
+    if (p.kind === "quest" || p.kind === "recipe") a.list.addFromPage(p);
+    else a.list.add({ name: p.title, wikiPath: p.wikiPath });
   }
 
   function onNameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -256,7 +262,7 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
               <div className={`result ${i === active ? "active" : ""}`} key={r.wikiPath}>
                 <ItemLink title={r.title} className="name" />
                 {r.outOfEra && <span className="badge era-out">era</span>}
-                <button className="btn sm primary" onClick={() => addOne(r.title, 1, r.wikiPath)}>
+                <button className="btn sm primary" onClick={() => void addByTitle(r.title, r.wikiPath)}>
                   + Add
                 </button>
               </div>
@@ -302,7 +308,7 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
                   <div className="result" key={q.wikiPath}>
                     <ItemLink title={q.title} className="name" />
                     {q.outOfEra && <span className="badge era-out">era</span>}
-                    <button className="btn sm primary" onClick={() => void addFullQuestByTitle(q.title)}>
+                    <button className="btn sm primary" onClick={() => void addByTitle(q.title, q.wikiPath)}>
                       + Add quest
                     </button>
                   </div>
@@ -353,17 +359,29 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
           )}
 
           <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
-            {page.kind === "quest" && (
-              <button className="btn primary sm" onClick={() => addFullPage(page)}>
-                + Add full quest{page.components.length ? ` (${page.components.length} items)` : ""}
-              </button>
+            {/* Quests & recipes: the whole point is to pull turn-ins/ingredients in
+                under their heading, so that's the primary action. A recipe also offers
+                adding just the crafted item (e.g. when it's itself a quest turn-in). */}
+            {(page.kind === "quest" || page.kind === "recipe") && (
+              <>
+                <button className="btn primary sm" onClick={() => addFullPage(page)}>
+                  {page.kind === "quest"
+                    ? `+ Add full quest${page.components.length ? ` (${page.components.length} items)` : ""}`
+                    : `+ Add full recipe${page.components.length ? ` (${page.components.length} ingredients)` : ""}`}
+                </button>
+                {page.kind === "recipe" && (
+                  <button className="btn sm" onClick={() => addItem(page)}>
+                    + Add just “{page.title}”
+                  </button>
+                )}
+              </>
             )}
             {page.kind === "mob" && page.components.length > 0 && (
               <button className="btn primary sm" onClick={() => addFullPage(page)}>
                 + Add all {page.components.length} loot
               </button>
             )}
-            {(page.kind === "item" || page.kind === "recipe" || page.kind === "page" || page.kind === "spell") && (
+            {(page.kind === "item" || page.kind === "page" || page.kind === "spell") && (
               <>
                 <button className="btn primary sm" onClick={() => addItem(page)}>
                   + Add “{page.title}”

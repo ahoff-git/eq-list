@@ -20,10 +20,12 @@ in the main process and all UI in the renderer.
     only when `EQL_DEVTOOLS` is set. Each window's renderer console is piped into the
     main-process log (`renderer:<role>`), so renderer output lands in the same terminal
     + debug file as the main process instead of only that window's DevTools.
-  - `window-state.ts` — persists window positions + whether the overlay was open, in
-    a file separate from settings (bounds change constantly; routing them through the
-    reactive store would spam change events). Off-screen bounds are ignored, and a
-    "reset window positions" action recenters lost windows.
+  - `window-state.ts` — persists window positions + whether the map window was open
+    (so the next launch reopens it), in a file separate from settings (bounds change
+    constantly; routing them through the reactive store would spam change events).
+    Off-screen bounds are ignored, and a "reset window positions" action recenters lost
+    windows. Per-window UI toggles (active tab, map pin/key/zone/share) persist
+    separately in the renderer via `usePersistentState` (localStorage).
   - `protocol.ts` — serves the exported renderer over `app://` in production, reading
     files via asar-aware `fs` so it works when packaged.
   - `store.ts` — the one source of truth: shopping list + settings (persisted to

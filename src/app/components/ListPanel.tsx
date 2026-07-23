@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useShoppingList, useMatchFlashes, useCurrentZone } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import ItemLink from "./ItemLink";
-import { groupByOrigin, effectiveNeeded, type ListGroup } from "@/shared/grouping";
+import { groupByOrigin, effectiveNeeded, itemTotals, normalizeItemName, type ListGroup } from "@/shared/grouping";
 import {
   groupDropsByZone,
   splitDropsByCurrentZone,
@@ -26,6 +26,9 @@ export default function ListPanel() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const groups = groupByOrigin(list.entries, list.questRuns);
+  // Grand total needed of each item across every group — shown in parens when an item is
+  // wanted by more than one quest/recipe.
+  const totals = itemTotals(groups);
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }));
   const setRuns = (g: ListGroup, delta: number) => api()?.list.setRuns(g.key, g.runs + delta);
   const removeGroup = (g: ListGroup) => Promise.all(g.entries.map((e) => api()?.list.remove(e.id)));
@@ -102,7 +105,14 @@ export default function ListPanel() {
               {!isCollapsed && (
                 <div className="group-entries">
                   {g.entries.map((e) => (
-                    <EntryRow key={e.id} entry={e} runs={g.runs} flashing={flashed.has(e.id)} currentZone={zone} />
+                    <EntryRow
+                      key={e.id}
+                      entry={e}
+                      runs={g.runs}
+                      total={totals.get(normalizeItemName(e.name)) ?? 0}
+                      flashing={flashed.has(e.id)}
+                      currentZone={zone}
+                    />
                   ))}
                 </div>
               )}
@@ -117,11 +127,14 @@ export default function ListPanel() {
 function EntryRow({
   entry,
   runs,
+  total,
   flashing,
   currentZone,
 }: {
   entry: ShoppingListEntry;
   runs: number;
+  /** Grand total of this item needed across all groups (for the "(N total)" hint). */
+  total: number;
   flashing: boolean;
   currentZone: string | null;
 }) {
@@ -133,7 +146,9 @@ function EntryRow({
   const need = effectiveNeeded(entry, runs);
   const met = entry.obtained >= need;
   const cls = ["entry", met ? "done" : "", flashing ? "flash" : ""].filter(Boolean).join(" ");
-  const setNeeded = (delta: number) => api()?.list.update(entry.id, { needed: Math.max(1, entry.needed + delta) });
+  // +/- adjust how many you've ACQUIRED (obtained); needed comes from the quest/recipe
+  // qty × the group's runs. Obtained can exceed need (you can over-loot) but not go below 0.
+  const setObtained = (delta: number) => api()?.list.update(entry.id, { obtained: Math.max(0, entry.obtained + delta) });
 
   // Lazily fetch this item's sources the first time it's expanded (cached in main).
   async function toggle() {
@@ -164,6 +179,7 @@ function EntryRow({
         <ItemLink title={entry.name} className="entry-name" />
         <span className="entry-count">
           <span className={`have ${met ? "met" : ""}`}>{entry.obtained}</span> / {need}
+          {total > need && <span className="muted small"> ({total} total)</span>}
         </span>
         <button
           className="btn ghost sm"
@@ -172,10 +188,10 @@ function EntryRow({
         >
           ↗
         </button>
-        <button className="btn ghost sm" title="Need one fewer" onClick={() => setNeeded(-1)}>
+        <button className="btn ghost sm" title="Got one fewer" onClick={() => setObtained(-1)} disabled={entry.obtained <= 0}>
           −
         </button>
-        <button className="btn ghost sm" title="Need one more" onClick={() => setNeeded(+1)}>
+        <button className="btn ghost sm" title="Got one more" onClick={() => setObtained(+1)}>
           +
         </button>
         <button className="btn ghost sm" title="Remove" onClick={() => api()?.list.remove(entry.id)}>

@@ -1,0 +1,21 @@
+/**
+ * localStorage keys for persisted UI state, in one place so they're documented as a
+ * set and can't silently collide or drift between the components that read/write them.
+ * Values persist per window (see `usePersistentState`).
+ */
+export const STORAGE_KEYS = {
+  /** Main window: the active tab. */
+  activeTab: "eqlist.main.tab",
+  /** Main window: the Hunt tab's zone filter. */
+  huntZone: "eqlist.main.huntZone",
+  /** Map window: dropped pins. */
+  mapPins: "eqlist.map.pins",
+  /** Map window: the viewed-zone override (blank = follow current zone). */
+  mapZone: "eqlist.map.zone",
+  /** Map window: always-on-top. */
+  mapPinned: "eqlist.map.pinned",
+  /** Map window: key/legend visibility. */
+  mapShowKey: "eqlist.map.showKey",
+  /** Map window: share-my-pins toggle. */
+  mapSharePins: "eqlist.map.sharePins",
+} as const;

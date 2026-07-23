@@ -3,9 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { createLogger } from "@/shared/logging";
 import type { MapPin } from "@/shared/map/pins";
-import type { AwariPayload } from "@/shared/types";
+import { AWARI_MSG, type AwariPayload } from "@/shared/types";
 
 const log = createLogger("awari");
+
+/** Shown for a peer whose display name we don't have. */
+const DEFAULT_PEER_NAME = "Someone";
 
 /** A peer's last known live location (keyed by their awari peer id). */
 export interface PeerLoc {
@@ -56,18 +59,18 @@ export function useAwariRoom(opts: { name: string }): {
     const a = api();
     if (!a) return;
     const offMessage = a.awari.onMessage(({ sender, payload: p }) => {
-      if (p.kind === "pins" && Array.isArray(p.pins)) {
-        const by = str(p, "name", "Someone");
+      if (p.kind === AWARI_MSG.pins && Array.isArray(p.pins)) {
+        const by = str(p, "name", DEFAULT_PEER_NAME);
         setPeerPins((prev) => ({ ...prev, [sender]: (p.pins as MapPin[]).map((pin) => ({ ...pin, by })) }));
         return;
       }
       if (typeof p.x !== "number" || typeof p.y !== "number") return;
-      if (p.kind === "loc") {
+      if (p.kind === AWARI_MSG.loc) {
         setPeers((prev) => ({ ...prev, [sender]: { peerId: sender, zone: str(p, "zone"), y: p.y as number, x: p.x as number } }));
-      } else if (p.kind === "ping") {
+      } else if (p.kind === AWARI_MSG.ping) {
         setPings((prev) => ({
           ...prev,
-          [sender]: { peerId: sender, name: str(p, "name", "Someone"), zone: str(p, "zone"), y: p.y as number, x: p.x as number },
+          [sender]: { peerId: sender, name: str(p, "name", DEFAULT_PEER_NAME), zone: str(p, "zone"), y: p.y as number, x: p.x as number },
         }));
       }
     });
@@ -89,17 +92,17 @@ export function useAwariRoom(opts: { name: string }): {
   // VIEWED (passed in) — not our physical zone — so pinging works while browsing any map.
   const sendPing = useCallback((eq: { y: number; x: number }, pingZone: string) => {
     const a = api();
-    if (!a) return void log.debug("ping ignored — no Electron bridge");
-    if (!pingZone) return void log.debug("ping ignored — no zone in view");
-    const payload = { kind: "ping", name: nameRef.current || "Someone", zone: pingZone, y: eq.y, x: eq.x };
+    if (!a) return void log.debug("ping ignored - no Electron bridge");
+    if (!pingZone) return void log.debug("ping ignored - no zone in view");
+    const payload = { kind: AWARI_MSG.ping, name: nameRef.current || DEFAULT_PEER_NAME, zone: pingZone, y: eq.y, x: eq.x };
     // With debug logging on, show exactly what we're broadcasting (gated by the logger).
-    log.debug("map click → broadcasting", payload);
+    log.debug("map click -> broadcasting", payload);
     a.awari.send(payload);
   }, []);
 
   // Broadcast our current pins (empty array un-shares). Peers replace our set on receipt.
   const sharePins = useCallback((pins: MapPin[]) => {
-    api()?.awari.send({ kind: "pins", name: nameRef.current || "Someone", pins });
+    api()?.awari.send({ kind: AWARI_MSG.pins, name: nameRef.current || DEFAULT_PEER_NAME, pins });
   }, []);
 
   return {

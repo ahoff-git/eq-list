@@ -178,22 +178,34 @@ function parseComponents(section: Section): WikiComponent[] {
 
 // ─── Quest sections ─────────────────────────────────────────────────────────
 
-/** questTopTable: vertical th→td key/value rows → sources (giver, zone). */
-function parseQuestInfo(content: HTMLElement): ItemSource[] {
+// questTopTable rows (besides giver/start-zone, which become sources) worth showing on
+// the quest as a card — "Minimum Level"/"Classes" answer "can my character do this?",
+// and Related NPCs/Zones give context. Matched as lowercased substrings of the label.
+const QUEST_CARD_LABELS = ["level", "class", "race", "faction", "related npc", "related zone"];
+
+/**
+ * Parse the vertical questTopTable once (th→td key/value rows) into both the giver/zone
+ * **sources** and an info **card** (level / classes / related NPCs & zones). One walk so
+ * the label handling lives in a single place.
+ */
+function parseQuestInfo(content: HTMLElement, title: string): { sources: ItemSource[]; card?: ItemCard } {
   const table = content.querySelector("table.questTopTable");
-  if (!table) return [];
-  const out: ItemSource[] = [];
+  if (!table) return { sources: [] };
+  const sources: ItemSource[] = [];
+  const lines: string[] = [];
   for (const row of table.querySelectorAll("tr")) {
     const th = row.querySelector("th");
     const td = row.querySelector("td");
     if (!th || !td) continue;
-    const label = th.text.replace(/\s+/g, " ").replace(/:\s*$/, "").trim().toLowerCase();
+    const rawLabel = th.text.replace(/\s+/g, " ").replace(/:\s*$/, "").trim();
+    const label = rawLabel.toLowerCase();
     const value = td.text.replace(/\s+/g, " ").trim();
     if (!value) continue;
-    if (label.includes("quest giver")) out.push({ kind: "quest", where: value, detail: "Quest giver" });
-    else if (label.includes("start zone")) out.push({ kind: "quest", where: value, detail: "Start zone" });
+    if (label.includes("quest giver")) sources.push({ kind: "quest", where: value, detail: "Quest giver" });
+    else if (label.includes("start zone")) sources.push({ kind: "quest", where: value, detail: "Start zone" });
+    else if (QUEST_CARD_LABELS.some((l) => label.includes(l))) lines.push(`${rawLabel}: ${value}`);
   }
-  return out;
+  return { sources, card: lines.length ? { title, lines } : undefined };
 }
 
 /**
@@ -311,10 +323,40 @@ function parseMobLoot(content: HTMLElement): WikiComponent[] {
 }
 
 /**
+ * Faction impact from a mob page's "Factions" / "Opposing Factions" sections → card
+ * lines, so the card shows what killing this mob helps/hurts. Each is a `<ul>` of
+ * `<li>faction (±N)</li>` following the heading; a lone "None" carries no info, so it's
+ * skipped (and the line dropped entirely when nothing's left).
+ */
+function parseMobFactions(content: HTMLElement): string[] {
+  const listAfter = (id: string): string => {
+    const h = content.querySelectorAll("h2, h3").find((x) => x.getAttribute("id") === id);
+    if (!h) return "";
+    for (let el = headingBlock(h).nextElementSibling; el && !headingOf(el); el = el.nextElementSibling) {
+      const ul = el.tagName === "UL" ? el : el.querySelector("ul");
+      if (!ul) continue;
+      return ul
+        .querySelectorAll("li")
+        .map((li) => li.text.replace(/\s+/g, " ").trim())
+        .filter((t) => t && !/^none$/i.test(t))
+        .join(", ");
+    }
+    return "";
+  };
+  const lines: string[] = [];
+  const factions = listAfter("Factions");
+  if (factions) lines.push(`Factions: ${factions}`);
+  const opposing = listAfter("Opposing_Factions");
+  if (opposing) lines.push(`Opposing factions: ${opposing}`);
+  return lines;
+}
+
+/**
  * A mob/NPC's stat card from its `.mobStatsBox`/`.eql-mobpage-stats` table — the
- * location (Spawn Zone / Location) plus Level/Race/Class/HP/Special. Reuses the
- * ItemCard shape so it renders inline and on hover like items/spells. Rows are
- * already "Label: value" text; we keep those and drop the bare section headers.
+ * location (Spawn Zone / Location) plus Level/Race/Class/HP/Special — followed by its
+ * faction impact. Reuses the ItemCard shape so it renders inline and on hover like
+ * items/spells. Stat rows are already "Label: value" text; we keep those and drop the
+ * bare section headers.
  */
 function parseMobCard(content: HTMLElement, title: string): ItemCard | undefined {
   const box = content.querySelector(".mobStatsBox, .eql-mobpage-stats");
@@ -332,6 +374,7 @@ function parseMobCard(content: HTMLElement, title: string): ItemCard | undefined
       .join(" ");
     if (text.includes(":")) lines.push(text); // keep "Label: value" rows, drop section headers
   }
+  lines.push(...parseMobFactions(content));
 
   if (!lines.length && !icon) return undefined;
   return { title, icon, lines };
@@ -473,13 +516,15 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
   if (content.querySelector("table.questTopTable")) {
     const walkthrough = sections.find((s) => /walkthrough/i.test(s.id) || /walkthrough/i.test(s.heading));
     const reward = sections.find((s) => /reward/i.test(s.id) || /reward/i.test(s.heading));
+    const { sources, card } = parseQuestInfo(content, title);
     return {
       kind: "quest",
       title,
       wikiPath,
-      sources: parseQuestInfo(content),
+      sources,
       components: parseWalkthroughTurnIns(walkthrough),
       rewards: parseRewards(reward),
+      card,
       fetchedAt,
     };
   }
