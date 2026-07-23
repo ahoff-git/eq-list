@@ -17,7 +17,7 @@
  */
 import { parse, HTMLElement, type Node } from "node-html-parser";
 import { WIKI_BASE } from "./api";
-import type { WikiPage, ItemSource, WikiComponent, SourceKind, ItemCard } from "../../src/shared/types";
+import type { WikiPage, ItemSource, WikiComponent, SourceKind, ItemCard, WikiReward } from "../../src/shared/types";
 
 const ELEMENT_NODE = 1;
 
@@ -196,15 +196,32 @@ function parseQuestInfo(content: HTMLElement): ItemSource[] {
   return out;
 }
 
-/** Reward <ul> → plain reward strings. */
-function parseRewards(section: Section | undefined): string[] {
+/**
+ * Reward <ul> → reward lines. When a line IS a single linked item (its whole text is
+ * one content link, e.g. a reward weapon), we tag it with the item name/path so the
+ * UI can make it hover/open like a list item. Faction/coin/XP lines stay plain text.
+ */
+function parseRewards(section: Section | undefined): WikiReward[] {
   if (!section) return [];
-  const rewards: string[] = [];
+  const rewards: WikiReward[] = [];
   for (const el of section.els) {
     if (el.tagName !== "UL") continue;
     for (const li of el.querySelectorAll("li")) {
-      const t = li.text.replace(/\s+/g, " ").trim();
-      if (t) rewards.push(t);
+      // Item rewards render as `.hbdiv > a` with an embedded `.hb` stat tooltip, so
+      // `li.text` is the name PLUS the whole stat dump. Take the anchor for both the
+      // display text and the identity, ignoring the tooltip. (Same shape as mob loot.)
+      const hb = li.querySelector(".hbdiv a");
+      if (hb && isContentLink(hb)) {
+        const name = hb.text.replace(/\s+/g, " ").trim();
+        if (name) rewards.push({ text: name, item: linkName(hb), wikiPath: linkPath(hb) });
+        continue;
+      }
+      const text = li.text.replace(/\s+/g, " ").trim();
+      if (!text) continue;
+      // Plain line: tag it as an item only when the whole line is one content link.
+      const a = li.querySelector("a");
+      const wholeLineIsLink = !!a && isContentLink(a) && a.text.replace(/\s+/g, " ").trim() === text;
+      rewards.push(wholeLineIsLink ? { text, item: linkName(a!), wikiPath: linkPath(a!) } : { text });
     }
   }
   return rewards;
@@ -236,34 +253,88 @@ function parseWalkthroughTurnIns(section: Section | undefined): WikiComponent[] 
 
 // ─── Mob / NPC sections ───────────────────────────────────────────────────────
 
+/** The `.mw-heading` wrapper of a heading, when present, else the heading itself. */
+function headingBlock(h: HTMLElement): HTMLElement {
+  const parent = h.parentNode as HTMLElement | null;
+  if (parent && parent.tagName === "DIV" && /\bmw-heading\b/.test(parent.getAttribute("class") ?? "")) return parent;
+  return h;
+}
+
+/** The smallest percentage in a string ("1x 100% (33%)" → "33%"), or undefined. */
+function lowestPercent(s: string): string | undefined {
+  const nums = [...s.matchAll(/(\d+(?:\.\d+)?)\s*%/g)].map((m) => parseFloat(m[1]));
+  return nums.length ? `${Math.min(...nums)}%` : undefined;
+}
+
+/** One loot `<li>` → a component (dropped item + its drop rate), added to `seen`. */
+function addLootItem(li: HTMLElement, seen: Map<string, WikiComponent>): void {
+  const a = li.querySelector(".hbdiv a") ?? li.querySelector("a");
+  if (!a || !isContentLink(a)) return;
+  const name = linkName(a);
+  if (!name || seen.has(name)) return;
+  // Drop rate is a **percentage**, and templates vary on where they put it:
+  //   `.drare` ("(17.3%)")  ·  `.ddb` drop-data box ("[1] 1x 25% (50%)"). A `.ddb`
+  //   line has two figures (per-slot vs overall); the **lower** is the real drop
+  //   chance ("1x 100% (33%)" → 33%), so take the minimum percentage. Fall back to a
+  //   trailing "(X%) (low% - high%)". Rarity WORDS ("Rare"/"Always") are ignored.
+  const drare = li.querySelector(".drare")?.text ?? "";
+  const ddb = li.querySelector(".ddb")?.text ?? "";
+  const src = /%/.test(drare) ? drare : ddb;
+  let dropRate = lowestPercent(src);
+  if (!dropRate) {
+    const m = li.text.match(/\((\d+(?:\.\d+)?)%\)\s*\(\s*\d+(?:\.\d+)?%\s*-\s*\d+(?:\.\d+)?%\s*\)/);
+    if (m) dropRate = `${m[1]}%`;
+  }
+  seen.set(name, { name, qty: 1, wikiPath: linkPath(a), dropRate });
+}
+
 /**
- * "Known Loot" on a mob/NPC page: the h2#Known_Loot is followed by a <ul> whose
- * <li>s each start with the dropped item as `div.hbdiv > a`. The list is nested in
- * a wrapper div (not a flat section child), so find the heading and take the next
- * <ul> directly. The embedded tooltip after each link also has anchors, so take
- * the first anchor in `.hbdiv` specifically.
+ * Loot on a mob/NPC page. Mobs use several loot sections — "Known Loot" plus
+ * "Common Loot" / "Unique Loot" (which carry drop percentages) — under `<h2>`s whose
+ * id/text contains "Loot". For each, we walk from the heading (through its
+ * `.mw-heading` wrapper, and whatever wrapper div the list is nested in) collecting
+ * `<ul>`s until the next section, and read each `<li>`'s `.hbdiv > a` item + drop rate.
  */
 function parseMobLoot(content: HTMLElement): WikiComponent[] {
-  const heading = content.querySelector("#Known_Loot");
-  if (!heading) return [];
-  let list: HTMLElement | null = null;
-  for (let el = heading.nextElementSibling; el; el = el.nextElementSibling) {
-    if (el.tagName === "UL") {
-      list = el;
-      break;
+  const seen = new Map<string, WikiComponent>();
+  const headings = content
+    .querySelectorAll("h2, h3")
+    .filter((h) => /loot/i.test(h.getAttribute("id") ?? "") || /loot/i.test(h.text));
+  for (const h of headings) {
+    for (let el = headingBlock(h).nextElementSibling; el; el = el.nextElementSibling) {
+      if (headingOf(el)) break; // reached the next section
+      const uls = el.tagName === "UL" ? [el] : el.querySelectorAll("ul");
+      for (const ul of uls) for (const li of ul.querySelectorAll("li")) addLootItem(li, seen);
     }
   }
-  if (!list) list = (heading.parentNode as HTMLElement | undefined)?.querySelector("ul") ?? null;
-  if (!list) return [];
-
-  const seen = new Map<string, WikiComponent>();
-  for (const li of list.querySelectorAll("li")) {
-    const a = li.querySelector(".hbdiv a") ?? li.querySelector("a");
-    if (!a || !isContentLink(a)) continue;
-    const name = linkName(a);
-    if (name && !seen.has(name)) seen.set(name, { name, qty: 1, wikiPath: linkPath(a) });
-  }
   return [...seen.values()];
+}
+
+/**
+ * A mob/NPC's stat card from its `.mobStatsBox`/`.eql-mobpage-stats` table — the
+ * location (Spawn Zone / Location) plus Level/Race/Class/HP/Special. Reuses the
+ * ItemCard shape so it renders inline and on hover like items/spells. Rows are
+ * already "Label: value" text; we keep those and drop the bare section headers.
+ */
+function parseMobCard(content: HTMLElement, title: string): ItemCard | undefined {
+  const box = content.querySelector(".mobStatsBox, .eql-mobpage-stats");
+  if (!box) return undefined;
+
+  const iconSrc = content.querySelector(".eql-mobpage-image img, .eql-mobpage-media img")?.getAttribute("src");
+  const icon = iconSrc ? (iconSrc.startsWith("http") ? iconSrc : `${WIKI_BASE}${iconSrc}`) : undefined;
+
+  const lines: string[] = [];
+  for (const tr of box.querySelectorAll("tr")) {
+    const text = tr
+      .querySelectorAll("th, td")
+      .map((c) => c.text.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .join(" ");
+    if (text.includes(":")) lines.push(text); // keep "Label: value" rows, drop section headers
+  }
+
+  if (!lines.length && !icon) return undefined;
+  return { title, icon, lines };
 }
 
 // ─── Item stat card (the wiki's hover tooltip) ──────────────────────────────────
@@ -319,6 +390,62 @@ function parseItemCard(content: HTMLElement): ItemCard | undefined {
   return { title, icon, lines };
 }
 
+// ─── Spell card ─────────────────────────────────────────────────────────────
+
+/** Flatten a spell detail/slot table into readable lines ("Mana: 7", effect text). */
+function spellTableLines(table: HTMLElement): string[] {
+  const out: string[] = [];
+  for (const tr of table.querySelectorAll("tr")) {
+    const cells = tr.querySelectorAll("th, td").map((c) => c.text.replace(/\s+/g, " ").trim());
+    for (let i = 0; i < cells.length; i += 2) {
+      const label = cells[i];
+      const value = cells[i + 1];
+      if (value === undefined) {
+        if (label) out.push(label);
+      } else if (/^\d+\W*$/.test(label)) {
+        if (value) out.push(value); // a slot number ("1", "1 :") → keep just the effect text
+      } else if (label && value) {
+        out.push(`${label}: ${value}`);
+      } else if (label || value) {
+        out.push(label || value);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * A spell's summary card (description + classes/levels + effects + casting details),
+ * reusing the ItemCard shape so spells hover and render like items. Keyed off the
+ * `.eql-spellpage` layout (not the standard item sections).
+ */
+function parseSpellCard(content: HTMLElement, title: string): ItemCard | undefined {
+  const root = content.querySelector(".eql-spellpage");
+  if (!root) return undefined;
+
+  const iconSrc = content.querySelector(".eql-spellpage-icon img")?.getAttribute("src");
+  const icon = iconSrc ? (iconSrc.startsWith("http") ? iconSrc : `${WIKI_BASE}${iconSrc}`) : undefined;
+
+  const lines: string[] = [];
+  const summary = content.querySelector(".eql-spellpage-summary-text");
+  if (summary) {
+    const desc = summary.text.replace(/\s+/g, " ").replace(/^\s*Overview\s*/i, "").trim();
+    if (desc) lines.push(desc);
+  }
+  const classes = content.querySelector(".eql-spellpage-classes");
+  if (classes) {
+    const items = classes.querySelectorAll("li").map((li) => li.text.replace(/\s+/g, " ").trim()).filter(Boolean);
+    const text = items.length ? items.join(", ") : classes.text.replace(/\s+/g, " ").replace(/^\s*Classes\s*/i, "").trim();
+    if (text) lines.push(`Classes: ${text}`);
+  }
+  for (const table of content.querySelectorAll(".eql-spellpage-slot-table, .eql-spellpage-detail-table")) {
+    lines.push(...spellTableLines(table));
+  }
+
+  if (!lines.length && !icon) return undefined;
+  return { title, icon, lines };
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export function parseWikiPage(title: string, wikiPath: string, html: string): WikiPage {
@@ -338,6 +465,7 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       sources: [],
       components: parseMobLoot(content),
       rewards: [],
+      card: parseMobCard(content, title),
       fetchedAt,
     };
   }
@@ -358,6 +486,20 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
 
   if (content.querySelector("table.zoneTopTable")) {
     return { kind: "zone", title, wikiPath, sources: [], components: [], rewards: [], fetchedAt };
+  }
+
+  // Spell pages use their own container; without this they'd fall through to "item".
+  if (content.querySelector(".eql-spellpage, .spellStatsBox")) {
+    return {
+      kind: "spell",
+      title,
+      wikiPath,
+      sources: [],
+      components: [],
+      rewards: [],
+      card: parseSpellCard(content, title),
+      fetchedAt,
+    };
   }
 
   // Item page (fallback — also covers player-craftable items, which carry a recipe).

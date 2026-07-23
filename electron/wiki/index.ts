@@ -34,8 +34,14 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // Bump whenever parse.ts changes how a page becomes a WikiPage (new page kinds,
 // different sources/components). Cached pages carry the version they were parsed
 // under; a mismatch forces a re-parse, so a parser fix reaches every page instead
-// of being masked by week-old cache entries. (v2: mob/zone classification + loot.)
-const CACHE_VERSION = 2;
+// of being masked by week-old cache entries. (v2: mob/zone classification + loot;
+// v3: spell classification + item cards + structured rewards; v4: reward items with
+// embedded stat tooltips parsed as clean links; v5: spell cards (description/details);
+// v6: mob cards (location/stats) + loot rarity; v7: loot drop % across all loot
+// sections (Common/Unique); v8: dropRate is percentages only (rarity words dropped);
+// v9: also read the drop % from the `.ddb` drop-data box; v10: use the lowest % in
+// the drop-data box (the real drop chance, not the per-slot figure).)
+const CACHE_VERSION = 10;
 
 // Wiki taxonomy (confirmed against the live wiki). Kept as named constants so a
 // category rename only needs editing here.

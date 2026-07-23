@@ -64,12 +64,15 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
   }, [term, mode]);
 
   // A screengrab lookup prefills the box (name mode) and its text searches normally.
+  // Keyed on `prefill` only: it must fire once per lookup, NOT whenever `nav` changes
+  // (that would re-paste the text and block navigation — nav.clear() is a one-shot here).
   useEffect(() => {
     if (!prefill) return;
     setMode("name");
     nav.clear();
     setTerm(prefill.text);
-  }, [prefill, nav]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   // Fetch whatever page the in-app nav points at (from a result, a link, or back/forward).
   useEffect(() => {
@@ -157,6 +160,58 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
   const addItem = (p: WikiPage) => api()?.list.add({ name: p.title, wikiPath: p.wikiPath });
   const addFullPage = (p: WikiPage) => api()?.list.addFromPage(p);
   const addOne = (name: string, qty: number, wikiPath?: string) => api()?.list.add({ name, needed: qty, wikiPath });
+
+  const BLANK_ZONE = /^(various|unknown|none|n\/a)$/i;
+  // The mob's zone, for coordinate clicks (open the map there + drop a marker).
+  const cardZone = (() => {
+    for (const l of page?.card?.lines ?? []) {
+      const m = l.match(/^(?:Zone|Spawn Zone):\s*(.+)$/i);
+      if (m && !BLANK_ZONE.test(m[1].trim())) return m[1].trim();
+    }
+    return undefined;
+  })();
+
+  // Render a stat-card line: a Zone → map link; any embedded EQ coordinate → a map
+  // link that opens the mob's zone and marks that spot; otherwise plain text.
+  function cardLineNode(line: string): React.ReactNode {
+    const zoneM = line.match(/^(Zone|Spawn Zone):\s*(.+)$/i);
+    if (zoneM) {
+      const z = zoneM[2].trim();
+      if (BLANK_ZONE.test(z)) return line;
+      return (
+        <>
+          {zoneM[1]}:{" "}
+          <span className="link" title="View this zone on the map" onClick={() => api()?.map.openAt(z)}>
+            {z}
+          </span>
+        </>
+      );
+    }
+    if (cardZone) {
+      const re = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
+      const parts: React.ReactNode[] = [];
+      let last = 0;
+      let m: RegExpExecArray | null;
+      let i = 0;
+      while ((m = re.exec(line))) {
+        if (m.index > last) parts.push(line.slice(last, m.index));
+        const y = parseFloat(m[1]);
+        const x = parseFloat(m[2]);
+        const coord = m[0];
+        parts.push(
+          <span key={`c${i++}`} className="link" title="Show this spot on the map" onClick={() => api()?.map.openAt(cardZone, { y, x }, page?.title)}>
+            {coord}
+          </span>,
+        );
+        last = m.index + coord.length;
+      }
+      if (parts.length) {
+        if (last < line.length) parts.push(line.slice(last));
+        return <>{parts}</>;
+      }
+    }
+    return line;
+  }
 
   return (
     <div>
@@ -308,7 +363,7 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
                 + Add all {page.components.length} loot
               </button>
             )}
-            {(page.kind === "item" || page.kind === "recipe" || page.kind === "page") && (
+            {(page.kind === "item" || page.kind === "recipe" || page.kind === "page" || page.kind === "spell") && (
               <>
                 <button className="btn primary sm" onClick={() => addItem(page)}>
                   + Add “{page.title}”
@@ -322,6 +377,22 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
             )}
           </div>
 
+          {page.card && (
+            <div className="page-card">
+              {page.card.icon && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="pc-icon" src={page.card.icon} alt="" width={40} height={40} />
+              )}
+              <div className="pc-lines">
+                {page.card.lines.map((l, i) => (
+                  <div className="pc-line" key={i}>
+                    {cardLineNode(l)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {page.components.length > 0 && (
             <>
               <h4 className="muted small" style={{ marginTop: 12 }}>
@@ -331,7 +402,13 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
                 {page.components.map((c) => (
                   <li key={c.name}>
                     <span>
-                      {c.qty}× <ItemLink title={c.name} />
+                      {c.qty > 1 ? `${c.qty}× ` : ""}
+                      <ItemLink title={c.name} />
+                      {c.dropRate && (
+                        <span className="badge rarity" title="Drop rate">
+                          {c.dropRate}
+                        </span>
+                      )}
                     </span>
                     <button className="btn ghost sm" onClick={() => addOne(c.name, c.qty, c.wikiPath)}>
                       + Add
@@ -353,6 +430,11 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
           {page.kind === "zone" && (
             <p className="muted small" style={{ marginTop: 12 }}>Zone page — open it on eqlwiki to browse its contents.</p>
           )}
+          {page.kind === "spell" && (
+            <p className="muted small" style={{ marginTop: 12 }}>
+              Spell — add it to watch for it dropping, or open it on eqlwiki for how to acquire it.
+            </p>
+          )}
 
           {page.sources.length > 0 && <SourceList sources={page.sources} />}
           {page.rewards.length > 0 && (
@@ -360,7 +442,7 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
               <h4 className="muted small" style={{ marginTop: 12 }}>Rewards</h4>
               <ul>
                 {page.rewards.map((r, i) => (
-                  <li key={i}>{r}</li>
+                  <li key={i}>{r.item ? <ItemLink title={r.item} label={r.text} /> : r.text}</li>
                 ))}
               </ul>
             </>

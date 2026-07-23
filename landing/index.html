@@ -47,17 +47,20 @@
 
       <div class="cta">
         <!--
-          Download: point this at your hosted installer. If you publish via
-          electron-builder to GitHub Releases (npm run dist -- --publish always),
-          "releases/latest" resolves to the newest build. Replace OWNER/REPO.
+          Download → the newest GitHub Release for this repo. Publish builds with
+          `npm run dist -- --publish always` (or upload release/*.exe to a release);
+          `releases/latest` then resolves to the newest one.
         -->
-        <a class="btn primary" id="download" href="https://github.com/OWNER/REPO/releases/latest">
+        <a class="btn primary" id="download" href="https://github.com/ahoff-git/eq-list/releases/latest">
           Download for Windows
         </a>
         <!-- Launch the installed app via its registered eqlist:// scheme. -->
-        <a class="btn" href="eqlist://open">Launch the app</a>
+        <a class="btn" id="launch" href="eqlist://open">Launch the app</a>
       </div>
       <p class="sub">Windows 10/11 · already installed? “Launch the app” opens it (or focuses it).</p>
+      <p class="sub" id="launch-hint" style="display: none; color: var(--accent)">
+        Nothing opened? You’ll need to install it first — grab it with “Download for Windows”.
+      </p>
 
       <ul>
         <li>Fuzzy search for items, quests, and recipes — spelling can be rough.</li>
@@ -72,5 +75,19 @@
         no memory reading or game hooking.
       </footer>
     </main>
+    <script>
+      // The eqlist:// scheme only resolves if the app is installed. We can't truly
+      // detect whether the OS handed off, so after a short delay we surface a nudge to
+      // install (harmless if the app did open — this page is then in the background).
+      var launch = document.getElementById("launch");
+      var hint = document.getElementById("launch-hint");
+      if (launch && hint) {
+        launch.addEventListener("click", function () {
+          window.setTimeout(function () {
+            hint.style.display = "block";
+          }, 1200);
+        });
+      }
+    </script>
   </body>
 </html>

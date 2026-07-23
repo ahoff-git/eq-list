@@ -44,7 +44,17 @@ export interface KillEvent {
   at: string;
 }
 
-export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent;
+/** A parsed "Your Location is Y, X, Z" line (EQ reports y first). Drives the map. */
+export interface LocEvent {
+  kind: "loc";
+  y: number;
+  x: number;
+  z: number;
+  raw: string;
+  at: string;
+}
+
+export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent | LocEvent;
 
 // ─── Session stats ──────────────────────────────────────────────────────────
 
@@ -88,14 +98,27 @@ export interface ItemSource {
   detail?: string;
 }
 
-/** A required ingredient/turn-in referenced by a recipe or quest. */
+/** A required ingredient/turn-in (recipe/quest) or a mob's loot line. */
 export interface WikiComponent {
   name: string;
   qty: number;
   wikiPath?: string;
+  /** Drop chance for mob loot as a percentage ("4.7%"), when the wiki gives one. */
+  dropRate?: string;
 }
 
-export type WikiPageKind = "item" | "quest" | "recipe" | "mob" | "zone" | "page";
+export type WikiPageKind = "item" | "quest" | "recipe" | "mob" | "zone" | "spell" | "page";
+
+/**
+ * One reward line from a quest/recipe. `item`/`wikiPath` are set only when the whole
+ * line is a single linked item (e.g. a reward weapon) — so it can be hovered/opened
+ * like a list item. Faction/coin/XP lines stay as plain `text`.
+ */
+export interface WikiReward {
+  text: string;
+  item?: string;
+  wikiPath?: string;
+}
 
 /**
  * The item stat card the wiki shows on hover (type, weight, class/race, effects…).
@@ -120,7 +143,7 @@ export interface WikiPage {
   /** For quests/recipes: the items you must gather. */
   components: WikiComponent[];
   /** For quests/recipes: what you get. */
-  rewards: string[];
+  rewards: WikiReward[];
   /** The item's own stat card (items/recipes), for the hover tooltip. */
   card?: ItemCard;
   /** True if the page is tagged with an era that isn't live yet (can't obtain). */
@@ -206,6 +229,14 @@ export interface Settings {
   matchMode: MatchMode;
   /** Hide out-of-era pages in search results. */
   hideOutOfEra: boolean;
+  /** Opt-in: join the awari peer-to-peer network (see peers + send pings). Default off. */
+  connectPeers: boolean;
+  /** Broadcast your live location to peers (requires `connectPeers`). Default off. */
+  shareLocation: boolean;
+  /** Display name shown to peers; blank = derived from the log file's character name. */
+  playerName: string;
+  /** Override for the awari bootstrap-service URL; blank = the live default. */
+  bootstrapUrl: string;
   overlay: OverlaySettings;
   debug: boolean;
 }
@@ -216,6 +247,28 @@ export interface WatcherStatus {
   watching: boolean;
   file?: string;
   error?: string;
+}
+
+// ─── Peer networking (awari) ────────────────────────────────────────────────
+
+/**
+ * An app message carried over the awari room. `kind` discriminates the shape
+ * (`loc` | `ping` | `pins` today; add more as features use the shared connection).
+ * Kept loose so it survives IPC structured-clone and isn't tied to any one feature.
+ */
+export type AwariPayload = { kind: string; [key: string]: unknown };
+
+/** A peer message the owner window received, relayed to every window (self excluded). */
+export interface AwariInbound {
+  /** The sending peer's id. */
+  sender: string;
+  payload: AwariPayload;
+}
+
+/** The owner window's connection status, broadcast to every window. */
+export interface AwariStatus {
+  connected: boolean;
+  peerId: string | null;
 }
 
 // ─── Preload bridge (window.eql) ────────────────────────────────────────────
@@ -275,6 +328,11 @@ export interface EqlApi {
     current(): Promise<string | null>;
     onChanged(cb: (zone: string | null) => void): Unsubscribe;
   };
+  loc: {
+    /** The player's last logged location (from `/loc`), or null if none yet. */
+    current(): Promise<LocEvent | null>;
+    onChanged(cb: (loc: LocEvent | null) => void): Unsubscribe;
+  };
   stats: {
     get(): Promise<SessionStats>;
     reset(): Promise<SessionStats>;
@@ -315,6 +373,38 @@ export interface EqlApi {
     open(): Promise<void>;
     setClickThrough(enabled: boolean): Promise<void>;
   };
+  map: {
+    /** Open (or focus) the sibling map window. */
+    open(): Promise<void>;
+    /**
+     * Open the map window at a zone. With `loc` (EQ y,x — e.g. from a mob's Location
+     * coordinate), drop a marker there labeled with `label`.
+     */
+    openAt(zone: string, loc?: { y: number; x: number }, label?: string): Promise<void>;
+    /** Fires in the map window when asked to view a zone / drop a marker (`openAt`). */
+    onViewZone(cb: (msg: { zone: string; loc?: { y: number; x: number }; label?: string }) => void): Unsubscribe;
+    /** Open a zone's map page on the Project 1999 wiki (for zones with no bundled map). */
+    openP99(zone: string): Promise<void>;
+  };
+  /**
+   * Peer networking (awari), brokered by the main process. The always-alive main
+   * window owns the single WebRTC connection; every other window talks to peers
+   * through here. See `AwariHost` (owner engine) and ADR 0012.
+   */
+  awari: {
+    /** Publish an app payload to the room (relayed to the owner window, which holds the socket). */
+    send(payload: AwariPayload): void;
+    /** A peer message arrived (owner-relayed to every window; never your own). */
+    onMessage(cb: (msg: AwariInbound) => void): Unsubscribe;
+    /** Connection status changed (joined? + our peer id). */
+    onStatus(cb: (status: AwariStatus) => void): Unsubscribe;
+    /** Owner-window plumbing: the broker asks this (owner) window to publish a payload. */
+    onPublish(cb: (payload: AwariPayload) => void): Unsubscribe;
+    /** Owner-window plumbing: report an inbound peer message up to the broker. */
+    reportMessage(msg: AwariInbound): void;
+    /** Owner-window plumbing: report connection status up to the broker. */
+    reportStatus(status: AwariStatus): void;
+  };
   win: {
     /** Which window this renderer is: "main" or "overlay". */
     role(): Promise<"main" | "overlay">;
@@ -323,6 +413,8 @@ export interface EqlApi {
     hide(): void;
     /** Set the live window opacity (0.2–1), transient — does not change the saved setting. */
     setOpacity(value: number): void;
+    /** Toggle this window's always-on-top (per-window; used by the map's pin). */
+    setAlwaysOnTop(enabled: boolean): void;
     close(): void;
     /** Forget saved positions and recenter windows (for "lost" windows). */
     resetPositions(): Promise<void>;

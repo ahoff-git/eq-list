@@ -25,14 +25,11 @@ test("item page → drop sources with mob and zone", () => {
   assert.equal(p.components.length, 0);
 });
 
-test("item page → stat card for the hover tooltip; mob page has none", () => {
+test("item page → stat card for the hover tooltip", () => {
   const item = parseFixture("item-fungus-tunic", "Fungus Covered Scale Tunic");
   assert.ok(item.card, "item should have a stat card");
   assert.equal(item.card!.title, "Fungus Covered Scale Tunic");
   assert.ok(item.card!.lines.length > 0);
-  // A mob's loot cards live inside .hb tooltips, so the mob page itself has no own card.
-  const mob = parseFixture("mob-hill-giant", "A Hill Giant");
-  assert.equal(mob.card, undefined);
 });
 
 test("quest page → giver/zone sources, turn-in components, rewards", () => {
@@ -46,13 +43,65 @@ test("quest page → giver/zone sources, turn-in components, rewards", () => {
   assert.equal(talon!.name, "Aviak Talon");
   assert.equal(talon!.wikiPath, "/Aviak_Talon");
   assert.ok(p.rewards.length >= 1);
+  // Rewards are structured; these are coin/faction lines, so none is a linked item.
+  assert.equal(typeof p.rewards[0].text, "string");
+  assert.ok(p.rewards.every((r) => !r.item));
 });
 
-test("mob/NPC page → classified as mob with Known Loot", () => {
+test("spell page → classified as spell with a description/details card", () => {
+  const p = parseFixture("spell-burst-of-fire", "Burst of Fire");
+  assert.equal(p.kind, "spell");
+  assert.ok(p.card, "spell should have a card");
+  assert.equal(p.card!.title, "Burst of Fire");
+  // Description, class list, and casting details all make it into the card lines.
+  assert.ok(p.card!.lines.some((l) => /burns your target/i.test(l)));
+  assert.ok(p.card!.lines.some((l) => /^Classes:/.test(l)));
+  assert.ok(p.card!.lines.some((l) => /^Mana:/.test(l)));
+});
+
+test("quest reward items → linkable, with the embedded tooltip stat-dump stripped", () => {
+  const p = parseFixture("quest-langseax", "Langseax Quest");
+  assert.equal(p.kind, "quest");
+  const langseax = p.rewards.find((r) => r.item === "Langseax");
+  assert.ok(langseax, "Langseax tagged as an item reward");
+  assert.equal(langseax!.text, "Langseax"); // display text only — NOT "Langseax MAGIC ITEM Slot:…"
+  assert.equal(langseax!.wikiPath, "/Langseax");
+  assert.ok(p.rewards.some((r) => r.item === "Langseax of the Wolves"));
+});
+
+test("mob/NPC page → mob kind, Known Loot with rarity, and a location/stats card", () => {
   const p = parseFixture("mob-hill-giant", "A Hill Giant");
   assert.equal(p.kind, "mob");
   assert.ok(p.components.length > 5);
-  assert.ok(p.components.some((c) => c.name === "Hill Giant Toes"));
+  const toes = p.components.find((c) => c.name === "Hill Giant Toes");
+  assert.ok(toes);
+  assert.equal(toes!.dropRate, undefined); // rarity word ("Rare"), not a %, so no rate shown
+
+  // Location + key stats are parsed into the card (renders inline + on hover).
+  assert.ok(p.card, "mob should have a stats card");
+  assert.equal(p.card!.title, "A Hill Giant");
+  assert.ok(p.card!.lines.some((l) => /^Location:/.test(l)));
+  assert.ok(p.card!.lines.some((l) => /^Level:/.test(l)));
+});
+
+test("mob loot merges all loot sections and reads drop percentages", () => {
+  const p = parseFixture("mob-minotaur-slaver", "A minotaur slaver");
+  assert.equal(p.kind, "mob");
+  // Common Loot carries a "(X%) (low - high)" chance — we keep the point estimate.
+  const lapis = p.components.find((c) => c.name === "Lapis Lazuli");
+  assert.ok(lapis, "Lapis Lazuli should be parsed from Common Loot");
+  assert.equal(lapis!.dropRate, "4.7%");
+  // …and Known Loot's items are merged in too (different section, same list).
+  assert.ok(p.components.some((c) => c.name === "Minotaur Battle Axe"));
+});
+
+test("mob loot drop % from the `.ddb` drop-data box (not just `.drare`)", () => {
+  // On this page `.drare` is a rarity word ("Rare"); the % lives in `.ddb` ("[1] 1x 25%").
+  const p = parseFixture("mob-minotaur-lord", "Minotaur Lord");
+  assert.equal(p.kind, "mob");
+  const horn = p.components.find((c) => c.name === "Minotaur Horn");
+  assert.ok(horn, "Minotaur Horn should be parsed");
+  assert.equal(horn!.dropRate, "25%");
 });
 
 test("player-craftable item → recipe components", () => {

@@ -56,6 +56,10 @@ const api: EqlApi = {
     current: () => ipcRenderer.invoke(CH.zoneGet),
     onChanged: (cb) => on(CH.zoneChanged, cb),
   },
+  loc: {
+    current: () => ipcRenderer.invoke(CH.locGet),
+    onChanged: (cb) => on(CH.locChanged, cb),
+  },
   stats: {
     get: () => ipcRenderer.invoke(CH.statsGet),
     reset: () => ipcRenderer.invoke(CH.statsReset),
@@ -80,11 +84,26 @@ const api: EqlApi = {
     open: () => ipcRenderer.invoke(CH.overlayOpen),
     setClickThrough: (enabled) => ipcRenderer.invoke(CH.overlaySetClickThrough, enabled),
   },
+  map: {
+    open: () => ipcRenderer.invoke(CH.winOpenMap),
+    openAt: (zone, loc, label) => ipcRenderer.invoke(CH.mapOpenAt, zone, loc, label),
+    onViewZone: (cb) => on(CH.mapViewZone, cb),
+    openP99: (zone) => ipcRenderer.invoke(CH.mapOpenP99, zone),
+  },
+  awari: {
+    send: (payload) => ipcRenderer.send(CH.awariOutbound, payload),
+    onMessage: (cb) => on(CH.awariMessage, cb),
+    onStatus: (cb) => on(CH.awariStatusChanged, cb),
+    onPublish: (cb) => on(CH.awariPublish, cb),
+    reportMessage: (msg) => ipcRenderer.send(CH.awariInbound, msg),
+    reportStatus: (status) => ipcRenderer.send(CH.awariStatus, status),
+  },
   win: {
     role: () => Promise.resolve(role()),
     minimize: () => ipcRenderer.send(CH.winMinimize),
     hide: () => ipcRenderer.send(CH.winHide),
     setOpacity: (value) => ipcRenderer.send(CH.winSetOpacity, value),
+    setAlwaysOnTop: (enabled) => ipcRenderer.send(CH.winSetAlwaysOnTop, enabled),
     close: () => ipcRenderer.send(CH.winClose),
     resetPositions: () => ipcRenderer.invoke(CH.winResetPositions),
   },

@@ -6,9 +6,7 @@
  * explain what this is and offer to launch (eqlist:// deep link) or download the app.
  */
 
-// Where the installer is hosted. If you publish via electron-builder to GitHub
-// Releases, "releases/latest" resolves to the newest build — set OWNER/REPO.
-const DOWNLOAD_URL = "https://github.com/OWNER/REPO/releases/latest";
+import { LATEST_RELEASE_URL } from "@/shared/constants";
 
 export default function LandingView() {
   return (
@@ -26,7 +24,7 @@ export default function LandingView() {
           <a className="btn primary" href="eqlist://open">
             Launch the app
           </a>
-          <a className="btn" href={DOWNLOAD_URL} target="_blank" rel="noreferrer">
+          <a className="btn" href={LATEST_RELEASE_URL} target="_blank" rel="noreferrer">
             Download for Windows
           </a>
         </div>

@@ -9,15 +9,17 @@ list, hunt, search, session, settings.
 - **Window shell** (`src/app/page.tsx`, `.app.glass`): frameless, transparent,
   resizable, translucent. The **title bar** is the drag handle and carries the window
   controls — an **opacity toggle** (flip between 100% and the settings slider value,
-  transient via `win.setOpacity`), **pin** (always-on-top, toggles
-  `overlay.alwaysOnTop`), **minimize**, and **hide-to-tray** (`win.hide()`).
+  transient via `win.setOpacity`), **pin** (always-on-top, toggles `overlay.alwaysOnTop`
+  — the shared `PinButton`, gray off / red on, same as the map window), **minimize**,
+  and **hide-to-tray** (`win.hide()`).
   Opacity/always-on-top come from settings and are applied by the main process
   (`applyOverlaySettings`). Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
   tray. One window, styled once; see [ADR 0009](../decisions/0009-single-window-with-tray.md).
 - **System tray** (`main.ts`): show/hide plus the **dev-only** options kept out of the
-  UI — Debug logging, Open debug log, Reset window position, and Quit. The tray is the
-  only way to fully exit (✕ hides to tray; the app stays resident).
+  UI — Debug logging, Open debug log, Open developer tools (on the focused/main
+  window), Reset window position, and Quit. The tray is the only way to fully exit
+  (✕ hides to tray; the app stays resident).
 - **In-app navigation** (`src/lib/nav.tsx`, `NavProvider`/`useNav`): a shared page
   history. Every item / mob / quest name is an `ItemLink` (`components/ItemLink.tsx`) —
   clicking it calls `openPage(title)`, opening that page on the **Search tab in-app**,
@@ -34,10 +36,10 @@ list, hunt, search, session, settings.
     page in the browser (`wiki.openInBrowser`, host-validated in main). A quest/recipe
     group has a **×N runs** control (`list.setRuns`) — running a quest twice doubles
     every turn-in's needed count. `effectiveNeeded(entry, runs)` is the one source of
-    truth for "how many you actually need". Each entry expands (▸) to a lazy-loaded
-    **"where to get it"** — drop mobs grouped by zone (current zone first via
-    `splitDropsByCurrentZone`) plus color-coded non-drop sources (`otherSources`);
-    mob/source names are in-app links.
+    truth for "how many you actually need". A quest/recipe group header also has an
+    **↗ eqlwiki** button. Each entry expands (▸) to a lazy-loaded **"where to get it"** —
+    drop mobs grouped by zone (current zone first via `splitDropsByCurrentZone`) plus
+    color-coded non-drop sources (`otherSources`); mob/source names are in-app links.
   - `HuntPanel` — the **Hunt tab**: inverts "how do I get each needed item" into
     "where do I go to farm what's left". `useEntrySources` fetches each still-needed
     item's sources (`wiki.getPage`, cached) and `src/shared/hunt.ts`
@@ -46,15 +48,21 @@ list, hunt, search, session, settings.
     list they cover; the current zone (`useCurrentZone`) floats to the top. A **zone
     filter** narrows to one zone (`sourceZones` for the options, `zoneMatches` to
     filter); with the `overlay.followZone` setting on, it auto-tracks the log's current
-    zone. Items with no known drop are called out separately. Names navigate in-app.
+    zone. The picked zone is owned by the parent (`page.tsx`) so it survives tab
+    switches. Each item shows its **drop rate** for that mob (`useMobLoot` fetches the
+    hunt mobs' loot pages, since the rate lives there, not on the item). Items with no
+    known drop are called out separately. Names navigate in-app.
   - `SearchPanel` — fuzzy-search eqlwiki (typo-tolerant, ↑↓/Enter keyboard nav) with
     two modes: **By name** (any item/quest/recipe) and **By zone** (fuzzy-pick a zone,
     then list its quests). The open page is whatever `nav.current` points at; a result
     name/row, each **"How to get it"** source, and each component are all in-app links,
     with ← / → history buttons in the page header. Open a page to add an item,
     **"Add full quest"** to queue all of a quest's turn-ins, or **"Add all N loot"** on
-    a mob/NPC page to queue its Known Loot (each tagged with the origin). Out-of-era
-    results are badged, with a "hide out of era" toggle.
+    a mob/NPC page to queue its Known Loot (each tagged with the origin). A quest reward
+    that's a single item is itself an in-app link (hover for its card); on a mob's stat
+    card its **zone** is clickable (opens the map there) and any **coordinate** in its
+    Location (e.g. "(1555, -2410)", EQ y,x) opens the map at that zone and drops a marker
+    pin (`map.openAt` with a loc). Out-of-era results are badged, with a "hide out of era" toggle.
   - `SessionPanel` — live XP-gain and kill counts for the session, with XP attributed
     to the mob you killed most recently (from `session-stats.ts`), and a reset.
   - `SettingsPanel` — log folder, match mode, window opacity/text-size, keep-completed,

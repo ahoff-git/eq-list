@@ -1,6 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
-import { useShoppingList, useCurrentZone, useEntrySources, useSettings } from "@/lib/hooks";
+import { useMemo } from "react";
+import { useShoppingList, useCurrentZone, useEntrySources, useSettings, useMobLoot } from "@/lib/hooks";
 import ItemLink from "./ItemLink";
 import { buildHunt, neededEntries, huntInputsFor } from "@/shared/hunt";
 import { zoneMatches, sourceZones } from "@/shared/sources";
@@ -9,16 +9,22 @@ import { zoneMatches, sourceZones } from "@/shared/sources";
  * The Hunt tab answers "where do I go to farm what's left?" It takes every item
  * you still need, looks up who drops each (`useEntrySources`, cached), and inverts
  * that into zones → mobs → the needed items they drop (`buildHunt`). The zone
- * you're currently in (from the log) floats to the top. A zone filter (shared with
- * the overlay, incl. the "follow your zone" setting) narrows to one zone. Items with
- * no known drop are called out separately. Names navigate within the app.
+ * you're currently in (from the log) floats to the top. A zone filter (incl. the
+ * "follow your zone" setting) narrows to one zone; the picked zone is owned by the
+ * parent so it survives tab switches. Items with no known drop are called out
+ * separately. Names navigate within the app.
  */
-export default function HuntPanel() {
+export default function HuntPanel({
+  pickedZone,
+  onPickedZone,
+}: {
+  pickedZone: string | null;
+  onPickedZone: (zone: string | null) => void;
+}) {
   const list = useShoppingList();
   const zone = useCurrentZone();
   const settings = useSettings();
   const followZone = settings?.overlay.followZone ?? false;
-  const [pickedZone, setPickedZone] = useState<string | null>(null);
   // Effective filter: the log's zone when "follow" is on, else the manual pick.
   const narrow = followZone ? zone : pickedZone;
 
@@ -33,6 +39,10 @@ export default function HuntPanel() {
   );
   const covered = new Set(allZones.flatMap((z) => z.mobs.flatMap((m) => m.items.map((i) => i.item))));
   const noSource = needed.filter((e) => !covered.has(e.name));
+
+  // Drop rates come from each mob's loot page (the item's "Drops From" has none).
+  const mobNames = useMemo(() => [...new Set(allZones.flatMap((z) => z.mobs.map((m) => m.mob)))], [allZones]);
+  const mobLoot = useMobLoot(mobNames);
 
   const zoneOptions = useMemo(() => {
     const byLower = new Map<string, string>();
@@ -77,7 +87,7 @@ export default function HuntPanel() {
             className="field"
             style={{ width: "auto" }}
             value={pickedZone ?? ""}
-            onChange={(e) => setPickedZone(e.target.value || null)}
+            onChange={(e) => onPickedZone(e.target.value || null)}
             title="Show only what's obtainable in a zone"
           >
             <option value="">All zones</option>
@@ -111,18 +121,22 @@ export default function HuntPanel() {
               <div className="hunt-mob" key={m.mob}>
                 <ItemLink title={m.mob} className="hm-name" />
                 <span className="hm-items">
-                  {m.items.map((it) => (
-                    <ItemLink
-                      key={it.item}
-                      title={it.item}
-                      className="hunt-item"
-                      label={
-                        <>
-                          {it.item} <span className="muted">{it.obtained}/{it.needed}</span>
-                        </>
-                      }
-                    />
-                  ))}
+                  {m.items.map((it) => {
+                    const rate = mobLoot[m.mob]?.[it.item];
+                    return (
+                      <ItemLink
+                        key={it.item}
+                        title={it.item}
+                        className="hunt-item"
+                        label={
+                          <>
+                            {it.item} <span className="muted">{it.obtained}/{it.needed}</span>
+                            {rate && <span className="badge rarity">{rate}</span>}
+                          </>
+                        }
+                      />
+                    );
+                  })}
                 </span>
               </div>
             ))}

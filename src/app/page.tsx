@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import SearchPanel from "./components/SearchPanel";
 import ListPanel from "./components/ListPanel";
@@ -8,8 +8,10 @@ import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
 import StatusBar from "./components/StatusBar";
 import LandingView from "./components/LandingView";
+import PinButton from "./components/PinButton";
 import { useShoppingList, useSettings } from "@/lib/hooks";
 import { NavProvider, useNav } from "@/lib/nav";
+import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY } from "@/shared/constants";
 
 type Tab = "list" | "hunt" | "search" | "session" | "settings";
@@ -30,6 +32,11 @@ export default function Home() {
   const sliderOpacity = settings?.overlay.opacity ?? 1;
   // Transient "full opacity" toggle: flip between 100% and the settings slider value.
   const [opaque, setOpaque] = useState(false);
+  // Owned here so the Hunt tab's zone filter survives switching tabs.
+  const [huntZone, setHuntZone] = useState<string | null>(null);
+
+  // Stable so NavProvider's callbacks (and thus `nav`'s identity) don't churn each render.
+  const showSearch = useCallback(() => setTab("search"), []);
 
   useEffect(() => {
     setInElectron(!!api());
@@ -54,8 +61,10 @@ export default function Home() {
   if (!inElectron) return <LandingView />;
 
   return (
-    <NavProvider onOpen={() => setTab("search")}>
+    <NavProvider onOpen={showSearch}>
       <NavKeys />
+      <AwariHost />
+
       <div className="app glass">
         <div className="titlebar">
           <h1>
@@ -63,6 +72,9 @@ export default function Home() {
           </h1>
           <span className="spacer" />
           <div className="win-controls no-drag">
+            <button className="wc" title="Open map window" onClick={() => api()?.map.open()}>
+              🗺
+            </button>
             <button
               className={`wc ${opaque ? "on" : ""}`}
               title={
@@ -74,13 +86,11 @@ export default function Home() {
             >
               ◐
             </button>
-            <button
-              className={`wc ${pinned ? "on" : ""}`}
+            <PinButton
+              pinned={pinned}
+              onToggle={() => api()?.settings.update({ overlay: { alwaysOnTop: !pinned } })}
               title={`Always on top: ${pinned ? "on" : "off"} · ${OVERLAY_HOTKEY.label} shows/hides`}
-              onClick={() => api()?.settings.update({ overlay: { alwaysOnTop: !pinned } })}
-            >
-              📌
-            </button>
+            />
             <button className="wc" title="Minimize" onClick={() => api()?.win.minimize()}>
               —
             </button>
@@ -110,7 +120,7 @@ export default function Home() {
 
         <div className="panel">
           {tab === "list" && <ListPanel />}
-          {tab === "hunt" && <HuntPanel />}
+          {tab === "hunt" && <HuntPanel pickedZone={huntZone} onPickedZone={setHuntZone} />}
           {tab === "search" && <SearchPanel prefill={prefill} />}
           {tab === "session" && <SessionPanel />}
           {tab === "settings" && <SettingsPanel />}

@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "EQ Legends loot shopping-list overlay — watches your EverQuest log and lights up when items on your list drop. Data sourced from eqlwiki.com.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ahoff-git/eq-list.git"
+  },
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev:next": "next dev",
@@ -20,6 +24,9 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {
+    "@awari/core": "^0.0.4",
+    "@awari/protocol": "^0.0.4",
+    "@awari/transport-peerjs": "^0.0.4",
     "next": "15.4.10",
     "node-html-parser": "^7.0.1",
     "react": "19.1.0",
@@ -56,7 +63,9 @@
     "protocols": [
       {
         "name": "EQ List",
-        "schemes": ["eqlist"]
+        "schemes": [
+          "eqlist"
+        ]
       }
     ],
     "directories": {

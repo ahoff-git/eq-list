@@ -24,41 +24,18 @@ export default function ListPanel() {
   const flashed = useMatchFlashes();
   const zone = useCurrentZone();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [quickAdd, setQuickAdd] = useState("");
 
   const groups = groupByOrigin(list.entries, list.questRuns);
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }));
   const setRuns = (g: ListGroup, delta: number) => api()?.list.setRuns(g.key, g.runs + delta);
   const removeGroup = (g: ListGroup) => Promise.all(g.entries.map((e) => api()?.list.remove(e.id)));
 
-  function add() {
-    const name = quickAdd.trim();
-    if (!name) return;
-    void api()?.list.add({ name });
-    setQuickAdd("");
-  }
-
   return (
     <div>
-      <div className="row" style={{ marginBottom: 12, gap: 8 }}>
-        <input
-          className="field"
-          placeholder="Add an item by name…"
-          value={quickAdd}
-          onChange={(e) => setQuickAdd(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") add();
-          }}
-        />
-        <button className="btn primary" onClick={add}>
-          + Add
-        </button>
-      </div>
-
       {list.entries.length === 0 ? (
         <div className="empty">
           <p>Your shopping list is empty.</p>
-          <p className="small">Add an item above, or find items/quests/recipes on the Search tab.</p>
+          <p className="small">Find items, quests, or recipes on the Search tab and add them here.</p>
         </div>
       ) : (
         <div className="row" style={{ marginBottom: 12 }}>
@@ -97,6 +74,18 @@ export default function ListPanel() {
                 <span className="muted small">
                   {g.entries.filter((e) => e.obtained >= effectiveNeeded(e, g.runs)).length}/{g.entries.length}
                 </span>
+                {g.kind && (
+                  <button
+                    className="btn ghost sm"
+                    title={`Open ${g.label} on eqlwiki`}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      api()?.wiki.openInBrowser(g.label);
+                    }}
+                  >
+                    ↗
+                  </button>
+                )}
                 {g.kind && (
                   <button
                     className="btn ghost sm"

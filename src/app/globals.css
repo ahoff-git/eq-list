@@ -113,6 +113,8 @@ button {
 .badge.kind-vendor { color: #c9a0ff; }
 .badge.kind-quest { color: #ffd479; }
 .badge.kind-recipe { color: #8fe0a5; }
+.badge.kind-spell { color: #f29be0; }
+.badge.rarity { color: var(--accent); border-color: var(--accent-dim); margin-left: 6px; }
 .badge.era-out { color: var(--bad); border-color: var(--bad); }
 .era-warning { color: var(--bad); margin-top: 8px; }
 
@@ -153,14 +155,15 @@ button {
   height: 100vh;
   background: var(--bg);
 }
-/* Frameless translucent float: rounded, bordered, blurred; body is transparent so
-   the corners show through. Window-level opacity is applied by the main process. */
+/* Frameless float: rounded + bordered (the body is transparent so the corners show
+   through). The background is SOLID — translucency is controlled solely by the
+   window's opacity (the slider / the title-bar toggle), so 100% is truly 100% opaque.
+   A translucent CSS background here would leave residual see-through even at 100%. */
 .app.glass {
-  background: rgba(14, 16, 19, 0.9);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
-  backdrop-filter: blur(3px);
 }
 .titlebar {
   -webkit-app-region: drag; /* the titlebar is the window drag handle */
@@ -190,6 +193,9 @@ button {
 }
 .wc:hover { background: var(--bg-input); color: var(--text); }
 .wc.on { color: var(--accent); }
+/* emoji buttons (pin) don't take `color`, so signal off/on with grayscale + opacity */
+.wc.pin { filter: grayscale(1); opacity: 0.5; }
+.wc.pin.on { filter: none; opacity: 1; }
 
 .tabs {
   display: flex;
@@ -273,6 +279,22 @@ button {
 .page-detail h3 { margin-bottom: 8px; }
 .page-detail ul { list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .page-detail li { display: flex; gap: 8px; align-items: baseline; }
+
+/* inline stat card on a page (item stats / spell description + details) */
+.page-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.page-card .pc-icon { border-radius: 4px; flex: none; background: var(--bg-raised); }
+.page-card .pc-lines { display: flex; flex-direction: column; gap: 1px; font-size: 12px; min-width: 0; }
+.page-card .pc-line { color: var(--text-dim); line-height: 1.4; }
+.page-card .pc-line:first-child { color: var(--text); font-weight: 500; }
 
 /* ── shopping list ───────────────────────────────────────────── */
 .list {
@@ -529,6 +551,185 @@ kbd {
   background: var(--bad);
 }
 .dot.on { background: var(--good); }
+
+/* ── map window ───────────────────────────────────────────────── */
+.map-win {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.map-win .titlebar h1 { display: flex; align-items: center; gap: 6px; }
+.map-zone-select {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 2px 6px;
+  max-width: 55%;
+}
+.map-body { display: flex; flex: 1; min-height: 0; }
+.map-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-dim);
+  background: #0a0c0f;
+}
+.map-empty-title { color: var(--text); font-weight: 600; }
+.map-surface {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #0a0c0f;
+  min-width: 0;
+}
+.map-key {
+  width: 42%;
+  max-width: 340px;
+  overflow: auto;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  padding: 6px;
+}
+.map-key img { width: 100%; height: auto; display: block; }
+.map-zoom {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  background: rgba(14, 16, 19, 0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  pointer-events: none;
+}
+.map-readout {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  background: rgba(14, 16, 19, 0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  pointer-events: none;
+}
+.map-canvases { position: relative; }
+.map-canvases canvas { position: absolute; top: 0; left: 0; }
+.map-note {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(14, 16, 19, 0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.map-cal {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+.map-cal-head { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.map-cal-head .muted { margin-left: auto; font-weight: 400; }
+.map-cal-step { margin-left: auto; color: var(--accent); font-variant-numeric: tabular-nums; }
+.map-cal-values {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  user-select: all; /* click to select the whole line for copy */
+  word-break: break-all;
+}
+
+/* map pins: toolbar, show/hide menu, per-pin popover, hover tip */
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(23, 26, 31, 0.9);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.map-toolbar .muted { margin-left: 4px; }
+.pin-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 7px;
+}
+.pin-btn:hover { background: var(--bg-input); border-color: var(--border); }
+.pin-btn.held { background: var(--bg-input); border-color: currentColor; }
+.pin-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 12px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.pin-menu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 220px;
+  max-width: calc(100vw - 16px);
+  padding: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+}
+.pin-menu-head { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.pin-menu .field { font-size: 12px; padding: 5px 7px; }
+.pin-menu textarea.field { resize: vertical; }
+.pin-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 240px;
+  background: rgba(14, 16, 19, 0.92);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text);
+  pointer-events: none;
+}
+.pin-tip .pt-title { font-weight: 700; }
+.pin-tip .pt-label { color: var(--text-dim); font-size: 11px; }
+.pin-tip .pt-note { margin-top: 2px; white-space: pre-wrap; }
 
 /* ── screengrab region selector ──────────────────────────────── */
 .select-root {

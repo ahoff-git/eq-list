@@ -10,8 +10,10 @@ import {
   parseZoneLine,
   parseXpLine,
   parseKillLine,
+  parseLocLine,
   splitTimestamp,
   stripArticle,
+  characterFromLogFile,
 } from "../../src/shared/log-parser";
 
 test("splitTimestamp extracts the message and an ISO time", () => {
@@ -111,4 +113,22 @@ test("parseKillLine reads both kill forms, ignores player death", () => {
 
   // "have been slain" = the player died; not a kill.
   assert.equal(parseKillLine("[Mon Jul 20 19:03:05 2026] You have been slain by an orc pawn!"), null);
+});
+
+test("parseLocLine reads the y,x,z triple (y first), including negatives/decimals", () => {
+  const loc = parseLocLine("[Mon Jul 20 19:03:05 2026] Your Location is 1234.5, -678.9, 42.0");
+  assert.ok(loc);
+  assert.equal(loc!.kind, "loc");
+  assert.equal(loc!.y, 1234.5);
+  assert.equal(loc!.x, -678.9);
+  assert.equal(loc!.z, 42.0);
+
+  assert.equal(parseLocLine("[Mon Jul 20 19:03:05 2026] You have entered Greater Faydark."), null);
+});
+
+test("characterFromLogFile pulls the character from the log filename (path or bare)", () => {
+  assert.equal(characterFromLogFile("C:\\EQ\\Logs\\eqlog_Soandso_pq.proj.txt"), "Soandso");
+  assert.equal(characterFromLogFile("eqlog_Bob_server.txt"), "Bob");
+  assert.equal(characterFromLogFile("random.txt"), null);
+  assert.equal(characterFromLogFile(undefined), null);
 });

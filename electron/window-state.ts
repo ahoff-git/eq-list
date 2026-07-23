@@ -23,11 +23,12 @@ export interface Bounds {
   height: number;
 }
 
-type Role = "main" | "overlay";
+type Role = "main" | "overlay" | "map";
 
 interface WindowState {
   main?: Bounds;
   overlay?: Bounds;
+  map?: Bounds;
 }
 
 // Lazily loaded so we don't touch app.getPath before `ready`.
@@ -109,5 +110,6 @@ export function resetPositions(): void {
   const s = get();
   delete s.main;
   delete s.overlay;
+  delete s.map;
   writeNow();
 }

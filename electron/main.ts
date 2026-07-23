@@ -16,12 +16,12 @@ import { createSessionStats } from "./session-stats";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, getMainWindow, applyOverlaySettings } from "./windows";
+import { createMainWindow, getMainWindow, getMapWindow, applyOverlaySettings } from "./windows";
 import { resetPositions, beginQuit } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink } from "../src/shared/logging";
-import type { Settings, AppInfo } from "../src/shared/types";
+import type { Settings, AppInfo, LocEvent } from "../src/shared/types";
 
 const log = createLogger("main");
 
@@ -106,10 +106,22 @@ if (!app.requestSingleInstanceLock()) {
   const lookup = createLookup(ocr, routeSearchText);
 
   let currentZone: string | null = null;
+  let currentLoc: LocEvent | null = null;
   let appInfo: AppInfo = { hotkeys: [], logFile };
 
   syncDebugFlag(store.getSettings());
-  registerIpc({ store, wiki, watcher, stats, lookup, logFile, getCurrentZone: () => currentZone, getAppInfo: () => appInfo });
+  registerIpc({
+    store,
+    wiki,
+    watcher,
+    stats,
+    lookup,
+    logFile,
+    getCurrentZone: () => currentZone,
+    getCurrentLoc: () => currentLoc,
+    getAppInfo: () => appInfo,
+    broadcast,
+  });
 
   let watchKey = "";
   function startWatcher(): void {
@@ -132,6 +144,10 @@ if (!app.requestSingleInstanceLock()) {
     if (event.zone === currentZone) return;
     currentZone = event.zone;
     broadcast(CH.zoneChanged, currentZone);
+  });
+  watcher.onLoc((event) => {
+    currentLoc = event;
+    broadcast(CH.locChanged, currentLoc);
   });
   watcher.onLoot((event) => {
     broadcast(CH.lootEvent, event);
@@ -176,6 +192,18 @@ if (!app.requestSingleInstanceLock()) {
         click: (item) => store.updateSettings({ debug: item.checked }),
       },
       { label: "Open debug log", click: () => void shell.openPath(logFile) },
+      {
+        label: "Open developer tools",
+        click: () => {
+          // Open devtools for every real window (main + map) so per-window logs —
+          // e.g. the map's ping broadcast — are visible in their own console.
+          const wins = [getMainWindow(), getMapWindow()].filter(
+            (w): w is BrowserWindow => !!w && !w.isDestroyed(),
+          );
+          if (!wins.length) wins.push(createMainWindow(store.getSettings().overlay));
+          for (const w of wins) w.webContents.openDevTools({ mode: "detach" });
+        },
+      },
       {
         label: "Reset window position",
         click: () => {

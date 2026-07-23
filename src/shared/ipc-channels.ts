@@ -26,6 +26,7 @@ export const CH = {
   // watcher / zone / stats (invoke)
   watcherStatus: "watcher:status",
   zoneGet: "zone:get",
+  locGet: "loc:get",
   statsGet: "stats:get",
   statsReset: "stats:reset",
   lookupCapture: "lookup:capture",
@@ -36,22 +37,35 @@ export const CH = {
   // overlay / window control (invoke + send)
   overlayOpen: "overlay:open",
   overlaySetClickThrough: "overlay:setClickThrough",
+  winOpenMap: "win:openMap",
+  mapOpenAt: "map:openAt",
+  mapOpenP99: "map:openP99",
   winRole: "win:role",
   winMinimize: "win:minimize",
   winHide: "win:hide",
   winSetOpacity: "win:setOpacity",
+  winSetAlwaysOnTop: "win:setAlwaysOnTop",
   winClose: "win:close",
   winResetPositions: "win:resetPositions",
+  // awari peer networking (brokered by the main process; see ADR 0012)
+  awariOutbound: "awari:outbound", // any window → main: relay to the owner window
+  awariInbound: "awari:inbound", // owner → main: a peer message arrived
+  awariStatus: "awari:status", // owner → main: connection status changed
   // events (main → renderer)
+  awariPublish: "evt:awariPublish", // main → owner: publish this payload to the room
+  awariMessage: "evt:awariMessage", // main → all: a peer message (self excluded)
+  awariStatusChanged: "evt:awariStatus", // main → all: connection status
   listChanged: "evt:list",
   settingsChanged: "evt:settings",
   lootEvent: "evt:loot",
   lootMatched: "evt:lootMatched",
   watcherStatusChanged: "evt:watcherStatus",
   zoneChanged: "evt:zone",
+  locChanged: "evt:loc",
   statsChanged: "evt:stats",
   searchPrefill: "evt:searchPrefill",
   navCommand: "evt:navCommand",
+  mapViewZone: "evt:mapViewZone",
 } as const;
 
 export type Channel = (typeof CH)[keyof typeof CH];

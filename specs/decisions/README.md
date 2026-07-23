@@ -13,6 +13,9 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0007: Quests-by-zone via backlinks ∩ Category:Quests](./0007-quests-by-zone-via-backlinks.md)
 - [0008: In-app page navigation with a history stack](./0008-in-app-page-navigation.md)
 - [0009: One translucent window + a system tray](./0009-single-window-with-tray.md)
+- [0010: Port eq-map's map core; show the map in a sibling window](./0010-ported-map-core.md)
+- [0011: Opt-in peer location sharing over awari](./0011-awari-peer-location-sharing.md) — *superseded by 0012*
+- [0012: awari connection owned by the main window, brokered over IPC](./0012-awari-connection-owned-by-main-window.md)
 
 ## Open Questions
 - Should out-of-era pages be *hidden* (not just badged)? Filtering search results by

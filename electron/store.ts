@@ -32,6 +32,10 @@ const DEFAULT_SETTINGS: Settings = {
   activeLogFile: "",
   matchMode: "exact",
   hideOutOfEra: false,
+  connectPeers: false,
+  shareLocation: false,
+  playerName: "",
+  bootstrapUrl: "",
   overlay: {
     opacity: 0.9,
     alwaysOnTop: true,

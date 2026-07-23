@@ -6,6 +6,7 @@ import type {
   Settings,
   WatcherStatus,
   LootEvent,
+  LocEvent,
   SessionStats,
   AppInfo,
   ItemSource,
@@ -56,6 +57,31 @@ export function useCurrentZone(): string | null {
     return a.zone.onChanged(setZone);
   }, []);
   return zone;
+}
+
+/** The player's last logged location (from `/loc`), or null if none yet. */
+export function usePlayerLoc(): LocEvent | null {
+  const [loc, setLoc] = useState<LocEvent | null>(null);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void a.loc.current().then(setLoc);
+    return a.loc.onChanged(setLoc);
+  }, []);
+  return loc;
+}
+
+/** A rolling trail of recent locations (oldest→newest) for drawing movement. */
+export function usePlayerTrail(limit = 200): LocEvent[] {
+  const [trail, setTrail] = useState<LocEvent[]>([]);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    return a.loc.onChanged((l) => {
+      if (l) setTrail((prev) => [...prev, l].slice(-limit));
+    });
+  }, [limit]);
+  return trail;
 }
 
 /**
@@ -151,6 +177,43 @@ export function useEntrySources(entries: ShoppingListEntry[]): {
   }, [key]);
 
   return { sources, loading };
+}
+
+/**
+ * Drop rates keyed `mob → item → rate`, for the Hunt list. Rates live on the mob's
+ * loot list (not the item's "Drops From"), so we fetch each hunt mob's page (cached)
+ * and index its loot components' `dropRate`. Refetches only when the mob set changes.
+ */
+export function useMobLoot(mobNames: string[]): Record<string, Record<string, string>> {
+  const [loot, setLoot] = useState<Record<string, Record<string, string>>>({});
+  const key = mobNames
+    .slice()
+    .sort()
+    .join("|");
+  useEffect(() => {
+    const a = api();
+    if (!a || mobNames.length === 0) {
+      setLoot({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const pairs = await Promise.all(
+        mobNames.map(async (mob) => {
+          const page = await a.wiki.getPage(mob);
+          const rates: Record<string, string> = {};
+          for (const c of page?.components ?? []) if (c.dropRate) rates[c.name] = c.dropRate;
+          return [mob, rates] as const;
+        }),
+      );
+      if (!cancelled) setLoot(Object.fromEntries(pairs));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return loot;
 }
 
 // The item stat card, memoized per title across the session — a name can appear in

@@ -25,23 +25,34 @@ shopping list.
   See [ADR 0007](../decisions/0007-quests-by-zone-via-backlinks.md).
 - `electron/wiki/parse.ts` — a **pure** black box: page HTML → normalized `WikiPage`
   (`kind`, `sources`, `components`, `rewards`). Encodes the real wiki DOM:
-  - **Page kind** is decided by a signature container class so NPCs/zones aren't
-    mistaken for items: `.mobStatsBox`/`.eql-mobpage-stats` → `mob`,
-    `table.questTopTable` → `quest`, `table.zoneTopTable` → `zone`, else `item`.
-    (`recipe` is an item page whose sources include a `recipe` kind.)
+  - **Page kind** is decided by a signature container class so NPCs/zones/spells
+    aren't mistaken for items: `.mobStatsBox`/`.eql-mobpage-stats` → `mob`,
+    `table.questTopTable` → `quest`, `table.zoneTopTable` → `zone`,
+    `.eql-spellpage`/`.spellStatsBox` → `spell`, else `item`. (`recipe` is an item
+    page whose sources include a `recipe` kind.)
   - Item pages: fixed `<h2 id="…">` sections; `span.esec` = empty section.
     `Drops_From` (zone `<p>` + `<ul>` of mobs), `Sold_by` (`table.eoTable3`),
     `Related_quests`/`Tradeskill_recipes` (`<ul>` of links), `Player_crafted`
     (`<dl><dd>` "N x item").
-  - Quests: `table.questTopTable` (giver/zone), `Reward` `<ul>`, and turn-ins mined
-    heuristically from `Walkthrough` (a link counts only when a quantity precedes it).
-  - Mob/NPC pages: `#Known_Loot` heading → the following `<ul>` (which lives inside a
-    wrapper div, so we walk `nextElementSibling` rather than assuming a flat section)
-    → loot items as `components` (deduped, links only). Powers the Hunt tab.
-  - Item stat card (`WikiPage.card`): the page's own `.itemtopbg`(title) + `.itemdata`
-    (icon + stat lines) — the block the wiki shows on hover. Only the page's OWN card
-    counts, so blocks nested in a `.hb` tooltip (embedded loot/prose item cards) are
-    skipped. Drives the in-app hover tooltip (`ItemLink`).
+  - Quests: `table.questTopTable` (giver/zone), `Reward` `<ul>` (each line kept as
+    `{text, item?}` — `item` set only when the whole line is one linked item, so a
+    reward weapon is hover/openable but faction/coin lines stay plain), and turn-ins
+    mined heuristically from `Walkthrough` (a link counts only when a quantity precedes it).
+  - Mob/NPC pages: loot is gathered from **every** section whose heading contains
+    "Loot" (Known / Common / Unique …) — walk each heading (through its `.mw-heading`
+    wrapper and whatever div the `<ul>` is nested in) to its `<ul>`s, dedupe by name.
+    Each `<li>`'s `.hbdiv > a` is the item; its **drop rate** (`WikiComponent.dropRate`)
+    is the **percentage** chance — from `.drare` ("(17.3%)") or the `.ddb` drop-data box
+    ("[1] 1x 25% (50%)"), taking the **lowest** % (the real chance, not the per-slot
+    figure) — else a trailing "(X%) (low% - high%)". Rarity *words* ("Rare"/"Always")
+    carry no number and are ignored. Powers the Hunt tab.
+  - Stat card (`WikiPage.card`), reused across kinds — the block shown inline on the
+    page and on hover (`ItemLink` / `useItemCard`):
+    - **items**: the page's own `.itemtopbg`(title) + `.itemdata` (icon + stat lines),
+      ignoring blocks nested in a `.hb` tooltip (those are embedded, not the page's own).
+    - **spells**: `.eql-spellpage` description + classes + effect/casting tables.
+    - **mobs/NPCs**: the `.mobStatsBox`/`.eql-mobpage-stats` table → **location**
+      (Spawn Zone / Location) + Level/Race/Class/HP/Special, plus the mob portrait.
   - Tables use `eoTable2/eoTable3`, never `.wikitable`.
 - **Cache versioning** — `getPage` caches the *parsed* `WikiPage` to disk, so a
   `parse.ts` change (new page kinds, new fields) would otherwise be masked by
@@ -67,7 +78,9 @@ shopping list.
   `eql-buff-calc` sample which bakes JSON at build.
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
-- Drop *rates* are not available on the wiki, so they aren't modeled.
+- Drop rates live on the **mob** page (per loot line — a `(X%)` chance or a rarity
+  word), not the item page: item "Drops From" gives the mob + zone but no rate. So a
+  rate shows when you view the dropping mob, not the item itself.
 
 ## See also
 [architecture](../architecture/README.md) · [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md)

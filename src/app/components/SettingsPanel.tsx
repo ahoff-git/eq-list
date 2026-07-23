@@ -1,6 +1,7 @@
 "use client";
 import { useSettings, useWatcherStatus, useAppInfo } from "@/lib/hooks";
 import { api } from "@/lib/api";
+import { characterFromLogFile } from "@/shared/log-parser";
 import type { DeepPartial, Settings } from "@/shared/types";
 
 /** Log location, match strictness, overlay look, and the debug toggle. */
@@ -12,6 +13,7 @@ export default function SettingsPanel() {
   if (!settings) return <p className="muted">Loading settings…</p>;
 
   const patch = (p: DeepPartial<Settings>) => api()?.settings.update(p);
+  const derivedName = characterFromLogFile(status.file) ?? "";
 
   async function browse() {
     const dir = await api()?.settings.pickLogDir();
@@ -92,6 +94,47 @@ export default function SettingsPanel() {
         onChange={(v) => patch({ overlay: { followZone: v } })}
       />
 
+      <Toggle
+        label="Connect to the peer-to-peer network"
+        checked={settings.connectPeers}
+        onChange={(v) => patch({ connectPeers: v })}
+      />
+      <Toggle
+        label="Share my location with other players"
+        checked={settings.shareLocation}
+        disabled={!settings.connectPeers}
+        onChange={(v) => patch({ shareLocation: v })}
+      />
+      <div className="setting" style={{ paddingTop: 0, borderTop: "none" }}>
+        <label>Player name</label>
+        <input
+          className="field"
+          placeholder={derivedName || "Your character name"}
+          value={settings.playerName}
+          onChange={(e) => patch({ playerName: e.target.value })}
+        />
+        <span className="hint">
+          Shown to peers when you click (ping) the map. Blank uses your log’s character name
+          {derivedName ? ` (${derivedName})` : ""}.
+        </span>
+      </div>
+      <div className="setting" style={{ paddingTop: 0, borderTop: "none" }}>
+        <span className="hint">
+          Off by default. <b>Connect</b> to see other players and ping the map — click a spot and your
+          name shows there for everyone in that zone. <b>Share</b> also broadcasts your live position as
+          you type <kbd>/loc</kbd>.
+        </span>
+        {settings.connectPeers && (
+          <input
+            className="field"
+            placeholder="awari bootstrap URL — blank uses the default"
+            value={settings.bootstrapUrl}
+            onChange={(e) => patch({ bootstrapUrl: e.target.value })}
+            style={{ marginTop: 6 }}
+          />
+        )}
+      </div>
+
       <div className="setting">
         <span className="hint">
           Pin (always-on-top), minimize, and hide are on the title bar. Debug logging, the debug log,
@@ -142,11 +185,21 @@ function screengrabLabel(info: ReturnType<typeof useAppInfo>): string {
   return info?.hotkeys.find((h) => /screengrab/i.test(h.action))?.label ?? "Ctrl/Cmd+Shift+L";
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({
+  label,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
   return (
     <div className="setting">
-      <label className="row" style={{ gap: 8 }}>
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <label className="row" style={{ gap: 8, opacity: disabled ? 0.5 : 1 }}>
+        <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
         {label}
       </label>
     </div>

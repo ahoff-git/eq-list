@@ -44,6 +44,15 @@ function debugEnabled(): boolean {
   return false;
 }
 
+/**
+ * Turn renderer debug logging on/off at runtime (the browser gate `debugEnabled`
+ * reads). Bridges the tray's "Debug logging" setting to this file's magic flag, so
+ * callers never poke `globalThis.__EQL_DEBUG__` by hand.
+ */
+export function setRendererDebug(enabled: boolean): void {
+  (globalThis as { __EQL_DEBUG__?: boolean }).__EQL_DEBUG__ = enabled;
+}
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogSink = (level: LogLevel, parts: unknown[]) => void;
 
@@ -59,7 +68,10 @@ export function setLogSink(fn: LogSink | null): void {
 export function createLogger(namespace: string): Logger {
   const tag = `[${namespace}]`;
   const write = (level: LogLevel, args: unknown[]) => {
-    (console[level] ?? console.log)(tag, ...args);
+    // Use console.log for debug/info so they're visible at devtools' DEFAULT level —
+    // console.debug lands in "Verbose", which is hidden unless explicitly enabled.
+    const fn = level === "warn" ? console.warn : level === "error" ? console.error : console.log;
+    fn(tag, ...args);
     sink?.(level, [tag, ...args]);
   };
   return {

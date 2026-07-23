@@ -65,7 +65,12 @@ export function NavProvider({ onOpen, children }: { onOpen?: () => void; childre
     onOpen?.();
   }, [onOpen]);
 
-  const clear = useCallback(() => setState({ stack: [], index: -1 }), []);
+  // Idempotent: return the same state when already empty so React bails out (no
+  // needless re-render / effect churn).
+  const clear = useCallback(
+    () => setState((s) => (s.stack.length === 0 && s.index === -1 ? s : { stack: [], index: -1 })),
+    [],
+  );
 
   const value = useMemo<Nav>(
     () => ({

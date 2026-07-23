@@ -17,7 +17,9 @@ in the main process and all UI in the renderer.
   - `session-stats.ts` — session XP/kill tracking (see [log-watching](../log-watching/README.md)).
   - `windows.ts` — the framed control window and the frameless transparent overlay.
     Windows show without stealing focus (overlay uses `showInactive`); DevTools open
-    only when `EQL_DEVTOOLS` is set.
+    only when `EQL_DEVTOOLS` is set. Each window's renderer console is piped into the
+    main-process log (`renderer:<role>`), so renderer output lands in the same terminal
+    + debug file as the main process instead of only that window's DevTools.
   - `window-state.ts` — persists window positions + whether the overlay was open, in
     a file separate from settings (bounds change constantly; routing them through the
     reactive store would spam change events). Off-screen bounds are ignored, and a

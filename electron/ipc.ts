@@ -5,15 +5,16 @@
  */
 import { ipcMain, dialog, shell, BrowserWindow } from "electron";
 import { CH } from "../src/shared/ipc-channels";
+import { p99ZoneUrl } from "../src/shared/constants";
 import { WIKI_BASE } from "./wiki/api";
-import { createMainWindow, applyOverlaySettings, getMainWindow } from "./windows";
+import { createMainWindow, createMapWindow, applyOverlaySettings, getMainWindow } from "./windows";
 import { resetPositions } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
 import type { LogWatcher } from "./log-watcher";
 import type { SessionTracker } from "./session-stats";
 import type { Lookup } from "./lookup";
-import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo } from "../src/shared/types";
+import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus } from "../src/shared/types";
 
 export interface IpcContext {
   store: Store;
@@ -24,12 +25,16 @@ export interface IpcContext {
   logFile: string;
   /** The player's current zone (tracked from the log in main.ts). */
   getCurrentZone: () => string | null;
+  /** The player's last logged location (tracked from the log in main.ts). */
+  getCurrentLoc: () => LocEvent | null;
   /** Diagnostics for the Help section (hotkey registration, …). */
   getAppInfo: () => AppInfo;
+  /** Push an event to every window (owned by main.ts). */
+  broadcast: (channel: string, payload: unknown) => void;
   watcher: LogWatcher;
 }
 
-export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getCurrentZone, getAppInfo }: IpcContext): void {
+export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
   // ── shopping list ──
   ipcMain.handle(CH.listGet, () => store.getList());
   ipcMain.handle(CH.listAdd, (_e, input) => store.addEntry(input));
@@ -73,6 +78,7 @@ export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getC
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
   ipcMain.handle(CH.zoneGet, () => getCurrentZone());
+  ipcMain.handle(CH.locGet, () => getCurrentLoc());
   ipcMain.handle(CH.statsGet, () => stats.snapshot());
   ipcMain.handle(CH.statsReset, () => {
     stats.reset(); // emits change → broadcast; also return the fresh snapshot to the caller
@@ -99,6 +105,31 @@ export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getC
     store.updateSettings({ overlay: { clickThrough: enabled } });
     applyOverlaySettings(store.getSettings().overlay);
   });
+  // Open (or focus) the sibling map window.
+  ipcMain.handle(CH.winOpenMap, () => {
+    const win = createMapWindow(store.getSettings().overlay);
+    win.show();
+    win.focus();
+  });
+  // Open the map window and tell it to view a zone (and optionally drop a marker).
+  ipcMain.handle(CH.mapOpenAt, (_e, zone: string, loc?: { y: number; x: number }, label?: string) => {
+    const win = createMapWindow(store.getSettings().overlay);
+    win.show();
+    win.focus();
+    const send = () => win.webContents.send(CH.mapViewZone, { zone, loc, label });
+    if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
+    else send();
+  });
+  // Open a zone's map page on the Project 1999 wiki (host fixed, so it's safe).
+  ipcMain.handle(CH.mapOpenP99, (_e, zone: string) => shell.openExternal(p99ZoneUrl(zone)));
+
+  // ── awari peer networking broker (see ADR 0012) ──
+  // The always-alive main window owns the single WebRTC connection; the main process
+  // is a pure relay. Any window's send → the owner publishes it; the owner's inbound
+  // peer messages + status → fanned out to every window (the map, and anything else).
+  ipcMain.on(CH.awariOutbound, (_e, payload: AwariPayload) => getMainWindow()?.webContents.send(CH.awariPublish, payload));
+  ipcMain.on(CH.awariInbound, (_e, msg: AwariInbound) => broadcast(CH.awariMessage, msg));
+  ipcMain.on(CH.awariStatus, (_e, status: AwariStatus) => broadcast(CH.awariStatusChanged, status));
 
   ipcMain.on(CH.winMinimize, (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
   // Hide to tray (single-window app): keep the process alive so the tray/hotkey can reshow.
@@ -106,6 +137,9 @@ export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getC
   // Transient opacity (the "full opacity" toggle) — doesn't touch the saved setting.
   ipcMain.on(CH.winSetOpacity, (e, value: number) =>
     BrowserWindow.fromWebContents(e.sender)?.setOpacity(Math.max(0.2, Math.min(1, value))),
+  );
+  ipcMain.on(CH.winSetAlwaysOnTop, (e, enabled: boolean) =>
+    BrowserWindow.fromWebContents(e.sender)?.setAlwaysOnTop(!!enabled, "screen-saver"),
   );
   ipcMain.on(CH.winClose, (e) => BrowserWindow.fromWebContents(e.sender)?.close());
   // Forget saved position and recenter the window (for a "lost" window).

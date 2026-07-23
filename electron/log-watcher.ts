@@ -10,9 +10,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
-import { parseLogLine, parseZoneLine, parseXpLine, parseKillLine } from "../src/shared/log-parser";
+import { parseLogLine, parseZoneLine, parseXpLine, parseKillLine, parseLocLine } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
-import type { LootEvent, ZoneEvent, XpEvent, KillEvent, WatcherStatus } from "../src/shared/types";
+import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
@@ -25,6 +25,7 @@ export interface LogWatcher {
   onZone(cb: (e: ZoneEvent) => void): void;
   onXp(cb: (e: XpEvent) => void): void;
   onKill(cb: (e: KillEvent) => void): void;
+  onLoc(cb: (e: LocEvent) => void): void;
   onStatus(cb: (s: WatcherStatus) => void): void;
 }
 
@@ -143,7 +144,12 @@ export function createLogWatcher(): LogWatcher {
             continue;
           }
           const kill = parseKillLine(line);
-          if (kill) bus.emit("kill", kill);
+          if (kill) {
+            bus.emit("kill", kill);
+            continue;
+          }
+          const loc = parseLocLine(line);
+          if (loc) bus.emit("loc", loc);
         }
       }
       setStatus({ watching: true, file: target });
@@ -178,6 +184,7 @@ export function createLogWatcher(): LogWatcher {
     onZone: (cb) => void bus.on("zone", cb),
     onXp: (cb) => void bus.on("xp", cb),
     onKill: (cb) => void bus.on("kill", cb),
+    onLoc: (cb) => void bus.on("loc", cb),
     onStatus: (cb) => void bus.on("status", cb),
   };
 }

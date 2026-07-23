@@ -15,7 +15,7 @@
  *   You looted a <item> from <source>'s corpse to create a <result>.
  */
 
-import type { LootEvent, ZoneEvent, XpEvent, KillEvent } from "./types";
+import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent } from "./types";
 
 const MONTHS: Record<string, number> = {
   Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
@@ -57,6 +57,17 @@ export function splitTimestamp(line: string): { at: string; message: string } | 
 /** Strip a leading English article so names match the wiki / shopping list. */
 export function stripArticle(name: string): string {
   return name.replace(/^(?:an?|the) /i, "").trim();
+}
+
+/**
+ * Character name from an EQ log filename (`eqlog_<Character>_<server>.txt`), or null.
+ * Used to default the player's peer-network display name. Accepts a full path.
+ */
+export function characterFromLogFile(file?: string): string | null {
+  if (!file) return null;
+  const base = file.split(/[\\/]/).pop() ?? file;
+  const m = base.match(/^eqlog_([^_]+)_/i);
+  return m ? m[1] : null;
 }
 
 /**
@@ -150,4 +161,22 @@ export function parseKillLine(line: string): KillEvent | null {
   const m = parsed.message.match(KILL_BY_YOU) ?? parsed.message.match(KILL_SLAIN_BY);
   if (!m?.groups?.target) return null;
   return { kind: "kill", target: stripArticle(m.groups.target.trim()), raw: parsed.raw, at: parsed.at };
+}
+
+// "Your Location is 1234.5, -678.9, 42.0" → LocEvent. EQ reports the triple y-first.
+const LOC_RE = /^Your Location is (?<y>-?\d+(?:\.\d+)?), (?<x>-?\d+(?:\.\d+)?), (?<z>-?\d+(?:\.\d+)?)$/;
+
+export function parseLocLine(line: string): LocEvent | null {
+  const parsed = messageOf(line);
+  if (!parsed) return null;
+  const m = parsed.message.match(LOC_RE);
+  if (!m?.groups) return null;
+  return {
+    kind: "loc",
+    y: parseFloat(m.groups.y),
+    x: parseFloat(m.groups.x),
+    z: parseFloat(m.groups.z),
+    raw: parsed.raw,
+    at: parsed.at,
+  };
 }
