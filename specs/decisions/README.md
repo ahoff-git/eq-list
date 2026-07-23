@@ -16,6 +16,7 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0010: Port eq-map's map core; show the map in a sibling window](./0010-ported-map-core.md)
 - [0011: Opt-in peer location sharing over awari](./0011-awari-peer-location-sharing.md) — *superseded by 0012*
 - [0012: awari connection owned by the main window, brokered over IPC](./0012-awari-connection-owned-by-main-window.md)
+- [0013: CI publishes a rolling "latest" Windows build](./0013-ci-rolling-latest-windows-build.md)
 
 ## Open Questions
 - Should out-of-era pages be *hidden* (not just badged)? Filtering search results by

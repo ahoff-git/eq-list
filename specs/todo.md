@@ -23,10 +23,17 @@ real machine to confirm:_
   "Connect" off leaves the room. Needs real network + WebRTC (unavailable in the dev
   sandbox). See [ADR 0012](./decisions/0012-awari-connection-owned-by-main-window.md).
 
-_Distribution wiring (needs a host/repo decision):_
+_Distribution wiring:_
 
-- **Landing page — publish + host.** `landing/index.html`'s buttons are wired:
-  Download → `github.com/ahoff-git/eq-list/releases/latest`, Launch → `eqlist://open`.
-  Remaining: actually **publish a release** so the Download resolves (`npm run dist --
-  --publish always`, or upload `release/*.exe` to a GitHub release), and **host** the
-  landing page somewhere (e.g. GitHub Pages).
+- **CI build — verify first run.** `.github/workflows/build-windows.yml` auto-builds the
+  installer and publishes it to the rolling `latest` release on every push to `main`
+  ([ADR 0013](./decisions/0013-ci-rolling-latest-windows-build.md)). Needs to be **on
+  `main` to take effect**; confirm the first Actions run goes green (Windows build +
+  `electron-builder`) and that `/releases/latest` then resolves to the `.exe`. Not
+  exercisable in the dev sandbox.
+- **Landing page — host it.** `landing/index.html`'s buttons are wired (Download →
+  `/releases/latest`, Launch → `eqlist://open`) and the Download target is now populated
+  by CI. Remaining: **host** the static page somewhere (e.g. GitHub Pages). Optional:
+  point Download straight at `/releases/latest/download/<asset>` for a one-click download.
+- **Code signing (optional).** Builds are unsigned → Windows SmartScreen warns "unknown
+  publisher". Needs a cert (`CSC_LINK`/`CSC_KEY_PASSWORD` secrets) wired into the workflow.

@@ -1,0 +1,58 @@
+name: Build Windows installer
+
+# Keep a fresh Windows .exe published as a rolling "latest" release, so the landing
+# page's Download button (which points at /releases/latest) always hands out the newest
+# build. Runs on every push to main, and on demand from the Actions tab.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# The default GITHUB_TOKEN needs write access to move the tag and create/refresh the release.
+permissions:
+  contents: write
+
+# One build at a time; a newer push cancels an in-flight one so "latest" never goes backwards.
+concurrency:
+  group: build-windows
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Don't ship a broken "latest": gate the build on the same checks we run locally.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+      # Static renderer + compiled main process, then the NSIS installer into release/.
+      # `--publish never`: we attach the artifact ourselves (below), not via electron-builder.
+      - run: npm run build
+      - run: npx electron-builder --publish never
+
+      # Point the rolling tag at this commit so the published release isn't stale.
+      - name: Move "latest" tag to this commit
+        shell: bash
+        run: |
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin refs/tags/latest
+
+      - name: Publish rolling "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          body: Automated build of ${{ github.sha }} (${{ github.ref_name }}).
+          files: release/*.exe
+          make_latest: true
+          fail_on_unmatched_files: true
