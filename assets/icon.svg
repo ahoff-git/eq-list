@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- EQ List app icon: a faceted gold "loot" gem on a dark rounded tile, matching the
+       app's gold-on-dark palette. Original artwork (no EverQuest trademarks). This SVG
+       is the design source; scripts/generate-icons.mjs rasterizes it into favicon.ico. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b212a"/>
+      <stop offset="1" stop-color="#0d1013"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#tile)" stroke="#2a2f38" stroke-width="6"/>
+  <!-- gem facets (light from the top-left) -->
+  <g stroke="#0d1013" stroke-width="3" stroke-linejoin="round">
+    <path d="M96 96 108 128 44 128 Z" fill="#f4c445"/>
+    <path d="M96 96 160 96 148 128 108 128 Z" fill="#ffd970"/>
+    <path d="M160 96 212 128 148 128 Z" fill="#d69a1e"/>
+    <path d="M44 128 128 128 128 216 Z" fill="#e7ad2b"/>
+    <path d="M212 128 128 128 128 216 Z" fill="#c98a15"/>
+  </g>
+  <path d="M96 96 160 96 212 128 128 216 44 128 Z" fill="none" stroke="#0d1013" stroke-width="5" stroke-linejoin="round"/>
+</svg>

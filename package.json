@@ -21,6 +21,7 @@
     "build": "npm run build:next && npm run build:electron",
     "start": "npm run build && electron .",
     "app": "node scripts/launch.mjs",
+    "icons": "node scripts/generate-icons.mjs",
     "dist": "npm run build && electron-builder",
     "lint": "next lint",
     "sim": "node scripts/replay-log.mjs",
@@ -76,7 +77,8 @@
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "src/app/favicon.ico"
     }
   }
 }

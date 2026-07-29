@@ -9,7 +9,7 @@
  * The window restores its last position (window-state.ts). DevTools only open when
  * EQL_DEVTOOLS is set, not on every dev run.
  */
-import { BrowserWindow } from "electron";
+import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { savedBounds, rememberBounds, setMapOpen, isQuitting } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
@@ -37,6 +37,11 @@ const DEV = !!process.env.EQL_DEV;
 const DEV_URL = "http://localhost:3000";
 const APP_URL = "app://local";
 const PRELOAD = path.join(__dirname, "preload.js");
+
+/** The app/taskbar icon — the same .ico the tray and web favicon use, packaged in out/. */
+function windowIcon(): string {
+  return path.join(app.getAppPath(), "out", "favicon.ico");
+}
 
 function load(win: BrowserWindow, route: string): void {
   if (DEV) {
@@ -74,6 +79,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
     transparent: true,
     resizable: true,
     title: "EQ List",
+    icon: windowIcon(),
     alwaysOnTop: overlay?.alwaysOnTop ?? true,
     backgroundColor: "#00000000",
     webPreferences: {
@@ -128,6 +134,7 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
     transparent: true,
     resizable: true,
     title: "EQ List — Map",
+    icon: windowIcon(),
     alwaysOnTop: overlay?.alwaysOnTop ?? true,
     backgroundColor: "#00000000",
     webPreferences: {

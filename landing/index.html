@@ -76,15 +76,16 @@
       </footer>
     </main>
     <script>
-      // The eqlist:// scheme only resolves if the app is installed. We can't truly
-      // detect whether the OS handed off, so after a short delay we surface a nudge to
-      // install (harmless if the app did open — this page is then in the background).
+      // The eqlist:// scheme only resolves if the app is installed. If it opened, the app
+      // takes the foreground and this tab loses focus — so only nudge to install when
+      // we're STILL focused a moment after the click (nothing handled the link).
       var launch = document.getElementById("launch");
       var hint = document.getElementById("launch-hint");
       if (launch && hint) {
         launch.addEventListener("click", function () {
+          hint.style.display = "none"; // reset on re-click
           window.setTimeout(function () {
-            hint.style.display = "block";
+            if (document.hasFocus()) hint.style.display = "block";
           }, 1200);
         });
       }
