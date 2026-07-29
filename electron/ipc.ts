@@ -12,20 +12,25 @@ import { resetPositions } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
 import type { LogWatcher } from "./log-watcher";
-import type { SessionTracker } from "./session-stats";
 import type { CombatTracker } from "./combat-stats";
 import type { CombatHistory } from "./combat-history";
 import type { XpTracker } from "./xp-progress";
+import type { HpTracker } from "./hp-estimate";
+import type { KillLog } from "./kill-log";
+import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
 import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer } from "../src/shared/types";
+import type { MobObservation } from "../src/shared/mob-stats";
 
 export interface IpcContext {
   store: Store;
   wiki: WikiClient;
-  stats: SessionTracker;
   combat: CombatTracker;
   history: CombatHistory;
   xp: XpTracker;
+  hp: HpTracker;
+  killLog: KillLog;
+  mobs: MobKnowledgeStore;
   lookup: Lookup;
   /** Path to the debug log file. */
   logFile: string;
@@ -40,7 +45,7 @@ export interface IpcContext {
   watcher: LogWatcher;
 }
 
-export function registerIpc({ store, wiki, watcher, stats, combat, history, xp, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
+export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, killLog, mobs, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
   // ── shopping list ──
   ipcMain.handle(CH.listGet, () => store.getList());
   ipcMain.handle(CH.listAdd, (_e, input) => store.addEntry(input));
@@ -85,11 +90,6 @@ export function registerIpc({ store, wiki, watcher, stats, combat, history, xp, 
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
   ipcMain.handle(CH.zoneGet, () => getCurrentZone());
   ipcMain.handle(CH.locGet, () => getCurrentLoc());
-  ipcMain.handle(CH.statsGet, () => stats.snapshot());
-  ipcMain.handle(CH.statsReset, () => {
-    stats.reset(); // emits change → broadcast; also return the fresh snapshot to the caller
-    return stats.snapshot();
-  });
   ipcMain.handle(CH.combatGet, () => combat.snapshot());
   ipcMain.handle(CH.combatReset, () => {
     combat.reset();
@@ -102,6 +102,15 @@ export function registerIpc({ store, wiki, watcher, stats, combat, history, xp, 
   ipcMain.handle(CH.xpGet, () => xp.state());
   // The one figure the log can't give us, supplied by the player (see xp-progress.ts).
   ipcMain.handle(CH.xpSet, (_e, intoLevel: number, level?: number) => xp.set(intoLevel, level));
+  ipcMain.handle(CH.hpGet, () => hp.state());
+  ipcMain.handle(CH.hpSet, (_e, max: number) => hp.set(max));
+  ipcMain.handle(CH.hpSetRegen, (_e, perTick: number) => hp.setRegen(perTick));
+  ipcMain.handle(CH.killsAll, (_e, zone?: string) => killLog.kills(zone));
+  ipcMain.handle(CH.killsClear, () => killLog.clear());
+  ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
+  ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
+  ipcMain.handle(CH.mobsReport, (_e, by: string, observations: MobObservation[]) => mobs.report(by, observations));
+  ipcMain.handle(CH.mobsForgetPeers, () => mobs.forgetPeers());
   ipcMain.handle(CH.combatClearHistory, () => {
     history.clear();
     return history.sessions();

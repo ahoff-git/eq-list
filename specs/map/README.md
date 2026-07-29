@@ -79,6 +79,28 @@ trail) plotted on it, in a sibling window opened from the main window's 🗺 but
   defaults to the log's character name (`characterFromLogFile`). Peers/pings are
   filtered to the viewed zone. Bootstrap URL defaults to the live service, overridable
   in Settings.
+- **Mob knowledge** (the 📖 toolbar panel) — what killing things here has taught us:
+  **observed drop rates** (`count/kills` with the rate dimmed until the sample is worth
+  trusting) and **roam areas** (the middle of where a mob died and how far that spreads, with a
+  ±button that pins it on the map). Yours is derived from the kill log on demand;
+  peers' arrives over the room and is stored separately, so every figure can still say how much
+  of it you saw yourself. `src/shared/mob-stats.ts` does the rolling-up and the pooling; see
+  [ADR 0024](../decisions/0024-mob-knowledge.md).
+- **Kill heatmap** (the ☠ toolbar panel) — where kills happened, drawn from the recorded kill
+  log (`electron/kill-log.ts`). Each dot fades and shrinks with **confidence**, and carries the
+  marker from `src/shared/kill-confidence.ts` — the same glyph the kill list shows, so a faint
+  dot and its row agree. Anything below "approximate" isn't plotted at all: it stays in the
+  list, labelled, because an inferred position drawn like a measured one is worse than none.
+  Right-click a marker (or use Settings) to hide the markers.
+  The panel's filters — time window, mob, what dropped, dropped-anything, confidence floor —
+  come from `src/shared/kill-filters.ts` and are applied to **both** the map and the list, so
+  they're always the same query. Drops are attached to kills as the loot lines arrive, which
+  is what makes "only kills that dropped X" a filter rather than a search.
+  The **☣ toggle** shares your placed kills with the room (conclusion only: zone, position,
+  mob, confidence) **and** your mob observations (counts, so pooled rates are just addition) —
+  one intent, one switch. Peers' kills draw outlined rather than filled. See
+  [ADR 0023](../decisions/0023-kill-heatmap.md) and
+  [ADR 0024](../decisions/0024-mob-knowledge.md).
 - **Connected users** (the 👥 toolbar panel, when connected) — everyone in the room,
   whether or not they share anything: presence from awari's roster, names/zones from a
   `hello` payload, plus what each is sharing (location dot, pin count) and a button to

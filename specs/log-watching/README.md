@@ -6,13 +6,20 @@ where you are, and what's hitting what — so the store can tick shopping-list i
 as they drop and the damage meter can show how the fight went.
 
 ## Responsibilities
-- `src/shared/log-parser.ts` — a **pure** black box, one small parser per line type:
-  `parseLogLine` (loot: `--You have looted…--`, auto-sell, auto-store into a tradeskill
-  depot, loot-and-combine — each reporting a `qty`, since a line can report a stack),
-  `parseZoneLine` (`You have entered <zone>.`), `parseXpLine`
-  (`You gain [party] experience! (N%)`), `parseKillLine`
+- `src/shared/parse-line.ts` — **where text stops being text**. `splitLine` takes the
+  timestamp off once, `parseLine` runs the matchers in cost order (combat first) and returns
+  the single event a line produces, and every event carries a **`logId`** pointing back at
+  its line. Nothing downstream re-reads a string. Before this, each parser re-split every
+  line itself — up to seven times per line, which cost about as much as the whole parse does
+  now. See [ADR 0019](../decisions/0019-parse-once-and-one-tracker.md).
+- `src/shared/log-parser.ts` — a **pure** black box, one small matcher per line type
+  (each takes an already-split `LogLine`):
+  `parseLoot` (`--You have looted…--`, auto-sell, auto-store into a tradeskill depot,
+  loot-and-combine — each reporting a `qty`, since a line can report a stack),
+  `parseZone` (`You have entered <zone>.`), `parseXp`
+  (`You gain [party] experience! (N%)`), `parseKill`
   (`You have slain X` / `X has been slain by Y`; player death is ignored), and
-  `parseLevelLine` (`You have gained a level! Welcome to level N!` — EQL puts both halves
+  `parseLevel` (`You have gained a level! Welcome to level N!` — EQL puts both halves
   on one line, and the number is the only place the log states your level).
   Timestamps are kept as the log's naive local wall clock (no zone offset).
 - `src/shared/combat-parser.ts` — the same idea for combat, and the bulk of a real log:
@@ -21,7 +28,15 @@ as they drop and the damage meter can show how the fight went.
   **casting lifecycle** — `cast` (`You begin casting X`) and `spell-outcome`
   (fizzle / interrupted / resisted / blocked) — which is what makes cast times and resist
   rates measurable at all, plus your own `death` (`You have been slain by X!`, which
-  `parseKillLine` deliberately ignores). Names are canonicalized so one thing is one row: `You`/`YOU` →
+  `parseKill` deliberately ignores), `buff-faded` (`Your [pet's] X spell has worn off.` —
+  the pet flag matters, since a pet's buff can't change *your* totals), and the two combat
+  **modes**: `stance` (`You assume an evasive stance.`) and `invocation` (`You begin
+  reciting the empowering invocation.`). Only the *naming* line is usable — "You begin to
+  change your stance." doesn't say which — and the names aren't enumerated, which is how
+  "recovery" and "spellblade" showed up in real data without a code change. Modes matter
+  because they change multipliers *and* cast times; see
+  [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md).
+  Names are canonicalized so one thing is one row: `You`/`YOU` →
   `You`, articles folded, and a spell's trailing **rank** stripped (`spellName`), because
   EQL casts "Shock of Lightning VI" but damages "by Shock of Lightning". See
   [ADR 0014](../decisions/0014-damage-meter-from-the-log.md) and
@@ -33,33 +48,74 @@ as they drop and the damage meter can show how the fight went.
     Only the file present at start anchors at EOF (so launching mid-session skips old
     history); a log that *appears while watching* (new session, or `npm run sim`) is
     read from the top so nothing is missed.
-  - Emits `loot`, `zone`, `xp`, `kill`, `loc`, `combat`, and `status`; never parses
-    itself. Parsers are tried in `PARSERS` order — combat first, because it's most of
-    the file and every parser returns null for lines it doesn't own.
+  - Calls `parseLine` **once** per line and fans the result out by `event.kind`; the
+    combat kinds are also emitted together as `combat`, so the meter takes one
+    subscription. It never parses anything itself, and it numbers the lines it reads so
+    every event carries a `logId`.
 - `main.ts` tracks the current zone from `zone` events and broadcasts it (overlay /
-  status bar), feeds `xp`/`kill` into `session-stats.ts` and `combat` into
-  `combat-stats.ts` (coalesced before broadcast — a single poll can carry thousands of
-  combat lines).
-- `electron/session-stats.ts` — session XP/kill totals, attributing each XP gain to
-  the most recently killed mob (a time-windowed heuristic; EQ doesn't say which mob
-  gave XP). Emits a snapshot broadcast to the Session tab.
-- `electron/combat-stats.ts` — the damage meter's tracker: per-combatant damage dealt /
+  status bar) and feeds `xp`/`kill`/`combat` into `combat-stats.ts` — the single session
+  tracker — coalescing its snapshots before broadcast, since one poll can carry thousands
+  of combat lines.
+- `electron/combat-stats.ts` — **the** session tracker: experience-gain counts (solo /
+  party) and kills, each gain credited to the mob that died in the last 15s (a heuristic;
+  EQ never says which mob paid); per-combatant damage dealt /
   taken / healed, DPS over *active* combat time, max hit, accuracy and crits;
   **per-spell** casts / cast time / damage-per-second-of-casting / resist rate; and
   **per-mob** time-to-kill and experience rate, a per-second damage series, and a recap of
-  what was hitting you before each death — for the current fight and the session. It also
+  what was hitting you before each death — for the current fight and the session. Spells are
+  tallied **per invocation** and your melee **per stance**, since neither is comparable
+  across a mode change ([ADR 0020](../decisions/0020-split-by-stance-and-invocation.md));
+  the rows stay blended and the split is on hover. It also
   folds the two capitalizations EQ gives one name (`Obsolete model` / `obsolete model`)
-  into a single row, which needs memory a per-line parser doesn't have. See
-  [ADR 0017](../decisions/0017-camp-efficiency-and-asking-the-player.md).
+  into a single row, which needs memory a per-line parser doesn't have. Fights are
+  delimited by swings in **log time** (a >10s lull starts a new one), so a replayed log
+  meters exactly like a live one, and it keeps no past fights — it emits `fightEnd` and
+  stays memoryless. See
+  [ADR 0017](../decisions/0017-camp-efficiency-and-asking-the-player.md) and
+  [ADR 0019](../decisions/0019-parse-once-and-one-tracker.md).
+- `electron/hp-estimate.ts` — bounds on your **maximum hit points**, which the log never
+  states: the floor is damage you survived in one unhealed stretch, the ceiling is damage
+  that killed you from known-full health (an overheal on you, or a respawn). Heals, lulls,
+  buff fades and level-ups invalidate windows, and the killing blow never counts as
+  survived. Soft and overridable — see
+  [ADR 0018](../decisions/0018-inferred-max-hit-points.md).
 - `electron/xp-progress.ts` — percent into the current level: **the one figure the log
   can't give us**, so the player states it once, gains creep it forward, and a level-up
-  resets it. Kept in its own file (not settings) because it changes on every kill. Fights are delimited by swings in **log time** (a >10s
-  lull starts a new one), so a replayed log meters exactly like a live one. It keeps no
-  past fights: it emits `fightEnd` and stays memoryless.
+  resets it. Kept in its own file (not settings) because it changes on every kill, and it
+  deliberately outlives a session reset — it's player state, not a session tally.
 - `electron/combat-history.ts` — where finished fights go: a flat, bounded (1000) list on
   disk under userData, tagged by session, with sessions derived by grouping. Written as
   fights end (debounced) so a crash costs at most the fight in progress.
+- `electron/kill-log.ts` — where each kill happened and how much to believe it, plus what it
+  dropped (attached as the loot lines arrive). See
+  [ADR 0022](../decisions/0022-invocation-effects-and-kill-locations.md) and
+  [ADR 0023](../decisions/0023-kill-heatmap.md).
+- `electron/mob-knowledge.ts` — drop rates and roam areas rolled up from those kills, pooled
+  with peers' observations (stored apart from yours, always attributed). See
+  [ADR 0024](../decisions/0024-mob-knowledge.md).
 - Loot→list matching lives in the [store](../architecture/README.md), not here.
+
+## Invocation side-effects
+Two invocations do more than scale numbers, and both are now accounted for
+([ADR 0022](../decisions/0022-invocation-effects-and-kill-locations.md)):
+
+- **Divine** heals you off your own spell damage, and it **is** in the log — as a self-heal
+  with **no spell named**, immediately after a spell lands:
+  ```
+  You hit a coyote for 12 points of cold damage by Blast of Cold.
+  A coyote's skin goes numb.
+  You healed Kainos for 8 hit points.        ← no "by <spell>": the invocation's doing
+  ```
+  Every heal we *can* attribute names its spell (`… for 20 hit points by Inner Fire`), so the
+  absence is the signal. It's credited to the spell that triggered it (as `invocationHealed`,
+  kept apart from a heal spell's own healing) and counted into `Per mana`, because that's what
+  the mana bought. Measured on a real log: 242 health returned under divine.
+- **Spell Blade** can trigger a free cast. There is **no message for it** — searched a whole
+  log for one. The signature is a spell *landing with no cast in flight* **from a spell you
+  actually cast**: that last clause matters, because damage shields and buff procs are
+  castless by nature and counting them claimed 21 procs where the truth was closer to zero.
+  Rate is procs ÷ swings while the invocation is up. Still unvalidated against a real proc —
+  in the log to hand, spellblade was up for only 35 swings and nothing fired.
 
 ## Log format reference
 - Location (default): `C:\Users\Public\Daybreak Game Company\Installed Games\EverQuest Legends\Logs`
@@ -73,8 +129,9 @@ as they drop and the damage meter can show how the fight went.
 
 ## Non-responsibilities
 - Does not decide what counts as "wanted" — that's matching in the store.
-- Parses loot, zone, xp, kill, loc and combat lines today. Still out of scope:
-  faction hits, skill-ups, coin, spell casting/fizzles, and buff/debuff landings.
+- Parses loot, zone, xp, kill, level, loc and combat lines today (combat including casts,
+  spell outcomes, deaths, buff fades and mode changes). Still out of scope: faction hits,
+  skill-ups, coin, and buff/debuff *landings*.
 - Does not enable the EQ log itself — the user turns on logging in-game (`/log on`).
 
 ## See also

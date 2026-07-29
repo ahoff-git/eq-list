@@ -38,16 +38,19 @@
  */
 
 import type {
+  BuffFadedEvent,
   CastEvent,
   CombatEvent,
   DamageEvent,
   DeathEvent,
   HealEvent,
+  InvocationEvent,
   MissEvent,
+  StanceEvent,
   SpellOutcome,
   SpellOutcomeEvent,
+  LogLine,
 } from "./types";
-import { splitTimestamp } from "./log-parser";
 
 /** Canonical name for the logging player, whichever case the log used. */
 export const SELF = "You";
@@ -131,6 +134,21 @@ const CAST_RE = /^(?<caster>.+?) begins? casting (?<spell>.+?)\.$/;
  */
 const DEATH_RES = [/^You have been slain by (?<killer>.+?)!$/, /^You died\.$/];
 
+/**
+ * A buff expiring. Only *your own* matters to anything downstream (a pet's buff can't
+ * change your max hit points), so the pet form is captured and flagged rather than
+ * discarded.
+ */
+const FADE_RE = /^Your (?<pet>pet's )?(?<spell>.+?) spell has worn off\.$/;
+
+/**
+ * Your combat mode. The log announces the *change* first ("You begin to change your
+ * stance.") and then names the result — it's the naming line that matters, since only it
+ * says which mode is now in force.
+ */
+const STANCE_RE = /^You assume an? (?<stance>.+?) stance\.$/;
+const INVOCATION_RE = /^You begin reciting the (?<invocation>.+?) invocation\.$/;
+
 /** How a cast ended other than landing. Each resolves the cast in flight. */
 const OUTCOME_RES: [outcome: SpellOutcome, re: RegExp][] = [
   ["fizzle", /^Your (?<spell>.+?) spell fizzles!$/],
@@ -150,8 +168,15 @@ const OUTCOME_RES: [outcome: SpellOutcome, re: RegExp][] = [
  * trailing roman numeral makes both sides agree; the untouched line is still in `raw`.
  */
 export function spellName(name: string): string {
-  return name.trim().replace(/ [IVXL]+$/, "");
+  return name.trim().replace(RANK_RE, "");
 }
+
+/** The rank the cast line stated ("VI"), if any — the wiki keys its pages by it. */
+export function spellRank(name: string): string | undefined {
+  return name.trim().match(RANK_RE)?.[1];
+}
+
+const RANK_RE = / ([IVXL]+)$/;
 
 /** Reflexive heal/damage targets ("healed himself") resolve to the actor. */
 const REFLEXIVE = new Set(["himself", "herself", "itself", "themselves", "yourself", "myself"]);
@@ -172,21 +197,17 @@ export function combatant(name: string): string {
  * Parse one combat line. Returns null for the ~90% of log lines that aren't combat,
  * so callers can chain this with the other parsers cheaply.
  */
-export function parseCombatLine(line: string): CombatEvent | null {
-  const raw = line.trim();
-  if (!raw) return null;
-  const split = splitTimestamp(raw);
-  if (!split) return null; // combat lines always carry a timestamp
-  const { message, at } = split;
+export function parseCombat(line: LogLine): CombatEvent | null {
+  const { message, at, raw, logId } = line;
 
   const spell = message.match(SPELL_RE);
-  if (spell?.groups) return damage(spell.groups, at, raw, false);
+  if (spell?.groups) return damage(spell.groups, line, false);
 
   const melee = message.match(MELEE_RE);
-  if (melee?.groups) return damage(melee.groups, at, raw, true);
+  if (melee?.groups) return damage(melee.groups, line, true);
 
   const shield = message.match(SHIELD_RE);
-  if (shield?.groups) return damage(shield.groups, at, raw, false);
+  if (shield?.groups) return damage(shield.groups, line, false);
 
   const dot = message.match(DOT_FROM_RE) ?? message.match(DOT_BY_RE);
   if (dot?.groups) {
@@ -200,6 +221,7 @@ export function parseCombatLine(line: string): CombatEvent | null {
       melee: false,
       // Flagged so per-spell stats can tell one cast landing from its later ticks.
       tick: true,
+      logId,
       at,
       raw,
     } satisfies DamageEvent;
@@ -213,6 +235,7 @@ export function parseCombatLine(line: string): CombatEvent | null {
       target: combatant(miss.groups.target),
       verb: miss.groups.verb,
       qualifier: miss.groups.qualifier,
+      logId,
       at,
       raw,
     } satisfies MissEvent;
@@ -229,6 +252,7 @@ export function parseCombatLine(line: string): CombatEvent | null {
       amount: Number(heal.groups.amount),
       attempted: heal.groups.attempted ? Number(heal.groups.attempted) : undefined,
       spell: heal.groups.spell ? spellName(heal.groups.spell) : undefined,
+      logId,
       at,
       raw,
     } satisfies HealEvent;
@@ -241,9 +265,38 @@ export function parseCombatLine(line: string): CombatEvent | null {
       kind: "death",
       victim: SELF,
       killer: m.groups?.killer ? combatant(m.groups.killer) : undefined,
+      logId,
       at,
       raw,
     } satisfies DeathEvent;
+  }
+
+  const fade = message.match(FADE_RE);
+  if (fade?.groups) {
+    return {
+      kind: "buff-faded",
+      spell: spellName(fade.groups.spell),
+      pet: !!fade.groups.pet,
+      logId,
+      at,
+      raw,
+    } satisfies BuffFadedEvent;
+  }
+
+  const stance = message.match(STANCE_RE);
+  if (stance?.groups) {
+    return { kind: "stance", stance: stance.groups.stance, logId, at, raw } satisfies StanceEvent;
+  }
+
+  const invocation = message.match(INVOCATION_RE);
+  if (invocation?.groups) {
+    return {
+      kind: "invocation",
+      invocation: invocation.groups.invocation,
+      logId,
+      at,
+      raw,
+    } satisfies InvocationEvent;
   }
 
   const cast = message.match(CAST_RE);
@@ -252,6 +305,8 @@ export function parseCombatLine(line: string): CombatEvent | null {
       kind: "cast",
       caster: combatant(cast.groups.caster),
       spell: spellName(cast.groups.spell),
+      rank: spellRank(cast.groups.spell),
+      logId,
       at,
       raw,
     } satisfies CastEvent;
@@ -268,6 +323,7 @@ export function parseCombatLine(line: string): CombatEvent | null {
       spell: spellName(m.groups.spell),
       outcome,
       target: m.groups.target ? combatant(m.groups.target) : undefined,
+      logId,
       at,
       raw,
     } satisfies SpellOutcomeEvent;
@@ -277,7 +333,11 @@ export function parseCombatLine(line: string): CombatEvent | null {
 }
 
 /** Shared shape for the melee/spell/shield damage branches. */
-function damage(g: Record<string, string | undefined>, at: string, raw: string, melee: boolean): DamageEvent {
+function damage(
+  g: Record<string, string | undefined>,
+  line: LogLine,
+  melee: boolean,
+): DamageEvent {
   return {
     kind: "damage",
     attacker: combatant(g.attacker ?? ""),
@@ -289,7 +349,8 @@ function damage(g: Record<string, string | undefined>, at: string, raw: string, 
     damageType: g.type,
     qualifier: g.qualifier,
     melee,
-    at,
-    raw,
+    logId: line.logId,
+    at: line.at,
+    raw: line.raw,
   };
 }

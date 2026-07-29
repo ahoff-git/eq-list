@@ -14,9 +14,11 @@ in the main process and all UI in the renderer.
     front (each at its own **native** resolution, so differing monitor resolutions
     aren't stretched/distorted), shows a per-monitor transparent selector; the crop
     is OCR'd (Tesseract.js) and the text is routed into the control window's Search box.
-  - `session-stats.ts` — session XP/kill tracking; `combat-stats.ts` — the damage meter's
-    per-combatant and per-spell tallies; `combat-history.ts` — finished fights persisted
-    for later (all three see [log-watching](../log-watching/README.md)).
+  - `combat-stats.ts` — the one session tracker: experience/kill counters, per-combatant
+    and per-spell tallies, per-mob rates; `combat-history.ts` — finished fights persisted
+    for later; `xp-progress.ts` / `hp-estimate.ts` — persistent player state that outlives
+    a session reset (all see [log-watching](../log-watching/README.md)).
+    See [ADR 0019](../decisions/0019-parse-once-and-one-tracker.md).
   - `windows.ts` — the framed control window and the frameless transparent overlay.
     Windows show without stealing focus (overlay uses `showInactive`); DevTools open
     only when `EQL_DEVTOOLS` is set. Each window's renderer console is piped into the
@@ -39,8 +41,10 @@ in the main process and all UI in the renderer.
   and overlay (`overlay/page.tsx`). It never imports Node/Electron — it only calls
   the typed `window.eql` bridge.
 - **Shared** (`src/shared/`) is framework-agnostic code imported by both sides:
-  `types.ts` (the IPC contract), `ipc-channels.ts`, `logging.ts`, `log-parser.ts`,
-  `combat-parser.ts`.
+  `types.ts` (the IPC contract), `ipc-channels.ts`, `logging.ts`, and the log pipeline —
+  `log-parser.ts` (which owns the one place a raw line is split), `combat-parser.ts`, and
+  `parse-line.ts`, the single-pass dispatcher every line goes through exactly once
+  ([ADR 0019](../decisions/0019-parse-once-and-one-tracker.md)).
 
 ## Data flow
 - Renderer → main: `window.eql.*` → `ipcRenderer.invoke` → `ipcMain.handle` → store/wiki/watcher.

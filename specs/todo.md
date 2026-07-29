@@ -70,23 +70,93 @@ _Distribution wiring:_
 - **Code signing (optional).** Builds are unsigned → Windows SmartScreen warns "unknown
   publisher". Needs a cert (`CSC_LINK`/`CSC_KEY_PASSWORD` secrets) wired into the workflow.
 
-_UI:_
+_Ready to build (decided, not started):_
 
+- **Damage per mana.** eqlwiki states a spell's mana cost — verified, `Mana 7` in
+  `fixtures/wiki/spell-burst-of-fire.html` — so this is a wiki lookup, not OCR. One
+  wrinkle: cost is per *rank*, and `spellName()` strips the rank to make cast and damage
+  lines agree, so the rank needs carrying alongside the canonical name (it's still in `raw`).
+- **Fold `session-stats.ts` into `combat-stats.ts`.** Two main-process modules watch the
+  log and count experience and kills; the combat tracker needs about five lines (gain
+  count, solo/party split) to be a strict superset. Retires a module and its test, fixes
+  the Session tab counting the pet's own death as a kill, and removes the split that
+  already caused one bug — two "reset" buttons that meant different things, now papered
+  over by `resetSession()`.
 - **Text-size +/− buttons.** Not everyone wants the same size text. `overlay.fontScale`
   (0.8–1.6) already exists in settings and is applied by the renderer — this is about
   putting +/− controls somewhere obvious (titlebar next to the opacity toggle?) instead of
   only a Settings slider.
 
+_Next up:_
+
+- **Mark undocumented drops in the mob panel too.** The Hunt tab now reconciles wiki claims
+  against your kills ([ADR 0025](./decisions/0025-observation-over-the-wiki.md)); the 📖 panel
+  shows observed rates but doesn't yet say which of them the wiki has never heard of. Same
+  module, one more lookup.
+- **A "what this build changed" list.** Undocumented drops are the app discovering things no
+  reference knows. Pooled across the room that's a genuinely new dataset — worth surfacing
+  somewhere deliberate rather than only per mob.
+
 _To discuss:_
 
-- **OCR beyond item lookup.** The app already ships Tesseract for the screengrab item
-  lookup (`electron/ocr.ts`, `electron/lookup.ts`), so reading numbers off the game UI is
-  plausible — the obvious candidates are the **experience bar** (which would remove the
-  one figure we have to ask the player for, see
-  [ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md)) and **HP/mana**,
-  which would unlock "how close was that" and damage-per-mana. Worth a conversation first:
-  it needs a user-calibrated screen region per UI layout, it's fragile across resolutions
-  and UI mods, and a wrong number read confidently is worse than a blank. Decide whether
-  it's opt-in calibration or not worth the fragility.
-- Create a reusable feature that lets the overlay ask the user for information, then uses that info in calculations.
-- Feature from EQ-Map to create a kill heatmap. Can use the above feature to request the user call /loc to record the location of the kill 
+- **OCR beyond item lookup — mostly settled.** Ruled out for the **experience bar** (the
+  log's gains plus a level-up baseline already solve it exactly, see
+  [ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md)) and for **mana
+  cost** (the wiki has it, above). **Health** is now *inferred* from what you survive and
+  what kills you ([ADR 0018](./decisions/0018-inferred-max-hit-points.md)), so the only
+  remaining prize is a live health *trace* rather than a maximum — worth deciding whether
+  that's wanted, given it needs a user-calibrated screen region per UI layout, is fragile
+  across resolutions and UI mods, may capture nothing in exclusive fullscreen, and a
+  confidently wrong reading is worse than a blank.
+- **Ask-the-user, applied elsewhere.** `AskValue` +
+  [ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md) established the
+  pattern (hover for why, click to fill in) and it now backs two figures: experience into
+  the level, and maximum health. Worth a look for other gaps — resist rate targets? gear
+  goals? — rather than inventing new one-off inputs.
+- **Kill heatmap (from eq-map) — decided, not built.** Plot kills on the zone map, honest
+  about the fact that it can only be as accurate as the player is. Agreed design:
+  - Stamp each kill with the last `/loc`, the zone, and **how old that location was**.
+  - **Confidence decays with staleness**: full weight when fresh, and past about a minute
+    stop trusting the position — record the kill regardless, but plot it faintly or not at
+    all, and say why.
+  - A fresh `/loc` **restores** confidence retroactively: a player can only travel so far so
+    fast, so a new fix close to the old one supports the kills in between; a distant one says
+    they moved and those positions were guesses.
+  - **Interpolate between the last two fixes** when both are known — position, elapsed time
+    and the implied speed give a dead-reckoned guess for anything in between. It is a guess
+    and must be labelled one; a kill logged while apparently moving is much weaker evidence
+    than one logged while parked.
+  - **Record generously, decide the visuals later**: store the position, both fixes, the
+    ages, the implied speed and a confidence figure per kill. It's cheap, and it means the
+    display can be reworked without re-collecting anything.
+
+  **Built** — recording, the confidence marker, the filtered map layer, the kill list and
+  peer sharing all ship ([ADR 0023](./decisions/0023-kill-heatmap.md)). What's left:
+  - **The `/loc` nag.** This is now the load-bearing piece: a real log yielded 132 kills but
+    only one position worth believing, because `/loc` was sent five times in an evening. Ask
+    for one when the camp looks to have changed (the `AskValue` pattern fits), and the map
+    fills in.
+  - **Retro-scoring.** Confidence is fixed when the kill is recorded, but the evidence is
+    stored — a later `/loc` close to the earlier one could raise confidence for the kills in
+    between, which is exactly the "they can only go so far so fast" argument.
+  - **Spawn points, not just roam areas.** A roam area is the centroid and spread of where a
+    mob died. With enough fixes, clusters would separate individual spawn points from a
+    wandering path — the data is already stored, this is an analysis question.
+- **Setting: split the meter by mode by default.** The per-stance / per-invocation data is
+  already tracked and shown on hover
+  ([ADR 0020](./decisions/0020-split-by-stance-and-invocation.md)). Some players will want
+  those as real rows all the time — a Settings toggle, no new data needed.
+- **Loot tab — agreed, not built.** The latest drops and what became of each (kept, into a
+  bag, into the tradeskill depot, auto-sold — the log distinguishes all four, see
+  `src/shared/log-parser.ts`), with the same hover detail the List tab gives. Mostly a new
+  panel over the existing loot feed; `LootEvent` already carries `qty` and the source.
+  **Highlighting is wanted** — but it needs filters and an **ignore list** to be usable, so
+  the first cut highlights what's on your shopping list (free, already known) and the
+  broader rule ("used by a quest in my level range in this zone") comes with the filters.
+
+_Recently settled (kept only as pointers):_
+
+- Parse-once pipeline and the single session tracker shipped — see
+  [ADR 0019](./decisions/0019-parse-once-and-one-tracker.md).
+
+- Need to let the user know if a new version of the app is available and provide a link to it.

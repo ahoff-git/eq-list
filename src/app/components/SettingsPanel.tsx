@@ -93,6 +93,16 @@ export default function SettingsPanel() {
         checked={settings.overlay.followZone}
         onChange={(v) => patch({ overlay: { followZone: v } })}
       />
+      <Toggle
+        label="Damage meter: split spells by invocation as rows (not just on hover)"
+        checked={settings.overlay.splitByMode}
+        onChange={(v) => patch({ overlay: { splitByMode: v } })}
+      />
+      <Toggle
+        label="Map: mark how trustworthy each kill's position is (right-click a marker to hide)"
+        checked={settings.overlay.showKillConfidence}
+        onChange={(v) => patch({ overlay: { showKillConfidence: v } })}
+      />
 
       <Toggle
         label="Connect to the peer-to-peer network"

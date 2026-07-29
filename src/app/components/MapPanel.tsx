@@ -5,6 +5,20 @@ import { eqToCanvasCoords, canvasToEqCoords } from "@/shared/map/coords";
 import { clearCanvas, drawImageScaled, drawLine, drawCircle } from "@/lib/map/draw";
 import type { Loc, Point, Zone } from "@/shared/map/types";
 
+/**
+ * A kill to plot. `confidence` fades and shrinks it, and `glyph`/`color` come from the
+ * shared confidence vocabulary so the map and the kill list say the same thing.
+ */
+export interface RenderKill {
+  y: number;
+  x: number;
+  confidence: number;
+  glyph: string;
+  color: string;
+  /** Someone else's kill, shared over the room — drawn hollow so it reads as theirs. */
+  peer?: string;
+}
+
 /** A pin resolved for drawing (the parent maps `MapPin` → this via the palette). */
 export interface RenderPin {
   id: string;
@@ -63,6 +77,8 @@ const MAP_COLORS = {
 export default function MapPanel({
   zone,
   redrawKey,
+  kills = [],
+  showKillConfidence = true,
   trail = [],
   peers = [],
   pings = [],
@@ -77,6 +93,10 @@ export default function MapPanel({
 }: {
   zone: Zone | undefined;
   redrawKey?: number;
+  /** Recorded kills for this zone — the heatmap layer. */
+  kills?: RenderKill[];
+  /** Draw the little confidence glyph on each kill. */
+  showKillConfidence?: boolean;
   /** The `/loc` trail, oldest→newest (owned by the parent so it can be cleared). */
   trail?: { y: number; x: number }[];
   peers?: { y: number; x: number }[];
@@ -208,6 +228,36 @@ export default function MapPanel({
       }
     }
 
+    // Kills go down first: they're history, and everything live belongs on top of them.
+    // Confidence drives both size and opacity, so a guess is visibly a guess.
+    for (const kill of kills) {
+      const p = toScreen(kill);
+      if (!p) continue;
+      const weight = Math.max(0.15, kill.confidence);
+      ctx.save();
+      ctx.globalAlpha = 0.15 + weight * 0.45;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4 + weight * 8, 0, 2 * Math.PI);
+      ctx.fillStyle = kill.color;
+      ctx.fill();
+      if (kill.peer) {
+        // Someone else's: outlined rather than filled, so a shared heatmap stays legible.
+        ctx.globalAlpha = 0.7;
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = kill.color;
+        ctx.stroke();
+      }
+      if (showKillConfidence) {
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = kill.color;
+        ctx.font = "10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(kill.glyph, p.x, p.y);
+      }
+      ctx.restore();
+    }
+
     for (let i = 1; i < trail.length; i++) {
       const a = toScreen(trail[i - 1]);
       const b = toScreen(trail[i]);
@@ -270,7 +320,7 @@ export default function MapPanel({
       }
     }
     ctx.textBaseline = "alphabetic";
-  }, [loc, trail, peers, pings, pins, zone, side, redrawKey, showGrid, toScreen, frame]);
+  }, [loc, trail, peers, pings, pins, kills, showKillConfidence, zone, side, redrawKey, showGrid, toScreen, frame]);
 
   /** Screen point (within the canvas) → EQ coordinate, inverting the view. */
   function eqAt(e: React.MouseEvent<HTMLDivElement>): Loc | undefined {

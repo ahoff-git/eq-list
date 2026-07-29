@@ -44,6 +44,8 @@ const DEFAULT_SETTINGS: Settings = {
     fontScale: 1,
     showObtained: true,
     followZone: false,
+    splitByMode: false,
+    showKillConfidence: true,
   },
   debug: false,
 };

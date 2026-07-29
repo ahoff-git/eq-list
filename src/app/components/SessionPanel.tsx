@@ -1,6 +1,6 @@
 "use client";
-import { useCombatStats, useSessionStats, useXpProgress } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import { useCombatStats, useXpProgress } from "@/lib/hooks";
+import { api, resetSession } from "@/lib/api";
 import AskValue from "./AskValue";
 import CampReport from "./CampReport";
 import type { FightStats, XpProgress } from "@/shared/types";
@@ -14,7 +14,6 @@ import type { FightStats, XpProgress } from "@/shared/types";
  * downtime that decides an evening's real experience rate.
  */
 export default function SessionPanel() {
-  const stats = useSessionStats();
   const combat = useCombatStats();
   const xp = useXpProgress();
   const session = combat.session;
@@ -25,9 +24,9 @@ export default function SessionPanel() {
   return (
     <div>
       <div className="row" style={{ marginBottom: 12 }}>
-        <span className="muted small">Since {startedLabel(stats.startedAt)}</span>
+        <span className="muted small">Since {startedLabel(combat.startedAt)}</span>
         <span className="spacer" />
-        <button className="btn ghost sm" onClick={() => api()?.stats.reset()}>
+        <button className="btn ghost sm" onClick={resetSession} title="Clear the counters and the damage meter (recorded fights are kept)">
           Reset session
         </button>
       </div>
@@ -44,12 +43,12 @@ export default function SessionPanel() {
           value={session.spanSec ? `${Math.round((downtimeSec / session.spanSec) * 100)}%` : "—"}
           hint={`${fmtDuration(downtimeSec)} not fighting, of ${fmtDuration(session.spanSec)} elapsed`}
         />
-        <StatTile label="Kills" value={session.kills || stats.kills} />
+        <StatTile label="Kills" value={session.kills} />
       </div>
 
       <div className="stat-row">
-        <StatTile label="XP gains" value={stats.totalXp} />
-        <StatTile label="Solo / Party" value={`${stats.soloXp} / ${stats.partyXp}`} />
+        <StatTile label="XP gains" value={session.xpGains} />
+        <StatTile label="Solo / Party" value={`${session.soloXp} / ${session.partyXp}`} />
         <StatTile label="XP earned" value={session.xpPct ? `${session.xpPct}%` : "—"} hint="Percent of a level earned this session" />
         <StatTile
           label="Level"

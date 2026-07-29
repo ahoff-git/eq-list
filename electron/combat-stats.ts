@@ -17,6 +17,7 @@ import { EventEmitter } from "node:events";
 import { SELF } from "../src/shared/combat-parser";
 import type {
   CombatEvent,
+  XpEvent,
   CombatStats,
   CombatantStat,
   DeathRecap,
@@ -42,6 +43,16 @@ const XP_ATTRIBUTION_MS = 15_000;
 const DEATH_WINDOW_MS = 15_000;
 const MAX_DEATHS = 5;
 
+/**
+ * How soon after your own spell lands an unattributed self-heal is taken to be the
+ * invocation's doing. The log puts them back to back, so this is deliberately tight — a
+ * wider window would start swallowing other people's unattributed heals.
+ */
+const INVOCATION_HEAL_MS = 3000;
+
+/** Used until the log has told us which stance/invocation is active. */
+const UNKNOWN_MODE = "unknown";
+
 /** Cap the per-second sparkline so one endless fight can't grow without bound. */
 const MAX_BUCKETS = 900;
 
@@ -64,8 +75,11 @@ export interface CombatTracker {
   flush(): void;
   /** A mob died. Feeds time-to-kill and experience attribution. */
   recordKill(mob: string, at: string): void;
-  /** An experience gain, credited to the most recent kill. */
-  recordXp(pct: number, at: string): void;
+  /**
+   * An experience gain: counted, credited to the most recent kill, and split solo/party.
+   * Takes the parsed event so the tracker isn't handed loose numbers to re-interpret.
+   */
+  recordXp(event: XpEvent): void;
   /** The zone the player is in, stamped onto fights as they're filed. */
   setZone(zone: string | null): void;
   zone(): string | null;
@@ -85,6 +99,8 @@ interface Tally {
   lastAt: number;
   /** Time actually spent fighting (gaps longer than the idle window don't count). */
   activeMs: number;
+  /** Your melee under each stance — empty for combatants whose stance we can't know. */
+  byStance: Map<string, ModeTally>;
 }
 
 /** Parse a naive-local (or ISO) timestamp to ms; NaN-safe. */
@@ -94,7 +110,10 @@ function ms(at: string): number {
 }
 
 function emptyTally(): Tally {
-  return { dealt: 0, taken: 0, healed: 0, hits: 0, misses: 0, crits: 0, maxHit: 0, firstAt: 0, lastAt: 0, activeMs: 0 };
+  return {
+    dealt: 0, taken: 0, healed: 0, hits: 0, misses: 0, crits: 0, maxHit: 0,
+    firstAt: 0, lastAt: 0, activeMs: 0, byStance: new Map(),
+  };
 }
 
 /**
@@ -102,7 +121,52 @@ function emptyTally(): Tally {
  * are tracked: this table exists to answer "which of my spells earn their cast time",
  * and other people's spell damage already shows in their combatant row.
  */
+/** A spell's numbers under one invocation (or melee's under one stance). */
+interface ModeTally {
+  casts: number;
+  lands: number;
+  damage: number;
+  healed: number;
+  castMs: number;
+  timed: number;
+  hits: number;
+  misses: number;
+  maxHit: number;
+  /** Healing the invocation granted off this spell's damage. */
+  invocationHealed: number;
+  /** Landings with no cast in flight — presumed free casts. */
+  procs: number;
+  procDamage: number;
+}
+
+function emptyMode(): ModeTally {
+  return {
+    casts: 0, lands: 0, damage: 0, healed: 0, castMs: 0, timed: 0, hits: 0, misses: 0,
+    maxHit: 0, invocationHealed: 0, procs: 0, procDamage: 0,
+  };
+}
+
+/** Per-invocation totals that aren't about one spell (see `InvocationSummary`). */
+interface InvocationTally {
+  swings: number;
+  procs: number;
+  procDamage: number;
+  healed: number;
+}
+
+function emptyInvocation(): InvocationTally {
+  return { swings: 0, procs: 0, procDamage: 0, healed: 0 };
+}
+
+/** Fetch-or-create a per-mode tally inside a map keyed by mode name. */
+function modeTally(modes: Map<string, ModeTally>, mode: string): ModeTally {
+  let t = modes.get(mode);
+  if (!t) modes.set(mode, (t = emptyMode()));
+  return t;
+}
+
 interface SpellTally {
+  rank?: string;
   casts: number;
   lands: number;
   ticks: number;
@@ -117,8 +181,12 @@ interface SpellTally {
   castMs: number;
   timed: number;
   overhealed: number;
+  /** Healing the invocation granted off this spell's damage (divine's doing). */
+  invocationHealed: number;
   /** Who resisted it — resist rates vary enormously between mobs. */
   resistedBy: Map<string, number>;
+  /** The same spell under each invocation — the numbers above are the blend. */
+  byInvocation: Map<string, ModeTally>;
 }
 
 /** Mutable per-mob tallies: how long its kills took and what they paid. */
@@ -136,7 +204,9 @@ function emptySpell(): SpellTally {
   return {
     casts: 0, lands: 0, ticks: 0, fizzles: 0, interrupts: 0, resists: 0, blocked: 0,
     damage: 0, healed: 0, maxHit: 0, castMs: 0, timed: 0, overhealed: 0,
+    invocationHealed: 0,
     resistedBy: new Map(),
+    byInvocation: new Map(),
   };
 }
 
@@ -156,11 +226,14 @@ function createWindow() {
   const tallies = new Map<string, Tally>();
   const spells = new Map<string, SpellTally>();
   const mobs = new Map<string, MobTally>();
+  const invocations = new Map<string, InvocationTally>();
   const span = { firstAt: 0, lastAt: 0, activeMs: 0 };
   /** Your damage per second of the window, indexed from its first damage. */
   const buckets: number[] = [];
   const deaths: DeathRecap[] = [];
-  const totals = { kills: 0, xpPct: 0 };
+  const totals = { kills: 0, xpPct: 0, xpGains: 0, soloXp: 0, partyXp: 0 };
+  /** The span of log lines this window was built from (see `FightStats.logIds`). */
+  const lines = { from: 0, to: 0 };
 
   const tally = (name: string): Tally => {
     let t = tallies.get(name);
@@ -180,11 +253,24 @@ function createWindow() {
     return t;
   };
 
+  const invocationTally = (name: string): InvocationTally => {
+    let t = invocations.get(name);
+    if (!t) invocations.set(name, (t = emptyInvocation()));
+    return t;
+  };
+
   return {
     span,
     totals,
     buckets,
     deaths,
+    lines,
+    /** Widen the window's line range — cheap, and it's the way back to the source. */
+    note(logId: number) {
+      if (!logId) return;
+      if (!lines.from) lines.from = logId;
+      lines.to = logId;
+    },
     /** Add your damage into the second-bucket it landed in (for the sparkline). */
     bucket(at: number, amount: number) {
       if (!span.firstAt) return;
@@ -205,6 +291,8 @@ function createWindow() {
     spells,
     mob,
     mobs,
+    invocationTally,
+    invocations,
   };
 }
 
@@ -227,6 +315,28 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   const incoming: { at: number; source: string; amount: number }[] = [];
   /** First-seen spelling of each name, keyed lowercase (see `canon`). */
   const names = new Map<string, string>();
+  /**
+   * The stance and invocation currently in force. They change damage multipliers and cast
+   * times, so every tally is filed under whichever was active — a blended average across
+   * a stance change describes a character who never existed.
+   */
+  let stance = UNKNOWN_MODE;
+  let invocation = UNKNOWN_MODE;
+  /**
+   * Your last spell landing. An unattributed self-heal right after one is the invocation
+   * healing you off the damage (divine's doing) — the log gives no other clue: every heal we
+   * *can* attribute names its spell, so the absence is the signal.
+   */
+  let lastLanding: { spell: string; at: number } | null = null;
+  /** Set when a landing arrived with no cast in flight — the free-cast signature. */
+  let unpairedLanding = false;
+  /**
+   * Spells you have actually been seen casting. A free cast is a spell **you can cast**
+   * arriving without one — so this is what separates it from the things that never have a
+   * cast at all: damage shields ("flames") and buff procs ("Spirit of Lightning Strike")
+   * are castless by nature and would otherwise every single one read as a free cast.
+   */
+  const castRepertoire = new Set<string>();
   let currentZone: string | null = null;
 
   /**
@@ -247,9 +357,18 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     return name;
   };
 
-  /** True for you and anything of yours ("Kainos`s warder", "Kainos`s pet"). */
-  const isMine = (name: string): boolean =>
-    name === SELF || (!!player && name.toLowerCase().startsWith(`${player.toLowerCase()}\``));
+  /**
+   * True for you and anything of yours. The log writes you three ways and all three are
+   * you: **"You"** when you act, your **character name** when a message names you ("You
+   * healed Kainos for 8 hit points"), and **"<Name>`s warder"** for a pet.
+   */
+  const isMine = (name: string): boolean => {
+    if (name === SELF) return true;
+    if (!player) return false;
+    const lower = name.toLowerCase();
+    const me = player.toLowerCase();
+    return lower === me || lower.startsWith(`${me}\``);
+  };
 
   const row = (name: string, t: Tally): CombatantStat => {
     const activeSec = Math.max(1, Math.round(t.activeMs / 1000));
@@ -265,6 +384,15 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       activeSec,
       dps: Math.round((t.dealt / activeSec) * 10) / 10,
       mine: isMine(name),
+      byStance: [...t.byStance.entries()]
+        .map(([stanceName, m]) => ({
+          stance: stanceName,
+          damage: m.damage,
+          hits: m.hits,
+          misses: m.misses,
+          maxHit: m.maxHit,
+        }))
+        .sort((a, b) => b.damage - a.damage),
     };
   };
 
@@ -273,6 +401,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     const completed = t.lands + t.resists + t.blocked;
     return {
       spell,
+      rank: t.rank,
       casts: t.casts,
       lands: t.lands,
       ticks: t.ticks,
@@ -292,9 +421,27 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       dpc: t.lands && avgCastSec ? Math.round((t.damage / t.lands / avgCastSec) * 10) / 10 : 0,
       resistRate: completed ? Math.round((t.resists / completed) * 100) / 100 : 0,
       overhealed: t.overhealed,
+      invocationHealed: t.invocationHealed,
       resistedBy: [...t.resistedBy.entries()]
         .map(([target, count]) => ({ target, count }))
         .sort((a, b) => b.count - a.count || a.target.localeCompare(b.target)),
+      byInvocation: [...t.byInvocation.entries()]
+        .map(([mode, m]) => {
+          const modeCastSec = m.timed ? Math.round((m.castMs / m.timed / 1000) * 100) / 100 : 0;
+          return {
+            mode,
+            casts: m.casts,
+            lands: m.lands,
+            damage: m.damage,
+            healed: m.healed,
+            avgCastSec: modeCastSec,
+            dpc: m.lands && modeCastSec ? Math.round((m.damage / m.lands / modeCastSec) * 10) / 10 : 0,
+            invocationHealed: m.invocationHealed,
+            procs: m.procs,
+            procDamage: m.procDamage,
+          };
+        })
+        .sort((a, b) => b.damage - a.damage || b.casts - a.casts),
     };
   };
 
@@ -331,8 +478,22 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         .sort((a, b) => b.xpPerMin - a.xpPerMin || b.kills - a.kills || a.mob.localeCompare(b.mob)),
       kills: w.totals.kills,
       xpPct: Math.round(w.totals.xpPct * 1000) / 1000,
+      xpGains: w.totals.xpGains,
+      soloXp: w.totals.soloXp,
+      partyXp: w.totals.partyXp,
       yourPerSec: [...w.buckets],
       deaths: [...w.deaths],
+      logIds: w.lines.from ? { ...w.lines } : undefined,
+      invocations: [...w.invocations.entries()]
+        .map(([mode, t]) => ({
+          mode,
+          swings: t.swings,
+          procs: t.procs,
+          procDamage: t.procDamage,
+          procRate: t.swings ? Math.round((t.procs / t.swings) * 1000) / 1000 : 0,
+          healed: t.healed,
+        }))
+        .sort((a, b) => b.procs - a.procs || b.swings - a.swings),
     };
   };
 
@@ -364,40 +525,94 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         if (isMine(event.attacker)) w.bucket(at, event.amount);
         if (event.spell && isMine(canon(event.attacker))) {
           const sp = w.spell(event.spell);
+          const mode = modeTally(sp.byInvocation, invocation);
           sp.damage += event.amount;
+          mode.damage += event.amount;
           if (event.tick) {
             sp.ticks += 1;
           } else {
             sp.lands += 1;
+            mode.lands += 1;
             sp.maxHit = Math.max(sp.maxHit, event.amount);
+            mode.maxHit = Math.max(mode.maxHit, event.amount);
           }
           if (castMs) {
             sp.castMs += castMs;
             sp.timed += 1;
+            mode.castMs += castMs;
+            mode.timed += 1;
           }
+          // A landing with nothing in flight, from a spell you *do* cast, had no cast of
+          // its own — the signature of a free cast (Spell Blade grants them silently).
+          // Ticks are excluded upstream; castless sources are excluded by the repertoire.
+          if (unpairedLanding && !event.tick && castRepertoire.has(event.spell)) {
+            mode.procs += 1;
+            mode.procDamage += event.amount;
+            const inv = w.invocationTally(invocation);
+            inv.procs += 1;
+            inv.procDamage += event.amount;
+          }
+        } else if (event.melee && isMine(canon(event.attacker))) {
+          // Melee is the stance's business — the multipliers live there.
+          const m = modeTally(a.byStance, stance);
+          m.damage += event.amount;
+          m.hits += 1;
+          m.maxHit = Math.max(m.maxHit, event.amount);
+          // Free casts trigger off attacks, so swings are the denominator for their rate.
+          w.invocationTally(invocation).swings += 1;
         }
         break;
       }
-      case "miss":
-        w.tally(canon(event.attacker)).misses += 1;
+      case "miss": {
+        const attacker = canon(event.attacker);
+        const t = w.tally(attacker);
+        t.misses += 1;
+        if (isMine(attacker)) {
+          modeTally(t.byStance, stance).misses += 1;
+          w.invocationTally(invocation).swings += 1; // a swing either way
+        }
         break;
+      }
       case "heal": {
         w.tally(canon(event.healer)).healed += event.amount;
         if (event.spell && isMine(event.healer)) {
           const sp = w.spell(event.spell);
+          const mode = modeTally(sp.byInvocation, invocation);
           sp.healed += event.amount;
+          mode.healed += event.amount;
           sp.lands += 1;
+          mode.lands += 1;
+          if (castMs) {
+            mode.castMs += castMs;
+            mode.timed += 1;
+          }
           if (event.attempted) sp.overhealed += Math.max(0, event.attempted - event.amount);
           if (castMs) {
             sp.castMs += castMs;
             sp.timed += 1;
           }
+        } else if (!event.spell && isMine(event.healer) && isMine(event.target) && lastLanding) {
+          // No spell named, healing yourself, moments after your own spell landed: the
+          // invocation converting damage into health. Credited to the spell that triggered
+          // it and to the invocation, so the mana's *whole* return is visible.
+          if (at - lastLanding.at <= INVOCATION_HEAL_MS) {
+            const sp = w.spell(lastLanding.spell);
+            sp.invocationHealed += event.amount;
+            modeTally(sp.byInvocation, invocation).invocationHealed += event.amount;
+            w.invocationTally(invocation).healed += event.amount;
+          }
         }
         break;
       }
-      case "cast":
-        if (isMine(event.caster)) w.spell(event.spell).casts += 1;
+      case "cast": {
+        if (!isMine(event.caster)) break;
+        castRepertoire.add(event.spell);
+        const sp = w.spell(event.spell);
+        sp.casts += 1;
+        modeTally(sp.byInvocation, invocation).casts += 1;
+        if (event.rank) sp.rank = event.rank;
         break;
+      }
       case "spell-outcome": {
         if (!isMine(event.caster)) break;
         const sp = w.spell(event.spell);
@@ -413,8 +628,11 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         break;
       }
       case "death":
-        // Recorded via `recordDeath` (it needs the rolling incoming-damage buffer, which
-        // lives outside any one window).
+      case "stance":
+      case "invocation":
+        // Deaths go through `recordDeath` (they need the rolling incoming-damage buffer,
+        // which lives outside any one window); mode changes are tracked on the tracker
+        // itself, not inside a window, since they persist across fights.
         break;
     }
   }
@@ -476,13 +694,30 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       if (!at) return;
       const stale = !!lastCombatAt && at - lastCombatAt > FIGHT_IDLE_MS;
 
+      if (event.kind === "stance") {
+        stance = event.stance;
+        return void emit();
+      }
+      if (event.kind === "invocation") {
+        invocation = event.invocation;
+        return void emit();
+      }
+
       if (event.kind === "cast") {
         pending = isMine(event.caster) ? { caster: event.caster, spell: event.spell, at } : pending;
       } else if (event.kind === "spell-outcome" && pending?.spell === event.spell) {
         pending = null; // fizzled / interrupted / resisted — nothing will land
       }
       // A tick is not a fresh cast landing, so it must not consume the pending cast.
+      const hadPending = !!pending;
       const castMs = event.kind === "damage" && event.tick ? 0 : pairCast(event, at);
+      // Nothing was in flight, so this landing had no cast of its own. Distinct from "the
+      // cast was too old to pair", which `pairCast` also reports as 0.
+      unpairedLanding = !hadPending;
+
+      if (event.kind === "damage" && !event.tick && event.spell && isMine(canon(event.attacker))) {
+        lastLanding = { spell: event.spell, at };
+      }
 
       if (event.kind === "damage" && isMine(canon(event.target))) {
         incoming.push({ at, source: canon(event.attacker), amount: event.amount });
@@ -515,6 +750,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         apply(fight, event, at, castMs);
       }
       apply(session, event, at, castMs);
+      fight.note(event.logId);
+      session.note(event.logId);
       emit();
     },
     setPlayer(name) {
@@ -548,11 +785,21 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       emit();
     },
 
-    /** Experience, credited to the mob that just died (as the Session tab does). */
-    recordXp(pct, atIso) {
-      const at = ms(atIso);
-      for (const w of [fight, session]) w.totals.xpPct += pct;
-      if (lastKill && at - lastKill.at >= -2000 && at - lastKill.at < XP_ATTRIBUTION_MS) {
+    /**
+     * Experience. Counted, split solo/party, and credited to the mob that died in the
+     * attribution window — EQ never says which mob paid, and the "slain" line lands
+     * immediately before the gain, so the most recent kill is the best available answer.
+     */
+    recordXp(event) {
+      const at = ms(event.at);
+      const pct = event.pct ?? 0;
+      for (const w of [fight, session]) {
+        w.totals.xpGains += 1;
+        if (event.party) w.totals.partyXp += 1;
+        else w.totals.soloXp += 1;
+        w.totals.xpPct += pct;
+      }
+      if (pct && lastKill && at - lastKill.at >= -2000 && at - lastKill.at < XP_ATTRIBUTION_MS) {
         for (const w of [fight, session]) w.mob(lastKill.mob).xpPct += pct;
       }
       emit();
@@ -573,8 +820,12 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       pending = null;
       lastKill = null;
       lastKillAt = 0;
+      lastLanding = null;
       incoming.length = 0;
       names.clear();
+      // The repertoire is knowledge about the character, not a tally, so a reset keeps it.
+      // The stance and invocation aren't session state — they're what the character is
+      // doing right now, and a reset doesn't change that.
       emit();
     },
     onChange: (cb) => void bus.on("change", cb),

@@ -1,59 +1,92 @@
+import type { MobKnowledge, MobObservation } from "./mob-stats";
+
 /**
  * types.ts — the shared contract between the Electron main process and the
  * renderer. Both sides import these; nothing here may import Node or React so
  * it stays safe on both. The preload bridge (`window.eql`) is typed by `EqlApi`.
  */
 
-// ─── Log events ─────────────────────────────────────────────────────────────
+// ─── Log lines and events ───────────────────────────────────────────────────
+
+/**
+ * A log line with its timestamp already split off — the shape the parsers work on.
+ *
+ * Splitting happens **once per line**, in `splitLine`, and every parser is handed the
+ * result. Before this existed each parser re-ran the same timestamp regex on the same
+ * string, so a busy line paid for that work up to seven times.
+ */
+export interface LogLine {
+  /**
+   * Monotonic id of the line within this run of the app. It's how an event points back
+   * at the text it came from without anything downstream having to keep parsing strings.
+   * Not a file line number — the watcher usually starts mid-file.
+   */
+  logId: number;
+  /** ISO timestamp taken from the line's leading bracket. */
+  at: string;
+  /** The line with the timestamp bracket removed — what the patterns match against. */
+  message: string;
+  /** The original line, trimmed. Kept for debugging and log-matching, never re-parsed. */
+  raw: string;
+}
+
+/** What every parsed event carries, so the fields are declared once. */
+export interface LogEventBase {
+  /** The line this came from (see `LogLine.logId`). */
+  logId: number;
+  /** The original log line, minus the timestamp bracket. */
+  raw: string;
+  /** ISO timestamp from the log line. */
+  at: string;
+}
+
+/**
+ * What became of a drop. The log distinguishes all four, and they matter differently: a
+ * `sold` item is gone, a `combined` one turned into something else, and a `stored` one is
+ * in a depot rather than your bags.
+ */
+export type LootFate = "kept" | "sold" | "stored" | "combined";
 
 /** A parsed "you looted X from Y" line from the EQ log. */
-export interface LootEvent {
+export interface LootEvent extends LogEventBase {
   kind: "loot";
+  /** What happened to it as it was looted. */
+  fate: LootFate;
+  /** The fate's particulars: the coins it sold for, where it was stored, what it became. */
+  detail?: string;
   /** Item name, exactly as it appears in the log (leading article stripped). */
   item: string;
   /** How many the line reported ("You looted 2 Spiderling Eye…"); 1 when unstated. */
   qty: number;
   /** Corpse / source name the item came from. */
   source: string;
-  /** Original, untouched log line (minus the timestamp bracket). */
-  raw: string;
-  /** ISO timestamp parsed from the log line, or the ingest time as a fallback. */
-  at: string;
 }
 
 /** A parsed "You have entered <zone>" line — tracks the player's current zone. */
-export interface ZoneEvent {
+export interface ZoneEvent extends LogEventBase {
   kind: "zone";
   zone: string;
-  raw: string;
-  at: string;
 }
 
 /** A parsed "You gain [party] experience! (N%)" line. `pct` present only when shown. */
-export interface XpEvent {
+export interface XpEvent extends LogEventBase {
   kind: "xp";
   party: boolean;
   pct?: number;
-  raw: string;
-  at: string;
 }
 
 /** A parsed kill ("You have slain X" / "X has been slain by Y"). `target` is the mob. */
-export interface KillEvent {
+export interface KillEvent extends LogEventBase {
   kind: "kill";
   target: string;
-  raw: string;
-  at: string;
 }
 
 /** A parsed "Your Location is Y, X, Z" line (EQ reports y first). Drives the map. */
-export interface LocEvent {
+export interface LocEvent extends LogEventBase {
   kind: "loc";
   y: number;
   x: number;
   z: number;
-  raw: string;
-  at: string;
 }
 
 /**
@@ -61,11 +94,9 @@ export interface LocEvent {
  * the one place the log ever states your level. Either form means the XP-into-level
  * counter starts over.
  */
-export interface LevelEvent {
+export interface LevelEvent extends LogEventBase {
   kind: "level";
   level?: number;
-  raw: string;
-  at: string;
 }
 
 export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent | LocEvent | LevelEvent;
@@ -77,7 +108,7 @@ export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent | LocEvent | 
  * separates swings from everything else; `spell` is set for spells and DoTs (for a
  * bare DoT tick the log names no caster, so `attacker` falls back to the DoT).
  */
-export interface DamageEvent {
+export interface DamageEvent extends LogEventBase {
   kind: "damage";
   attacker: string;
   target: string;
@@ -92,24 +123,20 @@ export interface DamageEvent {
   melee: boolean;
   /** True for a damage-over-time tick, as opposed to a spell first landing. */
   tick?: boolean;
-  raw: string;
-  at: string;
 }
 
 /** A swing that missed — pairs with `DamageEvent` to give an accuracy figure. */
-export interface MissEvent {
+export interface MissEvent extends LogEventBase {
   kind: "miss";
   attacker: string;
   target: string;
   verb: string;
   /** "Riposte" when the miss was forced by one. */
   qualifier?: string;
-  raw: string;
-  at: string;
 }
 
 /** A heal ("You healed X for N hit points [by <spell>]"). Reflexive → healer. */
-export interface HealEvent {
+export interface HealEvent extends LogEventBase {
   kind: "heal";
   healer: string;
   target: string;
@@ -118,8 +145,6 @@ export interface HealEvent {
   /** What the heal would have restored, when the log reports an overheal. */
   attempted?: number;
   spell?: string;
-  raw: string;
-  at: string;
 }
 
 /**
@@ -127,35 +152,57 @@ export interface HealEvent {
  * follows is what makes cast time — and therefore damage-per-second-of-casting —
  * measurable from a log that never states either.
  */
-export interface CastEvent {
+export interface CastEvent extends LogEventBase {
   kind: "cast";
   caster: string;
+  /** Canonical name, rank stripped, so the cast and its damage line agree. */
   spell: string;
-  raw: string;
-  at: string;
+  /** The rank the log stated ("VI"), kept because the wiki pages are per rank. */
+  rank?: string;
 }
 
 /** How a cast ended without landing. */
 export type SpellOutcome = "fizzle" | "interrupted" | "resisted" | "blocked";
 
-export interface SpellOutcomeEvent {
+export interface SpellOutcomeEvent extends LogEventBase {
   kind: "spell-outcome";
   caster: string;
   spell: string;
   outcome: SpellOutcome;
   /** Who shrugged it off, when the log names them. */
   target?: string;
-  raw: string;
-  at: string;
 }
 
 /** Your own death. `killer` is absent for the bare "You died." line. */
-export interface DeathEvent {
+export interface DeathEvent extends LogEventBase {
   kind: "death";
   victim: string;
   killer?: string;
-  raw: string;
-  at: string;
+}
+
+/**
+ * Your combat mode changed. Stances and invocations apply multipliers and alter cast
+ * times, so damage and cast-time figures are only comparable *within* one of them — which
+ * is why every tally is split by whichever was active (see ADR 0020).
+ */
+export interface StanceEvent extends LogEventBase {
+  kind: "stance";
+  /** "balanced", "evasive"… as the log words it. */
+  stance: string;
+}
+
+export interface InvocationEvent extends LogEventBase {
+  kind: "invocation";
+  /** "empowering", "divine", "arcane mastery"… as the log words it. */
+  invocation: string;
+}
+
+/** One of your (or your pet's) buffs expiring — max hit points may have just changed. */
+export interface BuffFadedEvent extends LogEventBase {
+  kind: "buff-faded";
+  spell: string;
+  /** True for "Your pet's X spell has worn off" — irrelevant to *your* own totals. */
+  pet: boolean;
 }
 
 export type CombatEvent =
@@ -164,7 +211,10 @@ export type CombatEvent =
   | HealEvent
   | CastEvent
   | SpellOutcomeEvent
-  | DeathEvent;
+  | DeathEvent
+  | BuffFadedEvent
+  | StanceEvent
+  | InvocationEvent;
 
 // ─── Damage meter ───────────────────────────────────────────────────────────
 
@@ -191,6 +241,22 @@ export interface CombatantStat {
   dps: number;
   /** True for you and your pet — the rows the meter highlights. */
   mine: boolean;
+  /**
+   * Melee split by the **stance** that was active, for your own rows. Stances change the
+   * multipliers, so a blended swing average hides more than it shows. Empty for other
+   * people — the log never states their stance.
+   */
+  byStance: StanceSplit[];
+}
+
+/** Your melee under a single stance. */
+export interface StanceSplit {
+  /** The stance active at the time, or "unknown" before the log has told us. */
+  stance: string;
+  damage: number;
+  hits: number;
+  misses: number;
+  maxHit: number;
 }
 
 /**
@@ -201,6 +267,8 @@ export interface CombatantStat {
  */
 export interface SpellStat {
   spell: string;
+  /** The last rank seen cast, for looking the spell up on the wiki. */
+  rank?: string;
   /** Casts begun. */
   casts: number;
   /** Casts that landed damage or a heal (a DoT counts once, at first landing). */
@@ -226,8 +294,61 @@ export interface SpellStat {
   resistRate: number;
   /** Hit points a heal would have restored but didn't (the overheal). */
   overhealed: number;
+  /**
+   * Healing the *invocation* granted off this spell's damage (the divine invocation heals
+   * you for a share of what you spent). Kept apart from `healed`, which means "this is a
+   * heal spell" — mixing them would make a nuke look like a cure. It's what the mana also
+   * bought, so damage alone understates the spell.
+   */
+  invocationHealed: number;
   /** Who resisted it, most often first — resist rates vary wildly by mob. */
   resistedBy: { target: string; count: number }[];
+  /**
+   * The same spell under each **invocation**, because an invocation changes both damage
+   * and cast time. The figures above are the blend of these; this is what makes them
+   * interpretable. Biggest contributor first.
+   */
+  byInvocation: SpellModeStat[];
+}
+
+/** One spell's numbers under a single invocation. */
+export interface SpellModeStat {
+  /** The invocation active at the time, or "unknown" before the log has told us. */
+  mode: string;
+  casts: number;
+  lands: number;
+  damage: number;
+  healed: number;
+  /** Mean measured cast time under this invocation, seconds (0 when untimed). */
+  avgCastSec: number;
+  /** Damage per second spent casting, under this invocation. */
+  dpc: number;
+  /** Healing this invocation granted off the spell's damage (divine's doing). */
+  invocationHealed: number;
+  /**
+   * Landings with **no cast in flight** — the signature of a free cast, which the Spell
+   * Blade invocation grants at random and the log never announces.
+   */
+  procs: number;
+  /** Damage those free casts contributed. */
+  procDamage: number;
+}
+
+/**
+ * What an invocation did for you overall, which is the only level at which a proc *rate*
+ * makes sense: Spell Blade's free casts trigger off attacks, so the denominator is swings.
+ */
+export interface InvocationSummary {
+  mode: string;
+  /** Your melee swings (landed or missed) while this invocation was up. */
+  swings: number;
+  /** Spell landings with no cast in flight — presumed free casts. */
+  procs: number;
+  procDamage: number;
+  /** `procs / swings`, 0–1. Meaningless unless the invocation grants free casts. */
+  procRate: number;
+  /** Healing the invocation granted off your spell damage. */
+  healed: number;
 }
 
 /**
@@ -287,11 +408,25 @@ export interface FightStats {
   byMob: MobKillStat[];
   /** Kills and experience credited within the window. */
   kills: number;
+  /** Percent of a level earned — the log's own figure, summed. */
   xpPct: number;
+  /** How many experience messages arrived, and how they split. */
+  xpGains: number;
+  soloXp: number;
+  partyXp: number;
   /** Your damage per second of the window, for a sparkline (index = second). */
   yourPerSec: number[];
   /** Your deaths in the window, newest first (capped). */
   deaths: DeathRecap[];
+  /** Per-invocation totals: swings, free casts and the healing each granted. */
+  invocations: InvocationSummary[];
+  /**
+   * The span of log lines this window was built from. With `startedAt`/`endedAt` (which are
+   * the log's own timestamps) it's enough to find the source lines again — so a stored
+   * fight can be **re-derived** if how we compute something changes later, instead of being
+   * frozen with whatever the maths said at the time. See ADR 0021.
+   */
+  logIds?: { from: number; to: number };
 }
 
 /**
@@ -320,6 +455,11 @@ export interface StoredFight {
   label: string;
   /** The zone it happened in, when the log had told us one. */
   zone?: string;
+  /**
+   * The log file it was read from. `logIds` is only meaningful within one run of the app,
+   * so this plus the fight's timestamps is the durable way back to the source lines.
+   */
+  logFile?: string;
   stats: FightStats;
 }
 
@@ -359,28 +499,6 @@ export interface SessionSummary {
   totalDealt: number;
   yourDealt: number;
   yourTaken: number;
-}
-
-// ─── Session stats ──────────────────────────────────────────────────────────
-
-export interface MobStat {
-  mob: string;
-  kills: number;
-  xp: number;
-}
-
-/** Live session totals derived from the log (reset on demand). */
-export interface SessionStats {
-  startedAt: string;
-  /** Count of experience-gain messages (EQ logs no XP amount). */
-  totalXp: number;
-  partyXp: number;
-  soloXp: number;
-  /** Sum of the shown percentages, when the server includes them. */
-  totalPct: number;
-  kills: number;
-  /** Per-mob kills + attributed XP, best first. */
-  byMob: MobStat[];
 }
 
 // ─── Wiki data ──────────────────────────────────────────────────────────────
@@ -531,6 +649,73 @@ export interface XpProgress {
   known: boolean;
 }
 
+// ─── Kill locations (for the heatmap) ───────────────────────────────────────
+
+/**
+ * Where a kill happened, and everything that went into believing it. EQ only logs a
+ * position when you type `/loc`, so the location is always inferred — this keeps the
+ * evidence alongside the guess so the display can decide what to trust (see
+ * `electron/kill-log.ts`).
+ */
+export interface KillRecord {
+  id: string;
+  /** The log line the kill came from. */
+  logId: number;
+  at: string;
+  mob: string;
+  zone?: string;
+  /** The last known position — absent if the log had never reported one. */
+  y?: number;
+  x?: number;
+  /** How old that fix was when the kill landed. */
+  fixAgeSec?: number;
+  /** The fix before it, which is what makes movement measurable. */
+  prevY?: number;
+  prevX?: number;
+  /** Distance and time between those two fixes, and the speed they imply. */
+  movedUnits?: number;
+  movedSec?: number;
+  speed?: number;
+  /** Dead-reckoned position: the same course and speed carried on for the fix's age. */
+  guessedY?: number;
+  guessedX?: number;
+  /** 0–1. 1 means a fresh fix from a stationary player; 0 means don't plot it as fact. */
+  confidence: number;
+  /**
+   * What this corpse gave up. Attached as the loot lines arrive rather than joined later —
+   * the log puts them right after the kill, and doing it once at ingestion is what lets the
+   * map filter by drop without re-reading anything.
+   */
+  drops?: string[];
+}
+
+// ─── Health estimate ────────────────────────────────────────────────────────
+
+/**
+ * Bounds on your maximum hit points, squeezed out of the log (see `hp-estimate.ts`).
+ * The log never states health, so this is inferred from what you survived and what
+ * killed you — a **soft** figure that sharpens with play and is overridable.
+ */
+export interface HpEstimate {
+  /** Damage survived in one stretch with no healing: your maximum is above this. */
+  atLeast: number;
+  /** Damage that killed you from known-full health: your maximum is at or below this. */
+  atMost?: number;
+  /** What the player said it is — believed over the inference, until they level. */
+  stated?: number;
+  /** The level these observations belong to; levelling discards them. */
+  level?: number;
+  /** How many observations have contributed (a rough confidence signal). */
+  samples: number;
+  /**
+   * Hit points regained per tick while fighting, if the player has told us. Health ticks
+   * back every ~6 seconds, so a long window lets you absorb more than your maximum —
+   * without this the floor creeps upward on duration alone.
+   */
+  regenPerTick?: number;
+  updatedAt: string;
+}
+
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export interface OverlaySettings {
@@ -541,6 +726,18 @@ export interface OverlaySettings {
   showObtained: boolean; // keep completed items visible
   /** Auto-narrow the overlay to the zone you're in (from the log) as you travel. */
   followZone: boolean;
+  /**
+   * Show the damage meter's per-stance / per-invocation breakdown as rows rather than only
+   * on hover. Off by default: a spell can have six invocations behind it, and six rows per
+   * spell is unreadable at a glance (see ADR 0020).
+   */
+  splitByMode: boolean;
+  /**
+   * Show the little how-much-do-I-believe-this marker on kill positions (map and list).
+   * On by default — an inferred position that looks measured is the thing to avoid — but
+   * it's dismissible, including by right-clicking the marker itself.
+   */
+  showKillConfidence: boolean;
 }
 
 export type MatchMode = "exact" | "contains";
@@ -587,6 +784,10 @@ export const AWARI_MSG = {
   ping: "ping",
   /** A peer's shared map pins. */
   pins: "pins",
+  /** A peer's shared kill locations, for a combined heatmap. */
+  kills: "kills",
+  /** A peer's observations about mobs: drop counts and roam areas, pooled into rates. */
+  mobs: "mobs",
   /**
    * Who a peer is (name + zone). awari's roster gives us peer *ids*; this is how a
    * connected-users list learns names. Sent on join, whenever ours changes, and
@@ -689,11 +890,6 @@ export interface EqlApi {
     current(): Promise<LocEvent | null>;
     onChanged(cb: (loc: LocEvent | null) => void): Unsubscribe;
   };
-  stats: {
-    get(): Promise<SessionStats>;
-    reset(): Promise<SessionStats>;
-    onChanged(cb: (stats: SessionStats) => void): Unsubscribe;
-  };
   /** The damage meter: per-combatant damage/DPS for the current fight and session. */
   combat: {
     get(): Promise<CombatStats>;
@@ -709,6 +905,36 @@ export interface EqlApi {
     fights(sessionId: string): Promise<StoredFight[]>;
     /** Forget all stored history (the live meter is untouched). */
     clearHistory(): Promise<SessionSummary[]>;
+  };
+  /**
+   * What's been learned about mobs by killing them: observed drop rates, roam areas, and
+   * whose observations went into each. Yours comes from the kill log; peers' arrives over the
+   * room and is kept separately (see `electron/mob-knowledge.ts`).
+   */
+  mobs: {
+    /** Pooled knowledge, most-killed first. */
+    all(zone?: string): Promise<MobKnowledge[]>;
+    /** Your own observations, in the form peers receive them. */
+    mine(zone?: string): Promise<MobObservation[]>;
+    /** File observations received from a peer. */
+    report(by: string, observations: MobObservation[]): Promise<void>;
+    /** Forget everything peers have told us (your own observations are untouched). */
+    forgetPeers(): Promise<void>;
+  };
+  /** Recorded kill locations, for the heatmap. */
+  kills: {
+    /** Every kill recorded (optionally for one zone), newest first. */
+    all(zone?: string): Promise<KillRecord[]>;
+    clear(): Promise<void>;
+  };
+  /** Inferred bounds on your maximum hit points, and the overrides for them. */
+  hp: {
+    get(): Promise<HpEstimate>;
+    /** Record the player's own figure for maximum hit points. */
+    set(max: number): Promise<HpEstimate>;
+    /** Record in-combat regeneration per tick, so long windows can be discounted. */
+    setRegen(perTick: number): Promise<HpEstimate>;
+    onChanged(cb: (estimate: HpEstimate) => void): Unsubscribe;
   };
   /**
    * Experience progress — the one figure the log can't give us, so the UI asks for it

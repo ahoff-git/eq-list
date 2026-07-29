@@ -7,7 +7,9 @@ export type DamageView = "dealt" | "taken";
 /**
  * The bar list: one row per combatant, scaled to the biggest row so relative
  * contribution reads at a glance. Your rows (you + pet) are tinted; the numbers that
- * don't earn a column — max hit, accuracy, crits, healing — are on hover.
+ * don't earn a column — max hit, accuracy, crits, healing — are on hover, along with your
+ * melee split by **stance**, since a stance changes the multipliers and a blended swing
+ * average describes a character who never existed (ADR 0020).
  */
 export default function DamageMeter({ rows, view }: { rows: CombatantStat[]; view: DamageView }) {
   const relevant = rows.filter((r) => value(r, view) > 0);
@@ -46,7 +48,19 @@ function detail(row: CombatantStat): string {
     row.crits > 0 ? `${row.crits} critical${row.crits === 1 ? "" : "s"}` : "",
     row.healed > 0 ? `healed ${row.healed.toLocaleString()}` : "",
     `active ${row.activeSec}s`,
+    stanceSplit(row),
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** Your melee by stance — shown only when more than one stance contributed. */
+function stanceSplit(row: CombatantStat): string {
+  if (row.byStance.length < 2) return "";
+  const parts = row.byStance.map((s) => {
+    const swings = s.hits + s.misses;
+    const acc = swings ? ` ${Math.round((s.hits / swings) * 100)}%` : "";
+    return `${s.stance}: ${s.damage.toLocaleString()}${acc}`;
+  });
+  return `melee by stance — ${parts.join(" · ")}`;
 }

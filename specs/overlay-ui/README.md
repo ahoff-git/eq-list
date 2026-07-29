@@ -11,7 +11,8 @@ list, hunt, search, damage, session, settings.
   controls — an **opacity toggle** (flip between 100% and the settings slider value,
   transient via `win.setOpacity`), **pin** (always-on-top, toggles `overlay.alwaysOnTop`
   — the shared `PinButton`, gray off / red on, same as the map window), **minimize**,
-  and **hide-to-tray** (`win.hide()`).
+  **text size** (A− / A+, stepping `overlay.fontScale` 0.8–1.6 — the same value the
+  Settings slider holds), and **hide-to-tray** (`win.hide()`).
   Opacity/always-on-top come from settings and are applied by the main process
   (`applyOverlaySettings`). Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
@@ -59,8 +60,13 @@ list, hunt, search, damage, session, settings.
     filter); with the `overlay.followZone` setting on, it auto-tracks the log's current
     zone. The picked zone is owned by the parent (`page.tsx`) so it survives tab
     switches. Each item shows its **drop rate** for that mob (`useMobLoot` fetches the
-    hunt mobs' loot pages, since the rate lives there, not on the item). Items with no
-    known drop are called out separately. Names navigate in-app.
+    hunt mobs' loot pages, since the rate lives there, not on the item) — reconciled against
+    **your own kills**: past ~15 kills your observed rate leads and is badged `✓`, below that
+    the wiki's figure shows (dimmed), and a wiki claim that hasn't appeared in 25+ kills is
+    flagged "unseen in N". The hover always says which source is speaking and why. The wiki
+    describes an older build, so this is the app correcting it in place —
+    [ADR 0025](../decisions/0025-observation-over-the-wiki.md). Items with no known drop are
+    called out separately. Names navigate in-app.
   - `SearchPanel` — fuzzy-search eqlwiki (typo-tolerant, ↑↓/Enter keyboard nav) with
     two modes: **By name** (any item/quest/recipe) and **By zone** (fuzzy-pick a zone,
     then list its quests). The open page is whatever `nav.current` points at; a result
@@ -83,11 +89,17 @@ list, hunt, search, damage, session, settings.
     last night" and "how's this pull going" are one screen.
     - `DamageMeter` — bars scaled to the top row so relative contribution reads without
       arithmetic, with total, share and DPS; your rows (you + your pet) are tinted, and
-      hover gives max hit, accuracy, crits, healing and active time.
+      hover gives max hit, accuracy, crits, healing, active time, and — for your own rows —
+      **melee split by stance**, since stances change the multipliers.
     - `SpellTable` — where your damage came from, spell by spell: casts, damage, healing,
       average **measured** cast time, **dmg/s cast** (the efficiency column — a slow nuke
-      and a fast one that hit the same are not equally good), **resist %** (red past 25%)
-      and failed casts. Sortable by any of those; melee is a synthetic row so the pie adds
+      and a fast one that hit the same are not equally good), **mana** and **dmg/mana**
+      (cost comes from the spell's wiki page — the log never states it), **resist %** (red
+      past 25%) and failed casts. The hover also shows the wiki's *stated* cast time next
+      to the measured one (which is how a mispaired cast gives itself away) and the row's
+      **per-invocation split** — the same spell can hit for 2.3× as much and cast faster
+      under a different invocation, so the blended row is a starting point, not an answer.
+      See [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md). Sortable by any of those; melee is a synthetic row so the pie adds
       up. Cast times come from the log's one-second resolution — trust the averages, not a
       single reading.
     - `DamageHistory` — sessions (newest first) → their fights (labelled with the mob you
@@ -95,7 +107,10 @@ list, hunt, search, damage, session, settings.
     - `Sparkline` — your damage per second across the fight, because a steady grind and a
       burst that fell off a cliff can share a DPS number but never a silhouette.
     - **Deaths** — what killed you, and what was landing in the 15s before it. The log
-      names a killer but never a reason; the run-up is the reason.
+      names a killer but never a reason; the run-up is the reason. Each is shown as a share
+      of your **inferred** health (`hp-estimate.ts`, see
+      [ADR 0018](../decisions/0018-inferred-max-hit-points.md)) — a range with its evidence
+      on hover, correctable through the same `AskValue` control.
     Tiles above show your damage, your DPS, all damage, how long the window was *in
     combat*, and your pet's share when it fought. A **★ best DPS** flag appears when the
     fight beats your recorded best against that opponent, and **Copy** puts a one-line
@@ -104,7 +119,8 @@ list, hunt, search, damage, session, settings.
   - `SessionPanel` — the **camp screen**: is this spot worth it? XP/hour (over elapsed
     time, so it's a forecast), **time to level**, **downtime** (elapsed minus time in
     combat — the biggest lever on a night's real rate), level, and the session's XP-gain
-    and kill counters (`session-stats.ts`). Below, `CampReport` gives **per mob** for this
+    and kill counters — all from the one session tracker (`combat-stats.ts`, see
+    [ADR 0019](../decisions/0019-parse-once-and-one-tracker.md)). Below, `CampReport` gives **per mob** for this
     session (kills, time-to-kill, XP, XP/min *fighting*) and **per zone** across all
     recorded history, so tonight's camp can be compared with last week's. See
     [ADR 0017](../decisions/0017-camp-efficiency-and-asking-the-player.md).

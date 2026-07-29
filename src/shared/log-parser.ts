@@ -20,7 +20,16 @@
  * captures the count into `qty` — dropping it would under-count the shopping list.
  */
 
-import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent } from "./types";
+import type {
+  LogLine,
+  LootEvent,
+  LootFate,
+  ZoneEvent,
+  XpEvent,
+  KillEvent,
+  LocEvent,
+  LevelEvent,
+} from "./types";
 
 const MONTHS: Record<string, number> = {
   Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
@@ -29,34 +38,32 @@ const MONTHS: Record<string, number> = {
 
 const pad = (n: number | string) => String(n).padStart(2, "0");
 
-/**
- * Current local wall clock as a naive (no-Z) ISO string — the same shape we use
- * for parsed lines, so mixed timestamps still sort correctly.
- */
-function nowNaiveIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-    d.getMinutes(),
-  )}:${pad(d.getSeconds())}`;
-}
+const TIMESTAMP_RE =
+  /^\[(?<dow>\w{3}) (?<mon>\w{3}) (?<day>[ \d]?\d) (?<h>\d{2}):(?<min>\d{2}):(?<s>\d{2}) (?<year>\d{4})\]\s?(?<rest>.*)$/;
 
 /**
- * `[Www Mmm D HH:MM:SS YYYY] rest` → { at, message }, or null if no timestamp.
- * `at` preserves the log's local wall clock verbatim (the log carries no time
- * zone), rather than shifting the calendar date through a UTC conversion.
+ * `[Www Mmm D HH:MM:SS YYYY] rest` -> a `LogLine`, or null when the line has no
+ * timestamp. **This is the only place a raw log string is taken apart**: every parser
+ * takes the result, so the regex runs once per line rather than once per parser.
+ *
+ * `at` keeps the log's local wall clock verbatim (the log states no time zone) rather
+ * than shifting the calendar date through a UTC conversion. A line with no timestamp is
+ * the continuation of a wrapped message, never an event, so returning null drops it.
  */
-export function splitTimestamp(line: string): { at: string; message: string } | null {
-  const m = line.match(
-    /^\[(?<dow>\w{3}) (?<mon>\w{3}) (?<day>[ \d]?\d) (?<h>\d{2}):(?<min>\d{2}):(?<s>\d{2}) (?<year>\d{4})\]\s?(?<rest>.*)$/,
-  );
-  if (!m || !m.groups) return null;
+export function splitLine(raw: string, logId = 0): LogLine | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const m = trimmed.match(TIMESTAMP_RE);
+  if (!m?.groups) return null;
   const { mon, day, h, min, s, year, rest } = m.groups;
   const month = MONTHS[mon];
-  const at =
-    month === undefined
-      ? nowNaiveIso()
-      : `${year}-${pad(month)}-${pad(day.trim())}T${h}:${min}:${s}`;
-  return { at, message: rest };
+  if (month === undefined) return null; // an unreadable month means an unusable time
+  return {
+    logId,
+    at: `${year}-${pad(month)}-${pad(day.trim())}T${h}:${min}:${s}`,
+    message: rest,
+    raw: trimmed,
+  };
 }
 
 /** Strip a leading English article so names match the wiki / shopping list. */
@@ -76,85 +83,78 @@ export function characterFromLogFile(file?: string): string | null {
 }
 
 /**
- * Loot message patterns. Each captures `item`, `qty` and `source` (where present).
+ * Loot message patterns, each with what the line says became of the item. Every pattern
+ * captures `item`, `qty` and `source`; where the line goes on to say what happened, that
+ * tail is captured as `detail` (the coins, the container, the thing it became).
  * `an?` consumes the article so it never lands in the captured item name.
  */
-const LOOT_PATTERNS: RegExp[] = [
+const LOOT_PATTERNS: { fate: LootFate; re: RegExp }[] = [
   // Standard drop line, wrapped in -- --
-  /^--You have looted (?:(?<qty>\d+) )?(?:an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse\.--$/,
+  {
+    fate: "kept",
+    re: /^--You have looted (?:(?<qty>\d+) )?(?:an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse\.--$/,
+  },
   // Auto-sell: looted then immediately vendored
-  /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and sold it for .+?\.$/,
+  {
+    fate: "sold",
+    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and sold it for (?<detail>.+?)\.$/,
+  },
   // Auto-store: straight into a tradeskill depot / currency tab (no trailing period)
-  /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and stored it in your .+?\.?$/,
+  {
+    fate: "stored",
+    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and stored it in your (?<detail>.+?)\.?$/,
+  },
   // Loot-and-combine (item upgrades): the input item is still "obtained"
-  /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse to create .+?\.?$/,
+  {
+    fate: "combined",
+    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse to create (?<detail>.+?)\.?$/,
+  },
 ];
 
-/** Parse a raw loot message (timestamp already removed) into a LootEvent, or null. */
-export function parseLootMessage(message: string, at: string, raw: string): LootEvent | null {
-  for (const re of LOOT_PATTERNS) {
-    const m = message.match(re);
+/** Loot from an already-split line, or null when it is not a loot line. */
+export function parseLoot(line: LogLine): LootEvent | null {
+  for (const { fate, re } of LOOT_PATTERNS) {
+    const m = line.message.match(re);
     if (m && m.groups?.item) {
       return {
         kind: "loot",
         item: stripArticle(m.groups.item.trim()),
         qty: Math.max(1, Number(m.groups.qty ?? 1)),
         source: stripArticle((m.groups.source ?? "").trim()),
-        raw,
-        at,
+        fate,
+        detail: m.groups.detail ? stripArticle(m.groups.detail.trim()) : undefined,
+        logId: line.logId,
+        raw: line.raw,
+        at: line.at,
       };
     }
   }
   return null;
 }
 
-/** Parse a full log line (with or without a leading timestamp) into a LootEvent, or null. */
-export function parseLogLine(line: string): LootEvent | null {
-  const trimmed = line.trim();
-  if (!trimmed) return null;
-  const split = splitTimestamp(trimmed);
-  const message = split ? split.message : trimmed;
-  const at = split ? split.at : nowNaiveIso();
-  return parseLootMessage(message, at, trimmed);
-}
-
 /** "You have entered <zone>." → ZoneEvent, or null. Leading "the " is dropped. */
 const ENTER_ZONE = /^You have entered (?:the )?(?<zone>.+?)\.$/;
 
-export function parseZoneLine(line: string): ZoneEvent | null {
-  const trimmed = line.trim();
-  if (!trimmed) return null;
-  const split = splitTimestamp(trimmed);
-  const message = split ? split.message : trimmed;
-  const at = split ? split.at : nowNaiveIso();
-  const m = message.match(ENTER_ZONE);
+export function parseZone(line: LogLine): ZoneEvent | null {
+  const m = line.message.match(ENTER_ZONE);
   if (!m?.groups?.zone) return null;
-  return { kind: "zone", zone: m.groups.zone.trim(), raw: trimmed, at };
-}
-
-/** Split a line into its message + timestamp once, for the smaller parsers below. */
-function messageOf(line: string): { message: string; at: string; raw: string } | null {
-  const raw = line.trim();
-  if (!raw) return null;
-  const split = splitTimestamp(raw);
-  return { message: split ? split.message : raw, at: split ? split.at : nowNaiveIso(), raw };
+  return { kind: "zone", zone: m.groups.zone.trim(), logId: line.logId, raw: line.raw, at: line.at };
 }
 
 // "You gain experience! (0.5%)" (EQL) or "You gain experience!!" (classic) — accept
 // one or more "!" so both work. Party and the percentage are optional.
 const XP_RE = /^You gain (?<party>party )?experience!+(?: \((?<pct>[\d.]+)%\))?$/;
 
-export function parseXpLine(line: string): XpEvent | null {
-  const parsed = messageOf(line);
-  if (!parsed) return null;
-  const m = parsed.message.match(XP_RE);
+export function parseXp(line: LogLine): XpEvent | null {
+  const m = line.message.match(XP_RE);
   if (!m) return null;
   return {
     kind: "xp",
     party: !!m.groups?.party,
     pct: m.groups?.pct ? parseFloat(m.groups.pct) : undefined,
-    raw: parsed.raw,
-    at: parsed.at,
+    logId: line.logId,
+    raw: line.raw,
+    at: line.at,
   };
 }
 
@@ -163,12 +163,16 @@ export function parseXpLine(line: string): XpEvent | null {
 const KILL_BY_YOU = /^You have slain (?<target>.+)!$/;
 const KILL_SLAIN_BY = /^(?<target>.+?) has been slain by .+!$/;
 
-export function parseKillLine(line: string): KillEvent | null {
-  const parsed = messageOf(line);
-  if (!parsed) return null;
-  const m = parsed.message.match(KILL_BY_YOU) ?? parsed.message.match(KILL_SLAIN_BY);
+export function parseKill(line: LogLine): KillEvent | null {
+  const m = line.message.match(KILL_BY_YOU) ?? line.message.match(KILL_SLAIN_BY);
   if (!m?.groups?.target) return null;
-  return { kind: "kill", target: stripArticle(m.groups.target.trim()), raw: parsed.raw, at: parsed.at };
+  return {
+    kind: "kill",
+    target: stripArticle(m.groups.target.trim()),
+    logId: line.logId,
+    raw: line.raw,
+    at: line.at,
+  };
 }
 
 /**
@@ -183,17 +187,16 @@ const LEVEL_RES = [
   /^Welcome to level (?<level>\d+)!$/,
 ];
 
-export function parseLevelLine(line: string): LevelEvent | null {
-  const parsed = messageOf(line);
-  if (!parsed) return null;
+export function parseLevel(line: LogLine): LevelEvent | null {
   for (const re of LEVEL_RES) {
-    const m = parsed.message.match(re);
+    const m = line.message.match(re);
     if (!m) continue;
     return {
       kind: "level",
       level: m.groups?.level ? Number(m.groups.level) : undefined,
-      raw: parsed.raw,
-      at: parsed.at,
+      logId: line.logId,
+      raw: line.raw,
+      at: line.at,
     };
   }
   return null;
@@ -202,17 +205,16 @@ export function parseLevelLine(line: string): LevelEvent | null {
 // "Your Location is 1234.5, -678.9, 42.0" → LocEvent. EQ reports the triple y-first.
 const LOC_RE = /^Your Location is (?<y>-?\d+(?:\.\d+)?), (?<x>-?\d+(?:\.\d+)?), (?<z>-?\d+(?:\.\d+)?)$/;
 
-export function parseLocLine(line: string): LocEvent | null {
-  const parsed = messageOf(line);
-  if (!parsed) return null;
-  const m = parsed.message.match(LOC_RE);
+export function parseLoc(line: LogLine): LocEvent | null {
+  const m = line.message.match(LOC_RE);
   if (!m?.groups) return null;
   return {
     kind: "loc",
     y: parseFloat(m.groups.y),
     x: parseFloat(m.groups.x),
     z: parseFloat(m.groups.z),
-    raw: parsed.raw,
-    at: parsed.at,
+    logId: line.logId,
+    raw: line.raw,
+    at: line.at,
   };
 }

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { createLogger } from "@/shared/logging";
 import type { MapPin } from "@/shared/map/pins";
+import type { MobObservation } from "@/shared/mob-stats";
 import { AWARI_MSG, type AwariPayload, type AwariPeer } from "@/shared/types";
 
 const log = createLogger("awari");
@@ -12,6 +13,21 @@ const DEFAULT_PEER_NAME = "Someone";
 
 /** Key our own ping is stored under — peer ids are `eq-list-…`, so it can't collide. */
 const SELF_KEY = "self";
+
+/**
+ * A kill as it travels between players — deliberately the bare minimum: where, what, and
+ * how much to believe it. The evidence behind the confidence stays local; a peer only needs
+ * the conclusion.
+ */
+export interface SharedKill {
+  zone: string;
+  y: number;
+  x: number;
+  mob: string;
+  confidence: number;
+  /** Who shared it, filled in on receipt. */
+  by?: string;
+}
 
 /** A peer's last known live location (keyed by their awari peer id). */
 export interface PeerLoc {
@@ -66,13 +82,17 @@ export function useAwariRoom(opts: { name: string }): {
   pings: PeerPing[];
   peerPins: MapPin[];
   users: ConnectedUser[];
+  peerKills: SharedKill[];
   sendPing: (eq: { y: number; x: number }, zone: string) => void;
   sharePins: (pins: MapPin[]) => void;
+  shareKills: (kills: SharedKill[]) => void;
+  shareMobs: (observations: MobObservation[]) => void;
 } {
   const { name } = opts;
   const [peers, setPeers] = useState<Record<string, PeerLoc>>({});
   const [pings, setPings] = useState<Record<string, PeerPing>>({});
   const [peerPins, setPeerPins] = useState<Record<string, MapPin[]>>({});
+  const [peerKills, setPeerKills] = useState<Record<string, SharedKill[]>>({});
   const [roster, setRoster] = useState<AwariPeer[]>([]);
   // Latest name for outbound ping/pins (kept in a ref so the senders stay stable).
   const nameRef = useRef(name);
@@ -82,6 +102,21 @@ export function useAwariRoom(opts: { name: string }): {
     const a = api();
     if (!a) return;
     const offMessage = a.awari.onMessage(({ sender, payload: p }) => {
+      if (p.kind === AWARI_MSG.mobs && Array.isArray(p.mobs)) {
+        // Observations are filed in the main process rather than held here: they're worth
+        // keeping across restarts, and every window should see the same pooled picture.
+        const by = str(p, "name", DEFAULT_PEER_NAME);
+        void a.mobs.report(by, p.mobs as MobObservation[]);
+        return;
+      }
+      if (p.kind === AWARI_MSG.kills && Array.isArray(p.kills)) {
+        const by = str(p, "name", DEFAULT_PEER_NAME);
+        setPeerKills((prev) => ({
+          ...prev,
+          [sender]: (p.kills as SharedKill[]).map((k) => ({ ...k, by })),
+        }));
+        return;
+      }
       if (p.kind === AWARI_MSG.pins && Array.isArray(p.pins)) {
         const by = str(p, "name", DEFAULT_PEER_NAME);
         setPeerPins((prev) => ({ ...prev, [sender]: (p.pins as MapPin[]).map((pin) => ({ ...pin, by })) }));
@@ -110,6 +145,7 @@ export function useAwariRoom(opts: { name: string }): {
         setPeers({});
         setPings({});
         setPeerPins({});
+        setPeerKills({});
         setRoster([]);
       }
     });
@@ -145,6 +181,27 @@ export function useAwariRoom(opts: { name: string }): {
     api()?.awari.send({ kind: AWARI_MSG.pins, name: nameRef.current || DEFAULT_PEER_NAME, pins });
   }, []);
 
+  /**
+   * Broadcast our kill locations (empty array un-shares) so a camp's heatmap can be pooled.
+   * Only placeable kills are worth sending — a peer can't do anything with a position we
+   * don't have — and the caller decides which those are.
+   */
+  const shareKills = useCallback((kills: SharedKill[]) => {
+    api()?.awari.send({ kind: AWARI_MSG.kills, name: nameRef.current || DEFAULT_PEER_NAME, kills });
+  }, []);
+
+  /**
+   * Broadcast what we've learned about mobs — counts, not raw kills, so a pooled drop rate is
+   * just addition and none of our movements travel with it.
+   */
+  const shareMobs = useCallback((observations: MobObservation[]) => {
+    api()?.awari.send({
+      kind: AWARI_MSG.mobs,
+      name: nameRef.current || DEFAULT_PEER_NAME,
+      mobs: observations,
+    });
+  }, []);
+
   // One row per connected peer, merging the roster with what they've shared. A peer
   // that never says hello still shows up (by a shortened id) — presence is presence.
   const users = useMemo<ConnectedUser[]>(
@@ -166,7 +223,10 @@ export function useAwariRoom(opts: { name: string }): {
     pings: Object.values(pings),
     peerPins: Object.values(peerPins).flat(),
     users,
+    peerKills: Object.values(peerKills).flat(),
     sendPing,
     sharePins,
+    shareKills,
+    shareMobs,
   };
 }

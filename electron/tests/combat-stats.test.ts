@@ -5,8 +5,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCombatStats } from "../combat-stats";
-import { parseCombatLine } from "../../src/shared/combat-parser";
-import type { CombatEvent } from "../../src/shared/types";
+import { parseCombat } from "../../src/shared/combat-parser";
+import { splitLine } from "../../src/shared/log-parser";
+import type { CombatEvent, XpEvent } from "../../src/shared/types";
 
 /** `sec` seconds past midnight as mm:ss — seconds roll into minutes, as a clock does. */
 function clock(sec: number): string {
@@ -18,10 +19,15 @@ function clock(sec: number): string {
 /** A log timestamp `sec` seconds past midnight, in the shape the parsers produce. */
 const stamp = (sec: number) => `2026-07-29T${clock(sec)}`;
 
+/** An experience gain, as the watcher would hand it over. */
+function xp(pct: number, sec: number, party = false): XpEvent {
+  return { kind: "xp", party, pct, logId: 1, raw: "You gain experience!", at: stamp(sec) };
+}
+
 /** Feed lines as if they were tailed from a log, `sec` seconds past midnight. */
 function feed(tracker: ReturnType<typeof createCombatStats>, lines: [sec: number, message: string][]): void {
   for (const [sec, message] of lines) {
-    const event = parseCombatLine(`[Wed Jul 29 ${clock(sec)} 2026] ${message}`) as CombatEvent;
+    const event = parseCombat(splitLine(`[Wed Jul 29 ${clock(sec)} 2026] ${message}`, 1)!) as CombatEvent;
     assert.ok(event, `expected to parse: ${message}`);
     tracker.record(event);
   }
@@ -340,8 +346,8 @@ test("experience is credited to the mob that just died, and drives XP/min", () =
   const t = tracker();
   feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
   t.recordKill("a coyote", stamp(20));
-  t.recordXp(1.5, stamp(21)); // within the attribution window
-  t.recordXp(0.5, stamp(120)); // long after — counted for the session, not the mob
+  t.recordXp(xp(1.5, 21)); // within the attribution window
+  t.recordXp(xp(0.5, 120)); // long after — counted for the session, not the mob
 
   const s = t.snapshot().session;
   assert.equal(s.xpPct, 2);
@@ -423,6 +429,156 @@ test("one mob under two spellings is one row", () => {
   );
   assert.equal(s.byMob.length, 1);
   assert.equal(s.byMob[0].kills, 2);
+});
+
+test("experience messages are counted and split solo / party", () => {
+  // These counters came from the retired session-stats module; one tracker owns them now.
+  const t = tracker();
+  t.recordXp(xp(1, 1));
+  t.recordXp(xp(0.5, 2, true));
+  t.recordXp(xp(0.25, 3, true));
+
+  const s = t.snapshot().session;
+  assert.equal(s.xpGains, 3);
+  assert.equal(s.soloXp, 1);
+  assert.equal(s.partyXp, 2);
+  assert.equal(s.xpPct, 1.75);
+});
+
+// ── stance and invocation: the same spell is a different spell under each ──
+test("a spell is split by the invocation active when it was cast", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You begin reciting the empowering invocation."],
+    [2, "You begin casting Blast of Cold."],
+    [4, "You hit a coyote for 30 points of cold damage by Blast of Cold."],
+    [6, "You begin reciting the arcane mastery invocation."],
+    [7, "You begin casting Blast of Cold."],
+    [8, "You hit a coyote for 60 points of cold damage by Blast of Cold."],
+  ]);
+
+  const spell = t.snapshot().session.spells.find((s) => s.spell === "Blast of Cold")!;
+  // The row itself stays the blend — that's what the table shows at a glance.
+  assert.equal(spell.casts, 2);
+  assert.equal(spell.damage, 90);
+
+  // …and the split is what makes the blend interpretable: same spell, different cast time
+  // and different damage under each invocation.
+  const arcane = spell.byInvocation.find((m) => m.mode === "arcane mastery")!;
+  const empowering = spell.byInvocation.find((m) => m.mode === "empowering")!;
+  assert.equal(arcane.damage, 60);
+  assert.equal(arcane.avgCastSec, 1);
+  assert.equal(empowering.damage, 30);
+  assert.equal(empowering.avgCastSec, 2);
+});
+
+test("melee is split by the stance active at the time", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You assume a balanced stance."],
+    [2, "You pierce a coyote for 20 points of damage."],
+    [3, "You try to pierce a coyote, but miss!"],
+    [4, "You assume an evasive stance."],
+    [5, "You pierce a coyote for 5 points of damage."],
+  ]);
+
+  const you = t.snapshot().session.byCombatant.find((r) => r.name === "You")!;
+  assert.equal(you.dealt, 25); // combined, as the meter shows
+  const balanced = you.byStance.find((s) => s.stance === "balanced")!;
+  const evasive = you.byStance.find((s) => s.stance === "evasive")!;
+  assert.equal(balanced.damage, 20);
+  assert.equal(balanced.misses, 1);
+  assert.equal(evasive.damage, 5);
+});
+
+test("before the log names a mode, tallies file under 'unknown' rather than vanishing", () => {
+  const t = tracker();
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  const you = t.snapshot().session.byCombatant.find((r) => r.name === "You")!;
+  assert.deepEqual(
+    you.byStance.map((s) => s.stance),
+    ["unknown"],
+  );
+});
+
+test("other people's melee isn't split — the log never states their stance", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You assume a balanced stance."],
+    [2, "Bunnyslayer pierces a coyote for 10 points of damage."],
+  ]);
+  const them = t.snapshot().session.byCombatant.find((r) => r.name === "Bunnyslayer")!;
+  assert.deepEqual(them.byStance, []);
+});
+
+test("a mode outlives a session reset — it's what the character is doing, not a tally", () => {
+  const t = tracker();
+  feed(t, [[1, "You assume an evasive stance."]]);
+  t.reset();
+  feed(t, [[2, "You pierce a coyote for 10 points of damage."]]);
+  const you = t.snapshot().session.byCombatant.find((r) => r.name === "You")!;
+  assert.equal(you.byStance[0].stance, "evasive");
+});
+
+// ── what invocations do beyond scaling: divine's healing, Spell Blade's free casts ──
+test("an unattributed self-heal after your own spell is the invocation's healing", () => {
+  // Verbatim shape from a real log: the heal names no spell, and follows the landing.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin reciting the divine invocation."],
+    [2, "You begin casting Blast of Cold."],
+    [4, "You hit a coyote for 12 points of cold damage by Blast of Cold."],
+    [4, "You healed Kainos for 8 hit points."],
+  ]);
+
+  const s = t.snapshot().session;
+  const spell = s.spells.find((x) => x.spell === "Blast of Cold")!;
+  assert.equal(spell.invocationHealed, 8);
+  // It is not counted as the spell *healing* — a nuke is not a cure.
+  assert.equal(spell.healed, 0);
+  assert.equal(s.invocations.find((i) => i.mode === "divine")!.healed, 8);
+});
+
+test("an unattributed heal with no recent spell of yours is left alone", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "A skeleton punches YOU for 10 points of damage."],
+    [2, "You healed Kainos for 8 hit points."], // someone's heal, or an item — not ours
+  ]);
+  assert.equal(t.snapshot().session.spells.length, 0);
+});
+
+test("a spell landing with no cast in flight is counted as a free cast", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin reciting the spellblade invocation."],
+    [2, "You begin casting Blast of Cold."],
+    [3, "You hit a coyote for 12 points of cold damage by Blast of Cold."], // paired
+    [5, "You pierce a coyote for 5 points of damage."], // a swing
+    [6, "You hit a coyote for 20 points of cold damage by Blast of Cold."], // nothing cast
+  ]);
+
+  const inv = t.snapshot().session.invocations.find((i) => i.mode === "spellblade")!;
+  assert.equal(inv.procs, 1);
+  assert.equal(inv.procDamage, 20);
+  assert.equal(inv.swings, 1);
+  assert.equal(inv.procRate, 1);
+});
+
+test("castless damage sources are not free casts", () => {
+  // A damage shield never has a cast, so counting it would report a proc on every hit —
+  // which is exactly what the first version of this did.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin reciting the spellblade invocation."],
+    [2, "A female rat is burned by Kainos`s warder's flames for 2 points of non-melee damage."],
+    [3, "A female rat is burned by Kainos`s warder's flames for 2 points of non-melee damage."],
+  ]);
+  assert.equal(t.snapshot().session.invocations.find((i) => i.mode === "spellblade")?.procs ?? 0, 0);
 });
 
 test("a fight knows which zone it happened in", () => {

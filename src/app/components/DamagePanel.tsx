@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useCombatStats } from "@/lib/hooks";
-import { api } from "@/lib/api";
+import { useCombatStats, useHpEstimate } from "@/lib/hooks";
+import { api, resetSession } from "@/lib/api";
 import DamageMeter, { type DamageView } from "./DamageMeter";
 import SpellTable from "./SpellTable";
 import DamageHistory from "./DamageHistory";
 import Sparkline from "./Sparkline";
-import type { DeathRecap, FightBest, FightStats, StoredFight } from "@/shared/types";
+import AskValue from "./AskValue";
+import type { DeathRecap, FightBest, FightStats, HpEstimate, StoredFight } from "@/shared/types";
 
 /**
  * The damage meter. Two axes of choice, because they answer different questions:
@@ -75,7 +76,7 @@ export default function DamagePanel() {
           </button>
         )}
         {scope !== "history" && (
-          <button className="btn ghost sm" onClick={() => api()?.combat.reset()} title="Clear the live meter (history is kept)">
+          <button className="btn ghost sm" onClick={resetSession} title="Clear the live meter and the session counters (recorded fights are kept)">
             Reset
           </button>
         )}
@@ -161,11 +162,41 @@ function StatTile({ label, value, hint }: { label: string; value: number | strin
 /**
  * What killed you, and what was landing in the seconds before. The log names a killer
  * but never a reason — the run-up is the reason.
+ *
+ * The damage only means something against your health, which the log also never states —
+ * so it's shown against the **inferred** maximum (what you've survived, what has killed
+ * you), with the evidence on hover and a click to correct it.
  */
 function Deaths({ deaths }: { deaths: DeathRecap[] }) {
+  const hp = useHpEstimate();
+  const max = usableMax(hp);
+
   return (
     <div className="deaths">
-      <h3 className="section-head">Deaths</h3>
+      <h3 className="section-head">
+        Deaths
+        <span className="hp-note">
+          {max ? `· health ${hpLabel(hp)}` : "· health unknown"}
+          <AskValue
+            prompt={max ? "set" : "tell me"}
+            why={hpWhy(hp)}
+            suffix=" hp"
+            min={1}
+            max={100000}
+            initial={max || undefined}
+            onSubmit={(value) => api()?.hp.set(value)}
+          />
+          <AskValue
+            prompt={hp.regenPerTick ? `regen ${hp.regenPerTick}` : "regen?"}
+            why="Health ticks back every ~6 seconds, which lets a long fight absorb more than you actually have — so it inflates the figures on the left. Tell me your in-combat regeneration per tick and I'll discount it. Left blank, nothing is assumed."
+            suffix=" /tick"
+            min={0}
+            max={1000}
+            initial={hp.regenPerTick}
+            onSubmit={(value) => api()?.hp.setRegen(value)}
+          />
+        </span>
+      </h3>
       {deaths.map((d) => (
         <div className="death" key={d.at}>
           <div className="row">
@@ -174,6 +205,7 @@ function Deaths({ deaths }: { deaths: DeathRecap[] }) {
             <span className="spacer" />
             <span className="muted small">
               {fmt(d.totalTaken)} taken in the last {d.windowSec}s
+              {max ? ` · ${Math.round((d.totalTaken / max) * 100)}% of your health` : ""}
             </span>
           </div>
           <div className="death-sources">
@@ -187,6 +219,35 @@ function Deaths({ deaths }: { deaths: DeathRecap[] }) {
       ))}
     </div>
   );
+}
+
+/** The best single number to compare damage against, or 0 when nothing is known yet. */
+function usableMax(hp: HpEstimate): number {
+  if (hp.stated) return hp.stated;
+  // With both bounds, the midpoint is the least-wrong single figure; with only a floor,
+  // the floor itself understates by definition — which is the safer direction.
+  if (hp.atMost) return Math.round((hp.atLeast + hp.atMost) / 2);
+  return hp.atLeast;
+}
+
+function hpLabel(hp: HpEstimate): string {
+  if (hp.stated) return `${fmt(hp.stated)}`;
+  if (hp.atMost) return `${fmt(hp.atLeast)}–${fmt(hp.atMost)}`;
+  return `${fmt(hp.atLeast)}+`;
+}
+
+/** Say where the figure came from — it's inferred, and the reader should know that. */
+function hpWhy(hp: HpEstimate): string {
+  if (hp.stated) return `You told me ${hp.stated}. Click to change it; levelling up clears it.`;
+  const parts = [
+    hp.atLeast ? `you've survived ${hp.atLeast} damage in one stretch without healing` : "",
+    hp.atMost ? `${hp.atMost} has killed you from full health` : "",
+  ].filter(Boolean);
+  const evidence = parts.length ? `Worked out from the log: ${parts.join(", and ")}.` : "Nothing to go on yet.";
+  const regen = hp.regenPerTick
+    ? `Discounting ${hp.regenPerTick} regen per 6s tick.`
+    : "Passive regeneration is not discounted (tell me the rate and it will be).";
+  return `${evidence} ${regen} Buffs the log doesn't announce keep it approximate — click to set it outright.`;
 }
 
 /** Share of your side's damage that came from the pet rather than you. */

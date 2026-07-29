@@ -6,17 +6,26 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCombatLine, combatant, SELF } from "../../src/shared/combat-parser";
+import { parseCombat, combatant, SELF } from "../../src/shared/combat-parser";
+import { splitLine } from "../../src/shared/log-parser";
 import type {
   CastEvent,
   DamageEvent,
   DeathEvent,
   HealEvent,
+  InvocationEvent,
   MissEvent,
   SpellOutcomeEvent,
+  StanceEvent,
 } from "../../src/shared/types";
 
 const TS = "[Wed Jul 29 00:12:33 2026] ";
+
+/** Raw line in, event out — the parser itself takes an already-split line. */
+function parseCombatLine(raw: string) {
+  const line = splitLine(raw, 1);
+  return line ? parseCombat(line) : null;
+}
 const parse = (message: string) => parseCombatLine(TS + message);
 
 test("a mob's melee swing on the pet", () => {
@@ -221,6 +230,26 @@ test("your own death parses, with and without a killer", () => {
 test("a mob's death is a kill, not your death", () => {
   // `parseKillLine` owns these; the combat parser must not claim them.
   assert.equal(parse("A coyote has been slain by Kainos!"), null);
+});
+
+test("a stance change is the line that names the new stance", () => {
+  const e = parse("You assume an evasive stance.") as StanceEvent;
+  assert.equal(e.kind, "stance");
+  assert.equal(e.stance, "evasive");
+  assert.equal((parse("You assume a balanced stance.") as StanceEvent).stance, "balanced");
+  // The announcement of a change says nothing about which stance results.
+  assert.equal(parse("You begin to change your stance."), null);
+});
+
+test("an invocation change is the reciting line, which names it", () => {
+  const e = parse("You begin reciting the arcane mastery invocation.") as InvocationEvent;
+  assert.equal(e.kind, "invocation");
+  assert.equal(e.invocation, "arcane mastery");
+  assert.equal(
+    (parse("You begin reciting the empowering invocation.") as InvocationEvent).invocation,
+    "empowering",
+  );
+  assert.equal(parse("You begin to change your invocation."), null);
 });
 
 test("non-combat lines are ignored", () => {

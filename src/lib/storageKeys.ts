@@ -20,4 +20,10 @@ export const STORAGE_KEYS = {
   mapShowKey: "eqlist.map.showKey",
   /** Map window: share-my-pins toggle. */
   mapSharePins: "eqlist.map.sharePins",
+  /** Map window: the kills panel's visibility. */
+  mapKillsOpen: "eqlist.map.killsOpen",
+  /** Map window: the mob-knowledge panel's visibility. */
+  mapMobsOpen: "eqlist.map.mobsOpen",
+  /** Map window: share-my-kills toggle. */
+  mapShareKills: "eqlist.map.shareKills",
 } as const;

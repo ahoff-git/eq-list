@@ -12,10 +12,12 @@ import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
 import { createStore } from "./store";
 import { createWikiClient } from "./wiki";
 import { createLogWatcher } from "./log-watcher";
-import { createSessionStats } from "./session-stats";
 import { createCombatStats } from "./combat-stats";
 import { createCombatHistory } from "./combat-history";
 import { createXpProgress } from "./xp-progress";
+import { createHpEstimate } from "./hp-estimate";
+import { createKillLog } from "./kill-log";
+import { createMobKnowledge } from "./mob-knowledge";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
@@ -123,10 +125,12 @@ if (!app.requestSingleInstanceLock()) {
   const store = createStore(userData);
   const wiki = createWikiClient(path.join(userData, "wiki-cache"));
   const watcher = createLogWatcher();
-  const stats = createSessionStats();
   const combat = createCombatStats();
   const history = createCombatHistory(userData);
   const xp = createXpProgress(userData);
+  const hp = createHpEstimate(userData);
+  const killLog = createKillLog(userData);
+  const mobs = createMobKnowledge(userData, killLog);
   const ocr = createOcr(path.join(userData, "tesseract-cache"));
   const lookup = createLookup(ocr, routeSearchText);
 
@@ -139,10 +143,12 @@ if (!app.requestSingleInstanceLock()) {
     store,
     wiki,
     watcher,
-    stats,
     combat,
     history,
     xp,
+    hp,
+    killLog,
+    mobs,
     lookup,
     logFile,
     getCurrentZone: () => currentZone,
@@ -171,7 +177,9 @@ if (!app.requestSingleInstanceLock()) {
     broadcast(CH.watcherStatusChanged, status);
     // The log's filename carries the character name, which is how the damage meter
     // knows which rows are yours (you + "<Character>`s warder").
-    combat.setPlayer(characterFromLogFile(status.file) ?? "");
+    const character = characterFromLogFile(status.file) ?? "";
+    combat.setPlayer(character);
+    hp.setPlayer(character); // heals on you are logged by character name, not "you"
   });
   watcher.onZone((event) => {
     if (event.zone === currentZone) return;
@@ -181,31 +189,36 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onLoc((event) => {
     currentLoc = event;
+    killLog.noteLoc(event); // the fix a later kill will be placed against
     broadcast(CH.locChanged, currentLoc);
   });
   watcher.onLoot((event) => {
+    killLog.noteLoot(event); // ties the drop to the corpse it came from
     broadcast(CH.lootEvent, event);
     for (const entry of store.applyLoot(event)) {
       broadcast(CH.lootMatched, { event, entry });
     }
   });
   watcher.onKill((event) => {
-    stats.recordKill(event.target, event.at);
-    combat.recordKill(event.target, event.at); // time-to-kill + xp attribution
+    combat.recordKill(event.target, event.at);
+    killLog.record(event.target, currentZone, event.at, event.logId);
   });
   watcher.onXp((event) => {
-    stats.recordXp(event);
-    if (event.pct) {
-      combat.recordXp(event.pct, event.at);
-      xp.addGain(event.pct); // creeps the player-supplied "into level" figure forward
-    }
+    combat.recordXp(event);
+    if (event.pct) xp.addGain(event.pct); // creeps the player-stated "into level" forward
   });
-  watcher.onLevel((event) => xp.levelUp(event.level, event.at));
-  watcher.onCombat((event) => combat.record(event));
+  watcher.onLevel((event) => {
+    xp.levelUp(event.level, event.at);
+    hp.levelUp(event.level); // more hit points now, so the old bounds are void
+  });
+  watcher.onCombat((event) => {
+    combat.record(event);
+    hp.record(event);
+  });
   // Fights are filed as they end, so history survives a crash as well as a clean quit.
-  combat.onFightEnd((fight) => history.add(fight, combat.zone()));
+  combat.onFightEnd((fight) => history.add(fight, combat.zone(), watcher.status().file));
   xp.onChange((progress) => broadcast(CH.xpChanged, progress));
-  stats.onChange((snapshot) => broadcast(CH.statsChanged, snapshot));
+  hp.onChange((estimate) => broadcast(CH.hpChanged, estimate));
   combat.onChange(
     coalesce(250, (snapshot) => {
       // Debug-gated: the one line that answers "is the meter seeing this fight?"
@@ -313,6 +326,9 @@ if (!app.requestSingleInstanceLock()) {
     combat.flush();
     history.flush();
     xp.flush();
+    hp.flush();
+    killLog.flush();
+    mobs.flush();
   });
 });
 

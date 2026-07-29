@@ -1,5 +1,13 @@
 # Wiki data
 
+## Standing caveat
+The wiki describes an **older, heavily modified** version of the game. It's the right starting
+point — it knows what exists, what a quest needs, which zones matter — but its **drop rates and
+loot lists are not to be trusted as current**. Where the app has killed something itself, its
+own observations take over and the disagreement is shown rather than hidden; see
+[ADR 0025](../decisions/0025-observation-over-the-wiki.md) and `src/shared/drop-truth.ts`.
+Measured example: of two items a `minotaur slaver` actually dropped, the wiki lists neither.
+
 ## Purpose
 Use [eqlwiki.com](https://eqlwiki.com) as the source of truth for items, quests,
 and recipes, so a user can search for a goal and add everything it needs to the

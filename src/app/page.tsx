@@ -7,6 +7,7 @@ import HuntPanel from "./components/HuntPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
 import DamagePanel from "./components/DamagePanel";
+import LootPanel from "./components/LootPanel";
 import StatusBar from "./components/StatusBar";
 import LandingView from "./components/LandingView";
 import PinButton from "./components/PinButton";
@@ -17,7 +18,7 @@ import { NavProvider, useNav } from "@/lib/nav";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "search" | "damage" | "session" | "settings";
+type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "settings";
 
 /**
  * The single app window: a frameless, translucent float (the "overlay" look) that
@@ -33,6 +34,13 @@ export default function Home() {
   const settings = useSettings();
   const pinned = settings?.overlay.alwaysOnTop ?? true;
   const sliderOpacity = settings?.overlay.opacity ?? 1;
+  // Text size lives in settings (and is applied by the renderer); the titlebar just nudges
+  // it, so the Settings slider and these buttons are the same one value.
+  const fontScale = settings?.overlay.fontScale ?? 1;
+  const stepFontScale = (direction: number) => {
+    const next = Math.round(Math.min(1.6, Math.max(0.8, fontScale + direction * 0.1)) * 10) / 10;
+    if (next !== fontScale) api()?.settings.update({ overlay: { fontScale: next } });
+  };
   // Transient "full opacity" toggle: flip between 100% and the settings slider value.
   const [opaque, setOpaque] = useState(false);
   // Owned here so the Hunt tab's zone filter survives switching tabs (and, persisted,
@@ -80,6 +88,12 @@ export default function Home() {
             <button className="wc" title="Open map window" onClick={() => api()?.map.open()}>
               🗺
             </button>
+            <button className="wc" title="Smaller text" onClick={() => stepFontScale(-1)} disabled={fontScale <= 0.8}>
+              A−
+            </button>
+            <button className="wc" title="Larger text" onClick={() => stepFontScale(1)} disabled={fontScale >= 1.6}>
+              A+
+            </button>
             <button
               className={`wc ${opaque ? "on" : ""}`}
               title={
@@ -112,6 +126,9 @@ export default function Home() {
           <button className={tabCls(tab, "hunt")} onClick={() => setTab("hunt")}>
             Hunt
           </button>
+          <button className={tabCls(tab, "loot")} onClick={() => setTab("loot")}>
+            Loot
+          </button>
           <button className={tabCls(tab, "search")} onClick={() => setTab("search")}>
             Search
           </button>
@@ -129,6 +146,7 @@ export default function Home() {
         <div className="panel">
           {tab === "list" && <ListPanel />}
           {tab === "hunt" && <HuntPanel pickedZone={huntZone} onPickedZone={setHuntZone} />}
+          {tab === "loot" && <LootPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} />}
           {tab === "damage" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}

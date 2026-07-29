@@ -21,18 +21,29 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0015: Peer presence from awari's roster, names from a `hello` payload](./0015-peer-presence-via-hello.md)
 - [0016: Combat history on disk, and spell efficiency derived from the log](./0016-combat-history-and-spell-analytics.md)
 - [0017: Camp-efficiency analytics, and asking the player for what the log can't say](./0017-camp-efficiency-and-asking-the-player.md)
+- [0018: Maximum hit points inferred from the log, stored softly](./0018-inferred-max-hit-points.md)
+- [0019: Parse each log line once, and let one tracker own the session](./0019-parse-once-and-one-tracker.md)
+- [0020: Split every tally by stance and invocation](./0020-split-by-stance-and-invocation.md)
+- [0021: Stored fights keep a pointer back to their source lines](./0021-stored-fights-keep-their-source.md)
+- [0022: Invocation side-effects, and placing kills honestly](./0022-invocation-effects-and-kill-locations.md)
+- [0023: The kill heatmap — show the doubt, share the conclusion](./0023-kill-heatmap.md)
+- [0024: Mob knowledge — observed drop rates and roam areas, pooled with peers](./0024-mob-knowledge.md)
+- [0025: Observation outranks the wiki, and disagreements are shown](./0025-observation-over-the-wiki.md)
 
 ## Open Questions
+- Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the
+  same. Should contributions be weighted, or individual peers mutable/vetoable?
+  See [ADR 0024](./0024-mob-knowledge.md).
+- Undocumented drops are surfaced per mob. Should they also be *reported upward* somewhere —
+  a shared list of "things this build drops that no wiki knows"? The room already pools
+  observations ([ADR 0024](./0024-mob-knowledge.md)); this would be the useful summary of them.
 - Should out-of-era pages be *hidden* (not just badged)? Filtering search results by
   era would need a category lookup per result — flagging-on-open is done today.
 - Should the overlay support multiple named lists / profiles per character?
 - Should the damage meter break a fight down by *phase* (adds arriving, mob enraging)?
   Today a fight is one flat window from first swing to last.
-- `session-stats.ts` and `combat-stats.ts` both consume kill/XP events now (different
-  aggregations: session counters vs fight-scoped rates). Should the Session tab's counters
-  come from the combat tracker so there's one consumer?
-  See [ADR 0017](./0017-camp-efficiency-and-asking-the-player.md).
-- The pet's *own* death parses as a kill (`<pet> has been slain by …`); the combat tracker
-  filters it, but `session-stats.ts` still counts it in the Session tab's kill total.
+- Should a fight's stored record keep the raw `logId` range it covered, so a past fight
+  could be re-derived from the log if the tracker's maths changes?
+  See [ADR 0019](./0019-parse-once-and-one-tracker.md).
 - Should the overlay toggle hotkey be user-configurable? (Currently a fixed
   `Ctrl/Cmd+Shift+O` via Electron's built-in `globalShortcut` — no native dep.)

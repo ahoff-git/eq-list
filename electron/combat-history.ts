@@ -29,8 +29,12 @@ const MAX_FIGHTS = 1000;
 const WRITE_DEBOUNCE_MS = 2000;
 
 export interface CombatHistory {
-  /** File a finished fight under the current session, tagged with the zone it happened in. */
-  add(fight: FightStats, zone?: string | null): void;
+  /**
+   * File a finished fight under the current session, tagged with the zone it happened in
+   * and the log file it came from (with `stats.logIds` and the timestamps, that's the way
+   * back to the source lines — see ADR 0021).
+   */
+  add(fight: FightStats, zone?: string | null, logFile?: string | null): void;
   /** Per-zone totals across every recorded fight — which camp actually pays. */
   zones(): ZoneReport[];
   /** Your best recorded fight per opponent. */
@@ -84,8 +88,15 @@ export function createCombatHistory(userDataDir: string, sessionId: string = ran
   }
 
   return {
-    add(stats, zone) {
-      fights.push({ id: randomUUID(), sessionId, label: labelFor(stats), zone: zone ?? undefined, stats });
+    add(stats, zone, logFile) {
+      fights.push({
+        id: randomUUID(),
+        sessionId,
+        label: labelFor(stats),
+        zone: zone ?? undefined,
+        logFile: logFile ?? undefined,
+        stats,
+      });
       if (fights.length > MAX_FIGHTS) fights = fights.slice(-MAX_FIGHTS);
       log.debug("filed fight", { label: labelFor(stats), dealt: stats.totalDealt, kept: fights.length });
       scheduleWrite();

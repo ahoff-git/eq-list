@@ -7,15 +7,17 @@ import type {
   WatcherStatus,
   LootEvent,
   LocEvent,
-  SessionStats,
   CombatStats,
   FightStats,
   XpProgress,
+  HpEstimate,
+  KillRecord,
   AppInfo,
   ItemSource,
   ItemCard,
   ShoppingListEntry,
 } from "@/shared/types";
+import type { MobKnowledge } from "@/shared/mob-stats";
 
 /** One-shot app diagnostics (hotkey registration) for the Help section. */
 export function useAppInfo(): AppInfo | null {
@@ -26,28 +28,6 @@ export function useAppInfo(): AppInfo | null {
     void a.app.info().then(setInfo);
   }, []);
   return info;
-}
-
-const EMPTY_STATS: SessionStats = {
-  startedAt: "",
-  totalXp: 0,
-  partyXp: 0,
-  soloXp: 0,
-  totalPct: 0,
-  kills: 0,
-  byMob: [],
-};
-
-/** Live session XP/kill stats from the log. */
-export function useSessionStats(): SessionStats {
-  const [stats, setStats] = useState<SessionStats>(EMPTY_STATS);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.stats.get().then(setStats);
-    return a.stats.onChanged(setStats);
-  }, []);
-  return stats;
 }
 
 const EMPTY_FIGHT: FightStats = {
@@ -63,8 +43,12 @@ const EMPTY_FIGHT: FightStats = {
   byMob: [],
   kills: 0,
   xpPct: 0,
+  xpGains: 0,
+  soloXp: 0,
+  partyXp: 0,
   yourPerSec: [],
   deaths: [],
+  invocations: [],
 };
 
 const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
@@ -94,6 +78,79 @@ export function useXpProgress(): XpProgress {
     return a.xp.onChanged(setProgress);
   }, []);
   return progress;
+}
+
+/**
+ * Inferred bounds on your maximum hit points (see `hp-estimate.ts`). Soft by nature:
+ * it sharpens as you play, and a stated figure overrides it.
+ */
+export function useHpEstimate(): HpEstimate {
+  const [estimate, setEstimate] = useState<HpEstimate>({ atLeast: 0, samples: 0, updatedAt: "" });
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void a.hp.get().then(setEstimate);
+    return a.hp.onChanged(setEstimate);
+  }, []);
+  return estimate;
+}
+
+/**
+ * Pooled mob knowledge (yours plus peers'), keyed by mob name for quick lookup. Used wherever
+ * the wiki's claims need checking against what we've actually killed.
+ */
+export function useMobKnowledge(refreshKey: unknown): Record<string, MobKnowledge> {
+  const [known, setKnown] = useState<Record<string, MobKnowledge>>({});
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void a.mobs.all().then((mobs) => {
+      // A mob can be known in several zones; fold them together, since "does it drop this"
+      // isn't a per-zone question.
+      const byMob: Record<string, MobKnowledge> = {};
+      for (const m of mobs) {
+        const cur = byMob[m.mob];
+        if (!cur) {
+          byMob[m.mob] = m;
+          continue;
+        }
+        byMob[m.mob] = {
+          ...cur,
+          kills: cur.kills + m.kills,
+          myKills: cur.myKills + m.myKills,
+          drops: mergeDropLists(cur, m),
+          contributors: [...new Set([...cur.contributors, ...m.contributors])],
+        };
+      }
+      setKnown(byMob);
+    });
+  }, [refreshKey]);
+  return known;
+}
+
+/** Sum two zones' drop counts for the same mob, then re-derive the rates from the total. */
+function mergeDropLists(a: MobKnowledge, b: MobKnowledge): MobKnowledge["drops"] {
+  const kills = a.kills + b.kills;
+  const counts = new Map<string, number>();
+  for (const d of [...a.drops, ...b.drops]) counts.set(d.item, (counts.get(d.item) ?? 0) + d.count);
+  return [...counts.entries()]
+    .map(([item, count]) => ({ item, count, rate: kills ? Math.round((count / kills) * 1000) / 1000 : 0 }))
+    .sort((x, y) => y.rate - x.rate || x.item.localeCompare(y.item));
+}
+
+/**
+ * Recorded kills, newest first. Re-read when `refreshKey` changes — kills accumulate as you
+ * play, and the map only needs to catch up when something says so (a new kill, a zone
+ * change) rather than on a timer.
+ */
+export function useKills(zone: string | undefined, refreshKey: unknown): KillRecord[] {
+  const [kills, setKills] = useState<KillRecord[]>([]);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void a.kills.all(zone).then(setKills);
+  }, [zone, refreshKey]);
+  return kills;
 }
 
 /** The zone the player is currently in (from the log), or null if unknown. */
@@ -238,6 +295,64 @@ export function useEntrySources(entries: ShoppingListEntry[]): {
   }, [key]);
 
   return { sources, loading };
+}
+
+/** What the wiki states about a spell — the numbers the log never gives. */
+export interface SpellFacts {
+  /** Mana cost, so damage can be weighed against what it cost to cast. */
+  mana?: number;
+  /** The wiki's stated cast time, for comparison with what we measured. */
+  castSec?: number;
+}
+
+/**
+ * Wiki facts for a set of spells, keyed by the name the meter uses. Mana cost is the one
+ * thing needed for damage-per-mana and it isn't in the log — but it *is* on the spell's
+ * wiki page, which the main process already caches, so no OCR and no guessing.
+ *
+ * Pages are per rank ("Spell: Shock of Lightning VI"), with the un-ranked page as the
+ * fallback. Refetches only when the set of spells changes.
+ */
+export function useSpellFacts(spells: { spell: string; rank?: string }[]): Record<string, SpellFacts> {
+  const [facts, setFacts] = useState<Record<string, SpellFacts>>({});
+  const key = spells
+    .map((s) => `${s.spell}|${s.rank ?? ""}`)
+    .sort()
+    .join(",");
+
+  useEffect(() => {
+    const a = api();
+    if (!a || spells.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const pairs = await Promise.all(
+        spells.map(async ({ spell, rank }) => {
+          const page =
+            (rank ? await a.wiki.getPage(`Spell: ${spell} ${rank}`) : null) ??
+            (await a.wiki.getPage(`Spell: ${spell}`));
+          return [spell, factsFromCard(page?.card?.lines ?? [])] as const;
+        }),
+      );
+      if (!cancelled) setFacts(Object.fromEntries(pairs));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the spell set, not array identity (`wiki.getPage` is cached in main).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return facts;
+}
+
+/** Pull the two numbers we want out of a spell card's "Label: value" lines. */
+function factsFromCard(lines: string[]): SpellFacts {
+  const find = (label: string): number | undefined => {
+    const line = lines.find((l) => l.toLowerCase().startsWith(`${label}:`));
+    const value = line ? Number.parseFloat(line.slice(line.indexOf(":") + 1)) : NaN;
+    return Number.isFinite(value) ? value : undefined;
+  };
+  return { mana: find("mana"), castSec: find("casting time") };
 }
 
 /**

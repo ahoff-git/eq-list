@@ -1,10 +1,13 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { useCurrentZone, usePlayerTrail, useSettings, useWatcherStatus } from "@/lib/hooks";
+import { useCurrentZone, useKills, usePlayerTrail, useSettings, useWatcherStatus } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import MapPanel, { type RenderPin } from "../components/MapPanel";
+import MapPanel, { type RenderKill, type RenderPin } from "../components/MapPanel";
+import KillList from "../components/KillList";
+import MobKnowledgePanel from "../components/MobKnowledge";
+import { DEFAULT_KILL_FILTERS, filterKills, type KillFilters } from "@/shared/kill-filters";
 import MapKey from "../components/MapKey";
 import PinButton from "../components/PinButton";
 import { useCalibration } from "@/lib/map/useCalibration";
@@ -12,6 +15,7 @@ import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { baseZones, findZone, sortZones } from "@/shared/map/zones";
 import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import { characterFromLogFile } from "@/shared/log-parser";
+import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
 import { setRendererDebug } from "@/shared/logging";
 
 /**
@@ -110,6 +114,10 @@ export default function MapWindow() {
   const [sharePinsOn, setSharePinsOn] = usePersistentState(STORAGE_KEYS.mapSharePins, false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
+  const [killsOpen, setKillsOpen] = usePersistentState(STORAGE_KEYS.mapKillsOpen, false);
+  const [mobsOpen, setMobsOpen] = usePersistentState(STORAGE_KEYS.mapMobsOpen, false);
+  const [killFilters, setKillFilters] = useState<KillFilters>(DEFAULT_KILL_FILTERS);
+  const [shareKillsOn, setShareKillsOn] = usePersistentState(STORAGE_KEYS.mapShareKills, false);
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // Broadcast (or un-share) pins to peers when connected + sharing.
@@ -117,6 +125,70 @@ export default function MapWindow() {
     if (!connected) return;
     broadcastPins(sharePinsOn ? pins : []);
   }, [connected, sharePinsOn, pins, broadcastPins]);
+
+  // Kills are re-read when a new one could have landed (the current zone's kill count moves
+  // with play, so the trail's length is a cheap "something happened" signal).
+  const allKills = useKills(zone?.name, `${zoneKey}:${trail.points.length}`);
+  const kills = useMemo(() => filterKills(allKills, killFilters), [allKills, killFilters]);
+  const showKillConfidence = settings?.overlay.showKillConfidence ?? true;
+
+  // Only placed kills can go on the map; the rest stay in the list, labelled.
+  const renderKills = useMemo<RenderKill[]>(() => {
+    const mine = kills
+      .filter((k) => k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
+      .map((k) => {
+        const tier = confidenceTier(k.confidence);
+        return { y: k.y!, x: k.x!, confidence: k.confidence, glyph: tier.glyph, color: tier.color };
+      });
+    const theirs = room.peerKills
+      .filter((k) => zoneMatch(k.zone))
+      .map((k) => {
+        const tier = confidenceTier(k.confidence);
+        return { y: k.y, x: k.x, confidence: k.confidence, glyph: tier.glyph, color: tier.color, peer: k.by };
+      });
+    return [...mine, ...theirs];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kills, room.peerKills, zoneKey]);
+
+  // Share the placed kills for the zone in view (empty un-shares), so a camp's heatmap can
+  // be pooled. Only the conclusion travels — the evidence behind it stays local.
+  const broadcastKills = room.shareKills;
+  useEffect(() => {
+    if (!connected) return;
+    broadcastKills(
+      shareKillsOn && zoneKey
+        ? kills
+            .filter((k) => k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
+            .map((k) => ({ zone: zoneKey, y: k.y!, x: k.x!, mob: k.mob, confidence: k.confidence }))
+        : [],
+    );
+  }, [connected, shareKillsOn, kills, zoneKey, broadcastKills]);
+
+  // Sharing kills and sharing what they taught us are one intent, so one toggle drives both.
+  // Observations are counts, so they pool by addition — see `mob-stats.ts`.
+  const broadcastMobs = room.shareMobs;
+  useEffect(() => {
+    if (!connected) return;
+    if (!shareKillsOn) return void broadcastMobs([]);
+    void api()
+      ?.mobs.mine()
+      .then((mine) => broadcastMobs(mine));
+    // Re-shared as the kill count moves, which is when there's anything new to say.
+  }, [connected, shareKillsOn, allKills.length, broadcastMobs]);
+
+  /**
+   * Pin where a mob lives. The roam centre is a real coordinate, so this reuses the pin
+   * machinery rather than adding a one-off "centre the view" path into the canvas.
+   */
+  function markMobArea(mob: { mob: string; area?: { y: number; x: number; spread: number } }) {
+    if (!mob.area || !zoneKey) return;
+    const title = `${mob.mob} ±${mob.area.spread}`;
+    setPins((prev) =>
+      prev.some((p) => p.title === title && p.zone === zoneKey)
+        ? prev
+        : [...prev, { id: crypto.randomUUID(), kind: "star", zone: zoneKey, y: mob.area!.y, x: mob.area!.x, title }],
+    );
+  }
 
   const zoneMatch = (z: string) => !!zoneKey && findZone(z, baseZones)?.name === zoneKey;
 
@@ -283,6 +355,29 @@ export default function MapWindow() {
         <button className={`wc ${layersOpen ? "on" : ""}`} title="Show / hide pin types" onClick={() => setLayersOpen((o) => !o)}>
           👁
         </button>
+        <button
+          className={`wc ${mobsOpen ? "on" : ""}`}
+          title="What killing things here has taught us — drop rates and roam areas"
+          onClick={() => setMobsOpen((o) => !o)}
+        >
+          📖
+        </button>
+        <button
+          className={`wc ${killsOpen ? "on" : ""}`}
+          title="Kills recorded here — the heatmap and its filters"
+          onClick={() => setKillsOpen((o) => !o)}
+        >
+          ☠{kills.length ? ` ${kills.length}` : ""}
+        </button>
+        {connected && (
+          <button
+            className={`wc pin ${shareKillsOn ? "on" : ""}`}
+            title="Share your kill locations, so the camp's heatmap is everyone's"
+            onClick={() => setShareKillsOn((s) => !s)}
+          >
+            ☣
+          </button>
+        )}
         {connected && (
           <button
             className={`wc ${usersOpen ? "on" : ""}`}
@@ -333,6 +428,23 @@ export default function MapWindow() {
         </div>
       )}
 
+      {mobsOpen && (
+        <MobKnowledgePanel
+          zone={zone?.name}
+          refreshKey={`${allKills.length}:${room.peerKills.length}`}
+          onMarkMob={markMobArea}
+        />
+      )}
+
+      {killsOpen && (
+        <KillList
+          kills={kills}
+          filters={killFilters}
+          onFilters={setKillFilters}
+          showConfidence={showKillConfidence}
+        />
+      )}
+
       {layersOpen && (
         <div className="pin-layers no-drag">
           <div className="muted small">Pin types</div>
@@ -364,6 +476,8 @@ export default function MapWindow() {
           <MapPanel
             zone={zone}
             redrawKey={cal.tick}
+            kills={renderKills}
+            showKillConfidence={showKillConfidence}
             trail={trail.points}
             peers={peers}
             pings={pings}

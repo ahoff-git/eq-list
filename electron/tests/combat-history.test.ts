@@ -27,6 +27,7 @@ function combatant(name: string, dealt: number, mine = false): CombatantStat {
     activeSec: 1,
     dps: dealt,
     mine,
+    byStance: [],
   };
 }
 
@@ -46,8 +47,12 @@ function fight(min: number, yours: number, theirs: number, mob = "a coyote", ext
     byMob: [],
     kills: 1,
     xpPct: 1,
+    xpGains: 1,
+    soloXp: 1,
+    partyXp: 0,
     yourPerSec: [],
     deaths: [],
+    invocations: [],
     ...extra,
   };
 }

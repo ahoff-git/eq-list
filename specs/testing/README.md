@@ -15,10 +15,28 @@ unit-tested.
   - `electron/combat-stats.ts` → `electron/tests/combat-stats.test.ts` (per-combatant
     tallies, fight boundaries, active-time DPS, `mine` flagging, and the per-spell
     numbers: measured cast time, rank-folding, resist rate, and the dmg/s-cast formula
-    that must not inflate partly-timed spells). Deterministic: time comes from the log's
+    that must not inflate partly-timed spells; plus the per-stance / per-invocation splits,
+    including the "unknown" bucket and modes surviving a reset). Deterministic: time comes from the log's
     timestamps, so there are no clocks or sleeps. Note the helper builds timestamps as
     real clock times — an early version wrote "00:00:60", which `Date.parse` rejects, and
     the resulting NaN quietly zeroed a window's span.
+  - `src/shared/drop-truth.ts` → `electron/tests/drop-truth.test.ts` (confirmed / undocumented
+    / unseen verdicts, when a wiki claim becomes suspicious, and the sample size at which our
+    own observations take over from the wiki's figure).
+  - `src/shared/mob-stats.ts` → `electron/tests/mob-stats.test.ts` (rolling kills up into
+    observations, observed drop rates and their denominators, roam areas ignoring untrustworthy
+    positions, and pooling a peer's counts while keeping provenance — including that a pooled
+    area *widens* rather than averaging inward).
+  - `src/shared/kill-filters.ts` + `kill-confidence.ts` → `electron/tests/kill-filters.test.ts`
+    (time windows, mob/drop matching, the confidence floor, and every tier having a distinct
+    glyph so the map doesn't depend on colour alone).
+  - `electron/kill-log.ts` → `electron/tests/kill-log.test.ts` (placement from the last fix,
+    confidence decay, the movement penalty, dead reckoning, and recording kills that can't be
+    placed at all).
+  - `electron/hp-estimate.ts` → `electron/tests/hp-estimate.test.ts` (floors from survived
+    damage, ceilings from deaths at full health, and — the important half — every case
+    where it must *refuse* to infer: healing, lulls, your own buffs fading, overkill, and a
+    floor that contradicts the ceiling).
   - `electron/xp-progress.ts` → `electron/tests/xp-progress.test.ts` (nothing assumed
     until the player says so, gains accumulating, level-up resetting, clamping, reload,
     corrupt file).
@@ -33,8 +51,6 @@ unit-tested.
     entry-count hover — pinned to sum to `itemTotals`).
   - `src/shared/sources.ts` → `electron/tests/sources.test.ts` (drops-by-zone,
     loose zone matching, current-zone split).
-  - `electron/session-stats.ts` → `electron/tests/session-stats.test.ts` (XP/kill
-    counts and time-windowed XP-to-mob attribution).
   - `electron/wiki/parse.ts` → `electron/tests/wiki-parse.test.ts`, pinned against
     real page HTML in `fixtures/wiki/` (item drops, quest turn-ins/rewards, recipe
     components). Re-capture a fixture only when the wiki's markup actually changes.

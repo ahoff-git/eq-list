@@ -6,28 +6,54 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parseLogLine,
-  parseLevelLine,
-  parseZoneLine,
-  parseXpLine,
-  parseKillLine,
-  parseLocLine,
-  splitTimestamp,
+  parseLoot,
+  parseLevel,
+  parseZone,
+  parseXp,
+  parseKill,
+  parseLoc,
+  splitLine,
   stripArticle,
   characterFromLogFile,
 } from "../../src/shared/log-parser";
+import type { LogLine } from "../../src/shared/types";
 
-test("splitTimestamp extracts the message and an ISO time", () => {
-  const r = splitTimestamp("[Fri Jul 17 18:41:14 2026] Hello world");
+/**
+ * The parsers take an already-split line (see `splitLine`). These wrappers keep the tests
+ * reading as "raw line in, event out", which is what they're actually pinning.
+ */
+function on<T>(parse: (line: LogLine) => T | null): (raw: string) => T | null {
+  return (raw) => {
+    const line = splitLine(raw, 1);
+    return line ? parse(line) : null;
+  };
+}
+
+const parseLogLine = on(parseLoot);
+const parseZoneLine = on(parseZone);
+const parseXpLine = on(parseXp);
+const parseKillLine = on(parseKill);
+const parseLocLine = on(parseLoc);
+const parseLevelLine = on(parseLevel);
+
+test("splitLine extracts the message, an ISO time, and carries the line id", () => {
+  const r = splitLine("[Fri Jul 17 18:41:14 2026] Hello world", 42);
   assert.ok(r);
   assert.equal(r!.message, "Hello world");
   assert.match(r!.at, /^2026-07-17T/);
+  assert.equal(r!.logId, 42);
+  assert.equal(r!.raw, "[Fri Jul 17 18:41:14 2026] Hello world");
 });
 
-test("splitTimestamp tolerates a space-padded day", () => {
-  const r = splitTimestamp("[Sun Jul  7 09:05:00 2026] x");
+test("splitLine tolerates a space-padded day", () => {
+  const r = splitLine("[Sun Jul  7 09:05:00 2026] x");
   assert.ok(r);
   assert.match(r!.at, /^2026-07-07T/);
+});
+
+test("splitLine rejects a line with no timestamp — a wrapped continuation, not an event", () => {
+  assert.equal(splitLine("  Policy set or a policy with unsafe-eval enabled."), null);
+  assert.equal(splitLine(""), null);
 });
 
 test("stripArticle removes leading a/an/the", () => {
@@ -65,6 +91,30 @@ test("parses the loot-and-combine line", () => {
 
 // The auto-store forms and the stack counts below are verbatim shapes from a real
 // EQL log — they were silently unparsed (or under-counted) before.
+test("each loot line records what became of the item", () => {
+  const kept = parseLogLine("[Fri Jul 17 18:41:14 2026] --You have looted a Bone Chips from a skeleton's corpse.--");
+  assert.equal(kept!.fate, "kept");
+  assert.equal(kept!.detail, undefined);
+
+  const sold = parseLogLine(
+    "[Fri Jul 17 18:41:14 2026] You looted a Snake Egg from an asp's corpse and sold it for 4 copper.",
+  );
+  assert.equal(sold!.fate, "sold");
+  assert.equal(sold!.detail, "4 copper");
+
+  const stored = parseLogLine(
+    "[Fri Jul 17 18:41:14 2026] You looted a Spiderling Silk from a rock spider's corpse and stored it in your tradeskill depot",
+  );
+  assert.equal(stored!.fate, "stored");
+  assert.equal(stored!.detail, "tradeskill depot");
+
+  const combined = parseLogLine(
+    "[Fri Jul 17 18:41:14 2026] You looted a Crushbone Belt +2 from an orc's corpse to create a Crushbone Belt +5.",
+  );
+  assert.equal(combined!.fate, "combined");
+  assert.equal(combined!.detail, "Crushbone Belt +5");
+});
+
 test("parses the auto-store (tradeskill depot) loot line", () => {
   const e = parseLogLine(
     "[Fri Jul 17 18:41:14 2026] You looted a Spiderling Silk from a rock spider's corpse and stored it in your tradeskill depot",

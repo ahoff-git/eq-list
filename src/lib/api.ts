@@ -14,3 +14,11 @@ declare global {
 export function api(): EqlApi | null {
   return typeof window !== "undefined" && window.eql ? window.eql : null;
 }
+
+/**
+ * Clear everything the app calls "this session" — one tracker now owns all of it
+ * (see ADR 0019), so both "reset" buttons can only ever mean the same thing.
+ */
+export function resetSession(): void {
+  void api()?.combat.reset();
+}

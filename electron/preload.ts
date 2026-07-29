@@ -60,11 +60,6 @@ const api: EqlApi = {
     current: () => ipcRenderer.invoke(CH.locGet),
     onChanged: (cb) => on(CH.locChanged, cb),
   },
-  stats: {
-    get: () => ipcRenderer.invoke(CH.statsGet),
-    reset: () => ipcRenderer.invoke(CH.statsReset),
-    onChanged: (cb) => on(CH.statsChanged, cb),
-  },
   combat: {
     get: () => ipcRenderer.invoke(CH.combatGet),
     reset: () => ipcRenderer.invoke(CH.combatReset),
@@ -74,6 +69,22 @@ const api: EqlApi = {
     zones: () => ipcRenderer.invoke(CH.combatZones),
     bests: () => ipcRenderer.invoke(CH.combatBests),
     clearHistory: () => ipcRenderer.invoke(CH.combatClearHistory),
+  },
+  mobs: {
+    all: (zone) => ipcRenderer.invoke(CH.mobsAll, zone),
+    mine: (zone) => ipcRenderer.invoke(CH.mobsMine, zone),
+    report: (by, observations) => ipcRenderer.invoke(CH.mobsReport, by, observations),
+    forgetPeers: () => ipcRenderer.invoke(CH.mobsForgetPeers),
+  },
+  kills: {
+    all: (zone) => ipcRenderer.invoke(CH.killsAll, zone),
+    clear: () => ipcRenderer.invoke(CH.killsClear),
+  },
+  hp: {
+    get: () => ipcRenderer.invoke(CH.hpGet),
+    set: (max) => ipcRenderer.invoke(CH.hpSet, max),
+    setRegen: (perTick) => ipcRenderer.invoke(CH.hpSetRegen, perTick),
+    onChanged: (cb) => on(CH.hpChanged, cb),
   },
   xp: {
     get: () => ipcRenderer.invoke(CH.xpGet),

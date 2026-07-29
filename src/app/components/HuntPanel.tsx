@@ -1,6 +1,14 @@
 "use client";
 import { useMemo } from "react";
-import { useShoppingList, useCurrentZone, useEntrySources, useSettings, useMobLoot } from "@/lib/hooks";
+import {
+  useShoppingList,
+  useCurrentZone,
+  useEntrySources,
+  useSettings,
+  useMobLoot,
+  useMobKnowledge,
+} from "@/lib/hooks";
+import { bestRate, reconcileDrops } from "@/shared/drop-truth";
 import ItemLink from "./ItemLink";
 import { buildHunt, neededEntries, huntInputsFor } from "@/shared/hunt";
 import { zoneMatches, sourceZones } from "@/shared/sources";
@@ -43,6 +51,10 @@ export default function HuntPanel({
   // Drop rates come from each mob's loot page (the item's "Drops From" has none).
   const mobNames = useMemo(() => [...new Set(allZones.flatMap((z) => z.mobs.map((m) => m.mob)))], [allZones]);
   const mobLoot = useMobLoot(mobNames);
+  // The wiki describes an older, since-modified game, so its rates are a starting point. Our
+  // own kills are this build — they take over once there are enough of them, and either way
+  // the badge says which you're reading (see `drop-truth.ts`).
+  const known = useMobKnowledge(mobNames.join("|"));
 
   const zoneOptions = useMemo(() => {
     const byLower = new Map<string, string>();
@@ -122,7 +134,13 @@ export default function HuntPanel({
                 <ItemLink title={m.mob} className="hm-name" />
                 <span className="hm-items">
                   {m.items.map((it) => {
-                    const rate = mobLoot[m.mob]?.[it.item];
+                    const mob = known[m.mob];
+                    const [truth] = reconcileDrops(
+                      { [it.item]: mobLoot[m.mob]?.[it.item] },
+                      Object.fromEntries((mob?.drops ?? []).map((d) => [d.item, d.count])),
+                      mob?.kills ?? 0,
+                    );
+                    const shown = bestRate(truth);
                     return (
                       <ItemLink
                         key={it.item}
@@ -131,7 +149,23 @@ export default function HuntPanel({
                         label={
                           <>
                             {it.item} <span className="muted">{it.obtained}/{it.needed}</span>
-                            {rate && <span className="badge rarity">{rate}</span>}
+                            {shown.source !== "none" && (
+                              <span
+                                className={`badge rarity rate-${shown.source}`}
+                                title={rateWhy(truth, shown.source)}
+                              >
+                                {shown.text}
+                                {shown.source === "observed" ? "✓" : ""}
+                              </span>
+                            )}
+                            {truth.suspicious && (
+                              <span
+                                className="badge era-out"
+                                title={`The wiki lists this, but ${truth.kills} kills haven't produced one. The wiki describes an older build — treat the claim with suspicion.`}
+                              >
+                                unseen in {truth.kills}
+                              </span>
+                            )}
                           </>
                         }
                       />
@@ -154,4 +188,16 @@ export default function HuntPanel({
       )}
     </div>
   );
+}
+
+/** Say which source a rate came from, and why that one is leading. */
+function rateWhy(truth: ReturnType<typeof reconcileDrops>[number], source: "observed" | "wiki"): string {
+  if (source === "observed") {
+    return `Seen ${truth.seen} times in ${truth.kills} of your own kills${
+      truth.wikiRate ? ` — the wiki says ${truth.wikiRate}` : " — the wiki doesn't list it at all"
+    }.`;
+  }
+  return `The wiki's figure${
+    truth.kills ? `, from an older build. You've killed it ${truth.kills} times so far` : ""
+  } — your own kills take over once there are enough of them.`;
 }
