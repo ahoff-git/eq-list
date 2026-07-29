@@ -1,14 +1,26 @@
 "use client";
-import { useSessionStats } from "@/lib/hooks";
+import { useCombatStats, useSessionStats, useXpProgress } from "@/lib/hooks";
 import { api } from "@/lib/api";
+import AskValue from "./AskValue";
+import CampReport from "./CampReport";
+import type { FightStats, XpProgress } from "@/shared/types";
 
 /**
- * Live session tracking from the log: experience gains and kills, with XP
- * attributed to the mob you most recently killed. EQ logs no XP amount, so
- * counts (and the shown %, when present) are what we have.
+ * The session's "how's it going" screen: experience rate and where it's coming from,
+ * how much of the session was actually spent fighting, and which mobs/zones pay best.
+ *
+ * Rates come from the combat tracker's session window, because that's what knows the
+ * difference between elapsed time and time *in combat* — the gap between them being the
+ * downtime that decides an evening's real experience rate.
  */
 export default function SessionPanel() {
   const stats = useSessionStats();
+  const combat = useCombatStats();
+  const xp = useXpProgress();
+  const session = combat.session;
+
+  const xpPerHour = ratePerHour(session);
+  const downtimeSec = Math.max(0, session.spanSec - session.durationSec);
 
   return (
     <div>
@@ -21,48 +33,98 @@ export default function SessionPanel() {
       </div>
 
       <div className="stat-row">
-        <StatTile label="XP gains" value={stats.totalXp} />
-        <StatTile label="Solo / Party" value={`${stats.soloXp} / ${stats.partyXp}`} />
-        {stats.totalPct > 0 && <StatTile label="Total %" value={`${stats.totalPct}%`} />}
-        <StatTile label="Kills" value={stats.kills} />
+        <StatTile label="XP / hour" value={xpPerHour ? `${xpPerHour}%` : "—"} hint="Percent of a level per hour, over elapsed session time" />
+        <StatTile
+          label="Time to level"
+          value={<TimeToLevel xp={xp} xpPerHour={xpPerHour} />}
+          hint="Needs how far into the level you are — the log never says"
+        />
+        <StatTile
+          label="Downtime"
+          value={session.spanSec ? `${Math.round((downtimeSec / session.spanSec) * 100)}%` : "—"}
+          hint={`${fmtDuration(downtimeSec)} not fighting, of ${fmtDuration(session.spanSec)} elapsed`}
+        />
+        <StatTile label="Kills" value={session.kills || stats.kills} />
       </div>
 
-      {stats.byMob.length === 0 ? (
-        <div className="empty">
-          <p>No kills or XP yet this session.</p>
-          <p className="small">Go kill something — this fills in from the log.</p>
-        </div>
-      ) : (
-        <table className="stat-table">
-          <thead>
-            <tr>
-              <th>Mob</th>
-              <th>Kills</th>
-              <th>XP</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.byMob.map((m) => (
-              <tr key={m.mob}>
-                <td>{m.mob}</td>
-                <td>{m.kills}</td>
-                <td>{m.xp}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div className="stat-row">
+        <StatTile label="XP gains" value={stats.totalXp} />
+        <StatTile label="Solo / Party" value={`${stats.soloXp} / ${stats.partyXp}`} />
+        <StatTile label="XP earned" value={session.xpPct ? `${session.xpPct}%` : "—"} hint="Percent of a level earned this session" />
+        <StatTile
+          label="Level"
+          value={xp.level ?? "—"}
+          hint="From the log's 'Welcome to level N!' line"
+        />
+      </div>
+
+      {/* `fight.startedAt` changes when a new fight begins, which is exactly when the
+          previous one has been filed into history — so it's a free refresh trigger. */}
+      <CampReport byMob={session.byMob} refreshKey={combat.fight.startedAt} />
     </div>
   );
 }
 
-function StatTile({ label, value }: { label: string; value: number | string }) {
+/**
+ * Time to level, or an invitation to supply the missing piece. The log only ever states
+ * experience *gains*, so the app needs the starting point once — after that it keeps
+ * itself current (and resets on level-up), so this asks at most once per level.
+ */
+function TimeToLevel({ xp, xpPerHour }: { xp: XpProgress; xpPerHour: number }) {
+  const set = (value: number) => api()?.xp.set(value);
+
+  if (!xp.known) {
+    return (
+      <AskValue
+        prompt="tell me"
+        why="Time to level needs how far into this level you are — the log only reports gains, never a total. Give it once and I'll keep it current from your XP gains, then reset it when you level."
+        suffix="%"
+        onSubmit={set}
+      />
+    );
+  }
+
+  const remaining = Math.max(0, 100 - xp.intoLevel);
+  const hours = xpPerHour > 0 ? remaining / xpPerHour : 0;
+
   return (
-    <div className="stat-tile">
+    <span className="ttl" title={`${xp.intoLevel.toFixed(1)}% into the level · ${remaining.toFixed(1)}% to go`}>
+      {hours > 0 ? fmtHours(hours) : "—"}
+      <AskValue
+        prompt={`${xp.intoLevel.toFixed(0)}%`}
+        why="How far into this level you are, kept current from your XP gains. Click to correct it."
+        suffix="%"
+        initial={Math.round(xp.intoLevel * 10) / 10}
+        onSubmit={set}
+      />
+    </span>
+  );
+}
+
+function StatTile({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
+  return (
+    <div className="stat-tile" title={hint}>
       <div className="stat-value">{value}</div>
       <div className="stat-label">{label}</div>
     </div>
   );
+}
+
+/** Percent of a level per hour, over the session's elapsed (not combat) time. */
+function ratePerHour(session: FightStats): number {
+  if (!session.spanSec || !session.xpPct) return 0;
+  return Math.round((session.xpPct / (session.spanSec / 3600)) * 100) / 100;
+}
+
+function fmtHours(hours: number): string {
+  if (hours >= 100) return "ages";
+  if (hours >= 1) return `${hours.toFixed(1)}h`;
+  return `${Math.round(hours * 60)}m`;
+}
+
+function fmtDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  return m > 0 ? `${m}m ${sec % 60}s` : `${sec}s`;
 }
 
 function startedLabel(iso: string): string {

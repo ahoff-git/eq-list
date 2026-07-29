@@ -209,7 +209,9 @@ export function createStore(userDataDir: string): Store {
         const target = normalize(e.name);
         const hit = settings.matchMode === "exact" ? item === target : item.includes(target) || target.includes(item);
         if (hit) {
-          e.obtained += 1;
+          // Count what the line actually reported: a looted stack of 2 moves the
+          // shopping list 2 closer to done, not 1.
+          e.obtained += event.qty;
           e.lastSeenAt = event.at;
           matched.push(e);
         }

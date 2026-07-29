@@ -12,6 +12,8 @@ export const STORAGE_KEYS = {
   mapPins: "eqlist.map.pins",
   /** Map window: the viewed-zone override (blank = follow current zone). */
   mapZone: "eqlist.map.zone",
+  /** Map window: whether zoning in-game snaps the map back to your zone. */
+  mapFollowZone: "eqlist.map.followZone",
   /** Map window: always-on-top. */
   mapPinned: "eqlist.map.pinned",
   /** Map window: key/legend visibility. */

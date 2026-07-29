@@ -1,0 +1,583 @@
+/**
+ * combat-stats.ts — the damage meter's state, fed by parsed combat events.
+ *
+ * Two windows are tracked at once, because both questions matter mid-play: "how did
+ * *that* fight go" (`fight`) and "how has the whole session gone" (`session`). A
+ * fight is just a burst of combat: the first damage event starts one, and a gap of
+ * `FIGHT_IDLE_MS` with no damage ends it, so the next pull starts a clean row set.
+ *
+ * All timing comes from the log's own timestamps, never wall clock — so a replayed
+ * or backfilled log produces exactly the same DPS as it did live, and the tests are
+ * deterministic. EQ logs to the second, so DPS over very short fights is coarse;
+ * `activeSec` has a 1s floor to keep a single big hit from reading as infinite DPS.
+ *
+ * Emits `change` with a fresh snapshot so main can broadcast it to every window.
+ */
+import { EventEmitter } from "node:events";
+import { SELF } from "../src/shared/combat-parser";
+import type {
+  CombatEvent,
+  CombatStats,
+  CombatantStat,
+  DeathRecap,
+  FightStats,
+  MobKillStat,
+  SpellStat,
+} from "../src/shared/types";
+
+/** No damage for this long ends the current fight. */
+const FIGHT_IDLE_MS = 10_000;
+
+/**
+ * A cast that takes longer than this to land isn't the cast we're timing — the log
+ * dropped the pairing (interrupted off-screen, or the effect never fired), so the
+ * measurement is discarded rather than recorded as a 30-second cast.
+ */
+const CAST_PAIR_MS = 20_000;
+
+/** How long after a kill an experience gain is still credited to it (as the Session tab). */
+const XP_ATTRIBUTION_MS = 15_000;
+
+/** How much of the run-up to a death the recap covers, and how many deaths to keep. */
+const DEATH_WINDOW_MS = 15_000;
+const MAX_DEATHS = 5;
+
+/** Cap the per-second sparkline so one endless fight can't grow without bound. */
+const MAX_BUCKETS = 900;
+
+export interface CombatTracker {
+  record(event: CombatEvent): void;
+  /**
+   * The logging character's name, so the meter can flag your own row and your pet's
+   * ("Kainos`s warder"). Pass "" when unknown — only the highlight depends on it.
+   */
+  setPlayer(name: string): void;
+  snapshot(): CombatStats;
+  reset(): void;
+  onChange(cb: (stats: CombatStats) => void): void;
+  /**
+   * Called with each fight as it ends (when the next one starts, or on reset/quit) so
+   * it can be filed into history. The tracker itself keeps no past fights.
+   */
+  onFightEnd(cb: (fight: FightStats) => void): void;
+  /** Close out the fight in progress — for app quit, so the last pull isn't lost. */
+  flush(): void;
+  /** A mob died. Feeds time-to-kill and experience attribution. */
+  recordKill(mob: string, at: string): void;
+  /** An experience gain, credited to the most recent kill. */
+  recordXp(pct: number, at: string): void;
+  /** The zone the player is in, stamped onto fights as they're filed. */
+  setZone(zone: string | null): void;
+  zone(): string | null;
+}
+
+/** Mutable per-combatant tallies (shaped into `CombatantStat` on snapshot). */
+interface Tally {
+  dealt: number;
+  taken: number;
+  healed: number;
+  hits: number;
+  misses: number;
+  crits: number;
+  maxHit: number;
+  /** Log times (ms) of this combatant's first and last *damage dealt*. */
+  firstAt: number;
+  lastAt: number;
+  /** Time actually spent fighting (gaps longer than the idle window don't count). */
+  activeMs: number;
+}
+
+/** Parse a naive-local (or ISO) timestamp to ms; NaN-safe. */
+function ms(at: string): number {
+  const t = Date.parse(at);
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function emptyTally(): Tally {
+  return { dealt: 0, taken: 0, healed: 0, hits: 0, misses: 0, crits: 0, maxHit: 0, firstAt: 0, lastAt: 0, activeMs: 0 };
+}
+
+/**
+ * Mutable per-spell tallies (shaped into `SpellStat` on snapshot). Only **your** casts
+ * are tracked: this table exists to answer "which of my spells earn their cast time",
+ * and other people's spell damage already shows in their combatant row.
+ */
+interface SpellTally {
+  casts: number;
+  lands: number;
+  ticks: number;
+  fizzles: number;
+  interrupts: number;
+  resists: number;
+  blocked: number;
+  damage: number;
+  healed: number;
+  maxHit: number;
+  /** Sum of the cast durations we could actually measure, and how many those were. */
+  castMs: number;
+  timed: number;
+  overhealed: number;
+  /** Who resisted it — resist rates vary enormously between mobs. */
+  resistedBy: Map<string, number>;
+}
+
+/** Mutable per-mob tallies: how long its kills took and what they paid. */
+interface MobTally {
+  kills: number;
+  killMs: number;
+  xpPct: number;
+}
+
+function emptyMob(): MobTally {
+  return { kills: 0, killMs: 0, xpPct: 0 };
+}
+
+function emptySpell(): SpellTally {
+  return {
+    casts: 0, lands: 0, ticks: 0, fizzles: 0, interrupts: 0, resists: 0, blocked: 0,
+    damage: 0, healed: 0, maxHit: 0, castMs: 0, timed: 0, overhealed: 0,
+    resistedBy: new Map(),
+  };
+}
+
+/**
+ * Add the time since the previous damage, unless the two are further apart than a
+ * fight — that gap is downtime, not combat. Summing these is what keeps a session's
+ * DPS meaningful: without it you'd divide a night's damage by a night's *calendar*
+ * time and every row would read ~0.
+ */
+function addActive(span: { lastAt: number; activeMs: number }, at: number): void {
+  const gap = at - span.lastAt;
+  if (span.lastAt && gap > 0 && gap <= FIGHT_IDLE_MS) span.activeMs += gap;
+}
+
+/** One accumulating window (a fight, or the session). */
+function createWindow() {
+  const tallies = new Map<string, Tally>();
+  const spells = new Map<string, SpellTally>();
+  const mobs = new Map<string, MobTally>();
+  const span = { firstAt: 0, lastAt: 0, activeMs: 0 };
+  /** Your damage per second of the window, indexed from its first damage. */
+  const buckets: number[] = [];
+  const deaths: DeathRecap[] = [];
+  const totals = { kills: 0, xpPct: 0 };
+
+  const tally = (name: string): Tally => {
+    let t = tallies.get(name);
+    if (!t) tallies.set(name, (t = emptyTally()));
+    return t;
+  };
+
+  const spell = (name: string): SpellTally => {
+    let t = spells.get(name);
+    if (!t) spells.set(name, (t = emptySpell()));
+    return t;
+  };
+
+  const mob = (name: string): MobTally => {
+    let t = mobs.get(name);
+    if (!t) mobs.set(name, (t = emptyMob()));
+    return t;
+  };
+
+  return {
+    span,
+    totals,
+    buckets,
+    deaths,
+    /** Add your damage into the second-bucket it landed in (for the sparkline). */
+    bucket(at: number, amount: number) {
+      if (!span.firstAt) return;
+      const i = Math.floor((at - span.firstAt) / 1000);
+      if (i < 0 || i >= MAX_BUCKETS) return;
+      while (buckets.length <= i) buckets.push(0);
+      buckets[i] += amount;
+    },
+    /** Extend the window — only damage defines when a fight runs. */
+    mark(at: number) {
+      if (!span.firstAt) span.firstAt = at;
+      addActive(span, at);
+      span.lastAt = at;
+    },
+    tally,
+    tallies,
+    spell,
+    spells,
+    mob,
+    mobs,
+  };
+}
+
+type Window = ReturnType<typeof createWindow>;
+
+export function createCombatStats(nowIso: () => string = () => new Date().toISOString()): CombatTracker {
+  const bus = new EventEmitter();
+  let fight = createWindow();
+  let session = createWindow();
+  let startedAt = nowIso();
+  let player = "";
+  /** Log time of the last swing (hit or miss), for idle detection. */
+  let lastCombatAt = 0;
+  /** The cast in flight, waiting for its effect to land so it can be timed. */
+  let pending: { caster: string; spell: string; at: number } | null = null;
+  /** The last mob to die, for experience attribution, and when the last kill landed. */
+  let lastKill: { mob: string; at: number } | null = null;
+  let lastKillAt = 0;
+  /** Rolling tail of damage taken by you, for the death recap. */
+  const incoming: { at: number; source: string; amount: number }[] = [];
+  /** First-seen spelling of each name, keyed lowercase (see `canon`). */
+  const names = new Map<string, string>();
+  let currentZone: string | null = null;
+
+  /**
+   * Fold the two spellings EQ gives the same creature into one row.
+   *
+   * A name is capitalized at the start of a sentence and lowercase mid-sentence — so
+   * "Obsolete model has been slain" and "You have slain obsolete model" are the same mob
+   * arriving under two keys. Guessing from the capitalization alone can't work (real
+   * proper nouns exist: "Minotaur Lord", and players' names), so this remembers the first
+   * spelling seen for a name and reuses it. Case-folding needs memory, which is exactly
+   * why it lives here and not in the stateless parser.
+   */
+  const canon = (name: string): string => {
+    const key = name.toLowerCase();
+    const seen = names.get(key);
+    if (seen) return seen;
+    names.set(key, name);
+    return name;
+  };
+
+  /** True for you and anything of yours ("Kainos`s warder", "Kainos`s pet"). */
+  const isMine = (name: string): boolean =>
+    name === SELF || (!!player && name.toLowerCase().startsWith(`${player.toLowerCase()}\``));
+
+  const row = (name: string, t: Tally): CombatantStat => {
+    const activeSec = Math.max(1, Math.round(t.activeMs / 1000));
+    return {
+      name,
+      dealt: t.dealt,
+      taken: t.taken,
+      healed: t.healed,
+      hits: t.hits,
+      misses: t.misses,
+      crits: t.crits,
+      maxHit: t.maxHit,
+      activeSec,
+      dps: Math.round((t.dealt / activeSec) * 10) / 10,
+      mine: isMine(name),
+    };
+  };
+
+  const spellRow = (spell: string, t: SpellTally): SpellStat => {
+    const avgCastSec = t.timed ? Math.round((t.castMs / t.timed / 1000) * 100) / 100 : 0;
+    const completed = t.lands + t.resists + t.blocked;
+    return {
+      spell,
+      casts: t.casts,
+      lands: t.lands,
+      ticks: t.ticks,
+      fizzles: t.fizzles,
+      interrupts: t.interrupts,
+      resists: t.resists,
+      blocked: t.blocked,
+      damage: t.damage,
+      healed: t.healed,
+      maxHit: t.maxHit,
+      avgCastSec,
+      // Damage per second spent casting: *average damage per landing* over the *average*
+      // cast time. Dividing total damage by only the measured casts' seconds would
+      // inflate a spell whose casts were mostly untimed (all the damage, a fraction of
+      // the time). For a DoT, `damage` includes its ticks — which is right: the whole
+      // point is what one cast eventually earns.
+      dpc: t.lands && avgCastSec ? Math.round((t.damage / t.lands / avgCastSec) * 10) / 10 : 0,
+      resistRate: completed ? Math.round((t.resists / completed) * 100) / 100 : 0,
+      overhealed: t.overhealed,
+      resistedBy: [...t.resistedBy.entries()]
+        .map(([target, count]) => ({ target, count }))
+        .sort((a, b) => b.count - a.count || a.target.localeCompare(b.target)),
+    };
+  };
+
+  /** Per-mob rows: fastest experience first, which is the point of the table. */
+  const mobRow = (mob: string, t: MobTally): MobKillStat => {
+    const killSec = t.killMs / 1000;
+    return {
+      mob,
+      kills: t.kills,
+      avgKillSec: t.kills ? Math.round((killSec / t.kills) * 10) / 10 : 0,
+      xpPct: Math.round(t.xpPct * 1000) / 1000,
+      xpPerMin: killSec > 0 ? Math.round((t.xpPct / (killSec / 60)) * 100) / 100 : 0,
+    };
+  };
+
+  const summarize = (w: Window): FightStats => {
+    const byCombatant = [...w.tallies.entries()]
+      .map(([name, t]) => row(name, t))
+      .sort((a, b) => b.dealt - a.dealt || b.taken - a.taken || a.name.localeCompare(b.name));
+    return {
+      startedAt: w.span.firstAt ? new Date(w.span.firstAt).toISOString() : "",
+      endedAt: w.span.lastAt ? new Date(w.span.lastAt).toISOString() : "",
+      durationSec: w.span.firstAt ? Math.max(1, Math.round(w.span.activeMs / 1000)) : 0,
+      totalDealt: byCombatant.reduce((n, c) => n + c.dealt, 0),
+      yourDealt: byCombatant.filter((c) => c.mine).reduce((n, c) => n + c.dealt, 0),
+      yourTaken: byCombatant.filter((c) => c.mine).reduce((n, c) => n + c.taken, 0),
+      byCombatant,
+      spanSec: w.span.firstAt ? Math.max(1, Math.round((w.span.lastAt - w.span.firstAt) / 1000)) : 0,
+      spells: [...w.spells.entries()]
+        .map(([name, t]) => spellRow(name, t))
+        .sort((a, b) => b.damage - a.damage || b.healed - a.healed || a.spell.localeCompare(b.spell)),
+      byMob: [...w.mobs.entries()]
+        .map(([name, t]) => mobRow(name, t))
+        .sort((a, b) => b.xpPerMin - a.xpPerMin || b.kills - a.kills || a.mob.localeCompare(b.mob)),
+      kills: w.totals.kills,
+      xpPct: Math.round(w.totals.xpPct * 1000) / 1000,
+      yourPerSec: [...w.buckets],
+      deaths: [...w.deaths],
+    };
+  };
+
+  const snapshot = (): CombatStats => ({
+    startedAt,
+    fight: summarize(fight),
+    session: summarize(session),
+  });
+
+  const emit = () => bus.emit("change", snapshot());
+
+  /**
+   * Apply one event to a window. `castMs` is the measured duration of the cast this
+   * event completes, when the tracker could pair the two (see `record`).
+   */
+  function apply(w: Window, event: CombatEvent, at: number, castMs = 0): void {
+    switch (event.kind) {
+      case "damage": {
+        const a = w.tally(canon(event.attacker));
+        a.dealt += event.amount;
+        a.hits += 1;
+        if (event.qualifier === "Critical") a.crits += 1;
+        a.maxHit = Math.max(a.maxHit, event.amount);
+        if (!a.firstAt) a.firstAt = at;
+        addActive(a, at);
+        a.lastAt = at;
+        w.tally(canon(event.target)).taken += event.amount;
+        w.mark(at); // only damage defines when a fight ran
+        if (isMine(event.attacker)) w.bucket(at, event.amount);
+        if (event.spell && isMine(canon(event.attacker))) {
+          const sp = w.spell(event.spell);
+          sp.damage += event.amount;
+          if (event.tick) {
+            sp.ticks += 1;
+          } else {
+            sp.lands += 1;
+            sp.maxHit = Math.max(sp.maxHit, event.amount);
+          }
+          if (castMs) {
+            sp.castMs += castMs;
+            sp.timed += 1;
+          }
+        }
+        break;
+      }
+      case "miss":
+        w.tally(canon(event.attacker)).misses += 1;
+        break;
+      case "heal": {
+        w.tally(canon(event.healer)).healed += event.amount;
+        if (event.spell && isMine(event.healer)) {
+          const sp = w.spell(event.spell);
+          sp.healed += event.amount;
+          sp.lands += 1;
+          if (event.attempted) sp.overhealed += Math.max(0, event.attempted - event.amount);
+          if (castMs) {
+            sp.castMs += castMs;
+            sp.timed += 1;
+          }
+        }
+        break;
+      }
+      case "cast":
+        if (isMine(event.caster)) w.spell(event.spell).casts += 1;
+        break;
+      case "spell-outcome": {
+        if (!isMine(event.caster)) break;
+        const sp = w.spell(event.spell);
+        if (event.outcome === "fizzle") sp.fizzles += 1;
+        else if (event.outcome === "interrupted") sp.interrupts += 1;
+        else if (event.outcome === "resisted") {
+          sp.resists += 1;
+          if (event.target) {
+            const target = canon(event.target);
+            sp.resistedBy.set(target, (sp.resistedBy.get(target) ?? 0) + 1);
+          }
+        } else sp.blocked += 1;
+        break;
+      }
+      case "death":
+        // Recorded via `recordDeath` (it needs the rolling incoming-damage buffer, which
+        // lives outside any one window).
+        break;
+    }
+  }
+
+  /** Hand the finished fight to whoever files history, if it had any damage in it. */
+  function endFight(): void {
+    if (fight.span.firstAt) bus.emit("fightEnd", summarize(fight));
+  }
+
+  /**
+   * Snapshot what was hitting you in the run-up to a death. The log doesn't say what
+   * killed you beyond a name, so the useful answer is the incoming damage right before
+   * it — which needs a rolling buffer, kept trimmed to the recap window.
+   */
+  function recordDeath(at: number, killer?: string): DeathRecap {
+    const since = at - DEATH_WINDOW_MS;
+    const bySource = new Map<string, number>();
+    let totalTaken = 0;
+    for (const hit of incoming) {
+      if (hit.at < since) continue;
+      bySource.set(hit.source, (bySource.get(hit.source) ?? 0) + hit.amount);
+      totalTaken += hit.amount;
+    }
+    return {
+      at: new Date(at).toISOString(),
+      killer,
+      incoming: [...bySource.entries()]
+        .map(([source, amount]) => ({ source, amount }))
+        .sort((a, b) => b.amount - a.amount),
+      totalTaken,
+      windowSec: DEATH_WINDOW_MS / 1000,
+    };
+  }
+
+  /**
+   * Measure the cast this event completes. EQ never states a cast time, but it does log
+   * the start ("You begin casting X") — so the gap to the effect landing *is* the cast
+   * time. One cast at a time per caster, so a single slot tracks it.
+   */
+  function pairCast(event: CombatEvent, at: number): number {
+    if (!pending) return 0;
+    const spell = event.kind === "damage" || event.kind === "heal" ? event.spell : undefined;
+    if (!spell || spell !== pending.spell) return 0;
+    const actor = event.kind === "damage" ? event.attacker : event.kind === "heal" ? event.healer : "";
+    if (actor !== pending.caster) return 0;
+    const took = at - pending.at;
+    pending = null;
+    // A DoT's later ticks arrive long after the cast; only the first landing is timed.
+    return took >= 0 && took <= CAST_PAIR_MS ? took : 0;
+  }
+
+  return {
+    record(event) {
+      const at = ms(event.at);
+      // An unparseable timestamp would read as 1970 and wreck every span it touched, so
+      // the event is dropped instead. (Nothing in a real log does this — but the whole
+      // module is built on the assumption that `at` is meaningful, so it's checked once,
+      // here, rather than defended against everywhere downstream.)
+      if (!at) return;
+      const stale = !!lastCombatAt && at - lastCombatAt > FIGHT_IDLE_MS;
+
+      if (event.kind === "cast") {
+        pending = isMine(event.caster) ? { caster: event.caster, spell: event.spell, at } : pending;
+      } else if (event.kind === "spell-outcome" && pending?.spell === event.spell) {
+        pending = null; // fizzled / interrupted / resisted — nothing will land
+      }
+      // A tick is not a fresh cast landing, so it must not consume the pending cast.
+      const castMs = event.kind === "damage" && event.tick ? 0 : pairCast(event, at);
+
+      if (event.kind === "damage" && isMine(canon(event.target))) {
+        incoming.push({ at, source: canon(event.attacker), amount: event.amount });
+        // Keep the buffer to the recap window (plus slack) — it's a tail, not a log.
+        const cutoff = at - DEATH_WINDOW_MS * 2;
+        while (incoming.length && incoming[0].at < cutoff) incoming.shift();
+      }
+
+      if (event.kind === "death") {
+        const recap = recordDeath(at, event.killer);
+        for (const w of [fight, session]) {
+          w.deaths.unshift(recap);
+          if (w.deaths.length > MAX_DEATHS) w.deaths.pop();
+        }
+        emit();
+        return;
+      }
+
+      // Swings (hit or miss) are what delimit a fight; the first one after a lull
+      // starts a fresh row set. Heals and casts ride along — they belong to a fight only
+      // while one is running, so downtime healing/buffing doesn't invent a "fight".
+      if (event.kind === "damage" || event.kind === "miss") {
+        if (stale) {
+          endFight();
+          fight = createWindow();
+        }
+        lastCombatAt = at;
+        apply(fight, event, at, castMs);
+      } else if (lastCombatAt && !stale) {
+        apply(fight, event, at, castMs);
+      }
+      apply(session, event, at, castMs);
+      emit();
+    },
+    setPlayer(name) {
+      const next = name.trim();
+      if (next === player) return;
+      player = next;
+      emit(); // `mine` flags change, so the windows need a fresh snapshot
+    },
+
+    /**
+     * A kill. Time-to-kill is the gap since the fight started or the previous kill in it,
+     * which is as close as a log with no health bars can get.
+     */
+    recordKill(rawMob, atIso) {
+      const mob = canon(rawMob);
+      // "Kainos`s warder has been slain by a skeleton!" reads as a kill to the log
+      // parser, but a pet dying is not something you killed — and crediting experience
+      // to it would put your own pet at the top of the "what's worth killing" table.
+      if (isMine(mob)) return;
+      const at = ms(atIso);
+      const from = Math.max(fight.span.firstAt || at, lastKillAt || 0) || at;
+      const took = Math.max(0, at - from);
+      for (const w of [fight, session]) {
+        const m = w.mob(mob);
+        m.kills += 1;
+        m.killMs += took;
+        w.totals.kills += 1;
+      }
+      lastKill = { mob, at };
+      lastKillAt = at;
+      emit();
+    },
+
+    /** Experience, credited to the mob that just died (as the Session tab does). */
+    recordXp(pct, atIso) {
+      const at = ms(atIso);
+      for (const w of [fight, session]) w.totals.xpPct += pct;
+      if (lastKill && at - lastKill.at >= -2000 && at - lastKill.at < XP_ATTRIBUTION_MS) {
+        for (const w of [fight, session]) w.mob(lastKill.mob).xpPct += pct;
+      }
+      emit();
+    },
+
+    setZone(next) {
+      currentZone = next;
+    },
+    zone: () => currentZone,
+    snapshot,
+    flush: endFight,
+    reset() {
+      endFight(); // don't lose the fight in progress just because the meter was cleared
+      fight = createWindow();
+      session = createWindow();
+      startedAt = nowIso();
+      lastCombatAt = 0;
+      pending = null;
+      lastKill = null;
+      lastKillAt = 0;
+      incoming.length = 0;
+      names.clear();
+      emit();
+    },
+    onChange: (cb) => void bus.on("change", cb),
+    onFightEnd: (cb) => void bus.on("fightEnd", cb),
+  };
+}

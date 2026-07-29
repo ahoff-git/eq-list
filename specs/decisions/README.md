@@ -17,10 +17,22 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0011: Opt-in peer location sharing over awari](./0011-awari-peer-location-sharing.md) — *superseded by 0012*
 - [0012: awari connection owned by the main window, brokered over IPC](./0012-awari-connection-owned-by-main-window.md)
 - [0013: CI publishes a rolling "latest" Windows build](./0013-ci-rolling-latest-windows-build.md)
+- [0014: Damage meter parsed from the log, with log-time fights](./0014-damage-meter-from-the-log.md)
+- [0015: Peer presence from awari's roster, names from a `hello` payload](./0015-peer-presence-via-hello.md)
+- [0016: Combat history on disk, and spell efficiency derived from the log](./0016-combat-history-and-spell-analytics.md)
+- [0017: Camp-efficiency analytics, and asking the player for what the log can't say](./0017-camp-efficiency-and-asking-the-player.md)
 
 ## Open Questions
 - Should out-of-era pages be *hidden* (not just badged)? Filtering search results by
   era would need a category lookup per result — flagging-on-open is done today.
 - Should the overlay support multiple named lists / profiles per character?
+- Should the damage meter break a fight down by *phase* (adds arriving, mob enraging)?
+  Today a fight is one flat window from first swing to last.
+- `session-stats.ts` and `combat-stats.ts` both consume kill/XP events now (different
+  aggregations: session counters vs fight-scoped rates). Should the Session tab's counters
+  come from the combat tracker so there's one consumer?
+  See [ADR 0017](./0017-camp-efficiency-and-asking-the-player.md).
+- The pet's *own* death parses as a kill (`<pet> has been slain by …`); the combat tracker
+  filters it, but `session-stats.ts` still counts it in the Session tab's kill total.
 - Should the overlay toggle hotkey be user-configurable? (Currently a fixed
   `Ctrl/Cmd+Shift+O` via Electron's built-in `globalShortcut` — no native dep.)

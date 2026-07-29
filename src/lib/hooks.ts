@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import type {
   ShoppingList,
@@ -8,6 +8,9 @@ import type {
   LootEvent,
   LocEvent,
   SessionStats,
+  CombatStats,
+  FightStats,
+  XpProgress,
   AppInfo,
   ItemSource,
   ItemCard,
@@ -47,6 +50,52 @@ export function useSessionStats(): SessionStats {
   return stats;
 }
 
+const EMPTY_FIGHT: FightStats = {
+  startedAt: "",
+  endedAt: "",
+  durationSec: 0,
+  spanSec: 0,
+  totalDealt: 0,
+  yourDealt: 0,
+  yourTaken: 0,
+  byCombatant: [],
+  spells: [],
+  byMob: [],
+  kills: 0,
+  xpPct: 0,
+  yourPerSec: [],
+  deaths: [],
+};
+
+const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
+
+/** Live damage-meter state from the log (current fight + session). */
+export function useCombatStats(): CombatStats {
+  const [stats, setStats] = useState<CombatStats>(EMPTY_COMBAT);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void a.combat.get().then(setStats);
+    return a.combat.onChanged(setStats);
+  }, []);
+  return stats;
+}
+
+/**
+ * How far into the current level the player is. Seeded by the player (the log never
+ * states a total), then kept current by the main process from XP gains and level-ups.
+ */
+export function useXpProgress(): XpProgress {
+  const [progress, setProgress] = useState<XpProgress>({ intoLevel: 0, known: false });
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void a.xp.get().then(setProgress);
+    return a.xp.onChanged(setProgress);
+  }, []);
+  return progress;
+}
+
 /** The zone the player is currently in (from the log), or null if unknown. */
 export function useCurrentZone(): string | null {
   const [zone, setZone] = useState<string | null>(null);
@@ -71,17 +120,29 @@ export function usePlayerLoc(): LocEvent | null {
   return loc;
 }
 
-/** A rolling trail of recent locations (oldest→newest) for drawing movement. */
-export function usePlayerTrail(limit = 200): LocEvent[] {
-  const [trail, setTrail] = useState<LocEvent[]>([]);
+/**
+ * A rolling trail of recent locations (oldest→newest) for drawing movement, plus a
+ * `clear` for the map's "clear trail" control. Zoning wipes it: `LocEvent`s carry no
+ * zone, so keeping them would draw the last zone's path across the new map.
+ */
+export function usePlayerTrail(limit = 200): { points: LocEvent[]; clear: () => void } {
+  const [points, setPoints] = useState<LocEvent[]>([]);
+  const zone = useCurrentZone();
+  const clear = useCallback(() => setPoints([]), []);
+
   useEffect(() => {
     const a = api();
     if (!a) return;
     return a.loc.onChanged((l) => {
-      if (l) setTrail((prev) => [...prev, l].slice(-limit));
+      if (l) setPoints((prev) => [...prev, l].slice(-limit));
     });
   }, [limit]);
-  return trail;
+
+  useEffect(() => {
+    clear();
+  }, [zone, clear]);
+
+  return { points, clear };
 }
 
 /**

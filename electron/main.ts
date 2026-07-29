@@ -13,6 +13,9 @@ import { createStore } from "./store";
 import { createWikiClient } from "./wiki";
 import { createLogWatcher } from "./log-watcher";
 import { createSessionStats } from "./session-stats";
+import { createCombatStats } from "./combat-stats";
+import { createCombatHistory } from "./combat-history";
+import { createXpProgress } from "./xp-progress";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
@@ -21,6 +24,7 @@ import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
+import { characterFromLogFile } from "../src/shared/log-parser";
 import type { Settings, AppInfo, LocEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -32,6 +36,25 @@ function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(channel, payload);
   }
+}
+
+/**
+ * Wrap `fn` so a burst of calls delivers only the newest value, once, after `ms`.
+ * Combat lines arrive in floods (a whole appended chunk per poll — or an entire log
+ * read from the top when it first appears), and no UI can use 2000 snapshots; this
+ * keeps the renderers fed without making the IPC channel the bottleneck.
+ */
+function coalesce<T>(ms: number, fn: (value: T) => void): (value: T) => void {
+  let latest: T;
+  let timer: NodeJS.Timeout | null = null;
+  return (value: T) => {
+    latest = value;
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      fn(latest);
+    }, ms);
+  };
 }
 
 /** Mirror the debug toggle into the env flag that logging.ts reads. */
@@ -101,6 +124,9 @@ if (!app.requestSingleInstanceLock()) {
   const wiki = createWikiClient(path.join(userData, "wiki-cache"));
   const watcher = createLogWatcher();
   const stats = createSessionStats();
+  const combat = createCombatStats();
+  const history = createCombatHistory(userData);
+  const xp = createXpProgress(userData);
   const ocr = createOcr(path.join(userData, "tesseract-cache"));
   const lookup = createLookup(ocr, routeSearchText);
 
@@ -114,6 +140,9 @@ if (!app.requestSingleInstanceLock()) {
     wiki,
     watcher,
     stats,
+    combat,
+    history,
+    xp,
     lookup,
     logFile,
     getCurrentZone: () => currentZone,
@@ -138,10 +167,16 @@ if (!app.requestSingleInstanceLock()) {
     // Only re-target the watcher when the log location actually changed.
     if (`${settings.logDir}|${settings.activeLogFile}` !== watchKey) startWatcher();
   });
-  watcher.onStatus((status) => broadcast(CH.watcherStatusChanged, status));
+  watcher.onStatus((status) => {
+    broadcast(CH.watcherStatusChanged, status);
+    // The log's filename carries the character name, which is how the damage meter
+    // knows which rows are yours (you + "<Character>`s warder").
+    combat.setPlayer(characterFromLogFile(status.file) ?? "");
+  });
   watcher.onZone((event) => {
     if (event.zone === currentZone) return;
     currentZone = event.zone;
+    combat.setZone(currentZone); // so finished fights are filed against the right camp
     broadcast(CH.zoneChanged, currentZone);
   });
   watcher.onLoc((event) => {
@@ -154,9 +189,34 @@ if (!app.requestSingleInstanceLock()) {
       broadcast(CH.lootMatched, { event, entry });
     }
   });
-  watcher.onKill((event) => stats.recordKill(event.target, event.at));
-  watcher.onXp((event) => stats.recordXp(event));
+  watcher.onKill((event) => {
+    stats.recordKill(event.target, event.at);
+    combat.recordKill(event.target, event.at); // time-to-kill + xp attribution
+  });
+  watcher.onXp((event) => {
+    stats.recordXp(event);
+    if (event.pct) {
+      combat.recordXp(event.pct, event.at);
+      xp.addGain(event.pct); // creeps the player-supplied "into level" figure forward
+    }
+  });
+  watcher.onLevel((event) => xp.levelUp(event.level, event.at));
+  watcher.onCombat((event) => combat.record(event));
+  // Fights are filed as they end, so history survives a crash as well as a clean quit.
+  combat.onFightEnd((fight) => history.add(fight, combat.zone()));
+  xp.onChange((progress) => broadcast(CH.xpChanged, progress));
   stats.onChange((snapshot) => broadcast(CH.statsChanged, snapshot));
+  combat.onChange(
+    coalesce(250, (snapshot) => {
+      // Debug-gated: the one line that answers "is the meter seeing this fight?"
+      log.debug("combat", {
+        fight: snapshot.fight.totalDealt,
+        session: snapshot.session.totalDealt,
+        rows: snapshot.fight.byCombatant.length,
+      });
+      broadcast(CH.combatChanged, snapshot);
+    }),
+  );
 
   // Global hotkey to show/hide the app window — always works even when the game has
   // focus, so the float can never get "stuck" behind the game.
@@ -245,6 +305,14 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow(store.getSettings().overlay);
+  });
+
+  // Don't lose the last pull on the way out: close the fight in progress, then get it
+  // (and any debounced writes) to disk.
+  app.on("before-quit", () => {
+    combat.flush();
+    history.flush();
+    xp.flush();
   });
 });
 

@@ -9,13 +9,18 @@
  * e.g.
  *   [Fri Jul 17 18:41:14 2026] --You have looted a Mote of Potential from an orc's corpse.--
  *
- * Loot message forms handled (patterns cross-checked against EQBuddy's parser):
+ * Loot message forms handled (patterns cross-checked against EQBuddy's parser, then
+ * against a real EQL log — the auto-store forms below came from that log):
  *   --You have looted a <item> from <source>'s corpse.--
  *   You looted a <item> from <source>'s corpse and sold it for <coins>.
  *   You looted a <item> from <source>'s corpse to create a <result>.
+ *   You looted a <item> from <source>'s corpse and stored it in your <bag/depot>
+ *
+ * A line can report a stack ("You looted 2 Spiderling Eye from…"), so every pattern
+ * captures the count into `qty` — dropping it would under-count the shopping list.
  */
 
-import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent } from "./types";
+import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent } from "./types";
 
 const MONTHS: Record<string, number> = {
   Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
@@ -71,16 +76,18 @@ export function characterFromLogFile(file?: string): string | null {
 }
 
 /**
- * Loot message patterns. Each captures `item` (and `source` where present).
+ * Loot message patterns. Each captures `item`, `qty` and `source` (where present).
  * `an?` consumes the article so it never lands in the captured item name.
  */
 const LOOT_PATTERNS: RegExp[] = [
   // Standard drop line, wrapped in -- --
-  /^--You have looted (?:\d+ )?(?:an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse\.--$/,
+  /^--You have looted (?:(?<qty>\d+) )?(?:an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse\.--$/,
   // Auto-sell: looted then immediately vendored
-  /^You looted (?:\d+ |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and sold it for .+?\.$/,
+  /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and sold it for .+?\.$/,
+  // Auto-store: straight into a tradeskill depot / currency tab (no trailing period)
+  /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and stored it in your .+?\.?$/,
   // Loot-and-combine (item upgrades): the input item is still "obtained"
-  /^You looted (?:\d+ |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse to create .+?\.?$/,
+  /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse to create .+?\.?$/,
 ];
 
 /** Parse a raw loot message (timestamp already removed) into a LootEvent, or null. */
@@ -91,6 +98,7 @@ export function parseLootMessage(message: string, at: string, raw: string): Loot
       return {
         kind: "loot",
         item: stripArticle(m.groups.item.trim()),
+        qty: Math.max(1, Number(m.groups.qty ?? 1)),
         source: stripArticle((m.groups.source ?? "").trim()),
         raw,
         at,
@@ -161,6 +169,34 @@ export function parseKillLine(line: string): KillEvent | null {
   const m = parsed.message.match(KILL_BY_YOU) ?? parsed.message.match(KILL_SLAIN_BY);
   if (!m?.groups?.target) return null;
   return { kind: "kill", target: stripArticle(m.groups.target.trim()), raw: parsed.raw, at: parsed.at };
+}
+
+/**
+ * Levelling up. EQL writes both halves on **one line** — "You have gained a level!
+ * Welcome to level 2!" — which is the form a real log actually contains; the halves are
+ * also accepted alone in case the wording varies. The number is worth having (it's the
+ * only place the log ever states your level), and either half means the XP-into-level
+ * counter goes back to zero.
+ */
+const LEVEL_RES = [
+  /^You have gained a level!(?: Welcome to level (?<level>\d+)!)?$/,
+  /^Welcome to level (?<level>\d+)!$/,
+];
+
+export function parseLevelLine(line: string): LevelEvent | null {
+  const parsed = messageOf(line);
+  if (!parsed) return null;
+  for (const re of LEVEL_RES) {
+    const m = parsed.message.match(re);
+    if (!m) continue;
+    return {
+      kind: "level",
+      level: m.groups?.level ? Number(m.groups.level) : undefined,
+      raw: parsed.raw,
+      at: parsed.at,
+    };
+  }
+  return null;
 }
 
 // "Your Location is 1234.5, -678.9, 42.0" → LocEvent. EQ reports the triple y-first.

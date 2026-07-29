@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupByOrigin, effectiveNeeded, originKey, itemTotals, normalizeItemName } from "../../src/shared/grouping";
+import { groupByOrigin, effectiveNeeded, originKey, itemDemands, itemTotals, normalizeItemName } from "../../src/shared/grouping";
 import type { ShoppingListEntry } from "../../src/shared/types";
 
 function entry(p: Partial<ShoppingListEntry> & { name: string }): ShoppingListEntry {
@@ -84,4 +84,40 @@ test("itemTotals sums an item across groups, scaled by each group's runs", () =>
   // An item wanted by only one group totals to its own need (so the UI hides the parens).
   const solo = groupByOrigin([entry({ name: "Bone Chips", needed: 3 })]);
   assert.equal(itemTotals(solo).get("bone chips"), 3);
+});
+
+test("itemDemands names who wants an item, and sums to the same total", () => {
+  // Same rat-ear example: the hover has to be able to say *which* quests make up the 8.
+  const pie = { kind: "recipe" as const, name: "Rat Ear Pie" };
+  const quest = { kind: "quest" as const, name: "Rat Catcher" };
+  const groups = groupByOrigin(
+    [
+      entry({ name: "Rat Ear", needed: 2, origin: pie }),
+      entry({ name: "Rat Ear", needed: 4, origin: quest }),
+      entry({ name: "Rat Ear", needed: 1 }), // and one added on its own
+    ],
+    { [originKey(pie)]: 2 },
+  );
+
+  const demands = itemDemands(groups).get(normalizeItemName("Rat Ear"))!;
+  assert.deepEqual(
+    demands.map((d) => [d.label, d.kind, d.need, d.runs]),
+    [
+      ["Rat Ear Pie", "recipe", 4, 2], // 2 per pie × 2 runs
+      ["Rat Catcher", "quest", 4, 1],
+      ["Other items", null, 1, 1],
+    ],
+  );
+  // The hint and its explanation come from one place, so they can't drift apart.
+  assert.equal(
+    demands.reduce((n, d) => n + d.need, 0),
+    itemTotals(groups).get(normalizeItemName("Rat Ear")),
+  );
+});
+
+test("itemDemands lists a single claim for an item only one group wants", () => {
+  const groups = groupByOrigin([entry({ name: "Bone Chips", needed: 3 })]);
+  const demands = itemDemands(groups).get("bone chips")!;
+  assert.equal(demands.length, 1);
+  assert.equal(demands[0].need, 3);
 });

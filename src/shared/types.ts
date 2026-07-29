@@ -11,6 +11,8 @@ export interface LootEvent {
   kind: "loot";
   /** Item name, exactly as it appears in the log (leading article stripped). */
   item: string;
+  /** How many the line reported ("You looted 2 Spiderling Eye…"); 1 when unstated. */
+  qty: number;
   /** Corpse / source name the item came from. */
   source: string;
   /** Original, untouched log line (minus the timestamp bracket). */
@@ -54,7 +56,310 @@ export interface LocEvent {
   at: string;
 }
 
-export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent | LocEvent;
+/**
+ * Levelling up. `level` is present only for the numbered "Welcome to level N!" line —
+ * the one place the log ever states your level. Either form means the XP-into-level
+ * counter starts over.
+ */
+export interface LevelEvent {
+  kind: "level";
+  level?: number;
+  raw: string;
+  at: string;
+}
+
+export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent | LocEvent | LevelEvent;
+
+// ─── Combat events (see combat-parser.ts) ───────────────────────────────────
+
+/**
+ * Damage landing on someone — a melee swing, a spell/proc, or a DoT tick. `melee`
+ * separates swings from everything else; `spell` is set for spells and DoTs (for a
+ * bare DoT tick the log names no caster, so `attacker` falls back to the DoT).
+ */
+export interface DamageEvent {
+  kind: "damage";
+  attacker: string;
+  target: string;
+  amount: number;
+  /** The attack verb for melee swings ("bites", "pierce"). */
+  verb?: string;
+  spell?: string;
+  /** "cold", "magic", "disease", "non-melee"… when the log names one. */
+  damageType?: string;
+  /** The log's trailing note on the swing: "Critical", "Riposte", … */
+  qualifier?: string;
+  melee: boolean;
+  /** True for a damage-over-time tick, as opposed to a spell first landing. */
+  tick?: boolean;
+  raw: string;
+  at: string;
+}
+
+/** A swing that missed — pairs with `DamageEvent` to give an accuracy figure. */
+export interface MissEvent {
+  kind: "miss";
+  attacker: string;
+  target: string;
+  verb: string;
+  /** "Riposte" when the miss was forced by one. */
+  qualifier?: string;
+  raw: string;
+  at: string;
+}
+
+/** A heal ("You healed X for N hit points [by <spell>]"). Reflexive → healer. */
+export interface HealEvent {
+  kind: "heal";
+  healer: string;
+  target: string;
+  /** Hit points actually restored. */
+  amount: number;
+  /** What the heal would have restored, when the log reports an overheal. */
+  attempted?: number;
+  spell?: string;
+  raw: string;
+  at: string;
+}
+
+/**
+ * A cast starting ("You begin casting X"). Pairing this with the damage/heal that
+ * follows is what makes cast time — and therefore damage-per-second-of-casting —
+ * measurable from a log that never states either.
+ */
+export interface CastEvent {
+  kind: "cast";
+  caster: string;
+  spell: string;
+  raw: string;
+  at: string;
+}
+
+/** How a cast ended without landing. */
+export type SpellOutcome = "fizzle" | "interrupted" | "resisted" | "blocked";
+
+export interface SpellOutcomeEvent {
+  kind: "spell-outcome";
+  caster: string;
+  spell: string;
+  outcome: SpellOutcome;
+  /** Who shrugged it off, when the log names them. */
+  target?: string;
+  raw: string;
+  at: string;
+}
+
+/** Your own death. `killer` is absent for the bare "You died." line. */
+export interface DeathEvent {
+  kind: "death";
+  victim: string;
+  killer?: string;
+  raw: string;
+  at: string;
+}
+
+export type CombatEvent =
+  | DamageEvent
+  | MissEvent
+  | HealEvent
+  | CastEvent
+  | SpellOutcomeEvent
+  | DeathEvent;
+
+// ─── Damage meter ───────────────────────────────────────────────────────────
+
+/** One row of the damage meter. */
+export interface CombatantStat {
+  name: string;
+  /** Damage dealt / taken by this combatant, and healing it did. */
+  dealt: number;
+  taken: number;
+  healed: number;
+  /** Landed and missed swings (melee + spells), for the accuracy figure. */
+  hits: number;
+  misses: number;
+  /** Landed swings the log tagged "(Critical)". */
+  crits: number;
+  /** Biggest single hit dealt. */
+  maxHit: number;
+  /**
+   * Seconds this combatant was actually fighting (min 1) — the sum of gaps between
+   * its damage, excluding downtime. Not the wall-clock span.
+   */
+  activeSec: number;
+  /** `dealt / activeSec`, rounded to one decimal. */
+  dps: number;
+  /** True for you and your pet — the rows the meter highlights. */
+  mine: boolean;
+}
+
+/**
+ * One of your spells over a window. Everything here is measured from the log — EQ
+ * states neither cast times nor resist rates, so both are derived: cast time from the
+ * gap between "You begin casting X" and the effect landing, resist rate from how many
+ * completed casts were shrugged off.
+ */
+export interface SpellStat {
+  spell: string;
+  /** Casts begun. */
+  casts: number;
+  /** Casts that landed damage or a heal (a DoT counts once, at first landing). */
+  lands: number;
+  /** Later damage-over-time ticks from those landings. */
+  ticks: number;
+  fizzles: number;
+  interrupts: number;
+  resists: number;
+  blocked: number;
+  /** Damage this spell did, first landing + every tick. */
+  damage: number;
+  healed: number;
+  maxHit: number;
+  /** Mean measured cast time, seconds (0 when no cast could be timed). */
+  avgCastSec: number;
+  /**
+   * Damage per second **spent casting** — the efficiency figure: a slow nuke and a fast
+   * one that hit for the same amount are not equally good. 0 when nothing was timed.
+   */
+  dpc: number;
+  /** Share of completed casts that were resisted, 0–1. */
+  resistRate: number;
+  /** Hit points a heal would have restored but didn't (the overheal). */
+  overhealed: number;
+  /** Who resisted it, most often first — resist rates vary wildly by mob. */
+  resistedBy: { target: string; count: number }[];
+}
+
+/**
+ * What killing one kind of mob costs and earns. Kill time is measured between kills
+ * inside a fight, so a pull of three coyotes gives three intervals — the closest the
+ * log gets to "how long does one take".
+ */
+export interface MobKillStat {
+  mob: string;
+  kills: number;
+  /** Mean seconds per kill. */
+  avgKillSec: number;
+  /** Experience percent credited to this mob (same attribution as the Session tab). */
+  xpPct: number;
+  /**
+   * `xpPct` per minute *spent fighting it* — downtime excluded, so it compares mobs
+   * fairly but overstates what a night actually yields. Use it to rank, not to forecast.
+   */
+  xpPerMin: number;
+}
+
+/** What was landing on you in the seconds before you died. */
+export interface DeathRecap {
+  at: string;
+  killer?: string;
+  /** Damage taken in the lead-up, biggest source first. */
+  incoming: { source: string; amount: number }[];
+  totalTaken: number;
+  /** Seconds of damage the recap covers. */
+  windowSec: number;
+}
+
+/** Damage totals over a window: one fight, or the whole session. */
+export interface FightStats {
+  /** Log timestamps of the first and last damage in the window ("" when empty). */
+  startedAt: string;
+  endedAt: string;
+  /**
+   * Seconds of *combat* in the window, downtime excluded — so a session's figure is
+   * time spent fighting, not time since the app opened.
+   */
+  durationSec: number;
+  totalDealt: number;
+  /** Damage you and your pet dealt, and took, within the window. */
+  yourDealt: number;
+  yourTaken: number;
+  /**
+   * Wall-clock seconds the window spans, first damage to last — as opposed to
+   * `durationSec`, which counts only time in combat. The difference is downtime.
+   */
+  spanSec: number;
+  /** Rows, biggest dealer first. */
+  byCombatant: CombatantStat[];
+  /** Your spells in this window, most damaging first. */
+  spells: SpellStat[];
+  /** What you killed here, and what it cost/earned. Best rate first. */
+  byMob: MobKillStat[];
+  /** Kills and experience credited within the window. */
+  kills: number;
+  xpPct: number;
+  /** Your damage per second of the window, for a sparkline (index = second). */
+  yourPerSec: number[];
+  /** Your deaths in the window, newest first (capped). */
+  deaths: DeathRecap[];
+}
+
+/**
+ * The damage meter's live state: the current (or last) fight plus the session.
+ * Whether the fight is still "live" is left to the reader — compare `fight.endedAt`
+ * against the clock — because the log only reveals a lull when the next swing lands.
+ */
+export interface CombatStats {
+  /** When tracking started / was last reset. */
+  startedAt: string;
+  fight: FightStats;
+  session: FightStats;
+}
+
+// ─── Combat history (past fights and sessions) ──────────────────────────────
+
+/**
+ * A finished fight, kept so a past session can be dug into after the fact. It's the
+ * same `FightStats` the live meter renders, plus enough identity to browse by.
+ */
+export interface StoredFight {
+  id: string;
+  /** Groups fights into a play session (one app run, or since the last reset). */
+  sessionId: string;
+  /** The main thing you were fighting — the biggest opponent, for the fight list. */
+  label: string;
+  /** The zone it happened in, when the log had told us one. */
+  zone?: string;
+  stats: FightStats;
+}
+
+/** A zone's whole recorded history — the "which camp is actually better" answer. */
+export interface ZoneReport {
+  zone: string;
+  fights: number;
+  kills: number;
+  /** Seconds in combat, and the experience earned for them. */
+  combatSec: number;
+  xpPct: number;
+  xpPerMin: number;
+  yourDealt: number;
+  /** Your DPS across the zone's fights. */
+  dps: number;
+  /** When you last fought here. */
+  lastAt: string;
+}
+
+/** Your best recorded fight against a given opponent. */
+export interface FightBest {
+  label: string;
+  /** Your damage and DPS in that fight. */
+  yourDealt: number;
+  dps: number;
+  at: string;
+}
+
+/** A play session, derived by grouping stored fights. */
+export interface SessionSummary {
+  sessionId: string;
+  startedAt: string;
+  endedAt: string;
+  fights: number;
+  /** Seconds of combat, and damage totals, across the session's fights. */
+  combatSec: number;
+  totalDealt: number;
+  yourDealt: number;
+  yourTaken: number;
+}
 
 // ─── Session stats ──────────────────────────────────────────────────────────
 
@@ -207,6 +512,25 @@ export interface ShoppingList {
   questRuns: Record<string, number>;
 }
 
+// ─── Experience progress ────────────────────────────────────────────────────
+
+/**
+ * How far into the current level you are. The log states experience only as *gains*
+ * ("You gain experience! (1.025%)"), never a total — so the starting point has to come
+ * from the player. Once given, the app keeps it current by adding every gain and
+ * resetting on "You have gained a level!", so it's asked for at most once per level.
+ */
+export interface XpProgress {
+  /** Percent into the current level, 0–100. */
+  intoLevel: number;
+  /** Level, when the log has told us ("Welcome to level N!"). */
+  level?: number;
+  /** When the player last stated it (or when a level-up reset it). */
+  statedAt?: string;
+  /** True once we have something to work from. */
+  known: boolean;
+}
+
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export interface OverlaySettings {
@@ -263,6 +587,12 @@ export const AWARI_MSG = {
   ping: "ping",
   /** A peer's shared map pins. */
   pins: "pins",
+  /**
+   * Who a peer is (name + zone). awari's roster gives us peer *ids*; this is how a
+   * connected-users list learns names. Sent on join, whenever ours changes, and
+   * again whenever someone new joins (so late arrivals learn about us).
+   */
+  hello: "hello",
 } as const;
 export type AwariMsgKind = (typeof AWARI_MSG)[keyof typeof AWARI_MSG];
 
@@ -284,6 +614,17 @@ export interface AwariInbound {
 export interface AwariStatus {
   connected: boolean;
   peerId: string | null;
+}
+
+/**
+ * Someone else in the room, as the connected-users list sees them. Presence comes
+ * from awari's roster (`onPeerJoined`/`onPeerLeft`) so a peer is listed as soon as
+ * they connect; `name`/`zone` fill in when their `hello` arrives.
+ */
+export interface AwariPeer {
+  peerId: string;
+  name?: string;
+  zone?: string;
 }
 
 // ─── Preload bridge (window.eql) ────────────────────────────────────────────
@@ -353,6 +694,32 @@ export interface EqlApi {
     reset(): Promise<SessionStats>;
     onChanged(cb: (stats: SessionStats) => void): Unsubscribe;
   };
+  /** The damage meter: per-combatant damage/DPS for the current fight and session. */
+  combat: {
+    get(): Promise<CombatStats>;
+    reset(): Promise<CombatStats>;
+    onChanged(cb: (stats: CombatStats) => void): Unsubscribe;
+    /** Past play sessions, newest first. */
+    sessions(): Promise<SessionSummary[]>;
+    /** Per-zone totals across all recorded fights, best experience rate first. */
+    zones(): Promise<ZoneReport[]>;
+    /** Your best recorded fight per opponent. */
+    bests(): Promise<FightBest[]>;
+    /** The stored fights of one session, newest first. */
+    fights(sessionId: string): Promise<StoredFight[]>;
+    /** Forget all stored history (the live meter is untouched). */
+    clearHistory(): Promise<SessionSummary[]>;
+  };
+  /**
+   * Experience progress — the one figure the log can't give us, so the UI asks for it
+   * and this keeps it current afterwards.
+   */
+  xp: {
+    get(): Promise<XpProgress>;
+    /** Record what the player says their current XP into the level is (0–100). */
+    set(intoLevel: number, level?: number): Promise<XpProgress>;
+    onChanged(cb: (progress: XpProgress) => void): Unsubscribe;
+  };
   lookup: {
     /** Open the region selector (same as the screengrab hotkey). */
     open(): Promise<void>;
@@ -413,12 +780,16 @@ export interface EqlApi {
     onMessage(cb: (msg: AwariInbound) => void): Unsubscribe;
     /** Connection status changed (joined? + our peer id). */
     onStatus(cb: (status: AwariStatus) => void): Unsubscribe;
+    /** Who else is in the room (roster + the names/zones they've announced). */
+    onPeers(cb: (peers: AwariPeer[]) => void): Unsubscribe;
     /** Owner-window plumbing: the broker asks this (owner) window to publish a payload. */
     onPublish(cb: (payload: AwariPayload) => void): Unsubscribe;
     /** Owner-window plumbing: report an inbound peer message up to the broker. */
     reportMessage(msg: AwariInbound): void;
     /** Owner-window plumbing: report connection status up to the broker. */
     reportStatus(status: AwariStatus): void;
+    /** Owner-window plumbing: report the room roster up to the broker. */
+    reportPeers(peers: AwariPeer[]): void;
   };
   win: {
     /** Which window this renderer is: "main" or "overlay". */

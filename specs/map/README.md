@@ -20,7 +20,10 @@ trail) plotted on it, in a sibling window opened from the main window's 🗺 but
 - **Location feed** — a `/loc` line (`Your Location is Y, X, Z`) becomes a `LocEvent`
   via `parseLocLine` (`src/shared/log-parser.ts`) and flows through the same
   main→IPC→renderer pipeline as the `zone` event (`watcher.onLoc` → `currentLoc` →
-  `CH.locChanged` broadcast → `usePlayerLoc` / `usePlayerTrail`).
+  `CH.locChanged` broadcast → `usePlayerLoc` / `usePlayerTrail`). The **trail** (the line
+  between logged positions) is owned by the map window so the toolbar's **∿** button can
+  clear it; it also clears itself when you zone, since a `LocEvent` carries no zone and
+  the old path would otherwise be drawn across the new map.
 - **UI** — `MapPanel` (`src/app/components/MapPanel.tsx`) stacks two square canvases
   (static map + moving overlay), sized to the window via a `ResizeObserver`. A **zoom/
   pan view** (scroll wheel zooms toward the cursor, clamped 1–`MAX_ZOOM`) is layered on
@@ -29,9 +32,15 @@ trail) plotted on it, in a sibling window opened from the main window's 🗺 but
   default with a dropdown to view any mapped zone (and `map.openAt(zone)` / the
   `mapViewZone` event let a clickable location elsewhere point it at a zone — with a
   coordinate it also drops a marker pin there); created on
-  demand by `createMapWindow`. The title bar carries a **pin** (per-window
-  always-on-top, via the shared `PinButton`), a **key** toggle (the zone's `mapKeyImg`
-  beside the map), and — with Debug logging on — the 📐 calibration toggle. A zone with
+  demand by `createMapWindow`. A hand-picked zone is an **override** that persists —
+  but only until the log says you actually **zoned**, which clears it so the map goes
+  back to following you (otherwise one dropdown pick silently stops it forever). The
+  **follow** checkbox beside the dropdown governs that, on by default; turn it off to
+  keep studying one map while you travel. The
+  title bar carries a **pin** (per-window always-on-top, via the shared `PinButton`), a
+  **key** toggle (the zone's `mapKeyImg` beside the map, **zoomable** — `MapKey`: scroll
+  to zoom toward the cursor, drag to pan, double-click to reset, since the key scans are
+  unreadable at sidebar width), and — with Debug logging on — the 📐 calibration toggle. A zone with
   **no configured map** (most of eqlwiki's ~117 zones — only ~14 are bundled + calibrated)
   shows a clear empty panel: it names the zone, notes saved markers appear once it's
   mapped, and offers a **View on Project 1999** button (`map.openP99` → the zone's P99 map
@@ -62,11 +71,18 @@ trail) plotted on it, in a sibling window opened from the main window's 🗺 but
   `awari.send`. Two Settings gates (both default off): **`connectPeers`** joins the
   room — you then see peers' live locations (green dots) and can **ping** the map (click
   a spot → your `playerName` + the **viewed** zone are broadcast and drawn as a gold
-  named marker for everyone viewing that zone); **`shareLocation`** additionally
+  named marker for everyone viewing that zone). A fresh ping **animates** — expanding
+  rings for ~2.4s, then it settles into a plain marker so it stays findable — and your
+  own ping is echoed locally, since the inbound stream excludes you and a click with no
+  visible result reads as broken. **`shareLocation`** additionally
   broadcasts your own live `/loc` (disabled in the UI until connected). `playerName`
   defaults to the log's character name (`characterFromLogFile`). Peers/pings are
   filtered to the viewed zone. Bootstrap URL defaults to the live service, overridable
   in Settings.
+- **Connected users** (the 👥 toolbar panel, when connected) — everyone in the room,
+  whether or not they share anything: presence from awari's roster, names/zones from a
+  `hello` payload, plus what each is sharing (location dot, pin count) and a button to
+  jump to their zone. See [ADR 0015](../decisions/0015-peer-presence-via-hello.md).
 
 ## Non-responsibilities
 - No continuous position tracking: EQ only logs a location when one is emitted
@@ -84,4 +100,5 @@ trail) plotted on it, in a sibling window opened from the main window's 🗺 but
 ## See also
 [overlay-ui](../overlay-ui/README.md) · [log-watching](../log-watching/README.md) ·
 [data-model](./data-model.md) · [ADR 0010](../decisions/0010-ported-map-core.md) ·
-[ADR 0011](../decisions/0011-awari-peer-location-sharing.md)
+[ADR 0011](../decisions/0011-awari-peer-location-sharing.md) ·
+[ADR 0015](../decisions/0015-peer-presence-via-hello.md)

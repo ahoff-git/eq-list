@@ -3,7 +3,7 @@
 ## Purpose
 Give the player **one** window: a frameless, translucent, always-on-top float (the
 "overlay" look) that sits over the game, lights up on drops, and holds everything —
-list, hunt, search, session, settings.
+list, hunt, search, damage, session, settings.
 
 ## Responsibilities
 - **Window shell** (`src/app/page.tsx`, `.app.glass`): frameless, transparent,
@@ -33,8 +33,13 @@ list, hunt, search, session, settings.
     item** (collapsible sub-bullets; standalone items fall into "Other"). Grouping is
     `src/shared/grouping.ts` (`groupByOrigin`). Entries are keyed by **name + origin**, so
     the same item can appear under **several headings** (e.g. rat ears wanted by a recipe
-    *and* a quest); each entry shows `have / need` for that group, plus a **"(N total)"**
-    hint (`itemTotals`) when the item is wanted elsewhere too. The entry's **+/− adjust
+    *and* a quest); each entry reads **"5 of 3 (10)"** — you have 5, this group wants 3,
+    and 10 are wanted across every group (shown only when it differs). A drop credits
+    *every* group that wants the item, so the combined figure is the one that says whether
+    you can stop farming — and **hovering the count breaks it down**, naming each
+    quest/recipe behind the total and what it wants (with "×N runs" where that's why).
+    `itemDemands` produces that breakdown and `itemTotals` sums it, so the number and its
+    explanation come from one place. The entry's **+/− adjust
     how many you've acquired** (`obtained`); `needed` comes from the turn-in qty × runs.
     Entries flash on match; the name navigates in-app, and an ↗ button opens its eqlwiki
     page (`wiki.openInBrowser`, host-validated in main). A quest/recipe group has a
@@ -70,13 +75,51 @@ list, hunt, search, session, settings.
     card its **zone** is clickable (opens the map there) and any **coordinate** in its
     Location (e.g. "(1555, -2410)", EQ y,x) opens the map at that zone and drops a marker
     pin (`map.openAt` with a loc). Out-of-era results are badged, with a "hide out of era" toggle.
-  - `SessionPanel` — live XP-gain and kill counts for the session, with XP attributed
-    to the mob you killed most recently (from `session-stats.ts`), and a reset.
+  - `DamagePanel` — the **damage meter** (from `combat-stats.ts` / `combat-history.ts`;
+    see [ADR 0014](../decisions/0014-damage-meter-from-the-log.md) and
+    [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md)). Two axes:
+    **scope** (this/last fight · session · **history**) and **view** (dealt · taken ·
+    **spells**). A stored fight renders through the same views as a live one, so "dig into
+    last night" and "how's this pull going" are one screen.
+    - `DamageMeter` — bars scaled to the top row so relative contribution reads without
+      arithmetic, with total, share and DPS; your rows (you + your pet) are tinted, and
+      hover gives max hit, accuracy, crits, healing and active time.
+    - `SpellTable` — where your damage came from, spell by spell: casts, damage, healing,
+      average **measured** cast time, **dmg/s cast** (the efficiency column — a slow nuke
+      and a fast one that hit the same are not equally good), **resist %** (red past 25%)
+      and failed casts. Sortable by any of those; melee is a synthetic row so the pie adds
+      up. Cast times come from the log's one-second resolution — trust the averages, not a
+      single reading.
+    - `DamageHistory` — sessions (newest first) → their fights (labelled with the mob you
+      were fighting) → pick one to break it down. "Clear history" forgets all of it.
+    - `Sparkline` — your damage per second across the fight, because a steady grind and a
+      burst that fell off a cliff can share a DPS number but never a silhouette.
+    - **Deaths** — what killed you, and what was landing in the 15s before it. The log
+      names a killer but never a reason; the run-up is the reason.
+    Tiles above show your damage, your DPS, all damage, how long the window was *in
+    combat*, and your pet's share when it fought. A **★ best DPS** flag appears when the
+    fight beats your recorded best against that opponent, and **Copy** puts a one-line
+    summary on the clipboard for guild chat. "This fight" flips to "Last fight" on its own
+    once the log has been quiet for 10s; **Reset** clears the live meter and keeps history.
+  - `SessionPanel` — the **camp screen**: is this spot worth it? XP/hour (over elapsed
+    time, so it's a forecast), **time to level**, **downtime** (elapsed minus time in
+    combat — the biggest lever on a night's real rate), level, and the session's XP-gain
+    and kill counters (`session-stats.ts`). Below, `CampReport` gives **per mob** for this
+    session (kills, time-to-kill, XP, XP/min *fighting*) and **per zone** across all
+    recorded history, so tonight's camp can be compared with last week's. See
+    [ADR 0017](../decisions/0017-camp-efficiency-and-asking-the-player.md).
+    - Time to level needs the one thing the log never states — how far into the level you
+      are — so it **asks**: `AskValue` turns the gap into the control (hover for why,
+      click to fill in). After that `xp-progress.ts` keeps it current from XP gains and
+      zeroes it on level-up, so it's asked at most once per level. Reuse `AskValue` for any
+      future figure the log can't supply.
   - `SettingsPanel` — log folder, match mode, window opacity/text-size, keep-completed,
     follow-your-zone, and a **Help** area: global-shortcut list with live registration
     status (`app.info()`) and a screengrab explanation/test button. Dev-only options
     live in the tray, not here.
-  - `StatusBar` — watcher state, current zone, and the last drop seen.
+  - `StatusBar` — watcher state, current zone, and the last drop seen. A drop moves the
+    matching list entries by the **quantity the log reported**, so a looted stack of 2
+    advances the count by 2.
 - **Screengrab lookup** (`src/app/select/page.tsx` + `electron/lookup.ts`): the
   `Ctrl/Cmd+Shift+L` hotkey (or the Search/Settings buttons) screenshots every display
   *first* (before any window shows, so a hovered tooltip is frozen and our UI isn't

@@ -3,9 +3,33 @@
 Open work only. Delete an item when it's done and record the outcome where it
 belongs (ADR, README, or code).
 
-_Implemented but unverified in the dev sandbox (no display / GPU / OCR) — needs a
-real machine to confirm:_
+_Needs a real run to confirm (built, typechecked, unit-tested, but not yet exercised
+in-game):_
 
+- **Damage meter, live.** The parser was validated against a whole real log (0 unmatched
+  combat lines) and the tracker against that log's numbers, but confirm in-game: the
+  Damage tab fills while fighting, "This fight" flips to "Last fight" after a lull, your
+  and your pet's rows are the highlighted ones, and DPS looks sane for a long fight.
+  See [ADR 0014](./decisions/0014-damage-meter-from-the-log.md).
+- **Camp analytics, live.** Confirm in-game: XP/hour and **time to level** (the tile asks
+  for your current XP% on first use, then keeps itself current and resets when you level),
+  **downtime** looking plausible for a real session, the per-mob table ranking sensibly,
+  and the per-zone table filling in as you move camps. Also the Damage tab's additions:
+  the per-second sparkline, the death recap, pet share, the ★ personal-best flag, and
+  **Copy**. See [ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md).
+- **Spell table + history, live.** Confirm the **Spells** view fills as you cast (cast
+  times land in the 1–3s range, resist % rises on a resistant mob, melee shows as its own
+  row and the numbers add up to your total), and that **History** lists tonight's session,
+  drills into individual fights, and is still there after restarting the app. Ranked
+  spells ("Shock of Lightning VI") must appear as **one** row, not two. See
+  [ADR 0016](./decisions/0016-combat-history-and-spell-analytics.md).
+- **Connected users, two clients.** With peer networking on, confirm the 👥 panel lists
+  the other client (name from its `hello`, not a peer id), that a peer connected *without*
+  location sharing still appears, that the row's zone button jumps the map there, and
+  that leaving removes the row. See [ADR 0015](./decisions/0015-peer-presence-via-hello.md).
+- **Ping animation + zone follow.** Confirm your own map click now shows an animated
+  gold ping locally, and that actually zoning in-game clears a hand-picked zone override
+  so the map follows you again.
 - **Screengrab lookup, end-to-end.** Verify the `Ctrl/Cmd+Shift+L` flow: region
   select → capture → Tesseract OCR accuracy → fuzzy match. First OCR downloads the
   English model (needs network); tune the crop / text cleanup if accuracy is poor.
@@ -23,6 +47,13 @@ real machine to confirm:_
   "Connect" off leaves the room. Needs real network + WebRTC (unavailable in the dev
   sandbox). See [ADR 0012](./decisions/0012-awari-connection-owned-by-main-window.md).
 
+_Zones:_
+
+- **Add maps for the zones actually being played.** A real log showed visits to East
+  Commonlands, The Estate of Unrest, New Sebilis Expedition and the EQL Tutorial —
+  none of which have a bundled map, so the map window falls back to the P99 link. Each
+  needs an image plus hand calibration (📐), see [map](./map/README.md).
+
 _Distribution wiring:_
 
 - **CI build — verify first run.** `.github/workflows/build-windows.yml` auto-builds the
@@ -38,3 +69,24 @@ _Distribution wiring:_
   point Download straight at `/releases/latest/download/<asset>` for a one-click download.
 - **Code signing (optional).** Builds are unsigned → Windows SmartScreen warns "unknown
   publisher". Needs a cert (`CSC_LINK`/`CSC_KEY_PASSWORD` secrets) wired into the workflow.
+
+_UI:_
+
+- **Text-size +/− buttons.** Not everyone wants the same size text. `overlay.fontScale`
+  (0.8–1.6) already exists in settings and is applied by the renderer — this is about
+  putting +/− controls somewhere obvious (titlebar next to the opacity toggle?) instead of
+  only a Settings slider.
+
+_To discuss:_
+
+- **OCR beyond item lookup.** The app already ships Tesseract for the screengrab item
+  lookup (`electron/ocr.ts`, `electron/lookup.ts`), so reading numbers off the game UI is
+  plausible — the obvious candidates are the **experience bar** (which would remove the
+  one figure we have to ask the player for, see
+  [ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md)) and **HP/mana**,
+  which would unlock "how close was that" and damage-per-mana. Worth a conversation first:
+  it needs a user-calibrated screen region per UI layout, it's fragile across resolutions
+  and UI mods, and a wrong number read confidently is worse than a blank. Decide whether
+  it's opt-in calibration or not worth the fragility.
+- Create a reusable feature that lets the overlay ask the user for information, then uses that info in calculations.
+- Feature from EQ-Map to create a kill heatmap. Can use the above feature to request the user call /loc to record the location of the kill 

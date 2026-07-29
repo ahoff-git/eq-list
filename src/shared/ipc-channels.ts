@@ -29,6 +29,15 @@ export const CH = {
   locGet: "loc:get",
   statsGet: "stats:get",
   statsReset: "stats:reset",
+  combatGet: "combat:get",
+  combatReset: "combat:reset",
+  combatSessions: "combat:sessions",
+  combatFights: "combat:fights",
+  combatZones: "combat:zones",
+  combatBests: "combat:bests",
+  combatClearHistory: "combat:clearHistory",
+  xpGet: "xp:get",
+  xpSet: "xp:set",
   lookupCapture: "lookup:capture",
   lookupOpen: "lookup:open",
   lookupCancel: "lookup:cancel",
@@ -51,10 +60,12 @@ export const CH = {
   awariOutbound: "awari:outbound", // any window → main: relay to the owner window
   awariInbound: "awari:inbound", // owner → main: a peer message arrived
   awariStatus: "awari:status", // owner → main: connection status changed
+  awariPeers: "awari:peers", // owner → main: the room roster changed
   // events (main → renderer)
   awariPublish: "evt:awariPublish", // main → owner: publish this payload to the room
   awariMessage: "evt:awariMessage", // main → all: a peer message (self excluded)
   awariStatusChanged: "evt:awariStatus", // main → all: connection status
+  awariPeersChanged: "evt:awariPeers", // main → all: who else is in the room
   listChanged: "evt:list",
   settingsChanged: "evt:settings",
   lootEvent: "evt:loot",
@@ -63,6 +74,8 @@ export const CH = {
   zoneChanged: "evt:zone",
   locChanged: "evt:loc",
   statsChanged: "evt:stats",
+  combatChanged: "evt:combat",
+  xpChanged: "evt:xp",
   searchPrefill: "evt:searchPrefill",
   navCommand: "evt:navCommand",
   mapViewZone: "evt:mapViewZone",

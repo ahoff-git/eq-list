@@ -34,3 +34,26 @@
 [Mon Jul 20 19:11:55 2026] Your Location is 300.0, 450.0, 5.0
 [Mon Jul 20 19:12:10 2026] Your Location is -500.0, 250.0, 5.0
 [Mon Jul 20 19:12:25 2026] Your Location is -900.0, -100.0, 5.0
+[Mon Jul 20 19:12:40 2026] You begin casting Blast of Cold.
+[Mon Jul 20 19:12:42 2026] You hit a coyote for 12 points of cold damage by Blast of Cold.
+[Mon Jul 20 19:12:43 2026] A coyote bites Kainos`s warder for 16 points of damage.
+[Mon Jul 20 19:12:44 2026] Kainos`s warder tries to bite a coyote, but misses!
+[Mon Jul 20 19:12:45 2026] Kainos`s warder bites a coyote for 8 points of damage.
+[Mon Jul 20 19:12:46 2026] A coyote is burned by Kainos`s warder's flames for 2 points of non-melee damage.
+[Mon Jul 20 19:12:47 2026] You pierce a coyote for 6 points of damage.
+[Mon Jul 20 19:12:48 2026] You try to pierce a coyote, but miss!
+[Mon Jul 20 19:12:49 2026] A coyote bites YOU for 5 points of damage.
+[Mon Jul 20 19:12:50 2026] You kick a coyote for 21 points of damage. (Critical)
+[Mon Jul 20 19:12:51 2026] A coyote bashes Kainos`s warder for 1 point of damage. (Riposte)
+[Mon Jul 20 19:12:52 2026] You healed Kainos`s warder for 8 (20) hit points by Inner Fire.
+[Mon Jul 20 19:12:53 2026] Kainos`s warder has taken 1 damage by Plague Rat Disease.
+[Mon Jul 20 19:12:54 2026] You have slain a coyote!
+[Mon Jul 20 19:12:55 2026] You gain experience! (1.025%)
+[Mon Jul 20 19:12:56 2026] You begin casting Shock of Lightning VI.
+[Mon Jul 20 19:12:58 2026] You hit a coyote for 74 points of magic damage by Shock of Lightning.
+[Mon Jul 20 19:13:00 2026] You begin casting Blast of Cold.
+[Mon Jul 20 19:13:01 2026] A coyote resisted your Blast of Cold!
+[Mon Jul 20 19:13:03 2026] You begin casting Blast of Cold.
+[Mon Jul 20 19:13:04 2026] Your Blast of Cold spell fizzles!
+[Mon Jul 20 19:13:05 2026] You looted 2 Spiderling Eye from a coyote's corpse and sold it for 1 silver and 4 copper.
+[Mon Jul 20 19:13:06 2026] You looted a Spiderling Silk from a coyote's corpse and stored it in your tradeskill depot

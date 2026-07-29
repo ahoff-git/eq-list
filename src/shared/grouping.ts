@@ -42,18 +42,50 @@ export function normalizeItemName(name: string): string {
   return name.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/** One group's claim on an item — the pieces the parenthetical total is made of. */
+export interface ItemDemand {
+  /** The quest/recipe asking for it (or "Other items"). */
+  label: string;
+  /** null for the catch-all group. */
+  kind: WikiPageKind | null;
+  /** How many that group needs, its runs already applied. */
+  need: number;
+  /** How many times the group is set to run, so the reason for `need` is visible. */
+  runs: number;
+}
+
 /**
- * Total needed of each item across ALL groups (each group scaled by its runs), keyed by
- * normalized name. The same item can appear under several quest/recipe headings; this is
- * the grand total the list shows in parentheses (e.g. rat ears "0/4 (8 total)").
+ * Who wants each item and how many each wants, keyed by normalized name. This is what
+ * lets the list *explain* its "(N)" hint — hovering a count names the quests behind it.
  */
-export function itemTotals(groups: ListGroup[]): Map<string, number> {
-  const totals = new Map<string, number>();
+export function itemDemands(groups: ListGroup[]): Map<string, ItemDemand[]> {
+  const demands = new Map<string, ItemDemand[]>();
   for (const g of groups) {
     for (const e of g.entries) {
       const key = normalizeItemName(e.name);
-      totals.set(key, (totals.get(key) ?? 0) + effectiveNeeded(e, g.runs));
+      const forItem = demands.get(key) ?? [];
+      forItem.push({ label: g.label, kind: g.kind, need: effectiveNeeded(e, g.runs), runs: g.runs });
+      demands.set(key, forItem);
     }
+  }
+  return demands;
+}
+
+/**
+ * Total needed of each item across ALL groups (each group scaled by its runs), keyed by
+ * normalized name. The same item can appear under several quest/recipe headings; this is
+ * the grand total the list shows in parentheses (e.g. rat ears "0 of 4 (8)").
+ *
+ * Summed from `itemDemands` so the number and the hover that breaks it down can never
+ * disagree.
+ */
+export function itemTotals(groups: ListGroup[]): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const [key, demands] of itemDemands(groups)) {
+    totals.set(
+      key,
+      demands.reduce((n, d) => n + d.need, 0),
+    );
   }
   return totals;
 }

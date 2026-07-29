@@ -6,6 +6,7 @@ import ListPanel from "./components/ListPanel";
 import HuntPanel from "./components/HuntPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
+import DamagePanel from "./components/DamagePanel";
 import StatusBar from "./components/StatusBar";
 import LandingView from "./components/LandingView";
 import PinButton from "./components/PinButton";
@@ -16,7 +17,7 @@ import { NavProvider, useNav } from "@/lib/nav";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "search" | "session" | "settings";
+type Tab = "list" | "hunt" | "search" | "damage" | "session" | "settings";
 
 /**
  * The single app window: a frameless, translucent float (the "overlay" look) that
@@ -114,6 +115,9 @@ export default function Home() {
           <button className={tabCls(tab, "search")} onClick={() => setTab("search")}>
             Search
           </button>
+          <button className={tabCls(tab, "damage")} onClick={() => setTab("damage")}>
+            Damage
+          </button>
           <button className={tabCls(tab, "session")} onClick={() => setTab("session")}>
             Session
           </button>
@@ -126,6 +130,7 @@ export default function Home() {
           {tab === "list" && <ListPanel />}
           {tab === "hunt" && <HuntPanel pickedZone={huntZone} onPickedZone={setHuntZone} />}
           {tab === "search" && <SearchPanel prefill={prefill} />}
+          {tab === "damage" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "settings" && <SettingsPanel />}
         </div>

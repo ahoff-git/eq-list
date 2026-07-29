@@ -14,7 +14,9 @@ in the main process and all UI in the renderer.
     front (each at its own **native** resolution, so differing monitor resolutions
     aren't stretched/distorted), shows a per-monitor transparent selector; the crop
     is OCR'd (Tesseract.js) and the text is routed into the control window's Search box.
-  - `session-stats.ts` — session XP/kill tracking (see [log-watching](../log-watching/README.md)).
+  - `session-stats.ts` — session XP/kill tracking; `combat-stats.ts` — the damage meter's
+    per-combatant and per-spell tallies; `combat-history.ts` — finished fights persisted
+    for later (all three see [log-watching](../log-watching/README.md)).
   - `windows.ts` — the framed control window and the frameless transparent overlay.
     Windows show without stealing focus (overlay uses `showInactive`); DevTools open
     only when `EQL_DEVTOOLS` is set. Each window's renderer console is piped into the
@@ -37,12 +39,15 @@ in the main process and all UI in the renderer.
   and overlay (`overlay/page.tsx`). It never imports Node/Electron — it only calls
   the typed `window.eql` bridge.
 - **Shared** (`src/shared/`) is framework-agnostic code imported by both sides:
-  `types.ts` (the IPC contract), `ipc-channels.ts`, `logging.ts`, `log-parser.ts`.
+  `types.ts` (the IPC contract), `ipc-channels.ts`, `logging.ts`, `log-parser.ts`,
+  `combat-parser.ts`.
 
 ## Data flow
 - Renderer → main: `window.eql.*` → `ipcRenderer.invoke` → `ipcMain.handle` → store/wiki/watcher.
 - Main → renderer (events): store/watcher emit → `main.ts` broadcasts to every window →
-  preload `on*` subscriptions → React hooks (`src/lib/hooks.ts`).
+  preload `on*` subscriptions → React hooks (`src/lib/hooks.ts`). High-rate streams are
+  coalesced before broadcast (the damage meter's snapshot) so a burst of log lines can't
+  flood the channel.
 - The store is authoritative, so the control window and overlay always agree.
 
 ## Non-responsibilities

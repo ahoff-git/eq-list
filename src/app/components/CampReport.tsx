@@ -1,0 +1,101 @@
+"use client";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import type { MobKillStat, ZoneReport } from "@/shared/types";
+
+/**
+ * "Is this camp worth it?" — the two tables that answer it.
+ *
+ * **Per mob** (this session): how long one takes to kill and what it pays per minute.
+ * **Per zone** (all recorded history): the same question across camps, so tonight's
+ * spot can be compared with last week's.
+ *
+ * Experience is in percent of a level, because that's the only form the log gives.
+ * `refreshKey` re-reads the zone table — history only changes when a fight ends.
+ */
+export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]; refreshKey: string }) {
+  const [zones, setZones] = useState<ZoneReport[]>([]);
+
+  useEffect(() => {
+    void api()?.combat.zones().then(setZones);
+  }, [refreshKey]);
+
+  return (
+    <>
+      <h3 className="section-head" title="From this session's fights">
+        Per mob, this session
+      </h3>
+      {byMob.length === 0 ? (
+        <p className="muted small">Nothing killed yet this session.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="stat-table">
+            <thead>
+              <tr>
+                <th>Mob</th>
+                <th>Kills</th>
+                <th title="Average time from the previous kill in the fight">Kill time</th>
+                <th title="Experience credited to it, in percent of a level">XP</th>
+                <th title="Percent of a level per minute spent fighting it — downtime excluded, so it ranks mobs rather than forecasting an evening">
+                  XP/min fighting
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {byMob.map((m) => (
+                <tr key={m.mob}>
+                  <td>{m.mob}</td>
+                  <td>{m.kills}</td>
+                  <td>{m.avgKillSec ? `${m.avgKillSec}s` : "—"}</td>
+                  <td>{m.xpPct ? `${m.xpPct}%` : "—"}</td>
+                  <td className="num-accent">{m.xpPerMin ? `${m.xpPerMin}%` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h3 className="section-head" title="Every fight ever recorded, grouped by zone">
+        Per zone, all time
+      </h3>
+      {zones.length === 0 ? (
+        <p className="muted small">
+          No zoned history yet — fights are filed against whatever zone the log last reported.
+        </p>
+      ) : (
+        <div className="table-scroll">
+          <table className="stat-table">
+            <thead>
+              <tr>
+                <th>Zone</th>
+                <th>Fights</th>
+                <th>Kills</th>
+                <th title="Time in combat, downtime excluded">Combat</th>
+                <th title="Per minute of combat in the zone, downtime excluded">XP/min fighting</th>
+                <th>DPS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {zones.map((z) => (
+                <tr key={z.zone} title={`Last fought ${new Date(z.lastAt).toLocaleString()}`}>
+                  <td>{z.zone}</td>
+                  <td>{z.fights}</td>
+                  <td>{z.kills}</td>
+                  <td>{mins(z.combatSec)}</td>
+                  <td className="num-accent">{z.xpPerMin ? `${z.xpPerMin}%` : "—"}</td>
+                  <td>{z.dps || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+function mins(sec: number): string {
+  const m = Math.floor(sec / 60);
+  return m > 0 ? `${m}m` : `${sec}s`;
+}

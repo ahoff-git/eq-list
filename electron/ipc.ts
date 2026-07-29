@@ -13,13 +13,19 @@ import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
 import type { LogWatcher } from "./log-watcher";
 import type { SessionTracker } from "./session-stats";
+import type { CombatTracker } from "./combat-stats";
+import type { CombatHistory } from "./combat-history";
+import type { XpTracker } from "./xp-progress";
 import type { Lookup } from "./lookup";
-import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus } from "../src/shared/types";
+import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer } from "../src/shared/types";
 
 export interface IpcContext {
   store: Store;
   wiki: WikiClient;
   stats: SessionTracker;
+  combat: CombatTracker;
+  history: CombatHistory;
+  xp: XpTracker;
   lookup: Lookup;
   /** Path to the debug log file. */
   logFile: string;
@@ -34,7 +40,7 @@ export interface IpcContext {
   watcher: LogWatcher;
 }
 
-export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
+export function registerIpc({ store, wiki, watcher, stats, combat, history, xp, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
   // ── shopping list ──
   ipcMain.handle(CH.listGet, () => store.getList());
   ipcMain.handle(CH.listAdd, (_e, input) => store.addEntry(input));
@@ -84,6 +90,22 @@ export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getC
     stats.reset(); // emits change → broadcast; also return the fresh snapshot to the caller
     return stats.snapshot();
   });
+  ipcMain.handle(CH.combatGet, () => combat.snapshot());
+  ipcMain.handle(CH.combatReset, () => {
+    combat.reset();
+    return combat.snapshot();
+  });
+  ipcMain.handle(CH.combatSessions, () => history.sessions());
+  ipcMain.handle(CH.combatFights, (_e, sessionId: string) => history.fights(sessionId));
+  ipcMain.handle(CH.combatZones, () => history.zones());
+  ipcMain.handle(CH.combatBests, () => history.bests());
+  ipcMain.handle(CH.xpGet, () => xp.state());
+  // The one figure the log can't give us, supplied by the player (see xp-progress.ts).
+  ipcMain.handle(CH.xpSet, (_e, intoLevel: number, level?: number) => xp.set(intoLevel, level));
+  ipcMain.handle(CH.combatClearHistory, () => {
+    history.clear();
+    return history.sessions();
+  });
 
   // ── screengrab lookup + app info ──
   ipcMain.handle(CH.lookupCapture, (e, rect: Rect, view: { width: number; height: number }) =>
@@ -130,6 +152,7 @@ export function registerIpc({ store, wiki, watcher, stats, lookup, logFile, getC
   ipcMain.on(CH.awariOutbound, (_e, payload: AwariPayload) => getMainWindow()?.webContents.send(CH.awariPublish, payload));
   ipcMain.on(CH.awariInbound, (_e, msg: AwariInbound) => broadcast(CH.awariMessage, msg));
   ipcMain.on(CH.awariStatus, (_e, status: AwariStatus) => broadcast(CH.awariStatusChanged, status));
+  ipcMain.on(CH.awariPeers, (_e, peers: AwariPeer[]) => broadcast(CH.awariPeersChanged, peers));
 
   ipcMain.on(CH.winMinimize, (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
   // Hide to tray (single-window app): keep the process alive so the tray/hotkey can reshow.

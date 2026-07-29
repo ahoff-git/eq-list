@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseLogLine,
+  parseLevelLine,
   parseZoneLine,
   parseXpLine,
   parseKillLine,
@@ -60,6 +61,35 @@ test("parses the loot-and-combine line", () => {
   );
   assert.ok(e);
   assert.equal(e!.item, "Crushbone Belt +2");
+});
+
+// The auto-store forms and the stack counts below are verbatim shapes from a real
+// EQL log — they were silently unparsed (or under-counted) before.
+test("parses the auto-store (tradeskill depot) loot line", () => {
+  const e = parseLogLine(
+    "[Fri Jul 17 18:41:14 2026] You looted a Spiderling Silk from a rock spider's corpse and stored it in your tradeskill depot",
+  );
+  assert.ok(e);
+  assert.equal(e!.item, "Spiderling Silk");
+  assert.equal(e!.source, "rock spider");
+  assert.equal(e!.qty, 1);
+});
+
+test("a looted stack reports its count", () => {
+  const e = parseLogLine(
+    "[Fri Jul 17 18:41:14 2026] You looted 2 Spiderling Eye from a spiderling's corpse and sold it for 1 silver and 4 copper.",
+  );
+  assert.ok(e);
+  assert.equal(e!.item, "Spiderling Eye");
+  assert.equal(e!.qty, 2);
+});
+
+test("qty defaults to 1, and the count never lands in the item name", () => {
+  const one = parseLogLine("[Fri Jul 17 18:41:14 2026] --You have looted a Bone Chips from a skeleton's corpse.--");
+  assert.equal(one!.qty, 1);
+  const many = parseLogLine("[Fri Jul 17 18:41:14 2026] --You have looted 4 Bone Chips from a skeleton's corpse.--");
+  assert.equal(many!.qty, 4);
+  assert.equal(many!.item, "Bone Chips");
 });
 
 test("multi-word item and source names survive", () => {
@@ -131,4 +161,22 @@ test("characterFromLogFile pulls the character from the log filename (path or ba
   assert.equal(characterFromLogFile("eqlog_Bob_server.txt"), "Bob");
   assert.equal(characterFromLogFile("random.txt"), null);
   assert.equal(characterFromLogFile(undefined), null);
+});
+
+test("parseLevelLine reads the level-up line, keeping the number", () => {
+  // Verbatim from a real log: EQL puts both halves on one line.
+  const real = parseLevelLine("[Tue Jul 28 23:33:10 2026] You have gained a level! Welcome to level 2!");
+  assert.ok(real);
+  assert.equal(real!.level, 2);
+
+  const welcome = parseLevelLine("[Wed Jul 29 00:31:02 2026] Welcome to level 14!");
+  assert.equal(welcome!.level, 14);
+
+  // Either half alone still means "start the XP counter over", number or not.
+  const gained = parseLevelLine("[Wed Jul 29 00:31:02 2026] You have gained a level!");
+  assert.ok(gained);
+  assert.equal(gained!.level, undefined);
+
+  // An ability point is not a level.
+  assert.equal(parseLevelLine("[Wed Jul 29 00:31:02 2026] You have gained an ability point!"), null);
 });

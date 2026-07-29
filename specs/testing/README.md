@@ -6,12 +6,31 @@ unit-tested.
 
 ## Responsibilities
 - **Tested black boxes** — pure, side-effect-free modules with pinned behavior:
-  - `src/shared/log-parser.ts` → `electron/tests/log-parser.test.ts` (loot grammar
-    + timestamp handling).
+  - `src/shared/log-parser.ts` → `electron/tests/log-parser.test.ts` (loot grammar,
+    stack quantities, timestamp handling).
+  - `src/shared/combat-parser.ts` → `electron/tests/combat-parser.test.ts` (the combat
+    grammar: melee/spell/shield/DoT damage, misses, heals, `(Critical)`/`(Riposte)`
+    qualifiers, overheals, and the casting lifecycle — casts, fizzles, interrupts,
+    resists, blocks). Every input line is **verbatim from a real log**.
+  - `electron/combat-stats.ts` → `electron/tests/combat-stats.test.ts` (per-combatant
+    tallies, fight boundaries, active-time DPS, `mine` flagging, and the per-spell
+    numbers: measured cast time, rank-folding, resist rate, and the dmg/s-cast formula
+    that must not inflate partly-timed spells). Deterministic: time comes from the log's
+    timestamps, so there are no clocks or sleeps. Note the helper builds timestamps as
+    real clock times — an early version wrote "00:00:60", which `Date.parse` rejects, and
+    the resulting NaN quietly zeroed a window's span.
+  - `electron/xp-progress.ts` → `electron/tests/xp-progress.test.ts` (nothing assumed
+    until the player says so, gains accumulating, level-up resetting, clamping, reload,
+    corrupt file).
+  - `electron/combat-history.ts` → `electron/tests/combat-history.test.ts` (session
+    grouping, newest-first ordering, per-zone aggregation, personal bests, the 1000-fight
+    cap, reload after a restart, and a corrupt file being survivable). Touches a temp dir, like the log-watcher test —
+    persisting and reloading *is* the feature.
   - `src/shared/fuzzy.ts` → `electron/tests/fuzzy.test.ts` (typo/transposition/
     partial/word-order matching and ranking).
   - `src/shared/grouping.ts` → `electron/tests/grouping.test.ts` (grouping by origin,
-    ordering, per-group progress).
+    ordering, per-group progress, and the cross-group demand breakdown behind the
+    entry-count hover — pinned to sum to `itemTotals`).
   - `src/shared/sources.ts` → `electron/tests/sources.test.ts` (drops-by-zone,
     loose zone matching, current-zone split).
   - `electron/session-stats.ts` → `electron/tests/session-stats.test.ts` (XP/kill
@@ -21,6 +40,15 @@ unit-tested.
     components). Re-capture a fixture only when the wiki's markup actually changes.
 
   Once green, don't re-run or change these unless the module itself changes.
+- **Checking a parser against a whole log** — unit tests pin the shapes we *know*; they
+  can't tell you about a shape you've never seen. So when the game's messages change (or
+  before trusting a new parser), run the parsers over a **real log** and look at what
+  didn't match: bucket the leftovers by shape, ignore chat/system noise, and anything
+  combat- or loot-looking in the remainder is data being silently dropped. That pass is
+  what found the `(Critical)`/`(Riposte)` qualifiers, the overheal form, archery, damage
+  shields and the tradeskill-depot loot line — 57 lines in one log that parsed as
+  nothing. It's a throwaway script, not a committed test: it needs a real log, which
+  isn't in the repo.
 - **Integration test** — `electron/tests/log-watcher.test.ts` drives the real
   `log-watcher` against a temp eqlog: it asserts only newly-appended lines are
   emitted (backlog/chatter ignored) and that truncation/rotation resets cleanly.
@@ -33,9 +61,12 @@ unit-tested.
 - **Static checks**: `npm run typecheck` (both tsconfigs) and `npm run lint`.
 
 ## Simulating the game log
-`npm run sim` replays `fixtures/sample-eqlog.txt` (example loot + chatter in the
-real EQ format) into a target `eqlog_*.txt`, restamping each line to the current
-time so it looks live. Point the app's Log folder at the replay directory and the
+`npm run sim` replays `fixtures/sample-eqlog.txt` (example loot, chatter and a **full
+combat exchange** — melee, a crit, a riposte, spell damage, a pet, a damage shield, a
+DoT tick, a heal, misses, a looted stack and a depot loot — in the real EQ format) into a
+target `eqlog_*.txt`, restamping each line to the current time so it looks live. The
+sample's pet lines are named for the character `Kainos`, so replaying into an
+`eqlog_Kainos_*.txt` also exercises the meter's "these rows are mine" highlighting. Point the app's Log folder at the replay directory and the
 overlay reacts exactly as in-game — no playing required. `scripts/replay-log.mjs`
 takes `--loop`, `--loot-only`, `--interval`, `--jitter`, `--from <real log>`,
 `--to <dir|file>`, `--keep-timestamps`, `--append` (see the file header, or

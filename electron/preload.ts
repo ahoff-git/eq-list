@@ -65,6 +65,21 @@ const api: EqlApi = {
     reset: () => ipcRenderer.invoke(CH.statsReset),
     onChanged: (cb) => on(CH.statsChanged, cb),
   },
+  combat: {
+    get: () => ipcRenderer.invoke(CH.combatGet),
+    reset: () => ipcRenderer.invoke(CH.combatReset),
+    onChanged: (cb) => on(CH.combatChanged, cb),
+    sessions: () => ipcRenderer.invoke(CH.combatSessions),
+    fights: (sessionId) => ipcRenderer.invoke(CH.combatFights, sessionId),
+    zones: () => ipcRenderer.invoke(CH.combatZones),
+    bests: () => ipcRenderer.invoke(CH.combatBests),
+    clearHistory: () => ipcRenderer.invoke(CH.combatClearHistory),
+  },
+  xp: {
+    get: () => ipcRenderer.invoke(CH.xpGet),
+    set: (intoLevel, level) => ipcRenderer.invoke(CH.xpSet, intoLevel, level),
+    onChanged: (cb) => on(CH.xpChanged, cb),
+  },
   lookup: {
     open: () => ipcRenderer.invoke(CH.lookupOpen),
     capture: (rect, view) => ipcRenderer.invoke(CH.lookupCapture, rect, view),
@@ -94,9 +109,11 @@ const api: EqlApi = {
     send: (payload) => ipcRenderer.send(CH.awariOutbound, payload),
     onMessage: (cb) => on(CH.awariMessage, cb),
     onStatus: (cb) => on(CH.awariStatusChanged, cb),
+    onPeers: (cb) => on(CH.awariPeersChanged, cb),
     onPublish: (cb) => on(CH.awariPublish, cb),
     reportMessage: (msg) => ipcRenderer.send(CH.awariInbound, msg),
     reportStatus: (status) => ipcRenderer.send(CH.awariStatus, status),
+    reportPeers: (peers) => ipcRenderer.send(CH.awariPeers, peers),
   },
   win: {
     role: () => Promise.resolve(role()),

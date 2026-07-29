@@ -10,12 +10,28 @@
 import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
-import { parseLogLine, parseZoneLine, parseXpLine, parseKillLine, parseLocLine } from "../src/shared/log-parser";
+import { parseLogLine, parseZoneLine, parseXpLine, parseKillLine, parseLocLine, parseLevelLine } from "../src/shared/log-parser";
+import { parseCombatLine } from "../src/shared/combat-parser";
 import { createLogger } from "../src/shared/logging";
-import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, WatcherStatus } from "../src/shared/types";
+import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
+
+/**
+ * Line parsers paired with the event each emits. Every parser returns null for lines
+ * it doesn't own, so the order is purely about cost: combat spam is the bulk of a real
+ * log, so it goes first and the rest never see those lines.
+ */
+const PARSERS: [event: string, parse: (line: string) => unknown][] = [
+  ["combat", parseCombatLine],
+  ["loot", parseLogLine],
+  ["zone", parseZoneLine],
+  ["xp", parseXpLine],
+  ["kill", parseKillLine],
+  ["loc", parseLocLine],
+  ["level", parseLevelLine],
+];
 
 export interface LogWatcher {
   start(logDir: string, activeLogFile: string): void;
@@ -26,6 +42,8 @@ export interface LogWatcher {
   onXp(cb: (e: XpEvent) => void): void;
   onKill(cb: (e: KillEvent) => void): void;
   onLoc(cb: (e: LocEvent) => void): void;
+  onCombat(cb: (e: CombatEvent) => void): void;
+  onLevel(cb: (e: LevelEvent) => void): void;
   onStatus(cb: (s: WatcherStatus) => void): void;
 }
 
@@ -128,28 +146,13 @@ export function createLogWatcher(): LogWatcher {
         const lines = pending.split(/\r?\n/);
         pending = lines.pop() ?? ""; // trailing partial line waits for more bytes
         for (const line of lines) {
-          const loot = parseLogLine(line);
-          if (loot) {
-            bus.emit("loot", loot);
-            continue;
+          for (const [event, parse] of PARSERS) {
+            const parsed = parse(line);
+            if (parsed) {
+              bus.emit(event, parsed);
+              break; // a line is only ever one kind of event
+            }
           }
-          const zone = parseZoneLine(line);
-          if (zone) {
-            bus.emit("zone", zone);
-            continue;
-          }
-          const xp = parseXpLine(line);
-          if (xp) {
-            bus.emit("xp", xp);
-            continue;
-          }
-          const kill = parseKillLine(line);
-          if (kill) {
-            bus.emit("kill", kill);
-            continue;
-          }
-          const loc = parseLocLine(line);
-          if (loc) bus.emit("loc", loc);
         }
       }
       setStatus({ watching: true, file: target });
@@ -185,6 +188,8 @@ export function createLogWatcher(): LogWatcher {
     onXp: (cb) => void bus.on("xp", cb),
     onKill: (cb) => void bus.on("kill", cb),
     onLoc: (cb) => void bus.on("loc", cb),
+    onCombat: (cb) => void bus.on("combat", cb),
+    onLevel: (cb) => void bus.on("level", cb),
     onStatus: (cb) => void bus.on("status", cb),
   };
 }

@@ -3,7 +3,14 @@ import { useState } from "react";
 import { useShoppingList, useMatchFlashes, useCurrentZone } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import ItemLink from "./ItemLink";
-import { groupByOrigin, effectiveNeeded, itemTotals, normalizeItemName, type ListGroup } from "@/shared/grouping";
+import {
+  groupByOrigin,
+  effectiveNeeded,
+  itemDemands,
+  normalizeItemName,
+  type ItemDemand,
+  type ListGroup,
+} from "@/shared/grouping";
 import {
   groupDropsByZone,
   splitDropsByCurrentZone,
@@ -26,9 +33,9 @@ export default function ListPanel() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const groups = groupByOrigin(list.entries, list.questRuns);
-  // Grand total needed of each item across every group — shown in parens when an item is
-  // wanted by more than one quest/recipe.
-  const totals = itemTotals(groups);
+  // Who wants each item and how many: the parenthetical grand total, and the hover that
+  // names the quests/recipes behind it.
+  const demands = itemDemands(groups);
   const toggle = (key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] }));
   const setRuns = (g: ListGroup, delta: number) => api()?.list.setRuns(g.key, g.runs + delta);
   const removeGroup = (g: ListGroup) => Promise.all(g.entries.map((e) => api()?.list.remove(e.id)));
@@ -109,7 +116,7 @@ export default function ListPanel() {
                       key={e.id}
                       entry={e}
                       runs={g.runs}
-                      total={totals.get(normalizeItemName(e.name)) ?? 0}
+                      demands={demands.get(normalizeItemName(e.name)) ?? []}
                       flashing={flashed.has(e.id)}
                       currentZone={zone}
                     />
@@ -127,14 +134,14 @@ export default function ListPanel() {
 function EntryRow({
   entry,
   runs,
-  total,
+  demands,
   flashing,
   currentZone,
 }: {
   entry: ShoppingListEntry;
   runs: number;
-  /** Grand total of this item needed across all groups (for the "(N total)" hint). */
-  total: number;
+  /** Every group wanting this item — the source of the "(N)" hint and its hover. */
+  demands: ItemDemand[];
   flashing: boolean;
   currentZone: string | null;
 }) {
@@ -144,6 +151,7 @@ function EntryRow({
   const [showOthers, setShowOthers] = useState(false);
 
   const need = effectiveNeeded(entry, runs);
+  const total = demands.reduce((n, d) => n + d.need, 0);
   const met = entry.obtained >= need;
   const cls = ["entry", met ? "done" : "", flashing ? "flash" : ""].filter(Boolean).join(" ");
   // +/- adjust how many you've ACQUIRED (obtained); needed comes from the quest/recipe
@@ -177,9 +185,12 @@ function EntryRow({
           {open ? "▾" : "▸"}
         </button>
         <ItemLink title={entry.name} className="entry-name" />
-        <span className="entry-count">
-          <span className={`have ${met ? "met" : ""}`}>{entry.obtained}</span> / {need}
-          {total > need && <span className="muted small"> ({total} total)</span>}
+        {/* "5 of 3 (10)" — you have 5, this group wants 3, everything wants 10 between
+            them. A drop credits every group that wants the item, so the combined figure
+            is the one that says whether you can stop farming. */}
+        <span className="entry-count" title={countTitle(entry.obtained, need, demands)}>
+          <span className={`have ${met ? "met" : ""}`}>{entry.obtained}</span> of {need}
+          {total > need && <span className="muted small"> ({total})</span>}
         </span>
         <button
           className="btn ghost sm"
@@ -225,6 +236,21 @@ function EntryRow({
       )}
     </div>
   );
+}
+
+/**
+ * Spell out the terse "5 of 3 (10)" on hover. With more than one claim on the item, the
+ * parenthetical total is only meaningful if you can see what it's made of — so name each
+ * quest/recipe and what it wants (including why, when it's set to multiple runs).
+ */
+function countTitle(obtained: number, need: number, demands: ItemDemand[]): string {
+  if (demands.length <= 1) return `You have ${obtained}; this group needs ${need}`;
+  const total = demands.reduce((n, d) => n + d.need, 0);
+  const lines = demands.map((d) => {
+    const tag = d.kind ? ` (${d.kind}${d.runs > 1 ? ` ×${d.runs} runs` : ""})` : "";
+    return `• ${d.label}${tag} — ${d.need}`;
+  });
+  return [`You have ${obtained} of ${total} needed:`, ...lines].join("\n");
 }
 
 /** Drop mobs for one zone (current zone highlighted); mob names are in-app links. */

@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { useCurrentZone, useSettings, useWatcherStatus } from "@/lib/hooks";
+import { useCurrentZone, usePlayerTrail, useSettings, useWatcherStatus } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import MapPanel, { type RenderPin } from "../components/MapPanel";
+import MapKey from "../components/MapKey";
 import PinButton from "../components/PinButton";
 import { useCalibration } from "@/lib/map/useCalibration";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
@@ -37,6 +38,23 @@ export default function MapWindow() {
   useEffect(() => {
     setRendererDebug(settings?.debug ?? false);
   }, [settings?.debug]);
+
+  // Travelling puts the map back on you (on by default): picking a zone by hand — or
+  // jumping to one from another window — holds only until the log says you've actually
+  // zoned. Turn it off to keep studying one map while you travel.
+  const [followZone, setFollowZone] = usePersistentState(STORAGE_KEYS.mapFollowZone, true);
+  const seenZoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentZone) return;
+    const previous = seenZoneRef.current;
+    seenZoneRef.current = currentZone;
+    // Only a *change* clears it, so the toggle can't fight the persisted override on load.
+    if (followZone && previous !== null && previous !== currentZone) setOverride(null);
+  }, [currentZone, followZone, setOverride]);
+
+  // The `/loc` trail (the line drawn between your logged positions), owned here so the
+  // toolbar can clear it; it also resets itself when you zone.
+  const trail = usePlayerTrail(200);
 
   // A clickable location elsewhere (e.g. a mob's zone or coordinate) asks us to view
   // a zone — and, when a coordinate came along, drop a marker pin there (deduped).
@@ -91,6 +109,7 @@ export default function MapWindow() {
   const [hiddenSharers, setHiddenSharers] = useState<Set<string>>(new Set());
   const [sharePinsOn, setSharePinsOn] = usePersistentState(STORAGE_KEYS.mapSharePins, false);
   const [layersOpen, setLayersOpen] = useState(false);
+  const [usersOpen, setUsersOpen] = useState(false);
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // Broadcast (or un-share) pins to peers when connected + sharing.
@@ -199,6 +218,10 @@ export default function MapWindow() {
             </option>
           ))}
         </select>
+        <label className="map-follow no-drag" title="Snap the map to your zone when you travel">
+          <input type="checkbox" checked={followZone} onChange={(e) => setFollowZone(e.target.checked)} />
+          follow
+        </label>
         <div className="win-controls no-drag">
           {canCalibrate && (
             <button
@@ -249,15 +272,66 @@ export default function MapWindow() {
               : "pick a pin, or click to ping"}
         </span>
         <span className="spacer" />
+        <button
+          className="wc"
+          title="Clear the line drawn between your /loc positions"
+          onClick={trail.clear}
+          disabled={trail.points.length === 0}
+        >
+          ∿
+        </button>
         <button className={`wc ${layersOpen ? "on" : ""}`} title="Show / hide pin types" onClick={() => setLayersOpen((o) => !o)}>
           👁
         </button>
+        {connected && (
+          <button
+            className={`wc ${usersOpen ? "on" : ""}`}
+            title="Who else is connected"
+            onClick={() => setUsersOpen((o) => !o)}
+          >
+            👥{room.users.length ? ` ${room.users.length}` : ""}
+          </button>
+        )}
         {connected && (
           <button className={`wc pin ${sharePinsOn ? "on" : ""}`} title="Share my pins with peers" onClick={() => setSharePinsOn((s) => !s)}>
             🔗
           </button>
         )}
       </div>
+
+      {usersOpen && connected && (
+        <div className="map-users no-drag">
+          <div className="muted small">Connected users</div>
+          {room.users.length === 0 ? (
+            <p className="muted small">
+              Nobody else is in the room yet. Anyone else running EQ List with peer networking on
+              shows up here.
+            </p>
+          ) : (
+            room.users.map((u) => (
+              <div className="user-row" key={u.peerId}>
+                <span
+                  className={`dot ${u.sharingLoc ? "on" : ""}`}
+                  title={u.sharingLoc ? "Sharing their location" : "Connected, not sharing location"}
+                />
+                <span className="u-name">{u.name}</span>
+                {u.zone ? (
+                  <button
+                    className="btn ghost sm"
+                    title={`View ${u.zone}`}
+                    onClick={() => setOverride(findZone(u.zone, baseZones)?.name ?? u.zone)}
+                  >
+                    {u.zone}
+                  </button>
+                ) : (
+                  <span className="muted small">zone unknown</span>
+                )}
+                {u.pins > 0 && <span className="muted small">· {u.pins} pin{u.pins === 1 ? "" : "s"}</span>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {layersOpen && (
         <div className="pin-layers no-drag">
@@ -290,6 +364,7 @@ export default function MapWindow() {
           <MapPanel
             zone={zone}
             redrawKey={cal.tick}
+            trail={trail.points}
             peers={peers}
             pings={pings}
             pins={renderPins}
@@ -324,12 +399,7 @@ export default function MapWindow() {
             )}
           </div>
         )}
-        {showKey && zone?.mapKeyImg && (
-          <aside className="map-key">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={zone.mapKeyImg} alt={`${zone.name} map key`} />
-          </aside>
-        )}
+        {showKey && zone?.mapKeyImg && <MapKey src={zone.mapKeyImg} alt={`${zone.name} map key`} />}
       </div>
 
       {selected && selectedPin && (

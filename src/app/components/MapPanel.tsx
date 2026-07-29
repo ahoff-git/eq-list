@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePlayerLoc, usePlayerTrail } from "@/lib/hooks";
+import { usePlayerLoc } from "@/lib/hooks";
 import { eqToCanvasCoords, canvasToEqCoords } from "@/shared/map/coords";
 import { clearCanvas, drawImageScaled, drawLine, drawCircle } from "@/lib/map/draw";
 import type { Loc, Point, Zone } from "@/shared/map/types";
@@ -38,6 +38,14 @@ function niceStep(span: number): number {
 const MAX_ZOOM = 6;
 const HIT_RADIUS = 9; // px — how close the cursor must be to hover/select a pin
 
+/**
+ * How long a fresh ping animates. A ping is a "look here" gesture, so it announces
+ * itself with expanding rings and then settles into a plain marker that stays put —
+ * long enough to catch your eye across the room, short enough not to distract.
+ */
+const PING_ANIM_MS = 2400;
+const PING_RINGS = 3;
+
 /** Overlay marker colours, kept together so they're named + tweakable in one place. */
 const MAP_COLORS = {
   self: "crimson",
@@ -55,6 +63,7 @@ const MAP_COLORS = {
 export default function MapPanel({
   zone,
   redrawKey,
+  trail = [],
   peers = [],
   pings = [],
   pins = [],
@@ -68,8 +77,11 @@ export default function MapPanel({
 }: {
   zone: Zone | undefined;
   redrawKey?: number;
+  /** The `/loc` trail, oldest→newest (owned by the parent so it can be cleared). */
+  trail?: { y: number; x: number }[];
   peers?: { y: number; x: number }[];
-  pings?: { name: string; y: number; x: number }[];
+  /** Peer pings; `at` (ms) is when it arrived, which drives the drop-in animation. */
+  pings?: { name: string; y: number; x: number; at?: number }[];
   pins?: RenderPin[];
   placing?: boolean;
   onPlace?: (eq: Loc, clientX: number, clientY: number) => void;
@@ -81,7 +93,6 @@ export default function MapPanel({
   showGrid?: boolean;
 }) {
   const loc = usePlayerLoc();
-  const trail = usePlayerTrail(200);
   const wrapRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const dotsRef = useRef<HTMLCanvasElement>(null);
@@ -92,6 +103,19 @@ export default function MapPanel({
   const [hoverEq, setHoverEq] = useState<Loc | null>(null);
   const [hovered, setHovered] = useState<{ pin: RenderPin; x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  // Bumped per animation frame while a ping is still expanding; the overlay redraw
+  // depends on it. Nothing animates most of the time, so the loop is usually off.
+  const [frame, setFrame] = useState(0);
+  const animating = pings.some((p) => p.at && Date.now() - p.at < PING_ANIM_MS);
+
+  useEffect(() => {
+    if (!animating) return;
+    let raf = requestAnimationFrame(function tick() {
+      setFrame((n) => n + 1);
+      raf = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [animating]);
 
   const calibrated = !!zone?.size && !!zone.centerOffset;
 
@@ -199,12 +223,30 @@ export default function MapPanel({
     }
     ctx.textAlign = "center";
     ctx.font = "12px sans-serif";
+    const now = Date.now();
     for (const ping of pings) {
       const p = toScreen(ping);
       if (!p) continue;
-      drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.ping, size: 4 });
+      // Fresh pings throw off expanding rings and a swollen dot that settles; older
+      // ones are just markers, so a ping stays findable after the animation ends.
+      const t = ping.at ? Math.min(1, (now - ping.at) / PING_ANIM_MS) : 1;
+      if (t < 1) {
+        ctx.save();
+        ctx.strokeStyle = MAP_COLORS.ping;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < PING_RINGS; i++) {
+          const rt = t * PING_RINGS - i; // each ring starts a beat after the last
+          if (rt <= 0 || rt >= 1) continue;
+          ctx.globalAlpha = (1 - rt) * 0.9;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 6 + rt * 26, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.ping, size: 4 + (1 - t) * 3 });
       ctx.fillStyle = MAP_COLORS.ping;
-      ctx.fillText(ping.name, p.x, p.y - 7);
+      ctx.fillText(ping.name, p.x, p.y - 7 - (1 - t) * 3);
     }
     for (const pin of pins) {
       const p = toScreen(pin);
@@ -228,7 +270,7 @@ export default function MapPanel({
       }
     }
     ctx.textBaseline = "alphabetic";
-  }, [loc, trail, peers, pings, pins, zone, side, redrawKey, showGrid, toScreen]);
+  }, [loc, trail, peers, pings, pins, zone, side, redrawKey, showGrid, toScreen, frame]);
 
   /** Screen point (within the canvas) → EQ coordinate, inverting the view. */
   function eqAt(e: React.MouseEvent<HTMLDivElement>): Loc | undefined {
