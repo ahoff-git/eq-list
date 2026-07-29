@@ -23,9 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22+: `npm test` passes a glob to `node --test`, which Node 20 treats as a
+      # literal path (and Node 20 is past EOL). Keep this on the same major as dev machines.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci

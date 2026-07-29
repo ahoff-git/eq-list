@@ -27,7 +27,9 @@ unit-tested.
   Timing-based (500ms poll), so it uses short real-time waits.
 - **Runner**: Node's built-in test runner, no extra dependency. `npm test` compiles
   the Electron/shared TS (`tsconfig.electron.json`) then runs
-  `node --test "dist-electron/electron/tests/**/*.test.js"`.
+  `node --test "dist-electron/electron/tests/**/*.test.js"`. Needs **Node 22+**
+  (`engines` in `package.json`): older Node takes the glob literally, and passing the
+  directory instead isn't supported on current Node — so the glob stays quoted.
 - **Static checks**: `npm run typecheck` (both tsconfigs) and `npm run lint`.
 
 ## Simulating the game log

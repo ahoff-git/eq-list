@@ -27,10 +27,11 @@ _Distribution wiring:_
 
 - **CI build — verify first run.** `.github/workflows/build-windows.yml` auto-builds the
   installer and publishes it to the rolling `latest` release on every push to `main`
-  ([ADR 0013](./decisions/0013-ci-rolling-latest-windows-build.md)). Needs to be **on
-  `main` to take effect**; confirm the first Actions run goes green (Windows build +
-  `electron-builder`) and that `/releases/latest` then resolves to the `.exe`. Not
-  exercisable in the dev sandbox.
+  ([ADR 0013](./decisions/0013-ci-rolling-latest-windows-build.md)). The first run failed
+  at the `npm test` gate (runner was on Node 20, which doesn't expand the test glob — now
+  pinned to Node 22); the gate steps all pass locally on Node 22. Still to confirm on a
+  real run: `electron-builder` succeeds on the runner, the `latest` tag moves, and
+  `/releases/latest` resolves to the `.exe`. Not exercisable in the dev sandbox.
 - **Landing page — host it.** `landing/index.html`'s buttons are wired (Download →
   `/releases/latest`, Launch → `eqlist://open`) and the Download target is now populated
   by CI. Remaining: **host** the static page somewhere (e.g. GitHub Pages). Optional:

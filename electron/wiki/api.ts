@@ -15,7 +15,7 @@ const log = createLogger("wiki-api");
 
 export const WIKI_BASE = "https://eqlwiki.com";
 const API = `${WIKI_BASE}/api.php`;
-const UA = "EQ-List/0.1 (loot overlay; contact ahoffman@collineargroup.com)";
+const UA = "EQ-List/0.1 (loot overlay; contact adamhoffmang@gmail.com)";
 const TIMEOUT_MS = 20_000;
 
 async function apiGet<T>(params: Record<string, string>): Promise<T> {
