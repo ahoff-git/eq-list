@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { CombatantStat, MeleeTypeStat, SpecialHitStat } from "@/shared/types";
+import type { CombatantStat } from "@/shared/types";
 
 /** Which number the bars are showing. */
 export type DamageView = "dealt" | "taken";
@@ -8,9 +8,10 @@ export type DamageView = "dealt" | "taken";
 /**
  * The bar list: one row per combatant, scaled to the biggest row so relative contribution reads
  * at a glance. Your rows (you + pet) are tinted. Quick numbers that don't earn a column — max hit,
- * accuracy, healing, the stance split — stay on hover; the **breakdown** (melee by weapon/skill and
- * the special hits like Critical / Riposte / Flurry) opens on click, since "which weapon landed
- * that" is a thing you go looking for, not a hover afterthought.
+ * accuracy, healing, the stance split — stay on hover; the **breakdown** opens on click into three
+ * collapsible groups (Melee, Spells, Special hits), each drilling into its detail. Melee + Spells
+ * account for the whole of that row's damage; "which weapon landed that" is a thing you go looking
+ * for, not a hover afterthought.
  */
 export default function DamageMeter({ rows, view }: { rows: CombatantStat[]; view: DamageView }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -23,10 +24,7 @@ export default function DamageMeter({ rows, view }: { rows: CombatantStat[]; vie
     <div className="meters">
       {sorted.map((row) => {
         const v = value(row, view);
-        // Old persisted fights predate these fields — treat their absence as "nothing to expand".
-        const byType = row.byType ?? [];
-        const specials = row.specials ?? [];
-        const canExpand = byType.length > 0 || specials.length > 0;
+        const canExpand = hasBreakdown(row);
         const isOpen = open === row.name;
         return (
           <div className="meter-group" key={row.name}>
@@ -43,7 +41,7 @@ export default function DamageMeter({ rows, view }: { rows: CombatantStat[]; vie
                 {view === "dealt" && <span className="meter-dps"> {row.dps}/s</span>}
               </span>
             </div>
-            {isOpen && <Breakdown byType={byType} specials={specials} />}
+            {isOpen && <Breakdown row={row} />}
           </div>
         );
       })}
@@ -53,40 +51,74 @@ export default function DamageMeter({ rows, view }: { rows: CombatantStat[]; vie
 
 const value = (row: CombatantStat, view: DamageView): number => (view === "dealt" ? row.dealt : row.taken);
 
-/** The melee-by-weapon and special-hits breakdown revealed under an opened row. */
-function Breakdown({ byType, specials }: { byType: MeleeTypeStat[]; specials: SpecialHitStat[] }) {
+/** Old persisted fights predate these fields — treat their absence as "nothing to expand". */
+function hasBreakdown(row: CombatantStat): boolean {
+  return (row.byType?.length ?? 0) > 0 || (row.bySpell?.length ?? 0) > 0 || (row.specials?.length ?? 0) > 0;
+}
+
+/** The three damage-source groups under an opened row, each collapsible into its detail. */
+function Breakdown({ row }: { row: CombatantStat }) {
+  const byType = row.byType ?? [];
+  const bySpell = row.bySpell ?? [];
+  const specials = row.specials ?? [];
   return (
     <div className="meter-breakdown">
       {byType.length > 0 && (
-        <div className="mb-section">
-          <span className="mb-title">by weapon / skill</span>
+        <Group title="Melee" total={sum(byType, (t) => t.damage)} note={`${sum(byType, (t) => t.hits)} hits`}>
           {byType.map((t) => (
-            <div className="mb-row" key={t.type}>
-              <span className="mb-label">{t.type}</span>
-              <span className="mb-hits muted">{t.hits}×</span>
-              <span className="spacer" />
-              <span className="mb-dmg">{t.damage.toLocaleString()}</span>
-              <span className="muted small">max {t.maxHit.toLocaleString()}</span>
-            </div>
+            <DetailRow key={t.type} label={t.type} hits={t.hits} damage={t.damage} maxHit={t.maxHit} />
           ))}
-        </div>
+        </Group>
+      )}
+      {bySpell.length > 0 && (
+        <Group title="Spells" total={sum(bySpell, (s) => s.damage)} note={`${bySpell.length} source${bySpell.length === 1 ? "" : "s"}`}>
+          {bySpell.map((s) => (
+            <DetailRow key={s.spell} label={s.spell} hits={s.hits} damage={s.damage} maxHit={s.maxHit} />
+          ))}
+        </Group>
       )}
       {specials.length > 0 && (
-        <div className="mb-section">
-          <span className="mb-title">special hits</span>
+        <Group title="Special hits" note={`${sum(specials, (s) => s.hits)} hits`}>
           {specials.map((s) => (
-            <div className="mb-row" key={s.kind}>
-              <span className="mb-label">{s.kind}</span>
-              <span className="mb-hits muted">{s.hits}×</span>
-              <span className="spacer" />
-              {s.damage > 0 && <span className="mb-dmg">{s.damage.toLocaleString()}</span>}
-            </div>
+            <DetailRow key={s.kind} label={s.kind} hits={s.hits} damage={s.damage} />
           ))}
-        </div>
+        </Group>
       )}
     </div>
   );
 }
+
+/** A collapsible group header (Melee / Spells / Special hits) with its damage total, opening its rows. */
+function Group({ title, total, note, children }: { title: string; total?: number; note: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`mb-group ${open ? "open" : ""}`}>
+      <div className="mb-group-head" onClick={() => setOpen((o) => !o)}>
+        <span className="caret">{open ? "▾" : "▸"}</span>
+        <span className="mb-group-title">{title}</span>
+        <span className="spacer" />
+        {total !== undefined && <span className="mb-group-total">{total.toLocaleString()}</span>}
+        <span className="muted small">{note}</span>
+      </div>
+      {open && <div className="mb-group-body">{children}</div>}
+    </div>
+  );
+}
+
+/** One source line inside a group: what it was, how many, how much, biggest. */
+function DetailRow({ label, hits, damage, maxHit }: { label: string; hits: number; damage: number; maxHit?: number }) {
+  return (
+    <div className="mb-row">
+      <span className="mb-label">{label}</span>
+      <span className="mb-hits muted">{hits}×</span>
+      <span className="spacer" />
+      {damage > 0 && <span className="mb-dmg">{damage.toLocaleString()}</span>}
+      {maxHit !== undefined && maxHit > 0 && <span className="muted small">max {maxHit.toLocaleString()}</span>}
+    </div>
+  );
+}
+
+const sum = <T,>(xs: T[], pick: (x: T) => number): number => xs.reduce((n, x) => n + pick(x), 0);
 
 /** Hover detail — the numbers that don't earn a column of their own. */
 function detail(row: CombatantStat): string {
@@ -98,7 +130,7 @@ function detail(row: CombatantStat): string {
     row.crits > 0 ? `${row.crits} critical${row.crits === 1 ? "" : "s"}` : "",
     row.healed > 0 ? `healed ${row.healed.toLocaleString()}` : "",
     `active ${row.activeSec}s`,
-    (row.byType?.length ?? 0) || (row.specials?.length ?? 0) ? "click for the weapon / special-hit breakdown" : "",
+    hasBreakdown(row) ? "click for the melee / spell / special breakdown" : "",
     stanceSplit(row),
   ]
     .filter(Boolean)

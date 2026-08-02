@@ -37,8 +37,10 @@ const api: EqlApi = {
     searchZones: (term) => ipcRenderer.invoke(CH.wikiSearchZones, term),
     questsByZone: (zone) => ipcRenderer.invoke(CH.wikiQuestsByZone, zone),
     openInBrowser: (target) => ipcRenderer.invoke(CH.wikiOpen, target),
+    refresh: () => ipcRenderer.invoke(CH.wikiRefresh),
   },
   loot: {
+    recent: (limit) => ipcRenderer.invoke(CH.lootRecent, limit),
     onEvent: (cb) => on(CH.lootEvent, cb),
     onMatched: (cb) => on(CH.lootMatched, cb),
   },
@@ -48,6 +50,12 @@ const api: EqlApi = {
   },
   log: {
     import: () => ipcRenderer.invoke(CH.logImport),
+  },
+  update: {
+    current: () => ipcRenderer.invoke(CH.updateCurrent),
+    onAvailable: (cb) => on(CH.updateAvailable, cb),
+    open: () => ipcRenderer.invoke(CH.updateOpen),
+    dismiss: () => ipcRenderer.invoke(CH.updateDismiss),
   },
   watcher: {
     status: () => ipcRenderer.invoke(CH.watcherStatus),

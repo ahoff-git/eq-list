@@ -55,6 +55,12 @@ export interface WikiClient {
   getPage(title: string): Promise<WikiPage | null>;
   searchZones(term: string): Promise<SearchResult[]>;
   questsByZone(zone: string): Promise<SearchResult[]>;
+  /**
+   * Force a re-fetch of the mirrored search indexes now, instead of waiting out the weekly TTL —
+   * so a page added to the wiki shows up in search straight away. Also drops the session's
+   * derived caches (era flags, zone quests) so they rebuild against the fresh data.
+   */
+  refresh(): Promise<void>;
 }
 
 function cacheKey(title: string): string {
@@ -69,6 +75,8 @@ function toResult(title: string): SearchResult {
 interface CachedIndex {
   get(): string[] | null;
   ensureFresh(): void;
+  /** Re-fetch now, ignoring the TTL (for an explicit "refresh" from the user). */
+  refresh(): Promise<void>;
 }
 
 function createCachedIndex(file: string, fetcher: () => Promise<string[]>, label: string): CachedIndex {
@@ -111,6 +119,7 @@ function createCachedIndex(file: string, fetcher: () => Promise<string[]>, label
     ensureFresh: () => {
       if (!fresh()) void refresh();
     },
+    refresh,
   };
 }
 
@@ -196,6 +205,17 @@ export function createWikiClient(cacheDir: string): WikiClient {
   }
 
   return {
+    async refresh() {
+      // Drop the session's derived caches, then force both mirrored indexes to re-fetch — so a
+      // page just added to the wiki is searchable now, not at the weekly TTL.
+      eraFlagCache.clear();
+      zoneQuestsCache.clear();
+      outEraSet = null;
+      outEraAt = 0;
+      await Promise.all([titleIndex.refresh(), zoneIndex.refresh()]);
+      log.debug("wiki indexes refreshed on demand");
+    },
+
     async search(term) {
       const q = term.trim();
       if (q.length < 2) return [];

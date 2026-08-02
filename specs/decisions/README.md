@@ -37,6 +37,8 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0031: An inferred bound has to be able to come back down](./0031-an-inferred-bound-must-be-able-to-fall.md)
 - [0032: Remove the retained-but-dead overlay/click-through surface](./0032-remove-dead-overlay-surface.md) — *reverses the `clickThrough` retention noted in 0009*
 - [0033: Eating a log is idempotent — every kill and drop is keyed by its line](./0033-eating-a-log-is-idempotent.md)
+- [0034: Tell the user a newer build exists; don't install it for them](./0034-update-notification.md)
+- [0035: Cast alerts get their own click-through overlay window, over the game](./0035-cast-alert-overlay-window.md)
 
 ## Open Questions
 - Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the

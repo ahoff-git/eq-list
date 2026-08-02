@@ -12,15 +12,18 @@ interface ActiveAlert extends CastAlertEvent {
 }
 
 /**
- * The dispel-prep alert surface: flashes a banner (and optionally beeps) when the main
- * process reports a watched spell beginning to cast (see Settings → Cast alerts). Mounted
- * in the overlay + map windows; renders nothing until an alert fires. Each banner auto-
- * dismisses after a few seconds, or on click.
+ * The dispel-prep alert surface: shows a banner and a red border flash when the main process
+ * reports a watched spell beginning to cast (see Settings → Cast alerts).
  *
- * `canBeep` lets only the always-alive main window own the sound, so an alert doesn't beep
- * twice when the map window is also open — both still show the banner.
+ * Split across windows so the alert lands where it's useful without beeping twice:
+ *   - the **alert overlay** window (`/alert`) draws the visuals *over the game* — `showVisual`,
+ *     `canBeep=false` (it's click-through and never focused, so it can't unlock audio);
+ *   - the always-alive **main** window owns the sound — `canBeep`, `showVisual=false`.
+ *
+ * Renders nothing until an alert fires (and nothing at all when `showVisual` is false). Each
+ * banner auto-dismisses after a few seconds.
  */
-export default function CastAlerts({ canBeep = true }: { canBeep?: boolean }) {
+export default function CastAlerts({ canBeep = true, showVisual = true }: { canBeep?: boolean; showVisual?: boolean }) {
   const settings = useSettings();
   const [alerts, setAlerts] = useState<ActiveAlert[]>([]);
   const nextId = useRef(0);
@@ -32,20 +35,23 @@ export default function CastAlerts({ canBeep = true }: { canBeep?: boolean }) {
   soundRef.current = canBeep && (settings?.castAlerts?.sound ?? false);
   const flashRef = useRef(false);
   flashRef.current = settings?.castAlerts?.flash ?? false;
+  const showVisualRef = useRef(true);
+  showVisualRef.current = showVisual;
 
   useEffect(() => {
     const a = api();
     if (!a) return;
     return a.alerts.onCast((e) => {
+      if (soundRef.current) beep();
+      if (!showVisualRef.current) return; // a beep-only instance (the main window)
       const id = nextId.current++;
       setAlerts((prev) => [{ ...e, id }, ...prev].slice(0, MAX_ALERTS));
-      if (soundRef.current) beep();
       if (flashRef.current) setFlashKey(++flashCount.current);
       window.setTimeout(() => setAlerts((prev) => prev.filter((x) => x.id !== id)), ALERT_MS);
     });
   }, []);
 
-  if (!alerts.length && flashKey === null) return null;
+  if (!showVisual || (!alerts.length && flashKey === null)) return null;
   return (
     <>
       {flashKey !== null && (

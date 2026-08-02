@@ -12,6 +12,7 @@ import StatusBar from "./components/StatusBar";
 import LandingView from "./components/LandingView";
 import PinButton from "./components/PinButton";
 import CastAlerts from "./components/CastAlerts";
+import UpdateBanner from "./components/UpdateBanner";
 import TabBar, { type TabItem } from "./components/TabBar";
 import { useRendererDebug, useShoppingList, useSettings } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
@@ -91,7 +92,10 @@ export default function Home() {
     <NavProvider onOpen={showSearch}>
       <NavKeys />
       <AwariHost />
-      <CastAlerts />
+      {/* Beep only — the banner + flash live in the dedicated click-through overlay window
+          (/alert), which floats over the game. This window is the always-alive one that can
+          reliably play the sound. */}
+      <CastAlerts showVisual={false} />
 
       <div className="app glass">
         <div className="titlebar">
@@ -143,6 +147,8 @@ export default function Home() {
             </button>
           </div>
         </div>
+
+        <UpdateBanner />
 
         <TabBar items={tabItems} active={tab} onSelect={(k) => setTab(k as Tab)} />
 

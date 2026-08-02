@@ -242,6 +242,18 @@ export default function SettingsPanel() {
                   placeholder="spell name (or part of it)"
                   onChange={(e) => updateWatch(w.id, { spell: e.target.value })}
                 />
+                <label
+                  className="row"
+                  style={{ gap: 4 }}
+                  title="Also alert when a player, pet, or named NPC casts this — not just ordinary mobs. Off keeps a groupmate's cast (e.g. BunnySlayer's Charm) quiet."
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!w.includePlayers}
+                    onChange={(e) => updateWatch(w.id, { includePlayers: e.target.checked })}
+                  />
+                  <span className="small muted">players</span>
+                </label>
                 <button className="btn ghost sm" title="Remove" onClick={() => removeWatch(w.id)}>
                   ✕
                 </button>

@@ -274,6 +274,9 @@ export function useLootFeed(limit = 40): LootEvent[] {
   useEffect(() => {
     const a = api();
     if (!a) return;
+    // History first (drops are tracked in the main process, even before this tab was opened),
+    // then live appends. Don't clobber a live drop that beat the fetch back.
+    void a.loot.recent(limit).then((hist) => setEvents((prev) => (prev.length ? prev : hist)));
     return a.loot.onEvent((e) => setEvents((prev) => [e, ...prev].slice(0, limit)));
   }, [limit]);
   return events;

@@ -10,7 +10,6 @@ import MobKnowledgePanel from "../components/MobKnowledge";
 import { DEFAULT_KILL_FILTERS, filterKills, type KillFilters } from "@/shared/kill-filters";
 import MapKey from "../components/MapKey";
 import PinButton from "../components/PinButton";
-import CastAlerts from "../components/CastAlerts";
 import { useCalibration } from "@/lib/map/useCalibration";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { baseZones, findZone, sortZones } from "@/shared/map/zones";
@@ -271,7 +270,6 @@ export default function MapWindow() {
 
   return (
     <div className="map-win">
-      <CastAlerts canBeep={false} />
       <div className="titlebar">
         <h1>
           <span className="mark">🗺</span> {zone?.name ?? zoneName ?? "Map"}

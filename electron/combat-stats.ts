@@ -109,6 +109,8 @@ interface Tally {
   byStance: Map<string, ModeTally>;
   /** Melee landed, keyed by skill/weapon ("Slash", "Crush", "Backstab"): the "which hand" view. */
   byVerb: Map<string, { hits: number; damage: number; maxHit: number }>;
+  /** Non-melee damage keyed by source (spell / DoT / proc / shield): the other half of "dealt". */
+  bySpell: Map<string, { hits: number; damage: number; maxHit: number }>;
   /** Hits carrying a qualifier ("Critical", "Riposte", …), keyed by it — whatever the log wrote. */
   bySpecial: Map<string, { hits: number; damage: number }>;
 }
@@ -122,7 +124,8 @@ function ms(at: string): number {
 function emptyTally(): Tally {
   return {
     dealt: 0, taken: 0, healed: 0, hits: 0, misses: 0, crits: 0, maxHit: 0,
-    firstAt: 0, lastAt: 0, activeMs: 0, byStance: new Map(), byVerb: new Map(), bySpecial: new Map(),
+    firstAt: 0, lastAt: 0, activeMs: 0,
+    byStance: new Map(), byVerb: new Map(), bySpell: new Map(), bySpecial: new Map(),
   };
 }
 
@@ -380,6 +383,9 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       byType: [...t.byVerb.entries()]
         .map(([type, v]) => ({ type, hits: v.hits, damage: v.damage, maxHit: v.maxHit }))
         .sort((a, b) => b.damage - a.damage || b.hits - a.hits),
+      bySpell: [...t.bySpell.entries()]
+        .map(([spell, v]) => ({ spell, hits: v.hits, damage: v.damage, maxHit: v.maxHit }))
+        .sort((a, b) => b.damage - a.damage || b.hits - a.hits),
       specials: [...t.bySpecial.entries()]
         .map(([kind, s]) => ({ kind, hits: s.hits, damage: s.damage }))
         .sort((a, b) => b.hits - a.hits || b.damage - a.damage),
@@ -517,6 +523,14 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
           v.damage += event.amount;
           v.maxHit = Math.max(v.maxHit, event.amount);
           a.byVerb.set(meleeSkill(event.verb), v);
+        } else if (event.spell) {
+          // The other half of "dealt": spell landings, DoT ticks, procs and damage shields, per
+          // source. byVerb + bySpell together account for the row's whole damage.
+          const s = a.bySpell.get(event.spell) ?? { hits: 0, damage: 0, maxHit: 0 };
+          s.hits += 1;
+          s.damage += event.amount;
+          s.maxHit = Math.max(s.maxHit, event.amount);
+          a.bySpell.set(event.spell, s);
         }
         if (event.qualifier) {
           const s = a.bySpecial.get(event.qualifier) ?? { hits: 0, damage: 0 };

@@ -265,6 +265,12 @@ export interface CombatantStat {
    */
   byType: MeleeTypeStat[];
   /**
+   * Non-melee damage split by source (spell / DoT / proc / damage shield), most-damage first.
+   * With `byType` this accounts for the whole `dealt` total — the two halves of "where did my
+   * damage come from". Empty for a combatant that only swung.
+   */
+  bySpell: SpellDamageStat[];
+  /**
    * Landed hits the log tagged with a qualifier — Critical, Flurry, Crippling Blow, Riposte, …
    * Whatever the log actually wrote, not a fixed list, so a new tag surfaces on its own. Most
    * frequent first.
@@ -285,6 +291,18 @@ export interface StanceSplit {
 /** Melee landed with one skill/weapon (the swing verb, e.g. "Slash", "Pierce", "Backstab"). */
 export interface MeleeTypeStat {
   type: string;
+  hits: number;
+  damage: number;
+  maxHit: number;
+}
+
+/**
+ * Non-melee damage this combatant dealt from one source — a spell, a DoT (its ticks folded in),
+ * a proc, or a damage shield. Per combatant, so your row and your pet's each sum honestly; the
+ * Spells *view* keeps the deeper per-cast stats (cast time, resist rate). "hits" counts landings.
+ */
+export interface SpellDamageStat {
+  spell: string;
   hits: number;
   damage: number;
   maxHit: number;
@@ -792,6 +810,12 @@ export interface CastWatch {
   id: string;
   spell: string;
   enabled: boolean;
+  /**
+   * Also alert when this spell is cast by a *named* caster — another player, a pet, or a named
+   * NPC (anyone whose log name has no "a/an/the" article), not just an ordinary mob. Off by
+   * default: a groupmate casting Charm isn't a threat to prep against. See `matchCast`.
+   */
+  includePlayers?: boolean;
 }
 
 /** Settings for the "a watched spell is being cast" alert. */
@@ -940,6 +964,12 @@ export interface LogImportResult {
   drops: number;
 }
 
+/** What the renderer needs to show "a newer build is available" (see `electron/update-check.ts`). */
+export interface UpdateNotice {
+  /** The release page to open. */
+  url: string;
+}
+
 // ─── Preload bridge (window.eql) ────────────────────────────────────────────
 
 /** Unsubscribe function returned by every `on*` subscription. */
@@ -981,8 +1011,18 @@ export interface EqlApi {
     questsByZone(zone: string): Promise<SearchResult[]>;
     /** Open a wiki page in the external browser (wikiPath or title). */
     openInBrowser(target: string): Promise<void>;
+    /**
+     * Force the search indexes to re-fetch now (they're mirrored to disk and otherwise only
+     * refresh weekly), so a newly-added wiki page becomes searchable immediately.
+     */
+    refresh(): Promise<void>;
   };
   loot: {
+    /**
+     * The most recent drops (newest first), tracked in the main process so the feed is complete
+     * even when the Loot tab wasn't open. Pair with `onEvent` for live appends.
+     */
+    recent(limit?: number): Promise<LootEvent[]>;
     /** Every parsed loot line, whether or not it's on the list. */
     onEvent(cb: (event: LootEvent) => void): Unsubscribe;
     /** Loot lines that matched a shopping-list entry. */
@@ -1001,6 +1041,17 @@ export interface EqlApi {
      * what was digested, or null if the picker was cancelled. Live combat stats are untouched.
      */
     import(): Promise<LogImportResult | null>;
+  };
+  /** "A newer build is out" notification (rolling `latest` release; no auto-updater). */
+  update: {
+    /** The newer build found this session, or null — for a tab mounted after the check ran. */
+    current(): Promise<UpdateNotice | null>;
+    /** A newer build was just found (for a tab already mounted). */
+    onAvailable(cb: (notice: UpdateNotice) => void): Unsubscribe;
+    /** Open the release page in the browser and stop flagging this build. */
+    open(): Promise<void>;
+    /** Dismiss: stop flagging this build (the next newer one still notifies). */
+    dismiss(): Promise<void>;
   };
   watcher: {
     status(): Promise<WatcherStatus>;

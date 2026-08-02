@@ -9,7 +9,7 @@
  * The window restores its last position (window-state.ts). DevTools only open when
  * EQL_DEVTOOLS is set, not on every dev run.
  */
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, screen } from "electron";
 import path from "node:path";
 import { savedBounds, rememberBounds, setMapOpen, isQuitting } from "./window-state";
 import { clampUiScale } from "../src/shared/constants";
@@ -65,12 +65,16 @@ function load(win: BrowserWindow, route: string): void {
 
 let mainWindow: BrowserWindow | null = null;
 let mapWindow: BrowserWindow | null = null;
+let alertWindow: BrowserWindow | null = null;
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
 }
 export function getMapWindow(): BrowserWindow | null {
   return mapWindow;
+}
+export function getAlertWindow(): BrowserWindow | null {
+  return alertWindow;
 }
 
 export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
@@ -171,6 +175,61 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
   load(mapWindow, "map");
   if (process.env.EQL_DEVTOOLS) mapWindow.webContents.openDevTools({ mode: "detach" });
   return mapWindow;
+}
+
+/**
+ * The cast-alert overlay — a frameless, transparent, click-through window pinned above
+ * everything and stretched over the primary display, so a dispel-prep banner (and the red
+ * border flash) appears *on top of the game*, not buried in the app window behind it.
+ *
+ * It never takes focus and never eats a click (`setIgnoreMouseEvents`), so it can't disrupt
+ * play — which is also why it can't beep (a never-focused window can't unlock audio): the
+ * always-alive main window owns the sound, this window owns the visuals. Created only while
+ * cast alerts are enabled (see `main.ts`); when empty it's fully transparent, so it's invisible.
+ */
+export function createAlertWindow(): BrowserWindow {
+  if (alertWindow && !alertWindow.isDestroyed()) return alertWindow;
+  const { bounds } = screen.getPrimaryDisplay();
+  alertWindow = new BrowserWindow({
+    ...bounds,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    focusable: false, // never steal focus from the game
+    skipTaskbar: true,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: PRELOAD,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      additionalArguments: ["--eql-role=alert"],
+    },
+  });
+  alertWindow.setAlwaysOnTop(true, "screen-saver");
+  alertWindow.setIgnoreMouseEvents(true, { forward: true }); // click-through: every click passes to the game
+  // Best-effort: keep showing over a borderless-fullscreen game and across virtual desktops.
+  alertWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  pipeRendererConsole(alertWindow, "alert");
+  alertWindow.on("closed", () => {
+    alertWindow = null;
+  });
+  load(alertWindow, "alert");
+  // `showInactive` so appearing never pulls focus off the game.
+  alertWindow.once("ready-to-show", () => alertWindow?.showInactive());
+  return alertWindow;
+}
+
+/** Tear down the alert overlay (when cast alerts are turned off) — nothing to show, no window. */
+export function closeAlertWindow(): void {
+  if (alertWindow && !alertWindow.isDestroyed()) alertWindow.close();
+  alertWindow = null;
 }
 
 /**

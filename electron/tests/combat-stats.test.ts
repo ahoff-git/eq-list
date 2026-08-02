@@ -552,17 +552,32 @@ test("melee splits by the skill behind each hit and by any qualifier the log wro
   assert.deepEqual(coyote.byType.map((x) => x.type), ["Bite"]);
 });
 
-test("a spell hit is not counted as a melee weapon, but its crit still shows", () => {
+test("a spell hit is not counted as a melee weapon, but shows as a spell source and its crit shows", () => {
   const t = tracker();
   feed(t, [
     [1, "You pierce a coyote for 10 points of damage."],
     [2, "You hit a coyote for 40 points of cold damage by Frost Rift. (Critical)"],
   ]);
   const you = t.snapshot().fight.byCombatant.find((r) => r.name === "You")!;
-  // Only the melee swing is a weapon row; the nuke is not.
-  assert.deepEqual(you.byType.map((x) => x.type), ["Pierce"]);
-  // …but its "(Critical)" is still a special hit.
+  // The swing is a weapon row; the nuke is a spell source. Together they account for `dealt`.
+  assert.deepEqual(you.byType.map((x) => [x.type, x.damage]), [["Pierce", 10]]);
+  assert.deepEqual(you.bySpell.map((x) => [x.spell, x.damage, x.maxHit]), [["Frost Rift", 40, 40]]);
+  const fromSources = you.byType.reduce((n, x) => n + x.damage, 0) + you.bySpell.reduce((n, x) => n + x.damage, 0);
+  assert.equal(you.dealt, fromSources); // melee + spells account for the whole of `dealt`
+  // …and its "(Critical)" is still a special hit.
   assert.deepEqual(you.specials.map((x) => x.kind), ["Critical"]);
+});
+
+test("a DoT's ticks fold into that spell's source total on the caster's row", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "a large plague rat has taken 2 damage from Splurt by You."],
+    [2, "a large plague rat has taken 2 damage from Splurt by You."],
+    [3, "a large plague rat has taken 3 damage from Splurt by You."],
+  ]);
+  const you = t.snapshot().fight.byCombatant.find((r) => r.name === "You")!;
+  // Three ticks of Splurt fold into one source line summing them, biggest tick as the max.
+  assert.deepEqual(you.bySpell.find((s) => s.spell === "Splurt"), { spell: "Splurt", hits: 3, damage: 7, maxHit: 3 });
 });
 
 // ── what invocations do beyond scaling: divine's healing, Spell Blade's free casts ──

@@ -17,11 +17,13 @@ import { createCombatHistory } from "./combat-history";
 import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";
 import { createKillLog } from "./kill-log";
+import { createLootLog } from "./loot-log";
+import { createUpdateChecker } from "./update-check";
 import { createMobKnowledge } from "./mob-knowledge";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, createMapWindow, getMainWindow, getMapWindow, applyOverlaySettings, showInSearch } from "./windows";
+import { createMainWindow, createMapWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, applyOverlaySettings, showInSearch } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
@@ -34,6 +36,9 @@ const log = createLogger("main");
 
 // Must run before `ready`.
 registerAppProtocolScheme();
+// The cast-alert beep is Web Audio with no bundled asset; without this it stays suspended until
+// the window gets a user gesture, so the very first alert after launch would be silent.
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
 function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -120,6 +125,8 @@ if (!app.requestSingleInstanceLock()) {
   const xp = createXpProgress(userData);
   const hp = createHpEstimate(userData);
   const killLog = createKillLog(userData);
+  const lootLog = createLootLog(userData);
+  const updates = createUpdateChecker(userData);
   const mobs = createMobKnowledge(userData, killLog);
   const ocr = createOcr(path.join(userData, "tesseract-cache"));
   const lookup = createLookup(ocr, showInSearch);
@@ -138,6 +145,8 @@ if (!app.requestSingleInstanceLock()) {
     xp,
     hp,
     killLog,
+    lootLog,
+    updates,
     mobs,
     lookup,
     logFile,
@@ -147,6 +156,12 @@ if (!app.requestSingleInstanceLock()) {
     broadcast,
   });
 
+  // Quietly ask whether a newer build has been published; the renderer shows a banner if so.
+  // Fire-and-forget and fail-safe — a slow or offline network never delays or breaks startup.
+  void updates.check().then((info) => {
+    if (info) broadcast(CH.updateAvailable, { url: info.url });
+  });
+
   let watchKey = "";
   function startWatcher(): void {
     const s = store.getSettings();
@@ -154,11 +169,20 @@ if (!app.requestSingleInstanceLock()) {
     watcher.start(s.logDir, s.activeLogFile);
   }
 
+  // The click-through alert overlay exists only while cast alerts are on — no point floating an
+  // invisible window over the game otherwise, and turning alerts off should take it away.
+  function syncAlertWindow(settings: Settings): void {
+    if (settings.castAlerts.enabled) createAlertWindow();
+    else closeAlertWindow();
+  }
+  syncAlertWindow(store.getSettings());
+
   store.onList((list) => broadcast(CH.listChanged, list));
   store.onSettings((settings) => {
     syncDebugFlag(settings);
     broadcast(CH.settingsChanged, settings);
     applyOverlaySettings(settings.overlay);
+    syncAlertWindow(settings);
     tray?.setContextMenu(buildTrayMenu()); // keep the "Debug logging" checkbox in sync
     // Only re-target the watcher when the log location actually changed.
     if (`${settings.logDir}|${settings.activeLogFile}` !== watchKey) startWatcher();
@@ -185,6 +209,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onLoot((event) => {
     killLog.noteLoot(event); // ties the drop to the corpse it came from
+    lootLog.add(event); // the always-on loot feed, so the tab is complete whenever it's opened
     broadcast(CH.lootEvent, event);
     for (const entry of store.applyLoot(event)) {
       broadcast(CH.lootMatched, { event, entry });
@@ -207,6 +232,7 @@ if (!app.requestSingleInstanceLock()) {
     hp.record(event);
     // Dispel prep: flash the overlay when a watched spell begins casting.
     if (event.kind === "cast" && matchCast(event, store.getSettings().castAlerts)) {
+      getAlertWindow()?.moveTop(); // ensure the overlay is above the app windows, not just the game
       broadcast(CH.castAlert, { caster: event.caster, spell: event.spell, at: event.at } satisfies CastAlertEvent);
     }
   });
@@ -325,6 +351,7 @@ if (!app.requestSingleInstanceLock()) {
     xp.flush();
     hp.flush();
     killLog.flush();
+    lootLog.flush();
     mobs.flush();
   });
 });

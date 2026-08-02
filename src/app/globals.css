@@ -616,20 +616,33 @@ button {
   white-space: nowrap;
 }
 .meter-dps { color: var(--accent); margin-left: 6px; }
+
+/* "A newer build is available" strip, between the titlebar and the tabs. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  margin: 0 8px 6px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 13px;
+}
+.update-banner .ub-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+.update-banner .ub-text { color: var(--text); }
 .meter.expandable { cursor: pointer; }
 .meter-caret { position: relative; color: var(--text-dim); font-size: 10px; width: 8px; }
-/* The melee-by-weapon and special-hits breakdown, opened under a row. */
-.meter-breakdown {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
-  padding: 4px 10px 6px 24px;
-  font-size: 12px;
-}
-.mb-section { display: flex; flex-direction: column; gap: 1px; min-width: 190px; flex: 1; }
-.mb-title { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+/* The damage-source breakdown opened under a row: collapsible Melee / Spells / Special groups. */
+.meter-breakdown { display: flex; flex-direction: column; gap: 2px; padding: 3px 10px 6px 22px; font-size: 12px; }
+.mb-group-head { display: flex; align-items: baseline; gap: 8px; cursor: pointer; padding: 1px 0; }
+.mb-group-head:hover { color: var(--text); }
+.mb-group-head .caret { color: var(--text-dim); font-size: 10px; width: 8px; }
+.mb-group-title { font-weight: 500; }
+.mb-group-total { font-variant-numeric: tabular-nums; color: var(--text); }
+.mb-group-body { display: flex; flex-direction: column; gap: 1px; padding: 1px 0 3px 16px; }
 .mb-row { display: flex; align-items: baseline; gap: 8px; }
-.mb-row .mb-label { min-width: 74px; }
+.mb-row .mb-label { min-width: 110px; }
 .mb-row .mb-hits { font-variant-numeric: tabular-nums; }
 .mb-row .mb-dmg { font-variant-numeric: tabular-nums; color: var(--text); }
 

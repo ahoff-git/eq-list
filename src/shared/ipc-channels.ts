@@ -18,6 +18,7 @@ export const CH = {
   settingsUpdate: "settings:update",
   settingsPickLogDir: "settings:pickLogDir",
   logImport: "log:import",
+  lootRecent: "loot:recent",
   alertsTest: "alerts:test",
   // wiki (invoke)
   wikiSearch: "wiki:search",
@@ -25,6 +26,7 @@ export const CH = {
   wikiSearchZones: "wiki:searchZones",
   wikiQuestsByZone: "wiki:questsByZone",
   wikiOpen: "wiki:open",
+  wikiRefresh: "wiki:refresh",
   // watcher / zone / stats (invoke)
   watcherStatus: "watcher:status",
   zoneGet: "zone:get",
@@ -53,6 +55,10 @@ export const CH = {
   lookupCancel: "lookup:cancel",
   appInfo: "app:info",
   appOpenLog: "app:openLog",
+  // update notification (rolling "latest" build; see ADR 0013)
+  updateCurrent: "update:current",
+  updateOpen: "update:open",
+  updateDismiss: "update:dismiss",
   // window control (invoke + send)
   winOpenMap: "win:openMap",
   mapOpenAt: "map:openAt",
@@ -79,6 +85,7 @@ export const CH = {
   lootMatched: "evt:lootMatched",
   castAlert: "evt:castAlert", // main → all: a watched spell began casting
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
+  updateAvailable: "evt:updateAvailable", // main → all: a newer build is published
 
   watcherStatusChanged: "evt:watcherStatus",
   zoneChanged: "evt:zone",

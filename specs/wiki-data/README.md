@@ -25,6 +25,10 @@ shopping list.
   in the background): `title-index.json` (all pages, from `list=allpages`) and
   `zone-index.json` (from `Category:Zones`). The server search is only a fallback while
   an index warms up. See [ADR 0006](../decisions/0006-fuzzy-search-with-title-index.md).
+  Since search matches the *cached* mirror (and returns local hits without hitting the server),
+  a page added after the last mirror won't appear until the TTL — so `refresh()` (the Search
+  tab's **↻ Refresh list** button) force-re-fetches both indexes on demand and drops the
+  session's derived caches.
 - **Quests by zone** — `questsByZone(zone)` returns the quests in a zone. This wiki
   runs stock MediaWiki (no CirrusSearch), so `incategory:` search doesn't work and
   category membership doesn't tag quests to zones. Instead we take the zone page's

@@ -97,10 +97,12 @@ list, hunt, search, damage, session, settings.
       arithmetic, with total, share and DPS; your rows (you + your pet) are tinted, and
       hover gives max hit, accuracy, crits, healing, active time, and — for your own rows —
       **melee split by stance**, since stances change the multipliers. Click a row to open its
-      **breakdown**: melee by **weapon/skill** (Slash, Pierce, Crush, Kick, Backstab — the log
-      names the skill, the closest it gets to "which hand") and **special hits** by whatever
-      qualifier the log wrote (Critical, Riposte, Flurry…, not a fixed list). Both come off the
-      `verb`/`qualifier` the parser already captured; see `combat-stats.ts`.
+      **breakdown** — three collapsible groups that account for the whole of that row's damage:
+      **Melee** by weapon/skill (Slash, Pierce, Crush, Kick, Backstab — the log names the skill,
+      the closest it gets to "which hand"), **Spells** by source (each spell/DoT/proc/shield,
+      per combatant), and **Special hits** by whatever qualifier the log wrote (Critical, Riposte,
+      Flurry…, not a fixed list). All three come off the `verb`/`spell`/`qualifier` the parser
+      already captured; see `combat-stats.ts` (`byVerb`/`bySpell`/`bySpecial`).
     - `SpellTable` — where your damage came from, spell by spell: casts, damage, healing,
       average **measured** cast time, **dmg/s cast** (the efficiency column — a slow nuke
       and a fast one that hit the same are not equally good), **mana** and **dmg/mana**
@@ -154,9 +156,13 @@ list, hunt, search, damage, session, settings.
   - `CastAlerts` — dispel-prep alert. The main process matches every `cast` event
     (`<caster> begins casting <spell>`) against the user's watch list (`matchCast`, pure)
     and broadcasts a `castAlert`; this shows a banner and, per the Settings toggles, **beeps**
-    and/or **flashes a red border** around the window. Mounted in the overlay + map windows so
-    it shows wherever you're looking (only the main window owns the beep, to avoid a double).
-    Only casts the log *names* can match — generic "begins to cast a spell" lines carry no name.
+    and/or **flashes a red border**. The visuals render in a **dedicated click-through overlay
+    window** (`src/app/alert/page.tsx`, `createAlertWindow`) pinned over the game, so the alert
+    lands where you're looking; the always-alive main window owns the **beep** (a click-through
+    window can't unlock audio) — [ADR 0035](../decisions/0035-cast-alert-overlay-window.md). Each
+    watch has an **include-players** toggle: off (default), a named caster — player, pet, named
+    NPC — doesn't fire it, so a groupmate's Charm stays quiet; on, it does. Only casts the log
+    *names* can match — generic "begins to cast a spell" lines carry no name.
 - **Screengrab lookup** (`src/app/select/page.tsx` + `electron/lookup.ts`): the
   `Ctrl/Cmd+Shift+L` hotkey (or the Search/Settings buttons) screenshots every display
   *first* (before any window shows, so a hovered tooltip is frozen and our UI isn't

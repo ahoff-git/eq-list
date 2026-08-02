@@ -10,7 +10,7 @@ import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE } from "./wiki/api";
 import { importLog } from "./log-import";
-import { createMapWindow, getMainWindow, showInSearch } from "./windows";
+import { createMapWindow, getAlertWindow, getMainWindow, showInSearch } from "./windows";
 import { resetPositions } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
@@ -20,6 +20,8 @@ import type { CombatHistory } from "./combat-history";
 import type { XpTracker } from "./xp-progress";
 import type { HpTracker } from "./hp-estimate";
 import type { KillLog } from "./kill-log";
+import type { LootLog } from "./loot-log";
+import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
 import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent } from "../src/shared/types";
@@ -35,6 +37,8 @@ export interface IpcContext {
   xp: XpTracker;
   hp: HpTracker;
   killLog: KillLog;
+  lootLog: LootLog;
+  updates: UpdateChecker;
   mobs: MobKnowledgeStore;
   lookup: Lookup;
   /** Path to the debug log file. */
@@ -50,7 +54,7 @@ export interface IpcContext {
   watcher: LogWatcher;
 }
 
-export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, killLog, mobs, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
+export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, killLog, lootLog, updates, mobs, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
   // ── shopping list ──
   ipcMain.handle(CH.listGet, () => store.getList());
   ipcMain.handle(CH.listAdd, (_e, input) => store.addEntry(input));
@@ -77,6 +81,7 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // when there is one, so the test looks like what you'd actually see.
   ipcMain.handle(CH.alertsTest, () => {
     const watch = store.getSettings().castAlerts.watches.find((w) => w.enabled && w.spell.trim());
+    getAlertWindow()?.moveTop(); // you're on the Settings tab, so raise the overlay above it
     broadcast(CH.castAlert, {
       caster: "Test",
       spell: watch?.spell.trim() || "Fear",
@@ -121,6 +126,7 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.handle(CH.wikiGetPage, (_e, title: string) => wiki.getPage(title));
   ipcMain.handle(CH.wikiSearchZones, (_e, term: string) => wiki.searchZones(term));
   ipcMain.handle(CH.wikiQuestsByZone, (_e, zone: string) => wiki.questsByZone(zone));
+  ipcMain.handle(CH.wikiRefresh, () => wiki.refresh());
   // Open a wiki page in the user's browser. `target` is a wikiPath ("/Bone_Chips")
   // or a title ("Bone Chips"); host is validated so only eqlwiki links open.
   ipcMain.handle(CH.wikiOpen, (_e, target: string) => {
@@ -159,6 +165,9 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     killLog.clear();
     broadcast(CH.killsChanged, undefined);
   });
+  // The loot feed's history — tracked in the main process, so the tab shows drops from before
+  // it was opened, then follows live ones over CH.lootEvent.
+  ipcMain.handle(CH.lootRecent, (_e, limit?: number) => lootLog.recent(limit));
   ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
   ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
   ipcMain.handle(CH.mobsReport, (_e, by: string, observations: MobObservation[]) => mobs.report(by, observations));
@@ -177,6 +186,20 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.handle(CH.lookupCancel, () => lookup.cancel());
   ipcMain.handle(CH.appInfo, () => getAppInfo());
   ipcMain.handle(CH.appOpenLog, () => shell.openPath(logFile));
+
+  // ── update notification ──
+  // The renderer draws the banner; the URL/commit stay in the main process. `current` lets a
+  // tab that mounted after the check still catch the notice.
+  ipcMain.handle(CH.updateCurrent, () => {
+    const info = updates.latest();
+    return info ? { url: info.url } : null;
+  });
+  ipcMain.handle(CH.updateOpen, () => {
+    const info = updates.latest();
+    if (info && isGithubUrl(info.url)) void shell.openExternal(info.url);
+    updates.markSeen(); // acting on it counts as seen — don't nag for this build again
+  });
+  ipcMain.handle(CH.updateDismiss, () => updates.markSeen());
 
   // ── window control ──
   // Open (or focus) the sibling map window.
@@ -222,4 +245,14 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     resetPositions();
     getMainWindow()?.center();
   });
+}
+
+/** Only ever open a github.com https link — the release URL comes from the API, so pin the host. */
+function isGithubUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && (u.hostname === "github.com" || u.hostname.endsWith(".github.com"));
+  } catch {
+    return false;
+  }
 }

@@ -26,6 +26,9 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
   const [results, setResults] = useState<SearchResult[]>([]);
   const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  // Bumped by a manual index refresh so the current search re-runs against the fresh data.
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   // zone mode
   const [zoneTerm, setZoneTerm] = useState("");
@@ -70,7 +73,7 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
       cancelled = true;
       clearTimeout(id);
     };
-  }, [term, mode]);
+  }, [term, mode, refreshNonce]);
 
   // A screengrab lookup prefills the box (name mode) and its text searches normally.
   // Keyed on `prefill` only: it must fire once per lookup, NOT whenever `nav` changes
@@ -124,6 +127,20 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
   function switchMode(m: Mode) {
     setMode(m);
     nav.clear();
+  }
+
+  // Force the wiki search index to re-fetch (it's mirrored to disk and otherwise only updates
+  // weekly), then re-run the current search so a just-added page shows up without a wait.
+  async function refreshIndex() {
+    const a = api();
+    if (!a || refreshing) return;
+    setRefreshing(true);
+    try {
+      await a.wiki.refresh();
+      setRefreshNonce((n) => n + 1);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   // Every "open this" in the panel goes through the shared in-app nav.
@@ -241,6 +258,14 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
       <div className="row" style={{ marginBottom: 8, gap: 10 }}>
         <button className="btn sm" title={`Screengrab lookup — or press ${LOOKUP_HOTKEY.label}`} onClick={() => api()?.lookup.open()}>
           📷 Look up from screen
+        </button>
+        <button
+          className="btn sm"
+          title="Re-fetch the wiki's search index now. It's mirrored to disk and otherwise only refreshes about weekly, so a just-added item can be missing from search until you do this."
+          onClick={refreshIndex}
+          disabled={refreshing}
+        >
+          {refreshing ? "↻ Refreshing…" : "↻ Refresh list"}
         </button>
         <span className="spacer" />
         <label className="row muted small" style={{ gap: 5 }}>

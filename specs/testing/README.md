@@ -100,4 +100,4 @@ takes `--loop`, `--loot-only`, `--interval`, `--jitter`, `--from <real log>`,
 - Network calls (the wiki API) are not hit in tests; parsers are tested on fixtures.
 
 ## See also
-[log-watching](../log-watching/README.md) · [wiki-data](../wiki-data/README.md)
+[manual QA checklist](./manual-qa.md) · [log-watching](../log-watching/README.md) · [wiki-data](../wiki-data/README.md)

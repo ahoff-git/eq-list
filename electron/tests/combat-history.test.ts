@@ -29,6 +29,7 @@ function combatant(name: string, dealt: number, mine = false): CombatantStat {
     mine,
     byStance: [],
     byType: [],
+    bySpell: [],
     specials: [],
   };
 }
