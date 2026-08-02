@@ -8,8 +8,10 @@ a real run. This is a *verification* list, not open work — open work lives in 
 
 - **Damage meter, live.** The parser was validated against a whole real log (0 unmatched combat
   lines) and the tracker against that log's numbers, but confirm in-game: the Damage tab fills while
-  fighting, "This fight" flips to "Last fight" after a lull, your and your pet's rows are the
-  highlighted ones, and DPS looks sane for a long fight. See
+  fighting, your and your pet's rows are the highlighted ones, and DPS looks sane for a long fight.
+  Crucially, confirm a **laggy/kited fight isn't split** — a lull with the mob still up keeps one
+  fight (the "This fight" totals don't reset), and it's only the mob dying that starts the next one
+  ([ADR 0036](../decisions/0036-a-fight-ends-on-death-not-a-lull.md)). See
   [ADR 0014](../decisions/0014-damage-meter-from-the-log.md).
 - **Damage breakdown, live.** Click a Dealt row and confirm the **Melee / Spells / Special** groups
   open, Melee + Spells sum to the row's total, weapons read sensibly (Hit / Crush / Kick / Pierce

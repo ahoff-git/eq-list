@@ -39,6 +39,7 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0033: Eating a log is idempotent — every kill and drop is keyed by its line](./0033-eating-a-log-is-idempotent.md)
 - [0034: Tell the user a newer build exists; don't install it for them](./0034-update-notification.md)
 - [0035: Cast alerts get their own click-through overlay window, over the game](./0035-cast-alert-overlay-window.md)
+- [0036: A fight ends on a death, not on a lull](./0036-a-fight-ends-on-death-not-a-lull.md)
 
 ## Open Questions
 - Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the

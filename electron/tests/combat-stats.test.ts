@@ -86,21 +86,32 @@ test("misses count toward accuracy but add no damage", () => {
   assert.equal(you.dealt, 10);
 });
 
-test("a lull starts a new fight, while the session keeps accumulating", () => {
+test("a lull does not split a fight while the enemy is still up — it chases until dead", () => {
   const t = tracker();
   feed(t, [
     [1, "You pierce a coyote for 10 points of damage."],
-    [30, "You pierce a rat for 7 points of damage."], // 29s later: new fight
+    [30, "You pierce a coyote for 7 points of damage."], // 29s later, nothing died: still one fight
   ]);
 
   const s = t.snapshot();
-  assert.equal(s.fight.totalDealt, 7);
+  assert.equal(s.fight.totalDealt, 17); // one continuous fight through the lull, not two
+  assert.equal(s.session.totalDealt, 17);
+});
+
+test("once the mob is dead, a lull starts the next fight", () => {
+  const t = tracker();
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(1)); // the coyote dies — the fight is resolved
+  feed(t, [[20, "You pierce a rat for 7 points of damage."]]); // 19s after the kill: a new pull, a new fight
+
+  const s = t.snapshot();
+  assert.equal(s.fight.totalDealt, 7); // just the new pull
   assert.deepEqual(
     s.fight.byCombatant.map((r) => r.name),
     ["You", "a rat"],
   );
   assert.equal(s.session.totalDealt, 17);
-  assert.equal(s.session.byCombatant.length, 3); // you + both mobs
+  assert.equal(s.session.byCombatant.length, 3); // you + both mobs, across the session
 });
 
 test("damage inside the idle window stays in one fight", () => {
@@ -319,10 +330,9 @@ test("finished fights are handed off for history, with the fight's own totals", 
   const t = tracker();
   const ended: number[] = [];
   t.onFightEnd((f) => ended.push(f.totalDealt));
-  feed(t, [
-    [1, "You pierce a coyote for 10 points of damage."],
-    [30, "You pierce a rat for 7 points of damage."], // lull → first fight ends
-  ]);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(1)); // resolved, so the following lull can end the fight
+  feed(t, [[30, "You pierce a rat for 7 points of damage."]]); // lull after the kill → first fight ends
   assert.deepEqual(ended, [10]);
 
   t.flush(); // quitting closes the fight in progress

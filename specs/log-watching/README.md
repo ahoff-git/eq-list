@@ -68,7 +68,9 @@ as they drop and the damage meter can show how the fight went.
   the rows stay blended and the split is on hover. It also
   folds the two capitalizations EQ gives one name (`Obsolete model` / `obsolete model`)
   into a single row, which needs memory a per-line parser doesn't have. Fights are
-  delimited by swings in **log time** (a >10s lull starts a new one), so a replayed log
+  delimited by swings in **log time**, but a fight ends on a **death**, not a lull — a mob
+  chases until dead, so a gap is tolerated (short once something's died, long while the enemy's
+  still up; [ADR 0036](../decisions/0036-a-fight-ends-on-death-not-a-lull.md)). A replayed log
   meters exactly like a live one, and it keeps no past fights — it emits `fightEnd` and
   stays memoryless. See
   [ADR 0017](../decisions/0017-camp-efficiency-and-asking-the-player.md) and

@@ -2,9 +2,14 @@
  * combat-stats.ts — the damage meter's state, fed by parsed combat events.
  *
  * Two windows are tracked at once, because both questions matter mid-play: "how did
- * *that* fight go" (`fight`) and "how has the whole session gone" (`session`). A
- * fight is just a burst of combat: the first damage event starts one, and a gap of
- * `FIGHT_IDLE_MS` with no damage ends it, so the next pull starts a clean row set.
+ * *that* fight go" (`fight`) and "how has the whole session gone" (`session`). A fight
+ * is a burst of combat: the first damage event starts one. Ending it is deliberately
+ * reluctant — in this game a mob chases until it (or you) dies, so a lull in the log is
+ * usually lag or repositioning, not the end. Only once something has **died** (a kill, or
+ * your own death) does a short quiet (`SETTLED_END_MS`) close the fight so the next pull is
+ * its own; while the enemy is presumably still up, it takes a long silence (`ENGAGED_END_MS`).
+ * The active-time DPS divides by is separate: any gap over `ACTIVE_GAP_MS` is downtime either
+ * way, so tolerating a lull never deflates the rate.
  *
  * All timing comes from the log's own timestamps, never wall clock — so a replayed
  * or backfilled log produces exactly the same DPS as it did live, and the tests are
@@ -27,8 +32,25 @@ import type {
   SpellStat,
 } from "../src/shared/types";
 
-/** No damage for this long ends the current fight. */
-const FIGHT_IDLE_MS = 10_000;
+/**
+ * A gap longer than this between combat events is downtime, not fought time — it's excluded from
+ * the active seconds DPS divides by, so a lull can't deflate your rate. (This is *not* what ends a
+ * fight — see below; a fight tolerates far longer silences.)
+ */
+const ACTIVE_GAP_MS = 10_000;
+
+/**
+ * Once something has died — the mob you were on, or you — the fight is resolved, and this much
+ * quiet then ends it, so the next pull is its own fight.
+ */
+const SETTLED_END_MS = 10_000;
+
+/**
+ * While an engagement is unresolved (nothing dead yet), a lull is lag or repositioning, not the
+ * end — the mob is still chasing. Only this much *total* silence ends the fight. Generous on
+ * purpose: a kite with long pauses, or a stretch where the log lagged, stays one fight.
+ */
+const ENGAGED_END_MS = 60_000;
 
 /**
  * A cast that takes longer than this to land isn't the cast we're timing — the log
@@ -231,7 +253,7 @@ function emptySpell(): SpellTally {
  */
 function addActive(span: { lastAt: number; activeMs: number }, at: number): void {
   const gap = at - span.lastAt;
-  if (span.lastAt && gap > 0 && gap <= FIGHT_IDLE_MS) span.activeMs += gap;
+  if (span.lastAt && gap > 0 && gap <= ACTIVE_GAP_MS) span.activeMs += gap;
 }
 
 /** One accumulating window (a fight, or the session). */
@@ -324,6 +346,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   /** The last mob to die, for experience attribution, and when the last kill landed. */
   let lastKill: { mob: string; at: number } | null = null;
   let lastKillAt = 0;
+  /** Log time of your last death — like a kill, it resolves the fight (combat's over, you're down). */
+  let lastDeathAt = 0;
   /** Rolling tail of damage taken by you, for the death recap. */
   const incoming: { at: number; source: string; amount: number }[] = [];
   /**
@@ -714,7 +738,13 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       // module is built on the assumption that `at` is meaningful, so it's checked once,
       // here, rather than defended against everywhere downstream.)
       if (!at) return;
-      const stale = !!lastCombatAt && at - lastCombatAt > FIGHT_IDLE_MS;
+      // A lull is not the end of a fight. Only end it promptly once the engagement has been
+      // *resolved* — the last thing to happen was a death (a kill, or yours), so this quiet is the
+      // pause before the next pull. While it's unresolved (the enemy's still up and, in this game,
+      // still chasing), tolerate a much longer silence before splitting into a new fight.
+      const resolved = lastKillAt >= lastCombatAt || lastDeathAt >= lastCombatAt;
+      const endGap = resolved ? SETTLED_END_MS : ENGAGED_END_MS;
+      const stale = !!lastCombatAt && at - lastCombatAt > endGap;
 
       if (event.kind === "stance") {
         stance = event.stance;
@@ -760,6 +790,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       }
 
       if (event.kind === "death") {
+        lastDeathAt = at; // resolves the fight: a short quiet now ends it (you're down, combat's over)
         const recap = recordDeath(at, event.killer);
         for (const w of [fight, session]) {
           w.deaths.unshift(recap);
@@ -853,6 +884,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       pending = null;
       lastKill = null;
       lastKillAt = 0;
+      lastDeathAt = 0;
       lastLanding = null;
       incoming.length = 0;
       names.clear();
