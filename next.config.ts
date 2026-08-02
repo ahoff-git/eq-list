@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
   // A trailing slash makes each route export to its own <route>/index.html,
   // which the app:// protocol handler resolves cleanly (e.g. /overlay/index.html).
   trailingSlash: true,
+  devIndicators: false
 };
 
 export default nextConfig;

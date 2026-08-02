@@ -101,3 +101,11 @@ _Recently settled (kept only as pointers):_
 
 - Parse-once pipeline and the single session tracker shipped — see
   [ADR 0019](./decisions/0019-parse-once-and-one-tracker.md).
+- Need to keep Awari up to date. We are 2 releases behind currently
+  - Should use the optional google handshake stuff. peerjs servers are iffy
+- Need to support multiple level maps (ex RunnyEye Citadel had 4 layers)
+  - Players will need a way to choose the zone, and a layer. Both of these should effect pins, pings etc. 
+- Should be able to choose a monitor for the alert to appear on
+- Need to add more colors to the alert options 
+- Need to add more sounds to the alert options 
+- Need to add more notifaction animation options (ex, alert location, duration, wiggle, float direction, etc)

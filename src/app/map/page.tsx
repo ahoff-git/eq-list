@@ -288,11 +288,11 @@ export default function MapWindow() {
         >
           <option value="">Follow current{currentZone ? ` · ${currentZone}` : ""}</option>
           {/* The viewed zone has no map — keep the dropdown showing it, flagged. */}
-          {override && !zoneOptions.some((z) => z.name === override) && (
+          {override && !zoneOptions.some((z) => z.key === override) && (
             <option value={override}>{override} (no map)</option>
           )}
           {zoneOptions.map((z) => (
-            <option key={z.name} value={z.name}>
+            <option key={z.key} value={z.key}>
               {z.name}
             </option>
           ))}

@@ -12,8 +12,8 @@
 import type { Loc, Zone } from "./types";
 
 export type ZoneSize = { width: number; height: number };
-export const MIN_STEP = 100;
-export const MAX_STEP = 5000;
+export const MIN_STEP = 10;
+export const MAX_STEP = 500;
 
 /**
  * Updated `size` (and `centerOffset`, when the zone has one) for the held keys,
@@ -52,11 +52,11 @@ export function nextStep(
   const consumed: string[] = [];
 
   if (keys.has("-") && !noRepeat.has("-")) {
-    next = Math.max(MIN_STEP, step - 100);
+    next = Math.max(MIN_STEP, step - 10);
     consumed.push("-");
   }
   if (keys.has("=") && !noRepeat.has("=")) {
-    next = Math.min(MAX_STEP, step + 100);
+    next = Math.min(MAX_STEP, step + 10);
     consumed.push("=");
   }
 

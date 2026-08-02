@@ -29,9 +29,9 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {
-    "@awari/core": "^0.0.4",
-    "@awari/protocol": "^0.0.4",
-    "@awari/transport-peerjs": "^0.0.4",
+    "@awari/core": "^0.0.6",
+    "@awari/protocol": "^0.0.6",
+    "@awari/transport-peerjs": "^0.0.6",
     "next": "15.4.10",
     "node-html-parser": "^7.0.1",
     "react": "19.1.0",

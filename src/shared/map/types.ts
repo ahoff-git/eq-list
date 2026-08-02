@@ -22,7 +22,9 @@ export type CanvasSize = { width: number; height: number };
  */
 export type Zone = {
   name: string;
+  key: string;
   sortingStr?: string;
+  layer?: number;
   mapImg?: string;
   mapKeyImg?: string;
   size?: { width: number; height: number };
