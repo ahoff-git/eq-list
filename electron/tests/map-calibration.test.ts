@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { nudgeZone, nextStep, calibrationValues, MIN_STEP, MAX_STEP } from "../../src/shared/map/calibration";
 import type { Zone } from "../../src/shared/map/types";
 
-const zone = (): Zone => ({ name: "Z", size: { width: 1000, height: 1000 }, centerOffset: { y: 0, x: 0 } });
+const zone = (): Zone => ({ name: "Z", key: "z", size: { width: 1000, height: 1000 }, centerOffset: { y: 0, x: 0 } });
 
 test("nudgeZone resizes and offsets by the given step, without mutating the zone", () => {
   const z = zone();
@@ -20,7 +20,7 @@ test("nudgeZone resizes and offsets by the given step, without mutating the zone
 });
 
 test("nudgeZone omits centerOffset when the zone has none", () => {
-  const out = nudgeZone({ name: "Z", size: { width: 10, height: 10 } }, new Set(["w"]), 1);
+  const out = nudgeZone({ name: "Z", key: "z", size: { width: 10, height: 10 } }, new Set(["w"]), 1);
   assert.equal(out.centerOffset, undefined);
 });
 
@@ -34,7 +34,7 @@ test("nextStep adjusts by 100, clamps, and reports consumed keys (no-repeat)", (
 
 test("calibrationValues renders the paste-ready string", () => {
   assert.equal(
-    calibrationValues({ name: "Z", size: { width: 6175, height: 6175 }, centerOffset: { y: -50, x: 200 } }),
+    calibrationValues({ name: "Z", key: "z", size: { width: 6175, height: 6175 }, centerOffset: { y: -50, x: 200 } }),
     "size: { width: 6175, height: 6175 }, centerOffset: { y: -50, x: 200 }",
   );
 });
