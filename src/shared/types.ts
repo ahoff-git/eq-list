@@ -79,6 +79,12 @@ export interface XpEvent extends LogEventBase {
 export interface KillEvent extends LogEventBase {
   kind: "kill";
   target: string;
+  /**
+   * Who landed the killing blow — `"You"`, your pet, another player, or a mob (the log
+   * reports deaths in earshot, so plenty of these are nobody's business but their own).
+   * Empty only if the line named no killer.
+   */
+  killer: string;
 }
 
 /** A parsed "Your Location is Y, X, Z" line (EQ reports y first). Drives the map. */
@@ -133,6 +139,11 @@ export interface MissEvent extends LogEventBase {
   verb: string;
   /** "Riposte" when the miss was forced by one. */
   qualifier?: string;
+  /**
+   * How the defender avoided it, when the log says so ("…but YOU dodge!"). Absent for a
+   * plain whiff. Either way it's a miss for the attacker; this only names the reason.
+   */
+  avoidance?: "dodge" | "parry" | "block" | "riposte";
 }
 
 /** A heal ("You healed X for N hit points [by <spell>]"). Reflexive → healer. */
@@ -663,6 +674,17 @@ export interface KillRecord {
   logId: number;
   at: string;
   mob: string;
+  /**
+   * Who landed the killing blow. The log reports every death in earshot, so this is often
+   * someone else entirely; absent on records stored before it was captured.
+   */
+  killer?: string;
+  /**
+   * Whether the kill was yours (you or your pet). Other people's kills still say something
+   * about where a mob spawns, but they are not evidence about what it drops for *you* —
+   * you never looted those corpses. Absent on records stored before it was captured.
+   */
+  mine?: boolean;
   zone?: string;
   /** The last known position — absent if the log had never reported one. */
   y?: number;
@@ -716,13 +738,47 @@ export interface HpEstimate {
   updatedAt: string;
 }
 
+// ─── Cast alerts (dispel prep) ──────────────────────────────────────────────
+
+/**
+ * A spell to watch for being cast, so the user gets a heads-up to prep a dispel/cure.
+ * `spell` is matched case-insensitively as a **substring** of the cast spell's name, so
+ * "Fear" catches any spell whose name contains it.
+ */
+export interface CastWatch {
+  id: string;
+  spell: string;
+  enabled: boolean;
+}
+
+/** Settings for the "a watched spell is being cast" alert. */
+export interface CastAlertSettings {
+  /** Master on/off. */
+  enabled: boolean;
+  /** Play a short beep when an alert fires. */
+  sound: boolean;
+  /** Flash a red border around the window when an alert fires. */
+  flash: boolean;
+  /** Also alert on YOUR own casts (off by default — you know what you're casting). */
+  includeSelf: boolean;
+  watches: CastWatch[];
+}
+
+/** Fired when a watched spell begins casting — the payload the overlay banner shows. */
+export interface CastAlertEvent {
+  /** Who's casting (a mob, a peer, or you). */
+  caster: string;
+  /** The spell as the log named it (rank stripped). */
+  spell: string;
+  at: string;
+}
+
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export interface OverlaySettings {
   opacity: number; // 0.2 .. 1
   alwaysOnTop: boolean;
-  clickThrough: boolean;
-  fontScale: number; // 0.8 .. 1.6
+  fontScale: number; // 0.6 .. 1 — see UI_SCALE / ADR 0026 (kept its name to not break saved settings)
   showObtained: boolean; // keep completed items visible
   /** Auto-narrow the overlay to the zone you're in (from the log) as you travel. */
   followZone: boolean;
@@ -758,6 +814,8 @@ export interface Settings {
   playerName: string;
   /** Override for the awari bootstrap-service URL; blank = the live default. */
   bootstrapUrl: string;
+  /** Alert when a watched spell begins casting, so you can prep a dispel/cure. */
+  castAlerts: CastAlertSettings;
   overlay: OverlaySettings;
   debug: boolean;
 }
@@ -828,6 +886,17 @@ export interface AwariPeer {
   zone?: string;
 }
 
+/** Result of digesting ("eating") a log file into learned data (kill log → mob knowledge). */
+export interface LogImportResult {
+  /** The file that was digested. */
+  file: string;
+  lines: number;
+  /** Kill lines digested. */
+  kills: number;
+  /** Loot lines attributed to a corpse. */
+  drops: number;
+}
+
 // ─── Preload bridge (window.eql) ────────────────────────────────────────────
 
 /** Unsubscribe function returned by every `on*` subscription. */
@@ -875,6 +944,20 @@ export interface EqlApi {
     onEvent(cb: (event: LootEvent) => void): Unsubscribe;
     /** Loot lines that matched a shopping-list entry. */
     onMatched(cb: (payload: { event: LootEvent; entry: ShoppingListEntry }) => void): Unsubscribe;
+  };
+  alerts: {
+    /** Fires when a watched spell begins casting (gated by Settings.castAlerts). */
+    onCast(cb: (event: CastAlertEvent) => void): Unsubscribe;
+    /** Fire a sample cast alert (banner + beep) so the user can preview it. */
+    test(): Promise<void>;
+  };
+  log: {
+    /**
+     * Pick a log file and digest ("eat") it into learned data — its kills, drops and
+     * positions fold into the kill log / mob knowledge, without live-watching it. Returns
+     * what was digested, or null if the picker was cancelled. Live combat stats are untouched.
+     */
+    import(): Promise<LogImportResult | null>;
   };
   watcher: {
     status(): Promise<WatcherStatus>;
@@ -926,6 +1009,12 @@ export interface EqlApi {
     /** Every kill recorded (optionally for one zone), newest first. */
     all(zone?: string): Promise<KillRecord[]>;
     clear(): Promise<void>;
+    /**
+     * Fires when the kill log changes in bulk — an import ("eat a log") or a clear.
+     * Live kills don't push this (the panels refetch off their own refresh keys); it
+     * exists so out-of-band changes land in already-open windows without a reopen.
+     */
+    onChanged(cb: () => void): Unsubscribe;
   };
   /** Inferred bounds on your maximum hit points, and the overrides for them. */
   hp: {
@@ -968,6 +1057,11 @@ export interface EqlApi {
   search: {
     /** Fires when a screengrab lookup fills the Search box with OCR'd text. */
     onPrefill(cb: (text: string) => void): Unsubscribe;
+    /**
+     * Surface `text` in the control window's Search box, focusing that window. For
+     * secondary windows (the map) that have no search of their own.
+     */
+    show(text: string): Promise<void>;
   };
   nav: {
     /**
@@ -976,10 +1070,6 @@ export interface EqlApi {
      * navigate within the app, never straight to the external wiki.
      */
     onCommand(cb: (dir: "back" | "forward") => void): Unsubscribe;
-  };
-  overlay: {
-    open(): Promise<void>;
-    setClickThrough(enabled: boolean): Promise<void>;
   };
   map: {
     /** Open (or focus) the sibling map window. */
@@ -1018,8 +1108,6 @@ export interface EqlApi {
     reportPeers(peers: AwariPeer[]): void;
   };
   win: {
-    /** Which window this renderer is: "main" or "overlay". */
-    role(): Promise<"main" | "overlay">;
     minimize(): void;
     /** Hide the window to the tray (the app keeps running; reshow via tray/hotkey). */
     hide(): void;

@@ -29,6 +29,13 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0023: The kill heatmap — show the doubt, share the conclusion](./0023-kill-heatmap.md)
 - [0024: Mob knowledge — observed drop rates and roam areas, pooled with peers](./0024-mob-knowledge.md)
 - [0025: Observation outranks the wiki, and disagreements are shown](./0025-observation-over-the-wiki.md)
+- [0026: The interface scale only shrinks, and it zooms the window rather than the font](./0026-interface-scale-only-shrinks.md)
+- [0027: Only your own kills count, and the log has to say whose they were](./0027-only-your-kills-count.md)
+- [0028: Peer networking, actually run — and the five things that were broken](./0028-peer-networking-verified-and-repaired.md)
+- [0029: Three measurements corrected by replaying the whole log](./0029-measurements-corrected-against-the-log.md)
+- [0030: A log line that already happened is history, not news](./0030-history-is-not-news.md)
+- [0031: An inferred bound has to be able to come back down](./0031-an-inferred-bound-must-be-able-to-fall.md)
+- [0032: Remove the retained-but-dead overlay/click-through surface](./0032-remove-dead-overlay-surface.md) — *reverses the `clickThrough` retention noted in 0009*
 
 ## Open Questions
 - Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the

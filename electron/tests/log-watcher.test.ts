@@ -76,6 +76,82 @@ test("reads a log that appears after watching starts, from the top (the sim case
   }
 });
 
+// Switching to a character you haven't played since launch used to replay their whole log as
+// if it were happening now — 120 phantom kills in a measured run, plus re-counted experience,
+// re-matched loot and an alert for every spell they were ever cast at.
+test("switching to a log that already existed does not replay its history", async () => {
+  const dir = tempLogDir();
+  const idle = path.join(dir, "eqlog_Idle_test.txt");
+  const active = path.join(dir, "eqlog_Active_test.txt");
+  // Both characters have a past, and the active one was written most recently.
+  fs.writeFileSync(idle, stamp("--You have looted a Ancient History from a rat's corpse.--") + "\n");
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(idle, old, old);
+  fs.writeFileSync(active, stamp("--You have looted a Also History from a rat's corpse.--") + "\n");
+
+  const watcher = createLogWatcher();
+  const events: LootEvent[] = [];
+  watcher.onLoot((e) => events.push(e));
+  watcher.start(dir, "");
+
+  try {
+    await sleep(700);
+    assert.equal(events.length, 0, "neither log's history should be replayed at startup");
+
+    // The player switches characters: the idle log starts being written again.
+    fs.appendFileSync(idle, stamp(LOOT) + "\n");
+    await waitFor(() => events.length >= 1);
+    await sleep(700); // let a replay show up, if it were going to
+
+    assert.deepEqual(
+      events.map((e) => e.item),
+      ["Bone Chips"],
+      "only the newly written line, not the whole file",
+    );
+  } finally {
+    watcher.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Two characters in one sitting swap which eqlog is newest. Coming back to the first one used
+// to re-read it from the top, replaying every kill, drop and fight in it a second time.
+test("switching characters and back does not replay the first log", async () => {
+  const dir = tempLogDir();
+  const first = path.join(dir, "eqlog_First_test.txt");
+  const second = path.join(dir, "eqlog_Second_test.txt");
+  fs.writeFileSync(first, "");
+
+  const watcher = createLogWatcher();
+  const events: LootEvent[] = [];
+  watcher.onLoot((e) => events.push(e));
+  watcher.start(dir, "");
+
+  try {
+    await sleep(700);
+    fs.appendFileSync(first, stamp(LOOT) + "\n");
+    await waitFor(() => events.length >= 1);
+
+    // Play the second character: its log is now the most recently written.
+    fs.writeFileSync(second, stamp("--You have looted a Rat Ear from a rat's corpse.--") + "\n");
+    await waitFor(() => events.length >= 2);
+    assert.equal(events[1].item, "Rat Ear");
+
+    // Back to the first: appending makes it newest again. Only the new line should arrive.
+    fs.appendFileSync(first, stamp("--You have looted a Snake Fang from a snake's corpse.--") + "\n");
+    await waitFor(() => events.length >= 3);
+    await sleep(700); // give a replay time to show up, if it were going to
+
+    assert.deepEqual(
+      events.map((e) => e.item),
+      ["Bone Chips", "Rat Ear", "Snake Fang"],
+    );
+  } finally {
+    watcher.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("resumes after the log is truncated / rotated", async () => {
   const dir = tempLogDir();
   const file = path.join(dir, "eqlog_Tester_test.txt");

@@ -33,6 +33,15 @@ export function useNav(): Nav {
 }
 
 /**
+ * The same, but null outside a provider. Only the control window has an in-app page view,
+ * so shared components (`ItemLink`) that also render in the map window ask this way and
+ * fall back to handing the name to the control window instead of crashing.
+ */
+export function useOptionalNav(): Nav | null {
+  return useContext(NavContext);
+}
+
+/**
  * Owns the history stack. `onOpen` fires whenever a page is shown (openPage /
  * back / forward that lands on a page) so the host can switch to the page view
  * (the Search tab). Kept separate from the tab state it doesn't own.

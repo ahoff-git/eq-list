@@ -27,7 +27,13 @@ export default function MobKnowledgePanel({
   const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
-    void api()?.mobs.all(zone).then(setMobs);
+    const a = api();
+    if (!a) return;
+    const load = () => void a.mobs.all(zone).then(setMobs);
+    load();
+    // Refetch when the kill log changes in bulk (an imported "eaten" log / a clear), not only
+    // when the caller's zone/refreshKey ticks — otherwise digested data waits for a reopen.
+    return a.kills.onChanged(load);
   }, [zone, refreshKey]);
 
   if (mobs.length === 0) {

@@ -27,6 +27,19 @@ test("a drop the wiki has never heard of is flagged as undocumented", () => {
   assert.equal(truth.wikiRate, undefined);
 });
 
+// The log and the wiki rarely agree on capitalisation. Matching them literally split one item
+// into two rows with opposite, both-wrong verdicts — and since "undocumented" is the headline
+// claim here, a stray capital was enough to manufacture a discovery.
+test("a difference in capitalisation is the same item, not a discovery", () => {
+  const truths = reconcileDrops({ "Bone Chips": "25%" }, { "bone chips": 8 }, 40);
+  assert.equal(truths.length, 1);
+  assert.equal(truths[0].verdict, "confirmed");
+  assert.equal(truths[0].seen, 8);
+  assert.equal(truths[0].wikiRate, "25%");
+  assert.equal(truths[0].item, "Bone Chips", "the wiki's spelling is the canonical one");
+  assert.equal(truths[0].suspicious, false);
+});
+
 test("a wiki claim we've never seen is 'unseen', and only suspicious with evidence", () => {
   const [thin] = reconcileDrops({ "Fabled Sword": "1%" }, {}, 3);
   assert.equal(thin.verdict, "unseen");

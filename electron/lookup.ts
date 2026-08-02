@@ -70,6 +70,11 @@ async function grabAllDisplays(displays: Electron.Display[]): Promise<Map<number
 /** `onText` receives the recognized text (empty string if none) to route to Search. */
 export function createLookup(ocr: Ocr, onText: (text: string) => void): Lookup {
   let selectors: Selector[] = [];
+  // `open()` captures the screens (100s of ms) before it assigns `selectors`. It's
+  // reachable from both the hotkey and IPC, so guard against a second call racing inside
+  // that window — otherwise the first call's fullscreen, input-blocking windows are
+  // orphaned (never in `selectors`, so never closed).
+  let opening = false;
 
   function closeAll(except?: BrowserWindow): void {
     for (const s of selectors) {
@@ -83,21 +88,27 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void): Lookup {
 
   return {
     async open() {
-      closeAll();
-      const displays = screen.getAllDisplays();
-      // Capture BEFORE creating any window, so the shot has neither our UI nor a
-      // tooltip that would vanish when our window steals focus.
-      const images = await grabAllDisplays(displays).catch((e) => {
-        log.warn("screen capture failed:", (e as Error).message);
-        return new Map<number, NativeImage>();
-      });
-      selectors = displays.map((display) => {
-        const win = createLookupWindow(display.bounds);
-        win.on("closed", () => {
-          selectors = selectors.filter((s) => s.win !== win);
+      if (opening) return; // a capture is already being set up; don't stack a second set
+      opening = true;
+      try {
+        closeAll();
+        const displays = screen.getAllDisplays();
+        // Capture BEFORE creating any window, so the shot has neither our UI nor a
+        // tooltip that would vanish when our window steals focus.
+        const images = await grabAllDisplays(displays).catch((e) => {
+          log.warn("screen capture failed:", (e as Error).message);
+          return new Map<number, NativeImage>();
         });
-        return { win, display, image: images.get(display.id) ?? null };
-      });
+        selectors = displays.map((display) => {
+          const win = createLookupWindow(display.bounds);
+          win.on("closed", () => {
+            selectors = selectors.filter((s) => s.win !== win);
+          });
+          return { win, display, image: images.get(display.id) ?? null };
+        });
+      } finally {
+        opening = false;
+      }
     },
 
     cancel() {

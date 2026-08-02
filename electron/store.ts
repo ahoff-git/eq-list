@@ -12,7 +12,8 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import { stripArticle } from "../src/shared/log-parser";
-import { originKey } from "../src/shared/grouping";
+import { normalizeItemName, originKey } from "../src/shared/grouping";
+import { clampUiScale } from "../src/shared/constants";
 import type {
   ShoppingList,
   ShoppingListEntry,
@@ -37,11 +38,24 @@ const DEFAULT_SETTINGS: Settings = {
   shareLocation: false,
   playerName: "",
   bootstrapUrl: "",
+  castAlerts: {
+    enabled: true,
+    sound: true,
+    flash: true,
+    includeSelf: false,
+    // Starter set of common crowd-control effects — edit/extend in Settings. Substring,
+    // case-insensitive, so these catch ranked/variant names too.
+    watches: [
+      { id: "fear", spell: "Fear", enabled: true },
+      { id: "mez", spell: "Mesmeri", enabled: true },
+      { id: "charm", spell: "Charm", enabled: true },
+      { id: "root", spell: "Root", enabled: true },
+    ],
+  },
   overlay: {
     opacity: 0.9,
     alwaysOnTop: true,
-    clickThrough: false,
-    fontScale: 1,
+    fontScale: 0.9,
     showObtained: true,
     followZone: false,
     splitByMode: false,
@@ -50,8 +64,10 @@ const DEFAULT_SETTINGS: Settings = {
   debug: false,
 };
 
+// Loot/list matching: drop the article too (a loot line's "a Bat Wing" is the list's
+// "Bat Wing"), then the shared lower/collapse rule — one place for the collapse rule.
 function normalize(name: string): string {
-  return stripArticle(name).toLowerCase().replace(/\s+/g, " ").trim();
+  return normalizeItemName(stripArticle(name));
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -99,6 +115,15 @@ export function createStore(userDataDir: string): Store {
   const list: ShoppingList = readJson(listPath, { entries: [], questRuns: {} });
   if (!list.questRuns) list.questRuns = {}; // migrate lists saved before quest runs existed
   let settings: Settings = deepMerge(DEFAULT_SETTINGS, readJson<DeepPartial<Settings>>(settingsPath, {}));
+  // The scale used to allow values above 1 (it enlarged, and never actually applied). Now that
+  // it does apply, and 100% is the maximum, anything stored above it has to come down or the
+  // window would suddenly render bigger than it ever did. Written back so the file agrees with
+  // what's in memory — otherwise the slider and the JSON disagree until something else saves.
+  const scale = clampUiScale(settings.overlay.fontScale);
+  if (scale !== settings.overlay.fontScale) {
+    settings.overlay.fontScale = scale;
+    persist(settingsPath, settings);
+  }
 
   function readJson<T>(file: string, fallback: T): T {
     try {
@@ -111,7 +136,12 @@ export function createStore(userDataDir: string): Store {
   function persist(file: string, data: unknown) {
     try {
       fs.mkdirSync(userDataDir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
+      // Write a temp file then rename over the target: a crash mid-write can't truncate the
+      // real file, which `readJson` would otherwise fail to parse and silently replace with
+      // an empty list — losing a hand-built shopping list with no error shown.
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+      fs.renameSync(tmp, file);
     } catch (e) {
       log.warn("persist failed", file, (e as Error).message);
     }

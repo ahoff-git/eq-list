@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { setRendererDebug } from "@/shared/logging";
 import type {
   ShoppingList,
   Settings,
@@ -17,7 +18,7 @@ import type {
   ItemCard,
   ShoppingListEntry,
 } from "@/shared/types";
-import type { MobKnowledge } from "@/shared/mob-stats";
+import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
 
 /** One-shot app diagnostics (hotkey registration) for the Help section. */
 export function useAppInfo(): AppInfo | null {
@@ -104,26 +105,34 @@ export function useMobKnowledge(refreshKey: unknown): Record<string, MobKnowledg
   useEffect(() => {
     const a = api();
     if (!a) return;
-    void a.mobs.all().then((mobs) => {
-      // A mob can be known in several zones; fold them together, since "does it drop this"
-      // isn't a per-zone question.
-      const byMob: Record<string, MobKnowledge> = {};
-      for (const m of mobs) {
-        const cur = byMob[m.mob];
-        if (!cur) {
-          byMob[m.mob] = m;
-          continue;
+    const load = () =>
+      void a.mobs.all().then((mobs) => {
+        // A mob can be known in several zones; fold them together, since "does it drop this"
+        // isn't a per-zone question.
+        // Keyed by `mobKey` (article- and case-folded) so a wiki name like "a gnoll" finds
+        // knowledge filed under the kill's stripped "gnoll".
+        const byMob: Record<string, MobKnowledge> = {};
+        for (const m of mobs) {
+          const key = mobKey(m.mob);
+          const cur = byMob[key];
+          if (!cur) {
+            byMob[key] = m;
+            continue;
+          }
+          byMob[key] = {
+            ...cur,
+            kills: cur.kills + m.kills,
+            myKills: cur.myKills + m.myKills,
+            drops: mergeDropLists(cur, m),
+            contributors: [...new Set([...cur.contributors, ...m.contributors])],
+          };
         }
-        byMob[m.mob] = {
-          ...cur,
-          kills: cur.kills + m.kills,
-          myKills: cur.myKills + m.myKills,
-          drops: mergeDropLists(cur, m),
-          contributors: [...new Set([...cur.contributors, ...m.contributors])],
-        };
-      }
-      setKnown(byMob);
-    });
+        setKnown(byMob);
+      });
+    load();
+    // Mob knowledge is derived from the kill log, so a bulk kill change (import / clear) means
+    // refetch — not just when the caller's refreshKey ticks over.
+    return a.kills.onChanged(load);
   }, [refreshKey]);
   return known;
 }
@@ -148,7 +157,10 @@ export function useKills(zone: string | undefined, refreshKey: unknown): KillRec
   useEffect(() => {
     const a = api();
     if (!a) return;
-    void a.kills.all(zone).then(setKills);
+    const load = () => void a.kills.all(zone).then(setKills);
+    load();
+    // Refetch on a bulk change (import / clear) so out-of-band edits reach an already-open window.
+    return a.kills.onChanged(load);
   }, [zone, refreshKey]);
   return kills;
 }
@@ -228,6 +240,21 @@ export function useSettings(): Settings | null {
     return a.settings.onChanged(setSettings);
   }, []);
   return settings;
+}
+
+/**
+ * Mirror the tray's "Debug logging" toggle into this renderer's log gate, so
+ * `createLogger(...).debug()` actually prints (and reaches the main-process log file,
+ * which pipes every renderer console). **Every window has to call this** — the gate is
+ * per-renderer, so a window that skips it silently discards its own diagnostics. The
+ * awari connection lives in the main window, which is exactly where they're wanted.
+ */
+export function useRendererDebug(): void {
+  const settings = useSettings();
+  const debug = settings?.debug ?? false;
+  useEffect(() => {
+    setRendererDebug(debug);
+  }, [debug]);
 }
 
 export function useWatcherStatus(): WatcherStatus {

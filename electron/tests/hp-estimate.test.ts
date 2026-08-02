@@ -303,3 +303,46 @@ test("a corrupt file is survivable", () => {
   fs.writeFileSync(path.join(dir, "hp-estimate.json"), "{nope");
   assert.equal(createHpEstimate(dir).state().atLeast, 0);
 });
+
+// A camp chains pull after pull with gaps under the idle cut, so an "unhealed stretch" can run
+// for minutes — and you regenerate throughout. Summing it claims you absorbed the lot on one
+// health bar; a real log produced "survived at least 815" that way, for a level 2 character.
+test("a stretch too long to be one health bar is discarded, not banked", () => {
+  const long: [number, string][] = [];
+  for (let sec = 1; sec <= 91; sec += 5) long.push([sec, "A skeleton punches YOU for 20 points of damage."]);
+  long.push([200, "A coyote bites YOU for 1 point of damage."]); // the lull tries to bank it
+
+  const hp = tracker();
+  feed(hp, long);
+  assert.equal(hp.state().atLeast, 0, "90 seconds of chained pulls proves nothing about the maximum");
+});
+
+test("…but a stretch inside the limit still counts", () => {
+  const hp = tracker();
+  const fight: [number, string][] = [];
+  for (let sec = 1; sec <= 41; sec += 8) fight.push([sec, "A skeleton punches YOU for 20 points of damage."]);
+  fight.push([200, "A coyote bites YOU for 1 point of damage."]); // the lull banks a 40s window
+  feed(hp, fight);
+  assert.equal(hp.state().atLeast, 120);
+});
+
+// A floor could only ever rise, so one reading from a fight the game kept you alive through
+// was permanent — and could sit above a ceiling measured from an actual death.
+test("a measured ceiling below the floor discards the floor rather than itself", () => {
+  const hp = tracker();
+  feed(hp, [
+    // A scripted mauling: 300 absorbed inside the window, survived.
+    [1, "Minotaur Lord hits YOU for 150 points of damage."],
+    [3, "Minotaur Lord hits YOU for 150 points of damage."],
+    [5, "You healed Kainos for 1 (99) hit points."], // overheal → banks the floor, anchors full
+  ]);
+  assert.equal(hp.state().atLeast, 300);
+
+  // Then, from that known-full anchor, 90 damage is fatal — so the maximum is at most 90.
+  feed(hp, [
+    [7, "A skeleton punches YOU for 90 points of damage."],
+    [8, "You have been slain by a skeleton!"],
+  ]);
+  assert.equal(hp.state().atMost, 90);
+  assert.equal(hp.state().atLeast, 0, "the floor was the unsound half and is dropped");
+});

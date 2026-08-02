@@ -9,6 +9,7 @@ import {
   useMobKnowledge,
 } from "@/lib/hooks";
 import { bestRate, reconcileDrops } from "@/shared/drop-truth";
+import { mobKey } from "@/shared/mob-stats";
 import ItemLink from "./ItemLink";
 import { buildHunt, neededEntries, huntInputsFor } from "@/shared/hunt";
 import { zoneMatches, sourceZones } from "@/shared/sources";
@@ -134,7 +135,9 @@ export default function HuntPanel({
                 <ItemLink title={m.mob} className="hm-name" />
                 <span className="hm-items">
                   {m.items.map((it) => {
-                    const mob = known[m.mob];
+                    // `known` is keyed by mobKey (article/case-folded) so the wiki's
+                    // "a gnoll" meets the kill log's "gnoll".
+                    const mob = known[mobKey(m.mob)];
                     const [truth] = reconcileDrops(
                       { [it.item]: mobLoot[m.mob]?.[it.item] },
                       Object.fromEntries((mob?.drops ?? []).map((d) => [d.item, d.count])),

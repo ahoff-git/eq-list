@@ -38,6 +38,18 @@ export interface LogWatcher {
   onStatus(cb: (s: WatcherStatus) => void): void;
 }
 
+/** Every eqlog_*.txt currently in a dir, absolute. */
+function existingLogs(logDir: string): string[] {
+  try {
+    return fs
+      .readdirSync(logDir)
+      .filter((f) => /^eqlog_.*\.txt$/i.test(f))
+      .map((f) => path.join(logDir, f));
+  } catch {
+    return [];
+  }
+}
+
 /** Newest eqlog_*.txt in a dir, or a specific file when the user pinned one. */
 function resolveTarget(logDir: string, activeLogFile: string): string | null {
   if (activeLogFile) {
@@ -67,6 +79,8 @@ export function createLogWatcher(): LogWatcher {
   let activeLogFile = "";
   let target: string | null = null;
   let offset = 0;
+  /** How far we had read each file we've followed, so switching back doesn't replay it. */
+  const seen = new Map<string, number>();
   let pending = "";
   let busy = false;
   /** Monotonic line counter — an event's `logId`, so it can point back at its line. */
@@ -81,14 +95,27 @@ export function createLogWatcher(): LogWatcher {
 
   /**
    * Point at a file. `fromStart` reads it from the top; otherwise we anchor at EOF.
-   * We anchor at EOF only for the file that already exists when watching *starts*
-   * (so launching mid-session doesn't replay hours of old log). A file that appears
-   * *while* watching — a new session, or the sim's fresh log — is read from the top.
+   *
+   * Only a log that genuinely **appeared** after watching began is read from the top — a new
+   * session, or the sim's fresh log. Every log that already existed is anchored at its end,
+   * whether or not it was the one we started on: switching to another character mid-session
+   * otherwise replays their entire history as if it were happening now, which re-records
+   * every kill, re-counts the experience, re-matches the loot against the shopping list and
+   * fires an alert for every spell they were ever cast at. Measured at 120 phantom kills.
+   *
+   * A file we have already followed resumes exactly where we left off, whatever `fromStart`
+   * says — the same argument, for the case where we've read part of it.
    */
   function switchTarget(file: string | null, fromStart = false) {
+    if (target) seen.set(target, offset);
     target = file;
     pending = "";
-    offset = file ? (fromStart ? 0 : safeSize(file)) : 0;
+    if (!file) {
+      offset = 0;
+      return;
+    }
+    const resume = seen.get(file);
+    offset = resume ?? (fromStart ? 0 : safeSize(file));
   }
 
   function safeSize(file: string): number {
@@ -99,12 +126,15 @@ export function createLogWatcher(): LogWatcher {
     }
   }
 
-  function readNew(file: string, from: number, to: number): string {
+  // Returns the decoded text AND the byte count actually read: a short read (fewer bytes
+  // than requested) must not decode the zero-filled tail as NUL characters, nor let the
+  // caller advance the offset past bytes it never saw.
+  function readNew(file: string, from: number, to: number): { text: string; bytesRead: number } {
     const fd = fs.openSync(file, "r");
     try {
       const buf = Buffer.alloc(to - from);
-      fs.readSync(fd, buf, 0, buf.length, from);
-      return buf.toString("utf8");
+      const bytesRead = fs.readSync(fd, buf, 0, buf.length, from);
+      return { text: buf.toString("utf8", 0, bytesRead), bytesRead };
     } finally {
       fs.closeSync(fd);
     }
@@ -120,6 +150,9 @@ export function createLogWatcher(): LogWatcher {
         if (newest && newest !== target) {
           log.debug("following new log", newest);
           switchTarget(newest, true); // appeared while watching → read it fully
+          // Announce the new file (→ main sets the player from its name) BEFORE parsing its
+          // backlog, so the new character's kills/damage aren't attributed to the old one.
+          setStatus({ watching: true, file: newest });
         }
       }
       if (!target || !fs.existsSync(target)) {
@@ -134,8 +167,9 @@ export function createLogWatcher(): LogWatcher {
         pending = "";
       }
       if (size > offset) {
-        pending += readNew(target, offset, size);
-        offset = size;
+        const { text, bytesRead } = readNew(target, offset, size);
+        pending += text;
+        offset += bytesRead;
         const lines = pending.split(/\r?\n/);
         pending = lines.pop() ?? ""; // trailing partial line waits for more bytes
         for (const line of lines) {
@@ -164,6 +198,10 @@ export function createLogWatcher(): LogWatcher {
         setStatus({ watching: false, error: dir ? `Log folder not found: ${dir}` : "No log folder set" });
         return;
       }
+      // Every log already on disk is history, not news — pin each at its current end so that
+      // switching characters later follows the new writing rather than replaying the past.
+      seen.clear();
+      for (const existing of existingLogs(dir)) seen.set(existing, safeSize(existing));
       switchTarget(resolveTarget(dir, file));
       log.debug("start watching", { dir, file, target });
       timer = setInterval(poll, POLL_MS);

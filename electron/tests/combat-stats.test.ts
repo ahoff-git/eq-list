@@ -581,6 +581,39 @@ test("castless damage sources are not free casts", () => {
   assert.equal(t.snapshot().session.invocations.find((i) => i.mode === "spellblade")?.procs ?? 0, 0);
 });
 
+// One cast of an area spell lands on each target separately, and only the first of those
+// finds the cast in flight. Counting the rest as free casts made two area spells produce 61
+// of the 65 "free casts" in a real log — and put them under whichever invocation happened to
+// be up, so the one that actually grants free casts came fourth.
+test("an area spell's extra landings are one cast, not free casts", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin reciting the spellblade invocation."],
+    [2, "You begin casting Fingers of Fire."],
+    [4, "You hit a grikbar kobold for 20 points of fire damage by Fingers of Fire."],
+    [4, "You hit a grikbar shaman for 19 points of fire damage by Fingers of Fire."],
+    [4, "You hit a kobold runt for 18 points of fire damage by Fingers of Fire."],
+  ]);
+
+  const spell = t.snapshot().session.spells.find((s) => s.spell === "Fingers of Fire")!;
+  assert.equal(spell.casts, 1);
+  assert.equal(spell.lands, 3, "each target is still a landing");
+  assert.equal(t.snapshot().session.invocations.find((i) => i.mode === "spellblade")?.procs ?? 0, 0);
+});
+
+test("a genuine free cast a second later is still counted", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin reciting the spellblade invocation."],
+    [2, "You begin casting Fire Bolt."],
+    [4, "You hit a coyote for 20 points of fire damage by Fire Bolt."],
+    [6, "You hit a coyote for 20 points of fire damage by Fire Bolt."], // no cast, later second
+  ]);
+  assert.equal(t.snapshot().session.invocations.find((i) => i.mode === "spellblade")!.procs, 1);
+});
+
 test("a fight knows which zone it happened in", () => {
   const t = tracker();
   assert.equal(t.zone(), null);
@@ -588,13 +621,14 @@ test("a fight knows which zone it happened in", () => {
   assert.equal(t.zone(), "Steamfont Mountains");
 });
 
-test("change events carry a snapshot", () => {
+test("onChange signals each change; snapshot reflects the running total", () => {
   const t = tracker();
-  const seen: number[] = [];
-  t.onChange((s) => seen.push(s.session.totalDealt));
+  let changes = 0;
+  t.onChange(() => changes++); // signal-only now — the snapshot is pulled on demand
   feed(t, [
     [1, "You pierce a coyote for 10 points of damage."],
     [2, "You pierce a coyote for 5 points of damage."],
   ]);
-  assert.deepEqual(seen, [10, 15]);
+  assert.equal(changes, 2);
+  assert.equal(t.snapshot().session.totalDealt, 15);
 });

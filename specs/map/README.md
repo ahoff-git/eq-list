@@ -80,8 +80,9 @@ trail) plotted on it, in a sibling window opened from the main window's 🗺 but
   filtered to the viewed zone. Bootstrap URL defaults to the live service, overridable
   in Settings.
 - **Mob knowledge** (the 📖 toolbar panel) — what killing things here has taught us:
-  **observed drop rates** (`count/kills` with the rate dimmed until the sample is worth
-  trusting) and **roam areas** (the middle of where a mob died and how far that spreads, with a
+  **observed drop rates** (kills-that-dropped-it over kills, dimmed until the sample is worth
+  trusting — only kills that were yours count, see
+  [ADR 0027](../decisions/0027-only-your-kills-count.md)) and **roam areas** (the middle of where a mob died and how far that spreads, with a
   ±button that pins it on the map). Yours is derived from the kill log on demand;
   peers' arrives over the room and is stored separately, so every figure can still say how much
   of it you saw yourself. `src/shared/mob-stats.ts` does the rolling-up and the pooling; see
@@ -91,7 +92,9 @@ trail) plotted on it, in a sibling window opened from the main window's 🗺 but
   marker from `src/shared/kill-confidence.ts` — the same glyph the kill list shows, so a faint
   dot and its row agree. Anything below "approximate" isn't plotted at all: it stays in the
   list, labelled, because an inferred position drawn like a measured one is worse than none.
-  Right-click a marker (or use Settings) to hide the markers.
+  Right-click a marker (or use Settings) to hide the markers. Kills someone else landed are
+  in the list, named and believed half as much — the position came from *your* `/loc`, and they
+  were standing somewhere else.
   The panel's filters — time window, mob, what dropped, dropped-anything, confidence floor —
   come from `src/shared/kill-filters.ts` and are applied to **both** the map and the list, so
   they're always the same query. Drops are attached to kills as the loot lines arrive, which

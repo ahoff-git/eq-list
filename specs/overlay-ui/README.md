@@ -11,10 +11,11 @@ list, hunt, search, damage, session, settings.
   controls — an **opacity toggle** (flip between 100% and the settings slider value,
   transient via `win.setOpacity`), **pin** (always-on-top, toggles `overlay.alwaysOnTop`
   — the shared `PinButton`, gray off / red on, same as the map window), **minimize**,
-  **text size** (A− / A+, stepping `overlay.fontScale` 0.8–1.6 — the same value the
-  Settings slider holds), and **hide-to-tray** (`win.hide()`).
+  **interface scale** (A− / A+, stepping `overlay.fontScale` over `UI_SCALE` — 60%–100%,
+  the same value the Settings slider holds), and **hide-to-tray** (`win.hide()`).
   Opacity/always-on-top come from settings and are applied by the main process
-  (`applyOverlaySettings`). Show/hide also works from the
+  (`applyOverlaySettings`), which also pushes the scale onto **every** window as a zoom
+  factor — see [ADR 0026](../decisions/0026-interface-scale-only-shrinks.md). Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
   tray. One window, styled once; see [ADR 0009](../decisions/0009-single-window-with-tray.md).
 - **System tray** (`main.ts`): show/hide plus the **dev-only** options kept out of the
@@ -29,6 +30,11 @@ list, hunt, search, damage, session, settings.
   Browser-style **back/forward** walks the stack: mouse thumb buttons (forwarded from
   main as `app-command` on `CH.navCommand`) and **Alt+←/→**. Only the explicit
   "↗ eqlwiki" button leaves the app. See [ADR 0008](../decisions/0008-in-app-page-navigation.md).
+- **Tab bar** (`components/TabBar.tsx`): the row of tab buttons. When the window is too
+  narrow to show them all, the ones that don't fit collapse into a **» menu** (a
+  dropdown) instead of shrinking their labels off the edge — so every tab stays reachable
+  without resizing. It measures natural tab widths from an off-screen ghost row and
+  re-fits on resize (`ResizeObserver`) and when a label changes (the List count).
 - **Tabs** (all wrapped in `NavProvider`):
   - `ListPanel` — the shopping list **grouped by the quest/recipe that added each
     item** (collapsible sub-bullets; standalone items fall into "Other"). Grouping is
@@ -129,13 +135,21 @@ list, hunt, search, damage, session, settings.
       click to fill in). After that `xp-progress.ts` keeps it current from XP gains and
       zeroes it on level-up, so it's asked at most once per level. Reuse `AskValue` for any
       future figure the log can't supply.
-  - `SettingsPanel` — log folder, match mode, window opacity/text-size, keep-completed,
-    follow-your-zone, and a **Help** area: global-shortcut list with live registration
-    status (`app.info()`) and a screengrab explanation/test button. Dev-only options
-    live in the tray, not here.
+  - `SettingsPanel` — log folder, match mode, window opacity / interface scale, keep-completed,
+    follow-your-zone, **cast alerts** (the watched-spell list + beep/**screen-flash**/include-self
+    toggles, with a **Test alert** button that fires a sample down the real broadcast path),
+    **"Eat a log file"** (digest a past log into learned mob data — see `electron/log-import.ts`),
+    and a **Help** area: global-shortcut list with live registration status (`app.info()`) and a
+    screengrab explanation/test button. Dev-only options live in the tray, not here.
   - `StatusBar` — watcher state, current zone, and the last drop seen. A drop moves the
     matching list entries by the **quantity the log reported**, so a looted stack of 2
     advances the count by 2.
+  - `CastAlerts` — dispel-prep alert. The main process matches every `cast` event
+    (`<caster> begins casting <spell>`) against the user's watch list (`matchCast`, pure)
+    and broadcasts a `castAlert`; this shows a banner and, per the Settings toggles, **beeps**
+    and/or **flashes a red border** around the window. Mounted in the overlay + map windows so
+    it shows wherever you're looking (only the main window owns the beep, to avoid a double).
+    Only casts the log *names* can match — generic "begins to cast a spell" lines carry no name.
 - **Screengrab lookup** (`src/app/select/page.tsx` + `electron/lookup.ts`): the
   `Ctrl/Cmd+Shift+L` hotkey (or the Search/Settings buttons) screenshots every display
   *first* (before any window shows, so a hovered tooltip is frozen and our UI isn't

@@ -14,12 +14,6 @@ function on<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 
-/** Which window this is, from the --eql-role argument set when it was created. */
-function role(): "main" | "overlay" {
-  const arg = process.argv.find((a) => a.startsWith("--eql-role="));
-  return arg?.split("=")[1] === "overlay" ? "overlay" : "main";
-}
-
 const api: EqlApi = {
   list: {
     get: () => ipcRenderer.invoke(CH.listGet),
@@ -47,6 +41,13 @@ const api: EqlApi = {
   loot: {
     onEvent: (cb) => on(CH.lootEvent, cb),
     onMatched: (cb) => on(CH.lootMatched, cb),
+  },
+  alerts: {
+    onCast: (cb) => on(CH.castAlert, cb),
+    test: () => ipcRenderer.invoke(CH.alertsTest),
+  },
+  log: {
+    import: () => ipcRenderer.invoke(CH.logImport),
   },
   watcher: {
     status: () => ipcRenderer.invoke(CH.watcherStatus),
@@ -79,6 +80,7 @@ const api: EqlApi = {
   kills: {
     all: (zone) => ipcRenderer.invoke(CH.killsAll, zone),
     clear: () => ipcRenderer.invoke(CH.killsClear),
+    onChanged: (cb) => on(CH.killsChanged, cb),
   },
   hp: {
     get: () => ipcRenderer.invoke(CH.hpGet),
@@ -102,13 +104,10 @@ const api: EqlApi = {
   },
   search: {
     onPrefill: (cb) => on(CH.searchPrefill, cb),
+    show: (text) => ipcRenderer.invoke(CH.searchShow, text),
   },
   nav: {
     onCommand: (cb) => on(CH.navCommand, cb),
-  },
-  overlay: {
-    open: () => ipcRenderer.invoke(CH.overlayOpen),
-    setClickThrough: (enabled) => ipcRenderer.invoke(CH.overlaySetClickThrough, enabled),
   },
   map: {
     open: () => ipcRenderer.invoke(CH.winOpenMap),
@@ -127,7 +126,6 @@ const api: EqlApi = {
     reportPeers: (peers) => ipcRenderer.send(CH.awariPeers, peers),
   },
   win: {
-    role: () => Promise.resolve(role()),
     minimize: () => ipcRenderer.send(CH.winMinimize),
     hide: () => ipcRenderer.send(CH.winHide),
     setOpacity: (value) => ipcRenderer.send(CH.winSetOpacity, value),

@@ -11,12 +11,14 @@ import LootPanel from "./components/LootPanel";
 import StatusBar from "./components/StatusBar";
 import LandingView from "./components/LandingView";
 import PinButton from "./components/PinButton";
-import { useShoppingList, useSettings } from "@/lib/hooks";
+import CastAlerts from "./components/CastAlerts";
+import TabBar, { type TabItem } from "./components/TabBar";
+import { useRendererDebug, useShoppingList, useSettings } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
 import AwariHost from "@/lib/awari/host";
-import { OVERLAY_HOTKEY } from "@/shared/constants";
+import { OVERLAY_HOTKEY, UI_SCALE, clampUiScale } from "@/shared/constants";
 
 type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "settings";
 
@@ -32,14 +34,16 @@ export default function Home() {
   const [inElectron, setInElectron] = useState<boolean | null>(null);
   const list = useShoppingList();
   const settings = useSettings();
+  // This window owns the awari connection, so its diagnostics are the ones worth having.
+  useRendererDebug();
   const pinned = settings?.overlay.alwaysOnTop ?? true;
   const sliderOpacity = settings?.overlay.opacity ?? 1;
-  // Text size lives in settings (and is applied by the renderer); the titlebar just nudges
-  // it, so the Settings slider and these buttons are the same one value.
-  const fontScale = settings?.overlay.fontScale ?? 1;
-  const stepFontScale = (direction: number) => {
-    const next = Math.round(Math.min(1.6, Math.max(0.8, fontScale + direction * 0.1)) * 10) / 10;
-    if (next !== fontScale) api()?.settings.update({ overlay: { fontScale: next } });
+  // Scale lives in settings (main applies it as the window's zoom factor); the titlebar just
+  // nudges it, so the Settings slider and these buttons are the same one value.
+  const uiScale = settings?.overlay.fontScale ?? UI_SCALE.max;
+  const stepUiScale = (direction: number) => {
+    const next = clampUiScale(uiScale + direction * UI_SCALE.step);
+    if (next !== uiScale) api()?.settings.update({ overlay: { fontScale: next } });
   };
   // Transient "full opacity" toggle: flip between 100% and the settings slider value.
   const [opaque, setOpaque] = useState(false);
@@ -70,6 +74,16 @@ export default function Home() {
     });
   }, [setTab]);
 
+  const tabItems: TabItem[] = [
+    { key: "list", label: list.entries.length ? `List (${list.entries.length})` : "List" },
+    { key: "hunt", label: "Hunt" },
+    { key: "loot", label: "Loot" },
+    { key: "search", label: "Search" },
+    { key: "damage", label: "Damage" },
+    { key: "session", label: "Session" },
+    { key: "settings", label: "Settings" },
+  ];
+
   if (inElectron === null) return null; // brief pre-mount frame
   if (!inElectron) return <LandingView />;
 
@@ -77,6 +91,7 @@ export default function Home() {
     <NavProvider onOpen={showSearch}>
       <NavKeys />
       <AwariHost />
+      <CastAlerts />
 
       <div className="app glass">
         <div className="titlebar">
@@ -88,10 +103,20 @@ export default function Home() {
             <button className="wc" title="Open map window" onClick={() => api()?.map.open()}>
               🗺
             </button>
-            <button className="wc" title="Smaller text" onClick={() => stepFontScale(-1)} disabled={fontScale <= 0.8}>
+            <button
+              className="wc"
+              title={`Smaller interface — ${Math.round(uiScale * 100)}%`}
+              onClick={() => stepUiScale(-1)}
+              disabled={uiScale <= UI_SCALE.min}
+            >
               A−
             </button>
-            <button className="wc" title="Larger text" onClick={() => stepFontScale(1)} disabled={fontScale >= 1.6}>
+            <button
+              className="wc"
+              title={`Larger interface — ${Math.round(uiScale * 100)}% (100% is full size)`}
+              onClick={() => stepUiScale(1)}
+              disabled={uiScale >= UI_SCALE.max}
+            >
               A+
             </button>
             <button
@@ -119,29 +144,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="tabs">
-          <button className={tabCls(tab, "list")} onClick={() => setTab("list")}>
-            List{list.entries.length ? ` (${list.entries.length})` : ""}
-          </button>
-          <button className={tabCls(tab, "hunt")} onClick={() => setTab("hunt")}>
-            Hunt
-          </button>
-          <button className={tabCls(tab, "loot")} onClick={() => setTab("loot")}>
-            Loot
-          </button>
-          <button className={tabCls(tab, "search")} onClick={() => setTab("search")}>
-            Search
-          </button>
-          <button className={tabCls(tab, "damage")} onClick={() => setTab("damage")}>
-            Damage
-          </button>
-          <button className={tabCls(tab, "session")} onClick={() => setTab("session")}>
-            Session
-          </button>
-          <button className={tabCls(tab, "settings")} onClick={() => setTab("settings")}>
-            Settings
-          </button>
-        </div>
+        <TabBar items={tabItems} active={tab} onSelect={(k) => setTab(k as Tab)} />
 
         <div className="panel">
           {tab === "list" && <ListPanel />}
@@ -186,8 +189,4 @@ function NavKeys() {
     return () => window.removeEventListener("keydown", onKey);
   }, [nav]);
   return null;
-}
-
-function tabCls(active: Tab, tab: Tab): string {
-  return `tab ${active === tab ? "active" : ""}`;
 }

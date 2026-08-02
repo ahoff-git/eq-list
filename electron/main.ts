@@ -21,13 +21,14 @@ import { createMobKnowledge } from "./mob-knowledge";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, createMapWindow, getMainWindow, getMapWindow, applyOverlaySettings } from "./windows";
+import { createMainWindow, createMapWindow, getMainWindow, getMapWindow, applyOverlaySettings, showInSearch } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
 import { characterFromLogFile } from "../src/shared/log-parser";
-import type { Settings, AppInfo, LocEvent } from "../src/shared/types";
+import { matchCast } from "../src/shared/cast-alerts";
+import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
 
 const log = createLogger("main");
 
@@ -46,15 +47,14 @@ function broadcast(channel: string, payload: unknown): void {
  * read from the top when it first appears), and no UI can use 2000 snapshots; this
  * keeps the renderers fed without making the IPC channel the bottleneck.
  */
-function coalesce<T>(ms: number, fn: (value: T) => void): (value: T) => void {
-  let latest: T;
+/** Run `fn` at most once per `ms` (it pulls whatever state it needs when it fires). */
+function coalesce(ms: number, fn: () => void): () => void {
   let timer: NodeJS.Timeout | null = null;
-  return (value: T) => {
-    latest = value;
+  return () => {
     if (timer) return;
     timer = setTimeout(() => {
       timer = null;
-      fn(latest);
+      fn();
     }, ms);
   };
 }
@@ -63,16 +63,6 @@ function coalesce<T>(ms: number, fn: (value: T) => void): (value: T) => void {
 function syncDebugFlag(settings: Settings): void {
   if (settings.debug) process.env.EQL_DEBUG = "1";
   else delete process.env.EQL_DEBUG;
-}
-
-/** Route screengrab-OCR'd text into the control window's Search box. */
-function routeSearchText(text: string): void {
-  const win = getMainWindow() ?? createMainWindow();
-  win.show();
-  win.focus();
-  const send = () => win.webContents.send(CH.searchPrefill, text);
-  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
-  else send();
 }
 
 const DEEP_LINK_SCHEME = "eqlist";
@@ -132,7 +122,7 @@ if (!app.requestSingleInstanceLock()) {
   const killLog = createKillLog(userData);
   const mobs = createMobKnowledge(userData, killLog);
   const ocr = createOcr(path.join(userData, "tesseract-cache"));
-  const lookup = createLookup(ocr, routeSearchText);
+  const lookup = createLookup(ocr, showInSearch);
 
   let currentZone: string | null = null;
   let currentLoc: LocEvent | null = null;
@@ -180,6 +170,7 @@ if (!app.requestSingleInstanceLock()) {
     const character = characterFromLogFile(status.file) ?? "";
     combat.setPlayer(character);
     hp.setPlayer(character); // heals on you are logged by character name, not "you"
+    killLog.setPlayer(character); // so your pet's death isn't filed as a mob you farm
   });
   watcher.onZone((event) => {
     if (event.zone === currentZone) return;
@@ -189,7 +180,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onLoc((event) => {
     currentLoc = event;
-    killLog.noteLoc(event); // the fix a later kill will be placed against
+    killLog.noteLoc(event, currentZone); // the fix a later kill will be placed against
     broadcast(CH.locChanged, currentLoc);
   });
   watcher.onLoot((event) => {
@@ -201,7 +192,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onKill((event) => {
     combat.recordKill(event.target, event.at);
-    killLog.record(event.target, currentZone, event.at, event.logId);
+    killLog.record(event.target, event.killer, currentZone, event.at, event.logId);
   });
   watcher.onXp((event) => {
     combat.recordXp(event);
@@ -214,13 +205,19 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onCombat((event) => {
     combat.record(event);
     hp.record(event);
+    // Dispel prep: flash the overlay when a watched spell begins casting.
+    if (event.kind === "cast" && matchCast(event, store.getSettings().castAlerts)) {
+      broadcast(CH.castAlert, { caster: event.caster, spell: event.spell, at: event.at } satisfies CastAlertEvent);
+    }
   });
   // Fights are filed as they end, so history survives a crash as well as a clean quit.
   combat.onFightEnd((fight) => history.add(fight, combat.zone(), watcher.status().file));
   xp.onChange((progress) => broadcast(CH.xpChanged, progress));
   hp.onChange((estimate) => broadcast(CH.hpChanged, estimate));
   combat.onChange(
-    coalesce(250, (snapshot) => {
+    coalesce(250, () => {
+      // Snapshot pulled here (once per 250ms), not computed on every combat line.
+      const snapshot = combat.snapshot();
       // Debug-gated: the one line that answers "is the meter seeing this fight?"
       log.debug("combat", {
         fight: snapshot.fight.totalDealt,

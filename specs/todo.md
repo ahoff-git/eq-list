@@ -39,13 +39,14 @@ in-game):_
 - **Map window, real run.** Confirm the map window opens (🗺 button), draws the zone
   image, and plots the player dot on a `/loc` line. If a P99 map doesn't line up,
   re-tune it with the in-app calibration tool (enable Debug logging in the tray).
-- **Peer networking (awari), real run.** With "Connect to the peer-to-peer network"
-  on, confirm two clients join via the bootstrap-service; that clicking the map pings
-  the other (a gold named marker in the *viewed* zone); that "Share my location" adds
-  live green dots; that the connection now lives in the **main window** and survives
-  **closing the map window** (reopening the map still shows peers); and that toggling
-  "Connect" off leaves the room. Needs real network + WebRTC (unavailable in the dev
-  sandbox). See [ADR 0012](./decisions/0012-awari-connection-owned-by-main-window.md).
+- **Peer networking (awari) — run, and repaired.** Two clients were driven end to end
+  (join, presence by name, pings, live location, kill positions, pooled drop rates); five
+  bugs found and fixed, see
+  [ADR 0028](./decisions/0028-peer-networking-verified-and-repaired.md). Still unverified
+  *by hand in the game*: that the connection survives **closing the map window** (reopening
+  still shows peers), and that toggling "Connect" off leaves the room. Also untested with
+  more than two clients — the cold-start recovery is bounded and won't reconcile a room
+  that splits two-and-two.
 
 _Zones:_
 
@@ -72,6 +73,11 @@ _Distribution wiring:_
 
 _Ready to build (decided, not started):_
 
+- **Count the coin.** 248 lines of "You receive 3 silver and 2 copper from the corpse." (and
+  "…from that item" on an auto-sell) go unparsed, so the camp report can't answer what a camp
+  is worth per hour in money — which is half of "is this camp worth it". The loot parser
+  already handles the auto-sell *item* line; this is the coin beside it. Needs a small money
+  type (platinum/gold/silver/copper) rather than a bare number.
 - **Damage per mana.** eqlwiki states a spell's mana cost — verified, `Mana 7` in
   `fixtures/wiki/spell-burst-of-fire.html` — so this is a wiki lookup, not OCR. One
   wrinkle: cost is per *rank*, and `spellName()` strips the rank to make cast and damage
@@ -82,10 +88,6 @@ _Ready to build (decided, not started):_
   the Session tab counting the pet's own death as a kill, and removes the split that
   already caused one bug — two "reset" buttons that meant different things, now papered
   over by `resetSession()`.
-- **Text-size +/− buttons.** Not everyone wants the same size text. `overlay.fontScale`
-  (0.8–1.6) already exists in settings and is applied by the renderer — this is about
-  putting +/− controls somewhere obvious (titlebar next to the opacity toggle?) instead of
-  only a Settings slider.
 
 _Next up:_
 
@@ -132,16 +134,26 @@ _To discuss:_
 
   **Built** — recording, the confidence marker, the filtered map layer, the kill list and
   peer sharing all ship ([ADR 0023](./decisions/0023-kill-heatmap.md)). What's left:
-  - **The `/loc` nag.** This is now the load-bearing piece: a real log yielded 132 kills but
-    only one position worth believing, because `/loc` was sent five times in an evening. Ask
-    for one when the camp looks to have changed (the `AskValue` pattern fits), and the map
-    fills in.
+  - **The `/loc` nag.** This is the load-bearing piece: a real 13,000-line log yielded 323
+    kills and **six** positions worth believing, because `/loc` was typed nine times across
+    several evenings. Ask for one when the camp looks to have changed (the `AskValue` pattern
+    fits), and the map fills in.
   - **Retro-scoring.** Confidence is fixed when the kill is recorded, but the evidence is
     stored — a later `/loc` close to the earlier one could raise confidence for the kills in
     between, which is exactly the "they can only go so far so fast" argument.
   - **Spawn points, not just roam areas.** A roam area is the centroid and spread of where a
     mob died. With enough fixes, clusters would separate individual spawn points from a
     wandering path — the data is already stored, this is an analysis question.
+  - **Group-mates' kills.** A group-mate's killing blow is indistinguishable from a stranger's
+    in the log, so those kills only count towards a drop rate once you loot the corpse
+    ([ADR 0027](./decisions/0027-only-your-kills-count.md)). Telling them apart means asking
+    who was damaging the mob, which the kill log can't see — the damage tracker can. Worth
+    doing if grouping turns out to be common; it needs the two to talk.
+  - **Items per kill, alongside the drop chance.** `drops` counts kills that produced an item,
+    which is the right numerator for a probability but throws away the stack size — a line
+    saying "You looted 2 Spiderling Eye" counts once. For a stackable trash drop the useful
+    figure is items-per-kill. It's a second number, not a correction, and it changes the shared
+    observation shape, so it wants deciding rather than sneaking in.
 - **Setting: split the meter by mode by default.** The per-stance / per-invocation data is
   already tracked and shown on hover
   ([ADR 0020](./decisions/0020-split-by-stance-and-invocation.md)). Some players will want

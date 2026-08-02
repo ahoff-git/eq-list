@@ -19,10 +19,20 @@
  * Pure and DOM-free: main derives observations from the kill log, the renderer merges them for
  * display, and both use exactly this code.
  */
+import { stripArticle } from "./log-parser";
 import type { KillRecord } from "./types";
 
 /** Positions this poor are ignored when working out where a mob lives. */
 const AREA_MIN_CONFIDENCE = 0.2;
+
+/**
+ * The key to look mob knowledge up by. Kills arrive article-stripped ("a gnoll" → "gnoll",
+ * via `parseKill`) but the wiki keeps the article ("a gnoll"), so a lookup has to fold the
+ * article — and case — away for the two to meet. Idempotent on already-stripped names.
+ */
+export function mobKey(name: string): string {
+  return stripArticle(name).toLowerCase().trim();
+}
 
 /** A mob's tally in one zone — the shareable unit. Counts, never raw kills. */
 export interface MobObservation {
@@ -69,12 +79,20 @@ const keyOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${zon
 /**
  * Roll your kill log up into observations. Kills with no zone are skipped — a drop rate that
  * can't be placed can't be compared with anything.
+ *
+ * Only kills that were **yours** count. The log reports every death in earshot, so a third of
+ * a busy zone's records can be strangers' kills; counting them would pad the denominator with
+ * corpses you never had the chance to loot and drag every rate down. A kill someone else
+ * landed but you looted counts too — the loot is the proof you had it. Records stored before
+ * the killer was captured have no `mine` and are taken at face value, since re-deciding them
+ * now is impossible.
  */
 export function observeMobs(kills: KillRecord[]): MobObservation[] {
   const byKey = new Map<string, MobObservation & { points: { y: number; x: number }[] }>();
 
   for (const kill of kills) {
     if (!kill.zone) continue;
+    if (kill.mine === false && !kill.drops?.length) continue;
     const key = keyOf(kill.mob, kill.zone);
     let obs = byKey.get(key);
     if (!obs) {
@@ -83,7 +101,10 @@ export function observeMobs(kills: KillRecord[]): MobObservation[] {
     }
     obs.kills += 1;
     if (kill.at > obs.lastAt) obs.lastAt = kill.at;
-    for (const item of kill.drops ?? []) obs.drops[item] = (obs.drops[item] ?? 0) + 1;
+    // Counted per *kill*, not per loot line: `drops` is the numerator of a per-kill rate, so
+    // a corpse that yielded two of an item is still one kill that dropped it. Otherwise a
+    // generous corpse pushes the rate over 100%, which is not a probability.
+    for (const item of new Set(kill.drops ?? [])) obs.drops[item] = (obs.drops[item] ?? 0) + 1;
     // Only positions worth believing shape the roam area — see AREA_MIN_CONFIDENCE.
     if (kill.y !== undefined && kill.x !== undefined && kill.confidence >= AREA_MIN_CONFIDENCE) {
       obs.points.push({ y: kill.y, x: kill.x });

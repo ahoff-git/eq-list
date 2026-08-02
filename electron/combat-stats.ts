@@ -14,7 +14,8 @@
  * Emits `change` with a fresh snapshot so main can broadcast it to every window.
  */
 import { EventEmitter } from "node:events";
-import { SELF } from "../src/shared/combat-parser";
+import { isYours } from "../src/shared/combat-parser";
+import { createNameRegistry } from "../src/shared/name-registry";
 import type {
   CombatEvent,
   XpEvent,
@@ -65,7 +66,12 @@ export interface CombatTracker {
   setPlayer(name: string): void;
   snapshot(): CombatStats;
   reset(): void;
-  onChange(cb: (stats: CombatStats) => void): void;
+  /**
+   * Fires (synchronously) when something changed. It carries no data — call `snapshot()`
+   * when you're ready to read, so a consumer that throttles doesn't pay to summarize both
+   * windows on every one of a log flood's thousands of events.
+   */
+  onChange(cb: () => void): void;
   /**
    * Called with each fight as it ends (when the next one starts, or on reset/quit) so
    * it can be filed into history. The tracker itself keeps no past fights.
@@ -313,8 +319,6 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   let lastKillAt = 0;
   /** Rolling tail of damage taken by you, for the death recap. */
   const incoming: { at: number; source: string; amount: number }[] = [];
-  /** First-seen spelling of each name, keyed lowercase (see `canon`). */
-  const names = new Map<string, string>();
   /**
    * The stance and invocation currently in force. They change damage multipliers and cast
    * times, so every tally is filed under whichever was active — a blended average across
@@ -339,36 +343,12 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   const castRepertoire = new Set<string>();
   let currentZone: string | null = null;
 
-  /**
-   * Fold the two spellings EQ gives the same creature into one row.
-   *
-   * A name is capitalized at the start of a sentence and lowercase mid-sentence — so
-   * "Obsolete model has been slain" and "You have slain obsolete model" are the same mob
-   * arriving under two keys. Guessing from the capitalization alone can't work (real
-   * proper nouns exist: "Minotaur Lord", and players' names), so this remembers the first
-   * spelling seen for a name and reuses it. Case-folding needs memory, which is exactly
-   * why it lives here and not in the stateless parser.
-   */
-  const canon = (name: string): string => {
-    const key = name.toLowerCase();
-    const seen = names.get(key);
-    if (seen) return seen;
-    names.set(key, name);
-    return name;
-  };
+  /** One spelling per creature, so a sentence-initial capital doesn't split a row in two. */
+  const names = createNameRegistry();
+  const canon = names.canon;
 
-  /**
-   * True for you and anything of yours. The log writes you three ways and all three are
-   * you: **"You"** when you act, your **character name** when a message names you ("You
-   * healed Kainos for 8 hit points"), and **"<Name>`s warder"** for a pet.
-   */
-  const isMine = (name: string): boolean => {
-    if (name === SELF) return true;
-    if (!player) return false;
-    const lower = name.toLowerCase();
-    const me = player.toLowerCase();
-    return lower === me || lower.startsWith(`${me}\``);
-  };
+  /** You or anything of yours, against the current `player` — see `isYours`. */
+  const isMine = (name: string): boolean => isYours(name, player);
 
   const row = (name: string, t: Tally): CombatantStat => {
     const activeSec = Math.max(1, Math.round(t.activeMs / 1000));
@@ -503,7 +483,9 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     session: summarize(session),
   });
 
-  const emit = () => bus.emit("change", snapshot());
+  // Signal-only: `snapshot()` is computed by whoever's listening, when they're ready — not
+  // eagerly here on every event (see the `onChange` contract).
+  const emit = () => bus.emit("change");
 
   /**
    * Apply one event to a window. `castMs` is the measured duration of the cast this
@@ -711,9 +693,20 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       // A tick is not a fresh cast landing, so it must not consume the pending cast.
       const hadPending = !!pending;
       const castMs = event.kind === "damage" && event.tick ? 0 : pairCast(event, at);
+      // An area spell lands on each target separately, and only the first of those landings
+      // finds the cast still in flight — so without this the rest read as free casts. Two
+      // landings of one spell in the same log second are one cast hitting two things: EQ
+      // stamps to the second and a real recast takes seconds. (A free cast of the very spell
+      // you just landed, inside the same second, would be missed — far rarer than the area
+      // spells this otherwise miscounts, which were 61 of 65 "free casts" in a real log.)
+      const sameCast =
+        event.kind === "damage" &&
+        !!event.spell &&
+        lastLanding?.spell === event.spell &&
+        lastLanding.at === at;
       // Nothing was in flight, so this landing had no cast of its own. Distinct from "the
       // cast was too old to pair", which `pairCast` also reports as 0.
-      unpairedLanding = !hadPending;
+      unpairedLanding = !hadPending && !sameCast;
 
       if (event.kind === "damage" && !event.tick && event.spell && isMine(canon(event.attacker))) {
         lastLanding = { spell: event.spell, at };

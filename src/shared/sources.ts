@@ -10,17 +10,26 @@ export interface ZoneDrops {
   mobs: string[];
 }
 
-/** Drop sources grouped by zone (mobs deduped, zone order preserved). */
+/**
+ * Drop sources grouped by zone (mobs deduped, zone order preserved). Zones are keyed by
+ * their normalized form (`normalizeZone`, same as the "you are here" match), so the wiki
+ * spelling one mob's zone "The Feerrott" and another's "Feerrott" collapse into one header
+ * rather than two — the first spelling seen is the one shown.
+ */
 export function groupDropsByZone(sources: ItemSource[]): ZoneDrops[] {
-  const byZone = new Map<string, string[]>();
+  const byZone = new Map<string, ZoneDrops>();
   for (const s of sources) {
     if (s.kind !== "drop") continue;
-    const zone = s.detail?.trim() || "Unknown zone";
-    const mobs = byZone.get(zone) ?? [];
-    if (s.where && !mobs.includes(s.where)) mobs.push(s.where);
-    byZone.set(zone, mobs);
+    const display = s.detail?.trim() || "Unknown zone";
+    const key = normalizeZone(display) || "unknown zone";
+    let group = byZone.get(key);
+    if (!group) {
+      group = { zone: display, mobs: [] };
+      byZone.set(key, group);
+    }
+    if (s.where && !group.mobs.includes(s.where)) group.mobs.push(s.where);
   }
-  return [...byZone.entries()].map(([zone, mobs]) => ({ zone, mobs }));
+  return [...byZone.values()];
 }
 
 /** Distinct non-drop source kinds present (e.g. ["vendor","quest"]), for a hint. */
@@ -51,12 +60,19 @@ export function otherSources(sources: ItemSource[]): ItemSource[] {
   return out;
 }
 
-/** Distinct zones an item is obtainable in (from any source's `detail`). */
+/** Distinct zones an item is obtainable in (from any source's `detail`), folded the same
+ *  way as `groupDropsByZone` so "The Feerrott" and "Feerrott" are one option, not two. */
 export function sourceZones(sources: ItemSource[]): string[] {
   const zones: string[] = [];
+  const seen = new Set<string>();
   for (const s of sources) {
     const z = s.detail?.trim();
-    if (z && !zones.some((existing) => existing.toLowerCase() === z.toLowerCase())) zones.push(z);
+    if (!z) continue;
+    const key = normalizeZone(z);
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      zones.push(z);
+    }
   }
   return zones;
 }
@@ -66,7 +82,8 @@ export function isObtainableIn(sources: ItemSource[], zone: string): boolean {
   return sources.some((s) => !!s.detail && zoneMatches(zone, s.detail));
 }
 
-function normalizeZone(z: string): string {
+/** Fold a zone name for matching/grouping: lowercase, drop a leading "the", collapse spaces. */
+export function normalizeZone(z: string): string {
   return z.toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
 }
 

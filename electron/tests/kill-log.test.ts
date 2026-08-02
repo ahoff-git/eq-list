@@ -1,15 +1,18 @@
 /**
- * Tests for where kills get placed, and how much the placement is trusted. The whole point
- * is honesty about a guess: EQ only reports a position when the player asks it to, so these
- * pin the *confidence* rules as much as the arithmetic.
+ * Tests for what gets recorded as a kill, where it gets placed, and how much the placement is
+ * trusted. The whole point is honesty about a guess: EQ only reports a position when the player
+ * asks it to, and it reports every death in earshot rather than only yours — so these pin the
+ * *confidence* and *ownership* rules as much as the arithmetic.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createKillLog } from "../kill-log";
-import type { LocEvent } from "../../src/shared/types";
+import { createKillLog, type KillLog } from "../kill-log";
+import type { LocEvent, LootEvent } from "../../src/shared/types";
+
+const ZONE = "Steamfont Mountains";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "eql-kills-"));
@@ -25,35 +28,44 @@ function loc(y: number, x: number, sec: number): LocEvent {
   return { kind: "loc", y, x, z: 0, logId: 1, raw: "Your Location is", at: stamp(sec) };
 }
 
+function looted(item: string, source: string, sec: number): LootEvent {
+  return { kind: "loot", item, qty: 1, source, fate: "kept", logId: 1, raw: "looted", at: stamp(sec) };
+}
+
+/** A kill by you, which is what most of these are about. */
+function kill(k: KillLog, mob: string, sec: number, zone: string | null = ZONE): void {
+  k.record(mob, "You", zone, stamp(sec), sec);
+}
+
 test("a kill with no position yet is still recorded, with no confidence", () => {
   const k = createKillLog(tempDir());
-  k.record("a coyote", "Steamfont Mountains", stamp(10), 5);
+  kill(k, "a coyote", 10);
 
-  const [kill] = k.kills();
-  assert.equal(kill.mob, "a coyote");
-  assert.equal(kill.y, undefined);
-  assert.equal(kill.confidence, 0);
+  const [only] = k.kills();
+  assert.equal(only.mob, "a coyote");
+  assert.equal(only.y, undefined);
+  assert.equal(only.confidence, 0);
 });
 
 test("a fresh fix from a stationary player is trusted completely", () => {
   const k = createKillLog(tempDir());
-  k.noteLoc(loc(100, 200, 10));
-  k.noteLoc(loc(100, 200, 20)); // same spot: parked
-  k.record("a coyote", "Steamfont Mountains", stamp(25), 9);
+  k.noteLoc(loc(100, 200, 10), ZONE);
+  k.noteLoc(loc(100, 200, 20), ZONE); // same spot: parked
+  kill(k, "a coyote", 25);
 
-  const [kill] = k.kills();
-  assert.equal(kill.y, 100);
-  assert.equal(kill.x, 200);
-  assert.equal(kill.fixAgeSec, 5);
-  assert.equal(kill.speed, 0);
-  assert.equal(kill.confidence, 1);
+  const [only] = k.kills();
+  assert.equal(only.y, 100);
+  assert.equal(only.x, 200);
+  assert.equal(only.fixAgeSec, 5);
+  assert.equal(only.speed, 0);
+  assert.equal(only.confidence, 1);
 });
 
 test("confidence decays as the fix goes stale, and is gone past the horizon", () => {
   const k = createKillLog(tempDir());
-  k.noteLoc(loc(0, 0, 0));
-  k.record("mid", null, stamp(35), 1); // 35s old: partway down
-  k.record("stale", null, stamp(90), 2); // past a minute: don't plot as fact
+  k.noteLoc(loc(0, 0, 0), ZONE);
+  kill(k, "mid", 35); // 35s old: partway down
+  kill(k, "stale", 90); // past a minute: don't plot as fact
 
   const [stale, mid] = k.kills(); // newest first
   assert.ok(mid.confidence > 0 && mid.confidence < 1, `expected a middling score, got ${mid.confidence}`);
@@ -64,14 +76,14 @@ test("confidence decays as the fix goes stale, and is gone past the horizon", ()
 
 test("a player who was moving is trusted less than one who was parked", () => {
   const moving = createKillLog(tempDir());
-  moving.noteLoc(loc(0, 0, 0));
-  moving.noteLoc(loc(300, 0, 10)); // covered ground
-  moving.record("a coyote", null, stamp(12), 1);
+  moving.noteLoc(loc(0, 0, 0), ZONE);
+  moving.noteLoc(loc(300, 0, 10), ZONE); // covered ground
+  kill(moving, "a coyote", 12);
 
   const parked = createKillLog(tempDir());
-  parked.noteLoc(loc(0, 0, 0));
-  parked.noteLoc(loc(0, 0, 10));
-  parked.record("a coyote", null, stamp(12), 1);
+  parked.noteLoc(loc(0, 0, 0), ZONE);
+  parked.noteLoc(loc(0, 0, 10), ZONE);
+  kill(parked, "a coyote", 12);
 
   assert.equal(moving.kills()[0].speed, 30); // 300 units in 10s
   assert.ok(
@@ -80,33 +92,46 @@ test("a player who was moving is trusted less than one who was parked", () => {
   );
 });
 
+// A slow shuffle used to round to "speed 0" and read as parked — a real /loc pair 149 units
+// apart over 23 minutes scored as a stationary camp. Distance decides, not rounded speed.
+test("a slow crawl still counts as movement, however small the rounded speed", () => {
+  const k = createKillLog(tempDir());
+  k.noteLoc(loc(0, 0, 0), ZONE);
+  k.noteLoc(loc(60, 0, 600), ZONE); // 60 units in 10 minutes — 0.1 units/s
+  kill(k, "a coyote", 605);
+
+  const [only] = k.kills();
+  assert.equal(only.speed, 0, "the displayed speed does round to zero");
+  assert.ok(only.confidence < 1, "but it should not be credited as a parked player");
+});
+
 test("a moving player gets a dead-reckoned guess as well as the raw fix", () => {
   const k = createKillLog(tempDir());
-  k.noteLoc(loc(0, 0, 0));
-  k.noteLoc(loc(100, 50, 10)); // 10 units/s north, 5 east
-  k.record("a coyote", null, stamp(14), 1); // 4s past the fix
+  k.noteLoc(loc(0, 0, 0), ZONE);
+  k.noteLoc(loc(100, 50, 10), ZONE); // 10 units/s north, 5 east
+  kill(k, "a coyote", 14); // 4s past the fix
 
-  const [kill] = k.kills();
-  assert.equal(kill.y, 100); // the fix itself, untouched
-  assert.equal(kill.guessedY, 140); // …and where the course would have taken them
-  assert.equal(kill.guessedX, 70);
-  assert.equal(kill.movedUnits, 112);
+  const [only] = k.kills();
+  assert.equal(only.y, 100); // the fix itself, untouched
+  assert.equal(only.guessedY, 140); // …and where the course would have taken them
+  assert.equal(only.guessedX, 70);
+  assert.equal(only.movedUnits, 112);
 });
 
 test("a stationary player gets no guess — there's no course to extend", () => {
   const k = createKillLog(tempDir());
-  k.noteLoc(loc(10, 10, 0));
-  k.noteLoc(loc(10, 10, 10));
-  k.record("a coyote", null, stamp(12), 1);
+  k.noteLoc(loc(10, 10, 0), ZONE);
+  k.noteLoc(loc(10, 10, 10), ZONE);
+  kill(k, "a coyote", 12);
   assert.equal(k.kills()[0].guessedY, undefined);
 });
 
 test("kills can be read back per zone, newest first", () => {
   const k = createKillLog(tempDir());
-  k.noteLoc(loc(1, 1, 0));
-  k.record("first", "Ak'Anon", stamp(1), 1);
-  k.record("second", "Steamfont Mountains", stamp(2), 2);
-  k.record("third", "Ak'Anon", stamp(3), 3);
+  k.noteLoc(loc(1, 1, 0), "Ak'Anon");
+  kill(k, "first", 1, "Ak'Anon");
+  kill(k, "second", 2, ZONE);
+  kill(k, "third", 3, "Ak'Anon");
 
   assert.deepEqual(
     k.kills("Ak'Anon").map((x) => x.mob),
@@ -118,12 +143,173 @@ test("kills can be read back per zone, newest first", () => {
 test("the log survives a restart, and a corrupt file is not fatal", () => {
   const dir = tempDir();
   const first = createKillLog(dir);
-  first.noteLoc(loc(5, 5, 0));
-  first.record("a coyote", "Ak'Anon", stamp(2), 1);
+  first.noteLoc(loc(5, 5, 0), "Ak'Anon");
+  kill(first, "a coyote", 2, "Ak'Anon");
   first.flush();
   assert.equal(createKillLog(dir).kills().length, 1);
 
   const broken = tempDir();
   fs.writeFileSync(path.join(broken, "kill-log.json"), "{nope");
   assert.deepEqual(createKillLog(broken).kills(), []);
+});
+
+// ── whose kill was it ──
+
+test("your own pet dying is not a kill", () => {
+  const k = createKillLog(tempDir());
+  k.setPlayer("Kainos");
+  k.record("Kainos`s warder", "a kobold", ZONE, stamp(10), 1);
+  k.record("Kainos", "a kobold", ZONE, stamp(20), 2); // and neither is your own death
+  kill(k, "a kobold", 30);
+
+  assert.deepEqual(
+    k.kills().map((x) => x.mob),
+    ["a kobold"],
+  );
+});
+
+// Records filed before the killer was captured include your pet's deaths. Learning your name
+// is the first moment they can be recognised, so that's when they go.
+test("your own deaths already in the log are dropped once your name is known", () => {
+  const dir = tempDir();
+  const first = createKillLog(dir);
+  first.record("Kainos`s warder", "a kobold", ZONE, stamp(10), 1); // no player set yet
+  kill(first, "a kobold", 20);
+  first.flush();
+
+  const second = createKillLog(dir);
+  assert.equal(second.kills().length, 2, "both are there until we know who you are");
+  second.setPlayer("Kainos");
+  assert.deepEqual(
+    second.kills().map((k) => k.mob),
+    ["a kobold"],
+  );
+});
+
+test("someone else's kill is recorded, but marked as theirs", () => {
+  const k = createKillLog(tempDir());
+  k.setPlayer("Kainos");
+  kill(k, "a kobold", 10);
+  k.record("a kobold", "Bunnyslayer", ZONE, stamp(20), 2);
+
+  const [theirs, mine] = k.kills();
+  assert.equal(mine.mine, true);
+  assert.equal(mine.killer, "You");
+  assert.equal(theirs.mine, false);
+  assert.equal(theirs.killer, "Bunnyslayer");
+});
+
+test("your pet's kill is yours", () => {
+  const k = createKillLog(tempDir());
+  k.setPlayer("Kainos");
+  k.record("a kobold", "Kainos`s warder", ZONE, stamp(10), 1);
+  assert.equal(k.kills()[0].mine, true);
+});
+
+test("someone else's kill is placed less confidently — your /loc was about you", () => {
+  const k = createKillLog(tempDir());
+  k.setPlayer("Kainos");
+  k.noteLoc(loc(50, 50, 0), ZONE);
+  k.noteLoc(loc(50, 50, 5), ZONE); // parked, fresh fix: as good as it gets
+  kill(k, "a kobold", 8);
+  k.record("a kobold", "Bunnyslayer", ZONE, stamp(9), 9);
+
+  const [theirs, mine] = k.kills();
+  assert.equal(mine.confidence, 1);
+  assert.equal(theirs.confidence, 0.5);
+  assert.equal(theirs.y, 50, "the position is still recorded, just believed less");
+});
+
+// ── one mob, one name ──
+
+test("the two spellings EQ gives a mob become one name", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "rogue clockwork", 10); // "You have slain a rogue clockwork!"
+  k.record("Rogue clockwork", "Jarn", ZONE, stamp(20), 2); // "Rogue clockwork has been slain by…"
+
+  assert.deepEqual(new Set(k.kills().map((x) => x.mob)), new Set(["rogue clockwork"]));
+});
+
+test("the canonical spelling survives a restart", () => {
+  const dir = tempDir();
+  const first = createKillLog(dir);
+  kill(first, "obsolete model", 10);
+  first.flush();
+
+  const second = createKillLog(dir);
+  kill(second, "Obsolete model", 20);
+  assert.deepEqual(new Set(second.kills().map((x) => x.mob)), new Set(["obsolete model"]));
+});
+
+// ── placing a kill after zoning ──
+
+test("a fix from the zone you just left does not place a kill in the new one", () => {
+  const k = createKillLog(tempDir());
+  k.noteLoc(loc(500, 500, 0), "The Steamfont Mountains");
+  kill(k, "a kerran", 5, "Kerra Isle"); // zoned, no /loc since
+
+  const [only] = k.kills();
+  assert.equal(only.y, undefined, "a Steamfont position says nothing about Kerra Isle");
+  assert.equal(only.confidence, 0);
+});
+
+test("zoning back makes the old fix usable again, aged as usual", () => {
+  const k = createKillLog(tempDir());
+  k.noteLoc(loc(500, 500, 0), ZONE);
+  kill(k, "a kerran", 5, "Kerra Isle");
+  kill(k, "a kobold", 8, ZONE);
+
+  const [back] = k.kills();
+  assert.equal(back.mob, "a kobold");
+  assert.equal(back.y, 500);
+});
+
+// ── which corpse a drop came from ──
+
+test("identical drops spread across the corpses that could have given them", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "minotaur slaver", 10);
+  kill(k, "minotaur slaver", 20);
+  k.noteLoot(looted("Minotaur Blood", "minotaur slaver", 30));
+  k.noteLoot(looted("Minotaur Blood", "minotaur slaver", 31));
+
+  const [second, first] = k.kills();
+  assert.deepEqual(first.drops, ["Minotaur Blood"]);
+  assert.deepEqual(second.drops, ["Minotaur Blood"], "the older corpse should not be left empty");
+});
+
+test("a corpse that really gave two of something keeps both", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a rock spider", 10);
+  k.noteLoot(looted("Spiderling Silk", "a rock spider", 14));
+  k.noteLoot(looted("Spiderling Silk", "a rock spider", 15));
+
+  assert.deepEqual(k.kills()[0].drops, ["Spiderling Silk", "Spiderling Silk"]);
+});
+
+test("different items from one corpse all attach to it", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a kobold", 10);
+  k.noteLoot(looted("Bone Chips", "a kobold", 12));
+  k.noteLoot(looted("Rusty Dagger", "a kobold", 13));
+
+  assert.deepEqual(k.kills()[0].drops, ["Bone Chips", "Rusty Dagger"]);
+});
+
+test("a drop from a corpse nobody killed recently is dropped on the floor", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a kobold", 10);
+  k.noteLoot(looted("Bone Chips", "a coyote", 12)); // never killed a coyote
+  assert.equal(k.kills()[0].drops, undefined);
+});
+
+test("clearing the log forgets where the player was, too", () => {
+  const k = createKillLog(tempDir());
+  k.noteLoc(loc(100, 100, 0), ZONE);
+  kill(k, "a kobold", 5);
+  k.clear();
+  kill(k, "a kobold", 8);
+
+  const [only] = k.kills();
+  assert.equal(only.y, undefined, "a cleared log shouldn't place the next kill from old evidence");
 });

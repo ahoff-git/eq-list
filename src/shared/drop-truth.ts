@@ -18,6 +18,7 @@
  *
  * Pure and DOM-free so it can be tested without a wiki or a log.
  */
+import { normalizeItemName } from "./grouping";
 
 /** How much evidence before "never seen it" is worth remarking on. */
 export const SUSPICIOUS_AFTER_KILLS = 25;
@@ -56,20 +57,32 @@ export function reconcileDrops(
   observed: Record<string, number>,
   kills: number,
 ): DropTruth[] {
-  const items = new Set([...Object.keys(wikiDrops), ...Object.keys(observed)]);
+  // The wiki and the log rarely agree on capitalisation, and matching them literally turned
+  // one item into two contradictory rows: the log's spelling "undocumented" (the wiki has
+  // never heard of it) and the wiki's "unseen" (all those kills produced none) — both false,
+  // and both the opposite of the truth. Since "undocumented" is the headline claim this
+  // module exists to make (ADR 0025), a capital letter must not be able to manufacture one.
+  const wikiByKey = new Map(Object.entries(wikiDrops).map(([item, rate]) => [normalizeItemName(item), { item, rate }]));
+  const observedByKey = new Map(Object.entries(observed).map(([item, n]) => [normalizeItemName(item), { item, n }]));
+  const keys = new Set([...wikiByKey.keys(), ...observedByKey.keys()]);
   const trustObserved = kills >= TRUST_OBSERVED_AFTER_KILLS;
 
-  return [...items]
-    .map((item): DropTruth => {
-      const seen = observed[item] ?? 0;
-      const listed = item in wikiDrops;
+  return [...keys]
+    .map((key): DropTruth => {
+      const fromWiki = wikiByKey.get(key);
+      const fromLog = observedByKey.get(key);
+      const seen = fromLog?.n ?? 0;
+      const listed = !!fromWiki;
+      // Prefer the wiki's spelling: it's the canonical one, and it's what the item's page and
+      // the shopping list are keyed by.
+      const item = fromWiki?.item ?? fromLog?.item ?? key;
       return {
         item,
         verdict: !listed ? "undocumented" : seen > 0 ? "confirmed" : "unseen",
         kills,
         seen,
         observedRate: kills ? Math.round((seen / kills) * 1000) / 1000 : undefined,
-        wikiRate: wikiDrops[item],
+        wikiRate: fromWiki?.rate,
         trustObserved,
         // A wiki claim is only suspicious once we've killed the thing enough times that its
         // absence means something.

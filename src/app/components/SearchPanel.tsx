@@ -44,23 +44,32 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
   const shownResults = keep(results);
   const shownQuests = keep(quests);
 
-  // Debounced name search.
+  // Debounced name search. A `cancelled` flag drops a slower in-flight search when a newer
+  // keystroke supersedes it, so stale results can't overwrite current ones (or reappear
+  // after the box is cleared).
   useEffect(() => {
     const a = api();
     if (mode !== "name" || !a || term.trim().length < 2) {
       setResults([]);
+      setBusy(false);
       return;
     }
+    let cancelled = false;
     const id = setTimeout(async () => {
       setBusy(true);
       try {
-        setResults(await a.wiki.search(term));
+        const res = await a.wiki.search(term);
+        if (cancelled) return;
+        setResults(res);
         setActive(0);
       } finally {
-        setBusy(false);
+        if (!cancelled) setBusy(false);
       }
     }, 200);
-    return () => clearTimeout(id);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
   }, [term, mode]);
 
   // A screengrab lookup prefills the box (name mode) and its text searches normally.

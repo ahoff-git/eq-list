@@ -20,6 +20,7 @@
  * captures the count into `qty` — dropping it would under-count the shopping list.
  */
 
+import { SELF } from "./combat-parser";
 import type {
   LogLine,
   LootEvent,
@@ -158,17 +159,24 @@ export function parseXp(line: LogLine): XpEvent | null {
   };
 }
 
-// Kills that credit you/your group. "You have been slain by X" (player death) uses
-// "have been", so neither pattern matches it — deaths are intentionally ignored.
+// Something died. "You have been slain by X" (your own death) uses "have been", so neither
+// pattern matches it.
+//
+// The killer matters and is captured: the log reports every death in earshot, so a bare
+// "X has been slain by Y!" is just as likely to be a stranger's kill, or a mob killing
+// someone's pet, as it is yours. Only the reader can decide what to count, and it can't
+// decide without knowing who swung — see `electron/kill-log.ts`.
 const KILL_BY_YOU = /^You have slain (?<target>.+)!$/;
-const KILL_SLAIN_BY = /^(?<target>.+?) has been slain by .+!$/;
+const KILL_SLAIN_BY = /^(?<target>.+?) has been slain by (?<killer>.+)!$/;
 
 export function parseKill(line: LogLine): KillEvent | null {
-  const m = line.message.match(KILL_BY_YOU) ?? line.message.match(KILL_SLAIN_BY);
+  const byYou = line.message.match(KILL_BY_YOU);
+  const m = byYou ?? line.message.match(KILL_SLAIN_BY);
   if (!m?.groups?.target) return null;
   return {
     kind: "kill",
     target: stripArticle(m.groups.target.trim()),
+    killer: byYou ? SELF : stripArticle((m.groups.killer ?? "").trim()),
     logId: line.logId,
     raw: line.raw,
     at: line.at,

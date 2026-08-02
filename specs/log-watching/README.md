@@ -87,12 +87,18 @@ as they drop and the damage meter can show how the fight went.
   disk under userData, tagged by session, with sessions derived by grouping. Written as
   fights end (debounced) so a crash costs at most the fight in progress.
 - `electron/kill-log.ts` — where each kill happened and how much to believe it, plus what it
-  dropped (attached as the loot lines arrive). See
-  [ADR 0022](../decisions/0022-invocation-effects-and-kill-locations.md) and
-  [ADR 0023](../decisions/0023-kill-heatmap.md).
-- `electron/mob-knowledge.ts` — drop rates and roam areas rolled up from those kills, pooled
-  with peers' observations (stored apart from yours, always attributed). See
+  dropped (attached as the loot lines arrive) and **who killed it**. The log reports every death
+  in earshot, so a record knows whether it was yours; your own death isn't a kill and isn't
+  stored, and a position fix only places kills in the zone it was taken in. See
+  [ADR 0022](../decisions/0022-invocation-effects-and-kill-locations.md),
+  [ADR 0023](../decisions/0023-kill-heatmap.md) and
+  [ADR 0027](../decisions/0027-only-your-kills-count.md).
+- `electron/mob-knowledge.ts` — drop rates and roam areas rolled up from **your own** kills,
+  pooled with peers' observations (stored apart from yours, always attributed). See
   [ADR 0024](../decisions/0024-mob-knowledge.md).
+- `src/shared/name-registry.ts` — one spelling per creature. EQ capitalizes a name at the start
+  of a sentence, so the damage meter and the kill log would otherwise disagree about what a mob
+  is called; both take their names from here.
 - Loot→list matching lives in the [store](../architecture/README.md), not here.
 
 ## Invocation side-effects

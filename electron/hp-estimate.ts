@@ -40,6 +40,21 @@ const log = createLogger("hp-estimate");
 const WINDOW_IDLE_MS = 10_000;
 
 /**
+ * How long an unhealed stretch may run before it stops being evidence of anything.
+ *
+ * A "stretch" is damage with gaps under `WINDOW_IDLE_MS`, which at a camp chains pull after
+ * pull into one run lasting minutes — and you regenerate throughout. Summing it claims you
+ * absorbed the lot on one health bar: a real log produced "survived at least 815" for a level
+ * 2 character, while deaths at the same levels put the ceiling at 198. A floor above a known
+ * ceiling isn't a rough figure, it's a wrong one.
+ *
+ * So a long stretch is discarded rather than banked, unless the player has told us their
+ * regeneration rate and it can actually be subtracted. A minute is a judgement call: long
+ * enough to cover a real fight, short enough that ten ticks of regen can't dominate.
+ */
+const MAX_UNHEALED_SPAN_MS = 60_000;
+
+/**
  * How often health ticks back. Regeneration is the reason a window's *duration* matters
  * and not just its damage: over a minute of fighting you can absorb noticeably more than
  * you have. The rate is unknowable from the log (it varies with level, gear, sitting and
@@ -150,11 +165,17 @@ export function createHpEstimate(
   }
 
   /**
-   * Raise the floor: you lived through this much in one stretch, so the maximum exceeds
-   * it — less whatever ticked back while it happened.
+   * Raise the floor: you lived through this much damage between `fromMs` and `toMs`, so your
+   * maximum exceeds it — less whatever ticked back while it happened. A stretch too long to
+   * be trusted is discarded rather than banked; see `MAX_UNHEALED_SPAN_MS`.
    */
-  function observeSurvived(damage: number, regen = 0): void {
-    const net = damage - regen;
+  function observeSurvived(damage: number, fromMs: number, toMs: number): void {
+    const span = fromMs && toMs > fromMs ? toMs - fromMs : 0;
+    if (!state.regenPerTick && span > MAX_UNHEALED_SPAN_MS) {
+      log.debug("unhealed stretch too long to trust; discarded", { damage, seconds: Math.round(span / 1000) });
+      return;
+    }
+    const net = damage - regenOver(fromMs, toMs);
     if (net <= state.atLeast) return;
     damage = net;
     // A floor above a known ceiling means the ceiling came from a stale buff state; the
@@ -170,7 +191,15 @@ export function createHpEstimate(
     damage -= regen;
     if (damage <= 0) return;
     if (state.atMost !== undefined && state.atMost <= damage) return;
-    state = { ...state, atMost: damage, samples: state.samples + 1 };
+    // A ceiling below the floor is a contradiction, and the ceiling is the sounder half: it
+    // runs from a known-full anchor to a death, while the floor only assumes nothing healed
+    // you. Scripted fights break that assumption — a real log banked "survived at least 813"
+    // from a 15-second mauling the game kept the player alive through, and because a floor
+    // could only ever rise, that reading was permanent. So a tighter ceiling clears it and
+    // collection starts again.
+    const atLeast = state.atLeast > damage ? 0 : state.atLeast;
+    if (atLeast !== state.atLeast) log.debug("floor discarded — it exceeded a measured ceiling", { was: state.atLeast, atMost: damage });
+    state = { ...state, atMost: damage, atLeast, samples: state.samples + 1 };
     log.debug("hp ceiling lowered", { atMost: damage });
     changed();
   }
@@ -190,7 +219,7 @@ export function createHpEstimate(
           // Out-of-combat regeneration would let a long stretch exceed your real maximum,
           // so a lull banks what we have and starts a fresh window.
           if (lastHitAt && at - lastHitAt > WINDOW_IDLE_MS) {
-            observeSurvived(sinceHeal, regenOver(healWindowStart, lastHitAt));
+            observeSurvived(sinceHeal, healWindowStart, lastHitAt);
             sinceHeal = 0;
             healWindowStart = at;
           }
@@ -205,7 +234,7 @@ export function createHpEstimate(
         case "heal": {
           if (!isMe(event.target)) return;
           // A heal invalidates the floor window (you can absorb more than you have)…
-          observeSurvived(sinceHeal, regenOver(healWindowStart, lastHitAt));
+          observeSurvived(sinceHeal, healWindowStart, lastHitAt);
           sinceHeal = 0;
           healWindowStart = 0;
           // …and an *overheal* is the one thing that proves full health outright: the
@@ -225,7 +254,7 @@ export function createHpEstimate(
           // The killing blow is *not* damage you survived — but everything before it is,
           // so the floor is the window minus that last hit. (Overkill would otherwise
           // credit you with absorbing a blow that in fact ended you.)
-          observeSurvived(sinceHeal - lastAmount, regenOver(healWindowStart, lastHitAt));
+          observeSurvived(sinceHeal - lastAmount, healWindowStart, lastHitAt);
           // Respawning puts you back at full — the assumption behind every later ceiling.
           resetWindows(true);
           return;
@@ -234,7 +263,7 @@ export function createHpEstimate(
           // A pet's buff can't move *your* maximum; one of yours can, so any window that
           // spans the change is no longer comparable.
           if (event.pet) return;
-          observeSurvived(sinceHeal, regenOver(healWindowStart, lastHitAt));
+          observeSurvived(sinceHeal, healWindowStart, lastHitAt);
           resetWindows(false);
           return;
         }
@@ -244,8 +273,12 @@ export function createHpEstimate(
     },
 
     levelUp(level) {
-      // More hit points now: every bound collected at the old level is wrong.
-      state = { ...empty(level ?? state.level), stated: undefined };
+      // More hit points now: every bound collected at the old level is wrong. (The floor is
+      // arguably still valid — you don't lose health by levelling — but carrying it forward
+      // would also carry any bad reading forward for good, and the floor is the bound most
+      // exposed to healing the log never mentions. The regen rate is a fact about the
+      // character, not an observation, so it stays.)
+      state = { ...empty(level ?? state.level), regenPerTick: state.regenPerTick };
       resetWindows(true);
       log.debug("hp estimate reset by level up", state);
       changed();

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { connectToRoom, randomPeerId, ROOM_ID } from "@/lib/awari/net";
 import { useSettings, useCurrentZone, usePlayerLoc, useWatcherStatus } from "@/lib/hooks";
@@ -10,6 +10,32 @@ import type { AwariPayload, AwariPeer } from "@/shared/types";
 import type { RoomSession } from "@awari/protocol";
 
 const log = createLogger("awari");
+
+/**
+ * How long to sit in a silent room before trying the join again, and how many times.
+ *
+ * Two clients that start at the same instant can each create their own room and never
+ * discover the other — measured, and it does not heal on its own: two minutes in both were
+ * "connected", both alone, with one leader hint registered that only one of them was behind.
+ * That's the everyday case of two people launching the app together, so a lone client re-joins
+ * a few times; by the second attempt the other's hint is registered and resolves.
+ *
+ * Bounded, because genuinely being the only player online is normal and must not become an
+ * endless reconnect loop. After the last attempt we settle and stop churning.
+ */
+const REJOIN_DELAYS_MS = [20_000, 45_000, 90_000];
+
+/**
+ * Retrying on a fixed schedule doesn't help two clients that started together: being equally
+ * lonely, they re-join in lockstep and race each other into a fresh room every time. Measured
+ * — three synchronised retries, still two rooms. Spreading each wait over a wide random range
+ * breaks the tie, so one of them registers its hint while the other is still waiting and the
+ * later arrival simply finds it.
+ */
+function rejoinWait(attempt: number): number {
+  const base = REJOIN_DELAYS_MS[attempt];
+  return base === undefined ? base : Math.round(base * (0.5 + Math.random()));
+}
 
 /**
  * The app's single awari connection, owned by the always-alive main window — route
@@ -41,11 +67,30 @@ export default function AwariHost() {
   const peerIdRef = useRef<string>("");
   /** Who else is in the room: awari's roster, enriched by their `hello` payloads. */
   const rosterRef = useRef(new Map<string, AwariPeer>());
+  /** Peers we've already answered, so a mutual greeting settles instead of ping-ponging. */
+  const greetedRef = useRef(new Set<string>());
 
-  /** Publish to the room if we're connected (a no-op before the session resolves). */
+  /**
+   * The last payload of each kind that couldn't be sent because the room wasn't up yet.
+   *
+   * Joining takes a few seconds, and every window announces itself the moment it mounts, so
+   * the opening `hello` and the initial pins/kills/mobs broadcasts all landed before there
+   * was anywhere to send them. They were dropped and nothing re-sent them: someone who left
+   * sharing switched on shared *nothing* until they happened to kill something new.
+   *
+   * Keyed by kind and last-write-wins, because these are all "here is my current state"
+   * messages — replaying a backlog of them would be wrong; replaying the newest is exactly
+   * right.
+   */
+  const pendingRef = useRef(new Map<string, AwariPayload>());
+
+  /** Publish to the room, or hold the payload until there's a room to publish to. */
   const publish = useCallback((payload: AwariPayload) => {
     const s = sessionRef.current;
-    if (!s) return void log.debug("publish skipped - no session yet", payload.kind);
+    if (!s) {
+      pendingRef.current.set(payload.kind, payload);
+      return void log.debug("publish held until the room is up:", payload.kind);
+    }
     void s.publish({ type: "room" }, payload).catch((e) => log.debug("publish failed:", (e as Error).message));
   }, []);
 
@@ -61,8 +106,15 @@ export default function AwariHost() {
   const sayHello = useCallback(() => {
     publish({ kind: AWARI_MSG.hello, ...identityRef.current });
   }, [publish]);
+  // The inbound handler is created when we join and must not be rebuilt to reach a newer
+  // `sayHello`; a ref keeps it current without re-joining the room.
+  const sayHelloRef = useRef(sayHello);
+  sayHelloRef.current = sayHello;
 
-  // Join / leave. Re-runs when the connection is toggled or the bootstrap URL changes.
+  const [rejoin, setRejoin] = useState(0);
+
+  // Join / leave. Re-runs when the connection is toggled, the bootstrap URL changes, or a
+  // silent room prompts a retry.
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -71,12 +123,15 @@ export default function AwariHost() {
       return;
     }
     let cancelled = false;
+    let lonely: ReturnType<typeof setTimeout> | null = null;
     let session: RoomSession | null = null;
     const myPeerId = randomPeerId();
     peerIdRef.current = myPeerId;
     // The Map instance itself never changes; hold it locally so the cleanup below
     // clears the same roster this join populated.
     const roster = rosterRef.current;
+    const greeted = greetedRef.current;
+    const pending = pendingRef.current;
 
     void connectToRoom({
       roomId: ROOM_ID,
@@ -97,6 +152,15 @@ export default function AwariHost() {
             zone: typeof payload.zone === "string" ? payload.zone : prev.zone,
           });
           reportRoster();
+          // Answer a hello with our own, once per peer. The greeting sent from `onPeerJoined`
+          // races the data channel actually opening and is simply lost when it loses, which
+          // left whoever joined first permanently nameless to whoever joined second. A reply
+          // can't lose that race — their hello arriving is proof the channel is up — and
+          // "once per peer" is what stops the two of us greeting each other forever.
+          if (!greeted.has(sender)) {
+            greeted.add(sender);
+            sayHelloRef.current();
+          }
         }
         a.awari.reportMessage({ sender, payload: payload as { kind: string } });
       },
@@ -116,16 +180,35 @@ export default function AwariHost() {
         });
         s.onPeerLeft((peer) => {
           roster.delete(peer.peerId);
+          greeted.delete(peer.peerId); // a returning peer gets greeted again
           reportRoster();
         });
         sayHello();
+        // Anything that tried to go out while we were still joining, now that it can.
+        const held = [...pending.values()];
+        pending.clear();
+        for (const payload of held) publish(payload);
+        if (held.length) log.debug("flushed", held.length, "held payload(s)");
+
+        const wait = rejoinWait(rejoin);
+        if (wait !== undefined) {
+          lonely = setTimeout(() => {
+            if (cancelled || roster.size > 0) return;
+            log.debug("room still empty after", wait, "ms - re-joining (attempt", rejoin + 2, "of", REJOIN_DELAYS_MS.length + 1, ")");
+            setRejoin((n) => n + 1);
+          }, wait);
+        }
       })
       .catch((e) => log.warn("could not join the awari room:", (e as Error).message));
 
     return () => {
       cancelled = true;
+      if (lonely) clearTimeout(lonely);
       sessionRef.current = null;
       roster.clear();
+      greeted.clear();
+      // Held payloads describe a room we're leaving; a later join re-announces from scratch.
+      pending.clear();
       a.awari.reportStatus({ connected: false, peerId: null });
       reportRoster();
       if (session) void session.close();
@@ -133,7 +216,12 @@ export default function AwariHost() {
     // `sayHello` reads the latest name/zone through a ref, so re-joining on a rename
     // isn't needed (or wanted).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, bootstrapUrl, publish, reportRoster]);
+  }, [connected, bootstrapUrl, publish, reportRoster, rejoin]);
+
+  // A fresh connection gets a fresh set of retries.
+  useEffect(() => {
+    if (!connected) setRejoin(0);
+  }, [connected]);
 
   // Publish payloads other windows ask us to send (they have no socket of their own).
   useEffect(() => {

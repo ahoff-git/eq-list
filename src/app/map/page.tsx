@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { useCurrentZone, useKills, usePlayerTrail, useSettings, useWatcherStatus } from "@/lib/hooks";
+import { useCurrentZone, useKills, usePlayerTrail, useRendererDebug, useSettings, useWatcherStatus } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import MapPanel, { type RenderKill, type RenderPin } from "../components/MapPanel";
@@ -10,13 +10,13 @@ import MobKnowledgePanel from "../components/MobKnowledge";
 import { DEFAULT_KILL_FILTERS, filterKills, type KillFilters } from "@/shared/kill-filters";
 import MapKey from "../components/MapKey";
 import PinButton from "../components/PinButton";
+import CastAlerts from "../components/CastAlerts";
 import { useCalibration } from "@/lib/map/useCalibration";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { baseZones, findZone, sortZones } from "@/shared/map/zones";
 import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
-import { setRendererDebug } from "@/shared/logging";
 
 /**
  * The sibling map window (route `/map`, opened by the main window's 🗺 button).
@@ -33,15 +33,28 @@ export default function MapWindow() {
   const zoneName = override ?? currentZone ?? "";
   const zone = useMemo(() => (zoneName ? findZone(zoneName, baseZones) : undefined), [zoneName]);
   const zoneOptions = useMemo(() => sortZones(baseZones).filter((z) => z.mapImg), []);
-  const zoneKey = zone?.name;
+  /**
+   * The zone we're scoped to, canonical where we can be. **Not** `zone?.name`: `zone` is the
+   * *map* we have for the place, and plenty of real zones have no bundled map. Keying data off
+   * the map object made every "here" panel fall back to `undefined` — which the main process
+   * reads as "every zone" — so standing anywhere unmapped quietly showed you the whole kill
+   * log and every mob you'd ever seen, under headings that said "here".
+   */
+  const zoneKey = zone?.name ?? zoneName ?? undefined;
+  /**
+   * Is `z` the zone currently on screen? Declared here, above every user: it was previously
+   * defined further down and called from `renderKills`'s memo, which only *reached* the call
+   * when a peer actually shared kills — so the temporal dead zone crashed the whole map
+   * window the first time someone did, and never otherwise. Stable so the memos below can
+   * depend on it honestly instead of silencing the lint rule.
+   */
+  const zoneMatch = useCallback(
+    (z: string) => !!zoneKey && (findZone(z, baseZones)?.name ?? z) === zoneKey,
+    [zoneKey],
+  );
 
   const settings = useSettings();
-
-  // Mirror the tray's "Debug logging" toggle into the renderer's log gate, so
-  // `createLogger(...).debug()` (e.g. the ping broadcast) prints to this window's console.
-  useEffect(() => {
-    setRendererDebug(settings?.debug ?? false);
-  }, [settings?.debug]);
+  useRendererDebug();
 
   // Travelling puts the map back on you (on by default): picking a zone by hand — or
   // jumping to one from another window — holds only until the log says you've actually
@@ -128,13 +141,13 @@ export default function MapWindow() {
 
   // Kills are re-read when a new one could have landed (the current zone's kill count moves
   // with play, so the trail's length is a cheap "something happened" signal).
-  const allKills = useKills(zone?.name, `${zoneKey}:${trail.points.length}`);
+  const allKills = useKills(zoneKey, `${zoneKey}:${trail.points.length}`);
   const kills = useMemo(() => filterKills(allKills, killFilters), [allKills, killFilters]);
   const showKillConfidence = settings?.overlay.showKillConfidence ?? true;
 
   // Only placed kills can go on the map; the rest stay in the list, labelled.
   const renderKills = useMemo<RenderKill[]>(() => {
-    const mine = kills
+    const local = kills
       .filter((k) => k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
       .map((k) => {
         const tier = confidenceTier(k.confidence);
@@ -146,9 +159,8 @@ export default function MapWindow() {
         const tier = confidenceTier(k.confidence);
         return { y: k.y, x: k.x, confidence: k.confidence, glyph: tier.glyph, color: tier.color, peer: k.by };
       });
-    return [...mine, ...theirs];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kills, room.peerKills, zoneKey]);
+    return [...local, ...theirs];
+  }, [kills, room.peerKills, zoneMatch]);
 
   // Share the placed kills for the zone in view (empty un-shares), so a camp's heatmap can
   // be pooled. Only the conclusion travels — the evidence behind it stays local.
@@ -190,13 +202,9 @@ export default function MapWindow() {
     );
   }
 
-  const zoneMatch = (z: string) => !!zoneKey && findZone(z, baseZones)?.name === zoneKey;
-
   // Peers/pings/pins filtered to the viewed zone (and pins to the visible kinds).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const peers = useMemo(() => room.peers.filter((p) => zoneMatch(p.zone)), [room.peers, zoneKey]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const pings = useMemo(() => room.pings.filter((p) => zoneMatch(p.zone)), [room.pings, zoneKey]);
+  const peers = useMemo(() => room.peers.filter((p) => zoneMatch(p.zone)), [room.peers, zoneMatch]);
+  const pings = useMemo(() => room.pings.filter((p) => zoneMatch(p.zone)), [room.pings, zoneMatch]);
   // Distinct people currently sharing pins — each gets its own visibility toggle.
   const sharers = useMemo(
     () => [...new Set(room.peerPins.map((p) => p.by).filter((b): b is string => !!b))],
@@ -263,6 +271,7 @@ export default function MapWindow() {
 
   return (
     <div className="map-win">
+      <CastAlerts canBeep={false} />
       <div className="titlebar">
         <h1>
           <span className="mark">🗺</span> {zone?.name ?? zoneName ?? "Map"}
@@ -430,7 +439,7 @@ export default function MapWindow() {
 
       {mobsOpen && (
         <MobKnowledgePanel
-          zone={zone?.name}
+          zone={zoneKey}
           refreshKey={`${allKills.length}:${room.peerKills.length}`}
           onMarkMob={markMobArea}
         />
@@ -466,7 +475,7 @@ export default function MapWindow() {
             </>
           )}
           <button className="btn ghost sm" onClick={clearZonePins} disabled={!zoneKey} style={{ marginTop: 4 }}>
-            Clear pins in {zone?.name ?? "zone"}
+            Clear pins in {zoneKey ?? "zone"}
           </button>
         </div>
       )}

@@ -29,6 +29,11 @@ export function createOcr(cachePath: string): Ocr {
         await w.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SINGLE_BLOCK });
         return w;
       });
+      // First init fetches the model from a CDN; if that fails (e.g. offline on first run)
+      // clear the cached rejection so a later lookup retries instead of being dead forever.
+      workerPromise.catch(() => {
+        workerPromise = null;
+      });
     }
     return workerPromise;
   }

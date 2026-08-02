@@ -12,9 +12,12 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { savedBounds, rememberBounds, setMapOpen, isQuitting } from "./window-state";
+import { clampUiScale } from "../src/shared/constants";
 import { CH } from "../src/shared/ipc-channels";
 import { createLogger } from "../src/shared/logging";
 import type { OverlaySettings } from "../src/shared/types";
+
+const log = createLogger("windows");
 
 /**
  * Bridge a window's renderer console into the main-process log, so renderer output
@@ -43,7 +46,16 @@ function windowIcon(): string {
   return path.join(app.getAppPath(), "out", "favicon.ico");
 }
 
+/** The scale last applied, so a window opened or reloaded later can catch up to it. */
+let uiScale: number | null = null;
+
 function load(win: BrowserWindow, route: string): void {
+  // The zoom factor belongs to the frame, so a fresh load resets it — re-apply on every
+  // navigation rather than only when the setting changes, or a reopened window (the map is
+  // created on demand) comes back at full size while the setting says otherwise.
+  win.webContents.on("did-finish-load", () => {
+    if (uiScale !== null) applyUiScale(uiScale, win);
+  });
   if (DEV) {
     void win.loadURL(`${DEV_URL}/${route}`);
   } else {
@@ -205,10 +217,46 @@ export function createLookupWindow(bounds: { x: number; y: number; width: number
   return win;
 }
 
-/** Push opacity / always-on-top onto the live window (the single app window). */
+/**
+ * Surface `text` in the control window's Search box, creating/showing that window first.
+ * The one path anything outside the control window uses to hand it something to look up —
+ * the screengrab OCR result, and a clicked name in the map window (which has no search of
+ * its own). Waits for the load when the window was only just created, since a send to a
+ * loading frame is dropped.
+ */
+export function showInSearch(text: string): void {
+  const win = getMainWindow() ?? createMainWindow();
+  win.show();
+  win.focus();
+  const send = () => win.webContents.send(CH.searchPrefill, text);
+  if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
+  else send();
+}
+
+/**
+ * Push opacity / always-on-top onto the app window, and the interface scale onto **every**
+ * window — the map is a sibling window and should shrink with the rest of the app, not
+ * separately.
+ */
 export function applyOverlaySettings(overlay: OverlaySettings): void {
+  applyUiScale(overlay.fontScale);
   const win = mainWindow;
   if (!win || win.isDestroyed()) return;
   win.setOpacity(overlay.opacity);
   win.setAlwaysOnTop(overlay.alwaysOnTop, "screen-saver");
+}
+
+/**
+ * Scale a window's whole rendering. `setZoomFactor` is per-`webContents` and survives until
+ * the frame navigates, so it's re-applied when a window loads as well as when the setting
+ * changes.
+ */
+export function applyUiScale(scale: number, win?: BrowserWindow): void {
+  const factor = clampUiScale(scale);
+  uiScale = factor;
+  const targets = win ? [win] : BrowserWindow.getAllWindows();
+  for (const target of targets) {
+    if (!target.isDestroyed()) target.webContents.setZoomFactor(factor);
+  }
+  log.debug("ui scale", factor, "on", targets.length, win ? "(one window)" : "window(s)");
 }

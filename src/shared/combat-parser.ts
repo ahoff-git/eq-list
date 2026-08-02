@@ -56,6 +56,22 @@ import type {
 export const SELF = "You";
 
 /**
+ * True if `name` is you or something of yours, given your character `player` (blank when
+ * unknown). The log writes you three ways and all three are you: **"You"** when you act,
+ * your **character name** when a message names you, and **"<Name>`s warder"** for a pet.
+ *
+ * Shared so the damage meter and the kill log can't disagree about what counts as yours —
+ * two copies drifting is how the Session tab and the map end up with different kill counts.
+ */
+export function isYours(name: string, player: string): boolean {
+  if (name === SELF) return true;
+  if (!player) return false;
+  const lower = name.toLowerCase();
+  const me = player.toLowerCase();
+  return lower === me || lower.startsWith(`${me}\``);
+}
+
+/**
  * Melee attack verbs, third-person *and* first-person ("A coyote bites" / "You
  * bite"). The list has to be enumerated rather than matched as `\w+`: the attacker
  * pattern is lazy, so a generic verb would split "A skeleton punches YOU" into
@@ -107,9 +123,26 @@ const SPELL_RE = new RegExp(
 /** Damage shields: the *wearer* is the attacker, the one who ran into it is the target. */
 const SHIELD_RE = /^(?<target>.+?) is (?<verb>\w+) by (?<attacker>.+?)'s (?<source>\w+) for (?<amount>\d+) points? of (?<type>non-melee) damage\.$/;
 
+/**
+ * A swing that didn't land. Two grammars, because EQ words a plain whiff and an active
+ * defence differently: "…but misses!" versus "…but YOU dodge!" / "…but a wild tiger parries!".
+ * Both are misses to the attacker, and dropping the second sort understates every hit rate —
+ * the player's own log had 92 of them, all invisible.
+ */
+const AVOIDANCE = "dodge|dodges|parry|parries|block|blocks|riposte|ripostes";
 const MISS_RE = new RegExp(
-  `^(?<attacker>.+?) (?:tries|try) to (?<verb>\\w+) (?<target>.+?), but miss(?:es)?!${QUALIFIER}`,
+  `^(?<attacker>.+?) (?:tries|try) to (?<verb>\\w+) (?<target>.+?), but ` +
+    `(?:miss(?:es)?|(?<defender>.+?) (?<avoided>${AVOIDANCE}))!${QUALIFIER}`,
 );
+
+/** "dodges" / "parries" → "dodge" / "parry", so the two spellings tally as one. */
+function avoidanceKind(word: string): MissEvent["avoidance"] {
+  const w = word.toLowerCase();
+  if (w.startsWith("dodge")) return "dodge";
+  if (w.startsWith("parr")) return "parry";
+  if (w.startsWith("block")) return "block";
+  return "riposte";
+}
 
 // Damage-over-time ticks. The "from <dot> by <source>" form names who applied it;
 // the shorter "by <dot>" form doesn't, so the DoT itself becomes the attacker.
@@ -235,6 +268,7 @@ export function parseCombat(line: LogLine): CombatEvent | null {
       target: combatant(miss.groups.target),
       verb: miss.groups.verb,
       qualifier: miss.groups.qualifier,
+      avoidance: miss.groups.avoided ? avoidanceKind(miss.groups.avoided) : undefined,
       logId,
       at,
       raw,

@@ -17,6 +17,8 @@ export const CH = {
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
   settingsPickLogDir: "settings:pickLogDir",
+  logImport: "log:import",
+  alertsTest: "alerts:test",
   // wiki (invoke)
   wikiSearch: "wiki:search",
   wikiGetPage: "wiki:getPage",
@@ -47,16 +49,14 @@ export const CH = {
   killsClear: "kills:clear",
   lookupCapture: "lookup:capture",
   lookupOpen: "lookup:open",
+  searchShow: "search:show",
   lookupCancel: "lookup:cancel",
   appInfo: "app:info",
   appOpenLog: "app:openLog",
-  // overlay / window control (invoke + send)
-  overlayOpen: "overlay:open",
-  overlaySetClickThrough: "overlay:setClickThrough",
+  // window control (invoke + send)
   winOpenMap: "win:openMap",
   mapOpenAt: "map:openAt",
   mapOpenP99: "map:openP99",
-  winRole: "win:role",
   winMinimize: "win:minimize",
   winHide: "win:hide",
   winSetOpacity: "win:setOpacity",
@@ -77,6 +77,9 @@ export const CH = {
   settingsChanged: "evt:settings",
   lootEvent: "evt:loot",
   lootMatched: "evt:lootMatched",
+  castAlert: "evt:castAlert", // main → all: a watched spell began casting
+  killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
+
   watcherStatusChanged: "evt:watcherStatus",
   zoneChanged: "evt:zone",
   locChanged: "evt:loc",

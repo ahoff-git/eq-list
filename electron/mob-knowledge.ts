@@ -25,6 +25,47 @@ const WRITE_DEBOUNCE_MS = 4000;
 /** Per peer, so one chatty client can't crowd out everyone else. */
 const MAX_OBSERVATIONS_PER_PEER = 2000;
 
+const isFinNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/**
+ * Keep only well-formed observations from a peer. Peer payloads are untrusted (see the IPC
+ * trust boundary): a bad shape reaching the pool would poison rates — a non-numeric `kills`
+ * makes every derived rate NaN — and would be written to disk. So each is checked and
+ * coerced here, at the one point everything a peer sends passes through, and bad ones dropped.
+ */
+function sanitizeObservations(input: unknown[]): MobObservation[] {
+  const out: MobObservation[] = [];
+  for (const o of input) {
+    if (!o || typeof o !== "object") continue;
+    const r = o as Record<string, unknown>;
+    if (typeof r.mob !== "string" || !r.mob.trim()) continue;
+    if (typeof r.zone !== "string" || !r.zone.trim()) continue;
+    if (!isFinNum(r.kills) || r.kills < 0) continue;
+
+    const drops: Record<string, number> = {};
+    if (r.drops && typeof r.drops === "object" && !Array.isArray(r.drops)) {
+      for (const [item, count] of Object.entries(r.drops as Record<string, unknown>)) {
+        if (isFinNum(count) && count >= 0) drops[item] = count;
+      }
+    }
+
+    const clean: MobObservation = {
+      mob: r.mob,
+      zone: r.zone,
+      kills: r.kills,
+      drops,
+      lastAt: typeof r.lastAt === "string" ? r.lastAt : "",
+    };
+    const a = r.area as Record<string, unknown> | undefined;
+    if (a && typeof a === "object" && isFinNum(a.y) && isFinNum(a.x) && isFinNum(a.spread) && isFinNum(a.samples)) {
+      clean.area = { y: a.y, x: a.x, spread: a.spread, samples: a.samples };
+    }
+    if (typeof r.by === "string") clean.by = r.by;
+    out.push(clean);
+  }
+  return out;
+}
+
 export interface MobKnowledgeStore {
   /** Your own observations, in the form peers receive them. */
   mine(zone?: string): MobObservation[];
@@ -81,8 +122,8 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
       const name = by.trim();
       if (!name || !Array.isArray(observations)) return;
       // A peer's latest report *replaces* their previous one: they send their whole tally, so
-      // adding would double-count everything they'd already told us.
-      peers[name] = observations.slice(0, MAX_OBSERVATIONS_PER_PEER);
+      // adding would double-count everything they'd already told us. Untrusted, so validated.
+      peers[name] = sanitizeObservations(observations as unknown[]).slice(0, MAX_OBSERVATIONS_PER_PEER);
       log.debug("peer observations filed", { by: name, mobs: peers[name].length });
       if (!timer) timer = setTimeout(write, WRITE_DEBOUNCE_MS);
     },

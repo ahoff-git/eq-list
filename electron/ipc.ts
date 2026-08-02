@@ -6,8 +6,11 @@
 import { ipcMain, dialog, shell, BrowserWindow } from "electron";
 import { CH } from "../src/shared/ipc-channels";
 import { p99ZoneUrl } from "../src/shared/constants";
+import { characterFromLogFile } from "../src/shared/log-parser";
+import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE } from "./wiki/api";
-import { createMainWindow, createMapWindow, applyOverlaySettings, getMainWindow } from "./windows";
+import { importLog } from "./log-import";
+import { createMapWindow, getMainWindow, showInSearch } from "./windows";
 import { resetPositions } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
@@ -19,8 +22,10 @@ import type { HpTracker } from "./hp-estimate";
 import type { KillLog } from "./kill-log";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
-import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer } from "../src/shared/types";
+import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
+
+const log = createLogger("ipc");
 
 export interface IpcContext {
   store: Store;
@@ -67,6 +72,50 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     return res.canceled || !res.filePaths.length ? null : res.filePaths[0];
   });
 
+  // Fire a sample cast alert (the Settings "Test" button) down the real broadcast path,
+  // so it shows in every window and beeps just like a live one. Uses a watched spell name
+  // when there is one, so the test looks like what you'd actually see.
+  ipcMain.handle(CH.alertsTest, () => {
+    const watch = store.getSettings().castAlerts.watches.find((w) => w.enabled && w.spell.trim());
+    broadcast(CH.castAlert, {
+      caster: "Test",
+      spell: watch?.spell.trim() || "Fear",
+      at: new Date().toISOString(),
+    } satisfies CastAlertEvent);
+  });
+
+  // "Eat" a log file: digest it into the kill log (→ mob knowledge). The kill log flags your
+  // own kills by character name, so name it for THIS log's character during the import, then
+  // restore the live watcher's character afterwards.
+  ipcMain.handle(CH.logImport, async () => {
+    const res = await dialog.showOpenDialog({
+      title: "Choose an EverQuest log to digest",
+      properties: ["openFile"],
+      filters: [
+        { name: "EQ logs", extensions: ["txt"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    });
+    if (res.canceled || !res.filePaths.length) return null;
+    const file = res.filePaths[0];
+    const live = characterFromLogFile(watcher.status().file) ?? "";
+    try {
+      killLog.setPlayer(characterFromLogFile(file) ?? "");
+      const result = importLog(file, killLog);
+      killLog.flush();
+      log.debug("digested log", { file, ...result });
+      // The import lands out-of-band (no live loc/zone event to piggyback on), so nudge every
+      // open window to refetch kills + mob knowledge — otherwise the new data only shows on reopen.
+      broadcast(CH.killsChanged, undefined);
+      return { file, ...result };
+    } catch (e) {
+      log.warn("log import failed:", (e as Error).message);
+      return null;
+    } finally {
+      killLog.setPlayer(live); // restore the live character's identity for ongoing watching
+    }
+  });
+
   // ── wiki ──
   ipcMain.handle(CH.wikiSearch, (_e, term: string) => wiki.search(term));
   ipcMain.handle(CH.wikiGetPage, (_e, title: string) => wiki.getPage(title));
@@ -106,7 +155,10 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.handle(CH.hpSet, (_e, max: number) => hp.set(max));
   ipcMain.handle(CH.hpSetRegen, (_e, perTick: number) => hp.setRegen(perTick));
   ipcMain.handle(CH.killsAll, (_e, zone?: string) => killLog.kills(zone));
-  ipcMain.handle(CH.killsClear, () => killLog.clear());
+  ipcMain.handle(CH.killsClear, () => {
+    killLog.clear();
+    broadcast(CH.killsChanged, undefined);
+  });
   ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
   ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
   ipcMain.handle(CH.mobsReport, (_e, by: string, observations: MobObservation[]) => mobs.report(by, observations));
@@ -121,21 +173,12 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     lookup.capture(rect, view, e.sender),
   );
   ipcMain.handle(CH.lookupOpen, () => lookup.open());
+  ipcMain.handle(CH.searchShow, (_e, text: string) => showInSearch(text));
   ipcMain.handle(CH.lookupCancel, () => lookup.cancel());
   ipcMain.handle(CH.appInfo, () => getAppInfo());
   ipcMain.handle(CH.appOpenLog, () => shell.openPath(logFile));
 
   // ── window control ──
-  // "Open overlay" now just surfaces the single app window (kept for the API shape).
-  ipcMain.handle(CH.overlayOpen, () => {
-    const win = createMainWindow(store.getSettings().overlay);
-    win.show();
-    win.focus();
-  });
-  ipcMain.handle(CH.overlaySetClickThrough, (_e, enabled: boolean) => {
-    store.updateSettings({ overlay: { clickThrough: enabled } });
-    applyOverlaySettings(store.getSettings().overlay);
-  });
   // Open (or focus) the sibling map window.
   ipcMain.handle(CH.winOpenMap, () => {
     const win = createMapWindow(store.getSettings().overlay);

@@ -8,6 +8,7 @@
  */
 import type { ItemSource, ShoppingListEntry } from "./types";
 import { effectiveNeeded, originKey } from "./grouping";
+import { normalizeZone } from "./sources";
 
 export interface HuntItemRef {
   item: string;
@@ -63,24 +64,27 @@ export function huntInputsFor(
 
 /** Group needed items by the zone + mob that drop them. */
 export function buildHunt(items: HuntInput[]): HuntZone[] {
-  const byZone = new Map<string, Map<string, HuntMob>>();
+  // Keyed by normalized zone (so "The Feerrott"/"Feerrott" are one zone, matching the drops
+  // panel), keeping the first spelling seen for the header.
+  const byZone = new Map<string, { zone: string; mobs: Map<string, HuntMob> }>();
   for (const it of items) {
     for (const s of it.sources) {
       if (s.kind !== "drop") continue;
-      const zone = s.detail?.trim() || "Unknown zone";
+      const display = s.detail?.trim() || "Unknown zone";
+      const key = normalizeZone(display) || "unknown zone";
       const mob = s.where?.trim();
       if (!mob) continue;
-      let mobs = byZone.get(zone);
-      if (!mobs) byZone.set(zone, (mobs = new Map()));
-      let hm = mobs.get(mob);
-      if (!hm) mobs.set(mob, (hm = { mob, items: [] }));
+      let group = byZone.get(key);
+      if (!group) byZone.set(key, (group = { zone: display, mobs: new Map() }));
+      let hm = group.mobs.get(mob);
+      if (!hm) group.mobs.set(mob, (hm = { mob, items: [] }));
       if (!hm.items.some((r) => r.item === it.name)) {
         hm.items.push({ item: it.name, needed: it.needed, obtained: it.obtained });
       }
     }
   }
 
-  const zones: HuntZone[] = [...byZone.entries()].map(([zone, mobs]) => ({
+  const zones: HuntZone[] = [...byZone.values()].map(({ zone, mobs }) => ({
     zone,
     // Mobs that drop the most of what you need come first.
     mobs: [...mobs.values()].sort((a, b) => b.items.length - a.items.length || a.mob.localeCompare(b.mob)),

@@ -53,6 +53,8 @@ export function sortZones(zones: Zone[]): Zone[] {
   return [...zones].sort((a, b) => {
     const term1 = (a.sortingStr || "") + a.name;
     const term2 = (b.sortingStr || "") + b.name;
-    return term1 > term2 ? 1 : -1;
+    // localeCompare returns 0 on a tie — a bare `>` ternary would report -1 both ways,
+    // giving an inconsistent (engine-dependent) order the moment two keys are equal.
+    return term1.localeCompare(term2);
   });
 }

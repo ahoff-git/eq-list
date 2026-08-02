@@ -103,6 +103,32 @@ test("misses parse for both the pet and you", () => {
   assert.equal(mine.attacker, SELF);
 });
 
+// EQ words an active defence differently from a whiff. Both are misses for the attacker, and
+// only counting whiffs made every hit rate read high — the player's log had 92 of these.
+test("a dodge, parry or block is a miss for the attacker", () => {
+  const dodged = parse("A grikbar kobold tries to hit YOU, but YOU dodge!") as MissEvent;
+  assert.equal(dodged.kind, "miss");
+  assert.equal(dodged.attacker, "a grikbar kobold");
+  assert.equal(dodged.target, SELF);
+  assert.equal(dodged.verb, "hit");
+  assert.equal(dodged.avoidance, "dodge");
+
+  const parried = parse("Kainos`s warder tries to bite a wild tiger, but a wild tiger parries!") as MissEvent;
+  assert.equal(parried.kind, "miss");
+  assert.equal(parried.attacker, "Kainos`s warder");
+  assert.equal(parried.target, "a wild tiger");
+  assert.equal(parried.avoidance, "parry");
+
+  const blocked = parse("A kerran puma tries to claw Chadillac, but Chadillac blocks!") as MissEvent;
+  assert.equal(blocked.kind, "miss");
+  assert.equal(blocked.avoidance, "block");
+});
+
+test("a plain whiff records no avoidance — there was nothing to avoid it with", () => {
+  const whiff = parse("Kainos`s warder tries to bite a coyote, but misses!") as MissEvent;
+  assert.equal(whiff.avoidance, undefined);
+});
+
 test("heals parse, and a reflexive heal resolves to the healer", () => {
   const mine = parse("You healed Kainos`s warder for 8 hit points.") as HealEvent;
   assert.equal(mine.kind, "heal");

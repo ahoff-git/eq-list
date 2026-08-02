@@ -126,6 +126,14 @@ function KillRow({ kill, showConfidence }: { kill: KillRecord; showConfidence: b
       <span className="kr-time">{clock(kill.at)}</span>
       {showConfidence && <ConfidenceMark kill={kill} />}
       <span className="kr-mob">{kill.mob}</span>
+      {kill.mine === false && (
+        <span
+          className="muted small"
+          title={`${kill.killer} killed this, not you. It still says the mob is here, but it doesn't count towards your drop rates — you never had the corpse.`}
+        >
+          by {kill.killer}
+        </span>
+      )}
       {kill.drops?.length ? (
         <span className="kr-drops">
           {kill.drops.map((d, i) => (

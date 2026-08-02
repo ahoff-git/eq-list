@@ -1,6 +1,7 @@
 "use client";
 import { useLayoutEffect, useRef, useState } from "react";
-import { useNav } from "@/lib/nav";
+import { useOptionalNav } from "@/lib/nav";
+import { api } from "@/lib/api";
 import { useItemCard } from "@/lib/hooks";
 import type { ItemCard } from "@/shared/types";
 
@@ -10,6 +11,9 @@ import type { ItemCard } from "@/shared/types";
  * lazily (only while hovering) and cached; non-item names (mobs, zones) simply show
  * none. It's positioned `fixed` and clamped to the viewport so it isn't clipped by
  * the scrolling panel.
+ *
+ * The map window has no page view of its own, so a click there hands the name to the
+ * control window's Search instead of navigating in place.
  */
 export default function ItemLink({
   title,
@@ -20,13 +24,14 @@ export default function ItemLink({
   label?: React.ReactNode;
   className?: string;
 }) {
-  const nav = useNav();
+  const nav = useOptionalNav();
   const hover = useCardHover(title);
+  const open = () => (nav ? nav.openPage(title) : void api()?.search.show(title));
   return (
     <span
       className={`link item-link${className ? ` ${className}` : ""}`}
-      title="Open"
-      onClick={() => nav.openPage(title)}
+      title={nav ? "Open" : "Look up in the main window"}
+      onClick={open}
       onMouseEnter={hover.onMouseEnter}
       onMouseLeave={hover.onMouseLeave}
     >

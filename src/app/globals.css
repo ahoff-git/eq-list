@@ -209,10 +209,57 @@ button {
   border-bottom: 2px solid transparent;
   color: var(--text-dim);
   padding: 8px 12px;
+  /* Keep natural width so cramped tabs collapse into the » menu (TabBar) rather than
+     shrinking their labels into unreadable slivers. */
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .tab.active {
   color: var(--text);
   border-bottom-color: var(--accent);
+}
+
+/* Overflow "»" menu for tabs that don't fit (TabBar) */
+.tab-more {
+  position: relative;
+  display: inline-flex;
+}
+.tab-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.tab-menu-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab-menu-item:hover { background: var(--bg); color: var(--text); }
+.tab-menu-item.active { color: var(--accent); }
+
+/* Off-screen measurement row: laid out (so widths are real) but invisible + inert. */
+.tab-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .panel {
@@ -1105,3 +1152,61 @@ kbd {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* cast alerts — a flashing banner over the overlay when a watched spell is being cast */
+.cast-alerts {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  max-width: 92%;
+  pointer-events: none;
+}
+.cast-alert {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--bad);
+  background: rgba(58, 12, 12, 0.94);
+  color: #ffe3e3;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  animation: cast-alert-pulse 0.7s ease-in-out infinite alternate;
+}
+.cast-alert .ca-icon { font-size: 1.15em; line-height: 1; }
+.cast-alert .ca-text b { color: #fff; }
+.cast-alert .ca-hint {
+  margin-left: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.78em;
+  color: #ffb0b0;
+}
+/* A red border flash over the whole window when an alert fires (toggleable). */
+.cast-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 90; /* under the banners (100), over the app */
+  pointer-events: none;
+  border-radius: 12px; /* soften against the frameless window's rounded corners */
+  box-shadow: inset 0 0 0 5px var(--bad), inset 0 0 55px 8px rgba(229, 83, 75, 0.65);
+  animation: cast-flash-anim 0.6s ease-out forwards;
+}
+@keyframes cast-flash-anim {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes cast-alert-pulse {
+  from { border-color: var(--bad); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+  to   { border-color: #ffd0d0; box-shadow: 0 0 14px rgba(229, 83, 75, 0.7), 0 4px 16px rgba(0, 0, 0, 0.5); }
+}
