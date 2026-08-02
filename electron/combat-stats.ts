@@ -14,7 +14,7 @@
  * Emits `change` with a fresh snapshot so main can broadcast it to every window.
  */
 import { EventEmitter } from "node:events";
-import { isYours } from "../src/shared/combat-parser";
+import { isYours, meleeSkill } from "../src/shared/combat-parser";
 import { createNameRegistry } from "../src/shared/name-registry";
 import type {
   CombatEvent,
@@ -107,6 +107,10 @@ interface Tally {
   activeMs: number;
   /** Your melee under each stance — empty for combatants whose stance we can't know. */
   byStance: Map<string, ModeTally>;
+  /** Melee landed, keyed by skill/weapon ("Slash", "Crush", "Backstab"): the "which hand" view. */
+  byVerb: Map<string, { hits: number; damage: number; maxHit: number }>;
+  /** Hits carrying a qualifier ("Critical", "Riposte", …), keyed by it — whatever the log wrote. */
+  bySpecial: Map<string, { hits: number; damage: number }>;
 }
 
 /** Parse a naive-local (or ISO) timestamp to ms; NaN-safe. */
@@ -118,7 +122,7 @@ function ms(at: string): number {
 function emptyTally(): Tally {
   return {
     dealt: 0, taken: 0, healed: 0, hits: 0, misses: 0, crits: 0, maxHit: 0,
-    firstAt: 0, lastAt: 0, activeMs: 0, byStance: new Map(),
+    firstAt: 0, lastAt: 0, activeMs: 0, byStance: new Map(), byVerb: new Map(), bySpecial: new Map(),
   };
 }
 
@@ -373,6 +377,12 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
           maxHit: m.maxHit,
         }))
         .sort((a, b) => b.damage - a.damage),
+      byType: [...t.byVerb.entries()]
+        .map(([type, v]) => ({ type, hits: v.hits, damage: v.damage, maxHit: v.maxHit }))
+        .sort((a, b) => b.damage - a.damage || b.hits - a.hits),
+      specials: [...t.bySpecial.entries()]
+        .map(([kind, s]) => ({ kind, hits: s.hits, damage: s.damage }))
+        .sort((a, b) => b.hits - a.hits || b.damage - a.damage),
     };
   };
 
@@ -498,6 +508,22 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         a.dealt += event.amount;
         a.hits += 1;
         if (event.qualifier === "Critical") a.crits += 1;
+        // Which skill/weapon landed it (the log names the skill, not the hand), and any tag it
+        // carried — Critical, Riposte, Flurry, … Both kept for every combatant, so "what's
+        // critting me" reads as easily as "what am I hitting with".
+        if (event.melee && event.verb) {
+          const v = a.byVerb.get(meleeSkill(event.verb)) ?? { hits: 0, damage: 0, maxHit: 0 };
+          v.hits += 1;
+          v.damage += event.amount;
+          v.maxHit = Math.max(v.maxHit, event.amount);
+          a.byVerb.set(meleeSkill(event.verb), v);
+        }
+        if (event.qualifier) {
+          const s = a.bySpecial.get(event.qualifier) ?? { hits: 0, damage: 0 };
+          s.hits += 1;
+          s.damage += event.amount;
+          a.bySpecial.set(event.qualifier, s);
+        }
         a.maxHit = Math.max(a.maxHit, event.amount);
         if (!a.firstAt) a.firstAt = at;
         addActive(a, at);

@@ -43,13 +43,16 @@ const DEFAULT_SETTINGS: Settings = {
     sound: true,
     flash: true,
     includeSelf: false,
-    // Starter set of common crowd-control effects — edit/extend in Settings. Substring,
-    // case-insensitive, so these catch ranked/variant names too.
+    // Starter set of common crowd-control effects — the "Suggested" chips in Settings offer
+    // more (and mark these as already-on). Substring, case-insensitive, so each catches a whole
+    // family: "Terror" gets Screaming Terror, "Instill" is this server's root line.
     watches: [
       { id: "fear", spell: "Fear", enabled: true },
+      { id: "terror", spell: "Terror", enabled: true },
       { id: "mez", spell: "Mesmeri", enabled: true },
       { id: "charm", spell: "Charm", enabled: true },
       { id: "root", spell: "Root", enabled: true },
+      { id: "instill", spell: "Instill", enabled: true },
     ],
   },
   overlay: {

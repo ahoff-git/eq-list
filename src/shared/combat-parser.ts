@@ -103,6 +103,23 @@ const MELEE_VERBS = [
 const VERBS = MELEE_VERBS.join("|");
 
 /**
+ * Base (first-person, singular) form of each verb, so a mob's "slashes" and your "slash"
+ * tally as one skill. Built from the list above — every verb is a `plural, singular` pair —
+ * so `MELEE_VERBS` stays the single source of truth for what a swing can be called.
+ */
+const MELEE_VERB_BASE = new Map<string, string>();
+for (let i = 0; i < MELEE_VERBS.length; i += 2) {
+  MELEE_VERB_BASE.set(MELEE_VERBS[i], MELEE_VERBS[i + 1]);
+  MELEE_VERB_BASE.set(MELEE_VERBS[i + 1], MELEE_VERBS[i + 1]);
+}
+
+/** The skill behind a swing — its base verb, Title-cased: "slashes"/"slash" → "Slash". */
+export function meleeSkill(verb: string): string {
+  const base = MELEE_VERB_BASE.get(verb.toLowerCase()) ?? verb.toLowerCase();
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+/**
  * Optional trailing qualifier, e.g. `. (Critical)` / `! (Riposte)`. It sits *outside*
  * the sentence, so every swing pattern has to allow it — anchoring on `\.$` silently
  * dropped every critical hit and riposte.

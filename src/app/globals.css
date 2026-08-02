@@ -616,6 +616,22 @@ button {
   white-space: nowrap;
 }
 .meter-dps { color: var(--accent); margin-left: 6px; }
+.meter.expandable { cursor: pointer; }
+.meter-caret { position: relative; color: var(--text-dim); font-size: 10px; width: 8px; }
+/* The melee-by-weapon and special-hits breakdown, opened under a row. */
+.meter-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  padding: 4px 10px 6px 24px;
+  font-size: 12px;
+}
+.mb-section { display: flex; flex-direction: column; gap: 1px; min-width: 190px; flex: 1; }
+.mb-title { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.mb-row { display: flex; align-items: baseline; gap: 8px; }
+.mb-row .mb-label { min-width: 74px; }
+.mb-row .mb-hits { font-variant-numeric: tabular-nums; }
+.mb-row .mb-dmg { font-variant-numeric: tabular-nums; color: var(--text); }
 
 /* Spell breakdown: a wide table in a narrow window, so it scrolls on its own. */
 .table-scroll { overflow-x: auto; }
@@ -1047,6 +1063,14 @@ kbd {
 .kill-row .kr-time { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
 .kill-row .kr-mob { min-width: 120px; }
 .kill-row .kr-drops { color: var(--text); }
+/* One openable row per mob — a count + drop summary, so repeated kills don't wall up the list. */
+.kill-group-head { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.kill-group-head:hover { color: var(--text); }
+.kill-group-head .caret { align-self: center; width: 12px; color: var(--text-dim); }
+.kill-group-head .kr-mob { min-width: 120px; font-weight: 500; }
+.kill-group-head .kg-count { font-variant-numeric: tabular-nums; }
+.kill-group-head .kr-drops { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.kg-rows { padding-left: 20px; } /* indent a mob's individual kills under its header */
 /* The how-much-do-I-believe-this marker, shared with the map (see kill-confidence.ts). */
 .conf-mark { cursor: context-menu; font-size: 13px; line-height: 1; }
 
@@ -1210,3 +1234,8 @@ kbd {
   from { border-color: var(--bad); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
   to   { border-color: #ffd0d0; box-shadow: 0 0 14px rgba(229, 83, 75, 0.7), 0 4px 16px rgba(0, 0, 0, 0.5); }
 }
+
+/* Suggested crowd-control watches: click-to-add chips grouped by effect (see cast-suggestions.ts). */
+.cast-suggest .cs-row { gap: 6px; margin-top: 4px; align-items: baseline; }
+.cast-suggest .cs-cat { min-width: 46px; }
+.cast-suggest .cs-chip.added { color: var(--good); border-color: var(--accent-dim); opacity: 1; cursor: default; }

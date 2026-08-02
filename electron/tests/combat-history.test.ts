@@ -28,6 +28,8 @@ function combatant(name: string, dealt: number, mine = false): CombatantStat {
     dps: dealt,
     mine,
     byStance: [],
+    byType: [],
+    specials: [],
   };
 }
 

@@ -28,8 +28,14 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
   const killLog: KillLog = {
     setPlayer() {},
     noteLoc: (loc: LocEvent) => locs.push(loc.y),
-    record: (mob, killer, zone) => recorded.push({ mob, killer, zone }),
-    noteLoot: (e: LootEvent) => loot.push(e.item),
+    record: (mob, killer, zone) => {
+      recorded.push({ mob, killer, zone });
+      return true; // this mock has no dedup; every kill line is "newly recorded"
+    },
+    noteLoot: (e: LootEvent) => {
+      loot.push(e.item);
+      return true;
+    },
     kills: () => [],
     clear() {},
     flush() {},

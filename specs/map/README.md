@@ -99,6 +99,9 @@ trail) plotted on it, in a sibling window opened from the main window's 🗺 but
   come from `src/shared/kill-filters.ts` and are applied to **both** the map and the list, so
   they're always the same query. Drops are attached to kills as the loot lines arrive, which
   is what makes "only kills that dropped X" a filter rather than a search.
+  The list **groups by mob** — one openable row per mob with a kill count and drop summary, so
+  300 kills of the same thing read as `grikbar kobold ×300` instead of 300 identical lines;
+  expand a row to see the individual kills (each still its own dot on the map).
   The **☣ toggle** shares your placed kills with the room (conclusion only: zone, position,
   mob, confidence) **and** your mob observations (counts, so pooled rates are just addition) —
   one intent, one switch. Peers' kills draw outlined rather than filled. See

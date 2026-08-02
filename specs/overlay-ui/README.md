@@ -96,7 +96,11 @@ list, hunt, search, damage, session, settings.
     - `DamageMeter` — bars scaled to the top row so relative contribution reads without
       arithmetic, with total, share and DPS; your rows (you + your pet) are tinted, and
       hover gives max hit, accuracy, crits, healing, active time, and — for your own rows —
-      **melee split by stance**, since stances change the multipliers.
+      **melee split by stance**, since stances change the multipliers. Click a row to open its
+      **breakdown**: melee by **weapon/skill** (Slash, Pierce, Crush, Kick, Backstab — the log
+      names the skill, the closest it gets to "which hand") and **special hits** by whatever
+      qualifier the log wrote (Critical, Riposte, Flurry…, not a fixed list). Both come off the
+      `verb`/`qualifier` the parser already captured; see `combat-stats.ts`.
     - `SpellTable` — where your damage came from, spell by spell: casts, damage, healing,
       average **measured** cast time, **dmg/s cast** (the efficiency column — a slow nuke
       and a fast one that hit the same are not equally good), **mana** and **dmg/mana**
@@ -137,8 +141,11 @@ list, hunt, search, damage, session, settings.
       future figure the log can't supply.
   - `SettingsPanel` — log folder, match mode, window opacity / interface scale, keep-completed,
     follow-your-zone, **cast alerts** (the watched-spell list + beep/**screen-flash**/include-self
-    toggles, with a **Test alert** button that fires a sample down the real broadcast path),
-    **"Eat a log file"** (digest a past log into learned mob data — see `electron/log-import.ts`),
+    toggles, a **Test alert** button that fires a sample down the real broadcast path, and
+    **Suggested** click-to-add chips of common crowd control grouped by effect — see
+    `src/shared/cast-suggestions.ts`, since EQ names most CC off-theme),
+    **"Eat a log file"** (digest a past log into learned mob data — see `electron/log-import.ts`;
+    keyed per line so re-eating or overlapping logs never double-count, [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md)),
     and a **Help** area: global-shortcut list with live registration status (`app.info()`) and a
     screengrab explanation/test button. Dev-only options live in the tray, not here.
   - `StatusBar` — watcher state, current zone, and the last drop seen. A drop moves the

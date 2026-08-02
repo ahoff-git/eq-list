@@ -520,6 +520,51 @@ test("a mode outlives a session reset — it's what the character is doing, not 
   assert.equal(you.byStance[0].stance, "evasive");
 });
 
+// ── melee broken down by weapon/skill and by special-hit qualifier ──
+
+test("melee splits by the skill behind each hit and by any qualifier the log wrote", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You crush a coyote for 20 points of damage."],
+    [2, "You crush a coyote for 10 points of damage. (Critical)"],
+    [3, "You pierce a coyote for 8 points of damage."],
+    [4, "You kick a coyote for 6 points of damage."],
+    [5, "You hit a coyote for 5 points of damage. (Riposte)"],
+    [6, "A coyote bites YOU for 4 points of damage."],
+  ]);
+  const rows = t.snapshot().fight.byCombatant;
+  const you = rows.find((r) => r.name === "You")!;
+
+  // "which hand/weapon": most damage first — Crush (2 hits, 30), then Pierce, Kick, Hit.
+  assert.deepEqual(
+    you.byType.map((x) => [x.type, x.hits, x.damage, x.maxHit]),
+    [["Crush", 2, 30, 20], ["Pierce", 1, 8, 8], ["Kick", 1, 6, 6], ["Hit", 1, 5, 5]],
+  );
+  // special hits: exactly the qualifiers the log carried, and the old crit counter still agrees.
+  assert.deepEqual(
+    you.specials.map((x) => [x.kind, x.hits, x.damage]),
+    [["Critical", 1, 10], ["Riposte", 1, 5]],
+  );
+  assert.equal(you.crits, 1);
+
+  // Incoming is broken down too, and a mob's third-person "bites" folds to the "Bite" skill.
+  const coyote = rows.find((r) => r.name === "a coyote")!;
+  assert.deepEqual(coyote.byType.map((x) => x.type), ["Bite"]);
+});
+
+test("a spell hit is not counted as a melee weapon, but its crit still shows", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "You hit a coyote for 40 points of cold damage by Frost Rift. (Critical)"],
+  ]);
+  const you = t.snapshot().fight.byCombatant.find((r) => r.name === "You")!;
+  // Only the melee swing is a weapon row; the nuke is not.
+  assert.deepEqual(you.byType.map((x) => x.type), ["Pierce"]);
+  // …but its "(Critical)" is still a special hit.
+  assert.deepEqual(you.specials.map((x) => x.kind), ["Critical"]);
+});
+
 // ── what invocations do beyond scaling: divine's healing, Spell Blade's free casts ──
 test("an unattributed self-heal after your own spell is the invocation's healing", () => {
   // Verbatim shape from a real log: the heal names no spell, and follows the landing.

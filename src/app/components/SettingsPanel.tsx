@@ -4,6 +4,7 @@ import { useSettings, useWatcherStatus, useAppInfo } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { UI_SCALE } from "@/shared/constants";
+import { CAST_SUGGESTIONS, isWatched } from "@/shared/cast-suggestions";
 import type { CastWatch, DeepPartial, LogImportResult, Settings } from "@/shared/types";
 
 /** Log location, match strictness, overlay look, and the debug toggle. */
@@ -26,6 +27,11 @@ export default function SettingsPanel() {
     setWatches(ca.watches.map((w) => (w.id === id ? { ...w, ...p } : w)));
   const removeWatch = (id: string) => setWatches(ca.watches.filter((w) => w.id !== id));
   const addWatch = () => setWatches([...ca.watches, { id: crypto.randomUUID(), spell: "", enabled: true }]);
+  // Add a suggested crowd-control watch, unless an identical substring is already on the list.
+  const addSuggestion = (spell: string) => {
+    if (ca.watches.some((w) => w.spell.trim().toLowerCase() === spell.trim().toLowerCase())) return;
+    setWatches([...ca.watches, { id: crypto.randomUUID(), spell, enabled: true }]);
+  };
 
   async function browse() {
     const dir = await api()?.settings.pickLogDir();
@@ -248,6 +254,34 @@ export default function SettingsPanel() {
               <button className="btn sm" onClick={() => api()?.alerts.test()} title="Preview the alert banner (and beep)">
                 Test alert
               </button>
+            </div>
+
+            <div className="cast-suggest">
+              <span className="hint" style={{ display: "block", margin: "10px 0 4px" }}>
+                Suggested — common crowd control, grouped by effect. Many CC spells aren’t named
+                “Fear” or “Charm” (this server’s root is <i>Instill</i>), so click to watch a whole
+                family. ✓ means it’s already on your list.
+              </span>
+              {CAST_SUGGESTIONS.map((group) => (
+                <div className="row wrap cs-row" key={group.category}>
+                  <span className="muted small cs-cat">{group.category}</span>
+                  {group.suggestions.map((s) => {
+                    const added = isWatched(ca.watches, s);
+                    return (
+                      <button
+                        key={s.spell}
+                        className={`btn sm ghost cs-chip ${added ? "added" : ""}`}
+                        title={s.note}
+                        disabled={added}
+                        onClick={() => addSuggestion(s.spell)}
+                      >
+                        {added ? "✓ " : "+ "}
+                        {s.spell}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           </div>
         )}

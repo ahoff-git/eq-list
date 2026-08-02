@@ -36,6 +36,7 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0030: A log line that already happened is history, not news](./0030-history-is-not-news.md)
 - [0031: An inferred bound has to be able to come back down](./0031-an-inferred-bound-must-be-able-to-fall.md)
 - [0032: Remove the retained-but-dead overlay/click-through surface](./0032-remove-dead-overlay-surface.md) — *reverses the `clickThrough` retention noted in 0009*
+- [0033: Eating a log is idempotent — every kill and drop is keyed by its line](./0033-eating-a-log-is-idempotent.md)
 
 ## Open Questions
 - Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the

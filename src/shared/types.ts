@@ -258,6 +258,18 @@ export interface CombatantStat {
    * people — the log never states their stance.
    */
   byStance: StanceSplit[];
+  /**
+   * Melee landed, split by the skill/weapon behind it (slash, pierce, crush, kick, backstab…) —
+   * as close as the log gets to "which hand/weapon did that", since it names the skill, not the
+   * slot. Most-damage first; empty for a combatant that only dealt spell damage.
+   */
+  byType: MeleeTypeStat[];
+  /**
+   * Landed hits the log tagged with a qualifier — Critical, Flurry, Crippling Blow, Riposte, …
+   * Whatever the log actually wrote, not a fixed list, so a new tag surfaces on its own. Most
+   * frequent first.
+   */
+  specials: SpecialHitStat[];
 }
 
 /** Your melee under a single stance. */
@@ -268,6 +280,22 @@ export interface StanceSplit {
   hits: number;
   misses: number;
   maxHit: number;
+}
+
+/** Melee landed with one skill/weapon (the swing verb, e.g. "Slash", "Pierce", "Backstab"). */
+export interface MeleeTypeStat {
+  type: string;
+  hits: number;
+  damage: number;
+  maxHit: number;
+}
+
+/** Landed hits carrying one qualifier ("Critical", "Riposte", "Flurry", …). */
+export interface SpecialHitStat {
+  kind: string;
+  hits: number;
+  /** Damage across those hits (0 when the qualifier only appears on misses, e.g. a riposte whiff). */
+  damage: number;
 }
 
 /**
@@ -709,6 +737,21 @@ export interface KillRecord {
    * map filter by drop without re-reading anything.
    */
   drops?: string[];
+  /**
+   * A stable identity for this kill, derived from the log line itself (`timestamp|mob|killer`)
+   * rather than the random `id`. It's what makes eating a log idempotent: the same line always
+   * produces the same key, so re-digesting a log — or importing one that overlaps kills already
+   * recorded live — records each real kill exactly once. Absent on records stored before keying
+   * (backfilled on load). See ADR 0033.
+   */
+  key?: string;
+  /**
+   * The keys of the loot lines already folded into `drops` (`lootTimestamp|item|source`), so a
+   * replayed loot line is recognised and not counted twice. Parallel to `drops`; absent on
+   * pre-keying records, which is why a genuinely-new drop onto such a corpse is trusted but a
+   * re-import isn't (see `noteLoot`).
+   */
+  dropKeys?: string[];
 }
 
 // ─── Health estimate ────────────────────────────────────────────────────────

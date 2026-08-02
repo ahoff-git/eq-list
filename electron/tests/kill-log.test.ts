@@ -313,3 +313,60 @@ test("clearing the log forgets where the player was, too", () => {
   const [only] = k.kills();
   assert.equal(only.y, undefined, "a cleared log shouldn't place the next kill from old evidence");
 });
+
+// ── eating a log twice changes nothing (dedup) ──
+// A kill/loot line's identity is the line itself, so a re-import — or a log eaten after it was
+// watched live — records each real event exactly once. record()/noteLoot() say whether they
+// actually added, so an importer can report only what was new.
+
+test("the same kill line read twice records one kill", () => {
+  const k = createKillLog(tempDir());
+  assert.equal(k.record("a kobold", "You", ZONE, stamp(10), 1), true);
+  assert.equal(k.record("a kobold", "You", ZONE, stamp(10), 1), false, "the replay is a no-op");
+  assert.equal(k.kills().length, 1);
+});
+
+test("two real kills of the same mob a second apart are both kept", () => {
+  const k = createKillLog(tempDir());
+  assert.equal(k.record("a kobold", "You", ZONE, stamp(10), 1), true);
+  assert.equal(k.record("a kobold", "You", ZONE, stamp(11), 2), true, "a different line, a real kill");
+  assert.equal(k.kills().length, 2);
+});
+
+test("the same loot line read twice adds one drop", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a kobold", 10);
+  assert.equal(k.noteLoot(looted("Bone Chips", "a kobold", 12)), true);
+  assert.equal(k.noteLoot(looted("Bone Chips", "a kobold", 12)), false, "same line, no second drop");
+  assert.deepEqual(k.kills()[0].drops, ["Bone Chips"]);
+});
+
+test("re-eating the same sequence changes nothing, even across a restart", () => {
+  const dir = tempDir();
+  const first = createKillLog(dir);
+  first.record("a kobold", "You", ZONE, stamp(10), 1);
+  first.noteLoot(looted("Bone Chips", "a kobold", 12));
+  first.flush();
+
+  const again = createKillLog(dir); // keys were persisted, so the replay recognises both lines
+  assert.equal(again.record("a kobold", "You", ZONE, stamp(10), 1), false, "kill already known");
+  assert.equal(again.noteLoot(looted("Bone Chips", "a kobold", 12)), false, "drop already known");
+  assert.equal(again.kills().length, 1);
+  assert.deepEqual(again.kills()[0].drops, ["Bone Chips"]);
+});
+
+test("a drop already on a pre-keying corpse is not duplicated by a re-read", () => {
+  const dir = tempDir();
+  // Data stored before loot keys existed: a corpse holding a drop but no dropKeys to prove it.
+  fs.writeFileSync(
+    path.join(dir, "kill-log.json"),
+    JSON.stringify({
+      kills: [
+        { id: "x", logId: 1, at: stamp(10), mob: "a kobold", killer: "You", mine: true, confidence: 0, drops: ["Bone Chips"] },
+      ],
+    }),
+  );
+  const k = createKillLog(dir);
+  assert.equal(k.noteLoot(looted("Bone Chips", "a kobold", 12)), false, "a re-read of a known drop");
+  assert.deepEqual(k.kills()[0].drops, ["Bone Chips"], "the rate isn't inflated by the replay");
+});

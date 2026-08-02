@@ -17,9 +17,13 @@ import type { KillLog } from "./kill-log";
 export interface LogImportResult {
   /** Lines read from the file. */
   lines: number;
-  /** Kill lines digested (your own and, as spawn evidence, others' in earshot). */
+  /**
+   * Kills **newly** recorded (your own and, as spawn evidence, others' in earshot). Lines already
+   * known — because the log was eaten before, or watched live — are deduped and not counted, so
+   * re-eating a log reports 0.
+   */
   kills: number;
-  /** Loot lines attributed to a corpse. */
+  /** Drops **newly** attributed to a corpse (already-folded loot lines are deduped, not counted). */
   drops: number;
 }
 
@@ -46,12 +50,10 @@ export function importLog(file: string, killLog: KillLog): LogImportResult {
         killLog.noteLoc(event, zone);
         break;
       case "loot":
-        killLog.noteLoot(event);
-        drops++;
+        if (killLog.noteLoot(event)) drops++;
         break;
       case "kill":
-        killLog.record(event.target, event.killer, zone, event.at, event.logId);
-        kills++;
+        if (killLog.record(event.target, event.killer, zone, event.at, event.logId)) kills++;
         break;
     }
   }

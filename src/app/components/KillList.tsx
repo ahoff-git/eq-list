@@ -6,10 +6,19 @@ import type { KillFilters, KillWindow } from "@/shared/kill-filters";
 import ItemLink from "./ItemLink";
 import type { KillRecord } from "@/shared/types";
 
+/** How many mob groups to show before the "show more" fold. Distinct mobs per zone are few. */
+const MAX_GROUPS = 40;
+
+/** Distinct drops to name in a group's header before summarising the rest as "+N". */
+const MAX_HEAD_DROPS = 6;
+
 /**
  * The kills behind the heatmap, with the same confidence marker the map draws — so a faint
  * dot on the map and its row here tell the same story. Filters are lifted to the parent
  * because the map is filtered by the same object.
+ *
+ * Kills are grouped by mob: one row per mob you can open, rather than a row per kill, so
+ * killing the same thing 300 times reads as "grikbar kobold ×300" and not 300 identical lines.
  */
 export default function KillList({
   kills,
@@ -26,7 +35,10 @@ export default function KillList({
   const set = <K extends keyof KillFilters>(key: K, value: KillFilters[K]) =>
     onFilters({ ...filters, [key]: value });
 
-  const shown = expanded ? kills : kills.slice(0, 40);
+  // One openable entry per mob (newest first), so 300 kills of the same thing read as a single
+  // row with a count — not a wall of identical names. The map still plots every individual kill.
+  const groups = useMemo(() => groupByMob(kills), [kills]);
+  const shownGroups = expanded ? groups : groups.slice(0, MAX_GROUPS);
   // The mobs actually present, so the filter offers real choices rather than a free-text box.
   const mobs = useMemo(() => [...new Set(kills.map((k) => k.mob))].sort(), [kills]);
 
@@ -93,7 +105,7 @@ export default function KillList({
 
         <span className="spacer" />
         <span className="muted small">
-          {kills.length} kill{kills.length === 1 ? "" : "s"}
+          {groups.length} mob{groups.length === 1 ? "" : "s"} · {kills.length} kill{kills.length === 1 ? "" : "s"}
         </span>
       </div>
 
@@ -104,14 +116,92 @@ export default function KillList({
         </p>
       ) : (
         <div className="kill-rows">
-          {shown.map((kill) => (
-            <KillRow key={kill.id} kill={kill} showConfidence={showConfidence} />
+          {shownGroups.map((g) => (
+            <MobGroup key={g.mob} group={g} showConfidence={showConfidence} />
           ))}
-          {!expanded && kills.length > shown.length && (
+          {!expanded && groups.length > shownGroups.length && (
             <button className="btn ghost sm" onClick={() => setExpanded(true)}>
-              show {kills.length - shown.length} more
+              show {groups.length - shownGroups.length} more
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface MobGroupData {
+  mob: string;
+  /** This mob's kills, newest first. */
+  kills: KillRecord[];
+}
+
+/** Bucket kills by mob, keeping newest-first order both between groups and within each. */
+function groupByMob(kills: KillRecord[]): MobGroupData[] {
+  const byMob = new Map<string, KillRecord[]>();
+  for (const kill of kills) {
+    const list = byMob.get(kill.mob);
+    if (list) list.push(kill);
+    else byMob.set(kill.mob, [kill]); // first sighting is the newest, so groups stay newest-first
+  }
+  return [...byMob.entries()].map(([mob, ks]) => ({ mob, kills: ks }));
+}
+
+/** Distinct items a group dropped, most-dropped first, with how many times each was seen. */
+function summarizeDrops(kills: KillRecord[]): { item: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const kill of kills) {
+    for (const item of kill.drops ?? []) counts.set(item, (counts.get(item) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([item, count]) => ({ item, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** One mob's kills as a single openable row: a count and drop summary, expanding to each kill. */
+function MobGroup({ group, showConfidence }: { group: MobGroupData; showConfidence: boolean }) {
+  const [open, setOpen] = useState(false);
+  const newest = group.kills[0];
+  const drops = useMemo(() => summarizeDrops(group.kills), [group.kills]);
+  const others = group.kills.filter((k) => k.mine === false).length;
+  const headDrops = drops.slice(0, MAX_HEAD_DROPS);
+
+  return (
+    <div className={`kill-group ${open ? "open" : ""}`}>
+      <div className="kill-group-head" onClick={() => setOpen((o) => !o)}>
+        <span className="caret">{open ? "▾" : "▸"}</span>
+        <span className="kr-mob">{group.mob}</span>
+        <span className="kg-count muted small">×{group.kills.length}</span>
+        {others > 0 && (
+          <span
+            className="muted small"
+            title={`${others} killed by someone else — still evidence the mob is here, but not counted in your drop rates.`}
+          >
+            {others} by others
+          </span>
+        )}
+        <span className="spacer" />
+        {headDrops.length > 0 && (
+          <span className="kr-drops">
+            {headDrops.map((d, i) => (
+              <span key={d.item}>
+                {i > 0 && ", "}
+                <ItemLink title={d.item} />
+                {d.count > 1 && <span className="muted small"> ×{d.count}</span>}
+              </span>
+            ))}
+            {drops.length > headDrops.length && (
+              <span className="muted small"> +{drops.length - headDrops.length}</span>
+            )}
+          </span>
+        )}
+        <span className="kr-time">{clock(newest.at)}</span>
+      </div>
+      {open && (
+        <div className="kill-rows kg-rows">
+          {group.kills.map((kill) => (
+            <KillRow key={kill.id} kill={kill} showConfidence={showConfidence} />
+          ))}
         </div>
       )}
     </div>
