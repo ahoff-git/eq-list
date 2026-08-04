@@ -11,8 +11,7 @@
  */
 import { app, BrowserWindow, screen } from "electron";
 import path from "node:path";
-import { savedBounds, rememberBounds, setMapOpen, isQuitting } from "./window-state";
-import { clampUiScale } from "../src/shared/constants";
+import { savedBounds, rememberBounds, setMapOpen, isQuitting, setMaximized, wasMaximized } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { createLogger } from "../src/shared/logging";
 import type { OverlaySettings } from "../src/shared/types";
@@ -36,6 +35,34 @@ function pipeRendererConsole(win: BrowserWindow, role: string): void {
   });
 }
 
+/**
+ * Keep a frameless window's own maximize/restore button honest, and remember the state.
+ *
+ * A framed window gets this from the OS; ours draw their own titlebar, so the renderer has
+ * to be told — including after a reload, which starts the button from scratch. Maximizing
+ * from any source (our button, a double-click on the drag region, Win+Up, the taskbar) comes
+ * back through the same two window events, so the button can never disagree with reality.
+ */
+function reportMaximize(role: "main" | "map", win: BrowserWindow): void {
+  const send = () => {
+    if (!win.isDestroyed()) win.webContents.send(CH.winMaximizeChanged, win.isMaximized());
+  };
+  win.on("maximize", () => {
+    setMaximized(role, true);
+    send();
+  });
+  win.on("unmaximize", () => {
+    setMaximized(role, false);
+    send();
+  });
+  win.webContents.on("did-finish-load", send);
+}
+
+/** Open maximized if that's how it was left — the same courtesy a normal window extends. */
+function restoreMaximized(role: "main" | "map", win: BrowserWindow): void {
+  if (wasMaximized(role)) win.maximize();
+}
+
 const DEV = !!process.env.EQL_DEV;
 const DEV_URL = "http://localhost:3000";
 const APP_URL = "app://local";
@@ -46,16 +73,14 @@ function windowIcon(): string {
   return path.join(app.getAppPath(), "out", "favicon.ico");
 }
 
-/** The scale last applied, so a window opened or reloaded later can catch up to it. */
-let uiScale: number | null = null;
+/**
+ * Note there's no zoom handling here any more. The interface scale is a CSS `zoom` applied by
+ * each window's own renderer (`useUiScale`): Chromium's `setZoomFactor` is per **origin**, and
+ * every window is served from one, so it could only ever hold a single scale for all of them —
+ * which is why the map's A−/A+ used to move the main window too.
+ */
 
 function load(win: BrowserWindow, route: string): void {
-  // The zoom factor belongs to the frame, so a fresh load resets it — re-apply on every
-  // navigation rather than only when the setting changes, or a reopened window (the map is
-  // created on demand) comes back at full size while the setting says otherwise.
-  win.webContents.on("did-finish-load", () => {
-    if (uiScale !== null) applyUiScale(uiScale, win);
-  });
   if (DEV) {
     void win.loadURL(`${DEV_URL}/${route}`);
   } else {
@@ -97,6 +122,9 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
     title: "EQ List",
     icon: windowIcon(),
     alwaysOnTop: overlay?.alwaysOnTop ?? true,
+    // Set the saved opacity up front so the window opens at the right translucency (no flash),
+    // then the renderer owns it — see `applyOverlaySettings`.
+    opacity: overlay?.opacity ?? 1,
     backgroundColor: "#00000000",
     webPreferences: {
       preload: PRELOAD,
@@ -107,9 +135,13 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
     },
   });
   rememberBounds("main", mainWindow);
+  reportMaximize("main", mainWindow);
   pipeRendererConsole(mainWindow, "main");
   if (overlay) applyOverlaySettings(overlay);
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.once("ready-to-show", () => {
+    if (mainWindow) restoreMaximized("main", mainWindow);
+    mainWindow?.show();
+  });
   // Mouse thumb buttons (and some keyboards) fire browser back/forward as an
   // app-command; forward it so the renderer can walk its own page history instead
   // of the OS trying to navigate a non-existent browser.
@@ -162,12 +194,19 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
     },
   });
   rememberBounds("map", mapWindow);
+  reportMaximize("map", mapWindow);
   pipeRendererConsole(mapWindow, "map");
   setMapOpen(true); // so the next launch restores it (see main.ts startup)
   if (overlay) mapWindow.setAlwaysOnTop(overlay.alwaysOnTop, "screen-saver");
-  mapWindow.once("ready-to-show", () => mapWindow?.show());
-  mapWindow.on("closed", () => {
-    mapWindow = null;
+  mapWindow.once("ready-to-show", () => {
+    if (mapWindow) restoreMaximized("map", mapWindow);
+    mapWindow?.show();
+  });
+  const created = mapWindow;
+  created.on("closed", () => {
+    // Only if it's still this window: reopening while the old one is closing would otherwise
+    // let the stale `closed` null out the new reference (the bug the alert overlay hit).
+    if (mapWindow === created) mapWindow = null;
     // A user-initiated close forgets the window; a close during app quit keeps the
     // "was open" flag so we can reopen it next launch.
     if (!isQuitting()) setMapOpen(false);
@@ -187,9 +226,17 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
  * always-alive main window owns the sound, this window owns the visuals. Created only while
  * cast alerts are enabled (see `main.ts`); when empty it's fully transparent, so it's invisible.
  */
-export function createAlertWindow(): BrowserWindow {
-  if (alertWindow && !alertWindow.isDestroyed()) return alertWindow;
-  const { bounds } = screen.getPrimaryDisplay();
+export function createAlertWindow(displayId?: number): BrowserWindow {
+  const display = alertDisplay(displayId);
+  // Already up: a monitor change just moves it. Tearing it down and building another raced with
+  // its own teardown — `closed` fires after the replacement is created, and the handler used to
+  // null out whichever window was current, so the new overlay became unreachable and the alert
+  // kept appearing on the old monitor until some other setting rebuilt it.
+  if (alertWindow && !alertWindow.isDestroyed()) {
+    coverDisplay(alertWindow, display);
+    return alertWindow;
+  }
+  const { bounds } = display;
   alertWindow = new BrowserWindow({
     ...bounds,
     show: false,
@@ -217,13 +264,42 @@ export function createAlertWindow(): BrowserWindow {
   // Best-effort: keep showing over a borderless-fullscreen game and across virtual desktops.
   alertWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   pipeRendererConsole(alertWindow, "alert");
-  alertWindow.on("closed", () => {
-    alertWindow = null;
+  const created = alertWindow;
+  // Only clear the reference if it's still *this* window — see the note above about the race.
+  created.on("closed", () => {
+    if (alertWindow === created) alertWindow = null;
   });
-  load(alertWindow, "alert");
+  load(created, "alert");
   // `showInactive` so appearing never pulls focus off the game.
-  alertWindow.once("ready-to-show", () => alertWindow?.showInactive());
-  return alertWindow;
+  created.once("ready-to-show", () => {
+    created.showInactive();
+    coverDisplay(created, alertDisplay(displayId));
+  });
+  coverDisplay(created, display);
+  return created;
+}
+
+/** The monitor to cover: the chosen one, or primary when it's unset or gone (unplugged). */
+function alertDisplay(displayId?: number): Electron.Display {
+  return (
+    (displayId !== undefined && screen.getAllDisplays().find((d) => d.id === displayId)) ||
+    screen.getPrimaryDisplay()
+  );
+}
+
+/**
+ * Make a window cover exactly one display. The constructor can't be trusted with this: a window
+ * created for a secondary or HiDPI monitor inherits the *primary* display's work-area size, so
+ * the overlay ends up the wrong size and the banner lands off-screen or half-way across. Same
+ * fix as the screengrab selector — re-assert the bounds after creation, once the window is
+ * realized, and once more a beat later, since some Electron builds only honour it then.
+ */
+function coverDisplay(win: BrowserWindow, display: Electron.Display): void {
+  const apply = () => {
+    if (!win.isDestroyed()) win.setBounds(display.bounds);
+  };
+  apply();
+  setTimeout(apply, 60);
 }
 
 /** Tear down the alert overlay (when cast alerts are turned off) — nothing to show, no window. */
@@ -293,29 +369,17 @@ export function showInSearch(text: string): void {
 }
 
 /**
- * Push opacity / always-on-top onto the app window, and the interface scale onto **every**
- * window — the map is a sibling window and should shrink with the rest of the app, not
- * separately.
+ * Push always-on-top onto the app window, and the interface scale onto **every** window — the
+ * map is a sibling window and should shrink with the rest of the app, not separately.
+ *
+ * Opacity is deliberately **not** set here. It has a transient override (the titlebar's ◐ "fully
+ * opaque" toggle) that lives in the renderer, and re-applying the saved value on every settings
+ * change used to clobber it — the ◐ would read "on" while the window quietly went translucent. The
+ * window opens at the saved opacity (constructor) and the renderer owns it from then on.
  */
 export function applyOverlaySettings(overlay: OverlaySettings): void {
-  applyUiScale(overlay.fontScale);
   const win = mainWindow;
   if (!win || win.isDestroyed()) return;
-  win.setOpacity(overlay.opacity);
   win.setAlwaysOnTop(overlay.alwaysOnTop, "screen-saver");
 }
 
-/**
- * Scale a window's whole rendering. `setZoomFactor` is per-`webContents` and survives until
- * the frame navigates, so it's re-applied when a window loads as well as when the setting
- * changes.
- */
-export function applyUiScale(scale: number, win?: BrowserWindow): void {
-  const factor = clampUiScale(scale);
-  uiScale = factor;
-  const targets = win ? [win] : BrowserWindow.getAllWindows();
-  for (const target of targets) {
-    if (!target.isDestroyed()) target.webContents.setZoomFactor(factor);
-  }
-  log.debug("ui scale", factor, "on", targets.length, win ? "(one window)" : "window(s)");
-}

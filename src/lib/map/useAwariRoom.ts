@@ -42,6 +42,8 @@ export interface PeerPing {
   peerId: string;
   name: string;
   zone: string;
+  /** The layer they were viewing, when the zone has layers (see `Zone.layer`). */
+  layer?: number;
   y: number;
   x: number;
   /** When it arrived (ms, local clock) — drives the drop-in animation. */
@@ -70,6 +72,12 @@ function str(p: AwariPayload, key: string, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
 }
 
+/** Read `key` off a loose peer payload as a number (undefined when absent or not one). */
+function num(p: AwariPayload, key: string): number | undefined {
+  const v = p[key];
+  return typeof v === "number" ? v : undefined;
+}
+
 /**
  * The map's view of peer networking. The WebRTC connection itself lives in the main
  * window (`AwariHost`); this hook just consumes the brokered message stream — building
@@ -83,7 +91,7 @@ export function useAwariRoom(opts: { name: string }): {
   peerPins: MapPin[];
   users: ConnectedUser[];
   peerKills: SharedKill[];
-  sendPing: (eq: { y: number; x: number }, zone: string) => void;
+  sendPing: (eq: { y: number; x: number }, zone: string, layer?: number) => void;
   sharePins: (pins: MapPin[]) => void;
   shareKills: (kills: SharedKill[]) => void;
   shareMobs: (observations: MobObservation[]) => void;
@@ -132,6 +140,7 @@ export function useAwariRoom(opts: { name: string }): {
             peerId: sender,
             name: str(p, "name", DEFAULT_PEER_NAME),
             zone: str(p, "zone"),
+            layer: num(p, "layer"),
             y: p.y as number,
             x: p.x as number,
             at: Date.now(),
@@ -157,14 +166,15 @@ export function useAwariRoom(opts: { name: string }): {
     };
   }, []);
 
-  // Broadcast a clicked location (a "ping"), tagged with our name and the zone being
-  // VIEWED (passed in) — not our physical zone — so pinging works while browsing any map.
-  const sendPing = useCallback((eq: { y: number; x: number }, pingZone: string) => {
+  // Broadcast a clicked location (a "ping"), tagged with our name and the zone + layer
+  // being VIEWED (passed in) — not our physical zone — so pinging works while browsing
+  // any map, and a floor's ping only lands on that floor.
+  const sendPing = useCallback((eq: { y: number; x: number }, pingZone: string, layer?: number) => {
     const a = api();
     if (!a) return void log.debug("ping ignored - no Electron bridge");
     if (!pingZone) return void log.debug("ping ignored - no zone in view");
     const name = nameRef.current || DEFAULT_PEER_NAME;
-    const payload = { kind: AWARI_MSG.ping, name, zone: pingZone, y: eq.y, x: eq.x };
+    const payload = { kind: AWARI_MSG.ping, name, zone: pingZone, layer, y: eq.y, x: eq.x };
     // With debug logging on, show exactly what we're broadcasting (gated by the logger).
     log.debug("map click -> broadcasting", payload);
     a.awari.send(payload);
@@ -172,7 +182,7 @@ export function useAwariRoom(opts: { name: string }): {
     // see gives no feedback that the click landed.
     setPings((prev) => ({
       ...prev,
-      [SELF_KEY]: { peerId: SELF_KEY, name, zone: pingZone, y: eq.y, x: eq.x, at: Date.now() },
+      [SELF_KEY]: { peerId: SELF_KEY, name, zone: pingZone, layer, y: eq.y, x: eq.x, at: Date.now() },
     }));
   }, []);
 

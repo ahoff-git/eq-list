@@ -18,10 +18,25 @@
  */
 export const UI_SCALE = { min: 0.6, max: 1, step: 0.05 } as const;
 
-/** Clamp a stored or user-supplied scale into the supported range. */
+/**
+ * The **map window's** range, which unlike the overlay's may go *above* 100%. ADR 0026 capped the
+ * scale at full size because an overlay wants to take up less room than the game, not more — but
+ * the map is the opposite: it's a picture you lean into, and a dungeon corridor at 100% on a big
+ * monitor is smaller than it needs to be.
+ */
+export const MAP_UI_SCALE = { min: 0.6, max: 2, step: 0.05 } as const;
+
+export type ScaleRange = { min: number; max: number; step: number };
+
+/** Clamp a stored or user-supplied scale into a range, rounded to whole percent. */
+export function clampScale(scale: number, range: ScaleRange): number {
+  if (!Number.isFinite(scale)) return range.max;
+  return Math.min(range.max, Math.max(range.min, Math.round(scale * 100) / 100));
+}
+
+/** Clamp into the overlay's range (60%–100%). */
 export function clampUiScale(scale: number): number {
-  if (!Number.isFinite(scale)) return UI_SCALE.max;
-  return Math.min(UI_SCALE.max, Math.max(UI_SCALE.min, Math.round(scale * 100) / 100));
+  return clampScale(scale, UI_SCALE);
 }
 
 export const OVERLAY_HOTKEY = {

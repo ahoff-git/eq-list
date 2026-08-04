@@ -4,7 +4,8 @@
  * the renderer side, apart from the pure geometry in `src/shared/map/`.
  */
 
-import type { MapDimensions } from "@/shared/map/types";
+import { fitRect } from "@/shared/map/coords";
+import type { MapRect } from "@/shared/map/types";
 
 export type CircleOptions = {
   color?: string;
@@ -87,20 +88,13 @@ export function clearCanvas(canvas: HTMLCanvasElement) {
 }
 
 /**
- * Draw an image scaled to fit `canvas` while preserving aspect ratio, centered.
- * Returns the on-screen image size so the caller can record it (e.g. as the
- * zone's `mapDims`) — this function itself keeps no state.
+ * Draw an image fitted into `canvas` (aspect preserved, centred) and return the rectangle
+ * it went into. The fit itself comes from the pure `fitRect`, which the coordinate maths
+ * also uses — the picture and the plotted dot have to measure from the same rectangle.
  */
-export function drawImageScaled(canvas: HTMLCanvasElement, img: HTMLImageElement): MapDimensions {
-  const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-  const x = canvas.width / 2 - (img.width / 2) * scale;
-  const y = canvas.height / 2 - (img.height / 2) * scale;
-
-  const imgWidth = img.width * scale;
-  const imgHeight = img.height * scale;
-
+export function drawImageScaled(canvas: HTMLCanvasElement, img: HTMLImageElement): MapRect {
+  const rect = fitRect({ width: img.naturalWidth, height: img.naturalHeight }, canvas);
   const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(img, x, y, imgWidth, imgHeight);
-
-  return { width: imgWidth, height: imgHeight };
+  ctx.drawImage(img, rect.x, rect.y, rect.width, rect.height);
+  return rect;
 }

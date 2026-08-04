@@ -13,7 +13,7 @@ import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import { stripArticle } from "../src/shared/log-parser";
 import { normalizeItemName, originKey } from "../src/shared/grouping";
-import { clampUiScale } from "../src/shared/constants";
+import { MAP_UI_SCALE, clampScale, clampUiScale } from "../src/shared/constants";
 import type {
   ShoppingList,
   ShoppingListEntry,
@@ -54,11 +54,20 @@ const DEFAULT_SETTINGS: Settings = {
       { id: "root", spell: "Root", enabled: true },
       { id: "instill", spell: "Instill", enabled: true },
     ],
+    // Appearance / behaviour of the alert (all tunable in Settings). displayId is omitted so the
+    // overlay defaults to the primary display until the user picks one.
+    color: "#e5534b", // the app's --bad red
+    soundName: "chirp",
+    position: "top",
+    durationMs: 6000,
+    animation: "pulse",
   },
   overlay: {
     opacity: 0.9,
     alwaysOnTop: true,
     fontScale: 0.9,
+    // The map is a picture: it starts at full size rather than the main window's 90%.
+    mapFontScale: 1,
     showObtained: true,
     followZone: false,
     splitByMode: false,
@@ -118,13 +127,15 @@ export function createStore(userDataDir: string): Store {
   const list: ShoppingList = readJson(listPath, { entries: [], questRuns: {} });
   if (!list.questRuns) list.questRuns = {}; // migrate lists saved before quest runs existed
   let settings: Settings = deepMerge(DEFAULT_SETTINGS, readJson<DeepPartial<Settings>>(settingsPath, {}));
-  // The scale used to allow values above 1 (it enlarged, and never actually applied). Now that
-  // it does apply, and 100% is the maximum, anything stored above it has to come down or the
-  // window would suddenly render bigger than it ever did. Written back so the file agrees with
-  // what's in memory — otherwise the slider and the JSON disagree until something else saves.
+  // Both scales are clamped on load, against *their own* range: the overlay's stops at 100%
+  // (ADR 0026 — an overlay wants to take less room than the game), while the map's may go above it,
+  // being a picture you lean into. Written back so the file agrees with what's in memory —
+  // otherwise the slider and the JSON disagree until something else saves.
   const scale = clampUiScale(settings.overlay.fontScale);
-  if (scale !== settings.overlay.fontScale) {
+  const mapScale = clampScale(settings.overlay.mapFontScale, MAP_UI_SCALE);
+  if (scale !== settings.overlay.fontScale || mapScale !== settings.overlay.mapFontScale) {
     settings.overlay.fontScale = scale;
+    settings.overlay.mapFontScale = mapScale;
     persist(settingsPath, settings);
   }
 

@@ -152,7 +152,10 @@ button {
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* 100%, not 100vh: the interface scale is a CSS `zoom` on the root (see `useUiScale`), and a
+     `vh` length is scaled by it — the shell would cover only `scale` of the window and leave a
+     gap. `zoom` expands the containing block instead, so a percentage fills the window exactly. */
+  height: 100%;
   background: var(--bg);
 }
 /* Frameless float: rounded + bordered (the body is transparent so the corners show
@@ -164,6 +167,13 @@ button {
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
+}
+/* Maximized, the float look stops making sense: the window fills the work area, so rounded
+   corners and a border would just be four notches of desktop showing through. */
+.app.glass.maximized,
+.map-win.maximized {
+  border-radius: 0;
+  border-color: transparent;
 }
 .titlebar {
   -webkit-app-region: drag; /* the titlebar is the window drag handle */
@@ -850,14 +860,15 @@ kbd {
 .map-win {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%; /* see .app — percentages survive the root `zoom`, `vh` doesn't */
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
 }
 .map-win .titlebar h1 { display: flex; align-items: center; gap: 6px; }
-.map-zone-select {
+.map-zone-select,
+.map-source-select {
   background: var(--bg-input);
   color: var(--text);
   border: 1px solid var(--border);
@@ -866,6 +877,20 @@ kbd {
   padding: 2px 6px;
   max-width: 55%;
 }
+/* The map source sits left of the zone picker and stays narrow — the zone name is the
+   thing worth reading, and the titlebar has to fit both. */
+.map-source-select { max-width: 28%; }
+/* Attribution for a community-drawn map file, tucked out of the way of the map itself. */
+.map-credits {
+  position: absolute;
+  bottom: 4px;
+  left: 8px;
+  margin: 0;
+  pointer-events: none;
+  font-size: 10px;
+  opacity: 0.75;
+}
+.map-body { position: relative; }
 .map-follow {
   display: flex;
   align-items: center;
@@ -1013,6 +1038,9 @@ kbd {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
+  /* An explicit colour: the pin *types* set their own inline, so anything without one (the move
+     tool) used to inherit near-black onto a near-black toolbar and effectively vanish. */
+  color: var(--text);
   font-size: 15px;
   line-height: 1;
   padding: 2px 7px;
@@ -1190,12 +1218,10 @@ kbd {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* cast alerts — a flashing banner over the overlay when a watched spell is being cast */
+/* cast alerts — a flashing banner over the overlay when a watched spell is being cast.
+   Colour comes from --alert-color (set inline from Settings), placement from a pos-* class. */
 .cast-alerts {
   position: fixed;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -1204,6 +1230,13 @@ kbd {
   max-width: 92%;
   pointer-events: none;
 }
+/* Where on the overlay the banners stack (Settings → alert position). */
+.cast-alerts.pos-top { top: 8px; left: 50%; transform: translateX(-50%); }
+.cast-alerts.pos-top-left { top: 8px; left: 8px; }
+.cast-alerts.pos-top-right { top: 8px; right: 8px; }
+.cast-alerts.pos-center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.cast-alerts.pos-bottom-left { bottom: 8px; left: 8px; }
+.cast-alerts.pos-bottom-right { bottom: 8px; right: 8px; }
 .cast-alert {
   pointer-events: auto;
   display: flex;
@@ -1211,14 +1244,19 @@ kbd {
   gap: 8px;
   padding: 7px 14px;
   border-radius: 10px;
-  border: 1px solid var(--bad);
-  background: rgba(58, 12, 12, 0.94);
-  color: #ffe3e3;
+  /* The accent (Settings → colour); falls back to the app red if ever unset. */
+  border: 1px solid var(--alert-color, var(--bad));
+  background: rgba(20, 12, 12, 0.94);
+  color: #fdeaea;
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-  animation: cast-alert-pulse 0.7s ease-in-out infinite alternate;
 }
+/* Motion while a banner is up (Settings → animation). */
+.cast-alert.anim-pulse { animation: cast-alert-pulse 0.7s ease-in-out infinite alternate; }
+.cast-alert.anim-wiggle { animation: cast-alert-wiggle 0.4s ease-in-out infinite; }
+.cast-alert.anim-float { animation: cast-alert-float 1.4s ease-in-out infinite alternate; }
+.cast-alert.anim-none { animation: none; }
 .cast-alert .ca-icon { font-size: 1.15em; line-height: 1; }
 .cast-alert .ca-text b { color: #fff; }
 .cast-alert .ca-hint {
@@ -1226,16 +1264,18 @@ kbd {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.78em;
-  color: #ffb0b0;
+  opacity: 0.85;
 }
-/* A red border flash over the whole window when an alert fires (toggleable). */
+/* A coloured border flash over the whole screen when an alert fires (toggleable). */
 .cast-flash {
   position: fixed;
   inset: 0;
   z-index: 90; /* under the banners (100), over the app */
   pointer-events: none;
   border-radius: 12px; /* soften against the frameless window's rounded corners */
-  box-shadow: inset 0 0 0 5px var(--bad), inset 0 0 55px 8px rgba(229, 83, 75, 0.65);
+  box-shadow:
+    inset 0 0 0 5px var(--alert-color, var(--bad)),
+    inset 0 0 55px 8px color-mix(in srgb, var(--alert-color, var(--bad)) 60%, transparent);
   animation: cast-flash-anim 0.6s ease-out forwards;
 }
 @keyframes cast-flash-anim {
@@ -1244,11 +1284,44 @@ kbd {
   100% { opacity: 0; }
 }
 @keyframes cast-alert-pulse {
-  from { border-color: var(--bad); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
-  to   { border-color: #ffd0d0; box-shadow: 0 0 14px rgba(229, 83, 75, 0.7), 0 4px 16px rgba(0, 0, 0, 0.5); }
+  from { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+  to   { box-shadow: 0 0 15px var(--alert-color, var(--bad)), 0 4px 16px rgba(0, 0, 0, 0.5); }
+}
+@keyframes cast-alert-wiggle {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  25% { transform: translateX(-3px) rotate(-1.2deg); }
+  75% { transform: translateX(3px) rotate(1.2deg); }
+}
+@keyframes cast-alert-float {
+  from { transform: translateY(3px); }
+  to   { transform: translateY(-4px); }
 }
 
 /* Suggested crowd-control watches: click-to-add chips grouped by effect (see cast-suggestions.ts). */
 .cast-suggest .cs-row { gap: 6px; margin-top: 4px; align-items: baseline; }
 .cast-suggest .cs-cat { min-width: 46px; }
 .cast-suggest .cs-chip.added { color: var(--good); border-color: var(--accent-dim); opacity: 1; cursor: default; }
+
+/* Alert-style controls (color / sound / position / motion / duration / monitor) in Settings —
+   used for the defaults and for a watch's own style, hence the shared `.astyle` class. */
+.astyle .astyle-row { gap: 8px; align-items: center; margin-bottom: 8px; }
+.astyle .astyle-label { min-width: 62px; color: var(--text-dim); font-size: 12px; }
+.astyle .swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+}
+.astyle .swatch.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--accent); }
+
+/* A watch's own alert style, tucked under its row in Settings. Indented so it reads as
+   belonging to that watch rather than to the list. */
+.watch-style {
+  margin: 4px 0 8px 22px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0 6px 6px 0;
+}

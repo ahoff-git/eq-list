@@ -23,7 +23,32 @@
  * only match casts the log *names*; generic "begins to cast a spell" lines carry no name.)
  */
 import { SELF } from "./combat-parser";
-import type { CastEvent, CastAlertSettings, CastWatch } from "./types";
+import type { AlertStyle, BuffFadedEvent, CastEvent, CastAlertSettings, CastWatch } from "./types";
+
+/**
+ * The style an alert should use: the watch's overrides laid over the defaults, field by field.
+ *
+ * Resolved **here**, at the moment of the alert, and sent with it — rather than letting the
+ * overlay read the settings itself. The overlay would only know the defaults, so a watch's own
+ * color would never reach the screen; and an alert already on screen shouldn't restyle itself
+ * because a later alert had different ideas.
+ */
+export function alertStyle(settings: CastAlertSettings, watch?: CastWatch | null): AlertStyle {
+  const base: AlertStyle = {
+    sound: settings.sound,
+    flash: settings.flash,
+    color: settings.color,
+    soundName: settings.soundName,
+    position: settings.position,
+    durationMs: settings.durationMs,
+    animation: settings.animation,
+  };
+  const over = watch?.style;
+  if (!over) return base;
+  // Only the keys the watch actually set: `{ color: undefined }` must not blank out a default.
+  const set = Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined));
+  return { ...base, ...set };
+}
 
 /**
  * How recent a cast has to be to be worth warning about. Generous next to a cast time, tight
@@ -50,16 +75,54 @@ export function matchCast(
   if (event.caster === SELF && !settings.includeSelf) return null;
   // An unreadable timestamp can't be judged stale, so it's allowed through: missing an alert
   // is the worse failure of the two.
-  const at = Date.parse(event.at);
-  if (!Number.isNaN(at) && now - at > LIVE_WITHIN_MS) return null;
+  if (stale(event.at, now)) return null;
   const named = isNamedCaster(event.caster);
   const spell = event.spell.toLowerCase();
   for (const w of settings.watches) {
     if (!w.enabled) continue;
+    // Unset means on: every watch that predates the choice is a cast watch.
+    if (w.onCast === false) continue;
     // A named caster (player / pet / named NPC) only fires a watch that opted them in.
     if (named && !w.includePlayers) continue;
-    const needle = w.spell.trim().toLowerCase();
-    if (needle && spell.includes(needle)) return w;
+    if (matchesWatch(w, spell)) return w;
+  }
+  return null;
+}
+
+/** Is this watch's text in the spell name? (Both already lowercased.) */
+function matchesWatch(w: CastWatch, spell: string): boolean {
+  const needle = w.spell.trim().toLowerCase();
+  return !!needle && spell.includes(needle);
+}
+
+/** Too old to act on — the same liveness rule casts get, for the same reason. */
+function stale(at: string, now: number): boolean {
+  const t = Date.parse(at);
+  return !Number.isNaN(t) && now - t > LIVE_WITHIN_MS;
+}
+
+/**
+ * The watch a *fade* matches (a watch with `onFade`, whose text is in the faded spell), or null.
+ *
+ * None of the caster rules apply here: a fade line has no caster, only the spell and — for one
+ * you'd cast on something else — who it wore off. So `includeSelf`/`includePlayers` are
+ * irrelevant, and a fade on you, on your pet and on your target are all reportable. What the
+ * player asked for is the prompt itself: "your root is gone, re-root".
+ *
+ * One honest limit: EQ words some fades per spell ("Your strength fades.") and names no spell at
+ * all, so such a watch has to match those words rather than the spell's name.
+ */
+export function matchFade(
+  event: Pick<BuffFadedEvent, "spell" | "at">,
+  settings: CastAlertSettings,
+  now: number = Date.now(),
+): CastWatch | null {
+  if (!settings.enabled) return null;
+  if (stale(event.at, now)) return null;
+  const spell = event.spell.toLowerCase();
+  for (const w of settings.watches) {
+    if (!w.enabled || !w.onFade) continue;
+    if (matchesWatch(w, spell)) return w;
   }
   return null;
 }

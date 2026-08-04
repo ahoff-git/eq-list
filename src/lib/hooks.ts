@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { setRendererDebug } from "@/shared/logging";
+import { UI_SCALE, clampScale, type ScaleRange } from "@/shared/constants";
 import type {
   ShoppingList,
   Settings,
@@ -175,6 +176,37 @@ export function useCurrentZone(): string | null {
     return a.zone.onChanged(setZone);
   }, []);
   return zone;
+}
+
+/**
+ * Scale this window's whole interface, as a CSS `zoom` on the document root.
+ *
+ * **Not** `webContents.setZoomFactor`, which was the obvious choice and cannot work: Chromium's
+ * zoom is per *origin*, and every window here is served from one (`app://local` packaged,
+ * `localhost:3000` in dev). Setting it on one window moved every window — so the map's A−/A+ and
+ * the main window's fought over a single number instead of holding their own. Measured, not
+ * assumed. CSS `zoom` is per document, so each window keeps its own.
+ *
+ * The shells must use `height: 100%` rather than `100vh` for this: a `vh` length gets scaled by
+ * the zoom (leaving a gap), while `zoom` expands the containing block so percentages fill the
+ * window exactly. See `.app` in globals.css.
+ */
+export function useUiScale(scale: number | undefined, range: ScaleRange = UI_SCALE): void {
+  useEffect(() => {
+    if (scale === undefined) return; // settings not loaded yet — leave it alone
+    document.documentElement.style.zoom = String(clampScale(scale, range));
+  }, [scale, range]);
+}
+
+/**
+ * Whether this window is maximized. The main process announces it — including once per load,
+ * so a fresh renderer doesn't start out guessing — because a frameless window's own titlebar
+ * has no other way to know, and the window can be maximized by things that aren't our button.
+ */
+export function useMaximized(): boolean {
+  const [maximized, setMaximized] = useState(false);
+  useEffect(() => api()?.win.onMaximizeChanged(setMaximized), []);
+  return maximized;
 }
 
 /** The player's last logged location (from `/loc`), or null if none yet. */

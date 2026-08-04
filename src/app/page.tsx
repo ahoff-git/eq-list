@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import SearchPanel from "./components/SearchPanel";
+import MaximizeButton from "./components/MaximizeButton";
+import ScaleButtons from "./components/ScaleButtons";
 import ListPanel from "./components/ListPanel";
 import HuntPanel from "./components/HuntPanel";
 import SettingsPanel from "./components/SettingsPanel";
@@ -14,12 +16,12 @@ import PinButton from "./components/PinButton";
 import CastAlerts from "./components/CastAlerts";
 import UpdateBanner from "./components/UpdateBanner";
 import TabBar, { type TabItem } from "./components/TabBar";
-import { useRendererDebug, useShoppingList, useSettings } from "@/lib/hooks";
+import { useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
 import AwariHost from "@/lib/awari/host";
-import { OVERLAY_HOTKEY, UI_SCALE, clampUiScale } from "@/shared/constants";
+import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
 type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "settings";
 
@@ -34,18 +36,20 @@ export default function Home() {
   // Undetermined until mounted (keeps SSR/first-client render consistent).
   const [inElectron, setInElectron] = useState<boolean | null>(null);
   const list = useShoppingList();
+  // Squares the window's corners while maximized (see globals.css).
+  const maximized = useMaximized();
   const settings = useSettings();
   // This window owns the awari connection, so its diagnostics are the ones worth having.
   useRendererDebug();
   const pinned = settings?.overlay.alwaysOnTop ?? true;
   const sliderOpacity = settings?.overlay.opacity ?? 1;
   // Scale lives in settings (main applies it as the window's zoom factor); the titlebar just
-  // nudges it, so the Settings slider and these buttons are the same one value.
+  // nudges it, so the Settings slider and these buttons are the same one value. The map window
+  // has its own, stepped by its own copy of these buttons.
   const uiScale = settings?.overlay.fontScale ?? UI_SCALE.max;
-  const stepUiScale = (direction: number) => {
-    const next = clampUiScale(uiScale + direction * UI_SCALE.step);
-    if (next !== uiScale) api()?.settings.update({ overlay: { fontScale: next } });
-  };
+  // This window scales itself: the scale is a CSS zoom per document, because Chromium's own zoom
+  // is per-origin and every window here shares one (see `useUiScale`).
+  useUiScale(settings?.overlay.fontScale);
   // Transient "full opacity" toggle: flip between 100% and the settings slider value.
   const [opaque, setOpaque] = useState(false);
   // Owned here so the Hunt tab's zone filter survives switching tabs (and, persisted,
@@ -60,10 +64,14 @@ export default function Home() {
     setInElectron(!!api());
   }, []);
 
-  // Apply the live opacity (overrides the main-process value while toggled opaque).
+  // The renderer owns the window's opacity (main no longer re-applies it — see
+  // applyOverlaySettings), so the transient "fully opaque" toggle sticks across other actions.
+  // Wait for settings before touching it, or the `?? 1` fallback would flash the window fully
+  // opaque on launch before the saved value loads (the constructor already set it correctly).
   useEffect(() => {
+    if (!settings) return;
     api()?.win.setOpacity(opaque ? 1 : sliderOpacity);
-  }, [opaque, sliderOpacity]);
+  }, [opaque, sliderOpacity, settings]);
 
   // A screengrab lookup fills the Search box with OCR'd text and jumps here.
   useEffect(() => {
@@ -97,7 +105,7 @@ export default function Home() {
           reliably play the sound. */}
       <CastAlerts showVisual={false} />
 
-      <div className="app glass">
+      <div className={`app glass ${maximized ? "maximized" : ""}`}>
         <div className="titlebar">
           <h1>
             <span className="mark">EQ</span> List
@@ -107,22 +115,10 @@ export default function Home() {
             <button className="wc" title="Open map window" onClick={() => api()?.map.open()}>
               🗺
             </button>
-            <button
-              className="wc"
-              title={`Smaller interface — ${Math.round(uiScale * 100)}%`}
-              onClick={() => stepUiScale(-1)}
-              disabled={uiScale <= UI_SCALE.min}
-            >
-              A−
-            </button>
-            <button
-              className="wc"
-              title={`Larger interface — ${Math.round(uiScale * 100)}% (100% is full size)`}
-              onClick={() => stepUiScale(1)}
-              disabled={uiScale >= UI_SCALE.max}
-            >
-              A+
-            </button>
+            <ScaleButtons
+              scale={uiScale}
+              onScale={(next) => api()?.settings.update({ overlay: { fontScale: next } })}
+            />
             <button
               className={`wc ${opaque ? "on" : ""}`}
               title={
@@ -142,6 +138,7 @@ export default function Home() {
             <button className="wc" title="Minimize" onClick={() => api()?.win.minimize()}>
               —
             </button>
+            <MaximizeButton />
             <button className="wc" title="Hide to tray" onClick={() => api()?.win.hide()}>
               ✕
             </button>

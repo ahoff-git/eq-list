@@ -260,9 +260,10 @@ export function createHpEstimate(
           return;
         }
         case "buff-faded": {
-          // A pet's buff can't move *your* maximum; one of yours can, so any window that
-          // spans the change is no longer comparable.
-          if (event.pet) return;
+          // Only a buff that was on *you* can move your maximum. A pet's can't, and neither can
+          // one of your spells wearing off something you cast it at (a root on a mob) — the
+          // parser reports all three now, so both are skipped here.
+          if (event.pet || event.target) return;
           observeSurvived(sinceHeal, healWindowStart, lastHitAt);
           resetWindows(false);
           return;

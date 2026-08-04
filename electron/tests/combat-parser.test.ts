@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { parseCombat, combatant, SELF } from "../../src/shared/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type {
+  BuffFadedEvent,
   CastEvent,
   DamageEvent,
   DeathEvent,
@@ -299,4 +300,55 @@ test("combatant() folds case/articles so one mob is one row", () => {
   assert.equal(combatant("You"), SELF);
   // A mob whose real name starts with "The" keeps its capital — only the article folds.
   assert.equal(combatant("The Ancient One"), "the Ancient One");
+});
+
+// ── fades ──────────────────────────────────────────────────────────────────────
+// All four shapes are lines from a real log. Whose spell it was decides who cares: only your
+// own can move your maximum hit points, while a watch waiting to re-root wants the third.
+
+test("a buff fading on you, on your pet, and on something you cast it at", () => {
+  const mine = parse("Your Spirit of Wolf spell has worn off.") as BuffFadedEvent;
+  assert.equal(mine?.kind, "buff-faded");
+  assert.deepEqual(
+    { spell: mine.spell, pet: mine.pet, target: mine.target },
+    { spell: "Spirit of Wolf", pet: false, target: undefined },
+  );
+
+  const pet = parse("Your pet's Burst of Strength spell has worn off.") as BuffFadedEvent;
+  assert.equal(pet?.kind, "buff-faded");
+  assert.equal(pet.pet, true);
+  assert.equal(pet.spell, "Burst of Strength");
+
+  // The commonest form in a real log, and the one the old pattern missed entirely.
+  const theirs = parse("Your Root spell has worn off of a wild tiger.") as BuffFadedEvent;
+  assert.equal(theirs?.kind, "buff-faded");
+  assert.equal(theirs.spell, "Root");
+  assert.equal(theirs.target, "a wild tiger");
+  assert.equal(theirs.pet, false);
+});
+
+test("EQ's per-spell fade wording is kept as the words it used", () => {
+  // These name no spell at all — "Fleeting Fury" expiring says "Your fury fades."
+  for (const [text, words] of [
+    ["Your fury fades.", "fury"],
+    ["Your surge of strength fades.", "surge of strength"],
+    ["Your sense of center fades.", "sense of center"],
+  ] as const) {
+    const event = parse(text) as BuffFadedEvent;
+    assert.equal(event?.kind, "buff-faded", text);
+    assert.equal(event.spell, words);
+    assert.equal(event.target, undefined); // still your own buff
+  }
+});
+
+test("somebody gating out is not a spell fading", () => {
+  // "Bunnyslayer fades away." is a person leaving, and 18 of those an evening would be noise.
+  assert.equal(parse("Bunnyslayer fades away."), null);
+  assert.equal(parse("A wild tiger fades away."), null);
+});
+
+test("a spell wearing off you by name is still your own", () => {
+  const event = parse("Your Fleeting Fury spell has worn off of you.") as BuffFadedEvent;
+  assert.equal(event?.kind, "buff-faded");
+  assert.equal(event.target, undefined, "the reflexive form means it was on you");
 });

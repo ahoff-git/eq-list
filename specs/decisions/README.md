@@ -40,6 +40,11 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0034: Tell the user a newer build exists; don't install it for them](./0034-update-notification.md)
 - [0035: Cast alerts get their own click-through overlay window, over the game](./0035-cast-alert-overlay-window.md)
 - [0036: A fight ends on a death, not on a lull](./0036-a-fight-ends-on-death-not-a-lull.md)
+- [0037: A zone is one place; its layers are a user choice, not a log fact](./0037-one-zone-many-layers.md)
+- [0038: A map has a scale and a centre, and you calibrate it by clicking](./0038-a-map-has-a-scale-and-a-centre.md) — *replaces the `size`/`centerOffset` pair from 0010*
+- [0039: Render the game's own map files, and let the player choose whose maps](./0039-render-the-game-s-own-maps.md)
+- [0040: Floors come from the mapmaker's labels, not from the geometry](./0040-floors-come-from-the-mapmaker.md) — *extends 0037's layer picker to vector maps*
+- [0041: The interface scale is a CSS zoom per window, not Chromium's](./0041-interface-scale-is-a-css-zoom-per-window.md) — *re-implements 0026; Chromium's zoom is per-origin*
 
 ## Open Questions
 - Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the

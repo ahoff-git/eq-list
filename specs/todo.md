@@ -6,9 +6,15 @@ in the **[manual QA checklist](./testing/manual-qa.md)**, not here.
 
 _Zones:_
 
+- **Calibrate the five bundled-but-uncalibrated maps.** RunnyEye Citadel's four floors and
+  Northern Desert of Ro ship with images and **no calibration** — what they used to carry was
+  their image's own pixel dimensions, which plotted your dot at a fictitious spot
+  ([ADR 0038](./decisions/0038-a-map-has-a-scale-and-a-centre.md)). Each now needs one real
+  visit: 📐, `/loc`, click where you are, walk somewhere far, `/loc`, click again. Two clicks
+  per floor, and the values get pasted into `zones.ts`.
 - **Add maps for the zones actually being played.** A real log showed visits to East Commonlands,
   The Estate of Unrest, New Sebilis Expedition and the EQL Tutorial — none of which have a bundled
-  map, so the map window falls back to the P99 link. Each needs an image plus hand calibration (📐),
+  map, so the map window falls back to the P99 link. Each needs an image plus calibration (📐),
   see [map](./map/README.md).
 
 _Distribution wiring:_
@@ -99,13 +105,25 @@ _To discuss:_
 
 _Recently settled (kept only as pointers):_
 
-- Parse-once pipeline and the single session tracker shipped — see
-  [ADR 0019](./decisions/0019-parse-once-and-one-tracker.md).
 - Need to keep Awari up to date. We are 2 releases behind currently
   - Should use the optional google handshake stuff. peerjs servers are iffy
-- Need to support multiple level maps (ex RunnyEye Citadel had 4 layers)
-  - Players will need a way to choose the zone, and a layer. Both of these should effect pins, pings etc. 
-- Should be able to choose a monitor for the alert to appear on
-- Need to add more colors to the alert options 
-- Need to add more sounds to the alert options 
-- Need to add more notifaction animation options (ex, alert location, duration, wiggle, float direction, etc)
+
+
+- **A 'custom' alert location you place with the mouse.** The one alert item still open: stick the
+  banner to the cursor, click to drop it, name that spot, then pick it per alert (the per-alert
+  style plumbing is already there — it'd be another `AlertStyle` field plus a named-location list).
+  The work is in the overlay window: it's click-through and never focused
+  ([ADR 0035](./decisions/0035-cast-alert-overlay-window.md)), so placement means temporarily
+  making it interactive and focusable, then handing the dropped point back.
+
+- Player pings are currently light yellow and are very hard to see. Either add a thin dark outline or change the color.
+
+- **Name the zones we could only name by their file.** 133 game maps resolve to 14 real zone
+  names; the rest show as `gukbottom`. Deliberate — a wrong name plots kills in the wrong
+  place — but the alias table in `map-sources.ts` is where they get filled in, a few at a time
+  as zones are actually visited.
+
+
+- Add toggles for tables 
+- Fix the zone names. Go research all the zones and show more normal names when possible. 
+  - update the zone picker to be a combo dropdown that you can type in, and narrow the selection options to only zones that match a reasonable  lavenstein distance 

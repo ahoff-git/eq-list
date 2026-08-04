@@ -11,13 +11,37 @@ list, hunt, search, damage, session, settings.
   controls — an **opacity toggle** (flip between 100% and the settings slider value,
   transient via `win.setOpacity`), **pin** (always-on-top, toggles `overlay.alwaysOnTop`
   — the shared `PinButton`, gray off / red on, same as the map window), **minimize**,
-  **interface scale** (A− / A+, stepping `overlay.fontScale` over `UI_SCALE` — 60%–100%,
-  the same value the Settings slider holds), and **hide-to-tray** (`win.hide()`).
-  Opacity/always-on-top come from settings and are applied by the main process
-  (`applyOverlaySettings`), which also pushes the scale onto **every** window as a zoom
-  factor — see [ADR 0026](../decisions/0026-interface-scale-only-shrinks.md). Show/hide also works from the
+  **interface scale** (the shared `ScaleButtons`: A− / A+, stepping `overlay.fontScale` over
+  `UI_SCALE` — 60%–100%, the same value the Settings slider holds), **maximize/restore** (the
+  shared `MaximizeButton`, see below) and **hide-to-tray** (`win.hide()`).
+  **Always-on-top** and the interface **scale** come from settings and are applied by the main
+  process (`applyOverlaySettings`). The **scale** is applied by each window's *own renderer*, as a
+  CSS `zoom` on the document root (`useUiScale`) — see
+  [ADR 0026](../decisions/0026-interface-scale-only-shrinks.md) for why 100% is the ceiling and
+  [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md) for why it can't be
+  Chromium's `setZoomFactor` (per *origin*, and every window shares one, so two windows could never
+  hold two scales). **The map window scales separately** (`overlay.mapFontScale`, its own A− / A+):
+  one window is a column of text you shrink to reclaim desk space, the other is a picture you
+  enlarge to read. A shell inside a scaled window must size with **percentages, not `vh`** — a `vh`
+  length is scaled by the zoom and comes up short. **Opacity** is the exception:
+  the window opens at the saved value (constructor) and the **renderer** owns it thereafter, so the
+  transient ◐ toggle isn't clobbered when the main process reacts to some other settings change.
+  Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
   tray. One window, styled once; see [ADR 0009](../decisions/0009-single-window-with-tray.md).
+- **Maximize / restore** (`MaximizeButton` + `useMaximized`): a frameless window draws its own
+  titlebar, so it has to be given what the OS would normally provide. The button asks main to
+  `maximize()`/`unmaximize()`, and main reports the window's `maximize`/`unmaximize` events
+  back — so the glyph (▢ / ❐) follows the window even when something else maximizes it
+  (a drag-region double-click, `Win+↑`, the taskbar), and is re-announced on every load so a
+  reloaded renderer can't start out wrong. Maximizing **squares the window's corners and hides
+  its border** (`.maximized`): the rounded float look would otherwise leave four notches of
+  desktop showing. The state persists per window in `window-state.json` beside — not instead
+  of — the bounds, which stay the size to restore *to*; "Reset window position" clears it, since
+  a window lost behind a maximized frame is what that button is for. Both the main and map
+  windows have it; the **cast-alert overlay does not**, being click-through and
+  `maximizable: false`, which is also why the main process can just ask `isMaximizable()`
+  rather than track which window is the exception.
 - **System tray** (`main.ts`): show/hide plus the **dev-only** options kept out of the
   UI — Debug logging, Open debug log, Open developer tools (on the focused/main
   window), Reset window position, and Quit. The tray is the only way to fully exit
@@ -143,9 +167,16 @@ list, hunt, search, damage, session, settings.
       future figure the log can't supply.
   - `SettingsPanel` — log folder, match mode, window opacity / interface scale, keep-completed,
     follow-your-zone, **cast alerts** (the watched-spell list + beep/**screen-flash**/include-self
-    toggles, a **Test alert** button that fires a sample down the real broadcast path, and
+    toggles, a **Test alert** button that fires a sample down the real broadcast path,
     **Suggested** click-to-add chips of common crowd control grouped by effect — see
-    `src/shared/cast-suggestions.ts`, since EQ names most CC off-theme),
+    `src/shared/cast-suggestions.ts`, since EQ names most CC off-theme — and an **Alert style**
+    block: color swatches, a **sound** picker (synthesized presets from `src/lib/alertSounds.ts`,
+    with a Preview button), on-screen **position**, **motion** (pulse/wiggle/float/none),
+    **duration**, and — with more than one monitor — which **display** the overlay covers. Those
+    controls are `AlertStyleFields`, used twice: once for the **defaults** and again for a watch
+    with a style **of its own** (🎨 on its row, which copies the defaults and then lets you tune
+    them, with a Test button that previews *that* watch). Each watch also chooses which prompts
+    it wants — **cast**, **fades**, or both),
     **"Eat a log file"** (digest a past log into learned mob data — see `electron/log-import.ts`;
     keyed per line so re-eating or overlapping logs never double-count, [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md)),
     and a **Help** area: global-shortcut list with live registration status (`app.info()`) and a
@@ -163,6 +194,25 @@ list, hunt, search, damage, session, settings.
     watch has an **include-players** toggle: off (default), a named caster — player, pet, named
     NPC — doesn't fire it, so a groupmate's Charm stays quiet; on, it does. Only casts the log
     *names* can match — generic "begins to cast a spell" lines carry no name.
+
+    A watch can also alert when its spell **fades** (`matchFade`) — the opposite prompt, "re-cast
+    it": your root wearing off a mob, your Spirit of Wolf expiring. Off by default, and separable
+    from the cast alert, so a buff can be fade-only. The parser reports all four shapes a real log
+    uses, including your spell wearing off *something else* and EQ's per-spell flavour wording
+    ("Your strength fades."), which names no spell — such a watch matches those words instead.
+
+    Appearance is **per alert**, not per window: `alertStyle` resolves the matching watch's
+    overrides over the defaults in the main process, and the resolved `AlertStyle` travels *with*
+    the alert. It has to — the overlay only knows the defaults, so nothing per-watch could reach
+    the screen otherwise — and an alert already up keeps the look it fired with. Two alerts can
+    now occupy different corners, so the banner renders one stack per position.
+
+    The overlay covers the chosen display, and changing that **moves** it rather than rebuilding
+    it: recreating raced with its own teardown (the old window's `closed` nulled out the new
+    reference), which is why a monitor change appeared to do nothing until some other setting
+    rebuilt the window. Its bounds are re-asserted after creation, on show, and once more a beat
+    later — the constructor mis-sizes a window made for a secondary or HiDPI monitor, exactly as
+    the screengrab selector already worked around.
 - **Screengrab lookup** (`src/app/select/page.tsx` + `electron/lookup.ts`): the
   `Ctrl/Cmd+Shift+L` hotkey (or the Search/Settings buttons) screenshots every display
   *first* (before any window shows, so a hovered tooltip is frozen and our UI isn't
@@ -180,8 +230,9 @@ list, hunt, search, damage, session, settings.
 ## Non-responsibilities
 - No business logic or persistence in the renderer — it calls `window.eql` and renders
   store state.
-- Window creation, opacity, and always-on-top are applied by the main process
-  (`electron/windows.ts`); the UI only requests them.
+- Window creation and always-on-top are applied by the main process
+  (`electron/windows.ts`); the UI only requests them. (Opacity is the one exception — the renderer
+  owns the live value so the transient ◐ toggle survives unrelated settings changes.)
 
 ## See also
 [architecture](../architecture/README.md) ·

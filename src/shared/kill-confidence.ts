@@ -9,12 +9,12 @@
 
 /** One rung of the ladder from "measured" to "don't believe this". */
 export interface ConfidenceTier {
-  /** Drawn on the map and shown in the list. Deliberately a filling circle, not a colour
-   *  alone — it has to read on a busy map and for colour-blind players. */
+  /** Drawn on the map and shown in the list. Deliberately a filling circle, not a color
+   *  alone — it has to read on a busy map and for color-blind players. */
   glyph: string;
   /** Short name, for a legend or a filter. */
   label: string;
-  /** Colour for the marker; green through amber to red as the guess gets worse. */
+  /** Color for the marker; green through amber to red as the guess gets worse. */
   color: string;
   /** Plain-language explanation, for the hover. */
   why: string;

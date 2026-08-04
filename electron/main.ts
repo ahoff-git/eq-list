@@ -29,7 +29,7 @@ import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
 import { characterFromLogFile } from "../src/shared/log-parser";
-import { matchCast } from "../src/shared/cast-alerts";
+import { alertStyle, matchCast, matchFade } from "../src/shared/cast-alerts";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -171,9 +171,14 @@ if (!app.requestSingleInstanceLock()) {
 
   // The click-through alert overlay exists only while cast alerts are on — no point floating an
   // invisible window over the game otherwise, and turning alerts off should take it away.
+  // Changing the chosen monitor *moves* it (`createAlertWindow` re-covers the display), rather
+  // than racing a teardown against its replacement.
   function syncAlertWindow(settings: Settings): void {
-    if (settings.castAlerts.enabled) createAlertWindow();
-    else closeAlertWindow();
+    if (!settings.castAlerts.enabled) {
+      closeAlertWindow();
+      return;
+    }
+    createAlertWindow(settings.castAlerts.displayId);
   }
   syncAlertWindow(store.getSettings());
 
@@ -227,13 +232,37 @@ if (!app.requestSingleInstanceLock()) {
     xp.levelUp(event.level, event.at);
     hp.levelUp(event.level); // more hit points now, so the old bounds are void
   });
+  /** Put an alert on the overlay, above the app windows as well as the game. */
+  function raiseAlert(alert: CastAlertEvent): void {
+    getAlertWindow()?.moveTop();
+    broadcast(CH.castAlert, alert);
+  }
   watcher.onCombat((event) => {
     combat.record(event);
     hp.record(event);
-    // Dispel prep: flash the overlay when a watched spell begins casting.
-    if (event.kind === "cast" && matchCast(event, store.getSettings().castAlerts)) {
-      getAlertWindow()?.moveTop(); // ensure the overlay is above the app windows, not just the game
-      broadcast(CH.castAlert, { caster: event.caster, spell: event.spell, at: event.at } satisfies CastAlertEvent);
+    // Dispel prep: flash the overlay when a watched spell begins casting — and, for a watch
+    // that asked, when one fades ("your root is gone, re-root").
+    const alerts = store.getSettings().castAlerts;
+    const cast = event.kind === "cast" ? matchCast(event, alerts) : null;
+    const fade = event.kind === "buff-faded" ? matchFade(event, alerts) : null;
+    // The style is resolved here, from the watch that matched, and travels with the alert.
+    if (cast && event.kind === "cast") {
+      raiseAlert({
+        caster: event.caster,
+        spell: event.spell,
+        at: event.at,
+        event: "cast",
+        style: alertStyle(alerts, cast),
+      });
+    } else if (fade && event.kind === "buff-faded") {
+      raiseAlert({
+        caster: "",
+        spell: event.spell,
+        at: event.at,
+        event: "fade",
+        target: event.pet ? "your pet" : event.target,
+        style: alertStyle(alerts, fade),
+      });
     }
   });
   // Fights are filed as they end, so history survives a crash as well as a clean quit.

@@ -1,40 +1,62 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { api } from "@/lib/api";
 import { useSettings } from "@/lib/hooks";
-import type { CastAlertEvent } from "@/shared/types";
+import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
+import type { AlertPosition, AlertStyle, CastAlertEvent } from "@/shared/types";
 
-const ALERT_MS = 6000; // how long a banner stays up
+const DEFAULT_DURATION_MS = 6000;
+const MIN_DURATION_MS = 1000;
 const MAX_ALERTS = 4; // cap so a caster spamming a spell can't bury the screen
 
 interface ActiveAlert extends CastAlertEvent {
   id: number;
+  /** The style it fired with — fixed at that moment, so nothing later restyles it. */
+  resolved: AlertStyle;
 }
 
 /**
- * The dispel-prep alert surface: shows a banner and a red border flash when the main process
- * reports a watched spell beginning to cast (see Settings → Cast alerts).
+ * The dispel-prep alert surface: a banner and a colored screen-border flash when the main
+ * process reports a watched spell beginning to cast (see Settings → Cast alerts). Its whole
+ * appearance — color, on-screen position, motion, how long it lingers, and which beep — comes
+ * from `settings.castAlerts`, so the user tunes it.
  *
  * Split across windows so the alert lands where it's useful without beeping twice:
  *   - the **alert overlay** window (`/alert`) draws the visuals *over the game* — `showVisual`,
- *     `canBeep=false` (it's click-through and never focused, so it can't unlock audio);
+ *     `canBeep=false` (it's click-through and never focused, so it can't reliably unlock audio);
  *   - the always-alive **main** window owns the sound — `canBeep`, `showVisual=false`.
  *
  * Renders nothing until an alert fires (and nothing at all when `showVisual` is false). Each
- * banner auto-dismisses after a few seconds.
+ * banner auto-dismisses after `durationMs`.
  */
 export default function CastAlerts({ canBeep = true, showVisual = true }: { canBeep?: boolean; showVisual?: boolean }) {
   const settings = useSettings();
+  const ca = settings?.castAlerts;
   const [alerts, setAlerts] = useState<ActiveAlert[]>([]);
   const nextId = useRef(0);
   // A changing key remounts the flash overlay so its one-shot animation replays; null hides it.
   const [flashKey, setFlashKey] = useState<number | null>(null);
   const flashCount = useRef(0);
-  // Read the toggles through refs so the subscription can stay mount-once.
-  const soundRef = useRef(false);
-  soundRef.current = canBeep && (settings?.castAlerts?.sound ?? false);
-  const flashRef = useRef(false);
-  flashRef.current = settings?.castAlerts?.flash ?? false;
+  /**
+   * The style an alert should be shown in. It arrives *with* the alert, already resolved from
+   * the defaults and the matching watch's overrides (`alertStyle`) — this window only knows the
+   * defaults, so anything per-watch could only come this way. The settings are the fallback for
+   * a payload without one.
+   */
+  const styleOf = (e: CastAlertEvent): AlertStyle => ({
+    sound: e.style?.sound ?? ca?.sound ?? false,
+    flash: e.style?.flash ?? ca?.flash ?? false,
+    color: e.style?.color ?? ca?.color ?? "#e5534b",
+    soundName: e.style?.soundName ?? ca?.soundName ?? DEFAULT_ALERT_SOUND,
+    position: e.style?.position ?? ca?.position ?? "top",
+    durationMs: e.style?.durationMs ?? ca?.durationMs ?? DEFAULT_DURATION_MS,
+    animation: e.style?.animation ?? ca?.animation ?? "pulse",
+  });
+  // Reached from a mount-once subscription, so it goes through a ref.
+  const styleRef = useRef(styleOf);
+  styleRef.current = styleOf;
+  const canBeepRef = useRef(true);
+  canBeepRef.current = canBeep;
   const showVisualRef = useRef(true);
   showVisualRef.current = showVisual;
 
@@ -42,63 +64,70 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
     const a = api();
     if (!a) return;
     return a.alerts.onCast((e) => {
-      if (soundRef.current) beep();
+      const style = styleRef.current(e);
+      if (canBeepRef.current && style.sound) playAlertSound(style.soundName);
       if (!showVisualRef.current) return; // a beep-only instance (the main window)
       const id = nextId.current++;
-      setAlerts((prev) => [{ ...e, id }, ...prev].slice(0, MAX_ALERTS));
-      if (flashRef.current) setFlashKey(++flashCount.current);
-      window.setTimeout(() => setAlerts((prev) => prev.filter((x) => x.id !== id)), ALERT_MS);
+      // The resolved style rides along on the active alert: one already on screen must keep the
+      // look it fired with, whatever the next alert (or a settings edit) says.
+      setAlerts((prev) => [{ ...e, id, resolved: style }, ...prev].slice(0, MAX_ALERTS));
+      if (style.flash) setFlashKey(++flashCount.current);
+      const ms = Math.max(MIN_DURATION_MS, style.durationMs);
+      window.setTimeout(() => setAlerts((prev) => prev.filter((x) => x.id !== id)), ms);
     });
   }, []);
 
   if (!showVisual || (!alerts.length && flashKey === null)) return null;
+
+  // A custom property carries each alert's color into the CSS (border + flash), falling back to
+  // the app's red if it's ever unset. Per *alert*, not per window, now that a watch can have its
+  // own — the flash is one screen-wide effect, so the newest alert's color wins it.
+  const accent = (color: string) => ({ "--alert-color": color }) as CSSProperties;
+  const flashColor = alerts[0]?.resolved.color ?? ca?.color ?? "#e5534b";
+  // One stack per position: two alerts can now want different corners of the screen.
+  const stacks = new Map<AlertPosition, ActiveAlert[]>();
+  for (const a of alerts) stacks.set(a.resolved.position, [...(stacks.get(a.resolved.position) ?? []), a]);
+
   return (
     <>
       {flashKey !== null && (
-        <div className="cast-flash" key={flashKey} aria-hidden onAnimationEnd={() => setFlashKey(null)} />
+        <div
+          className="cast-flash"
+          key={flashKey}
+          style={accent(flashColor)}
+          aria-hidden
+          onAnimationEnd={() => setFlashKey(null)}
+        />
       )}
-      {alerts.length > 0 && (
-        <div className="cast-alerts no-drag">
-          {alerts.map((a) => (
+      {[...stacks].map(([position, stack]) => (
+        <div className={`cast-alerts no-drag pos-${position}`} key={position}>
+          {stack.map((a) => (
             <button
               key={a.id}
-              className="cast-alert"
+              className={`cast-alert anim-${a.resolved.animation}`}
+              style={accent(a.resolved.color)}
               title="Dismiss"
               onClick={() => setAlerts((prev) => prev.filter((x) => x.id !== a.id))}
             >
-              <span className="ca-icon">⚠</span>
+              {/* A cast and a fade are opposite prompts — stop that, versus do that again — so
+                  they don't get to look alike. */}
+              <span className="ca-icon">{a.event === "fade" ? "⏳" : "⚠"}</span>
               <span className="ca-text">
-                <b>{a.caster}</b> casting <b>{a.spell}</b>
+                {a.event === "fade" ? (
+                  <>
+                    <b>{a.spell}</b> faded{a.target ? <> on <b>{a.target}</b></> : ""}
+                  </>
+                ) : (
+                  <>
+                    <b>{a.caster}</b> casting <b>{a.spell}</b>
+                  </>
+                )}
               </span>
-              <span className="ca-hint">dispel!</span>
+              <span className="ca-hint">{a.event === "fade" ? "re-cast!" : "dispel!"}</span>
             </button>
           ))}
         </div>
-      )}
+      ))}
     </>
   );
-}
-
-// A short two-tone alert via Web Audio, so there's no bundled sound asset. One context is
-// reused across alerts; any failure (no audio device) leaves the visual banner as the alert.
-let audioCtx: AudioContext | null = null;
-function beep() {
-  try {
-    audioCtx ??= new AudioContext();
-    const ctx = audioCtx;
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.setValueAtTime(880, t);
-    osc.frequency.setValueAtTime(660, t + 0.12);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.32);
-  } catch {
-    /* no audio available — the banner still fires */
-  }
 }

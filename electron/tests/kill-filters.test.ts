@@ -96,7 +96,7 @@ test("confidence tiers run from measured to unplaced, and never fall through", (
   assert.equal(confidenceTier(0.3).label, "approximate");
   assert.equal(confidenceTier(0.05).label, "guess");
   assert.equal(confidenceTier(0).label, "unplaced");
-  // Every tier has a distinct glyph, so the map reads without relying on colour.
+  // Every tier has a distinct glyph, so the map reads without relying on color.
   const glyphs = CONFIDENCE_TIERS.map((t) => t.glyph);
   assert.equal(new Set(glyphs).size, glyphs.length);
 });

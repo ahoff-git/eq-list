@@ -3,13 +3,15 @@
  * Handlers stay thin: they translate a call into a store/wiki/watcher method.
  * One-way main→renderer events (list/settings/loot/status) are wired in main.ts.
  */
-import { ipcMain, dialog, shell, BrowserWindow } from "electron";
+import { ipcMain, dialog, shell, screen, BrowserWindow } from "electron";
 import { CH } from "../src/shared/ipc-channels";
 import { p99ZoneUrl } from "../src/shared/constants";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE } from "./wiki/api";
 import { importLog } from "./log-import";
+import { createMapReader, listSources } from "./eq-maps";
+import { alertStyle } from "../src/shared/cast-alerts";
 import { createMapWindow, getAlertWindow, getMainWindow, showInSearch } from "./windows";
 import { resetPositions } from "./window-state";
 import type { Store } from "./store";
@@ -55,6 +57,10 @@ export interface IpcContext {
 }
 
 export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, killLog, lootLog, updates, mobs, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
+  // Parsed map files, kept for the life of the app: they don't change under us, and a zone
+  // is up to 800KB of text that several windows may ask for.
+  const mapReader = createMapReader();
+
   // ── shopping list ──
   ipcMain.handle(CH.listGet, () => store.getList());
   ipcMain.handle(CH.listAdd, (_e, input) => store.addEntry(input));
@@ -79,13 +85,18 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // Fire a sample cast alert (the Settings "Test" button) down the real broadcast path,
   // so it shows in every window and beeps just like a live one. Uses a watched spell name
   // when there is one, so the test looks like what you'd actually see.
-  ipcMain.handle(CH.alertsTest, () => {
-    const watch = store.getSettings().castAlerts.watches.find((w) => w.enabled && w.spell.trim());
+  ipcMain.handle(CH.alertsTest, (_e, watchId?: string) => {
+    const alerts = store.getSettings().castAlerts;
+    // Testing a particular watch shows *its* style; otherwise the first usable one stands in.
+    const watch =
+      (watchId && alerts.watches.find((w) => w.id === watchId)) ||
+      alerts.watches.find((w) => w.enabled && w.spell.trim());
     getAlertWindow()?.moveTop(); // you're on the Settings tab, so raise the overlay above it
     broadcast(CH.castAlert, {
       caster: "Test",
       spell: watch?.spell.trim() || "Fear",
       at: new Date().toISOString(),
+      style: alertStyle(alerts, watch),
     } satisfies CastAlertEvent);
   });
 
@@ -186,6 +197,15 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.handle(CH.lookupCancel, () => lookup.cancel());
   ipcMain.handle(CH.appInfo, () => getAppInfo());
   ipcMain.handle(CH.appOpenLog, () => shell.openPath(logFile));
+  // Monitors, for choosing where the alert overlay appears (Settings → cast alerts).
+  ipcMain.handle(CH.displaysList, () => {
+    const primaryId = screen.getPrimaryDisplay().id;
+    return screen.getAllDisplays().map((d, i) => ({
+      id: d.id,
+      label: `Monitor ${i + 1} — ${d.size.width}×${d.size.height}${d.id === primaryId ? " (primary)" : ""}`,
+      primary: d.id === primaryId,
+    }));
+  });
 
   // ── update notification ──
   // The renderer draws the banner; the URL/commit stay in the main process. `current` lets a
@@ -220,6 +240,18 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // Open a zone's map page on the Project 1999 wiki (host fixed, so it's safe).
   ipcMain.handle(CH.mapOpenP99, (_e, zone: string) => shell.openExternal(p99ZoneUrl(zone)));
 
+  // ── the game's own map files (see ADR 0039) ──
+  // Listed fresh each call: the user can install a pack, or repoint their log directory,
+  // without restarting the app.
+  ipcMain.handle(CH.mapSources, () => listSources(store.getSettings().logDir));
+  ipcMain.handle(CH.mapLoad, (_e, sourceId: string, zoneFile: string) => {
+    const dir = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId)?.dir;
+    if (!dir) return null;
+    // Never let a renderer-supplied name walk out of its source folder.
+    if (!/^[a-z0-9_.-]+$/i.test(zoneFile)) return null;
+    return mapReader.load(dir, zoneFile) ?? null;
+  });
+
   // ── awari peer networking broker (see ADR 0012) ──
   // The always-alive main window owns the single WebRTC connection; the main process
   // is a pure relay. Any window's send → the owner publishes it; the owner's inbound
@@ -230,6 +262,14 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.on(CH.awariPeers, (_e, peers: AwariPeer[]) => broadcast(CH.awariPeersChanged, peers));
 
   ipcMain.on(CH.winMinimize, (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
+  // Maximize/restore. The click-through alert overlay is `maximizable: false`, so asking is
+  // enough to keep it out of this — no window needs to know whether it's the exception.
+  ipcMain.on(CH.winToggleMaximize, (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (!win?.isMaximizable()) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
   // Hide to tray (single-window app): keep the process alive so the tray/hotkey can reshow.
   ipcMain.on(CH.winHide, (e) => BrowserWindow.fromWebContents(e.sender)?.hide());
   // Transient opacity (the "full opacity" toggle) — doesn't touch the saved setting.

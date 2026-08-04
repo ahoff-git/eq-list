@@ -55,6 +55,7 @@ export const CH = {
   lookupCancel: "lookup:cancel",
   appInfo: "app:info",
   appOpenLog: "app:openLog",
+  displaysList: "displays:list",
   // update notification (rolling "latest" build; see ADR 0013)
   updateCurrent: "update:current",
   updateOpen: "update:open",
@@ -63,7 +64,15 @@ export const CH = {
   winOpenMap: "win:openMap",
   mapOpenAt: "map:openAt",
   mapOpenP99: "map:openP99",
+  /** Which map sets are available (bundled images + the game's maps folder and its packs). */
+  mapSources: "map:sources",
+  /** One zone's vector geometry from a chosen source. */
+  mapLoad: "map:load",
   winMinimize: "win:minimize",
+  /** Maximize/restore this window — frameless windows have to ask for it. */
+  winToggleMaximize: "win:toggleMaximize",
+  /** Sent to a window when it maximizes or restores, so its titlebar button can follow. */
+  winMaximizeChanged: "evt:winMaximized",
   winHide: "win:hide",
   winSetOpacity: "win:setOpacity",
   winSetAlwaysOnTop: "win:setAlwaysOnTop",

@@ -185,11 +185,23 @@ const CAST_RE = /^(?<caster>.+?) begins? casting (?<spell>.+?)\.$/;
 const DEATH_RES = [/^You have been slain by (?<killer>.+?)!$/, /^You died\.$/];
 
 /**
- * A buff expiring. Only *your own* matters to anything downstream (a pet's buff can't
- * change your max hit points), so the pet form is captured and flagged rather than
- * discarded.
+ * A spell expiring, in the four shapes a real log produces:
+ *
+ *     Your Spirit of Wolf spell has worn off.                    a buff on you
+ *     Your pet's Burst of Strength spell has worn off.            one on your pet
+ *     Your Root spell has worn off of a wild tiger.               one you cast on something else
+ *     Your strength fades.                                        the same thing, worded per spell
+ *
+ * The last form is EQ's own per-spell flavour text and names no spell, so `spell` holds the
+ * words the log used ("strength", "sense of center"). Whose buff it was decides who cares:
+ * only your own can move *your* maximum hit points, while a watch waiting to re-root a mob
+ * wants exactly the third form. Note `<Name> fades away.` is somebody gating out, not a spell —
+ * anchoring on "Your" and "fades." keeps it out.
  */
-const FADE_RE = /^Your (?<pet>pet's )?(?<spell>.+?) spell has worn off\.$/;
+const FADE_RES = [
+  /^Your (?<pet>pet's )?(?<spell>.+?) spell has worn off(?: of (?<target>.+?))?\.$/,
+  /^Your (?<spell>.+?) fades\.$/,
+];
 
 /**
  * Your combat mode. The log announces the *change* first ("You begin to change your
@@ -322,12 +334,18 @@ export function parseCombat(line: LogLine): CombatEvent | null {
     } satisfies DeathEvent;
   }
 
-  const fade = message.match(FADE_RE);
-  if (fade?.groups) {
+  for (const re of FADE_RES) {
+    const fade = message.match(re);
+    if (!fade?.groups) continue;
+    const named = fade.groups.target;
+    // "worn off of you" (or "of yourself") is still your own buff, so a reflexive target drops
+    // away — leaving "no target" to mean exactly one thing: it was on you.
+    const on = named && !REFLEXIVE.has(named.toLowerCase()) ? combatant(named) : undefined;
     return {
       kind: "buff-faded",
       spell: spellName(fade.groups.spell),
       pet: !!fade.groups.pet,
+      target: on === SELF ? undefined : on,
       logId,
       at,
       raw,

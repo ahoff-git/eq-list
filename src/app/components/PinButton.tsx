@@ -2,7 +2,7 @@
 
 /**
  * The always-on-top 📌 toggle used in window title bars — grayed out when off, full
- * colour (the pushpin's own red) when on, so its state reads at a glance. The backing
+ * color (the pushpin's own red) when on, so its state reads at a glance. The backing
  * state differs per window (a setting in the main window, local state in the map
  * window), so the parent supplies `pinned` + `onToggle`.
  */

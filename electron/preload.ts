@@ -46,7 +46,7 @@ const api: EqlApi = {
   },
   alerts: {
     onCast: (cb) => on(CH.castAlert, cb),
-    test: () => ipcRenderer.invoke(CH.alertsTest),
+    test: (watchId) => ipcRenderer.invoke(CH.alertsTest, watchId),
   },
   log: {
     import: () => ipcRenderer.invoke(CH.logImport),
@@ -56,6 +56,9 @@ const api: EqlApi = {
     onAvailable: (cb) => on(CH.updateAvailable, cb),
     open: () => ipcRenderer.invoke(CH.updateOpen),
     dismiss: () => ipcRenderer.invoke(CH.updateDismiss),
+  },
+  display: {
+    list: () => ipcRenderer.invoke(CH.displaysList),
   },
   watcher: {
     status: () => ipcRenderer.invoke(CH.watcherStatus),
@@ -122,6 +125,8 @@ const api: EqlApi = {
     openAt: (zone, loc, label) => ipcRenderer.invoke(CH.mapOpenAt, zone, loc, label),
     onViewZone: (cb) => on(CH.mapViewZone, cb),
     openP99: (zone) => ipcRenderer.invoke(CH.mapOpenP99, zone),
+    sources: () => ipcRenderer.invoke(CH.mapSources),
+    load: (sourceId, zoneFile) => ipcRenderer.invoke(CH.mapLoad, sourceId, zoneFile),
   },
   awari: {
     send: (payload) => ipcRenderer.send(CH.awariOutbound, payload),
@@ -135,6 +140,8 @@ const api: EqlApi = {
   },
   win: {
     minimize: () => ipcRenderer.send(CH.winMinimize),
+    toggleMaximize: () => ipcRenderer.send(CH.winToggleMaximize),
+    onMaximizeChanged: (cb) => on(CH.winMaximizeChanged, cb),
     hide: () => ipcRenderer.send(CH.winHide),
     setOpacity: (value) => ipcRenderer.send(CH.winSetOpacity, value),
     setAlwaysOnTop: (enabled) => ipcRenderer.send(CH.winSetAlwaysOnTop, enabled),

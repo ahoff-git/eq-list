@@ -1,4 +1,11 @@
 import type { MobKnowledge, MobObservation } from "./mob-stats";
+import type { EqMap } from "./map/eqmap";
+import type { MapSourceReport } from "./map/map-sources";
+
+/** A zone's vector map as it crosses IPC: geometry, labels, and who drew it. */
+export type LoadedMap = EqMap & { credits: string[] };
+
+export type { MapSourceReport };
 
 /**
  * types.ts — the shared contract between the Electron main process and the
@@ -208,12 +215,23 @@ export interface InvocationEvent extends LogEventBase {
   invocation: string;
 }
 
-/** One of your (or your pet's) buffs expiring — max hit points may have just changed. */
+/**
+ * A spell of yours expiring — on you, on your pet, or on something you cast it at. Your own
+ * may have just changed your max hit points; the others can't, but a watch can still ask to be
+ * told (that's the "re-root it" alert).
+ */
 export interface BuffFadedEvent extends LogEventBase {
   kind: "buff-faded";
+  /**
+   * The spell as the log named it — or, for EQ's per-spell flavour form ("Your strength
+   * fades."), the words it used instead. Those lines name no spell, so a watch that wants them
+   * has to match the wording.
+   */
   spell: string;
   /** True for "Your pet's X spell has worn off" — irrelevant to *your* own totals. */
   pet: boolean;
+  /** Who it wore off, when the log named someone else. Absent means it was on you. */
+  target?: string;
 }
 
 export type CombatEvent =
@@ -816,28 +834,101 @@ export interface CastWatch {
    * default: a groupmate casting Charm isn't a threat to prep against. See `matchCast`.
    */
   includePlayers?: boolean;
+  /**
+   * Alert when the spell **begins casting**. Defaults to on when unset (every watch predates
+   * the choice); turn it off for a watch that only cares about the fade.
+   */
+  onCast?: boolean;
+  /**
+   * Also alert when the spell **fades** — your root wearing off a mob, your Spirit of Wolf
+   * expiring. Off by default: a watch is normally a warning to interrupt something, and a fade
+   * is the opposite kind of prompt (re-cast it). See `matchFade`.
+   */
+  onFade?: boolean;
+  /**
+   * This watch's own look and sound, overriding the defaults field by field. Absent means it
+   * follows them — which is what every watch does until you give it one. Partial so a style
+   * saved before a new field existed still picks that field up from the defaults.
+   */
+  style?: Partial<AlertStyle>;
 }
 
-/** Settings for the "a watched spell is being cast" alert. */
-export interface CastAlertSettings {
+/** Where the alert banner sits on the overlay. */
+export type AlertPosition = "top" | "top-left" | "top-right" | "center" | "bottom-left" | "bottom-right";
+
+/** How the alert banner behaves while it's up. */
+export type AlertAnimation = "pulse" | "wiggle" | "float" | "none";
+
+/** One connected monitor, for choosing where the alert overlay appears. */
+export interface DisplayInfo {
+  /** Electron's display id (stable while the monitor stays connected). */
+  id: number;
+  /** A human label, e.g. "Monitor 1 — 2560×1440". */
+  label: string;
+  /** Whether this is the OS primary display. */
+  primary: boolean;
+}
+
+/**
+ * How an alert looks and sounds. Held apart from the rest of the settings because a **watch may
+ * carry its own** — "Charm being cast" and "my root wore off" are different emergencies and
+ * deserve to be told apart at a glance, without reading the banner (see `alertStyle`).
+ */
+export interface AlertStyle {
+  /** Play a beep when an alert fires (which beep is `soundName`). */
+  sound: boolean;
+  /** Flash a colored border around the screen when an alert fires (which color is `color`). */
+  flash: boolean;
+  /** Accent color for the banner border + screen flash — any CSS color (see `ALERT_COLORS`). */
+  color: string;
+  /** Which synthesized beep to play (see `src/lib/alertSounds.ts`). */
+  soundName: string;
+  /** Where the banner appears on the overlay. */
+  position: AlertPosition;
+  /** How long a banner stays up, in milliseconds. */
+  durationMs: number;
+  /** The banner's motion while it's up. */
+  animation: AlertAnimation;
+}
+
+/**
+ * Settings for the "a watched spell is being cast" alert. The `AlertStyle` fields it inherits are
+ * the **defaults**, which any watch may override.
+ */
+export interface CastAlertSettings extends AlertStyle {
   /** Master on/off. */
   enabled: boolean;
-  /** Play a short beep when an alert fires. */
-  sound: boolean;
-  /** Flash a red border around the window when an alert fires. */
-  flash: boolean;
   /** Also alert on YOUR own casts (off by default — you know what you're casting). */
   includeSelf: boolean;
   watches: CastWatch[];
+  /**
+   * The display the overlay covers, by Electron display id. Absent = the primary display (and the
+   * fallback whenever the saved id is gone, e.g. a monitor was unplugged). See `createAlertWindow`.
+   */
+  displayId?: number;
 }
 
-/** Fired when a watched spell begins casting — the payload the overlay banner shows. */
+/** Fired when a watched spell begins casting, or fades — the payload the overlay banner shows. */
 export interface CastAlertEvent {
-  /** Who's casting (a mob, a peer, or you). */
+  /** Who's casting (a mob, a peer, or you). Empty for a fade, which names no caster. */
   caster: string;
-  /** The spell as the log named it (rank stripped). */
+  /** The spell as the log named it (rank stripped), or the words a fade line used. */
   spell: string;
   at: string;
+  /**
+   * Which prompt this is. A cast says "dispel, now"; a fade says "cast it again". Absent means
+   * a cast, so an alert sent by an older build still reads correctly.
+   */
+  event?: "cast" | "fade";
+  /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
+  target?: string;
+  /**
+   * The look and sound this alert should use, already resolved from the defaults and the watch's
+   * own overrides (`alertStyle`). Carried with the alert so the overlay renders what *this* watch
+   * asked for — it can't work that out itself, and an alert already up mustn't be restyled by
+   * the next one. Absent only from an older build's payload, where the defaults stand in.
+   */
+  style?: AlertStyle;
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
@@ -846,6 +937,12 @@ export interface OverlaySettings {
   opacity: number; // 0.2 .. 1
   alwaysOnTop: boolean;
   fontScale: number; // 0.6 .. 1 — see UI_SCALE / ADR 0026 (kept its name to not break saved settings)
+  /**
+   * The **map window's** scale, kept apart from `fontScale` because the two windows want
+   * different sizes: one is a column of text you shrink to reclaim desk space, the other is a
+   * picture you enlarge to read. Same range, its own A−/A+ buttons in the map titlebar.
+   */
+  mapFontScale: number;
   showObtained: boolean; // keep completed items visible
   /** Auto-narrow the overlay to the zone you're in (from the log) as you travel. */
   followZone: boolean;
@@ -1031,8 +1128,11 @@ export interface EqlApi {
   alerts: {
     /** Fires when a watched spell begins casting (gated by Settings.castAlerts). */
     onCast(cb: (event: CastAlertEvent) => void): Unsubscribe;
-    /** Fire a sample cast alert (banner + beep) so the user can preview it. */
-    test(): Promise<void>;
+    /**
+     * Fire a sample cast alert (banner + beep) so the user can preview it. Naming a watch
+     * previews *its* style; without one, the first usable watch stands in.
+     */
+    test(watchId?: string): Promise<void>;
   };
   log: {
     /**
@@ -1177,6 +1277,14 @@ export interface EqlApi {
     onViewZone(cb: (msg: { zone: string; loc?: { y: number; x: number }; label?: string }) => void): Unsubscribe;
     /** Open a zone's map page on the Project 1999 wiki (for zones with no bundled map). */
     openP99(zone: string): Promise<void>;
+    /**
+     * Map sets we can read: the bundled images, plus the game's `maps` folder and every
+     * pack installed in a subfolder of it. Re-queried when the log directory changes, since
+     * that's what tells us where the game lives.
+     */
+    sources(): Promise<MapSourceReport>;
+    /** One zone's geometry + labelled points from a folder source (null if it has no map). */
+    load(sourceId: string, zoneFile: string): Promise<LoadedMap | null>;
   };
   /**
    * Peer networking (awari), brokered by the main process. The always-alive main
@@ -1201,8 +1309,20 @@ export interface EqlApi {
     /** Owner-window plumbing: report the room roster up to the broker. */
     reportPeers(peers: AwariPeer[]): void;
   };
+  /** Connected monitors, for choosing where the alert overlay shows (Settings → cast alerts). */
+  display: {
+    list(): Promise<DisplayInfo[]>;
+  };
   win: {
     minimize(): void;
+    /** Maximize this window, or restore it if it already is. */
+    toggleMaximize(): void;
+    /**
+     * This window maximized or restored — by our button or by anything else (a drag-region
+     * double-click, Win+Up, the taskbar). Drives the titlebar button's glyph, and fires again
+     * after a reload so it can't start out wrong.
+     */
+    onMaximizeChanged(cb: (maximized: boolean) => void): Unsubscribe;
     /** Hide the window to the tray (the app keeps running; reshow via tray/hotkey). */
     hide(): void;
     /** Set the live window opacity (0.2–1), transient — does not change the saved setting. */

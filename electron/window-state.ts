@@ -31,6 +31,11 @@ interface WindowState {
   map?: Bounds;
   /** Whether the (on-demand) map window was open, so we can reopen it next launch. */
   mapOpen?: boolean;
+  /**
+   * Which windows were left maximized. Kept beside — not instead of — the bounds above,
+   * which stay the size to restore *to*, exactly as a normal window behaves.
+   */
+  maximized?: Partial<Record<Role, boolean>>;
 }
 
 // Lazily loaded so we don't touch app.getPath before `ready`.
@@ -96,6 +101,18 @@ export function rememberBounds(role: Role, win: BrowserWindow): void {
   win.on("close", () => save(true)); // flush before the window (and maybe the app) goes away
 }
 
+/** Remember that a window was left maximized, so it opens that way next time. */
+export function setMaximized(role: Role, on: boolean): void {
+  const s = get();
+  s.maximized = { ...s.maximized, [role]: on };
+  persist();
+}
+
+/** Was this window maximized when we last saw it? */
+export function wasMaximized(role: Role): boolean {
+  return !!get().maximized?.[role];
+}
+
 /** True once the app has begun quitting — lets close handlers skip "user closed" logic. */
 export function isQuitting(): boolean {
   return quitting;
@@ -124,5 +141,7 @@ export function resetPositions(): void {
   delete s.main;
   delete s.overlay;
   delete s.map;
+  // A window "lost" behind a maximized frame is exactly what this button is for.
+  delete s.maximized;
   writeNow();
 }

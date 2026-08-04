@@ -12,6 +12,12 @@ export interface MapPin {
   kind: PinKind;
   /** Zone the pin belongs to (matched with `findZone`). */
   zone: string;
+  /**
+   * Which layer of a multi-layer zone it was dropped on (see `Zone.layer`). Unset means
+   * the whole zone — an unlayered zone, or a pin we placed from data that doesn't know
+   * the floor — and shows on every layer.
+   */
+  layer?: number;
   y: number;
   x: number;
   /** Short label drawn on the map under the pin. */
