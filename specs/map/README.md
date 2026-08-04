@@ -23,7 +23,7 @@ world coordinates, so a map knows where it is. See
     space). Math derived in [data-model.md](./data-model.md).
   - `zones.ts` — `CURATED_ZONES` (the few names the solver gets wrong, see **Zone names**),
     `findZone` (case- and leading-"the"-insensitive, so the log's wording resolves), `sortZones`,
-    and `onLayer` for floor-scoped markers.
+    and `onLayer` for floor-scoped markers (against the *set* of floors in view).
 - **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawLine`, `drawCircle`,
   `clearCanvas`. Geometry itself is drawn by `MapPanel` onto the static lower canvas, batched into
   one `Path2D` per colour (the biggest zones carry 20k segments) with hairline strokes that survive
@@ -82,7 +82,8 @@ world coordinates, so a map knows where it is. See
   into rather than an overlay to shrink; see
   [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)), **minimize**,
   **maximize/restore**, a **pin** (per-window always-on-top, via the shared `PinButton`) and a
-  **floor** dropdown (only when the map labels more than one storey — see **Floors**). A zone with
+  **⌂ floors** button saying how many storeys are drawn, which opens the 👁 panel to change it (only
+  when the map labels more than one — see **Floors and heights**). A zone with
   **no map file** shows a clear empty panel: it names the zone, says which map set was looked in,
   notes that saved markers appear once it's mapped, and offers a **View on Project 1999** button
   (`map.openP99` → the zone's P99 map page in the browser) — the one place a scan is still useful,
@@ -132,9 +133,13 @@ world coordinates, so a map knows where it is. See
   from the geometry's own world box. Layer `_1` is the points of interest and is read; layer
   `_2` is a compass and the mapmaker's credits drawn as vector text far outside the zone, so
   it isn't drawn — only its labels, shown as attribution under the map.
-- **Label filter** (`src/shared/map/poi-kinds.ts` + the 👁 panel's **Map labels** section) — a busy
-  zone is mostly labels (Greater Faydark has 144, 85 of them merchants), and which ones matter
-  depends on what you're there for, so each **kind** can be switched off. The choice persists.
+- **What's drawn** (the 👁 panel, `src/app/components/MapFilters.tsx`) — one place for four
+  questions, in the order you'd ask them: **which heights**, **which of my pins**, **which of the
+  map's own labels**, **whose shared pins**. A busy dungeon needs all four, so each is its own
+  section; the panel scrolls rather than growing, because the map is the point. Presentational —
+  every choice is owned by the map window, so it can't drift out of step with the canvas.
+- **Label filter** (`src/shared/map/poi-kinds.ts`) — a busy zone is mostly labels, and which ones
+  matter depends on what you're there for, so each **kind** can be switched off. The choice persists.
 
   Kinds come from **the label's own words**, not from its color. The colors *are* categories — and
   the classifier agrees with them where the packs have a convention (zone lines red, quest givers
@@ -144,22 +149,57 @@ world coordinates, so a map knows where it is. See
   beside each toggle, since that's how you recognise them on screen — and it's the color those
   labels really are *on this map*, not one we assumed.
 
-  A trailing parenthetical is the strongest signal in the corpus and is read before the article,
-  because only the brackets separate Brewall's `a reanimating hand (Hunter)` (a spawn on the Hunter
-  achievement list) from `a spell research merchant (Research)` (a shopkeeper). Floor labels are
-  their own kind, recognised by the same test that drives the floor picker rather than a second
-  guess at the same thing. The rows offered are only the kinds a given map actually contains.
-- **Floors** (`detectFloors`/`floorAt`/`segmentOnFloor` in `eqmap.ts`) — a vector map holds
-  every storey at once, so RunnyEye arrives as five levels of corridor on top of each other.
+  **Fourteen kinds in five sections** — *Getting around* (zone lines · ports & boats · ways up &
+  down), *Doors & traps*, *Who's here* (vendors & services · quests & missions · named & bosses ·
+  ordinary spawns), *The zone* (ground spawns & drops · tradeskill stations · names & places), *Map
+  notes* (floor markers · notes). The **section headings are themselves toggles**, because the
+  gesture you usually want is a whole section off ("hide the dungeon furniture"), not one kind at a
+  time. Only the kinds a given map actually contains are offered, and an empty section is dropped.
+
+  Every vocabulary is a **tally of the real corpus** — 760 files, ~19,000 distinct labels — and the
+  counts stay in the code so a rule can be argued with. A trailing parenthetical is the most
+  informative shape (7,000+ labels carry one) and is read first, because only the brackets separate
+  `a reanimating hand (Hunter)` (a spawn on the Hunter achievement list) from `a spell research
+  merchant (Research)` (a shopkeeper). But **a bracket it can't read defers to the label's own
+  words** rather than assuming a trade, which is the whole point: the old catch-all made merchants
+  of 5,749 distinct labels, including every `(Hunter,Roam)` spawn and every `Locked Door (Picklock
+  200+)`. `note` is the only fallback. `GS:` is *Ground Spawn*, not a quest prefix. Floor labels are
+  recognised by the same test that drives the floor filter rather than a second guess at it. See
+  [ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md).
+
+  **"Names & places" stays the largest section and is deliberately ambiguous**: a proper name written
+  plain (`Enraged Trueborn Lightstealer`, `Bandit Camp`) can't be told from a landmark by its words,
+  and splitting it on a guess would be worse than one honest row. The hint says so.
+- **Floors and heights** (`detectFloors`/`floorAt`/`inBands`/`segmentInBands`/`mapZRange` in
+  `eqmap.ts`) — a vector map holds every storey at once, so RunnyEye arrives as five levels of
+  corridor on top of each other.
   The floors are read from the **mapmaker's own labels** (`Level 1 (Top)`, `2nd Floor`), never
   guessed from heights: clustering z would split Greater Faydark's terrain-plus-treetops into
   fake floors, while the real floors are *joined* by their stairs. Labels that merely mention a
   level (`Water - LVL 3`, `TRAP: Fake Floor`) aren't storeys, and a map that labels its floors
   side by side at one height (Kurn's Tower, all eight at `z=1`) is drawn whole. Showing every
-  floor stays the default, as in-game; picking one filters geometry and labels, stamps pins and
-  pings via the same `layer` field as image layers, and the picker marks the floor your `/loc`
-  height puts you on with **· you**. See
+  floor stays the default, as in-game. See
   [ADR 0040](../decisions/0040-floors-come-from-the-mapmaker.md).
+
+  The floors are **checkboxes**, not a dropdown: two storeys read together is a real question and one
+  `<select>` could never answer it. The titlebar's **⌂** says how many are showing and opens the 👁
+  panel. Picks persist; an empty or stale one falls back to every floor, because hiding every floor
+  would only blank the map. A pin or ping is stamped with the floor in view **when exactly one is** —
+  with several on screen there's no single storey to claim, so it belongs to the zone. The rows mark
+  the floor your `/loc` height puts you on with **· you**.
+
+  A map whose author labelled **no** storeys gets a **height window** instead — a `minZ..maxZ` pair
+  of handles over the zone's own z span (`mapZRange`, read off the geometry). It's the only thing such
+  a map can honestly be filtered by, and it invents no floors: a person sets it and reads it. It
+  can't persist or travel, since z means a treetop in one zone and a sewer in the next, so it's held
+  with its zone and dropped when you look at another.
+
+  Both feed one **`ZBand[]`** into `MapPanel` — the drawing cares about heights, and only *some* of
+  the heights it's given have a name. No bands means no filter (every band on and nothing to filter
+  by are the same picture, so they're the same answer), and a stair spans two bands and shows on
+  both. Markers use the same `layer` field as before, via `onLayer` against the *set* of visible
+  floors; a marker stamped with a floor this map doesn't have still shows, so switching map packs
+  can't lose a pin you placed.
 - **Pins** (`src/shared/map/pins.ts` palette + `MapPanel`/map window) — a toolbar of
   pin kinds (Star/Danger/Camp/Loot/Note) plus a **Move** tool (drag your pins to
   reposition). Pick a kind up, then a map click **drops** it at that spot; with none
@@ -167,8 +207,9 @@ world coordinates, so a map knows where it is. See
   has a **title** (drawn under it on the map) and a free-text
   **note** (shown on hover); clicking your own pin opens an editor (title / note /
   Remove). Pins persist in `localStorage` (per zone — and per layer where the zone has
-  them, stamped with the layer you dropped it on). The **👁 menu** toggles visibility
-  by pin kind **and per sharer** (one toggle per peer sending pins). When connected, the
+  them, stamped with the layer you dropped it on). The **👁 panel** toggles visibility
+  by pin kind (**My pins**) **and per sharer** (**Shared by** — one toggle per peer sending
+  pins). When connected, the
   **🔗 toggle** shares your pins to peers (broadcast via awari, incl. title/note; peers'
   pins render read-only). All rendered on the overlay canvas, filtered to the viewed zone.
 - **Peer networking** (opt-in) — the awari **connection lives in the main window**
@@ -234,9 +275,16 @@ world coordinates, so a map knows where it is. See
   (typically when you type `/loc`), so the dot steps per loc line — the UI says so.
 - **The floor in view is never chosen for you.** On a vector map that names its storeys, your
   `/loc` height is enough to say which one you're on — and it's *shown* (**· you** in the
-  picker) rather than acted on, because auto-hiding four fifths of a map on an inference is a
+  rows) rather than acted on, because auto-hiding four fifths of a map on an inference is a
   worse failure than a busy map. Nothing derived from the log is filed under a floor: only pins
-  and pings, which a person placed while looking at one.
+  and pings, which a person placed while looking at one. The **height window** is the same rule
+  from the other side: on a map with no storey labels there is nothing to name, so the app offers
+  raw height for a person to set and read, and never guesses where a floor is
+  ([ADR 0040](../decisions/0040-floors-come-from-the-mapmaker.md) stands).
+- **A label's kind is never inferred from its colour, and never invented.** The classifier reads
+  words; a shape it doesn't recognise becomes a **note**, and the biggest section ("Names & places")
+  stays ambiguous on purpose rather than guessing whether a proper name is an NPC or a landmark.
+  See [ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md).
 - **Nothing is calibrated, and nothing can be.** A projection is read off a map's own geometry;
   there is no authored alignment to tune and no tool to tune it with. That went with the bundled
   scans ([ADR 0042](../decisions/0042-only-the-game-s-own-maps.md)) — along with the class of bug

@@ -9,10 +9,12 @@ import assert from "node:assert/strict";
 import {
   detectFloors,
   floorAt,
+  inBands,
   mapBounds,
+  mapZRange,
   mergeEqMaps,
   parseEqMap,
-  segmentOnFloor,
+  segmentInBands,
   vectorProjection,
 } from "../../src/shared/map/eqmap";
 import { eqToCanvasCoords } from "../../src/shared/map/coords";
@@ -199,12 +201,36 @@ test("a stair belongs to both floors it touches", () => {
   const floors = detectFloors(parseEqMap([at(0, "Level 1"), at(-100, "Level 2")].join("\n")));
   const [upper, lower] = floors;
   const stair = parseEqMap("L 0, 0, -10, 10, 10, -90, 0, 0, 0").segments[0];
-  assert.ok(segmentOnFloor(stair, upper));
-  assert.ok(segmentOnFloor(stair, lower));
+  assert.ok(segmentInBands(stair, [upper]));
+  assert.ok(segmentInBands(stair, [lower]));
   // While a wall on one floor stays on it.
   const wall = parseEqMap("L 0, 0, -95, 10, 10, -90, 0, 0, 0").segments[0];
-  assert.ok(!segmentOnFloor(wall, upper));
-  assert.ok(segmentOnFloor(wall, lower));
+  assert.ok(!segmentInBands(wall, [upper]));
+  assert.ok(segmentInBands(wall, [lower]));
+});
+
+test("several bands at once, and no bands means no filter", () => {
+  const floors = detectFloors(parseEqMap([at(0, "Level 1"), at(-100, "Level 2"), at(-200, "Level 3")].join("\n")));
+  const [top, middle, bottom] = floors;
+  // Two non-adjacent floors checked: what's between them is left out, which a single min/max
+  // window couldn't express — the whole reason this takes a list.
+  assert.ok(inBands(10, [top, bottom]));
+  assert.ok(inBands(-500, [top, bottom]));
+  assert.ok(!inBands(-100, [top, bottom]));
+  assert.ok(inBands(-100, [middle]));
+  // Nothing to filter by and everything switched on are the same picture, so they're one answer.
+  for (const bands of [undefined, []]) {
+    assert.ok(inBands(-100, bands));
+    assert.ok(segmentInBands(parseEqMap("L 0, 0, 900, 1, 1, 900, 0, 0, 0").segments[0], bands));
+  }
+});
+
+test("a hand-set window is chosen within the map's own height span", () => {
+  const map = parseEqMap(["L 0, 0, -40, 10, 10, 120, 0, 0, 0", at(60, "a bat")].join("\n"));
+  // Geometry states the span — a label can sit outside the drawn lines, and letting one stretch
+  // the scale would put most of the slider over empty air.
+  assert.deepEqual(mapZRange(map), { minZ: -40, maxZ: 120 });
+  assert.equal(mapZRange(parseEqMap("")), undefined);
 });
 
 test("a degenerate map still projects (no divide by zero)", () => {

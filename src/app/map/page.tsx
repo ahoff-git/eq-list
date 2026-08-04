@@ -25,9 +25,10 @@ import ZonePicker from "../components/ZonePicker";
 import { useMapSource, useVectorMap } from "@/lib/map/useMapSource";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { findZone, onLayer, sortZones } from "@/shared/map/zones";
-import { detectFloors, floorAt } from "@/shared/map/eqmap";
-import { poiKindSummary, type PoiKind } from "@/shared/map/poi-kinds";
+import { detectFloors, floorAt, mapZRange, type ZBand } from "@/shared/map/eqmap";
+import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
+import MapFilters, { type HeightPick } from "../components/MapFilters";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
 import { MAP_UI_SCALE } from "@/shared/constants";
@@ -56,9 +57,9 @@ export default function MapWindow() {
   // The viewed-zone override persists so reopening the map returns to the zone you were
   // looking at (blank = follow your current zone).
   const [override, setOverride] = usePersistentState<string | null>(STORAGE_KEYS.mapZone, null);
-  // Which floor we're looking at (null = all of them). Persisted like the zone override, and
+  // Which floors we're looking at (empty = all of them). Persisted like the zone override, and
   // validated below rather than reset by an effect.
-  const [layerPick, setLayerPick] = usePersistentState<number | null>(STORAGE_KEYS.mapLayer, null);
+  const [layerPicks, setLayerPicks] = usePersistentState<number[]>(STORAGE_KEYS.mapLayers, []);
   const zoneName = override ?? currentZone ?? "";
   const zone = useMemo(() => (zoneName ? findZone(zoneName, zones) : undefined), [zoneName, zones]);
   // The zone's geometry, loaded through the main process (null until it arrives).
@@ -69,12 +70,26 @@ export default function MapWindow() {
    * labels, never guessed, so a zone that doesn't name its levels simply has none.
    */
   const floors = useMemo(() => (vector ? detectFloors(vector) : []), [vector]);
-  // A floor pick belongs to the map it was made on, so travelling somewhere without that storey
-  // falls back to showing all of them.
-  const floorPick = floors.some((f) => f.layer === layerPick) ? layerPick : null;
-  const floor = floors.find((f) => f.layer === floorPick);
+  /**
+   * The floors actually drawn. A floor pick belongs to the map it was made on, so travelling
+   * somewhere without those storeys falls back to showing all of them — which is also what an
+   * empty pick means, since hiding every floor would just blank the map.
+   */
+  const shownLayers = useMemo(() => {
+    const valid = layerPicks.filter((l) => floors.some((f) => f.layer === l));
+    return valid.length ? valid : floors.map((f) => f.layer);
+  }, [layerPicks, floors]);
   /** The floor you're standing on, from your `/loc` height — marked in the picker. */
   const yourFloor = loc ? floorAt(floors, loc.z) : undefined;
+  /** The height span this map covers, which is the scale a hand-set window is chosen within. */
+  const zRange = useMemo(() => (vector ? mapZRange(vector) : undefined), [vector]);
+  /**
+   * A hand-set height window, for a map whose author labelled no storeys. Held **with its zone**
+   * and ignored the moment you look at another: a z of 40 means a treetop in one zone and a sewer
+   * in the next, so this is the one filter that can't sensibly persist or travel.
+   */
+  const [heightPick, setHeightPick] = useState<{ zone: string; lo: number; hi: number } | null>(null);
+  const height: HeightPick | null = heightPick?.zone && heightPick.zone === zoneName ? heightPick : null;
   /**
    * Is there a map to draw? The zone is in the list because its file is on disk, so it counts
    * before the geometry arrives — otherwise switching zones flashes "no map for this zone".
@@ -82,10 +97,35 @@ export default function MapWindow() {
   const hasMap = !!zone?.file;
   const sourceLabel = sources.find((s) => s.id === sourceId)?.label ?? "maps";
   /**
-   * The floor on screen, and what markers are filed under and filtered by: a storey's number, or
-   * `null` for all of them at once (which is the default, and what the game draws).
+   * The heights drawn, and the heights a label has to sit in to be drawn: the checked floors, or a
+   * hand-set window on a map that names none. Undefined draws the whole map, which is the default
+   * and what the game does.
    */
-  const viewLayer = floors.length ? floorPick : undefined;
+  const bands = useMemo<ZBand[] | undefined>(() => {
+    if (floors.length > 1) {
+      if (shownLayers.length === floors.length) return undefined;
+      return floors.filter((f) => shownLayers.includes(f.layer)).map(({ minZ, maxZ }) => ({ minZ, maxZ }));
+    }
+    if (!height || !zRange) return undefined;
+    // The outermost edges open out to infinity, so a handle at the end of its scale can't clip the
+    // top or bottom of the map by a rounding unit — the same reason `detectFloors` does it.
+    return [
+      {
+        minZ: height.lo <= zRange.minZ ? -Infinity : height.lo,
+        maxZ: height.hi >= zRange.maxZ ? Infinity : height.hi,
+      },
+    ];
+  }, [floors, shownLayers, height, zRange]);
+  /**
+   * The floor a pin or a ping you make now belongs to: the one floor in view, or none while several
+   * are — with more than one on screen there's no single storey to claim, so it belongs to the zone.
+   */
+  const viewLayer = floors.length > 1 && shownLayers.length === 1 ? shownLayers[0] : undefined;
+  /** The floors markers are filtered to. Undefined is every floor, so nothing is filtered out. */
+  const viewLayers = useMemo(
+    () => (floors.length > 1 && shownLayers.length < floors.length ? new Set(shownLayers) : undefined),
+    [floors.length, shownLayers],
+  );
   const zoneOptions = useMemo(() => sortZones(zones), [zones]);
   // The dropdown's options are places, so its value is a zone *name*; a saved pick may be
   // a key (or a zone we have no map for), so resolve it back to a name where we can.
@@ -184,13 +224,16 @@ export default function MapWindow() {
   // depends on what you're doing there. Persisted as an array, since a Set isn't JSON.
   const [hiddenPoiList, setHiddenPoiList] = usePersistentState<PoiKind[]>(STORAGE_KEYS.mapHiddenPoiKinds, []);
   const hiddenPoiKinds = useMemo(() => new Set(hiddenPoiList), [hiddenPoiList]);
-  /** The label kinds this map actually has, with the color they wear here. */
-  const poiKinds = useMemo(() => (vector ? poiKindSummary(vector.pois) : []), [vector]);
-  const togglePoiKind = (kind: PoiKind, visible: boolean) =>
-    setHiddenPoiList((prev) => (visible ? prev.filter((k) => k !== kind) : [...new Set([...prev, kind])]));
+  /** The label kinds this map actually has, in the filter's sections, with the color they wear here. */
+  const poiGroups = useMemo(() => (vector ? poiGroupSummary(vector.pois) : []), [vector]);
+  /** Several kinds at once, so switching a whole section is one action rather than one per row. */
+  const togglePoiKinds = (kinds: PoiKind[], visible: boolean) =>
+    setHiddenPoiList((prev) =>
+      visible ? prev.filter((k) => !kinds.includes(k)) : [...new Set([...prev, ...kinds])],
+    );
   const [hiddenSharers, setHiddenSharers] = useState<Set<string>>(new Set());
   const [sharePinsOn, setSharePinsOn] = usePersistentState(STORAGE_KEYS.mapSharePins, false);
-  const [pinTypesOpen, setPinTypesOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   const [killsOpen, setKillsOpen] = usePersistentState(STORAGE_KEYS.mapKillsOpen, false);
   const [mobsOpen, setMobsOpen] = usePersistentState(STORAGE_KEYS.mapMobsOpen, false);
@@ -310,8 +353,8 @@ export default function MapWindow() {
     [room.peers, room.users, zoneMatch],
   );
   const pings = useMemo(
-    () => room.pings.filter((p) => zoneMatch(p.zone) && onLayer(p, viewLayer)),
-    [room.pings, zoneMatch, viewLayer],
+    () => room.pings.filter((p) => zoneMatch(p.zone) && onLayer(p, viewLayers)),
+    [room.pings, zoneMatch, viewLayers],
   );
   // Distinct people currently sharing pins — each gets its own visibility toggle.
   const sharers = useMemo(
@@ -335,17 +378,17 @@ export default function MapWindow() {
       };
     };
     const local = pins
-      .filter((p) => zoneMatch(p.zone) && onLayer(p, viewLayer) && !hiddenKinds.has(p.kind))
+      .filter((p) => zoneMatch(p.zone) && onLayer(p, viewLayers) && !hiddenKinds.has(p.kind))
       .map((p) => mk(p, true));
     const peer = room.peerPins
       .filter(
         (p) =>
-          zoneMatch(p.zone) && onLayer(p, viewLayer) && !hiddenKinds.has(p.kind) && !hiddenSharers.has(p.by ?? ""),
+          zoneMatch(p.zone) && onLayer(p, viewLayers) && !hiddenKinds.has(p.kind) && !hiddenSharers.has(p.by ?? ""),
       )
       .map((p) => mk(p, false));
     return [...local, ...peer];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pins, room.peerPins, zoneKey, viewLayer, hiddenKinds, hiddenSharers]);
+  }, [pins, room.peerPins, zoneKey, viewLayers, hiddenKinds, hiddenSharers]);
 
   function placePin(eq: { y: number; x: number }, clientX: number, clientY: number) {
     if (!heldPin || !zoneKey) return;
@@ -355,7 +398,7 @@ export default function MapWindow() {
       id: crypto.randomUUID(),
       kind: heldPin,
       zone: zoneKey,
-      layer: viewLayer ?? undefined,
+      layer: viewLayer,
       y: eq.y,
       x: eq.x,
     };
@@ -380,7 +423,7 @@ export default function MapWindow() {
   const selectedPin = selected ? pins.find((p) => p.id === selected.id) : undefined;
   function clearZonePins() {
     setPins((prev) => prev.filter((p) => !zoneMatch(p.zone)));
-    setPinTypesOpen(false);
+    setFiltersOpen(false);
   }
   function toggleKind(kind: PinKind, visible: boolean) {
     setHiddenKinds((prev) => {
@@ -429,24 +472,17 @@ export default function MapWindow() {
           onPick={setOverride}
         />
         {/* The storeys a map's author labelled — only when it declares more than one. There are no
-            per-file layers any more: one map file is one zone. */}
+            per-file layers any more: one map file is one zone. A dropdown could only ever show one
+            floor at a time, so the picking happens in the 👁 panel and this says what's showing and
+            takes you there. */}
         {floors.length > 1 && (
-          <select
-            className="map-zone-select no-drag"
-            value={viewLayer ?? ""}
-            onChange={(e) => setLayerPick(e.target.value === "" ? null : Number(e.target.value))}
-            title={
-              "Which floor to show — the map file holds them all at once, as the game draws it.\nPins and pings you make belong to the floor you made them on."
-            }
+          <button
+            className={`wc no-drag ${bands ? "on" : ""}`}
+            title="Which floors are drawn — the map file holds them all at once, as the game draws it."
+            onClick={() => setFiltersOpen(true)}
           >
-            <option value="">All floors</option>
-            {floors.map((f) => (
-              <option key={f.layer} value={f.layer}>
-                {f.label}
-                {yourFloor?.layer === f.layer ? " · you" : ""}
-              </option>
-            ))}
-          </select>
+            ⌂ {bands ? `${shownLayers.length}/${floors.length}` : "all"}
+          </button>
         )}
         <label className="map-follow no-drag" title="Snap the map to your zone when you travel">
           <input type="checkbox" checked={followZone} onChange={(e) => setFollowZone(e.target.checked)} />
@@ -507,7 +543,11 @@ export default function MapWindow() {
         >
           ∿
         </button>
-        <button className={`wc ${pinTypesOpen ? "on" : ""}`} title="Show / hide pin types" onClick={() => setPinTypesOpen((o) => !o)}>
+        <button
+          className={`wc ${filtersOpen ? "on" : ""}`}
+          title="What's drawn — floors or heights, your pins, the map's own labels, peers' pins"
+          onClick={() => setFiltersOpen((o) => !o)}
+        >
           👁
         </button>
         <button
@@ -601,49 +641,26 @@ export default function MapWindow() {
         />
       )}
 
-      {pinTypesOpen && (
-        <div className="pin-layers no-drag">
-          <div className="muted small">Pin types</div>
-          {PIN_TYPES.map((t) => (
-            <label key={t.key} className="row" style={{ gap: 6 }}>
-              <input type="checkbox" checked={!hiddenKinds.has(t.key)} onChange={(e) => toggleKind(t.key, e.target.checked)} />
-              <span style={{ color: t.color }}>{t.glyph}</span> {t.label}
-            </label>
-          ))}
-          {poiKinds.length > 0 && (
-            <>
-              <div className="muted small" style={{ marginTop: 4 }}>
-                Map labels
-              </div>
-              {poiKinds.map((k) => (
-                <label key={k.kind} className="row" style={{ gap: 6 }} title={k.hint}>
-                  <input
-                    type="checkbox"
-                    checked={!hiddenPoiKinds.has(k.kind)}
-                    onChange={(e) => togglePoiKind(k.kind, e.target.checked)}
-                  />
-                  {/* The color these wear on *this* map — how you recognise them on screen. */}
-                  <span className="poi-dot" style={{ background: k.color ?? "#8ba0bd" }} />
-                  {k.label} <span className="muted small">{k.count}</span>
-                </label>
-              ))}
-            </>
-          )}
-          {sharers.length > 0 && (
-            <>
-              <div className="muted small" style={{ marginTop: 4 }}>Shared by</div>
-              {sharers.map((name) => (
-                <label key={name} className="row" style={{ gap: 6 }}>
-                  <input type="checkbox" checked={!hiddenSharers.has(name)} onChange={(e) => toggleSharer(name, e.target.checked)} />
-                  {name}
-                </label>
-              ))}
-            </>
-          )}
-          <button className="btn ghost sm" onClick={clearZonePins} disabled={!zoneKey} style={{ marginTop: 4 }}>
-            Clear pins in {zoneKey ?? "zone"}
-          </button>
-        </div>
+      {filtersOpen && (
+        <MapFilters
+          floors={floors}
+          shownLayers={shownLayers}
+          onLayers={setLayerPicks}
+          yourFloor={yourFloor}
+          zRange={zRange}
+          height={height}
+          onHeight={(pick) => setHeightPick(pick && zoneName ? { zone: zoneName, ...pick } : null)}
+          hiddenPinKinds={hiddenKinds}
+          onPinKind={toggleKind}
+          poiGroups={poiGroups}
+          hiddenPoiKinds={hiddenPoiKinds}
+          onPoiKinds={togglePoiKinds}
+          sharers={sharers}
+          hiddenSharers={hiddenSharers}
+          onSharer={toggleSharer}
+          zone={zoneKey}
+          onClearPins={clearZonePins}
+        />
       )}
 
       <div className="map-body">
@@ -651,7 +668,7 @@ export default function MapWindow() {
           <MapPanel
             zone={zone}
             vector={vector}
-            floor={floor}
+            bands={bands}
             hiddenPoiKinds={hiddenPoiKinds}
             emphasis={emphasis}
             kills={renderKills}
@@ -662,7 +679,7 @@ export default function MapWindow() {
             pins={renderPins}
             placing={heldPin !== null}
             onPlace={placePin}
-            onPing={connected && zoneKey ? (eq) => room.sendPing(eq, zoneKey, viewLayer ?? undefined) : undefined}
+            onPing={connected && zoneKey ? (eq) => room.sendPing(eq, zoneKey, viewLayer) : undefined}
             onPinClick={(pin, x, y) => {
               if (pin.mine) setSelected({ id: pin.id, x, y });
             }}

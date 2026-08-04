@@ -1064,15 +1064,49 @@ kbd {
 }
 .pin-btn:hover { background: var(--bg-input); border-color: var(--border); }
 .pin-btn.held { background: var(--bg-input); border-color: currentColor; }
-.pin-layers {
+/* The 👁 panel: what's drawn. Sectioned rather than one flat list — a dungeon offers a dozen-odd
+   toggles and the useful gesture is switching a whole section off. Scrolls rather than growing,
+   since it sits above the map and the map is the point. */
+.map-filters {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
+  max-height: 45vh;
+  overflow-y: auto;
   padding: 8px 12px;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
+.map-filters section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.map-filters header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Reads as the section's lid rather than another row of the list. */
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+  margin-bottom: 1px;
+}
+/* The trailing count / "all" button sits at the right edge — but only when there *is* one, or a
+   heading that's just its own name would be pushed over there on its own. */
+.map-filters header > :last-child:not(:first-child) {
+  margin-left: auto;
+}
+.map-filters header .group-name { font-weight: 500; }
+.map-filters .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The kinds sit under their group heading's checkbox, which is what the indent is saying. */
+.map-filters .row.indent { padding-left: 16px; }
+.map-filters .height-row input[type="range"] { flex: 1; min-width: 0; }
+.map-filters > .btn { align-self: flex-start; }
 /* A rate's provenance: observed (ours, this build) vs the wiki's older sample. */
 .badge.rate-observed { color: var(--good); border-color: var(--good); }
 .badge.rate-wiki { color: var(--text-dim); }

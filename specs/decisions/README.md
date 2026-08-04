@@ -51,6 +51,7 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0045: Place a custom alert spot by lending the overlay a click](./0045-place-a-custom-alert-spot.md) — *builds on 0035; the click-through overlay turns interactive for one placing click*
 - [0046: We name our own ICE servers, because PeerJS's defaults are not ours to trust](./0046-our-own-ice-servers-not-peerjs-defaults.md) — *the connectivity layer under 0008's transport and 0028's fixes*
 - [0047: Money is copper, counted in two ledgers](./0047-money-is-copper-in-two-ledgers.md) — *the money half of 0017's camp question; coin per mob pools like 0024's drop rates, item prices derive from the loot ledger*
+- [0048: A map label is read by its words, and a bracket it can't read defers](./0048-a-map-label-is-read-by-its-words.md) — *re-tallies the label kinds 0039 put on screen; multi-select floors and a height window over 0040's storeys*
 
 ## Open Questions
 - Open Relay's community TURN is best-effort and not production-grade

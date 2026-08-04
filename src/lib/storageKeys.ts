@@ -16,8 +16,12 @@ export const STORAGE_KEYS = {
   mapZone: "eqlist.map.zone",
   /** Map window: which kinds of map label are hidden (see `poiKind`). */
   mapHiddenPoiKinds: "eqlist.map.hiddenPoiKinds",
-  /** Map window: which layer of a multi-layer zone is being viewed (null = its first). */
-  mapLayer: "eqlist.map.layer",
+  /**
+   * Map window: which of a zone's labelled floors are shown (empty = all of them). A new key
+   * rather than the old `map.layer`, which held a single number — a stored scalar would break the
+   * moment this read it as a list, and "show every floor" is the right thing to fall back to.
+   */
+  mapLayers: "eqlist.map.layers",
   /** Map window: whether zoning in-game snaps the map back to your zone. */
   mapFollowZone: "eqlist.map.followZone",
   /** Map window: always-on-top. */

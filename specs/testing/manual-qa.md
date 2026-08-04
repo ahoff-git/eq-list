@@ -87,21 +87,34 @@ a real run. This is a *verification* list, not open work — open work lives in 
   case that needed a backstop: leave the list from *inside* an expanded kill row and confirm the
   emphasis clears rather than sticking. On a camp with hundreds of kills, check the ring still reads
   at a glance and that the dimming doesn't make the heatmap look empty.
-- **Map label filter (👁 → Map labels).** On a busy zone (Greater Faydark: 144 labels, 85 of them
-  merchants) confirm each kind switches off and on, that the counts match what's drawn, that the
-  swatch beside each row is the color those labels actually are on screen, and that the choice
-  survives reopening the window. The classification is unit-tested against real labels but the
-  *usefulness* isn't: check that turning Merchants off leaves a map you'd actually navigate by.
+- **Map label filter (👁).** On a busy zone (Greater Faydark, a Brewall dungeon) confirm each kind
+  switches off and on, that a **section heading** switches its whole group and shows a dash when only
+  part of it is on, that the counts match what's drawn, that the swatch beside each row is the color
+  those labels actually are on screen, and that the choice survives reopening the window. The
+  classification is unit-tested against the whole corpus but the *sections* aren't: check the panel
+  reads top-to-bottom without scrolling past what you came for, and that turning off *Doors & traps*
+  or *Who's here* leaves a map you'd actually navigate by
+  ([ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md)).
 - **The map's other window controls.** Confirm the map's **minimize** works, its **A− / A+** go
   above 100% (up to 200%) and stay legible there, and that a **vector** map keeps zooming well past
   the 6× an image stops at (30×) without the lines going to mush. The **move tool** (✥) should be
   clearly visible in the toolbar rather than black-on-black.
-- **Multi-floor zone, in RunnyEye.** The floor picker should read the mapmaker's names (`Level 1 (Top)` …
-    `Level 5 (Bottom)`) with **All floors** as the default. Rendering the five floors side by
-    side already confirms each is a legible plan, so what's left is in-game: that **· you**
-    marks the floor you're actually standing on as you descend, that stairs appear on both
-    floors they join, and that a pin dropped while one floor is showing doesn't appear on the
-    others ([ADR 0040](../decisions/0040-floors-come-from-the-mapmaker.md)).
+- **Multi-floor zone, in RunnyEye.** The 👁 panel's **Floors** section should read the mapmaker's
+    names (`Level 1 (Top)` … `Level 5 (Bottom)`) with all five checked by default, and the titlebar's
+    **⌂** should say `all` / `2/5`. Rendering the five floors side by side already confirms each is a
+    legible plan, so what's left is in-game: that **· you** marks the floor you're actually standing
+    on as you descend, that stairs appear on both floors they join, that a pin dropped while **one**
+    floor is showing doesn't appear on the others, and that a pin dropped with **several** showing
+    appears on all of them (there's no one storey it could belong to)
+    ([ADR 0040](../decisions/0040-floors-come-from-the-mapmaker.md),
+    [ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md)). Two non-adjacent floors
+    checked (1 and 3) should leave the middle one out rather than filling the gap.
+- **Height window, on a zone with no labelled floors.** Most maps have none, so the 👁 panel offers
+    **Height** instead — two handles over the zone's own z span. In a zone with real vertical
+    structure (a tower, a zone with caves under it) confirm dragging them isolates a level you'd
+    recognise, that the readout matches your `/loc` z, that **all** restores the whole map, and that
+    travelling to another zone drops the window rather than carrying a meaningless height across
+    ([ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md)).
 - **Cast-alert overlay, over the game.** With cast alerts on, confirm the banner + flash appear
   in the **click-through overlay on top of the game** (not just the app window), that clicking where
   the banner is still clicks the game beneath it, that the **beep** fires (even as the first alert

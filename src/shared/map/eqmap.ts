@@ -238,9 +238,43 @@ export function floorAt(floors: MapFloor[], z: number): MapFloor | undefined {
   return floors.find((f) => z >= f.minZ && z < f.maxZ);
 }
 
-/** Is any part of this segment on the given floor? A stair spans two, and shows on both. */
-export function segmentOnFloor(seg: MapSegment, floor: MapFloor): boolean {
-  return (seg.z1 >= floor.minZ && seg.z1 < floor.maxZ) || (seg.z2 >= floor.minZ && seg.z2 < floor.maxZ);
+/**
+ * A band of heights to draw. A `MapFloor` is one (it carries the same two fields), and so is a
+ * height window set by hand on a map whose author never labelled a storey — which is the whole
+ * reason this is its own shape rather than "a floor": the filter cares about heights, and only
+ * *some* of the heights it's given have a name.
+ */
+export interface ZBand {
+  minZ: number;
+  maxZ: number;
+}
+
+/**
+ * Is this height inside any of the bands? **No bands means no filter** — every band being on and
+ * there being nothing to filter by are the same picture (the whole map, as the game draws it), so
+ * they're the same answer rather than two states to keep straight.
+ *
+ * The lower edge is inclusive and the upper exclusive, so adjacent bands tile without overlapping;
+ * `detectFloors` reaches the outermost two out to infinity for the same reason.
+ */
+export function inBands(z: number, bands?: ZBand[]): boolean {
+  if (!bands?.length) return true;
+  return bands.some((b) => z >= b.minZ && z < b.maxZ);
+}
+
+/** Is any part of this segment in the bands? A stair spans two floors, and shows on both. */
+export function segmentInBands(seg: MapSegment, bands?: ZBand[]): boolean {
+  if (!bands?.length) return true;
+  return inBands(seg.z1, bands) || inBands(seg.z2, bands);
+}
+
+/**
+ * The height span a map's geometry covers — what a hand-set height window is chosen *within*, so
+ * the control offers the heights this zone actually has rather than an arbitrary scale.
+ */
+export function mapZRange(map: EqMap): ZBand | undefined {
+  const bounds = mapBounds(map);
+  return bounds ? { minZ: bounds.minZ, maxZ: bounds.maxZ } : undefined;
 }
 
 /** How much empty world to leave around the geometry, as a fraction of its span. */

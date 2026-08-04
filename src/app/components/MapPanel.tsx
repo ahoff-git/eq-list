@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerLoc } from "@/lib/hooks";
 import { canvasToEqCoords, clampPan, eqToCanvasCoords } from "@/shared/map/coords";
-import { mapBounds, segmentOnFloor, vectorProjection, type EqMap, type MapFloor } from "@/shared/map/eqmap";
+import { inBands, mapBounds, segmentInBands, vectorProjection, type EqMap, type ZBand } from "@/shared/map/eqmap";
 import { POI_KINDS, poiKind, type PoiKind } from "@/shared/map/poi-kinds";
 import { pickHit } from "@/shared/map/hit-test";
 import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
@@ -146,7 +146,7 @@ export default function MapPanel({
   onPinMove,
   showGrid = false,
   vector,
-  floor,
+  bands,
   hiddenPoiKinds,
   emphasis,
 }: {
@@ -179,10 +179,11 @@ export default function MapPanel({
    */
   vector?: EqMap | null;
   /**
-   * Show only this floor of a multi-storey map (undefined = all of them, which is what the game
-   * does). Stairs belong to both floors they touch, so they stay drawn.
+   * The height bands to draw — the checked floors of a multi-storey map, or a hand-set window on
+   * one that names no storeys. Undefined or empty draws the whole map, which is what the game does.
+   * Stairs belong to both floors they touch, so they stay drawn.
    */
-  floor?: MapFloor;
+  bands?: ZBand[];
   /** Label kinds to leave off the map (see `poiKind`) — a busy zone is mostly labels. */
   hiddenPoiKinds?: Set<PoiKind>;
   /**
@@ -258,17 +259,13 @@ export default function MapPanel({
   );
 
   /**
-   * The labels actually drawn: this floor's, of the kinds not hidden. Worked out here rather than
-   * in the draw loop, which runs on every `/loc`, ping frame and pan.
+   * The labels actually drawn: the ones at a visible height, of the kinds not hidden. Worked out
+   * here rather than in the draw loop, which runs on every `/loc`, ping frame and pan.
    */
   const visiblePois = useMemo(() => {
     if (!vector) return [];
-    return vector.pois.filter(
-      (poi) =>
-        (!floor || (poi.z >= floor.minZ && poi.z < floor.maxZ)) &&
-        !hiddenPoiKinds?.has(poiKind(poi.label)),
-    );
-  }, [vector, floor, hiddenPoiKinds]);
+    return vector.pois.filter((poi) => inBands(poi.z, bands) && !hiddenPoiKinds?.has(poiKind(poi.label)));
+  }, [vector, bands, hiddenPoiKinds]);
 
   /**
    * Everything on the map that answers to the cursor. Built in one place so hovering doesn't need
@@ -375,7 +372,7 @@ export default function MapPanel({
       // be thousands of context switches, and the biggest zones carry twenty thousand.
       const paths = new Map<string, Path2D>();
       for (const seg of vector.segments) {
-        if (floor && !segmentOnFloor(seg, floor)) continue;
+        if (!segmentInBands(seg, bands)) continue;
         const a = eqToCanvasCoords({ y: seg.y1, x: seg.x1 }, projection, view);
         const b = eqToCanvasCoords({ y: seg.y2, x: seg.x2 }, projection, view);
         if (!a || !b) continue;
@@ -393,7 +390,7 @@ export default function MapPanel({
       }
     }
     ctx.restore();
-  }, [vector, floor, projection, view, zoom, pan, side]);
+  }, [vector, bands, projection, view, zoom, pan, side]);
 
   // Draw the overlay (grid, trail, peers, loc, pings, pins) — coords via `toScreen`,
   // so markers/text stay a constant size while the map zooms/pans under them.

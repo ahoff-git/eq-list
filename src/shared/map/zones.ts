@@ -74,14 +74,17 @@ export function sortZones(zones: Zone[]): Zone[] {
 }
 
 /**
- * Is a marker visible on the floor in view?
+ * Is a marker visible on the floors in view?
  *
- * Two kinds of "no floor", and they mean opposite things. A **marker** without one belongs to the
- * zone rather than a storey — anything inferred from the log, which never reports a floor — so it
- * shows on every one. A **view** of `null` is showing every floor at once, so everything shows;
- * `undefined` is a zone with no floors at all.
+ * A **marker** without a layer belongs to the zone rather than a storey — anything inferred from the
+ * log, which never reports a floor — so it shows on every one. An empty or absent **set of floors**
+ * is no filter at all: every floor on screen, and a zone with no floors, are the same picture.
+ *
+ * A marker stamped with a floor the current map doesn't have still shows, which matters when the
+ * same zone is drawn from a different pack: a pin you placed is yours, and it shouldn't vanish
+ * because this author didn't label their storeys.
  */
-export function onLayer(marker: { layer?: number }, layer?: number | null): boolean {
-  if (layer === null) return true;
-  return marker.layer === undefined || marker.layer === layer;
+export function onLayer(marker: { layer?: number }, layers?: ReadonlySet<number> | null): boolean {
+  if (!layers?.size) return true;
+  return marker.layer === undefined || layers.has(marker.layer);
 }

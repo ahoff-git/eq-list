@@ -78,7 +78,13 @@ export const POI_KINDS: { kind: PoiKind; group: PoiGroup; label: string; hint: s
 // the packs use it for everything: a trade, an achievement flag, a picklock skill, a direction.
 // So it's read first — but only for the things it actually says.
 
-const TRAILING_PAREN = /\(([^)]*)\)\s*$/;
+/**
+ * The closing bracket is optional because 19 labels in the corpus are missing theirs —
+ * `Curfang_(Hunter`, `Altunic Jartin (Shields` — and a hand-authored typo shouldn't cost the label
+ * its kind. It can't swallow a mid-label bracket: `[^)]*` can't cross a `)`, so the match still has
+ * to reach the end of the string.
+ */
+const TRAILING_PAREN = /\(([^)]*)\)?\s*$/;
 
 /**
  * Brewall's mark for a spawn on the Hunter achievement list, stacked with roam/respawn notes:
@@ -149,7 +155,7 @@ const TRAP = /^traps?\b|\btrap:/i;
  * mark a harvestable item on the floor. The old classifier read it as a quest prefix, which put a
  * zone's entire foraging map under "Quests".
  */
-const LOOT_PREFIX = /^g[st]\s*[:.]/i;
+const LOOT_PREFIX = /^g[st]\s*[:.(]/i;
 
 /** A quest marker's own prefix, as the packs write it: `Q: …`, `Quest: …`. */
 const QUEST_PREFIX = /^(?:q|quest|task|mission)\s*[:.-]/i;
@@ -209,6 +215,11 @@ export function poiKind(label: string): PoiKind {
   if (META.test(text)) return "note";
 
   const inner = TRAILING_PAREN.exec(text)?.[1]?.trim();
+  // Two readings a bracket never overrules, hoisted above both helpers rather than duplicated
+  // inside them: `(Hunter)` marks an achievement spawn whatever else the label says, and
+  // `to The Plane of Knowledge (Click Book)` is a zone line however you work it.
+  if (inner && HUNTER.test(inner)) return "spawn";
+  if (ZONELINE.test(text)) return "zoneline";
   return (inner ? parenKind(text, inner) : undefined) ?? wordKind(text);
 }
 
@@ -222,15 +233,22 @@ export function poiKind(label: string): PoiKind {
  * can't read now defers to the label's own words instead of inventing a shopkeeper.
  */
 function parenKind(text: string, inner: string): PoiKind | undefined {
-  if (HUNTER.test(inner)) return "spawn";
   if (SELLER.test(inner)) return "merchant";
   if (QUEST_WORDS.test(inner)) return "quest";
   if (LOOT_WORDS.test(inner)) return "loot";
+  // Ahead of the station words, because a station never wears one of these and an NPC standing
+  // beside one does: "War Forge Assistant (Roam)" is a roamer, not a forge.
+  if (NOTABLE.test(inner) || EPIC_CLASS.test(inner)) return "spawn";
   // Unless the thing itself is a station — "Feir`Dal Forge (Cultural)" is a forge, not a shop.
   if (CRAFT.test(text)) return "craft";
   if (TRADE.test(inner) || TRAINER.test(inner)) return "merchant";
-  if (NOTABLE.test(inner) || EPIC_CLASS.test(inner)) return "spawn";
   if (KOS.test(inner)) return "trap";
+  // What the label already says it is outranks what the bracket says about *working* it: the
+  // bracket on `Elevator (click)` and `Portal to Island 2 Azarack (Key of the Misplaced)` is an
+  // instruction, not the thing — only `Locked Door (Picklock 200+)` is both.
+  if (DOOR.test(text)) return "door";
+  if (PASSAGE.test(text)) return "passage";
+  if (TRANSPORT.test(text)) return "transport";
   if (OPENS.test(inner)) return "door";
   if (WAY_PAREN.test(inner)) return "passage";
   if (TRANSPORT_PAREN.test(inner)) return "transport";
@@ -246,15 +264,16 @@ function wordKind(text: string): PoiKind {
   if (TRAP.test(text)) return "trap";
   if (LOOT_PREFIX.test(text) || LOOT_WORDS.test(text)) return "loot";
   if (QUEST_PREFIX.test(text)) return "quest";
-  if (ZONELINE.test(text)) return "zoneline";
   // Before the article: "The Protector PH=a shade guardian" names the named, not its placeholder.
   if (PLACEHOLDER.test(text)) return "spawn";
   if (ARTICLE.test(text)) return "mob";
   if (NOTABLE_LABEL.test(text)) return "spawn";
+  // Before the fixtures, so "Portal Merchant" is read as the shop it is rather than the portal
+  // it stands next to.
+  if (SERVICE.test(text)) return "merchant";
   if (DOOR.test(text)) return "door";
   if (PASSAGE.test(text)) return "passage";
   if (TRANSPORT.test(text)) return "transport";
-  if (SERVICE.test(text)) return "merchant";
   if (CRAFT.test(text)) return "craft";
   if (NUMERIC.test(text)) return "note";
   if (NAME_LIKE.test(text) && text.split(/\s+/).length <= NAME_MAX_WORDS) return "named";
