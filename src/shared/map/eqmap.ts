@@ -171,6 +171,11 @@ export interface MapFloor {
  */
 const FLOOR_LABEL = [/^(?:level|lvl)\s*(\d+)\s*(?:\(.*\))?$/i, /^(\d+)(?:st|nd|rd|th)\s+floor\s*(?:\(.*\))?$/i];
 
+/** Is this label purely a floor designation ("Level 2", "3rd Floor")? */
+export function isFloorLabel(label: string): boolean {
+  return FLOOR_LABEL.some((re) => re.test(label.trim()));
+}
+
 /**
  * How far apart two floor labels must sit in height to be describing separate storeys.
  * Some maps draw a tower's floors *side by side* at one height instead of stacking them —

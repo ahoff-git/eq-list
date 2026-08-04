@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerLoc } from "@/lib/hooks";
 import { canvasToEqCoords, canvasToImagePx, clampPan, eqToCanvasCoords, imagePxToCanvas } from "@/shared/map/coords";
 import { mapBounds, segmentOnFloor, vectorProjection, type EqMap, type MapFloor } from "@/shared/map/eqmap";
+import { poiKind, type PoiKind } from "@/shared/map/poi-kinds";
 import { clearCanvas, drawImageScaled, drawLine, drawCircle } from "@/lib/map/draw";
 import type { Loc, MapDimensions, MapView, Point, Zone } from "@/shared/map/types";
 
@@ -113,6 +114,7 @@ export default function MapPanel({
   fixes = [],
   vector,
   floor,
+  hiddenPoiKinds,
 }: {
   zone: Zone | undefined;
   redrawKey?: number;
@@ -154,6 +156,8 @@ export default function MapPanel({
    * the game does). Stairs belong to both floors they touch, so they stay drawn.
    */
   floor?: MapFloor;
+  /** Label kinds to leave off the map (see `poiKind`) — a busy zone is mostly labels. */
+  hiddenPoiKinds?: Set<PoiKind>;
 }) {
   const loc = usePlayerLoc();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -220,6 +224,19 @@ export default function MapPanel({
   }, [img, side, projection]);
 
   const maxZoom = vector ? VECTOR_MAX_ZOOM : IMAGE_MAX_ZOOM;
+
+  /**
+   * The labels actually drawn: this floor's, of the kinds not hidden. Worked out here rather than
+   * in the draw loop, which runs on every `/loc`, ping frame and pan.
+   */
+  const visiblePois = useMemo(() => {
+    if (!vector) return [];
+    return vector.pois.filter(
+      (poi) =>
+        (!floor || (poi.z >= floor.minZ && poi.z < floor.maxZ)) &&
+        !hiddenPoiKinds?.has(poiKind(poi.label)),
+    );
+  }, [vector, floor, hiddenPoiKinds]);
 
   /** The zoom/pan view, applied to a base canvas point. */
   const applyView = useCallback((p: Point): Point => ({ x: p.x * zoom + pan.x, y: p.y * zoom + pan.y }), [zoom, pan]);
@@ -353,8 +370,7 @@ export default function MapPanel({
       ctx.font = "10px sans-serif";
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
-      for (const poi of vector.pois) {
-        if (floor && (poi.z < floor.minZ || poi.z >= floor.maxZ)) continue;
+      for (const poi of visiblePois) {
         const p = toScreen(poi);
         if (!p) continue;
         ctx.fillStyle = poi.color ?? MAP_COLORS.poi;
@@ -485,7 +501,7 @@ export default function MapPanel({
     ctx.textBaseline = "alphabetic";
   }, [
     loc, trail, peers, pings, pins, kills, showKillConfidence, projected, side, redrawKey,
-    showGrid, toScreen, frame, fixes, view, applyView, vector, floor,
+    showGrid, toScreen, frame, fixes, view, applyView, vector, visiblePois,
   ]);
 
   /** Screen point (within the canvas) → base canvas point, inverting the zoom/pan view. */

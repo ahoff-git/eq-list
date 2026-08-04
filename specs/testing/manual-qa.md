@@ -56,6 +56,11 @@ a real run. This is a *verification* list, not open work — open work lives in 
   behind, a **plain click still does**, a drag with a pin held doesn't drop one, and Move mode
   still drags pins rather than the map. Then the case that was broken: **at fit zoom** (scrolled
   all the way out) the map can't move, and dragging it must *still* not ping.
+- **Map label filter (👁 → Map labels).** On a busy zone (Greater Faydark: 144 labels, 85 of them
+  merchants) confirm each kind switches off and on, that the counts match what's drawn, that the
+  swatch beside each row is the color those labels actually are on screen, and that the choice
+  survives reopening the window. The classification is unit-tested against real labels but the
+  *usefulness* isn't: check that turning Merchants off leaves a map you'd actually navigate by.
 - **The map's other window controls.** Confirm the map's **minimize** works, its **A− / A+** go
   above 100% (up to 200%) and stay legible there, and that a **vector** map keeps zooming well past
   the 6× an image stops at (30×) without the lines going to mush. The **move tool** (✥) should be

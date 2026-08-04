@@ -114,6 +114,23 @@ Maps come either from **the game's own map files** (every zone, self-locating) o
   from the geometry's own world box. Layer `_1` is the points of interest and is read; layer
   `_2` is a compass and the mapmaker's credits drawn as vector text far outside the zone, so
   it isn't drawn — only its labels, shown as attribution under the map.
+- **Label filter** (`src/shared/map/poi-kinds.ts` + the 👁 panel's **Map labels** section) — a busy
+  zone is mostly labels (Greater Faydark has 144, 85 of them merchants), and which ones matter
+  depends on what you're there for, so each **kind** can be switched off. The choice persists.
+
+  Kinds come from **the label's own words**, not from its color. The colors *are* categories — and
+  the classifier agrees with them where the packs have a convention (zone lines red, quest givers
+  blue/teal, forges purple 487 times out of 628) — but it's a convention each mapmaker keeps their
+  own way: zone lines come as both `255,0,0` and `240,0,0`, merchants as `0,128,0` and `0,127,0`,
+  and thousands of labels are drawn in the default black. Text is steadier. The color is still shown
+  beside each toggle, since that's how you recognise them on screen — and it's the color those
+  labels really are *on this map*, not one we assumed.
+
+  A trailing parenthetical is the strongest signal in the corpus and is read before the article,
+  because only the brackets separate Brewall's `a reanimating hand (Hunter)` (a spawn on the Hunter
+  achievement list) from `a spell research merchant (Research)` (a shopkeeper). Floor labels are
+  their own kind, recognised by the same test that drives the floor picker rather than a second
+  guess at the same thing. The rows offered are only the kinds a given map actually contains.
 - **Floors** (`detectFloors`/`floorAt`/`segmentOnFloor` in `eqmap.ts`) — a vector map holds
   every storey at once, so RunnyEye arrives as five levels of corridor on top of each other.
   The floors are read from the **mapmaker's own labels** (`Level 1 (Top)`, `2nd Floor`), never

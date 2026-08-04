@@ -124,6 +124,5 @@ _Recently settled (kept only as pointers):_
   as zones are actually visited.
 
 
-- Add toggles for tables 
 - Fix the zone names. Go research all the zones and show more normal names when possible. 
   - update the zone picker to be a combo dropdown that you can type in, and narrow the selection options to only zones that match a reasonable  lavenstein distance 

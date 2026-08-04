@@ -14,6 +14,8 @@ export const STORAGE_KEYS = {
   mapSource: "eqlist.map.source",
   /** Map window: the viewed-zone override (blank = follow current zone). */
   mapZone: "eqlist.map.zone",
+  /** Map window: which kinds of map label are hidden (see `poiKind`). */
+  mapHiddenPoiKinds: "eqlist.map.hiddenPoiKinds",
   /** Map window: which layer of a multi-layer zone is being viewed (null = its first). */
   mapLayer: "eqlist.map.layer",
   /** Map window: whether zoning in-game snaps the map back to your zone. */

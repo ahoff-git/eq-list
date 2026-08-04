@@ -11,9 +11,9 @@
  * Pure and dependency-free, and tested against the real corpus — see `poi-kinds.test.ts`.
  */
 
-import type { MapPoi } from "./eqmap";
+import { isFloorLabel, type MapPoi } from "./eqmap";
 
-export type PoiKind = "travel" | "quest" | "merchant" | "craft" | "mob" | "named" | "note";
+export type PoiKind = "travel" | "quest" | "merchant" | "craft" | "mob" | "named" | "floor" | "note";
 
 /** Display order and wording for the label filter. */
 export const POI_KINDS: { kind: PoiKind; label: string; hint: string }[] = [
@@ -22,8 +22,9 @@ export const POI_KINDS: { kind: PoiKind; label: string; hint: string }[] = [
   { kind: "merchant", label: "Merchants", hint: "Vendors, bankers and trainers — anyone whose label names their trade" },
   { kind: "craft", label: "Tradeskills", hint: "Forges, looms, kilns, ovens and the rest of the stations" },
   { kind: "mob", label: "Mobs", hint: "Ordinary spawns — a label that starts with a/an/the" },
-  { kind: "named", label: "Named", hint: "Someone or something with a proper name" },
-  { kind: "note", label: "Notes", hint: "Everything else the mapmaker wrote down — areas, loot, directions" },
+  { kind: "named", label: "Names & places", hint: "Proper names — people, landmarks and areas" },
+  { kind: "floor", label: "Floor markers", hint: "The mapmaker's own storey labels, which also drive the floor picker" },
+  { kind: "note", label: "Notes", hint: "Everything else the mapmaker wrote — directions, loot lists, credits" },
 ];
 
 /** Tradeskill stations, which are labelled by the object rather than by a person. */
@@ -36,6 +37,15 @@ const CRAFT = /\b(forge|loom|kiln|oven|pottery wheel|brew barrel|barrel|anvil|wo
  */
 const TRADE_PAREN = /\(([^)]+)\)\s*$/;
 const QUEST_TRADE = /\b(quest|quests|mission|missions|task|tasks|task master|taskmaster)\b/i;
+
+/**
+ * "(Hunter)" is Brewall's mark for a spawn on the Hunter achievement list — a mob to kill, not
+ * somebody to trade with, even though it wears a merchant's parenthetical.
+ */
+const HUNTER_PAREN = /^hunter$/i;
+
+/** A parenthetical describing an action rather than a trade: "Hidden Door (Click to Open)". */
+const INTERACT_PAREN = /\b(click|open|clicky|press|pull|lever)\b/i;
 
 /** A quest marker's prefix, as the packs write it: "GS: Questionable Cheese", "Q: …". */
 const QUEST_PREFIX = /^(gs|gt|q|quest)\s*[:.-]/i;
@@ -55,18 +65,28 @@ export function poiKind(label: string): PoiKind {
   if (!text) return "note";
   if (TRAVEL.test(text)) return "travel";
   if (QUEST_PREFIX.test(text)) return "quest";
+  if (isFloorLabel(text)) return "floor";
 
+  // A trailing parenthetical is the strongest signal in the corpus, so it's read before the
+  // article: "a reanimating hand (Hunter)" is a mob and "a spell research merchant (Research)" is
+  // a merchant, and only the brackets can tell them apart.
   const paren = TRADE_PAREN.exec(text);
   if (paren) {
-    // "(Quests)" and "(Missions)" are quest givers; any other trade in parentheses is a merchant
-    // or trainer. Either way the parenthetical is what tells us — the name never would.
-    return QUEST_TRADE.test(paren[1]) ? "quest" : "merchant";
+    const inner = paren[1].trim();
+    // Unless the thing itself is a station — "Feir`Dal Forge (Cultural)" is a forge, not a shop.
+    if (CRAFT.test(text)) return "craft";
+    if (QUEST_TRADE.test(inner)) return "quest";
+    if (HUNTER_PAREN.test(inner)) return "mob";
+    if (INTERACT_PAREN.test(inner)) return "note";
+    // Anything else in brackets names the trade they deal in — their name never would.
+    return "merchant";
   }
+
+  // An article means an ordinary spawn, the same signal the cast-alert matcher uses to tell a mob
+  // from a player. Checked before `CRAFT` so "a barrel golem" isn't filed as a brew barrel.
+  if (/^(an?|the)\s/i.test(text)) return "mob";
   if (CRAFT.test(text)) return "craft";
   if (NUMERIC.test(text)) return "note";
-  // An article means an ordinary spawn ("a grimling arcanist"), the same signal the cast-alert
-  // matcher uses to tell a mob from a player. Without one it's a proper name.
-  if (/^(an?|the)\s/i.test(text)) return "mob";
   if (/^[A-Z`'’]/.test(text) && text.split(/\s+/).length <= 4) return "named";
   return "note";
 }

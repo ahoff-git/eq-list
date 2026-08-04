@@ -28,6 +28,7 @@ import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { collapseLayers, findZone, layerLabel, onLayer, zoneLayers } from "@/shared/map/zones";
 import { IMAGE_SOURCE } from "@/shared/map/map-sources";
 import { detectFloors, floorAt } from "@/shared/map/eqmap";
+import { poiKindSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
@@ -206,6 +207,14 @@ export default function MapWindow() {
   const heldPin = tool && tool !== "move" ? (tool as PinKind) : null;
   const moveMode = tool === "move";
   const [hiddenKinds, setHiddenKinds] = useState<Set<PinKind>>(new Set());
+  // Which kinds of *map* label to leave off — a busy zone is mostly labels, and which ones matter
+  // depends on what you're doing there. Persisted as an array, since a Set isn't JSON.
+  const [hiddenPoiList, setHiddenPoiList] = usePersistentState<PoiKind[]>(STORAGE_KEYS.mapHiddenPoiKinds, []);
+  const hiddenPoiKinds = useMemo(() => new Set(hiddenPoiList), [hiddenPoiList]);
+  /** The label kinds this map actually has, with the color they wear here. */
+  const poiKinds = useMemo(() => (vector ? poiKindSummary(vector.pois) : []), [vector]);
+  const togglePoiKind = (kind: PoiKind, visible: boolean) =>
+    setHiddenPoiList((prev) => (visible ? prev.filter((k) => k !== kind) : [...new Set([...prev, kind])]));
   const [hiddenSharers, setHiddenSharers] = useState<Set<string>>(new Set());
   const [sharePinsOn, setSharePinsOn] = usePersistentState(STORAGE_KEYS.mapSharePins, false);
   const [pinTypesOpen, setPinTypesOpen] = useState(false);
@@ -629,6 +638,25 @@ export default function MapWindow() {
               <span style={{ color: t.color }}>{t.glyph}</span> {t.label}
             </label>
           ))}
+          {poiKinds.length > 0 && (
+            <>
+              <div className="muted small" style={{ marginTop: 4 }}>
+                Map labels
+              </div>
+              {poiKinds.map((k) => (
+                <label key={k.kind} className="row" style={{ gap: 6 }} title={k.hint}>
+                  <input
+                    type="checkbox"
+                    checked={!hiddenPoiKinds.has(k.kind)}
+                    onChange={(e) => togglePoiKind(k.kind, e.target.checked)}
+                  />
+                  {/* The color these wear on *this* map — how you recognise them on screen. */}
+                  <span className="poi-dot" style={{ background: k.color ?? "#8ba0bd" }} />
+                  {k.label} <span className="muted small">{k.count}</span>
+                </label>
+              ))}
+            </>
+          )}
           {sharers.length > 0 && (
             <>
               <div className="muted small" style={{ marginTop: 4 }}>Shared by</div>
@@ -652,6 +680,7 @@ export default function MapWindow() {
             zone={zone}
             vector={vector}
             floor={floor}
+            hiddenPoiKinds={hiddenPoiKinds}
             redrawKey={cal.tick}
             kills={renderKills}
             showKillConfidence={showKillConfidence}
