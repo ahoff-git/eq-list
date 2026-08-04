@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { createCombatStats } from "../combat-stats";
 import { parseCombat } from "../../src/shared/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
-import type { CombatEvent, XpEvent } from "../../src/shared/types";
+import type { CoinEvent, CombatEvent, LootEvent, XpEvent } from "../../src/shared/types";
 
 /** `sec` seconds past midnight as mm:ss — seconds roll into minutes, as a clock does. */
 function clock(sec: number): string {
@@ -22,6 +22,26 @@ const stamp = (sec: number) => `2026-07-29T${clock(sec)}`;
 /** An experience gain, as the watcher would hand it over. */
 function xp(pct: number, sec: number, party = false): XpEvent {
   return { kind: "xp", party, pct, logId: 1, raw: "You gain experience!", at: stamp(sec) };
+}
+
+/** Coin off a corpse (or, with `from: "item"`, an auto-sold item's). */
+function coin(copper: number, sec: number, from: CoinEvent["from"] = "corpse"): CoinEvent {
+  return { kind: "coin", from, copper, logId: 1, raw: "You receive", at: stamp(sec) };
+}
+
+/** An auto-sold drop, as `parseLoot` hands it over — priced, and naming the corpse. */
+function sold(item: string, source: string, copper: number, sec: number): LootEvent {
+  return {
+    kind: "loot",
+    item,
+    qty: 1,
+    source,
+    fate: "sold",
+    soldFor: copper,
+    logId: 1,
+    raw: "You looted",
+    at: stamp(sec),
+  };
 }
 
 /** Feed lines as if they were tailed from a log, `sec` seconds past midnight. */
@@ -701,4 +721,71 @@ test("onChange signals each change; snapshot reflects the running total", () => 
   ]);
   assert.equal(changes, 2);
   assert.equal(t.snapshot().session.totalDealt, 15);
+});
+
+// ── money ──
+//
+// Two ledgers, deliberately: coin the mob carried and what its drops auto-sold for. They're
+// gathered from different lines and attributed differently, and blending them would hide the
+// difference between a mob that pays cash and one that drops good trash (ADR 0047).
+
+test("coin off a corpse is credited to the mob that just died", () => {
+  const t = tracker();
+  feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(20));
+  t.recordCoin(coin(32, 22)); // within the attribution window
+  t.recordCoin(coin(10, 600)); // long after any kill — the session's money, nobody's in particular
+
+  const s = t.snapshot().session;
+  assert.equal(s.copper, 42, "every coin line counts towards the evening");
+  const mob = s.byMob.find((m) => m.mob === "a coyote")!;
+  assert.equal(mob.copper, 32);
+});
+
+test("an auto-sold item's coin line is ignored — the loot line already priced it", () => {
+  const t = tracker();
+  feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(20));
+  t.recordSale(sold("Snake Egg", "a coyote", 4, 21));
+  t.recordCoin(coin(4, 21, "item")); // the same four copper, said a second way
+
+  const s = t.snapshot().session;
+  assert.equal(s.soldCopper, 4);
+  assert.equal(s.copper, 0, "counting both would double every sale");
+});
+
+test("a sale is credited by the corpse it names, needing no timing guess", () => {
+  const t = tracker();
+  feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(20));
+  feed(t, [[30, "You pierce a rat for 10 points of damage."]]);
+  t.recordKill("a rat", stamp(40));
+  // Sold long after the coyote died, and after a different mob's kill — the item still says
+  // where it came from, which is what makes this the reliable half of the money.
+  t.recordSale(sold("Snake Egg", "a coyote", 14, 300));
+
+  const s = t.snapshot().session;
+  assert.equal(s.byMob.find((m) => m.mob === "a coyote")!.soldCopper, 14);
+  assert.equal(s.byMob.find((m) => m.mob === "a rat")!.soldCopper, 0);
+});
+
+test("the two ledgers stay apart per mob, and combine into coin per minute", () => {
+  const t = tracker();
+  feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(20)); // 10s of fighting it
+  t.recordCoin(coin(20, 21));
+  t.recordSale(sold("Snake Egg", "a coyote", 10, 21));
+
+  const mob = t.snapshot().session.byMob.find((m) => m.mob === "a coyote")!;
+  assert.equal(mob.copper, 20);
+  assert.equal(mob.soldCopper, 10);
+  assert.equal(mob.copperPerMin, 180); // 30c per 10s
+});
+
+test("a loot line the log put no price on adds no money", () => {
+  const t = tracker();
+  feed(t, [[10, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(20));
+  t.recordSale({ ...sold("Bone Chips", "a coyote", 0, 21), fate: "kept", soldFor: undefined });
+  assert.equal(t.snapshot().session.soldCopper, 0);
 });

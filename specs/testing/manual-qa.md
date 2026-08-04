@@ -30,6 +30,17 @@ a real run. This is a *verification* list, not open work — open work lives in 
   **one** row, not two. See [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md).
 - **Loot tab, live.** Confirm the Loot tab shows drops that landed **before** it was opened, keeps
   them **across a restart**, and follows live ones (`electron/loot-log.ts`).
+- **Money, live — the one to check line-by-line.** Coin is now counted in two ledgers
+  ([ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)) and the grammar came from a real
+  log this sandbox can't re-read, so the first real session is the verification. Confirm, in order:
+  the Session tab's **From corpses** matches the coin you actually picked up (add the "You receive …
+  from the corpse" lines by hand for one camp), **From sales** matches the auto-sells, and neither
+  is double the other — a doubled **From sales** means the "from that item" line is being counted
+  alongside the loot line, which is the specific failure this design guards against. Then the camp
+  report's per-mob **Coin** column: it should credit the mob you were looting, so kill two different
+  mobs, loot one, and check the coin didn't land on the other. Finally the Loot tab's **What it
+  sells for** table — a stack's "Each" must be the line price divided by the stack, not the line
+  price. Coin/hour on the Session tab is only as good as those two totals.
 - **Ping animation + zone follow.** Confirm your own map click shows an animated gold ping locally,
   and that actually zoning in-game clears a hand-picked zone override so the map follows you again.
 - **Screengrab lookup, end-to-end.** Verify the `Ctrl/Cmd+Shift+L` flow: region select → capture →
@@ -115,6 +126,12 @@ a real run. This is a *verification* list, not open work — open work lives in 
   prompted it: change the **monitor** and confirm the overlay moves *immediately*, with no other
   setting touched, and that the banner is the right size on a secondary or HiDPI screen (it used to
   inherit the primary display's dimensions).
+- **Windows reopen the size you left them.** Size and place the main window (and the map), quit via
+  the tray, relaunch, and confirm both come back **exactly** as they were. Worth repeating three or
+  four times on a **mixed-DPI** desktop with the window on the scaled monitor: the size used to be
+  multiplied by that monitor's scale factor on every launch, so the window grew until it filled the
+  screen. Also check a window left **maximized** reopens maximized, and restores down to the size it
+  had before — not to some default.
 - **Fade alerts.** Tick **fades** on a watch and confirm the banner reads "X faded" with the
   re-cast hint when your spell wears off — on you, on your pet, and on a mob you cast it at (three
   different log lines). Also confirm somebody **gating out** ("Bunnyslayer fades away.") never
@@ -169,6 +186,15 @@ a real run. This is a *verification* list, not open work — open work lives in 
   by hand: that the connection survives **closing the map window** (reopening still shows peers), and
   that toggling "Connect" off leaves the room. Untested with more than two clients — the cold-start
   recovery is bounded and won't reconcile a room that splits two-and-two.
+- **Our own ICE servers.** We now pass Google STUN + Open Relay TURN instead of PeerJS's defaults
+  ([ADR 0046](../decisions/0046-our-own-ice-servers-not-peerjs-defaults.md)). Nothing about this can
+  be unit-tested — ICE only means anything against real WebRTC between two real peers. To confirm:
+  with Debug logging on, the awari log names the providers in use; two clients still join and share;
+  and the WebRTC log no longer shows `net::ERR_NAME_NOT_RESOLVED` for `*.turn.peerjs.com`. The part
+  that actually needs *two networks* (not two processes on one machine) is whether the relay carries
+  peers behind **symmetric NAT** — that's the whole reason Open Relay is in the list, and it's the
+  one claim a single-machine run can't check. Open Relay is best-effort and rate-limited, so if it
+  is down, expect symmetric-NAT peers to fail while LAN peers are fine.
 
 ## Packaged build & distribution
 

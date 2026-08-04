@@ -11,7 +11,7 @@
  */
 import { app, BrowserWindow, screen } from "electron";
 import path from "node:path";
-import { savedBounds, rememberBounds, setMapOpen, isQuitting, setMaximized, wasMaximized } from "./window-state";
+import { savedBounds, rememberBounds, setMapOpen, isQuitting, setMaximized, wasMaximized, type Bounds } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { createLogger } from "../src/shared/logging";
 import type { OverlaySettings } from "../src/shared/types";
@@ -61,6 +61,28 @@ function reportMaximize(role: "main" | "map", win: BrowserWindow): void {
 /** Open maximized if that's how it was left — the same courtesy a normal window extends. */
 function restoreMaximized(role: "main" | "map", win: BrowserWindow): void {
   if (wasMaximized(role)) win.maximize();
+}
+
+/**
+ * Put a restored window on exactly its saved bounds. The constructor can't be trusted with them.
+ *
+ * On a mixed-DPI setup Electron sizes a new window using the *primary* display's scale factor, so a
+ * window reopened on a 125%-scaled monitor opens 1.25× too big (asking for 602×815 measured 754×1022).
+ * Those inflated bounds are what got saved on close, so the window grew on every single launch — the
+ * "windows resize themselves each time" bug. Re-asserting the bounds once the window exists lands it
+ * where the user left it; same fix, same reason, as `coverDisplay` below.
+ *
+ * Call this *before* `restoreMaximized`, so a window that opens maximized still has the right size to
+ * restore down to.
+ */
+function restoreBounds(win: BrowserWindow, bounds: Bounds | null): void {
+  if (!bounds) return;
+  const apply = () => {
+    // Never fight a maximize: saved bounds are the size to restore *to*, not the size to be.
+    if (!win.isDestroyed() && !win.isMaximized()) win.setBounds(bounds);
+  };
+  apply(); // now, so the window is never shown at the wrong size
+  win.once("ready-to-show", apply); // and again once realized, which some builds need
 }
 
 const DEV = !!process.env.EQL_DEV;
@@ -134,6 +156,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
       additionalArguments: ["--eql-role=main"],
     },
   });
+  restoreBounds(mainWindow, bounds);
   rememberBounds("main", mainWindow);
   reportMaximize("main", mainWindow);
   pipeRendererConsole(mainWindow, "main");
@@ -193,6 +216,7 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
       additionalArguments: ["--eql-role=map"],
     },
   });
+  restoreBounds(mapWindow, bounds);
   rememberBounds("map", mapWindow);
   reportMaximize("map", mapWindow);
   pipeRendererConsole(mapWindow, "map");

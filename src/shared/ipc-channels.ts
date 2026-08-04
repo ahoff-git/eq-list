@@ -19,6 +19,7 @@ export const CH = {
   settingsPickLogDir: "settings:pickLogDir",
   logImport: "log:import",
   lootRecent: "loot:recent",
+  lootPrices: "loot:prices",
   alertsTest: "alerts:test",
   alertPlaceStart: "alert:placeStart", // main window → main: begin placing a custom alert spot
   alertPlaceDone: "alert:placeDone", // overlay → main: the placed point (or null on cancel)

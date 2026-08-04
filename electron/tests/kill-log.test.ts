@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createKillLog, type KillLog } from "../kill-log";
-import type { LocEvent, LootEvent } from "../../src/shared/types";
+import type { CoinEvent, LocEvent, LootEvent } from "../../src/shared/types";
 
 const ZONE = "Steamfont Mountains";
 
@@ -30,6 +30,10 @@ function loc(y: number, x: number, sec: number): LocEvent {
 
 function looted(item: string, source: string, sec: number): LootEvent {
   return { kind: "loot", item, qty: 1, source, fate: "kept", logId: 1, raw: "looted", at: stamp(sec) };
+}
+
+function coin(copper: number, sec: number, from: CoinEvent["from"] = "corpse"): CoinEvent {
+  return { kind: "coin", from, copper, logId: 1, raw: "You receive", at: stamp(sec) };
 }
 
 /** A kill by you, which is what most of these are about. */
@@ -369,4 +373,74 @@ test("a drop already on a pre-keying corpse is not duplicated by a re-read", () 
   const k = createKillLog(dir);
   assert.equal(k.noteLoot(looted("Bone Chips", "a kobold", 12)), false, "a re-read of a known drop");
   assert.deepEqual(k.kills()[0].drops, ["Bone Chips"], "the rate isn't inflated by the replay");
+});
+
+// ── coin off a corpse ──
+//
+// Harder than a drop: the line names nothing at all, so these pin *which corpse gets credited*
+// and — the part that would quietly corrupt every figure — which coin isn't a mob's at all.
+
+test("coin off a corpse is credited to the mob that died", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a kobold", 10);
+  assert.equal(k.noteCoin(coin(32, 12)), true);
+  assert.equal(k.kills()[0].coin, 32);
+});
+
+test("an auto-sold item's coin is not the mob's money", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a kobold", 10);
+  assert.equal(k.noteCoin(coin(4, 12, "item")), false, "the loot line already priced it");
+  assert.equal(k.kills()[0].coin, undefined);
+});
+
+test("coin follows the corpse you were just looting, not merely the newest kill", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a kobold", 10);
+  kill(k, "a gnoll", 20); // died later, so it's the newest corpse…
+  k.noteLoot(looted("Bone Chips", "a kobold", 24)); // …but the kobold is the one being looted
+  k.noteCoin(coin(50, 25));
+
+  const byMob = new Map(k.kills().map((x) => [x.mob, x.coin]));
+  assert.equal(byMob.get("a kobold"), 50, "the item line names the corpse the coin came off");
+  assert.equal(byMob.get("a gnoll"), undefined);
+});
+
+test("with nothing being looted, coin goes to the newest kill of yours", () => {
+  const k = createKillLog(tempDir());
+  k.setPlayer("Kainos");
+  kill(k, "a kobold", 10);
+  k.record("a gnoll", "Bunnyslayer", ZONE, stamp(20), 2); // a stranger's corpse, never yours to loot
+  k.noteCoin(coin(50, 22));
+
+  const byMob = new Map(k.kills().map((x) => [x.mob, x.coin]));
+  assert.equal(byMob.get("a kobold"), 50);
+  assert.equal(byMob.get("a gnoll"), undefined, "you didn't loot a corpse you didn't kill");
+});
+
+test("coin with no corpse behind it is dropped rather than guessed at", () => {
+  const k = createKillLog(tempDir());
+  assert.equal(k.noteCoin(coin(50, 10)), false);
+  assert.equal(k.kills().length, 0);
+});
+
+test("two coin lines off one corpse add up", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a kobold", 10);
+  k.noteCoin(coin(30, 12));
+  k.noteCoin(coin(4, 13));
+  assert.equal(k.kills()[0].coin, 34);
+});
+
+test("the same coin line read twice adds the money once", () => {
+  const dir = tempDir();
+  const first = createKillLog(dir);
+  first.record("a kobold", "You", ZONE, stamp(10), 1);
+  assert.equal(first.noteCoin(coin(32, 12)), true);
+  assert.equal(first.noteCoin(coin(32, 12)), false, "same line, same money");
+  first.flush();
+
+  const again = createKillLog(dir); // the coin keys were persisted with the corpse
+  assert.equal(again.noteCoin(coin(32, 12)), false, "a re-import must not double the coin");
+  assert.equal(again.kills()[0].coin, 32);
 });

@@ -15,7 +15,7 @@
  * doesn't own, so the order only affects cost — never the outcome.
  */
 import { parseCombat } from "./combat-parser";
-import { parseKill, parseLevel, parseLoc, parseLoot, parseXp, parseZone, splitLine } from "./log-parser";
+import { parseCoin, parseKill, parseLevel, parseLoc, parseLoot, parseXp, parseZone, splitLine } from "./log-parser";
 import type { CombatEvent, LogEvent, LogLine } from "./types";
 
 /** Everything a log line can turn into. */
@@ -30,6 +30,7 @@ const MATCHERS: ((line: LogLine) => ParsedEvent | null)[] = [
   parseKill,
   parseLoc,
   parseLevel,
+  parseCoin,
 ];
 
 /**

@@ -15,17 +15,17 @@ _Distribution wiring:_
 
 _Ready to build (decided, not started):_
 
-- **Count the coin.** 248 lines of "You receive 3 silver and 2 copper from the corpse." (and
-  "…from that item" on an auto-sell) go unparsed, so the camp report can't answer what a camp
-  is worth per hour in money — which is half of "is this camp worth it". The loot parser
-  already handles the auto-sell *item* line; this is the coin beside it. Needs a small money
-  type (platinum/gold/silver/copper) rather than a bare number.
 - **Damage per mana.** eqlwiki states a spell's mana cost — verified, `Mana 7` in
   `fixtures/wiki/spell-burst-of-fire.html` — so this is a wiki lookup, not OCR. One
   wrinkle: cost is per *rank*, and `spellName()` strips the rank to make cast and damage
   lines agree, so the rank needs carrying alongside the canonical name (it's still in `raw`).
 _Next up:_
 
+- **Share item prices with peers.** Coin per mob now pools like a drop rate, but a vendor
+  price doesn't — it's derived from your own auto-sells
+  ([ADR 0047](./decisions/0047-money-is-copper-in-two-ledgers.md)). A price is the *easiest*
+  thing to pool (it's identical for everyone, so one observation settles it) and would fill in
+  the trash you've never happened to auto-sell. Needs a place in the observation payload.
 - **Mark undocumented drops in the mob panel too.** The Hunt tab now reconciles wiki claims
   against your kills ([ADR 0025](./decisions/0025-observation-over-the-wiki.md)); the 📖 panel
   shows observed rates but doesn't yet say which of them the wiki has never heard of. Same
@@ -33,6 +33,20 @@ _Next up:_
 - **A "what this build changed" list.** Undocumented drops are the app discovering things no
   reference knows. Pooled across the room that's a genuinely new dataset — worth surfacing
   somewhere deliberate rather than only per mob.
+- **Harden our bootstrap client** (`createHttpBootstrapClient`, `src/lib/awari/net.ts` — awari
+  ships no HTTP client, so this one is ours). Two gaps found while reviewing the ICE work
+  ([ADR 0046](./decisions/0046-our-own-ice-servers-not-peerjs-defaults.md)), neither yet fixed:
+  - **`registerHint`'s response is discarded.** The protocol returns
+    `registered | not-found | incompatible`; we `await fetch(...)` and drop it. Core calls this
+    immediately after a peer becomes genesis leader, so a hint that *didn't* register leaves
+    that client believing it leads a room nobody can resolve — which is exactly the
+    "two clients never met" symptom [ADR 0028](./decisions/0028-peer-networking-verified-and-repaired.md)
+    mitigated with jittered rejoins. Worth checking whether this fails silently **before**
+    tuning those delays again.
+  - **No `res.ok` check and no timeout on `resolve`.** A 5xx or HTML error page makes
+    `res.json()` throw, or yields a body with no `contacts`, which core feeds straight into
+    `tryContacts`. The user gets one `log.warn` and a stuck toggle, with no way to tell
+    "bootstrap is down" from "nobody's online". A hung request never aborts.
 
 _To discuss:_
 
@@ -83,9 +97,5 @@ _To discuss:_
   usable: the first cut highlights what's on your shopping list (free, already known), and the
   broader rule ("used by a quest in my level range in this zone") comes with the filters.
 
-_Recently settled (kept only as pointers):_
 
-- Need to keep Awari up to date. We are 2 releases behind currently
-  - Should use the optional google handshake stuff. peerjs servers are iffy
-- Custom alert spots you place with the mouse ship — placed on the overlay, named, then picked per
-  alert (default or per-watch) in Position; see [ADR 0045](./decisions/0045-place-a-custom-alert-spot.md).
+

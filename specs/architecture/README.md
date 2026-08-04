@@ -27,8 +27,14 @@ in the main process and all UI in the renderer.
   - `window-state.ts` — persists window positions + whether the map window was open
     (so the next launch reopens it), in a file separate from settings (bounds change
     constantly; routing them through the reactive store would spam change events).
-    Off-screen bounds are ignored, and a "reset window positions" action recenters lost
-    windows. Per-window UI toggles (active tab, map pin/key/zone/share) persist
+    Off-screen bounds are ignored, bounds bigger than the display they sit on are shrunk to
+    fit it, and a "reset window positions" action recenters lost windows. On restore, `windows.ts`
+    re-asserts the saved bounds with `setBounds` after creation: the constructor sizes a new
+    window by the **primary** display's scale factor, so on a mixed-DPI desktop a window reopened
+    on a scaled monitor came out proportionally too big — and since that inflated size was what
+    got saved on close, the window grew on every launch. Sub-pixel differences aren't persisted,
+    since a fractionally-scaled display reads bounds back a pixel off what was set.
+    Per-window UI toggles (active tab, map pin/key/zone/share) persist
     separately in the renderer via `usePersistentState` (localStorage).
   - `protocol.ts` — serves the exported renderer over `app://` in production, reading
     files via asar-aware `fs` so it works when packaged.

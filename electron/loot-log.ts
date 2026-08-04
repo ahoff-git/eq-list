@@ -13,7 +13,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import type { LootEvent } from "../src/shared/types";
+import { parseCoins } from "../src/shared/money";
+import type { ItemPrice, LootEvent } from "../src/shared/types";
 
 const log = createLogger("loot-log");
 
@@ -31,8 +32,20 @@ export interface LootLog {
   add(event: LootEvent): void;
   /** The most recent drops, newest first (at most `limit`). */
   recent(limit?: number): LootEvent[];
+  /** What each item has vendored for, derived from the auto-sells in the ledger. */
+  prices(): ItemPrice[];
   clear(): void;
   flush(): void;
+}
+
+/**
+ * What the vendor paid for one auto-sold line, in copper — from the parsed figure, falling
+ * back to re-reading the log's prose for lines stored before `soldFor` existed. The fallback
+ * is the only reason this isn't a plain field read: the ledger on disk outlives the parser.
+ */
+function saleCopper(event: LootEvent): number | null {
+  if (event.fate !== "sold") return null;
+  return event.soldFor ?? parseCoins(event.detail);
 }
 
 export function createLootLog(userDataDir: string): LootLog {
@@ -70,6 +83,34 @@ export function createLootLog(userDataDir: string): LootLog {
       save();
     },
     recent: (limit = DEFAULT_LIMIT) => events.slice(-limit).reverse(),
+
+    /**
+     * Per-item vendor prices, **derived** from the ledger rather than kept as a second store —
+     * the auto-sell lines already on disk are the evidence, so there's one record of what you
+     * sold and nothing to drift out of step with it (the same argument as ADR 0016).
+     *
+     * A stack's price is for the whole stack, so the unit price divides by `qty`. `sales` is
+     * the sample count: EQ prices an item the same every time, so more than one is only ever
+     * confirmation — but a single sale of a stack is where a rounding error would hide.
+     */
+    prices() {
+      const byItem = new Map<string, ItemPrice>();
+      for (const e of events) {
+        const copper = saleCopper(e);
+        if (copper === null) continue;
+        const cur = byItem.get(e.item) ?? { item: e.item, unitCopper: 0, qty: 0, copper: 0, sales: 0, lastAt: e.at };
+        cur.qty += e.qty;
+        cur.copper += copper;
+        cur.sales += 1;
+        if (e.at > cur.lastAt) cur.lastAt = e.at;
+        byItem.set(e.item, cur);
+      }
+      for (const p of byItem.values()) {
+        p.unitCopper = p.qty ? Math.round((p.copper / p.qty) * 10) / 10 : 0;
+      }
+      return [...byItem.values()].sort((a, b) => b.copper - a.copper || a.item.localeCompare(b.item));
+    },
+
     clear() {
       events = [];
       write();

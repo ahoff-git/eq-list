@@ -23,6 +23,30 @@ const log = createLogger("awari");
 /** The shared room every eq-list client joins. */
 export const ROOM_ID = "eq-list";
 
+/**
+ * Which of awari's built-in ICE presets we hand PeerJS, concatenated in order.
+ *
+ * **To go back to PeerJS's own defaults, set this to `[]`.** That is the whole revert —
+ * an empty list means we pass no `peerOptions` at all, exactly as before.
+ *
+ * Why override at all: PeerJS's default ICE list points at its public cloud TURN servers
+ * (`eu-0.turn.peerjs.com` and friends), which awari's transport documents as flaky and, in
+ * Electron / restricted-DNS runtimes, unable to even resolve — a `net::ERR_NAME_NOT_RESOLVED`
+ * in the WebRTC log. `eu-0.turn.peerjs.com` currently resolves to what looks like a
+ * residential address rather than managed relay infrastructure, which fits.
+ *
+ * Why these two: `config.iceServers` *replaces* PeerJS's list rather than merging, so the
+ * replacement has to be self-sufficient. `google` is STUN only — fine for same-machine, LAN
+ * and non-symmetric-NAT peers, but peers behind symmetric NAT need a relay, and dropping
+ * PeerJS's TURN without providing one would trade "flaky" for "never connects" for them.
+ * `open-relay` supplies that relay. It is a free community TURN on shared public credentials:
+ * rate-limited, best-effort, and explicitly not production-grade per awari's own warning — so
+ * treat it as better-than-nothing, not as solved. The real fix is our own TURN, which awari
+ * exposes as `selfHostedTurn({...})`; swapping to it is a change to this list plus its
+ * credentials, nothing more.
+ */
+const ICE_PROVIDERS = ["google", "open-relay"] as const;
+
 /** Live bootstrap-service (room directory / peer contact registry); overridable in Settings. */
 export const DEFAULT_BOOTSTRAP_URL = "https://awari-bootstrap-service.vercel.app";
 
@@ -45,7 +69,17 @@ function createHttpBootstrapClient(baseUrl: string, protocolVersion: string): Bo
   };
 }
 
-/** A fresh, readable per-session peer id (awari identifies each client by this). */
+/**
+ * A fresh, readable per-session peer id (awari identifies each client by this).
+ *
+ * Deliberately **not** stable across sessions, even though awari documents
+ * `AwariOptions.peerId` as "this peer's stable identity across sessions". Nothing here needs
+ * to recognise a returning peer: identity a player cares about is their character / server
+ * name, announced in the `hello` payload and re-announced on every rename (see ADR 0015).
+ * Keeping the two apart means the id stays transport-only — a rename can't disturb reconnect
+ * semantics, and a rejoin (see `REJOIN_DELAYS_MS`) entering as a new id costs nothing but a
+ * fresh `hello`.
+ */
 export function randomPeerId(): string {
   return `eq-list-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -63,10 +97,14 @@ export async function connectToRoom(opts: {
   onMessage?: PeerMessageHandler;
 }): Promise<RoomSession> {
   const { createAwari, PROTOCOL_VERSION } = await import("@awari/core");
-  const { createPeerJsTransport, readPeerJsId } = await import("@awari/transport-peerjs");
+  const { createPeerJsTransport, readPeerJsId, ICE_SERVERS } = await import("@awari/transport-peerjs");
+
+  // Built from awari's own presets rather than copied URLs, so their upkeep stays theirs.
+  const iceServers = ICE_PROVIDERS.flatMap((provider) => ICE_SERVERS[provider]);
+  log.debug("ice servers:", iceServers.length ? ICE_PROVIDERS.join(" + ") : "peerjs defaults");
 
   const awari = createAwari({
-    transport: createPeerJsTransport(),
+    transport: createPeerJsTransport(iceServers.length ? { peerOptions: { config: { iceServers } } } : undefined),
     bootstrap: createHttpBootstrapClient(opts.bootstrapUrl || DEFAULT_BOOTSTRAP_URL, PROTOCOL_VERSION),
     resolveConnectionId: readPeerJsId,
     peerId: opts.peerId,

@@ -42,6 +42,12 @@ export interface MobObservation {
   kills: number;
   /** How many of those kills dropped each item. */
   drops: Record<string, number>;
+  /**
+   * Coin taken off those corpses, in copper. The mob's *own* money — what its drops sell for
+   * is the item's figure and lives elsewhere (ADR 0047). Merges by addition like `drops`, so a
+   * pooled coin-per-kill is one bigger sample rather than an average of averages.
+   */
+  copper?: number;
   /** The middle of where it was killed, and how far that spreads (EQ units). */
   area?: { y: number; x: number; spread: number; samples: number };
   /** Most recent kill, so stale knowledge can be told from fresh. */
@@ -71,6 +77,9 @@ export interface MobKnowledge {
   lastAt: string;
   /** Names of everyone whose observations are in here (you are not listed). */
   contributors: string[];
+  /** Coin off its corpses, in copper: the pooled total and what that averages per kill. */
+  copper: number;
+  copperPerKill: number;
 }
 
 /** Key a mob to its zone: the same mob elsewhere is a different animal to a hunter. */
@@ -92,14 +101,16 @@ export function observeMobs(kills: KillRecord[]): MobObservation[] {
 
   for (const kill of kills) {
     if (!kill.zone) continue;
-    if (kill.mine === false && !kill.drops?.length) continue;
+    // Loot — an item or coin — is proof you had the corpse, whoever landed the killing blow.
+    if (kill.mine === false && !kill.drops?.length && !kill.coin) continue;
     const key = keyOf(kill.mob, kill.zone);
     let obs = byKey.get(key);
     if (!obs) {
-      obs = { mob: kill.mob, zone: kill.zone, kills: 0, drops: {}, lastAt: kill.at, points: [] };
+      obs = { mob: kill.mob, zone: kill.zone, kills: 0, drops: {}, copper: 0, lastAt: kill.at, points: [] };
       byKey.set(key, obs);
     }
     obs.kills += 1;
+    obs.copper = (obs.copper ?? 0) + (kill.coin ?? 0);
     if (kill.at > obs.lastAt) obs.lastAt = kill.at;
     // Counted per *kill*, not per loot line: `drops` is the numerator of a per-kill rate, so
     // a corpse that yielded two of an item is still one kill that dropped it. Otherwise a
@@ -143,11 +154,14 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
         drops: [],
         lastAt: obs.lastAt,
         contributors: [],
+        copper: 0,
+        copperPerKill: 0,
         areas: [],
       };
       byKey.set(key, known);
     }
     known.kills += obs.kills;
+    known.copper += obs.copper ?? 0;
     if (isMine) known.myKills += obs.kills;
     else if (obs.by && !known.contributors.includes(obs.by)) known.contributors.push(obs.by);
     if (obs.lastAt > known.lastAt) known.lastAt = obs.lastAt;
@@ -170,6 +184,7 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
       drops: known.drops
         .map((d) => ({ ...d, rate: known.kills ? Math.round((d.count / known.kills) * 1000) / 1000 : 0 }))
         .sort((a, b) => b.rate - a.rate || a.item.localeCompare(b.item)),
+      copperPerKill: known.kills ? Math.round((known.copper / known.kills) * 10) / 10 : 0,
       area: mergeAreas(areas),
       contributors: known.contributors.sort(),
     }))

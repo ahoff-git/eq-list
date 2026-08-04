@@ -8,6 +8,7 @@ import type {
   Settings,
   WatcherStatus,
   LootEvent,
+  ItemPrice,
   LocEvent,
   CombatStats,
   FightStats,
@@ -48,6 +49,8 @@ const EMPTY_FIGHT: FightStats = {
   xpGains: 0,
   soloXp: 0,
   partyXp: 0,
+  copper: 0,
+  soldCopper: 0,
   yourPerSec: [],
   deaths: [],
   invocations: [],
@@ -312,6 +315,19 @@ export function useLootFeed(limit = 40): LootEvent[] {
     return a.loot.onEvent((e) => setEvents((prev) => [e, ...prev].slice(0, limit)));
   }, [limit]);
   return events;
+}
+
+/**
+ * What each item has auto-sold for. Derived in main from the loot ledger, so it covers sales
+ * from before this tab was opened; `refreshKey` re-reads it — a new sale is the only thing that
+ * can change it, and the loot feed already knows when one arrives.
+ */
+export function useItemPrices(refreshKey: unknown): ItemPrice[] {
+  const [prices, setPrices] = useState<ItemPrice[]>([]);
+  useEffect(() => {
+    void api()?.loot.prices().then(setPrices);
+  }, [refreshKey]);
+  return prices;
 }
 
 /**

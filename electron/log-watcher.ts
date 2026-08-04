@@ -15,7 +15,7 @@ import { splitLine } from "../src/shared/log-parser";
 import { catchUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
-import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
+import type { CoinEvent, LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
@@ -45,6 +45,7 @@ export interface LogWatcher {
   onXp(cb: (e: XpEvent) => void): void;
   onKill(cb: (e: KillEvent) => void): void;
   onLoc(cb: (e: LocEvent) => void): void;
+  onCoin(cb: (e: CoinEvent) => void): void;
   onCombat(cb: (e: CombatEvent) => void): void;
   onLevel(cb: (e: LevelEvent) => void): void;
   onStatus(cb: (s: WatcherStatus) => void): void;
@@ -317,6 +318,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onXp: (cb) => void bus.on("xp", cb),
     onKill: (cb) => void bus.on("kill", cb),
     onLoc: (cb) => void bus.on("loc", cb),
+    onCoin: (cb) => void bus.on("coin", cb),
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
     onStatus: (cb) => void bus.on("status", cb),

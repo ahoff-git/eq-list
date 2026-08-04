@@ -1,6 +1,7 @@
 "use client";
 import { useCombatStats, useXpProgress } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
+import { describeCoins, formatCoins } from "@/shared/money";
 import AskValue from "./AskValue";
 import CampReport from "./CampReport";
 import type { FightStats, XpProgress } from "@/shared/types";
@@ -20,6 +21,10 @@ export default function SessionPanel() {
 
   const xpPerHour = ratePerHour(session);
   const downtimeSec = Math.max(0, session.spanSec - session.durationSec);
+  // The two money ledgers are summed only here, for the evening's income — the point of the
+  // split is per-mob and per-item comparison, and neither survives being averaged (ADR 0047).
+  const coin = (session.copper ?? 0) + (session.soldCopper ?? 0);
+  const coinPerHour = session.spanSec ? Math.round(coin / (session.spanSec / 3600)) : 0;
 
   return (
     <div>
@@ -54,6 +59,33 @@ export default function SessionPanel() {
           label="Level"
           value={xp.level ?? "—"}
           hint="From the log's 'Welcome to level N!' line"
+        />
+      </div>
+
+      <div className="stat-row">
+        <StatTile
+          label="Coin"
+          value={coin ? formatCoins(coin) : "—"}
+          hint={
+            coin
+              ? `${describeCoins(session.copper ?? 0)} off corpses · ${describeCoins(session.soldCopper ?? 0)} from auto-sold drops`
+              : "Coin off corpses plus what auto-sold drops fetched"
+          }
+        />
+        <StatTile
+          label="Coin / hour"
+          value={coinPerHour ? formatCoins(coinPerHour) : "—"}
+          hint="Over elapsed session time, downtime included — what an evening here actually pays"
+        />
+        <StatTile
+          label="From corpses"
+          value={session.copper ? formatCoins(session.copper) : "—"}
+          hint="Money the mobs themselves carried"
+        />
+        <StatTile
+          label="From sales"
+          value={session.soldCopper ? formatCoins(session.soldCopper) : "—"}
+          hint="What auto-sold drops fetched — only the log's auto-sell lines state a price"
         />
       </div>
 

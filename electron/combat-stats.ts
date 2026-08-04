@@ -22,7 +22,9 @@ import { EventEmitter } from "node:events";
 import { isYours, meleeSkill } from "../src/shared/combat-parser";
 import { createNameRegistry } from "../src/shared/name-registry";
 import type {
+  CoinEvent,
   CombatEvent,
+  LootEvent,
   XpEvent,
   CombatStats,
   CombatantStat,
@@ -61,6 +63,13 @@ const CAST_PAIR_MS = 20_000;
 
 /** How long after a kill an experience gain is still credited to it (as the Session tab). */
 const XP_ATTRIBUTION_MS = 15_000;
+
+/**
+ * How long after a kill coin off a corpse is still credited to it. Longer than the experience
+ * window: experience lands the same second as the kill, whereas looting is something the player
+ * gets round to — often after the next pull has already started.
+ */
+const COIN_ATTRIBUTION_MS = 120_000;
 
 /** How much of the run-up to a death the recap covers, and how many deaths to keep. */
 const DEATH_WINDOW_MS = 15_000;
@@ -108,6 +117,18 @@ export interface CombatTracker {
    * Takes the parsed event so the tracker isn't handed loose numbers to re-interpret.
    */
   recordXp(event: XpEvent): void;
+  /**
+   * Coin off a corpse — the mob's money. Credited to the most recent kill, the same
+   * attribution the log forces on experience (it names no mob either).
+   */
+  recordCoin(event: CoinEvent): void;
+  /**
+   * A looted item, for the money it fetched. Only an auto-sell states a price, so only
+   * those count — and they're kept apart from corpse coin, because "what the mob paid" and
+   * "what its drops vendor for" are two different answers to "is this camp worth it"
+   * (ADR 0047).
+   */
+  recordSale(event: LootEvent): void;
   /** The zone the player is in, stamped onto fights as they're filed. */
   setZone(zone: string | null): void;
   zone(): string | null;
@@ -229,10 +250,13 @@ interface MobTally {
   kills: number;
   killMs: number;
   xpPct: number;
+  /** Coin off its corpses, and what its drops auto-sold for. Separate ledgers, on purpose. */
+  copper: number;
+  soldCopper: number;
 }
 
 function emptyMob(): MobTally {
-  return { kills: 0, killMs: 0, xpPct: 0 };
+  return { kills: 0, killMs: 0, xpPct: 0, copper: 0, soldCopper: 0 };
 }
 
 function emptySpell(): SpellTally {
@@ -266,7 +290,7 @@ function createWindow() {
   /** Your damage per second of the window, indexed from its first damage. */
   const buckets: number[] = [];
   const deaths: DeathRecap[] = [];
-  const totals = { kills: 0, xpPct: 0, xpGains: 0, soloXp: 0, partyXp: 0 };
+  const totals = { kills: 0, xpPct: 0, xpGains: 0, soloXp: 0, partyXp: 0, copper: 0, soldCopper: 0 };
   /** The span of log lines this window was built from (see `FightStats.logIds`). */
   const lines = { from: 0, to: 0 };
 
@@ -468,12 +492,18 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   /** Per-mob rows: fastest experience first, which is the point of the table. */
   const mobRow = (mob: string, t: MobTally): MobKillStat => {
     const killSec = t.killMs / 1000;
+    const coin = t.copper + t.soldCopper;
     return {
       mob,
       kills: t.kills,
       avgKillSec: t.kills ? Math.round((killSec / t.kills) * 10) / 10 : 0,
       xpPct: Math.round(t.xpPct * 1000) / 1000,
       xpPerMin: killSec > 0 ? Math.round((t.xpPct / (killSec / 60)) * 100) / 100 : 0,
+      copper: t.copper,
+      soldCopper: t.soldCopper,
+      // Both ledgers together, because "what is this mob worth per minute" is the one
+      // question where the distinction stops mattering — it's all money off the same corpse.
+      copperPerMin: killSec > 0 ? Math.round((coin / (killSec / 60)) * 10) / 10 : 0,
     };
   };
 
@@ -501,6 +531,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       xpGains: w.totals.xpGains,
       soloXp: w.totals.soloXp,
       partyXp: w.totals.partyXp,
+      copper: w.totals.copper,
+      soldCopper: w.totals.soldCopper,
       yourPerSec: [...w.buckets],
       deaths: [...w.deaths],
       logIds: w.lines.from ? { ...w.lines } : undefined,
@@ -865,6 +897,38 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       }
       if (pct && lastKill && at - lastKill.at >= -2000 && at - lastKill.at < XP_ATTRIBUTION_MS) {
         for (const w of [fight, session]) w.mob(lastKill.mob).xpPct += pct;
+      }
+      emit();
+    },
+
+    /**
+     * Coin off a corpse. Only `from: "corpse"` counts: an auto-sell logs its coins twice —
+     * once on the loot line and once as a bare "from that item" — and taking both would
+     * double every sale (ADR 0047). The sale itself arrives through `recordSale`.
+     *
+     * The session total is unconditional; the per-mob credit needs a recent kill, because the
+     * line names no mob. Coin with no kill behind it (looting a corpse from an earlier camp)
+     * still counts towards the evening's money — it just can't say which mob paid.
+     */
+    recordCoin(event) {
+      if (event.from !== "corpse" || event.copper <= 0) return;
+      const at = ms(event.at);
+      for (const w of [fight, session]) w.totals.copper += event.copper;
+      if (lastKill && at - lastKill.at >= -2000 && at - lastKill.at < COIN_ATTRIBUTION_MS) {
+        for (const w of [fight, session]) w.mob(lastKill.mob).copper += event.copper;
+      }
+      emit();
+    },
+
+    /**
+     * What an auto-sold drop fetched. `source` names the corpse, so unlike coin this needs no
+     * timing guess — the item says which mob it came off.
+     */
+    recordSale(event) {
+      if (!event.soldFor) return;
+      for (const w of [fight, session]) {
+        w.totals.soldCopper += event.soldFor;
+        if (event.source) w.mob(canon(event.source)).soldCopper += event.soldFor;
       }
       emit();
     },

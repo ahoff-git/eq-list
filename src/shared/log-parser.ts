@@ -16,12 +16,18 @@
  *   You looted a <item> from <source>'s corpse to create a <result>.
  *   You looted a <item> from <source>'s corpse and stored it in your <bag/depot>
  *
+ * Coin is its own line and names neither mob nor item — only which of the two paid:
+ *   You receive <coins> from the corpse.     (the mob's money)
+ *   You receive <coins> from that item.      (an auto-sold item's money)
+ *
  * A line can report a stack ("You looted 2 Spiderling Eye from…"), so every pattern
  * captures the count into `qty` — dropping it would under-count the shopping list.
  */
 
 import { SELF } from "./combat-parser";
+import { parseCoins } from "./money";
 import type {
+  CoinEvent,
   LogLine,
   LootEvent,
   LootFate,
@@ -117,13 +123,18 @@ export function parseLoot(line: LogLine): LootEvent | null {
   for (const { fate, re } of LOOT_PATTERNS) {
     const m = line.message.match(re);
     if (m && m.groups?.item) {
+      const detail = m.groups.detail ? stripArticle(m.groups.detail.trim()) : undefined;
       return {
         kind: "loot",
         item: stripArticle(m.groups.item.trim()),
         qty: Math.max(1, Number(m.groups.qty ?? 1)),
         source: stripArticle((m.groups.source ?? "").trim()),
         fate,
-        detail: m.groups.detail ? stripArticle(m.groups.detail.trim()) : undefined,
+        detail,
+        // An auto-sell is the only place the log ever prices an item, so the coins are
+        // read here rather than left as prose in `detail` — this line is where "what does
+        // this item fetch" comes from, and it's the only loot line that names both.
+        soldFor: fate === "sold" ? (parseCoins(detail) ?? undefined) : undefined,
         logId: line.logId,
         raw: line.raw,
         at: line.at,
@@ -131,6 +142,35 @@ export function parseLoot(line: LogLine): LootEvent | null {
     }
   }
   return null;
+}
+
+/**
+ * Coin. "You receive 3 silver and 2 copper from the corpse." — and, on an auto-sell,
+ * the same sentence ending "from that item."
+ *
+ * The two tails are the whole reason this is one parser and not two: the log is telling
+ * you *where the money came from*, and that distinction is the difference between "this
+ * mob pays 3s a kill" and "this item vendors for 4c". `from` carries it forward; nothing
+ * downstream has to re-read the sentence to know which ledger a coin belongs in.
+ *
+ * Neither form names the mob or the item — attribution is the reader's job (see
+ * `electron/kill-log.ts` for the corpse and the loot line itself for the item).
+ */
+const COIN_RE = /^You receive (?<coins>.+?) from (?<from>the corpse|that item)\.$/;
+
+export function parseCoin(line: LogLine): CoinEvent | null {
+  const m = line.message.match(COIN_RE);
+  if (!m?.groups) return null;
+  const copper = parseCoins(m.groups.coins);
+  if (copper === null) return null; // "You receive a warm feeling from the corpse" — not money
+  return {
+    kind: "coin",
+    from: m.groups.from === "that item" ? "item" : "corpse",
+    copper,
+    logId: line.logId,
+    raw: line.raw,
+    at: line.at,
+  };
 }
 
 /** "You have entered <zone>." → ZoneEvent, or null. Leading "the " is dropped. */

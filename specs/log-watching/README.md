@@ -18,10 +18,17 @@ as they drop and the damage meter can show how the fight went.
   loot-and-combine — each reporting a `qty`, since a line can report a stack),
   `parseZone` (`You have entered <zone>.`), `parseXp`
   (`You gain [party] experience! (N%)`), `parseKill`
-  (`You have slain X` / `X has been slain by Y`; player death is ignored), and
+  (`You have slain X` / `X has been slain by Y`; player death is ignored),
   `parseLevel` (`You have gained a level! Welcome to level N!` — EQL puts both halves
-  on one line, and the number is the only place the log states your level).
+  on one line, and the number is the only place the log states your level), and
+  `parseCoin` (`You receive <coins> from the corpse.` / `…from that item.`). The tail is the
+  point of that last one: it's the only thing telling a mob's money from an auto-sold item's,
+  and the two are counted separately — see
+  [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md).
   Timestamps are kept as the log's naive local wall clock (no zone offset).
+- `src/shared/money.ts` — a **pure** black box beside the parser: coin in and out of copper,
+  which is the canonical unit everywhere (1p = 10g = 100s = 1000c). Denominations exist only
+  in its formatters, so nothing else has to normalise them.
 - `src/shared/combat-parser.ts` — the same idea for combat, and the bulk of a real log:
   melee swings, spell/proc damage, damage shields, DoT ticks, misses and heals, plus the
   `(Critical)`/`(Riposte)` qualifier that trails *after* the sentence. It also follows the
@@ -153,9 +160,12 @@ Two invocations do more than scale numbers, and both are now accounted for
 
 ## Non-responsibilities
 - Does not decide what counts as "wanted" — that's matching in the store.
-- Parses loot, zone, xp, kill, level, loc and combat lines today (combat including casts,
+- Parses loot, coin, zone, xp, kill, level, loc and combat lines today (combat including casts,
   spell outcomes, deaths, buff fades and mode changes). Still out of scope: faction hits,
-  skill-ups, coin, and buff/debuff *landings*.
+  skill-ups, and buff/debuff *landings*.
+- Does not decide **which corpse** a coin line's money came from — the line names none, so that
+  guess lives in `electron/kill-log.ts` where the kills are
+  ([ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)).
 - Does not enable the EQ log itself — the user turns on logging in-game (`/log on`).
 
 ## See also
@@ -163,4 +173,5 @@ Two invocations do more than scale numbers, and both are now accounted for
 [ADR 0004](../decisions/0004-log-watching-strategy.md) ·
 [ADR 0030](../decisions/0030-history-is-not-news.md) ·
 [ADR 0043](../decisions/0043-state-is-not-news-either.md) ·
-[ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md)
+[ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md) ·
+[ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)

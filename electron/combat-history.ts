@@ -142,6 +142,9 @@ export function createCombatHistory(userDataDir: string, sessionId: string = ran
           combatSec: 0,
           xpPct: 0,
           xpPerMin: 0,
+          copper: 0,
+          soldCopper: 0,
+          copperPerMin: 0,
           yourDealt: 0,
           dps: 0,
           lastAt: f.stats.endedAt,
@@ -150,6 +153,10 @@ export function createCombatHistory(userDataDir: string, sessionId: string = ran
         cur.kills += f.stats.kills;
         cur.combatSec += f.stats.durationSec;
         cur.xpPct += f.stats.xpPct;
+        // Fights stored before coin was parsed have neither figure — nothing, not zero, so a
+        // per-minute rate over a mixed history is honest about the fights it can account for.
+        cur.copper += f.stats.copper ?? 0;
+        cur.soldCopper += f.stats.soldCopper ?? 0;
         cur.yourDealt += f.stats.yourDealt;
         if (f.stats.endedAt > cur.lastAt) cur.lastAt = f.stats.endedAt;
         byZone.set(zone, cur);
@@ -158,6 +165,9 @@ export function createCombatHistory(userDataDir: string, sessionId: string = ran
       for (const z of byZone.values()) {
         z.xpPct = Math.round(z.xpPct * 1000) / 1000;
         z.xpPerMin = z.combatSec ? Math.round((z.xpPct / (z.combatSec / 60)) * 100) / 100 : 0;
+        z.copperPerMin = z.combatSec
+          ? Math.round(((z.copper + z.soldCopper) / (z.combatSec / 60)) * 10) / 10
+          : 0;
         z.dps = z.combatSec ? Math.round((z.yourDealt / z.combatSec) * 10) / 10 : 0;
       }
       return [...byZone.values()].sort((a, b) => b.xpPerMin - a.xpPerMin || b.kills - a.kills);

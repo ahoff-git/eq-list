@@ -80,10 +80,28 @@ function isOnScreen(b: Bounds): boolean {
   });
 }
 
+/**
+ * Shrink bounds that are bigger than the monitor they sit on. Position is left alone — an overlay
+ * hanging off the edge is a legitimate place to put it — but a window wider or taller than its
+ * display is never what the user chose: it's either a leftover from a bigger monitor that's since
+ * been unplugged, or the DPI inflation that used to grow the window on every launch (see
+ * `restoreBounds` in windows.ts). Restoring that verbatim leaves the window's own controls
+ * off-screen, with no way to resize a frameless window back.
+ */
+function fitToDisplay(b: Bounds): Bounds {
+  const wa = screen.getDisplayMatching(b).workArea;
+  return { ...b, width: Math.min(b.width, wa.width), height: Math.min(b.height, wa.height) };
+}
+
 /** Saved bounds for a role, or null if none/off-screen (so the caller centers). */
 export function savedBounds(role: Role): Bounds | null {
   const b = get()[role];
-  return b && isOnScreen(b) ? b : null;
+  return b && isOnScreen(b) ? fitToDisplay(b) : null;
+}
+
+/** Same bounds for our purposes if nothing moved by more than a pixel — see `save` below. */
+function nearlySame(a: Bounds | undefined, b: Bounds): boolean {
+  return !!a && (["x", "y", "width", "height"] as const).every((k) => Math.abs(a[k] - b[k]) <= 1);
 }
 
 /** Persist this window's bounds whenever it moves/resizes/closes. */
@@ -92,7 +110,11 @@ export function rememberBounds(role: Role, win: BrowserWindow): void {
     if (win.isDestroyed()) return;
     // Ignore maximized/minimized frames; keep the last "normal" size to restore to.
     if (win.isMaximized() || win.isMinimized()) return;
-    get()[role] = win.getBounds();
+    const next = win.getBounds();
+    // A fractionally-scaled display reads bounds back a pixel off what was set, so restoring a
+    // window can report a "new" size it never had. Saving that noise would creep a pixel a launch.
+    if (nearlySame(get()[role], next)) return;
+    get()[role] = next;
     if (immediate) writeNow();
     else persist();
   };

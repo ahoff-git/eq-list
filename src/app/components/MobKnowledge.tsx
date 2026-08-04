@@ -1,13 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
 import type { MobKnowledge } from "@/shared/mob-stats";
 
 /**
- * What killing things has taught us: how often each mob drops what, and roughly where it
- * lives. Both are *observed* — the wiki's rates are someone else's sample, these are yours
- * (pooled with any peers sharing theirs).
+ * What killing things has taught us: how often each mob drops what, what it carries, and
+ * roughly where it lives. All three are *observed* — the wiki's rates are someone else's
+ * sample, these are yours (pooled with any peers sharing theirs).
+ *
+ * Coin here is the mob's own money per kill, never what its drops vendor for: those come from
+ * different lines, pool differently, and answer different questions (ADR 0047).
  *
  * A rate is only as good as its denominator, so every row leads with the kill count and says
  * how much of it you saw yourself. Three kills is not a drop rate, and the display shouldn't
@@ -82,6 +86,14 @@ export default function MobKnowledgePanel({
                 {mob.kills} kill{mob.kills === 1 ? "" : "s"}
                 {pooled > 0 ? ` (${mob.myKills} yours)` : ""}
               </span>
+              {mob.copper > 0 && (
+                <span
+                  className="muted small"
+                  title={`${describeCoins(mob.copper)} off ${mob.kills} corpses — the coin it carried, not what its drops sell for`}
+                >
+                  {formatCoins(mob.copperPerKill)}/kill
+                </span>
+              )}
               <span className="spacer" />
               {mob.area && onMarkMob && (
                 <button

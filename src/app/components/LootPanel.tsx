@@ -1,9 +1,10 @@
 "use client";
 import { useMemo } from "react";
-import { useLootFeed, useShoppingList } from "@/lib/hooks";
+import { useItemPrices, useLootFeed, useShoppingList } from "@/lib/hooks";
 import { normalizeItemName } from "@/shared/grouping";
+import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
-import type { LootEvent, LootFate } from "@/shared/types";
+import type { ItemPrice, LootEvent, LootFate } from "@/shared/types";
 
 /**
  * Everything that has dropped this session and what became of it — kept, sold, stored in a
@@ -19,6 +20,10 @@ import type { LootEvent, LootFate } from "@/shared/types";
  * for now: it's free (the list is already in hand) and it can't cry wolf. Broader rules
  * ("used by a quest in my level range in this zone") need filters and an ignore list before
  * they'd be signal rather than noise — see the todo.
+ *
+ * The prices table underneath is the item half of the money question (ADR 0047): an auto-sell
+ * is the only line that ever prices an item, and a price holds wherever the item dropped — so
+ * it's worth keeping per item, apart from what any one mob's corpses paid.
  */
 const FATE_LABEL: Record<LootFate, string> = {
   kept: "kept",
@@ -30,6 +35,8 @@ const FATE_LABEL: Record<LootFate, string> = {
 export default function LootPanel() {
   const drops = useLootFeed(200);
   const list = useShoppingList();
+  // Only a sale can change a price, and the newest drop is the cheapest signal that one landed.
+  const prices = useItemPrices(drops[0]?.logId ?? 0);
 
   // Names on the shopping list, normalized the same way the store matches them.
   const wanted = useMemo(
@@ -75,7 +82,53 @@ export default function LootPanel() {
           <LootRow key={`${drop.logId}-${drop.item}`} drop={drop} wanted={wanted.has(normalizeItemName(drop.item))} />
         ))}
       </div>
+
+      <PriceTable prices={prices} />
     </div>
+  );
+}
+
+/**
+ * What your trash is worth, learned from your own auto-sells. Only what you've actually sold
+ * appears — the log never states a price otherwise, and guessing one would be worse than a gap.
+ */
+function PriceTable({ prices }: { prices: ItemPrice[] }) {
+  if (prices.length === 0) return null;
+  const earned = prices.reduce((n, p) => n + p.copper, 0);
+
+  return (
+    <>
+      <h3 className="section-head" title="Prices come from auto-sell lines — the only place the log states one">
+        What it sells for
+      </h3>
+      <div className="table-scroll">
+        <table className="stat-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th title="Price for one — a stack's line price divided by the stack">Each</th>
+              <th title="How many you've auto-sold">Sold</th>
+              <th title="What they came to in total">Earned</th>
+            </tr>
+          </thead>
+          <tbody>
+            {prices.map((p) => (
+              <tr key={p.item} title={`${p.sales} sale${p.sales === 1 ? "" : "s"}, last ${new Date(p.lastAt).toLocaleString()}`}>
+                <td>
+                  <ItemLink title={p.item} />
+                </td>
+                <td>{formatCoins(p.unitCopper)}</td>
+                <td>{p.qty}</td>
+                <td className="num-accent" title={describeCoins(p.copper)}>
+                  {formatCoins(p.copper)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small">Auto-sales in the ledger have earned {describeCoins(earned)}.</p>
+    </>
   );
 }
 

@@ -219,6 +219,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onLoot((event) => {
     killLog.noteLoot(event); // ties the drop to the corpse it came from
+    combat.recordSale(event); // an auto-sell is the only line that prices an item
     lootLog.add(event); // the always-on loot feed, so the tab is complete whenever it's opened
     broadcast(CH.lootEvent, event);
     for (const entry of store.applyLoot(event)) {
@@ -228,6 +229,13 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onKill((event) => {
     combat.recordKill(event.target, event.at);
     killLog.record(event.target, event.killer, currentZone, event.at, event.logId);
+  });
+  // Coin off a corpse goes to both ledgers it belongs in: the session's money (for a rate) and
+  // the mob that paid it (for the long-run per-kill figure). An auto-sold item's coin is skipped
+  // by both — the loot line above already priced it, and counting it here would double it.
+  watcher.onCoin((event) => {
+    combat.recordCoin(event);
+    killLog.noteCoin(event);
   });
   watcher.onXp((event) => {
     combat.recordXp(event);

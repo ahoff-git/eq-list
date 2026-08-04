@@ -25,6 +25,8 @@ export interface LogImportResult {
   kills: number;
   /** Drops **newly** attributed to a corpse (already-folded loot lines are deduped, not counted). */
   drops: number;
+  /** Coin **newly** attributed to a corpse, in copper (deduped the same way). */
+  coin: number;
 }
 
 /**
@@ -37,6 +39,7 @@ export function importLog(file: string, killLog: KillLog): LogImportResult {
   let logId = 0;
   let kills = 0;
   let drops = 0;
+  let coin = 0;
   for (const raw of lines) {
     // Negative ids mark these as imported, so a KillRecord.logId can't collide with a line
     // number from this run's live tailing.
@@ -55,7 +58,12 @@ export function importLog(file: string, killLog: KillLog): LogImportResult {
       case "kill":
         if (killLog.record(event.target, event.killer, zone, event.at, event.logId)) kills++;
         break;
+      case "coin":
+        // Coin off a corpse belongs to the mob that paid it, and that's learned knowledge like a
+        // drop rate — so it's digested. An auto-sold item's coin isn't a mob's; `noteCoin` drops it.
+        if (killLog.noteCoin(event)) coin += event.copper;
+        break;
     }
   }
-  return { lines: lines.length, kills, drops };
+  return { lines: lines.length, kills, drops, coin };
 }

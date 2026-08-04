@@ -178,3 +178,57 @@ test("mobs come back most-killed first", () => {
     ["a coyote", "a rat"],
   );
 });
+
+// ── what the mob itself carried ──
+//
+// Coin is a mob's own money, gathered separately from what its drops vendor for (ADR 0047).
+// It merges by addition like a drop count, so a pooled coin-per-kill is one bigger sample
+// rather than an average of averages.
+
+test("coin off corpses rolls up into a per-kill figure", () => {
+  const [obs] = observeMobs([
+    kill({ mob: "a coyote", coin: 30 }),
+    kill({ mob: "a coyote" }), // carried nothing, which still counts as a kill
+    kill({ mob: "a coyote", coin: 10 }),
+    kill({ mob: "a coyote" }),
+  ]);
+  assert.equal(obs.copper, 40);
+
+  const [known] = mergeObservations([obs], []);
+  assert.equal(known.copper, 40);
+  assert.equal(known.copperPerKill, 10); // 40 over 4 kills, empty corpses included
+});
+
+test("a pooled coin-per-kill is one bigger sample, not an average of averages", () => {
+  const mine = observeMobs([kill({ mob: "a coyote", coin: 100 })]);
+  const theirs: MobObservation[] = [
+    {
+      mob: "a coyote",
+      zone: "Steamfont Mountains",
+      kills: 9,
+      drops: {},
+      copper: 90,
+      lastAt: "2026-07-29T02:00:00.000Z",
+      by: "Bunnyslayer",
+    },
+  ];
+
+  const [known] = mergeObservations(mine, theirs);
+  assert.equal(known.copper, 190);
+  assert.equal(known.copperPerKill, 19); // 190 over 10 — not (100 + 10) / 2
+});
+
+test("a peer who reports no coin at all pools as nothing, not as a gap", () => {
+  const theirs: MobObservation[] = [
+    { mob: "a coyote", zone: "Steamfont Mountains", kills: 4, drops: {}, lastAt: "", by: "Bunnyslayer" },
+  ];
+  const [known] = mergeObservations([], theirs);
+  assert.equal(known.copper, 0);
+  assert.equal(known.copperPerKill, 0);
+});
+
+test("coin you took is proof the corpse was yours, whoever landed the blow", () => {
+  const [obs] = observeMobs([kill({ mob: "a coyote", killer: "Bunnyslayer", mine: false, coin: 30 })]);
+  assert.equal(obs.kills, 1, "you looted it, so it counts");
+  assert.equal(obs.copper, 30);
+});

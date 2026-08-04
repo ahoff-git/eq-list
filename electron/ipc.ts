@@ -207,6 +207,8 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // The loot feed's history — tracked in the main process, so the tab shows drops from before
   // it was opened, then follows live ones over CH.lootEvent.
   ipcMain.handle(CH.lootRecent, (_e, limit?: number) => lootLog.recent(limit));
+  // Vendor prices, derived from those same auto-sell lines — "what is this trash worth".
+  ipcMain.handle(CH.lootPrices, () => lootLog.prices());
   ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
   ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
   ipcMain.handle(CH.mobsReport, (_e, by: string, observations: MobObservation[]) => mobs.report(by, observations));

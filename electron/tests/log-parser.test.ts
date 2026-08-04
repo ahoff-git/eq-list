@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  parseCoin,
   parseLoot,
   parseLevel,
   parseZone,
@@ -35,6 +36,7 @@ const parseXpLine = on(parseXp);
 const parseKillLine = on(parseKill);
 const parseLocLine = on(parseLoc);
 const parseLevelLine = on(parseLevel);
+const parseCoinLine = on(parseCoin);
 
 test("splitLine extracts the message, an ISO time, and carries the line id", () => {
   const r = splitLine("[Fri Jul 17 18:41:14 2026] Hello world", 42);
@@ -113,6 +115,50 @@ test("each loot line records what became of the item", () => {
   );
   assert.equal(combined!.fate, "combined");
   assert.equal(combined!.detail, "Crushbone Belt +5");
+});
+
+// Coin. The line names neither mob nor item — only which of the two paid — so `from` is the
+// whole basis for keeping the two money ledgers apart downstream (ADR 0047).
+test("parses coin off a corpse", () => {
+  const e = parseCoinLine("[Fri Jul 17 18:41:14 2026] You receive 3 silver and 2 copper from the corpse.");
+  assert.ok(e);
+  assert.equal(e!.kind, "coin");
+  assert.equal(e!.from, "corpse");
+  assert.equal(e!.copper, 32);
+});
+
+test("parses coin from an auto-sold item, and says it came from the item", () => {
+  const e = parseCoinLine("[Fri Jul 17 18:41:14 2026] You receive 4 copper from that item.");
+  assert.ok(e);
+  assert.equal(e!.from, "item");
+  assert.equal(e!.copper, 4);
+});
+
+test("a 'You receive' line with no coin in it is not a coin line", () => {
+  assert.equal(parseCoinLine("[Fri Jul 17 18:41:14 2026] You receive a Gnoll Fang from the corpse."), null);
+  assert.equal(parseCoinLine("[Fri Jul 17 18:41:14 2026] You receive 3 silver from a vendor."), null);
+});
+
+test("an auto-sell states the item's price, which is parsed off the loot line itself", () => {
+  const one = parseLogLine(
+    "[Fri Jul 17 18:41:14 2026] You looted a Snake Egg from an asp's corpse and sold it for 4 copper.",
+  );
+  assert.equal(one!.soldFor, 4);
+
+  // A stack's price is for the whole stack — the unit price is the caller's division.
+  const stack = parseLogLine(
+    "[Fri Jul 17 18:41:14 2026] You looted 2 Spiderling Eye from a spiderling's corpse and sold it for 1 silver and 4 copper.",
+  );
+  assert.equal(stack!.soldFor, 14);
+  assert.equal(stack!.qty, 2);
+
+  // Every other fate: the log states no price, so there isn't one to invent.
+  const kept = parseLogLine("[Fri Jul 17 18:41:14 2026] --You have looted a Bone Chips from a skeleton's corpse.--");
+  assert.equal(kept!.soldFor, undefined);
+  const stored = parseLogLine(
+    "[Fri Jul 17 18:41:14 2026] You looted a Spiderling Silk from a rock spider's corpse and stored it in your tradeskill depot",
+  );
+  assert.equal(stored!.soldFor, undefined);
 });
 
 test("parses the auto-store (tradeskill depot) loot line", () => {

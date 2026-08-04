@@ -54,6 +54,7 @@ function sanitizeObservations(input: unknown[]): MobObservation[] {
       zone: r.zone,
       kills: r.kills,
       drops,
+      copper: isFinNum(r.copper) && r.copper >= 0 ? r.copper : 0,
       lastAt: typeof r.lastAt === "string" ? r.lastAt : "",
     };
     const a = r.area as Record<string, unknown> | undefined;

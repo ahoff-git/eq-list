@@ -41,6 +41,7 @@ const api: EqlApi = {
   },
   loot: {
     recent: (limit) => ipcRenderer.invoke(CH.lootRecent, limit),
+    prices: () => ipcRenderer.invoke(CH.lootPrices),
     onEvent: (cb) => on(CH.lootEvent, cb),
     onMatched: (cb) => on(CH.lootMatched, cb),
   },

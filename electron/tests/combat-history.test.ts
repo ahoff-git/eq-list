@@ -53,6 +53,8 @@ function fight(min: number, yours: number, theirs: number, mob = "a coyote", ext
     xpGains: 1,
     soloXp: 1,
     partyXp: 0,
+    copper: 0,
+    soldCopper: 0,
     yourPerSec: [],
     deaths: [],
     invocations: [],

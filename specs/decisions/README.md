@@ -49,11 +49,20 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0043: Where you are is state, not news — recover it, replay nothing](./0043-state-is-not-news-either.md) — *qualifies 0030: the zone and the last `/loc` describe the present, so a mid-session start recovers them*
 - [0044: The read position outlives the app — a gap is news, not history](./0044-the-log-position-outlives-the-app.md) — *reverses 0030's in-memory offsets and its "skipped, not queued" caveat; the app's state stops depending on when it was launched*
 - [0045: Place a custom alert spot by lending the overlay a click](./0045-place-a-custom-alert-spot.md) — *builds on 0035; the click-through overlay turns interactive for one placing click*
+- [0046: We name our own ICE servers, because PeerJS's defaults are not ours to trust](./0046-our-own-ice-servers-not-peerjs-defaults.md) — *the connectivity layer under 0008's transport and 0028's fixes*
+- [0047: Money is copper, counted in two ledgers](./0047-money-is-copper-in-two-ledgers.md) — *the money half of 0017's camp question; coin per mob pools like 0024's drop rates, item prices derive from the loot ledger*
 
 ## Open Questions
+- Open Relay's community TURN is best-effort and not production-grade
+  ([ADR 0046](./0046-our-own-ice-servers-not-peerjs-defaults.md)). Is peer sharing worth
+  running our own TURN for, or is "works for most, fails for symmetric NAT" acceptable?
 - Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the
   same. Should contributions be weighted, or individual peers mutable/vetoable?
   See [ADR 0024](./0024-mob-knowledge.md).
+- Coin per mob pools with peers; an item's vendor price does not
+  ([ADR 0047](./0047-money-is-copper-in-two-ledgers.md)). A price is the easiest thing of all to
+  pool — it's the same for everyone, so one observation settles it — but it isn't in the
+  observation payload. Worth adding, or is "what you've sold yourself" the honest scope?
 - Undocumented drops are surfaced per mob. Should they also be *reported upward* somewhere —
   a shared list of "things this build drops that no wiki knows"? The room already pools
   observations ([ADR 0024](./0024-mob-knowledge.md)); this would be the useful summary of them.

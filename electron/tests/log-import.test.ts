@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { importLog } from "../log-import";
 import type { KillLog } from "../kill-log";
-import type { LocEvent, LootEvent } from "../../src/shared/types";
+import type { CoinEvent, LocEvent, LootEvent } from "../../src/shared/types";
 
 test("importLog digests kills, drops, positions and zones from a file", () => {
   const text = [
@@ -17,6 +17,7 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
     "[Fri Jul 17 18:00:05 2026] Your Location is 100, 200, 30",
     "[Fri Jul 17 18:00:10 2026] You have slain a gnoll!",
     "[Fri Jul 17 18:00:11 2026] --You have looted a Gnoll Fang from a gnoll's corpse.--",
+    "[Fri Jul 17 18:00:12 2026] You receive 1 silver and 4 copper from the corpse.",
     "[Fri Jul 17 18:00:20 2026] Loading, please wait...", // not an event — ignored
   ].join("\n");
   const file = path.join(os.tmpdir(), `eql-import-${process.pid}.txt`);
@@ -25,6 +26,7 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
   const recorded: { mob: string; killer: string; zone: string | null }[] = [];
   const loot: string[] = [];
   const locs: number[] = [];
+  const coins: number[] = [];
   const killLog: KillLog = {
     setPlayer() {},
     noteLoc: (loc: LocEvent) => locs.push(loc.y),
@@ -36,6 +38,10 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
       loot.push(e.item);
       return true;
     },
+    noteCoin: (e: CoinEvent) => {
+      coins.push(e.copper);
+      return true;
+    },
     kills: () => [],
     clear() {},
     flush() {},
@@ -45,6 +51,8 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
     const res = importLog(file, killLog);
     assert.equal(res.kills, 1);
     assert.equal(res.drops, 1);
+    assert.equal(res.coin, 14); // "1 silver and 4 copper" — copper is the canonical unit
+    assert.deepEqual(coins, [14]);
     // parseKill strips the article, so the kill files as "gnoll" in the zone it happened in.
     assert.deepEqual(recorded, [{ mob: "gnoll", killer: "You", zone: "Blackburrow" }]);
     assert.deepEqual(loot, ["Gnoll Fang"]);

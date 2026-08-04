@@ -61,12 +61,37 @@ export interface LootEvent extends LogEventBase {
   fate: LootFate;
   /** The fate's particulars: the coins it sold for, where it was stored, what it became. */
   detail?: string;
+  /**
+   * What the vendor paid, in copper — set only on an auto-sell (`fate: "sold"`), where the
+   * log states it. This is the *item's* money, kept apart from the coin a corpse hands over:
+   * an auto-sell also logs a bare "You receive … from that item" line, and summing both
+   * would count the same coins twice (see ADR 0047). For a stack, it's the whole stack's
+   * price — divide by `qty` for a unit price.
+   */
+  soldFor?: number;
   /** Item name, exactly as it appears in the log (leading article stripped). */
   item: string;
   /** How many the line reported ("You looted 2 Spiderling Eye…"); 1 when unstated. */
   qty: number;
   /** Corpse / source name the item came from. */
   source: string;
+}
+
+/**
+ * What one item vendors for, learned from your own auto-sells. Deliberately separate from a
+ * mob's coin (ADR 0047): this is a property of the *item* and holds wherever it dropped, which
+ * is what makes it worth remembering at all — the mob figure only describes that mob.
+ */
+export interface ItemPrice {
+  item: string;
+  /** Price for one, in copper — a stack's line price divided by the stack. */
+  unitCopper: number;
+  /** How many of it you've sold, and for how much in total. */
+  qty: number;
+  copper: number;
+  /** Auto-sell lines behind the figure. One is enough for a price; more is confirmation. */
+  sales: number;
+  lastAt: string;
 }
 
 /** A parsed "You have entered <zone>" line — tracks the player's current zone. */
@@ -112,7 +137,20 @@ export interface LevelEvent extends LogEventBase {
   level?: number;
 }
 
-export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent | LocEvent | LevelEvent;
+/**
+ * Coin changing hands. The log says how much and from what *kind* of source, never which
+ * mob or which item — so `from` is the only thing separating the two money ledgers at the
+ * point of parsing, and it's load-bearing (ADR 0047).
+ */
+export interface CoinEvent extends LogEventBase {
+  kind: "coin";
+  /** `corpse` — a mob's money. `item` — an auto-sold item's, already known from the loot line. */
+  from: "corpse" | "item";
+  /** In copper, the canonical unit (see `src/shared/money.ts`). */
+  copper: number;
+}
+
+export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent | LocEvent | LevelEvent | CoinEvent;
 
 // ─── Combat events (see combat-parser.ts) ───────────────────────────────────
 
@@ -443,6 +481,16 @@ export interface MobKillStat {
    * fairly but overstates what a night actually yields. Use it to rank, not to forecast.
    */
   xpPerMin: number;
+  /**
+   * Money, in copper, kept as the two ledgers the log distinguishes (ADR 0047):
+   * `copper` is coin off its corpses, `soldCopper` what its drops auto-sold for. A mob that
+   * carries nothing but drops a good vendor trash is a different animal from one that pays
+   * cash, and blending them would hide that.
+   */
+  copper: number;
+  soldCopper: number;
+  /** Both together, per minute spent fighting it — the same "rank, don't forecast" caveat. */
+  copperPerMin: number;
 }
 
 /** What was landing on you in the seconds before you died. */
@@ -489,6 +537,13 @@ export interface FightStats {
   xpGains: number;
   soloXp: number;
   partyXp: number;
+  /**
+   * Money earned in the window, in copper, as two ledgers (ADR 0047): `copper` is coin taken
+   * off corpses, `soldCopper` what auto-sold drops fetched. Sum them for an evening's income;
+   * keep them apart to tell "this mob carries cash" from "this mob drops good trash".
+   */
+  copper: number;
+  soldCopper: number;
   /** Your damage per second of the window, for a sparkline (index = second). */
   yourPerSec: number[];
   /** Your deaths in the window, newest first (capped). */
@@ -547,6 +602,11 @@ export interface ZoneReport {
   combatSec: number;
   xpPct: number;
   xpPerMin: number;
+  /** Money across the zone's fights, in copper, as the two ledgers (ADR 0047). */
+  copper: number;
+  soldCopper: number;
+  /** Both together, per minute of combat in the zone. */
+  copperPerMin: number;
   yourDealt: number;
   /** Your DPS across the zone's fights. */
   dps: number;
@@ -788,6 +848,14 @@ export interface KillRecord {
    * re-import isn't (see `noteLoot`).
    */
   dropKeys?: string[];
+  /**
+   * Coin taken off this corpse, in copper — the mob's own money, which is a separate question
+   * from what its drops vendor for (ADR 0047). Absent when the corpse paid none, or when the
+   * coin line couldn't be placed on a corpse at all.
+   */
+  coin?: number;
+  /** The keys of the coin lines already folded into `coin`, so a replay doesn't double it. */
+  coinKeys?: string[];
 }
 
 // ─── Health estimate ────────────────────────────────────────────────────────
@@ -1081,6 +1149,8 @@ export interface LogImportResult {
   kills: number;
   /** Loot lines attributed to a corpse. */
   drops: number;
+  /** Coin attributed to a corpse, in copper. */
+  coin: number;
 }
 
 /** What the renderer needs to show "a newer build is available" (see `electron/update-check.ts`). */
@@ -1142,6 +1212,8 @@ export interface EqlApi {
      * even when the Loot tab wasn't open. Pair with `onEvent` for live appends.
      */
     recent(limit?: number): Promise<LootEvent[]>;
+    /** What each item has auto-sold for, biggest earner first. */
+    prices(): Promise<ItemPrice[]>;
     /** Every parsed loot line, whether or not it's on the list. */
     onEvent(cb: (event: LootEvent) => void): Unsubscribe;
     /** Loot lines that matched a shopping-list entry. */
