@@ -1,11 +1,12 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerLoc } from "@/lib/hooks";
-import { canvasToEqCoords, canvasToImagePx, clampPan, eqToCanvasCoords, imagePxToCanvas } from "@/shared/map/coords";
+import { canvasToEqCoords, clampPan, eqToCanvasCoords } from "@/shared/map/coords";
 import { mapBounds, segmentOnFloor, vectorProjection, type EqMap, type MapFloor } from "@/shared/map/eqmap";
-import { poiKind, type PoiKind } from "@/shared/map/poi-kinds";
-import { clearCanvas, drawImageScaled, drawLine, drawCircle } from "@/lib/map/draw";
-import type { Loc, MapDimensions, MapView, Point, Zone } from "@/shared/map/types";
+import { POI_KINDS, poiKind, type PoiKind } from "@/shared/map/poi-kinds";
+import { pickHit } from "@/shared/map/hit-test";
+import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
+import type { Loc, MapView, Point, Zone } from "@/shared/map/types";
 
 /**
  * A kill to plot. `confidence` fades and shrinks it, and `glyph`/`color` come from the
@@ -19,6 +20,16 @@ export interface RenderKill {
   color: string;
   /** Someone else's kill, shared over the room — drawn hollow so it reads as theirs. */
   peer?: string;
+  /**
+   * What to say when it's hovered, and what it means. Written by the page, which knows what a kill
+   * *is* — the panel only knows where the dot goes.
+   */
+  title?: string;
+  detail?: string;
+  /** The mob, so a click can act on it without the panel parsing a label. */
+  mob?: string;
+  /** The kill record's id, so the list can point at exactly this one. */
+  id?: string;
 }
 
 /** A pin resolved for drawing (the parent maps `MapPin` → this via the palette). */
@@ -38,8 +49,26 @@ export interface RenderPin {
 }
 
 /**
- * Draws a zone's map with the player's location + trail, peers, pings, and pins on
- * two stacked square canvases. A **zoom/pan view** (scroll wheel to zoom toward the
+ * Anything drawn on the map that names itself when hovered. One shape for every kind, so the
+ * tooltip and the hit-test don't grow a branch per marker.
+ */
+interface HoverTarget {
+  y: number;
+  x: number;
+  radius: number;
+  /** Settles an overlap — see `pickHit`. */
+  priority: number;
+  title: string;
+  detail?: string;
+  /** Set for a pin, which has its own click behaviour (edit / move). */
+  pin?: RenderPin;
+  /** Set for a kill, which the page may want to act on. */
+  kill?: RenderKill;
+}
+
+/**
+ * Draws a zone's map — the game's own vector geometry — with the player's location + trail,
+ * peers, pings, kills and pins, on two stacked square canvases. A **zoom/pan view** (scroll wheel to zoom toward the
  * cursor, drag to pan once zoomed) is applied to both layers; the pure `src/shared/map`
  * coord math maps EQ↔base-canvas, and this component layers the view on top (and inverts
  * it for the cursor readout + hit-testing).
@@ -62,7 +91,11 @@ function niceStep(span: number): number {
  */
 const IMAGE_MAX_ZOOM = 6;
 const VECTOR_MAX_ZOOM = 30;
-const HIT_RADIUS = 9; // px — how close the cursor must be to hover/select a pin
+/**
+ * How close the cursor must be, per marker kind. A pin is a thing you aim at, so it's forgiving; a
+ * kill dot is one of hundreds, so it isn't — otherwise a busy camp becomes one big hover target.
+ */
+const HIT_RADIUS = { pin: 9, self: 8, peer: 7, ping: 8, kill: 6, poi: 7 } as const;
 /** How far the pointer must travel before a press counts as a drag rather than a click. */
 const DRAG_SLOP = 4;
 
@@ -84,6 +117,8 @@ const MAP_COLORS = {
   gridRing: "rgba(235, 244, 255, 0.95)",
   gridCore: "rgba(10, 15, 24, 0.85)",
   fix: "#ff5cf0",
+  /** The ring around a kill picked out from the list. */
+  emphasis: "#ffffff",
   /** Map geometry the file gave no color for (it said black, which we can't show). */
   mapLine: "#8ba0bd",
   poi: "#9fd0ff",
@@ -106,15 +141,14 @@ export default function MapPanel({
   onPlace,
   onPing,
   onPinClick,
+  onKillClick,
   moveMode = false,
   onPinMove,
   showGrid = false,
-  calibrating = false,
-  onFix,
-  fixes = [],
   vector,
   floor,
   hiddenPoiKinds,
+  emphasis,
 }: {
   zone: Zone | undefined;
   redrawKey?: number;
@@ -124,7 +158,8 @@ export default function MapPanel({
   showKillConfidence?: boolean;
   /** The `/loc` trail, oldest→newest (owned by the parent so it can be cleared). */
   trail?: { y: number; x: number }[];
-  peers?: { y: number; x: number }[];
+  /** Peers' live locations. `name` is theirs, for the hover label. */
+  peers?: { y: number; x: number; name?: string }[];
   /** Peer pings; `at` (ms) is when it arrived, which drives the drop-in animation. */
   pings?: { name: string; y: number; x: number; at?: number }[];
   pins?: RenderPin[];
@@ -132,43 +167,39 @@ export default function MapPanel({
   onPlace?: (eq: Loc, clientX: number, clientY: number) => void;
   onPing?: (eq: Loc) => void;
   onPinClick?: (pin: RenderPin, clientX: number, clientY: number) => void;
+  /** A kill marker was clicked — the page decides what "go and see it" means. */
+  onKillClick?: (kill: RenderKill) => void;
   /** Move mode (from the toolbar): drag your own pins to relocate them. */
   moveMode?: boolean;
   onPinMove?: (id: string, eq: Loc) => void;
   showGrid?: boolean;
   /**
-   * Calibration mode: a click reports the **image pixel** it landed on (`onFix`) instead of
-   * placing or pinging. Image pixels, not EQ, because the whole point is that the EQ mapping
-   * isn't trustworthy yet — that's what's being established.
-   */
-  calibrating?: boolean;
-  onFix?: (imagePx: Point, image: MapDimensions) => void;
-  /** Fixes recorded so far (image pixels), drawn so you can see where your clicks landed. */
-  fixes?: Point[];
-  /**
-   * The game's own map for this zone, drawn instead of an image when present. It needs no
-   * calibration — the geometry is already in world coordinates, so it supplies its own
-   * scale and centre (`vectorProjection`).
+   * The game's own map for this zone. It needs no calibration — the geometry is already in world
+   * coordinates, so it states its own projection (`vectorProjection`).
    */
   vector?: EqMap | null;
   /**
-   * Show only this floor of a multi-storey vector map (undefined = all of them, which is what
-   * the game does). Stairs belong to both floors they touch, so they stay drawn.
+   * Show only this floor of a multi-storey map (undefined = all of them, which is what the game
+   * does). Stairs belong to both floors they touch, so they stay drawn.
    */
   floor?: MapFloor;
   /** Label kinds to leave off the map (see `poiKind`) — a busy zone is mostly labels. */
   hiddenPoiKinds?: Set<PoiKind>;
+  /**
+   * Kills to pick out — one mob's, or a single kill by id. Set while a row in the kill list is
+   * hovered, so pointing at a name answers "where did those die?".
+   */
+  emphasis?: { mob?: string; id?: string } | null;
 }) {
   const loc = usePlayerLoc();
   const wrapRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const dotsRef = useRef<HTMLCanvasElement>(null);
   const [side, setSide] = useState(0);
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [hoverEq, setHoverEq] = useState<Loc | null>(null);
-  const [hovered, setHovered] = useState<{ pin: RenderPin; x: number; y: number } | null>(null);
+  const [hovered, setHovered] = useState<{ target: HoverTarget; x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   /** Where a pan started (pointer + the pan at the time), while the button is held. */
   const panFrom = useRef<{ x: number; y: number; pan: Point } | null>(null);
@@ -192,9 +223,9 @@ export default function MapPanel({
   }, [animating]);
 
   /**
-   * A vector map's self-calibration: the world box it covers, standing in for an image. The
-   * zone the coordinate maths sees is the authored one for an image, and this for a map file
-   * — after which every marker, pin, ping and grid path below is identical for both.
+   * The map states its own projection: its geometry is world coordinates, so the world box it
+   * covers *is* its calibration (`vectorProjection`). Nothing here is authored or tuned — that
+   * went with the bundled scans (ADR 0042).
    */
   const projection = useMemo(() => {
     if (!vector?.segments.length && !vector?.pois.length) return undefined;
@@ -202,28 +233,29 @@ export default function MapPanel({
     return bounds ? vectorProjection(bounds) : undefined;
   }, [vector]);
 
-  const projected = useMemo<Zone | undefined>(
-    () => (projection && zone ? { ...zone, scale: projection.scale, center: projection.center } : zone),
-    [zone, projection],
-  );
-  const calibrated = !!projected?.scale && !!projected.center;
-  // A file-backed zone counts as mapped before its geometry arrives — the file is on disk,
-  // so "no map for this zone" would be wrong for the moment it takes to load.
-  const hasMap = !!vector || !!zone?.mapImg || !!zone?.file;
+  /** Can anything be plotted? Only once the geometry has arrived and stated where it is. */
+  const plottable = !!projection;
+  // The file being on disk is what makes a zone mapped; the geometry lands a moment later, and
+  // "no map for this zone" would be wrong in between.
+  const hasMap = !!vector || !!zone?.file;
 
   /**
-   * What we're measuring against: the map (an image's pixel size, or a vector map's world
-   * box) plus the square canvas it's fitted into. Undefined until there's a map to fit,
-   * which is also when there's nothing to plot markers onto anyway.
+   * What we're measuring against: the map's own extent plus the square canvas it's fitted into.
+   * Undefined until there's a map to fit, which is also when there's nothing to plot onto.
    */
-  const view = useMemo<MapView | undefined>(() => {
-    if (!side) return undefined;
-    const canvas = { width: side, height: side };
-    if (projection) return { image: projection.image, canvas };
-    return img ? { image: { width: img.naturalWidth, height: img.naturalHeight }, canvas } : undefined;
-  }, [img, side, projection]);
+  const view = useMemo<MapView | undefined>(
+    () => (side && projection ? { image: projection.image, canvas: { width: side, height: side } } : undefined),
+    [side, projection],
+  );
 
   const maxZoom = vector ? VECTOR_MAX_ZOOM : IMAGE_MAX_ZOOM;
+
+  /** Is this kill one of the ones being pointed at? By id when there is one, else by mob. */
+  const emphasized = useCallback(
+    (kill: RenderKill): boolean =>
+      !!emphasis && (emphasis.id ? kill.id === emphasis.id : !!emphasis.mob && kill.mob === emphasis.mob),
+    [emphasis],
+  );
 
   /**
    * The labels actually drawn: this floor's, of the kinds not hidden. Worked out here rather than
@@ -238,6 +270,63 @@ export default function MapPanel({
     );
   }, [vector, floor, hiddenPoiKinds]);
 
+  /**
+   * Everything on the map that answers to the cursor. Built in one place so hovering doesn't need
+   * a special case per marker kind, and so overlaps resolve consistently (`pickHit`): what you
+   * placed yourself outranks what the log inferred, which outranks the map's own labels.
+   */
+  const targets = useMemo<HoverTarget[]>(() => {
+    const list: HoverTarget[] = [];
+    for (const pin of pins) {
+      list.push({
+        y: pin.y,
+        x: pin.x,
+        radius: HIT_RADIUS.pin,
+        priority: 4,
+        title: pin.title || pin.label,
+        detail: [pin.title ? pin.label : "", pin.note ?? "", pin.mine ? "click to edit" : ""]
+          .filter(Boolean)
+          .join(" · "),
+        pin,
+      });
+    }
+    for (const kill of kills) {
+      if (!kill.title) continue; // unlabelled: nothing worth saying, so nothing to hover
+      list.push({
+        y: kill.y,
+        x: kill.x,
+        radius: HIT_RADIUS.kill,
+        priority: 2,
+        title: kill.title,
+        detail: kill.detail,
+        kill,
+      });
+    }
+    for (const ping of pings) {
+      list.push({ y: ping.y, x: ping.x, radius: HIT_RADIUS.ping, priority: 3, title: `${ping.name} pinged here` });
+    }
+    for (const peer of peers) {
+      list.push({
+        y: peer.y,
+        x: peer.x,
+        radius: HIT_RADIUS.peer,
+        priority: 3,
+        title: peer.name ?? "A peer",
+        detail: "sharing their location",
+      });
+    }
+    if (loc) {
+      list.push({ y: loc.y, x: loc.x, radius: HIT_RADIUS.self, priority: 3, title: "You", detail: `${loc.y}, ${loc.x}` });
+    }
+    // The map's own labels last: they're already written on the map, so hovering is for the ones
+    // that overlap into illegibility — and for saying which kind they are.
+    for (const poi of visiblePois) {
+      const kind = POI_KINDS.find((k) => k.kind === poiKind(poi.label));
+      list.push({ y: poi.y, x: poi.x, radius: HIT_RADIUS.poi, priority: 1, title: poi.label, detail: kind?.label });
+    }
+    return list;
+  }, [pins, kills, pings, peers, loc, visiblePois]);
+
   /** The zoom/pan view, applied to a base canvas point. */
   const applyView = useCallback((p: Point): Point => ({ x: p.x * zoom + pan.x, y: p.y * zoom + pan.y }), [zoom, pan]);
 
@@ -245,10 +334,10 @@ export default function MapPanel({
   const toScreen = useCallback(
     (eq: Loc): Point | undefined => {
       if (!view) return undefined;
-      const b = eqToCanvasCoords(eq, projected, view);
+      const b = eqToCanvasCoords(eq, projection, view);
       return b ? applyView(b) : undefined;
     },
-    [projected, view, applyView],
+    [projection, view, applyView],
   );
 
   // Fit the largest square into the container.
@@ -270,24 +359,8 @@ export default function MapPanel({
     setPan({ x: 0, y: 0 });
   }, [zone?.key]);
 
-  // Load the zone image (into state so a load triggers a redraw).
-  useEffect(() => {
-    setImg(null);
-    if (!zone?.mapImg) return;
-    const i = new Image();
-    let cancelled = false;
-    i.onload = () => {
-      if (!cancelled) setImg(i);
-    };
-    i.src = zone.mapImg;
-    return () => {
-      cancelled = true;
-    };
-  }, [zone?.mapImg]);
-
-  // Draw the map itself — vector geometry when we have it, else the image — under the
-  // current view (zoom/pan). Either way this canvas is static between zone/zoom changes;
-  // the moving markers live on the one stacked above it.
+  // Draw the map's geometry under the current view (zoom/pan). This canvas is static between
+  // zone/zoom changes; the moving markers live on the one stacked above it.
   useEffect(() => {
     const c = mapRef.current;
     if (!c || !side) return;
@@ -303,8 +376,8 @@ export default function MapPanel({
       const paths = new Map<string, Path2D>();
       for (const seg of vector.segments) {
         if (floor && !segmentOnFloor(seg, floor)) continue;
-        const a = eqToCanvasCoords({ y: seg.y1, x: seg.x1 }, projected, view);
-        const b = eqToCanvasCoords({ y: seg.y2, x: seg.x2 }, projected, view);
+        const a = eqToCanvasCoords({ y: seg.y1, x: seg.x1 }, projection, view);
+        const b = eqToCanvasCoords({ y: seg.y2, x: seg.x2 }, projection, view);
         if (!a || !b) continue;
         const key = seg.color ?? MAP_COLORS.mapLine;
         let path = paths.get(key);
@@ -318,11 +391,9 @@ export default function MapPanel({
         ctx.strokeStyle = color;
         ctx.stroke(path);
       }
-    } else if (img) {
-      drawImageScaled(c, img);
     }
     ctx.restore();
-  }, [img, vector, floor, projected, view, zoom, pan, side]);
+  }, [vector, floor, projection, view, zoom, pan, side]);
 
   // Draw the overlay (grid, trail, peers, loc, pings, pins) — coords via `toScreen`,
   // so markers/text stay a constant size while the map zooms/pans under them.
@@ -330,16 +401,16 @@ export default function MapPanel({
     const c = dotsRef.current;
     if (!c || !side) return;
     clearCanvas(c);
-    if (!projected) return;
+    if (!projection || !view) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
 
-    // The grid spans exactly what the image covers: its pixel extent times the scale.
-    if (showGrid && view && projected.scale && projected.center) {
-      const cx = projected.center.x;
-      const cy = projected.center.y;
-      const spanX = view.image.width * projected.scale;
-      const spanY = view.image.height * projected.scale;
+    // The grid spans exactly what the map covers: its extent times the scale.
+    if (showGrid) {
+      const cx = projection.center.x;
+      const cy = projection.center.y;
+      const spanX = view.image.width * projection.scale;
+      const spanY = view.image.height * projection.scale;
       const stepX = niceStep(spanX);
       const stepY = niceStep(spanY);
       const halfX = spanX / 2;
@@ -390,21 +461,37 @@ export default function MapPanel({
       const p = toScreen(kill);
       if (!p) continue;
       const weight = Math.max(0.15, kill.confidence);
+      // Hovering a name in the kill list picks its kills out here. Everything else fades rather
+      // than vanishing — a marker you can still see is context; one that disappears is a lie about
+      // what's on the map.
+      const picked = emphasized(kill);
+      const faded = !!emphasis && !picked;
+      const radius = 4 + weight * 8;
       ctx.save();
-      ctx.globalAlpha = 0.15 + weight * 0.45;
+      ctx.globalAlpha = (0.15 + weight * 0.45) * (faded ? 0.3 : 1);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 4 + weight * 8, 0, 2 * Math.PI);
+      ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI);
       ctx.fillStyle = kill.color;
       ctx.fill();
       if (kill.peer) {
         // Someone else's: outlined rather than filled, so a shared heatmap stays legible.
-        ctx.globalAlpha = 0.7;
+        ctx.globalAlpha = faded ? 0.2 : 0.7;
         ctx.lineWidth = 1;
         ctx.strokeStyle = kill.color;
         ctx.stroke();
       }
+      if (picked) {
+        // A ring outside the dot, so it reads at a glance without changing what the dot itself
+        // says about confidence — the size and colour still mean what they always did.
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = MAP_COLORS.emphasis;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius + 4, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
       if (showKillConfidence) {
-        ctx.globalAlpha = 0.9;
+        ctx.globalAlpha = faded ? 0.35 : 0.9;
         ctx.fillStyle = kill.color;
         ctx.font = "10px sans-serif";
         ctx.textAlign = "center";
@@ -475,33 +562,11 @@ export default function MapPanel({
         ctx.fillText(pin.title, p.x, p.y + 9);
       }
     }
-    // Calibration fixes: a numbered cross where you said a known coordinate sits. Drawn
-    // from image pixels, so a resize or a zoom moves them with the map they belong to.
-    fixes.forEach((fix, i) => {
-      const base = view && imagePxToCanvas(fix, view);
-      if (!base) return;
-      const p = applyView(base);
-      ctx.save();
-      ctx.strokeStyle = MAP_COLORS.fix;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(p.x - 7, p.y);
-      ctx.lineTo(p.x + 7, p.y);
-      ctx.moveTo(p.x, p.y - 7);
-      ctx.lineTo(p.x, p.y + 7);
-      ctx.stroke();
-      ctx.fillStyle = MAP_COLORS.fix;
-      ctx.font = "11px sans-serif";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "bottom";
-      ctx.fillText(`${i + 1}`, p.x + 8, p.y - 2);
-      ctx.restore();
-    });
 
     ctx.textBaseline = "alphabetic";
   }, [
-    loc, trail, peers, pings, pins, kills, showKillConfidence, projected, side, redrawKey,
-    showGrid, toScreen, frame, fixes, view, applyView, vector, visiblePois,
+    loc, trail, peers, pings, pins, kills, showKillConfidence, side, redrawKey,
+    showGrid, toScreen, frame, view, applyView, vector, visiblePois, emphasis, emphasized, projection,
   ]);
 
   /** Screen point (within the canvas) → base canvas point, inverting the zoom/pan view. */
@@ -512,13 +577,9 @@ export default function MapPanel({
 
   /** Screen point → EQ coordinate. */
   function eqAt(e: React.MouseEvent<HTMLDivElement>): Loc | undefined {
-    return view ? canvasToEqCoords(canvasAt(e), projected, view) : undefined;
+    return view ? canvasToEqCoords(canvasAt(e), projection, view) : undefined;
   }
 
-  /** Screen point → image pixel — what a calibration fix is recorded against. */
-  function imagePxAt(e: React.MouseEvent<HTMLDivElement>): Point | undefined {
-    return view ? canvasToImagePx(canvasAt(e), view) : undefined;
-  }
 
   /** The pin under the cursor (within a few px), if any. */
   function pinAt(e: React.MouseEvent<HTMLDivElement>): RenderPin | undefined {
@@ -527,14 +588,14 @@ export default function MapPanel({
     const py = e.clientY - rect.top;
     for (const pin of pins) {
       const p = toScreen(pin);
-      if (p && Math.hypot(p.x - px, p.y - py) <= HIT_RADIUS) return pin;
+      if (p && Math.hypot(p.x - px, p.y - py) <= HIT_RADIUS.pin) return pin;
     }
     return undefined;
   }
 
   function onMove(e: React.MouseEvent<HTMLDivElement>) {
-    // Panning comes first, and works whether or not the zone is calibrated — looking around
-    // an uncalibrated map is exactly when you need to.
+    // Panning comes first, and works before the geometry has landed — looking around a map that
+    // hasn't finished loading is exactly when you'd try.
     const grab = panFrom.current;
     if (grab) {
       const dx = e.clientX - grab.x;
@@ -548,21 +609,32 @@ export default function MapPanel({
       if (zoom > 1) setPan(clampPan({ x: grab.pan.x + dx, y: grab.pan.y + dy }, zoom, { width: side, height: side }));
       return;
     }
-    if (!calibrated) return;
+    if (!plottable) return;
     if (dragging) {
       const eq = eqAt(e);
       if (eq) onPinMove?.(dragging, eq);
       return;
     }
     setHoverEq(eqAt(e) ?? null);
-    const pin = pinAt(e);
-    setHovered(pin ? { pin, x: e.clientX, y: e.clientY } : null);
+    const target = targetAt(e);
+    setHovered(target ? { target, x: e.clientX, y: e.clientY } : null);
+  }
+
+  /** The marker under the cursor — any kind, nearest first (see `pickHit`). */
+  function targetAt(e: React.MouseEvent<HTMLDivElement>): HoverTarget | undefined {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cursor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const projected = targets.flatMap((t) => {
+      const at = toScreen(t);
+      return at ? [{ ...t, at }] : [];
+    });
+    return pickHit(projected, cursor);
   }
 
   function onDown(e: React.MouseEvent<HTMLDivElement>) {
     draggedRef.current = false;
     // Move mode's pin drag wins over panning — that's what it's for.
-    if (calibrated && moveMode) {
+    if (plottable && moveMode) {
       const pin = pinAt(e);
       if (pin?.mine) {
         e.preventDefault(); // don't start a text selection while dragging
@@ -588,19 +660,19 @@ export default function MapPanel({
       draggedRef.current = false;
       return;
     }
-    // Ahead of the `calibrated` guard on purpose: calibrating a zone that has no
-    // calibration yet is exactly the case that has to work.
-    if (calibrating) {
-      const px = imagePxAt(e);
-      if (px && view) onFix?.(px, view.image);
+    if (!plottable || moveMode) return; // move mode uses drag, not click
+    // A marker under the cursor is what the click was aimed at — placing a pin or pinging is what
+    // you do with the empty map.
+    const target = targetAt(e);
+    if (target?.pin) {
+      onPinClick?.(target.pin, e.clientX, e.clientY);
       return;
     }
-    if (!calibrated || moveMode) return; // move mode uses drag, not click
-    const pin = pinAt(e);
-    if (pin) {
-      onPinClick?.(pin, e.clientX, e.clientY);
+    if (target?.kill) {
+      onKillClick?.(target.kill);
       return;
     }
+    if (target) return; // hovering something unclickable shouldn't ping through it
     const eq = eqAt(e);
     if (!eq) return;
     if (placing) onPlace?.(eq, e.clientX, e.clientY);
@@ -633,9 +705,9 @@ export default function MapPanel({
     ? "grabbing"
     : moveMode
       ? "grab"
-      : hovered
+      : hovered?.target.pin || hovered?.target.kill
         ? "pointer"
-        : calibrating || placing || onPing
+        : placing || onPing
           ? "crosshair"
           : zoom > 1
             ? "grab" // zoomed in, so there's somewhere to drag to
@@ -663,27 +735,19 @@ export default function MapPanel({
         </div>
       )}
       {zoom > 1 && <div className="map-zoom">{zoom.toFixed(1)}×</div>}
-      {calibrated && hoverEq && (
+      {plottable && hoverEq && (
         <div className="map-readout" title="Cursor location (EQ y, x)">
           {hoverEq.y}, {hoverEq.x}
         </div>
       )}
       {hovered && (
         <div className="pin-tip" style={{ left: hovered.x + 12, top: hovered.y + 12 }}>
-          {hovered.pin.title && <div className="pt-title">{hovered.pin.title}</div>}
-          <div className="pt-label">
-            {hovered.pin.label}
-            {hovered.pin.mine ? " · click to edit" : ""}
-          </div>
-          {hovered.pin.note && <div className="pt-note">{hovered.pin.note}</div>}
+          <div className="pt-title">{hovered.target.title}</div>
+          {hovered.target.detail && <div className="pt-label">{hovered.target.detail}</div>}
         </div>
       )}
       {!hasMap && <p className="muted small map-note">No map for this zone yet.</p>}
-      {/* Only an image can be uncalibrated — a map file brings its own scale and centre. */}
-      {zone?.mapImg && !calibrated && (
-        <p className="muted small map-note">Map shown, but this zone isn’t calibrated — location can’t be plotted.</p>
-      )}
-      {hasMap && calibrated && !loc && (
+      {hasMap && plottable && !loc && (
         <p className="muted small map-note">
           Type <kbd>/loc</kbd> in-game to plot your position (it updates each time you do).
         </p>

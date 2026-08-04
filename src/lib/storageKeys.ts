@@ -22,8 +22,6 @@ export const STORAGE_KEYS = {
   mapFollowZone: "eqlist.map.followZone",
   /** Map window: always-on-top. */
   mapPinned: "eqlist.map.pinned",
-  /** Map window: key/legend visibility. */
-  mapShowKey: "eqlist.map.showKey",
   /** Map window: share-my-pins toggle. */
   mapSharePins: "eqlist.map.sharePins",
   /** Map window: the kills panel's visibility. */

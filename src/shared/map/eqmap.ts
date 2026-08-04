@@ -10,9 +10,10 @@
  *
  * **The coordinates are world coordinates with x and y negated** relative to what `/loc`
  * reports — the same negation the canvas maths already applies (see coords.ts). That is the
- * whole reason these maps need no calibration: unlike a scanned image, the file already
- * knows where it is in the world. Verified against every zone we had hand-tuned
- * calibration for; see [ADR 0039](../../../specs/decisions/0039-render-the-game-s-own-maps.md).
+ * whole reason these maps need no calibration: unlike a scanned image, the file already knows where
+ * it is in the world. Verified against every zone we once had hand-tuned calibration for — see
+ * [ADR 0039](../../../specs/decisions/0039-render-the-game-s-own-maps.md), and
+ * [ADR 0042](../../../specs/decisions/0042-only-the-game-s-own-maps.md) for the scans' removal.
  */
 
 import type { Loc, MapDimensions } from "./types";

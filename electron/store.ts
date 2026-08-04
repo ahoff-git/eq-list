@@ -61,6 +61,7 @@ const DEFAULT_SETTINGS: Settings = {
     position: "top",
     durationMs: 6000,
     animation: "pulse",
+    locations: [], // custom spots the user places with the mouse (Settings → Alert style)
   },
   overlay: {
     opacity: 0.9,

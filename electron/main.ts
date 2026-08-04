@@ -12,6 +12,8 @@ import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
 import { createStore } from "./store";
 import { createWikiClient } from "./wiki";
 import { createLogWatcher } from "./log-watcher";
+import { createLogCursor } from "./log-cursor";
+import { isSameSitting } from "../src/shared/log-catchup";
 import { createCombatStats } from "./combat-stats";
 import { createCombatHistory } from "./combat-history";
 import { createXpProgress } from "./xp-progress";
@@ -119,7 +121,10 @@ if (!app.requestSingleInstanceLock()) {
 
   const store = createStore(userData);
   const wiki = createWikiClient(path.join(userData, "wiki-cache"));
-  const watcher = createLogWatcher();
+  // Where we had read to when we last ran, so anything logged since is read as the news it is
+  // rather than being skipped ([ADR 0044](../specs/decisions/0044-the-log-position-outlives-the-app.md)).
+  const cursor = createLogCursor(userData);
+  const watcher = createLogWatcher(cursor);
   const combat = createCombatStats();
   const history = createCombatHistory(userData);
   const xp = createXpProgress(userData);
@@ -265,6 +270,17 @@ if (!app.requestSingleInstanceLock()) {
       });
     }
   });
+  // Everything logged while the app was closed has just been fed through the live path, which is
+  // what makes the app's state independent of when it was launched. The one thing that *isn't*
+  // simply "state" is the live meter: its totals mean "this sitting". Restart mid-camp and carrying
+  // on is exactly right; come back the next evening and last night's fights belong to history
+  // (where they already are, via `onFightEnd`) rather than to the panel you're looking at now.
+  watcher.onCaughtUp(({ file, bytes, lastAt }) => {
+    if (!bytes) return;
+    const continuing = isSameSitting(lastAt);
+    log.debug("log gap replayed", { file, bytes, lastAt, continuing });
+    if (!continuing) combat.reset();
+  });
   // Fights are filed as they end, so history survives a crash as well as a clean quit.
   combat.onFightEnd((fight) => history.add(fight, combat.zone(), watcher.status().file));
   xp.onChange((progress) => broadcast(CH.xpChanged, progress));
@@ -382,6 +398,8 @@ if (!app.requestSingleInstanceLock()) {
     killLog.flush();
     lootLog.flush();
     mobs.flush();
+    watcher.stop(); // records the read position, so the next run resumes exactly here
+    cursor.flush();
   });
 });
 

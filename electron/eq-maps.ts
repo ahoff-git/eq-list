@@ -11,7 +11,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { mergeEqMaps, parseEqMap, type EqMap } from "../src/shared/map/eqmap";
-import { IMAGE_SOURCE, type MapSource, type MapSourceReport } from "../src/shared/map/map-sources";
+import type { MapSource, MapSourceReport } from "../src/shared/map/map-sources";
+import { solveZoneNames, zoneLinkName, type ZoneLinks } from "../src/shared/map/zone-names";
 
 const log = createLogger("eq-maps");
 
@@ -77,8 +78,10 @@ export function findMapsDir(logDir: string): string | undefined {
  * subfolder holding map files (an installed pack — Brewall's, Goodurden's, whatever).
  */
 export function listSources(logDir: string): MapSourceReport {
-  const sources: MapSource[] = [{ id: IMAGE_SOURCE, label: "Bundled images", files: [] }];
+  const sources: MapSource[] = [];
   const mapsDir = findMapsDir(logDir);
+  // No maps folder means no maps at all — there's no bundled fallback (ADR 0042), and saying so is
+  // more use than an empty picker.
   if (!mapsDir) return { sources };
 
   sources.push({ id: STOCK_ID, label: "Game maps (maps folder)", dir: mapsDir, files: zoneFiles(mapsDir) });
@@ -149,6 +152,57 @@ export function createMapReader(): {
     },
     clear() {
       cache.clear();
+    },
+  };
+}
+
+/**
+ * What each map file's zone is *called*, worked out from the exit labels across the whole folder
+ * (see `solveZoneNames`). One pass per folder per run, cached: it reads every map, which is a few
+ * hundred milliseconds of I/O, so it's asked for separately from the source list and the picker
+ * improves once it lands rather than waiting on it.
+ *
+ * Only the `P` lines matter here, so the geometry is skipped while scanning — the base file of a
+ * big zone is most of a megabyte of `L` lines we'd only throw away.
+ */
+export function createZoneNamer(): {
+  names: (sources: { dir: string; files: string[] }[]) => Record<string, string>;
+  clear: () => void;
+} {
+  let cache: { key: string; names: Record<string, string> } | null = null;
+  return {
+    names(sources) {
+      const key = sources.map((s) => s.dir).join("|");
+      if (cache?.key === key) return cache.names;
+
+      // Pooled across every folder: a short name means the same zone in each pack, and the packs
+      // label different things. The game's own maps carry few exit labels, so on their own they
+      // name half of what they could; Brewall's labels name the same zones, and one shared
+      // gazetteer lets each source benefit from the other's homework.
+      const links: ZoneLinks = new Map();
+      for (const source of sources) {
+        for (const short of source.files) {
+          const out = links.get(short) ?? new Set<string>();
+          for (const suffix of GEOMETRY_LAYERS) {
+            const text = readIfPresent(path.join(source.dir, `${short}${suffix}.txt`));
+            if (!text) continue;
+            for (const line of text.split(/\r?\n/)) {
+              if (line[0] !== "P") continue;
+              const label = line.slice(1).split(",").slice(7).join(",").trim().replace(/_/g, " ");
+              const name = zoneLinkName(label);
+              if (name) out.add(name);
+            }
+          }
+          links.set(short, out);
+        }
+      }
+      const names = solveZoneNames(links);
+      log.debug("named zones", { sources: sources.length, files: links.size, named: Object.keys(names).length });
+      cache = { key, names };
+      return names;
+    },
+    clear() {
+      cache = null;
     },
   };
 }

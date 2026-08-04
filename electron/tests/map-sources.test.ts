@@ -1,13 +1,12 @@
 /**
- * Black-box tests for turning a folder of map files into zones. The risk this module exists
- * to manage is a *confident wrong answer* — a file labelled as a zone it isn't — so most of
- * these pin what must NOT be matched.
+ * Black-box tests for turning a folder of map files into zones. The risk this module manages is a
+ * *confident wrong answer* — a file labelled as a zone it isn't — so most of these pin what must
+ * NOT happen.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { IMAGE_SOURCE, prettyZoneName, zoneFileCandidates, zonesFromFiles } from "../../src/shared/map/map-sources";
-import { baseZones } from "../../src/shared/map/zones";
-import type { Zone } from "../../src/shared/map/types";
+import { prettyZoneName, zonesFromFiles } from "../../src/shared/map/map-sources";
+import { CURATED_ZONES, findZone, sortZones } from "../../src/shared/map/zones";
 
 /** A slice of a real maps folder, including the near-misses that make naming dangerous. */
 const FILES = [
@@ -16,66 +15,60 @@ const FILES = [
   "tox", "gukbottom", "akanon", "feerrott", "northro", "nro", "steamfontmts", "steamfont",
 ];
 
-test("candidates put the alias first, then the plain name", () => {
-  assert.equal(zoneFileCandidates("Greater Faydark")[0], "gfaydark");
-  assert.deepEqual(zoneFileCandidates("Toxxulia Forest").slice(0, 2), ["toxxulia", "tox"]);
-  // No alias needed when the name *is* the file name.
-  assert.deepEqual(zoneFileCandidates("Crushbone"), ["crushbone"]);
-  // Punctuation is dropped, which is how Ak'Anon finds akanon.
-  assert.ok(zoneFileCandidates("Ak'Anon").includes("akanon"));
-  // "X of Y" → "y", which is how The Estate of Unrest finds unrest.
-  assert.ok(zoneFileCandidates("The Estate of Unrest").includes("unrest"));
-});
-
-test("a zone is never named after a file belonging to a different zone", () => {
-  // The two traps a looser rule falls into: dropping a trailing word maps Qeynos Hills onto
-  // South Qeynos, and taking the last word maps East Commonlands onto the Commonlands.
-  assert.ok(!zoneFileCandidates("Qeynos Hills").includes("qeynos"));
-  assert.ok(!zoneFileCandidates("East Commonlands").includes("commonlands"));
-  assert.ok(!zoneFileCandidates("East Commonlands").includes("commons"));
-});
-
-test("zonesFromFiles names what it can and shows the file name for the rest", () => {
-  const zones = zonesFromFiles("brewall", FILES, baseZones);
-  const byFile = new Map(zones.map((z) => [z.file!, z.name]));
-
+test("a curated zone takes its own file, and nothing else does", () => {
+  const byFile = new Map(zonesFromFiles("brewall", FILES).map((z) => [z.file!, z.name]));
   assert.equal(byFile.get("gfaydark"), "Greater Faydark");
   assert.equal(byFile.get("qey2hh1"), "Qeynos Hills");
   assert.equal(byFile.get("felwithea"), "Northern Felwithe");
   assert.equal(byFile.get("felwitheb"), "Southern Felwithe");
   assert.equal(byFile.get("runnyeye"), "RunnyEye Citadel");
-  // A zone we can't name keeps its file name, which is honest and still selectable.
-  assert.equal(byFile.get("gukbottom"), "Gukbottom");
+  // `qeynos` is South Qeynos, and nothing curated claims it, so it keeps its file name — it must
+  // never inherit "Qeynos Hills" from the file next to it.
   assert.equal(byFile.get("qeynos"), "Qeynos");
-  // Every file is offered, and each carries the file it came from.
+});
+
+test("a zone we can't name keeps its file name, and is still offered", () => {
+  const zones = zonesFromFiles("brewall", FILES);
+  assert.equal(zones.find((z) => z.file === "gukbottom")?.name, "Gukbottom");
   assert.equal(zones.length, FILES.length);
   assert.ok(zones.every((z) => z.file && z.key.startsWith("brewall:")));
 });
 
-test("two files can't claim one zone name — that would fake a layer", () => {
-  // `toxxulia` and `tox` are the same zone twice; only one may take the real name, because
-  // zones sharing a name are treated as layers of one place (see zoneLayers).
-  const zones = zonesFromFiles("stock", FILES, baseZones);
-  const names = zones.map((z) => z.name);
-  assert.equal(new Set(names).size, names.length, `duplicate names: ${names.join(", ")}`);
-  assert.equal(names.filter((n) => n === "Toxxulia Forest").length, 1);
-  assert.equal(names.filter((n) => n === "Northern Desert of Ro").length, 1);
-  assert.equal(names.filter((n) => n === "Steamfont Mountains").length, 1);
+test("a solved name is used where nothing curated applies", () => {
+  const zones = zonesFromFiles("brewall", ["gukbottom", "kithicor"], {
+    gukbottom: "Ruins of Old Guk",
+    kithicor: "Kithicor Forest",
+  });
+  const byFile = new Map(zones.map((z) => [z.file!, z.name]));
+  assert.equal(byFile.get("gukbottom"), "Ruins of Old Guk");
+  assert.equal(byFile.get("kithicor"), "Kithicor Forest");
 });
 
-test("the alias order decides which spelling wins, and the loser stays reachable", () => {
-  const zones = zonesFromFiles("stock", FILES, baseZones);
-  const byFile = new Map(zones.map((z) => [z.file!, z.name]));
-  // `toxxulia` is listed first in the alias, so it takes the name...
-  assert.equal(byFile.get("toxxulia"), "Toxxulia Forest");
-  // ...and the other spelling is still in the list under its file name.
+test("the curated list outranks a solved name", () => {
+  // The real case: the solver offers `neriaka` the Fourth Gate, which is a different zone's file.
+  const zones = zonesFromFiles("brewall", ["neriaka"], { neriaka: "Neriak - Fourth Gate" });
+  assert.equal(zones[0].name, "Neriak Foreign Quarter");
+});
+
+test("no two zones share a name — that would be one place listed twice", () => {
+  // `tox`/`toxxulia`, `northro`/`nro` and `steamfont`/`steamfontmts` are the same zones twice.
+  const names = zonesFromFiles("stock", FILES, { tox: "Toxxulia Forest", nro: "Northern Desert of Ro" }).map(
+    (z) => z.name,
+  );
+  assert.equal(new Set(names).size, names.length, `duplicates: ${names.join(", ")}`);
+  assert.equal(names.filter((n) => n === "Toxxulia Forest").length, 1);
+  assert.equal(names.filter((n) => n === "Northern Desert of Ro").length, 1);
+});
+
+test("the loser of a duplicate stays reachable under its file name", () => {
+  const byFile = new Map(zonesFromFiles("stock", ["tox", "toxxulia"]).map((z) => [z.file!, z.name]));
+  assert.equal(byFile.get("toxxulia"), "Toxxulia Forest"); // the curated file
   assert.equal(byFile.get("tox"), "Tox");
 });
 
-test("a folder with none of our known zones still yields a usable list", () => {
-  const zones = zonesFromFiles("goodurden", ["someplace", "elsewhere"], baseZones);
+test("a folder of zones we know nothing about still yields a usable list", () => {
   assert.deepEqual(
-    zones.map((z) => z.name),
+    zonesFromFiles("goodurden", ["someplace", "elsewhere"]).map((z) => z.name),
     ["Someplace", "Elsewhere"],
   );
 });
@@ -85,11 +78,26 @@ test("prettyZoneName only capitalizes — it doesn't invent words", () => {
   assert.equal(prettyZoneName("qey2hh1"), "Qey2hh1");
 });
 
-test("file-backed zones need no calibration, and don't claim any", () => {
-  const zones: Zone[] = zonesFromFiles("brewall", ["gfaydark"], baseZones);
-  assert.equal(zones[0].scale, undefined);
-  assert.equal(zones[0].center, undefined);
-  assert.equal(zones[0].mapImg, undefined);
-  // The bundled-image source id is distinct from any folder's.
-  assert.notEqual(zones[0].key, IMAGE_SOURCE);
+test("every curated zone is one entry with a file, and no file is claimed twice", () => {
+  const files = CURATED_ZONES.map((z) => z.file);
+  assert.equal(new Set(files).size, files.length, "a file is curated twice");
+  const names = CURATED_ZONES.map((z) => z.name);
+  assert.equal(new Set(names).size, names.length, "a name is curated twice");
+});
+
+test("findZone matches a log's wording — case, and a leading 'the'", () => {
+  const zones = zonesFromFiles("stock", FILES);
+  assert.equal(findZone("The Feerrott", zones)?.file, "feerrott");
+  assert.equal(findZone("feerrott", zones)?.file, "feerrott"); // the log's own casing
+  assert.equal(findZone("greater faydark", zones)?.file, "gfaydark");
+  assert.equal(findZone("stock:gfaydark", zones)?.file, "gfaydark"); // by key
+  assert.equal(findZone("Nowhere At All", zones), undefined);
+});
+
+test("sortZones groups a family together", () => {
+  const zones = sortZones(zonesFromFiles("stock", ["felwitheb", "gfaydark", "felwithea", "lfaydark"]));
+  assert.deepEqual(
+    zones.map((z) => z.file),
+    ["gfaydark", "lfaydark", "felwithea", "felwitheb"], // Faydark…, then Felwithe…
+  );
 });

@@ -11,7 +11,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { parseLine } from "../src/shared/parse-line";
+import { splitLine } from "../src/shared/log-parser";
+import { catchUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
+import type { LogCursor } from "./log-cursor";
 import type { LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
@@ -23,6 +26,15 @@ const POLL_MS = 500;
  * a single kind (a death, say) can still have just that.
  */
 const COMBAT_KINDS = new Set(["damage", "miss", "heal", "cast", "spell-outcome", "death", "buff-faded"]);
+
+/** What one pass of catching a log up came to — see `onCaughtUp`. */
+export interface CaughtUp {
+  file: string;
+  /** Bytes replayed. Zero when there was no gap (a fresh log, or nothing logged since we stopped). */
+  bytes: number;
+  /** Timestamp of the last event in the gap, if it had any — how stale the replay is. */
+  lastAt?: string;
+}
 
 export interface LogWatcher {
   start(logDir: string, activeLogFile: string): void;
@@ -36,6 +48,12 @@ export interface LogWatcher {
   onCombat(cb: (e: CombatEvent) => void): void;
   onLevel(cb: (e: LevelEvent) => void): void;
   onStatus(cb: (s: WatcherStatus) => void): void;
+  /**
+   * Fired once per `start`, after the gap between where we left off and the end of the log has been
+   * read — so a caller can decide what a gap that size means (see `isSameSitting`). Always fired,
+   * with `bytes: 0` when there was nothing to catch up on.
+   */
+  onCaughtUp(cb: (info: CaughtUp) => void): void;
 }
 
 /** Every eqlog_*.txt currently in a dir, absolute. */
@@ -72,7 +90,12 @@ function resolveTarget(logDir: string, activeLogFile: string): string | null {
   }
 }
 
-export function createLogWatcher(): LogWatcher {
+/**
+ * `cursor` remembers read positions across restarts. Without one the watcher still works and simply
+ * forgets where it was between runs — which is what the tests that don't care use, and what the app
+ * did before [ADR 0044](../specs/decisions/0044-the-log-position-outlives-the-app.md).
+ */
+export function createLogWatcher(cursor?: LogCursor): LogWatcher {
   const bus = new EventEmitter();
   let timer: NodeJS.Timeout | null = null;
   let logDir = "";
@@ -83,6 +106,8 @@ export function createLogWatcher(): LogWatcher {
   const seen = new Map<string, number>();
   let pending = "";
   let busy = false;
+  /** Set by `start`, cleared by the first poll that follows it — the pass that reads the gap. */
+  let catchingUp: { file: string; bytes: number; lastAt?: string } | null = null;
   /** Monotonic line counter — an event's `logId`, so it can point back at its line. */
   let logId = 0;
   let status: WatcherStatus = { watching: false };
@@ -107,7 +132,7 @@ export function createLogWatcher(): LogWatcher {
    * says — the same argument, for the case where we've read part of it.
    */
   function switchTarget(file: string | null, fromStart = false) {
-    if (target) seen.set(target, offset);
+    if (target) remember(target, offset);
     target = file;
     pending = "";
     if (!file) {
@@ -116,6 +141,55 @@ export function createLogWatcher(): LogWatcher {
     }
     const resume = seen.get(file);
     offset = resume ?? (fromStart ? 0 : safeSize(file));
+    // A position past the end means the file was replaced or rotated while we weren't looking, so
+    // it says nothing about this file: everything in it is unread, and reading it from the top is
+    // both correct and the only option.
+    if (offset > safeSize(file)) offset = 0;
+    // Starting anywhere but the top means the lines before us are never read — including the two
+    // that say where the player is. Recover that state from what we're skipping (and only from
+    // there: what comes *after* is a gap we're about to read properly, which is also why this
+    // can't run when we're starting at the top — it would emit those lines twice).
+    if (offset > 0) catchUp(file, offset);
+  }
+
+  /** Record progress — in memory for this run, and on disk so the next run resumes here. */
+  function remember(file: string, at: number): void {
+    seen.set(file, at);
+    cursor?.set(file, at);
+  }
+
+  /** How far back to look for the zone line, growing until one turns up. A long camp in one zone
+   *  can push it a long way behind the recent combat, and the whole point is to find it. */
+  const CATCHUP_WINDOWS = [64 * 1024, 512 * 1024, 4 * 1024 * 1024];
+
+  /**
+   * Recover the current zone and position from the tail of a log we're about to follow from its
+   * end. Emitted on the ordinary `zone`/`loc` channels, because that state *is* current — the
+   * events that are merely history (kills, loot, experience, casts) are not emitted at all.
+   */
+  function catchUp(file: string, before: number): void {
+    const size = Math.min(before, safeSize(file));
+    if (!size) return;
+    for (const window of CATCHUP_WINDOWS) {
+      const from = Math.max(0, size - window);
+      const { text } = readNew(file, from, size);
+      // A partial first line is junk, so drop it — unless we started at the very beginning.
+      const body = from === 0 ? text : text.slice(text.indexOf("\n") + 1);
+      const lines = body.split(/\r?\n/).flatMap((raw) => splitLine(raw) ?? []);
+      const state = catchUpState(lines);
+      if (state.zone) {
+        log.debug("caught up", { file: path.basename(file), zone: state.zone.zone, loc: !!state.loc, window });
+        bus.emit("zone", state.zone);
+        if (state.loc) bus.emit("loc", state.loc);
+        return;
+      }
+      // No zone line yet. If that was the whole file, there simply isn't one to find.
+      if (from === 0) {
+        if (state.loc) bus.emit("loc", state.loc);
+        return;
+      }
+    }
+    log.debug("no zone line within the catch-up window", { file: path.basename(file) });
   }
 
   function safeSize(file: string): number {
@@ -170,6 +244,7 @@ export function createLogWatcher(): LogWatcher {
         const { text, bytesRead } = readNew(target, offset, size);
         pending += text;
         offset += bytesRead;
+        if (catchingUp) catchingUp.bytes += bytesRead;
         const lines = pending.split(/\r?\n/);
         pending = lines.pop() ?? ""; // trailing partial line waits for more bytes
         for (const line of lines) {
@@ -177,15 +252,27 @@ export function createLogWatcher(): LogWatcher {
           // result to each matcher, then we fan the typed event out by its own `kind`.
           const event = parseLine(line, ++logId);
           if (!event) continue;
+          if (catchingUp) catchingUp.lastAt = event.at;
           bus.emit(event.kind === "loot" ? "loot" : event.kind, event);
           if (COMBAT_KINDS.has(event.kind)) bus.emit("combat", event);
         }
+        // Only now — the lines are ingested, so it's safe to say we've read them. A crash
+        // between the two would replay this batch, which is why the write isn't deferred.
+        remember(target, offset);
       }
       setStatus({ watching: true, file: target });
     } catch (e) {
       setStatus({ watching: false, error: (e as Error).message });
     } finally {
       busy = false;
+      // The first poll after `start` is the one that reads the gap; report it even when it was
+      // empty, so a caller doesn't have to guess whether one is still coming.
+      if (catchingUp) {
+        const done = catchingUp;
+        catchingUp = null;
+        if (done.bytes) log.debug("caught up on gap", done);
+        bus.emit("caughtUp", done);
+      }
     }
   }
 
@@ -198,18 +285,30 @@ export function createLogWatcher(): LogWatcher {
         setStatus({ watching: false, error: dir ? `Log folder not found: ${dir}` : "No log folder set" });
         return;
       }
-      // Every log already on disk is history, not news — pin each at its current end so that
-      // switching characters later follows the new writing rather than replaying the past.
+      // Where each log stands. A log we have read before resumes from there, so whatever was
+      // written while the app was closed is read once, as the news it is (ADR 0044). A log we have
+      // never read is pinned at its end, because reading one from the top replays a whole history
+      // as if it were happening now (ADR 0030) — and on a first run there is no state to preserve.
       seen.clear();
-      for (const existing of existingLogs(dir)) seen.set(existing, safeSize(existing));
-      switchTarget(resolveTarget(dir, file));
-      log.debug("start watching", { dir, file, target });
+      for (const existing of existingLogs(dir)) {
+        seen.set(existing, cursor?.get(existing) ?? safeSize(existing));
+      }
+      const resolved = resolveTarget(dir, file);
+      // Announce the file BEFORE any of it is parsed: the character's name comes from the filename,
+      // and it's what tells the kill log and the meter which rows are yours. The gap is read by the
+      // poll below, so getting this out of order would file a whole session under the wrong name.
+      if (resolved) setStatus({ watching: true, file: resolved });
+      catchingUp = { file: resolved ?? "", bytes: 0 };
+      switchTarget(resolved);
+      log.debug("start watching", { dir, file, target, from: offset });
       timer = setInterval(poll, POLL_MS);
       poll();
     },
     stop() {
       if (timer) clearInterval(timer);
       timer = null;
+      catchingUp = null; // a start that never got its poll shouldn't report a gap later
+      if (target) remember(target, offset); // so the next run picks up exactly here
       setStatus({ watching: false });
     },
     status: () => status,
@@ -221,5 +320,6 @@ export function createLogWatcher(): LogWatcher {
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
     onStatus: (cb) => void bus.on("status", cb),
+    onCaughtUp: (cb) => void bus.on("caughtUp", cb),
   };
 }

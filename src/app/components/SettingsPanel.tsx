@@ -29,6 +29,8 @@ export default function SettingsPanel() {
   useEffect(() => {
     void api()?.display.list().then(setDisplays);
   }, []);
+  // True while placing a custom alert spot (the overlay is catching a click).
+  const [placing, setPlacing] = useState(false);
 
   if (!settings) return <p className="muted">Loading settings…</p>;
 
@@ -46,6 +48,22 @@ export default function SettingsPanel() {
   const addSuggestion = (spell: string) => {
     if (ca.watches.some((w) => w.spell.trim().toLowerCase() === spell.trim().toLowerCase())) return;
     setWatches([...ca.watches, { id: crypto.randomUUID(), spell, enabled: true }]);
+  };
+
+  // Custom alert spots (locations): a whole-array replace, like watches.
+  const setLocations = (locations: typeof ca.locations) => patch({ castAlerts: { locations } });
+  const renameLocation = (id: string, name: string) =>
+    setLocations(ca.locations.map((l) => (l.id === id ? { ...l, name } : l)));
+  const removeLocation = (id: string) => setLocations(ca.locations.filter((l) => l.id !== id));
+  // Let the user click a point on the overlay; add it as a named spot they can then rename / pick.
+  const placeSpot = async () => {
+    setPlacing(true);
+    try {
+      const p = await api()?.alerts.placeLocation();
+      if (p) setLocations([...ca.locations, { id: crypto.randomUUID(), name: `Spot ${ca.locations.length + 1}`, ...p }]);
+    } finally {
+      setPlacing(false);
+    }
   };
 
   async function browse() {
@@ -343,6 +361,7 @@ export default function SettingsPanel() {
                     </span>
                     <AlertStyleFields
                       style={alertStyle(ca, w)}
+                      locations={ca.locations}
                       onChange={(over) => updateWatch(w.id, { style: { ...w.style, ...over } })}
                     />
                     <div className="row" style={{ gap: 8, marginTop: 4 }}>
@@ -402,8 +421,44 @@ export default function SettingsPanel() {
 
               <AlertStyleFields
                 style={ca}
+                locations={ca.locations}
                 onChange={(over) => patch({ castAlerts: over })}
               />
+
+              <div className="row astyle-row" style={{ alignItems: "flex-start" }}>
+                <span className="astyle-label">Custom spots</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {ca.locations.length === 0 && (
+                    <span className="muted small">
+                      None yet — place one to pin an alert anywhere on the overlay, then pick it in Position.
+                    </span>
+                  )}
+                  {ca.locations.map((loc) => (
+                    <div className="row" key={loc.id} style={{ gap: 6, marginBottom: 4 }}>
+                      <input
+                        className="field sm"
+                        value={loc.name}
+                        onChange={(e) => renameLocation(loc.id, e.target.value)}
+                      />
+                      <span className="muted small" style={{ whiteSpace: "nowrap" }}>
+                        {Math.round(loc.fx * 100)}%, {Math.round(loc.fy * 100)}%
+                      </span>
+                      <button className="btn ghost sm" title="Remove this spot" onClick={() => removeLocation(loc.id)}>
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    className="btn sm"
+                    style={{ marginTop: 4 }}
+                    onClick={placeSpot}
+                    disabled={placing}
+                    title="Click a point on the alert overlay to place a spot alerts can appear at"
+                  >
+                    {placing ? "Click the overlay… (Esc to cancel)" : "＋ Place a spot"}
+                  </button>
+                </div>
+              </div>
 
               {displays.length > 1 && (
                 <div className="row astyle-row">

@@ -47,6 +47,9 @@ const api: EqlApi = {
   alerts: {
     onCast: (cb) => on(CH.castAlert, cb),
     test: (watchId) => ipcRenderer.invoke(CH.alertsTest, watchId),
+    placeLocation: () => ipcRenderer.invoke(CH.alertPlaceStart),
+    onPlaceBegin: (cb) => on(CH.alertPlaceBegin, cb),
+    placed: (point) => ipcRenderer.send(CH.alertPlaceDone, point),
   },
   log: {
     import: () => ipcRenderer.invoke(CH.logImport),
@@ -127,6 +130,7 @@ const api: EqlApi = {
     openP99: (zone) => ipcRenderer.invoke(CH.mapOpenP99, zone),
     sources: () => ipcRenderer.invoke(CH.mapSources),
     load: (sourceId, zoneFile) => ipcRenderer.invoke(CH.mapLoad, sourceId, zoneFile),
+    names: () => ipcRenderer.invoke(CH.mapNames),
   },
   awari: {
     send: (payload) => ipcRenderer.send(CH.awariOutbound, payload),

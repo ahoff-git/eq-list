@@ -171,7 +171,9 @@ list, hunt, search, damage, session, settings.
     **Suggested** click-to-add chips of common crowd control grouped by effect — see
     `src/shared/cast-suggestions.ts`, since EQ names most CC off-theme — and an **Alert style**
     block: color swatches, a **sound** picker (synthesized presets from `src/lib/alertSounds.ts`,
-    with a Preview button), on-screen **position**, **motion** (pulse/wiggle/float/none),
+    with a Preview button), on-screen **position** (six presets **or a custom spot placed with the
+    mouse** — a **Custom spots** manager places/names/deletes them, [ADR 0045](../decisions/0045-place-a-custom-alert-spot.md)),
+    **motion** (pulse/wiggle/float/none),
     **duration**, and — with more than one monitor — which **display** the overlay covers. Those
     controls are `AlertStyleFields`, used twice: once for the **defaults** and again for a watch
     with a style **of its own** (🎨 on its row, which copies the defaults and then lets you tune
@@ -206,6 +208,14 @@ list, hunt, search, damage, session, settings.
     the alert. It has to — the overlay only knows the defaults, so nothing per-watch could reach
     the screen otherwise — and an alert already up keeps the look it fired with. Two alerts can
     now occupy different corners, so the banner renders one stack per position.
+
+    A `position` is a preset **or** `loc:<id>` — a **custom spot** the user placed with the mouse,
+    stored as a fraction of the display in `castAlerts.locations` (survives a resolution/monitor
+    change). Placing one lends the click-through overlay a single click: `alerts.placeLocation()`
+    makes it interactive + focusable, `AlertPlacement` (in the overlay) shows a catcher + preview
+    and reports the click (or Esc), and main restores click-through and hands the point back to
+    Settings to name. The overlay resolves `loc:<id>` → its `fx/fy` (a deleted spot falls back to
+    the top). See [ADR 0045](../decisions/0045-place-a-custom-alert-spot.md).
 
     The overlay covers the chosen display, and changing that **moves** it rather than rebuilding
     it: recreating raced with its own teardown (the old window's `closed` nulled out the new

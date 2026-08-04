@@ -10,7 +10,7 @@ import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE } from "./wiki/api";
 import { importLog } from "./log-import";
-import { createMapReader, listSources } from "./eq-maps";
+import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { alertStyle } from "../src/shared/cast-alerts";
 import { createMapWindow, getAlertWindow, getMainWindow, showInSearch } from "./windows";
 import { resetPositions } from "./window-state";
@@ -60,6 +60,7 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // Parsed map files, kept for the life of the app: they don't change under us, and a zone
   // is up to 800KB of text that several windows may ask for.
   const mapReader = createMapReader();
+  const zoneNamer = createZoneNamer();
 
   // ── shopping list ──
   ipcMain.handle(CH.listGet, () => store.getList());
@@ -98,6 +99,33 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
       at: new Date().toISOString(),
       style: alertStyle(alerts, watch),
     } satisfies CastAlertEvent);
+  });
+
+  // ── placing a custom alert spot ──
+  // The overlay is click-through and never focused, so it can't catch a click. To place a spot we
+  // make it interactive + focusable for the moment, tell it to show the placement layer, and
+  // resolve this promise when it reports the click (or null on Esc). No overlay (alerts off) → null.
+  let placeResolve: ((p: { fx: number; fy: number } | null) => void) | null = null;
+  ipcMain.handle(CH.alertPlaceStart, () => {
+    const overlay = getAlertWindow();
+    if (!overlay || overlay.isDestroyed()) return null;
+    placeResolve?.(null); // a stray earlier placement never finished — drop it
+    overlay.setIgnoreMouseEvents(false);
+    overlay.setFocusable(true);
+    overlay.focus();
+    overlay.webContents.send(CH.alertPlaceBegin);
+    return new Promise<{ fx: number; fy: number } | null>((resolve) => {
+      placeResolve = resolve;
+    });
+  });
+  ipcMain.on(CH.alertPlaceDone, (_e, point: { fx: number; fy: number } | null) => {
+    const overlay = getAlertWindow();
+    if (overlay && !overlay.isDestroyed()) {
+      overlay.setIgnoreMouseEvents(true, { forward: true }); // back to click-through
+      overlay.setFocusable(false);
+    }
+    placeResolve?.(point ?? null);
+    placeResolve = null;
   });
 
   // "Eat" a log file: digest it into the kill log (→ mob knowledge). The kill log flags your
@@ -244,6 +272,12 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // Listed fresh each call: the user can install a pack, or repoint their log directory,
   // without restarting the app.
   ipcMain.handle(CH.mapSources, () => listSources(store.getSettings().logDir));
+  // Named separately from the source list: naming reads every map in the folder, and the picker is
+  // usable (by file name) while that's in flight.
+  ipcMain.handle(CH.mapNames, () => {
+    const { sources } = listSources(store.getSettings().logDir);
+    return sources.length ? zoneNamer.names(sources) : {};
+  });
   ipcMain.handle(CH.mapLoad, (_e, sourceId: string, zoneFile: string) => {
     const dir = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId)?.dir;
     if (!dir) return null;

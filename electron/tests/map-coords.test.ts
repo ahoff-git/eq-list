@@ -1,24 +1,19 @@
 /**
- * Black-box tests for the ported map geometry (src/shared/map). The two coord functions
- * are exact inverses up to integer rounding, so a round-trip must land back within one
- * grid step (one step = the zone's `scale`, adjusted for how far the image was fitted).
+ * Black-box tests for the ported map geometry (src/shared/map). The two coord functions are exact
+ * inverses up to integer rounding, so a round-trip must land back within one grid step (one step =
+ * the projection's `scale`, adjusted for how far the map was fitted).
+ *
+ * A projection is never authored — a map file states its own (see `vectorProjection` and ADR 0042) —
+ * so these use projections directly rather than going through a zone.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  canvasToEqCoords,
-  canvasToImagePx,
-  clampPan,
-  eqToCanvasCoords,
-  fitRect,
-  imagePxToCanvas,
-} from "../../src/shared/map/coords";
-import { baseZones, findZone } from "../../src/shared/map/zones";
-import type { MapView } from "../../src/shared/map/types";
+import { canvasToEqCoords, clampPan, eqToCanvasCoords, fitRect } from "../../src/shared/map/coords";
+import type { MapProjection, MapView } from "../../src/shared/map/types";
 
 const CANVAS = { width: 1000, height: 1000 };
 /** A landscape map, a portrait one and a square one, so letterboxing is covered both ways. */
-const IMAGES = [
+const MAPS = [
   { width: 550, height: 328 },
   { width: 271, height: 519 },
   { width: 400, height: 400 },
@@ -29,6 +24,8 @@ const SAMPLES = [
   { y: -500, x: 250 },
   { y: 1234, x: 678 },
 ];
+/** A spread of real scales: a city at ~1 unit/px through a continent at ~12. */
+const SCALES = [1.3, 3, 9.4, 12.7];
 
 test("fitRect fits, centres and preserves aspect", () => {
   // Landscape into a square: full width, letterboxed top and bottom.
@@ -44,57 +41,52 @@ test("fitRect fits, centres and preserves aspect", () => {
   });
 });
 
-test("eq→canvas→eq round-trips within one grid step for every calibrated zone", () => {
-  for (const zone of baseZones) {
-    if (!zone.scale || !zone.center) continue; // uncalibrated (no map, or awaiting 📐)
-    for (const image of IMAGES) {
+test("eq→canvas→eq round-trips within one grid step, at every scale and aspect", () => {
+  for (const scale of SCALES) {
+    for (const image of MAPS) {
+      const projection: MapProjection = { scale, center: { y: 120, x: -340 } };
       const view: MapView = { image, canvas: CANVAS };
       // EQ units per canvas pixel — what a whole-pixel round-trip can lose.
-      const tol = Math.ceil(zone.scale * (image.width / fitRect(image, CANVAS).width)) + 1;
+      const tol = Math.ceil(scale * (image.width / fitRect(image, CANVAS).width)) + 1;
       for (const eq of SAMPLES) {
-        const px = eqToCanvasCoords(eq, zone, view);
-        assert.ok(px, `${zone.name} should map ${JSON.stringify(eq)}`);
-        const back = canvasToEqCoords(px, zone, view);
+        const px = eqToCanvasCoords(eq, projection, view);
+        assert.ok(px, `should map ${JSON.stringify(eq)}`);
+        const back = canvasToEqCoords(px, projection, view);
         assert.ok(back);
-        assert.ok(Math.abs(back.y - eq.y) <= tol, `${zone.name}: y ${back.y} vs ${eq.y} (tol ${tol})`);
-        assert.ok(Math.abs(back.x - eq.x) <= tol, `${zone.name}: x ${back.x} vs ${eq.x} (tol ${tol})`);
+        assert.ok(Math.abs(back.y - eq.y) <= tol, `y ${back.y} vs ${eq.y} (tol ${tol})`);
+        assert.ok(Math.abs(back.x - eq.x) <= tol, `x ${back.x} vs ${eq.x} (tol ${tol})`);
       }
     }
   }
 });
 
-test("a zone centred on the origin puts EQ 0,0 at the image's centre", () => {
-  const gfay = findZone("Greater Faydark", baseZones);
-  assert.ok(gfay);
-  assert.deepEqual(gfay.center, { y: 0, x: 0 });
-  // A letterboxed image is still centred in the canvas, so the origin lands mid-canvas.
+test("the projection's centre lands at the centre of the drawn map", () => {
+  const projection: MapProjection = { scale: 10, center: { y: 600, x: 1200 } };
+  // A letterboxed map is still centred in the canvas, so its centre is mid-canvas.
   const view: MapView = { image: { width: 250, height: 500 }, canvas: CANVAS };
-  assert.deepEqual(eqToCanvasCoords({ y: 0, x: 0 }, gfay, view), { x: 500, y: 500 });
-  assert.deepEqual(canvasToEqCoords({ x: 500, y: 500 }, gfay, view), { y: 0, x: 0 });
+  assert.deepEqual(eqToCanvasCoords(projection.center, projection, view), { x: 500, y: 500 });
+  assert.deepEqual(canvasToEqCoords({ x: 500, y: 500 }, projection, view), projection.center);
 });
 
-test("scale is EQ units per image pixel, measured off the map as drawn", () => {
-  // 10 units/px on a 400px image drawn at 2.5× into a 1000px canvas → 4 units per canvas
-  // pixel, so 400 EQ units west of the centre is 100px right of it (EQ axes are flipped).
-  const zone = { name: "Z", key: "z", scale: 10, center: { y: 0, x: 0 } };
+test("scale is EQ units per map pixel, measured off the map as drawn", () => {
+  // 10 units/px on a 400px map drawn at 2.5× into a 1000px canvas → 4 units per canvas pixel, so
+  // 400 EQ units west of centre is 100px right of it (EQ axes are flipped).
+  const projection: MapProjection = { scale: 10, center: { y: 0, x: 0 } };
   const view: MapView = { image: { width: 400, height: 400 }, canvas: CANVAS };
-  assert.deepEqual(eqToCanvasCoords({ y: 0, x: -400 }, zone, view), { x: 600, y: 500 });
-  assert.deepEqual(eqToCanvasCoords({ y: -400, x: 0 }, zone, view), { x: 500, y: 600 });
+  assert.deepEqual(eqToCanvasCoords({ y: 0, x: -400 }, projection, view), { x: 600, y: 500 });
+  assert.deepEqual(eqToCanvasCoords({ y: -400, x: 0 }, projection, view), { x: 500, y: 600 });
   // Letterboxing halves the drawn size here, so the same EQ offset covers half the pixels.
   const half: MapView = { image: { width: 400, height: 800 }, canvas: CANVAS };
-  assert.deepEqual(eqToCanvasCoords({ y: 0, x: -400 }, zone, half), { x: 550, y: 500 });
+  assert.deepEqual(eqToCanvasCoords({ y: 0, x: -400 }, projection, half), { x: 550, y: 500 });
 });
 
-test("an uncalibrated zone yields undefined (nothing to plot)", () => {
+test("no projection means nothing is plotted", () => {
   const view: MapView = { image: { width: 400, height: 400 }, canvas: CANVAS };
-  const choose = findZone("Choose a zone", baseZones);
-  assert.ok(choose);
-  assert.equal(eqToCanvasCoords({ y: 0, x: 0 }, choose, view), undefined);
-  assert.equal(canvasToEqCoords({ x: 0, y: 0 }, choose, view), undefined);
-  // A zone awaiting calibration behaves the same — its map draws, its dot doesn't.
-  const runnyeye = findZone("RunnyEye Citadel", baseZones);
-  assert.ok(runnyeye?.mapImg);
-  assert.equal(eqToCanvasCoords({ y: 0, x: 0 }, runnyeye, view), undefined);
+  assert.equal(eqToCanvasCoords({ y: 0, x: 0 }, undefined, view), undefined);
+  assert.equal(canvasToEqCoords({ x: 0, y: 0 }, undefined, view), undefined);
+  // A map with no size can't be drawn on either — which is the state before one has loaded.
+  const projection: MapProjection = { scale: 1, center: { y: 0, x: 0 } };
+  assert.equal(eqToCanvasCoords({ y: 0, x: 0 }, projection, { image: { width: 0, height: 0 }, canvas: CANVAS }), undefined);
 });
 
 test("clampPan keeps the map covering the canvas", () => {
@@ -109,15 +101,4 @@ test("clampPan keeps the map covering the canvas", () => {
   assert.deepEqual(clampPan({ x: -300, y: 40 }, 0.5, canvas), { x: 0, y: 0 });
   // A canvas that hasn't been measured yet can't produce a NaN pan.
   assert.deepEqual(clampPan({ x: -10, y: -10 }, 3, { width: 0, height: 0 }), { x: 0, y: 0 });
-});
-
-test("canvas↔image pixel conversions invert, and need no calibration", () => {
-  const view: MapView = { image: { width: 550, height: 328 }, canvas: CANVAS };
-  const rect = fitRect(view.image, CANVAS);
-  assert.deepEqual(canvasToImagePx({ x: rect.x, y: rect.y }, view), { x: 0, y: 0 });
-  assert.deepEqual(imagePxToCanvas({ x: 0, y: 0 }, view), { x: rect.x, y: rect.y });
-  const px = { x: 137, y: 202 };
-  const back = canvasToImagePx(imagePxToCanvas(px, view)!, view);
-  assert.ok(back);
-  assert.ok(Math.abs(back.x - px.x) < 1e-9 && Math.abs(back.y - px.y) < 1e-9);
 });

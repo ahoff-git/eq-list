@@ -3,34 +3,34 @@
 ## Purpose
 Show the current zone's map with the player's live location (and a short movement
 trail) plotted on it, in a sibling window opened from the main window's 🗺 button.
-Maps come either from **the game's own map files** (every zone, self-locating) or from the
-**bundled images** (a handful of hand-calibrated P99 scans) — the player chooses, see
-**Sources** below and [ADR 0039](../decisions/0039-render-the-game-s-own-maps.md).
+
+Every map is one of **the game's own map files** — the `.txt` vector maps EverQuest itself draws,
+from the player's install. There are no bundled images and nothing to calibrate: the geometry is
+world coordinates, so a map knows where it is. See
+[ADR 0039](../decisions/0039-render-the-game-s-own-maps.md) for adopting them and
+[ADR 0042](../decisions/0042-only-the-game-s-own-maps.md) for dropping the scans.
 
 ## Responsibilities
 - **Geometry core** (`src/shared/map/`, ported from the eq-map project — see
   [ADR 0010](../decisions/0010-ported-map-core.md)), pure and DOM-free so it's unit
   tested (`electron/tests/map-coords.test.ts`):
   - `types.ts` — `Loc {y,x}` (EQ order), `Point {x,y}`, `CanvasSize`, `MapRect`, `MapView`,
-    `Zone` (`scale` + `center` calibration, `mapImg`/`mapKeyImg`, optional `layer`).
-  - `coords.ts` — `fitRect` (where the image lands on the canvas — the one definition the
-    drawing and the maths share), `eqToCanvasCoords` / `canvasToEqCoords`, exact inverses
-    that return `undefined` for an uncalibrated zone, and `canvasToImagePx` /
-    `imagePxToCanvas` for calibration fixes. Math derived in
-    [data-model.md](./data-model.md), decided in
-    [ADR 0038](../decisions/0038-a-map-has-a-scale-and-a-centre.md).
-  - `zones.ts` — `baseZones` (P99 classic maps, image paths retargeted to `/maps/…`),
-    `findZone` (case/leading-"the "-insensitive, matches the log's zone strings, plus an
-    optional layer), `sortZones`, and the layer helpers `zoneLayers` / `collapseLayers` /
-    `onLayer` / `layerLabel` (`electron/tests/map-zones.test.ts`).
-- **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawImageScaled`
-  (draws into `fitRect`'s rectangle and returns it), `drawLine`, `drawCircle`, `clearCanvas`.
-  Vector geometry is drawn by `MapPanel` onto the same static lower canvas, batched into one
-  `Path2D` per colour (the biggest zones carry 20k segments) with hairline strokes that
-  survive zoom. A segment whose file colour is pure black gets the panel's default line
-  colour — black meant "no colour given", and a black line on a dark panel is no map at all.
-  Points of interest are drawn on the *overlay* canvas instead, so their labels stay a
-  constant size as you zoom, like every other marker and like the game's own map.
+    `MapProjection` (`scale` + `center`, **read off a map, never authored**), and `Zone`, which is
+    now just a name and the map file behind it.
+  - `coords.ts` — `fitRect` (where the map lands on the canvas — the one definition the drawing and
+    the maths share), `eqToCanvasCoords` / `canvasToEqCoords`, exact inverses that take a projection
+    and return `undefined` without one, and `clampPan` (a zoomed map can't be dragged off into blank
+    space). Math derived in [data-model.md](./data-model.md).
+  - `zones.ts` — `CURATED_ZONES` (the few names the solver gets wrong, see **Zone names**),
+    `findZone` (case- and leading-"the"-insensitive, so the log's wording resolves), `sortZones`,
+    and `onLayer` for floor-scoped markers.
+- **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawLine`, `drawCircle`,
+  `clearCanvas`. Geometry itself is drawn by `MapPanel` onto the static lower canvas, batched into
+  one `Path2D` per colour (the biggest zones carry 20k segments) with hairline strokes that survive
+  zoom. A segment whose file colour is pure black gets the panel's default line colour — black meant
+  "no colour given", and a black line on a dark panel is no map at all. Points of interest are drawn
+  on the *overlay* canvas instead, so their labels stay a constant size as you zoom, like every other
+  marker and like the game's own map.
 - **Location feed** — a `/loc` line (`Your Location is Y, X, Z`) becomes a `LocEvent`
   via `parseLocLine` (`src/shared/log-parser.ts`) and flows through the same
   main→IPC→renderer pipeline as the `zone` event (`watcher.onLoc` → `currentLoc` →
@@ -50,6 +50,21 @@ Maps come either from **the game's own map files** (every zone, self-locating) o
   nowhere to go, and a drag that visibly did nothing must still not ping. Move mode's pin drag
   wins over panning, which is its whole job.
 
+  **Everything drawn names itself on hover** (`src/shared/map/hit-test.ts`, pure and tested): a
+  kill says which mob, when, what dropped and *how much to believe its position* (the tier's own
+  wording, since that's the one thing a dot can't show — see
+  [ADR 0023](../decisions/0023-kill-heatmap.md)); a peer says who they are; a ping says who pinged;
+  the player dot says its coordinates; a map label says its full text and which kind it is. One
+  target list and one hit-test, so there's no branch per marker kind.
+
+  Overlaps are the interesting part, and why the pick is a tested function rather than inline: a
+  crowded camp can have a pin, a kill and a zone label within a few pixels. Nearest wins, with a
+  small `priority` nudge settling near-ties — what you placed yourself outranks what the log
+  inferred, which outranks the map's own labels — and each kind carries its own radius, since a pin
+  is a thing you aim at while a kill dot is one of hundreds. **Clicking a kill** opens the ☠ list
+  filtered to that mob, which narrows the heatmap to it as well (one filter drives both), and
+  clicking a marker never falls through to a ping.
+
   The zoom ceiling depends on what's drawn: an image runs out of pixels (`IMAGE_MAX_ZOOM`, 6×),
   while the game's own maps are lines and stay sharp, so they go to `VECTOR_MAX_ZOOM` (30×) —
   which a dungeon corridor needs.
@@ -66,47 +81,50 @@ Maps come either from **the game's own map files** (every zone, self-locating) o
   window's and one that may go **above 100%** — `MAP_UI_SCALE`, since a map is a picture you lean
   into rather than an overlay to shrink; see
   [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)), **minimize**,
-  **maximize/restore**, a **pin** (per-window always-on-top, via the shared `PinButton`), a
-  **layer** dropdown (only when the zone has more than one map — see **Layers** below), a
-  **key** toggle (the zone's `mapKeyImg` beside the map, **zoomable** — `MapKey`: scroll
-  to zoom toward the cursor, drag to pan, double-click to reset, since the key scans are
-  unreadable at sidebar width), and — with Debug logging on — the 📐 calibration toggle. A zone with
-  **no configured map** (most of eqlwiki's ~117 zones — 20 are bundled, 15 calibrated)
-  shows a clear empty panel: it names the zone, notes saved markers appear once it's
-  mapped, and offers a **View on Project 1999** button (`map.openP99` → the zone's P99 map
-  page in the browser). Such zones stay selectable in the dropdown, flagged "(no map)".
-- **Calibration** (dev-only) — a map needs two numbers: `scale` (EQ units per image pixel)
-  and `center` (the EQ coordinate at the image's centre). Both come from **clicking**.
-  `src/shared/map/calibration.ts` is pure (`solveCalibration`, `centerFrom`,
-  `nudgeCalibration`, `nextStep`, `calibrationValues`); `src/lib/map/useCalibration.ts`
-  owns the fixes and the keyboard.
-  With the tray's **Debug logging** on, a **📐 toggle** appears in the map titlebar for any
-  zone that has an image — *including one with no calibration yet*, which is the case it
-  exists for. In calibration mode a **coordinate grid** (dots at nice EQ coords across the
-  image, origin highlighted) overlays the map, and a click records a **fix**: stand
-  somewhere, `/loc`, click that spot. One fix places the map; a second one far away sets its
-  scale too, which is the whole calibration — the EQ distance between two fixes over the
-  pixel distance *is* EQ units per pixel. Fixes draw as numbered crosses (in image pixels,
-  so they survive a resize) and can be cleared. Fine-tuning stays on the keyboard: I/J/K/L
-  move the centre by the step, W/S scale ±1%, −/= change the step. The live zone mutates so
-  the dot slides as you tune, and the panel shows the paste-ready `scale`/`center` with a
-  copy button. See [ADR 0038](../decisions/0038-a-map-has-a-scale-and-a-centre.md).
+  **maximize/restore**, a **pin** (per-window always-on-top, via the shared `PinButton`) and a
+  **floor** dropdown (only when the map labels more than one storey — see **Floors**). A zone with
+  **no map file** shows a clear empty panel: it names the zone, says which map set was looked in,
+  notes that saved markers appear once it's mapped, and offers a **View on Project 1999** button
+  (`map.openP99` → the zone's P99 map page in the browser) — the one place a scan is still useful,
+  now that we don't ship any.
 - **Sources** (`src/shared/map/map-sources.ts` + `electron/eq-maps.ts` + the titlebar's
-  leftmost dropdown, hover it for the folder layout) — where maps come from:
-  - **Bundled images** — the P99 scans in `public/maps/`, needing hand calibration. ~15 zones.
-  - **Game maps** — `<EverQuest>/maps/`, the `.txt` maps the game itself draws. Found from the
-    log folder in Settings (`<EQ>/Logs`), so there's nothing extra to configure. 133 zones on
-    the EQL install, including its custom ones and far more geometry than the P99 scans.
+  leftmost dropdown, hover it for the folder layout) — where maps come from. With no maps folder
+  found there are **no sources**, and the window says so: there's no bundled fallback to hide behind.
+  - **Game maps** — `<EverQuest>/maps/`, the ones the game ships with. Found from the log folder in
+    Settings (`<EQ>/Logs`), so there's nothing extra to configure. 133 zones on the EQL install,
+    including its custom ones.
   - **A pack** — any subfolder of `maps/` holding `.txt` files, discovered not hardcoded:
     unzip Brewall's into `maps/Brewall/` (568 zones, the most labels) or Goodurden's into its
     own subfolder and it shows up in the dropdown. The selection persists.
 
   Every source yields a `Zone[]`, so the picker, `findZone`, pins, kills and layers all work
-  against one shape. **Naming is the hard part**: files are named for a zone's *short* name
-  (`gfaydark`) and the log only says the long one, so `map-sources.ts` maps them with an alias
-  table for the zones we ship images for plus two conservative rules — and shows the file's
-  own name (`gukbottom`) for the rest, which stays selectable. It deliberately does not guess:
-  looser rules map "Qeynos Hills" onto `qeynos` and "East Commonlands" onto `commonlands`.
+  against one shape.
+- **Zone names** (`src/shared/map/zone-names.ts`, pure — `electron/tests/zone-names.test.ts`) —
+  files are named for a zone's *short* name (`gfaydark`) and nothing in them says the long one, but
+  **the packs label their exits**, so every `to The Lesser Faydark` marker names a real zone and the
+  corpus is its own gazetteer — in the server's own wording, not a table typed from memory.
+
+  Matching a harvested name to a file needs **two independent signals**, because either alone is
+  confidently wrong. Spelling (`gfaydark` sits inside `greaterfaydark`) offers `sebilis` "Western
+  Cabilis" and `grobb` "The Gorge of King Xorbb". **Adjacency** is the check: if this file is zone X,
+  the maps that link *to* X should be zones it links back to — which refuses those two, and rescues
+  `gfaydark` (spelling score 51) and `commons` → "West Commonlands" (which loses on spelling to "The
+  Commonlands"). Assignment is then global, one name to one file, so the right claimant takes a name
+  out from under a wrong one.
+
+  Names are pooled across **every** folder before solving: a short name means the same zone in each
+  pack, and the game's own maps carry few exit labels — sharing Brewall's homework lifts them from
+  47 named to 87 of 133. It runs on demand (~1s for 568 files) and the picker relabels itself when
+  it lands, so nothing waits on it. Priority is **catalogue → solved → the file's own name**: the
+  curated names win because the solver is occasionally sure and wrong (it offers `neriaka` the
+  Fourth Gate, which is a different file), and a zone still nameless shows as `gukbottom`, which is
+  honest and selectable.
+- **The zone picker** (`ZonePicker`) is a **type-to-find** box, not a dropdown: 568 zones in a
+  `<select>` is a scroll rather than a choice. Ranking is the app's existing `fuzzyRank` (token
+  overlap plus Levenshtein), over the zone name **and its file name** — the file is what a zone we
+  couldn't name is called, and what someone who knows EverQuest would type. ↑↓ and Enter work, and
+  the first row is always "Follow current", since following the log is the default and has to stay
+  one keystroke away.
 - **The EQ map format** (`src/shared/map/eqmap.ts`, pure — `electron/tests/eqmap.test.ts`):
   `L`ine and `P`oint records, parsed into geometry and labelled points. **Its coordinates are
   world coordinates** (x/y negated, the same negation `coords.ts` applies), which is why a
@@ -142,14 +160,6 @@ Maps come either from **the game's own map files** (every zone, self-locating) o
   pings via the same `layer` field as image layers, and the picker marks the floor your `/loc`
   height puts you on with **· you**. See
   [ADR 0040](../decisions/0040-floors-come-from-the-mapmaker.md).
-- **Layers** — some zones only exist as several floor images (RunnyEye Citadel's four). Those
-  are several `Zone`s **sharing a `name`**, differing by `key` + `layer`, so the picker lists
-  the place **once** (`collapseLayers`) and the layer is a second dropdown beside it. The log
-  never says which floor you're on, so a layer is only ever a *choice*: `findZone` defaults to
-  the lowest, and markers are layer-scoped **only where a person picked the layer** — pins and
-  pings carry one, while your position, peers, kills and roam areas stay zone-wide and draw on
-  every layer (`onLayer` treats an unstamped marker as zone-wide, which is also what pins from
-  before this shipped are). See [ADR 0037](../decisions/0037-one-zone-many-layers.md).
 - **Pins** (`src/shared/map/pins.ts` palette + `MapPanel`/map window) — a toolbar of
   pin kinds (Star/Danger/Camp/Loot/Note) plus a **Move** tool (drag your pins to
   reposition). Pick a kind up, then a map click **drops** it at that spot; with none
@@ -193,6 +203,15 @@ Maps come either from **the game's own map files** (every zone, self-locating) o
   Right-click a marker (or use Settings) to hide the markers. Kills someone else landed are
   in the list, named and believed half as much — the position came from *your* `/loc`, and they
   were standing somewhere else.
+  **Hovering a row picks its kills out on the map**: a mob's row rings every one of its kills, an
+  individual row rings just that one, and everything else fades to a third rather than disappearing
+  — a marker you can still see is context, one that vanishes is a lie about what's on the map. The
+  ring sits *outside* the dot so the dot's own size and colour still mean what they always did
+  (confidence). Leaving the list clears it outright: the rows hand the emphasis back and forth
+  between a mob and one of its kills, so without that backstop, walking the cursor out of a kill row
+  would leave a mob lit up for good. Emphasis by mob also lights **peers'** kills of the same mob,
+  since "where did those die" includes what the room saw.
+
   The panel's filters — time window, mob, what dropped, dropped-anything, confidence floor —
   come from `src/shared/kill-filters.ts` and are applied to **both** the map and the list, so
   they're always the same query. Drops are attached to kills as the loot lines arrive, which
@@ -218,22 +237,26 @@ Maps come either from **the game's own map files** (every zone, self-locating) o
   picker) rather than acted on, because auto-hiding four fifths of a map on an inference is a
   worse failure than a busy map. Nothing derived from the log is filed under a floor: only pins
   and pings, which a person placed while looking at one.
-- P99↔EQL map alignment isn't guaranteed; the calibration values are a starting set.
-  Re-tuning is done in-app via the dev-only calibration tool (above), then the values
-  are hand-copied into `zones.ts` — the tool doesn't persist them itself, deliberately, so
-  a map's calibration stays reviewable in git rather than living in one user's store.
-- **A map's pixel dimensions are never authored.** They're read off the loaded image, so the
-  only hand-written numbers are the two that can't be derived (`scale`, `center`). Five
-  bundled zones once carried their image's dimensions in place of a calibration; that's the
-  mistake this rules out (see [ADR 0038](../decisions/0038-a-map-has-a-scale-and-a-centre.md)).
-- The map window doesn't own zone/loc state — it reads the same store/broadcasts as
-  the main window.
-- **Images** are not bulk-downloaded for the zones they miss: P99's per-zone image naming is
-  inconsistent (no reliable map+key pair to auto-pick) and a scan is useless without
-  hand-tuned calibration. That's what the **Game maps** source is for — the zones are already
-  drawn, on the player's disk. An image zone with no map still links out to P99.
+- **Nothing is calibrated, and nothing can be.** A projection is read off a map's own geometry;
+  there is no authored alignment to tune and no tool to tune it with. That went with the bundled
+  scans ([ADR 0042](../decisions/0042-only-the-game-s-own-maps.md)) — along with the class of bug
+  where a rotated or cropped image could never be made to fit.
 - **Map files are read, never shipped.** The packs are other people's work, sitting in the
   user's own game install; we point at them and credit them, and bundle none of it.
+- **There is no rotation in the map-file format, and none in the maths.** Checked: across all ~1,900
+  files in both folders, *every* line is an `L` or a `P` — no header, no metadata, no orientation
+  flag. Geometry is world coordinates and is drawn north-up, verified against the P99 scans
+  (Greater Faydark matches feature for feature, and every clearly non-square zone agrees in
+  orientation with its independently drawn image).
+
+  A zone can still *look* rotated, and the reasons aren't in the vector data:
+  - **A scanned image could be** — which is one of the reasons the scans are gone. `scale` +
+    `center` express a size and a position and nothing else, so a rotated or differently-cropped
+    scan could never be calibrated to fit. `Neriakcommons_true_north.png` carried that name because
+    the standard P99 Neriak Commons map *isn't* true north; Neriak Third Gate was a landscape crop
+    of a square zone.
+  - **The game's own map window rotates to your heading.** Ours doesn't, so a side-by-side with the
+    in-game map will disagree by however far you're facing off north.
 - **Zone short names aren't guessed.** A file we can't confidently name is shown by its file
   name rather than a plausible-looking zone name — see **Sources** above for why a wrong name
   is worse than no name.

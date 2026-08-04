@@ -20,6 +20,8 @@ export const CH = {
   logImport: "log:import",
   lootRecent: "loot:recent",
   alertsTest: "alerts:test",
+  alertPlaceStart: "alert:placeStart", // main window → main: begin placing a custom alert spot
+  alertPlaceDone: "alert:placeDone", // overlay → main: the placed point (or null on cancel)
   // wiki (invoke)
   wikiSearch: "wiki:search",
   wikiGetPage: "wiki:getPage",
@@ -68,6 +70,8 @@ export const CH = {
   mapSources: "map:sources",
   /** One zone's vector geometry from a chosen source. */
   mapLoad: "map:load",
+  /** Zone names worked out from a source's own exit labels (see `solveZoneNames`). */
+  mapNames: "map:names",
   winMinimize: "win:minimize",
   /** Maximize/restore this window — frameless windows have to ask for it. */
   winToggleMaximize: "win:toggleMaximize",
@@ -93,6 +97,7 @@ export const CH = {
   lootEvent: "evt:loot",
   lootMatched: "evt:lootMatched",
   castAlert: "evt:castAlert", // main → all: a watched spell began casting
+  alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
   updateAvailable: "evt:updateAvailable", // main → all: a newer build is published
 

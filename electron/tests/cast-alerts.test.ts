@@ -26,6 +26,7 @@ function settings(over: Partial<CastAlertSettings> = {}): CastAlertSettings {
     position: "top",
     durationMs: 6000,
     animation: "pulse",
+    locations: [],
     ...over,
   };
 }

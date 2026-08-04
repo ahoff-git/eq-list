@@ -4,19 +4,6 @@ Open work only. Delete an item when it's done and record the outcome where it be
 or code). Features that are **built but await a real run** (in-game, packaged, or two clients) live
 in the **[manual QA checklist](./testing/manual-qa.md)**, not here.
 
-_Zones:_
-
-- **Calibrate the five bundled-but-uncalibrated maps.** RunnyEye Citadel's four floors and
-  Northern Desert of Ro ship with images and **no calibration** — what they used to carry was
-  their image's own pixel dimensions, which plotted your dot at a fictitious spot
-  ([ADR 0038](./decisions/0038-a-map-has-a-scale-and-a-centre.md)). Each now needs one real
-  visit: 📐, `/loc`, click where you are, walk somewhere far, `/loc`, click again. Two clicks
-  per floor, and the values get pasted into `zones.ts`.
-- **Add maps for the zones actually being played.** A real log showed visits to East Commonlands,
-  The Estate of Unrest, New Sebilis Expedition and the EQL Tutorial — none of which have a bundled
-  map, so the map window falls back to the P99 link. Each needs an image plus calibration (📐),
-  see [map](./map/README.md).
-
 _Distribution wiring:_
 
 - **Landing page — host it.** `landing/index.html`'s buttons are wired (Download → `/releases/latest`,
@@ -37,13 +24,6 @@ _Ready to build (decided, not started):_
   `fixtures/wiki/spell-burst-of-fire.html` — so this is a wiki lookup, not OCR. One
   wrinkle: cost is per *rank*, and `spellName()` strips the rank to make cast and damage
   lines agree, so the rank needs carrying alongside the canonical name (it's still in `raw`).
-- **Fold `session-stats.ts` into `combat-stats.ts`.** Two main-process modules watch the
-  log and count experience and kills; the combat tracker needs about five lines (gain
-  count, solo/party split) to be a strict superset. Retires a module and its test, fixes
-  the Session tab counting the pet's own death as a kill, and removes the split that
-  already caused one bug — two "reset" buttons that meant different things, now papered
-  over by `resetSession()`.
-
 _Next up:_
 
 - **Mark undocumented drops in the mob panel too.** The Hunt tab now reconciles wiki claims
@@ -107,22 +87,5 @@ _Recently settled (kept only as pointers):_
 
 - Need to keep Awari up to date. We are 2 releases behind currently
   - Should use the optional google handshake stuff. peerjs servers are iffy
-
-
-- **A 'custom' alert location you place with the mouse.** The one alert item still open: stick the
-  banner to the cursor, click to drop it, name that spot, then pick it per alert (the per-alert
-  style plumbing is already there — it'd be another `AlertStyle` field plus a named-location list).
-  The work is in the overlay window: it's click-through and never focused
-  ([ADR 0035](./decisions/0035-cast-alert-overlay-window.md)), so placement means temporarily
-  making it interactive and focusable, then handing the dropped point back.
-
-- Player pings are currently light yellow and are very hard to see. Either add a thin dark outline or change the color.
-
-- **Name the zones we could only name by their file.** 133 game maps resolve to 14 real zone
-  names; the rest show as `gukbottom`. Deliberate — a wrong name plots kills in the wrong
-  place — but the alias table in `map-sources.ts` is where they get filled in, a few at a time
-  as zones are actually visited.
-
-
-- Fix the zone names. Go research all the zones and show more normal names when possible. 
-  - update the zone picker to be a combo dropdown that you can type in, and narrow the selection options to only zones that match a reasonable  lavenstein distance 
+- Custom alert spots you place with the mouse ship — placed on the overlay, named, then picked per
+  alert (default or per-watch) in Position; see [ADR 0045](./decisions/0045-place-a-custom-alert-spot.md).

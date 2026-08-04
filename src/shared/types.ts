@@ -853,8 +853,25 @@ export interface CastWatch {
   style?: Partial<AlertStyle>;
 }
 
-/** Where the alert banner sits on the overlay. */
+/** A preset spot for the alert banner on the overlay. */
 export type AlertPosition = "top" | "top-left" | "top-right" | "center" | "bottom-left" | "bottom-right";
+
+/**
+ * Where the alert banner sits: a preset, or `loc:<id>` referring to a **custom spot** the user
+ * placed with the mouse (see `AlertLocation` / `castAlerts.locations`). One field, so a single
+ * dropdown offers both and switching between them never leaves a stale second field behind.
+ */
+export type AlertPositionValue = AlertPosition | `loc:${string}`;
+
+/** A user-placed alert spot, named, as a fraction of the overlay display so it survives a resize. */
+export interface AlertLocation {
+  id: string;
+  name: string;
+  /** 0..1 across the display's width. */
+  fx: number;
+  /** 0..1 down the display's height. */
+  fy: number;
+}
 
 /** How the alert banner behaves while it's up. */
 export type AlertAnimation = "pulse" | "wiggle" | "float" | "none";
@@ -883,8 +900,8 @@ export interface AlertStyle {
   color: string;
   /** Which synthesized beep to play (see `src/lib/alertSounds.ts`). */
   soundName: string;
-  /** Where the banner appears on the overlay. */
-  position: AlertPosition;
+  /** Where the banner appears — a preset, or `loc:<id>` for a placed custom spot. */
+  position: AlertPositionValue;
   /** How long a banner stays up, in milliseconds. */
   durationMs: number;
   /** The banner's motion while it's up. */
@@ -901,6 +918,11 @@ export interface CastAlertSettings extends AlertStyle {
   /** Also alert on YOUR own casts (off by default — you know what you're casting). */
   includeSelf: boolean;
   watches: CastWatch[];
+  /**
+   * Custom spots the user placed with the mouse, referenced by a `position` of `loc:<id>`. Shared
+   * across the defaults and every watch, so one placement serves all. See `AlertLocation`.
+   */
+  locations: AlertLocation[];
   /**
    * The display the overlay covers, by Electron display id. Absent = the primary display (and the
    * fallback whenever the saved id is gone, e.g. a monitor was unplugged). See `createAlertWindow`.
@@ -1133,6 +1155,16 @@ export interface EqlApi {
      * previews *its* style; without one, the first usable watch stands in.
      */
     test(watchId?: string): Promise<void>;
+    /**
+     * Place a custom alert spot with the mouse. The overlay is made interactive on its display;
+     * the user clicks where alerts should appear. Resolves with the point as fractions of that
+     * display (0..1), or null if cancelled (Esc) or there's no overlay (alerts off). Main window.
+     */
+    placeLocation(): Promise<{ fx: number; fy: number } | null>;
+    /** Overlay only: main asks it to enter placement mode. */
+    onPlaceBegin(cb: () => void): Unsubscribe;
+    /** Overlay only: report the placed point (or null on cancel) back to main. */
+    placed(point: { fx: number; fy: number } | null): void;
   };
   log: {
     /**
@@ -1285,6 +1317,13 @@ export interface EqlApi {
     sources(): Promise<MapSourceReport>;
     /** One zone's geometry + labelled points from a folder source (null if it has no map). */
     load(sourceId: string, zoneFile: string): Promise<LoadedMap | null>;
+    /**
+     * Zone short name → the long name, worked out from the maps' own exit labels. Pooled across
+     * every folder (a short name means the same zone in each pack, and the packs label different
+     * things), and read on demand: it scans every map, so the picker shows file names until it
+     * lands and then relabels itself.
+     */
+    names(): Promise<Record<string, string>>;
   };
   /**
    * Peer networking (awari), brokered by the main process. The always-alive main

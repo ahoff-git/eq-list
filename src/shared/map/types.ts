@@ -16,44 +16,37 @@ export type Point = { x: number; y: number };
 export type CanvasSize = { width: number; height: number };
 
 /**
- * Where a map image actually lands on the canvas: fitted to it, aspect preserved and
- * centred, so a non-square map is letterboxed. Both the drawing and the coordinate math
- * work from this same rectangle (`fitRect`) — otherwise the dot and the picture disagree.
+ * Where a map lands on the canvas: fitted to it, aspect preserved and centred, so a map that
+ * isn't square is letterboxed. Both the drawing and the coordinate math work from this same
+ * rectangle (`fitRect`) — otherwise the dot and the picture disagree.
  */
 export type MapRect = { x: number; y: number; width: number; height: number };
 
-/** A map image of a known pixel size, drawn onto a canvas of a known pixel size. */
-export type MapView = { image: MapDimensions; canvas: CanvasSize };
+/** A map of a known pixel size, drawn onto a canvas of a known pixel size. */
+export type MapView = { image: MapDimensions; canvas: MapDimensions };
 
 /**
- * A zone: its map/legend images plus the two numbers that align EQ world coordinates to
- * the image. Nothing here describes the image's pixel dimensions — those are read off the
- * image itself at draw time, so they can't be authored wrongly (see ADR 0038).
+ * What it takes to turn a world coordinate into a pixel: how big the map is in EQ units, and
+ * where it sits in the world.
+ *
+ * Never authored. A map file's geometry is already in world coordinates, so it states its own
+ * projection (`vectorProjection` reads it off the geometry's bounds) — which is the whole reason
+ * the bundled scans and their hand-tuned calibration are gone (ADR 0042).
  */
+export type MapProjection = {
+  /** EQ world units per map pixel. */
+  scale: number;
+  /** The EQ coordinate at the centre of the map. */
+  center: Loc;
+};
+
+/** A zone the map window can show: a name, and the map file it's drawn from. */
 export type Zone = {
   name: string;
+  /** Unique per source + file, e.g. `brewall:gfaydark`. */
   key: string;
+  /** Groups related zones in a sorted list ("Neriak", "Faydark"). */
   sortingStr?: string;
-  /**
-   * Which map of a multi-map zone this is (RunnyEye's four floors). Zones that are the
-   * same place share a `name` and differ by `layer` + `key`; a zone with a single map
-   * leaves it unset. The log never says which floor you're on, so the layer is a
-   * user choice — see `zoneLayers`/`findZone` in `zones.ts`.
-   */
-  layer?: number;
-  mapImg?: string;
-  mapKeyImg?: string;
-  /**
-   * Zone short name of the map *file* backing this zone, for a folder source (`gfaydark`).
-   * A file-backed zone needs no `scale`/`center`: the geometry is already in world
-   * coordinates, so it calibrates itself (see `vectorProjection`).
-   */
+  /** The zone short name of the map file behind it (`gfaydark`). */
   file?: string;
-  /**
-   * The map's scale: **EQ world units per image pixel**. Independent of the window size
-   * and of how the image is fitted, so it's a property of the map rather than of the view.
-   */
-  scale?: number;
-  /** The EQ coordinate at the **centre of the image** — where the map is, in world terms. */
-  center?: Loc;
 };

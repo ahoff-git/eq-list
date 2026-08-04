@@ -4,8 +4,6 @@
  * the renderer side, apart from the pure geometry in `src/shared/map/`.
  */
 
-import { fitRect } from "@/shared/map/coords";
-import type { MapRect } from "@/shared/map/types";
 
 export type CircleOptions = {
   color?: string;
@@ -87,14 +85,3 @@ export function clearCanvas(canvas: HTMLCanvasElement) {
   ctx?.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-/**
- * Draw an image fitted into `canvas` (aspect preserved, centred) and return the rectangle
- * it went into. The fit itself comes from the pure `fitRect`, which the coordinate maths
- * also uses — the picture and the plotted dot have to measure from the same rectangle.
- */
-export function drawImageScaled(canvas: HTMLCanvasElement, img: HTMLImageElement): MapRect {
-  const rect = fitRect({ width: img.naturalWidth, height: img.naturalHeight }, canvas);
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(img, rect.x, rect.y, rect.width, rect.height);
-  return rect;
-}

@@ -40,11 +40,15 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0034: Tell the user a newer build exists; don't install it for them](./0034-update-notification.md)
 - [0035: Cast alerts get their own click-through overlay window, over the game](./0035-cast-alert-overlay-window.md)
 - [0036: A fight ends on a death, not on a lull](./0036-a-fight-ends-on-death-not-a-lull.md)
-- [0037: A zone is one place; its layers are a user choice, not a log fact](./0037-one-zone-many-layers.md)
-- [0038: A map has a scale and a centre, and you calibrate it by clicking](./0038-a-map-has-a-scale-and-a-centre.md) — *replaces the `size`/`centerOffset` pair from 0010*
+- [0037: A zone is one place; its layers are a user choice, not a log fact](./0037-one-zone-many-layers.md) — *its per-image layers retired by 0042; floors continue in 0040*
+- [0038: A map has a scale and a centre, and you calibrate it by clicking](./0038-a-map-has-a-scale-and-a-centre.md) — *replaces the `size`/`centerOffset` pair from 0010; **superseded by 0042**, which removes the images and the calibration tool*
 - [0039: Render the game's own map files, and let the player choose whose maps](./0039-render-the-game-s-own-maps.md)
 - [0040: Floors come from the mapmaker's labels, not from the geometry](./0040-floors-come-from-the-mapmaker.md) — *extends 0037's layer picker to vector maps*
 - [0041: The interface scale is a CSS zoom per window, not Chromium's](./0041-interface-scale-is-a-css-zoom-per-window.md) — *re-implements 0026; Chromium's zoom is per-origin*
+- [0042: Only the game's own maps — the bundled scans are gone](./0042-only-the-game-s-own-maps.md) — *supersedes 0038 and retires 0010's image core*
+- [0043: Where you are is state, not news — recover it, replay nothing](./0043-state-is-not-news-either.md) — *qualifies 0030: the zone and the last `/loc` describe the present, so a mid-session start recovers them*
+- [0044: The read position outlives the app — a gap is news, not history](./0044-the-log-position-outlives-the-app.md) — *reverses 0030's in-memory offsets and its "skipped, not queued" caveat; the app's state stops depending on when it was launched*
+- [0045: Place a custom alert spot by lending the overlay a click](./0045-place-a-custom-alert-spot.md) — *builds on 0035; the click-through overlay turns interactive for one placing click*
 
 ## Open Questions
 - Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the

@@ -1,6 +1,6 @@
 "use client";
 import { ALERT_SOUNDS, playAlertSound } from "@/lib/alertSounds";
-import type { AlertAnimation, AlertPosition, AlertStyle } from "@/shared/types";
+import type { AlertAnimation, AlertLocation, AlertPosition, AlertPositionValue, AlertStyle } from "@/shared/types";
 
 /** Preset accent colors for the alert (border + flash). Any CSS color works; these are the picks. */
 export const ALERT_COLORS = [
@@ -40,9 +40,12 @@ export const ALERT_ANIMATIONS: { value: AlertAnimation; label: string }[] = [
 export default function AlertStyleFields({
   style,
   onChange,
+  locations = [],
 }: {
   style: AlertStyle;
   onChange: (patch: Partial<AlertStyle>) => void;
+  /** Custom spots (from `castAlerts.locations`) offered alongside the presets in Position. */
+  locations?: AlertLocation[];
 }) {
   // `astyle` carries the controls' own styling (swatch size, label column), so they look the
   // same wherever they're used — the rules used to hang off the defaults block's class, which
@@ -82,13 +85,22 @@ export default function AlertStyleFields({
         <select
           className="field sm"
           value={style.position}
-          onChange={(e) => onChange({ position: e.target.value as AlertPosition })}
+          onChange={(e) => onChange({ position: e.target.value as AlertPositionValue })}
         >
           {ALERT_POSITIONS.map((p) => (
             <option key={p.value} value={p.value}>
               {p.label}
             </option>
           ))}
+          {locations.length > 0 && (
+            <optgroup label="Custom spots">
+              {locations.map((loc) => (
+                <option key={loc.id} value={`loc:${loc.id}`}>
+                  {loc.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <span className="astyle-label" style={{ minWidth: 0 }}>
           Motion

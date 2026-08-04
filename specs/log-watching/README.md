@@ -45,9 +45,25 @@ as they drop and the damage meter can show how the fight went.
   - Polls the active file every 500ms and reads only newly-appended bytes.
   - Truncation-safe: if the file shrinks (new session / rotation) it resets.
   - Auto mode follows the most-recently-written `eqlog_*.txt`; or pin one file.
-    Only the file present at start anchors at EOF (so launching mid-session skips old
-    history); a log that *appears while watching* (new session, or `npm run sim`) is
-    read from the top so nothing is missed.
+    A log that *appears while watching* (new session, or `npm run sim`) is read from the
+    top so nothing is missed; a log we have **never** read is anchored at EOF, because
+    there we can't tell news from history.
+  - **Resumes where the last run stopped.** `electron/log-cursor.ts` keeps each log's read
+    position in `log-cursors.json`, so whatever was written while the app was closed is read
+    once, through the ordinary event path — the app's state is a function of the log, not of
+    when it was launched. The position advances only after a batch is emitted and is written
+    through immediately, so a crash costs a repeated batch at worst (and kills/drops are keyed
+    by their line anyway). `onCaughtUp` reports the gap so `main.ts` can decide whether the
+    live meter carries on (`isSameSitting`) or last night's fights belong to history.
+    See [ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md).
+  - **Catches up on state, never on news.** Anchoring at EOF skips the two lines that say
+    *where you are*, so a log about to be skipped has its tail scanned by `catchUpState`
+    (`src/shared/log-catchup.ts`) for the current zone and last `/loc` — emitted on the
+    ordinary `zone`/`loc` channels, with their own timestamps, so a mid-session start knows
+    what a fresh one learns by zoning. Nothing else is recovered: no kills, loot, experience
+    or casts. Runs on `start` and when following a log that already existed (a character who
+    was logged in first), and the window grows 64KB → 512KB → 4MB until a zone line turns up.
+    See [ADR 0043](../decisions/0043-state-is-not-news-either.md).
   - Calls `parseLine` **once** per line and fans the result out by `event.kind`; the
     combat kinds are also emitted together as `combat`, so the meter takes one
     subscription. It never parses anything itself, and it numbers the lines it reads so
@@ -144,4 +160,7 @@ Two invocations do more than scale numbers, and both are now accounted for
 
 ## See also
 [architecture](../architecture/README.md) · [testing](../testing/README.md) ·
-[ADR 0004](../decisions/0004-log-watching-strategy.md)
+[ADR 0004](../decisions/0004-log-watching-strategy.md) ·
+[ADR 0030](../decisions/0030-history-is-not-news.md) ·
+[ADR 0043](../decisions/0043-state-is-not-news-either.md) ·
+[ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md)

@@ -866,7 +866,24 @@ kbd {
   border-radius: 10px;
   overflow: hidden;
 }
-.map-win .titlebar h1 { display: flex; align-items: center; gap: 6px; }
+/* The map's bar carries a lot: title, source, zone picker, follow, and six controls. Past a
+   certain narrowness they can't share one line, and the overflow used to push the close button off
+   the window entirely — so it wraps instead. Nothing in a title bar may become unreachable. */
+.map-win .titlebar { flex-wrap: wrap; row-gap: 4px; }
+.map-win .titlebar h1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Asks for very little and grows into whatever's spare. A flex line *wraps* before it shrinks,
+     so a title claiming its full text width would push the controls onto a second row at the map's
+     default size; asking for 60px keeps everything on one line and still fills out on a wide
+     window. It's showing the same zone name as the picker, so it's the one that should yield. */
+  flex: 1 1 60px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .map-zone-select,
 .map-source-select {
   background: var(--bg-input);
@@ -879,7 +896,7 @@ kbd {
 }
 /* The map source sits left of the zone picker and stays narrow — the zone name is the
    thing worth reading, and the titlebar has to fit both. */
-.map-source-select { max-width: 28%; }
+.map-source-select { max-width: 22%; }
 /* Attribution for a community-drawn map file, tucked out of the way of the map itself. */
 .map-credits {
   position: absolute;
@@ -1237,6 +1254,46 @@ kbd {
 .cast-alerts.pos-center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
 .cast-alerts.pos-bottom-left { bottom: 8px; left: 8px; }
 .cast-alerts.pos-bottom-right { bottom: 8px; right: 8px; }
+/* A user-placed custom spot: left/top are set inline as % of the display; centre the banner on it. */
+.cast-alerts.pos-custom { transform: translate(-50%, -50%); }
+
+/* Placing a custom spot: a full-overlay catcher (dim tint so you know you're placing), a centered
+   hint, and a preview banner tracking the cursor. Only shown in the overlay window during placement. */
+.alert-place {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  cursor: crosshair;
+  background: rgba(0, 0, 0, 0.28);
+}
+.alert-place-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(20, 22, 28, 0.92);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.alert-place-preview {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--accent);
+  background: rgba(20, 12, 12, 0.9);
+  color: #fdeaea;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none; /* never let the preview eat the placing click */
+}
 .cast-alert {
   pointer-events: auto;
   display: flex;
@@ -1334,3 +1391,56 @@ kbd {
   flex: none;
   border: 1px solid rgba(0, 0, 0, 0.5);
 }
+
+/* ── zone picker (type-to-find, replacing a 568-entry <select>) ── */
+.zone-picker {
+  position: relative;
+  /* Takes the titlebar's spare room rather than a percentage cap: the whole point is reading the
+     zone name, and the long ones ("Ashengate, Reliquary of the Scale") need most of the bar. */
+  /* Asks for room for the longest real zone name ("Ashengate, Reliquary of the Scale") plus its
+     padding, and takes any spare bar with it. A *basis* rather than a min-width, so at the map's
+     320px minimum it gives way instead of shoving the close button off the edge. The window title
+     shrinks first either way — it's showing the same zone name. */
+  /* 200px is what the bar can spare at the map's default width without wrapping, and it shows the
+     longest real zone name ("Ashengate, Reliquary of the Scale" measures 182px here). It grows into
+     any spare bar, and the dropdown may be wider still, so a longer name is always readable in the
+     list even if the box clips it. */
+  flex: 1 1 200px;
+  min-width: 120px;
+}
+/* Not `.field.sm`, which is the app's 58px *numeric* input and would clip every zone name. */
+.zone-input { padding: 3px 7px; font-size: 12px; }
+.zone-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  /* At least as wide as the input, but free to grow for a long name — right-anchored so it
+     can't run off the edge of the window. */
+  right: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: 460px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 3px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.zone-option {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zone-option.on { background: var(--bg); color: var(--text); }
+.zone-option.current { color: var(--accent); }

@@ -35,6 +35,9 @@ in the main process and all UI in the renderer.
   - `store.ts` — the one source of truth: shopping list + settings (persisted to
     `userData`), plus loot→list matching.
   - `log-watcher.ts` — tails the EQ log; see [log-watching](../log-watching/README.md).
+  - `log-cursor.ts` — how far each log has been read, kept across restarts, so the app's state
+    doesn't depend on when it was launched
+    ([ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md)).
   - `wiki/` — the eqlwiki data source; see [wiki-data](../wiki-data/README.md).
   - `ipc.ts` — request/response handlers behind `window.eql`.
 - **Renderer** (`src/app/`, `src/lib/`) is a static SPA: control window (`page.tsx`)

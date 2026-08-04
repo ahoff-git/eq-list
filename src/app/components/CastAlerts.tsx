@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { api } from "@/lib/api";
 import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
-import type { AlertPosition, AlertStyle, CastAlertEvent } from "@/shared/types";
+import type { AlertLocation, AlertPositionValue, AlertStyle, CastAlertEvent } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -84,9 +84,11 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
   // own — the flash is one screen-wide effect, so the newest alert's color wins it.
   const accent = (color: string) => ({ "--alert-color": color }) as CSSProperties;
   const flashColor = alerts[0]?.resolved.color ?? ca?.color ?? "#e5534b";
-  // One stack per position: two alerts can now want different corners of the screen.
-  const stacks = new Map<AlertPosition, ActiveAlert[]>();
+  // One stack per position: two alerts can now want different corners of the screen (or different
+  // placed spots).
+  const stacks = new Map<AlertPositionValue, ActiveAlert[]>();
   for (const a of alerts) stacks.set(a.resolved.position, [...(stacks.get(a.resolved.position) ?? []), a]);
+  const locations = ca?.locations ?? [];
 
   return (
     <>
@@ -99,8 +101,10 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
           onAnimationEnd={() => setFlashKey(null)}
         />
       )}
-      {[...stacks].map(([position, stack]) => (
-        <div className={`cast-alerts no-drag pos-${position}`} key={position}>
+      {[...stacks].map(([position, stack]) => {
+        const place = placement(position, locations);
+        return (
+        <div className={`cast-alerts no-drag ${place.className}`} style={place.style} key={position}>
           {stack.map((a) => (
             <button
               key={a.id}
@@ -127,7 +131,25 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
             </button>
           ))}
         </div>
-      ))}
+        );
+      })}
     </>
   );
+}
+
+/**
+ * How a stack of alerts at one position is placed: a preset CSS class, or — for a `loc:<id>`
+ * custom spot — the placed fraction as an absolute point (centred on it). A `loc:` that no longer
+ * resolves (the spot was deleted) falls back to the top rather than dropping the alert.
+ */
+function placement(
+  position: AlertPositionValue,
+  locations: AlertLocation[],
+): { className: string; style?: CSSProperties } {
+  if (position.startsWith("loc:")) {
+    const loc = locations.find((l) => `loc:${l.id}` === position);
+    if (loc) return { className: "pos-custom", style: { left: `${loc.fx * 100}%`, top: `${loc.fy * 100}%` } };
+    return { className: "pos-top" };
+  }
+  return { className: `pos-${position}` };
 }

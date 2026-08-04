@@ -35,27 +35,47 @@ a real run. This is a *verification* list, not open work — open work lives in 
 - **Screengrab lookup, end-to-end.** Verify the `Ctrl/Cmd+Shift+L` flow: region select → capture →
   Tesseract OCR accuracy → fuzzy match. First OCR downloads the English model (needs network); tune
   the crop / text cleanup if accuracy is poor.
-- **Map window, real run.** Confirm the map window opens (🗺 button), draws the zone image, and plots
-  the player dot on a `/loc` line. The calibration model changed
-  ([ADR 0038](../decisions/0038-a-map-has-a-scale-and-a-centre.md)), so every bundled map's
-  alignment moved by up to 2% — worth a look at a zone you know well (Greater Faydark, Crushbone)
-  before trusting the dot.
+- **Map window, real run.** Confirm the map window opens (🗺 button), draws the zone, and plots the
+  player dot on a `/loc` line.
 - **The game's own maps, drawn (source dropdown).** Verified against the real install in the
   dev sandbox — sources discovered, every test `/loc` landing on the map — but never seen on
-  screen. Confirm: the leftmost titlebar dropdown lists **Bundled images**, **Game maps** and
-  **Brewall** with zone counts; hovering it explains the folders; switching redraws the zone
-  and the choice survives reopening the window. Then the things only eyes can check — geometry
+  screen. Confirm: the leftmost titlebar dropdown lists **Game maps** and **Brewall** with zone
+  counts (and *nothing* if no EverQuest install is found, with the window
+  saying so); hovering it explains the folders; switching redraws the zone and the choice survives
+  reopening the window. Then the things only eyes can check — geometry
   looks like the zone (not mirrored or upside down: walk and confirm the dot moves the way you
   do), labels are legible without swamping the map, your dot sits where you actually are, and
   a pin dropped on a vector map lands where you clicked. Compare a zone against its bundled
-  image to be sure both agree about where you are
-  ([ADR 0039](../decisions/0039-render-the-game-s-own-maps.md)).
+  ([ADR 0039](../decisions/0039-render-the-game-s-own-maps.md)). There's no bundled image to
+  compare against any more ([ADR 0042](../decisions/0042-only-the-game-s-own-maps.md)), so the
+  in-game map is the reference — remembering that the game's own window may be rotated to your
+  heading while ours is always north-up.
 - **Drag to pan, without pinging.** Zoom in, then drag the map around: it should follow the
   cursor and stop at each edge rather than sliding off into blank space. The bit that needs a
   human is the button-sharing — with peers connected, confirm a **drag never leaves a ping**
   behind, a **plain click still does**, a drag with a pin held doesn't drop one, and Move mode
   still drags pins rather than the map. Then the case that was broken: **at fit zoom** (scrolled
   all the way out) the map can't move, and dragging it must *still* not ping.
+- **Zone names and the type-to-find picker.** The names are solved from the maps' own exit labels
+  and spot-checked in the sandbox (87 of the game's 133 zones, every one I could verify correct),
+  but only a player knows whether they read right — check a few against the zone you're standing in,
+  and that the picker's file-name column matches. Then the box itself: typing narrows, ↑↓ and Enter
+  pick, Escape closes, **Follow current** is the first row and still works, and a zone that couldn't
+  be named is findable by typing its file name (`gukbottom`). Names arrive a beat after the window
+  opens — confirm the list relabels itself rather than staying on file names.
+- **Hovering and clicking the map's markers.** The pick logic is unit-tested but has never met a
+  cursor. Confirm a tooltip appears for each kind — a **kill** (mob, time, drops, and how much to
+  trust the position), the **player dot**, a **peer**, a **ping**, a **map label**, a **pin** — and
+  that it follows the cursor without flicker. Then the crowded case: stand where a pin sits on top of
+  a kill dot and confirm the **pin** wins, and that a marker plainly nearer the cursor wins
+  regardless. Clicking a kill should open the ☠ list filtered to that mob (and narrow the heatmap to
+  it); clicking any marker must **not** leave a ping behind, while clicking empty map still does.
+- **Kill list → map emphasis.** Open the ☠ list and run the cursor down it: hovering a **mob row**
+  should ring all of that mob's dots on the map (and dim the rest), hovering an **individual kill**
+  should ring only that one, and moving between them should swap cleanly without flicker. Then the
+  case that needed a backstop: leave the list from *inside* an expanded kill row and confirm the
+  emphasis clears rather than sticking. On a camp with hundreds of kills, check the ring still reads
+  at a glance and that the dimming doesn't make the heatmap look empty.
 - **Map label filter (👁 → Map labels).** On a busy zone (Greater Faydark: 144 labels, 85 of them
   merchants) confirm each kind switches off and on, that the counts match what's drawn, that the
   swatch beside each row is the color those labels actually are on screen, and that the choice
@@ -65,19 +85,7 @@ a real run. This is a *verification* list, not open work — open work lives in 
   above 100% (up to 200%) and stay legible there, and that a **vector** map keeps zooming well past
   the 6× an image stops at (30×) without the lines going to mush. The **move tool** (✥) should be
   clearly visible in the toolbar rather than black-on-black.
-- **Calibrate by clicking (📐).** The two-click flow is unit-tested but has never met a real `/loc`.
-  With Debug logging on, open a zone that ships **uncalibrated** (RunnyEye Citadel, Northern Desert
-  of Ro — the dot won't plot at all until this is done), hit 📐, then: `/loc`, click where you are,
-  walk somewhere far, `/loc`, click again. Confirm the numbered crosses land where you clicked, the
-  dot snaps onto you once the second fix lands, the values in the panel look sane (EQ units per
-  pixel, and a centre near the middle of the zone), and the copy button gives something that pastes
-  into `zones.ts`. Then check a *known-good* zone: one fix on a calibrated map should nudge it onto
-  your position without wrecking the scale.
-- **Multi-layer zone, in RunnyEye.** Two forms, and both want checking:
-  - **Bundled images** — confirm the zone appears **once** in the dropdown, the layer dropdown
-    switches floors, a pin dropped on one floor doesn't show on the others, and zoning in from
-    outside lands you on Layer 1 ([ADR 0037](../decisions/0037-one-zone-many-layers.md)).
-  - **Brewall** — the floor picker should read the mapmaker's names (`Level 1 (Top)` …
+- **Multi-floor zone, in RunnyEye.** The floor picker should read the mapmaker's names (`Level 1 (Top)` …
     `Level 5 (Bottom)`) with **All floors** as the default. Rendering the five floors side by
     side already confirms each is a legible plan, so what's left is in-game: that **· you**
     marks the floor you're actually standing on as you descend, that stairs appear on both
@@ -94,6 +102,12 @@ a real run. This is a *verification* list, not open work — open work lives in 
   beep is what fires; **position** moves the banner (all six spots); **motion** (pulse/wiggle/float/
   none) changes it; **duration** changes how long it lingers; and on a multi-monitor rig the
   **monitor** dropdown moves the overlay to the chosen display (it recreates on change).
+- **Custom alert spots.** In Settings → Alert style → Custom spots, click **Place a spot**: the
+  overlay should dim, show "Click where alerts should appear", and a preview banner should track the
+  cursor on the chosen monitor. A click adds a named spot (Esc cancels); it then appears in the
+  **Position** dropdown (defaults and per-watch). Pick it and Test — the banner lands where you
+  placed it. Deleting the spot while a watch still references it should fall that alert back to the
+  top, not drop it. See [ADR 0045](../decisions/0045-place-a-custom-alert-spot.md).
 
 - **Per-alert styles, and the monitor that wouldn't move.** Give one watch its own style (🎨) and
   leave another on the defaults, then confirm each fires in its own color/position/motion/duration
@@ -121,6 +135,27 @@ a real run. This is a *verification* list, not open work — open work lives in 
   flips; leave a window maximized, restart, and confirm it opens maximized *and* that ❐ then
   restores to a sensible size; check **Reset window position** un-maximizes. The cast-alert
   overlay must have **no** such button and stay click-through throughout.
+- **Startup state — launch the app while already playing.** Log in, camp somewhere, type `/loc`,
+  *then* start the app: it should open already knowing the zone (map drawn, "here" panels scoped)
+  and showing your last position, with **no** phantom kills, experience, loot matches or cast alerts
+  from the backlog ([ADR 0043](../decisions/0043-state-is-not-news-either.md)). Verified against a
+  real 4.9MB log outside the app (recovered `Blackburrow 2 (Adaptive)` and the last `/loc`, zero
+  other events); what's unverified in-game is the *renderer* end — including a map window opened
+  after startup, which reads the state over `zone:get`/`loc:get` rather than from a live event.
+  Also worth trying with two characters: switch to one who was logged in before the app started and
+  confirm the zone follows them.
+- **Nothing is lost while the app is closed.** The behaviour that makes state independent of launch
+  order ([ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md)), and the one thing here
+  that a real run can judge better than a test: **does the catch-up feel right, or does it feel like
+  the app is inventing things?** Quit the app mid-camp, keep playing for a few pulls, reopen it, and
+  confirm those kills, drops and experience gains are all there **once** — the ☠ list and the heatmap
+  count them, the Loot tab shows them, "into level" has moved — and that **no cast alerts** fire for
+  the fights you had while it was closed. Then the meter's own rule: reopening within a few minutes
+  should **keep** the session's running totals, while reopening the next evening should start a fresh
+  session with last night's fights in **History** instead. Worth checking the numbers add up rather
+  than double: kill counts and a drop rate you already know are the places a repeat would show.
+  Finally, delete `log-cursors.json` from userData and confirm the next start simply anchors at the
+  end of the log (missing the gap) rather than eating the whole thing.
 
 ## Peer networking — two clients
 

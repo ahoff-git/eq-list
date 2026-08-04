@@ -12,6 +12,12 @@ const MAX_GROUPS = 40;
 /** Distinct drops to name in a group's header before summarising the rest as "+N". */
 const MAX_HEAD_DROPS = 6;
 
+/** Which kills to pick out on the map: one mob's, or a single kill. */
+export interface KillEmphasis {
+  mob?: string;
+  id?: string;
+}
+
 /**
  * The kills behind the heatmap, with the same confidence marker the map draws — so a faint
  * dot on the map and its row here tell the same story. Filters are lifted to the parent
@@ -19,17 +25,23 @@ const MAX_HEAD_DROPS = 6;
  *
  * Kills are grouped by mob: one row per mob you can open, rather than a row per kill, so
  * killing the same thing 300 times reads as "grikbar kobold ×300" and not 300 identical lines.
+ *
+ * **Hovering a row lights its kills up on the map** (`onEmphasize`) — a mob's row lights all of
+ * them, an individual kill lights just that one. The list says what died; the map says where, and
+ * pointing at a name is the natural way to ask "where were those?".
  */
 export default function KillList({
   kills,
   filters,
   onFilters,
   showConfidence,
+  onEmphasize,
 }: {
   kills: KillRecord[];
   filters: KillFilters;
   onFilters: (next: KillFilters) => void;
   showConfidence: boolean;
+  onEmphasize?: (emphasis: KillEmphasis | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const set = <K extends keyof KillFilters>(key: K, value: KillFilters[K]) =>
@@ -43,7 +55,10 @@ export default function KillList({
   const mobs = useMemo(() => [...new Set(kills.map((k) => k.mob))].sort(), [kills]);
 
   return (
-    <div className="kill-list no-drag">
+    // Leaving the list clears the emphasis outright. The rows hand it back and forth between a mob
+    // and one of its kills, so without a backstop here, walking the cursor out of a kill row would
+    // leave that mob lit up on the map for good.
+    <div className="kill-list no-drag" onMouseLeave={() => onEmphasize?.(null)}>
       <div className="row wrap kill-filters">
         <div className="segmented">
           {(["10m", "1h", "session", "all"] as KillWindow[]).map((w) => (
@@ -159,7 +174,15 @@ function summarizeDrops(kills: KillRecord[]): { item: string; count: number }[] 
 }
 
 /** One mob's kills as a single openable row: a count and drop summary, expanding to each kill. */
-function MobGroup({ group, showConfidence }: { group: MobGroupData; showConfidence: boolean }) {
+function MobGroup({
+  group,
+  showConfidence,
+  onEmphasize,
+}: {
+  group: MobGroupData;
+  showConfidence: boolean;
+  onEmphasize?: (emphasis: KillEmphasis | null) => void;
+}) {
   const [open, setOpen] = useState(false);
   const newest = group.kills[0];
   const drops = useMemo(() => summarizeDrops(group.kills), [group.kills]);
@@ -168,7 +191,13 @@ function MobGroup({ group, showConfidence }: { group: MobGroupData; showConfiden
 
   return (
     <div className={`kill-group ${open ? "open" : ""}`}>
-      <div className="kill-group-head" onClick={() => setOpen((o) => !o)}>
+      <div
+        className="kill-group-head"
+        onClick={() => setOpen((o) => !o)}
+        // Hovering the mob picks out every one of its kills on the map.
+        onMouseEnter={() => onEmphasize?.({ mob: group.mob })}
+        onMouseLeave={() => onEmphasize?.(null)}
+      >
         <span className="caret">{open ? "▾" : "▸"}</span>
         <span className="kr-mob">{group.mob}</span>
         <span className="kg-count muted small">×{group.kills.length}</span>
@@ -200,7 +229,7 @@ function MobGroup({ group, showConfidence }: { group: MobGroupData; showConfiden
       {open && (
         <div className="kill-rows kg-rows">
           {group.kills.map((kill) => (
-            <KillRow key={kill.id} kill={kill} showConfidence={showConfidence} />
+            <KillRow key={kill.id} kill={kill} showConfidence={showConfidence} onEmphasize={onEmphasize} />
           ))}
         </div>
       )}
@@ -208,11 +237,25 @@ function MobGroup({ group, showConfidence }: { group: MobGroupData; showConfiden
   );
 }
 
-function KillRow({ kill, showConfidence }: { kill: KillRecord; showConfidence: boolean }) {
+function KillRow({
+  kill,
+  showConfidence,
+  onEmphasize,
+}: {
+  kill: KillRecord;
+  showConfidence: boolean;
+  onEmphasize?: (emphasis: KillEmphasis | null) => void;
+}) {
   const tier = confidenceTier(kill.confidence);
 
   return (
-    <div className="kill-row">
+    <div
+      className="kill-row"
+      // One kill, so the map points at exactly where this one died. The group's own hover fires
+      // again on the way out, which is why leaving sends null rather than the group.
+      onMouseEnter={() => onEmphasize?.({ id: kill.id })}
+      onMouseLeave={() => onEmphasize?.({ mob: kill.mob })}
+    >
       <span className="kr-time">{clock(kill.at)}</span>
       {showConfidence && <ConfidenceMark kill={kill} />}
       <span className="kr-mob">{kill.mob}</span>
@@ -274,7 +317,8 @@ export function ConfidenceMark({ kill }: { kill: KillRecord }) {
   );
 }
 
-function clock(iso: string): string {
+/** A kill's time of day, as the list and the map's hover both show it. */
+export function clock(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "—" : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }

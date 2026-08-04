@@ -15,18 +15,16 @@ import {
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import MapPanel, { type RenderKill, type RenderPin } from "../components/MapPanel";
-import KillList from "../components/KillList";
+import KillList, { clock, type KillEmphasis } from "../components/KillList";
 import MobKnowledgePanel from "../components/MobKnowledge";
 import { DEFAULT_KILL_FILTERS, filterKills, type KillFilters } from "@/shared/kill-filters";
-import MapKey from "../components/MapKey";
 import PinButton from "../components/PinButton";
 import MaximizeButton from "../components/MaximizeButton";
 import ScaleButtons from "../components/ScaleButtons";
-import { useCalibration } from "@/lib/map/useCalibration";
+import ZonePicker from "../components/ZonePicker";
 import { useMapSource, useVectorMap } from "@/lib/map/useMapSource";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
-import { collapseLayers, findZone, layerLabel, onLayer, zoneLayers } from "@/shared/map/zones";
-import { IMAGE_SOURCE } from "@/shared/map/map-sources";
+import { findZone, onLayer, sortZones } from "@/shared/map/zones";
 import { detectFloors, floorAt } from "@/shared/map/eqmap";
 import { poiKindSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
@@ -36,83 +34,68 @@ import { MAP_UI_SCALE } from "@/shared/constants";
 
 /**
  * The sibling map window (route `/map`, opened by the main window's 🗺 button).
- * Follows the log's current zone (with a dropdown to view any mapped zone), plots
- * your location/peers, and lets you drop pins from a toolbar (pick a pin up, click
- * the map to place; with none held, a click pings). Pins persist in localStorage and
- * can be shared to peers over awari. Frameless: the titlebar is the drag handle.
+ * Follows the log's current zone (with a type-to-find picker for any other), plots your
+ * location/peers, and lets you drop pins from a toolbar (pick a pin up, click the map to place;
+ * with none held, a click pings). Pins persist in localStorage and can be shared to peers over
+ * awari. Frameless: the titlebar is the drag handle.
  *
- * A zone with several maps (RunnyEye's four floors) is listed **once** in the dropdown
- * and gets a second **layer** dropdown beside it. Pins and pings are stamped with the
- * layer they were made on; everything read out of the log — your position, peers, kills —
- * stays zone-wide, because the log never says which floor you're on.
+ * Every map is one of the game's own **map files** (ADR 0042) — there are no bundled images and
+ * nothing to calibrate. A map that labels its **floors** gets a picker for them; pins and pings are
+ * stamped with the floor they were made on, while everything read out of the log — your position,
+ * peers, kills — stays zone-wide, because the log never says which floor you're on.
  */
 export default function MapWindow() {
   const currentZone = useCurrentZone();
-  // Your last `/loc`. Needed early: it says which floor you're on, and it's the coordinate a
-  // calibration fix is paired with.
+  // Your last `/loc`. Needed early: it says which floor you're on.
   const loc = usePlayerLoc();
   // Squares the window's corners while maximized (see globals.css).
   const maximized = useMaximized();
-  // Which set of maps we're drawing, and the zones it offers — the bundled images, or a
-  // folder of the game's own map files. Persisted; everything below works off `zones`
-  // rather than the bundled catalogue, so both kinds of source flow through one path.
+  // Which folder of map files we're drawing, and the zones in it — the game's own `maps`, or a
+  // pack installed beside it. Persisted.
   const { sources, sourceId, setSourceId, mapsDir, zones } = useMapSource();
   // The viewed-zone override persists so reopening the map returns to the zone you were
   // looking at (blank = follow your current zone).
   const [override, setOverride] = usePersistentState<string | null>(STORAGE_KEYS.mapZone, null);
-  // Which floor of a multi-layer zone we're looking at. Persisted like the zone override,
-  // and validated below rather than reset by an effect.
+  // Which floor we're looking at (null = all of them). Persisted like the zone override, and
+  // validated below rather than reset by an effect.
   const [layerPick, setLayerPick] = usePersistentState<number | null>(STORAGE_KEYS.mapLayer, null);
   const zoneName = override ?? currentZone ?? "";
-  // The maps we have for this place. More than one means the zone has layers (RunnyEye's
-  // four floors), which is what puts the layer dropdown on screen.
-  const layers = useMemo(() => zoneLayers(zoneName, zones), [zoneName, zones]);
-  // A layer pick belongs to the zone it was made in, so travelling to a zone that doesn't
-  // have that layer falls back to the first map instead of showing nothing.
-  const pickedLayer = layers.some((z) => z.layer === layerPick) ? layerPick : null;
-  const zone = useMemo(
-    () => (zoneName ? findZone(zoneName, zones, pickedLayer ?? undefined) : undefined),
-    [zoneName, zones, pickedLayer],
-  );
-  // A file-backed zone's geometry, loaded through the main process (null for image zones).
+  const zone = useMemo(() => (zoneName ? findZone(zoneName, zones) : undefined), [zoneName, zones]);
+  // The zone's geometry, loaded through the main process (null until it arrives).
   const vector = useVectorMap(sourceId, zone);
   /**
-   * Storeys the map's author labelled ("Level 3", "2nd Floor"). A vector map holds every floor
-   * at once — which is what the game draws — so these let you isolate one. Read from the file's
-   * own labels, never guessed, so a zone that doesn't name its levels simply has none.
+   * Storeys the map's author labelled ("Level 3", "2nd Floor"). A map file holds every floor at
+   * once — which is what the game draws — so these let you isolate one. Read from the file's own
+   * labels, never guessed, so a zone that doesn't name its levels simply has none.
    */
   const floors = useMemo(() => (vector ? detectFloors(vector) : []), [vector]);
-  // The same persisted pick serves both kinds of layer: a zone is either several map files or
-  // one file with floors, never both.
+  // A floor pick belongs to the map it was made on, so travelling somewhere without that storey
+  // falls back to showing all of them.
   const floorPick = floors.some((f) => f.layer === layerPick) ? layerPick : null;
   const floor = floors.find((f) => f.layer === floorPick);
   /** The floor you're standing on, from your `/loc` height — marked in the picker. */
   const yourFloor = loc ? floorAt(floors, loc.z) : undefined;
   /**
-   * Is there a map to draw? A file-backed zone counts before its geometry arrives — it's in
-   * the list because the file is on disk — so switching zones shows a blank map for a moment
-   * rather than flashing "no map for this zone".
+   * Is there a map to draw? The zone is in the list because its file is on disk, so it counts
+   * before the geometry arrives — otherwise switching zones flashes "no map for this zone".
    */
-  const hasMap = !!zone?.mapImg || !!zone?.file;
+  const hasMap = !!zone?.file;
   const sourceLabel = sources.find((s) => s.id === sourceId)?.label ?? "maps";
   /**
-   * The layer actually on screen, and what markers are filed under and filtered by — not
-   * `pickedLayer`, so "no pick yet" and "picked layer 1" mean the same thing. Three cases:
-   * a floored map showing one storey (its number), a floored map showing all of them
-   * (`null`), or an image zone, where the layer is simply which map file is open.
+   * The floor on screen, and what markers are filed under and filtered by: a storey's number, or
+   * `null` for all of them at once (which is the default, and what the game draws).
    */
-  const viewLayer = floors.length ? floorPick : zone?.layer;
-  // One option per place: layered zones are collapsed so a zone is never listed twice.
-  const zoneOptions = useMemo(() => collapseLayers(zones), [zones]);
+  const viewLayer = floors.length ? floorPick : undefined;
+  const zoneOptions = useMemo(() => sortZones(zones), [zones]);
   // The dropdown's options are places, so its value is a zone *name*; a saved pick may be
   // a key (or a zone we have no map for), so resolve it back to a name where we can.
   const selectValue = override ? (findZone(override, zones)?.name ?? override) : "";
   /**
-   * The zone we're scoped to, canonical where we can be. **Not** `zone?.name`: `zone` is the
-   * *map* we have for the place, and plenty of real zones have no bundled map. Keying data off
-   * the map object made every "here" panel fall back to `undefined` — which the main process
-   * reads as "every zone" — so standing anywhere unmapped quietly showed you the whole kill
-   * log and every mob you'd ever seen, under headings that said "here".
+   * The zone we're scoped to, canonical where we can be. **Not** `zone?.name`: `zone` is the map
+   * we have for the place, and a zone with no map file still has kills and mobs. Keying data off
+   * the map object made every "here" panel fall back to `undefined` — which the main process reads
+   * as "every zone" — so standing anywhere unmapped quietly showed you the whole kill log and every
+   * mob you'd ever seen, under headings that said "here".
    */
   const zoneKey = zone?.name ?? zoneName ?? undefined;
   /**
@@ -174,22 +157,12 @@ export default function MapWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The map window has its own always-on-top pin and a key/legend toggle (on by default);
-  // both persist so the window comes back the way you left it.
+  // The map window has its own always-on-top pin, persisted so it comes back as you left it.
   const [pinned, setPinned] = usePersistentState(STORAGE_KEYS.mapPinned, true);
-  const [showKey, setShowKey] = usePersistentState(STORAGE_KEYS.mapShowKey, true);
   useEffect(() => {
     api()?.win.setAlwaysOnTop(pinned);
   }, [pinned]);
 
-  // Dev-only calibration (Debug logging on → 📐 button → calibration mode + grid). Any
-  // zone with a map can be calibrated, including one that has never been — that's the case
-  // the click flow exists for.
-  const debug = settings?.debug ?? false;
-  const [calibrateOn, setCalibrateOn] = useState(false);
-  const canCalibrate = debug && !!zone?.mapImg;
-  const calibrating = canCalibrate && calibrateOn;
-  const cal = useCalibration(zone, calibrating);
 
   // Peer networking (awari). The WebRTC connection lives in the main window
   // (AwariHost); here we just read the brokered peer stream and send our pings/pins.
@@ -224,6 +197,9 @@ export default function MapWindow() {
   const [killFilters, setKillFilters] = useState<KillFilters>(DEFAULT_KILL_FILTERS);
   const [shareKillsOn, setShareKillsOn] = usePersistentState(STORAGE_KEYS.mapShareKills, false);
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
+  // Which kills the map should pick out: set while a row in the ☠ list is hovered, so pointing at
+  // a name answers "where did those die?". Transient by nature, so it isn't persisted.
+  const [emphasis, setEmphasis] = useState<KillEmphasis | null>(null);
 
   // Broadcast (or un-share) pins to peers when connected + sharing.
   useEffect(() => {
@@ -243,13 +219,38 @@ export default function MapWindow() {
       .filter((k) => k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
       .map((k) => {
         const tier = confidenceTier(k.confidence);
-        return { y: k.y!, x: k.x!, confidence: k.confidence, glyph: tier.glyph, color: tier.color };
+        return {
+          y: k.y!,
+          x: k.x!,
+          confidence: k.confidence,
+          glyph: tier.glyph,
+          color: tier.color,
+          mob: k.mob,
+          id: k.id,
+          // The hover says what the dot is, when it happened, what dropped, and — the part a
+          // marker can't show — how much of its *position* to believe (see ADR 0023).
+          title: k.mob,
+          detail: [clock(k.at), k.drops?.length ? `dropped ${k.drops.join(", ")}` : "", `${tier.label}: ${tier.why}`]
+            .filter(Boolean)
+            .join(" · "),
+        };
       });
     const theirs = room.peerKills
       .filter((k) => zoneMatch(k.zone))
       .map((k) => {
         const tier = confidenceTier(k.confidence);
-        return { y: k.y, x: k.x, confidence: k.confidence, glyph: tier.glyph, color: tier.color, peer: k.by };
+        return {
+          y: k.y,
+          x: k.x,
+          confidence: k.confidence,
+          glyph: tier.glyph,
+          color: tier.color,
+          peer: k.by,
+          mob: k.mob,
+          title: k.mob,
+          // Someone else's kill: say whose, since the position came from *their* `/loc`.
+          detail: `${k.by ?? "a peer"}'s kill · ${tier.label}: ${tier.why}`,
+        };
       });
     return [...local, ...theirs];
   }, [kills, room.peerKills, zoneMatch]);
@@ -300,7 +301,14 @@ export default function MapWindow() {
   // Peers are zone-wide on purpose: a `/loc` doesn't say which floor they're on, so
   // hiding them per layer would just lose people. A ping carries the layer its sender
   // was looking at, so it lands on that floor only.
-  const peers = useMemo(() => room.peers.filter((p) => zoneMatch(p.zone)), [room.peers, zoneMatch]);
+  const peers = useMemo(
+    () =>
+      room.peers
+        .filter((p) => zoneMatch(p.zone))
+        // Named from the roster, so hovering a green dot says who it is.
+        .map((p) => ({ ...p, name: room.users.find((u) => u.peerId === p.peerId)?.name })),
+    [room.peers, room.users, zoneMatch],
+  );
   const pings = useMemo(
     () => room.pings.filter((p) => zoneMatch(p.zone) && onLayer(p, viewLayer)),
     [room.pings, zoneMatch, viewLayer],
@@ -414,53 +422,30 @@ export default function MapWindow() {
             </option>
           ))}
         </select>
-        <select
-          className="map-zone-select no-drag"
+        <ZonePicker
+          zones={zoneOptions}
           value={selectValue}
-          onChange={(e) => setOverride(e.target.value || null)}
-          title="View a zone (blank = follow your current zone)"
-        >
-          <option value="">Follow current{currentZone ? ` · ${currentZone}` : ""}</option>
-          {/* The viewed zone has no map — keep the dropdown showing it, flagged. */}
-          {selectValue && !zoneOptions.some((z) => z.name === selectValue) && (
-            <option value={selectValue}>{selectValue} (no map)</option>
-          )}
-          {zoneOptions.map((z) => (
-            <option key={z.key} value={z.name}>
-              {z.name}
-              {/* Name the file too when it isn't obvious from the zone name, so a zone we
-                  could only name after its file isn't ambiguous. */}
-              {z.file && z.file !== z.name.toLowerCase() ? ` · ${z.file}` : ""}
-            </option>
-          ))}
-        </select>
-        {/* One dropdown, two kinds of layer: separate map files (an image zone) or the storeys
-            a map file's author labelled. Only shown when there's actually a choice. */}
-        {(floors.length > 1 || layers.length > 1) && (
+          currentZone={currentZone}
+          onPick={setOverride}
+        />
+        {/* The storeys a map's author labelled — only when it declares more than one. There are no
+            per-file layers any more: one map file is one zone. */}
+        {floors.length > 1 && (
           <select
             className="map-zone-select no-drag"
             value={viewLayer ?? ""}
             onChange={(e) => setLayerPick(e.target.value === "" ? null : Number(e.target.value))}
             title={
-              floors.length > 1
-                ? "Which floor to show — the map file holds them all at once, as the game draws it.\nPins and pings you make belong to the floor you made them on."
-                : "Which layer of this zone to view — pins and pings are per layer"
+              "Which floor to show — the map file holds them all at once, as the game draws it.\nPins and pings you make belong to the floor you made them on."
             }
           >
-            {/* Floors can be shown together; separate map files can't. */}
-            {floors.length > 1 && <option value="">All floors</option>}
-            {floors.length > 1
-              ? floors.map((f) => (
-                  <option key={f.layer} value={f.layer}>
-                    {f.label}
-                    {yourFloor?.layer === f.layer ? " · you" : ""}
-                  </option>
-                ))
-              : layers.map((z) => (
-                  <option key={z.key} value={z.layer}>
-                    {layerLabel(z)}
-                  </option>
-                ))}
+            <option value="">All floors</option>
+            {floors.map((f) => (
+              <option key={f.layer} value={f.layer}>
+                {f.label}
+                {yourFloor?.layer === f.layer ? " · you" : ""}
+              </option>
+            ))}
           </select>
         )}
         <label className="map-follow no-drag" title="Snap the map to your zone when you travel">
@@ -468,20 +453,6 @@ export default function MapWindow() {
           follow
         </label>
         <div className="win-controls no-drag">
-          {canCalibrate && (
-            <button
-              className={`wc ${calibrating ? "on" : ""}`}
-              title="Calibrate this map's alignment"
-              onClick={() => setCalibrateOn((c) => !c)}
-            >
-              📐
-            </button>
-          )}
-          {zone?.mapKeyImg && (
-            <button className={`wc ${showKey ? "on" : ""}`} title="Toggle the map key / legend" onClick={() => setShowKey((s) => !s)}>
-              ▤
-            </button>
-          )}
           {/* The map's own scale, separate from the main window's — see `mapFontScale`. */}
           <ScaleButtons
             scale={settings?.overlay.mapFontScale ?? 1}
@@ -626,6 +597,7 @@ export default function MapWindow() {
           filters={killFilters}
           onFilters={setKillFilters}
           showConfidence={showKillConfidence}
+          onEmphasize={setEmphasis}
         />
       )}
 
@@ -681,7 +653,7 @@ export default function MapWindow() {
             vector={vector}
             floor={floor}
             hiddenPoiKinds={hiddenPoiKinds}
-            redrawKey={cal.tick}
+            emphasis={emphasis}
             kills={renderKills}
             showKillConfidence={showKillConfidence}
             trail={trail.points}
@@ -694,27 +666,26 @@ export default function MapWindow() {
             onPinClick={(pin, x, y) => {
               if (pin.mine) setSelected({ id: pin.id, x, y });
             }}
+            onKillClick={(kill) => {
+              // Open the kill list scoped to that mob: the marker says where, the list says what
+              // happened there — and the filter drives both, so the map narrows to it as well.
+              if (!kill.mob) return;
+              setKillFilters((f) => ({ ...f, mob: kill.mob! }));
+              setKillsOpen(true);
+            }}
             moveMode={moveMode}
             onPinMove={(id, eq) => updatePin(id, { y: eq.y, x: eq.x })}
-            showGrid={calibrating}
-            calibrating={calibrating}
-            onFix={(px, image) => {
-              // No `/loc` yet means there's no EQ coordinate to pair the click with; the
-              // calibration panel says so rather than recording a fix against nothing.
-              if (loc) cal.addFix(loc, px, image);
-            }}
-            fixes={cal.fixes}
           />
         ) : (
           <div className="map-empty">
             <p className="map-empty-title">
-              {zoneName ? `No map configured for ${zone?.name ?? zoneName}` : "No zone selected"}
+              {zoneName ? `No map file for ${zone?.name ?? zoneName}` : "No zone selected"}
             </p>
             <p className="muted small">
               {!zoneName
                 ? "Your zone will appear once the log reports it — or pick one above."
-                : sourceId === IMAGE_SOURCE
-                  ? "Only the bundled images are this sparse — switch the map source above to the game's own maps for every zone."
+                : sources.length === 0
+                  ? "No maps folder found. The app looks beside the EverQuest log folder in Settings, so point that at your install and its maps will appear."
                   : `${sourceLabel} has no file for it. Another map set may, or the zone's name may differ from its file name — pick it by hand above.`}
             </p>
             <p className="muted small">
@@ -727,7 +698,6 @@ export default function MapWindow() {
             )}
           </div>
         )}
-        {showKey && zone?.mapKeyImg && <MapKey src={zone.mapKeyImg} alt={`${zone.name} map key`} />}
         {/* Someone drew this map by hand and shipped it for free; name them. */}
         {!!vector?.credits.length && (
           <p className="map-credits muted small" title="From the map file's credits layer">
@@ -768,52 +738,6 @@ export default function MapWindow() {
         </div>
       )}
 
-      {calibrating && (
-        <div className="map-cal">
-          <div className="map-cal-head">
-            <span>
-              Calibrating {zone?.name}
-              {zone?.layer ? ` · ${layerLabel(zone)}` : ""}
-            </span>
-            <span className="map-cal-step">Step size: {cal.step}</span>
-          </div>
-          {/* The one thing a fix can't be made without, so it's said first and plainly. */}
-          <div className="row" style={{ gap: 8 }}>
-            <span className={loc ? "small" : "muted small"}>
-              {loc ? `Your /loc: ${loc.y}, ${loc.x}` : "Type /loc in-game to record a fix"}
-            </span>
-            <span className="spacer" />
-            <span className="muted small">
-              {cal.fixes.length === 0
-                ? "no fixes yet"
-                : cal.fixes.length === 1
-                  ? "1 fix — placed, scale unchanged"
-                  : `${cal.fixes.length} fixes — placed and scaled`}
-            </span>
-            {cal.fixes.length > 0 && (
-              <button className="btn ghost sm" onClick={cal.clearFixes}>
-                Clear fixes
-              </button>
-            )}
-          </div>
-          <div className="row" style={{ gap: 8 }}>
-            <code className="map-cal-values">{cal.values}</code>
-            <button
-              className="btn ghost sm"
-              title="Copy the calibration for zones.ts"
-              onClick={() => void navigator.clipboard?.writeText(cal.values)}
-            >
-              ⧉
-            </button>
-          </div>
-          <span className="muted small">
-            Stand somewhere, <kbd>/loc</kbd>, then <b>click that spot</b> on the map. One click places
-            the map; a second click somewhere far away sets its scale too — that&apos;s the whole
-            calibration. Fine-tune with <kbd>I/J/K/L</kbd> (move) and <kbd>W/S</kbd> (scale ±1%),
-            <kbd>−</kbd>/<kbd>=</kbd> for step size, then paste the values into zones.ts.
-          </span>
-        </div>
-      )}
     </div>
   );
 }
