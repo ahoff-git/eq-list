@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { createLogWatcher } from "../log-watcher";
 import { createLogCursor } from "../log-cursor";
-import type { LocEvent, LootEvent } from "../../src/shared/types";
+import type { LocEvent, LogLine, LootEvent } from "../../src/shared/types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -72,6 +72,38 @@ test("emits loot for lines appended after start, ignoring backlog and chatter", 
     assert.equal(events.length, 1);
     assert.equal(events[0].item, "Bone Chips");
     assert.equal(events[0].source, "decaying skeleton");
+  } finally {
+    watcher.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A party invite is a line no parser owns, so the only way to alert on one is to see the line
+// itself. Every timestamped line comes through, parsed or not; a line without a timestamp is not
+// a log line at all.
+test("every timestamped line is offered raw, whether or not a parser claims it", async () => {
+  const dir = tempLogDir();
+  const file = path.join(dir, "eqlog_Tester_test.txt");
+  fs.writeFileSync(file, "");
+
+  const watcher = createLogWatcher();
+  const lines: LogLine[] = [];
+  const loot: LootEvent[] = [];
+  watcher.onLine((l) => lines.push(l));
+  watcher.onLoot((e) => loot.push(e));
+  watcher.start(dir, "");
+
+  try {
+    await sleep(700);
+    fs.appendFileSync(file, stamp("BunnySlayer invites you to a party.") + "\n");
+    fs.appendFileSync(file, stamp(LOOT) + "\n"); // a line that IS parsed still comes through raw
+    fs.appendFileSync(file, "not a log line at all\n");
+    await waitFor(() => lines.length >= 2);
+    assert.deepEqual(
+      lines.map((l) => l.message),
+      ["BunnySlayer invites you to a party.", LOOT],
+    );
+    assert.equal(loot.length, 1); // and the typed event still arrives as before
   } finally {
     watcher.stop();
     fs.rmSync(dir, { recursive: true, force: true });

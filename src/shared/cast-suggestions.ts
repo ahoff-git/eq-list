@@ -1,5 +1,5 @@
 /**
- * cast-suggestions.ts — a curated menu of crowd-control spells worth alerting on.
+ * cast-suggestions.ts — a curated menu of things worth alerting on.
  *
  * A cast-alert watch matches by substring against a cast spell's name (see cast-alerts.ts), but
  * EQ names most crowd control off-theme: this server's root is "Instill", a fear is "Screaming
@@ -10,6 +10,10 @@
  * chosen to catch a whole family: "Terror" catches Screaming Terror and the Terror-of-* fears,
  * "Cajol" catches Cajoling Whispers. Pure data, so the renderer that draws it and the test that
  * pins it down share one source. Categories and picks were checked against eqlwiki.com.
+ *
+ * The same list carries the **line** watches (`onLine`) — a party invite, a tell. Those match the
+ * whole log line rather than a spell name, and the wording is the part nobody remembers, which is
+ * exactly what a suggestion is for.
  */
 
 export interface CastSuggestion {
@@ -17,6 +21,13 @@ export interface CastSuggestion {
   spell: string;
   /** What this catches — shown as a tooltip so the substring isn't a mystery. */
   note: string;
+  /**
+   * Match whole **log lines** instead of a spell name (see `matchLine`). Such a watch is added
+   * with `onCast: false`: it's about what the game said, not about anything being cast.
+   */
+  onLine?: boolean;
+  /** What the chip says, when the substring itself would be cryptic ("invites you" → "Party invite"). */
+  label?: string;
 }
 
 export interface CastSuggestionGroup {
@@ -60,6 +71,16 @@ export const CAST_SUGGESTIONS: readonly CastSuggestionGroup[] = [
       { spell: "Immobil", note: "Immobilize" },
       { spell: "Fetter", note: "Fetter (higher-level root)" },
       { spell: "Paralyz", note: "Paralyzing Earth" },
+    ],
+  },
+  {
+    // Not spells at all: things said *to you* that are easy to miss with the chat window buried
+    // under a fight. Each is the shortest phrase that survives EQ's wording of the sentence
+    // ("… invites you to join a group." / "… invites you to a party."), so it catches either.
+    category: "Said to you",
+    suggestions: [
+      { spell: "invites you", onLine: true, label: "Party invite", note: "“<name> invites you to a party / to join a group.”" },
+      { spell: "tells you", onLine: true, label: "Tell", note: "A private message: “<name> tells you, '…'”" },
     ],
   },
 ];

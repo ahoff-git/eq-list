@@ -914,6 +914,13 @@ export interface CastWatch {
    */
   onFade?: boolean;
   /**
+   * Match `spell` against **whole log lines** instead of a spell name — "invites you" for a party
+   * invite, "tells you" for a private message. The log says plenty the parsers don't model, and
+   * this is how the player gets told about any of it without a new event kind per message.
+   * Off by default; a watch that has it on normally has `onCast: false`. See `matchLine`.
+   */
+  onLine?: boolean;
+  /**
    * This watch's own look and sound, overriding the defaults field by field. Absent means it
    * follows them — which is what every watch does until you give it one. Partial so a style
    * saved before a new field existed still picks that field up from the defaults.
@@ -998,20 +1005,29 @@ export interface CastAlertSettings extends AlertStyle {
   displayId?: number;
 }
 
-/** Fired when a watched spell begins casting, or fades — the payload the overlay banner shows. */
+/**
+ * Fired when a watched spell begins casting or fades, or a watched **line** appeared — the
+ * payload the overlay banner shows.
+ */
 export interface CastAlertEvent {
-  /** Who's casting (a mob, a peer, or you). Empty for a fade, which names no caster. */
+  /** Who's casting (a mob, a peer, or you). Empty for a fade or a line, which name no caster. */
   caster: string;
   /** The spell as the log named it (rank stripped), or the words a fade line used. */
   spell: string;
   at: string;
   /**
-   * Which prompt this is. A cast says "dispel, now"; a fade says "cast it again". Absent means
-   * a cast, so an alert sent by an older build still reads correctly.
+   * Which prompt this is. A cast says "dispel, now"; a fade says "cast it again"; a line just
+   * repeats what the game said. Absent means a cast, so an alert sent by an older build still
+   * reads correctly.
    */
-  event?: "cast" | "fade";
+  event?: "cast" | "fade" | "line";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
+  /**
+   * For a `line` alert, the log line that matched (timestamp stripped). The banner shows the
+   * game's own words, because for a line watch that sentence *is* the whole message.
+   */
+  text?: string;
   /**
    * The look and sound this alert should use, already resolved from the defaults and the watch's
    * own overrides (`alertStyle`). Carried with the alert so the overlay renders what *this* watch

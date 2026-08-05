@@ -146,12 +146,15 @@ const BLOCK_TOL = 6;
  * discretisation, not physics — {@link floorNear} snaps to whichever floor the nearby walls
  * evidence, so a smooth ramp arrives as a series of jumps larger than any real gradient.
  *
- * It's safe to be generous here because this limit isn't what stops a route scaling a wall — the
- * wall does, by blocking every height it spans (see {@link RouteGrid}). What remains is a cap on
- * absurdity: a 40-unit drop is survivable, and descents are charged more than climbs, so a route
- * still prefers the ramp it can walk.
+ * It's safe to be generous because this limit isn't what stops a route scaling a wall — the wall
+ * does, by blocking every height it spans (see {@link RouteGrid}). Measured at 80, coverage and
+ * accuracy are indistinguishable from 40 (28 of 36 dungeon routes either way, 0.1% of sampled length
+ * adrift), and the extra room absorbs the height discrepancies that hand-drawn maps are full of —
+ * a floor drawn at one height opening onto a corridor drawn at another.
+ *
+ * What it must **not** drag with it is {@link JUMP}: see there.
  */
-const MAX_STEP = 40;
+const MAX_STEP = 80;
 
 /** Extra cost per unit of descent, so a drop is a last resort rather than a free shortcut. */
 const DROP_PENALTY = 0.5;
@@ -160,10 +163,17 @@ const DROP_PENALTY = 0.5;
 const CLIMB_PENALTY = 0.2;
 
 /**
- * A height change bigger than a step is a *jump* — a ladder, a shaft, a labelled drop — and is
- * called out as a change of level rather than treated as walking.
+ * A height change bigger than this is a *jump* — a ladder, a shaft, a labelled drop — rather than
+ * walking: it gets both its ends kept as waypoints, is never smoothed across, and is called out to
+ * the user as a change of level.
+ *
+ * **Deliberately not {@link MAX_STEP}**, though it was once defined as it. When the step limit
+ * doubled, tying the two together doubled the height that smoothing would draw a straight line
+ * across, and the worst excursion in the corpus went from 187 to 416 units from any geometry at the
+ * route's own height — the same diagonal-through-rock failure that the two-ended jump was added to
+ * fix. A step may now be up to 80 units; drawing one as a straight line stops being honest at 40.
  */
-const JUMP = MAX_STEP;
+const JUMP = 40;
 
 /**
  * How far from the nearest drawn line a route may stray, in **EQ units**, measured at the height it's
@@ -333,6 +343,20 @@ export interface RouteGrid {
   /** `floors[cell * MAX_FLOORS + i]` — floor heights per cell, `floorCount` of them. */
   floors: Float32Array;
   floorCount: Uint8Array;
+  /**
+   * The segments themselves, and which cells each passes through (CSR: `segAt` holds indices, sliced
+   * by `segFrom[cell]`..`segFrom[cell + 1]`).
+   *
+   * Kept because a cell is too coarse to answer "does this step cross a wall?". A wall drawn
+   * diagonally occupies two diagonally-adjacent cells, and a step between the *other* two passes
+   * clean through the line while entering no blocked cell at all — the single biggest source of
+   * routes through solid walls. Refusing every such step instead seals narrow diagonal corridors,
+   * where the same two cells are walls running *alongside* you. Only the geometry can tell those
+   * apart, so {@link wallBetween} asks it.
+   */
+  segments: readonly MapSegment[];
+  segAt: Int32Array;
+  segFrom: Int32Array;
   /** A label says you may pass here even though a line was drawn through it. */
   passable: Uint8Array;
   /**
@@ -423,6 +447,9 @@ export function buildRouteGrid(map: EqMap): RouteGrid | undefined {
     blockCount: new Uint8Array(cells),
     floors: new Float32Array(cells * MAX_FLOORS),
     floorCount: new Uint8Array(cells),
+    segments: map.segments,
+    segAt: new Int32Array(0),
+    segFrom: new Int32Array(cells + 1),
     passable: new Uint8Array(cells),
     linkZ: new Float32Array(cells).fill(NaN),
     inkDistance: new Uint8Array(0), // sized by measureInkDistance, once the height range is sliced
@@ -439,6 +466,7 @@ export function buildRouteGrid(map: EqMap): RouteGrid | undefined {
   grid.inkPerArea = inkLength / Math.max(1, (maxX - minX) * (maxY - minY));
 
   rasterize(grid, map.segments);
+  indexSegments(grid);
   markLabels(grid, map);
   measureInkDistance(grid);
   return grid;
@@ -519,6 +547,130 @@ function addFloor(grid: RouteGrid, at: number, z: number): void {
   if (n >= MAX_FLOORS) return;
   grid.floors[base + n] = z;
   grid.floorCount[at] = n + 1;
+}
+
+/**
+ * Which cells each segment passes through, as a CSR index. Two passes so the storage is exact: count
+ * per cell, prefix-sum, then fill.
+ */
+function indexSegments(grid: RouteGrid): void {
+  const cells = grid.cols * grid.rows;
+  const counts = new Int32Array(cells);
+  const visit = (fn: (cell: number, i: number) => void) => {
+    for (let i = 0; i < grid.segments.length; i++) {
+      const seg = grid.segments[i];
+      const dx = seg.x2 - seg.x1;
+      const dy = seg.y2 - seg.y1;
+      const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (grid.cell / 2)));
+      let last = -1;
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        const col = colOf(grid, seg.x1 + dx * t);
+        const row = rowOf(grid, seg.y1 + dy * t);
+        if (!inBounds(grid, col, row)) continue;
+        const cell = row * grid.cols + col;
+        if (cell === last) continue; // the same cell twice running adds nothing
+        last = cell;
+        fn(cell, i);
+      }
+    }
+  };
+  visit((cell) => void counts[cell]++);
+  let total = 0;
+  for (let cell = 0; cell < cells; cell++) {
+    grid.segFrom[cell] = total;
+    total += counts[cell];
+  }
+  grid.segFrom[cells] = total;
+  grid.segAt = new Int32Array(total);
+  const fill = grid.segFrom.slice(0, cells);
+  visit((cell, i) => void (grid.segAt[fill[cell]++] = i));
+}
+
+/** Do two plan segments cross? Parameters along each, or undefined. */
+function planCross(
+  ax: number, ay: number, bx: number, by: number,
+  cx: number, cy: number, dx2: number, dy2: number,
+): { t: number; u: number } | undefined {
+  const rx = bx - ax;
+  const ry = by - ay;
+  const sx = dx2 - cx;
+  const sy = dy2 - cy;
+  const den = rx * sy - ry * sx;
+  if (Math.abs(den) < 1e-9) return undefined; // parallel; a wall alongside you isn't in the way
+  const t = ((cx - ax) * sy - (cy - ay) * sx) / den;
+  const u = ((cx - ax) * ry - (cy - ay) * rx) / den;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return undefined;
+  return { t, u };
+}
+
+/**
+ * Does walking straight from one point to another cross a wall *at the height you'd be walking*?
+ *
+ * The exact question, asked of the geometry rather than of the grid: gather the segments in the cells
+ * the line passes through and intersect against them. Crossing a wall fifty units below you is passing
+ * over it and fine; crossing one at your feet is walking through it. A label saying there's a way
+ * through (`passable`) forgives it, which is how a door in a wall stays a door.
+ *
+ * Used on the **legs that get drawn**, where a wrong answer is visible and large. It is deliberately
+ * *not* applied to every individual step, and that's a measured trade rather than an oversight.
+ * Applying it per step does eliminate the last crossings — and halves coverage, because in a corridor
+ * a few cells wide the line between two quantised cell *centres* genuinely does clip the wall, so the
+ * test correctly refuses steps a real player walks straight down the middle of:
+ *
+ *     per-step test   crossings   dungeon routes   expedition   that room
+ *        off             ~1/5 legs      28 of 36        12/12    in and out
+ *        on              ~0             22 of 36         5/12    sealed again
+ *
+ * What survives with it off was measured rather than assumed: across four zones every remaining
+ * crossing is **2.1 units deep or less, on 4-unit legs** — a single diagonal step cutting a wall's
+ * corner by about two units, which is the width of a hairline on screen. Sealing a room to avoid that
+ * is the worse answer.
+ */
+function wallBetween(
+  grid: RouteGrid,
+  x1: number, y1: number, z1: number,
+  x2: number, y2: number, z2: number,
+): boolean {
+  const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (grid.cell / 2)));
+  const seen = new Set<number>();
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps;
+    const col = colOf(grid, x1 + (x2 - x1) * t);
+    const row = rowOf(grid, y1 + (y2 - y1) * t);
+    // The **neighbouring** cells too, not just the one the sample lands in. A diagonal step's line
+    // runs corner to corner: it enters only the two cells it joins, while the wall it crosses lives
+    // in the two cells *beside* it, which no sample along the line ever visits. Missing them was why
+    // the first version of this test caught almost nothing.
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (!inBounds(grid, col + dc, row + dr)) continue;
+        const cell = (row + dr) * grid.cols + col + dc;
+        if (seen.has(cell)) continue;
+        seen.add(cell);
+        // A label saying there's a way through forgives the crossing — that's how a door stays a door.
+        if (grid.passable[cell]) continue;
+        for (let i = grid.segFrom[cell]; i < grid.segFrom[cell + 1]; i++) {
+          const seg = grid.segments[grid.segAt[i]];
+          const hit = planCross(x1, y1, x2, y2, seg.x1, seg.y1, seg.x2, seg.y2);
+          if (!hit) continue;
+          const walkZ = z1 + (z2 - z1) * hit.t;
+          const wallZ = seg.z1 + (seg.z2 - seg.z1) * hit.u;
+          if (Math.abs(walkZ - wallZ) <= BLOCK_TOL) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** The centre of a cell, in world coordinates. */
+function cellCentre(grid: RouteGrid, at: number): { x: number; y: number } {
+  const col = at % grid.cols;
+  return {
+    x: grid.minX + (col + 0.5) * grid.cell,
+    y: grid.minY + ((at - col) / grid.cols + 0.5) * grid.cell,
+  };
 }
 
 /** Is something drawn across this height here? Then you can't be standing in it. */
@@ -984,23 +1136,31 @@ function smooth(grid: RouteGrid, path: Place[]): Place[] {
  */
 function clearLine(grid: RouteGrid, a: Place, b: Place): boolean {
   // A change of level is a jump, never a walk — `smooth` keeps both its ends instead.
-  if (Math.abs(b.z - a.z) > MAX_STEP) return false;
+  if (Math.abs(b.z - a.z) > JUMP) return false;
   const ac = a.at % grid.cols;
   const ar = (a.at - ac) / grid.cols;
   const bc = b.at % grid.cols;
   const br = (b.at - bc) / grid.cols;
-  const steps = Math.max(1, Math.max(Math.abs(bc - ac), Math.abs(br - ar)) * 2);
-  for (let i = 1; i <= steps; i++) {
+  // Stepped in *world* space at a quarter of a cell and floored to the cell containing each point,
+  // rather than interpolating cell indices and rounding them. Rounding independently in each axis
+  // skips the cell a near-diagonal line actually clips — it lands in the neighbour instead — so a
+  // leg could be declared clear while passing straight through the corner of a wall.
+  const steps = Math.max(1, Math.ceil(Math.hypot(bc - ac, br - ar) * 4));
+  for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const c = Math.round(ac + (bc - ac) * t);
-    const r = Math.round(ar + (br - ar) * t);
+    const c = Math.floor(ac + (bc - ac) * t);
+    const r = Math.floor(ar + (br - ar) * t);
     if (!inBounds(grid, c, r)) return false;
     const at = r * grid.cols + c;
     const z = a.z + (b.z - a.z) * t;
     if (blocked(grid, at, z)) return false;
     if (inkCellsAway(grid, at, z) > grid.inkLimit) return false;
   }
-  return true;
+  // The leg as drawn is a long diagonal, so it needs the same exact question the search asks of a
+  // diagonal step — cell sampling alone lets it clip a corner.
+  const from = cellCentre(grid, a.at);
+  const to = cellCentre(grid, b.at);
+  return !wallBetween(grid, from.x, from.y, a.z, to.x, to.y, b.z);
 }
 
 function groundLength(steps: RouteStep[]): number {

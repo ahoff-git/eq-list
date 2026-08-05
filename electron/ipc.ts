@@ -93,11 +93,18 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
       (watchId && alerts.watches.find((w) => w.id === watchId)) ||
       alerts.watches.find((w) => w.enabled && w.spell.trim());
     getAlertWindow()?.moveTop(); // you're on the Settings tab, so raise the overlay above it
+    const spell = watch?.spell.trim() || "Fear";
+    // A line watch draws a different banner (the game's own sentence, no "dispel!"), so its test
+    // has to be one too — otherwise styling one previews a shape it will never take.
+    const shape: Partial<CastAlertEvent> = watch?.onLine
+      ? { caster: "", event: "line", text: `A log line containing “${spell}”` }
+      : { caster: "Test" };
     broadcast(CH.castAlert, {
       caster: "Test",
-      spell: watch?.spell.trim() || "Fear",
+      spell,
       at: new Date().toISOString(),
       style: alertStyle(alerts, watch),
+      ...shape,
     } satisfies CastAlertEvent);
   });
 

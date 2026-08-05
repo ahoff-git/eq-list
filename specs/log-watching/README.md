@@ -71,10 +71,13 @@ as they drop and the damage meter can show how the fight went.
     or casts. Runs on `start` and when following a log that already existed (a character who
     was logged in first), and the window grows 64KB → 512KB → 4MB until a zone line turns up.
     See [ADR 0043](../decisions/0043-state-is-not-news-either.md).
-  - Calls `parseLine` **once** per line and fans the result out by `event.kind`; the
+  - Splits each line **once** and fans the parsed result out by `event.kind`; the
     combat kinds are also emitted together as `combat`, so the meter takes one
     subscription. It never parses anything itself, and it numbers the lines it reads so
     every event carries a `logId`.
+  - Emits the split line itself on **`onLine`**, parsed or not — the channel for what the log says
+    and no parser models, like "BunnySlayer invites you to a party". Free: `splitLine` has already
+    run by then. See [ADR 0050](../decisions/0050-a-watch-can-read-a-whole-log-line.md).
 - `main.ts` tracks the current zone from `zone` events and broadcasts it (overlay /
   status bar) and feeds `xp`/`kill`/`combat` into `combat-stats.ts` — the single session
   tracker — coalescing its snapshots before broadcast, since one poll can carry thousands

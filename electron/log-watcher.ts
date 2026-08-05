@@ -10,12 +10,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
-import { parseLine } from "../src/shared/parse-line";
+import { parseSplitLine } from "../src/shared/parse-line";
 import { splitLine } from "../src/shared/log-parser";
 import { catchUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
-import type { CoinEvent, LootEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
+import type { CoinEvent, LootEvent, LogLine, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
@@ -48,6 +48,12 @@ export interface LogWatcher {
   onCoin(cb: (e: CoinEvent) => void): void;
   onCombat(cb: (e: CombatEvent) => void): void;
   onLevel(cb: (e: LevelEvent) => void): void;
+  /**
+   * Every timestamped line, whether or not a parser claimed it — the channel for things the log
+   * says but nothing models, like a party invite. Costs nothing to offer: the line is already
+   * split by the time the matchers run.
+   */
+  onLine(cb: (line: LogLine) => void): void;
   onStatus(cb: (s: WatcherStatus) => void): void;
   /**
    * Fired once per `start`, after the gap between where we left off and the end of the log has been
@@ -248,10 +254,14 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
         if (catchingUp) catchingUp.bytes += bytesRead;
         const lines = pending.split(/\r?\n/);
         pending = lines.pop() ?? ""; // trailing partial line waits for more bytes
-        for (const line of lines) {
-          // One pass per line: the dispatcher splits the timestamp once and hands the
-          // result to each matcher, then we fan the typed event out by its own `kind`.
-          const event = parseLine(line, ++logId);
+        for (const raw of lines) {
+          // One pass per line: the timestamp comes off once, the split line goes out as-is (for
+          // whoever watches the log's own words), then to the matchers, and the typed event is
+          // fanned out by its own `kind`. The id counts every raw line, parsed or not.
+          const line = splitLine(raw, ++logId);
+          if (!line) continue;
+          bus.emit("line", line);
+          const event = parseSplitLine(line);
           if (!event) continue;
           if (catchingUp) catchingUp.lastAt = event.at;
           bus.emit(event.kind === "loot" ? "loot" : event.kind, event);
@@ -321,6 +331,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onCoin: (cb) => void bus.on("coin", cb),
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
+    onLine: (cb) => void bus.on("line", cb),
     onStatus: (cb) => void bus.on("status", cb),
     onCaughtUp: (cb) => void bus.on("caughtUp", cb),
   };

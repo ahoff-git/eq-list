@@ -53,8 +53,13 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0047: Money is copper, counted in two ledgers](./0047-money-is-copper-in-two-ledgers.md) — *the money half of 0017's camp question; coin per mob pools like 0024's drop rates, item prices derive from the loot ledger*
 - [0048: A map label is read by its words, and a bracket it can't read defers](./0048-a-map-label-is-read-by-its-words.md) — *re-tallies the label kinds 0039 put on screen; multi-select floors and a height window over 0040's storeys*
 - [0049: A walking route is inferred from drawn lines, and says how much to believe it](./0049-a-route-is-inferred-from-drawn-lines.md) — *reads 0039's geometry for something it never claimed to state; leans on 0048's label kinds and stays clear of 0040's refusal to name storeys*
+- [0050: A watch can read a whole log line, not just a spell](./0050-a-watch-can-read-a-whole-log-line.md) — *widens 0035's alert from what the parsers model to anything the game prints (a party invite, a tell), without a new event kind per message*
 
 ## Open Questions
+- A line watch is a substring of the whole log line, and nothing rate-limits it
+  ([ADR 0050](./0050-a-watch-can-read-a-whole-log-line.md)). A careless one ("hit") fires
+  thousands of times a night. Is the overlay's four-banner cap enough, or does a watch want a
+  cooldown — and if so, per watch or per matched sentence?
 - A route across a dungeon whose levels are joined by nothing the labels name is genuinely
   unroutable, but on a large map the search can only report that it *gave up*
   ([ADR 0049](./0049-a-route-is-inferred-from-drawn-lines.md)). Is there a cheap way to prove

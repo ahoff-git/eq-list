@@ -19,11 +19,15 @@
  * replay), and a barrage of warnings about fights that ended hours ago is worse than silence,
  * so anything older than `LIVE_WITHIN_MS` is ignored.
  *
+ * A watch can also be pointed at the **raw log line** instead of a spell name (`onLine`), which is
+ * how "BunnySlayer invites you to a party" raises an alert without a parser and an event kind for
+ * every sentence the game can print. Same list, same styles, same overlay.
+ *
  * No I/O, no state: a black box the main process feeds and tests pin down. (Note it can
  * only match casts the log *names*; generic "begins to cast a spell" lines carry no name.)
  */
 import { SELF } from "./combat-parser";
-import type { AlertStyle, BuffFadedEvent, CastEvent, CastAlertSettings, CastWatch } from "./types";
+import type { AlertStyle, BuffFadedEvent, CastEvent, CastAlertSettings, CastWatch, LogLine } from "./types";
 
 /**
  * The style an alert should use: the watch's overrides laid over the defaults, field by field.
@@ -89,10 +93,10 @@ export function matchCast(
   return null;
 }
 
-/** Is this watch's text in the spell name? (Both already lowercased.) */
-function matchesWatch(w: CastWatch, spell: string): boolean {
+/** Is this watch's text in what it was pointed at — a spell name, or a whole line? (Both lowercased.) */
+function matchesWatch(w: CastWatch, text: string): boolean {
   const needle = w.spell.trim().toLowerCase();
-  return !!needle && spell.includes(needle);
+  return !!needle && text.includes(needle);
 }
 
 /** Too old to act on — the same liveness rule casts get, for the same reason. */
@@ -125,4 +129,35 @@ export function matchFade(
     if (matchesWatch(w, spell)) return w;
   }
   return null;
+}
+
+/**
+ * The watch a whole **log line** matches (a watch with `onLine`, whose text is in the line), or null.
+ *
+ * The line is matched with its timestamp already off, and *every* line is offered — including the
+ * ones that also became a typed event — because a watch here is the player saying "tell me when the
+ * game says this", and which lines the parsers happen to model is not their concern.
+ *
+ * None of the caster rules apply: a line names no caster we can classify, so `includeSelf` /
+ * `includePlayers` are irrelevant. The liveness rule does, for the same reason as everywhere else —
+ * a party invite from last night is not something to react to.
+ */
+export function matchLine(
+  line: Pick<LogLine, "message" | "at">,
+  settings: CastAlertSettings,
+  now: number = Date.now(),
+): CastWatch | null {
+  if (!settings.enabled) return null;
+  if (stale(line.at, now)) return null;
+  const message = line.message.toLowerCase();
+  for (const w of settings.watches) {
+    if (!w.enabled || !w.onLine) continue;
+    if (matchesWatch(w, message)) return w;
+  }
+  return null;
+}
+
+/** Does any enabled watch look at raw lines? Lets a caller skip the work when none does. */
+export function watchesLines(settings: CastAlertSettings): boolean {
+  return settings.enabled && settings.watches.some((w) => w.enabled && w.onLine && !!w.spell.trim());
 }

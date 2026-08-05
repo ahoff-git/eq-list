@@ -22,6 +22,17 @@ test("every suggestion is a non-empty substring with a note, and none repeats", 
   }
 });
 
+test("a line suggestion says so, and reads as words rather than a spell name", () => {
+  // These are the ones nobody can quote from memory ("invites you"), so the chip shows a plain
+  // label and the substring stays short enough to survive EQ's wording of the sentence.
+  const lines = CAST_SUGGESTIONS.flatMap((g) => g.suggestions).filter((s) => s.onLine);
+  assert.ok(lines.length > 0, "at least one line suggestion is offered");
+  for (const s of lines) {
+    assert.ok(s.label?.trim(), `${s.spell} has a label for the chip`);
+  }
+  assert.ok(lines.some((s) => s.spell === "invites you"), "a party invite is one click away");
+});
+
 test("isWatched folds case and whitespace like a real watch", () => {
   const watches = [{ spell: "Root" }, { spell: " terror " }];
   assert.equal(isWatched(watches, { spell: "Root", note: "" }), true);

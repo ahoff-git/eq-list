@@ -178,7 +178,8 @@ list, hunt, search, damage, session, settings.
     controls are `AlertStyleFields`, used twice: once for the **defaults** and again for a watch
     with a style **of its own** (🎨 on its row, which copies the defaults and then lets you tune
     them, with a Test button that previews *that* watch). Each watch also chooses which prompts
-    it wants — **cast**, **fades**, or both),
+    it wants — **cast**, **fades**, **line**, or any mix; the include-players toggle only shows
+    while a watch is watching casts, since a fade and a line name no caster),
     **"Eat a log file"** (digest a past log into learned mob data — see `electron/log-import.ts`;
     keyed per line so re-eating or overlapping logs never double-count, [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md)),
     and a **Help** area: global-shortcut list with live registration status (`app.info()`) and a
@@ -202,6 +203,15 @@ list, hunt, search, damage, session, settings.
     from the cast alert, so a buff can be fade-only. The parser reports all four shapes a real log
     uses, including your spell wearing off *something else* and EQ's per-spell flavour wording
     ("Your strength fades."), which names no spell — such a watch matches those words instead.
+
+    A watch can also be pointed at the **whole log line** (`onLine` / `matchLine`) instead of a
+    spell name — "invites you" catches "*BunnySlayer invites you to a party*", "tells you" catches a
+    private message. That's how anything the game prints becomes alertable without a parser and an
+    event kind per sentence: the watcher offers every split line on `onLine`, and `watchesLines`
+    skips the match when nobody's watching. Its banner shows the log's own words with no call to
+    action (💬), because unlike "dispel!" there is nothing to prompt. The **Suggested** chips offer
+    the party invite and the tell by label, since the wording is the unmemorable part.
+    See [ADR 0050](../decisions/0050-a-watch-can-read-a-whole-log-line.md).
 
     Appearance is **per alert**, not per window: `alertStyle` resolves the matching watch's
     overrides over the defaults in the main process, and the resolved `AlertStyle` travels *with*

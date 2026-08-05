@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
@@ -105,36 +105,56 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
         const place = placement(position, locations);
         return (
         <div className={`cast-alerts no-drag ${place.className}`} style={place.style} key={position}>
-          {stack.map((a) => (
-            <button
-              key={a.id}
-              className={`cast-alert anim-${a.resolved.animation}`}
-              style={accent(a.resolved.color)}
-              title="Dismiss"
-              onClick={() => setAlerts((prev) => prev.filter((x) => x.id !== a.id))}
-            >
-              {/* A cast and a fade are opposite prompts — stop that, versus do that again — so
-                  they don't get to look alike. */}
-              <span className="ca-icon">{a.event === "fade" ? "⏳" : "⚠"}</span>
-              <span className="ca-text">
-                {a.event === "fade" ? (
-                  <>
-                    <b>{a.spell}</b> faded{a.target ? <> on <b>{a.target}</b></> : ""}
-                  </>
-                ) : (
-                  <>
-                    <b>{a.caster}</b> casting <b>{a.spell}</b>
-                  </>
-                )}
-              </span>
-              <span className="ca-hint">{a.event === "fade" ? "re-cast!" : "dispel!"}</span>
-            </button>
-          ))}
+          {stack.map((a) => {
+            const view = banner(a);
+            return (
+              <button
+                key={a.id}
+                className={`cast-alert anim-${a.resolved.animation}`}
+                style={accent(a.resolved.color)}
+                title="Dismiss"
+                onClick={() => setAlerts((prev) => prev.filter((x) => x.id !== a.id))}
+              >
+                <span className="ca-icon">{view.icon}</span>
+                <span className="ca-text">{view.body}</span>
+                {view.hint && <span className="ca-hint">{view.hint}</span>}
+              </button>
+            );
+          })}
         </div>
         );
       })}
     </>
   );
+}
+
+/**
+ * What one banner shows. The three prompts are told apart by their icon before a word is read:
+ * a cast says stop that, a fade says do it again, and a line is the game talking — so it shows the
+ * log's own sentence and offers no call to action, because there isn't one to give.
+ */
+function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: string } {
+  if (a.event === "line") return { icon: "💬", body: <b>{a.text || a.spell}</b> };
+  if (a.event === "fade") {
+    return {
+      icon: "⏳",
+      body: (
+        <>
+          <b>{a.spell}</b> faded{a.target ? <> on <b>{a.target}</b></> : ""}
+        </>
+      ),
+      hint: "re-cast!",
+    };
+  }
+  return {
+    icon: "⚠",
+    body: (
+      <>
+        <b>{a.caster}</b> casting <b>{a.spell}</b>
+      </>
+    ),
+    hint: "dispel!",
+  };
 }
 
 /**

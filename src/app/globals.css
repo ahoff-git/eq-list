@@ -1350,6 +1350,13 @@ kbd {
 .cast-alert.anim-none { animation: none; }
 .cast-alert .ca-icon { font-size: 1.15em; line-height: 1; }
 .cast-alert .ca-text b { color: #fff; }
+/* A line watch shows the game's own sentence, which can run long — a banner has to stay a banner. */
+.cast-alert .ca-text {
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cast-alert .ca-hint {
   margin-left: 2px;
   text-transform: uppercase;

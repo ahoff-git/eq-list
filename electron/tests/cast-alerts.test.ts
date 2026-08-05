@@ -1,11 +1,12 @@
 /**
  * Black-box tests for the cast-alert matcher: which "<caster> begins casting <spell>"
- * events raise a dispel-prep alert, given the user's watch list.
+ * events raise a dispel-prep alert, given the user's watch list — and, for a watch pointed at
+ * raw lines, which of the log's own sentences do.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alertStyle, LIVE_WITHIN_MS, matchCast, matchFade } from "../../src/shared/cast-alerts";
-import type { CastAlertSettings } from "../../src/shared/types";
+import { alertStyle, LIVE_WITHIN_MS, matchCast, matchFade, matchLine, watchesLines } from "../../src/shared/cast-alerts";
+import type { CastAlertSettings, CastWatch } from "../../src/shared/types";
 
 /** A cast that just happened — the timing rule has its own tests below. */
 const NOW = Date.parse("2026-07-29T21:00:00");
@@ -147,6 +148,47 @@ test("a fade from hours ago raises nothing, like a stale cast", () => {
   const s = settings({ watches: [{ id: "root", spell: "Root", enabled: true, onFade: true }] });
   assert.equal(matchFade(faded("Root"), s, NOW + LIVE_WITHIN_MS + 1000), null);
   assert.equal(matchFade(faded("Root"), s, NOW + LIVE_WITHIN_MS - 1000)?.id, "root");
+});
+
+// ── whole log lines ────────────────────────────────────────────────────────────
+// A watch can be pointed at the log's own words instead of a spell name, which is how a party
+// invite ("BunnySlayer invites you to a party") raises an alert at all — nothing parses that line.
+
+const line = (message: string, at = "2026-07-29T21:00:00") => ({ message, at });
+const INVITE = "BunnySlayer invites you to a party.";
+const lineWatch = (over: Partial<CastWatch> = {}) =>
+  settings({ watches: [{ id: "invite", spell: "invites you", enabled: true, onLine: true, onCast: false, ...over }] });
+
+test("a line watch matches the words of a whole log line, case-insensitively", () => {
+  assert.equal(matchLine(line(INVITE), lineWatch(), NOW)?.id, "invite");
+  assert.equal(matchLine(line("BunnySlayer INVITES YOU to join a group."), lineWatch(), NOW)?.id, "invite");
+  assert.equal(matchLine(line("You have entered Befallen."), lineWatch(), NOW), null);
+});
+
+test("only a watch that asked for lines sees them, and it doesn't leak into casts", () => {
+  // The spell matchers and the line matcher share a list, so each has to ignore the other's watches.
+  assert.equal(matchLine(line(INVITE), settings(), NOW), null); // the default spell watches: not line watches
+  assert.equal(matchCast(cast("a mob", "invites you"), lineWatch(), NOW), null);
+  assert.equal(matchFade(faded("invites you"), lineWatch(), NOW), null);
+});
+
+test("a line watch obeys the master switch, its own switch, and the liveness rule", () => {
+  assert.equal(matchLine(line(INVITE), lineWatch({ enabled: false }), NOW), null);
+  assert.equal(matchLine(line(INVITE), settings({ enabled: false, watches: lineWatch().watches }), NOW), null);
+  // Last night's invite is not something to react to — the same rule casts and fades get.
+  assert.equal(matchLine(line(INVITE), lineWatch(), NOW + LIVE_WITHIN_MS + 1000), null);
+});
+
+test("a blank line watch matches nothing, rather than every line", () => {
+  assert.equal(matchLine(line(INVITE), lineWatch({ spell: "  " }), NOW), null);
+});
+
+test("watchesLines answers whether any line matching is worth doing at all", () => {
+  assert.equal(watchesLines(lineWatch()), true);
+  assert.equal(watchesLines(settings()), false); // spell watches only
+  assert.equal(watchesLines(lineWatch({ enabled: false })), false);
+  assert.equal(watchesLines(lineWatch({ spell: " " })), false); // a half-typed watch costs nothing
+  assert.equal(watchesLines(settings({ enabled: false, watches: lineWatch().watches })), false);
 });
 
 // ── per-alert style ────────────────────────────────────────────────────────────

@@ -168,6 +168,15 @@ a real run. This is a *verification* list, not open work — open work lives in 
   different log lines). Also confirm somebody **gating out** ("Bunnyslayer fades away.") never
   fires one, and that a buff whose fade EQ words per spell ("Your strength fades.") matches a
   watch on those words.
+- **Line alerts, and the invite's real wording.** Add the **Party invite** suggestion (or tick
+  **line** on a watch reading "invites you"), have someone invite you, and confirm the banner shows
+  the game's own sentence with the 💬 icon and no "dispel!" hint. This is the one thing the fixtures
+  can't settle: no log to hand contains an invite, so the phrase was chosen to survive either
+  wording EQ uses ("invites you to a party" / "invites you to join a group") — check which one this
+  server actually prints, and that a **tell** watch ("tells you") fires on a `/tell` too. Also worth
+  confirming the practical cost of a broad watch: tick **line** on something common and see whether
+  four banners' worth of spam is as annoying as expected
+  ([ADR 0050](../decisions/0050-a-watch-can-read-a-whole-log-line.md) leaves throttling open).
 - **Separate map scale.** Confirm the map window's A− / A+ move **only** the map and the main
   window's move only the main window (this was broken: Chromium's zoom is per-origin, so one number
   won for both — [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)). At

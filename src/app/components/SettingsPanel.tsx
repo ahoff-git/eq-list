@@ -4,7 +4,7 @@ import { useSettings, useWatcherStatus, useAppInfo } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { MAP_UI_SCALE, UI_SCALE } from "@/shared/constants";
-import { CAST_SUGGESTIONS, isWatched } from "@/shared/cast-suggestions";
+import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
 import { alertStyle } from "@/shared/cast-alerts";
 import AlertStyleFields from "./AlertStyleFields";
 import type {
@@ -44,10 +44,12 @@ export default function SettingsPanel() {
     setWatches(ca.watches.map((w) => (w.id === id ? { ...w, ...p } : w)));
   const removeWatch = (id: string) => setWatches(ca.watches.filter((w) => w.id !== id));
   const addWatch = () => setWatches([...ca.watches, { id: crypto.randomUUID(), spell: "", enabled: true }]);
-  // Add a suggested crowd-control watch, unless an identical substring is already on the list.
-  const addSuggestion = (spell: string) => {
-    if (ca.watches.some((w) => w.spell.trim().toLowerCase() === spell.trim().toLowerCase())) return;
-    setWatches([...ca.watches, { id: crypto.randomUUID(), spell, enabled: true }]);
+  // Add a suggested watch, unless an identical substring is already on the list. A line
+  // suggestion ("invites you") is about what the game said, so it isn't also matched as a spell.
+  const addSuggestion = (s: CastSuggestion) => {
+    if (ca.watches.some((w) => w.spell.trim().toLowerCase() === s.spell.trim().toLowerCase())) return;
+    const line = s.onLine ? { onLine: true, onCast: false } : {};
+    setWatches([...ca.watches, { id: crypto.randomUUID(), spell: s.spell, enabled: true, ...line }]);
   };
 
   // Custom alert spots (locations): a whole-array replace, like watches.
@@ -263,6 +265,8 @@ export default function SettingsPanel() {
           Watches the log for “<i>… begins casting <b>&lt;spell&gt;</b></i>” and flashes a banner so you can
           react before it lands. Matching is by substring, case-insensitive, so “Fear” catches any spell whose
           name contains it. Enemy casts the log doesn’t name (“begins to cast a spell”) can’t be identified.
+          Tick <b>line</b> on a watch to match the words of a whole log line instead — “invites you” catches
+          “<i>BunnySlayer invites you to a party</i>”.
         </span>
         {ca.enabled && (
           <div style={{ marginTop: 8 }}>
@@ -291,21 +295,25 @@ export default function SettingsPanel() {
                 <input
                   className="field"
                   value={w.spell}
-                  placeholder="spell name (or part of it)"
+                  placeholder={w.onLine ? "words from a log line" : "spell name (or part of it)"}
                   onChange={(e) => updateWatch(w.id, { spell: e.target.value })}
                 />
-                <label
-                  className="row"
-                  style={{ gap: 4 }}
-                  title="Also alert when a player, pet, or named NPC casts this — not just ordinary mobs. Off keeps a groupmate's cast (e.g. BunnySlayer's Charm) quiet."
-                >
-                  <input
-                    type="checkbox"
-                    checked={!!w.includePlayers}
-                    onChange={(e) => updateWatch(w.id, { includePlayers: e.target.checked })}
-                  />
-                  <span className="small muted">players</span>
-                </label>
+                {/* Only meaningful while this watch is looking at casts — a fade or a line names
+                    no caster to classify. */}
+                {w.onCast !== false && (
+                  <label
+                    className="row"
+                    style={{ gap: 4 }}
+                    title="Also alert when a player, pet, or named NPC casts this — not just ordinary mobs. Off keeps a groupmate's cast (e.g. BunnySlayer's Charm) quiet."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!w.includePlayers}
+                      onChange={(e) => updateWatch(w.id, { includePlayers: e.target.checked })}
+                    />
+                    <span className="small muted">players</span>
+                  </label>
+                )}
                 {/* Which prompt this watch is for. Casting means "stop that"; fading means "do
                     that again", and plenty of spells are only worth one or the other. */}
                 <label
@@ -331,6 +339,20 @@ export default function SettingsPanel() {
                     onChange={(e) => updateWatch(w.id, { onFade: e.target.checked })}
                   />
                   <span className="small muted">fades</span>
+                </label>
+                {/* Points the same text at whole log lines, so a watch can catch anything the game
+                    says — a party invite, a tell — not only a spell. */}
+                <label
+                  className="row"
+                  style={{ gap: 4 }}
+                  title="Alert when these words appear anywhere in a log line — “invites you” for a party invite, “tells you” for a private message. Matches what the game printed, not a spell name."
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!w.onLine}
+                    onChange={(e) => updateWatch(w.id, { onLine: e.target.checked })}
+                  />
+                  <span className="small muted">line</span>
                 </label>
                 {/* Its own look and sound, so two emergencies can be told apart without reading
                     the banner. A watch either follows the defaults or carries a full style. */}
@@ -378,7 +400,7 @@ export default function SettingsPanel() {
             ))}
             <div className="row" style={{ gap: 8, marginTop: 6 }}>
               <button className="btn sm" onClick={addWatch}>
-                + Add spell
+                + Add watch
               </button>
               <button className="btn sm" onClick={() => api()?.alerts.test()} title="Preview the alert banner (and beep)">
                 Test alert
@@ -387,9 +409,9 @@ export default function SettingsPanel() {
 
             <div className="cast-suggest">
               <span className="hint" style={{ display: "block", margin: "10px 0 4px" }}>
-                Suggested — common crowd control, grouped by effect. Many CC spells aren’t named
-                “Fear” or “Charm” (this server’s root is <i>Instill</i>), so click to watch a whole
-                family. ✓ means it’s already on your list.
+                Suggested — common crowd control, grouped by effect, plus things <i>said to you</i>.
+                Many CC spells aren’t named “Fear” or “Charm” (this server’s root is <i>Instill</i>),
+                so click to watch a whole family. ✓ means it’s already on your list.
               </span>
               {CAST_SUGGESTIONS.map((group) => (
                 <div className="row wrap cs-row" key={group.category}>
@@ -402,10 +424,10 @@ export default function SettingsPanel() {
                         className={`btn sm ghost cs-chip ${added ? "added" : ""}`}
                         title={s.note}
                         disabled={added}
-                        onClick={() => addSuggestion(s.spell)}
+                        onClick={() => addSuggestion(s)}
                       >
                         {added ? "✓ " : "+ "}
-                        {s.spell}
+                        {s.label ?? s.spell}
                       </button>
                     );
                   })}

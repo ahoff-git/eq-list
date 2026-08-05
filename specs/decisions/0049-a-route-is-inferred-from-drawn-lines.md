@@ -77,11 +77,18 @@ search state — and it is always presented as a suggestion carrying a confidenc
   cover, and `passage` additionally authorises a change of level that the step limit would never
   allow. **A `trap` does neither** — `TRAP: Fake Floor` is a way down and it works, but routing
   someone into a trap because it's a shortcut is a suggestion nobody asked for.
-- **The step limit is symmetric.** The asymmetric version (climb 10, drop 40) was a real bug: every
-  descending tunnel became one-way downhill and "route me back to the exit" could not be answered.
-  The cause is discretisation, not physics. It's safe to be generous because a wall — not the step
-  limit — is what stops a route scaling it. Climbing stays *cheaper* than dropping, so a route still
-  prefers the ramp it can walk.
+- **The step limit is symmetric, and generous (80 units).** The asymmetric version (climb 10, drop
+  40) was a real bug: every descending tunnel became one-way downhill and "route me back to the exit"
+  could not be answered. The cause is discretisation, not physics. It's safe to be generous because a
+  wall — not the step limit — is what stops a route scaling it, and hand-drawn maps are full of height
+  discrepancies (a floor drawn at one height opening onto a corridor drawn at another). Climbing stays
+  *cheaper* than dropping, so a route still prefers the ramp it can walk.
+
+  The threshold for "this is a **jump**, draw it as its own steep leg" is deliberately *separate* and
+  stays at 40. They were once the same constant, and doubling the step limit therefore doubled the
+  height that smoothing would draw a straight line across — which took the worst excursion in the
+  corpus from 187 units to 416. A step may be 80 units; drawing one as a straight line stops being
+  honest at 40.
 - **Two guards against the bedrock problem.** A route may not stray more than 6 cells (24 units)
   from drawn geometry **at the height it is walking at**, since nothing in a dungeon is that far from
   every wall — beyond it you've leaked around an unclosed wall end into the rock. And how far a route
@@ -166,6 +173,19 @@ search state — and it is always presented as a suggestion carrying a confidenc
 
 Measured on 28 zones: dungeons and towns route in ≤416ms with 0.1–0.8% of sampled route points
 clipping a wall (string-pull artefacts at corners); the eight open zones refuse instantly.
+
+- **Wall crossings are checked against the geometry, not the grid.** A cell is too coarse to answer
+  "does this step cross a wall?": a wall drawn diagonally occupies two diagonally-adjacent cells, and a
+  step between the *other* two passes clean through the line while entering no blocked cell. So the
+  segments are indexed per cell and the drawn legs are intersected against them exactly.
+
+  Applying that test to every individual step is **rejected**, on measurement. It removes the last
+  crossings and halves coverage (28 → 22 dungeon routes, the expedition 12/12 → 5/12, and the room
+  above sealed again), because in a corridor a few cells wide the line between two quantised cell
+  centres really does clip the wall — the test is right and the grid is the approximation. Finer cells
+  don't rescue it. What remains with it off is bounded and small: across four zones every crossing
+  measured **2.1 units or less, on 4-unit legs** — one diagonal step cutting a corner by about the
+  width of a hairline. Sealing rooms to avoid that is the worse trade.
 
 ## Consequences
 

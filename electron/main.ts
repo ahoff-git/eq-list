@@ -31,7 +31,7 @@ import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
 import { characterFromLogFile } from "../src/shared/log-parser";
-import { alertStyle, matchCast, matchFade } from "../src/shared/cast-alerts";
+import { alertStyle, matchCast, matchFade, matchLine, watchesLines } from "../src/shared/cast-alerts";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -277,6 +277,23 @@ if (!app.requestSingleInstanceLock()) {
         style: alertStyle(alerts, fade),
       });
     }
+  });
+  // The log says plenty no parser models — "BunnySlayer invites you to a party", a tell. A watch
+  // pointed at raw lines catches those. Every line comes through here, so the cheap "is anyone
+  // even watching lines?" check comes first; only then do we match.
+  watcher.onLine((line) => {
+    const alerts = store.getSettings().castAlerts;
+    if (!watchesLines(alerts)) return;
+    const watch = matchLine(line, alerts);
+    if (!watch) return;
+    raiseAlert({
+      caster: "",
+      spell: watch.spell,
+      text: line.message,
+      at: line.at,
+      event: "line",
+      style: alertStyle(alerts, watch),
+    });
   });
   // Everything logged while the app was closed has just been fed through the live path, which is
   // what makes the app's state independent of when it was launched. The one thing that *isn't*
