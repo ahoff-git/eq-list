@@ -87,6 +87,24 @@ a real run. This is a *verification* list, not open work — open work lives in 
   case that needed a backstop: leave the list from *inside* an expanded kill row and confirm the
   emphasis clears rather than sticking. On a camp with hundreds of kills, check the ring still reads
   at a glance and that the dimming doesn't make the heatmap look empty.
+- **Suggested routes (🧭).** Validated against real map files but never walked, and walking it is the
+  only test that counts: the audit can prove a route stays inside drawn corridor, not that a *player*
+  can follow it. In **Blackburrow** (the zone the whole design was built against — needs Brewall's
+  pack, the game's own `maps` folder has no file for it), `/loc` near the Qeynos Hills entrance, turn
+  route mode on, click down by the lake, and then actually walk it. The questions worth answering:
+  does it go the way you'd go, does it ever ask you to cross a wall or step off something lethal, and
+  does the **way back out** work as well as the way in (that direction was broken once and the fix is
+  load-bearing — see [ADR 0049](../decisions/0049-a-route-is-inferred-from-drawn-lines.md)). Then the
+  stacked case that plan-view pathing gets wrong: pick a destination in a tunnel that sits *directly
+  over or under* you and confirm the line doesn't cut through the floor between you.
+
+  Then the honesty of it, which matters as much as the line: the toolbar should state the distance and
+  a plain verdict, a route leaning on a `Swim Out`/`Ladder` label should say so, and an **open zone**
+  (Greater Faydark, East Karana) should refuse *immediately* with "drawn as terrain" rather than
+  pausing and then failing. Confirm the toggle survives reopening the window, that with route mode on
+  a map click no longer pings, that picking up a pin takes the click back, and that zoning clears the
+  destination. Finally the feel: a click should produce a line without a perceptible hitch (measured
+  ≤416ms on the slowest of 28 zones) — if a big dungeon stalls noticeably, that's worth knowing.
 - **Map label filter (👁).** On a busy zone (Greater Faydark, a Brewall dungeon) confirm each kind
   switches off and on, that a **section heading** switches its whole group and shows a dash when only
   part of it is on, that the counts match what's drawn, that the swatch beside each row is the color

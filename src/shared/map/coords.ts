@@ -72,15 +72,38 @@ export function canvasToEqCoords(px: Point, projection: MapProjection | undefine
 }
 
 /**
- * Keep a zoomed map covering the canvas. The scaled content spans `canvas · zoom`, so the pan may
- * run from "right/bottom edge aligned" to zero — anything outside that drags the map off into blank
- * space, which is never what you meant. At fit (zoom ≤ 1) there's nowhere to go.
+ * Keep a zoomed map covering the canvas — clamped against **the map as drawn**, not against the
+ * canvas.
+ *
+ * The difference is the whole point. A map is letterboxed inside the canvas whenever their aspect
+ * ratios differ (`fitRect`), so "the content spans canvas · zoom" counts the empty bars as content:
+ * pan to an edge and you're looking at a scaled-up bar instead of more map. Measuring from `rect`
+ * means the bars are never reachable once there's map to show in their place, which is what makes a
+ * zoomed map fill the space it's given.
+ *
+ * Per axis, and independently, since a map can be letterboxed on one and not the other:
+ * - the scaled map is **wider than the canvas** → the pan may run from "far edge aligned" to "near
+ *   edge aligned", and no further;
+ * - it **isn't** → there's nothing to reveal, so it sits centred.
+ *
+ * `rect` is optional so a caller with nothing drawn yet can still clamp sensibly; without it the
+ * canvas stands in for the map, which is exactly true for a map that fills it.
  */
-export function clampPan(pan: Point, zoom: number, canvas: CanvasSize): Point {
-  if (zoom <= 1) return { x: 0, y: 0 };
-  const limit = (span: number) => span - span * zoom; // ≤ 0
+export function clampPan(pan: Point, zoom: number, canvas: CanvasSize, rect?: MapRect): Point {
+  const box = rect ?? { x: 0, y: 0, width: canvas.width, height: canvas.height };
+  const axis = (start: number, span: number, viewport: number, at: number): number => {
+    const scaled = span * zoom;
+    // Centre it when the map can't fill the viewport: there is no more map to pull into view, so
+    // every pan means the same picture, and centred is the one that reads as deliberate.
+    if (scaled <= viewport) return viewport / 2 - (start + span / 2) * zoom;
+    // Otherwise: near edge no further right/down than the viewport's, far edge no further left/up.
+    const clamped = Math.min(-start * zoom, Math.max(viewport - (start + span) * zoom, at));
+    // `-start * zoom` is `-0` for a map flush with the canvas edge, and a `-0` pan compares unequal
+    // to the `0` every caller means by it — the same trap `neg` guards in eqmap.ts.
+    return clamped === 0 ? 0 : clamped;
+  };
   return {
-    x: Math.min(0, Math.max(limit(canvas.width), pan.x)),
-    y: Math.min(0, Math.max(limit(canvas.height), pan.y)),
+    x: axis(box.x, box.width, canvas.width, pan.x),
+    y: axis(box.y, box.height, canvas.height, pan.y),
   };
 }

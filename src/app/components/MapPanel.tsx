@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerLoc } from "@/lib/hooks";
-import { canvasToEqCoords, clampPan, eqToCanvasCoords } from "@/shared/map/coords";
+import { canvasToEqCoords, clampPan, eqToCanvasCoords, fitRect } from "@/shared/map/coords";
 import { inBands, mapBounds, segmentInBands, vectorProjection, type EqMap, type ZBand } from "@/shared/map/eqmap";
 import { POI_KINDS, poiKind, type PoiKind } from "@/shared/map/poi-kinds";
 import { pickHit } from "@/shared/map/hit-test";
+import type { RouteStep } from "@/shared/map/route";
 import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
-import type { Loc, MapView, Point, Zone } from "@/shared/map/types";
+import type { CanvasSize, Loc, MapView, Point, Zone } from "@/shared/map/types";
 
 /**
  * A kill to plot. `confidence` fades and shrinks it, and `glyph`/`color` come from the
@@ -68,7 +69,7 @@ interface HoverTarget {
 
 /**
  * Draws a zone's map — the game's own vector geometry — with the player's location + trail,
- * peers, pings, kills and pins, on two stacked square canvases. A **zoom/pan view** (scroll wheel to zoom toward the
+ * peers, pings, kills and pins, on two stacked canvases that fill the window. A **zoom/pan view** (scroll wheel to zoom toward the
  * cursor, drag to pan once zoomed) is applied to both layers; the pure `src/shared/map`
  * coord math maps EQ↔base-canvas, and this component layers the view on top (and inverts
  * it for the cursor readout + hit-testing).
@@ -119,6 +120,8 @@ const MAP_COLORS = {
   fix: "#ff5cf0",
   /** The ring around a kill picked out from the list. */
   emphasis: "#ffffff",
+  /** A suggested walking route. Dashed and cool-toned, so it reads as advice, not as geometry. */
+  route: "#54e0c7",
   /** Map geometry the file gave no color for (it said black, which we can't show). */
   mapLine: "#8ba0bd",
   poi: "#9fd0ff",
@@ -140,6 +143,10 @@ export default function MapPanel({
   placing = false,
   onPlace,
   onPing,
+  routing = false,
+  onRouteTo,
+  route,
+  routeStart,
   onPinClick,
   onKillClick,
   moveMode = false,
@@ -166,6 +173,19 @@ export default function MapPanel({
   placing?: boolean;
   onPlace?: (eq: Loc, clientX: number, clientY: number) => void;
   onPing?: (eq: Loc) => void;
+  /** Route mode: a click on the empty map picks a destination rather than pinging it. */
+  routing?: boolean;
+  onRouteTo?: (eq: Loc) => void;
+  /**
+   * A suggested walking route to draw, start to finish (`findRoute`). Drawn under every marker — it
+   * says how to get somewhere, so it must never hide the somewhere.
+   */
+  route?: RouteStep[];
+  /**
+   * Where a route starts. Drawn as a ring on its own, because a start with no destination yet is
+   * still worth seeing — otherwise placing one by hand gives no feedback at all.
+   */
+  routeStart?: { y: number; x: number };
   onPinClick?: (pin: RenderPin, clientX: number, clientY: number) => void;
   /** A kill marker was clicked — the page decides what "go and see it" means. */
   onKillClick?: (kill: RenderKill) => void;
@@ -196,7 +216,12 @@ export default function MapPanel({
   const wrapRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const dotsRef = useRef<HTMLCanvasElement>(null);
-  const [side, setSide] = useState(0);
+  /**
+   * The drawing surface, in pixels — **the whole container**, not the largest square in it. A square
+   * threw away the difference between the window's width and its height, which on a wide window is
+   * most of the screen; a map that can fill the space should.
+   */
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [hoverEq, setHoverEq] = useState<Loc | null>(null);
@@ -241,15 +266,21 @@ export default function MapPanel({
   const hasMap = !!vector || !!zone?.file;
 
   /**
-   * What we're measuring against: the map's own extent plus the square canvas it's fitted into.
+   * What we're measuring against: the map's own extent plus the canvas it's fitted into.
    * Undefined until there's a map to fit, which is also when there's nothing to plot onto.
    */
   const view = useMemo<MapView | undefined>(
-    () => (side && projection ? { image: projection.image, canvas: { width: side, height: side } } : undefined),
-    [side, projection],
+    () => (canvasSize.width && canvasSize.height && projection ? { image: projection.image, canvas: canvasSize } : undefined),
+    [canvasSize, projection],
   );
 
   const maxZoom = vector ? VECTOR_MAX_ZOOM : IMAGE_MAX_ZOOM;
+
+  /**
+   * Where the map lands on the canvas. Passed to `clampPan` so panning is bounded by the *map*
+   * rather than by the canvas — otherwise a zoomed map still lets you drag onto its letterbox bars.
+   */
+  const mapRect = useMemo(() => (view ? fitRect(view.image, view.canvas) : undefined), [view]);
 
   /** Is this kill one of the ones being pointed at? By id when there is one, else by mob. */
   const emphasized = useCallback(
@@ -337,12 +368,16 @@ export default function MapPanel({
     [projection, view, applyView],
   );
 
-  // Fit the largest square into the container.
+  // Fill the container. `fitRect` still letterboxes the map inside it when their shapes differ, but
+  // that's a gap you can now zoom into rather than dead canvas.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      setSide(Math.max(0, Math.floor(Math.min(el.clientWidth, el.clientHeight))));
+      setCanvasSize({
+        width: Math.max(0, Math.floor(el.clientWidth)),
+        height: Math.max(0, Math.floor(el.clientHeight)),
+      });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -356,11 +391,17 @@ export default function MapPanel({
     setPan({ x: 0, y: 0 });
   }, [zone?.key]);
 
+  // A pan is only valid for the canvas and map it was clamped against, so re-clamp when either
+  // changes — resizing the window, or a new zone's geometry arriving with a different shape.
+  useEffect(() => {
+    setPan((p) => clampPan(p, zoom, canvasSize, mapRect));
+  }, [canvasSize, mapRect, zoom]);
+
   // Draw the map's geometry under the current view (zoom/pan). This canvas is static between
   // zone/zoom changes; the moving markers live on the one stacked above it.
   useEffect(() => {
     const c = mapRef.current;
-    if (!c || !side) return;
+    if (!c || !canvasSize.width) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, c.width, c.height);
@@ -390,13 +431,13 @@ export default function MapPanel({
       }
     }
     ctx.restore();
-  }, [vector, bands, projection, view, zoom, pan, side]);
+  }, [vector, bands, projection, view, zoom, pan, canvasSize]);
 
   // Draw the overlay (grid, trail, peers, loc, pings, pins) — coords via `toScreen`,
   // so markers/text stay a constant size while the map zooms/pans under them.
   useEffect(() => {
     const c = dotsRef.current;
-    if (!c || !side) return;
+    if (!c || !canvasSize.width) return;
     clearCanvas(c);
     if (!projection || !view) return;
     const ctx = c.getContext("2d");
@@ -498,6 +539,49 @@ export default function MapPanel({
       ctx.restore();
     }
 
+    // Where the route starts, whether or not there's a route yet.
+    if (routeStart) {
+      const p = toScreen(routeStart);
+      if (p) {
+        ctx.save();
+        ctx.strokeStyle = MAP_COLORS.route;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // The suggested route, under everything else. Waypoints are marked because they're the corners
+    // you actually steer by — the line between two of them is just "keep going".
+    if (route && route.length > 1) {
+      ctx.save();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = MAP_COLORS.route;
+      ctx.globalAlpha = 0.85;
+      ctx.setLineDash([7, 5]);
+      ctx.beginPath();
+      let started = false;
+      for (const step of route) {
+        const p = toScreen(step);
+        if (!p) continue;
+        if (started) ctx.lineTo(p.x, p.y);
+        else {
+          ctx.moveTo(p.x, p.y);
+          started = true;
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+      for (const step of route.slice(1, -1)) {
+        const p = toScreen(step);
+        if (p) drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.route, size: 3 });
+      }
+      const end = toScreen(route[route.length - 1]);
+      if (end) drawCircle(end.x, end.y, ctx, { color: MAP_COLORS.route, size: 5 });
+    }
+
     for (let i = 1; i < trail.length; i++) {
       const a = toScreen(trail[i - 1]);
       const b = toScreen(trail[i]);
@@ -562,7 +646,7 @@ export default function MapPanel({
 
     ctx.textBaseline = "alphabetic";
   }, [
-    loc, trail, peers, pings, pins, kills, showKillConfidence, side, redrawKey,
+    loc, trail, peers, pings, pins, kills, showKillConfidence, canvasSize, redrawKey, route, routeStart,
     showGrid, toScreen, frame, view, applyView, vector, visiblePois, emphasis, emphasized, projection,
   ]);
 
@@ -603,7 +687,7 @@ export default function MapPanel({
       // Marked on the *attempt*, not on movement: at fit zoom there's nowhere to pan, so the
       // map stays put — and a drag that visibly did nothing must still not fire a ping.
       draggedRef.current = true;
-      if (zoom > 1) setPan(clampPan({ x: grab.pan.x + dx, y: grab.pan.y + dy }, zoom, { width: side, height: side }));
+      if (zoom > 1) setPan(clampPan({ x: grab.pan.x + dx, y: grab.pan.y + dy }, zoom, canvasSize, mapRect));
       return;
     }
     if (!plottable) return;
@@ -673,28 +757,24 @@ export default function MapPanel({
     const eq = eqAt(e);
     if (!eq) return;
     if (placing) onPlace?.(eq, e.clientX, e.clientY);
+    else if (routing) onRouteTo?.(eq);
     else onPing?.(eq);
   }
 
   // Scroll to zoom toward the cursor. Clamped to [1, MAX_ZOOM]; at 1 the view resets
   // to fit (pan 0) so the map can't drift off-centre.
   function onWheel(e: React.WheelEvent<HTMLDivElement>) {
-    if (!side) return;
+    if (!canvasSize.width) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
     const next = Math.min(maxZoom, Math.max(1, zoom * factor));
     if (next === zoom) return;
-    if (next <= 1) {
-      setZoom(1);
-      setPan({ x: 0, y: 0 });
-      return;
-    }
     // Keep the point under the cursor fixed as zoom changes, without letting the edge of the
-    // map pull away from the edge of the canvas.
-    const canvas = { width: side, height: side };
-    setPan(clampPan({ x: cx - ((cx - pan.x) / zoom) * next, y: cy - ((cy - pan.y) / zoom) * next }, next, canvas));
+    // map pull away from the edge of the canvas. Even at fit this goes through `clampPan`, which
+    // centres what it can't fill — a zero pan would only be centred on a map that fills the canvas.
+    setPan(clampPan({ x: cx - ((cx - pan.x) / zoom) * next, y: cy - ((cy - pan.y) / zoom) * next }, next, canvasSize, mapRect));
     setZoom(next);
   }
 
@@ -704,7 +784,7 @@ export default function MapPanel({
       ? "grab"
       : hovered?.target.pin || hovered?.target.kill
         ? "pointer"
-        : placing || onPing
+        : placing || routing || onPing
           ? "crosshair"
           : zoom > 1
             ? "grab" // zoomed in, so there's somewhere to drag to
@@ -712,10 +792,10 @@ export default function MapPanel({
 
   return (
     <div className="map-surface" ref={wrapRef}>
-      {side > 0 && (
+      {canvasSize.width > 0 && canvasSize.height > 0 && (
         <div
           className="map-canvases"
-          style={{ width: side, height: side, cursor }}
+          style={{ width: canvasSize.width, height: canvasSize.height, cursor }}
           onMouseMove={onMove}
           onMouseDown={onDown}
           onMouseUp={endDrag}
@@ -727,8 +807,8 @@ export default function MapPanel({
           onClick={onClickCanvas}
           onWheel={onWheel}
         >
-          <canvas ref={mapRef} width={side} height={side} />
-          <canvas ref={dotsRef} width={side} height={side} />
+          <canvas ref={mapRef} width={canvasSize.width} height={canvasSize.height} />
+          <canvas ref={dotsRef} width={canvasSize.width} height={canvasSize.height} />
         </div>
       )}
       {zoom > 1 && <div className="map-zoom">{zoom.toFixed(1)}×</div>}

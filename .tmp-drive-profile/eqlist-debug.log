@@ -1,0 +1,47 @@
+EQ List log — 2026-08-04T22:00:17.537Z
+2026-08-04T22:00:17.597Z WARN [main] could not register window hotkey: CommandOrControl+Shift+O
+2026-08-04T22:00:17.597Z WARN [main] could not register lookup hotkey: CommandOrControl+Shift+L
+2026-08-04T22:00:17.667Z DEBUG [log-watcher] caught up {"file":"eqlog_Kainos_qeynos.txt","zone":"New Sebilis Expedition","loc":true,"window":4194304}
+2026-08-04T22:00:17.668Z DEBUG [log-watcher] start watching {"dir":"G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\Logs","file":"","target":"G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\Logs\\eqlog_Kainos_qeynos.txt","from":5671503}
+2026-08-04T22:00:17.668Z DEBUG [main] app ready
+2026-08-04T22:00:17.807Z WARN [renderer:alert] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+2026-08-04T22:00:17.811Z WARN [renderer:main] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+2026-08-04T22:00:17.825Z WARN [renderer:map] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+2026-08-04T22:00:17.833Z DEBUG [eq-maps] map sources {"mapsDir":"G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\maps","sources":["stock:133","brewall:568"]}
+2026-08-04T22:00:17.837Z DEBUG [eq-maps] map sources {"mapsDir":"G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\maps","sources":["stock:133","brewall:568"]}
+2026-08-04T22:00:18.463Z DEBUG [eq-maps] named zones {"sources":2,"files":570,"named":260}
+2026-08-04T22:00:18.469Z DEBUG [main] combat {"fight":0,"session":0,"rows":0}
+2026-08-04T22:00:18.474Z DEBUG [eq-maps] map sources {"mapsDir":"G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\maps","sources":["stock:133","brewall:568"]}
+2026-08-04T22:00:18.484Z DEBUG [eq-maps] loaded map {"short":"newsebexp","segments":8934,"pois":1}
+2026-08-04T22:00:18.582Z WARN [renderer:map] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+2026-08-04T22:00:18.586Z DEBUG [eq-maps] map sources {"mapsDir":"G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\maps","sources":["stock:133","brewall:568"]}
+2026-08-04T22:00:18.589Z DEBUG [eq-maps] map sources {"mapsDir":"G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\maps","sources":["stock:133","brewall:568"]}
+2026-08-04T22:00:18.593Z DEBUG [eq-maps] map sources {"mapsDir":"G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\maps","sources":["stock:133","brewall:568"]}

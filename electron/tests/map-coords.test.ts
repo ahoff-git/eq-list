@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { canvasToEqCoords, clampPan, eqToCanvasCoords, fitRect } from "../../src/shared/map/coords";
-import type { MapProjection, MapView } from "../../src/shared/map/types";
+import type { MapProjection, MapView, Point } from "../../src/shared/map/types";
 
 const CANVAS = { width: 1000, height: 1000 };
 /** A landscape map, a portrait one and a square one, so letterboxing is covered both ways. */
@@ -89,7 +89,7 @@ test("no projection means nothing is plotted", () => {
   assert.equal(eqToCanvasCoords({ y: 0, x: 0 }, projection, { image: { width: 0, height: 0 }, canvas: CANVAS }), undefined);
 });
 
-test("clampPan keeps the map covering the canvas", () => {
+test("clampPan keeps a map that fills the canvas covering it", () => {
   const canvas = { width: 1000, height: 1000 };
   // At 2× the content is 2000px, so the pan may run from -1000 (right edge aligned) to 0.
   assert.deepEqual(clampPan({ x: -400, y: -600 }, 2, canvas), { x: -400, y: -600 });
@@ -98,7 +98,84 @@ test("clampPan keeps the map covering the canvas", () => {
   assert.deepEqual(clampPan({ x: -5000, y: -1200 }, 2, canvas), { x: -1000, y: -1000 });
   // At fit there's nowhere to go, so any pan collapses to centred.
   assert.deepEqual(clampPan({ x: -300, y: 40 }, 1, canvas), { x: 0, y: 0 });
-  assert.deepEqual(clampPan({ x: -300, y: 40 }, 0.5, canvas), { x: 0, y: 0 });
+  // Smaller than the viewport: centred, since no pan reveals any more of it.
+  assert.deepEqual(clampPan({ x: -300, y: 40 }, 0.5, canvas), { x: 250, y: 250 });
   // A canvas that hasn't been measured yet can't produce a NaN pan.
   assert.deepEqual(clampPan({ x: -10, y: -10 }, 3, { width: 0, height: 0 }), { x: 0, y: 0 });
+});
+
+/** Where the map's edges land on the canvas, given a pan — what the eye actually sees. */
+function edges(rect: { x: number; y: number; width: number; height: number }, zoom: number, pan: Point) {
+  return {
+    left: rect.x * zoom + pan.x,
+    right: (rect.x + rect.width) * zoom + pan.x,
+    top: rect.y * zoom + pan.y,
+    bottom: (rect.y + rect.height) * zoom + pan.y,
+  };
+}
+
+/**
+ * The invariant a pan must satisfy, per axis: **either the map covers the viewport, or it's
+ * centred in it.** There is no third case, and the bug this replaced produced one — clamping
+ * against the canvas let a zoomed map sit part-covered, showing a letterbox bar where there was
+ * more map to be had.
+ */
+function assertCoveredOrCentred(near: number, far: number, viewport: number, what: string) {
+  const span = far - near;
+  if (span >= viewport - 0.001) {
+    assert.ok(near <= 0.001, `${what}: blank before the map (near ${near})`);
+    assert.ok(far >= viewport - 0.001, `${what}: blank after the map (far ${far})`);
+  } else {
+    // Too small to cover, so no pan reveals more of it — centred is the only honest answer.
+    assert.ok(Math.abs((near + far) / 2 - viewport / 2) < 0.001, `${what}: should be centred (${near}–${far})`);
+  }
+}
+
+test("a zoomed map is never panned onto its own letterbox bars", () => {
+  // A landscape map in a taller canvas is letterboxed top and bottom. Clamping against the *canvas*
+  // let you drag those bars into view at any zoom, so a zoomed map showed blank space instead of the
+  // map that was there to show.
+  const canvas = { width: 1000, height: 1000 };
+  const rect = fitRect({ width: 550, height: 328 }, canvas);
+  assert.ok(rect.height < canvas.height, "expected this map to be letterboxed vertically");
+
+  for (const zoom of [1, 1.2, 2, 5, 17]) {
+    // Drag hard in every direction; every result has to satisfy the invariant.
+    for (const pan of [
+      { x: 0, y: 0 },
+      { x: 9999, y: 9999 },
+      { x: -9999, y: -9999 },
+      { x: 9999, y: -9999 },
+      { x: -320, y: 60 },
+    ]) {
+      const e = edges(rect, zoom, clampPan(pan, zoom, canvas, rect));
+      const at = `zoom ${zoom}, pan ${pan.x},${pan.y}`;
+      assertCoveredOrCentred(e.left, e.right, canvas.width, `${at} horizontally`);
+      assertCoveredOrCentred(e.top, e.bottom, canvas.height, `${at} vertically`);
+    }
+  }
+
+  // And the specific thing that was wrong: at 2× this map covers the canvas vertically, so the top
+  // bar must be unreachable — under the old rule, panning down showed 400px of it.
+  const e = edges(rect, 2, clampPan({ x: 0, y: 9999 }, 2, canvas, rect));
+  assert.equal(Math.round(e.top), 0, `dragging down should stop with the map's top edge at the canvas top`);
+});
+
+test("each axis is clamped on its own", () => {
+  // A tall map in a wide canvas: fitted, it fills the height and leaves bars either side. Zoomed
+  // moderately it covers the canvas vertically while still falling well short horizontally, so the
+  // axes must disagree — clamping them together is what made a zoomed map feel stuck one way and
+  // loose the other.
+  const canvas = { width: 1600, height: 900 };
+  const rect = fitRect({ width: 328, height: 550 }, canvas);
+  assert.ok(rect.width < canvas.width / 2, "expected wide bars either side");
+  assert.ok(Math.abs(rect.height - canvas.height) < 1, "expected it to fill the height");
+
+  // At fit, centred — which for a fitted map is the pan it already had.
+  assert.deepEqual(clampPan({ x: 40, y: -80 }, 1, canvas, rect), { x: 0, y: 0 });
+
+  const zoom = 1.5;
+  const e = edges(rect, zoom, clampPan({ x: 0, y: -9999 }, zoom, canvas, rect));
+  assert.ok(e.bottom >= canvas.height - 0.001 && e.top <= 0.001, "vertical should cover the canvas");
+  assert.ok(Math.abs((e.left + e.right) / 2 - canvas.width / 2) < 0.001, "horizontal should stay centred");
 });

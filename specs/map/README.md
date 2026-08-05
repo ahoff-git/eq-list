@@ -38,8 +38,13 @@ world coordinates, so a map knows where it is. See
   between logged positions) is owned by the map window so the toolbar's **∿** button can
   clear it; it also clears itself when you zone, since a `LocEvent` carries no zone and
   the old path would otherwise be drawn across the new map.
-- **UI** — `MapPanel` (`src/app/components/MapPanel.tsx`) stacks two square canvases
-  (static map + moving overlay), sized to the window via a `ResizeObserver`. A **zoom/
+- **UI** — `MapPanel` (`src/app/components/MapPanel.tsx`) stacks two canvases (static map + moving
+  overlay) **filling the window**, sized by a `ResizeObserver`. They were square, which threw away
+  the difference between the window's width and its height — on a wide window, most of the screen.
+  `fitRect` still letterboxes a map whose shape differs from the canvas's, but that's now a gap you
+  can zoom into rather than dead canvas, because **`clampPan` bounds panning by the map as drawn
+  rather than by the canvas**: once the map covers an axis, its letterbox bar is unreachable. Per
+  axis and independently, since a map can be letterboxed on one and not the other. A **zoom/
   pan view** (scroll wheel zooms toward the cursor; **drag to pan** once zoomed in) is layered on
   top of the pure coord math and inverted for the cursor→EQ
   **readout** and hit-testing. `clampPan` keeps the map covering the canvas, so it can't be
@@ -200,6 +205,47 @@ world coordinates, so a map knows where it is. See
   both. Markers use the same `layer` field as before, via `onLayer` against the *set* of visible
   floors; a marker stamped with a floor this map doesn't have still shows, so switching map packs
   can't lose a pin you placed.
+- **Suggested routes** (`src/shared/map/route.ts`, pure — `electron/tests/route.test.ts`; the 🧭
+  toolbar toggle, **off by default**) — "how do I walk from here to there", as A* over the map's own
+  lines. Drawn as a dashed line under every marker, with the distance and **how much to believe it**
+  in the toolbar.
+
+  The start is your last `/loc` — but **only when the zone on screen is the one you're standing in**,
+  since otherwise your position is a coordinate in a different zone. Anywhere else the start is
+  **placed by hand** (⌖, or just the first click), which is also the only way to try a route without
+  travelling there. A clicked point carries no height, so it takes the floor in view and
+  `findRoute` snaps it to the nearest floor the geometry evidences — on a stacked zone, pick a floor
+  first.
+
+  The whole thing is an inference, because **a map file never says what's walkable**: an `L` record
+  is a wall in a dungeon and a contour line outdoors, and nothing tells them apart. Three designs
+  failed on Blackburrow before this one worked, and each failure is a constraint —
+  plan-view pathing walks through ceilings (22% of its plan columns stack more than 20 units deep);
+  levels can't be found by clustering the zone's heights (the histogram's modes have no *empty* gaps,
+  so it collapses to one band); and walkable ground can't be flooded outward from the walls, because
+  **the rock between tunnels is undrawn** and so indistinguishable from open floor. What's left is to
+  seed the search from where you are and carry height along it, which is the one thing that
+  distinguishes a corridor from the corridor above it. Nothing is named as a floor, so
+  [ADR 0040](../decisions/0040-floors-come-from-the-mapmaker.md) stands.
+
+  **The mapmaker annotates what the geometry can't say**, and `poiKind` already reads it: a
+  `passage` (`Swim Out (Underwater)`, `Ladder Down`) opens a change of level the step limit would
+  refuse; a `door` opens a wall; a **`trap` opens nothing** — `TRAP: Fake Floor` is a way down and it
+  works, and suggesting it is still wrong.
+
+  **Colour is available and unused.** It is not a level code (nine of Blackburrow's fifteen segment
+  colours span more than 40 units of height), but locally it does separate stacked structure: where a
+  plan column holds geometry at two very different heights, the low and high groups wear disjoint
+  colours in **81% of Blackburrow's 390 stacked columns**. It's held in reserve rather than used,
+  because the routes that looked like they needed it were actually being spoiled by a height-blind
+  corridor guard and by the smoothing drawing straight lines across level changes; with those fixed,
+  0.2% of sampled route length runs outside the corridor.
+
+  **Confidence is measured, not asserted.** Drawn line per unit of area separates dungeons
+  (median 0.029) from open zones (max 0.0054) across 567 files, so a zone whose lines are *terrain*
+  is refused outright with that as the reason rather than given a route it can't stand behind. A
+  route that ran far from any ink, or leaned mostly on labels, says so. See
+  [ADR 0049](../decisions/0049-a-route-is-inferred-from-drawn-lines.md).
 - **Pins** (`src/shared/map/pins.ts` palette + `MapPanel`/map window) — a toolbar of
   pin kinds (Star/Danger/Camp/Loot/Note) plus a **Move** tool (drag your pins to
   reposition). Pick a kind up, then a map click **drops** it at that spot; with none
@@ -273,6 +319,11 @@ world coordinates, so a map knows where it is. See
 ## Non-responsibilities
 - No continuous position tracking: EQ only logs a location when one is emitted
   (typically when you type `/loc`), so the dot steps per loc line — the UI says so.
+- **No turn-by-turn navigation, and a route is never claimed as walkable.** It follows from the line
+  above: with no live position there's nothing to guide against, so a route is a drawn suggestion
+  that re-computes when a fresh `/loc` arrives. And since the geometry never said what's walkable, a
+  route always carries how much to believe it — including "this map is terrain, so there's no route
+  to be had". Open zones get none at all, which is the honest answer rather than a missing feature.
 - **The floor in view is never chosen for you.** On a vector map that names its storeys, your
   `/loc` height is enough to say which one you're on — and it's *shown* (**· you** in the
   rows) rather than acted on, because auto-hiding four fifths of a map on an inference is a

@@ -27,6 +27,7 @@ import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { findZone, onLayer, sortZones } from "@/shared/map/zones";
 import { detectFloors, floorAt, mapZRange, type ZBand } from "@/shared/map/eqmap";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
+import { buildRouteGrid, findRoute, ROUTE_FAILURES, type RouteStep } from "@/shared/map/route";
 import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import MapFilters, { type HeightPick } from "../components/MapFilters";
 import { characterFromLogFile } from "@/shared/log-parser";
@@ -243,6 +244,100 @@ export default function MapWindow() {
   // Which kills the map should pick out: set while a row in the ☠ list is hovered, so pointing at
   // a name answers "where did those die?". Transient by nature, so it isn't persisted.
   const [emphasis, setEmphasis] = useState<KillEmphasis | null>(null);
+
+  // ── Routes ────────────────────────────────────────────────────────────────
+  // Off by default, and opt-in on purpose: a route is *inferred* from lines that never say what's
+  // walkable (ADR 0049), so it's a tool you reach for rather than something the map always asserts.
+  const [routing, setRouting] = usePersistentState(STORAGE_KEYS.mapRouting, false);
+  /** Both ends of the route. Spots in *this* zone, so both are cleared when the zone changes. */
+  const [routeFrom, setRouteFrom] = useState<RouteStep | null>(null);
+  const [routeTo, setRouteTo] = useState<RouteStep | null>(null);
+  /** Armed by ⌖: the next map click places the start rather than the destination. */
+  const [placingStart, setPlacingStart] = useState(false);
+  useEffect(() => {
+    setRouteFrom(null);
+    setRouteTo(null);
+    setPlacingStart(false);
+  }, [zoneKey]);
+
+  /**
+   * Your logged position — but only where it means anything: **the zone on screen has to be the one
+   * you're standing in.** Otherwise your `/loc` is a coordinate in some other zone, and routing from
+   * it would either fail confusingly or, worse, quietly succeed from the wrong end of the map.
+   */
+  const logStart = loc && currentZone && zoneMatch(currentZone) ? { y: loc.y, x: loc.x, z: loc.z } : null;
+  /** Where the route starts: what you placed by hand, else where the log says you are. */
+  const routeStart = routeFrom ?? logStart;
+
+  /**
+   * The height to give a point placed by clicking. A map click is a position in *plan* — it says
+   * nothing about height, and on a zone stacked over itself that's two or three different places.
+   * The floor in view is the best available answer; failing that the middle of the map's range, which
+   * `findRoute` then snaps to the nearest floor the geometry actually evidences.
+   *
+   * So on a stacked zone, **pick a floor first** and clicks land on it. That's also why a placed
+   * start is called out in the status line rather than treated as a known position.
+   */
+  const placedZ = useMemo(() => {
+    const floor = floors.find((f) => f.layer === viewLayer);
+    if (floor) return floor.z;
+    if (height) return (height.lo + height.hi) / 2;
+    if (zRange) return (zRange.minZ + zRange.maxZ) / 2;
+    return 0;
+  }, [floors, viewLayer, height, zRange]);
+
+  // The rasterized geometry, per map — the expensive half, and it depends on nothing else, so it
+  // isn't rebuilt when you pick a new destination.
+  const routeGrid = useMemo(() => (routing && vector ? buildRouteGrid(vector) : undefined), [routing, vector]);
+  /**
+   * The route between the two ends, recomputed when either moves — so a fresh `/loc` re-routes from
+   * where you actually are, which is the only position the log ever gives us.
+   */
+  const routeResult = useMemo(
+    () => (routing && routeStart && routeTo ? findRoute(routeGrid, routeStart, routeTo) : undefined),
+    // `routeStart` is a fresh object each render; its contents are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [routing, routeGrid, routeTo, routeStart?.y, routeStart?.x, routeStart?.z],
+  );
+  const route = routeResult?.ok ? routeResult.route : undefined;
+
+  /**
+   * A map click in route mode. The start comes first when there isn't one — which is the whole flow
+   * for a zone you aren't standing in — and ⌖ re-arms it to move the start later.
+   */
+  function pickRoutePoint(eq: { y: number; x: number }) {
+    if (placingStart || !routeStart) {
+      setRouteFrom({ ...eq, z: placedZ });
+      setPlacingStart(false);
+      return;
+    }
+    setRouteTo({ ...eq, z: placedZ });
+  }
+  /**
+   * What the toolbar says while route mode is on. Every branch is load-bearing: a route that can't
+   * be worked out has to say *why* (the map is terrain, the two places don't connect), and one that
+   * can has to carry how much to believe it — the whole thing is an inference, and a dashed line on
+   * its own looks like a fact.
+   */
+  const routeStatus = placingStart
+    ? "click where the route should start from"
+    : !routeStart
+      ? // No usable position: either you haven't typed /loc, or you're looking at a zone you aren't
+        // standing in — in which case the log can't help and the start has to be placed.
+        currentZone && zoneMatch(currentZone)
+        ? "route mode — type /loc in game, or click to place a start"
+        : "route mode — click to place a start, then click where you want to go"
+      : !routeTo
+        ? `route mode — click where you want to go${routeFrom ? " (from your placed start)" : ""}`
+        : routeResult?.ok
+          ? `${routeResult.route.distance}u${routeFrom ? " from a placed start" : ""} · ${
+              { likely: "looks walkable", rough: "rough guess", doubtful: "probably wrong" }[
+                routeResult.route.confidence
+              ]
+            }${routeResult.route.notes.length ? ` · ${routeResult.route.notes.join(" ")}` : ""}`
+          : routeResult
+            ? ROUTE_FAILURES[routeResult.reason]
+            : "route mode";
 
   // Broadcast (or un-share) pins to peers when connected + sharing.
   useEffect(() => {
@@ -527,12 +622,44 @@ export default function MapWindow() {
         >
           ✥
         </button>
+        <button
+          className={`pin-btn ${routing ? "held" : ""}`}
+          title={
+            "Route mode — click the map for a suggested walking route from your last /loc. " +
+            "Worked out from the drawn lines, which never say what's walkable, so it's a suggestion " +
+            "and it tells you how much to trust it."
+          }
+          onClick={() => {
+            setRouting((on) => !on);
+            setRouteFrom(null);
+            setRouteTo(null);
+            setPlacingStart(false);
+            setTool(null); // a held pin would take the click first
+          }}
+        >
+          🧭
+        </button>
+        {routing && (
+          <button
+            className={`pin-btn ${placingStart ? "held" : ""}`}
+            title={
+              "Place the route's start by hand — for a zone you aren't standing in, or to try a route " +
+              "from somewhere other than your last /loc. On a stacked zone, pick a floor first so the " +
+              "click lands on it."
+            }
+            onClick={() => setPlacingStart((on) => !on)}
+          >
+            ⌖
+          </button>
+        )}
         <span className="muted small">
           {heldPin
             ? `holding ${pinType(heldPin).label} — click map to drop`
             : moveMode
               ? "move mode — drag a pin"
-              : "pick a pin, or click to ping"}
+              : routing
+                ? routeStatus
+                : "pick a pin, or click to ping"}
         </span>
         <span className="spacer" />
         <button
@@ -680,6 +807,10 @@ export default function MapWindow() {
             placing={heldPin !== null}
             onPlace={placePin}
             onPing={connected && zoneKey ? (eq) => room.sendPing(eq, zoneKey, viewLayer) : undefined}
+            routing={routing}
+            onRouteTo={pickRoutePoint}
+            route={route?.steps}
+            routeStart={routing ? (routeStart ?? undefined) : undefined}
             onPinClick={(pin, x, y) => {
               if (pin.mine) setSelected({ id: pin.id, x, y });
             }}
