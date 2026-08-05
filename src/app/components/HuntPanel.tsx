@@ -11,17 +11,28 @@ import {
 import { bestRate, reconcileDrops } from "@/shared/drop-truth";
 import { mobKey } from "@/shared/mob-stats";
 import ItemLink from "./ItemLink";
+import ZonePicker from "./ZonePicker";
+import { api } from "@/lib/api";
 import { buildHunt, neededEntries, huntInputsFor } from "@/shared/hunt";
 import { zoneMatches, sourceZones } from "@/shared/sources";
+import type { Zone } from "@/shared/map/types";
+
+/** How many zones the picker offers unfiltered — the hunt's list is short, so show it all. */
+const ZONE_MATCHES = 40;
 
 /**
  * The Hunt tab answers "where do I go to farm what's left?" It takes every item
  * you still need, looks up who drops each (`useEntrySources`, cached), and inverts
  * that into zones → mobs → the needed items they drop (`buildHunt`). The zone
- * you're currently in (from the log) floats to the top. A zone filter (incl. the
- * "follow your zone" setting) narrows to one zone; the picked zone is owned by the
- * parent so it survives tab switches. Items with no known drop are called out
- * separately. Names navigate within the app.
+ * you're currently in (from the log) floats to the top. Items with no known drop are
+ * called out separately. Names navigate within the app.
+ *
+ * The zone control is the map's: a type-to-find `ZonePicker` plus a **follow** checkbox,
+ * so choosing a zone and tracking the one you're in are both one gesture away rather than
+ * one of them being a trip to Settings. Follow is still the `overlay.followZone` setting —
+ * one source of truth, so the Settings toggle and this checkbox can't disagree. The picked
+ * zone is owned by the parent so it survives tab switches, and it survives turning follow
+ * on and off again too: coming back to the zone you were studying is the useful answer.
  */
 export default function HuntPanel({
   pickedZone,
@@ -34,7 +45,8 @@ export default function HuntPanel({
   const zone = useCurrentZone();
   const settings = useSettings();
   const followZone = settings?.overlay.followZone ?? false;
-  // Effective filter: the log's zone when "follow" is on, else the manual pick.
+  const setFollowZone = (on: boolean) => api()?.settings.update({ overlay: { followZone: on } });
+  // Effective filter: the log's zone when "follow" is on, else the manual pick (null = all zones).
   const narrow = followZone ? zone : pickedZone;
 
   const needed = useMemo(() => neededEntries(list.entries, list.questRuns), [list]);
@@ -57,7 +69,10 @@ export default function HuntPanel({
   // the badge says which you're reading (see `drop-truth.ts`).
   const known = useMobKnowledge(mobNames.join("|"));
 
-  const zoneOptions = useMemo(() => {
+  // Only zones something on your list drops in — the picker is for narrowing this hunt, not for
+  // browsing the world. Shaped as `Zone` because that's what `ZonePicker` matches over; there's no
+  // map file behind a wiki zone name, so the name is also its key.
+  const zoneOptions = useMemo<Zone[]>(() => {
     const byLower = new Map<string, string>();
     for (const e of needed) {
       for (const z of sourceZones(sources[e.name] ?? [])) {
@@ -65,7 +80,7 @@ export default function HuntPanel({
         if (!byLower.has(k)) byLower.set(k, z);
       }
     }
-    return [...byLower.values()].sort((a, b) => a.localeCompare(b));
+    return [...byLower.values()].sort((a, b) => a.localeCompare(b)).map((name) => ({ name, key: name }));
   }, [needed, sources]);
 
   const zones = useMemo(() => {
@@ -91,26 +106,25 @@ export default function HuntPanel({
           Kill these to finish your list.
         </p>
         <span className="spacer" />
-        {followZone ? (
-          <span className="muted small" title="Following your current zone (change in Settings)">
-            📍 {zone ?? "no zone"} only
-          </span>
-        ) : (
-          <select
-            className="field"
-            style={{ width: "auto" }}
-            value={pickedZone ?? ""}
-            onChange={(e) => onPickedZone(e.target.value || null)}
-            title="Show only what's obtainable in a zone"
-          >
-            <option value="">All zones</option>
-            {zoneOptions.map((z) => (
-              <option key={z} value={z}>
-                {z}
-              </option>
-            ))}
-          </select>
-        )}
+        <ZonePicker
+          zones={zoneOptions}
+          limit={ZONE_MATCHES}
+          // While following, the box shows the zone that's actually filtering — leaving it blank
+          // would mark "All zones" as the live choice, which is the one thing it isn't.
+          value={followZone ? (zone ?? "") : (pickedZone ?? "")}
+          blankLabel="All zones"
+          placeholder={followZone ? "📍 no zone yet" : "All zones"}
+          // Naming a zone is the opposite of following one, so it takes over rather than being
+          // silently overridden by wherever you happen to be standing.
+          onPick={(name) => {
+            if (followZone) setFollowZone(false);
+            onPickedZone(name);
+          }}
+        />
+        <label className="follow-toggle" title="Narrow to the zone you're in, and move with you (the same Settings toggle)">
+          <input type="checkbox" checked={followZone} onChange={(e) => setFollowZone(e.target.checked)} />
+          follow
+        </label>
       </div>
 
       {loading && zones.length === 0 && <p className="muted">Looking up drop sources…</p>}

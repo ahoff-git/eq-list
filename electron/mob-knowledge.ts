@@ -1,9 +1,13 @@
 /**
  * mob-knowledge.ts — pooled knowledge about mobs: observed drop rates and roam areas.
  *
- * Your own share is **derived, never stored**: it comes from the kill log every time it's
+ * Your own share is **derived, never stored here**: it comes from the kill log every time it's
  * asked for, so there's exactly one record of what you killed and no second copy to drift
- * (the same reasoning as sessions being derived from stored fights, ADR 0016).
+ * (the same reasoning as sessions being derived from stored fights, ADR 0016). It asks for
+ * `observations()`, not `kills()` — the kill log bounds how many *records* it keeps, and folds
+ * what the rest taught into observations of its own, so a rate here covers everything you've
+ * killed rather than everything still on file
+ * ([ADR 0056](../specs/decisions/0056-a-dropped-record-keeps-what-it-taught.md)).
  *
  * Peers' observations *are* stored, and deliberately **kept apart from yours**. Pooling makes
  * a drop rate far more useful — six players' kills of the same mob are one much better sample
@@ -108,7 +112,7 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
     zone ? obs.filter((o) => o.zone === zone) : obs;
 
   return {
-    mine: (zone) => forZone(observeMobs(killLog.kills()), zone),
+    mine: (zone) => forZone(killLog.observations(), zone),
 
     all(zone) {
       const theirs = Object.entries(peers).flatMap(([by, obs]) =>
@@ -116,7 +120,7 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
         // sender left it off.
         forZone(obs, zone).map((o) => ({ ...o, by: o.by ?? by })),
       );
-      return mergeObservations(forZone(observeMobs(killLog.kills()), zone), theirs);
+      return mergeObservations(forZone(killLog.observations(), zone), theirs);
     },
 
     report(by, observations) {

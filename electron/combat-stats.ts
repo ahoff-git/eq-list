@@ -19,11 +19,14 @@
  * Emits `change` with a fresh snapshot so main can broadcast it to every window.
  */
 import { EventEmitter } from "node:events";
-import { isYours, meleeSkill } from "../src/shared/combat-parser";
+import { isYours } from "../src/shared/combat-parser";
+import { createDamageCells, rollUpDamage } from "../src/shared/damage-tree";
 import { createNameRegistry } from "../src/shared/name-registry";
 import type {
   CoinEvent,
   CombatEvent,
+  DamageCell,
+  DamageKind,
   LootEvent,
   XpEvent,
   CombatStats,
@@ -150,11 +153,12 @@ interface Tally {
   activeMs: number;
   /** Your melee under each stance — empty for combatants whose stance we can't know. */
   byStance: Map<string, ModeTally>;
-  /** Melee landed, keyed by skill/weapon ("Slash", "Crush", "Backstab"): the "which hand" view. */
-  byVerb: Map<string, { hits: number; damage: number; maxHit: number }>;
-  /** Non-melee damage keyed by source (spell / DoT / proc / shield): the other half of "dealt". */
-  bySpell: Map<string, { hits: number; damage: number; maxHit: number }>;
-  /** Hits carrying a qualifier ("Critical", "Riposte", …), keyed by it — whatever the log wrote. */
+  /**
+   * Hits carrying a qualifier ("Critical", "Riposte", …), keyed by it — whatever the log wrote.
+   * Kept here rather than in the damage cells because a qualifier *overlaps* the split by
+   * source (a critical slash is in both), and a cell that overlapped its siblings would
+   * break the one guarantee the cells make.
+   */
   bySpecial: Map<string, { hits: number; damage: number }>;
 }
 
@@ -168,7 +172,7 @@ function emptyTally(): Tally {
   return {
     dealt: 0, taken: 0, healed: 0, hits: 0, misses: 0, crits: 0, maxHit: 0,
     firstAt: 0, lastAt: 0, activeMs: 0,
-    byStance: new Map(), byVerb: new Map(), bySpell: new Map(), bySpecial: new Map(),
+    byStance: new Map(), bySpecial: new Map(),
   };
 }
 
@@ -280,9 +284,14 @@ function addActive(span: { lastAt: number; activeMs: number }, at: number): void
   if (span.lastAt && gap > 0 && gap <= ACTIVE_GAP_MS) span.activeMs += gap;
 }
 
-/** One accumulating window (a fight, or the session). */
-function createWindow() {
+/**
+ * One accumulating window (a fight, or the session). `canon` is the tracker's name registry —
+ * the damage cells need it so their attacker/target names are the same ones the rows use.
+ */
+function createWindow(canon: (name: string) => string) {
   const tallies = new Map<string, Tally>();
+  /** Every hit as a (victim, attacker, kind, source) cell — see `damage-tree.ts`. */
+  const damage = createDamageCells(canon);
   const spells = new Map<string, SpellTally>();
   const mobs = new Map<string, MobTally>();
   const invocations = new Map<string, InvocationTally>();
@@ -324,6 +333,7 @@ function createWindow() {
     buckets,
     deaths,
     lines,
+    damage,
     /** Widen the window's line range — cheap, and it's the way back to the source. */
     note(logId: number) {
       if (!logId) return;
@@ -359,8 +369,14 @@ type Window = ReturnType<typeof createWindow>;
 
 export function createCombatStats(nowIso: () => string = () => new Date().toISOString()): CombatTracker {
   const bus = new EventEmitter();
-  let fight = createWindow();
-  let session = createWindow();
+  /**
+   * One spelling per creature, so a sentence-initial capital doesn't split a row in two.
+   * Declared first because the windows are built around it.
+   */
+  const names = createNameRegistry();
+  const canon = names.canon;
+  let fight = createWindow(canon);
+  let session = createWindow(canon);
   let startedAt = nowIso();
   let player = "";
   /** Log time of the last swing (hit or miss), for idle detection. */
@@ -398,15 +414,19 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   const castRepertoire = new Set<string>();
   let currentZone: string | null = null;
 
-  /** One spelling per creature, so a sentence-initial capital doesn't split a row in two. */
-  const names = createNameRegistry();
-  const canon = names.canon;
-
   /** You or anything of yours, against the current `player` — see `isYours`. */
   const isMine = (name: string): boolean => isYours(name, player);
 
-  const row = (name: string, t: Tally): CombatantStat => {
+  /**
+   * One meter row. The by-skill and by-spell splits are **derived** from this combatant's
+   * damage cells rather than tallied a second time, so the row and the drill-down under it
+   * can't disagree (ADR 0053). Only sources that landed something appear — a skill that
+   * produced nothing but misses is a hit-rate fact, and the drill-down is where it shows.
+   */
+  const row = (name: string, t: Tally, cells: DamageCell[]): CombatantStat => {
     const activeSec = Math.max(1, Math.round(t.activeMs / 1000));
+    const landedBySource = (kinds: DamageKind[]) =>
+      rollUpDamage(cells.filter((c) => kinds.includes(c.kind)), ["source"]).filter((n) => n.hits > 0);
     return {
       name,
       dealt: t.dealt,
@@ -428,12 +448,18 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
           maxHit: m.maxHit,
         }))
         .sort((a, b) => b.damage - a.damage),
-      byType: [...t.byVerb.entries()]
-        .map(([type, v]) => ({ type, hits: v.hits, damage: v.damage, maxHit: v.maxHit }))
-        .sort((a, b) => b.damage - a.damage || b.hits - a.hits),
-      bySpell: [...t.bySpell.entries()]
-        .map(([spell, v]) => ({ spell, hits: v.hits, damage: v.damage, maxHit: v.maxHit }))
-        .sort((a, b) => b.damage - a.damage || b.hits - a.hits),
+      byType: landedBySource(["Melee"]).map((n) => ({
+        type: n.label,
+        hits: n.hits,
+        damage: n.damage,
+        maxHit: n.maxHit,
+      })),
+      bySpell: landedBySource(["Spell", "Other"]).map((n) => ({
+        spell: n.label,
+        hits: n.hits,
+        damage: n.damage,
+        maxHit: n.maxHit,
+      })),
       specials: [...t.bySpecial.entries()]
         .map(([kind, s]) => ({ kind, hits: s.hits, damage: s.damage }))
         .sort((a, b) => b.hits - a.hits || b.damage - a.damage),
@@ -508,8 +534,17 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   };
 
   const summarize = (w: Window): FightStats => {
+    const cells = w.damage.cells();
+    // Each row only needs its own hits, so index the cells by attacker once rather than
+    // re-scanning them per row.
+    const byAttacker = new Map<string, DamageCell[]>();
+    for (const c of cells) {
+      const theirs = byAttacker.get(c.attacker);
+      if (theirs) theirs.push(c);
+      else byAttacker.set(c.attacker, [c]);
+    }
     const byCombatant = [...w.tallies.entries()]
-      .map(([name, t]) => row(name, t))
+      .map(([name, t]) => row(name, t, byAttacker.get(name) ?? []))
       .sort((a, b) => b.dealt - a.dealt || b.taken - a.taken || a.name.localeCompare(b.name));
     return {
       startedAt: w.span.firstAt ? new Date(w.span.firstAt).toISOString() : "",
@@ -519,6 +554,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       yourDealt: byCombatant.filter((c) => c.mine).reduce((n, c) => n + c.dealt, 0),
       yourTaken: byCombatant.filter((c) => c.mine).reduce((n, c) => n + c.taken, 0),
       byCombatant,
+      damageCells: cells,
       spanSec: w.span.firstAt ? Math.max(1, Math.round((w.span.lastAt - w.span.firstAt) / 1000)) : 0,
       spells: [...w.spells.entries()]
         .map(([name, t]) => spellRow(name, t))
@@ -570,24 +606,12 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         a.dealt += event.amount;
         a.hits += 1;
         if (event.qualifier === "Critical") a.crits += 1;
-        // Which skill/weapon landed it (the log names the skill, not the hand), and any tag it
-        // carried — Critical, Riposte, Flurry, … Both kept for every combatant, so "what's
-        // critting me" reads as easily as "what am I hitting with".
-        if (event.melee && event.verb) {
-          const v = a.byVerb.get(meleeSkill(event.verb)) ?? { hits: 0, damage: 0, maxHit: 0 };
-          v.hits += 1;
-          v.damage += event.amount;
-          v.maxHit = Math.max(v.maxHit, event.amount);
-          a.byVerb.set(meleeSkill(event.verb), v);
-        } else if (event.spell) {
-          // The other half of "dealt": spell landings, DoT ticks, procs and damage shields, per
-          // source. byVerb + bySpell together account for the row's whole damage.
-          const s = a.bySpell.get(event.spell) ?? { hits: 0, damage: 0, maxHit: 0 };
-          s.hits += 1;
-          s.damage += event.amount;
-          s.maxHit = Math.max(s.maxHit, event.amount);
-          a.bySpell.set(event.spell, s);
-        }
+        // Who hit whom, how, and with what — one cell, from which every drill-down and the
+        // row's own by-skill/by-spell split are rolled up (ADR 0053).
+        w.damage.record(event);
+        // Any tag the hit carried — Critical, Riposte, Flurry, … Kept for every combatant, so
+        // "what's critting me" reads as easily as "what am I hitting with". This one *overlaps*
+        // the split by source, which is why it isn't a cell.
         if (event.qualifier) {
           const s = a.bySpecial.get(event.qualifier) ?? { hits: 0, damage: 0 };
           s.hits += 1;
@@ -645,6 +669,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         const attacker = canon(event.attacker);
         const t = w.tally(attacker);
         t.misses += 1;
+        w.damage.record(event); // a miss is a hit-rate fact about a skill against a target
+
         if (isMine(attacker)) {
           modeTally(t.byStance, stance).misses += 1;
           w.invocationTally(invocation).swings += 1; // a swing either way
@@ -838,7 +864,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       if (event.kind === "damage" || event.kind === "miss") {
         if (stale) {
           endFight();
-          fight = createWindow();
+          fight = createWindow(canon);
         }
         lastCombatAt = at;
         apply(fight, event, at, castMs);
@@ -941,8 +967,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     flush: endFight,
     reset() {
       endFight(); // don't lose the fight in progress just because the meter was cleared
-      fight = createWindow();
-      session = createWindow();
+      fight = createWindow(canon);
+      session = createWindow(canon);
       startedAt = nowIso();
       lastCombatAt = 0;
       pending = null;

@@ -100,6 +100,7 @@ export const CH = {
   castAlert: "evt:castAlert", // main → all: a watched spell began casting
   alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
+  dataChanged: "evt:dataChanged", // main → all: stored data changed in bulk (a log was eaten, a store cleared)
   updateAvailable: "evt:updateAvailable", // main → all: a newer build is published
 
   watcherStatusChanged: "evt:watcherStatus",

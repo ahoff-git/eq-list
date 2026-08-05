@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createCombatHistory } from "../combat-history";
-import type { CombatantStat, FightStats } from "../../src/shared/types";
+import type { CombatantStat, DamageCell, DamageKind, FightStats } from "../../src/shared/types";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "eql-hist-"));
@@ -34,9 +34,22 @@ function combatant(name: string, dealt: number, mine = false): CombatantStat {
   };
 }
 
+/** A combatant that took damage rather than dealing it — what a fight is named after. */
+function hurt(name: string, taken: number): CombatantStat {
+  return { ...combatant(name, 0), taken };
+}
+
+/** One damage cell, for the fights whose label depends on who hit whom. */
+function cell(target: string, attacker: string, kind: DamageKind, source: string, damage: number): DamageCell {
+  return { target, attacker, kind, source, damage, hits: 1, ticks: 0, misses: 0, crits: 0, maxHit: damage };
+}
+
 /** A fight at minute `min`, where you dealt `yours` and the mob dealt `theirs`. */
 function fight(min: number, yours: number, theirs: number, mob = "a coyote", extra: Partial<FightStats> = {}): FightStats {
-  const stamp = (m: number) => `2026-07-29T01:${String(m).padStart(2, "0")}:00.000Z`;
+  // Minutes past 01:00, rolling into hours — a fight is keyed by its timestamps now, so two
+  // fights in a test have to happen at different times, as two fights in a log do.
+  const stamp = (m: number) =>
+    `2026-07-29T${String(1 + Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}:00.000Z`;
   return {
     startedAt: stamp(min),
     endedAt: stamp(min),
@@ -92,6 +105,114 @@ test("a fight is labelled with the thing you were fighting", () => {
   assert.equal(h.fights("s")[0].label, "Minotaur Lord");
 });
 
+test("in a group the fight is named after the mob, not the group-mate out-damaging you", () => {
+  const h = createCombatHistory(tempDir(), "s");
+  // BunnySlayer out-damages everything in the room, which is exactly why "the biggest dealer that
+  // isn't mine" used to title the fight after them. What *we* damaged is the coyote.
+  h.add(
+    fight(1, 100, 20, "a coyote", {
+      byCombatant: [combatant("You", 100, true), combatant("BunnySlayer", 400), combatant("a coyote", 20)],
+      damageCells: [
+        cell("a coyote", "You", "Melee", "Slash", 100),
+        cell("a coyote", "BunnySlayer", "Melee", "Slash", 400),
+        cell("You", "a coyote", "Melee", "Bite", 20),
+      ],
+    }),
+  );
+  assert.equal(h.fights("s")[0].label, "a coyote");
+});
+
+test("a fight stored under the old label rule is renamed on read, not left as it was filed", () => {
+  const dir = tempDir();
+  const a = createCombatHistory(dir, "s");
+  a.add(fight(1, 100, 20, "a coyote", { byCombatant: [combatant("You", 100, true), combatant("BunnySlayer", 400)] }));
+  a.flush();
+  // Hand-edit the file to the label the old rule would have written, as the real history file has.
+  const file = path.join(dir, "combat-history.json");
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { fights: { label: string }[] };
+  raw.fights[0].label = "BunnySlayer";
+  fs.writeFileSync(file, JSON.stringify(raw), "utf8");
+
+  // No cells on that fight either, so the fallback has to carry it: whatever took the most damage.
+  const b = createCombatHistory(dir, "s2");
+  assert.equal(b.fights("s")[0].label, "BunnySlayer"); // nothing took damage, so the dealer stands
+  // With a victim on record, the same read names it instead.
+  const c = createCombatHistory(tempDir(), "s");
+  c.add(
+    fight(1, 100, 20, "a coyote", {
+      byCombatant: [combatant("You", 100, true), combatant("BunnySlayer", 400), hurt("a coyote", 500)],
+    }),
+  );
+  assert.equal(c.fights("s")[0].label, "a coyote");
+});
+
+test("a login starts a new play session, and the same login twice is still one", () => {
+  const h = createCombatHistory(tempDir(), "run:1");
+  h.add(fight(1, 10, 1, "before"));
+  h.startSession("2026-07-29T20:00:00");
+  h.add(fight(2, 10, 1, "after"));
+  // The gap between two runs of the app gets replayed, so the same line can arrive twice.
+  h.startSession("2026-07-29T20:00:00");
+  h.add(fight(3, 10, 1, "later that evening"));
+
+  const sessions = h.sessions();
+  assert.equal(sessions.length, 2, "one session per login, not per app run");
+  assert.deepEqual(
+    h.fights("login:2026-07-29T20:00:00").map((f) => f.label),
+    ["later that evening", "after"],
+  );
+  assert.deepEqual(
+    h.fights("run:1").map((f) => f.label),
+    ["before"],
+  );
+});
+
+test("the same fight is filed once, however it arrives", () => {
+  const dir = tempDir();
+  const h = createCombatHistory(dir, "s");
+  assert.equal(h.add(fight(1, 100, 20), null, "/logs/eqlog_Kainos_qeynos.txt"), true);
+  // Eating a log you already watched replays the very same fight: same file, same timestamps.
+  assert.equal(h.add(fight(1, 100, 20), null, "/logs/eqlog_Kainos_qeynos.txt"), false);
+  // The path can differ (a copy of the log, a mapped drive); the file's name still names it.
+  assert.equal(h.add(fight(1, 100, 20), null, "D:/backup/eqlog_Kainos_qeynos.txt"), false);
+  // Another character's log genuinely records a different side of the same minutes.
+  assert.equal(h.add(fight(1, 100, 20), null, "/logs/eqlog_Bunnyslayer_qeynos.txt"), true);
+  assert.equal(h.fights("s").length, 2);
+  h.flush();
+
+  // And it survives a restart: the keys are rebuilt from what's on disk.
+  const reopened = createCombatHistory(dir, "s2");
+  assert.equal(reopened.add(fight(1, 100, 20), null, "/logs/eqlog_Kainos_qeynos.txt"), false);
+});
+
+test("a fight stored before keying still dedupes against a later import", () => {
+  const dir = tempDir();
+  const first = createCombatHistory(dir, "s");
+  first.add(fight(3, 50, 5), null, "/logs/eqlog_Kainos_qeynos.txt");
+  first.flush();
+  // Strip the key, as fights filed before this existed have none.
+  const file = path.join(dir, "combat-history.json");
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { fights: { key?: string }[] };
+  delete raw.fights[0].key;
+  fs.writeFileSync(file, JSON.stringify(raw), "utf8");
+
+  const reopened = createCombatHistory(dir, "s2");
+  assert.equal(reopened.add(fight(3, 50, 5), null, "/logs/eqlog_Kainos_qeynos.txt"), false);
+});
+
+test("a fight is filed under the session it's given, not the one in progress", () => {
+  const h = createCombatHistory(tempDir(), "run:live");
+  // What eating a log does: each sitting it finds is named on the call, so the live session the
+  // app is in the middle of isn't disturbed.
+  h.add(fight(1, 10, 1, "eaten"), null, "/logs/old.txt", "login:2026-07-01T20:00:00");
+  h.add(fight(2, 10, 1, "live"));
+  assert.deepEqual(
+    h.sessions().map((s) => s.sessionId).sort(),
+    ["login:2026-07-01T20:00:00", "run:live"],
+  );
+  assert.deepEqual(h.fights("login:2026-07-01T20:00:00").map((f) => f.label), ["eaten"]);
+});
+
 test("fights come back newest first", () => {
   const h = createCombatHistory(tempDir(), "s");
   h.add(fight(1, 1, 1, "first"));
@@ -136,7 +257,8 @@ test("history survives a restart", () => {
 
 test("the oldest fights are dropped once the cap is hit", () => {
   const h = createCombatHistory(tempDir(), "s");
-  for (let i = 0; i < 1005; i++) h.add(fight(1, i, 0, `fight-${i}`));
+  // A minute apart each, because a fight is identified by when it happened.
+  for (let i = 0; i < 1005; i++) h.add(fight(i, i, 0, `fight-${i}`));
 
   const fights = h.fights("s");
   assert.equal(fights.length, 1000);

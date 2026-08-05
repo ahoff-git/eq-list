@@ -150,7 +150,25 @@ export interface CoinEvent extends LogEventBase {
   copper: number;
 }
 
-export type LogEvent = LootEvent | ZoneEvent | XpEvent | KillEvent | LocEvent | LevelEvent | CoinEvent;
+/**
+ * Logging in — "Welcome to EverQuest Legends!", the first line of a sitting. It's the only
+ * thing in the log that marks where one play session ends and the next begins, which is what
+ * the history list groups by (ADR 0054). Carries nothing but its timestamp: that *is* the
+ * information.
+ */
+export interface LoginEvent extends LogEventBase {
+  kind: "login";
+}
+
+export type LogEvent =
+  | LootEvent
+  | ZoneEvent
+  | XpEvent
+  | KillEvent
+  | LocEvent
+  | LevelEvent
+  | CoinEvent
+  | LoginEvent;
 
 // ─── Combat events (see combat-parser.ts) ───────────────────────────────────
 
@@ -174,6 +192,12 @@ export interface DamageEvent extends LogEventBase {
   melee: boolean;
   /** True for a damage-over-time tick, as opposed to a spell first landing. */
   tick?: boolean;
+  /**
+   * True for a damage shield ("A female rat is burned by Kainos`s warder's flames …"): the
+   * wearer dealt it by *being hit*, not by attacking. There's no spell to name, so `spell`
+   * holds the log's source word ("flames") — this flag is what says it isn't a cast.
+   */
+  shield?: boolean;
 }
 
 /** A swing that missed — pairs with `DamageEvent` to give an accuracy figure. */
@@ -372,6 +396,109 @@ export interface SpecialHitStat {
   damage: number;
 }
 
+// ─── Damage detail (who hit whom, with what) ────────────────────────────────
+
+/** How a hit was delivered: a swing, a named spell, or neither (a damage shield). */
+export type DamageKind = "Melee" | "Spell" | "Other";
+
+/**
+ * One (victim, attacker, kind, source) bucket of damage — the leaf every damage tree is
+ * rolled up from. Flat on purpose: see [ADR 0053](../../specs/decisions/0053-damage-is-cells-rolled-up.md).
+ */
+export interface DamageCell {
+  /** Who took it, and who dealt it — canonical names, the same ones `byCombatant` uses. */
+  target: string;
+  attacker: string;
+  kind: DamageKind;
+  /** What landed it: a melee skill ("Slash"), a spell/DoT name, a shield's word ("flames"). */
+  source: string;
+  damage: number;
+  /** Landed hits, DoT ticks included. */
+  hits: number;
+  /** Of those hits, DoT ticks — a source that's all ticks is a DoT. */
+  ticks: number;
+  /** Swings that didn't land. Melee only: the log's misses name a verb, never a spell. */
+  misses: number;
+  /** Landed hits the log tagged "(Critical)". */
+  crits: number;
+  maxHit: number;
+}
+
+/** Which axis a level of a damage tree groups by. */
+export type DamageAxis = "target" | "attacker" | "kind" | "source";
+
+/**
+ * A node's damage against the denominators that don't move with the tree, 0–1 each. Every
+ * combination of "whose damage" × "on what":
+ *
+ * |                     | the whole fight | one victim           |
+ * | ------------------- | --------------- | -------------------- |
+ * | **anyone's**        | `ofFight`       | `ofTarget`           |
+ * | **this attacker's** | `ofAttacker`    | `ofAttackerOnTarget` |
+ *
+ * Each is absent when it would have no meaning rather than being guessed at:
+ *
+ * - the two right-hand ones need the node's hits to have landed on **one** victim (a spell's row
+ *   *above* its per-target split spans several, so "of that victim" says nothing);
+ * - the two bottom ones need a **single attacker** behind them;
+ * - `ofFight` needs the node's hits to be part of the fight's total — see below.
+ *
+ * **What "the fight" counts.** Everything landed on the things your side actually fought: a
+ * victim is in only if you or your pet hit it. Damage *on* you, your pet or your group is not
+ * part of "how much of this fight was mine" — it's the fight happening to you — so it's left out
+ * of the denominator, and a node made of it has no `ofFight` at all rather than a share of
+ * something it isn't in. Players hitting each other is the exception that falls out for free: if
+ * you hit them, they're a victim you fought, so a duel counts like any other fight. When nothing
+ * is known to be yours (no character name yet), sides can't be told apart and every victim counts.
+ */
+export interface DamageShares {
+  ofFight?: number;
+  ofTarget?: number;
+  ofAttacker?: number;
+  ofAttackerOnTarget?: number;
+}
+
+/**
+ * One level of a damage tree — a combatant, a kind, or a source — with its own metrics and
+ * the level below it. Every node's `damage` is exactly the sum of its children's, so a share
+ * always adds up.
+ */
+export interface DamageNode {
+  /** Who or what this level is (the value of the axis it groups by). */
+  label: string;
+  /** Which axis produced it, so a renderer can label the level without tracking depth. */
+  axis: DamageAxis;
+  damage: number;
+  hits: number;
+  ticks: number;
+  misses: number;
+  crits: number;
+  maxHit: number;
+  /** Share of the level above (of the whole tree at the top), 0–1. */
+  share: number;
+  /**
+   * The same damage measured against **fixed** denominators. `share` alone can't answer "how much
+   * of that mob did I do" — it's relative to whichever level happens to sit above, so the same 50%
+   * means something different at every depth, and comparing two nodes means multiplying shares
+   * back up their branches.
+   */
+  of: DamageShares;
+  /** The one victim every hit in this node landed on, when there is one — what `of.ofTarget` is of. */
+  onTarget?: string;
+  /** The one attacker behind every hit in this node, when there is one. */
+  byAttacker?: string;
+  /** `crits / hits`, 0 when nothing landed. */
+  critRate: number;
+  /**
+   * Landed swings over swings taken — 0 when nothing swung. DoT ticks are excluded from
+   * both sides: they aren't swings, and counting them reads as perfect accuracy.
+   */
+  hitRate: number;
+  /** True when this level names you or something of yours. Only set on combatant levels. */
+  mine?: boolean;
+  children: DamageNode[];
+}
+
 /**
  * One of your spells over a window. Everything here is measured from the log — EQ
  * states neither cast times nor resist rates, so both are derived: cast time from the
@@ -525,6 +652,13 @@ export interface FightStats {
   spanSec: number;
   /** Rows, biggest dealer first. */
   byCombatant: CombatantStat[];
+  /**
+   * Every hit in the window as a (victim, attacker, kind, source) cell — what the meter's
+   * drill-downs are rolled up from, in either direction (ADR 0053). Absent on fights stored
+   * before it existed; `byCombatant`'s own splits are derived from these, so the two can't
+   * disagree.
+   */
+  damageCells?: DamageCell[];
   /** Your spells in this window, most damaging first. */
   spells: SpellStat[];
   /** What you killed here, and what it cost/earned. Best rate first. */
@@ -579,7 +713,18 @@ export interface CombatStats {
  */
 export interface StoredFight {
   id: string;
-  /** Groups fights into a play session (one app run, or since the last reset). */
+  /**
+   * What makes this fight *this* fight: its log file and its own start/end timestamps
+   * (ADR 0033's keying, applied to fights). It's how eating a log you already watched — or
+   * eating it twice — files each fight once. Absent on fights stored before keying; those are
+   * keyed from the same fields on load.
+   */
+  key?: string;
+  /**
+   * Groups fights into a play session — a **sitting**, bounded by the log's login line
+   * ([ADR 0054](../../specs/decisions/0054-a-sitting-is-a-login.md)). Fights recorded before any
+   * login was seen fall under a per-run id instead.
+   */
   sessionId: string;
   /** The main thing you were fighting — the biggest opponent, for the fight list. */
   label: string;
@@ -1156,7 +1301,23 @@ export interface AwariPeer {
   zone?: string;
 }
 
-/** Result of digesting ("eating") a log file into learned data (kill log → mob knowledge). */
+/**
+ * How much of a store a "clear" is meant to take with it.
+ *
+ * `records` — the rows: individual kills, the loot feed. What they *taught* — observed drop rates,
+ * roam areas, vendor prices — is kept, because that's the expensive thing and it can't be
+ * recovered from a log you no longer have. This is the default everywhere, deliberately.
+ *
+ * `everything` — the summaries too. Only ever from a second, explicit answer, because it throws
+ * away months of observation ([ADR 0056](../../specs/decisions/0056-a-dropped-record-keeps-what-it-taught.md)).
+ */
+export type ForgetScope = "records" | "everything";
+
+/**
+ * Result of digesting ("eating") a log file into learned data — the kill log (→ mob knowledge)
+ * and combat history. Every count is of things that were **new**: eating a log twice, or eating
+ * one you watched live, reports zeros rather than doubling anything (ADR 0033).
+ */
 export interface LogImportResult {
   /** The file that was digested. */
   file: string;
@@ -1167,6 +1328,12 @@ export interface LogImportResult {
   drops: number;
   /** Coin attributed to a corpse, in copper. */
   coin: number;
+  /** Fights filed into history. */
+  fights: number;
+  /** Play sittings found, one per login line. */
+  sessions: number;
+  /** Drops added to the loot feed (and so to the prices derived from it). */
+  loot: number;
 }
 
 /** What the renderer needs to show "a newer build is available" (see `electron/update-check.ts`). */
@@ -1322,7 +1489,12 @@ export interface EqlApi {
   kills: {
     /** Every kill recorded (optionally for one zone), newest first. */
     all(zone?: string): Promise<KillRecord[]>;
-    clear(): Promise<void>;
+    /**
+     * Forget the recorded kills and the loot feed. **Observations survive** — drop rates, roam
+     * areas and vendor prices — unless the scope is `"everything"`, which the UI only sends after
+     * asking a second time (ADR 0056).
+     */
+    clear(scope?: ForgetScope): Promise<void>;
     /**
      * Fires when the kill log changes in bulk — an import ("eat a log") or a clear.
      * Live kills don't push this (the panels refetch off their own refresh keys); it
@@ -1367,6 +1539,12 @@ export interface EqlApi {
     info(): Promise<AppInfo>;
     /** Open the debug log file in the OS default app. */
     openLog(): Promise<void>;
+    /**
+     * Stored data changed in bulk — a log was eaten, or a store was cleared. Anything that reads
+     * a stored list once when it opens (the fight history, the loot feed) should refetch on this;
+     * live events say nothing about a whole file changing underneath.
+     */
+    onDataChanged(cb: () => void): Unsubscribe;
   };
   search: {
     /** Fires when a screengrab lookup fills the Search box with OCR'd text. */

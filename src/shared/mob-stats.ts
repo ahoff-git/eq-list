@@ -135,6 +135,35 @@ function areaOf(points: { y: number; x: number }[]): MobObservation["area"] {
 }
 
 /**
+ * Add observations of the same mob-in-a-zone together, into one observation.
+ *
+ * It's the arithmetic `mergeObservations` uses to pool across *people*, applied within a single
+ * observer — which is what lets a kill record be dropped without dropping what it taught: the
+ * kill log folds a record into an observation as it ages out, and adds that back here
+ * ([ADR 0056](../../specs/decisions/0056-a-dropped-record-keeps-what-it-taught.md)). Deliberately
+ * not `mergeObservations`: that answers "yours versus theirs", and both sides of this are yours.
+ */
+export function sumObservations(...groups: MobObservation[][]): MobObservation[] {
+  const byKey = new Map<string, MobObservation & { areas: NonNullable<MobObservation["area"]>[] }>();
+  for (const group of groups) {
+    for (const obs of group) {
+      const key = keyOf(obs.mob, obs.zone);
+      let sum = byKey.get(key);
+      if (!sum) {
+        sum = { mob: obs.mob, zone: obs.zone, kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, areas: [] };
+        byKey.set(key, sum);
+      }
+      sum.kills += obs.kills;
+      sum.copper = (sum.copper ?? 0) + (obs.copper ?? 0);
+      if (obs.lastAt > sum.lastAt) sum.lastAt = obs.lastAt;
+      if (obs.area) sum.areas.push(obs.area);
+      for (const [item, count] of Object.entries(obs.drops)) sum.drops[item] = (sum.drops[item] ?? 0) + count;
+    }
+  }
+  return [...byKey.values()].map(({ areas, ...obs }) => ({ ...obs, area: mergeAreas(areas) }));
+}
+
+/**
  * Pool observations into per-mob knowledge. `mine` is kept apart in the result so a rate can
  * always be traced back to how much of it you saw yourself — pooled data is more useful *and*
  * less verifiable, and the reader should be able to tell.

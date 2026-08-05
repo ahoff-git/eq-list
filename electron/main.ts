@@ -126,6 +126,13 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
+  // Main-process failures land in that same file rather than Electron's default dialog, which
+  // pops over the game. Handling `uncaughtException` also means we keep running instead of
+  // exiting — for an overlay that's the better trade: a broken feature beats the whole app
+  // disappearing mid-fight, and the log says what broke.
+  process.on("uncaughtException", (err) => log.error("uncaught", err));
+  process.on("unhandledRejection", (reason) => log.error("unhandled rejection", reason));
+
   const store = createStore(userData);
   const wiki = createWikiClient(path.join(userData, "wiki-cache"));
   // Where we had read to when we last ran, so anything logged since is read as the news it is
@@ -261,6 +268,13 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onLevel((event) => {
     xp.levelUp(event.level, event.at);
     hp.levelUp(event.level); // more hit points now, so the old bounds are void
+  });
+  // Logging in is the log's own "a new sitting starts here" (ADR 0054). Reset *before* the id
+  // changes, so the fight in progress — and every counter on the Session tab — files under the
+  // sitting it actually happened in.
+  watcher.onLogin((event) => {
+    combat.reset();
+    history.startSession(event.at);
   });
   /** Put an alert on the overlay, above the app windows as well as the game. */
   function raiseAlert(alert: CastAlertEvent): void {

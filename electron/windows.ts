@@ -100,8 +100,23 @@ function windowIcon(): string {
  * which is why the map's A−/A+ used to move the main window too.
  */
 
+/**
+ * Next's dev error overlay, hidden in every window we own (the *why* is [ADR 0052]:
+ * full-viewport UI on a frameless always-on-top window reads as the game blacking out,
+ * and the overlay takes keyboard focus with it).
+ *
+ * This has to be injected from the main process rather than written in `globals.css`,
+ * because the case that most needs hiding is the one a stylesheet can't cover: on a
+ * **compile error** Next serves a document with no app bundle at all, so app CSS — the
+ * rule included — never loads, and the overlay mounts straight onto `<body>` and focuses
+ * itself. Injected per document, since `insertCSS` is dropped on navigation and `next dev`
+ * reloads on its own.
+ */
+const HIDE_DEV_OVERLAY = "[data-nextjs-dev-overlay], nextjs-portal { display: none !important }";
+
 function load(win: BrowserWindow, route: string): void {
   if (DEV) {
+    win.webContents.on("dom-ready", () => void win.webContents.insertCSS(HIDE_DEV_OVERLAY));
     void win.loadURL(`${DEV_URL}/${route}`);
   } else {
     void win.loadURL(`${APP_URL}/${route ? `${route}/` : ""}index.html`);

@@ -118,17 +118,27 @@ export default function SettingsPanel() {
         </div>
         <span className="hint">
           Pick an old EverQuest log and fold its kills, drops and locations into your learned mob
-          data (observed drop rates + roam areas) — without watching it live. Your live combat/session
-          stats aren’t touched. Results appear right away: the Hunt tab pools every zone, while the map
-          shows the zone you’re viewing (only kills the log placed with a nearby <kbd>/loc</kbd> get a marker).
+          data (observed drop rates + roam areas), and its <b>fights into the Damage tab’s history</b>,
+          one play session per login — without watching it live. Your live combat/session stats
+          aren’t touched. Eating the same log twice is safe: every kill, drop and fight is keyed by
+          the log line behind it, so nothing lands twice. Results appear right away: the Hunt tab
+          pools every zone, while the map shows the zone you’re viewing (only kills the log placed
+          with a nearby <kbd>/loc</kbd> get a marker).
           {digested && (
             <>
               {" "}
-              <b>Digested {digested.kills} kills / {digested.drops} drops</b> from {fileName(digested.file)}.
+              <b>
+                Digested {digested.kills} kills / {digested.drops} drops / {digested.fights} fights /{" "}
+                {digested.loot} looted
+              </b>{" "}
+              from {fileName(digested.file)}
+              {digested.sessions > 0 && ` across ${digested.sessions} play session${digested.sessions === 1 ? "" : "s"}`}.
             </>
           )}
         </span>
       </div>
+
+      <ForgetData />
 
       <div className="setting">
         <label>Match mode</label>
@@ -196,7 +206,7 @@ export default function SettingsPanel() {
         onChange={(v) => patch({ overlay: { showObtained: v } })}
       />
       <Toggle
-        label="Follow your zone (auto-narrow to what's obtainable where you are)"
+        label="Hunt tab: follow your zone (auto-narrow to what's obtainable where you are)"
         checked={settings.overlay.followZone}
         onChange={(v) => patch({ overlay: { followZone: v } })}
       />
@@ -551,6 +561,66 @@ export default function SettingsPanel() {
 
 function screengrabLabel(info: ReturnType<typeof useAppInfo>): string {
   return info?.hotkeys.find((h) => /screengrab/i.test(h.action))?.label ?? "Ctrl/Cmd+Shift+L";
+}
+
+/**
+ * Forgetting recorded data — and the **second question** that guards what it taught.
+ *
+ * The records (individual kills, the loot feed) are replaceable: eat the logs again. The
+ * observations built from them — drop rates over hundreds of kills, roam areas, vendor prices —
+ * are not, once the logs are gone. So the first click never touches them, and taking them needs a
+ * separate, differently-worded answer (ADR 0056). No native confirm dialog: this window is
+ * always-on-top over the game, and a modal there is a blackout (ADR 0052).
+ */
+function ForgetData() {
+  const [asking, setAsking] = useState(false);
+  const [done, setDone] = useState("");
+
+  async function forget(scope: "records" | "everything") {
+    await api()?.kills.clear(scope);
+    setAsking(false);
+    setDone(scope === "everything" ? "Forgot the records and everything they taught." : "Forgot the records. Observations kept.");
+  }
+
+  return (
+    <div className="setting">
+      <label>Forget recorded data</label>
+      {asking ? (
+        <div className="row wrap">
+          <button className="btn" onClick={() => void forget("records")}>
+            Keep observations
+          </button>
+          <button className="btn danger" onClick={() => void forget("everything")}>
+            Forget observations too
+          </button>
+          <button className="btn ghost" onClick={() => setAsking(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="row">
+          <button className="btn" onClick={() => { setDone(""); setAsking(true); }}>
+            Forget kills and loot…
+          </button>
+        </div>
+      )}
+      <span className="hint">
+        {asking ? (
+          <>
+            This clears your recorded kills and the loot feed. <b>Observations</b> — every observed
+            drop rate, roam area and vendor price learned from them — can be kept: they took months
+            of play to gather and can’t be rebuilt from logs you no longer have. Eating your logs
+            again restores the records either way.
+          </>
+        ) : (
+          <>
+            Clears the individual kill records and the loot feed. You’ll be asked separately whether
+            to keep what they taught. {done && <b>{done}</b>}
+          </>
+        )}
+      </span>
+    </div>
+  );
 }
 
 function Toggle({

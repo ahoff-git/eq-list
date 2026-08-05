@@ -504,7 +504,7 @@ export default function MapWindow() {
             ⌂ {bands ? `${shownLayers.length}/${floors.length}` : "all"}
           </button>
         )}
-        <label className="map-follow no-drag" title="Snap the map to your zone when you travel">
+        <label className="follow-toggle no-drag" title="Snap the map to your zone when you travel">
           <input type="checkbox" checked={followZone} onChange={(e) => setFollowZone(e.target.checked)} />
           follow
         </label>

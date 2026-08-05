@@ -15,7 +15,7 @@ import { splitLine } from "../src/shared/log-parser";
 import { catchUpState, type CaughtUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
-import type { CoinEvent, LootEvent, LogLine, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
+import type { CoinEvent, LootEvent, LogLine, LoginEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
@@ -25,7 +25,21 @@ const POLL_MS = 500;
  * as "combat", so the damage meter can take one subscription while anything interested in
  * a single kind (a death, say) can still have just that.
  */
-const COMBAT_KINDS = new Set(["damage", "miss", "heal", "cast", "spell-outcome", "death", "buff-faded"]);
+const COMBAT_KINDS = new Set([
+  "damage",
+  "miss",
+  "heal",
+  "cast",
+  "spell-outcome",
+  "death",
+  "buff-faded",
+  // The two mode lines. They were missing here, which meant the tracker never learned which
+  // stance or invocation was in force and filed every swing and cast under "unknown" — the whole
+  // of [ADR 0020](../specs/decisions/0020-split-by-stance-and-invocation.md), dark. A real log has
+  // 243 of them. They're parsed, they were emitted on their own channels, and nothing listened.
+  "stance",
+  "invocation",
+]);
 
 /** What one pass of catching a log up came to — see `onCaughtUp`. */
 export interface CaughtUp {
@@ -48,6 +62,8 @@ export interface LogWatcher {
   onCoin(cb: (e: CoinEvent) => void): void;
   onCombat(cb: (e: CombatEvent) => void): void;
   onLevel(cb: (e: LevelEvent) => void): void;
+  /** Logging in — the log's own mark for "a new sitting starts here" (ADR 0054). */
+  onLogin(cb: (e: LoginEvent) => void): void;
   /**
    * Every timestamped line, whether or not a parser claimed it — the channel for things the log
    * says but nothing models, like a party invite. Costs nothing to offer: the line is already
@@ -339,6 +355,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onCoin: (cb) => void bus.on("coin", cb),
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
+    onLogin: (cb) => void bus.on("login", cb),
     onLine: (cb) => void bus.on("line", cb),
     onStatus: (cb) => void bus.on("status", cb),
     onCaughtUp: (cb) => void bus.on("caughtUp", cb),

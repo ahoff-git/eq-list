@@ -129,8 +129,9 @@ world coordinates, so a map knows where it is. See
   `<select>` is a scroll rather than a choice. Ranking is the app's existing `fuzzyRank` (token
   overlap plus Levenshtein), over the zone name **and its file name** — the file is what a zone we
   couldn't name is called, and what someone who knows EverQuest would type. ↑↓ and Enter work, and
-  the first row is always "Follow current", since following the log is the default and has to stay
-  one keystroke away.
+  blank is always the **first row** rather than something you clear the field to get, since it's a
+  real choice. What blank *means* is the caller's (`blankLabel`): here it's "Follow current", the
+  default; the [Hunt tab](../overlay-ui/README.md) reuses the same picker for "All zones".
 - **The EQ map format** (`src/shared/map/eqmap.ts`, pure — `electron/tests/eqmap.test.ts`):
   `L`ine and `P`oint records, parsed into geometry and labelled points. **Its coordinates are
   world coordinates** (x/y negated, the same negation `coords.ts` applies), which is why a

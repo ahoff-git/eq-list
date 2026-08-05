@@ -21,10 +21,14 @@ as they drop and the damage meter can show how the fight went.
   (`You have slain X` / `X has been slain by Y`; player death is ignored),
   `parseLevel` (`You have gained a level! Welcome to level N!` — EQL puts both halves
   on one line, and the number is the only place the log states your level), and
-  `parseCoin` (`You receive <coins> from the corpse.` / `…from that item.`). The tail is the
-  point of that last one: it's the only thing telling a mob's money from an auto-sold item's,
-  and the two are counted separately — see
-  [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md).
+  `parseCoin` (`You receive <coins> from the corpse.` / `…from that item.`) and
+  `parseLogin` (`Welcome to EverQuest Legends!`). The tail of the coin line is the point of it:
+  it's the only thing telling a mob's money from an auto-sold item's, and the two are counted
+  separately — see [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md). The login line
+  is the only mark in the log for **where one play session ends and the next begins** (12 of them
+  in a fortnight's real log), which is what the damage history groups by; it's matched *after*
+  `parseLevel`, whose "Welcome to level 14!" shares the opening words. See
+  [ADR 0054](../decisions/0054-a-sitting-is-a-login.md).
   Timestamps are kept as the log's naive local wall clock (no zone offset).
 - `src/shared/money.ts` — a **pure** black box beside the parser: coin in and out of copper,
   which is the canonical unit everywhere (1p = 10g = 100s = 1000c). Denominations exist only
@@ -74,7 +78,10 @@ as they drop and the damage meter can show how the fight went.
   - Splits each line **once** and fans the parsed result out by `event.kind`; the
     combat kinds are also emitted together as `combat`, so the meter takes one
     subscription. It never parses anything itself, and it numbers the lines it reads so
-    every event carries a `logId`.
+    every event carries a `logId`. **`stance` and `invocation` belong to that `combat` set** —
+    they were missing from it, which meant the tracker never heard about a mode change and filed
+    everything under "unknown", leaving [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md)
+    inert; see [ADR 0055](../decisions/0055-eating-a-log-fills-history.md).
   - Emits the split line itself on **`onLine`**, parsed or not — the channel for what the log says
     and no parser models, like "BunnySlayer invites you to a party". Free: `splitLine` has already
     run by then. See [ADR 0050](../decisions/0050-a-watch-can-read-a-whole-log-line.md).
@@ -113,7 +120,33 @@ as they drop and the damage meter can show how the fight went.
   deliberately outlives a session reset — it's player state, not a session tally.
 - `electron/combat-history.ts` — where finished fights go: a flat, bounded (1000) list on
   disk under userData, tagged by session, with sessions derived by grouping. Written as
-  fights end (debounced) so a crash costs at most the fight in progress.
+  fights end (debounced) so a crash costs at most the fight in progress. A **session is a
+  sitting**, started by the log's login line and keyed on its timestamp — so a restart mid-camp
+  doesn't split the evening, and the same line read twice doesn't either. Each fight's **label**
+  is recomputed on read from what your side damaged most, never trusted from the file, which is
+  how fights stored under the old rule stop being titled after a group-mate. See
+  [ADR 0054](../decisions/0054-a-sitting-is-a-login.md).
+- `electron/log-import.ts` — **eating a log**: a **catch-up** that replays a whole past file
+  through the same parser into every bucket that can take it — the kill log, combat history and
+  the loot feed (and so mob knowledge and item prices, which derive from those). Fights go through
+  a **tracker of its own** (never the live meter — that describes tonight), filed under the sitting
+  the log's login lines mark out. Everything is keyed by the log line behind it, so re-eating a log
+  — or eating one you watched live — lands each kill, drop and fight exactly once. Deliberately
+  *not* fed: the live meter, experience and health (they describe the character now, not the one in
+  an old log) and the shopping list (a curated to-do, not a record). A real 7.8MB log: 1,510 kills,
+  1,077 drops, 560 fights across 12 sittings, 115 item prices — in ~330ms.
+  See [ADR 0055](../decisions/0055-eating-a-log-fills-history.md) and
+  [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md).
+- **What ages out, and what never does.** Every store on disk is capped, but a cap on the kill log
+  or the loot ledger is a cap on *evidence* — drop rates, roam areas and vendor prices are derived
+  from them, so evicting a record used to un-learn what it taught (measured: the kill log filled in
+  ~5 weeks, the loot feed in ~9 days). Both now **fold a record into a summary before dropping it**
+  — `kill-log`'s `retired` observations behind `observations()`, `loot-log`'s `retired` prices
+  behind `prices()` — so only detail ages out and the knowledge is permanent. **Clearing works the
+  same way**: `clear()` retires the records on the way out and keeps everything they taught;
+  `clear("everything")` is the only path that unlearns, and the UI only sends it after asking a
+  second question. Combat history is the exception and stays lossy: a fight teaches nothing beyond
+  itself. See [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md).
 - `electron/kill-log.ts` — where each kill happened and how much to believe it, plus what it
   dropped (attached as the loot lines arrive) and **who killed it**. The log reports every death
   in earshot, so a record knows whether it was yours; your own death isn't a kill and isn't
@@ -121,12 +154,26 @@ as they drop and the damage meter can show how the fight went.
   [ADR 0022](../decisions/0022-invocation-effects-and-kill-locations.md),
   [ADR 0023](../decisions/0023-kill-heatmap.md) and
   [ADR 0027](../decisions/0027-only-your-kills-count.md).
-- `electron/mob-knowledge.ts` — drop rates and roam areas rolled up from **your own** kills,
-  pooled with peers' observations (stored apart from yours, always attributed). See
-  [ADR 0024](../decisions/0024-mob-knowledge.md).
+- `electron/mob-knowledge.ts` — drop rates and roam areas rolled up from **your own** kills
+  (`killLog.observations()`, so a mob you killed past the cap still counts), pooled with peers'
+  observations (stored apart from yours, always attributed). See
+  [ADR 0024](../decisions/0024-mob-knowledge.md) and
+  [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md).
+- `electron/loot-log.ts` — the always-on loot feed: every drop and what became of it, kept in the
+  main process so the Loot tab is complete whenever it's opened, and **keyed by its log line** so a
+  replayed gap can't file a drop twice. Per-item vendor prices are derived from the auto-sells in
+  it, and a sale that leaves the feed leaves its price behind
+  ([ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)).
 - `src/shared/name-registry.ts` — one spelling per creature. EQ capitalizes a name at the start
   of a sentence, so the damage meter and the kill log would otherwise disagree about what a mob
   is called; both take their names from here.
+- `src/shared/damage-tree.ts` — every hit as one **(victim, attacker, kind, source)** cell, plus
+  the roll-ups the meter's drill-downs are drawn from. Flat cells rather than a stored tree,
+  because both directions are wanted (who's taking it / what am I hitting) and a tree only reads
+  one way round; rolling up on demand is what makes every level sum exactly to the one above it.
+  The tracker fills it, the meter reads it, and the per-combatant by-skill/by-spell splits are
+  *derived* from it rather than tallied twice. See
+  [ADR 0053](../decisions/0053-damage-is-cells-rolled-up.md).
 - Loot→list matching lives in the [store](../architecture/README.md), not here.
 
 ## Invocation side-effects

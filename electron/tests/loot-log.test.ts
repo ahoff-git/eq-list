@@ -28,6 +28,47 @@ function drop(item: string, sec: number): LootEvent {
   };
 }
 
+/** An auto-sold drop, which is the only kind that states a price. */
+function sold(item: string, sec: number, copper: number, qty = 1): LootEvent {
+  return { ...drop(item, sec), qty, fate: "sold", soldFor: copper, detail: `${copper} copper` };
+}
+
+test("the same loot line twice is one drop — a replayed gap isn't a second Bone Chips", () => {
+  const l = createLootLog(tempDir());
+  l.add(drop("Bone Chips", 1));
+  l.add(drop("Bone Chips", 1));
+  assert.deepEqual(l.recent().map((e) => e.item), ["Bone Chips"]);
+  // A genuinely later drop of the same item is a different line, and counts.
+  l.add(drop("Bone Chips", 2));
+  assert.equal(l.recent().length, 2);
+});
+
+test("a price outlives the drop that proved it", () => {
+  const l = createLootLog(tempDir());
+  l.add(sold("Snake Egg", 1, 4));
+  l.add(sold("Snake Egg", 2, 4));
+  const [before] = l.prices();
+  assert.deepEqual([before.item, before.unitCopper, before.qty, before.sales], ["Snake Egg", 4, 2, 2]);
+
+  // Push both sales out of the feed. The ledger forgets the lines; the price it learned stays.
+  for (let i = 0; i < 20_050; i++) l.add(drop("Bone Chips", 1000 + i));
+  assert.equal(l.recent(50_000).some((e) => e.item === "Snake Egg"), false, "the drops aged out");
+  const [after] = l.prices();
+  assert.deepEqual([after.item, after.unitCopper, after.qty, after.sales], ["Snake Egg", 4, 2, 2]);
+
+  // Clearing the feed keeps the prices — including any sale still in it, which is retired on the
+  // way out rather than thrown away.
+  l.add(sold("Snake Egg", 90_000, 4));
+  l.clear();
+  assert.equal(l.prices()[0].sales, 3, "the sale still in the feed was kept too");
+  assert.deepEqual(l.recent(), []);
+  assert.deepEqual(l.prices().map((p) => [p.item, p.unitCopper]), [["Snake Egg", 4]]);
+
+  // Only the second, explicit answer unlearns them.
+  l.clear("everything");
+  assert.deepEqual(l.prices(), []);
+});
+
 test("recent returns drops newest first, capped at the limit", () => {
   const l = createLootLog(tempDir());
   l.add(drop("Bone Chips", 1));

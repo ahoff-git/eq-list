@@ -7,18 +7,56 @@ import SpellTable from "./SpellTable";
 import DamageHistory from "./DamageHistory";
 import Sparkline from "./Sparkline";
 import AskValue from "./AskValue";
-import type { DeathRecap, FightBest, FightStats, HpEstimate, StoredFight } from "@/shared/types";
+import { opponentOf } from "@/shared/damage-tree";
+import type { DamageAxis, DeathRecap, FightBest, FightStats, HpEstimate, StoredFight } from "@/shared/types";
 
 /**
  * The damage meter. Two axes of choice, because they answer different questions:
  *   scope — this fight (what just happened) / the session / a past fight from history
- *   view  — damage dealt, damage taken, or the per-spell breakdown
+ *   view  — which way the damage is fanned out (see `LAYOUTS`), or the per-spell table
+ *
+ * **Targets leads**, because that's the question a fight actually poses: what did we damage,
+ * and then — one click in — who hurt it and with what (ADR 0053). Opening on the dealer list
+ * put a row of party members where the enemy should be, and made "how much did we do to *that*"
+ * a number you had to assemble yourself.
  *
  * A stored fight renders through exactly the same views as a live one, so "dig into
  * last night" and "how's this pull going" are the same screen.
  */
 type Scope = "fight" | "session" | "history";
-type View = DamageView | "spells";
+type View = keyof typeof LAYOUTS | "spells";
+
+/**
+ * The ways damage fans out. Every one is the *same* cells rolled up along different axes
+ * (ADR 0053), so adding a question is a row here rather than a new component — and no two
+ * of them can disagree about a total.
+ *
+ * `bars` is which number the top-level rows show, and therefore what they're a list of;
+ * `drill` is the order below. **Abilities** exists because of area spells: the log writes
+ * Firestorm as one line per target, so every target-first order splits one cast four ways
+ * before you can see what the cast was worth. Putting the ability above the target adds it
+ * back up, and still says which mobs it landed on.
+ */
+const LAYOUTS = {
+  taken: {
+    label: "Targets",
+    hint: "What took damage — open a row for who hurt it, how, and with what",
+    bars: "taken",
+    drill: ["attacker", "kind", "source"],
+  },
+  dealt: {
+    label: "Dealers",
+    hint: "Who dealt the damage — open a row for what it hit, how, and with what",
+    bars: "dealt",
+    drill: ["target", "kind", "source"],
+  },
+  abilities: {
+    label: "Abilities",
+    hint: "Who dealt the damage — open a row for how, with what, and then what it landed on (area spells add up here)",
+    bars: "dealt",
+    drill: ["kind", "source", "target"],
+  },
+} as const satisfies Record<string, { label: string; hint: string; bars: DamageView; drill: DamageAxis[] }>;
 
 /** A fight is "live" while the log has shown damage within this window. */
 const LIVE_MS = 10_000;
@@ -26,7 +64,7 @@ const LIVE_MS = 10_000;
 export default function DamagePanel() {
   const stats = useCombatStats();
   const [scope, setScope] = useState<Scope>("fight");
-  const [view, setView] = useState<View>("dealt");
+  const [view, setView] = useState<View>("taken");
   const [picked, setPicked] = useState<StoredFight | null>(null);
   const live = useLiveFight(stats.fight.endedAt);
   const bests = useBests(stats.fight.startedAt);
@@ -34,8 +72,9 @@ export default function DamagePanel() {
   // The window on show: a live one, or the stored fight picked out of history.
   const window: FightStats | null = scope === "history" ? picked?.stats ?? null : stats[scope];
   const petShare = window ? petShareOfYours(window) : 0;
-  // A personal best only means something for one fight against a named opponent.
-  const opponent = scope === "history" ? picked?.label : biggestOpponent(stats.fight);
+  // A personal best only means something for one fight against a named opponent. `opponentOf` is
+  // the same rule history labels a fight by, so the ★ flag and the list agree on who you fought.
+  const opponent = scope === "history" ? picked?.label : opponentOf(stats.fight);
   const best = scope === "fight" && opponent ? bests.find((b) => b.label === opponent) : undefined;
   const fightDps = window?.durationSec ? Math.round((window.yourDealt / window.durationSec) * 10) / 10 : 0;
   const isBest = !!best && fightDps >= best.dps && fightDps > 0;
@@ -55,13 +94,16 @@ export default function DamagePanel() {
           </button>
         </div>
         <div className="segmented">
-          <button className={segCls(view === "dealt")} onClick={() => setView("dealt")}>
-            Dealt
-          </button>
-          <button className={segCls(view === "taken")} onClick={() => setView("taken")}>
-            Taken
-          </button>
-          <button className={segCls(view === "spells")} onClick={() => setView("spells")}>
+          {entries(LAYOUTS).map(([key, layout]) => (
+            <button key={key} className={segCls(view === key)} title={layout.hint} onClick={() => setView(key)}>
+              {layout.label}
+            </button>
+          ))}
+          <button
+            className={segCls(view === "spells")}
+            title="Your spells, cast by cast: cast time, damage per second of casting, resist rate"
+            onClick={() => setView("spells")}
+          >
             Spells
           </button>
         </div>
@@ -95,13 +137,17 @@ export default function DamagePanel() {
 
       {window && (
         <>
+          {/* Both directions, always — a tile that changes meaning with the view is a tile you
+              have to re-read every time you flip. */}
           <div className="stat-row">
-            <StatTile
-              label={view === "taken" ? "Damage on you" : "Your damage"}
-              value={fmt(view === "taken" ? window.yourTaken : window.yourDealt)}
-            />
+            <StatTile label="Your damage" value={fmt(window.yourDealt)} hint="Dealt by you and your pet" />
             <StatTile label="Your DPS" value={yourDps(window)} />
-            <StatTile label="All damage" value={fmt(window.totalDealt)} />
+            <StatTile label="Damage on you" value={fmt(window.yourTaken)} hint="Taken by you and your pet" />
+            <StatTile
+              label="All damage"
+              value={fmt(window.totalDealt)}
+              hint="Every hit in the window, whoever landed it — and the 100% the shares below are taken against"
+            />
             <StatTile label="In combat" value={duration(window.durationSec)} />
             {petShare > 0 && (
               <StatTile
@@ -138,7 +184,12 @@ export default function DamagePanel() {
               <p className="small">Swing at something — this fills in from the log as damage lands.</p>
             </div>
           ) : (
-            <DamageMeter rows={window.byCombatant} view={view} />
+            <DamageMeter
+              rows={window.byCombatant}
+              view={LAYOUTS[view].bars}
+              drill={LAYOUTS[view].drill}
+              cells={window.damageCells}
+            />
           )}
         </>
       )}
@@ -258,12 +309,6 @@ function petShareOfYours(window: FightStats): number {
   return mine.filter((c) => c.name !== "You").reduce((n, c) => n + c.dealt, 0) / total;
 }
 
-/** The fight's headline opponent — the same rule history uses to label a fight. */
-function biggestOpponent(window: FightStats): string | undefined {
-  const theirs = window.byCombatant.filter((c) => !c.mine);
-  return (theirs.find((c) => c.dealt > 0) ?? theirs[0])?.name;
-}
-
 /** One line for guild chat — the numbers people actually paste. */
 function summaryLine(window: FightStats, opponent?: string): string {
   const spell = window.spells.find((s) => s.dpc > 0);
@@ -303,6 +348,9 @@ const fmt = (n: number): string => n.toLocaleString();
 
 /** The shared segmented-control button (same one the Search tab uses). */
 const segCls = (active: boolean): string => `seg ${active ? "active" : ""}`;
+
+/** `Object.entries` that keeps the key type, so the layout buttons stay exhaustive. */
+const entries = <T extends object>(o: T): [keyof T, T[keyof T]][] => Object.entries(o) as [keyof T, T[keyof T]][];
 
 /**
  * Whether the current fight is still running. The log only reveals a lull when the

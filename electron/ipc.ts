@@ -26,7 +26,7 @@ import type { LootLog } from "./loot-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
-import type { ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent } from "../src/shared/types";
+import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 
 const log = createLogger("ipc");
@@ -135,9 +135,10 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     placeResolve = null;
   });
 
-  // "Eat" a log file: digest it into the kill log (→ mob knowledge). The kill log flags your
-  // own kills by character name, so name it for THIS log's character during the import, then
-  // restore the live watcher's character afterwards.
+  // "Eat" a log file: a catch-up that digests it into every store that can take it — the kill log
+  // (→ mob knowledge), combat history, and the loot feed (→ prices). The kill log flags your own
+  // kills by character name, so name it for THIS log's character during the import, then restore
+  // the live watcher's character afterwards.
   ipcMain.handle(CH.logImport, async () => {
     const res = await dialog.showOpenDialog({
       title: "Choose an EverQuest log to digest",
@@ -152,12 +153,16 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     const live = characterFromLogFile(watcher.status().file) ?? "";
     try {
       killLog.setPlayer(characterFromLogFile(file) ?? "");
-      const result = importLog(file, killLog);
+      const result = importLog(file, killLog, history, lootLog);
       killLog.flush();
+      history.flush();
+      lootLog.flush();
       log.debug("digested log", { file, ...result });
       // The import lands out-of-band (no live loc/zone event to piggyback on), so nudge every
-      // open window to refetch kills + mob knowledge — otherwise the new data only shows on reopen.
+      // open window to refetch — kills and mob knowledge on `killsChanged`, and everything that
+      // reads a stored list once when it opens (history, the loot feed) on `dataChanged`.
       broadcast(CH.killsChanged, undefined);
+      broadcast(CH.dataChanged, undefined);
       return { file, ...result };
     } catch (e) {
       log.warn("log import failed:", (e as Error).message);
@@ -207,9 +212,14 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.handle(CH.hpSet, (_e, max: number) => hp.set(max));
   ipcMain.handle(CH.hpSetRegen, (_e, perTick: number) => hp.setRegen(perTick));
   ipcMain.handle(CH.killsAll, (_e, zone?: string) => killLog.kills(zone));
-  ipcMain.handle(CH.killsClear, () => {
-    killLog.clear();
+  // Forget recorded kills and the loot feed. `scope` defaults to the records only — the observed
+  // drop rates, roam areas and vendor prices they taught are kept unless the caller says
+  // "everything", which the UI only sends after asking a second time (ADR 0056).
+  ipcMain.handle(CH.killsClear, (_e, scope: ForgetScope = "records") => {
+    killLog.clear(scope);
+    lootLog.clear(scope);
     broadcast(CH.killsChanged, undefined);
+    broadcast(CH.dataChanged, undefined);
   });
   // The loot feed's history — tracked in the main process, so the tab shows drops from before
   // it was opened, then follows live ones over CH.lootEvent.

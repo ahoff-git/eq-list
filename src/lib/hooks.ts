@@ -311,6 +311,9 @@ export function useWatcherStatus(): WatcherStatus {
 /** Rolling feed of the most recent parsed loot lines (newest first). */
 export function useLootFeed(limit = 40): LootEvent[] {
   const [events, setEvents] = useState<LootEvent[]>([]);
+  /** Bumped when the ledger changes wholesale (a log eaten, a clear) — see `onDataChanged`. */
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -320,7 +323,7 @@ export function useLootFeed(limit = 40): LootEvent[] {
     // panel its entire ledger whenever one drop beat the fetch back.
     void a.loot.recent(limit).then((hist) => setEvents((prev) => mergeLootFeed(prev, hist, limit)));
     return a.loot.onEvent((e) => setEvents((prev) => [e, ...prev].slice(0, limit)));
-  }, [limit]);
+  }, [limit, refresh]);
   return events;
 }
 

@@ -5,6 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCombatStats } from "../combat-stats";
+import { drillDown, sumDamage } from "../../src/shared/damage-tree";
+import type { DamageAxis } from "../../src/shared/types";
 import { parseCombat } from "../../src/shared/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type { CoinEvent, CombatEvent, LootEvent, XpEvent } from "../../src/shared/types";
@@ -54,6 +56,9 @@ function feed(tracker: ReturnType<typeof createCombatStats>, lines: [sec: number
 }
 
 const tracker = () => createCombatStats(() => "2026-07-29T00:00:00.000Z");
+
+/** The Targets view's drill order — the one the panel opens on. */
+const VICTIM_FIRST: DamageAxis[] = ["attacker", "kind", "source"];
 
 test("tallies damage dealt and taken per combatant", () => {
   const t = tracker();
@@ -608,6 +613,47 @@ test("a DoT's ticks fold into that spell's source total on the caster's row", ()
   const you = t.snapshot().fight.byCombatant.find((r) => r.name === "You")!;
   // Three ticks of Splurt fold into one source line summing them, biggest tick as the max.
   assert.deepEqual(you.bySpell.find((s) => s.spell === "Splurt"), { spell: "Splurt", hits: 3, damage: 7, maxHit: 3 });
+});
+
+test("the window's damage cells reconcile with its rows and its total, both ways round", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You slash a coyote for 20 points of damage."],
+    [2, "You try to slash a coyote, but miss!"],
+    [3, "You hit a coyote for 30 points of cold damage by Blast of Cold."],
+    [4, "A coyote bites Kainos`s warder for 4 points of damage."],
+    [5, "A coyote bites YOU for 6 points of damage."],
+    [6, "Kainos`s warder bites a coyote for 3 points of damage."],
+  ]);
+  const fight = t.snapshot().fight;
+  const cells = fight.damageCells!;
+
+  // The one number the page leads with, and the tree beneath it, are the same number.
+  assert.equal(sumDamage(cells), fight.totalDealt);
+  // Grouped by attacker the cells give each row's `dealt`; by target, its `taken`. Neither view
+  // can drift from the rows, because the rows' own splits are rolled up from these same cells.
+  for (const row of fight.byCombatant) {
+    assert.equal(sumDamage(cells.filter((c) => c.attacker === row.name)), row.dealt, `${row.name} dealt`);
+    assert.equal(sumDamage(cells.filter((c) => c.target === row.name)), row.taken, `${row.name} taken`);
+  }
+
+  // And the drill-down answers the question in the shape it's asked: who hit the coyote, how.
+  const attackers = drillDown(cells, "target", "a coyote", VICTIM_FIRST, (name) => name !== "a coyote");
+  assert.deepEqual(
+    attackers.map((n) => [n.label, n.damage, n.mine]),
+    [
+      ["You", 50, true],
+      ["Kainos`s warder", 3, true],
+    ],
+  );
+  assert.deepEqual(
+    attackers[0].children.map((n) => [n.label, n.damage, n.misses]),
+    [
+      ["Spell", 30, 0],
+      ["Melee", 20, 1],
+    ],
+  );
 });
 
 // ── what invocations do beyond scaling: divine's healing, Spell Blade's free casts ──

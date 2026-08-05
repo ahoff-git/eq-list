@@ -13,10 +13,12 @@ import {
   parseXp,
   parseKill,
   parseLoc,
+  parseLogin,
   splitLine,
   stripArticle,
   characterFromLogFile,
 } from "../../src/shared/log-parser";
+import { parseLine } from "../../src/shared/parse-line";
 import type { LogLine } from "../../src/shared/types";
 
 /**
@@ -37,6 +39,7 @@ const parseKillLine = on(parseKill);
 const parseLocLine = on(parseLoc);
 const parseLevelLine = on(parseLevel);
 const parseCoinLine = on(parseCoin);
+const parseLoginLine = on(parseLogin);
 
 test("splitLine extracts the message, an ISO time, and carries the line id", () => {
   const r = splitLine("[Fri Jul 17 18:41:14 2026] Hello world", 42);
@@ -275,4 +278,19 @@ test("parseLevelLine reads the level-up line, keeping the number", () => {
 
   // An ability point is not a level.
   assert.equal(parseLevelLine("[Wed Jul 29 00:31:02 2026] You have gained an ability point!"), null);
+});
+
+test("parseLoginLine finds the line that starts a sitting, and not the level one", () => {
+  // Verbatim from a real log — 12 of them across a fortnight, one per sitting.
+  const login = parseLoginLine("[Tue Jul 21 20:23:23 2026] Welcome to EverQuest Legends!");
+  assert.ok(login);
+  assert.equal(login!.at, "2026-07-21T20:23:23");
+
+  // The same words a level-up uses must not read as a login — that would restart the play
+  // session every time you levelled.
+  assert.equal(parseLoginLine("[Wed Jul 29 00:31:02 2026] Welcome to level 14!"), null);
+  assert.equal(parseLoginLine("[Tue Jul 28 23:33:10 2026] You have gained a level! Welcome to level 2!"), null);
+  // And the dispatcher agrees, which is what actually runs.
+  assert.equal(parseLine("[Wed Jul 29 00:31:02 2026] Welcome to level 14!")?.kind, "level");
+  assert.equal(parseLine("[Tue Jul 21 20:23:23 2026] Welcome to EverQuest Legends!")?.kind, "login");
 });

@@ -53,7 +53,9 @@ in the main process and all UI in the renderer.
   `types.ts` (the IPC contract), `ipc-channels.ts`, `logging.ts`, and the log pipeline —
   `log-parser.ts` (which owns the one place a raw line is split), `combat-parser.ts`, and
   `parse-line.ts`, the single-pass dispatcher every line goes through exactly once
-  ([ADR 0019](../decisions/0019-parse-once-and-one-tracker.md)).
+  ([ADR 0019](../decisions/0019-parse-once-and-one-tracker.md)) — plus the pure analysis the
+  two sides share, like `damage-tree.ts`, which the tracker fills and the meter rolls up
+  ([ADR 0053](../decisions/0053-damage-is-cells-rolled-up.md)).
 
 ## Data flow
 - Renderer → main: `window.eql.*` → `ipcRenderer.invoke` → `ipcMain.handle` → store/wiki/watcher.

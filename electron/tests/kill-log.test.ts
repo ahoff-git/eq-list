@@ -471,3 +471,83 @@ test("the cap forgets the lines it drops and keeps the lines it doesn't", () => 
   // record that no longer exists would block it forever.
   assert.equal(k.record("a kobold 0", "You", ZONE, at(0), 1), true, "a trimmed line can be recorded again");
 });
+
+/**
+ * The cap bounds the *detail*, never the knowledge. What a trimmed record taught — that the mob
+ * was killed, what it dropped, roughly where it lives — has to survive it, or a long-running log
+ * quietly forgets drop rates and roam areas as it goes (ADR 0056).
+ */
+test("a trimmed record keeps its kill, its drop and its position, as an observation", () => {
+  const dir = tempDir();
+  const k = createKillLog(dir);
+  const at = (i: number) => new Date(Date.parse("2026-07-29T00:00:00Z") + i * 1000).toISOString();
+  const OVER = 5300;
+
+  // One rare mob, killed early with a drop and a position — the record that will be trimmed.
+  k.noteLoc({ kind: "loc", y: 100, x: 200, z: 0, logId: 1, raw: "loc", at: at(0) }, ZONE);
+  k.record("a gnoll king", "You", ZONE, at(1), 1);
+  k.noteLoot({ kind: "loot", item: "Crown", qty: 1, source: "a gnoll king", fate: "kept", logId: 1, raw: "x", at: at(2) });
+  // …then enough ordinary kills to push it out.
+  for (let i = 0; i < OVER; i++) k.record(`a kobold ${i}`, "You", ZONE, at(10 + i), i);
+
+  assert.equal(k.kills().some((r) => r.mob === "a gnoll king"), false, "its record is gone");
+
+  const king = k.observations().find((o) => o.mob === "a gnoll king");
+  assert.ok(king, "but what it taught is not");
+  assert.equal(king!.kills, 1);
+  assert.deepEqual(king!.drops, { Crown: 1 });
+  assert.deepEqual({ y: king!.area?.y, x: king!.area?.x }, { y: 100, x: 200 }, "and roughly where it lives");
+
+  // It survives a restart, and adds to — rather than replaces — a later kill of the same mob.
+  k.flush();
+  const reopened = createKillLog(dir);
+  reopened.record("a gnoll king", "You", ZONE, at(99_999), 1);
+  const after = reopened.observations().find((o) => o.mob === "a gnoll king")!;
+  assert.equal(after.kills, 2, "the retired kill and the fresh one are one tally");
+  assert.deepEqual(after.drops, { Crown: 1 });
+
+  // Clearing the *records* keeps what they taught — that's the whole point of retiring them, and
+  // a wipe of the records is not a request to unlearn a fortnight of drop rates.
+  reopened.clear();
+  assert.deepEqual(reopened.kills(), []);
+  assert.equal(reopened.observations().find((o) => o.mob === "a gnoll king")?.kills, 2);
+
+  // Only the second, explicit answer takes the observations too.
+  reopened.clear("everything");
+  assert.deepEqual(reopened.observations(), []);
+});
+
+/**
+ * The property the whole arrangement rests on: kills and drops are **conserved** across the cap.
+ * Asserted in bulk rather than on one record, because an off-by-one in the fold is invisible on a
+ * single mob and turns a drop rate into a lie over a fortnight.
+ */
+test("kills and drops are conserved across the cap, however many records are trimmed", () => {
+  const k = createKillLog(tempDir());
+  const at = (i: number) => new Date(Date.parse("2026-07-29T00:00:00Z") + i * 1000).toISOString();
+  const MOBS = ["a gnoll", "a kobold", "a rat"];
+  const TOTAL = 12_000; // well past two full trims
+
+  k.noteLoc({ kind: "loc", y: 10, x: 20, z: 0, logId: 1, raw: "loc", at: at(0) }, ZONE);
+  for (let i = 0; i < TOTAL; i++) {
+    const mob = MOBS[i % MOBS.length];
+    k.record(mob, "You", ZONE, at(i + 1), i);
+    // Every fourth kill of each mob drops something.
+    if (i % 4 === 0) {
+      k.noteLoot({ kind: "loot", item: "Ear", qty: 1, source: mob, fate: "kept", logId: 1, raw: "x", at: at(i + 1) });
+    }
+  }
+
+  const obs = k.observations();
+  assert.equal(
+    obs.reduce((n, o) => n + o.kills, 0),
+    TOTAL,
+    "every kill is still counted somewhere",
+  );
+  assert.equal(
+    obs.reduce((n, o) => n + (o.drops.Ear ?? 0), 0),
+    TOTAL / 4,
+    "and so is every drop",
+  );
+  assert.ok(k.kills().length <= 5000, "while the records themselves stay bounded");
+});

@@ -94,7 +94,7 @@ const api: EqlApi = {
   },
   kills: {
     all: (zone) => ipcRenderer.invoke(CH.killsAll, zone),
-    clear: () => ipcRenderer.invoke(CH.killsClear),
+    clear: (scope) => ipcRenderer.invoke(CH.killsClear, scope),
     onChanged: (cb) => on(CH.killsChanged, cb),
   },
   hp: {
@@ -116,6 +116,7 @@ const api: EqlApi = {
   app: {
     info: () => ipcRenderer.invoke(CH.appInfo),
     openLog: () => ipcRenderer.invoke(CH.appOpenLog),
+    onDataChanged: (cb) => on(CH.dataChanged, cb),
   },
   search: {
     onPrefill: (cb) => on(CH.searchPrefill, cb),

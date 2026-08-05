@@ -86,6 +86,15 @@ button {
   padding: 3px 8px;
   font-size: 12px;
 }
+/* For the answer that destroys something unrecoverable — it should not look like the safe one. */
+.btn.danger {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+}
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+  border-color: var(--bad);
+}
 
 .field {
   width: 100%;
@@ -443,6 +452,20 @@ button {
   padding: 40px 16px;
 }
 
+/* A caught render crash (see CrashBoundary): a notice inside the window, never a takeover. */
+.crash {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
 /* ── grouped list (by quest / recipe) ────────────────────────── */
 .groups {
   display: flex;
@@ -643,18 +666,40 @@ button {
 .update-banner .ub-text { color: var(--text); }
 .meter.expandable { cursor: pointer; }
 .meter-caret { position: relative; color: var(--text-dim); font-size: 10px; width: 8px; }
-/* The damage-source breakdown opened under a row: collapsible Melee / Spells / Special groups. */
+/* The drill-down opened under a row: victim → attacker → kind → source, each level nested
+   inside the one it belongs to, with a faint bar for its share of that level. */
 .meter-breakdown { display: flex; flex-direction: column; gap: 2px; padding: 3px 10px 6px 22px; font-size: 12px; }
-.mb-group-head { display: flex; align-items: baseline; gap: 8px; cursor: pointer; padding: 1px 0; }
-.mb-group-head:hover { color: var(--text); }
-.mb-group-head .caret { color: var(--text-dim); font-size: 10px; width: 8px; }
-.mb-group-title { font-weight: 500; }
-.mb-group-total { font-variant-numeric: tabular-nums; color: var(--text); }
-.mb-group-body { display: flex; flex-direction: column; gap: 1px; padding: 1px 0 3px 16px; }
-.mb-row { display: flex; align-items: baseline; gap: 8px; }
-.mb-row .mb-label { min-width: 110px; }
-.mb-row .mb-hits { font-variant-numeric: tabular-nums; }
-.mb-row .mb-dmg { font-variant-numeric: tabular-nums; color: var(--text); }
+.dmg-level { display: flex; flex-direction: column; gap: 1px; }
+/* Says what the level splits by ("from", "how", "with"), so nesting needs no explaining. */
+.dmg-caption {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-top: 2px;
+}
+.dmg-node > .dmg-level { padding-left: 14px; border-left: 1px solid var(--border); margin-left: 3px; }
+.dmg-head {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.dmg-head.expandable { cursor: pointer; }
+.dmg-head:hover { background: var(--bg-raised); }
+/* The share of this level, behind the text — the same idea as the bars above, one level down. */
+.dmg-share { position: absolute; inset: 0 auto 0 0; background: var(--accent-dim); opacity: 0.18; }
+.dmg-node.mine > .dmg-head > .dmg-share { background: var(--accent); opacity: 0.22; }
+.dmg-head > .caret { position: relative; color: var(--text-dim); font-size: 10px; width: 8px; flex: none; }
+.dmg-label { position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dmg-node.mine > .dmg-head > .dmg-label { font-weight: 600; }
+.dmg-nums { position: relative; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.dmg-meta { position: relative; white-space: nowrap; }
+/* Qualifiers overlap the levels above, so they read as a footnote, never as another group. */
+.dmg-qualifiers { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; padding: 3px 4px 0; }
 
 /* Spell breakdown: a wide table in a narrow window, so it scrolls on its own. */
 .table-scroll { overflow-x: auto; }
@@ -762,11 +807,27 @@ button {
 
 /* History: sessions → their fights → the picked fight's header. */
 .history { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+/* The session index scrolls on its own, so the metrics for the fight you picked stay on screen
+   however much history there is. A px cap, not `vh`: the interface scale is a CSS `zoom` on the
+   root, which scales px along with everything else — a `vh` cap wouldn't shrink with it. */
+.hist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  /* Room for the scrollbar so it can't sit on top of the damage figures. */
+  padding-right: 2px;
+}
 .hist-session {
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  /* Never shrink. A column flex container with a capped height shrinks its children by
+     default, and `overflow: hidden` above turns that into a row of empty slivers rather than
+     a scrolling list — the list has to overflow the box, not squash inside it. */
+  flex: none;
 }
 .hist-head {
   display: flex;
@@ -908,7 +969,8 @@ kbd {
   opacity: 0.75;
 }
 .map-body { position: relative; }
-.map-follow {
+/* "follow the zone you're in" — the map's titlebar and the Hunt tab's toolbar both offer it. */
+.follow-toggle {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -916,7 +978,7 @@ kbd {
   color: var(--text-dim);
   white-space: nowrap;
 }
-.map-follow input { margin: 0; }
+.follow-toggle input { margin: 0; }
 .map-body { display: flex; flex: 1; min-height: 0; }
 .map-empty {
   flex: 1;
@@ -1449,6 +1511,9 @@ kbd {
   flex: 1 1 200px;
   min-width: 120px;
 }
+/* In the Hunt toolbar the picker isn't the whole bar, it's one control on a line that already
+   has a sentence on it — so it takes a share of the leftover room rather than all of it. */
+.hunt .zone-picker { flex: 0 1 200px; }
 /* Not `.field.sm`, which is the app's 58px *numeric* input and would clip every zone name. */
 .zone-input { padding: 3px 7px; font-size: 12px; }
 .zone-menu {

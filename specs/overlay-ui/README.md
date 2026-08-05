@@ -85,11 +85,16 @@ list, hunt, search, damage, session, settings.
     item's sources (`wiki.getPage`, cached) and `src/shared/hunt.ts`
     (`neededEntries` → `huntInputsFor` → `buildHunt`, pure + tested) builds
     zones → mobs → the needed items they drop. Zones/mobs sort by how much of your
-    list they cover; the current zone (`useCurrentZone`) floats to the top. A **zone
-    filter** narrows to one zone (`sourceZones` for the options, `zoneMatches` to
-    filter); with the `overlay.followZone` setting on, it auto-tracks the log's current
-    zone. The picked zone is owned by the parent (`page.tsx`) so it survives tab
-    switches. Each item shows its **drop rate** for that mob (`useMobLoot` fetches the
+    list they cover; the current zone (`useCurrentZone`) floats to the top. The **zone
+    control is the map's** — a type-to-find [`ZonePicker`](../map/README.md) plus a
+    **follow** checkbox — so picking a zone and tracking the one you're in are both one
+    gesture away instead of one of them being a trip to Settings. Its options are only the
+    zones your list actually drops in (`sourceZones`), blank means *all zones*, and
+    `zoneMatches` does the filtering. Follow is still the `overlay.followZone` setting, so
+    the checkbox and the Settings toggle are one value and can't disagree; naming a zone by
+    hand turns follow off rather than being overridden the moment you travel. The picked
+    zone is owned by the parent (`page.tsx`) so it survives tab switches — and turning
+    follow off returns you to it. Each item shows its **drop rate** for that mob (`useMobLoot` fetches the
     hunt mobs' loot pages, since the rate lives there, not on the item) — reconciled against
     **your own kills**: past ~15 kills your observed rate leads and is badged `✓`, below that
     the wiki's figure shows (dimmed), and a wiki claim that hasn't appeared in 25+ kills is
@@ -114,19 +119,45 @@ list, hunt, search, damage, session, settings.
   - `DamagePanel` — the **damage meter** (from `combat-stats.ts` / `combat-history.ts`;
     see [ADR 0014](../decisions/0014-damage-meter-from-the-log.md) and
     [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md)). Two axes:
-    **scope** (this/last fight · session · **history**) and **view** (dealt · taken ·
-    **spells**). A stored fight renders through the same views as a live one, so "dig into
-    last night" and "how's this pull going" are one screen.
+    **scope** (this/last fight · session · **history**) and **view** (**targets** · dealers ·
+    **spells**). **Targets is the default**: a fight's first question is what we damaged, not
+    which of us was in the room — opening on the dealer list showed a column of party members
+    where the enemy belongs. Tiles above are the same either way, on purpose. A stored fight
+    renders through the same views as a live one, so "dig into last night" and "how's this pull
+    going" are one screen.
     - `DamageMeter` — bars scaled to the top row so relative contribution reads without
       arithmetic, with total, share and DPS; your rows (you + your pet) are tinted, and
       hover gives max hit, accuracy, crits, healing, active time, and — for your own rows —
-      **melee split by stance**, since stances change the multipliers. Click a row to open its
-      **breakdown** — three collapsible groups that account for the whole of that row's damage:
-      **Melee** by weapon/skill (Slash, Pierce, Crush, Kick, Backstab — the log names the skill,
-      the closest it gets to "which hand"), **Spells** by source (each spell/DoT/proc/shield,
-      per combatant), and **Special hits** by whatever qualifier the log wrote (Critical, Riposte,
-      Flurry…, not a fixed list). All three come off the `verb`/`spell`/`qualifier` the parser
-      already captured; see `combat-stats.ts` (`byVerb`/`bySpell`/`bySpecial`).
+      **melee split by stance**, since stances change the multipliers. Click a row to **drill
+      into it**, four levels deep, each level captioned with what it splits by and carrying its
+      own total, hits, ticks, misses, crit rate, hit rate and biggest hit. Hovering a level also
+      gives its damage against **four fixed denominators** — of all damage on that victim, of that
+      attacker's damage on it, of the whole fight, and of that attacker's whole fight — because
+      "of the level above" moves with the depth and can't answer "how much of that mob was me".
+      **The fight excludes damage on your own side** (sides are read off who hit whom, so a
+      group-mate's kill still counts and a duel does too); see
+      [ADR 0053](../decisions/0053-damage-is-cells-rolled-up.md):
+
+      | view | the row | then | then | then |
+      | --- | --- | --- | --- | --- |
+      | **Targets** (default) | what took damage | **from** whom | **how** — Melee / Spell / Other | **with** what — skill, spell, DoT, shield |
+      | **Dealers** | who dealt it | **on** whom | **how** | **with** what |
+      | **Abilities** | who dealt it | **how** | **with** what | **on** whom |
+
+      All three are roll-ups of the same (victim, attacker, kind, source) cells along different
+      axes (`DamagePanel`'s `LAYOUTS` → `damage-tree.ts`,
+      [ADR 0053](../decisions/0053-damage-is-cells-rolled-up.md)), so a new question is a row in
+      that table rather than a new component. **Abilities** exists for area spells: the log writes
+      Firestorm as one line per target, so any victim-first order splits one cast four ways before
+      you can see what the cast was worth — putting the ability above the target adds it back up
+      and still says which mobs it landed on. Every level sums exactly to the one above it, so no
+      two views can disagree about a total. Qualifiers
+      the log wrote (Critical, Riposte, Flurry…, not a fixed list) sit at the bottom as an
+      explicit **"of these hits"** line, because they overlap the sources instead of
+      partitioning them — a critical slash is already counted under Melee → Slash, and adding
+      them as a fourth group is what used to make the numbers not add up. A fight stored before
+      the cells existed keeps only its dealer-side kind/source split; its Dealers view falls back
+      to that, and its Targets view says so rather than inventing attribution.
     - `SpellTable` — where your damage came from, spell by spell: casts, damage, healing,
       average **measured** cast time, **dmg/s cast** (the efficiency column — a slow nuke
       and a fast one that hit the same are not equally good), **mana** and **dmg/mana**
@@ -138,8 +169,15 @@ list, hunt, search, damage, session, settings.
       See [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md). Sortable by any of those; melee is a synthetic row so the pie adds
       up. Cast times come from the log's one-second resolution — trust the averages, not a
       single reading.
-    - `DamageHistory` — sessions (newest first) → their fights (labelled with the mob you
-      were fighting) → pick one to break it down. "Clear history" forgets all of it.
+    - `DamageHistory` — **play sessions** (newest first) → their fights → pick one to break it
+      down. A session is a **sitting**, bounded by the log's own `Welcome to EverQuest Legends!`
+      line rather than by app runs (which turned 12 real evenings into 38 "sessions"), and a fight
+      is named after **what your side damaged most** — not the group-mate out-damaging you, which
+      is how an evening came to be titled `BunnySlayer` throughout. Labels are recomputed on read,
+      so fights already stored get the current rule. See
+      [ADR 0054](../decisions/0054-a-sitting-is-a-login.md). The session list **scrolls inside
+      itself** (`.hist-list`): it's an index, and a fortnight of it otherwise pushed the metrics
+      for the fight you picked off the bottom of the tab. "Clear history" forgets all of it.
     - `Sparkline` — your damage per second across the fight, because a steady grind and a
       burst that fell off a cliff can share a DPS number but never a silhouette.
     - **Deaths** — what killed you, and what was landing in the 15s before it. The log
@@ -180,8 +218,19 @@ list, hunt, search, damage, session, settings.
     them, with a Test button that previews *that* watch). Each watch also chooses which prompts
     it wants — **cast**, **fades**, **line**, or any mix; the include-players toggle only shows
     while a watch is watching casts, since a fade and a line name no caster),
-    **"Eat a log file"** (digest a past log into learned mob data — see `electron/log-import.ts`;
-    keyed per line so re-eating or overlapping logs never double-count, [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md)),
+    **"Eat a log file"** (a **catch-up**: digest a past log into every bucket it can fill — learned
+    mob data, the **Damage tab's history** one play session per login with the fights whole, and the
+    **loot feed** with the prices it teaches; see `electron/log-import.ts`,
+    [ADR 0055](../decisions/0055-eating-a-log-fills-history.md). Keyed per line so re-eating or
+    overlapping logs never double-count, [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md);
+    the result line reports what was **new**, so a second helping reads zeros),
+    **"Forget recorded data"** (`ForgetData` — clears the kill records and the loot feed, and asks a
+    **second question** before touching what they taught: *Keep observations* or *Forget observations
+    too*. Records can be rebuilt by eating the logs again; observed drop rates, roam areas and vendor
+    prices cannot, so the safe answer is the plain one and the destructive one is styled `danger` and
+    names what it destroys. An inline step, not a native dialog — a modal over an always-on-top
+    window is a blackout of the game. See
+    [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)),
     and a **Help** area: global-shortcut list with live registration status (`app.info()`) and a
     screengrab explanation/test button. Dev-only options live in the tray, not here.
   - `StatusBar` — watcher state, current zone, and the last drop seen. A drop moves the
@@ -244,6 +293,17 @@ list, hunt, search, damage, session, settings.
   `hooks.ts` (`useShoppingList`, `useSettings`, `useWatcherStatus`, `useLootFeed`,
   `useMatchFlashes`, `useCurrentZone`, `useEntrySources`, `useItemCard`) — subscribe on
   mount, unsubscribe on unmount — and `nav.tsx` (the in-app page history above).
+- **Errors are logged, never drawn over the game** (`src/lib/error-reporting.ts`): Next's
+  dev error overlay is hidden outright — by CSS the *main process* injects into every window
+  it loads (`HIDE_DEV_OVERLAY` in `electron/windows.ts`), so it holds even for a compile
+  error, where the app's own stylesheet is part of what failed to build. A full-viewport
+  backdrop on an always-on-top window is a blackout of EverQuest. `ErrorReporter` (mounted once in
+  the root layout, so every window gets it) sends uncaught errors and rejected promises to
+  the logger, which the main process mirrors into the debug file behind tray → "Open debug
+  log". Each route's `error.tsx` is built by `crashBoundary(where)`; the app window shows a
+  small in-window notice with a "Try again", while the **alert overlay and the screengrab
+  selector draw nothing** — they're click-through or own a whole display, and a crashed one
+  can't dismiss itself. See [ADR 0052](../decisions/0052-an-error-goes-to-the-log-not-the-screen.md).
 - Styling is one dark theme in `src/app/globals.css`; the body is transparent so the
   frameless window can be see-through.
 
@@ -259,4 +319,5 @@ list, hunt, search, damage, session, settings.
 [ADR 0002](../decisions/0002-electron-shell-over-nextjs.md) ·
 [ADR 0005](../decisions/0005-renderer-static-export-and-app-protocol.md) ·
 [ADR 0008](../decisions/0008-in-app-page-navigation.md) ·
-[ADR 0009](../decisions/0009-single-window-with-tray.md)
+[ADR 0009](../decisions/0009-single-window-with-tray.md) ·
+[ADR 0052](../decisions/0052-an-error-goes-to-the-log-not-the-screen.md)

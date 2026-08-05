@@ -413,8 +413,10 @@ function damage(
     target: combatant(g.target ?? ""),
     amount: Number(g.amount),
     verb: g.verb,
-    // A damage shield names no spell, so its source word ("flames") stands in.
+    // A damage shield names no spell, so its source word ("flames") stands in. `source` is
+    // only ever captured by the shield pattern, which is what makes it the tell.
     spell: g.spell ? spellName(g.spell) : g.source,
+    shield: !!g.source,
     damageType: g.type,
     qualifier: g.qualifier,
     melee,

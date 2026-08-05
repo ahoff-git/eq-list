@@ -36,6 +36,7 @@ import type {
   KillEvent,
   LocEvent,
   LevelEvent,
+  LoginEvent,
 } from "./types";
 
 const MONTHS: Record<string, number> = {
@@ -248,6 +249,20 @@ export function parseLevel(line: LogLine): LevelEvent | null {
     };
   }
   return null;
+}
+
+/**
+ * Logging in. Verbatim from a real log: `Welcome to EverQuest Legends!` — 12 of them across
+ * two weeks of play, one per sitting, always the first line of it. The game's name is
+ * optional in the pattern so a build that drops "Legends" (or adds to it) still matches;
+ * anchoring on "Welcome to EverQuest" is what makes it a login and not the *level* line
+ * ("Welcome to level 2!"), which is why `parseLevel` runs first and this is checked after.
+ */
+const LOGIN_RE = /^Welcome to EverQuest\b.*!$/;
+
+export function parseLogin(line: LogLine): LoginEvent | null {
+  if (!LOGIN_RE.test(line.message)) return null;
+  return { kind: "login", logId: line.logId, raw: line.raw, at: line.at };
 }
 
 // "Your Location is 1234.5, -678.9, 42.0" → LocEvent. EQ reports the triple y-first.
