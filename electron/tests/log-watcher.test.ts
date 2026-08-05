@@ -489,3 +489,43 @@ test("resumes after the log is truncated / rotated", async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * Catch-up widens its read until it finds a zone line, and a log can be long enough to outrun even
+ * the widest window. That case used to fall out of the loop and emit *nothing* — throwing away a
+ * `/loc` it had already read, while the same reading on a small log was emitted happily. A position
+ * with no zone line before it still says where you are (`catchUpState`), so it's the best answer
+ * available and losing it leaves the map with no dot at all.
+ */
+test("a log too long to find a zone line in still reports the position it found", async () => {
+  const dir = tempLogDir();
+  const file = path.join(dir, "eqlog_Marathon_test.txt");
+  // The zone line goes first and is then buried under more than the widest catch-up window (4MB),
+  // so no pass can reach it. The `/loc` sits at the very end, well inside the narrowest pass.
+  const filler = stamp("You say, 'Hail, a guard'") + "\n";
+  fs.writeFileSync(
+    file,
+    stamp("You have entered Greater Faydark.") +
+      "\n" +
+      filler.repeat(Math.ceil((5 * 1024 * 1024) / filler.length)) +
+      stamp("Your Location is 111.00, 222.00, 33.00") +
+      "\n",
+  );
+  assert.ok(fs.statSync(file).size > 4 * 1024 * 1024, "the log has to outrun the widest window");
+
+  const watcher = createLogWatcher();
+  const zones: string[] = [];
+  const locs: LocEvent[] = [];
+  watcher.onZone((e) => zones.push(e.zone));
+  watcher.onLoc((e) => locs.push(e));
+  watcher.start(dir, "");
+
+  try {
+    await waitFor(() => locs.length >= 1);
+    assert.deepEqual([locs[0].y, locs[0].x, locs[0].z], [111, 222, 33], "the position is not discarded");
+    assert.deepEqual(zones, [], "and no zone is invented for it — we genuinely never found one");
+  } finally {
+    watcher.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

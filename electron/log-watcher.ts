@@ -12,7 +12,7 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import { parseSplitLine } from "../src/shared/parse-line";
 import { splitLine } from "../src/shared/log-parser";
-import { catchUpState } from "../src/shared/log-catchup";
+import { catchUpState, type CaughtUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
 import type { CoinEvent, LootEvent, LogLine, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
@@ -177,26 +177,34 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
   function catchUp(file: string, before: number): void {
     const size = Math.min(before, safeSize(file));
     if (!size) return;
+    /** The widest pass's reading — the one that saw the most lines, so the best answer we got. */
+    let widest: CaughtUpState = {};
     for (const window of CATCHUP_WINDOWS) {
       const from = Math.max(0, size - window);
       const { text } = readNew(file, from, size);
       // A partial first line is junk, so drop it — unless we started at the very beginning.
       const body = from === 0 ? text : text.slice(text.indexOf("\n") + 1);
       const lines = body.split(/\r?\n/).flatMap((raw) => splitLine(raw) ?? []);
-      const state = catchUpState(lines);
-      if (state.zone) {
-        log.debug("caught up", { file: path.basename(file), zone: state.zone.zone, loc: !!state.loc, window });
-        bus.emit("zone", state.zone);
-        if (state.loc) bus.emit("loc", state.loc);
+      widest = catchUpState(lines);
+      if (widest.zone) {
+        log.debug("caught up", { file: path.basename(file), zone: widest.zone.zone, loc: !!widest.loc, window });
+        bus.emit("zone", widest.zone);
+        if (widest.loc) bus.emit("loc", widest.loc);
         return;
       }
-      // No zone line yet. If that was the whole file, there simply isn't one to find.
-      if (from === 0) {
-        if (state.loc) bus.emit("loc", state.loc);
-        return;
-      }
+      // That was the whole file, so there simply isn't a zone line to find — no point widening.
+      if (from === 0) break;
     }
-    log.debug("no zone line within the catch-up window", { file: path.basename(file) });
+    // No zone line anywhere we looked, which used to mean giving up entirely on a log big enough to
+    // outrun the widest window — dropping a `/loc` we had in hand. A position with no zone line
+    // before it still describes where you are (see `catchUpState`), and it's the same reading the
+    // whole-file case has always emitted, so a long log shouldn't be the one case that discards it.
+    if (widest.loc) {
+      log.debug("caught up on position only — no zone line found", { file: path.basename(file) });
+      bus.emit("loc", widest.loc);
+    } else {
+      log.debug("no zone line within the catch-up window", { file: path.basename(file) });
+    }
   }
 
   function safeSize(file: string): number {

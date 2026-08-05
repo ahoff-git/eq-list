@@ -55,7 +55,13 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0049: A walking route is inferred from drawn lines, and says how much to believe it](./0049-a-route-is-inferred-from-drawn-lines.md) — *reads 0039's geometry for something it never claimed to state; leans on 0048's label kinds and stays clear of 0040's refusal to name storeys*
 - [0050: A watch can read a whole log line, not just a spell](./0050-a-watch-can-read-a-whole-log-line.md) — *widens 0035's alert from what the parsers model to anything the game prints (a party invite, a tell), without a new event kind per message*
 
+- [0051: An index is maintained, not re-derived — and a change announces itself](./0051-an-index-is-maintained-and-a-change-announces-itself.md) — *makes 0044's "replay cost is a non-issue" true for a played log and not only a fresh one; keeps 0033's line-keyed idempotence, and gives the map a real change signal instead of a proxy for one*
+
 ## Open Questions
+- Naming a folder of zones reads every map file inside a synchronous IPC handler, so it blocks
+  the main process for up to a second while the map window loads — which now happens at launch,
+  beside the replay ([ADR 0051](./0051-an-index-is-maintained-and-a-change-announces-itself.md)).
+  Is the answer a cache on disk keyed by the folder, or moving the read off the main thread?
 - A line watch is a substring of the whole log line, and nothing rate-limits it
   ([ADR 0050](./0050-a-watch-can-read-a-whole-log-line.md)). A careless one ("hit") fires
   thousands of times a night. Is the overlay's four-banner cap enough, or does a watch want a

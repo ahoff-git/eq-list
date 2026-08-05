@@ -444,3 +444,30 @@ test("the same coin line read twice adds the money once", () => {
   assert.equal(again.noteCoin(coin(32, 12)), false, "a re-import must not double the coin");
   assert.equal(again.kills()[0].coin, 32);
 });
+
+/**
+ * The log is bounded, so records leave it — and what leaves has to take its line-identity with
+ * it while every surviving record keeps its own. Getting that wrong is invisible in ordinary
+ * play and shows up as either a doubled kill or a permanently swallowed line after a trim.
+ */
+test("the cap forgets the lines it drops and keeps the lines it doesn't", () => {
+  const k = createKillLog(tempDir());
+  // A distinct second per kill, well past the cap. Not `stamp`, which only spans an hour.
+  const at = (i: number) => new Date(Date.parse("2026-07-29T00:00:00Z") + i * 1000).toISOString();
+  const OVER = 5300;
+  for (let i = 0; i < OVER; i++) k.record(`a kobold ${i}`, "You", ZONE, at(i), i);
+
+  const kept = k.kills(); // newest first
+  assert.ok(kept.length < OVER, "the log is capped rather than growing without bound");
+
+  // A record that survived the trim still recognises its own line, and the drop hung on it.
+  const newest = kept[0];
+  const drop: LootEvent = { ...looted("Bone Chips", newest.mob, 0), at: newest.at };
+  assert.equal(k.noteLoot(drop), true);
+  assert.equal(k.noteLoot(drop), false, "its loot line still dedups");
+  assert.equal(k.record(newest.mob, "You", ZONE, newest.at, 1), false, "its kill line still dedups");
+
+  // The oldest was trimmed away, so its line is unread again — an index entry pointing at a
+  // record that no longer exists would block it forever.
+  assert.equal(k.record("a kobold 0", "You", ZONE, at(0), 1), true, "a trimmed line can be recorded again");
+});

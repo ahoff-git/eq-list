@@ -66,6 +66,13 @@ function coalesce(ms: number, fn: () => void): () => void {
   };
 }
 
+/**
+ * How long to pool kill-log changes before telling the renderers. Kills are history, not a live
+ * meter, so half a second is imperceptible — and it's the watcher's own poll interval, which
+ * makes "one notice per batch of lines" the natural ceiling.
+ */
+const KILLS_NOTICE_MS = 500;
+
 /** Mirror the debug toggle into the env flag that logging.ts reads. */
 function syncDebugFlag(settings: Settings): void {
   if (settings.debug) process.env.EQL_DEBUG = "1";
@@ -212,13 +219,23 @@ if (!app.requestSingleInstanceLock()) {
     combat.setZone(currentZone); // so finished fights are filed against the right camp
     broadcast(CH.zoneChanged, currentZone);
   });
+  /**
+   * The kill log changed, so whatever draws it — the map's heatmap and kill list, mob knowledge —
+   * should re-read. Coalesced, because each notice costs a renderer the *whole* log: kills arrive
+   * in bursts (a camp pull, or an entire replayed gap inside one poll), and 600 round trips of
+   * 5000 records say nothing that one round trip doesn't.
+   *
+   * Fired only when something was actually newly recorded — the record/note calls return that —
+   * so a re-read log is silent rather than making every window refetch for no change.
+   */
+  const killsChanged = coalesce(KILLS_NOTICE_MS, () => broadcast(CH.killsChanged, undefined));
   watcher.onLoc((event) => {
     currentLoc = event;
     killLog.noteLoc(event, currentZone); // the fix a later kill will be placed against
     broadcast(CH.locChanged, currentLoc);
   });
   watcher.onLoot((event) => {
-    killLog.noteLoot(event); // ties the drop to the corpse it came from
+    if (killLog.noteLoot(event)) killsChanged(); // ties the drop to the corpse it came from
     combat.recordSale(event); // an auto-sell is the only line that prices an item
     lootLog.add(event); // the always-on loot feed, so the tab is complete whenever it's opened
     broadcast(CH.lootEvent, event);
@@ -228,14 +245,14 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onKill((event) => {
     combat.recordKill(event.target, event.at);
-    killLog.record(event.target, event.killer, currentZone, event.at, event.logId);
+    if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId)) killsChanged();
   });
   // Coin off a corpse goes to both ledgers it belongs in: the session's money (for a rate) and
   // the mob that paid it (for the long-run per-kill figure). An auto-sold item's coin is skipped
   // by both — the loot line above already priced it, and counting it here would double it.
   watcher.onCoin((event) => {
     combat.recordCoin(event);
-    killLog.noteCoin(event);
+    if (killLog.noteCoin(event)) killsChanged();
   });
   watcher.onXp((event) => {
     combat.recordXp(event);

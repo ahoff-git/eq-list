@@ -41,6 +41,19 @@ const WINDOW_MS: Record<KillWindow, number> = {
   all: Number.POSITIVE_INFINITY,
 };
 
+/**
+ * Does this window have a cutoff that moves as time passes, so anything displaying it needs a
+ * clock of its own? Everything but "all" does.
+ *
+ * `filterKills` reads the clock when it is *called*, which makes a caller that memoizes on the
+ * kills and the filters alone quietly wrong: the cutoff freezes at whenever those last changed, so
+ * a camp that goes quiet keeps showing kills well past the ten minutes the button claims. This is
+ * how a caller knows whether it has to tick.
+ */
+export function windowMoves(window: KillWindow): boolean {
+  return Number.isFinite(WINDOW_MS[window]);
+}
+
 /** Apply the filters. `now` is injectable so the time window is testable. */
 export function filterKills(kills: KillRecord[], filters: KillFilters, now = Date.now()): KillRecord[] {
   const cutoff = now - WINDOW_MS[filters.window];

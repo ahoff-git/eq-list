@@ -16,8 +16,6 @@ import { CH } from "../src/shared/ipc-channels";
 import { createLogger } from "../src/shared/logging";
 import type { OverlaySettings } from "../src/shared/types";
 
-const log = createLogger("windows");
-
 /**
  * Bridge a window's renderer console into the main-process log, so renderer output
  * (e.g. map ping broadcasts) shows up in the same terminal + debug file as everything

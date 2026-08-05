@@ -25,14 +25,6 @@ export interface CaughtUpState {
 }
 
 /**
- * Read state out of log lines, oldest first.
- *
- * A zone line **clears any position** read before it: a `/loc` from the zone you just left would
- * otherwise be plotted on the map of the zone you're in, which is worse than having no dot at all.
- * A position with no zone line before it is kept — no zoning happened within the tail, so it's a
- * fix for wherever you already were.
- */
-/**
  * How recent the end of a replayed gap has to be for it to count as the sitting you're still in.
  *
  * Longer than restarting the app (or it recovering from a crash), shorter than any break you'd
@@ -56,6 +48,14 @@ export function isSameSitting(lastAt: string | undefined, now: number = Date.now
   return !Number.isNaN(t) && now - t <= SAME_SITTING_MS;
 }
 
+/**
+ * Read state out of log lines, oldest first.
+ *
+ * A zone line **clears any position** read before it: a `/loc` from the zone you just left would
+ * otherwise be plotted on the map of the zone you're in, which is worse than having no dot at all.
+ * A position with no zone line before it is kept — no zoning happened within the tail, so it's a
+ * fix for wherever you already were.
+ */
 export function catchUpState(lines: LogLine[]): CaughtUpState {
   const state: CaughtUpState = {};
   for (const line of lines) {

@@ -228,12 +228,25 @@ export function useAwariRoom(opts: { name: string }): {
     [roster, peers, peerPins],
   );
 
+  /**
+   * The rooms's state as lists. Memoized on the state they flatten, because the identity of these
+   * arrays is load-bearing: they are dependencies of the map page's `renderKills` / `renderPins` /
+   * `peers` / `pings` memos, which in turn feed the canvas draw effect. Rebuilt fresh on every
+   * render — which is what `Object.values(...)` in the return statement did — every one of those
+   * memos missed, so any state change anywhere in the map window redrew the whole overlay and
+   * rebuilt the hover-target list, whether or not a peer had said anything.
+   */
+  const peerLocs = useMemo(() => Object.values(peers), [peers]);
+  const peerPings = useMemo(() => Object.values(pings), [pings]);
+  const allPeerPins = useMemo(() => Object.values(peerPins).flat(), [peerPins]);
+  const allPeerKills = useMemo(() => Object.values(peerKills).flat(), [peerKills]);
+
   return {
-    peers: Object.values(peers),
-    pings: Object.values(pings),
-    peerPins: Object.values(peerPins).flat(),
+    peers: peerLocs,
+    pings: peerPings,
+    peerPins: allPeerPins,
     users,
-    peerKills: Object.values(peerKills).flat(),
+    peerKills: allPeerKills,
     sendPing,
     sharePins,
     shareKills,

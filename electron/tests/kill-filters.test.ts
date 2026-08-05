@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_KILL_FILTERS, filterKills, type KillFilters } from "../../src/shared/kill-filters";
+import { DEFAULT_KILL_FILTERS, filterKills, windowMoves, type KillFilters } from "../../src/shared/kill-filters";
 import { confidenceTier, CONFIDENCE_TIERS, PLOTTABLE_CONFIDENCE } from "../../src/shared/kill-confidence";
 import type { KillRecord } from "../../src/shared/types";
 
@@ -99,4 +99,28 @@ test("confidence tiers run from measured to unplaced, and never fall through", (
   // Every tier has a distinct glyph, so the map reads without relying on color.
   const glyphs = CONFIDENCE_TIERS.map((t) => t.glyph);
   assert.equal(new Set(glyphs).size, glyphs.length);
+});
+
+/**
+ * A window whose cutoff moves has to be re-applied as time passes; "all" never does. A display that
+ * memoized on the kills and the filters alone froze the cutoff, so "10m" kept showing kills long
+ * past ten minutes once a camp went quiet — this is the signal that tells a caller it must tick.
+ */
+test("every window but 'all' has a cutoff that moves", () => {
+  assert.equal(windowMoves("10m"), true);
+  assert.equal(windowMoves("1h"), true);
+  assert.equal(windowMoves("session"), true, "12 hours still expires, so it still needs a clock");
+  assert.equal(windowMoves("all"), false, "nothing to re-apply — there is no cutoff");
+});
+
+test("the same kills expire as the clock advances, with the filters untouched", () => {
+  const only = filters({ window: "10m" });
+  const kills = [kill({ mob: "a kobold", at: agoMin(5) })];
+
+  assert.equal(filterKills(kills, only, NOW).length, 1, "five minutes old, inside the window");
+  assert.equal(
+    filterKills(kills, only, NOW + 6 * 60_000).length,
+    0,
+    "eleven minutes old — the same kill and the same filters, a later clock",
+  );
 });

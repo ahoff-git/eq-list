@@ -1,16 +1,20 @@
 "use client";
 import { useMemo } from "react";
 import { useItemPrices, useLootFeed, useShoppingList } from "@/lib/hooks";
+import { lootKey } from "@/shared/loot-feed";
 import { normalizeItemName } from "@/shared/grouping";
 import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
 import type { ItemPrice, LootEvent, LootFate } from "@/shared/types";
 
 /**
- * Everything that has dropped this session and what became of it — kept, sold, stored in a
- * depot, or consumed to make something else. The log distinguishes all four and they matter
- * differently: a sold item is gone, a combined one turned into something, a stored one is in
- * a depot rather than your bags.
+ * Everything that has dropped and what became of it — kept, sold, stored in a depot, or consumed
+ * to make something else. The log distinguishes all four and they matter differently: a sold item
+ * is gone, a combined one turned into something, a stored one is in a depot rather than your bags.
+ *
+ * **The ledger, not the session.** `loot-log.ts` persists it and reads it back on launch, so what's
+ * listed here reaches back through previous runs. The wording used to say "this session", which was
+ * true of the renderer-side feed this replaced and has been a quiet lie since.
  *
  * Names are `ItemLink`s, so the same hover card and in-app navigation the List tab gives
  * work here too — the point of the tab is to notice *what you got* without having to know
@@ -36,7 +40,9 @@ export default function LootPanel() {
   const drops = useLootFeed(200);
   const list = useShoppingList();
   // Only a sale can change a price, and the newest drop is the cheapest signal that one landed.
-  const prices = useItemPrices(drops[0]?.logId ?? 0);
+  // Keyed by the drop's whole identity rather than its `logId`: that counter restarts at zero
+  // every launch, so on its own it can repeat the value it already held and the refetch is skipped.
+  const prices = useItemPrices(drops[0] ? lootKey(drops[0]) : "");
 
   // Names on the shopping list, normalized the same way the store matches them.
   const wanted = useMemo(
@@ -53,9 +59,10 @@ export default function LootPanel() {
   if (drops.length === 0) {
     return (
       <div className="empty">
-        <p>Nothing has dropped yet this session.</p>
+        <p>Nothing has dropped yet.</p>
         <p className="small">
-          Loot lines appear here as they happen — what dropped, from what, and where it went.
+          Loot lines appear here as they happen — what dropped, from what, and where it went. The
+          list is kept, so it will still be here next time you open the app.
         </p>
       </div>
     );
@@ -64,8 +71,8 @@ export default function LootPanel() {
   return (
     <div>
       <div className="row wrap" style={{ marginBottom: 12 }}>
-        <span className="muted small">
-          {drops.length} drop{drops.length === 1 ? "" : "s"} this session
+        <span className="muted small" title="The most recent drops on record, newest first — kept across restarts">
+          {drops.length} recent drop{drops.length === 1 ? "" : "s"}
         </span>
         <span className="spacer" />
         {(Object.keys(FATE_LABEL) as LootFate[])
@@ -78,8 +85,12 @@ export default function LootPanel() {
       </div>
 
       <div className="loot-rows">
+        {/* Keyed by the drop's identity, not `logId-item`. The ledger outlives a run while `logId`
+            restarts at zero each launch, so that pair repeats across runs — two rows claiming one
+            key, which React resolves by reusing the wrong node (and warns about). `lootKey` is the
+            same identity the feed merges on, so the list and the merge agree on what one drop is. */}
         {drops.map((drop) => (
-          <LootRow key={`${drop.logId}-${drop.item}`} drop={drop} wanted={wanted.has(normalizeItemName(drop.item))} />
+          <LootRow key={lootKey(drop)} drop={drop} wanted={wanted.has(normalizeItemName(drop.item))} />
         ))}
       </div>
 

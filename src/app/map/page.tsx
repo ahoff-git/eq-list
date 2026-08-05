@@ -17,7 +17,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import MapPanel, { type RenderKill, type RenderPin } from "../components/MapPanel";
 import KillList, { clock, type KillEmphasis } from "../components/KillList";
 import MobKnowledgePanel from "../components/MobKnowledge";
-import { DEFAULT_KILL_FILTERS, filterKills, type KillFilters } from "@/shared/kill-filters";
+import { DEFAULT_KILL_FILTERS, filterKills, windowMoves, type KillFilters } from "@/shared/kill-filters";
 import PinButton from "../components/PinButton";
 import MaximizeButton from "../components/MaximizeButton";
 import ScaleButtons from "../components/ScaleButtons";
@@ -33,6 +33,13 @@ import MapFilters, { type HeightPick } from "../components/MapFilters";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
 import { MAP_UI_SCALE } from "@/shared/constants";
+
+/**
+ * How often to re-apply a moving kill window. A kill's own resolution is a second and the shortest
+ * window is ten minutes, so this only has to be fine enough that a row leaves the list at roughly
+ * the time it should — not fine enough to watch it happen.
+ */
+const KILL_WINDOW_TICK_MS = 30_000;
 
 /**
  * The sibling map window (route `/map`, opened by the main window's 🗺 button).
@@ -345,10 +352,23 @@ export default function MapWindow() {
     broadcastPins(sharePinsOn ? pins : []);
   }, [connected, sharePinsOn, pins, broadcastPins]);
 
-  // Kills are re-read when a new one could have landed (the current zone's kill count moves
-  // with play, so the trail's length is a cheap "something happened" signal).
-  const allKills = useKills(zoneKey, `${zoneKey}:${trail.points.length}`);
-  const kills = useMemo(() => filterKills(allKills, killFilters), [allKills, killFilters]);
+  // Kills are re-read when the main process says the log changed — see `useKills`.
+  const allKills = useKills(zoneKey);
+  /**
+   * The clock the kill window is measured against. A bounded window is a moving target and
+   * `filterKills` reads the time when it's called, so memoizing on the kills and the filters alone
+   * froze the cutoff wherever it last landed — pick "10m", stop killing, and the list went on
+   * showing half-hour-old kills (and the toolbar's ☠ count with it). Ticks only while there's a
+   * bound to enforce, so "all" costs nothing.
+   */
+  const [filterNow, setFilterNow] = useState(() => Date.now());
+  const windowTicks = windowMoves(killFilters.window);
+  useEffect(() => {
+    if (!windowTicks) return;
+    const id = setInterval(() => setFilterNow(Date.now()), KILL_WINDOW_TICK_MS);
+    return () => clearInterval(id);
+  }, [windowTicks]);
+  const kills = useMemo(() => filterKills(allKills, killFilters, filterNow), [allKills, killFilters, filterNow]);
   const showKillConfidence = settings?.overlay.showKillConfidence ?? true;
 
   // Only placed kills can go on the map; the rest stay in the list, labelled.

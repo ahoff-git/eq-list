@@ -21,6 +21,7 @@ import type {
   ShoppingListEntry,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
+import { mergeLootFeed } from "@/shared/loot-feed";
 
 /** One-shot app diagnostics (hotkey registration) for the Help section. */
 export function useAppInfo(): AppInfo | null {
@@ -152,20 +153,24 @@ function mergeDropLists(a: MobKnowledge, b: MobKnowledge): MobKnowledge["drops"]
 }
 
 /**
- * Recorded kills, newest first. Re-read when `refreshKey` changes — kills accumulate as you
- * play, and the map only needs to catch up when something says so (a new kill, a zone
- * change) rather than on a timer.
+ * Recorded kills, newest first. Re-read whenever the main process says the log changed — a kill,
+ * a drop landing on a corpse, or a bulk edit (import / clear).
+ *
+ * That notice is the *only* trigger, which is the point. This used to take a `refreshKey` and the
+ * map passed it the length of the `/loc` trail, on the reasoning that the kill count moves with
+ * play — but a `/loc` is not a kill, and each one refetched all 5000 records over IPC (~10ms per
+ * hop) and redrew the heatmap. A replayed gap types dozens of them in one burst, right while the
+ * map window is loading its geometry, which is exactly the lag spike that made this worth fixing.
  */
-export function useKills(zone: string | undefined, refreshKey: unknown): KillRecord[] {
+export function useKills(zone: string | undefined): KillRecord[] {
   const [kills, setKills] = useState<KillRecord[]>([]);
   useEffect(() => {
     const a = api();
     if (!a) return;
     const load = () => void a.kills.all(zone).then(setKills);
     load();
-    // Refetch on a bulk change (import / clear) so out-of-band edits reach an already-open window.
     return a.kills.onChanged(load);
-  }, [zone, refreshKey]);
+  }, [zone]);
   return kills;
 }
 
@@ -309,9 +314,11 @@ export function useLootFeed(limit = 40): LootEvent[] {
   useEffect(() => {
     const a = api();
     if (!a) return;
-    // History first (drops are tracked in the main process, even before this tab was opened),
-    // then live appends. Don't clobber a live drop that beat the fetch back.
-    void a.loot.recent(limit).then((hist) => setEvents((prev) => (prev.length ? prev : hist)));
+    // History (the main process tracks drops whether or not this tab is open) plus the live ones,
+    // *merged* — the two race, and `mergeLootFeed` owns which wins and how the overlap is spotted.
+    // This used to keep whatever had arrived live and drop the history wholesale, which cost the
+    // panel its entire ledger whenever one drop beat the fetch back.
+    void a.loot.recent(limit).then((hist) => setEvents((prev) => mergeLootFeed(prev, hist, limit)));
     return a.loot.onEvent((e) => setEvents((prev) => [e, ...prev].slice(0, limit)));
   }, [limit]);
   return events;

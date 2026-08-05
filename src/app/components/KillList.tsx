@@ -132,7 +132,7 @@ export default function KillList({
       ) : (
         <div className="kill-rows">
           {shownGroups.map((g) => (
-            <MobGroup key={g.mob} group={g} showConfidence={showConfidence} />
+            <MobGroup key={g.mob} group={g} showConfidence={showConfidence} onEmphasize={onEmphasize} />
           ))}
           {!expanded && groups.length > shownGroups.length && (
             <button className="btn ghost sm" onClick={() => setExpanded(true)}>
@@ -181,7 +181,13 @@ function MobGroup({
 }: {
   group: MobGroupData;
   showConfidence: boolean;
-  onEmphasize?: (emphasis: KillEmphasis | null) => void;
+  /**
+   * Required-but-nullable rather than optional, deliberately. As an optional prop it was simply
+   * never passed here, and because every call site is `onEmphasize?.(…)` nothing failed — it just
+   * meant hovering a row lit nothing up, silently, for the whole feature. Demanding the prop makes
+   * forgetting it a compile error; the parent's own prop stays optional, as its callers' choice.
+   */
+  onEmphasize: ((emphasis: KillEmphasis | null) => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const newest = group.kills[0];
@@ -244,7 +250,8 @@ function KillRow({
 }: {
   kill: KillRecord;
   showConfidence: boolean;
-  onEmphasize?: (emphasis: KillEmphasis | null) => void;
+  /** Demanded, not optional — see `MobGroup`. */
+  onEmphasize: ((emphasis: KillEmphasis | null) => void) | undefined;
 }) {
   const tier = confidenceTier(kill.confidence);
 
