@@ -241,6 +241,12 @@ world coordinates, so a map knows where it is. See
   corridor guard and by the smoothing drawing straight lines across level changes; with those fixed,
   0.2% of sampled route length runs outside the corridor.
 
+  **The grid's resolution is load-bearing**, because a doorway narrower than a wall cell disappears:
+  at 4-unit cells a room in New Sebilis Expedition was sealed outright, and 3 opens it while also
+  halving search time (a finer cell means a smaller wall footprint, so less of the zone is spuriously
+  solid). The corridor test's height tolerance is likewise in units, not in slices — a slice boundary
+  between a room floor at z −4 and its corridor at z −3 was enough to make the room unreachable.
+
   **Confidence is measured, not asserted.** Drawn line per unit of area separates dungeons
   (median 0.029) from open zones (max 0.0054) across 567 files, so a zone whose lines are *terrain*
   is refused outright with that as the reason rather than given a route it can't stand behind. A

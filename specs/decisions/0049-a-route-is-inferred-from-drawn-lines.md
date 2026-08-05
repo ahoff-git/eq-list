@@ -90,8 +90,8 @@ search state — and it is always presented as a suggestion carrying a confidenc
 
   Measuring that distance *in plan alone* was the single worst bug here, and an instructive one: on a
   stacked zone every column has ink somewhere, so the guard was vacuous in exactly the case it was
-  written for. Both its tolerances are now measured rather than chosen — over 36 routes across six
-  dungeons, sampled every 8 units:
+  written for. Its tolerance is measured rather than chosen — over 36 routes across six dungeons,
+  sampled every 8 units:
 
       10 cells, ±1 height slice   11.8% of sampled length adrift (>40u from same-height geometry)
        8 cells, ±1 slice           4.8%
@@ -100,7 +100,35 @@ search state — and it is always presented as a suggestion carrying a confidenc
 
   Tightening it **found more routes, not fewer** (30 against 29) and cut the slowest search from
   416ms to 305ms — the tell that the slack was never buying reach, only letting the search wander
-  into rock and get stuck there.
+  into rock and get stuck there. Loosening it again to rescue a large room was tried and rejected:
+  at 56 units, dungeon drift rose to 12.4% and the room stayed shut, because it was never a question
+  of reach.
+
+  **It remains a proximity test standing in for an enclosure test**, and that substitution is the
+  known weak point: it asks "is a wall near me?" where the real question is "am I inside the drawn
+  structure?". The two agree in a corridor and disagree in the middle of a large hall. A parity test —
+  counting wall crossings along a scanline per height slice — would answer the real question, and is
+  the next change if a zone with genuinely vast rooms misbehaves.
+- **The grid has to be fine enough for a doorway to survive it.** Blackburrow set the coarse end (a
+  10-unit cell swallows a third of its segments); **New Sebilis Expedition** set the fine end, by
+  failing outright — at 4 units a room there was sealed, because its doorway is narrower than the wall
+  cells either side of it. The room's interior sat 1–3 cells from ink, well inside every guard; it
+  simply had no opening left to walk through, which is why it presented as "a walkable room A\* can't
+  path in or out of".
+
+      cell   dungeon drift   expedition   that room   slowest
+        4    0.2% adrift     11/12        sealed      176ms
+        3    0.1%            12/12        open         80ms
+        2    0.3%            12/12        open         79ms
+
+  3 is better on every axis at once. The counter-intuitive part is the speed: a finer grid makes each
+  wall's plan footprint *smaller*, so less of the zone is spuriously solid and the search wanders less.
+- **A height tolerance in units, not in slices.** The corridor test is taken in height slices, and a
+  slice boundary falls at an arbitrary height — so a room floor drawn at z −4 opening onto a corridor
+  at z −3 could straddle one, and a **one-unit** difference in height decided whether the room was
+  reachable. Forgiving ±1 slice was the first attempt and was wrong in a different way (a slice's
+  height is an implementation detail, so it granted licence proportional to nothing, and cost a factor
+  of five in drift). Slices are now 4 units and the tolerance is a stated ±4 units.
 - **The smoothing verifies the line it will draw.** String-pulling isn't cosmetic when its output is
   what a player is told to walk, and two faults in it produced the worst routes in the corpus, both
   by drawing a straight line across a change of level. Keeping the waypoint *before* a jump but not

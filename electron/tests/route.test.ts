@@ -197,6 +197,25 @@ test("a change of level is drawn as a step, not a diagonal across the map", () =
   }
 });
 
+test("a narrow doorway survives rasterization", () => {
+  // New Sebilis Expedition found this: a room whose doorway is narrower than the wall cells either
+  // side of it was sealed outright, so a perfectly walkable room could not be entered or left. The
+  // room's interior was well inside every guard — it simply had no opening left to walk through.
+  const gap = 8; // a doorway this wide has to stay open
+  const map = mapOf([
+    ...box(0, 0, 120, 120),
+    // A dividing wall with a narrow gap in the middle of it.
+    wall(60, 0, 60, 60 - gap / 2),
+    wall(60, 60 + gap / 2, 60, 120),
+  ]);
+  const r = route(map, at(30, 60), at(90, 60));
+  // The doorway is what matters, not the tidiness of the line: it must cross the dividing wall at
+  // the gap and nowhere else. (It wanders a little getting there, which is the grid's business.)
+  const crossed = crossingY(r.steps, 60);
+  assert.ok(crossed !== undefined, "the route never crosses the dividing wall at all");
+  assert.ok(Math.abs(crossed - 60) <= gap, `crossed at y=${crossed}, which is through solid wall`);
+});
+
 test("a route won't cross ground whose only geometry is on another level", () => {
   // The corridor guard has to be measured *per height*. Measured in plan alone it is no constraint
   // at all on a stacked zone — every column has ink somewhere — which is how routes came to strike

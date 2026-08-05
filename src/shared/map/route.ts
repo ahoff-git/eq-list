@@ -35,7 +35,7 @@
  *    jump is now its own short, steep leg, and a leg is checked along the line that gets drawn.
  *
  * Two guards fall out of (3). A cell too far from any drawn line **at the height being walked** is
- * refused (`MAX_INK_CELLS`, `INK_SLICE`), since a dungeon has no floor 24 units from every wall —
+ * refused (`MAX_INK_UNITS`, `INK_SLICE`), since a dungeon has no floor 24 units from every wall —
  * that's rock, reached by leaking around one of the map's unclosed wall ends (10% of Blackburrow's
  * endpoints are loose). Measuring that in plan alone was a real bug and a subtle one: on a stacked
  * zone every column has ink *somewhere*, so the guard did nothing in the one place it was written
@@ -102,12 +102,25 @@ export type RouteResult = { ok: true; route: Route } | { ok: false; reason: Rout
 // Every number here was picked against real files, and its comment says which observation.
 
 /**
- * The finest grid resolution, in EQ units. Blackburrow's median segment is 14 units long and 454 of
- * its 1,419 segments are shorter than 10, so a 10-unit cell would swallow a third of the detail —
- * including the walls that make a corridor a corridor. 4 keeps them, and that zone comes out
- * 224 × 153.
+ * The finest grid resolution, in EQ units — and the thing that decides whether a **doorway survives
+ * rasterization**.
+ *
+ * Blackburrow set the ceiling: its median segment is 14 units long and 454 of its 1,419 segments are
+ * shorter than 10, so a 10-unit cell swallows a third of the detail, walls included. New Sebilis
+ * Expedition set the floor, and did it by failing — a room there was sealed outright at 4 units,
+ * because its doorway is narrower than the wall cells either side of it. The room's interior measured
+ * 1–3 cells from ink (well inside every guard); it simply had no opening left to walk through.
+ *
+ *     cell   dungeon drift   expedition   room in/out   slowest
+ *       4    0.2% adrift     11/12        0 of 6 work   176ms
+ *       3    0.1%            12/12        6 of 6        80ms
+ *       2    0.3%            12/12        6 of 6        79ms
+ *
+ * 3 is better on every axis at once, which is rare enough to be worth stating: it opens the doorways,
+ * halves the search time (a finer grid makes each wall's footprint *smaller*, so less of the zone is
+ * spuriously solid and the search wanders less), and improves accuracy. 2 buys nothing further.
  */
-const MIN_CELL = 4;
+const MIN_CELL = 3;
 
 /**
  * The most cells a grid may span in either direction. A zone's *size* varies by two orders of
@@ -153,23 +166,36 @@ const CLIMB_PENALTY = 0.2;
 const JUMP = MAX_STEP;
 
 /**
- * How far from the nearest drawn line a route may stray, in cells — measured **at the height it's
- * walking at** (see {@link INK_SLICE}). Beyond this you're in the rock between two tunnels, reached
+ * How far from the nearest drawn line a route may stray, in **EQ units**, measured at the height it's
+ * walking at (see {@link INK_SLICE}). Beyond this you're in the rock between two structures, reached
  * by leaking around one of the map's unclosed wall ends.
  *
- * Six cells (24 units) was measured, not chosen. Over 36 routes across six dungeons, sampled every
- * 8 units and asked how far the drawn line sat from any geometry at its own height:
+ * In units rather than cells, because the cell size varies with the size of the zone — the same "6
+ * cells" meant 24 units in Blackburrow and 96 in East Karana, which is no rule at all.
  *
- *     10 cells, ±1 slice   11.8% of samples adrift (>40u)   29 routes found
- *      8 cells, ±1 slice    4.8%                            29
- *      6 cells, ±1 slice    1.0%                            29
- *      6 cells,  exact      0.2%                            30
- *      5 cells,  exact      0.1%                            30
+ * **This is a proximity test standing in for an enclosure test, and that substitution has a known
+ * cost.** It asks "is there a wall near me?" when the real question is "am I inside the drawn
+ * structure?". The two agree in a corridor and disagree in a large room, whose middle is legitimately
+ * far from every wall: in New Sebilis Expedition the interior of one room measures 28 units clear of
+ * the nearest ink, so at this threshold the router calls it bedrock and refuses to path in or out of
+ * a perfectly walkable room.
  *
- * Tightening it *found more routes*, not fewer, which is the tell that the slack wasn't buying
- * reach — it was letting the search cut corners through rock and then get stuck out there.
+ * Loosening it is **not** the fix — measured over 36 routes in six dungeons plus 12 in the
+ * expedition:
+ *
+ *     limit   dungeon drift   expedition routes
+ *      24u    0.2% adrift     10/12
+ *      40u    8.8%            10/12
+ *      56u   12.4%            10/12
+ *      80u   14.2%            11/12 (and one search gave up)
+ *
+ * Slack costs dungeon accuracy sixtyfold and buys the expedition nothing, because the rooms that
+ * fail are not failing for want of reach. The real fix is a parity test — count wall crossings along
+ * a scanline per height slice, so "inside" is inside rather than "near" — which is a different guard,
+ * not a different number.
  */
-const MAX_INK_CELLS = 6;
+const MAX_INK_UNITS = 24;
+
 
 /**
  * How tall a slice the "is there corridor here?" measurement is taken in.
@@ -180,10 +206,28 @@ const MAX_INK_CELLS = 6;
  * of their length and then struck out 250 units across solid rock, because the rock had a tunnel
  * above it.
  */
-const INK_SLICE = 8;
+const INK_SLICE = 4;
 
-/** A ceiling on the slices, so a very tall zone widens its slices rather than growing without end. */
-const MAX_INK_SLICES = 48;
+/**
+ * How far in height the corridor test forgives, in EQ units.
+ *
+ * A slice boundary falls at an arbitrary height, and without this a cell flips from routable to
+ * bedrock across it. New Sebilis Expedition is the case that found it: a room floor drawn at z −4
+ * opens onto a corridor at z −3, the slice boundary lands between them, and a **one-unit** difference
+ * in height decided whether you could path in or out of a perfectly walkable room.
+ *
+ * Forgiving ±1 slice instead was the previous attempt and it was wrong in a different way — a slice's
+ * height is an implementation detail, so that granted licence proportional to nothing, and cost a
+ * factor of five in drift. This is a fixed, small, stated tolerance in the same units as everything
+ * else.
+ */
+const INK_Z_TOL = 4;
+
+/**
+ * A ceiling on the slices, so a very tall zone widens its slices rather than growing without end.
+ * Cost is cells × slices bytes: Blackburrow's 34k cells over 55 slices is under 2MB.
+ */
+const MAX_INK_SLICES = 96;
 
 /** Beyond this mean distance from the ink, a route is crossing more blank map than corridor. */
 const OPEN_GROUND_CELLS = 5;
@@ -310,6 +354,8 @@ export interface RouteGrid {
   /** How the height range is sliced: `slice = floor((z - minZ) / sliceHeight)`, clamped. */
   slices: number;
   sliceHeight: number;
+  /** {@link MAX_INK_UNITS} in this grid's own cells — what {@link inkCellsAway} is compared against. */
+  inkLimit: number;
   /**
    * Drawn line per unit of map area — how densely this zone is inked, and the basis of
    * {@link routeConfidence}. Measured from the segments themselves rather than from the cells they
@@ -382,6 +428,7 @@ export function buildRouteGrid(map: EqMap): RouteGrid | undefined {
     inkDistance: new Uint8Array(0), // sized by measureInkDistance, once the height range is sliced
     slices: 1,
     sliceHeight: 1,
+    inkLimit: 1,
     inkPerArea: 0,
     minZ,
     maxZ,
@@ -556,8 +603,7 @@ function markLabels(grid: RouteGrid, map: EqMap): void {
 
 /**
  * How many cells each cell is from the nearest drawn line, **per height slice**: one multi-source
- * BFS per slice, seeded from the geometry that reaches that slice, capped at
- * {@link MAX_INK_CELLS} + 1.
+ * BFS per slice, seeded from the geometry that reaches that slice, capped just past {@link RouteGrid.inkLimit}.
  *
  * A wall standing at z 0 says "there is corridor here, at z 0". It says nothing about z -100, and
  * measuring it as though it did is what let routes cut across bedrock.
@@ -567,7 +613,8 @@ function measureInkDistance(grid: RouteGrid): void {
   const span = Math.max(1, grid.maxZ - grid.minZ);
   grid.slices = Math.max(1, Math.min(MAX_INK_SLICES, Math.ceil(span / INK_SLICE)));
   grid.sliceHeight = span / grid.slices;
-  const cap = MAX_INK_CELLS + 1;
+  grid.inkLimit = Math.max(1, Math.min(200, Math.round(MAX_INK_UNITS / grid.cell)));
+  const cap = grid.inkLimit + 1;
   grid.inkDistance = new Uint8Array(cells * grid.slices).fill(cap);
 
   const sliceOf = (z: number) => {
@@ -621,12 +668,18 @@ function measureInkDistance(grid: RouteGrid): void {
  */
 export function inkCellsAway(grid: RouteGrid, at: number, z: number): number {
   const cells = grid.cols * grid.rows;
-  // Clamped, not skipped: the geometry's own top and bottom land exactly on a boundary, and the
-  // highest walkable height in a zone is often precisely `maxZ` — which without this reads as "no
-  // slice", i.e. "not corridor", and refuses to route along a zone's top floor at all.
-  const raw = Math.floor((z - grid.minZ) / grid.sliceHeight);
-  const slice = raw < 0 ? 0 : raw >= grid.slices ? grid.slices - 1 : raw;
-  return grid.inkDistance[slice * cells + at];
+  const clamp = (i: number) => (i < 0 ? 0 : i >= grid.slices ? grid.slices - 1 : i);
+  // Every slice overlapping the forgiven height band, so the answer doesn't depend on where a
+  // boundary happens to fall. Clamped rather than skipped: the geometry's own top and bottom land
+  // exactly on a boundary, and the highest walkable height in a zone is often precisely `maxZ`.
+  const lo = clamp(Math.floor((z - INK_Z_TOL - grid.minZ) / grid.sliceHeight));
+  const hi = clamp(Math.floor((z + INK_Z_TOL - grid.minZ) / grid.sliceHeight));
+  let best = grid.inkLimit + 1;
+  for (let slice = lo; slice <= hi; slice++) {
+    const d = grid.inkDistance[slice * cells + at];
+    if (d < best) best = d;
+  }
+  return best;
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────────────────────
@@ -718,7 +771,7 @@ function snap(grid: RouteGrid, to: RouteStep): Place | undefined {
         // The floor here, if the map says anything about one, else the height we were given.
         const z = floorNear(grid, c, r, to.z);
         if (blocked(grid, at, z)) continue;
-        if (inkCellsAway(grid, at, z) > MAX_INK_CELLS) continue;
+        if (inkCellsAway(grid, at, z) > grid.inkLimit) continue;
         const gap = Math.abs(z - to.z);
         if (gap < bestGap) {
           bestGap = gap;
@@ -817,7 +870,7 @@ export function findRoute(grid: RouteGrid | undefined, start: RouteStep, goal: R
       if (blocked(grid, at, z)) continue;
       // Nothing drawn near here *at this height* is bedrock between two tunnels, not floor — and it
       // has to be measured per height, because in plan alone a stacked zone always has ink somewhere.
-      if (inkCellsAway(grid, at, z) > MAX_INK_CELLS) continue;
+      if (inkCellsAway(grid, at, z) > grid.inkLimit) continue;
       relax({ at, z }, Math.hypot(dc * grid.cell, dr * grid.cell) + heightPenalty(dz));
     }
     // Changing level in place, where a label says there's a way up or down.
@@ -945,7 +998,7 @@ function clearLine(grid: RouteGrid, a: Place, b: Place): boolean {
     const at = r * grid.cols + c;
     const z = a.z + (b.z - a.z) * t;
     if (blocked(grid, at, z)) return false;
-    if (inkCellsAway(grid, at, z) > MAX_INK_CELLS) return false;
+    if (inkCellsAway(grid, at, z) > grid.inkLimit) return false;
   }
   return true;
 }
