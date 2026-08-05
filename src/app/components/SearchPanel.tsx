@@ -17,7 +17,15 @@ type Mode = "name" | "zone";
  * quest's turn-ins grouped under the quest. The open page and every link within it
  * are driven by the shared in-app nav (`useNav`), so nothing jumps to the browser.
  */
-export default function SearchPanel({ prefill }: { prefill?: { text: string; n: number } | null }) {
+export default function SearchPanel({
+  prefill,
+  onPrefillUsed,
+}: {
+  /** Text handed in from outside (screengrab OCR, or the map window) to search for. */
+  prefill?: string | null;
+  /** Called once the prefill has been applied, so the owner can drop it — see the effect. */
+  onPrefillUsed?: () => void;
+}) {
   const nav = useNav();
   const [mode, setMode] = useState<Mode>("name");
 
@@ -75,14 +83,18 @@ export default function SearchPanel({ prefill }: { prefill?: { text: string; n: 
     };
   }, [term, mode, refreshNonce]);
 
-  // A screengrab lookup prefills the box (name mode) and its text searches normally.
-  // Keyed on `prefill` only: it must fire once per lookup, NOT whenever `nav` changes
-  // (that would re-paste the text and block navigation — nav.clear() is a one-shot here).
+  // A screengrab lookup prefills the box (name mode) and its text searches normally. It's a
+  // one-shot: applying it clears the open page, so we tell the owner it's been used and it
+  // drops it. This panel is unmounted whenever another tab shows, and a prefill still sitting
+  // there would be re-applied on the next mount — clicking an item name in the List / Hunt /
+  // Loot tabs jumps here, and would land on the old lookup text instead of the clicked page.
+  // Keyed on `prefill` only, NOT on `nav` changing, for the same reason.
   useEffect(() => {
     if (!prefill) return;
     setMode("name");
     nav.clear();
-    setTerm(prefill.text);
+    setTerm(prefill);
+    onPrefillUsed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
 

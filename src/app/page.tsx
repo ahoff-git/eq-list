@@ -32,7 +32,10 @@ type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "setting
  */
 export default function Home() {
   const [tab, setTab] = usePersistentState<Tab>(STORAGE_KEYS.activeTab, "list");
-  const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
+  // Text handed to the Search box from outside it (see the onPrefill effect). Held here
+  // because SearchPanel is unmounted while another tab shows, and cleared as soon as it
+  // takes it — a prefill left sitting here would be re-applied by every later mount.
+  const [prefill, setPrefill] = useState<string | null>(null);
   // Undetermined until mounted (keeps SSR/first-client render consistent).
   const [inElectron, setInElectron] = useState<boolean | null>(null);
   const list = useShoppingList();
@@ -59,6 +62,7 @@ export default function Home() {
   // Stable so NavProvider's callbacks (and thus `nav`'s identity) don't churn each render
   // (`setTab` is a stable state setter).
   const showSearch = useCallback(() => setTab("search"), [setTab]);
+  const prefillUsed = useCallback(() => setPrefill(null), []);
 
   useEffect(() => {
     setInElectron(!!api());
@@ -73,13 +77,14 @@ export default function Home() {
     api()?.win.setOpacity(opaque ? 1 : sliderOpacity);
   }, [opaque, sliderOpacity, settings]);
 
-  // A screengrab lookup fills the Search box with OCR'd text and jumps here.
+  // A screengrab lookup fills the Search box with OCR'd text and jumps here (so does a
+  // name clicked in the map window, which has no search of its own).
   useEffect(() => {
     const a = api();
     if (!a) return;
     return a.search.onPrefill((text) => {
       setTab("search");
-      setPrefill({ text, n: Date.now() });
+      setPrefill(text);
     });
   }, [setTab]);
 
@@ -153,7 +158,7 @@ export default function Home() {
           {tab === "list" && <ListPanel />}
           {tab === "hunt" && <HuntPanel pickedZone={huntZone} onPickedZone={setHuntZone} />}
           {tab === "loot" && <LootPanel />}
-          {tab === "search" && <SearchPanel prefill={prefill} />}
+          {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
           {tab === "damage" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "settings" && <SettingsPanel />}
