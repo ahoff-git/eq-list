@@ -34,6 +34,4 @@ export const STORAGE_KEYS = {
   mapMobsOpen: "eqlist.map.mobsOpen",
   /** Map window: share-my-kills toggle. */
   mapShareKills: "eqlist.map.shareKills",
-  /** Map window: route mode — click the map for a suggested walking route (off by default). */
-  mapRouting: "eqlist.map.routing",
 } as const;

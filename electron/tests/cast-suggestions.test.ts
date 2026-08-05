@@ -31,6 +31,9 @@ test("a line suggestion says so, and reads as words rather than a spell name", (
     assert.ok(s.label?.trim(), `${s.spell} has a label for the chip`);
   }
   assert.ok(lines.some((s) => s.spell === "invites you"), "a party invite is one click away");
+  // Two shapes, because EQ words them nothing alike: "X invites you to join a group." for the
+  // group, "X has asked you to join the instance: …" for an expedition. Both are in the real log.
+  assert.ok(lines.some((s) => s.spell === "asked you to join"), "an instance invite is offered too");
 });
 
 test("isWatched folds case and whitespace like a real watch", () => {

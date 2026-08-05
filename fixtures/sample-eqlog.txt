@@ -22,6 +22,8 @@
 [Mon Jul 20 19:07:46 2026] --You have looted a Crushbone Belt +2 from an orc centurion's corpse.--
 [Mon Jul 20 19:07:47 2026] You looted a Crushbone Belt +2 from an orc centurion's corpse to create a Crushbone Belt +5.
 [Mon Jul 20 19:08:20 2026] Bristlebane tells you, 'The trickster smiles upon you.'
+[Mon Jul 20 19:08:30 2026] Bunnyslayer invites you to join a group.
+[Mon Jul 20 19:08:30 2026] To join the group, click on the 'FOLLOW' option, or 'DECLINE' to cancel.
 [Mon Jul 20 19:08:55 2026] a Skeletal Monk has been slain by you!
 [Mon Jul 20 19:08:56 2026] --You have looted a Shining Metallic Robe from a Skeletal Monk's corpse.--
 [Mon Jul 20 19:09:20 2026] You receive 3 gold from the corpse.

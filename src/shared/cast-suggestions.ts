@@ -75,12 +75,14 @@ export const CAST_SUGGESTIONS: readonly CastSuggestionGroup[] = [
   },
   {
     // Not spells at all: things said *to you* that are easy to miss with the chat window buried
-    // under a fight. Each is the shortest phrase that survives EQ's wording of the sentence
-    // ("… invites you to join a group." / "… invites you to a party."), so it catches either.
+    // under a fight. Every phrase here was read off a real 95k-line log and checked for what else
+    // it would catch — "invites you" hits all six real invites and nothing else, while the shorter
+    // "invites" would also fire on players discussing invites in chat.
     category: "Said to you",
     suggestions: [
-      { spell: "invites you", onLine: true, label: "Party invite", note: "“<name> invites you to a party / to join a group.”" },
-      { spell: "tells you", onLine: true, label: "Tell", note: "A private message: “<name> tells you, '…'”" },
+      { spell: "invites you", onLine: true, label: "Party invite", note: "“<name> invites you to join a group.”" },
+      { spell: "asked you to join", onLine: true, label: "Instance invite", note: "“<name> has asked you to join the instance: …” — worded nothing like a group invite, so it needs its own watch" },
+      { spell: "tells you", onLine: true, label: "Tell", note: "A private message: “<name> tells you, '…'” — the chattiest of these by far" },
     ],
   },
 ];

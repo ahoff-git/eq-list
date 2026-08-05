@@ -9,7 +9,8 @@ Accepted
 Alerts could only be raised for things the parsers model — a spell beginning to cast
 ([ADR 0035](./0035-cast-alert-overlay-window.md)) or one fading. But the log says a great deal more
 that a player wants to be told about while the chat window is buried under a fight. The prompting
-case: "BunnySlayer invites you to a party." Nothing parses that line, so nothing could alert on it.
+case: "Bunnyslayer invites you to join a group." Nothing parses that line, so nothing could alert
+on it.
 
 The obvious fix — a `parseInvite`, an `InviteEvent`, a fan-out channel, an `onInvite` toggle on a
 watch — buys exactly one message and asks for the whole chain again for the next one (a tell, a
@@ -48,6 +49,21 @@ of four banners on screen. The suggestions steer toward phrases that are rare by
 a bad watch is one tick to turn off; a per-watch cooldown is the fix if it turns out to be needed in
 practice.
 
+The suggested phrases were chosen by replaying a real 95,661-line log through `matchLine` rather
+than from memory, which is the only way to know a substring is aimed well:
+
+| phrase | fires | on |
+| --- | --- | --- |
+| `invites you` | 6 | every real group invite, nothing else |
+| `asked you to join` | 2 | both instance invites |
+| `tells you` | 123 | every `/tell` received across ~2 weeks |
+
+That exercise is also what caught the two traps. **`invites` alone is too short** — it matches
+players *discussing* invites in general chat ("if ur upset ur not gettin invites"). And **a group
+invite and an instance invite share no wording at all** ("X invites you to join a group." versus
+"X has asked you to join the instance: …"), so one substring cannot cover both and they ship as two
+chips.
+
 Matching is a substring of the line, so it cannot tell *who* sent a tell from *what* they said, and
-a watch for "invites you" fires whatever the tail of the sentence is — which is the point: EQ words
-the invite differently across servers, and the short phrase survives both.
+a watch for "invites you" fires whatever the tail of the sentence is — which is the point: the
+phrase survives a server that words the invite differently.

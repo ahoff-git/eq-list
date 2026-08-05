@@ -5,7 +5,6 @@ import { canvasToEqCoords, clampPan, eqToCanvasCoords, fitRect } from "@/shared/
 import { inBands, mapBounds, segmentInBands, vectorProjection, type EqMap, type ZBand } from "@/shared/map/eqmap";
 import { POI_KINDS, poiKind, type PoiKind } from "@/shared/map/poi-kinds";
 import { pickHit } from "@/shared/map/hit-test";
-import type { RouteStep } from "@/shared/map/route";
 import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
 import type { CanvasSize, Loc, MapView, Point, Zone } from "@/shared/map/types";
 
@@ -120,8 +119,6 @@ const MAP_COLORS = {
   fix: "#ff5cf0",
   /** The ring around a kill picked out from the list. */
   emphasis: "#ffffff",
-  /** A suggested walking route. Dashed and cool-toned, so it reads as advice, not as geometry. */
-  route: "#54e0c7",
   /** Map geometry the file gave no color for (it said black, which we can't show). */
   mapLine: "#8ba0bd",
   poi: "#9fd0ff",
@@ -143,10 +140,6 @@ export default function MapPanel({
   placing = false,
   onPlace,
   onPing,
-  routing = false,
-  onRouteTo,
-  route,
-  routeStart,
   onPinClick,
   onKillClick,
   moveMode = false,
@@ -173,19 +166,6 @@ export default function MapPanel({
   placing?: boolean;
   onPlace?: (eq: Loc, clientX: number, clientY: number) => void;
   onPing?: (eq: Loc) => void;
-  /** Route mode: a click on the empty map picks a destination rather than pinging it. */
-  routing?: boolean;
-  onRouteTo?: (eq: Loc) => void;
-  /**
-   * A suggested walking route to draw, start to finish (`findRoute`). Drawn under every marker — it
-   * says how to get somewhere, so it must never hide the somewhere.
-   */
-  route?: RouteStep[];
-  /**
-   * Where a route starts. Drawn as a ring on its own, because a start with no destination yet is
-   * still worth seeing — otherwise placing one by hand gives no feedback at all.
-   */
-  routeStart?: { y: number; x: number };
   onPinClick?: (pin: RenderPin, clientX: number, clientY: number) => void;
   /** A kill marker was clicked — the page decides what "go and see it" means. */
   onKillClick?: (kill: RenderKill) => void;
@@ -539,49 +519,6 @@ export default function MapPanel({
       ctx.restore();
     }
 
-    // Where the route starts, whether or not there's a route yet.
-    if (routeStart) {
-      const p = toScreen(routeStart);
-      if (p) {
-        ctx.save();
-        ctx.strokeStyle = MAP_COLORS.route;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    // The suggested route, under everything else. Waypoints are marked because they're the corners
-    // you actually steer by — the line between two of them is just "keep going".
-    if (route && route.length > 1) {
-      ctx.save();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = MAP_COLORS.route;
-      ctx.globalAlpha = 0.85;
-      ctx.setLineDash([7, 5]);
-      ctx.beginPath();
-      let started = false;
-      for (const step of route) {
-        const p = toScreen(step);
-        if (!p) continue;
-        if (started) ctx.lineTo(p.x, p.y);
-        else {
-          ctx.moveTo(p.x, p.y);
-          started = true;
-        }
-      }
-      ctx.stroke();
-      ctx.restore();
-      for (const step of route.slice(1, -1)) {
-        const p = toScreen(step);
-        if (p) drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.route, size: 3 });
-      }
-      const end = toScreen(route[route.length - 1]);
-      if (end) drawCircle(end.x, end.y, ctx, { color: MAP_COLORS.route, size: 5 });
-    }
-
     for (let i = 1; i < trail.length; i++) {
       const a = toScreen(trail[i - 1]);
       const b = toScreen(trail[i]);
@@ -646,7 +583,7 @@ export default function MapPanel({
 
     ctx.textBaseline = "alphabetic";
   }, [
-    loc, trail, peers, pings, pins, kills, showKillConfidence, canvasSize, redrawKey, route, routeStart,
+    loc, trail, peers, pings, pins, kills, showKillConfidence, canvasSize, redrawKey,
     showGrid, toScreen, frame, view, applyView, vector, visiblePois, emphasis, emphasized, projection,
   ]);
 
@@ -757,7 +694,6 @@ export default function MapPanel({
     const eq = eqAt(e);
     if (!eq) return;
     if (placing) onPlace?.(eq, e.clientX, e.clientY);
-    else if (routing) onRouteTo?.(eq);
     else onPing?.(eq);
   }
 
@@ -784,7 +720,7 @@ export default function MapPanel({
       ? "grab"
       : hovered?.target.pin || hovered?.target.kill
         ? "pointer"
-        : placing || routing || onPing
+        : placing || onPing
           ? "crosshair"
           : zoom > 1
             ? "grab" // zoomed in, so there's somewhere to drag to

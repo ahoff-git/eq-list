@@ -3,6 +3,10 @@
 Architecture Decision Records in the Michael Nygard format. Numbers are
 sequential and immutable; supersede rather than edit an `Accepted` decision.
 
+0049 is deliberately absent: it recorded a pathfinding experiment on the map's
+geometry that was removed rather than kept, and the record went with it. The
+number is retired, not free.
+
 ## Log
 - [0001: Record architecture decisions as ADRs](./0001-record-architecture-decisions.md)
 - [0002: Electron desktop shell over the existing Next.js app](./0002-electron-shell-over-nextjs.md)
@@ -52,7 +56,6 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 - [0046: We name our own ICE servers, because PeerJS's defaults are not ours to trust](./0046-our-own-ice-servers-not-peerjs-defaults.md) — *the connectivity layer under 0008's transport and 0028's fixes*
 - [0047: Money is copper, counted in two ledgers](./0047-money-is-copper-in-two-ledgers.md) — *the money half of 0017's camp question; coin per mob pools like 0024's drop rates, item prices derive from the loot ledger*
 - [0048: A map label is read by its words, and a bracket it can't read defers](./0048-a-map-label-is-read-by-its-words.md) — *re-tallies the label kinds 0039 put on screen; multi-select floors and a height window over 0040's storeys*
-- [0049: A walking route is inferred from drawn lines, and says how much to believe it](./0049-a-route-is-inferred-from-drawn-lines.md) — *reads 0039's geometry for something it never claimed to state; leans on 0048's label kinds and stays clear of 0040's refusal to name storeys*
 - [0050: A watch can read a whole log line, not just a spell](./0050-a-watch-can-read-a-whole-log-line.md) — *widens 0035's alert from what the parsers model to anything the game prints (a party invite, a tell), without a new event kind per message*
 
 - [0051: An index is maintained, not re-derived — and a change announces itself](./0051-an-index-is-maintained-and-a-change-announces-itself.md) — *makes 0044's "replay cost is a non-issue" true for a played log and not only a fresh one; keeps 0033's line-keyed idempotence, and gives the map a real change signal instead of a proxy for one*
@@ -66,13 +69,6 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
   ([ADR 0050](./0050-a-watch-can-read-a-whole-log-line.md)). A careless one ("hit") fires
   thousands of times a night. Is the overlay's four-banner cap enough, or does a watch want a
   cooldown — and if so, per watch or per matched sentence?
-- A route across a dungeon whose levels are joined by nothing the labels name is genuinely
-  unroutable, but on a large map the search can only report that it *gave up*
-  ([ADR 0049](./0049-a-route-is-inferred-from-drawn-lines.md)). Is there a cheap way to prove
-  disconnection — a coarse reachability pass first — or is the honest "gave up" enough?
-- Routes are refused outright on zones whose lines are terrain rather than walls (same ADR).
-  Would a plain straight line, clearly labelled as no more than that, be more use than nothing
-  in Greater Faydark — or does drawing one imply a walkability we can't check?
 - Open Relay's community TURN is best-effort and not production-grade
   ([ADR 0046](./0046-our-own-ice-servers-not-peerjs-defaults.md)). Is peer sharing worth
   running our own TURN for, or is "works for most, fails for symmetric NAT" acceptable?

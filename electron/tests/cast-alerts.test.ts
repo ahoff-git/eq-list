@@ -155,14 +155,25 @@ test("a fade from hours ago raises nothing, like a stale cast", () => {
 // invite ("BunnySlayer invites you to a party") raises an alert at all — nothing parses that line.
 
 const line = (message: string, at = "2026-07-29T21:00:00") => ({ message, at });
-const INVITE = "BunnySlayer invites you to a party.";
+/** Verbatim from a real log — this is the sentence the game actually prints. */
+const INVITE = "Bunnyslayer invites you to join a group.";
 const lineWatch = (over: Partial<CastWatch> = {}) =>
   settings({ watches: [{ id: "invite", spell: "invites you", enabled: true, onLine: true, onCast: false, ...over }] });
 
 test("a line watch matches the words of a whole log line, case-insensitively", () => {
   assert.equal(matchLine(line(INVITE), lineWatch(), NOW)?.id, "invite");
-  assert.equal(matchLine(line("BunnySlayer INVITES YOU to join a group."), lineWatch(), NOW)?.id, "invite");
+  assert.equal(matchLine(line("BunnySlayer INVITES YOU to a party."), lineWatch(), NOW)?.id, "invite");
   assert.equal(matchLine(line("You have entered Befallen."), lineWatch(), NOW), null);
+});
+
+// What the phrase is *for*: the real log's other invite-shaped lines must stay quiet. Your own
+// outgoing invite isn't news, and players talk about invites in chat all evening.
+test("the party-invite phrase catches the game's invite and not the talk around it", () => {
+  const w = lineWatch();
+  assert.equal(matchLine(line("You invite bunnyslayer to join your group."), w, NOW), null);
+  assert.equal(matchLine(line("Pons tells General:2, 'if ur upset ur not gettin invites, i can see what i can do'"), w, NOW), null);
+  assert.equal(matchLine(line("To join the group, click on the 'FOLLOW' option, or 'DECLINE' to cancel."), w, NOW), null);
+  assert.equal(matchLine(line("bunnyslayer rejects your offer to join the group."), w, NOW), null);
 });
 
 test("only a watch that asked for lines sees them, and it doesn't leak into casts", () => {

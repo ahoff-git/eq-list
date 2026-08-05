@@ -77,8 +77,9 @@ unit-tested.
 - **Static checks**: `npm run typecheck` (both tsconfigs) and `npm run lint`.
 
 ## Simulating the game log
-`npm run sim` replays `fixtures/sample-eqlog.txt` (example loot, chatter and a **full
-combat exchange** — melee, a crit, a riposte, spell damage, a pet, a damage shield, a
+`npm run sim` replays `fixtures/sample-eqlog.txt` (example loot, chatter, a **party invite**
+verbatim from a real log — so a line watch can be seen firing without waiting on a groupmate — and a
+**full combat exchange** — melee, a crit, a riposte, spell damage, a pet, a damage shield, a
 DoT tick, a heal, misses, a looted stack and a depot loot — in the real EQ format) into a
 target `eqlog_*.txt`, restamping each line to the current time so it looks live. The
 sample's pet lines are named for the character `Kainos`, so replaying into an

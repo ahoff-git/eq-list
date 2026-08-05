@@ -46,6 +46,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# Throwaway Electron profile used when driving the app for a screenshot (see specs/testing).
-.tmp-drive-profile/
