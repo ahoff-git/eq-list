@@ -22,7 +22,11 @@ world coordinates, so a map knows where it is. See
     and return `undefined` without one, and `clampPan` (a zoomed map can't be dragged off into blank
     space). Math derived in [data-model.md](./data-model.md).
   - `zones.ts` — `CURATED_ZONES` (the few names the solver gets wrong, see **Zone names**),
-    `findZone` (case- and leading-"the"-insensitive, so the log's wording resolves), `sortZones`,
+    `findZone` (the log's wording resolves: it folds through `normalizeZone` — the same fold the
+    wiki-side zone matching uses — so case, a leading "the", a difficulty number and the ruleset
+    tag beside it ("The Steamfont Mountains 2 (Adaptive)") all wash out and a harder zone still
+    gets its map, see
+    [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)), `sortZones`,
     and `onLayer` for floor-scoped markers (against the *set* of floors in view).
 - **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawLine`, `drawCircle`,
   `clearCanvas`. Geometry itself is drawn by `MapPanel` onto the static lower canvas, batched into
@@ -37,7 +41,12 @@ world coordinates, so a map knows where it is. See
   `CH.locChanged` broadcast → `usePlayerLoc` / `usePlayerTrail`). The **trail** (the line
   between logged positions) is owned by the map window so the toolbar's **∿** button can
   clear it; it also clears itself when you zone, since a `LocEvent` carries no zone and
-  the old path would otherwise be drawn across the new map.
+  the old path would otherwise be drawn across the new map. **So does your position**:
+  `main.ts` drops `currentLoc` and broadcasts `null` on a zone change, so the dot goes rather than
+  standing at the last zone's coordinates on this zone's map
+  ([ADR 0060](../decisions/0060-a-position-belongs-to-the-zone-it-was-taken-in.md)). Everything
+  that reads a `/loc` now agrees a position expires at the zone line — including the kill log,
+  whose fixes must match the kill's zone *verbatim*, unknown zone included.
 - **UI** — `MapPanel` (`src/app/components/MapPanel.tsx`) stacks two canvases (static map + moving
   overlay) **filling the window**, sized by a `ResizeObserver`. They were square, which threw away
   the difference between the window's width and its height — on a wide window, most of the screen.
@@ -125,6 +134,12 @@ world coordinates, so a map knows where it is. See
   curated names win because the solver is occasionally sure and wrong (it offers `neriaka` the
   Fourth Gate, which is a different file), and a zone still nameless shows as `gukbottom`, which is
   honest and selectable.
+  **The catalogue is not exempt from the solver's rules** — it outranks them, which makes a wrong
+  entry the one naming mistake that doesn't fail closed: it draws another zone's map under the
+  right name, and every position plotted on it is somewhere else. `Qeynos Hills` was curated onto
+  `qey2hh1`, whose own exit label reads `to Qeynos Hills` — the neighbour test the solver applies —
+  because it is West Karana; the hills are `qeytoqrg`. So before adding an entry, read the file's
+  `to …` labels: **a map that links to X is next to X.**
 - **The zone picker** (`ZonePicker`) is a **type-to-find** box, not a dropdown: 568 zones in a
   `<select>` is a scroll rather than a choice. Ranking is the app's existing `fuzzyRank` (token
   overlap plus Levenshtein), over the zone name **and its file name** — the file is what a zone we
@@ -243,7 +258,12 @@ world coordinates, so a map knows where it is. See
   of it you saw yourself. `src/shared/mob-stats.ts` does the rolling-up and the pooling; see
   [ADR 0024](../decisions/0024-mob-knowledge.md).
 - **Kill heatmap** (the ☠ toolbar panel) — where kills happened, drawn from the recorded kill
-  log (`electron/kill-log.ts`). Each dot fades and shrinks with **confidence**, and carries the
+  log (`electron/kill-log.ts`), asked for **by zone — every variant of it**. One Steamfont is drawn
+  by one map file, so a kill at `The Steamfont Mountains 2 (Adaptive)` belongs on the ordinary map:
+  `killLog.kills(zone)` matches through `sameZone` (exact after folding, *not* the loose
+  `zoneMatches` — `commonlands` sits inside `east commonlands`), and mob observations tally under
+  the same folded key. See [ADR 0059](../decisions/0059-a-zone-s-variants-are-one-zone.md).
+  Each dot fades and shrinks with **confidence**, and carries the
   marker from `src/shared/kill-confidence.ts` — the same glyph the kill list shows, so a faint
   dot and its row agree. Anything below "approximate" isn't plotted at all: it stays in the
   list, labelled, because an inferred position drawn like a measured one is worse than none.
@@ -258,6 +278,16 @@ world coordinates, so a map knows where it is. See
   between a mob and one of its kills, so without that backstop, walking the cursor out of a kill row
   would leave a mob lit up for good. Emphasis by mob also lights **peers'** kills of the same mob,
   since "where did those die" includes what the room saw.
+
+  The **[Hunt tab](../overlay-ui/README.md) asks the same question from the other window**
+  (`map.emphasize` → `KillEmphasis`, which is why that shape lives in shared types rather than
+  beside the list). Both write one piece of state, so whichever cursor moved last is the one being
+  answered. Two rules keep a hover from being a command: it **never opens the map**, and an
+  emphasis that matches nothing drawn here is **ignored** rather than honoured — the Hunt tab can
+  point at a mob that died in another zone or was never killed at all, and dimming every marker to
+  say "no" would be worse than saying nothing. Mob names are compared through `mobKey`, since the
+  name pointed at may be the wiki's ("a Gnoll Pup") while the kill log's is stripped and lowercase
+  ("gnoll pup") — the same fold mob knowledge already uses.
 
   The panel's filters — time window, mob, what dropped, dropped-anything, confidence floor —
   come from `src/shared/kill-filters.ts` and are applied to **both** the map and the list, so

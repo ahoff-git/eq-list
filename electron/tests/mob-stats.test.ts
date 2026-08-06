@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeObservations, mobKey, observeMobs, type MobObservation } from "../../src/shared/mob-stats";
+import { mergeObservations, mobKey, observeMobs, sumObservations, type MobObservation } from "../../src/shared/mob-stats";
 import type { KillRecord } from "../../src/shared/types";
 
 test("mobKey folds the wiki's article and case onto the kill log's stripped name", () => {
@@ -81,6 +81,42 @@ test("the same mob in two zones is two tallies", () => {
 
 test("kills with no zone are skipped — an unplaceable rate compares to nothing", () => {
   assert.deepEqual(observeMobs([kill({ mob: "a rat", zone: undefined })]), []);
+});
+
+// One Steamfont, whatever the door was set to (ADR 0059). The difficulty changes what the mobs
+// hit for; it doesn't make it a different animal in a different place.
+test("a zone's difficulty variants are one tally, named for the zone", () => {
+  const obs = observeMobs([
+    kill({ mob: "a rat", zone: "The Steamfont Mountains", drops: ["Rat Ear"] }),
+    kill({ mob: "a rat", zone: "The Steamfont Mountains 2 (Adaptive)", drops: ["Rat Ear"] }),
+    kill({ mob: "a rat", zone: "Steamfont Mountains 3" }),
+  ]);
+  assert.equal(obs.length, 1);
+  assert.equal(obs[0].kills, 3);
+  assert.deepEqual(obs[0].drops, { "Rat Ear": 2 });
+  // Named for the place, not the first door seen — the sample is no longer one variant's.
+  assert.equal(obs[0].zone, "The Steamfont Mountains");
+});
+
+// Retired tallies and peers' carry whatever their build stamped. Folding at the key is what makes
+// merging them retroactive: no migration, and no sample split in two by a spelling.
+test("a tally stored under a decorated zone merges with the plain one", () => {
+  const older: MobObservation = {
+    mob: "a rat",
+    zone: "Steamfont Mountains 2 (Adaptive)",
+    kills: 10,
+    drops: { "Rat Ear": 4 },
+    lastAt: "2026-07-29T01:00:00.000Z",
+  };
+  const [summed] = sumObservations([older], observeMobs([kill({ mob: "a rat", zone: "Steamfont Mountains" })]));
+  assert.equal(summed.kills, 11);
+  assert.equal(summed.zone, "Steamfont Mountains");
+
+  const [pooled] = mergeObservations(observeMobs([kill({ mob: "a rat", zone: "Steamfont Mountains" })]), [
+    { ...older, by: "Fippy" },
+  ]);
+  assert.equal(pooled.kills, 11);
+  assert.equal(pooled.myKills, 1);
 });
 
 test("the roam area is the middle of where you killed it, and how far that spreads", () => {

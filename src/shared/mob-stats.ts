@@ -20,6 +20,8 @@
  * display, and both use exactly this code.
  */
 import { stripArticle } from "./log-parser";
+import { normalizeZone } from "./sources";
+import { zoneBaseName } from "./names";
 import type { KillRecord } from "./types";
 
 /** Positions this poor are ignored when working out where a mob lives. */
@@ -82,8 +84,15 @@ export interface MobKnowledge {
   copperPerKill: number;
 }
 
-/** Key a mob to its zone: the same mob elsewhere is a different animal to a hunter. */
-const keyOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${zone.toLowerCase()}`;
+/**
+ * Key a mob to its zone: the same mob elsewhere is a different animal to a hunter.
+ *
+ * The zone folds through `normalizeZone`, so a zone's difficulty variants are one zone and their
+ * kills are one sample (ADR 0059). Folding *here*, at the key, is also what makes it retroactive
+ * and version-tolerant: observations already retired under a decorated name, and a peer's sent by
+ * a build that never folded, merge into the same tally with no migration and no lost counts.
+ */
+const keyOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${normalizeZone(zone)}`;
 
 /**
  * Roll your kill log up into observations. Kills with no zone are skipped — a drop rate that
@@ -106,7 +115,11 @@ export function observeMobs(kills: KillRecord[]): MobObservation[] {
     const key = keyOf(kill.mob, kill.zone);
     let obs = byKey.get(key);
     if (!obs) {
-      obs = { mob: kill.mob, zone: kill.zone, kills: 0, drops: {}, copper: 0, lastAt: kill.at, points: [] };
+      // Named for the zone, not for the door you came in by: this tally now pools every
+      // difficulty, so claiming the first one seen would misdescribe its own sample. The
+      // record still has the log's full wording; the observation is about the place.
+      const zone = zoneBaseName(kill.zone);
+      obs = { mob: kill.mob, zone, kills: 0, drops: {}, copper: 0, lastAt: kill.at, points: [] };
       byKey.set(key, obs);
     }
     obs.kills += 1;
@@ -150,7 +163,10 @@ export function sumObservations(...groups: MobObservation[][]): MobObservation[]
       const key = keyOf(obs.mob, obs.zone);
       let sum = byKey.get(key);
       if (!sum) {
-        sum = { mob: obs.mob, zone: obs.zone, kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, areas: [] };
+        // Base name, as in `observeMobs`: what's summed here can include tallies retired under a
+        // decorated name, and the sum is about the zone rather than any one door into it.
+        const zone = zoneBaseName(obs.zone);
+        sum = { mob: obs.mob, zone, kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, areas: [] };
         byKey.set(key, sum);
       }
       sum.kills += obs.kills;
@@ -177,7 +193,8 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
     if (!known) {
       known = {
         mob: obs.mob,
-        zone: obs.zone,
+        // Base name again — a peer's build may not fold, and the pool is about the zone.
+        zone: zoneBaseName(obs.zone),
         kills: 0,
         myKills: 0,
         drops: [],

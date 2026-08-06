@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   groupDropsByZone,
+  sameZone,
   zoneMatches,
   splitDropsByCurrentZone,
   otherSources,
@@ -39,6 +40,31 @@ test("zoneMatches is loose about name variants", () => {
   assert.ok(zoneMatches("Highpass", "Highpass Hold"));
   assert.ok(zoneMatches("The Feerrott", "Feerrott"));
   assert.ok(!zoneMatches("Befallen", "Blackburrow"));
+  // A harder zone is the same zone: the wiki lists a gnoll's drops once, for every difficulty.
+  assert.ok(zoneMatches("Blackburrow 3", "Blackburrow"));
+  assert.ok(!zoneMatches("Befallen 2", "Blackburrow"));
+});
+
+// The keying fold, and the whole reason it isn't `zoneMatches`: anything stored per zone is
+// answered by exact identity, or a query for one zone would return its neighbour's (ADR 0059).
+test("sameZone folds the decoration but never widens to a neighbour", () => {
+  assert.ok(sameZone("The Steamfont Mountains 2 (Adaptive)", "Steamfont Mountains"));
+  assert.ok(sameZone("Blackburrow 3", "Blackburrow"));
+  assert.ok(sameZone("The Feerrott", "feerrott"));
+  // What `zoneMatches` would wrongly say yes to, and this must not.
+  assert.ok(zoneMatches("East Commonlands", "Commonlands"));
+  assert.ok(!sameZone("East Commonlands", "Commonlands"));
+  assert.ok(!sameZone("Befallen", "Blackburrow"));
+  // A zone we never learned the name of has nothing to compare.
+  assert.ok(!sameZone(undefined, "Blackburrow"));
+});
+
+test("drops in a zone group under it whichever difficulty you're standing in", () => {
+  const grouped = groupDropsByZone([
+    { kind: "drop", where: "a gnoll", detail: "Blackburrow" },
+    { kind: "drop", where: "a gnoll pup", detail: "Blackburrow 3" },
+  ]);
+  assert.deepEqual(grouped, [{ zone: "Blackburrow", mobs: ["a gnoll", "a gnoll pup"] }]);
 });
 
 test("splitDropsByCurrentZone separates here from elsewhere", () => {

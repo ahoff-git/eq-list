@@ -21,18 +21,28 @@ unit-tested.
     real clock times — an early version wrote "00:00:60", which `Date.parse` rejects, and
     the resulting NaN quietly zeroed a window's span.
   - `src/shared/drop-truth.ts` → `electron/tests/drop-truth.test.ts` (confirmed / undocumented
-    / unseen verdicts, when a wiki claim becomes suspicious, and the sample size at which our
-    own observations take over from the wiki's figure).
+    / unseen verdicts, when a wiki claim becomes suspicious, the sample size at which our
+    own observations take over from the wiki's figure, and every grade of an item pooling into
+    one row with its counts *added* rather than overwritten).
+  - `src/shared/names.ts` → `electron/tests/names.test.ts` (an item's `+N` grade and a zone's
+    difficulty number and ruleset tag read off a name and taken back off it — and, the half that
+    matters, a name carrying none of them surviving untouched).
   - `src/shared/mob-stats.ts` → `electron/tests/mob-stats.test.ts` (rolling kills up into
     observations, observed drop rates and their denominators, roam areas ignoring untrustworthy
     positions, and pooling a peer's counts while keeping provenance — including that a pooled
-    area *widens* rather than averaging inward).
+    area *widens* rather than averaging inward, and that a zone's difficulty variants tally as one
+    sample even when an older or a peer's entry was stored under the decorated name).
   - `src/shared/kill-filters.ts` + `kill-confidence.ts` → `electron/tests/kill-filters.test.ts`
     (time windows, mob/drop matching, the confidence floor, and every tier having a distinct
     glyph so the map doesn't depend on colour alone).
   - `electron/kill-log.ts` → `electron/tests/kill-log.test.ts` (placement from the last fix,
     confidence decay, the movement penalty, dead reckoning, and recording kills that can't be
-    placed at all).
+    placed at all). Also the two halves of the zone fold, which pull opposite ways: reading kills
+    back by zone reaches every difficulty variant, while a `/loc` fix from another variant still
+    can't place a kill — changing difficulty is a teleport like any other zoning. Including the
+    hole that let a fix taken *before the zone was known* place kills anywhere
+    ([ADR 0060](../decisions/0060-a-position-belongs-to-the-zone-it-was-taken-in.md)): unknown
+    matches only unknown.
   - `electron/hp-estimate.ts` → `electron/tests/hp-estimate.test.ts` (floors from survived
     damage, ceilings from deaths at full health, and — the important half — every case
     where it must *refuse* to infer: healing, lulls, your own buffs fading, overkill, and a
@@ -50,7 +60,17 @@ unit-tested.
     ordering, per-group progress, and the cross-group demand breakdown behind the
     entry-count hover — pinned to sum to `itemTotals`).
   - `src/shared/sources.ts` → `electron/tests/sources.test.ts` (drops-by-zone,
-    loose zone matching, current-zone split).
+    loose zone matching including a zone made harder, current-zone split, and `sameZone` — the
+    strict fold used for keying — refusing the neighbour that `zoneMatches` happily accepts).
+  - `src/shared/loot-filters.ts` → `electron/tests/loot-filters.test.ts` (each filter narrowing the
+    ledger, "on my list" matching the way the store matches, tallies counting stacks rather than
+    lines, and the default sort leaving same-second drops in the order they were looted).
+  - `src/shared/sorting.ts` → `electron/tests/sorting.test.ts` (what a header click does, and that a
+    sort is stable and non-mutating — both of which its callers lean on).
+  - `src/shared/tooltip.ts` → `electron/tests/tooltip.test.ts` (a hover card placed right of its
+    anchor, left when the right won't fit, sliding up to clear the window's foot, the below/above
+    fallback for a window too narrow for either side — flipped without covering the anchor — and the
+    no-room-anywhere case that must clip rather than cover).
   - `electron/wiki/parse.ts` → `electron/tests/wiki-parse.test.ts`, pinned against
     real page HTML in `fixtures/wiki/` (item drops, quest turn-ins/rewards, recipe
     components). Re-capture a fixture only when the wiki's markup actually changes.

@@ -87,6 +87,13 @@ a real run. This is a *verification* list, not open work — open work lives in 
   case that needed a backstop: leave the list from *inside* an expanded kill row and confirm the
   emphasis clears rather than sticking. On a camp with hundreds of kills, check the ring still reads
   at a glance and that the dimming doesn't make the heatmap look empty.
+- **Hunt tab → map emphasis** (two windows). With the map open on a zone you've camped, run the
+  cursor down the Hunt tab's mob rows: a mob you've killed here should ring its dots. Then the three
+  cases that must do **nothing at all** — a mob from another zone, a mob you've never killed, and
+  the map window closed (it must not open). Confirm nothing dims in those cases, since a map that
+  greys out to say "no" is worse than one that ignores you. Check a mob the wiki names with an
+  article ("a gnoll pup") still rings the kill log's own spelling. Finally the backstop: hover a row,
+  switch tabs without leaving the row, and confirm the map clears rather than staying lit.
 - **Map label filter (👁).** On a busy zone (Greater Faydark, a Brewall dungeon) confirm each kind
   switches off and on, that a **section heading** switches its whole group and shows a dash when only
   part of it is on, that the counts match what's drawn, that the swatch beside each row is the color

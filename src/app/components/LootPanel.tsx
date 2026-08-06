@@ -1,10 +1,27 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useItemPrices, useLootFeed, useShoppingList } from "@/lib/hooks";
 import { lootKey } from "@/shared/loot-feed";
+import {
+  DEFAULT_LOOT_FILTERS,
+  DEFAULT_LOOT_SORT,
+  DEFAULT_PRICE_SORT,
+  LOOT_FATES,
+  filterLoot,
+  isFiltered,
+  lootSources,
+  sortLoot,
+  sortPrices,
+  tallyFates,
+  type LootFilters,
+  type LootSortKey,
+  type PriceSortKey,
+} from "@/shared/loot-filters";
 import { normalizeItemName } from "@/shared/grouping";
 import { describeCoins, formatCoins } from "@/shared/money";
+import type { Sort } from "@/shared/sorting";
 import ItemLink from "./ItemLink";
+import SortHeader from "./SortHeader";
 import type { ItemPrice, LootEvent, LootFate } from "@/shared/types";
 
 /**
@@ -12,22 +29,27 @@ import type { ItemPrice, LootEvent, LootFate } from "@/shared/types";
  * to make something else. The log distinguishes all four and they matter differently: a sold item
  * is gone, a combined one turned into something, a stored one is in a depot rather than your bags.
  *
+ * **Two views, not one scroll.** The drops and the prices answer different questions, and stacking
+ * them meant a few hundred rows of ledger pushed "what it sells for" off the bottom of the screen
+ * where nobody would ever see it. They're segmented the way the damage tab's scopes are, so each
+ * one gets the panel.
+ *
  * **The ledger, not the session.** `loot-log.ts` persists it and reads it back on launch, so what's
- * listed here reaches back through previous runs. The wording used to say "this session", which was
- * true of the renderer-side feed this replaced and has been a quiet lie since.
+ * listed here reaches back through previous runs. That's also why it needs filters: by the second
+ * evening this is mostly trash you've already dealt with.
  *
  * Names are `ItemLink`s, so the same hover card and in-app navigation the List tab gives
  * work here too — the point of the tab is to notice *what you got* without having to know
  * in advance to add it to a list.
  *
- * Rows on your shopping list are highlighted. That's deliberately the only highlight rule
- * for now: it's free (the list is already in hand) and it can't cry wolf. Broader rules
- * ("used by a quest in my level range in this zone") need filters and an ignore list before
- * they'd be signal rather than noise — see the todo.
+ * Rows on your shopping list are highlighted, and "on my list" is one of the filters. That's
+ * deliberately still the only highlight rule: it's free (the list is already in hand) and it can't
+ * cry wolf. Broader rules ("used by a quest in my level range in this zone") are a filter question
+ * now that there are filters — see the todo.
  *
- * The prices table underneath is the item half of the money question (ADR 0047): an auto-sell
- * is the only line that ever prices an item, and a price holds wherever the item dropped — so
- * it's worth keeping per item, apart from what any one mob's corpses paid.
+ * The prices view is the item half of the money question (ADR 0047): an auto-sell is the only line
+ * that ever prices an item, and a price holds wherever the item dropped — so it's worth keeping per
+ * item, apart from what any one mob's corpses paid.
  */
 const FATE_LABEL: Record<LootFate, string> = {
   kept: "kept",
@@ -35,6 +57,8 @@ const FATE_LABEL: Record<LootFate, string> = {
   stored: "stored",
   combined: "combined",
 };
+
+type View = "drops" | "prices";
 
 export default function LootPanel() {
   const drops = useLootFeed(200);
@@ -44,17 +68,25 @@ export default function LootPanel() {
   // every launch, so on its own it can repeat the value it already held and the refetch is skipped.
   const prices = useItemPrices(drops[0] ? lootKey(drops[0]) : "");
 
+  const [view, setView] = useState<View>("drops");
+  const [filters, setFilters] = useState<LootFilters>(DEFAULT_LOOT_FILTERS);
+  const [lootSort, setLootSort] = useState<Sort<LootSortKey>>(DEFAULT_LOOT_SORT);
+  const [priceSort, setPriceSort] = useState<Sort<PriceSortKey>>(DEFAULT_PRICE_SORT);
+
   // Names on the shopping list, normalized the same way the store matches them.
   const wanted = useMemo(
     () => new Set(list.entries.map((e) => normalizeItemName(e.name))),
     [list.entries],
   );
 
-  const totals = useMemo(() => {
-    const counts = { kept: 0, sold: 0, stored: 0, combined: 0 } as Record<LootFate, number>;
-    for (const d of drops) counts[d.fate] += d.qty;
-    return counts;
-  }, [drops]);
+  const shown = useMemo(
+    () => sortLoot(filterLoot(drops, filters, wanted), lootSort),
+    [drops, filters, wanted, lootSort],
+  );
+  // Tallied over what's on screen, so the numbers describe what you're actually looking at.
+  const totals = useMemo(() => tallyFates(shown), [shown]);
+  const sources = useMemo(() => lootSources(drops), [drops]);
+  const sortedPrices = useMemo(() => sortPrices(prices, priceSort), [prices, priceSort]);
 
   if (drops.length === 0) {
     return (
@@ -71,30 +103,187 @@ export default function LootPanel() {
   return (
     <div>
       <div className="row wrap" style={{ marginBottom: 12 }}>
-        <span className="muted small" title="The most recent drops on record, newest first — kept across restarts">
-          {drops.length} recent drop{drops.length === 1 ? "" : "s"}
-        </span>
+        <div className="segmented">
+          <button
+            className={segCls(view === "drops")}
+            onClick={() => setView("drops")}
+            title="Every drop on record, newest first — kept across restarts"
+          >
+            Drops
+          </button>
+          <button
+            className={segCls(view === "prices")}
+            onClick={() => setView("prices")}
+            title="What your trash sells for, learned from your own auto-sells"
+          >
+            Sells for{prices.length ? ` (${prices.length})` : ""}
+          </button>
+        </div>
         <span className="spacer" />
-        {(Object.keys(FATE_LABEL) as LootFate[])
-          .filter((fate) => totals[fate] > 0)
-          .map((fate) => (
-            <span key={fate} className={`fate-tally f-${fate}`}>
-              {totals[fate]} {FATE_LABEL[fate]}
+        {view === "drops" && (
+          <>
+            <span className="muted small" title="Drops shown, of the whole ledger">
+              {isFiltered(filters) ? `${shown.length} of ${drops.length}` : `${drops.length} drop${drops.length === 1 ? "" : "s"}`}
             </span>
-          ))}
+            {LOOT_FATES.filter((fate) => totals[fate] > 0).map((fate) => (
+              <span key={fate} className={`fate-tally f-${fate}`}>
+                {totals[fate]} {FATE_LABEL[fate]}
+              </span>
+            ))}
+          </>
+        )}
       </div>
 
-      <div className="loot-rows">
-        {/* Keyed by the drop's identity, not `logId-item`. The ledger outlives a run while `logId`
-            restarts at zero each launch, so that pair repeats across runs — two rows claiming one
-            key, which React resolves by reusing the wrong node (and warns about). `lootKey` is the
-            same identity the feed merges on, so the list and the merge agree on what one drop is. */}
-        {drops.map((drop) => (
-          <LootRow key={lootKey(drop)} drop={drop} wanted={wanted.has(normalizeItemName(drop.item))} />
+      {view === "drops" ? (
+        <>
+          <LootFilterBar filters={filters} onFilters={setFilters} sources={sources} />
+          <DropTable drops={shown} wanted={wanted} sort={lootSort} onSort={setLootSort} />
+        </>
+      ) : (
+        <PriceTable prices={sortedPrices} sort={priceSort} onSort={setPriceSort} />
+      )}
+    </div>
+  );
+}
+
+/** The filters, in the order you'd reach for them: what happened to it, what it was, whose corpse. */
+function LootFilterBar({
+  filters,
+  onFilters,
+  sources,
+}: {
+  filters: LootFilters;
+  onFilters: (next: LootFilters) => void;
+  sources: string[];
+}) {
+  const set = <K extends keyof LootFilters>(key: K, value: LootFilters[K]) =>
+    onFilters({ ...filters, [key]: value });
+
+  return (
+    <div className="row wrap loot-filters">
+      <div className="segmented">
+        <button className={segCls(filters.fate === "all")} onClick={() => set("fate", "all")} title="Every fate">
+          all
+        </button>
+        {LOOT_FATES.map((fate) => (
+          <button
+            key={fate}
+            className={segCls(filters.fate === fate)}
+            onClick={() => set("fate", fate)}
+            title={FATE_HINT[fate]}
+          >
+            {FATE_LABEL[fate]}
+          </button>
         ))}
       </div>
 
-      <PriceTable prices={prices} />
+      <input
+        className="field sm"
+        placeholder="item…"
+        value={filters.item}
+        onChange={(e) => set("item", e.target.value)}
+        title="Only drops whose name contains this"
+      />
+
+      <select
+        className="select-sm"
+        value={filters.source}
+        onChange={(e) => set("source", e.target.value)}
+        title="Only drops off this corpse"
+      >
+        <option value="">any corpse</option>
+        {sources.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+
+      <label className="row" style={{ gap: 4 }} title="Only drops that are on your shopping list">
+        <input
+          type="checkbox"
+          checked={filters.wantedOnly}
+          onChange={(e) => set("wantedOnly", e.target.checked)}
+        />
+        <span className="small">on my list</span>
+      </label>
+
+      {isFiltered(filters) && (
+        <button className="btn ghost sm" onClick={() => onFilters(DEFAULT_LOOT_FILTERS)} title="Show everything again">
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+const FATE_HINT: Record<LootFate, string> = {
+  kept: "Went into your bags",
+  sold: "Auto-sold on the spot — the only line that ever states a price",
+  stored: "Auto-stored in a depot or currency tab, not your bags",
+  combined: "Consumed to make something else",
+};
+
+/** The ledger as a table, so the columns line up and any of them can do the sorting. */
+function DropTable({
+  drops,
+  wanted,
+  sort,
+  onSort,
+}: {
+  drops: LootEvent[];
+  wanted: ReadonlySet<string>;
+  sort: Sort<LootSortKey>;
+  onSort: (next: Sort<LootSortKey>) => void;
+}) {
+  if (drops.length === 0) {
+    return (
+      <div className="empty">
+        <p>No drops match these filters.</p>
+        <p className="small">Widen them — the whole ledger is still there.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="table-scroll">
+      <table className="stat-table loot-table">
+        <thead>
+          <tr>
+            <SortHeader label="Time" column="at" sort={sort} onSort={onSort} title="When the log recorded it" />
+            <SortHeader label="Fate" column="fate" sort={sort} onSort={onSort} startDesc={false} title="What became of it" />
+            <SortHeader label="Qty" column="qty" sort={sort} onSort={onSort} title="How many the line reported" />
+            <SortHeader label="Item" column="item" sort={sort} onSort={onSort} startDesc={false} />
+            <SortHeader label="From" column="source" sort={sort} onSort={onSort} startDesc={false} title="Whose corpse" />
+            <th>Where it went</th>
+          </tr>
+        </thead>
+        <tbody>
+          {/* Keyed by the drop's identity, not `logId-item`. The ledger outlives a run while `logId`
+              restarts at zero each launch, so that pair repeats across runs — two rows claiming one
+              key, which React resolves by reusing the wrong node (and warns about). `lootKey` is the
+              same identity the feed merges on, so the list and the merge agree on what one drop is. */}
+          {drops.map((drop) => {
+            const onList = wanted.has(normalizeItemName(drop.item));
+            return (
+              <tr
+                key={lootKey(drop)}
+                className={onList ? "wanted" : undefined}
+                title={onList ? "On your shopping list" : undefined}
+              >
+                <td className="lt-time">{clock(drop.at)}</td>
+                <td className={`src-kind f-${drop.fate}`}>{FATE_LABEL[drop.fate]}</td>
+                <td className="lt-num">{drop.qty > 1 ? `${drop.qty}×` : ""}</td>
+                <td>
+                  <ItemLink title={drop.item} className="lt-item" />
+                </td>
+                <td className="muted">{drop.source}</td>
+                <td className="muted">{drop.detail ? detailLabel(drop) : ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -103,23 +292,45 @@ export default function LootPanel() {
  * What your trash is worth, learned from your own auto-sells. Only what you've actually sold
  * appears — the log never states a price otherwise, and guessing one would be worse than a gap.
  */
-function PriceTable({ prices }: { prices: ItemPrice[] }) {
-  if (prices.length === 0) return null;
+function PriceTable({
+  prices,
+  sort,
+  onSort,
+}: {
+  prices: ItemPrice[];
+  sort: Sort<PriceSortKey>;
+  onSort: (next: Sort<PriceSortKey>) => void;
+}) {
+  if (prices.length === 0) {
+    return (
+      <div className="empty">
+        <p>No prices yet.</p>
+        <p className="small">
+          A price comes from an auto-sell line — the only place the log ever states one. Sell some
+          trash and it fills in here, item by item.
+        </p>
+      </div>
+    );
+  }
   const earned = prices.reduce((n, p) => n + p.copper, 0);
 
   return (
     <>
-      <h3 className="section-head" title="Prices come from auto-sell lines — the only place the log states one">
-        What it sells for
-      </h3>
       <div className="table-scroll">
-        <table className="stat-table">
+        <table className="stat-table loot-table">
           <thead>
             <tr>
-              <th>Item</th>
-              <th title="Price for one — a stack's line price divided by the stack">Each</th>
-              <th title="How many you've auto-sold">Sold</th>
-              <th title="What they came to in total">Earned</th>
+              <SortHeader label="Item" column="item" sort={sort} onSort={onSort} startDesc={false} />
+              <SortHeader
+                label="Each"
+                column="unitCopper"
+                sort={sort}
+                onSort={onSort}
+                title="Price for one — a stack's line price divided by the stack"
+              />
+              <SortHeader label="Sold" column="qty" sort={sort} onSort={onSort} title="How many you've auto-sold" />
+              <SortHeader label="Earned" column="copper" sort={sort} onSort={onSort} title="What they came to in total" />
+              <SortHeader label="Last sold" column="lastAt" sort={sort} onSort={onSort} title="When you last sold one" />
             </tr>
           </thead>
           <tbody>
@@ -128,11 +339,12 @@ function PriceTable({ prices }: { prices: ItemPrice[] }) {
                 <td>
                   <ItemLink title={p.item} />
                 </td>
-                <td>{formatCoins(p.unitCopper)}</td>
-                <td>{p.qty}</td>
-                <td className="num-accent" title={describeCoins(p.copper)}>
+                <td className="lt-num">{formatCoins(p.unitCopper)}</td>
+                <td className="lt-num">{p.qty}</td>
+                <td className="lt-num num-accent" title={describeCoins(p.copper)}>
                   {formatCoins(p.copper)}
                 </td>
+                <td className="lt-time">{clock(p.lastAt)}</td>
               </tr>
             ))}
           </tbody>
@@ -140,20 +352,6 @@ function PriceTable({ prices }: { prices: ItemPrice[] }) {
       </div>
       <p className="muted small">Auto-sales in the ledger have earned {describeCoins(earned)}.</p>
     </>
-  );
-}
-
-function LootRow({ drop, wanted }: { drop: LootEvent; wanted: boolean }) {
-  return (
-    <div className={`loot-row ${wanted ? "wanted" : ""}`} title={wanted ? "On your shopping list" : undefined}>
-      <span className="lr-time">{clock(drop.at)}</span>
-      <span className={`src-kind f-${drop.fate}`}>{FATE_LABEL[drop.fate]}</span>
-      {drop.qty > 1 && <span className="lr-qty">{drop.qty}×</span>}
-      <ItemLink title={drop.item} className="lr-item" />
-      <span className="lr-source muted small">from {drop.source}</span>
-      <span className="spacer" />
-      {drop.detail && <span className="lr-detail muted small">{detailLabel(drop)}</span>}
-    </div>
   );
 }
 
@@ -175,3 +373,6 @@ function clock(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "—" : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
+
+/** The shared segmented-control button (same one the damage and search tabs use). */
+const segCls = (active: boolean): string => `seg ${active ? "active" : ""}`;

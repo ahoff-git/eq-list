@@ -6,7 +6,9 @@ point — it knows what exists, what a quest needs, which zones matter — but i
 loot lists are not to be trusted as current**. Where the app has killed something itself, its
 own observations take over and the disagreement is shown rather than hidden; see
 [ADR 0025](../decisions/0025-observation-over-the-wiki.md) and `src/shared/drop-truth.ts`.
-Measured example: of two items a `minotaur slaver` actually dropped, the wiki lists neither.
+Measured example: of two items a `minotaur slaver` actually dropped, the wiki lists **one** — and
+only once the item's grade is folded away, since what dropped was a `Minotaur Battle Axe +1` and
+what the wiki lists is the axe ([ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)).
 
 ## Purpose
 Use [eqlwiki.com](https://eqlwiki.com) as the source of truth for items, quests,
@@ -29,6 +31,12 @@ shopping list.
   a page added after the last mirror won't appear until the TTL — so `refresh()` (the Search
   tab's **↻ Refresh list** button) force-re-fetches both indexes on demand and drops the
   session's derived caches.
+- **A name is folded before it's looked up** — an item's grade and a zone's difficulty are numbers
+  the wiki has never heard of (it has `Dragoon Dirk`, not `Dragoon Dirk +2`; one Blackburrow page
+  serves every difficulty), so `search` / `searchZones` / `questsByZone` fold the query with
+  `src/shared/names.ts`, and `getPage` retries the base name when the asked-for title has no page —
+  the exact title first, so a graded page still wins if one exists.
+  See [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md).
 - **Quests by zone** — `questsByZone(zone)` returns the quests in a zone. This wiki
   runs stock MediaWiki (no CirrusSearch), so `incategory:` search doesn't work and
   category membership doesn't tag quests to zones. Instead we take the zone page's

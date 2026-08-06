@@ -66,6 +66,8 @@ export const CH = {
   // window control (invoke + send)
   winOpenMap: "win:openMap",
   mapOpenAt: "map:openAt",
+  /** Ask the map window (if it's open) to pick a mob's kills out — a hover hint, so `send`. */
+  mapEmphasize: "map:emphasize",
   mapOpenP99: "map:openP99",
   /** Which map sets are available (bundled images + the game's maps folder and its packs). */
   mapSources: "map:sources",
@@ -112,6 +114,7 @@ export const CH = {
   searchPrefill: "evt:searchPrefill",
   navCommand: "evt:navCommand",
   mapViewZone: "evt:mapViewZone",
+  mapEmphasis: "evt:mapEmphasis",
 } as const;
 
 export type Channel = (typeof CH)[keyof typeof CH];

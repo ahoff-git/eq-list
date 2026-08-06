@@ -15,7 +15,7 @@ import {
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import MapPanel, { type RenderKill, type RenderPin } from "../components/MapPanel";
-import KillList, { clock, type KillEmphasis } from "../components/KillList";
+import KillList, { clock } from "../components/KillList";
 import MobKnowledgePanel from "../components/MobKnowledge";
 import { DEFAULT_KILL_FILTERS, filterKills, windowMoves, type KillFilters } from "@/shared/kill-filters";
 import PinButton from "../components/PinButton";
@@ -32,6 +32,7 @@ import MapFilters, { type HeightPick } from "../components/MapFilters";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
 import { MAP_UI_SCALE } from "@/shared/constants";
+import type { KillEmphasis } from "@/shared/types";
 
 /**
  * How often to re-apply a moving kill window. A kill's own resolution is a second and the shortest
@@ -247,9 +248,14 @@ export default function MapWindow() {
   const [killFilters, setKillFilters] = useState<KillFilters>(DEFAULT_KILL_FILTERS);
   const [shareKillsOn, setShareKillsOn] = usePersistentState(STORAGE_KEYS.mapShareKills, false);
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
-  // Which kills the map should pick out: set while a row in the ☠ list is hovered, so pointing at
-  // a name answers "where did those die?". Transient by nature, so it isn't persisted.
+  // Which kills the map should pick out: set while a name is hovered — a row in the ☠ list, or a
+  // mob in the main window's Hunt tab — so pointing at one answers "where did those die?".
+  // Transient by nature, so it isn't persisted.
   const [emphasis, setEmphasis] = useState<KillEmphasis | null>(null);
+
+  // The same question asked from the other window. Both write one piece of state, so whichever
+  // cursor moved last is the one being answered — which is what a person would expect.
+  useEffect(() => api()?.map.onEmphasis(setEmphasis), []);
 
   // Broadcast (or un-share) pins to peers when connected + sharing.
   useEffect(() => {

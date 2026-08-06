@@ -19,6 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { mergeObservations, observeMobs, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
+import { sameZone } from "../src/shared/sources";
 import type { KillLog } from "./kill-log";
 
 const log = createLogger("mob-knowledge");
@@ -108,8 +109,10 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
     }
   }
 
+  // Folded, so a zone's difficulty variants answer as one zone (ADR 0059) — and so a peer whose
+  // build stamped the decorated name is still found when you ask for the plain one.
   const forZone = (obs: MobObservation[], zone?: string): MobObservation[] =>
-    zone ? obs.filter((o) => o.zone === zone) : obs;
+    zone ? obs.filter((o) => sameZone(o.zone, zone)) : obs;
 
   return {
     mine: (zone) => forZone(killLog.observations(), zone),

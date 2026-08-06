@@ -30,6 +30,14 @@ as they drop and the damage meter can show how the fight went.
   `parseLevel`, whose "Welcome to level 14!" shares the opening words. See
   [ADR 0054](../decisions/0054-a-sitting-is-a-login.md).
   Timestamps are kept as the log's naive local wall clock (no zone offset).
+  An **item's grade** (`Crushbone Belt +2`) and a **zone's difficulty and ruleset**
+  (`The Steamfont Mountains 2 (Adaptive)`) are
+  parsed out verbatim, unlike a spell's rank: they're the interesting part of the line, and the
+  matching downstream folds them away where a name has to meet the wiki's, the map's or the list's
+  (`src/shared/names.ts`, [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)). "Downstream"
+  includes the kill log and mob knowledge, which key by the folded zone so a camp is one camp
+  however hard the door was set ([ADR 0059](../decisions/0059-a-zone-s-variants-are-one-zone.md)) —
+  the record itself still says `Steamfont Mountains 2 (Adaptive)`.
 - `src/shared/money.ts` — a **pure** black box beside the parser: coin in and out of copper,
   which is the canonical unit everywhere (1p = 10g = 100s = 1000c). Denominations exist only
   in its formatters, so nothing else has to normalise them.

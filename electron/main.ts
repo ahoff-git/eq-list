@@ -225,6 +225,14 @@ if (!app.requestSingleInstanceLock()) {
     currentZone = event.zone;
     combat.setZone(currentZone); // so finished fights are filed against the right camp
     broadcast(CH.zoneChanged, currentZone);
+    // Your position does not survive the trip. A `/loc` describes a spot in *that* zone, and the
+    // map redraws for this one — so keeping it plots you somewhere you have never stood, with
+    // nothing on screen to say the dot is from the last zone. The trail is already wiped for this
+    // reason (`usePlayerTrail`) and the kill log already refuses a fix from another zone; this is
+    // the third reader of a `/loc` catching up with them. Cleared even between two difficulties of
+    // one zone: that is the same teleport to the same zone-in point (ADR 0059).
+    currentLoc = null;
+    broadcast(CH.locChanged, null);
   });
   /**
    * The kill log changed, so whatever draws it — the map's heatmap and kill list, mob knowledge —

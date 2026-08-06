@@ -40,6 +40,31 @@ test("a difference in capitalisation is the same item, not a discovery", () => {
   assert.equal(truths[0].suspicious, false);
 });
 
+// Every grade of an item is the same drop with a second roll on it, and the wiki only ever lists
+// the base item. Matching the log's wording literally reported the game dropping something no
+// reference knows *and* the wiki's item never dropping — the same false pair a stray capital used
+// to produce, and the reason ADR 0025's example read as a discovery.
+test("an item's grade is not a separate drop, and grades pool into one rate", () => {
+  const truths = reconcileDrops(
+    { "Crushbone Belt": "10%" },
+    { "Crushbone Belt +2": 3, "Crushbone Belt +5": 1 },
+    40,
+  );
+  assert.equal(truths.length, 1);
+  assert.equal(truths[0].verdict, "confirmed");
+  assert.equal(truths[0].seen, 4, "both grades count towards the one drop");
+  assert.equal(truths[0].item, "Crushbone Belt");
+  assert.equal(truths[0].observedRate, 0.1);
+});
+
+test("a graded drop the wiki has never heard of is named by its base item", () => {
+  // Still a discovery — but the row describes every grade of it, so it can't be labelled with one.
+  const [truth] = reconcileDrops({}, { "Minotaur Battle Axe +1": 1, "Minotaur Battle Axe +3": 1 }, 8);
+  assert.equal(truth.verdict, "undocumented");
+  assert.equal(truth.item, "Minotaur Battle Axe");
+  assert.equal(truth.seen, 2);
+});
+
 test("a wiki claim we've never seen is 'unseen', and only suspicious with evidence", () => {
   const [thin] = reconcileDrops({ "Fabled Sword": "1%" }, {}, 3);
   assert.equal(thin.verdict, "unseen");

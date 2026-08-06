@@ -4,6 +4,7 @@
  * Pure + testable.
  */
 import type { ItemSource } from "./types";
+import { zoneBaseName } from "./names";
 
 export interface ZoneDrops {
   zone: string;
@@ -82,9 +83,30 @@ export function isObtainableIn(sources: ItemSource[], zone: string): boolean {
   return sources.some((s) => !!s.detail && zoneMatches(zone, s.detail));
 }
 
-/** Fold a zone name for matching/grouping: lowercase, drop a leading "the", collapse spaces. */
+/**
+ * Fold a zone name for matching/grouping: drop a difficulty number and ruleset tag, lowercase,
+ * drop a leading "the", collapse spaces.
+ *
+ * The decoration goes because a harder Blackburrow is still Blackburrow to a map and to a wiki
+ * page (`names.ts`) — it changes what the mobs hit for, not where they live. The unfolded name is
+ * what gets *recorded*, so how hard the camp was is never lost.
+ */
 export function normalizeZone(z: string): string {
-  return z.toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
+  return zoneBaseName(z).toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Are these two names the same zone? **Exactly** the same, after folding — the one rule for
+ * keying anything by zone (kill records, mob observations), and deliberately not `zoneMatches`.
+ *
+ * The loose containment below is right for meeting the wiki halfway on a name it spells
+ * differently, and quite wrong here: "commonlands" sits inside "east commonlands", so a query for
+ * one would answer with the other's kills. See
+ * [ADR 0059](../../specs/decisions/0059-a-zone-s-variants-are-one-zone.md).
+ */
+export function sameZone(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  return normalizeZone(a) === normalizeZone(b);
 }
 
 /**

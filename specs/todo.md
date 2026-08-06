@@ -90,12 +90,12 @@ _To discuss:_
   already tracked and shown on hover
   ([ADR 0020](./decisions/0020-split-by-stance-and-invocation.md)). Some players will want
   those as real rows all the time — a Settings toggle, no new data needed.
-- **Loot tab — filters and highlighting.** The panel and an always-on, persisted loot feed now
-  ship (`electron/loot-log.ts`, `LootPanel`; [ADR 0033](./decisions/0033-eating-a-log-is-idempotent.md)
-  is unrelated — this is the live feed), showing the latest drops and each one's fate (kept / bag /
-  depot / auto-sold). **Highlighting is wanted** but needs **filters** and an **ignore list** to be
-  usable: the first cut highlights what's on your shopping list (free, already known), and the
-  broader rule ("used by a quest in my level range in this zone") comes with the filters.
+- **Loot tab — an ignore list, and highlighting worth the name.** The split views, filters and
+  sortable columns now ship ([ADR 0058](./decisions/0058-a-ledger-needs-filters-and-a-column-to-sort-by.md)),
+  and the only highlight rule is still "on your shopping list". Two things left, both now filter
+  questions rather than new mechanisms: an **ignore list** (trash you never want to see again —
+  persisted, unlike the per-window filters), and the broader rule **"used by a quest in my level
+  range in this zone"**, which needs the wiki's quest data per item and a level to compare against.
 
 
 

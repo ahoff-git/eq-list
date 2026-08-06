@@ -586,24 +586,19 @@ button {
 }
 
 /* ── loot feed ───────────────────────────────────────────────── */
-.loot-rows { display: flex; flex-direction: column; gap: 2px; }
-.loot-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--bg-raised);
-  font-size: 13px;
-}
+/* Text-led tables, so the shared right-aligned 2nd/3rd columns above don't apply: a fate and a
+   corpse are words. Only the cells marked `.lt-num` are numbers. */
+.loot-table { font-size: 12px; white-space: nowrap; }
+.loot-table th,
+.loot-table td { text-align: left; width: auto; }
+.loot-table .lt-num { text-align: right; font-variant-numeric: tabular-nums; width: 68px; color: var(--accent); }
+.loot-table .lt-time { font-family: var(--mono); font-size: 11px; color: var(--text-dim); width: 64px; }
+.loot-table .lt-item { font-weight: 500; }
 /* On the shopping list — the one highlight rule that can't cry wolf. */
-.loot-row.wanted {
-  background: var(--flash);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.loot-row .lr-time { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
-.loot-row .lr-qty { color: var(--accent); font-variant-numeric: tabular-nums; }
-.loot-row .lr-item { font-weight: 500; }
+.loot-table tr.wanted { background: var(--flash); box-shadow: inset 2px 0 0 var(--accent); }
+.loot-filters { margin-bottom: 8px; }
+/* Narrower than the map's zone picker: it shares a row with four other controls. */
+.loot-filters .select-sm { max-width: 30%; }
 .fate-tally { font-size: 11px; color: var(--text-dim); }
 /* Fate colours, shared by the row badge and the tallies. */
 .f-kept { color: #7fc4ff; }
@@ -706,8 +701,10 @@ button {
 .spell-table { font-size: 12px; white-space: nowrap; }
 .spell-table td:not(:first-child),
 .spell-table th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.spell-table th.sortable { padding: 0; }
-.spell-table th.sortable button {
+/* Sortable headers belong to any `.stat-table` — the spell breakdown and both loot views share
+   them. The button inherits its column's alignment, so a numeric header stays over its digits. */
+.stat-table th.sortable { padding: 0; }
+.stat-table th.sortable button {
   width: 100%;
   padding: 6px 10px;
   background: transparent;
@@ -715,12 +712,13 @@ button {
   color: inherit;
   font: inherit;
   font-weight: 600;
-  text-align: right;
+  text-align: inherit;
+  cursor: pointer;
 }
-.spell-table th.sortable button:hover { color: var(--text); }
-.spell-table th.sorted { color: var(--accent); }
-.spell-table .num-accent { color: var(--accent); }
-.spell-table .num-bad { color: var(--bad); }
+.stat-table th.sortable button:hover { color: var(--text); }
+.stat-table th.sorted { color: var(--accent); }
+.stat-table .num-accent { color: var(--accent); }
+.stat-table .num-bad { color: var(--bad); }
 .spell-table .spell-melee td { color: var(--text-dim); font-style: italic; }
 /* Per-invocation rows under a spell, when the split-by-mode setting is on. */
 .spell-table .spell-mode td { color: var(--text-dim); border-bottom-color: transparent; }
@@ -945,6 +943,9 @@ kbd {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* A compact select. `.select-sm` is the name to reach for outside the map (the loot filters use
+   it) — the map's two keep their own names because their widths differ from each other. */
+.select-sm,
 .map-zone-select,
 .map-source-select {
   background: var(--bg-input);

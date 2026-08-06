@@ -64,6 +64,11 @@ number is retired, not free.
 - [0054: A play session is a login, and a fight is named after what we fought](./0054-a-sitting-is-a-login.md) — *takes both from the log instead of the app's lifecycle: 0016's history list was grouping by app run (38 "sessions" for 12 real evenings) and titling fights after whichever group-mate out-damaged you; the label now reads 0053's cells*
 - [0055: Eating a log is a catch-up — it fills every bucket it can](./0055-eating-a-log-fills-history.md) — *0033 made eating idempotent for kills and drops; this extends the same keying to fights and loot so an old log backfills 0016's history (by 0054's sittings), the loot feed and 0047's prices, without duplicating an evening you watched live*
 - [0056: A dropped record keeps what it taught](./0056-a-dropped-record-keeps-what-it-taught.md) — *0016's "derive, don't duplicate" meant the kill log's and loot ledger's caps silently un-learned 0024's drop rates and roam areas and 0047's prices; eviction — and clearing — now folds a record into a summary first, so only detail is ever lost, and unlearning takes a second, explicit answer*
+- [0057: A grade is not an identity, and neither is a difficulty](./0057-a-grade-is-not-an-identity.md) — *an item's `+N` and a zone's difficulty number describe the copy, not the thing, so both fold away wherever a name is matched (the wiki, the map, the list, a drop rate) and stay whole wherever the log is shown; 0025's own headline example turns out to be the wiki's item wearing a `+1`*
+- [0058: A ledger needs filters and a column to sort by](./0058-a-ledger-needs-filters-and-a-column-to-sort-by.md) — *the loot tab stacked the ledger over the prices, so once 0033/0055 made the ledger outlive the app the prices sat below hundreds of rows of trash; splits it into two segmented views, adds one filter object and one sort rule (stable, because the log's clock only counts whole seconds) shared with the spell table*
+
+- [0059: A zone's variants are one zone](./0059-a-zone-s-variants-are-one-zone.md) — *0057 folded a zone's difficulty for the wiki and the map lookup but kept the kill log split by it; with real lines (`The Steamfont Mountains 2 (Adaptive)`) that hid an evening's kills from the one map that draws the place and cut every drop sample below 0025's believability bar, so `sameZone` — exact, not `zoneMatches` — now keys kills, per-zone knowledge and observations, retroactively via the key; the one comparison that stays verbatim is which `/loc` fix may place a kill, because changing difficulty is still a teleport*
+- [0060: A position belongs to the zone it was taken in](./0060-a-position-belongs-to-the-zone-it-was-taken-in.md) — *0059's teleport rule, applied to the two readers that hadn't heard it: a `/loc` taken before the zone was known was matching every zone (357 kills in a real log placed at another zone's coordinates), and the "You" dot outlived zoning entirely while the trail beside it was already being wiped*
 
 ## Open Questions
 - Naming a folder of zones reads every map file inside a synchronous IPC handler, so it blocks
@@ -84,6 +89,12 @@ number is retired, not free.
   ([ADR 0047](./0047-money-is-copper-in-two-ledgers.md)). A price is the easiest thing of all to
   pool — it's the same for everyone, so one observation settles it — but it isn't in the
   observation payload. Worth adding, or is "what you've sold yourself" the honest scope?
+- A zone's difficulty rides inside its name, which keeps it out of the stored shapes and the peer
+  payload ([ADR 0057](./0057-a-grade-is-not-an-identity.md)). Now that a variant is no longer its
+  own sample ([ADR 0059](./0059-a-zone-s-variants-are-one-zone.md)), a camp report that wanted to
+  compare difficulties would have to read them off the *records* before they age out. Is that worth
+  a field of its own, or is "Blackburrow 3" in the name enough for a player reading their own
+  history?
 - Undocumented drops are surfaced per mob. Should they also be *reported upward* somewhere —
   a shared list of "things this build drops that no wiki knows"? The room already pools
   observations ([ADR 0024](./0024-mob-knowledge.md)); this would be the useful summary of them.

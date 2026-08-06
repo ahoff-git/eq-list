@@ -115,6 +115,14 @@ test("itemDemands names who wants an item, and sums to the same total", () => {
   );
 });
 
+// The one fold every "is this the item?" question goes through — the loot line against the list
+// (store.ts), the log against the wiki (drop-truth.ts), an item's total across groups.
+test("normalizeItemName folds case, spacing and an item's grade", () => {
+  assert.equal(normalizeItemName("  Crushbone   Belt "), "crushbone belt");
+  // A looted "Crushbone Belt +2" is the "Crushbone Belt" a quest asked for.
+  assert.equal(normalizeItemName("Crushbone Belt +2"), normalizeItemName("Crushbone Belt"));
+});
+
 test("itemDemands lists a single claim for an item only one group wants", () => {
   const groups = groupByOrigin([entry({ name: "Bone Chips", needed: 3 })]);
   const demands = itemDemands(groups).get("bone chips")!;

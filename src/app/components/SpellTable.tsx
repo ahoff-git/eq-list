@@ -1,6 +1,8 @@
 "use client";
 import { Fragment, useState } from "react";
 import { useSettings, useSpellFacts, type SpellFacts } from "@/lib/hooks";
+import { sortRows, type Sort } from "@/shared/sorting";
+import SortHeader from "./SortHeader";
 import type { FightStats, SpellStat } from "@/shared/types";
 
 /**
@@ -22,12 +24,14 @@ import type { FightStats, SpellStat } from "@/shared/types";
 type SortKey = "damage" | "dpc" | "resistRate" | "casts" | "avgCastSec";
 
 export default function SpellTable({ window }: { window: FightStats }) {
-  const [sort, setSort] = useState<SortKey>("damage");
+  const [sort, setSort] = useState<Sort<SortKey>>({ key: "damage", desc: true });
   const facts = useSpellFacts(window.spells);
   // With the setting on, each invocation gets its own row under the spell's blended one.
   const split = useSettings()?.overlay.splitByMode ?? false;
 
-  const spells = [...window.spells].sort((a, b) => (b[sort] ?? 0) - (a[sort] ?? 0) || b.damage - a.damage);
+  // Biggest first by default; clicking the sorted column flips it (`sorting.ts`). Rows the column
+  // can't separate keep the order the tracker filed them in, which is damage-descending.
+  const spells = sortRows(window.spells, sort, (s, key) => s[key] ?? 0);
   const spellDamage = window.spells.reduce((n, s) => n + s.damage, 0);
   const melee = window.yourDealt - spellDamage;
 
@@ -46,16 +50,16 @@ export default function SpellTable({ window }: { window: FightStats }) {
         <thead>
           <tr>
             <th>Spell</th>
-            <Th label="Casts" k="casts" sort={sort} onSort={setSort} />
-            <Th label="Damage" k="damage" sort={sort} onSort={setSort} />
+            <SortHeader label="Casts" column="casts" sort={sort} onSort={setSort} />
+            <SortHeader label="Damage" column="damage" sort={sort} onSort={setSort} />
             <th>Healed</th>
-            <Th label="Cast" k="avgCastSec" sort={sort} onSort={setSort} title="Average measured cast time" />
-            <Th label="Dmg/s cast" k="dpc" sort={sort} onSort={setSort} title="Damage per second spent casting" />
+            <SortHeader label="Cast" column="avgCastSec" sort={sort} onSort={setSort} title="Average measured cast time" />
+            <SortHeader label="Dmg/s cast" column="dpc" sort={sort} onSort={setSort} title="Damage per second spent casting" />
             <th title="Mana cost, from the spell's wiki page">Mana</th>
             <th title="What a point of mana bought: damage, plus any healing the invocation granted off it">
               Per mana
             </th>
-            <Th label="Resist" k="resistRate" sort={sort} onSort={setSort} title="Share of completed casts resisted" />
+            <SortHeader label="Resist" column="resistRate" sort={sort} onSort={setSort} title="Share of completed casts resisted" />
             <th title="Fizzles + interrupts">Failed</th>
           </tr>
         </thead>
@@ -145,30 +149,6 @@ function InvocationNotes({ window }: { window: FightStats }) {
         </div>
       ))}
     </div>
-  );
-}
-
-/** A sortable column header (click to sort by it; the active one is marked). */
-function Th({
-  label,
-  k,
-  sort,
-  onSort,
-  title,
-}: {
-  label: string;
-  k: SortKey;
-  sort: SortKey;
-  onSort: (k: SortKey) => void;
-  title?: string;
-}) {
-  return (
-    <th className={`sortable ${sort === k ? "sorted" : ""}`} title={title ?? `Sort by ${label.toLowerCase()}`}>
-      <button onClick={() => onSort(k)}>
-        {label}
-        {sort === k ? " ▾" : ""}
-      </button>
-    </th>
   );
 }
 

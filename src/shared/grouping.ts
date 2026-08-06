@@ -11,6 +11,7 @@
  * single source of truth for "how many you actually need".
  */
 import type { ShoppingListEntry, WikiPageKind } from "./types";
+import { itemBaseName } from "./names";
 
 export interface ListGroup {
   key: string;
@@ -37,9 +38,16 @@ export function effectiveNeeded(entry: ShoppingListEntry, runs: number): number 
   return entry.needed * Math.max(1, runs);
 }
 
-/** Normalize an item name for cross-group totalling (wiki names are canonical, so light). */
+/**
+ * Normalize an item name for cross-group totalling and for every other place two spellings of
+ * one item have to meet (the loot line against the list, the log against the wiki).
+ *
+ * Light on purpose — wiki names are canonical — but a **grade is dropped**: the game hands you a
+ * "Crushbone Belt +2" and the wiki, the list and the quest that wants one all say "Crushbone
+ * Belt" (`names.ts`).
+ */
 export function normalizeItemName(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, " ").trim();
+  return itemBaseName(name).toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 /** One group's claim on an item — the pieces the parenthetical total is made of. */

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   useShoppingList,
   useCurrentZone,
@@ -33,6 +33,11 @@ const ZONE_MATCHES = 40;
  * one source of truth, so the Settings toggle and this checkbox can't disagree. The picked
  * zone is owned by the parent so it survives tab switches, and it survives turning follow
  * on and off again too: coming back to the zone you were studying is the useful answer.
+ *
+ * **Pointing at a mob picks its kills out on the map** (`map.emphasize`), exactly as hovering a row
+ * in the map's own ☠ list does. The hunt says what to kill; the map says where you found it last
+ * time, which is the next question and the one this list can't answer. It's a hint, not a command:
+ * it never opens the map, and with the map closed or looking elsewhere nothing happens.
  */
 export default function HuntPanel({
   pickedZone,
@@ -68,6 +73,12 @@ export default function HuntPanel({
   // own kills are this build — they take over once there are enough of them, and either way
   // the badge says which you're reading (see `drop-truth.ts`).
   const known = useMobKnowledge(mobNames.join("|"));
+
+  /** Ask the map to ring this mob's kills (null takes the ask back). */
+  const emphasize = (mob: string | null) => api()?.map.emphasize(mob ? { mob } : null);
+  // Leaving the tab fires no `mouseleave`, so without this the map stays lit with nothing
+  // pointing at it — the same backstop the kill list has, for the one exit a row can't see.
+  useEffect(() => () => void api()?.map.emphasize(null), []);
 
   // Only zones something on your list drops in — the picker is for narrowing this hunt, not for
   // browsing the world. Shaped as `Zone` because that's what `ZonePicker` matches over; there's no
@@ -144,53 +155,62 @@ export default function HuntPanel({
               <span className="hz-name">{z.zone}</span>
               {here && <span className="badge kind-drop">you are here</span>}
             </div>
-            {z.mobs.map((m) => (
-              <div className="hunt-mob" key={m.mob}>
-                <ItemLink title={m.mob} className="hm-name" />
-                <span className="hm-items">
-                  {m.items.map((it) => {
-                    // `known` is keyed by mobKey (article/case-folded) so the wiki's
-                    // "a gnoll" meets the kill log's "gnoll".
-                    const mob = known[mobKey(m.mob)];
-                    const [truth] = reconcileDrops(
-                      { [it.item]: mobLoot[m.mob]?.[it.item] },
-                      Object.fromEntries((mob?.drops ?? []).map((d) => [d.item, d.count])),
-                      mob?.kills ?? 0,
-                    );
-                    const shown = bestRate(truth);
-                    return (
-                      <ItemLink
-                        key={it.item}
-                        title={it.item}
-                        className="hunt-item"
-                        label={
-                          <>
-                            {it.item} <span className="muted">{it.obtained}/{it.needed}</span>
-                            {shown.source !== "none" && (
-                              <span
-                                className={`badge rarity rate-${shown.source}`}
-                                title={rateWhy(truth, shown.source)}
-                              >
-                                {shown.text}
-                                {shown.source === "observed" ? "✓" : ""}
-                              </span>
-                            )}
-                            {truth.suspicious && (
-                              <span
-                                className="badge era-out"
-                                title={`The wiki lists this, but ${truth.kills} kills haven't produced one. The wiki describes an older build — treat the claim with suspicion.`}
-                              >
-                                unseen in {truth.kills}
-                              </span>
-                            )}
-                          </>
-                        }
-                      />
-                    );
-                  })}
-                </span>
-              </div>
-            ))}
+            {z.mobs.map((m) => {
+              // `known` is keyed by mobKey (article/case-folded) so the wiki's
+              // "a gnoll" meets the kill log's "gnoll".
+              const mob = known[mobKey(m.mob)];
+              return (
+                <div
+                  className="hunt-mob"
+                  key={m.mob}
+                  // The whole row is about this mob, items included, so it's all one target —
+                  // there's nothing in it that would want to point somewhere else.
+                  onMouseEnter={() => emphasize(m.mob)}
+                  onMouseLeave={() => emphasize(null)}
+                >
+                  <ItemLink title={m.mob} className="hm-name" />
+                  <span className="hm-items">
+                    {m.items.map((it) => {
+                      const [truth] = reconcileDrops(
+                        { [it.item]: mobLoot[m.mob]?.[it.item] },
+                        Object.fromEntries((mob?.drops ?? []).map((d) => [d.item, d.count])),
+                        mob?.kills ?? 0,
+                      );
+                      const shown = bestRate(truth);
+                      return (
+                        <ItemLink
+                          key={it.item}
+                          title={it.item}
+                          className="hunt-item"
+                          label={
+                            <>
+                              {it.item} <span className="muted">{it.obtained}/{it.needed}</span>
+                              {shown.source !== "none" && (
+                                <span
+                                  className={`badge rarity rate-${shown.source}`}
+                                  title={rateWhy(truth, shown.source)}
+                                >
+                                  {shown.text}
+                                  {shown.source === "observed" ? "✓" : ""}
+                                </span>
+                              )}
+                              {truth.suspicious && (
+                                <span
+                                  className="badge era-out"
+                                  title={`The wiki lists this, but ${truth.kills} kills haven't produced one. The wiki describes an older build — treat the claim with suspicion.`}
+                                >
+                                  unseen in {truth.kills}
+                                </span>
+                              )}
+                            </>
+                          }
+                        />
+                      );
+                    })}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         );
       })}

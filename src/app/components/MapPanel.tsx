@@ -6,7 +6,9 @@ import { inBands, mapBounds, segmentInBands, vectorProjection, type EqMap, type 
 import { POI_KINDS, poiKind, type PoiKind } from "@/shared/map/poi-kinds";
 import { pickHit } from "@/shared/map/hit-test";
 import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
+import { mobKey } from "@/shared/mob-stats";
 import type { CanvasSize, Loc, MapView, Point, Zone } from "@/shared/map/types";
+import type { KillEmphasis } from "@/shared/types";
 
 /**
  * A kill to plot. `confidence` fades and shrinks it, and `glyph`/`color` come from the
@@ -187,10 +189,11 @@ export default function MapPanel({
   /** Label kinds to leave off the map (see `poiKind`) — a busy zone is mostly labels. */
   hiddenPoiKinds?: Set<PoiKind>;
   /**
-   * Kills to pick out — one mob's, or a single kill by id. Set while a row in the kill list is
-   * hovered, so pointing at a name answers "where did those die?".
+   * Kills to pick out — one mob's, or a single kill by id. Set while a name is hovered, in the
+   * kill list or the main window's Hunt tab, so pointing at it answers "where did those die?".
+   * An emphasis matching nothing on this map is ignored rather than fading everything.
    */
-  emphasis?: { mob?: string; id?: string } | null;
+  emphasis?: KillEmphasis | null;
 }) {
   const loc = usePlayerLoc();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -262,11 +265,30 @@ export default function MapPanel({
    */
   const mapRect = useMemo(() => (view ? fitRect(view.image, view.canvas) : undefined), [view]);
 
-  /** Is this kill one of the ones being pointed at? By id when there is one, else by mob. */
+  /**
+   * Is this kill one of the ones being pointed at? By id when there is one, else by mob — folded
+   * through `mobKey`, because the name being pointed at may be the wiki's ("a Gnoll Pup") while
+   * the kill log strips the article and keeps the log's case ("gnoll pup"). It's the same mob.
+   */
+  const matches = useCallback(
+    (kill: RenderKill, want: KillEmphasis): boolean =>
+      want.id ? kill.id === want.id : !!want.mob && !!kill.mob && mobKey(kill.mob) === mobKey(want.mob),
+    [],
+  );
+
+  /**
+   * The emphasis actually in force. An ask that picks out nothing here — the Hunt tab pointing at a
+   * mob that died in another zone, or that we've never killed — is dropped rather than honoured,
+   * since honouring it would dim every marker on the map to say "no".
+   */
+  const picking = useMemo(
+    () => (emphasis && kills.some((k) => matches(k, emphasis)) ? emphasis : null),
+    [emphasis, kills, matches],
+  );
+
   const emphasized = useCallback(
-    (kill: RenderKill): boolean =>
-      !!emphasis && (emphasis.id ? kill.id === emphasis.id : !!emphasis.mob && kill.mob === emphasis.mob),
-    [emphasis],
+    (kill: RenderKill): boolean => !!picking && matches(kill, picking),
+    [picking, matches],
   );
 
   /**
@@ -479,11 +501,11 @@ export default function MapPanel({
       const p = toScreen(kill);
       if (!p) continue;
       const weight = Math.max(0.15, kill.confidence);
-      // Hovering a name in the kill list picks its kills out here. Everything else fades rather
-      // than vanishing — a marker you can still see is context; one that disappears is a lie about
+      // Hovering a mob's name picks its kills out here. Everything else fades rather than
+      // vanishing — a marker you can still see is context; one that disappears is a lie about
       // what's on the map.
       const picked = emphasized(kill);
-      const faded = !!emphasis && !picked;
+      const faded = !!picking && !picked;
       const radius = 4 + weight * 8;
       ctx.save();
       ctx.globalAlpha = (0.15 + weight * 0.45) * (faded ? 0.3 : 1);
@@ -584,7 +606,7 @@ export default function MapPanel({
     ctx.textBaseline = "alphabetic";
   }, [
     loc, trail, peers, pings, pins, kills, showKillConfidence, canvasSize, redrawKey,
-    showGrid, toScreen, frame, view, applyView, vector, visiblePois, emphasis, emphasized, projection,
+    showGrid, toScreen, frame, view, applyView, vector, visiblePois, picking, emphasized, projection,
   ]);
 
   /** Screen point (within the canvas) → base canvas point, inverting the zoom/pan view. */

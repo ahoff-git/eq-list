@@ -1003,6 +1003,19 @@ export interface KillRecord {
   coinKeys?: string[];
 }
 
+/**
+ * Which kills the map should pick out: one mob's, or a single kill by id. Transient — it lives
+ * for as long as a cursor rests on a name, and is never stored.
+ *
+ * It sits in shared types rather than beside the kill list because it's asked for from two
+ * windows now: the map's own ☠ list, and the main window's Hunt tab (over `map.emphasize`). Both
+ * are the same question — "where did those die?" — so they send the same shape.
+ */
+export interface KillEmphasis {
+  mob?: string;
+  id?: string;
+}
+
 // ─── Health estimate ────────────────────────────────────────────────────────
 
 /**
@@ -1573,6 +1586,18 @@ export interface EqlApi {
     openAt(zone: string, loc?: { y: number; x: number }, label?: string): Promise<void>;
     /** Fires in the map window when asked to view a zone / drop a marker (`openAt`). */
     onViewZone(cb: (msg: { zone: string; loc?: { y: number; x: number }; label?: string }) => void): Unsubscribe;
+    /**
+     * Ask the map to pick a mob's kills out of its heatmap — what the map's own ☠ list does on
+     * hover, offered to the other windows so pointing at a mob name anywhere answers "where did
+     * those die?". `null` clears it.
+     *
+     * Deliberately **does not open the map**: this rides on a hover, and a window that appears
+     * because the cursor crossed a name is a window nobody asked for. With the map closed, or
+     * showing another zone, or holding no kills of that mob, it does nothing.
+     */
+    emphasize(emphasis: KillEmphasis | null): void;
+    /** Fires in the map window when someone asks for kills to be picked out (`emphasize`). */
+    onEmphasis(cb: (emphasis: KillEmphasis | null) => void): Unsubscribe;
     /** Open a zone's map page on the Project 1999 wiki (for zones with no bundled map). */
     openP99(zone: string): Promise<void>;
     /**

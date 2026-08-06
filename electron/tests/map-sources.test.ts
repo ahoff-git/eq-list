@@ -10,7 +10,7 @@ import { CURATED_ZONES, findZone, sortZones } from "../../src/shared/map/zones";
 
 /** A slice of a real maps folder, including the near-misses that make naming dangerous. */
 const FILES = [
-  "gfaydark", "lfaydark", "crushbone", "felwithea", "felwitheb", "qey2hh1", "qeynos", "qeynos2",
+  "gfaydark", "lfaydark", "crushbone", "felwithea", "felwitheb", "qey2hh1", "qeytoqrg", "qeynos", "qeynos2",
   "commonlands", "commons", "ecommons", "unrest", "runnyeye", "newsebexp", "nektulos", "toxxulia",
   "tox", "gukbottom", "akanon", "feerrott", "northro", "nro", "steamfontmts", "steamfont",
 ];
@@ -18,7 +18,8 @@ const FILES = [
 test("a curated zone takes its own file, and nothing else does", () => {
   const byFile = new Map(zonesFromFiles("brewall", FILES).map((z) => [z.file!, z.name]));
   assert.equal(byFile.get("gfaydark"), "Greater Faydark");
-  assert.equal(byFile.get("qey2hh1"), "Qeynos Hills");
+  assert.equal(byFile.get("qeytoqrg"), "Qeynos Hills");
+  assert.equal(byFile.get("qey2hh1"), "West Karana"); // the neighbour, not the hills
   assert.equal(byFile.get("felwithea"), "Northern Felwithe");
   assert.equal(byFile.get("felwitheb"), "Southern Felwithe");
   assert.equal(byFile.get("runnyeye"), "RunnyEye Citadel");
@@ -92,6 +93,22 @@ test("findZone matches a log's wording — case, and a leading 'the'", () => {
   assert.equal(findZone("greater faydark", zones)?.file, "gfaydark");
   assert.equal(findZone("stock:gfaydark", zones)?.file, "gfaydark"); // by key
   assert.equal(findZone("Nowhere At All", zones), undefined);
+});
+
+// A curated name pointing at the wrong file is the one mistake that doesn't fail closed: it draws
+// a different zone under the right name. `qey2hh1` is West Karana — its own map links "to Qeynos
+// Hills", which makes it the neighbour — and Qeynos Hills is `qeytoqrg`.
+test("Qeynos Hills is its own map, not the neighbour that links to it", () => {
+  const zones = zonesFromFiles("stock", ["qeytoqrg", "qey2hh1"]);
+  assert.equal(findZone("Qeynos Hills", zones)?.file, "qeytoqrg");
+  assert.equal(findZone("West Karana", zones)?.file, "qey2hh1");
+});
+
+test("a zone made harder is still drawn by the same map", () => {
+  // The difficulty says how hard the mobs hit, not where they stand, so it can't cost you the map.
+  const zones = zonesFromFiles("stock", FILES);
+  assert.equal(findZone("The Feerrott 2", zones)?.file, "feerrott");
+  assert.equal(findZone("Greater Faydark 4", zones)?.file, "gfaydark");
 });
 
 test("sortZones groups a family together", () => {

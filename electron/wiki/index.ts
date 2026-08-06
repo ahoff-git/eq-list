@@ -24,6 +24,7 @@ import {
 } from "./api";
 import { parseWikiPage } from "./parse";
 import { fuzzyRank } from "../../src/shared/fuzzy";
+import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
 import type { SearchResult, WikiPage } from "../../src/shared/types";
 
@@ -217,7 +218,10 @@ export function createWikiClient(cacheDir: string): WikiClient {
     },
 
     async search(term) {
-      const q = term.trim();
+      // A grade is dropped from the query as well as from the index side of a match: a name read
+      // off a tooltip ("Dragoon Dirk +2") has to find the page the wiki actually has, and the
+      // stray "+2" token was enough to drag a good fuzzy match under the threshold (`names.ts`).
+      const q = itemBaseName(term.trim());
       if (q.length < 2) return [];
       const local = fuzzyOver(titleIndex, q);
       if (local.length) return flagOutOfEra(local);
@@ -226,7 +230,8 @@ export function createWikiClient(cacheDir: string): WikiClient {
     },
 
     async searchZones(term) {
-      const q = term.trim();
+      // Same for a zone's difficulty: one wiki page describes Blackburrow at every difficulty.
+      const q = zoneBaseName(term.trim());
       if (q.length < 2) return [];
       // Zones aren't era-flagged — the picker runs per keystroke and you may want to
       // browse any zone regardless of era.
@@ -236,7 +241,7 @@ export function createWikiClient(cacheDir: string): WikiClient {
     },
 
     async questsByZone(zone) {
-      const z = zone.trim();
+      const z = zoneBaseName(zone.trim());
       if (!z) return [];
       const cached = zoneQuestsCache.get(z);
       if (cached) return cached;
@@ -269,7 +274,12 @@ export function createWikiClient(cacheDir: string): WikiClient {
         return cached.page;
       }
       try {
-        const fetched = await fetchPageHtml(title);
+        // A graded item has no page of its own — the wiki knows "Dragoon Dirk", not "Dragoon Dirk
+        // +2" — so a miss retries the base name (`names.ts`). The asked-for title is tried first,
+        // so a build where the wiki *does* carry a grade still gets its own page, and the result
+        // caches under the name we were asked about rather than paying for two fetches each time.
+        const base = itemBaseName(title);
+        const fetched = (await fetchPageHtml(title)) ?? (base !== title ? await fetchPageHtml(base) : null);
         if (!fetched) return cached?.page ?? null;
         const wikiPath = `/${fetched.title.replace(/ /g, "_")}`;
         const page = parseWikiPage(fetched.title, wikiPath, fetched.html);

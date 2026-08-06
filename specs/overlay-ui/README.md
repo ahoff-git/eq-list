@@ -50,7 +50,14 @@ list, hunt, search, damage, session, settings.
   history. Every item / mob / quest name is an `ItemLink` (`components/ItemLink.tsx`) —
   clicking it calls `openPage(title)`, opening that page on the **Search tab in-app**,
   never the browser; hovering it shows the wiki's item **stat card** (`WikiPage.card`
-  via `useItemCard`, fetched lazily and cached, positioned `fixed` + viewport-clamped).
+  via `useItemCard`, fetched lazily and cached, positioned `fixed` so the scrolling panel can't
+  clip it). The card goes **beside the name, never over it** — `src/shared/tooltip.ts`
+  (`placeTooltip`, pure + tested) picks the side: **right of the words, then left**, top-aligned with
+  the name and slid up only as far as the window's foot demands. Below/above is the fallback for a
+  window too narrow for either side, and that flip is measured from the name's *top* edge — doing it
+  relative to the bottom is what used to land the card on the word you were pointing at. A card
+  above is pinned by its own bottom edge, so a late-loading icon grows away from the name rather
+  than back over it.
   Browser-style **back/forward** walks the stack: mouse thumb buttons (forwarded from
   main as `app-command` on `CH.navCommand`) and **Alt+←/→**. Only the explicit
   "↗ eqlwiki" button leaves the app. See [ADR 0008](../decisions/0008-in-app-page-navigation.md).
@@ -102,6 +109,15 @@ list, hunt, search, damage, session, settings.
     describes an older build, so this is the app correcting it in place —
     [ADR 0025](../decisions/0025-observation-over-the-wiki.md). Items with no known drop are
     called out separately. Names navigate in-app.
+
+    **Pointing at a mob rings its kills on the [map](../map/README.md)** (`map.emphasize` →
+    the map window's own emphasis, the same one its ☠ list drives). The hunt says what to kill;
+    where you found it last time is the next question, and only the map can answer it. It's a
+    hover hint, so it **never opens the map** — a window that appears because the cursor crossed
+    a name is one nobody asked for — and an ask that picks out nothing (map closed, showing
+    another zone, no kills of that mob) is dropped rather than fading every marker to say "no".
+    The whole row is the target, items included, and leaving the tab clears the ask, since
+    switching tabs fires no `mouseleave`.
   - `SearchPanel` — fuzzy-search eqlwiki (typo-tolerant, ↑↓/Enter keyboard nav) with
     two modes: **By name** (any item/quest/recipe) and **By zone** (fuzzy-pick a zone,
     then list its quests). The open page is whatever `nav.current` points at; a result
@@ -166,7 +182,9 @@ list, hunt, search, damage, session, settings.
       to the measured one (which is how a mispaired cast gives itself away) and the row's
       **per-invocation split** — the same spell can hit for 2.3× as much and cast faster
       under a different invocation, so the blended row is a starting point, not an answer.
-      See [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md). Sortable by any of those; melee is a synthetic row so the pie adds
+      See [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md). Sortable by any of those
+      (`SortHeader` + `src/shared/sorting.ts`, shared with the loot tab — click a column to sort,
+      click again to flip); melee is a synthetic row so the pie adds
       up. Cast times come from the log's one-second resolution — trust the averages, not a
       single reading.
     - `DamageHistory` — **play sessions** (newest first) → their fights → pick one to break it
@@ -203,6 +221,18 @@ list, hunt, search, damage, session, settings.
       click to fill in). After that `xp-progress.ts` keeps it current from XP gains and
       zeroes it on level-up, so it's asked at most once per level. Reuse `AskValue` for any
       future figure the log can't supply.
+  - `LootPanel` — the **Loot tab**: the persisted drop ledger (`electron/loot-log.ts`), which
+    reaches back through previous runs rather than describing this session. **Two segmented views**
+    like the damage tab's scopes, because stacking them meant a few hundred rows of ledger pushed
+    the prices off the bottom of the screen: **Drops** (time · fate · qty · item · corpse · where it
+    went) and **Sells for** (each · sold · earned · last sold — the item half of the money question,
+    [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)). Both are tables with
+    **sortable columns** (`SortHeader` + `src/shared/sorting.ts`; click to sort, click again to
+    flip), and the drops view has **filters** — fate, item name, which corpse, and "on my list"
+    (`src/shared/loot-filters.ts`, pure + tested). Rows on your shopping list are highlighted, which
+    is still the only highlight rule: it's free and it can't cry wolf. Names are `ItemLink`s. The
+    header's tallies count the rows **on screen**, so they describe what you filtered to. See
+    [ADR 0058](../decisions/0058-a-ledger-needs-filters-and-a-column-to-sort-by.md).
   - `SettingsPanel` — log folder, match mode, window opacity / interface scale, keep-completed,
     follow-your-zone, **cast alerts** (the watched-spell list + beep/**screen-flash**/include-self
     toggles, a **Test alert** button that fires a sample down the real broadcast path,

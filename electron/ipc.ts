@@ -12,7 +12,7 @@ import { WIKI_BASE } from "./wiki/api";
 import { importLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { alertStyle } from "../src/shared/cast-alerts";
-import { createMapWindow, getAlertWindow, getMainWindow, showInSearch } from "./windows";
+import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, showInSearch } from "./windows";
 import { resetPositions } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
@@ -26,7 +26,7 @@ import type { LootLog } from "./loot-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
-import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent } from "../src/shared/types";
+import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 
 const log = createLogger("ipc");
@@ -283,6 +283,12 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     const send = () => win.webContents.send(CH.mapViewZone, { zone, loc, label });
     if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
     else send();
+  });
+  // Point the map at a mob's kills. Only ever forwarded to a map window that's already open —
+  // this rides on a hover, and a window that appears because the cursor crossed a name is one
+  // nobody asked for.
+  ipcMain.on(CH.mapEmphasize, (_e, emphasis: KillEmphasis | null) => {
+    getMapWindow()?.webContents.send(CH.mapEmphasis, emphasis);
   });
   // Open a zone's map page on the Project 1999 wiki (host fixed, so it's safe).
   ipcMain.handle(CH.mapOpenP99, (_e, zone: string) => shell.openExternal(p99ZoneUrl(zone)));

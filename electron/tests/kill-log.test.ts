@@ -144,6 +144,37 @@ test("kills can be read back per zone, newest first", () => {
   assert.equal(k.kills().length, 3);
 });
 
+// The zone a map draws is one place, however hard the door was set (ADR 0059). Asking the map's
+// name for it — no article, no number, no ruleset — has to reach every variant's kills.
+test("a zone's difficulty variants read back as one zone", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "first", 1, "The Steamfont Mountains");
+  kill(k, "second", 2, "The Steamfont Mountains 2 (Adaptive)");
+  kill(k, "third", 3, "Steamfont Mountains 3");
+  kill(k, "elsewhere", 4, "Ak'Anon");
+
+  assert.deepEqual(
+    k.kills(ZONE).map((x) => x.mob),
+    ["third", "second", "first"],
+  );
+  // The record keeps the log's own wording — the fold is in the question, not the answer.
+  assert.equal(k.kills(ZONE)[0].zone, "Steamfont Mountains 3");
+  // Folding must not turn the query into a substring match: a zone is not its neighbour.
+  assert.deepEqual(k.kills("Ak'Anon").map((x) => x.mob), ["elsewhere"]);
+});
+
+// Zoning teleports you, and stepping between two difficulties of one zone is no exception: you
+// arrive at the zone-in point, so the fix you took on the other side is wrong rather than stale.
+test("a fix from another difficulty of the same zone can't place a kill", () => {
+  const k = createKillLog(tempDir());
+  k.noteLoc(loc(100, 200, 0), "Steamfont Mountains");
+  kill(k, "a rat", 1, "Steamfont Mountains 2 (Adaptive)");
+
+  const [only] = k.kills();
+  assert.equal(only.y, undefined);
+  assert.equal(only.confidence, 0);
+});
+
 test("the log survives a restart, and a corrupt file is not fatal", () => {
   const dir = tempDir();
   const first = createKillLog(dir);
@@ -255,6 +286,30 @@ test("a fix from the zone you just left does not place a kill in the new one", (
   const [only] = k.kills();
   assert.equal(only.y, undefined, "a Steamfont position says nothing about Kerra Isle");
   assert.equal(only.confidence, 0);
+});
+
+// From a real log: the app started mid-session, the catch-up found a `/loc` but no zone line
+// (`log-watcher.ts`), and that zone-less fix went on to place nine Kerra Isle kills at a Steamfont
+// camp's exact coordinates — three minutes after zoning, on a 47-minute-old fix. "We don't know
+// where this was" is not "this was everywhere".
+test("a fix taken before the zone was known can't place a kill in a named zone", () => {
+  const k = createKillLog(tempDir());
+  k.noteLoc(loc(-420, 1757, 0), null);
+  kill(k, "a kerran", 5, "Kerra Isle");
+
+  const [only] = k.kills();
+  assert.equal(only.y, undefined);
+  assert.equal(only.confidence, 0);
+});
+
+test("a zone-less fix still places a kill whose zone is equally unknown", () => {
+  // Same state, not a guess across one: neither says which zone, so the fix is the best there is.
+  const k = createKillLog(tempDir());
+  k.noteLoc(loc(10, 20, 0), null);
+  kill(k, "something", 5, null);
+
+  const [only] = k.kills();
+  assert.deepEqual([only.y, only.x], [10, 20]);
 });
 
 test("zoning back makes the old fix usable again, aged as usual", () => {

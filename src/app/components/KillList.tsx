@@ -4,19 +4,13 @@ import { api } from "@/lib/api";
 import { confidenceTier, CONFIDENCE_TIERS } from "@/shared/kill-confidence";
 import type { KillFilters, KillWindow } from "@/shared/kill-filters";
 import ItemLink from "./ItemLink";
-import type { KillRecord } from "@/shared/types";
+import type { KillEmphasis, KillRecord } from "@/shared/types";
 
 /** How many mob groups to show before the "show more" fold. Distinct mobs per zone are few. */
 const MAX_GROUPS = 40;
 
 /** Distinct drops to name in a group's header before summarising the rest as "+N". */
 const MAX_HEAD_DROPS = 6;
-
-/** Which kills to pick out on the map: one mob's, or a single kill. */
-export interface KillEmphasis {
-  mob?: string;
-  id?: string;
-}
 
 /**
  * The kills behind the heatmap, with the same confidence marker the map draws — so a faint

@@ -55,7 +55,9 @@ in the main process and all UI in the renderer.
   `parse-line.ts`, the single-pass dispatcher every line goes through exactly once
   ([ADR 0019](../decisions/0019-parse-once-and-one-tracker.md)) — plus the pure analysis the
   two sides share, like `damage-tree.ts`, which the tracker fills and the meter rolls up
-  ([ADR 0053](../decisions/0053-damage-is-cells-rolled-up.md)).
+  ([ADR 0053](../decisions/0053-damage-is-cells-rolled-up.md)), and `names.ts`, which states once
+  which numbers in a name are part of its identity — an item's grade and a zone's difficulty are
+  not ([ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)).
 
 ## Data flow
 - Renderer → main: `window.eql.*` → `ipcRenderer.invoke` → `ipcMain.handle` → store/wiki/watcher.

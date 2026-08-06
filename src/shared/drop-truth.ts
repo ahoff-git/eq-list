@@ -19,6 +19,7 @@
  * Pure and DOM-free so it can be tested without a wiki or a log.
  */
 import { normalizeItemName } from "./grouping";
+import { itemBaseName } from "./names";
 
 /** How much evidence before "never seen it" is worth remarking on. */
 export const SUSPICIOUS_AFTER_KILLS = 25;
@@ -62,8 +63,25 @@ export function reconcileDrops(
   // never heard of it) and the wiki's "unseen" (all those kills produced none) — both false,
   // and both the opposite of the truth. Since "undocumented" is the headline claim this
   // module exists to make (ADR 0025), a capital letter must not be able to manufacture one.
-  const wikiByKey = new Map(Object.entries(wikiDrops).map(([item, rate]) => [normalizeItemName(item), { item, rate }]));
-  const observedByKey = new Map(Object.entries(observed).map(([item, n]) => [normalizeItemName(item), { item, n }]));
+  const wikiByKey = new Map<string, { item: string; rate: string | undefined }>();
+  for (const [item, rate] of Object.entries(wikiDrops)) {
+    const key = normalizeItemName(item);
+    if (!wikiByKey.has(key)) wikiByKey.set(key, { item, rate });
+  }
+
+  // The same fold puts every grade of an item on one row — a "+2" and a "+5" Crushbone Belt are
+  // one drop with a second roll on it (`names.ts`) — so several spellings routinely land on one
+  // key here and their counts have to be *added*. Keying a Map straight off the entries would let
+  // the last spelling seen overwrite the rest, quietly throwing kills away.
+  const observedByKey = new Map<string, { item: string; n: number }>();
+  for (const [item, n] of Object.entries(observed)) {
+    const key = normalizeItemName(item);
+    const already = observedByKey.get(key);
+    if (already) already.n += n;
+    // Graded names are folded, so the base name is the only one that describes the whole row.
+    else observedByKey.set(key, { item: itemBaseName(item), n });
+  }
+
   const keys = new Set([...wikiByKey.keys(), ...observedByKey.keys()]);
   const trustObserved = kills >= TRUST_OBSERVED_AFTER_KILLS;
 

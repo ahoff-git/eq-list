@@ -11,17 +11,32 @@
  */
 
 import type { Zone } from "./types";
+import { normalizeZone } from "../sources";
 
 /**
  * Zone names worth stating by hand, with the file each belongs to. Every one is a standard
- * EverQuest short name, and a name is only ever used if that file exists — so a mistake here fails
- * closed (the zone keeps its file name) rather than mislabelling somebody else's map.
+ * EverQuest short name, and a name is only ever used if that file exists — so a *missing* file here
+ * fails closed (the zone keeps its file name). A **wrong** one does not: it draws a different
+ * zone's map under the right name, and every position plotted on it is somewhere else entirely.
+ *
+ * So the solver's rule applies to hand-written entries too, and it is the check to run before
+ * adding one: **a map that links "to X" is a neighbour of X, not X**. `qey2hh1` was curated as
+ * Qeynos Hills on that mistake — its own exit label says `to Qeynos Hills`, because it is West
+ * Karana next door, and Qeynos Hills is `qeytoqrg` ("Qeynos to Surefall Glade", whose exits are
+ * Blackburrow, Northern Qeynos, Surefall Glade and West Karana). Confirmed against a real log's
+ * `/loc` fixes: all 20 recorded positions in Qeynos Hills sit inside `qeytoqrg`'s geometry and
+ * outside `qey2hh1`'s.
  */
 export const CURATED_ZONES: { name: string; file: string; sortingStr?: string }[] = [
   { name: "Greater Faydark", file: "gfaydark", sortingStr: "Faydark" },
   { name: "Lesser Faydark", file: "lfaydark", sortingStr: "Faydark" },
   { name: "Toxxulia Forest", file: "toxxulia" },
-  { name: "Qeynos Hills", file: "qey2hh1" },
+  { name: "Qeynos Hills", file: "qeytoqrg" },
+  // The neighbour that was standing in for it. EQ named West Karana for the road it carries
+  // ("Qeynos to HighHold, part 1"), which no spelling rule can reach — the other three Karanas
+  // are `eastkarana` / `northkarana` / `southkarana`, so this is the fourth by elimination and by
+  // its exits (Qeynos Hills, the Northern Plains of Karana).
+  { name: "West Karana", file: "qey2hh1", sortingStr: "Karana" },
   { name: "Clan Crushbone", file: "crushbone" },
   { name: "Northern Felwithe", file: "felwithea", sortingStr: "Felwithe" },
   { name: "Southern Felwithe", file: "felwitheb", sortingStr: "Felwithe" },
@@ -43,20 +58,17 @@ export const CURATED_ZONES: { name: string; file: string; sortingStr?: string }[
   { name: "EQL Tutorial", file: "tutoriala" },
 ];
 
-/** Normalize a zone name for tolerant matching: trim, lowercase, drop a leading "the ". */
-function normalize(name: string): string {
-  return name.trim().toLowerCase().replace(/^the /, "");
-}
-
 /**
- * Find a zone by name. Prefers an exact key match, then falls back to a normalized name match so a
- * log's "The Feerrott" resolves regardless of case or article — which is how the map follows you.
+ * Find a zone by name. Prefers an exact key match, then falls back to `normalizeZone` so a log's
+ * "The Feerrott" resolves regardless of case or article — which is how the map follows you. That
+ * fold is shared with the wiki-side zone matching rather than repeated here, which is also what
+ * makes a harder zone ("The Feerrott 3") land on the ordinary zone's map.
  */
 export function findZone(name: string, zones: Zone[]): Zone | undefined {
   const exact = zones.find((z) => z.key === name);
   if (exact) return exact;
-  const target = normalize(name);
-  return zones.find((z) => normalize(z.name) === target);
+  const target = normalizeZone(name);
+  return zones.find((z) => normalizeZone(z.name) === target);
 }
 
 /**
