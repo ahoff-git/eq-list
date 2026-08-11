@@ -219,6 +219,31 @@ test("a zone the graph never named shows a tidied file name, not a bare one", ()
   assert.deepEqual(findRoute(g, "gukbottom", "gukmid")?.zones.map((z) => z.name), ["Gukbottom", "Gukmid"]);
 });
 
+test("a zone with a map file resolves by file name too, even with no nodes in it", () => {
+  // There were three resolvers and they disagreed about this: the router wanted a *node* in the zone,
+  // while the manual pass accepted any zone with a map file. So an isolated zone could be routed to by
+  // its long name and not by its file name, and an excluded zone asked for by file said "no such zone".
+  const g = {
+    ...graph([boundary("a", 0, "b", 0)], [], { a: "Alpha", b: "Beta", lonely: "Lonely Vale", pok: "The Plane of Knowledge" }),
+    absent: ["pok"],
+  };
+
+  // `lonely` has a map file and no travel nodes at all. Both spellings agree, and both say the same
+  // thing about why you can't get there.
+  assert.equal(travelZone(g, "Lonely Vale"), "lonely");
+  assert.equal(travelZone(g, "lonely"), "lonely", "its file name is a name too");
+  assert.equal(answerRoute(g, "Alpha", "Lonely Vale").refused, "unreachable");
+  assert.equal(answerRoute(g, "Alpha", "lonely").refused, "unreachable");
+
+  // And an excluded zone is "not in the game" whichever way it's asked for — it used to be
+  // "unknown-to" by file, because its nodes were gone.
+  assert.equal(answerRoute(g, "Alpha", "The Plane of Knowledge").refused, "absent");
+  assert.equal(answerRoute(g, "Alpha", "pok").refused, "absent");
+
+  // A zone with neither a file nor a node is still unknown, which is the answer that must survive.
+  assert.equal(travelZone(g, "Atlantis"), undefined);
+});
+
 test("a zone is found by its long name or by its map file, folded like every other zone name", () => {
   const g = chain();
   assert.equal(travelZone(g, "Alpha"), "a");

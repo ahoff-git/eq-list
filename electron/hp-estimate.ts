@@ -28,12 +28,12 @@
  * until they level. Buffs the log doesn't announce are the main source of drift, which is
  * exactly why the number is presented as an estimate with its evidence.
  */
-import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import type { CombatEvent, HpEstimate } from "../src/shared/types";
 
+import { readJson, writeJson } from "./json-store";
 const log = createLogger("hp-estimate");
 
 /** No incoming damage for this long ends a window (health regenerates in the gap). */
@@ -108,30 +108,22 @@ export function createHpEstimate(
   let fullWindowStart = 0;
 
   function read(): HpEstimate {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<HpEstimate>;
-      return {
-        atLeast: Math.max(0, Number(parsed.atLeast) || 0),
-        regenPerTick: typeof parsed.regenPerTick === "number" ? parsed.regenPerTick : undefined,
-        atMost: typeof parsed.atMost === "number" ? parsed.atMost : undefined,
-        stated: typeof parsed.stated === "number" ? parsed.stated : undefined,
-        level: typeof parsed.level === "number" ? parsed.level : undefined,
-        samples: Math.max(0, Number(parsed.samples) || 0),
-        updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "",
-      };
-    } catch {
-      return empty();
-    }
+    // Every field below defaults, so an absent or unreadable file validates to exactly `empty()`.
+    const parsed = readJson<Partial<HpEstimate>>(file, {});
+    return {
+      atLeast: Math.max(0, Number(parsed.atLeast) || 0),
+      regenPerTick: typeof parsed.regenPerTick === "number" ? parsed.regenPerTick : undefined,
+      atMost: typeof parsed.atMost === "number" ? parsed.atMost : undefined,
+      stated: typeof parsed.stated === "number" ? parsed.stated : undefined,
+      level: typeof parsed.level === "number" ? parsed.level : undefined,
+      samples: Math.max(0, Number(parsed.samples) || 0),
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "",
+    };
   }
 
   function write(): void {
     timer = null;
-    try {
-      fs.mkdirSync(userDataDir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(state), "utf8");
-    } catch (e) {
-      log.warn("could not save hp estimate:", (e as Error).message);
-    }
+    writeJson(file, state, { what: "hp estimate" });
   }
 
   function changed(): HpEstimate {

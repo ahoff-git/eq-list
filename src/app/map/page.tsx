@@ -15,7 +15,7 @@ import {
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import MapPanel, { type RenderKill, type RenderPin } from "../components/MapPanel";
-import KillList, { clock } from "../components/KillList";
+import KillList from "../components/KillList";
 import MobKnowledgePanel from "../components/MobKnowledge";
 import { DEFAULT_KILL_FILTERS, filterKills, windowMoves, type KillFilters } from "@/shared/kill-filters";
 import PinButton from "../components/PinButton";
@@ -35,6 +35,7 @@ import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
 import { MAP_UI_SCALE } from "@/shared/constants";
 import type { KillEmphasis } from "@/shared/types";
 
+import { clock } from "@/shared/format";
 /**
  * How often to re-apply a moving kill window. A kill's own resolution is a second and the shortest
  * window is ten minutes, so this only has to be fine enough that a row leaves the list at roughly

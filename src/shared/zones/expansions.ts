@@ -18,7 +18,7 @@
  * **It fails open, deliberately.** A zone the table has never heard of is `"unknown"` and treated as
  * available. Excluding a zone the server *has* would cut it out of the map and every route silently,
  * which is far worse than offering one it hasn't — and there are real zones in that gap: Legends' own
- * custom zones, and the 28 zones eqlwiki names differently from fandom ("Kerra Island" for "Kerra
+ * custom zones, and the 26 zones eqlwiki names differently from fandom ("Kerra Island" for "Kerra
  * Isle", "Eastern Plains of Karana" for "East Karana"). The generator refuses to write a table that
  * would misfile a zone eqlwiki knows, which is the other half of that guarantee.
  *
@@ -56,7 +56,7 @@ export interface ZoneExpansion {
 }
 
 /**
- * Zone → expansion, folded. Built once: 351 zones is small, and every caller asks by name.
+ * Zone → expansion, folded. Built once: a few hundred zones is small, and every caller asks by name.
  *
  * Earliest expansion wins where two list the same zone, which the generated table already guarantees by
  * being release-ordered — a revamp doesn't change when a zone came into existence.
@@ -80,8 +80,16 @@ const byZone = ((): Map<string, ZoneExpansion> => {
  * "the", the backtick EverQuest writes for an apostrophe and a known alias all resolve.
  */
 export function zoneExpansion(zone: string): ZoneExpansion | undefined {
+  return look(zone).found;
+}
+
+/**
+ * The fold and the lookup, once, for the callers that want both. `zoneUnavailable` needs the key too
+ * (for the era set) and used to fold the same name a second time to get it.
+ */
+function look(zone: string): { key: string; found?: ZoneExpansion } {
   const key = zoneKey(zone);
-  return key ? byZone.get(key) : undefined;
+  return { key, found: key ? byZone.get(key) : undefined };
 }
 
 /**
@@ -96,11 +104,10 @@ export function zoneExpansion(zone: string): ZoneExpansion | undefined {
 export type ZoneUnavailable = "future" | "out-of-era";
 
 export function zoneUnavailable(zone: string, outOfEra?: ReadonlySet<string>): ZoneUnavailable | undefined {
-  const found = zoneExpansion(zone);
+  const { key, found } = look(zone);
   if (found && !found.onServer) return "future";
   // Checked second: an expansion the server doesn't have isn't merely "not open yet", and a zone the
   // table doesn't know can still be flagged by the wiki, which is the more specific source.
-  const key = zoneKey(zone);
   if (key && outOfEra?.has(key)) return "out-of-era";
   return undefined;
 }

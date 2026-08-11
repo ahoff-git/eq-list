@@ -7,16 +7,9 @@
  * `connectToRoom` — this module is safe to import during Next's static export, and
  * the network only spins up in the renderer at runtime (the main window; see ADR 0012).
  */
-import type { BootstrapClient } from "@awari/core";
-import type {
-  AwariMessage,
-  BootstrapRequest,
-  BootstrapResponse,
-  ContactHint,
-  RoomId,
-  RoomSession,
-} from "@awari/protocol";
+import type { AwariMessage, RoomSession } from "@awari/protocol";
 import { createLogger } from "@/shared/logging";
+import { createHttpBootstrapClient, DEFAULT_BOOTSTRAP_URL } from "@/shared/awari-bootstrap";
 
 const log = createLogger("awari");
 
@@ -47,28 +40,6 @@ export const ROOM_ID = "eq-list";
  */
 const ICE_PROVIDERS = ["google", "open-relay"] as const;
 
-/** Live bootstrap-service (room directory / peer contact registry); overridable in Settings. */
-export const DEFAULT_BOOTSTRAP_URL = "https://awari-bootstrap-service.vercel.app";
-
-/** HTTP `BootstrapClient` against the bootstrap-service (same contract as awari's reference client). */
-function createHttpBootstrapClient(baseUrl: string, protocolVersion: string): BootstrapClient {
-  const headers = { "Content-Type": "application/json" };
-  const base = baseUrl.replace(/\/+$/, ""); // tolerate a trailing slash
-  return {
-    async resolve(request: BootstrapRequest): Promise<BootstrapResponse> {
-      const res = await fetch(`${base}/api/bootstrap`, { method: "POST", headers, body: JSON.stringify(request) });
-      return res.json();
-    },
-    async registerHint(roomId: RoomId, hint: ContactHint): Promise<void> {
-      await fetch(`${base}/api/bootstrap/hints`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ roomId, protocolVersion, hint }),
-      });
-    },
-  };
-}
-
 /**
  * A fresh, readable per-session peer id (awari identifies each client by this).
  *
@@ -83,6 +54,9 @@ function createHttpBootstrapClient(baseUrl: string, protocolVersion: string): Bo
 export function randomPeerId(): string {
   return `eq-list-${crypto.randomUUID().slice(0, 8)}`;
 }
+
+/** Re-exported: the client itself lives in `shared` now, being plain `fetch` and therefore testable. */
+export { DEFAULT_BOOTSTRAP_URL };
 
 export type PeerMessageHandler = (message: AwariMessage) => void;
 

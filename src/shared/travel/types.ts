@@ -22,6 +22,8 @@
  * (main process) and any consumer (renderer) share it.
  */
 
+import { normalizeZone } from "../sources";
+
 /** An EQ world position, `/loc` order plus height. */
 export interface TravelAt {
   y: number;
@@ -240,4 +242,56 @@ export function zoneDistance(
 /** A boundary's canonical id and the pair behind it — sorted, so one border has one name. */
 export function boundaryId(a: string, b: string): string {
   return [a, b].sort().join("|");
+}
+
+/**
+ * **Which map file a zone name means** — the one answer, asked by every pass.
+ *
+ * There were three of these: the builder resolving a `to X` label, the manual pass resolving a
+ * hand-authored entry's zone, and the router resolving a route's endpoints. All three folded the name
+ * and scanned `zoneNames`, and then they disagreed about the fallback — the router accepted a bare file
+ * name only if some *node* was in that zone, while the manual pass also accepted one that merely had a
+ * map file. So an isolated zone could be routed to by its long name but not by its file name, and an
+ * excluded zone asked for by file came back "no such zone" instead of "not in the game".
+ *
+ * A name resolves **exactly after folding**, never by containment: `zoneMatches`' loose reading is right
+ * for meeting the wiki halfway and quite wrong here, since "commonlands" sits inside "east commonlands"
+ * ([ADR 0059](../../../specs/decisions/0059-a-zone-s-variants-are-one-zone.md)). Failing that, the name
+ * is tried **as a file** — which is what a zone nobody could name is called, and what someone who knows
+ * EverQuest would type.
+ */
+export function zoneFileFor(
+  zoneNames: Record<string, string>,
+  /** The files that exist — a graph's zones, a folder's listing, whichever the caller has. */
+  files: ReadonlySet<string>,
+  name: string,
+): string | undefined {
+  const wanted = normalizeZone(name);
+  if (!wanted) return undefined;
+  for (const [file, zoneName] of Object.entries(zoneNames)) {
+    if (normalizeZone(zoneName) === wanted) return file;
+  }
+  const bare = name.trim().toLowerCase();
+  return files.has(bare) || zoneNames[bare] !== undefined ? bare : undefined;
+}
+
+/**
+ * Every zone a graph covers. Asked by the resolver, by the router's endpoints and by the size a refusal
+ * quotes — three places that were each spelling out the same flatMap.
+ */
+export function graphZones(graph: Pick<TravelGraph, "nodes">): ReadonlySet<string> {
+  return new Set(graph.nodes.flatMap((n) => n.zones));
+}
+
+/**
+ * A node id fragment: readable, stable, and safe to write in a hand-authored file. Shared, because the
+ * builder and the manual pass both mint ids and two spellings of "make this a slug" is one too many.
+ */
+export function slug(text: string): string {
+  return (
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "place"
+  );
 }

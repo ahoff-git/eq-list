@@ -5,6 +5,7 @@ import { sortRows, type Sort } from "@/shared/sorting";
 import SortHeader from "./SortHeader";
 import type { FightStats, SpellStat } from "@/shared/types";
 
+import { figure } from "@/shared/format";
 /**
  * Where your damage came from, spell by spell — and whether each spell earns its cast
  * time. Two figures do the real work here, and neither is in the log:
@@ -69,8 +70,8 @@ export default function SpellTable({ window }: { window: FightStats }) {
               <tr title={detail(s, facts[s.spell])}>
                 <td>{s.spell}</td>
                 <td>{s.casts || "—"}</td>
-                <td>{s.damage ? s.damage.toLocaleString() : "—"}</td>
-                <td>{s.healed ? s.healed.toLocaleString() : "—"}</td>
+                <td>{figure(s.damage)}</td>
+                <td>{figure(s.healed)}</td>
                 <td>{s.avgCastSec ? `${s.avgCastSec.toFixed(1)}s` : "—"}</td>
                 <td className="num-accent">{s.dpc || "—"}</td>
                 <td>{facts[s.spell]?.mana ?? "—"}</td>
@@ -86,8 +87,8 @@ export default function SpellTable({ window }: { window: FightStats }) {
                   <tr className="spell-mode" key={`${s.spell}-${m.mode}`}>
                     <td>↳ {m.mode}</td>
                     <td>{m.casts || "—"}</td>
-                    <td>{m.damage ? m.damage.toLocaleString() : "—"}</td>
-                    <td>{m.healed ? m.healed.toLocaleString() : "—"}</td>
+                    <td>{figure(m.damage)}</td>
+                    <td>{figure(m.healed)}</td>
                     <td>{m.avgCastSec ? `${m.avgCastSec.toFixed(1)}s` : "—"}</td>
                     <td className="num-accent">{m.dpc || "—"}</td>
                     <td>—</td>

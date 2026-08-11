@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { mergeEqMaps, parseEqMap, type EqMap } from "../src/shared/map/eqmap";
+import { mergeEqMaps, parseEqMap, type EqMap, type MapPoi } from "../src/shared/map/eqmap";
 import { STOCK_SOURCE_ID, type MapSource, type MapSourceReport } from "../src/shared/map/map-sources";
 import { solveZoneNames, zoneLinkName, type ZoneLinks } from "../src/shared/map/zone-names";
 
@@ -109,6 +109,28 @@ function readIfPresent(file: string): string | undefined {
 }
 
 /**
+ * A zone's **labelled points and nothing else**, across both label layers.
+ *
+ * The base file of a big zone is most of a megabyte of `L` geometry that neither the gazetteer nor the
+ * travel graph looks at, so the `P` lines are sieved out before the parser sees them. Parsing is still
+ * the shared, tested `parseEqMap` — this used to be done inline with its own `split(",").slice(7)`,
+ * which was a second, unvalidated copy of the format's field layout.
+ */
+export function readZonePois(dir: string, short: string): MapPoi[] {
+  const pois: MapPoi[] = [];
+  for (const suffix of GEOMETRY_LAYERS) {
+    const text = readIfPresent(path.join(dir, `${short}${suffix}.txt`));
+    if (!text) continue;
+    const labels = text
+      .split(/\r?\n/)
+      .filter((line) => line[0] === "P")
+      .join("\n");
+    if (labels) pois.push(...parseEqMap(labels).pois);
+  }
+  return pois;
+}
+
+/**
  * One zone's map: base geometry plus the POI layer, merged, with the pack's credits if it
  * ships any. Cached by source+zone — the files don't change while the app runs, and a
  * re-render shouldn't re-read 800KB of text.
@@ -188,15 +210,9 @@ export function createZoneNamer(): {
       const links: ZoneLinks = new Map();
       for (const short of source.files) {
         const out = new Set<string>();
-        for (const suffix of GEOMETRY_LAYERS) {
-          const text = readIfPresent(path.join(source.dir, `${short}${suffix}.txt`));
-          if (!text) continue;
-          for (const line of text.split(/\r?\n/)) {
-            if (line[0] !== "P") continue;
-            const label = line.slice(1).split(",").slice(7).join(",").trim().replace(/_/g, " ");
-            const name = zoneLinkName(label);
-            if (name) out.add(name);
-          }
+        for (const poi of readZonePois(source.dir, short)) {
+          const name = zoneLinkName(poi.label);
+          if (name) out.add(name);
         }
         links.set(short, out);
       }

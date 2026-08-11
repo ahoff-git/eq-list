@@ -13,9 +13,9 @@
  * last size is lost (the window appears to "reset" every launch).
  */
 import { app, screen, type BrowserWindow } from "electron";
-import fs from "node:fs";
 import path from "node:path";
 
+import { readJson, writeJson } from "./json-store";
 export interface Bounds {
   x: number;
   y: number;
@@ -48,11 +48,7 @@ function file(): string {
 }
 function get(): WindowState {
   if (!state) {
-    try {
-      state = JSON.parse(fs.readFileSync(file(), "utf8")) as WindowState;
-    } catch {
-      state = {};
-    }
+    state = readJson<WindowState>(file(), {});
   }
   return state;
 }
@@ -61,11 +57,9 @@ function writeNow(): void {
     clearTimeout(writeTimer);
     writeTimer = null;
   }
-  try {
-    fs.writeFileSync(file(), JSON.stringify(get(), null, 2), "utf8");
-  } catch {
-    /* best effort */
-  }
+  // Was the one writer that never created its folder either, so a first run into a missing userData
+  // silently kept nothing.
+  writeJson(file(), get(), { pretty: true, what: "window positions" });
 }
 function persist(): void {
   if (writeTimer) clearTimeout(writeTimer);

@@ -14,11 +14,11 @@
  * Every failure path (offline, rate-limited, malformed, unreadable version) resolves to "nothing to
  * report": a broken update check must never interrupt the app.
  */
-import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { isNewerVersion, versionFromRelease } from "../src/shared/version";
 
+import { readJson, writeJson } from "./json-store";
 const log = createLogger("update-check");
 
 /** The repository CI publishes to (see .github/workflows/build-windows.yml). */
@@ -55,22 +55,13 @@ export function createUpdateChecker(
   let found: UpdateInfo | null = null;
 
   function read(): string {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { seenVersion?: string };
-      return typeof parsed.seenVersion === "string" ? parsed.seenVersion : "";
-    } catch {
-      return "";
-    }
+    const parsed = readJson<{ seenVersion?: string }>(file, {});
+    return typeof parsed.seenVersion === "string" ? parsed.seenVersion : "";
   }
 
   function write(version: string): void {
     seenVersion = version;
-    try {
-      fs.mkdirSync(userDataDir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify({ seenVersion }), "utf8");
-    } catch (e) {
-      log.warn("could not save update state:", (e as Error).message);
-    }
+    writeJson(file, { seenVersion }, { what: "update state" });
   }
 
   return {

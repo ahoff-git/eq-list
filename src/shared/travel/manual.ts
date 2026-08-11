@@ -13,11 +13,13 @@
  * Pure. The data itself is `manual-links.ts`.
  */
 
-import { normalizeZone } from "../sources";
 import { zoneWalks } from "./build";
 import {
   boundaryId,
+  graphZones,
   positionsIn,
+  slug,
+  zoneFileFor,
   type TravelCrossing,
   type TravelGraph,
   type TravelNode,
@@ -111,15 +113,6 @@ export interface ManualReport {
   networksDropped: { network: TravelToggle; zone: string }[];
 }
 
-function slug(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "place"
-  );
-}
-
 /** Nodes in a zone whose label contains `label` — how every hand-authored entry finds its place. */
 function matching(nodes: TravelNode[], zone: string, label: string): TravelNode[] {
   const wanted = label.toLowerCase();
@@ -127,17 +120,14 @@ function matching(nodes: TravelNode[], zone: string, label: string): TravelNode[
 }
 
 /**
- * Which map file a hand-authored entry means. Names a zone either way round — "The Plane of Knowledge"
- * or `poknowledge` — because a file name differs between packs while the zone's name doesn't, and
- * someone writing this table shouldn't have to know which one this pack chose.
+ * Which map file a hand-authored entry means — names a zone either way round ("The Plane of Knowledge"
+ * or `poknowledge`), because a file name differs between packs while the zone's name doesn't.
+ *
+ * The rule itself is `zoneFileFor`, shared with the builder and the router so the same entry can't mean
+ * three different things in three passes.
  */
 function fileFor(graph: TravelGraph, zone: string): string | undefined {
-  const wanted = normalizeZone(zone);
-  for (const [file, name] of Object.entries(graph.zoneNames)) {
-    if (normalizeZone(name) === wanted) return file;
-  }
-  const bare = zone.trim().toLowerCase();
-  return graph.zoneNames[bare] !== undefined || graph.nodes.some((n) => n.zones.includes(bare)) ? bare : undefined;
+  return zoneFileFor(graph.zoneNames, graphZones(graph), zone);
 }
 
 /**
@@ -167,7 +157,7 @@ export function applyManual(graph: TravelGraph, manual: TravelManual): { graph: 
   // very border creation just refused. So an excluded zone is not a zone a link may attach to.
   const excluded = new Set(graph.absent ?? []);
   const knownZones = new Set(
-    [...nodes.flatMap((n) => n.zones), ...Object.keys(graph.zoneNames)].filter((z) => !excluded.has(z)),
+    [...graphZones({ nodes }), ...Object.keys(graph.zoneNames)].filter((z) => !excluded.has(z)),
   );
   const ids = new Set(nodes.map((n) => n.id));
   const named = (zone: string) => graph.zoneNames[zone] ?? zone;

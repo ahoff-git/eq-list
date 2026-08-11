@@ -68,6 +68,21 @@ unit-tested.
   - `src/shared/loot-filters.ts` → `electron/tests/loot-filters.test.ts` (each filter narrowing the
     ledger, "on my list" matching the way the store matches, tallies counting stacks rather than
     lines, and the default sort leaving same-second drops in the order they were looted).
+  - `electron/json-store.ts` → `electron/tests/json-store.test.ts` (the one reader and the one **atomic**
+    writer every store on disk goes through). Ten modules each had their own, and only two wrote to a temp
+    file and renamed; the other eight wrote straight to the destination, so an interrupted write left a
+    half-file, the next read threw, the fallback took over, and the store came back **empty with nothing
+    said**. Atomicity can't be tested by killing the process mid-write, so what's pinned is the property
+    behind it: **a write that fails leaves the previous file completely intact** (forced by putting a
+    directory where the temp file needs to go), no temp file survives a success, a missing file is the
+    quiet fallback and a corrupt one the loud fallback. Touches a temp dir — what lands on disk is the
+    whole subject.
+  - `src/shared/format.ts` → `electron/tests/format.test.ts` (the display formatters the panels share).
+    Pinned because of how they arrived: `clock` existed in three components and `mins`/`duration` in
+    **four**, under two names with **three** different answers to the same span — one dropped the
+    seconds, one kept them, one showed a dash at zero. Every reading was wanted; sharing a name while
+    disagreeing was the bug. The tests hold the option explicit, and hold "a timestamp that isn't one
+    reads as a gap". Locale wording is the browser's, so they assert structure, not words.
   - `src/shared/sorting.ts` → `electron/tests/sorting.test.ts` (what a header click does, and that a
     sort is stable and non-mutating — both of which its callers lean on).
   - `src/shared/tooltip.ts` → `electron/tests/tooltip.test.ts` (a hover card placed right of its
@@ -134,6 +149,21 @@ unit-tested.
       start, unknown destination, unreachable) and the zone/border counts that make "no route"
       believable — including the fifth refusal, a zone that **isn't in the game**, told apart from one
       that is merely unreachable, because only one of the two is worth going on looking for.
+  - `src/shared/awari-bootstrap.ts` → `electron/tests/awari-bootstrap.test.ts` (our HTTP client for the
+    room directory — awari ships none, so this one is ours). Every test is a way the service can fail,
+    and every one must **reject**, because core waits on that: it confirms a leader-hint registered
+    *before* committing leadership, so a client that resolves regardless leaves a peer believing it leads
+    a room nobody can resolve — the "two clients never met" symptom
+    [ADR 0028](../decisions/0028-peer-networking-verified-and-repaired.md) mitigated with jittered
+    rejoins. So a refused hint rejects on **every** status that isn't `registered`, including none at
+    all; the three transport failures stay told apart (unreachable, a status code, a body that isn't
+    JSON) because the message is what reaches the log
+    ([ADR 0052](../decisions/0052-an-error-goes-to-the-log-not-the-screen.md)) and "bootstrap is down"
+    has to read differently from "nobody's online"; and a body missing `status`/`contacts` is refused
+    rather than handed on, since core reads that as an empty room. `fetch` is injected, the way
+    `createXpProgress` takes its clock — so this needs no network and no DOM. Lives in `shared/` because
+    that is what `tsconfig.electron.json` can see; the browser-only transport stays in
+    `src/lib/awari/net.ts`.
   - `electron/wiki/parse.ts` → `electron/tests/wiki-parse.test.ts`, pinned against
     real page HTML in `fixtures/wiki/` (item drops, quest turn-ins/rewards, recipe
     components). Re-capture a fixture only when the wiki's markup actually changes.

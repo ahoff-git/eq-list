@@ -5,8 +5,10 @@
  * fact that decides whether a zone exists on this server at all. A map pack draws all 26 expansions,
  * so without it the app offers you Argath, Bastion of Illdaera and routes you through it.
  *
- * The EverQuest fandom wiki states it, one table per expansion, in a shape every expansion page shares
- * (`transcludesection|zone_list`) — so the table is **fetched, not typed**. Output is
+ * The EverQuest fandom wiki states it, one table per expansion — in **two** shapes, an older plain
+ * `{| class="article-table"` and a newer transcludable one with every pipe escaped as `{{!}}`, both read
+ * by taking the first link in each row. Three pages (Omens of War, Ring of Scale, The Darkened Sea) fit
+ * neither and are skipped with a warning. So the table is **fetched, not typed**. Output is
  * `src/shared/travel/../zones/expansions.generated.ts`; the lookup over it, and the policy about which
  * expansions this server runs, are hand-written beside it in `zones/expansions.ts`.
  *
@@ -23,6 +25,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -105,14 +108,22 @@ async function expansionZones(title) {
   return { zones: [...zones].sort(), released };
 }
 
-/** The same fold `zoneKey` applies, kept in step by hand because a script can't import the TS. */
-const fold = (s) =>
-  s
-    .toLowerCase()
-    .replace(/[`’]/g, "'")
-    .replace(/^the\s+/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+/**
+ * **The app's own fold**, not a copy of it.
+ *
+ * This was reimplemented here, which quietly missed `ZONE_ALIASES` — so a zone the app folds onto
+ * another name ("Kerra Isle" onto "Kerra Ridge") folded differently in the safety check than in the app,
+ * and the check could pass while the app misfiled the zone. The compiled module is loaded instead, which
+ * is what the other travel scripts do.
+ */
+const { zoneKey: fold } = (() => {
+  const file = path.join(ROOT, "dist-electron/src/shared/names.js");
+  if (!fs.existsSync(file)) {
+    console.error(`Missing ${path.relative(ROOT, file)} — run: npm run build:electron`);
+    process.exit(1);
+  }
+  return createRequire(import.meta.url)(file);
+})();
 
 /**
  * Dates the infobox doesn't state. Only one page needs it, and getting it wrong matters: order decides

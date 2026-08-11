@@ -15,12 +15,12 @@
  * bounds are (see `window-state.ts`): it changes constantly, and routing it through the
  * reactive settings store would spam every window (and rebuild the tray) on every kill.
  */
-import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import type { XpProgress } from "../src/shared/types";
 
+import { readJson, writeJson } from "./json-store";
 const log = createLogger("xp-progress");
 
 /** Gains land often; coalesce the writes. */
@@ -47,27 +47,19 @@ export function createXpProgress(userDataDir: string, nowIso: () => string = () 
   let state: XpProgress = read();
 
   function read(): XpProgress {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<XpProgress>;
-      return {
-        intoLevel: clampPct(Number(parsed.intoLevel) || 0),
-        level: typeof parsed.level === "number" ? parsed.level : undefined,
-        statedAt: parsed.statedAt,
-        known: !!parsed.known,
-      };
-    } catch {
-      return { intoLevel: 0, level: undefined, known: false };
-    }
+    // `clampPct(0)` is 0, so an absent or unreadable file validates to "nothing known yet".
+    const parsed = readJson<Partial<XpProgress>>(file, {});
+    return {
+      intoLevel: clampPct(Number(parsed.intoLevel) || 0),
+      level: typeof parsed.level === "number" ? parsed.level : undefined,
+      statedAt: parsed.statedAt,
+      known: !!parsed.known,
+    };
   }
 
   function write(): void {
     timer = null;
-    try {
-      fs.mkdirSync(userDataDir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(state), "utf8");
-    } catch (e) {
-      log.warn("could not save xp progress:", (e as Error).message);
-    }
+    writeJson(file, state, { what: "xp progress" });
   }
 
   function changed(): XpProgress {

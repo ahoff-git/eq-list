@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { SessionSummary, StoredFight } from "@/shared/types";
 
+import { clock, dayTime, duration } from "@/shared/format";
 /**
  * Browse past play: sessions (newest first) drill into their fights, and picking a
  * fight hands it back to the panel to render with the same meter/spell views as a live
@@ -106,7 +107,7 @@ function Session({
         <span className="caret">{open ? "▾" : "▸"}</span>
         <span className="hist-when">{dayTime(summary.startedAt)}</span>
         <span className="muted small">
-          {summary.fights} fight{summary.fights === 1 ? "" : "s"} · {mins(summary.combatSec)} fighting
+          {summary.fights} fight{summary.fights === 1 ? "" : "s"} · {duration(summary.combatSec, { seconds: true })} fighting
         </span>
         <span className="spacer" />
         <span className="hist-dmg">{summary.yourDealt.toLocaleString()} dealt</span>
@@ -119,7 +120,7 @@ function Session({
               key={f.id}
               onClick={() => onPick(picked?.id === f.id ? null : f)}
             >
-              <span className="hf-when">{clock(f.stats.startedAt)}</span>
+              <span className="hf-when">{clock(f.stats.startedAt, { seconds: true })}</span>
               <span className="hf-label">{f.label}</span>
               <span className="muted small">{f.stats.durationSec}s</span>
               <span className="hf-dmg">{f.stats.yourDealt.toLocaleString()}</span>
@@ -131,17 +132,6 @@ function Session({
   );
 }
 
-function dayTime(iso: string): string {
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
 
-function clock(iso: string): string {
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
-}
 
-function mins(sec: number): string {
-  const m = Math.floor(sec / 60);
-  return m > 0 ? `${m}m ${sec % 60}s` : `${sec}s`;
-}
+

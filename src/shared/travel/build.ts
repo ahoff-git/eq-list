@@ -17,11 +17,12 @@
  * Pure — the file reading is `electron/travel-graph.ts`.
  */
 
-import { normalizeZone } from "../sources";
 import type { ZoneHarvest } from "./harvest";
 import {
   boundaryId,
   networkOfCrossing,
+  slug,
+  zoneFileFor,
   zoneDistance,
   type TravelCrossing,
   type TravelEdge,
@@ -68,16 +69,6 @@ export interface TravelBuildReport {
    * each — which is the size of the shortcut that would otherwise exist.
    */
   absent: { zone: string; borders: number }[];
-}
-
-/** A node id fragment: readable, stable, and safe to write in a hand-authored file. */
-function slug(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "point"
-  );
 }
 
 /**
@@ -130,16 +121,14 @@ export function buildTravelGraph(
   /** Boundaries by their canonical id — one node per border, filled in from both sides. */
   const boundaries = new Map<string, TravelNode>();
 
-  // A destination name resolves to a file the way a zone name resolves anywhere else: folded, then
-  // exact. Loose containment would happily read `to The Commonlands` as East Commonlands.
-  const fileByName = new Map<string, string>();
-  for (const [file, name] of Object.entries(zoneNames)) {
-    const key = normalizeZone(name);
-    if (key && !fileByName.has(key)) fileByName.set(key, file);
-  }
   const known = new Set(harvests.map((h) => h.zone));
-  // A label may also name a zone by its file name, which is what an unnamed zone shows as.
-  for (const file of known) if (!fileByName.has(file)) fileByName.set(file, file);
+  /** One resolver for every pass — see `zoneFileFor`, which is also what the router and the manual
+   *  pass ask. Memoised because a big pack asks it once per exit label. */
+  const resolved = new Map<string, string | undefined>();
+  const fileOf = (name: string): string | undefined => {
+    if (!resolved.has(name)) resolved.set(name, zoneFileFor(zoneNames, known, name));
+    return resolved.get(name);
+  };
 
   const zoneLabel = (file: string): string => zoneNames[file] ?? file;
   const unresolved = new Map<string, Set<string>>();
@@ -149,7 +138,7 @@ export function buildTravelGraph(
   const absent = new Set<string>();
   const refusedBorders = new Map<string, number>();
   for (const zone of absentZones) {
-    const file = fileByName.get(normalizeZone(zone)) ?? (known.has(zone) ? zone : undefined);
+    const file = fileOf(zone);
     if (file) absent.add(file);
   }
 
@@ -168,7 +157,7 @@ export function buildTravelGraph(
       // and `Translocator to Erudin` state a connection, and one that costs no walking and asks
       // nothing of you but turning up is a border by the same argument boats are (ADR 0062). Reading
       // those was the difference between Odus being reachable and being an island.
-      const target = point.to ? fileByName.get(normalizeZone(point.to)) : undefined;
+      const target = point.to ? fileOf(point.to) : undefined;
       // **A border into a zone that isn't in the game is refused, not reported as a mystery.** A map
       // file does answer to it, so calling it unresolved would be a lie: it's a place we know about and
       // are deliberately leaving out. Counted, because that count is the shortcut being avoided.

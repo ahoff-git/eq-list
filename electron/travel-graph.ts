@@ -11,10 +11,8 @@
  * one pack's coverage stand in for another's.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { parseEqMap, type MapPoi } from "../src/shared/map/eqmap";
 import { zonesFromFiles } from "../src/shared/map/map-sources";
 import type { MapSource } from "../src/shared/map/map-sources";
 import { buildTravelGraph, type TravelBuildReport } from "../src/shared/travel/build";
@@ -24,35 +22,10 @@ import { MANUAL_TRAVEL } from "../src/shared/travel/manual-links";
 import { outOfEraSet, zoneAvailable } from "../src/shared/zones/expansions";
 import { answerRoute, type TravelAnswer, type TravelEnd } from "../src/shared/travel/route";
 import type { TravelGraph, TravelOptions } from "../src/shared/travel/types";
-import { createZoneNamer } from "./eq-maps";
+import { createZoneNamer, readZonePois } from "./eq-maps";
+import { readJson, writeJson } from "./json-store";
 
 const log = createLogger("travel-graph");
-
-/** The layers the labels live on — the base file and `_1`, the same two the map reader reads. */
-const LABEL_LAYERS = ["", "_1"] as const;
-
-/**
- * A zone's labelled points, and nothing else. The base file of a big zone is most of a megabyte of
- * `L` geometry that a travel graph never looks at, so the `P` lines are sieved out before the parser
- * sees them — the same shortcut `createZoneNamer` takes, for the same reason.
- */
-export function readZonePois(dir: string, short: string): MapPoi[] {
-  const pois: MapPoi[] = [];
-  for (const suffix of LABEL_LAYERS) {
-    let text: string;
-    try {
-      text = fs.readFileSync(path.join(dir, `${short}${suffix}.txt`), "latin1");
-    } catch {
-      continue;
-    }
-    const labels = text
-      .split(/\r?\n/)
-      .filter((line) => line[0] === "P")
-      .join("\n");
-    if (labels) pois.push(...parseEqMap(labels).pois);
-  }
-  return pois;
-}
 
 /** Every zone in a source, harvested for travel points. */
 export function harvestSource(source: Pick<MapSource, "dir" | "files">): ZoneHarvest[] {
@@ -123,21 +96,16 @@ export function routedPath(dir: string, sourceId: string): string {
 }
 
 export function writeGraph(file: string, graph: TravelGraph): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(graph, null, 2)}\n`, "utf8");
+  writeJson(file, graph, { pretty: true, what: "travel graph" });
   log.debug("wrote travel graph", { file, nodes: graph.nodes.length, edges: graph.edges.length });
 }
 
 /** Read a stored graph, or `undefined` when there isn't one (or it's unreadable). */
 export function readGraph(file: string): TravelGraph | undefined {
-  try {
-    const graph = JSON.parse(fs.readFileSync(file, "utf8")) as TravelGraph;
-    // A graph from an older shape is no use and shouldn't crash a caller three layers up.
-    if (!Array.isArray(graph?.nodes) || !Array.isArray(graph?.edges)) return undefined;
-    return graph;
-  } catch {
-    return undefined;
-  }
+  const graph = readJson<TravelGraph | undefined>(file, undefined);
+  // A graph from an older shape is no use and shouldn't crash a caller three layers up.
+  if (!Array.isArray(graph?.nodes) || !Array.isArray(graph?.edges)) return undefined;
+  return graph;
 }
 
 /**

@@ -69,20 +69,6 @@ _Next up:_
 - **A "what this build changed" list.** Undocumented drops are the app discovering things no
   reference knows. Pooled across the room that's a genuinely new dataset — worth surfacing
   somewhere deliberate rather than only per mob.
-- **Harden our bootstrap client** (`createHttpBootstrapClient`, `src/lib/awari/net.ts` — awari
-  ships no HTTP client, so this one is ours). Two gaps found while reviewing the ICE work
-  ([ADR 0046](./decisions/0046-our-own-ice-servers-not-peerjs-defaults.md)), neither yet fixed:
-  - **`registerHint`'s response is discarded.** The protocol returns
-    `registered | not-found | incompatible`; we `await fetch(...)` and drop it. Core calls this
-    immediately after a peer becomes genesis leader, so a hint that *didn't* register leaves
-    that client believing it leads a room nobody can resolve — which is exactly the
-    "two clients never met" symptom [ADR 0028](./decisions/0028-peer-networking-verified-and-repaired.md)
-    mitigated with jittered rejoins. Worth checking whether this fails silently **before**
-    tuning those delays again.
-  - **No `res.ok` check and no timeout on `resolve`.** A 5xx or HTML error page makes
-    `res.json()` throw, or yields a body with no `contacts`, which core feeds straight into
-    `tryContacts`. The user gets one `log.warn` and a stuck toggle, with no way to tell
-    "bootstrap is down" from "nobody's online". A hung request never aborts.
 
 _To discuss:_
 

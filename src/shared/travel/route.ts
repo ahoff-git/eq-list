@@ -17,8 +17,9 @@
  */
 
 import { prettyZoneName } from "../map/map-sources";
-import { normalizeZone } from "../sources";
 import {
+  crossingOfMode,
+  graphZones,
   TRAVEL_DEFAULTS,
   zoneDistance,
   type TravelAt,
@@ -26,7 +27,9 @@ import {
   type TravelMode,
   type TravelNode,
   type TravelOptions,
+  type TravelCrossing,
   type TravelToggle,
+  zoneFileFor,
 } from "./types";
 
 /**
@@ -59,6 +62,18 @@ export interface TravelStep {
   from?: TravelLeg;
 }
 
+/**
+ * **How you get across at this step**, or `undefined` for an ordinary zone line — which is most of them.
+ *
+ * Two places carry the same fact and callers shouldn't have to know both: a **border** states it
+ * (`node.via` — a boat, a translocator, a portal), and a **conveyance leg** implies it from its mode (a
+ * druid ring, a wizard spire). The panel and the scripts each worked this out for themselves until this
+ * existed, which is one rule in two spellings.
+ */
+export function stepCrossing(step: TravelStep): TravelCrossing | undefined {
+  return step.node.via ?? (step.from ? crossingOfMode(step.from.mode) : undefined);
+}
+
 export interface TravelRoute {
   steps: TravelStep[];
   /** Total straight-line walking, in EQ world units. */
@@ -89,15 +104,16 @@ export function zoneName(graph: Pick<TravelGraph, "zoneNames">, zone: string): s
   return graph.zoneNames[zone] ?? prettyZoneName(zone);
 }
 
-/** Which map file a zone name means — its long name, or the file name an unnamed zone shows as. */
+/**
+ * Which map file a zone name means — its long name, or the file name an unnamed zone shows as.
+ *
+ * `zoneFileFor`'s rule, shared with the builder and the manual pass. **A zone with a map file counts
+ * even if it has no nodes**: it used to need one, so an isolated zone could be routed to by its long
+ * name but not by its file name, and a zone excluded for not being in the game came back "no such zone"
+ * rather than "not in the game at this time".
+ */
 export function travelZone(graph: TravelGraph, name: string): string | undefined {
-  const wanted = normalizeZone(name);
-  if (!wanted) return undefined;
-  for (const [file, name] of Object.entries(graph.zoneNames)) {
-    if (normalizeZone(name) === wanted) return file;
-  }
-  const bare = name.trim().toLowerCase();
-  return graph.nodes.some((n) => n.zones.includes(bare)) ? bare : undefined;
+  return zoneFileFor(graph.zoneNames, graphZones(graph), name);
 }
 
 /** A minimal binary min-heap. The graph runs to thousands of nodes, where scanning for the
@@ -317,8 +333,7 @@ export interface TravelAnswer {
 
 /** What the graph covers — the denominator behind any answer it gives. */
 function knows(graph: TravelGraph): { zones: number; borders: number } {
-  const zones = new Set(graph.nodes.flatMap((n) => n.zones));
-  return { zones: zones.size, borders: graph.nodes.filter((n) => n.kind === "boundary").length };
+  return { zones: graphZones(graph).size, borders: graph.nodes.filter((n) => n.kind === "boundary").length };
 }
 
 /** `findRoute`, with the failure classified — what an interface asks, and what IPC carries. */

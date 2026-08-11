@@ -4,8 +4,8 @@ import { api } from "@/lib/api";
 import ZonePicker from "./ZonePicker";
 import type { Zone } from "@/shared/map/types";
 import type { TravelAnswer, TravelSettings } from "@/shared/types";
-import type { TravelRoute, TravelStep } from "@/shared/travel/route";
-import { CROSSING_WORDS, crossingOfMode, type TravelAt, type TravelCrossing } from "@/shared/travel/types";
+import { stepCrossing, type TravelRoute, type TravelStep } from "@/shared/travel/route";
+import { CROSSING_WORDS, type TravelAt } from "@/shared/travel/types";
 
 /**
  * "How do I get there?" — the cross-zone route panel (the 🧭 button).
@@ -67,22 +67,12 @@ function refusalText(answer: TravelAnswer, to: string): string {
   }
 }
 
-/**
- * How you get across, when it's anything other than walking over a line.
- *
- * Two places it can come from and they're the same fact: a **border** carries it (`node.via` — a boat,
- * a translocator, a portal), and a **conveyance leg** implies it from its mode (a druid ring, a wizard
- * spire). Nothing shown for an ordinary zone line, which is most of them — a badge on every step would
- * say nothing and hide the ones that matter.
- */
-function crossingOf(step: TravelStep): TravelCrossing | undefined {
-  return step.node.via ?? (step.from ? crossingOfMode(step.from.mode) : undefined);
-}
-
 /** One line of the route. A border is where you zone; a walk is the only thing that costs anything. */
 function Leg({ step }: { step: TravelStep }) {
   const leg = step.from;
-  const via = crossingOf(step);
+  // Nothing shown for an ordinary zone line, which is most of them — a badge on every step would say
+  // nothing and hide the ones that matter.
+  const via = stepCrossing(step);
   return (
     <li className="travel-leg">
       {leg ? (

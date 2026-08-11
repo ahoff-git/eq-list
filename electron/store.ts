@@ -14,6 +14,7 @@ import { createLogger } from "../src/shared/logging";
 import { stripArticle } from "../src/shared/log-parser";
 import { normalizeItemName, originKey } from "../src/shared/grouping";
 import { MAP_UI_SCALE, clampScale, clampUiScale } from "../src/shared/constants";
+import { readJson, writeJson } from "./json-store";
 import type {
   ShoppingList,
   ShoppingListEntry,
@@ -142,26 +143,15 @@ export function createStore(userDataDir: string): Store {
     persist(settingsPath, settings);
   }
 
-  function readJson<T>(file: string, fallback: T): T {
-    try {
-      return JSON.parse(fs.readFileSync(file, "utf8")) as T;
-    } catch {
-      return fallback;
-    }
-  }
-
-  function persist(file: string, data: unknown) {
-    try {
-      fs.mkdirSync(userDataDir, { recursive: true });
-      // Write a temp file then rename over the target: a crash mid-write can't truncate the
-      // real file, which `readJson` would otherwise fail to parse and silently replace with
-      // an empty list — losing a hand-built shopping list with no error shown.
-      const tmp = `${file}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
-      fs.renameSync(tmp, file);
-    } catch (e) {
-      log.warn("persist failed", file, (e as Error).message);
-    }
+  /**
+   * The temp-file-then-rename reasoning that used to live here is now `json-store.ts`, which every store
+   * on disk shares — eight of them were writing straight to the target and losing everything on an
+   * interrupted write.
+   *
+   * A `function` rather than a `const`, because it's called from above its own definition.
+   */
+  function persist(file: string, data: unknown): void {
+    writeJson(file, data, { pretty: true, what: file });
   }
 
   function emitList(): ShoppingList {

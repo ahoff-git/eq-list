@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { clock } from "@/shared/format";
 import { confidenceTier, CONFIDENCE_TIERS } from "@/shared/kill-confidence";
 import type { KillFilters, KillWindow } from "@/shared/kill-filters";
 import ItemLink from "./ItemLink";
@@ -319,7 +320,4 @@ export function ConfidenceMark({ kill }: { kill: KillRecord }) {
 }
 
 /** A kill's time of day, as the list and the map's hover both show it. */
-export function clock(iso: string): string {
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
+

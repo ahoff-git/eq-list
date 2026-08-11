@@ -19,9 +19,59 @@ import type {
   ItemSource,
   ItemCard,
   ShoppingListEntry,
+  Unsubscribe,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
 import { mergeLootFeed } from "@/shared/loot-feed";
+
+/**
+ * A value the **main process owns**: how to read it now, and how to follow it afterwards.
+ *
+ * Defined at module scope so each `source` has a stable identity — which is what lets `useLive` name
+ * honest dependencies instead of an empty array with a lint suppression over it.
+ */
+type Eql = NonNullable<ReturnType<typeof api>>;
+
+interface LiveSource<T> {
+  read: (a: Eql) => Promise<T>;
+  follow: (a: Eql, on: (value: T) => void) => Unsubscribe;
+}
+
+function live<T>(read: LiveSource<T>["read"], follow: LiveSource<T>["follow"]): LiveSource<T> {
+  return { read, follow };
+}
+
+/**
+ * Seed from the current value, then follow the stream, and unsubscribe on the way out.
+ *
+ * Eight hooks wrote this lifecycle out verbatim. None of them had it wrong — but "read once, subscribe,
+ * **return the unsubscribe**" is exactly the shape where one copy quietly forgets the last part and
+ * leaks a listener per mount, with nothing failing to show it. One copy can't drift from itself.
+ *
+ * `api()` is null during Next's prerender and in a plain browser, so a value that never arrives leaves
+ * the initial one in place — every caller's initial is the honest "nothing yet".
+ */
+function useLive<T>(source: LiveSource<T>, initial: T): T {
+  const [value, setValue] = useState<T>(initial);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void source.read(a).then(setValue);
+    return source.follow(a, setValue);
+  }, [source]);
+  return value;
+}
+
+const LIVE = {
+  combat: live<CombatStats>((a) => a.combat.get(), (a, on) => a.combat.onChanged(on)),
+  xp: live<XpProgress>((a) => a.xp.get(), (a, on) => a.xp.onChanged(on)),
+  hp: live<HpEstimate>((a) => a.hp.get(), (a, on) => a.hp.onChanged(on)),
+  zone: live<string | null>((a) => a.zone.current(), (a, on) => a.zone.onChanged(on)),
+  loc: live<LocEvent | null>((a) => a.loc.current(), (a, on) => a.loc.onChanged(on)),
+  list: live<ShoppingList>((a) => a.list.get(), (a, on) => a.list.onChanged(on)),
+  settings: live<Settings | null>((a) => a.settings.get(), (a, on) => a.settings.onChanged(on)),
+  watcher: live<WatcherStatus>((a) => a.watcher.status(), (a, on) => a.watcher.onStatus(on)),
+};
 
 /** One-shot app diagnostics (hotkey registration) for the Help section. */
 export function useAppInfo(): AppInfo | null {
@@ -57,18 +107,13 @@ const EMPTY_FIGHT: FightStats = {
   invocations: [],
 };
 
+const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };
+const NO_WATCHER: WatcherStatus = { watching: false };
 const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
 
 /** Live damage-meter state from the log (current fight + session). */
 export function useCombatStats(): CombatStats {
-  const [stats, setStats] = useState<CombatStats>(EMPTY_COMBAT);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.combat.get().then(setStats);
-    return a.combat.onChanged(setStats);
-  }, []);
-  return stats;
+  return useLive(LIVE.combat, EMPTY_COMBAT);
 }
 
 /**
@@ -76,14 +121,7 @@ export function useCombatStats(): CombatStats {
  * states a total), then kept current by the main process from XP gains and level-ups.
  */
 export function useXpProgress(): XpProgress {
-  const [progress, setProgress] = useState<XpProgress>({ intoLevel: 0, known: false });
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.xp.get().then(setProgress);
-    return a.xp.onChanged(setProgress);
-  }, []);
-  return progress;
+  return useLive(LIVE.xp, { intoLevel: 0, known: false });
 }
 
 /**
@@ -91,14 +129,7 @@ export function useXpProgress(): XpProgress {
  * it sharpens as you play, and a stated figure overrides it.
  */
 export function useHpEstimate(): HpEstimate {
-  const [estimate, setEstimate] = useState<HpEstimate>({ atLeast: 0, samples: 0, updatedAt: "" });
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.hp.get().then(setEstimate);
-    return a.hp.onChanged(setEstimate);
-  }, []);
-  return estimate;
+  return useLive(LIVE.hp, { atLeast: 0, samples: 0, updatedAt: "" });
 }
 
 /**
@@ -176,14 +207,7 @@ export function useKills(zone: string | undefined): KillRecord[] {
 
 /** The zone the player is currently in (from the log), or null if unknown. */
 export function useCurrentZone(): string | null {
-  const [zone, setZone] = useState<string | null>(null);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.zone.current().then(setZone);
-    return a.zone.onChanged(setZone);
-  }, []);
-  return zone;
+  return useLive(LIVE.zone, null);
 }
 
 /**
@@ -219,14 +243,7 @@ export function useMaximized(): boolean {
 
 /** The player's last logged location (from `/loc`), or null if none yet. */
 export function usePlayerLoc(): LocEvent | null {
-  const [loc, setLoc] = useState<LocEvent | null>(null);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.loc.current().then(setLoc);
-    return a.loc.onChanged(setLoc);
-  }, []);
-  return loc;
+  return useLive(LIVE.loc, null);
 }
 
 /**
@@ -261,25 +278,11 @@ export function usePlayerTrail(limit = 200): { points: LocEvent[]; clear: () => 
  */
 
 export function useShoppingList(): ShoppingList {
-  const [list, setList] = useState<ShoppingList>({ entries: [], questRuns: {} });
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.list.get().then(setList);
-    return a.list.onChanged(setList);
-  }, []);
-  return list;
+  return useLive(LIVE.list, EMPTY_LIST);
 }
 
 export function useSettings(): Settings | null {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.settings.get().then(setSettings);
-    return a.settings.onChanged(setSettings);
-  }, []);
-  return settings;
+  return useLive(LIVE.settings, null);
 }
 
 /**
@@ -298,14 +301,7 @@ export function useRendererDebug(): void {
 }
 
 export function useWatcherStatus(): WatcherStatus {
-  const [status, setStatus] = useState<WatcherStatus>({ watching: false });
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    void a.watcher.status().then(setStatus);
-    return a.watcher.onStatus(setStatus);
-  }, []);
-  return status;
+  return useLive(LIVE.watcher, NO_WATCHER);
 }
 
 /** Rolling feed of the most recent parsed loot lines (newest first). */

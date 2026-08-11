@@ -6,6 +6,7 @@ import AskValue from "./AskValue";
 import CampReport from "./CampReport";
 import type { FightStats, XpProgress } from "@/shared/types";
 
+import { StatTile } from "./ui";
 /**
  * The session's "how's it going" screen: experience rate and where it's coming from,
  * how much of the session was actually spent fighting, and which mobs/zones pay best.
@@ -132,14 +133,7 @@ function TimeToLevel({ xp, xpPerHour }: { xp: XpProgress; xpPerHour: number }) {
   );
 }
 
-function StatTile({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
-  return (
-    <div className="stat-tile" title={hint}>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  );
-}
+
 
 /** Percent of a level per hour, over the session's elapsed (not combat) time. */
 function ratePerHour(session: FightStats): number {

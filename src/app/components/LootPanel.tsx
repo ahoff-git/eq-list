@@ -24,6 +24,8 @@ import ItemLink from "./ItemLink";
 import SortHeader from "./SortHeader";
 import type { ItemPrice, LootEvent, LootFate } from "@/shared/types";
 
+import { clock, when } from "@/shared/format";
+import { segCls } from "./ui";
 /**
  * Everything that has dropped and what became of it — kept, sold, stored in a depot, or consumed
  * to make something else. The log distinguishes all four and they matter differently: a sold item
@@ -335,7 +337,7 @@ function PriceTable({
           </thead>
           <tbody>
             {prices.map((p) => (
-              <tr key={p.item} title={`${p.sales} sale${p.sales === 1 ? "" : "s"}, last ${new Date(p.lastAt).toLocaleString()}`}>
+              <tr key={p.item} title={`${p.sales} sale${p.sales === 1 ? "" : "s"}, last ${when(p.lastAt)}`}>
                 <td>
                   <ItemLink title={p.item} />
                 </td>
@@ -369,10 +371,7 @@ function detailLabel(drop: LootEvent): string {
   }
 }
 
-function clock(iso: string): string {
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
+
 
 /** The shared segmented-control button (same one the damage and search tabs use). */
-const segCls = (active: boolean): string => `seg ${active ? "active" : ""}`;
+

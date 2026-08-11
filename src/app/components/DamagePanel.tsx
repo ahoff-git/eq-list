@@ -10,6 +10,8 @@ import AskValue from "./AskValue";
 import { opponentOf } from "@/shared/damage-tree";
 import type { DamageAxis, DeathRecap, FightBest, FightStats, HpEstimate, StoredFight } from "@/shared/types";
 
+import { segCls, StatTile } from "./ui";
+import { duration, when } from "@/shared/format";
 /**
  * The damage meter. Two axes of choice, because they answer different questions:
  *   scope — this fight (what just happened) / the session / a past fight from history
@@ -130,7 +132,7 @@ export default function DamagePanel() {
         <div className="hist-picked">
           <span className="hp-label">{picked.label}</span>
           <span className="muted small">
-            {new Date(picked.stats.startedAt).toLocaleString()} · {picked.stats.durationSec}s
+            {when(picked.stats.startedAt)} · {picked.stats.durationSec}s
           </span>
         </div>
       )}
@@ -148,7 +150,7 @@ export default function DamagePanel() {
               value={fmt(window.totalDealt)}
               hint="Every hit in the window, whoever landed it — and the 100% the shares below are taken against"
             />
-            <StatTile label="In combat" value={duration(window.durationSec)} />
+            <StatTile label="In combat" value={inCombat(window.durationSec)} />
             {petShare > 0 && (
               <StatTile
                 label="Pet share"
@@ -161,7 +163,7 @@ export default function DamagePanel() {
           {isBest && (
             <p
               className="pb-flag"
-              title={`Previous best against ${opponent}: ${best.dps}/s on ${new Date(best.at).toLocaleString()}`}
+              title={`Previous best against ${opponent}: ${best.dps}/s on ${when(best.at)}`}
             >
               ★ Best DPS on {opponent} — {fightDps}/s
             </p>
@@ -201,14 +203,7 @@ export default function DamagePanel() {
   );
 }
 
-function StatTile({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
-  return (
-    <div className="stat-tile" title={hint}>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  );
-}
+
 
 /**
  * What killed you, and what was landing in the seconds before. The log names a killer
@@ -316,7 +311,7 @@ function summaryLine(window: FightStats, opponent?: string): string {
     opponent ? `vs ${opponent}` : "",
     `${fmt(window.yourDealt)} dmg`,
     `${yourDps(window)} dps`,
-    duration(window.durationSec),
+    inCombat(window.durationSec),
     spell ? `top: ${spell.spell} ${spell.dpc}/s cast` : "",
   ]
     .filter(Boolean)
@@ -338,16 +333,19 @@ function yourDps(window: FightStats): string {
   return window.yourDealt ? `${Math.round((window.yourDealt / sec) * 10) / 10}` : "—";
 }
 
-function duration(sec: number): string {
-  if (!sec) return "—";
-  const m = Math.floor(sec / 60);
-  return m > 0 ? `${m}m ${sec % 60}s` : `${sec}s`;
-}
-
 const fmt = (n: number): string => n.toLocaleString();
 
+/**
+ * How long the window spent fighting — a dash rather than "0s" when it hasn't.
+ *
+ * The dash is this panel's call, not the formatter's: "In combat: 0s" reads like a measurement, while a
+ * dash reads like the absence it is. `duration` used to be reimplemented here just to fold that in, which
+ * left three different answers to `duration(0)` across the app.
+ */
+const inCombat = (sec: number): string => (sec ? duration(sec, { seconds: true }) : "—");
+
 /** The shared segmented-control button (same one the Search tab uses). */
-const segCls = (active: boolean): string => `seg ${active ? "active" : ""}`;
+
 
 /** `Object.entries` that keeps the key type, so the layout buttons stay exhaustive. */
 const entries = <T extends object>(o: T): [keyof T, T[keyof T]][] => Object.entries(o) as [keyof T, T[keyof T]][];

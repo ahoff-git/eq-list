@@ -12,7 +12,7 @@
  * The lookup over this, and the policy about which expansions this server runs, are hand-written in
  * `expansions.ts` beside it. Nothing should import this file directly.
  *
- * 351 zones across 22 expansions.
+ * 347 zones across 22 expansions.
  */
 
 export interface ExpansionZones {

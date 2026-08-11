@@ -51,8 +51,7 @@ function load(module) {
 const { graphPath, readGraph, routedPath, writeGraph } = load("electron/travel-graph.js");
 const { applyManual } = load("src/shared/travel/manual.js");
 const { MANUAL_TRAVEL } = load("src/shared/travel/manual-links.js");
-const { findRoute } = load("src/shared/travel/route.js");
-const { crossingOfMode } = load("src/shared/travel/types.js");
+const { findRoute, stepCrossing } = load("src/shared/travel/route.js");
 
 const dir = typeof opt("out") === "string" ? path.resolve(String(opt("out"))) : path.join(ROOT, "data");
 const only = opt("source");
@@ -128,9 +127,8 @@ for (const id of sources) {
         // A walk names the zone it crossed; a port names nothing, because it crosses no zone.
         const how = step.from ? `${step.from.mode}${step.from.across ? ` ${step.from.across.name}` : ""}` : "";
         const leg = step.from ? `${how} ${Math.round(step.from.cost)}${step.from.assumed ? "?" : ""} → ` : "";
-        // How you cross is one field, so printing it is one lookup: a border carries it, and a
-        // conveyance leg implies it from its mode. Nothing for an ordinary zone line.
-        const via = step.node.via ?? (step.from && crossingOfMode(step.from.mode));
+        // One rule, shared with the panel: a border states how you cross, a conveyance leg implies it.
+        const via = stepCrossing(step);
         console.log(`    ${leg}${step.node.label}${via ? `  [${via}]` : ""}`);
       }
     }

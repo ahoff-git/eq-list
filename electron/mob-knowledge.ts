@@ -15,13 +15,13 @@
  * every merged figure still knows how much of it you saw yourself. Nothing a peer says can
  * change what your own log recorded.
  */
-import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { mergeObservations, observeMobs, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
 import { sameZone } from "../src/shared/sources";
 import type { KillLog } from "./kill-log";
 
+import { readJson, writeJson } from "./json-store";
 const log = createLogger("mob-knowledge");
 
 /** Reports arrive whenever a peer's tally changes; coalesce the writes. */
@@ -91,22 +91,14 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
   let timer: NodeJS.Timeout | null = null;
 
   function read(): Record<string, MobObservation[]> {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { peers?: Record<string, MobObservation[]> };
-      return parsed.peers && typeof parsed.peers === "object" ? parsed.peers : {};
-    } catch {
-      return {}; // absent or unreadable — pooled knowledge is a bonus, never load-bearing
-    }
+    // Absent or unreadable is nothing pooled — a bonus, never load-bearing.
+    const parsed = readJson<{ peers?: Record<string, MobObservation[]> }>(file, {});
+    return parsed.peers && typeof parsed.peers === "object" ? parsed.peers : {};
   }
 
   function write(): void {
     timer = null;
-    try {
-      fs.mkdirSync(userDataDir, { recursive: true });
-      fs.writeFileSync(file, JSON.stringify({ peers }), "utf8");
-    } catch (e) {
-      log.warn("could not save mob knowledge:", (e as Error).message);
-    }
+    writeJson(file, { peers }, { what: "mob knowledge" });
   }
 
   // Folded, so a zone's difficulty variants answer as one zone (ADR 0059) — and so a peer whose

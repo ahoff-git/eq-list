@@ -31,7 +31,7 @@ We tried the obvious things and each was too small:
 **Record which expansion every zone came with, and ask that.**
 
 `scripts/fetch-zone-expansions.mjs` fetches each expansion's own zone table from the EverQuest fandom
-wiki — one table per expansion page — and writes `src/shared/zones/expansions.generated.ts`: **351 zones
+wiki — one table per expansion page — and writes `src/shared/zones/expansions.generated.ts`: **347 zones
 across 22 expansions**, release-ordered. Fetched, not typed, and regenerable when an expansion ships.
 
 `src/shared/zones/expansions.ts` is the lookup over it, and **one function is the app's whole answer**:
@@ -50,7 +50,7 @@ its era is open* changes as the server progresses, and only one of them belongs 
 **It fails open.** A zone the table has never heard of is available. That is the load-bearing decision,
 because the two failure directions are not equal: offering a zone you can't reach is a wasted click,
 while excluding one you *can* removes it from the map, the picker and every route, silently. There are
-real zones in that gap — Legends' own custom zones, and 28 zones eqlwiki names differently from fandom
+real zones in that gap — Legends' own custom zones, and 26 zones eqlwiki names differently from fandom
 ("Kerra Island" for "Kerra Isle", "Eastern Plains of Karana" for "East Karana"). The generator enforces
 the other half: it **refuses to write** a table that would file a zone eqlwiki knows under an expansion
 the server doesn't run.
@@ -80,7 +80,7 @@ Rejected alternatives:
   the Plane of Knowledge has no eqlwiki page; the expansion table files it under Planes of Power, so it
   and ~350 others exclude themselves.
 - **The table is checked against the server's own wiki, both ways.** Every one of eqlwiki's 116 zones
-  belongs to an expansion this server runs (or the generator won't write), and the 28 it can't find are
+  belongs to an expansion this server runs (or the generator won't write), and the 26 it can't find are
   reported as the fail-open cases they are.
 - **Three expansion pages have no table the generator can read** — Omens of War, Ring of Scale, The
   Darkened Sea — so their zones aren't excluded yet. They'll show as available and, being their own

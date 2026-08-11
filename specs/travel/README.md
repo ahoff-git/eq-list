@@ -43,6 +43,12 @@ stating a fact.
     The other two kinds: a `place` sits in one zone (a druid ring, a spire, a dock), and a `hub` is a
     teleport network, in no zone at all.
 
+    `zoneFileFor` is **the one answer to "which map file does this zone name mean"** — folded, then exact,
+    then tried as a file name. There were three of these (the builder resolving a label, the manual pass
+    resolving an entry, the router resolving an endpoint) and they disagreed about the fallback, so an
+    isolated zone resolved by its long name but not its file name and an excluded zone asked for by file
+    said "no such zone" instead of "not in the game". One rule now, shared.
+
     **How you cross is `via`** — `boat` · `translocator` · `portal` · `spire` · `ring` — and **absent is
     the common case**, meaning an ordinary zone line with nothing to take. A boundary is a boundary
     whichever way you cross it, which is what makes the graph work; but which way it is, is the first

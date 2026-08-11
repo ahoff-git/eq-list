@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { describeCoins, formatCoins } from "@/shared/money";
 import type { MobKillStat, ZoneReport } from "@/shared/types";
 
+import { duration, when } from "@/shared/format";
 /**
  * "Is this camp worth it?" — the two tables that answer it.
  *
@@ -93,11 +94,11 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
             </thead>
             <tbody>
               {zones.map((z) => (
-                <tr key={z.zone} title={`Last fought ${new Date(z.lastAt).toLocaleString()}`}>
+                <tr key={z.zone} title={`Last fought ${when(z.lastAt)}`}>
                   <td>{z.zone}</td>
                   <td>{z.fights}</td>
                   <td>{z.kills}</td>
-                  <td>{mins(z.combatSec)}</td>
+                  <td>{duration(z.combatSec)}</td>
                   <td className="num-accent">{z.xpPerMin ? `${z.xpPerMin}%` : "—"}</td>
                   <td
                     className="num-accent"
@@ -116,10 +117,7 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
   );
 }
 
-function mins(sec: number): string {
-  const m = Math.floor(sec / 60);
-  return m > 0 ? `${m}m` : `${sec}s`;
-}
+
 
 /** Everything the mob was worth, in copper. */
 function coinTotal(m: MobKillStat): number {
