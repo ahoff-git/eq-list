@@ -11,13 +11,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { mergeEqMaps, parseEqMap, type EqMap } from "../src/shared/map/eqmap";
-import type { MapSource, MapSourceReport } from "../src/shared/map/map-sources";
+import { STOCK_SOURCE_ID, type MapSource, type MapSourceReport } from "../src/shared/map/map-sources";
 import { solveZoneNames, zoneLinkName, type ZoneLinks } from "../src/shared/map/zone-names";
 
 const log = createLogger("eq-maps");
-
-/** The game's own folder, listed first and labelled as what it is. */
-const STOCK_ID = "stock";
 
 /**
  * Layers we read: the base file plus `_1`, which is where the packs put their labelled
@@ -84,7 +81,7 @@ export function listSources(logDir: string): MapSourceReport {
   // more use than an empty picker.
   if (!mapsDir) return { sources };
 
-  sources.push({ id: STOCK_ID, label: "Game maps (maps folder)", dir: mapsDir, files: zoneFiles(mapsDir) });
+  sources.push({ id: STOCK_SOURCE_ID, label: "Game maps (maps folder)", dir: mapsDir, files: zoneFiles(mapsDir) });
 
   let entries: string[] = [];
   try {
@@ -166,43 +163,50 @@ export function createMapReader(): {
  * big zone is most of a megabyte of `L` lines we'd only throw away.
  */
 export function createZoneNamer(): {
-  names: (sources: { dir: string; files: string[] }[]) => Record<string, string>;
+  names: (source: { dir: string; files: string[] }) => Record<string, string>;
   clear: () => void;
 } {
-  let cache: { key: string; names: Record<string, string> } | null = null;
+  /** One gazetteer per folder, keyed by it — a pack is named once per run, whichever you view. */
+  const cache = new Map<string, Record<string, string>>();
   return {
-    names(sources) {
-      const key = sources.map((s) => s.dir).join("|");
-      if (cache?.key === key) return cache.names;
+    names(source) {
+      const cached = cache.get(source.dir);
+      if (cached) return cached;
 
-      // Pooled across every folder: a short name means the same zone in each pack, and the packs
-      // label different things. The game's own maps carry few exit labels, so on their own they
-      // name half of what they could; Brewall's labels name the same zones, and one shared
-      // gazetteer lets each source benefit from the other's homework.
+      // **One folder, on its own.** These used to be pooled, on the reasoning that a short name
+      // means the same zone in every pack, so the packs could lend each other labels — the game's
+      // own maps carry few exit labels and name barely a third of their files unaided.
+      //
+      // But a pack is a *survey*, not a contribution to a shared one: two folders are two authors
+      // drawing the same world separately, and `solveZoneNames` assigns one name to one file, so
+      // merging their evidence lets one pack's file take a name out from under the other's.
+      // Measured on a real install (133 game maps beside Brewall's 568), pooling left **eight**
+      // Brewall zones nameless that its own labels name outright — Unrest, Sebilis, Dalnir, Kurn's
+      // Tower, the City of Mist, the Akheva Ruins, Trakanon's Teeth, Neriak Commons — and rewrote
+      // seven more in the other pack's wording. A borrowed name is worth less than a name you can
+      // trust: an unnamed file still shows, and still draws.
       const links: ZoneLinks = new Map();
-      for (const source of sources) {
-        for (const short of source.files) {
-          const out = links.get(short) ?? new Set<string>();
-          for (const suffix of GEOMETRY_LAYERS) {
-            const text = readIfPresent(path.join(source.dir, `${short}${suffix}.txt`));
-            if (!text) continue;
-            for (const line of text.split(/\r?\n/)) {
-              if (line[0] !== "P") continue;
-              const label = line.slice(1).split(",").slice(7).join(",").trim().replace(/_/g, " ");
-              const name = zoneLinkName(label);
-              if (name) out.add(name);
-            }
+      for (const short of source.files) {
+        const out = new Set<string>();
+        for (const suffix of GEOMETRY_LAYERS) {
+          const text = readIfPresent(path.join(source.dir, `${short}${suffix}.txt`));
+          if (!text) continue;
+          for (const line of text.split(/\r?\n/)) {
+            if (line[0] !== "P") continue;
+            const label = line.slice(1).split(",").slice(7).join(",").trim().replace(/_/g, " ");
+            const name = zoneLinkName(label);
+            if (name) out.add(name);
           }
-          links.set(short, out);
         }
+        links.set(short, out);
       }
       const names = solveZoneNames(links);
-      log.debug("named zones", { sources: sources.length, files: links.size, named: Object.keys(names).length });
-      cache = { key, names };
+      log.debug("named zones", { dir: source.dir, files: links.size, named: Object.keys(names).length });
+      cache.set(source.dir, names);
       return names;
     },
     clear() {
-      cache = null;
+      cache.clear();
     },
   };
 }

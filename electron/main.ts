@@ -145,7 +145,7 @@ if (!app.requestSingleInstanceLock()) {
   const hp = createHpEstimate(userData);
   const killLog = createKillLog(userData);
   const lootLog = createLootLog(userData);
-  const updates = createUpdateChecker(userData);
+  const updates = createUpdateChecker(userData, app.getVersion());
   const mobs = createMobKnowledge(userData, killLog);
   const ocr = createOcr(path.join(userData, "tesseract-cache"));
   const lookup = createLookup(ocr, showInSearch);
@@ -177,9 +177,16 @@ if (!app.requestSingleInstanceLock()) {
 
   // Quietly ask whether a newer build has been published; the renderer shows a banner if so.
   // Fire-and-forget and fail-safe — a slow or offline network never delays or breaks startup.
-  void updates.check().then((info) => {
-    if (info) broadcast(CH.updateAvailable, { url: info.url });
-  });
+  // Only a packaged build has a version CI stamped a build number into; a dev run reports the
+  // un-stamped `package.json` version, which every published build outranks, so it would always
+  // "have an update" and the banner would only ever be noise.
+  if (app.isPackaged) {
+    void updates.check().then((info) => {
+      if (info) broadcast(CH.updateAvailable, { url: info.url, version: info.version });
+    });
+  } else {
+    log.debug("update check skipped: not a packaged build");
+  }
 
   let watchKey = "";
   function startWatcher(): void {

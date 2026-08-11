@@ -66,3 +66,44 @@ export function zoneDifficulty(name: string): number | undefined {
 export function zoneBaseName(name: string): string {
   return nameWithout(nameWithout(name, ZONE_MODE_RE), ZONE_DIFFICULTY_RE);
 }
+
+/**
+ * **Zones the log and the maps call different things** — the other half of the mapping list, beside
+ * `CURATED_ZONES` in `map/zones.ts`. That table says which *file* a zone is; this one says which
+ * *name*, for a place the game and the mapmakers never agreed on.
+ *
+ * Both sides are written folded (lower case, no leading "the"), because that is the form every
+ * comparison reaches this table with. Fold to the **map's** name: the map is the thing on screen, so
+ * that is the name the picker and the title should show.
+ *
+ * Add an entry only once the file is *identified* — by the zones it links to, and by whether your
+ * own recorded positions land inside its geometry. Kerra Isle is `kerraridge`, named "Kerra Ridge" by
+ * both packs' own labels: its only exit is to Toxxulia Forest, which is Kerra Isle's only neighbour,
+ * and 454 of 463 positions recorded there sit inside its lines. A guess here is the one naming
+ * mistake that doesn't fail closed — see the warning on `CURATED_ZONES`.
+ */
+const ZONE_ALIASES: Record<string, string> = {
+  "kerra isle": "kerra ridge",
+};
+
+/**
+ * The one fold behind every "is this the same zone?" — the key that kill records, mob knowledge, the
+ * map lookup, hunt grouping and the wiki's drop zones all compare on.
+ *
+ * Decoration off (difficulty, ruleset), then case, a leading "the" and spacing normalised, then any
+ * alias applied. `normalizeZone` in `sources.ts` is this function; it lives here because the rule is
+ * about what a zone *name* means, and nothing else in this module has dependencies either.
+ */
+export function zoneKey(name: string): string {
+  const folded = zoneBaseName(name)
+    .toLowerCase()
+    // **The apostrophe.** EverQuest's map labels write a backtick — `Erud\`s Crossing`,
+    // `Kurn\`s Tower`, `Dagnor\`s Cauldron` — while the log writes a typewriter one (verified
+    // against a real log: `Ak'Anon`, `Erud's Crossing`), and people type that too. Left unfolded,
+    // a zone the solver named off a label could never match the zone line that takes you there.
+    .replace(/[`’]/g, "'")
+    .replace(/^the\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return ZONE_ALIASES[folded] ?? folded;
+}

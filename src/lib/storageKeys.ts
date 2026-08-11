@@ -34,4 +34,6 @@ export const STORAGE_KEYS = {
   mapMobsOpen: "eqlist.map.mobsOpen",
   /** Map window: share-my-kills toggle. */
   mapShareKills: "eqlist.map.shareKills",
+  /** Map window: the travel panel's visibility. Which conveyances you have is a *setting*, not this. */
+  mapTravelOpen: "eqlist.map.travelOpen",
 } as const;

@@ -21,6 +21,42 @@ _Ready to build (decided, not started):_
   lines agree, so the rank needs carrying alongside the canonical name (it's still in `raw`).
 _Next up:_
 
+- **Three expansion pages the zone table can't read.** `scripts/fetch-zone-expansions.mjs` gets 22 of 25
+  expansions; **Omens of War**, **Ring of Scale** and **The Darkened Sea** write their zone lists in a
+  shape neither of the two it handles matches, so it skips them and says so
+  ([ADR 0064](./decisions/0064-a-zone-belongs-to-an-expansion.md)). Their zones therefore aren't excluded:
+  they'll be offered in the picker and, being their own continents, sit as isolated zones rather than
+  corrupting a route. Worth a look at those three pages' wikitext — it may be one more row separator.
+
+- **Travel: ask from the other windows too.** The 🧭 panel ships in the map window
+  ([ADR 0062](./decisions/0062-a-travel-graph-of-zone-lines.md), [travel](./travel/README.md)), and
+  `api().travel.route` is available to any of them. The two that would want it: the **Hunt tab**, which
+  already points at zones you'd travel to ("how far is that camp?"), and an **item's drop zones**, where
+  "who drops this, and where" stops short of "and how do I get there". Both are a call and a line of
+  UI; the question is where a distance belongs without turning a list into a route planner.
+- **Travel: a graph could borrow a zone the pack lacks, the way the map now does.**
+  [ADR 0063](./decisions/0063-a-zone-the-pack-lacks-is-borrowed.md) made the zone *list* fall back to the
+  game's own maps for a zone the chosen pack has no file for; `travel-graph.ts` still builds strictly per
+  source (`zonesFromFiles`, one folder). So a zone only the backstop covers is a hole in the graph — and
+  worse than a hole, since its neighbours' `to <zone>` labels then resolve to nothing and show up as
+  unresolved destinations. `zonesFromSources` is the shape to reuse; the wrinkle is that harvesting has
+  to read each borrowed zone's labels from *its own* folder.
+- **Travel: verify the hand-authored table in game.** `manual-links.ts` ships classic-EverQuest boat
+  runs as a starting point, unverified on EQ Legends, and **no translocator gnomes at all** — nothing
+  about a Legends-only NPC can be read off a map or reasonably guessed, so that section is empty on
+  purpose (with both shapes to copy from in a comment: a border if anyone can walk up to it, a
+  `gnome`-mode link if it needs a class, a faction or a fee). `npm run travel:manual` prints which
+  entries found a real label, which named a zone this pack has no map for, and which are malformed —
+  that's the list to work through. The same run also prints the destinations no map file answered to and
+  the zones with no way in or out, which is where the graph is actually thin.
+- **`poiKind` reads `Druid Rings` as a plain name.** Its transport vocabulary spells the ring singular
+  (`\bdruid ring\b` can't reach the plural), so those markers are filed under "Names & places" in the
+  map's own label filter instead of "Ports & boats". The travel graph re-reads its fallback kinds to get
+  around it; the filter still shows them in the wrong section. One character in the regex, but it's a
+  pinned black box with a corpus tally behind it
+  ([ADR 0048](./decisions/0048-a-map-label-is-read-by-its-words.md)) — worth re-tallying rather than
+  patching blind.
+
 - **Share item prices with peers.** Coin per mob now pools like a drop rate, but a vendor
   price doesn't — it's derived from your own auto-sells
   ([ADR 0047](./decisions/0047-money-is-copper-in-two-ledgers.md)). A price is the *easiest*

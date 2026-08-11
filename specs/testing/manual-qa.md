@@ -203,6 +203,20 @@ a real run. This is a *verification* list, not open work — open work lives in 
   Finally, delete `log-cursors.json` from userData and confirm the next start simply anchors at the
   end of the log (missing the gap) rather than eating the whole thing.
 
+- **Travel — the 🧭 panel, unseen.** The graph, the routing and the refusals are unit-tested and the
+  main-process path was exercised directly (build, cache, all four refusals, the druid toggle changing
+  the answer), but **nothing about the panel has been looked at** — the dev sandbox is headless. To
+  confirm: it opens from the map toolbar and remembers being open; **From** defaults to your zone and
+  **To** to the map you're viewing; a zone in the route shows that zone's map; the three checkboxes
+  persist (they're `Settings.travel`) and changing one re-asks for the route.
+
+  The layout is what to look at hardest, because it's what was reported wrong and the fix was reasoned
+  from the CSS rather than seen: a zone picker's dropdown must open **over the map**, not be clipped at
+  the panel's edge, and must not run off the left of the window; the From/To row must **stay put** while
+  a long route scrolls under it; and the panel must take about 45% of the window at **any** map font
+  scale, including above 100% (that was a `vh` unit being scaled by the root `zoom` — the same trap
+  `.app` documents). Worth resizing the window narrow and wide with a long route showing.
+
 ## Peer networking — two clients
 
 - **Connected users, two clients.** With peer networking on, confirm the 👥 panel lists the other
@@ -235,7 +249,12 @@ a real run. This is a *verification* list, not open work — open work lives in 
   ([ADR 0013](../decisions/0013-ci-rolling-latest-windows-build.md)). The gate steps all pass locally
   on Node 22. Still to confirm on a real run: `electron-builder` succeeds on the runner, the `latest`
   tag moves, and `/releases/latest` resolves to the `.exe`.
-- **Update notification.** On a packaged build, confirm the banner appears when `latest` has moved
-  past the installed commit, **Download** opens the release page, **✕** dismisses, and the same build
-  isn't flagged again while the next one still is. See
-  [ADR 0034](../decisions/0034-update-notification.md).
+- **Build number — verify first run.** Each run stamps `0.1.<run number>` before packaging
+  ([ADR 0064](../decisions/0064-every-build-has-a-number.md)). On a real run, confirm the installer's
+  filename carries that version, the release body's `version:` line matches it, the installed app's
+  `app.getVersion()` agrees, and the *next* run's number is higher.
+- **Update notification.** On a packaged build, confirm the banner names a version higher than the
+  installed one, **Download** opens the release page, **✕** dismisses, and the same build isn't
+  flagged again while the next one still is. The case worth staging deliberately: install a build,
+  then publish (or hand-edit a test release to announce) a *lower* version — nothing should appear.
+  See [ADR 0064](../decisions/0064-every-build-has-a-number.md).

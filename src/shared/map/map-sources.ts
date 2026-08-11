@@ -12,10 +12,28 @@
  * own exit labels (most of them), and failing both, the **file's own name** — which is honest and
  * still selectable. Guessing is worse than not knowing: a confidently mislabelled map is how you
  * end up plotting kills in the wrong place.
+ *
+ * Coverage differs between packs as well, so `zonesFromSources` borrows a zone the chosen pack
+ * doesn't have from the game's own maps — one file at a time, never blended
+ * ([ADR 0063](../../../specs/decisions/0063-a-zone-the-pack-lacks-is-borrowed.md)).
+ *
+ * A pack also draws **far more of EverQuest than this server runs** — Brewall's covers all 26
+ * expansions — so `zonesFromSources` drops the zones that don't exist here, by the one test the whole
+ * app shares (`zoneAvailable`, see [ADR 0064](../../../specs/decisions/0064-a-zone-belongs-to-an-expansion.md)).
+ * It fails open: a zone the expansion table has never heard of is kept, because losing a real zone is
+ * much worse than offering an unreachable one. `zonesFromFiles` does **not** filter — it answers "what
+ * is this folder's zone called", which is a different question, and the naming tests lean on it.
  */
 
 import { CURATED_ZONES } from "./zones";
 import type { Zone } from "./types";
+import { zoneAvailable } from "../zones/expansions";
+
+/**
+ * The game's own `maps/` folder — the one source every install has, which is what makes it the
+ * backstop a pack's missing zone is borrowed from (`zonesFromSources`).
+ */
+export const STOCK_SOURCE_ID = "stock";
 
 /** A place maps can be loaded from. */
 export interface MapSource {
@@ -65,9 +83,48 @@ export function zonesFromFiles(
   return files.map((short) => {
     const own = curated.get(short);
     // A curated name was reserved for *this* file above, so it isn't "taken" from itself.
-    if (own) return { name: own.name, sortingStr: own.sortingStr, key: `${sourceId}:${short}`, file: short };
+    if (own) {
+      return { name: own.name, sortingStr: own.sortingStr, key: `${sourceId}:${short}`, file: short, source: sourceId };
+    }
     const name = [solved[short], prettyZoneName(short)].find((c) => c && !taken.has(c)) ?? short;
     taken.add(name);
-    return { name, key: `${sourceId}:${short}`, file: short };
+    return { name, key: `${sourceId}:${short}`, file: short, source: sourceId };
   });
+}
+
+/** A source as the zone list needs it: which folder, what's in it, and what that folder calls them. */
+export interface NamedSource {
+  id: string;
+  files: string[];
+  /** That pack's own solved names — never another's ([ADR 0061](../../../specs/decisions/0061-a-map-pack-names-its-own-zones.md)). */
+  solved?: Record<string, string>;
+}
+
+/**
+ * The zones on offer: **everything the chosen pack has, plus whatever the backstop can draw of the
+ * zones it doesn't.**
+ *
+ * Packs differ in coverage, not just in detail — the game's own maps ship no Blackburrow or Unrest,
+ * and Brewall's pack has no New Sebilis Expedition, which is one of EQ Legends' own zones. On a real
+ * install that was 233 kills with no map on one side and 286 on the other, for zones the other folder
+ * had all along. So a zone the chosen pack lacks is **borrowed**, one file at a time, and tagged with
+ * the source that will draw it.
+ *
+ * This is coverage, not blending: a zone is still drawn from exactly one file, and a pack still names
+ * only its own zones ([ADR 0061](../../../specs/decisions/0061-a-map-pack-names-its-own-zones.md)) —
+ * a borrowed zone is named by the folder it came from. The chosen pack always wins where both have
+ * something, including on a **name** collision, since two entries for one place would leave one of
+ * them unreachable.
+ */
+export function zonesFromSources(chosen: NamedSource, backstop?: NamedSource): Zone[] {
+  const mine = zonesFromFiles(chosen.id, chosen.files, chosen.solved);
+  const offered = (zones: Zone[]) => zones.filter((z) => zoneAvailable(z.name));
+  if (!backstop || backstop.id === chosen.id) return offered(mine);
+
+  const have = new Set(chosen.files);
+  const missing = backstop.files.filter((short) => !have.has(short));
+  if (!missing.length) return offered(mine);
+
+  const names = new Set(mine.map((z) => z.name));
+  return offered([...mine, ...zonesFromFiles(backstop.id, missing, backstop.solved).filter((z) => !names.has(z.name))]);
 }

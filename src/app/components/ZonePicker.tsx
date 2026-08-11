@@ -27,6 +27,7 @@ export default function ZonePicker({
   placeholder,
   blankLabel,
   limit = MAX_MATCHES,
+  align = "right",
 }: {
   zones: Zone[];
   /** The chosen zone's display name, or "" for whatever `blankLabel` describes. */
@@ -39,6 +40,12 @@ export default function ZonePicker({
   blankLabel?: string;
   /** How many matches to offer — raise it when the zone list is a short, curated one. */
   limit?: number;
+  /**
+   * Which edge the dropdown is anchored to. The menu can be wider than the box, so it has to grow
+   * *away* from the nearest window edge or it runs off it — right for a picker near the right of its
+   * window (the map's titlebar), left for one on the left (the travel panel's "From").
+   */
+  align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -107,7 +114,7 @@ export default function ZonePicker({
         onKeyDown={onKeyDown}
       />
       {open && (
-        <div className="zone-menu">
+        <div className={`zone-menu ${align}`}>
           <button
             className={`zone-option ${active === -1 ? "on" : ""} ${!value ? "current" : ""}`}
             onMouseEnter={() => setActive(-1)}

@@ -4,7 +4,7 @@
  * Pure + testable.
  */
 import type { ItemSource } from "./types";
-import { zoneBaseName } from "./names";
+import { zoneKey } from "./names";
 
 export interface ZoneDrops {
   zone: string;
@@ -84,16 +84,18 @@ export function isObtainableIn(sources: ItemSource[], zone: string): boolean {
 }
 
 /**
- * Fold a zone name for matching/grouping: drop a difficulty number and ruleset tag, lowercase,
- * drop a leading "the", collapse spaces.
+ * Fold a zone name for matching/grouping: drop a difficulty number and ruleset tag, lowercase, drop
+ * a leading "the", collapse spaces, and apply any alias.
  *
- * The decoration goes because a harder Blackburrow is still Blackburrow to a map and to a wiki
- * page (`names.ts`) — it changes what the mobs hit for, not where they live. The unfolded name is
- * what gets *recorded*, so how hard the camp was is never lost.
+ * The decoration goes because a harder Blackburrow is still Blackburrow to a map and to a wiki page
+ * — it changes what the mobs hit for, not where they live. The unfolded name is what gets
+ * *recorded*, so how hard the camp was is never lost.
+ *
+ * The rule itself is `zoneKey` in `names.ts`, which also owns the alias list for the zones the log
+ * and the maps name differently. This is its name at the call sites, kept because half the app asks
+ * for it by this one.
  */
-export function normalizeZone(z: string): string {
-  return zoneBaseName(z).toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ").trim();
-}
+export const normalizeZone = zoneKey;
 
 /**
  * Are these two names the same zone? **Exactly** the same, after folding — the one rule for

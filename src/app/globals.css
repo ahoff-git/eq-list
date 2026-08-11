@@ -1134,7 +1134,9 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 45vh;
+  /* `%`, not `vh` — the map window's scale is a CSS `zoom` and a viewport unit is scaled by it (see
+     `.app`). Its sibling panels were already right; this one was the odd one out. */
+  max-height: 45%;
   overflow-y: auto;
   padding: 8px 12px;
   background: var(--bg-raised);
@@ -1230,6 +1232,117 @@ kbd {
 .conf-mark { cursor: context-menu; font-size: 13px; line-height: 1; }
 
 /* connected users (peer roster) — same drop-down slab as the pin layers menu */
+/* ── Travel: the cross-zone route panel (the 🧭 button; see specs/travel) ────────────────────── */
+.travel-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Bounded so the map stays the point, but **`%`, not `vh`**: the map window's scale is a CSS `zoom`
+     on the root and may go above 100% (see `.app`), which scales a viewport unit and leaves this
+     panel taking far more of the window than 45% of it. A percentage resolves against `.map-win`,
+     whose height is definite, so it means what it says at any scale. */
+  max-height: 45%;
+  padding: 8px 12px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.travel-panel p { margin: 0; }
+/**
+ * The asking half never scrolls; only the answer does.
+ *
+ * This panel used to scroll as a whole, which broke it two ways at once: an `overflow` ancestor
+ * **clips absolutely-positioned descendants**, so a zone picker's dropdown was cut off at the panel's
+ * edge and the panel grew a scrollbar trying to show it — and a long route pushed the From/To boxes
+ * out of view, so the controls scrolled away from the thing they control.
+ */
+.travel-ask { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.travel-answer {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.travel-ends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Each end takes half the width and shrinks together, so a narrow window stacks them rather than
+   squeezing one picker to nothing. */
+.travel-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 220px;
+}
+.travel-end .zone-picker { flex: 1; }
+.travel-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.travel-opt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.travel-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.travel-summary strong { font-size: 15px; }
+.travel-modes {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+.travel-hops { line-height: 1.9; }
+.travel-legs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.travel-leg {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* A fixed column so the distances line up and can be read down rather than hunted for. */
+.travel-cost {
+  flex: 0 0 4.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+/* A guessed figure must not read like a measured one — see ADR 0062. The accent is the app's
+   "pay attention to this number" colour, which is exactly what a stand-in wants. */
+.travel-cost.guess { color: var(--accent); }
+.travel-cost.start { font-style: italic; }
+.travel-where { min-width: 0; }
+/* How you cross, when it's anything but walking over a line — a boat, a spire, a translocator. Reads as
+   a tag rather than more of the sentence, so it's findable when scanning a long route. */
+.travel-via {
+  margin-left: 6px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
 .map-users {
   display: flex;
   flex-direction: column;
@@ -1520,9 +1633,10 @@ kbd {
 .zone-menu {
   position: absolute;
   top: calc(100% + 2px);
-  /* At least as wide as the input, but free to grow for a long name — right-anchored so it
-     can't run off the edge of the window. */
-  right: 0;
+  /* At least as wide as the input, but free to grow for a long name — and anchored to whichever
+     edge lets it grow *inwards*, since it can be wider than the box it hangs from. Right for a
+     picker sitting near the right of its window, left for one on the left; getting this wrong sends
+     the list off the edge, where `.map-win`'s `overflow: hidden` clips it away entirely. */
   min-width: 100%;
   width: max-content;
   max-width: 460px;
@@ -1537,6 +1651,9 @@ kbd {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
 }
+.zone-menu.right { right: 0; }
+.zone-menu.left { left: 0; }
+
 .zone-option {
   text-align: left;
   background: transparent;

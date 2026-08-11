@@ -21,11 +21,12 @@ world coordinates, so a map knows where it is. See
     the maths share), `eqToCanvasCoords` / `canvasToEqCoords`, exact inverses that take a projection
     and return `undefined` without one, and `clampPan` (a zoomed map can't be dragged off into blank
     space). Math derived in [data-model.md](./data-model.md).
-  - `zones.ts` — `CURATED_ZONES` (the few names the solver gets wrong, see **Zone names**),
+  - `zones.ts` — `CURATED_ZONES` (the few names the solver gets wrong or can't reach, see
+    **Zone names**),
     `findZone` (the log's wording resolves: it folds through `normalizeZone` — the same fold the
-    wiki-side zone matching uses — so case, a leading "the", a difficulty number and the ruleset
-    tag beside it ("The Steamfont Mountains 2 (Adaptive)") all wash out and a harder zone still
-    gets its map, see
+    wiki-side zone matching uses — so case, a leading "the", the apostrophe the maps and the log
+    write differently, a difficulty number and the ruleset tag beside it ("The Steamfont Mountains 2
+    (Adaptive)") all wash out and a harder zone still gets its map, see
     [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)), `sortZones`,
     and `onLayer` for floor-scoped markers (against the *set* of floors in view).
 - **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawLine`, `drawCircle`,
@@ -114,6 +115,16 @@ world coordinates, so a map knows where it is. See
 
   Every source yields a `Zone[]`, so the picker, `findZone`, pins, kills and layers all work
   against one shape.
+
+  **A zone the chosen pack hasn't got is borrowed from the game's own maps**
+  ([ADR 0063](../decisions/0063-a-zone-the-pack-lacks-is-borrowed.md), `zonesFromSources`). Packs
+  differ in coverage, not only detail: the game's maps ship no Blackburrow or Unrest, Brewall's ships
+  no New Sebilis Expedition (an EQL zone), and on a real log that was 237 kills with no map on one
+  side and 286 on the other. Each `Zone` carries the `source` that will draw it and is loaded from
+  *there*; the backstop is specifically the game's `maps/`, the one folder every install has, so the
+  rule is the same on every machine. Still one file per zone, still named by the folder it came from
+  (0061), the pack still winning wherever both have something — and the titlebar says **· from Game
+  maps** when a map was borrowed, because a map that looks unlike the rest shouldn't be a mystery.
 - **Zone names** (`src/shared/map/zone-names.ts`, pure — `electron/tests/zone-names.test.ts`) —
   files are named for a zone's *short* name (`gfaydark`) and nothing in them says the long one, but
   **the packs label their exits**, so every `to The Lesser Faydark` marker names a real zone and the
@@ -127,10 +138,15 @@ world coordinates, so a map knows where it is. See
   Commonlands"). Assignment is then global, one name to one file, so the right claimant takes a name
   out from under a wrong one.
 
-  Names are pooled across **every** folder before solving: a short name means the same zone in each
-  pack, and the game's own maps carry few exit labels — sharing Brewall's homework lifts them from
-  47 named to 87 of 133. It runs on demand (~1s for 568 files) and the picker relabels itself when
-  it lands, so nothing waits on it. Priority is **catalogue → solved → the file's own name**: the
+  Naming is **per pack, from that pack's own labels** — a pack is a survey, not a contribution to a
+  shared one, and pooling let one folder's file take a name out from under another's
+  ([ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md)). On a real install that cost
+  Brewall eight zone names its labels state outright (Unrest, Sebilis, Dalnir, Kurn's Tower, the City
+  of Mist, the Akheva Ruins, Trakanon's Teeth, Neriak Commons) and rewrote seven more. The price is
+  that the game's own maps, which label few exits, name 54 of 133 files rather than borrowing their
+  way to more; the catalogue covers the zones that matter and the rest show their file name. It runs
+  on demand per pack (~1s for 568 files) and the picker relabels itself when it lands, so nothing
+  waits on it. Priority is **catalogue → solved → the file's own name**: the
   curated names win because the solver is occasionally sure and wrong (it offers `neriaka` the
   Fourth Gate, which is a different file), and a zone still nameless shows as `gukbottom`, which is
   honest and selectable.
@@ -139,7 +155,34 @@ world coordinates, so a map knows where it is. See
   right name, and every position plotted on it is somewhere else. `Qeynos Hills` was curated onto
   `qey2hh1`, whose own exit label reads `to Qeynos Hills` — the neighbour test the solver applies —
   because it is West Karana; the hills are `qeytoqrg`. So before adding an entry, read the file's
-  `to …` labels: **a map that links to X is next to X.**
+  `to …` labels: **a map that links to X is next to X.** The second half of the check, when you have
+  played the zone: your own recorded positions have to fall inside that file's geometry, because you
+  cannot stand outside the zone you are in.
+
+  **The mapping list is two tables**, because a name can be wrong in two ways:
+  - `CURATED_ZONES` (`src/shared/map/zones.ts`) — *which file* a zone is, for the names no pack's
+    labels reach. A real log's zones drove the current set: `kerraridge`, `qeynos2`, `qeynos`, `qrg`,
+    `freporte`, `erudsxing`, `erudnext`, `butcher`, `oot`, each identified by its exits (and
+    `butcher` by a recorded position), lifting a real install from **15 of 30 zones resolving to 27**.
+  - `ZONE_ALIASES` (`src/shared/names.ts`) — *which name*, for a place the game and the mapmakers
+    never agreed on. The log says **Kerra Isle**; both packs' labels say **Kerra Ridge**, and 454 of
+    463 positions recorded there sit inside `kerraridge`'s lines, so the alias folds the log's name
+    onto the map's. It's part of `zoneKey`, so a kill recorded under one name and a map named the
+    other are one zone to the heatmap, the kill list, mob knowledge and the wiki's drop zones alike.
+
+  The three zones that stayed unresolved after that were **coverage, not naming** — and they're
+  answered under **Sources** above: a zone the chosen pack hasn't got is borrowed from the game's own
+  maps ([ADR 0063](../decisions/0063-a-zone-the-pack-lacks-is-borrowed.md)), which leaves nothing
+  unmapped that any folder on the machine can draw.
+- **Only zones this server has** — a pack draws all 26 expansions of EverQuest, so `zonesFromSources`
+  drops the ones that don't exist here (`zoneAvailable`, see
+  [ADR 0064](../decisions/0064-a-zone-belongs-to-an-expansion.md)): a fetched zone → expansion table rules
+  out everything past this server, and eqlwiki's live era flags close what it has but hasn't opened. The
+  same function the [travel](../travel/README.md) graph excludes by, so the picker can't offer a zone a
+  route would refuse. It **fails open** — a zone the table has never heard of is kept, because losing a
+  real zone is worse than offering an unreachable one, and Legends' own custom zones live in that gap.
+  `zonesFromFiles` deliberately doesn't filter: "what is this folder's zone called" is a different
+  question, and the naming rules above lean on it.
 - **The zone picker** (`ZonePicker`) is a **type-to-find** box, not a dropdown: 568 zones in a
   `<select>` is a scroll rather than a choice. Ranking is the app's existing `fuzzyRank` (token
   overlap plus Levenshtein), over the zone name **and its file name** — the file is what a zone we
@@ -249,6 +292,14 @@ world coordinates, so a map knows where it is. See
   defaults to the log's character name (`characterFromLogFile`). Peers/pings are
   filtered to the viewed zone. Bootstrap URL defaults to the live service, overridable
   in Settings.
+- **Travel** (the 🧭 toolbar panel) — how to get from one zone to another, which is the one question a
+  map of a single zone can't answer. **From** is where the log says you are (with your `/loc`, so the
+  walk to the first border is measured); **to** defaults to *the zone you're viewing*, so picking a map
+  in the titlebar and opening this panel is one gesture. The answer is a list of borders and walks —
+  never a line on the canvas — and each zone in it is a button that shows that map. Three checkboxes say
+  which ports to assume, and they're `Settings.travel` rather than window state, because your class
+  isn't a property of the map you're looking at. Owned by [travel](../travel/README.md); this window
+  only holds the state, as it does for every other panel.
 - **Mob knowledge** (the 📖 toolbar panel) — what killing things here has taught us:
   **observed drop rates** (kills-that-dropped-it over kills, dimmed until the sample is worth
   trusting — only kills that were yours count, see
@@ -309,9 +360,16 @@ world coordinates, so a map knows where it is. See
 ## Non-responsibilities
 - No continuous position tracking: EQ only logs a location when one is emitted
   (typically when you type `/loc`), so the dot steps per loc line — the UI says so.
-- **No routing, and no suggestion about how to get anywhere.** A map file's lines never say what's
-  walkable — an `L` record is a wall in a dungeon and a contour line outdoors — so a route could only
-  ever be a guess dressed as advice. Tried once and removed: the map already shows you the corridor.
+- **No routing *inside* a zone, and no line drawn on a map.** A map file's lines never say what's
+  walkable — an `L` record is a wall in a dungeon and a contour line outdoors — so a route through the
+  geometry could only ever be a guess dressed as advice. Tried once and removed: the map already shows
+  you the corridor.
+
+  Getting **between** zones is a different question on different data, and it has its own area:
+  [travel](../travel/README.md) routes over the mapmakers' own `to <zone>` **labels** — the same corpus
+  that names the zones above — and answers with a list of places rather than a drawn path. This window
+  *hosts* that panel (🧭) and still draws nothing of it: no line, no arrow, nothing on the canvas
+  ([ADR 0062](../decisions/0062-a-travel-graph-of-zone-lines.md)).
 - **The floor in view is never chosen for you.** On a vector map that names its storeys, your
   `/loc` height is enough to say which one you're on — and it's *shown* (**· you** in the
   rows) rather than acted on, because auto-hiding four fifths of a map on an inference is a

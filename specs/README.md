@@ -12,6 +12,7 @@ Start here, then branch out by area:
 - [wiki-data](./wiki-data/README.md) — sourcing items/quests/recipes from eqlwiki.
 - [overlay-ui](./overlay-ui/README.md) — the control window and the floating overlay.
 - [map](./map/README.md) — the sibling map window that plots your live location.
+- [travel](./travel/README.md) — the zone-line graph behind "how do I get from here to there?".
 - [testing](./testing/README.md) — what's a tested black box and how to run it.
 
 Decisions are logged as ADRs in [decisions/](./decisions/README.md). Open work is

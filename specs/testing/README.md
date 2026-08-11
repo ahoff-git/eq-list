@@ -26,7 +26,10 @@ unit-tested.
     one row with its counts *added* rather than overwritten).
   - `src/shared/names.ts` → `electron/tests/names.test.ts` (an item's `+N` grade and a zone's
     difficulty number and ruleset tag read off a name and taken back off it — and, the half that
-    matters, a name carrying none of them surviving untouched).
+    matters, a name carrying none of them surviving untouched). Plus `zoneKey`, the one fold behind
+    every "same zone?": every difficulty and ruleset of a zone landing on one key, the backtick the
+    maps write folding onto the apostrophe the log writes, an aliased name (Kerra Isle → Kerra Ridge)
+    folding onto the map's, and two zones that merely share words staying apart.
   - `src/shared/mob-stats.ts` → `electron/tests/mob-stats.test.ts` (rolling kills up into
     observations, observed drop rates and their denominators, roam areas ignoring untrustworthy
     positions, and pooling a peer's counts while keeping provenance — including that a pooled
@@ -71,6 +74,66 @@ unit-tested.
     anchor, left when the right won't fit, sliding up to clear the window's foot, the below/above
     fallback for a window too narrow for either side — flipped without covering the anchor — and the
     no-room-anywhere case that must clip rather than cover).
+  - `electron/eq-maps.ts` → `electron/tests/eq-maps.test.ts` (what counts as a map source, and that
+    **a pack is named from its own labels only** — including that a folder's names don't change when
+    another pack appears beside it, [ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md)).
+    Touches a temp dir: "which folder did this come from" is the whole question.
+  - `src/shared/zones/expansions.ts` → `electron/tests/zone-expansions.test.ts` (which expansion a zone
+    came with, and whether that means you can go there —
+    [ADR 0064](../decisions/0064-a-zone-belongs-to-an-expansion.md)). Checked in **both** directions,
+    because the two failure modes aren't equal: the zones it must exclude (Argath → Veil of Alaris, Vex
+    Thal, the Plane of Knowledge), and — the half that matters — the zones it must **never** exclude,
+    including ones the table has never heard of, which must fail open. Plus the generated table being
+    release-ordered so a classic zone can't be claimed by a later expansion's revamp, the live era list
+    being what closes Kunark today and re-opens it later, and a permanent refusal outranking a temporary
+    one.
+  - `src/shared/travel/` → `electron/tests/travel-harvest.test.ts`, `travel-build.test.ts`,
+    `travel-manual.test.ts`, `travel-route.test.ts` — the four jobs of the zone-line graph
+    ([ADR 0062](../decisions/0062-a-travel-graph-of-zone-lines.md)), split so each is its own black box:
+    - **harvest** — which labels are travel, and the half that matters: which are *refused*. A label
+      naming no single destination is dropped and counted; a labelled ferry destination is an ordinary
+      border **wherever in the label it's stated** (`Boat to Erudin` as much as `to Erudin (Boat)` —
+      reading only the second is what cut Odus off the graph); a conveyance the shared classifier files
+      as a plain name (`Druid Rings`) is still recognised, while `a dock worker` and `Dock Merchant`
+      are not. Plus **how you'd cross** read off the label in the words a route shows — a dock is a
+      `boat`, `Spires` a `spire`, a bare `Portal` a `portal` (it used to fall through) — with a gnome on
+      a dock reading as a translocator and anything unrecognised still reading as nothing.
+    - **build** — both halves of a border collapsing into **one** node that holds its position in each
+      zone, a zone's boundaries joined to each other by the distance between them (the `A|B`/`A|C`/`A|D`
+      shape, asserted edge by edge), branching onward measured in the *next* zone's frame, several
+      crossings of one border all kept with the nearest used, a one-sided border still a border whose
+      walks are flagged as guesses, a destination no file answers to reported rather than dropped, a
+      zone name resolved *exactly* after folding (never by containment — "commonlands" sits inside
+      "east commonlands"), EverQuest's backtick folded against a typed apostrophe, rings hubbed but
+      **docks never** (a boat has two particular ends), a conveyance that names its destination becoming
+      a border carrying **`via`** — one field for how you cross, not words appended to its name — while one
+      whose destination resolves to nothing keeps its node for pairing, the zones with no way in or out, and **a zone the server hasn't got never
+      entering the graph at all** — its own points skipped, borders into it refused and counted rather
+      than called unresolved, named either as you'd say it or as its map file, and a pack that never had
+      it treated as no error.
+    - **manual** — a boat stated as a **border** with no mode, cost or toggle and positioned at each
+      end's dock; a boundary the maps already found only **gaining coordinates** rather than being
+      duplicated; a far side with no dock drawn still a border whose walks are flagged; a place matched
+      by a piece of its label rather than a node id; a port place this pack never labelled *invented*
+      **and wired into its zone** (walks are stored, so otherwise it's an island); an addition
+      **extending** the network the maps already found instead of standing up a second; a dropped member
+      keeping its node and losing its free ride; a block *removing* the walk in both directions **and
+      surviving the zone's walks being recomputed in the same pass**; a malformed entry told apart from
+      one naming a zone this pack simply lacks; a place naming its zone **either way round** (its name or
+      its map file), since the shipped table says "South Qeynos" and the file is `qeynos`; and the input
+      graph left unmutated, positions included.
+    - **route** — zoning costing no leg with the walk after it measured in the next zone's frame, the
+      nearest of a border's several crossings used, a conveyance not used until asked for, a wizard
+      toggle not opening the druid network, a boat working with **every** toggle off (it's a border), a
+      zone you only pass through by conveyance still named in the summary, an unplaced border's walk
+      priced as a guess *and flagged*, one zone answered as a straight line, no route returned as an
+      answer rather than thrown, and — the output half — **every zone a route mentions carrying the name
+      a person reads** ("Northern Felwithe", never `felwithea`) in the summary, on each leg and on the
+      virtual ends, down to the tidied fallback for a zone the graph never named. Plus `answerRoute`,
+      which is what the UI actually calls: each of the four refusals told apart (no graph, unknown
+      start, unknown destination, unreachable) and the zone/border counts that make "no route"
+      believable — including the fifth refusal, a zone that **isn't in the game**, told apart from one
+      that is merely unreachable, because only one of the two is worth going on looking for.
   - `electron/wiki/parse.ts` → `electron/tests/wiki-parse.test.ts`, pinned against
     real page HTML in `fixtures/wiki/` (item drops, quest turn-ins/rewards, recipe
     components). Re-capture a fixture only when the wiki's markup actually changes.

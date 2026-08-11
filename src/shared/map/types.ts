@@ -49,4 +49,10 @@ export type Zone = {
   sortingStr?: string;
   /** The zone short name of the map file behind it (`gfaydark`). */
   file?: string;
+  /**
+   * Which source will actually draw it. Usually the one you picked — but a zone that pack doesn't
+   * cover is borrowed from the game's own maps, and it has to be loaded from *there*
+   * ([ADR 0063](../../../specs/decisions/0063-a-zone-the-pack-lacks-is-borrowed.md)).
+   */
+  source?: string;
 };

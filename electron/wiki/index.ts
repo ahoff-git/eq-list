@@ -57,6 +57,15 @@ export interface WikiClient {
   searchZones(term: string): Promise<SearchResult[]>;
   questsByZone(zone: string): Promise<SearchResult[]>;
   /**
+   * Zone page titles the server currently has **out of era**, derived rather than listed: every page
+   * in `Category:Zones` whose categories include one of the eras `Template:PageEra` says isn't live.
+   *
+   * So it follows the server. When Legends opens Kunark the wiki's template changes and these stop
+   * being excluded, with nothing to edit here. Cached on disk, because the answer has to survive being
+   * offline — see `outOfEraZones` for what happens when the lookup fails.
+   */
+  outOfEraZones(): Promise<string[]>;
+  /**
    * Force a re-fetch of the mirrored search indexes now, instead of waiting out the weekly TTL —
    * so a page added to the wiki shows up in search straight away. Also drops the session's
    * derived caches (era flags, zone quests) so they rebuild against the fresh data.
@@ -124,6 +133,10 @@ function createCachedIndex(file: string, fetcher: () => Promise<string[]>, label
   };
 }
 
+/** Does a page's category name match one of the eras the server has switched off? */
+const isOutEraCategory = (set: Set<string>, cat: string) =>
+  set.has(cat.replace(/^Category:\s*/i, "").replace(/_/g, " ").toLowerCase().trim());
+
 /** Create a wiki client that caches parsed pages + search indexes under `cacheDir`. */
 export function createWikiClient(cacheDir: string): WikiClient {
   fs.mkdirSync(cacheDir, { recursive: true });
@@ -137,6 +150,30 @@ export function createWikiClient(cacheDir: string): WikiClient {
     "zone",
   );
   const zoneQuestsCache = new Map<string, SearchResult[]>();
+  /**
+   * The derived out-of-era zone list, mirrored to disk like the other indexes.
+   *
+   * On disk because it has to be **available offline and early**: the travel graph asks for it before
+   * it can build, and a missed lookup would mean a graph confidently routing you through Kunark. A
+   * stale list is much better than none — an era opens once, and the worst a day-old answer does is
+   * leave a zone excluded slightly too long.
+   */
+  const outEraZoneIndex = createCachedIndex(
+    path.join(cacheDir, "out-of-era-zones.json"),
+    async () => {
+      const outEra = await fetchOutEraCategorySet();
+      // No era data means no exclusions, and silently excluding nothing is the failure that matters —
+      // so refuse to overwrite a good list with an empty one (`createCachedIndex` keeps the old one
+      // when a fetch yields nothing).
+      if (!outEra.size) return [];
+      if (!zoneIndex.get()?.length) await zoneIndex.refresh();
+      const zones = zoneIndex.get() ?? [];
+      if (!zones.length) return [];
+      const cats = await fetchCategoriesFor(zones);
+      return zones.filter((title) => (cats.get(title) ?? []).some((c) => isOutEraCategory(outEra, c)));
+    },
+    "out-of-era zone",
+  );
 
   // Out-of-era category set, fetched once and refreshed on the index TTL.
   let outEraSet: Set<string> | null = null;
@@ -151,9 +188,6 @@ export function createWikiClient(cacheDir: string): WikiClient {
     }
     return outEraSet;
   }
-
-  const isOutEraCategory = (set: Set<string>, cat: string) =>
-    set.has(cat.replace(/^Category:\s*/i, "").replace(/_/g, " ").toLowerCase().trim());
 
   // Per-title out-of-era flag, cached for the session (search hits repeat a lot).
   const eraFlagCache = new Map<string, boolean>();
@@ -179,9 +213,11 @@ export function createWikiClient(cacheDir: string): WikiClient {
     return results.map((r) => ({ ...r, outOfEra: eraFlagCache.get(r.title) ?? false }));
   }
 
-  // Warm both shortly after startup so the first searches are already fuzzy.
+  // Warm these shortly after startup so the first searches are already fuzzy — and so the travel
+  // graph, which is built on first use, has the era list to hand rather than waiting on the network.
   titleIndex.ensureFresh();
   zoneIndex.ensureFresh();
+  outEraZoneIndex.ensureFresh();
 
   function readCache(title: string): { page: WikiPage; ageMs: number; version: number } | null {
     try {
@@ -214,6 +250,8 @@ export function createWikiClient(cacheDir: string): WikiClient {
       outEraSet = null;
       outEraAt = 0;
       await Promise.all([titleIndex.refresh(), zoneIndex.refresh()]);
+      // After the zone index, since it's derived from it.
+      await outEraZoneIndex.refresh();
       log.debug("wiki indexes refreshed on demand");
     },
 
@@ -227,6 +265,13 @@ export function createWikiClient(cacheDir: string): WikiClient {
       if (local.length) return flagOutOfEra(local);
       const hits = await opensearch(q);
       return flagOutOfEra(hits.length ? hits : await fullTextSearch(q));
+    },
+
+    async outOfEraZones() {
+      // A cached list is used as-is (`ensureFresh` re-reads in the background on the TTL); only an
+      // empty one waits on the network, since "no exclusions" is the answer that would do harm.
+      if (!outEraZoneIndex.get()?.length) await outEraZoneIndex.refresh();
+      return outEraZoneIndex.get() ?? [];
     },
 
     async searchZones(term) {

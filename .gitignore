@@ -27,6 +27,11 @@
 # log replay output (see scripts/replay-log.mjs)
 /replay-logs/
 
+# generated travel graphs (see scripts/build-travel-graph.mjs) — built from *your* map pack, so
+# they're a per-install artifact rather than shared data. The hand-authored half is in
+# src/shared/travel/manual-links.ts and is committed.
+/data/
+
 # misc
 .DS_Store
 *.pem

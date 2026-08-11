@@ -5,7 +5,9 @@ sequential and immutable; supersede rather than edit an `Accepted` decision.
 
 0049 is deliberately absent: it recorded a pathfinding experiment on the map's
 geometry that was removed rather than kept, and the record went with it. The
-number is retired, not free.
+number is retired, not free. It stays retired: [0062](./0062-a-travel-graph-of-zone-lines.md)
+routes between zones over the mapmakers' **exit labels**, which is different data
+with a different provenance, and still does no routing inside one.
 
 ## Log
 - [0001: Record architecture decisions as ADRs](./0001-record-architecture-decisions.md)
@@ -41,7 +43,7 @@ number is retired, not free.
 - [0031: An inferred bound has to be able to come back down](./0031-an-inferred-bound-must-be-able-to-fall.md)
 - [0032: Remove the retained-but-dead overlay/click-through surface](./0032-remove-dead-overlay-surface.md) — *reverses the `clickThrough` retention noted in 0009*
 - [0033: Eating a log is idempotent — every kill and drop is keyed by its line](./0033-eating-a-log-is-idempotent.md)
-- [0034: Tell the user a newer build exists; don't install it for them](./0034-update-notification.md)
+- [0034: Tell the user a newer build exists; don't install it for them](./0034-update-notification.md) — *superseded by [0064](./0064-every-build-has-a-number.md); notify-with-a-link stands, the commit-as-identity half does not*
 - [0035: Cast alerts get their own click-through overlay window, over the game](./0035-cast-alert-overlay-window.md)
 - [0036: A fight ends on a death, not on a lull](./0036-a-fight-ends-on-death-not-a-lull.md)
 - [0037: A zone is one place; its layers are a user choice, not a log fact](./0037-one-zone-many-layers.md) — *its per-image layers retired by 0042; floors continue in 0040*
@@ -69,6 +71,11 @@ number is retired, not free.
 
 - [0059: A zone's variants are one zone](./0059-a-zone-s-variants-are-one-zone.md) — *0057 folded a zone's difficulty for the wiki and the map lookup but kept the kill log split by it; with real lines (`The Steamfont Mountains 2 (Adaptive)`) that hid an evening's kills from the one map that draws the place and cut every drop sample below 0025's believability bar, so `sameZone` — exact, not `zoneMatches` — now keys kills, per-zone knowledge and observations, retroactively via the key; the one comparison that stays verbatim is which `/loc` fix may place a kill, because changing difficulty is still a teleport*
 - [0060: A position belongs to the zone it was taken in](./0060-a-position-belongs-to-the-zone-it-was-taken-in.md) — *0059's teleport rule, applied to the two readers that hadn't heard it: a `/loc` taken before the zone was known was matching every zone (357 kills in a real log placed at another zone's coordinates), and the "You" dot outlived zoning entirely while the trail beside it was already being wiped*
+- [0061: A map pack names its own zones](./0061-a-map-pack-names-its-own-zones.md) — *0039 made each folder a source you pick between, but naming pooled every folder's exit labels into one gazetteer; two surveys fighting over `solveZoneNames`' one-name-to-one-file rule cost Brewall eight zone names its own labels state outright and rewrote seven more, so a pack is now named from its own labels and nothing else's*
+- [0062: A travel graph of zone lines — route between zones, never inside one](./0062-a-travel-graph-of-zone-lines.md) — *the answer to "how do I get there?" the map deliberately doesn't give ([0049](./README.md), retired: geometry can't say what's walkable). Reads the exit labels 0039/0061 already trust for naming, and 0048 already classifies, into a graph whose nodes are **boundaries** — one node in both its zones, so zoning is free and edgeless, and every edge is a walk across one zone*
+- [0063: A zone the pack lacks is borrowed from the game's own maps](./0063-a-zone-the-pack-lacks-is-borrowed.md) — *0061 stopped the packs lending each other names; coverage is the other question, and it went unasked — the game's maps ship no Blackburrow or Unrest and Brewall's ships no New Sebilis Expedition, so whichever folder you picked, hundreds of a real log's kills had no map while the folder beside it had one. A zone is still drawn from one file, named by the folder it came from, and the borrowing is marked in the titlebar*
+- [0064: A zone belongs to an expansion, and that's how we know it exists](./0064-a-zone-belongs-to-an-expansion.md) — *a map pack draws all 26 expansions, so the app was offering Argath, Bastion of Illdaera and routing through the Plane of Knowledge. 0062's era flags catch Kunark and Velious because eqlwiki knows those eras; they're blind to everything past them. So the zone → expansion table is **fetched** from the fandom wiki (351 zones, 22 expansions) and one function — `zoneAvailable` — answers it for the map list and the travel graph alike. Fails open, because losing a real zone is far worse than offering an unreachable one*
+- [0064: Every build has a number, and "newer" is a comparison](./0064-every-build-has-a-number.md) — *the pipeline never touched the version, so every installer ever built claimed to be `0.1.0` and [0034](./0034-update-notification.md) had to identify builds by commit — which is unique but unordered, so a re-run or a revert would have prompted a "newer" build the user was already past. CI now stamps its run number into the patch (`0.1.<run>`), the release announces it, and the check is `>` rather than `≠`; the silent first-check baseline goes with it, so a stale install is told it's behind*
 
 ## Open Questions
 - Naming a folder of zones reads every map file inside a synchronous IPC handler, so it blocks

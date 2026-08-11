@@ -29,6 +29,7 @@ import { detectFloors, floorAt, mapZRange, type ZBand } from "@/shared/map/eqmap
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import MapFilters, { type HeightPick } from "../components/MapFilters";
+import TravelPanel from "../components/TravelPanel";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
 import { MAP_UI_SCALE } from "@/shared/constants";
@@ -245,6 +246,7 @@ export default function MapWindow() {
   const [usersOpen, setUsersOpen] = useState(false);
   const [killsOpen, setKillsOpen] = usePersistentState(STORAGE_KEYS.mapKillsOpen, false);
   const [mobsOpen, setMobsOpen] = usePersistentState(STORAGE_KEYS.mapMobsOpen, false);
+  const [travelOpen, setTravelOpen] = usePersistentState(STORAGE_KEYS.mapTravelOpen, false);
   const [killFilters, setKillFilters] = useState<KillFilters>(DEFAULT_KILL_FILTERS);
   const [shareKillsOn, setShareKillsOn] = usePersistentState(STORAGE_KEYS.mapShareKills, false);
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -466,6 +468,16 @@ export default function MapWindow() {
         <h1>
           <span className="mark">🗺</span> {zone?.name ?? zoneName ?? "Map"}
         </h1>
+        {/* A zone the chosen pack hasn't got is drawn from the game's own maps (ADR 0063). Said out
+            loud, because "this map looks different from the rest" should never be a mystery. */}
+        {zone?.source && zone.source !== sourceId && (
+          <span
+            className="muted small"
+            title={`${sourceLabel} has no map for this zone, so it's drawn from ${sources.find((s) => s.id === zone.source)?.label ?? zone.source}`}
+          >
+            · from {sources.find((s) => s.id === zone.source)?.label ?? zone.source}
+          </span>
+        )}
         {connected && (
           <span className="muted small" title="Peers sharing their location in this zone">
             · {peers.length} nearby
@@ -577,6 +589,13 @@ export default function MapWindow() {
           👁
         </button>
         <button
+          className={`wc ${travelOpen ? "on" : ""}`}
+          title="How to get from one zone to another — the route, and which ports to assume"
+          onClick={() => setTravelOpen((o) => !o)}
+        >
+          🧭
+        </button>
+        <button
           className={`wc ${mobsOpen ? "on" : ""}`}
           title="What killing things here has taught us — drop rates and roam areas"
           onClick={() => setMobsOpen((o) => !o)}
@@ -647,6 +666,21 @@ export default function MapWindow() {
             ))
           )}
         </div>
+      )}
+
+      {travelOpen && (
+        <TravelPanel
+          zones={zones}
+          sourceId={sourceId}
+          currentZone={currentZone}
+          viewedZone={zoneName}
+          loc={loc}
+          travel={settings?.travel ?? { druid: false, wizard: false, gnome: true }}
+          onTravel={(patch) => void api()?.settings.update({ travel: patch })}
+          // A zone in the route opens its map, which also turns "follow me" off — the same override
+          // the titlebar's picker sets, so the two can't disagree about what you're looking at.
+          onViewZone={setOverride}
+        />
       )}
 
       {mobsOpen && (

@@ -25,6 +25,9 @@
     "dist": "npm run build && electron-builder",
     "lint": "next lint",
     "sim": "node scripts/replay-log.mjs",
+    "zones:expansions": "node scripts/fetch-zone-expansions.mjs",
+    "travel:build": "npm run build:electron && node scripts/build-travel-graph.mjs",
+    "travel:manual": "node scripts/apply-travel-manual.mjs",
     "test": "npm run build:electron && node --test \"dist-electron/electron/tests/**/*.test.js\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },

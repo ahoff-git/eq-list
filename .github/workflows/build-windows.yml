@@ -40,6 +40,17 @@ jobs:
       # Static renderer + compiled main process, then the NSIS installer into release/.
       # `--publish never`: we attach the artifact ourselves (below), not via electron-builder.
       - run: npm run build
+
+      # Every build gets its own number (ADR 0064) — `0.1.<run>`, monotonic across runs — so the
+      # app can ask whether a published build is *newer* rather than merely different. Must land
+      # before electron-builder, which reads the version from package.json for the installer name
+      # and for the `app.getVersion()` the update check compares against. The working tree is
+      # never committed; the stamp lives only in this run's artifact and the release body.
+      - name: Stamp this build's number into the version
+        id: version
+        shell: bash
+        run: echo "version=$(node scripts/stamp-version.mjs "$GITHUB_RUN_NUMBER")" >> "$GITHUB_OUTPUT"
+
       - run: npx electron-builder --publish never
 
       # Point the rolling tag at this commit so the published release isn't stale.
@@ -53,8 +64,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Latest build
-          body: Automated build of ${{ github.sha }} (${{ github.ref_name }}).
+          name: Latest build ${{ steps.version.outputs.version }}
+          # The `version:` line is machine-read by the app's update check (electron/update-check.ts):
+          # the tag is the rolling `latest` and can't carry a version, so the body announces it.
+          body: |
+            Automated build of ${{ github.sha }} (${{ github.ref_name }}).
+            version: ${{ steps.version.outputs.version }}
           files: release/*.exe
           make_latest: true
           fail_on_unmatched_files: true

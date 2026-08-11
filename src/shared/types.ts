@@ -1,11 +1,15 @@
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { EqMap } from "./map/eqmap";
 import type { MapSourceReport } from "./map/map-sources";
+import type { TravelAnswer, TravelEnd } from "./travel/route";
+import type { TravelOptions } from "./travel/types";
 
 /** A zone's vector map as it crosses IPC: geometry, labels, and who drew it. */
 export type LoadedMap = EqMap & { credits: string[] };
 
 export type { MapSourceReport };
+/** Re-exported so a renderer can type a route without reaching into the travel module. */
+export type { TravelAnswer, TravelEnd, TravelOptions };
 
 /**
  * types.ts — the shared contract between the Electron main process and the
@@ -1244,8 +1248,29 @@ export interface Settings {
   bootstrapUrl: string;
   /** Alert when a watched spell begins casting, so you can prep a dispel/cure. */
   castAlerts: CastAlertSettings;
+  /** Which ways of getting about a route may assume you have. */
+  travel: TravelSettings;
   overlay: OverlaySettings;
   debug: boolean;
+}
+
+/**
+ * What a cross-zone route is allowed to assume about you.
+ *
+ * A setting rather than a per-window filter, because it's a fact about *you* — your class, or who you
+ * can call on — not about what you're looking at. One answer, wherever a route is asked for.
+ *
+ * Druid and wizard default **off**: a route that quietly assumed a port you can't get is advice you
+ * can't take. Translocator gnomes default **on**, being public transport. Boats aren't here, because
+ * a boat is a border like any other ([ADR 0062](../../specs/decisions/0062-a-travel-graph-of-zone-lines.md)).
+ */
+export interface TravelSettings {
+  /** You can get a druid ring port — you're a druid, or someone will oblige. */
+  druid: boolean;
+  /** …and a wizard spire teleport. */
+  wizard: boolean;
+  /** Legends' translocator gnomes are available to you. */
+  gnome: boolean;
 }
 
 // ─── Watcher status ─────────────────────────────────────────────────────────
@@ -1353,6 +1378,8 @@ export interface LogImportResult {
 export interface UpdateNotice {
   /** The release page to open. */
   url: string;
+  /** The published build's version — already established as newer than the running one. */
+  version: string;
 }
 
 // ─── Preload bridge (window.eql) ────────────────────────────────────────────
@@ -1576,6 +1603,21 @@ export interface EqlApi {
      */
     onCommand(cb: (dir: "back" | "forward") => void): Unsubscribe;
   };
+  travel: {
+    /**
+     * How to get from one zone to another, over the chosen map source's graph — or the reason there
+     * is no way. Zone names or map file names, either end; pass an `at` for a `/loc` you have and the
+     * walk to the first border is charged for real rather than assumed free.
+     *
+     * The first call for a source builds its graph (~1s for a big pack) and it's kept after that.
+     */
+    route(
+      sourceId: string,
+      from: TravelEnd | string,
+      to: TravelEnd | string,
+      options?: TravelOptions,
+    ): Promise<TravelAnswer>;
+  };
   map: {
     /** Open (or focus) the sibling map window. */
     open(): Promise<void>;
@@ -1609,12 +1651,11 @@ export interface EqlApi {
     /** One zone's geometry + labelled points from a folder source (null if it has no map). */
     load(sourceId: string, zoneFile: string): Promise<LoadedMap | null>;
     /**
-     * Zone short name → the long name, worked out from the maps' own exit labels. Pooled across
-     * every folder (a short name means the same zone in each pack, and the packs label different
-     * things), and read on demand: it scans every map, so the picker shows file names until it
-     * lands and then relabels itself.
+     * Zone short name → the long name, worked out from **this source's own** exit labels. One pack
+     * is one survey and never lends another its names (ADR 0060). Read on demand: it scans every
+     * map in the folder, so the picker shows file names until it lands and then relabels itself.
      */
-    names(): Promise<Record<string, string>>;
+    names(sourceId: string): Promise<Record<string, string>>;
   };
   /**
    * Peer networking (awari), brokered by the main process. The always-alive main

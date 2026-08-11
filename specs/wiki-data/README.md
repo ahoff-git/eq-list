@@ -96,6 +96,13 @@ shopping list.
   title) and marks each `SearchResult.outOfEra`. The UI badges them and offers a
   "hide out of era" toggle (`settings.hideOutOfEra`). Zone-name suggestions are not
   flagged (the picker runs per keystroke). Category keys are underscore-normalized.
+- **Out-of-era *zones*, as a list** — `outOfEraZones()` runs the same test over every page in
+  `Category:Zones` and mirrors the answer to disk beside the other indexes (45 zones today: Kunark and
+  Velious). It exists because [travel](../travel/README.md) has to **leave those zones out of its
+  graph** — a map pack draws them, so without this a route goes confidently through a continent the
+  server hasn't opened. Derived rather than listed, so it corrects itself when an era opens; on disk
+  because a *stale* answer only over-excludes for a while, while a *missing* one produces a wrong route.
+  It's the one index whose consumer isn't the search UI.
 
 ## Non-responsibilities
 - No build-time data generation — data is fetched at runtime and cached

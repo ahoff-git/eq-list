@@ -11,6 +11,7 @@ import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE } from "./wiki/api";
 import { importLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
+import { createTravelRouter } from "./travel-graph";
 import { alertStyle } from "../src/shared/cast-alerts";
 import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, showInSearch } from "./windows";
 import { resetPositions } from "./window-state";
@@ -26,7 +27,7 @@ import type { LootLog } from "./loot-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
-import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis } from "../src/shared/types";
+import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, TravelAnswer, TravelEnd, TravelOptions } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 
 const log = createLogger("ipc");
@@ -61,6 +62,9 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // is up to 800KB of text that several windows may ask for.
   const mapReader = createMapReader();
   const zoneNamer = createZoneNamer();
+  // The wiki is what knows which zones the server has open, so the graph asks it rather than carrying
+  // a list of its own (see `absentZonesFor`).
+  const travel = createTravelRouter({ outOfEraZones: () => wiki.outOfEraZones() });
 
   // ── shopping list ──
   ipcMain.handle(CH.listGet, () => store.getList());
@@ -259,7 +263,7 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // tab that mounted after the check still catch the notice.
   ipcMain.handle(CH.updateCurrent, () => {
     const info = updates.latest();
-    return info ? { url: info.url } : null;
+    return info ? { url: info.url, version: info.version } : null;
   });
   ipcMain.handle(CH.updateOpen, () => {
     const info = updates.latest();
@@ -299,10 +303,30 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.handle(CH.mapSources, () => listSources(store.getSettings().logDir));
   // Named separately from the source list: naming reads every map in the folder, and the picker is
   // usable (by file name) while that's in flight.
-  ipcMain.handle(CH.mapNames, () => {
-    const { sources } = listSources(store.getSettings().logDir);
-    return sources.length ? zoneNamer.names(sources) : {};
+  // Per source, because a pack names its own zones and nothing else's (ADR 0060) — asking for one
+  // folder's names is also all the picker ever needs, since it only ever shows one pack at a time.
+  ipcMain.handle(CH.mapNames, (_e, sourceId: string) => {
+    const source = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId);
+    return source ? zoneNamer.names(source) : {};
   });
+  /**
+   * How to get from one zone to another. Built from the same folder the map is drawn from, on first
+   * ask and then kept — a graph belongs to the pack you picked, so it isn't stored anywhere and can't
+   * fall out of step with that choice (see specs/travel).
+   *
+   * Every failure comes back as a *reason*, because "no route" covers four different situations and a
+   * person needs to know which: a zone this pack has no map for, a typo, an island in the graph, or a
+   * port they've switched off.
+   */
+  ipcMain.handle(
+    CH.travelRoute,
+    (_e, sourceId: string, from: TravelEnd | string, to: TravelEnd | string, options?: TravelOptions) => {
+      const source = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId);
+      if (!source) return { refused: "no-graph", knows: { zones: 0, borders: 0 } } satisfies TravelAnswer;
+      return travel.answer(source, from, to, options);
+    },
+  );
+
   ipcMain.handle(CH.mapLoad, (_e, sourceId: string, zoneFile: string) => {
     const dir = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId)?.dir;
     if (!dir) return null;

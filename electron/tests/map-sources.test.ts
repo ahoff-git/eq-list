@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { prettyZoneName, zonesFromFiles } from "../../src/shared/map/map-sources";
+import { prettyZoneName, zonesFromFiles, zonesFromSources } from "../../src/shared/map/map-sources";
 import { CURATED_ZONES, findZone, sortZones } from "../../src/shared/map/zones";
 
 /** A slice of a real maps folder, including the near-misses that make naming dangerous. */
@@ -23,9 +23,11 @@ test("a curated zone takes its own file, and nothing else does", () => {
   assert.equal(byFile.get("felwithea"), "Northern Felwithe");
   assert.equal(byFile.get("felwitheb"), "Southern Felwithe");
   assert.equal(byFile.get("runnyeye"), "RunnyEye Citadel");
-  // `qeynos` is South Qeynos, and nothing curated claims it, so it keeps its file name — it must
-  // never inherit "Qeynos Hills" from the file next to it.
-  assert.equal(byFile.get("qeynos"), "Qeynos");
+  // `qeynos` IS South Qeynos (its exits: North Qeynos, the Aqueducts, the Erud's Crossing
+  // translocator), and it is curated as such — but it must never inherit "Qeynos Hills" from the
+  // file next to it, which is the mistake the whole two-signal rule exists to refuse.
+  assert.equal(byFile.get("qeynos"), "South Qeynos");
+  assert.notEqual(byFile.get("qeynos"), "Qeynos Hills");
 });
 
 test("a zone we can't name keeps its file name, and is still offered", () => {
@@ -117,4 +119,48 @@ test("sortZones groups a family together", () => {
     zones.map((z) => z.file),
     ["gfaydark", "lfaydark", "felwithea", "felwitheb"], // Faydark…, then Felwithe…
   );
+});
+
+// ── borrowing a zone the chosen pack hasn't got (ADR 0063) ──
+
+test("the chosen pack's zones are its own, and a zone it lacks is borrowed from the game's maps", () => {
+  // Real coverage: Brewall ships no `newsebexp` (an EQL-only zone) and the game ships no
+  // `blackburrow`, so on a real install each folder had a zone the other needed all along.
+  const zones = zonesFromSources(
+    { id: "brewall", files: ["gfaydark", "blackburrow"] },
+    { id: "stock", files: ["gfaydark", "newsebexp"] },
+  );
+  const byName = new Map(zones.map((z) => [z.name, z]));
+  assert.equal(byName.get("Greater Faydark")?.source, "brewall", "both have it, so the pack draws it");
+  assert.equal(byName.get("Blackburrow")?.source, "brewall");
+  const borrowed = byName.get("New Sebilis Expedition");
+  assert.equal(borrowed?.source, "stock", "the pack hasn't got it, so it's borrowed");
+  assert.equal(borrowed?.file, "newsebexp");
+  assert.equal(borrowed?.key, "stock:newsebexp", "and its key says where it came from");
+});
+
+test("a borrowed zone is named by the folder it came from, never by the pack that lacked it", () => {
+  const zones = zonesFromSources(
+    { id: "brewall", files: ["gukbottom"], solved: { gukbottom: "Ruins of Old Guk" } },
+    { id: "stock", files: ["gukbottom", "kithicor"], solved: { kithicor: "Kithicor Forest", gukbottom: "Something Else" } },
+  );
+  const byFile = new Map(zones.map((z) => [z.file, z.name]));
+  assert.equal(byFile.get("gukbottom"), "Ruins of Old Guk", "the pack's own name for its own file");
+  assert.equal(byFile.get("kithicor"), "Kithicor Forest", "the backstop's name for the borrowed file");
+});
+
+test("the pack wins a name collision, so one place is never two entries", () => {
+  // Two files, one zone: only one could ever be reached, and it should be the pack you picked.
+  const zones = zonesFromSources(
+    { id: "brewall", files: ["blackburrow"] },
+    { id: "stock", files: ["oldblackburrow"], solved: { oldblackburrow: "Blackburrow" } },
+  );
+  assert.deepEqual(zones.map((z) => [z.name, z.source]), [["Blackburrow", "brewall"]]);
+});
+
+test("with no backstop, or when the backstop is the chosen source, nothing changes", () => {
+  const files = ["gfaydark", "crushbone"];
+  const alone = zonesFromSources({ id: "stock", files });
+  assert.deepEqual(alone, zonesFromFiles("stock", files));
+  assert.deepEqual(zonesFromSources({ id: "stock", files }, { id: "stock", files }), alone);
 });

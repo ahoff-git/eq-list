@@ -125,6 +125,9 @@ const api: EqlApi = {
   nav: {
     onCommand: (cb) => on(CH.navCommand, cb),
   },
+  travel: {
+    route: (sourceId, from, to, options) => ipcRenderer.invoke(CH.travelRoute, sourceId, from, to, options),
+  },
   map: {
     open: () => ipcRenderer.invoke(CH.winOpenMap),
     openAt: (zone, loc, label) => ipcRenderer.invoke(CH.mapOpenAt, zone, loc, label),
@@ -134,7 +137,7 @@ const api: EqlApi = {
     openP99: (zone) => ipcRenderer.invoke(CH.mapOpenP99, zone),
     sources: () => ipcRenderer.invoke(CH.mapSources),
     load: (sourceId, zoneFile) => ipcRenderer.invoke(CH.mapLoad, sourceId, zoneFile),
-    names: () => ipcRenderer.invoke(CH.mapNames),
+    names: (sourceId) => ipcRenderer.invoke(CH.mapNames, sourceId),
   },
   awari: {
     send: (payload) => ipcRenderer.send(CH.awariOutbound, payload),

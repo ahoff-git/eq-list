@@ -4,10 +4,10 @@ import { api } from "@/lib/api";
 import type { UpdateNotice } from "@/shared/types";
 
 /**
- * A dismissible "newer build available" strip. The main process finds the update (comparing the
- * rolling `latest` release's commit to what we've acknowledged) and owns the URL; this just draws
- * it. **Download** opens the release page, **✕** hides it — both tell main to stop flagging this
- * build, so the next newer one notifies but this one won't nag again.
+ * A dismissible "newer build available" strip. The main process finds the update (the rolling
+ * `latest` release's build number, only when it's higher than the running one) and owns the URL;
+ * this just draws it. **Download** opens the release page, **✕** hides it — both tell main to stop
+ * flagging this build, so the next newer one notifies but this one won't nag again.
  */
 export default function UpdateBanner() {
   const [notice, setNotice] = useState<UpdateNotice | null>(null);
@@ -25,7 +25,7 @@ export default function UpdateBanner() {
   return (
     <div className="update-banner no-drag">
       <span className="ub-dot" aria-hidden />
-      <span className="ub-text">A newer build of EQ List is available.</span>
+      <span className="ub-text">EQ List {notice.version} is available — newer than this build.</span>
       <span className="spacer" />
       <button
         className="btn sm primary"

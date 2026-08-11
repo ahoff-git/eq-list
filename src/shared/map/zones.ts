@@ -26,6 +26,11 @@ import { normalizeZone } from "../sources";
  * Blackburrow, Northern Qeynos, Surefall Glade and West Karana). Confirmed against a real log's
  * `/loc` fixes: all 20 recorded positions in Qeynos Hills sit inside `qeytoqrg`'s geometry and
  * outside `qey2hh1`'s.
+ *
+ * That check is the price of an entry, and it has two halves worth running: **the exits** (a file's
+ * neighbours identify it) and **your own positions** (you cannot stand outside the zone you are in).
+ * Where the log and the maps disagree about the *name* rather than the file, the entry goes in
+ * `ZONE_ALIASES` (`src/shared/names.ts`) instead — the two tables are one mapping list.
  */
 export const CURATED_ZONES: { name: string; file: string; sortingStr?: string }[] = [
   { name: "Greater Faydark", file: "gfaydark", sortingStr: "Faydark" },
@@ -55,7 +60,45 @@ export const CURATED_ZONES: { name: string; file: string; sortingStr?: string }[
   { name: "East Commonlands", file: "ecommons" },
   { name: "The Estate of Unrest", file: "unrest" },
   { name: "New Sebilis Expedition", file: "newsebexp" },
-  { name: "EQL Tutorial", file: "tutoriala" },
+  // The log's own wording. It used to read "EQL Tutorial", which is nobody's name for it — the
+  // zone line says "You have entered EverQuest Legends Tutorial." and that is what has to resolve.
+  { name: "EverQuest Legends Tutorial", file: "tutoriala" },
+  /*
+   * More zones a real log caught us visiting, none of which any pack's labels name — every one
+   * identified by its own exits (the neighbours a zone links to are the zone's fingerprint):
+   *
+   *   kerraridge  to Toxxulia Forest — Kerra Isle's only neighbour, and 454 of 463 positions
+   *               recorded there sit inside its lines. Named "Kerra Ridge" by both packs, which is
+   *               why the log's "Kerra Isle" is an alias rather than an entry here.
+   *   qeynos2     to Qeynos Hills, South Qeynos, the Catacombs, the Aqueducts
+   *   qeynos      to North Qeynos, the Aqueducts, and the Erud's Crossing translocator
+   *   qrg         to Qeynos Hills and Jaggedpine Forest
+   *   freporte    to West Freeport, the Northern Desert of Ro, and a boat to Butcherblock/Ocean of
+   *               Tears/Qeynos
+   *   erudsxing   to Erudin and South Qeynos
+   *   erudnext    to Erud's Crossing by boat, ferry and translocator, plus "Erudin City" — the
+   *               outer city, where `erudnint` (exits: "Erudin") is the palace inside it
+   *   butcher     to the Greater Faydark, South Kaladim, Dagnor's Cauldron and the Ocean of Tears.
+   *               The game's own maps name it "The Butcherblock Mountains" unaided; Brewall's say
+   *               "Butcherblock", which folds to neither the log's name nor that one — so it is
+   *               stated here and both packs agree.
+   */
+  { name: "Kerra Ridge", file: "kerraridge" },
+  { name: "North Qeynos", file: "qeynos2", sortingStr: "Qeynos" },
+  { name: "South Qeynos", file: "qeynos", sortingStr: "Qeynos" },
+  { name: "Surefall Glade", file: "qrg" },
+  { name: "East Freeport", file: "freporte", sortingStr: "Freeport" },
+  { name: "Erud's Crossing", file: "erudsxing" },
+  { name: "Erudin", file: "erudnext" },
+  { name: "Butcherblock Mountains", file: "butcher" },
+  /*
+   * `oot` is the weaker one, stated because the alternative is silence: it carries no exit labels of
+   * its own, so the neighbour test can't confirm it — but two files that *do* label their boats name
+   * "The Ocean of Tears" (`butcher`, `freporte`), no other file claims that name, and `oot` is the
+   * standard short name. Brewall ships `oceanoftears`, which its own labels name, so this only
+   * matters for the game's own maps.
+   */
+  { name: "The Ocean of Tears", file: "oot" },
 ];
 
 /**
