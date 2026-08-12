@@ -28,12 +28,12 @@ import { ROOT, appDataDirs, dirOpt, few, flag, helpIfAsked, load, opt } from "./
 helpIfAsked(import.meta.url);
 
 /**
- * How much of each report to print. They differ because they're read differently: the excluded zones
- * and the isolated ones are a sanity check ("does that look about right?"), while the unresolved
- * destinations are a **worklist** — the names you go and type into `manual-links.ts` — so that one is
- * the longest and prints each entry on its own line.
+ * How much of each report to print. They differ because they're read differently: the excluded zones,
+ * the isolated ones and a network's members are a sanity check ("does that look about right?"), while
+ * the unresolved destinations are a **worklist** — the names you go and type into `manual-links.ts` —
+ * so that one is the longest and prints each entry on its own line.
  */
-const SHOW = { absent: 8, isolated: 12, unresolved: 15, namedBy: 4 };
+const SHOW = { absent: 8, isolated: 12, networks: 12, unresolved: 15, namedBy: 4 };
 
 const { listSources } = load("electron/eq-maps.js");
 const { buildFromSource, graphPath, writeGraph } = load("electron/travel-graph.js");
@@ -109,11 +109,13 @@ for (const source of wanted) {
   console.log(`  ${report.zones} zones → ${report.boundaries} boundaries, ${report.nodes} nodes, ${report.edges} edges`);
   for (const net of report.networks) {
     // A single destination is still a network for a *cast* port — you can reach it from anywhere — but
-    // for a boat or a gnome one end is half a run, and says so.
+    // for a boat or a gnome one end is half a run, and says so. A succor is neither: every entry is
+    // complete on its own, since it takes you nowhere but the zone you're already in.
     const lone = net.zones.length === 1 && (net.network === "boat" || net.network === "gnome");
+    const what = net.network === "succor" ? "succor points, in" : `${net.network}:`;
     console.log(
-      `  ${net.network}: ${net.zones.length} zone${net.zones.length === 1 ? (lone ? " (one end — needs its pair)" : "") : "s"}` +
-        ` — ${net.zones.join(", ")}`,
+      `  ${what} ${net.zones.length} zone${net.zones.length === 1 ? (lone ? " (one end — needs its pair)" : "") : "s"}` +
+        ` — ${few(net.zones, SHOW.networks)}`,
     );
   }
   // Printed whether or not you asked for detail: a graph that knows less on purpose should say so as
@@ -133,7 +135,7 @@ for (const source of wanted) {
   // claims is worse than one that says where it's thin. This is the hand-massaging list.
   if (!quiet) {
     if (report.oneSided.length) console.log(`  ${report.oneSided.length} borders only one side drew — walks from them are guesses, not measurements`);
-    if (report.dropped.length) console.log(`  ${report.dropped.length} travel labels named nowhere (bare "Zone Line", "Succor")`);
+    if (report.dropped.length) console.log(`  ${report.dropped.length} travel labels named nowhere (bare "Zone Line", "Zone Out")`);
     if (report.isolated.length) {
       console.log(`  ${report.isolated.length} zones with no way in or out: ${few(report.isolated, SHOW.isolated)}`);
     }

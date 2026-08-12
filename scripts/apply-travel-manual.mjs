@@ -14,6 +14,7 @@
  *   npm run travel:manual -- --out "<dir>"    # where the graphs live (default: ./data)
  *   npm run travel:manual -- --route "Greater Faydark" "Ak'Anon"    # sanity-check a route
  *   npm run travel:manual -- --route A B --druid --wizard           # …with ports allowed
+ *   npm run travel:manual -- --route A B --succor                   # …assuming you can evacuate
  *
  * Needs `npm run build:electron` first.
  */
@@ -89,7 +90,7 @@ for (const id of sources) {
   const i = argv.indexOf("--route");
   if (i >= 0 && argv[i + 1] && argv[i + 2]) {
     // No boat toggle: a boat is a boundary, as unconditional as a zone line.
-    const options = { druid: flag("druid"), wizard: flag("wizard"), gnome: !flag("no-gnome") };
+    const options = { druid: flag("druid"), wizard: flag("wizard"), gnome: !flag("no-gnome"), succor: flag("succor") };
     const route = findRoute(routed, argv[i + 1], argv[i + 2], options);
     if (!route) {
       console.log(`\n  no route ${argv[i + 1]} → ${argv[i + 2]} with ${JSON.stringify(options)}`);

@@ -16,8 +16,8 @@ import { CROSSING_WORDS, type TravelAt } from "@/shared/travel/types";
  * wrong; what they're good for is *ordering* routes, and a route says which of its numbers are
  * outright guesses rather than merely approximate.
  *
- * The three toggles are settings rather than panel state, because "can I get a druid port" is a fact
- * about you and not about what you're looking at.
+ * The toggles are settings rather than panel state, because "can I get a druid port" is a fact about
+ * you and not about what you're looking at.
  */
 
 /** The conveyances, in the order they're offered, with what saying yes to one means. */
@@ -40,6 +40,11 @@ const CONVEYANCES: {
     key: "gnome",
     label: "Translocator gnomes",
     hint: "Legends' translocator gnomes. On by default — anyone can walk up to one. Turn it off if the route is assuming one you can't use.",
+  },
+  {
+    key: "succor",
+    label: "Succor / pick",
+    hint: "You can get to a zone's safe point without walking there — an evacuation spell, or a /pick into another instance, which drop you at the same spot. It changes no zone; what it saves is the walk, when that spot is nearer the way out than you are. Off by default: it needs a spell, a friend with one, or a second pick to jump to, and a map can't say whether you have any of them.",
   },
 ];
 
@@ -70,12 +75,22 @@ function refusalText(answer: TravelAnswer, to: string): string {
   }
 }
 
+/**
+ * Which zone a leg happened in, and what it did there — you walk *across* a zone, but a succor moves
+ * you *within* one, which is the whole of what makes it worth a toggle.
+ */
+function legWhere(leg: NonNullable<TravelStep["from"]>): string | undefined {
+  if (!leg.across) return undefined;
+  return `${leg.mode === "succor" ? "within" : "across"} ${leg.across.name} → `;
+}
+
 /** One line of the route. A border is where you zone; a walk is the only thing that costs anything. */
 function Leg({ step }: { step: TravelStep }) {
   const leg = step.from;
   // Nothing shown for an ordinary zone line, which is most of them — a badge on every step would say
   // nothing and hide the ones that matter.
   const via = stepCrossing(step);
+  const where = leg && legWhere(leg);
   return (
     <li className="travel-leg">
       {leg ? (
@@ -87,7 +102,7 @@ function Leg({ step }: { step: TravelStep }) {
         <span className="travel-cost start">start</span>
       )}
       <span className="travel-where">
-        {leg?.across && <span className="muted small">across {leg.across.name} → </span>}
+        {where && <span className="muted small">{where}</span>}
         {step.node.label}
         {via && (
           <span className={`travel-via ${via}`} title={`Take the ${CROSSING_WORDS[via]} — no walking`}>
@@ -101,6 +116,9 @@ function Leg({ step }: { step: TravelStep }) {
 
 function legTitle(leg: NonNullable<TravelStep["from"]>): string {
   const where = leg.across ? ` across ${leg.across.name}` : "";
+  // A succor is the one leg that leaves you in the zone you were already in, so "the ride" would be
+  // the wrong word for it — what it saved you is the walk you'd otherwise have made across it.
+  if (leg.mode === "succor") return "No walking — you evacuate to this spot from wherever you're standing";
   if (leg.mode !== "walk") return "No walking — this is the ride itself";
   return leg.assumed
     ? `A stand-in, not a measurement${where}: nobody drew this end of the border, so how far it is isn't known`
@@ -140,13 +158,13 @@ export default function TravelPanel({
   const to = toPick ?? viewedZone;
 
   /**
-   * The three answers, on their own. `settings` is replaced wholesale whenever *anything* in it
+   * The four answers, on their own. `settings` is replaced wholesale whenever *anything* in it
    * changes, so depending on `travel` directly would re-ask for the route when an unrelated setting
    * moved.
    */
   const options = useMemo(
-    () => ({ druid: travel.druid, wizard: travel.wizard, gnome: travel.gnome }),
-    [travel.druid, travel.wizard, travel.gnome],
+    () => ({ druid: travel.druid, wizard: travel.wizard, gnome: travel.gnome, succor: travel.succor }),
+    [travel.druid, travel.wizard, travel.gnome, travel.succor],
   );
 
   useEffect(() => {

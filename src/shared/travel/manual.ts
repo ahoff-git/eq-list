@@ -13,7 +13,7 @@
  * Pure. The data itself is `manual-links.ts`.
  */
 
-import { zoneWalks } from "./build";
+import { zoneSuccors, zoneWalks } from "./build";
 import {
   isCast,
   boundaryId,
@@ -26,6 +26,15 @@ import {
   type TravelNode,
   type TravelToggle,
 } from "./types";
+
+/**
+ * The modes a hand-authored entry can be written in: every toggle except `succor`.
+ *
+ * A pair, a network and a hub all join **two places**. A succor joins a zone to itself, so there is
+ * nothing to pair it with and no network for it to be in — it's read off the map's own marker or it
+ * isn't there at all. Excluding it here is what stops an entry that would quietly do nothing.
+ */
+export type TravelJoin = Exclude<TravelToggle, "succor">;
 
 /** Where a manual link attaches. */
 export interface TravelPlace {
@@ -62,7 +71,7 @@ export type ManualLink =
     }
   | {
       shape: "pair" | "network";
-      mode: TravelToggle;
+      mode: TravelJoin;
       places: TravelPlace[];
       /**
        * What the crossing costs, in the same EQ world units as walking. **Defaults to zero**: the
@@ -84,7 +93,7 @@ export interface ManualBlock {
 export interface TravelManual {
   links: ManualLink[];
   /** Take a zone out of an auto-detected network — a ring the maps label that doesn't work. */
-  drop?: { network: TravelToggle; zone: string; why: string }[];
+  drop?: { network: TravelJoin; zone: string; why: string }[];
   blocks?: ManualBlock[];
   // Zones the server hasn't opened aren't here: they're excluded when the graph is **built** (the
   // wiki's out-of-era zones plus `ABSENT_ZONES`), because a subtraction you can forget to apply leaves
@@ -94,7 +103,7 @@ export interface TravelManual {
 /** What applying the manual did, and what it couldn't. */
 export interface ManualReport {
   /** Links applied, and what each contributed. */
-  applied: { why: string; kind: TravelToggle | "boundary"; edges: number }[];
+  applied: { why: string; kind: TravelJoin | "boundary"; edges: number }[];
   /** Borders stated by hand — created, or given coordinates the maps didn't pair up themselves. */
   boundaries: string[];
   /** Places that matched no label and were invented, so a pack's coverage is visible. */
@@ -112,7 +121,7 @@ export interface ManualReport {
   blocked: number;
   /** Blocks whose two ends didn't both resolve, so nothing was removed. */
   unresolvedBlocks: string[];
-  networksDropped: { network: TravelToggle; zone: string }[];
+  networksDropped: { network: TravelJoin; zone: string }[];
 }
 
 /** Nodes in a zone whose label contains `label` — how every hand-authored entry finds its place. */
@@ -295,13 +304,16 @@ export function applyManual(graph: TravelGraph, manual: TravelManual): { graph: 
     report.applied.push({ why: link.why, kind: link.mode, edges: added });
   }
 
-  // **Recompute the walks of every zone this touched**, rather than patching them. A new node needs
-  // wiring in, and a new coordinate on an existing border changes what the walks *already there* cost
-  // — so the honest move is to throw that zone's walks away and let the builder's own rule redo them.
+  // **Recompute the within-zone edges of every zone this touched**, rather than patching them. A new
+  // node needs wiring in — including a free ride to the zone's succor point, if it has one — and a new
+  // coordinate on an existing border changes what the walks *already there* cost. So the honest move is
+  // to throw that zone's own edges away and let the builder's rules redo them. Those are exactly the
+  // edges that name a zone; anything that leaves one (a hub, a hand-authored pair) doesn't and stays.
   if (touched.size) {
-    edges = edges.filter((edge) => edge.mode !== "walk" || !edge.zone || !touched.has(edge.zone));
+    edges = edges.filter((edge) => !edge.zone || !touched.has(edge.zone));
     for (const zone of touched) {
-      edges.push(...zoneWalks(nodes.filter((n) => n.zones.includes(zone)), zone));
+      const inZone = nodes.filter((n) => n.zones.includes(zone));
+      edges.push(...zoneWalks(inZone, zone), ...zoneSuccors(inZone, zone));
     }
   }
 

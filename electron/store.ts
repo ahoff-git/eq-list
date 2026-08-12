@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS: Settings = {
   playerName: "",
   bootstrapUrl: "",
   // Off for the ports you may not be able to get, on for the gnome anyone can walk up to.
-  travel: { druid: false, wizard: false, gnome: true },
+  travel: { druid: false, wizard: false, gnome: true, succor: false },
   castAlerts: {
     enabled: true,
     sound: true,

@@ -218,6 +218,54 @@ test("a ring is walkable from its zone's borders, like anything else in the zone
   ]);
 });
 
+test("a zone's succor point is reached for nothing from anywhere in it, and left on foot", () => {
+  const succor = (x: number): TravelPoint => ({ label: "Succor", at: { y: 0, x, z: 0 }, kind: "place", crossing: "succor" });
+  const { graph, report } = buildTravelGraph(
+    { id: "stock" },
+    [
+      zone("gfaydark", [border("Lesser Faydark", 0, 0), border("Clan Crushbone", 0, 1000), succor(900)]),
+      zone("lfaydark", []),
+      zone("crushbone", []),
+    ],
+    NAMES,
+  );
+
+  const point = graph.nodes.find((n) => n.id === "gfaydark#succor")!;
+  assert.equal(point.kind, "place");
+  assert.equal(point.via, "succor", "the node says how you arrived, because there is no other way to");
+
+  // **In for nothing, from both borders.** An evacuation is cast where you stand, so the safe point is
+  // somewhere you arrive — the same one-wayness a druid ring has, inside one zone.
+  assert.deepEqual(
+    graph.edges.filter((e) => e.mode === "succor").map((e) => `${e.from}→${e.to} @${e.zone}: ${e.cost}`).sort(),
+    ["crushbone|gfaydark→gfaydark#succor @gfaydark: 0", "gfaydark|lfaydark→gfaydark#succor @gfaydark: 0"],
+  );
+  // …and out on foot, priced like anything else in the zone — which is the whole saving: 100 to
+  // Crushbone's line instead of the 1000 you'd have walked from Lesser Faydark's.
+  assert.deepEqual(walks(graph.edges).filter((w) => w.includes("succor")), [
+    "crushbone|gfaydark→gfaydark#succor @gfaydark: 100",
+    "gfaydark#succor→crushbone|gfaydark @gfaydark: 100",
+    "gfaydark#succor→gfaydark|lfaydark @gfaydark: 900",
+    "gfaydark|lfaydark→gfaydark#succor @gfaydark: 900",
+  ]);
+
+  // **No hub.** A succor "network" has exactly one destination — this zone's — so collapsing it would
+  // say every safe point in the world reaches every other, which is a teleport nobody has.
+  assert.equal(graph.nodes.some((n) => n.id === "net:succor"), false);
+  assert.deepEqual(report.networks, [{ network: "succor", zones: ["gfaydark"] }]);
+});
+
+test("a zone whose only travel is a succor point and a dock has no way in or out, and says so", () => {
+  // A free ride between two dead ends is not a connection. Counting any edge as one would quietly drop
+  // this zone off the list of holes to work through, which is the one thing the report mustn't do.
+  const { report } = buildTravelGraph(
+    { id: "stock" },
+    [zone("crushbone", [place("succor", "Succor"), place("boat", "Dock")])],
+    NAMES,
+  );
+  assert.deepEqual(report.isolated, ["crushbone"]);
+});
+
 test("a conveyance that names its destination becomes a border, and says how you cross", () => {
   // Two continents, joined only the way the packs really label it. Before this, both sides were
   // unpaired docks and Odus was an island — which is the Ak'Anon → Toxxulia Forest bug.

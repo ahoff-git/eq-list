@@ -10,7 +10,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { zoneWalks } from "../../src/shared/travel/build";
+import { zoneSuccors, zoneWalks } from "../../src/shared/travel/build";
 import { answerRoute, findRoute, travelZone, zoneName, type TravelRoute } from "../../src/shared/travel/route";
 import { UNKNOWN_CROSSING, type TravelEdge, type TravelGraph, type TravelNode } from "../../src/shared/travel/types";
 
@@ -35,16 +35,24 @@ function place(zone: string, x: number, label: string): TravelNode {
   return { id: `${zone}#${label.toLowerCase()}`, kind: "place", label, zones: [zone], at: { [zone]: at(x) } };
 }
 
+/** A zone's safe point — a place that says how you got to it, since walking isn't the way. */
+function succor(zone: string, x: number): TravelNode {
+  return { ...place(zone, x, "Succor"), via: "succor" };
+}
+
 /**
- * A graph with its walks materialised, the way a real build leaves them — the router reads stored
- * edges, so a fixture without them is a fixture of a different program.
+ * A graph with its within-zone edges materialised, the way a real build leaves them — the router reads
+ * stored edges, so a fixture without them is a fixture of a different program.
  */
 function graph(nodes: TravelNode[], extra: TravelEdge[] = [], zoneNames: Record<string, string> = {}): TravelGraph {
   const zones = new Map<string, TravelNode[]>();
   for (const node of nodes) {
     for (const zone of node.zones) zones.set(zone, [...(zones.get(zone) ?? []), node]);
   }
-  const edges = [...[...zones].flatMap(([zone, inZone]) => zoneWalks(inZone, zone)), ...extra];
+  const edges = [
+    ...[...zones].flatMap(([zone, inZone]) => [...zoneWalks(inZone, zone), ...zoneSuccors(inZone, zone)]),
+    ...extra,
+  ];
   return { source: { id: "test" }, zoneNames, nodes, edges };
 }
 
@@ -183,6 +191,46 @@ test("a gnome is public transport, so it's on unless switched off", () => {
   ]);
   assert.deepEqual(findRoute(g, "a", "z")?.modes, ["gnome"]);
   assert.equal(findRoute(g, "a", "z", { gnome: false }), undefined);
+});
+
+test("a succor is a free ride to the zone's own safe point, and only when it's asked for", () => {
+  // Right at the far side of the zone, 100 from the way out and 4900 from where you're standing.
+  const g = graph([boundary("a", 5000, "b", 0), succor("a", 4900)], [], { a: "Alpha", b: "Beta" });
+  const from = { zone: "a", at: { y: 0, x: 0, z: 0 } };
+
+  const walked = findRoute(g, from, "b");
+  assert.equal(walked?.cost, 5000, "off by default, so it's the whole zone on foot");
+  assert.deepEqual(walked?.modes, []);
+
+  const evac = findRoute(g, from, "b", { succor: true });
+  assert.ok(evac);
+  // Cast where you stand, then walk the last 100 — the walk it saves is the entire point of it.
+  assert.equal(evac.cost, 100);
+  assert.deepEqual(evac.modes, ["succor"]);
+  assert.deepEqual(evac.steps.map((s) => s.node.id), [" start", "a#succor", "a|b", " goal"]);
+  // **It crosses nothing.** The trip is still the two zones it always was, and the leg names the zone
+  // it happened *inside* — which is how the panel words it "within Alpha" rather than "across" it.
+  assert.deepEqual(files(evac), ["a", "b"]);
+  assert.deepEqual(evac.steps.map((s) => s.from?.across?.zone), [undefined, "a", "a", "b"]);
+});
+
+test("a succor works in a zone you're only passing through, not just the one you start in", () => {
+  // Where most of the saving is: you zone in at one end of a big zone, evacuate, and walk out of the
+  // near side. The free edges run from *every* node in the zone, so arriving at a border is enough.
+  const g = graph([boundary("a", 0, "b", 0), boundary("b", 9000, "c", 0), succor("b", 8900)], [], {
+    a: "Alpha",
+    b: "Beta",
+    c: "Gamma",
+  });
+
+  assert.equal(findRoute(g, "a", "c")?.cost, 9000);
+
+  const evac = findRoute(g, "a", "c", { succor: true });
+  assert.ok(evac);
+  assert.equal(evac.cost, 100);
+  assert.deepEqual(evac.steps.map((s) => s.node.id), [" start", "a|b", "b#succor", "b|c", " goal"]);
+  // Beta's safe point is Beta's alone — nothing here says you can evacuate into a zone you aren't in.
+  assert.equal(findRoute(g, "a", "c", { succor: true })?.zones.length, 3);
 });
 
 test("a walk from a border nobody labelled on this side is priced as a guess, and flagged", () => {

@@ -10,7 +10,9 @@
  *     border, and a walk to it takes the nearest one.
  *  2. **Walks within a zone are the edges.** For each zone, every pair of its nodes gets an edge
  *     weighted by the distance between them *in that zone*. Crossing the boundary itself needs no
- *     edge at all: standing at the node is standing in both zones.
+ *     edge at all: standing at the node is standing in both zones. A zone whose map marks its **succor
+ *     point** also gets a free edge into it from each of the others, because an evacuation is cast from
+ *     where you stand — the same one-wayness a druid ring has, inside one zone.
  *  3. **A teleport network collapses to a hub** — a free edge *out* to each of its destinations. Only
  *     rings and spires; a boat runs between two particular docks (see `AUTO_NETWORKS`). The edges are
  *     one-way on purpose: a druid or a wizard casts from where they stand, so every ring is somewhere
@@ -57,9 +59,13 @@ export interface TravelBuildReport {
   oneSided: string[];
   /** Destinations no map file answered to, and the zones whose labels named them. */
   unresolved: { name: string; from: string[] }[];
-  /** Labels that read as travel but named nowhere — a bare `Zone Line`, a `Succor` point. */
+  /** Labels that read as travel but named nowhere — a bare `Zone Line`, `Zone Out`. */
   dropped: { zone: string; label: string }[];
-  /** The conveyances found, and which zones are in them. */
+  /**
+   * The conveyances found, and which zones are in them. `succor` reads a little differently from the
+   * rest — it wires no network, so its row is simply the zones whose maps say where an evacuation
+   * drops you.
+   */
   networks: { network: TravelNetwork; zones: string[] }[];
   /** Zones with a map file and no way in or out. The list to work through by hand. */
   isolated: string[];
@@ -90,6 +96,28 @@ export function zoneWalks(nodes: TravelNode[], zone: string): TravelEdge[] {
     for (let j = i + 1; j < nodes.length; j++) edges.push(...walkPair(nodes[i], nodes[j], zone));
   }
   return edges;
+}
+
+/**
+ * The free ways **into** a zone's safe point: from every other node in that zone, for nothing.
+ *
+ * An evacuation is cast from where you stand — the same fact that makes a druid ring one-way — so a
+ * succor point is somewhere you arrive and never somewhere you walk to in order to leave. Leaving is
+ * an ordinary walk, which `zoneWalks` has already priced; these are the edges that make the arrival
+ * cost nothing.
+ *
+ * It's a hub's shape without a hub, because a succor network has exactly one destination: the zone's
+ * own. Wiring it through `net:succor` would say every zone's safe point reaches every other, which is
+ * a teleport nobody has. So the free edges are stated directly, and the toggle then filters them like
+ * any other conveyance's.
+ */
+export function zoneSuccors(nodes: TravelNode[], zone: string): TravelEdge[] {
+  const points = nodes.filter((n) => n.via === "succor");
+  return points.flatMap((point) =>
+    nodes
+      .filter((n) => n.id !== point.id)
+      .map((n) => ({ from: n.id, to: point.id, mode: "succor" as const, cost: 0, zone })),
+  );
 }
 
 /**
@@ -185,6 +213,11 @@ export function buildTravelGraph(
           label: point.label,
           zones: [harvest.zone],
           at: { [harvest.zone]: [point.at] },
+          // **Only a succor marks itself.** `via` is how you *got* somewhere, and a succor point is the
+          // one place where that's settled by the place itself — you evacuated, there is no other way
+          // to arrive. A dock wearing `via: "boat"` would instead claim a ride nobody has paired up
+          // yet, so a conveyance's kind stays where it belongs: on the border, once one exists.
+          ...(point.crossing === "succor" ? { via: "succor" as const } : {}),
         };
         nodes.push(node);
         // A **network** is about permission — which rings a druid can reach — so it's the crossing's
@@ -239,7 +272,7 @@ export function buildTravelGraph(
     }
   }
   const edges: TravelEdge[] = [];
-  for (const [zone, inZone] of byZone) edges.push(...zoneWalks(inZone, zone));
+  for (const [zone, inZone] of byZone) edges.push(...zoneWalks(inZone, zone), ...zoneSuccors(inZone, zone));
 
   // ── Teleport networks ────────────────────────────────────────────────────────────────────────
   const networks: { network: TravelNetwork; zones: string[] }[] = [];
@@ -261,8 +294,12 @@ export function buildTravelGraph(
     for (const node of found) edges.push({ from: hub.id, to: node.id, mode: network, cost: 0 });
   }
 
+  // **Only an edge that leaves the zone counts as a way in or out**, which is the ones with no `zone`
+  // on them: a walk and a succor both name the zone they happen inside, and neither gets you out of it.
+  // Counting every edge said a zone whose only two nodes were a dock and a succor point was connected,
+  // when all it really has is a short walk between two dead ends.
   const linked = new Set<string>();
-  for (const edge of edges) linked.add(edge.from).add(edge.to);
+  for (const edge of edges) if (!edge.zone) linked.add(edge.from).add(edge.to);
   const isolated = harvests
     .map((h) => h.zone)
     .filter((zone) => !absent.has(zone))

@@ -20,6 +20,11 @@
  *  - **A druid ring and a spire are on the map, and their networks are derivable** — every ring
  *    reaches every other, so the build wires the whole set into one hub without being told. Nothing
  *    needs adding here unless a zone's ring exists and this pack never labelled it.
+ *  - **A succor point can't be written here at all**, deliberately. It joins no two places — it's one
+ *    zone's own safe point (ADR 0069) — so there's no `pair` or `network` shape it fits, and the type
+ *    says so. What's more, a place here is named by *label*, with no coordinates: an entry could state
+ *    that a zone has a safe point and not where it is, and an unplaced one costs `UNKNOWN_CROSSING`,
+ *    which is a guess that can beat a measured walk. So it's read off the map's marker or it isn't there.
  *  - **Which zones the server actually runs** — not here at all. `zones/expansions.ts` answers it for
  *    the whole app: the expansion table rules out everything past this server, and eqlwiki's live era
  *    flags close what it has but hasn't opened. Applied when the graph is *built*, so re-running the

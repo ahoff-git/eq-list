@@ -15,8 +15,8 @@ stating a fact.
 - **The graph** (`src/shared/travel/`, pure and DOM-free, so it's unit tested and usable from either
   process):
   - `types.ts` — `TravelNode` / `TravelEdge` / `TravelGraph`, the `TravelMode` list
-    (`walk` · `druid` · `wizard` · `gnome`), `TravelNetwork` and `TRAVEL_DEFAULTS`; `UNKNOWN_CROSSING`,
-    `dist3d`, `positionsIn`, `zoneDistance` and `boundaryId`.
+    (`walk` · `druid` · `wizard` · `gnome` · `succor`), `TravelNetwork` and `TRAVEL_DEFAULTS`;
+    `UNKNOWN_CROSSING`, `dist3d`, `positionsIn`, `zoneDistance` and `boundaryId`.
 
     **A node is a boundary, and the zones are metadata on it.** Greater Faydark's `to Clan Crushbone`
     and Clan Crushbone's `to Greater Faydark` are one place, so they are one node —
@@ -51,6 +51,15 @@ stating a fact.
     which priced a port at the cost of reaching one and left a druid in a ringless zone being told to
     hike. It also means a **lone** ring is a network worth having, where under the old model it went
     nowhere. A boat is the opposite and stays two-way: you have to go and board it.
+
+    **A succor is that same rule, one zone wide** ([ADR 0069](../decisions/0069-a-succor-is-a-port-inside-one-zone.md)).
+    An evacuation — the spell, or the `/pick` that drops you at the same spot — moves you from wherever
+    you're standing to one fixed safe point *in the zone you're already in*. So the safe point is a
+    `place` with a free edge **into** it from every other node in that zone, and leaving it is an
+    ordinary walk. What it buys is the leg that usually dominates a route: the walk from where you are
+    to the way out. It wires **no hub**, because its network has exactly one destination — this zone's —
+    and hubbing it would say every safe point in the world reaches every other; for the same reason a
+    `pair` or a `network` entry can't be written in `succor` mode at all (`TravelJoin`).
 
     `zoneFileFor` is **the one answer to "which map file does this zone name mean"** — folded, then exact,
     then the same words in another order, then tried as a file name. There were three of these (the
@@ -95,9 +104,17 @@ stating a fact.
     and a destination no map file answers to costs nothing: the builder keeps the place for
     `manual-links.ts` to pair, and reports the miss.
 
-    A label that names **no single destination** — a bare `Zone Line`, a `Succor` point,
+    A label that names **no single destination** — a bare `Zone Line`,
     `to East Freeport & The Butcherblock Mountains` — is dropped and *counted*. It says a border is
     here, which a graph can't use without knowing the other side, and inventing one would be a guess.
+
+    **A `Succor` marker is the exception**, and only because it isn't a border: it names nowhere
+    because it *goes* nowhere. `poiKind` files it under zone lines (right for the map's own filter — it's
+    drawn where the exits are), so it's read here once nothing has resolved a destination, which leaves
+    `to North Karana (Succor)` the border it says it is. Only the words that mean this and nothing else
+    are accepted — `succor`, `succour`, `evac`, `evacuate`. **`Safe Spot` and `Safe Point` are refused
+    on purpose**: in the packs those mark somewhere pleasant to camp far more often than they mark a
+    succor point, and a wrong safe point is a free ride to the wrong end of the zone.
   - `build.ts` — `buildTravelGraph`: per-zone harvests → a graph, plus the report of what it couldn't
     do. Every border becomes one node filled in from both sides; then `zoneWalks` joins each zone's
     nodes to each other; then teleport networks collapse to hubs.
@@ -147,7 +164,9 @@ stating a fact.
 
     **Walks are stored, not derived** — they're the substance of the graph, so they belong in the file
     where they can be read and corrected one distance at a time. With one node per border this is
-    small: a zone has as many nodes as it has neighbours and conveyances.
+    small: a zone has as many nodes as it has neighbours and conveyances. `zoneSuccors` states a zone's
+    free rides to its safe point the same way, and the two are recomputed together whenever the manual
+    pass touches a zone.
   - `manual.ts` + `manual-links.ts` — `applyManual` and the hand-authored table it applies. Same shape
     and same reasoning as `CURATED_ZONES` in [map](../map/README.md): a small, commented, typechecked
     list of things a person had to find out, beside a much larger body of things that are *read*.
@@ -207,8 +226,10 @@ stating a fact.
     the worst case is "Gukbottom" rather than `gukbottom`.
 - **Which conveyances a route may use.** Druid and wizard default **off** — both need a class you may
   not have or a favour you may not be able to call in, and a route that quietly assumed one would be
-  advice you can't take. Translocator gnomes default **on**, being public transport. **Boats are not a
-  toggle**: by the time one is in the graph it's a border.
+  advice you can't take. **Succor / pick** defaults off by that same argument: it needs an evacuation
+  spell, a friend with one, or a second pick to jump into, and a map can't say whether you have any of
+  them. Translocator gnomes default **on**, being public transport. **Boats are not a toggle**: by the
+  time one is in the graph it's a border.
 - **Reading the maps and asking the wiki** (`electron/travel-graph.ts`) — I/O only. Sources, zone naming and the map
   format are the [map](../map/README.md) subsystem's, reused as they are; only the `P` lines are
   sieved out before parsing, because the base file of a big zone is most of a megabyte of `L` geometry
@@ -247,7 +268,8 @@ stating a fact.
     down. A guessed figure wears a `?` and the accent colour: a stand-in must not look like a
     measurement.
   - Zoning shows as no leg, which is the model made visible — the lines are walks, and each says which
-    zone it crossed.
+    zone it crossed. A **succor** leg says `within <zone>` rather than `across` it, because it crossed
+    nothing: it's the one leg that leaves you where you already were, only nearer the way out.
   - **The asking half never scrolls; only the answer does** (`.travel-ask` / `.travel-answer`). Two
     reasons, both learned the hard way: a zone picker's dropdown is absolutely positioned and an
     `overflow` ancestor **clips** one, so a panel that scrolled as a whole cut the list off at its own
@@ -276,8 +298,10 @@ stating a fact.
   second copy of the map format, the graph builder or the router in JavaScript, which is why these need
   `npm run build:electron` first and say so when it's missing.
 - **Saying where it's thin.** A build reports the borders only one side drew (whose walks are guesses,
-  not measurements), the destinations no map file answered to, the zones with no way in or out, and the
-  labels that named nowhere. Those lists name zones by **map file**, deliberately and unlike a route's
+  not measurements), the destinations no map file answered to, the zones with no way in or out, the
+  zones whose maps mark a succor point, and the labels that named nowhere. **Only an edge that leaves a
+  zone counts as a way in or out** — a walk and a succor both name the zone they happen inside, and a
+  free ride between two dead ends is not a connection. Those lists name zones by **map file**, deliberately and unlike a route's
   output: they're the keys you go and type in `manual-links.ts`. The manual pass reports
   which entries matched a real label, which had to invent a node, and which named a zone this pack has
   no map for. That output *is* the hand-massaging list — a graph that quietly covers less than it
@@ -308,8 +332,13 @@ stating a fact.
 - **The hand-authored table is not verified in EQ Legends.** The boat runs are classic-EverQuest
   knowledge and a starting point, not a finding; the translocator gnomes are deliberately empty,
   because nothing about a Legends-only NPC can be read off a map or reasonably guessed.
+- **A succor point can't be hand-authored**, only read. `TravelPlace` names a place by zone and label
+  and carries no coordinates, so an entry could say a safe point exists but not where — and an unplaced
+  one is priced at `UNKNOWN_CROSSING`, a guess that can *beat* a measured walk. A zone whose pack never
+  drew the marker simply doesn't offer the ride.
 
 ## See also
 [map](../map/README.md) · [ADR 0062](../decisions/0062-a-travel-graph-of-zone-lines.md) ·
 [ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md) ·
-[ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md) · [testing](../testing/README.md)
+[ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md) ·
+[ADR 0069](../decisions/0069-a-succor-is-a-port-inside-one-zone.md) · [testing](../testing/README.md)

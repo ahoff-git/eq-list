@@ -217,7 +217,7 @@ a real run. This is a *verification* list, not open work — open work lives in 
   main-process path was exercised directly (build, cache, all four refusals, the druid toggle changing
   the answer), but **nothing about the panel has been looked at** — the dev sandbox is headless. To
   confirm: it opens from the map toolbar and remembers being open; **From** defaults to your zone and
-  **To** to the map you're viewing; a zone in the route shows that zone's map; the three checkboxes
+  **To** to the map you're viewing; a zone in the route shows that zone's map; the four checkboxes
   persist (they're `Settings.travel`) and changing one re-asks for the route.
 
   **Ports, since the model changed** ([ADR 0066](../decisions/0066-a-port-is-cast-from-where-you-stand.md)):
@@ -226,6 +226,17 @@ a real run. This is a *verification* list, not open work — open work lives in 
   actually travel it, because the graph now claims any ring is reachable from anywhere, and a zone that
   forbids teleporting would make that claim wrong in a way only playing it can show. Re-run
   `npm run travel:build` first: a graph stored before the change lacks the hubs a lone ring should have.
+
+  **Succor / pick, unmeasured against a real pack**
+  ([ADR 0069](../decisions/0069-a-succor-is-a-port-inside-one-zone.md)). The reading and the routing are
+  unit-tested, but **how many zones actually carry the marker is unknown** — `poiKind`'s corpus tally
+  names the word, nothing has counted the points. `npm run travel:build` now prints a `succor points, in
+  N zones` line: that number is the first thing to look at, and if it's near zero the toggle is correct
+  and useless on this pack. Then, in a zone that has one, turn the checkbox on with a fresh `/loc` from
+  the far end of the zone and confirm the route gains a `within <zone> → Succor` leg and a smaller total.
+  The claim to test in game is the coordinate itself: evacuate and see whether you land where the
+  mapmaker drew it. A safe point in the wrong place is a free ride to the wrong end of the zone, and it
+  would look exactly like a good route here.
 
 - **The ☠ list with a peer sharing, unseen.** The filter bar is now one row and shared kills are rows in
   it, but neither has been looked at — the sandbox is headless and this needs two clients. To confirm: the

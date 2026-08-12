@@ -462,7 +462,7 @@ export default function MapWindow() {
           currentZone={currentZone}
           viewedZone={zoneName}
           loc={loc}
-          travel={settings?.travel ?? { druid: false, wizard: false, gnome: true }}
+          travel={settings?.travel ?? { druid: false, wizard: false, gnome: true, succor: false }}
           onTravel={(patch) => void api()?.settings.update({ travel: patch })}
           // A zone in the route opens its map, which also turns "follow me" off — the same override
           // the titlebar's picker sets, so the two can't disagree about what you're looking at.

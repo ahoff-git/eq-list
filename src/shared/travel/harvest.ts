@@ -26,7 +26,8 @@ import type { TravelAt, TravelCrossing } from "./types";
  * written as a way out (`to X`) or a way in (`from X`), because a border is one place either way and
  * the builder joins both sides into one node.
  *
- * A `place` is somewhere in this zone you can travel *from*: a ring, a spire, a dock.
+ * A `place` is somewhere in this zone travel touches: a ring, a spire, a dock — or a succor point,
+ * which is the one you only ever travel *to*.
  */
 export interface TravelPoint {
   label: string;
@@ -41,8 +42,9 @@ export interface TravelPoint {
    */
   to?: string;
   /**
-   * For a place: **how you'd cross** here, when the label says — a dock is a `boat`, `Spires` a
-   * `spire`. Absent when the label names a conveyance we can't place at all.
+   * For a place: **how you'd get here without walking**, when the label says — a dock is a `boat`,
+   * `Spires` a `spire`, `Succor` a `succor`. Absent when the label names a conveyance we can't place
+   * at all.
    */
   crossing?: TravelCrossing;
 }
@@ -75,12 +77,23 @@ const TRANSLOCATOR = /\btranslocator\b|\bteleport(?:er|ation)?\s*(?:pad|gnome)\b
 const PORTAL = /\bportals?\b/i;
 
 /**
+ * Where an evacuation drops you — the one "conveyance" that goes nowhere, since it moves you inside
+ * the zone you're already in.
+ *
+ * Only the words that mean this and nothing else. `Safe Spot` and `Safe Point` are deliberately **not**
+ * here: in the packs they mark somewhere pleasant to camp far more often than they mark a succor point,
+ * and a wrong safe point is a free ride to the wrong end of the zone.
+ */
+const SUCCOR = /\bsucco(?:u)?rs?\b|\bevac(?:uate|uation)?\b/i;
+
+/**
  * How a conveyance label says you cross, or `undefined` when it says nothing we recognise.
  *
  * Order matters only where a label mentions two: `Dock (Translocator Narrik)` is a gnome standing on a
  * dock, so the translocator wins — and a portal is checked last, being the vaguest of them.
  */
 export function transportCrossing(label: string): TravelCrossing | undefined {
+  if (SUCCOR.test(label)) return "succor";
   if (TRANSLOCATOR.test(label)) return "translocator";
   if (RING.test(label)) return "ring";
   if (SPIRE.test(label)) return "spire";
@@ -107,10 +120,14 @@ const RECLASSIFIABLE = new Set(["transport", "named", "note"]);
 /**
  * The travel point a label describes, or `undefined` when it describes none.
  *
- * A zone line that names no destination (`Succor`, a bare `Zone Line`) is dropped: it says a border
- * is here, which a graph can't use without knowing the other side, and inventing one would be a
- * guess. The caller counts what it dropped so a build can report it rather than quietly covering
- * less ground than it claims.
+ * A zone line that names no destination (a bare `Zone Line`) is dropped: it says a border is here,
+ * which a graph can't use without knowing the other side, and inventing one would be a guess. The
+ * caller counts what it dropped so a build can report it rather than quietly covering less ground than
+ * it claims.
+ *
+ * A **`Succor`** marker is the exception among those, and the reason is that it isn't a border at all:
+ * it names no destination because it *has* none, being the spot inside this zone an evacuation drops
+ * you at. That's a place, and a complete fact on its own.
  */
 export function travelPoint(poi: MapPoi): TravelPoint | undefined {
   const label = poi.label.trim();
@@ -122,7 +139,10 @@ export function travelPoint(poi: MapPoi): TravelPoint | undefined {
     // rather than repeating its noise-stripping and its refusal of `A & B` labels here.
     const inbound = ARRIVAL.exec(label)?.[1];
     const to = zoneLinkName(inbound ? `to ${inbound}` : label);
-    if (!to) return undefined;
+    // `poiKind` files a succor marker under zone lines, which is right for the map's own filter — it's
+    // drawn where the exits are and a person looking for one looks there. Here it's read only once
+    // nothing has named a destination, so `to North Karana (Succor)` stays the border it says it is.
+    if (!to) return SUCCOR.test(label) ? { label, at, kind: "place", crossing: "succor" } : undefined;
 
     // **`to Timorous Deep (Boat)` is a border like any other.** A boat costs no walking and asks
     // nothing of you but turning up at the dock, so a labelled ferry destination is the same fact as a
@@ -147,7 +167,7 @@ export interface ZoneHarvest {
   /** The map file (zone short name). */
   zone: string;
   points: TravelPoint[];
-  /** Labels that read as travel but named nowhere — a bare `Zone Line`, a `Succor` point. */
+  /** Labels that read as travel but named nowhere — a bare `Zone Line`, `Zone Out`. */
   dropped: string[];
 }
 

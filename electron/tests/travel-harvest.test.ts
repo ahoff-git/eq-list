@@ -31,7 +31,6 @@ test("the noise a pack appends to an exit label isn't part of the zone's name", 
 test("a label that names no single destination is refused rather than guessed at", () => {
   // A border with no destination: real, drawn, and useless to a graph.
   assert.equal(travelPoint(poi("Zone Line")), undefined);
-  assert.equal(travelPoint(poi("Succor")), undefined);
   // Two destinations belong to neither, which is `zoneLinkName`'s rule and the right one.
   assert.equal(travelPoint(poi("to East Freeport & The Butcherblock Mountains")), undefined);
   // Not travel at all.
@@ -84,6 +83,29 @@ test("a conveyance says how you'd cross, in the words a route shows", () => {
   assert.equal(transportCrossing("Portal to the Spires"), "spire");
   // Nothing recognisable is still nothing — the fallthrough is the point.
   assert.equal(transportCrossing("Bank"), undefined);
+});
+
+test("a succor point names nowhere because it goes nowhere, so it's a place rather than a dropped exit", () => {
+  // `poiKind` files it under zone lines — it's drawn where the exits are — and it names no destination,
+  // which for anything else means "a border we can't use". A succor is the one where that's not a gap:
+  // it has no far side, being the spot inside *this* zone an evacuation drops you at.
+  const succor = travelPoint(poi("Succor", 10, 20, 30));
+  assert.deepEqual(succor, { label: "Succor", at: { y: 10, x: 20, z: 30 }, kind: "place", crossing: "succor" });
+
+  // The other spellings the packs use, which reach here down the *other* path — `Evac Point` reads as a
+  // plain name to the shared classifier, and gets re-read like `Druid Rings` does.
+  assert.equal(travelPoint(poi("Succor Point"))?.crossing, "succor");
+  assert.equal(travelPoint(poi("Evac Point"))?.crossing, "succor");
+  assert.equal(travelPoint(poi("Evacuate"))?.crossing, "succor");
+
+  // A label that does name a destination is a border, whatever else it mentions — the succor reading is
+  // only ever reached once nothing has resolved.
+  assert.equal(travelPoint(poi("to North Karana (Succor)"))?.kind, "border");
+
+  // Not offered: "Safe Spot" is where you camp far more often than where you land, and a wrong safe
+  // point is a free ride to the wrong end of the zone.
+  assert.equal(travelPoint(poi("Safe Spot")), undefined);
+  assert.equal(transportCrossing("Safe Point"), undefined);
 });
 
 test("a conveyance the shared classifier files as a plain name is still a conveyance", () => {

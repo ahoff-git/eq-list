@@ -129,4 +129,3 @@ _To discuss:_
 - DoT damage is not being counted correctly. It hits way more than is being parsed from the logs. 
   - There is an initial cast + damage logged and then every damage tic should be added to that spell's damage. 
     - Tic damage should be shown as a spell total and with an expandable section showing damage stats, like how many times it ticed, or resisted etc
-- for the navigation graph creation: add a toggle for "succor/pick", which lets you teleport IN ZONE to that location. Potentially reducing your distance to the nearest zoneline 

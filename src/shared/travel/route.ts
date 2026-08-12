@@ -7,7 +7,7 @@
  *  - **A start and a finish are zones, not nodes.** You are somewhere in a zone and want to be
  *    somewhere in another, so each end attaches through a virtual node — free when we don't know
  *    where you are, and the real walk when a `/loc` does.
- *  - **A conveyance you haven't got isn't an edge.** Druid, wizard, boat and gnome edges are filtered
+ *  - **A conveyance you haven't got isn't an edge.** Druid, wizard, gnome and succor edges are filtered
  *    by the toggles before the search starts, so a route never suggests a port you can't take.
  *
  * Crossing a zone line costs nothing and appears as no leg at all: a boundary node is in both its
@@ -51,7 +51,10 @@ export interface TravelZone {
 export interface TravelLeg {
   mode: TravelMode;
   cost: number;
-  /** Which zone a walk crossed. Absent on a conveyance, which crosses none. */
+  /**
+   * Which zone this happened in — the one a walk crossed, or the one a succor was cast inside. Absent
+   * on a conveyance between zones, which crosses none of them.
+   */
   across?: TravelZone;
   /** The cost is a stand-in — an unplaced border, or a hand-set figure — not a measured distance. */
   assumed: boolean;
@@ -232,16 +235,27 @@ export function findRoute(
    * agree.
    */
   const hubs = new Map<string, TravelMode>();
+  /**
+   * The safe points of the zone you're starting in — the succor edges say which, and they say it only
+   * if the toggle let them through, so there's one filter here rather than two that have to agree.
+   */
+  const succors = new Set<string>();
   for (const edge of graph.edges) {
     if (edge.mode !== "walk" && !allowed[edge.mode]) continue;
     const across = edge.zone ? named(edge.zone) : undefined;
     add(edge.from, { to: edge.to, mode: edge.mode, cost: edge.cost, across, assumed: !!edge.assumed });
     if (byId.get(edge.from)?.kind === "hub" && isCast(edge.mode)) hubs.set(edge.from, edge.mode);
+    if (edge.mode === "succor" && edge.zone === fromZone) succors.add(edge.to);
   }
   // **A port is cast from where you stand.** You don't walk to a druid ring to leave — you walk to one
   // only when it's where you're going — so the network is entered for free from the start, wherever the
   // start is. Casting later can never help: every destination was already free at step zero.
   for (const [hub, mode] of hubs) add(START, { to: hub, mode, cost: 0, assumed: false });
+  // The same argument, one zone wide. The graph's succor edges run from node to node, and "where you
+  // stand" is usually neither — it's the middle of the zone, which is the whole reason this helps.
+  for (const point of succors) {
+    add(START, { to: point, mode: "succor", cost: 0, across: named(fromZone), assumed: false });
+  }
   // The two ends, wired in by the same rule as everything else: with no position given there is
   // nothing to charge, and the route says that figure is a stand-in.
   for (const node of graph.nodes) {

@@ -44,8 +44,15 @@ export interface TravelAt {
  * boat is a way two zones connect that costs you no walking and asks nothing of you but turning up
  * at the dock, so it's the same thing as a line you step over — the ferry ride's minutes are real
  * and are not what this graph measures.
+ *
+ * **`succor` is the odd one out: it goes nowhere.** An evacuation — the spell, or the `/pick` that
+ * drops you at the same place — moves you *within* the zone you are already in, from wherever you
+ * stand to one fixed safe point. It is a mode all the same, because it is something a route may
+ * assume you can do and may be denied; it simply never changes which zone you're in. What it buys is
+ * the walk it saves when that spot is nearer the way out than you are
+ * ([ADR 0069](../../../specs/decisions/0069-a-succor-is-a-port-inside-one-zone.md)).
  */
-export type TravelMode = "walk" | "druid" | "wizard" | "gnome";
+export type TravelMode = "walk" | "druid" | "wizard" | "gnome" | "succor";
 
 /** The conveyances a route can be allowed or denied. Walking is not among them. */
 export type TravelToggle = Exclude<TravelMode, "walk">;
@@ -58,16 +65,21 @@ export type TravelToggle = Exclude<TravelMode, "walk">;
 export type TravelNetwork = TravelToggle | "boat";
 
 /**
- * **How you get across**, when it isn't simply walking over a line.
+ * **How you got here**, when it isn't simply walking.
  *
- * A boundary is a boundary whichever way you cross it — that's what makes the graph work — but which
- * way it is, is the first thing a person wants to know: "walk to the dock and take the boat" is a
- * different instruction from "walk over the line", even though both cost the same nothing. So it's
- * recorded on the border rather than left in its label for a reader to spot.
+ * Mostly that means getting *across*: a boundary is a boundary whichever way you cross it — that's
+ * what makes the graph work — but which way it is, is the first thing a person wants to know. "Walk
+ * to the dock and take the boat" is a different instruction from "walk over the line", even though
+ * both cost the same nothing, so it's recorded on the border rather than left in its label for a
+ * reader to spot.
+ *
+ * `succor` is the one that crosses nothing: it's a zone's own safe point, arrived at from anywhere
+ * inside that zone. Same field because it answers the same question — how did I get to this place,
+ * if not on foot?
  *
  * **Absent is the common case** and means exactly what it says: an ordinary zone line, nothing to take.
  */
-export type TravelCrossing = "boat" | "translocator" | "portal" | "spire" | "ring";
+export type TravelCrossing = "boat" | "translocator" | "portal" | "spire" | "ring" | "succor";
 
 /** What to call each one, for a person. */
 export const CROSSING_WORDS: Record<TravelCrossing, string> = {
@@ -76,10 +88,11 @@ export const CROSSING_WORDS: Record<TravelCrossing, string> = {
   portal: "portal",
   spire: "spire",
   ring: "ring",
+  succor: "succor",
 };
 
 /**
- * The conveyances you **cast**, as against the ones you board.
+ * The **networks** you cast into, as against the ones you board.
  *
  * This is the single most important distinction in the graph, and two things follow from it:
  *
@@ -92,10 +105,15 @@ export const CROSSING_WORDS: Record<TravelCrossing, string> = {
  *
  * Get the second one wrong and every route through a port is priced at the cost of reaching the nearest
  * ring — which is how a druid in a zone with no ring at all was told to walk.
+ *
+ * **A succor is cast too and is deliberately not here**, because this list is what earns a *hub*: a
+ * succor point reaches nothing but itself, so there is no network to collapse and hubbing it would say
+ * every zone's safe point leads to every other. Its one-wayness is written straight into the edges the
+ * builder makes instead — see `zoneSuccors`.
  */
 export const CAST_MODES = ["druid", "wizard"] as const;
 
-/** Is this a spell you cast from where you stand, rather than something you have to reach? */
+/** Is this a spell that casts you into a network — one whose destinations are therefore all arrivals? */
 export function isCast(mode: TravelMode): mode is (typeof CAST_MODES)[number] {
   return (CAST_MODES as readonly string[]).includes(mode);
 }
@@ -103,8 +121,8 @@ export function isCast(mode: TravelMode): mode is (typeof CAST_MODES)[number] {
 /**
  * Which network a crossing belongs to, for the parts that care about *permission* rather than wording:
  * rings and spires wire themselves into a hub, a translocator is a `gnome`, a boat needs no toggle at
- * all. A **portal** belongs to none — nothing about a bare `Portal` says who may use it or where it
- * goes, which is why it waits for `manual-links.ts`.
+ * all, and a succor answers only to itself. A **portal** belongs to none — nothing about a bare
+ * `Portal` says who may use it or where it goes, which is why it waits for `manual-links.ts`.
  */
 export function networkOfCrossing(crossing: TravelCrossing): TravelNetwork | undefined {
   switch (crossing) {
@@ -116,6 +134,8 @@ export function networkOfCrossing(crossing: TravelCrossing): TravelNetwork | und
       return "gnome";
     case "boat":
       return "boat";
+    case "succor":
+      return "succor";
     default:
       return undefined;
   }
@@ -130,6 +150,8 @@ export function crossingOfMode(mode: TravelMode): TravelCrossing | undefined {
       return "spire";
     case "gnome":
       return "translocator";
+    case "succor":
+      return "succor";
     default:
       return undefined;
   }
@@ -142,11 +164,16 @@ export function crossingOfMode(mode: TravelMode): TravelCrossing | undefined {
  * able to call in, so a route that quietly assumes one would be advice you can't take. **Gnomes
  * default on**: a translocator is public transport, open to anyone who walks up to it. Boats aren't
  * here at all — they're boundaries, as unconditional as a zone line.
+ *
+ * **Succor defaults off** by the druid-and-wizard argument: it needs an evacuation spell, a friend
+ * with one, or a second instance to `/pick` into, and none of the three can be read off a map. Unlike
+ * a gnome you can walk up to and see, there is nothing here to check before the route relies on it.
  */
 export const TRAVEL_DEFAULTS: Record<TravelToggle, boolean> = {
   druid: false,
   wizard: false,
   gnome: true,
+  succor: false,
 };
 
 export type TravelOptions = Partial<Record<TravelToggle, boolean>>;
@@ -155,7 +182,8 @@ export type TravelOptions = Partial<Record<TravelToggle, boolean>>;
  * What a node is.
  *
  * - `boundary` — the border between two zones, in both of them. The reason the graph works.
- * - `place` — somewhere in *one* zone you can travel from: a druid ring, a spire, a dock.
+ * - `place` — somewhere in *one* zone you can travel from or arrive at: a druid ring, a spire, a dock,
+ *   a succor point.
  * - `hub` — a teleport network, in no zone at all: a free edge **out** to each of its destinations,
  *   entered for free from wherever the route starts (`findRoute`). Every druid ring reaches every other,
  *   which is a clique, and a hub has the same shortest paths with a fraction of the edges — plus one
@@ -197,7 +225,10 @@ export interface TravelEdge {
   mode: TravelMode;
   /** EQ world units of walking. Zero for a port, which is what makes one worth taking. */
   cost: number;
-  /** For a walk: which zone you walk across. It's how an edge is found again to correct by hand. */
+  /**
+   * Which zone this happens in — the one a walk crosses, or the one a succor is cast inside. It's how
+   * an edge is found again to correct by hand, and how the router knows whose safe point is whose.
+   */
   zone?: string;
   /** Set when the cost is a stand-in rather than something measured. Surfaced on the route. */
   assumed?: boolean;

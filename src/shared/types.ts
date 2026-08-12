@@ -1286,8 +1286,8 @@ export interface Settings {
  * A setting rather than a per-window filter, because it's a fact about *you* — your class, or who you
  * can call on — not about what you're looking at. One answer, wherever a route is asked for.
  *
- * Druid and wizard default **off**: a route that quietly assumed a port you can't get is advice you
- * can't take. Translocator gnomes default **on**, being public transport. Boats aren't here, because
+ * Druid, wizard and succor default **off**: a route that quietly assumed a port you can't get is advice
+ * you can't take. Translocator gnomes default **on**, being public transport. Boats aren't here, because
  * a boat is a border like any other ([ADR 0062](../../specs/decisions/0062-a-travel-graph-of-zone-lines.md)).
  */
 export interface TravelSettings {
@@ -1297,6 +1297,12 @@ export interface TravelSettings {
   wizard: boolean;
   /** Legends' translocator gnomes are available to you. */
   gnome: boolean;
+  /**
+   * You can reach a zone's succor point without walking there — an evacuation spell, or a `/pick` into
+   * another instance, both of which drop you at the same spot
+   * ([ADR 0069](../../specs/decisions/0069-a-succor-is-a-port-inside-one-zone.md)).
+   */
+  succor: boolean;
 }
 
 // ─── Watcher status ─────────────────────────────────────────────────────────
