@@ -278,6 +278,20 @@ a real run. This is a *verification* list, not open work — open work lives in 
   by hand: that the connection survives **closing the map window** (reopening still shows peers), and
   that toggling "Connect" off leaves the room. Untested with more than two clients — the cold-start
   recovery is bounded and won't reconcile a room that splits two-and-two.
+- **Surviving a drop, and leaving cleanly.** The room now re-joins itself when awari reports it
+  unreachable ([ADR 0070](../decisions/0070-a-dropped-room-rejoins-itself.md)), and no unit test can
+  reach this — it needs two clients and a *real* drop, which is the hard part to stage. The cheapest
+  staging is the network, not the app: with two clients in the room and Debug logging on, pull one
+  machine's network (or block the PeerJS broker) long enough for awari to exhaust its own recovery.
+  Expect, on the disconnected client, `dropped out of the awari room:` naming a reason, the 👥 panel
+  **emptying** rather than keeping ghosts, and a `re-joining in Nms` line — then, once the network is
+  back, the room reforming on its own with **no toggling of Connect**, names and pings working again.
+  Confirm the backoff holds at a minute rather than spinning if you leave it down. Then the failed
+  join: point `bootstrapUrl` at something dead, toggle Connect on, and confirm it keeps retrying with
+  backoff (it used to give up for good) and picks up when the URL is corrected. Finally the graceful
+  leave — with three clients, have the one that joined **first** (most likely the leader) quit, and
+  confirm the other two keep seeing each other's pings without a stall; that handoff is what
+  `leaveRoom()` buys and what a bare `close()` cost everyone else.
 - **Our own ICE servers.** We now pass Google STUN + Open Relay TURN instead of PeerJS's defaults
   ([ADR 0046](../decisions/0046-our-own-ice-servers-not-peerjs-defaults.md)). Nothing about this can
   be unit-tested — ICE only means anything against real WebRTC between two real peers. To confirm:

@@ -1237,6 +1237,13 @@ export interface OverlaySettings {
    * picture you enlarge to read. Same range, its own A−/A+ buttons in the map titlebar.
    */
   mapFontScale: number;
+  /**
+   * The **map window's** opacity, kept apart from `opacity` for the same reason as the scale:
+   * a translucent column of text is still readable over the game, a translucent map is not —
+   * so the map starts opaque and is dimmed only if you want it to be. Same 0.2–1 range, its own
+   * ◐ toggle in the map titlebar.
+   */
+  mapOpacity: number;
   showObtained: boolean; // keep completed items visible
   /** Auto-narrow the overlay to the zone you're in (from the log) as you travel. */
   followZone: boolean;

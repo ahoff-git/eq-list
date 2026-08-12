@@ -70,8 +70,9 @@ const DEFAULT_SETTINGS: Settings = {
     opacity: 0.9,
     alwaysOnTop: true,
     fontScale: 0.9,
-    // The map is a picture: it starts at full size rather than the main window's 90%.
+    // The map is a picture: it starts at full size, and solid, rather than the main window's 90%.
     mapFontScale: 1,
+    mapOpacity: 1,
     showObtained: true,
     followZone: false,
     splitByMode: false,

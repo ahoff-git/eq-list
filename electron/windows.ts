@@ -231,6 +231,9 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
     title: "EQ List — Map",
     icon: windowIcon(),
     alwaysOnTop: overlay?.alwaysOnTop ?? true,
+    // Its own saved opacity, set up front for the same reason as the main window's (no flash),
+    // and owned by the renderer from then on.
+    opacity: overlay?.mapOpacity ?? 1,
     backgroundColor: "#00000000",
     webPreferences: {
       preload: PRELOAD,
@@ -422,8 +425,9 @@ export function showInSearch(text: string): void {
  *
  * Opacity is deliberately **not** set here. It has a transient override (the titlebar's ◐ "fully
  * opaque" toggle) that lives in the renderer, and re-applying the saved value on every settings
- * change used to clobber it — the ◐ would read "on" while the window quietly went translucent. The
- * window opens at the saved opacity (constructor) and the renderer owns it from then on.
+ * change used to clobber it — the ◐ would read "on" while the window quietly went translucent. Each
+ * window opens at its own saved opacity (constructor: `opacity` / `mapOpacity`) and its renderer
+ * owns it from then on.
  */
 export function applyOverlaySettings(overlay: OverlaySettings): void {
   const win = mainWindow;

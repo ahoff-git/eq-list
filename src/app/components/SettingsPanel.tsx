@@ -48,6 +48,24 @@ export default function SettingsPanel() {
           value={settings.overlay.opacity}
           onChange={(e) => patch({ overlay: { opacity: Number(e.target.value) } })}
         />
+        <span className="hint">The map window has its own, below.</span>
+      </div>
+
+      <div className="setting">
+        <label>Map window opacity — {percent(settings.overlay.mapOpacity)}</label>
+        <input
+          type="range"
+          min={OVERLAY_OPACITY.min}
+          max={OVERLAY_OPACITY.max}
+          step={OVERLAY_OPACITY.step}
+          value={settings.overlay.mapOpacity}
+          onChange={(e) => patch({ overlay: { mapOpacity: Number(e.target.value) } })}
+        />
+        <span className="hint">
+          Separate for the same reason as the scale below: text stays readable through the glass,
+          a map doesn&apos;t — so this one starts solid. Either window&apos;s ◐ button flips its own
+          value to 100% and back.
+        </span>
       </div>
 
       <div className="setting">

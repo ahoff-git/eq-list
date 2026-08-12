@@ -97,7 +97,10 @@ world coordinates, so a map knows where it is. See
   title bar carries its own **A− / A+** (`overlay.mapFontScale`, a *separate* value from the main
   window's and one that may go **above 100%** — `MAP_UI_SCALE`, since a map is a picture you lean
   into rather than an overlay to shrink; see
-  [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)), **minimize**,
+  [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)), its own **◐ opacity**
+  toggle (the shared `OpacityButton`, flipping `overlay.mapOpacity` — a separate value from the main
+  window's, and one that starts **solid**, since a map is a picture to read rather than text to see
+  past), **minimize**,
   **maximize/restore**, a **pin** (per-window always-on-top, via the shared `PinButton`) and a
   **⌂ floors** button saying how many storeys are drawn, which opens the 👁 panel to change it (only
   when the map labels more than one — see **Floors and heights**). A zone with

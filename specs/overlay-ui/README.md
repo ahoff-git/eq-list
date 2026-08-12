@@ -23,9 +23,12 @@ list, hunt, search, damage, session, settings.
   hold two scales). **The map window scales separately** (`overlay.mapFontScale`, its own A− / A+):
   one window is a column of text you shrink to reclaim desk space, the other is a picture you
   enlarge to read. A shell inside a scaled window must size with **percentages, not `vh`** — a `vh`
-  length is scaled by the zoom and comes up short. **Opacity** is the exception:
-  the window opens at the saved value (constructor) and the **renderer** owns it thereafter, so the
-  transient ◐ toggle isn't clobbered when the main process reacts to some other settings change.
+  length is scaled by the zoom and comes up short. **Opacity** splits the same way
+  (`overlay.opacity` here, `overlay.mapOpacity` for the map, which starts **solid** — text stays
+  readable through the glass, a map doesn't) and is also the exception to "main applies it": each
+  window opens at its own saved value (constructor) and its **renderer** owns it thereafter
+  (`useWindowOpacity`), so the transient ◐ toggle — the shared `OpacityButton`, in both title
+  bars — isn't clobbered when the main process reacts to some other settings change.
   Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
   tray. One window, styled once; see [ADR 0009](../decisions/0009-single-window-with-tray.md).
@@ -235,7 +238,7 @@ list, hunt, search, damage, session, settings.
     is still the only highlight rule: it's free and it can't cry wolf. Names are `ItemLink`s. The
     header's tallies count the rows **on screen**, so they describe what you filtered to. See
     [ADR 0058](../decisions/0058-a-ledger-needs-filters-and-a-column-to-sort-by.md).
-  - `SettingsPanel` — log folder, match mode, window opacity / interface scale, keep-completed,
+  - `SettingsPanel` — log folder, match mode, window + map opacity / interface + map scale, keep-completed,
     follow-your-zone, **cast alerts** (the watched-spell list + beep/**screen-flash**/include-self
     toggles, a **Test alert** button that fires a sample down the real broadcast path,
     **Suggested** click-to-add chips of common crowd control grouped by effect — see
@@ -361,8 +364,8 @@ list, hunt, search, damage, session, settings.
 - No business logic or persistence in the renderer — it calls `window.eql` and renders
   store state.
 - Window creation and always-on-top are applied by the main process
-  (`electron/windows.ts`); the UI only requests them. (Opacity is the one exception — the renderer
-  owns the live value so the transient ◐ toggle survives unrelated settings changes.)
+  (`electron/windows.ts`); the UI only requests them. (Opacity is the one exception — each window's
+  renderer owns its live value so the transient ◐ toggle survives unrelated settings changes.)
 
 ## See also
 [architecture](../architecture/README.md) ·

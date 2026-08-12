@@ -13,16 +13,16 @@ import LootPanel from "./components/LootPanel";
 import StatusBar from "./components/StatusBar";
 import LandingView from "./components/LandingView";
 import PinButton from "./components/PinButton";
+import OpacityButton from "./components/OpacityButton";
 import CastAlerts from "./components/CastAlerts";
 import UpdateBanner from "./components/UpdateBanner";
 import TabBar, { type TabItem } from "./components/TabBar";
-import { useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale } from "@/lib/hooks";
+import { useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
-import { percent } from "@/shared/format";
 
 type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "settings";
 
@@ -54,8 +54,9 @@ export default function Home() {
   // This window scales itself: the scale is a CSS zoom per document, because Chromium's own zoom
   // is per-origin and every window here shares one (see `useUiScale`).
   useUiScale(settings?.overlay.fontScale);
-  // Transient "full opacity" toggle: flip between 100% and the settings slider value.
-  const [opaque, setOpaque] = useState(false);
+  // Transient "full opacity" toggle: flip between 100% and the settings slider value. The
+  // renderer owns the live value (see `useWindowOpacity`); the map window has its own.
+  const { opaque, toggle: toggleOpaque } = useWindowOpacity(settings ? sliderOpacity : undefined);
   // Owned here so the Hunt tab's zone filter survives switching tabs (and, persisted,
   // reopening the window).
   const [huntZone, setHuntZone] = usePersistentState<string | null>(STORAGE_KEYS.huntZone, null);
@@ -68,15 +69,6 @@ export default function Home() {
   useEffect(() => {
     setInElectron(!!api());
   }, []);
-
-  // The renderer owns the window's opacity (main no longer re-applies it — see
-  // applyOverlaySettings), so the transient "fully opaque" toggle sticks across other actions.
-  // Wait for settings before touching it, or the `?? 1` fallback would flash the window fully
-  // opaque on launch before the saved value loads (the constructor already set it correctly).
-  useEffect(() => {
-    if (!settings) return;
-    api()?.win.setOpacity(opaque ? 1 : sliderOpacity);
-  }, [opaque, sliderOpacity, settings]);
 
   // A screengrab lookup fills the Search box with OCR'd text and jumps here (so does a
   // name clicked in the map window, which has no search of its own).
@@ -125,17 +117,7 @@ export default function Home() {
               scale={uiScale}
               onScale={(next) => api()?.settings.update({ overlay: { fontScale: next } })}
             />
-            <button
-              className={`wc ${opaque ? "on" : ""}`}
-              title={
-                opaque
-                  ? "Opacity: 100% — click for translucent"
-                  : `Opacity: ${percent(sliderOpacity)} — click for fully opaque`
-              }
-              onClick={() => setOpaque((o) => !o)}
-            >
-              ◐
-            </button>
+            <OpacityButton opaque={opaque} opacity={sliderOpacity} onToggle={toggleOpaque} />
             <PinButton
               pinned={pinned}
               onToggle={() => api()?.settings.update({ overlay: { alwaysOnTop: !pinned } })}

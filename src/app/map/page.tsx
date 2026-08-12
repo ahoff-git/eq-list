@@ -11,6 +11,7 @@ import {
   useSettings,
   useUiScale,
   useWatcherStatus,
+  useWindowOpacity,
 } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -125,6 +126,10 @@ export default function MapWindow() {
   const settings = useSettings();
   // The map's own scale, separate from the main window's (see `useUiScale`).
   useUiScale(settings?.overlay.mapFontScale, MAP_UI_SCALE);
+  // And its own translucency, likewise: a map is a picture you read, so it's usually the window
+  // you want more solid than the list. `undefined` until settings load leaves it alone.
+  const mapOpacity = settings?.overlay.mapOpacity ?? 1;
+  const { opaque, toggle: toggleOpaque } = useWindowOpacity(settings ? mapOpacity : undefined);
   useRendererDebug();
 
   // Travelling puts the map back on you (on by default): picking a zone by hand — or
@@ -429,6 +434,9 @@ export default function MapWindow() {
         onFollowZone={setFollowZone}
         scale={settings?.overlay.mapFontScale ?? 1}
         onScale={(next) => api()?.settings.update({ overlay: { mapFontScale: next } })}
+        opaque={opaque}
+        opacity={mapOpacity}
+        onOpaque={toggleOpaque}
         pinned={pinned}
         onPinned={() => setPinned((p) => !p)}
       />

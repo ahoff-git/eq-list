@@ -1,6 +1,7 @@
 "use client";
 import { api } from "@/lib/api";
 import { MAP_UI_SCALE } from "@/shared/constants";
+import OpacityButton from "./OpacityButton";
 import PinButton from "./PinButton";
 import ScaleButtons from "./ScaleButtons";
 import WindowButtons from "./WindowButtons";
@@ -42,6 +43,9 @@ export default function MapTitlebar({
   onFollowZone,
   scale,
   onScale,
+  opaque,
+  opacity,
+  onOpaque,
   pinned,
   onPinned,
 }: {
@@ -71,6 +75,10 @@ export default function MapTitlebar({
   onFollowZone: (on: boolean) => void;
   scale: number;
   onScale: (next: number) => void;
+  /** Whether the transient "fully opaque" override is on, and the saved value it flips back to. */
+  opaque: boolean;
+  opacity: number;
+  onOpaque: () => void;
   pinned: boolean;
   onPinned: () => void;
 }) {
@@ -136,6 +144,8 @@ export default function MapTitlebar({
       <div className="win-controls no-drag">
         {/* The map's own scale, separate from the main window's — see `mapFontScale`. */}
         <ScaleButtons scale={scale} onScale={onScale} what="map" range={MAP_UI_SCALE} />
+        {/* Likewise its own translucency — see `mapOpacity`. */}
+        <OpacityButton opaque={opaque} opacity={opacity} onToggle={onOpaque} />
         <PinButton pinned={pinned} onToggle={onPinned} />
         {/* Closed for real, not hidden — the map is opened on demand. */}
         <WindowButtons dismissTitle="Close map" dismiss={() => api()?.win.close()} />

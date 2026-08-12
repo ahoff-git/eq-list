@@ -306,6 +306,29 @@ export function useUiScale(scale: number | undefined, range: ScaleRange = UI_SCA
 }
 
 /**
+ * Own this window's live opacity, and the transient "fully opaque" toggle beside it.
+ *
+ * The **renderer** owns the value rather than the main process: the ◐ toggle is a transient
+ * override of the saved setting, and re-applying the saved value from main on every settings
+ * change clobbered it (the button read "on" while the window quietly went translucent). The
+ * window opens at the saved opacity (its constructor) and this takes over from there.
+ *
+ * `saved` is `undefined` until settings load, which is when to leave the window alone — the
+ * constructor already set it right, and applying a fallback would flash it opaque on launch.
+ * Each window passes its own setting (`overlay.opacity`, `overlay.mapOpacity`); the IPC applies
+ * to whichever window sent it.
+ */
+export function useWindowOpacity(saved: number | undefined): { opaque: boolean; toggle: () => void } {
+  const [opaque, setOpaque] = useState(false);
+  const toggle = useCallback(() => setOpaque((o) => !o), []);
+  useEffect(() => {
+    if (saved === undefined) return;
+    api()?.win.setOpacity(opaque ? 1 : saved);
+  }, [opaque, saved]);
+  return { opaque, toggle };
+}
+
+/**
  * Whether this window is maximized. The main process announces it — including once per load,
  * so a fresh renderer doesn't start out guessing — because a frameless window's own titlebar
  * has no other way to know, and the window can be maximized by things that aren't our button.
