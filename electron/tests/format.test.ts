@@ -11,7 +11,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clock, dayTime, duration, figure, when } from "../../src/shared/format";
+import { clock, dayTime, duration, figure, percent, when } from "../../src/shared/format";
 
 test("a duration says minutes, and seconds only when asked", () => {
   // The distinction the two copies disagreed about.
@@ -64,4 +64,19 @@ test("a tally of nothing reads as nothing, and a real one reads with separators"
   assert.equal(figure(null), "—");
   assert.equal(figure(12345), (12345).toLocaleString());
   assert.notEqual(figure(1), "—", "one is a real number");
+});
+
+test("a percentage takes the fraction, and 0% is a reading rather than a gap", () => {
+  assert.equal(percent(0.372), "37%");
+  assert.equal(percent(0.372, { places: 1 }), "37.2%");
+  assert.equal(percent(1), "100%");
+  // Unlike a tally, a measured nothing is real: 0% of the damage is a fact about the fight.
+  assert.equal(percent(0), "0%");
+});
+
+test("a percentage of nothing is a gap, not NaN%", () => {
+  // What an unguarded division used to put on screen. `over` returns undefined for exactly this case.
+  for (const nothing of [undefined, null, NaN, Infinity]) {
+    assert.equal(percent(nothing), "—", String(nothing));
+  }
 });

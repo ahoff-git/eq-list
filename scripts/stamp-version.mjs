@@ -17,10 +17,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { withBuildNumber } from "../dist-electron/src/shared/version.js";
+import { ROOT, load } from "./lib/cli.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// Loaded rather than statically imported so a missing build says so, the way the other scripts do.
+const { withBuildNumber } = load("src/shared/version.js");
 const build = Number(process.argv[2]);
 
 if (!Number.isInteger(build) || build < 0) {

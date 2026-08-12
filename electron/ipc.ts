@@ -5,7 +5,7 @@
  */
 import { ipcMain, dialog, shell, screen, BrowserWindow } from "electron";
 import { CH } from "../src/shared/ipc-channels";
-import { p99ZoneUrl } from "../src/shared/constants";
+import { OVERLAY_OPACITY, p99ZoneUrl } from "../src/shared/constants";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE } from "./wiki/api";
@@ -57,7 +57,8 @@ export interface IpcContext {
   watcher: LogWatcher;
 }
 
-export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, killLog, lootLog, updates, mobs, lookup, logFile, getCurrentZone, getCurrentLoc, getAppInfo, broadcast }: IpcContext): void {
+export function registerIpc(context: IpcContext): void {
+  const { wiki } = context;
   // Parsed map files, kept for the life of the app: they don't change under us, and a zone
   // is up to 800KB of text that several windows may ask for.
   const mapReader = createMapReader();
@@ -65,6 +66,36 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   // The wiki is what knows which zones the server has open, so the graph asks it rather than carrying
   // a list of its own (see `absentZonesFor`).
   const travel = createTravelRouter({ outOfEraZones: () => wiki.outOfEraZones() });
+
+  const shared: SharedIpc = { mapReader, zoneNamer, travel };
+
+  // One registrar per subject. The order is for reading only — nothing here depends on it.
+  registerListIpc(context);
+  registerSettingsIpc(context);
+  registerWikiIpc(context);
+  registerStatsIpc(context);
+  registerAppIpc(context);
+  registerWindowIpc(context, shared);
+  registerPeerIpc(context);
+}
+
+/**
+ * What the registrars share: readers and a router that are expensive to build and safe to reuse.
+ *
+ * Beside the context rather than inside it, because the context is *given* to `registerIpc` by main
+ * while these are made by it — and main has no business holding a map reader.
+ */
+interface SharedIpc {
+  mapReader: ReturnType<typeof createMapReader>;
+  zoneNamer: ReturnType<typeof createZoneNamer>;
+  travel: ReturnType<typeof createTravelRouter>;
+}
+
+/**
+ * The shopping list itself: what's on it, what's obtained, and how many runs a group is for.
+ */
+function registerListIpc(context: IpcContext): void {
+  const { store } = context;
 
   // ── shopping list ──
   ipcMain.handle(CH.listGet, () => store.getList());
@@ -74,6 +105,14 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.handle(CH.listRemove, (_e, id: string) => store.removeEntry(id));
   ipcMain.handle(CH.listClear, () => store.clearList());
   ipcMain.handle(CH.listSetRuns, (_e, originKey: string, runs: number) => store.setQuestRuns(originKey, runs));
+
+}
+
+/**
+ * Settings, the cast-alert test, and digesting a past log — the Settings tab's own surface.
+ */
+function registerSettingsIpc(context: IpcContext): void {
+  const { store, watcher, combat, history, killLog, lootLog, broadcast } = context;
 
   // ── settings ──
   ipcMain.handle(CH.settingsGet, () => store.getSettings());
@@ -176,6 +215,14 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     }
   });
 
+}
+
+/**
+ * The wiki client: search, a page, and the refresh that re-mirrors its indexes.
+ */
+function registerWikiIpc(context: IpcContext): void {
+  const { wiki } = context;
+
   // ── wiki ──
   ipcMain.handle(CH.wikiSearch, (_e, term: string) => wiki.search(term));
   ipcMain.handle(CH.wikiGetPage, (_e, title: string) => wiki.getPage(title));
@@ -195,6 +242,15 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     }
     return Promise.resolve();
   });
+
+}
+
+/**
+ * Everything the log taught us: where you are, the damage meter, experience, health, kills,
+ * loot and pooled mob knowledge.
+ */
+function registerStatsIpc(context: IpcContext): void {
+  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -239,6 +295,15 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     return history.sessions();
   });
 
+}
+
+/**
+ * The app itself: the screengrab lookup, diagnostics for the Help section, the monitor list,
+ * and the update check.
+ */
+function registerAppIpc(context: IpcContext): void {
+  const { updates, lookup, logFile, getAppInfo } = context;
+
   // ── screengrab lookup + app info ──
   ipcMain.handle(CH.lookupCapture, (e, rect: Rect, view: { width: number; height: number }) =>
     lookup.capture(rect, view, e.sender),
@@ -271,6 +336,16 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     updates.markSeen(); // acting on it counts as seen — don't nag for this build again
   });
   ipcMain.handle(CH.updateDismiss, () => updates.markSeen());
+
+}
+
+/**
+ * Windows, and the map they draw: opening and sizing them, plus reading the game's own map files
+ * and answering a travel route.
+ */
+function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
+  const { store, wiki } = context;
+  const { mapReader, zoneNamer, travel } = shared;
 
   // ── window control ──
   // Open (or focus) the sibling map window.
@@ -335,6 +410,15 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
     return mapReader.load(dir, zoneFile) ?? null;
   });
 
+}
+
+/**
+ * The peer-networking relay. Main holds no connection of its own — the always-alive main window
+ * owns it, and this only fans messages out.
+ */
+function registerPeerIpc(context: IpcContext): void {
+  const { broadcast } = context;
+
   // ── awari peer networking broker (see ADR 0012) ──
   // The always-alive main window owns the single WebRTC connection; the main process
   // is a pure relay. Any window's send → the owner publishes it; the owner's inbound
@@ -357,7 +441,9 @@ export function registerIpc({ store, wiki, watcher, combat, history, xp, hp, kil
   ipcMain.on(CH.winHide, (e) => BrowserWindow.fromWebContents(e.sender)?.hide());
   // Transient opacity (the "full opacity" toggle) — doesn't touch the saved setting.
   ipcMain.on(CH.winSetOpacity, (e, value: number) =>
-    BrowserWindow.fromWebContents(e.sender)?.setOpacity(Math.max(0.2, Math.min(1, value))),
+    BrowserWindow.fromWebContents(e.sender)?.setOpacity(
+      Math.max(OVERLAY_OPACITY.min, Math.min(OVERLAY_OPACITY.max, value)),
+    ),
   );
   ipcMain.on(CH.winSetAlwaysOnTop, (e, enabled: boolean) =>
     BrowserWindow.fromWebContents(e.sender)?.setAlwaysOnTop(!!enabled, "screen-saver"),

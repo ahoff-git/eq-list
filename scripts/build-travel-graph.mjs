@@ -23,34 +23,17 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { ROOT, appDataDirs, dirOpt, few, flag, helpIfAsked, load, opt } from "./lib/cli.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const require = createRequire(import.meta.url);
-const argv = process.argv.slice(2);
+helpIfAsked(import.meta.url);
 
-function opt(name, fallback) {
-  const i = argv.indexOf(`--${name}`);
-  if (i < 0) return fallback;
-  const value = argv[i + 1];
-  return value === undefined || value.startsWith("--") ? true : value;
-}
-const flag = (name) => argv.includes(`--${name}`);
-
-if (flag("help")) {
-  console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("*/")[0].replace(/^\/\*\*?/, ""));
-  process.exit(0);
-}
-
-function load(module) {
-  const file = path.join(ROOT, "dist-electron", module);
-  if (!fs.existsSync(file)) {
-    console.error(`Missing ${path.relative(ROOT, file)} — run: npm run build:electron`);
-    process.exit(1);
-  }
-  return require(file);
-}
+/**
+ * How much of each report to print. They differ because they're read differently: the excluded zones
+ * and the isolated ones are a sanity check ("does that look about right?"), while the unresolved
+ * destinations are a **worklist** — the names you go and type into `manual-links.ts` — so that one is
+ * the longest and prints each entry on its own line.
+ */
+const SHOW = { absent: 8, isolated: 12, unresolved: 15, namedBy: 4 };
 
 const { listSources } = load("electron/eq-maps.js");
 const { buildFromSource, graphPath, writeGraph } = load("electron/travel-graph.js");
@@ -64,20 +47,16 @@ const { createWikiClient } = load("electron/wiki/index.js");
  */
 async function outOfEraZones() {
   if (flag("offline")) return { zones: [], why: "--offline" };
-  const appData = process.env.APPDATA;
-  if (!appData) return { zones: [], why: "no APPDATA to find the wiki cache in" };
-  for (const name of ["EQ List", "eq-list"]) {
-    const cacheDir = path.join(appData, name, "wiki-cache");
-    if (!fs.existsSync(path.dirname(cacheDir))) continue;
+  for (const dir of appDataDirs()) {
     try {
-      const zones = await createWikiClient(cacheDir).outOfEraZones();
+      const zones = await createWikiClient(path.join(dir, "wiki-cache")).outOfEraZones();
       if (zones.length) return { zones, why: null };
       return { zones: [], why: "the wiki returned no out-of-era zones" };
     } catch (e) {
       return { zones: [], why: e.message };
     }
   }
-  return { zones: [], why: "no wiki cache found — run the app once, or pass --offline" };
+  return { zones: [], why: "no app data folder — run the app once, or pass --offline" };
 }
 
 /**
@@ -87,11 +66,9 @@ async function outOfEraZones() {
 function logDir() {
   const given = opt("logs");
   if (typeof given === "string") return given;
-  const appData = process.env.APPDATA;
-  for (const name of ["EQ List", "eq-list"]) {
-    if (!appData) break;
+  for (const dir of appDataDirs()) {
     try {
-      const settings = JSON.parse(fs.readFileSync(path.join(appData, name, "settings.json"), "utf8"));
+      const settings = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8"));
       if (settings.logDir) return settings.logDir;
     } catch {
       /* not this one */
@@ -115,7 +92,7 @@ if (!wanted.length) {
   process.exit(1);
 }
 
-const outDir = typeof opt("out") === "string" ? path.resolve(String(opt("out"))) : path.join(ROOT, "data");
+const outDir = dirOpt("out", "data");
 const quiet = flag("quiet");
 
 const era = await outOfEraZones();
@@ -131,17 +108,25 @@ for (const source of wanted) {
   console.log(`\n${source.label} (${source.id})`);
   console.log(`  ${report.zones} zones → ${report.boundaries} boundaries, ${report.nodes} nodes, ${report.edges} edges`);
   for (const net of report.networks) {
-    console.log(`  ${net.network}: ${net.zones.length} zone${net.zones.length === 1 ? " (no network — needs a second)" : "s"} — ${net.zones.join(", ")}`);
+    // A single destination is still a network for a *cast* port — you can reach it from anywhere — but
+    // for a boat or a gnome one end is half a run, and says so.
+    const lone = net.zones.length === 1 && (net.network === "boat" || net.network === "gnome");
+    console.log(
+      `  ${net.network}: ${net.zones.length} zone${net.zones.length === 1 ? (lone ? " (one end — needs its pair)" : "") : "s"}` +
+        ` — ${net.zones.join(", ")}`,
+    );
   }
-  // Deliberate exclusions are printed whether or not you asked for detail: a graph that knows less on
-  // purpose should say so as loudly as one that's merely thin.
-  // Deliberate exclusions, summarised — the individual zones are the wiki's business, not a finding.
+  // Printed whether or not you asked for detail: a graph that knows less on purpose should say so as
+  // loudly as one that's merely thin. Summarised, though — which zones is the wiki's business.
   if (report.absent.length) {
     const borders = report.absent.reduce((n, a) => n + a.borders, 0);
-    const named = report.absent.map((a) => a.zone).slice(0, 8).join(", ");
+    const named = few(
+      report.absent.map((a) => a.zone),
+      SHOW.absent,
+    );
     console.log(
       `  left out ${report.absent.length} zone${report.absent.length === 1 ? "" : "s"} not in the game` +
-        ` (refused ${borders} border${borders === 1 ? "" : "s"} into them): ${named}${report.absent.length > 8 ? " …" : ""}`,
+        ` (refused ${borders} border${borders === 1 ? "" : "s"} into them): ${named}`,
     );
   }
   // Everything the build couldn't do is printed, because a graph that quietly covers less than it
@@ -149,11 +134,13 @@ for (const source of wanted) {
   if (!quiet) {
     if (report.oneSided.length) console.log(`  ${report.oneSided.length} borders only one side drew — walks from them are guesses, not measurements`);
     if (report.dropped.length) console.log(`  ${report.dropped.length} travel labels named nowhere (bare "Zone Line", "Succor")`);
-    if (report.isolated.length) console.log(`  ${report.isolated.length} zones with no way in or out: ${report.isolated.slice(0, 12).join(", ")}${report.isolated.length > 12 ? " …" : ""}`);
-    const top = report.unresolved.slice(0, 15);
+    if (report.isolated.length) {
+      console.log(`  ${report.isolated.length} zones with no way in or out: ${few(report.isolated, SHOW.isolated)}`);
+    }
+    const top = report.unresolved.slice(0, SHOW.unresolved);
     if (top.length) {
       console.log(`  ${report.unresolved.length} destinations no map file answered to — the top ${top.length}:`);
-      for (const miss of top) console.log(`    "${miss.name}" — named by ${miss.from.slice(0, 4).join(", ")}${miss.from.length > 4 ? ` +${miss.from.length - 4}` : ""}`);
+      for (const miss of top) console.log(`    "${miss.name}" — named by ${few(miss.from, SHOW.namedBy)}`);
     }
   }
   console.log(`  → ${path.relative(ROOT, file) || file}`);

@@ -15,7 +15,7 @@
  * doesn't own, so the order only affects cost — never the outcome.
  */
 import { parseCombat } from "./combat-parser";
-import { parseCoin, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseXp, parseZone, splitLine } from "./log-parser";
+import { parseCoin, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseParty, parseXp, parseZone, splitLine } from "./log-parser";
 import type { CombatEvent, LogEvent, LogLine } from "./types";
 
 /** Everything a log line can turn into. */
@@ -31,6 +31,9 @@ const MATCHERS: ((line: LogLine) => ParsedEvent | null)[] = [
   parseLoc,
   parseLevel,
   parseCoin,
+  // Rare, and its loosest pattern reads group chat — so it goes after every parser that owns
+  // a line outright.
+  parseParty,
   // Once a sitting, so it goes last — and after `parseLevel`, whose "Welcome to level 2!"
   // shares the opening words.
   parseLogin,

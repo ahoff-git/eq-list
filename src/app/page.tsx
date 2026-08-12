@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import SearchPanel from "./components/SearchPanel";
-import MaximizeButton from "./components/MaximizeButton";
+import WindowButtons from "./components/WindowButtons";
 import ScaleButtons from "./components/ScaleButtons";
 import ListPanel from "./components/ListPanel";
 import HuntPanel from "./components/HuntPanel";
@@ -22,6 +22,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
+import { percent } from "@/shared/format";
 
 type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "settings";
 
@@ -129,7 +130,7 @@ export default function Home() {
               title={
                 opaque
                   ? "Opacity: 100% — click for translucent"
-                  : `Opacity: ${Math.round(sliderOpacity * 100)}% — click for fully opaque`
+                  : `Opacity: ${percent(sliderOpacity)} — click for fully opaque`
               }
               onClick={() => setOpaque((o) => !o)}
             >
@@ -140,13 +141,8 @@ export default function Home() {
               onToggle={() => api()?.settings.update({ overlay: { alwaysOnTop: !pinned } })}
               title={`Always on top: ${pinned ? "on" : "off"} · ${OVERLAY_HOTKEY.label} shows/hides`}
             />
-            <button className="wc" title="Minimize" onClick={() => api()?.win.minimize()}>
-              —
-            </button>
-            <MaximizeButton />
-            <button className="wc" title="Hide to tray" onClick={() => api()?.win.hide()}>
-              ✕
-            </button>
+            {/* Hide, not close: the app keeps watching the log from the tray. */}
+            <WindowButtons dismissTitle="Hide to tray" dismiss={() => api()?.win.hide()} />
           </div>
         </div>
 

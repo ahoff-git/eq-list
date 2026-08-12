@@ -1,5 +1,6 @@
 "use client";
 import { UI_SCALE, clampScale, type ScaleRange } from "@/shared/constants";
+import { percent } from "@/shared/format";
 
 /**
  * The A− / A+ interface-scale pair for a window title bar. Each window scales *itself*: the
@@ -25,12 +26,12 @@ export default function ScaleButtons({
     const next = clampScale(scale + direction * range.step, range);
     if (next !== scale) onScale(next);
   };
-  const percent = Math.round(scale * 100);
+  const shown = percent(scale);
   return (
     <>
       <button
         className="wc"
-        title={`Smaller ${what} — ${percent}%`}
+        title={`Smaller ${what} — ${shown}`}
         onClick={() => step(-1)}
         disabled={scale <= range.min}
       >
@@ -38,7 +39,7 @@ export default function ScaleButtons({
       </button>
       <button
         className="wc"
-        title={`Larger ${what} — ${percent}%${range.max <= 1 ? " (100% is full size)" : ""}`}
+        title={`Larger ${what} — ${shown}${range.max <= 1 ? " (100% is full size)" : ""}`}
         onClick={() => step(1)}
         disabled={scale >= range.max}
       >

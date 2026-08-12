@@ -23,6 +23,7 @@ import { stripArticle } from "./log-parser";
 import { normalizeZone } from "./sources";
 import { zoneBaseName } from "./names";
 import type { KillRecord } from "./types";
+import { ratio } from "./numbers";
 
 /** Positions this poor are ignored when working out where a mob lives. */
 const AREA_MIN_CONFIDENCE = 0.2;
@@ -228,9 +229,9 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
       ...known,
       // Rates are computed once, at the end, from the pooled totals.
       drops: known.drops
-        .map((d) => ({ ...d, rate: known.kills ? Math.round((d.count / known.kills) * 1000) / 1000 : 0 }))
+        .map((d) => ({ ...d, rate: ratio(d.count, known.kills, 3) }))
         .sort((a, b) => b.rate - a.rate || a.item.localeCompare(b.item)),
-      copperPerKill: known.kills ? Math.round((known.copper / known.kills) * 10) / 10 : 0,
+      copperPerKill: ratio(known.copper, known.kills, 1),
       area: mergeAreas(areas),
       contributors: known.contributors.sort(),
     }))

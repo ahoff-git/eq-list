@@ -33,7 +33,7 @@ import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import type { CombatEvent, HpEstimate } from "../src/shared/types";
 
-import { readJson, writeJson } from "./json-store";
+import { createSaver, readJson } from "./json-store";
 const log = createLogger("hp-estimate");
 
 /** No incoming damage for this long ends a window (health regenerates in the gap). */
@@ -90,8 +90,8 @@ export function createHpEstimate(
 ): HpTracker {
   const file = path.join(userDataDir, "hp-estimate.json");
   const bus = new EventEmitter();
-  let timer: NodeJS.Timeout | null = null;
   let state: HpEstimate = read();
+  const saver = createSaver(file, "hp estimate", () => state, WRITE_DEBOUNCE_MS);
   let player = "";
 
   /** Damage taken since the last heal/gap — the "at least" window. */
@@ -121,14 +121,9 @@ export function createHpEstimate(
     };
   }
 
-  function write(): void {
-    timer = null;
-    writeJson(file, state, { what: "hp estimate" });
-  }
-
   function changed(): HpEstimate {
     state = { ...state, updatedAt: nowIso() };
-    if (!timer) timer = setTimeout(write, WRITE_DEBOUNCE_MS);
+    saver.save();
     bus.emit("change", state);
     return state;
   }
@@ -292,8 +287,7 @@ export function createHpEstimate(
     onChange: (cb) => void bus.on("change", cb),
 
     flush() {
-      if (timer) clearTimeout(timer);
-      write();
+      saver.flush();
     },
   };
 }

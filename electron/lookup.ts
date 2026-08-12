@@ -29,6 +29,23 @@ interface Selector {
   image: NativeImage | null;
 }
 
+/**
+ * How a crop is prepared for OCR.
+ *
+ * Tesseract reads enlarged text markedly better, and an item name grabbed from a game UI is small —
+ * so a narrow crop is scaled up toward `targetWidth`. Capped, because interpolating past 2× invents
+ * detail rather than revealing it, and never downscaled: throwing pixels away can only lose letters.
+ */
+const UPSCALE = {
+  targetWidth: 1600,
+  maxFactor: 2,
+  /** Don't pay for a resize that changes nothing — anything under this is the same image. */
+  worthIt: 1.01,
+} as const;
+
+/** A crop smaller than this (px) is noise from a stray drag; OCR the whole grab instead. */
+const MIN_CROP_PX = 4;
+
 /** OCR output is noisy — collapse whitespace and drop obvious junk characters. */
 function cleanText(text: string): string {
   return text
@@ -150,13 +167,11 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void): Lookup {
             ` displaySize=${sel.display.size.width}x${sel.display.size.height} scale=${sel.display.scaleFactor}` +
             ` content=${JSON.stringify(cb)} img=${isize.width}x${isize.height} → ${JSON.stringify(crop)}`,
         );
-        const cropped = w > 4 && h > 4 ? img.crop(crop) : img;
-        // Upscale small crops — Tesseract reads enlarged text much better. Scale up
-        // toward ~1600px wide, capped at 2x, never downscaling.
+        const cropped = w > MIN_CROP_PX && h > MIN_CROP_PX ? img.crop(crop) : img;
         const cs = cropped.getSize();
-        const factor = Math.max(1, Math.min(2, 1600 / Math.max(1, cs.width)));
+        const factor = Math.max(1, Math.min(UPSCALE.maxFactor, UPSCALE.targetWidth / Math.max(1, cs.width)));
         const image =
-          factor > 1.01
+          factor > UPSCALE.worthIt
             ? cropped.resize({ width: Math.round(cs.width * factor), height: Math.round(cs.height * factor), quality: "best" })
             : cropped;
         const text = cleanText(await ocr.recognize(image.toPNG()));

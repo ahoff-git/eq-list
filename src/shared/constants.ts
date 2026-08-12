@@ -1,6 +1,7 @@
 /**
  * constants.ts — small shared constants used by both processes.
  */
+import { round } from "./numbers";
 
 /**
  * Global hotkey to show/hide the overlay. Works even when the overlay is
@@ -26,12 +27,22 @@ export const UI_SCALE = { min: 0.6, max: 1, step: 0.05 } as const;
  */
 export const MAP_UI_SCALE = { min: 0.6, max: 2, step: 0.05 } as const;
 
+/**
+ * How translucent the overlay may be made.
+ *
+ * The floor is the point of it: an overlay you can't see is one you can't find to dismiss, and the
+ * hotkey is no help if you've forgotten the window is there at all. Both processes need the same
+ * number — the renderer to bound the slider, main to clamp whatever arrives over IPC — and each had
+ * its own copy of `0.2`, so moving the floor meant finding both.
+ */
+export const OVERLAY_OPACITY = { min: 0.2, max: 1, step: 0.05 } as const;
+
 export type ScaleRange = { min: number; max: number; step: number };
 
 /** Clamp a stored or user-supplied scale into a range, rounded to whole percent. */
 export function clampScale(scale: number, range: ScaleRange): number {
   if (!Number.isFinite(scale)) return range.max;
-  return Math.min(range.max, Math.max(range.min, Math.round(scale * 100) / 100));
+  return Math.min(range.max, Math.max(range.min, round(scale, 2)));
 }
 
 /** Clamp into the overlay's range (60%–100%). */

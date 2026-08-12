@@ -23,11 +23,12 @@
  * would misfile a zone eqlwiki knows, which is the other half of that guarantee.
  *
  * Pure and dependency-free apart from the shared zone fold. See
- * [ADR 0064](../../../specs/decisions/0064-a-zone-belongs-to-an-expansion.md).
+ * [ADR 0065](../../../specs/decisions/0065-a-zone-belongs-to-an-expansion.md).
  */
 
 import { zoneKey } from "../names";
 import { ZONE_EXPANSIONS } from "./expansions.generated";
+import { createZoneResolver } from "./resolve";
 
 export type { ExpansionZones } from "./expansions.generated";
 export { ZONE_EXPANSIONS };
@@ -84,12 +85,24 @@ export function zoneExpansion(zone: string): ZoneExpansion | undefined {
 }
 
 /**
+ * The table, asked loosely. This is the one lookup in the app that takes **every** tier the resolver
+ * offers, because it is the one where a wrong answer is cheapest: the result is a badge and an
+ * availability check that already fails open, so a zone matched to the wrong neighbour is mislabelled
+ * rather than mis-drawn. The map and the router don't get that latitude — see
+ * [ADR 0068](../../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md).
+ *
+ * It earns its keep immediately: the app's own zone names and fandom's disagree for 16 of the 31
+ * zones stated in `CURATED_ZONES`, and every one of those looked up as "unknown" before this.
+ */
+const resolver = createZoneResolver([...byZone.values()], (z) => z.zone, { narrow: true, fuzzy: true });
+
+/**
  * The fold and the lookup, once, for the callers that want both. `zoneUnavailable` needs the key too
  * (for the era set) and used to fold the same name a second time to get it.
  */
 function look(zone: string): { key: string; found?: ZoneExpansion } {
   const key = zoneKey(zone);
-  return { key, found: key ? byZone.get(key) : undefined };
+  return { key, found: key ? resolver.resolve(zone)?.item : undefined };
 }
 
 /**

@@ -24,7 +24,7 @@ _Next up:_
 - **Three expansion pages the zone table can't read.** `scripts/fetch-zone-expansions.mjs` gets 22 of 25
   expansions; **Omens of War**, **Ring of Scale** and **The Darkened Sea** write their zone lists in a
   shape neither of the two it handles matches, so it skips them and says so
-  ([ADR 0064](./decisions/0064-a-zone-belongs-to-an-expansion.md)). Their zones therefore aren't excluded:
+  ([ADR 0065](./decisions/0065-a-zone-belongs-to-an-expansion.md)). Their zones therefore aren't excluded:
   they'll be offered in the picker and, being their own continents, sit as isolated zones rather than
   corrupting a route. Worth a look at those three pages' wikitext — it may be one more row separator.
 
@@ -34,6 +34,11 @@ _Next up:_
   already points at zones you'd travel to ("how far is that camp?"), and an **item's drop zones**, where
   "who drops this, and where" stops short of "and how do I get there". Both are a call and a line of
   UI; the question is where a distance belongs without turning a list into a route planner.
+- **Travel: the graph doesn't honour `STOCK_ONLY_ZONES`.** The map draws a pinned zone from the game's
+  own files, but `buildFromSource` harvests exit labels per source, so the graph reads that zone's
+  labels from the *chosen pack's* file — the two can disagree about a zone we've deliberately said the
+  pack gets wrong. Same plumbing as the borrowing item below (a harvest has to read each borrowed or
+  pinned zone from its own folder), so worth doing in one go.
 - **Travel: a graph could borrow a zone the pack lacks, the way the map now does.**
   [ADR 0063](./decisions/0063-a-zone-the-pack-lacks-is-borrowed.md) made the zone *list* fall back to the
   game's own maps for a zone the chosen pack has no file for; `travel-graph.ts` still builds strictly per
@@ -119,5 +124,9 @@ _To discuss:_
   persisted, unlike the per-window filters), and the broader rule **"used by a quest in my level
   range in this zone"**, which needs the wiki's quest data per item and a level to compare against.
 
-
-
+- Damage history tab should have a search box for reducing the number of records shown to just those that include the searched term
+  - Search field should focus on mob name and zone  
+- DoT damage is not being counted correctly. It hits way more than is being parsed from the logs. 
+  - There is an initial cast + damage logged and then every damage tic should be added to that spell's damage. 
+    - Tic damage should be shown as a spell total and with an expandable section showing damage stats, like how many times it ticed, or resisted etc
+- for the navigation graph creation: add a toggle for "succor/pick", which lets you teleport IN ZONE to that location. Potentially reducing your distance to the nearest zoneline 

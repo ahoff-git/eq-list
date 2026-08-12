@@ -75,24 +75,40 @@ export async function fullTextSearch(term: string, limit = 12): Promise<SearchRe
  * crawl so a huge wiki can't spin forever.
  */
 export async function fetchAllTitles(maxPages = 80): Promise<string[]> {
+  return fetchListTitles(
+    "allpages",
+    "ap",
+    { apnamespace: "0", aplimit: "max", apfilterredir: "nonredirects" },
+    maxPages,
+  );
+}
+
+/**
+ * Every title a MediaWiki `list=` query returns, following its continuation.
+ *
+ * Two of these were written out, for `allpages` and `categorymembers`. They differ only in the list
+ * name and its **continuation prefix** — `apcontinue`, `cmcontinue` — which is MediaWiki's convention,
+ * along with the answer arriving under `query.<list>`. Stating that once means the paging, the cap and
+ * the stop condition are the same for the next list we ask about; a copy that dropped the `break`
+ * would quietly make `maxPages` requests every time.
+ */
+async function fetchListTitles(
+  list: string,
+  prefix: string,
+  params: Record<string, string>,
+  maxPages: number,
+): Promise<string[]> {
+  const key = `${prefix}continue`;
   const titles: string[] = [];
-  let apcontinue: string | undefined;
+  let next: string | undefined;
   for (let page = 0; page < maxPages; page++) {
-    const params: Record<string, string> = {
-      action: "query",
-      list: "allpages",
-      apnamespace: "0",
-      aplimit: "max",
-      apfilterredir: "nonredirects",
-    };
-    if (apcontinue) params.apcontinue = apcontinue;
     const data = await apiGet<{
-      query?: { allpages?: { title: string }[] };
-      continue?: { apcontinue?: string };
-    }>(params);
-    for (const p of data.query?.allpages ?? []) titles.push(p.title);
-    apcontinue = data.continue?.apcontinue;
-    if (!apcontinue) break;
+      query?: Record<string, { title: string }[] | undefined>;
+      continue?: Record<string, string | undefined>;
+    }>({ action: "query", list, ...params, ...(next ? { [key]: next } : {}) });
+    for (const p of data.query?.[list] ?? []) titles.push(p.title);
+    next = data.continue?.[key];
+    if (!next) break;
   }
   return titles;
 }
@@ -100,26 +116,8 @@ export async function fetchAllTitles(maxPages = 80): Promise<string[]> {
 /** Titles of a category's content-namespace (ns=0) members, paginated. */
 export async function fetchCategoryTitles(category: string, maxPages = 40): Promise<string[]> {
   const cmtitle = category.startsWith("Category:") ? category : `Category:${category}`;
-  const titles: string[] = [];
-  let cmcontinue: string | undefined;
-  for (let page = 0; page < maxPages; page++) {
-    const params: Record<string, string> = {
-      action: "query",
-      list: "categorymembers",
-      cmtitle,
-      cmnamespace: "0",
-      cmlimit: "max",
-    };
-    if (cmcontinue) params.cmcontinue = cmcontinue;
-    const data = await apiGet<{
-      query?: { categorymembers?: { title: string }[] };
-      continue?: { cmcontinue?: string };
-    }>(params);
-    for (const p of data.query?.categorymembers ?? []) titles.push(p.title);
-    cmcontinue = data.continue?.cmcontinue;
-    if (!cmcontinue) break;
-  }
-  return titles;
+  // ns=0 only: without it the answer also carries the category's sub-categories and files.
+  return fetchListTitles("categorymembers", "cm", { cmtitle, cmnamespace: "0", cmlimit: "max" }, maxPages);
 }
 
 /**

@@ -9,11 +9,10 @@
  */
 import sharp from "sharp";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { ROOT } from "./lib/cli.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const svg = readFileSync(path.join(root, "assets", "icon.svg"));
+const svg = readFileSync(path.join(ROOT, "assets", "icon.svg"));
 
 // Sizes a Windows .ico should carry (16 for the tray/titlebar, 256 for the installer/exe).
 const SIZES = [16, 24, 32, 48, 64, 128, 256];
@@ -49,8 +48,8 @@ function buildIco(images) {
   return Buffer.concat([header, dir, ...images]);
 }
 
-writeFileSync(path.join(root, "src", "app", "favicon.ico"), buildIco(pngs));
-mkdirSync(path.join(root, "assets"), { recursive: true });
-writeFileSync(path.join(root, "assets", "icon.png"), pngs[SIZES.indexOf(256)]);
+writeFileSync(path.join(ROOT, "src", "app", "favicon.ico"), buildIco(pngs));
+mkdirSync(path.join(ROOT, "assets"), { recursive: true });
+writeFileSync(path.join(ROOT, "assets", "icon.png"), pngs[SIZES.indexOf(256)]);
 
 console.log(`wrote src/app/favicon.ico (${SIZES.join(", ")}px) and assets/icon.png`);

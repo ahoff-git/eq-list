@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { prettyZoneName, zonesFromFiles, zonesFromSources } from "../../src/shared/map/map-sources";
+import { STOCK_ONLY_ZONES, prettyZoneName, stockOnly, zonesFromFiles, zonesFromSources } from "../../src/shared/map/map-sources";
 import { CURATED_ZONES, findZone, sortZones } from "../../src/shared/map/zones";
 
 /** A slice of a real maps folder, including the near-misses that make naming dangerous. */
@@ -163,4 +163,40 @@ test("with no backstop, or when the backstop is the chosen source, nothing chang
   const alone = zonesFromSources({ id: "stock", files });
   assert.deepEqual(alone, zonesFromFiles("stock", files));
   assert.deepEqual(zonesFromSources({ id: "stock", files }, { id: "stock", files }), alone);
+});
+
+test("a zone on the stock-only list is drawn from the game's maps even when the pack has one", () => {
+  // The exception to "your pack wins": a pack's map for a particular zone can be the wrong one to use,
+  // and preferring the pack in general can't fix one bad file.
+  const zones = zonesFromSources(
+    { id: "brewall", files: ["lavastorm", "gfaydark"], solved: { lavastorm: "Brewall's Lavastorm" } },
+    { id: "stock", files: ["lavastorm", "kithicor"], solved: { lavastorm: "Lavastorm Mountains" } },
+  );
+  const lava = zones.find((z) => z.file === "lavastorm");
+  assert.equal(lava?.source, "stock", "drawn from the game's own maps");
+  assert.equal(lava?.name, "Lavastorm Mountains", "and named by the folder that draws it (ADR 0061)");
+  // Only that zone: everything else still comes from the pack you chose.
+  assert.equal(zones.find((z) => z.file === "gfaydark")?.source, "brewall");
+  assert.equal(zones.filter((z) => z.file === "lavastorm").length, 1, "one place, one entry");
+});
+
+test("a stock-only zone the game's maps haven't got keeps the pack's, rather than vanishing", () => {
+  // A zone drawn imperfectly beats a zone not drawn at all — the override withholds a file, it doesn't
+  // delete the zone.
+  const zones = zonesFromSources({ id: "brewall", files: ["lavastorm"] }, { id: "stock", files: ["kithicor"] });
+  assert.equal(zones.find((z) => z.file === "lavastorm")?.source, "brewall");
+});
+
+test("with no backstop at all, a stock-only zone still draws", () => {
+  const zones = zonesFromSources({ id: "brewall", files: ["lavastorm"] });
+  assert.equal(zones.length, 1);
+  assert.equal(zones[0].source, "brewall");
+});
+
+test("the stock-only list is matched on the file name, loosely", () => {
+  assert.ok(stockOnly("lavastorm"));
+  assert.ok(stockOnly(" Lavastorm "), "however it was typed into the list");
+  assert.ok(!stockOnly("lavastorm2"), "and not by prefix — a different zone is a different file");
+  assert.ok(!stockOnly(undefined), "an image zone has no file");
+  assert.ok(STOCK_ONLY_ZONES.every((f) => f === f.trim().toLowerCase()), "entries are stored ready to match");
 });

@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { drillDown } from "@/shared/damage-tree";
 import type { CombatantStat, DamageAxis, DamageCell, DamageNode, SpecialHitStat } from "@/shared/types";
+import { percent } from "@/shared/format";
+import { ratio } from "@/shared/numbers";
 
 /** Which number the bars are showing. */
 export type DamageView = "dealt" | "taken";
@@ -66,7 +68,7 @@ export default function DamageMeter({
               {canExpand && <span className="meter-caret">{isOpen ? "▾" : "▸"}</span>}
               <span className="meter-name">{row.name}</span>
               <span className="meter-nums">
-                {v.toLocaleString()} <span className="muted">({total > 0 ? Math.round((v / total) * 100) : 0}%)</span>
+                {v.toLocaleString()} <span className="muted">({percent(ratio(v, total))})</span>
                 {view === "dealt" && <span className="meter-dps"> {row.dps}/s</span>}
               </span>
             </div>
@@ -151,7 +153,7 @@ function Node({ node, startOpen }: { node: DamageNode; startOpen: boolean }) {
         <span className="dmg-label">{node.label}</span>
         <span className="spacer" />
         <span className="dmg-nums">
-          {node.damage.toLocaleString()} <span className="muted">({pct(node.share)})</span>
+          {node.damage.toLocaleString()} <span className="muted">({percent(node.share)})</span>
         </span>
         <span className="dmg-meta muted small">{meta(node)}</span>
       </div>
@@ -165,8 +167,8 @@ function meta(node: DamageNode): string {
   const swings = node.hits - node.ticks + node.misses;
   return [
     `${node.hits}×`,
-    node.crits > 0 ? `${pct(node.critRate)} crit` : "",
-    node.misses > 0 ? `${pct(node.hitRate)} of ${swings}` : "",
+    node.crits > 0 ? `${percent(node.critRate)} crit` : "",
+    node.misses > 0 ? `${percent(node.hitRate)} of ${swings}` : "",
     node.maxHit > 0 ? `max ${node.maxHit.toLocaleString()}` : "",
   ]
     .filter(Boolean)
@@ -179,13 +181,13 @@ function meta(node: DamageNode): string {
  */
 function nodeDetail(node: DamageNode): string {
   const swings = node.hits - node.ticks + node.misses;
-  const avg = node.hits > 0 ? Math.round(node.damage / node.hits) : 0;
+  const avg = ratio(node.damage, node.hits, 0);
   return [
     `${node.label} — ${node.damage.toLocaleString()} damage`,
     node.hits > 0 ? `${node.hits} hits · ${avg} average · ${node.maxHit.toLocaleString()} biggest` : "",
     node.ticks > 0 ? `${node.ticks} of them damage-over-time ticks` : "",
-    swings > 0 ? `${pct(node.hitRate)} of ${swings} swings landed (${node.misses} missed)` : "",
-    node.crits > 0 ? `${node.crits} critical (${pct(node.critRate)} of hits)` : "",
+    swings > 0 ? `${percent(node.hitRate)} of ${swings} swings landed (${node.misses} missed)` : "",
+    node.crits > 0 ? `${node.crits} critical (${percent(node.critRate)} of hits)` : "",
     "",
     ...shareLines(node),
     node.children.length > 0 ? `\nclick to split by ${CAPTIONS[node.children[0].axis]}` : "",
@@ -202,11 +204,11 @@ function shareLines(node: DamageNode): string[] {
   const { ofFight, ofTarget, ofAttacker, ofAttackerOnTarget } = node.of;
   const whose = node.byAttacker === "You" ? "your" : `${node.byAttacker}'s`;
   return [
-    `${pct(node.share)} of the level above`,
-    ofTarget !== undefined ? `${pct(ofTarget)} of all damage on ${node.onTarget}` : "",
-    ofAttackerOnTarget !== undefined ? `${pct(ofAttackerOnTarget)} of ${whose} damage on ${node.onTarget}` : "",
-    ofFight !== undefined ? `${pct(ofFight)} of the whole fight` : "",
-    ofAttacker !== undefined ? `${pct(ofAttacker)} of ${whose} damage in the fight` : "",
+    `${percent(node.share)} of the level above`,
+    ofTarget !== undefined ? `${percent(ofTarget)} of all damage on ${node.onTarget}` : "",
+    ofAttackerOnTarget !== undefined ? `${percent(ofAttackerOnTarget)} of ${whose} damage on ${node.onTarget}` : "",
+    ofFight !== undefined ? `${percent(ofFight)} of the whole fight` : "",
+    ofAttacker !== undefined ? `${percent(ofAttacker)} of ${whose} damage in the fight` : "",
   ].filter(Boolean);
 }
 
@@ -223,7 +225,7 @@ function Qualifiers({ specials, hits }: { specials: SpecialHitStat[]; hits: numb
       {specials.map((s) => (
         <span key={s.kind} title={`${s.kind} on ${s.hits} of ${hits} landed hits, for ${s.damage.toLocaleString()} damage`}>
           {s.kind} <span className="muted">{s.hits}×</span>
-          {hits > 0 && <span className="muted small"> ({Math.round((s.hits / hits) * 100)}%)</span>}
+          {hits > 0 && <span className="muted small"> ({percent(ratio(s.hits, hits))})</span>}
         </span>
       ))}
     </div>
@@ -268,7 +270,7 @@ function bare(label: string, axis: DamageNode["axis"], damage: number, parent: n
     misses: 0,
     crits: 0,
     maxHit: 0,
-    share: parent > 0 ? damage / parent : 0,
+    share: ratio(damage, parent),
     of: {},
     critRate: 0,
     hitRate: 0,
@@ -278,15 +280,13 @@ function bare(label: string, axis: DamageNode["axis"], damage: number, parent: n
 
 const sum = <T,>(xs: T[], pick: (x: T) => number): number => xs.reduce((n, x) => n + pick(x), 0);
 
-const pct = (share: number): string => `${Math.round(share * 100)}%`;
-
 /** Hover detail — the numbers that don't earn a column of their own. */
 function detail(row: CombatantStat, view: DamageView, canExpand: boolean): string {
   const swings = row.hits + row.misses;
   return [
     `${row.dealt.toLocaleString()} dealt · ${row.taken.toLocaleString()} taken`,
     `max hit ${row.maxHit.toLocaleString()}`,
-    swings > 0 ? `${Math.round((row.hits / swings) * 100)}% of ${swings} swings landed` : "",
+    swings > 0 ? `${percent(ratio(row.hits, swings))} of ${swings} swings landed` : "",
     row.crits > 0 ? `${row.crits} critical${row.crits === 1 ? "" : "s"}` : "",
     row.healed > 0 ? `healed ${row.healed.toLocaleString()}` : "",
     `active ${row.activeSec}s`,
@@ -302,7 +302,7 @@ function stanceSplit(row: CombatantStat): string {
   if (row.byStance.length < 2) return "";
   const parts = row.byStance.map((s) => {
     const swings = s.hits + s.misses;
-    const acc = swings ? ` ${Math.round((s.hits / swings) * 100)}%` : "";
+    const acc = swings ? ` ${percent(ratio(s.hits, swings))}` : "";
     return `${s.stance}: ${s.damage.toLocaleString()}${acc}`;
   });
   return `melee by stance — ${parts.join(" · ")}`;

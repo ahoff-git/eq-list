@@ -3,14 +3,7 @@ import { useState } from "react";
 import { useShoppingList, useMatchFlashes, useCurrentZone } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import ItemLink from "./ItemLink";
-import {
-  groupByOrigin,
-  effectiveNeeded,
-  itemDemands,
-  normalizeItemName,
-  type ItemDemand,
-  type ListGroup,
-} from "@/shared/grouping";
+import { effectiveNeeded, groupByOrigin, itemDemands, normalizeItemName, totalNeed, type ItemDemand, type ListGroup } from "@/shared/grouping";
 import {
   groupDropsByZone,
   splitDropsByCurrentZone,
@@ -151,7 +144,7 @@ function EntryRow({
   const [showOthers, setShowOthers] = useState(false);
 
   const need = effectiveNeeded(entry, runs);
-  const total = demands.reduce((n, d) => n + d.need, 0);
+  const total = totalNeed(demands);
   const met = entry.obtained >= need;
   const cls = ["entry", met ? "done" : "", flashing ? "flash" : ""].filter(Boolean).join(" ");
   // +/- adjust how many you've ACQUIRED (obtained); needed comes from the quest/recipe
@@ -245,7 +238,7 @@ function EntryRow({
  */
 function countTitle(obtained: number, need: number, demands: ItemDemand[]): string {
   if (demands.length <= 1) return `You have ${obtained}; this group needs ${need}`;
-  const total = demands.reduce((n, d) => n + d.need, 0);
+  const total = totalNeed(demands);
   const lines = demands.map((d) => {
     const tag = d.kind ? ` (${d.kind}${d.runs > 1 ? ` ×${d.runs} runs` : ""})` : "";
     return `• ${d.label}${tag} — ${d.need}`;

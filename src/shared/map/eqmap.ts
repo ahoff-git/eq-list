@@ -18,6 +18,18 @@
 
 import type { Loc, MapDimensions } from "./types";
 
+/**
+ * The two line kinds' field counts, from the format above.
+ *
+ * `fields` is how many comma-separated numbers a line carries before anything else (a `P`'s label
+ * follows, and may itself contain commas); `coords` is how many of those *must* parse for the line to
+ * mean anything — the colour channels can be junk and the line is still a line where it says it is,
+ * but a NaN coordinate would place it nowhere. Written out as bare 9/6/7/3 they were four numbers in
+ * two conditions with nothing saying which was which.
+ */
+const SEGMENT = { fields: 9, coords: 6 } as const;
+const POINT = { fields: 7, coords: 3 } as const;
+
 /** A line of map geometry, in EQ `/loc` space. */
 export interface MapSegment {
   y1: number;
@@ -96,17 +108,17 @@ export function parseEqMap(text: string): EqMap {
     const fields = line.slice(1).split(",");
 
     if (kind === "L") {
-      const n = fields.slice(0, 9).map(Number);
-      if (n.length < 9 || n.slice(0, 6).some((v) => !Number.isFinite(v))) continue;
+      const n = fields.slice(0, SEGMENT.fields).map(Number);
+      if (n.length < SEGMENT.fields || n.slice(0, SEGMENT.coords).some((v) => !Number.isFinite(v))) continue;
       const a = toLoc(n[0], n[1]);
       const b = toLoc(n[3], n[4]);
       segments.push({ y1: a.y, x1: a.x, z1: n[2], y2: b.y, x2: b.x, z2: n[5], color: color(n[6], n[7], n[8]) });
     } else {
-      const n = fields.slice(0, 7).map(Number);
-      if (n.length < 7 || n.slice(0, 3).some((v) => !Number.isFinite(v))) continue;
+      const n = fields.slice(0, POINT.fields).map(Number);
+      if (n.length < POINT.fields || n.slice(0, POINT.coords).some((v) => !Number.isFinite(v))) continue;
       const at = toLoc(n[0], n[1]);
       // Labels use underscores for spaces, and a label may itself contain commas.
-      const label = fields.slice(7).join(",").trim().replace(/_/g, " ");
+      const label = fields.slice(POINT.fields).join(",").trim().replace(/_/g, " ");
       if (!label) continue;
       pois.push({ y: at.y, x: at.x, z: n[2], label, color: color(n[3], n[4], n[5]), size: n[6] || 1 });
     }

@@ -64,11 +64,22 @@ export const SELF = "You";
  * two copies drifting is how the Session tab and the map end up with different kill counts.
  */
 export function isYours(name: string, player: string): boolean {
-  if (name === SELF) return true;
-  if (!player) return false;
+  return name === SELF || isTheirs(name, player);
+}
+
+/**
+ * True if `name` is `owner` or something of theirs — "<Owner>`s warder" (a backtick, not an
+ * apostrophe), which is the only ownership the log ever states.
+ *
+ * The same question asked of somebody who isn't you: a group-mate's pet is the group-mate's,
+ * and the meter has to be able to say so without pretending the pet is yours (see
+ * `src/shared/party.ts`). `player` blank means nobody, not everybody.
+ */
+export function isTheirs(name: string, owner: string): boolean {
+  if (!owner) return false;
   const lower = name.toLowerCase();
-  const me = player.toLowerCase();
-  return lower === me || lower.startsWith(`${me}\``);
+  const them = owner.toLowerCase();
+  return lower === them || lower.startsWith(`${them}\``);
 }
 
 /**

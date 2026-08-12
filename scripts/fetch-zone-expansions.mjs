@@ -25,12 +25,19 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { ROOT, few, flag, load } from "./lib/cli.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "src/shared/zones/expansions.generated.ts");
-const dryRun = process.argv.includes("--dry-run");
+
+/** How many unrecognised zones to name. It's a warning, not a worklist — Legends has custom zones. */
+const SHOW_MISSING = 12;
+
+/**
+ * How many pages of a category to follow. `cmlimit: max` is 500 titles a page, so this is a backstop
+ * against a continuation loop that never terminates, not a real limit on any category here.
+ */
+const MAX_PAGES = 40;
+const dryRun = flag("dry-run");
 
 const FANDOM = "https://everquest.fandom.com/api.php";
 const EQLWIKI = "https://eqlwiki.com/api.php";
@@ -50,7 +57,7 @@ async function api(base, params) {
 async function categoryMembers(base, category) {
   const titles = [];
   let cmcontinue;
-  for (let page = 0; page < 40; page++) {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const params = {
       action: "query",
       list: "categorymembers",
@@ -116,14 +123,7 @@ async function expansionZones(title) {
  * and the check could pass while the app misfiled the zone. The compiled module is loaded instead, which
  * is what the other travel scripts do.
  */
-const { zoneKey: fold } = (() => {
-  const file = path.join(ROOT, "dist-electron/src/shared/names.js");
-  if (!fs.existsSync(file)) {
-    console.error(`Missing ${path.relative(ROOT, file)} — run: npm run build:electron`);
-    process.exit(1);
-  }
-  return createRequire(import.meta.url)(file);
-})();
+const { zoneKey: fold } = load("src/shared/names.js");
 
 /**
  * Dates the infobox doesn't state. Only one page needs it, and getting it wrong matters: order decides
@@ -178,7 +178,7 @@ async function main() {
   }
   console.log(`  eqlwiki lists ${known.length} zones`);
   console.log(`  ${missing.length} not in the table (fine — the lookup fails open; Legends has custom zones)`);
-  if (missing.length) console.log(`    ${missing.slice(0, 12).join(", ")}${missing.length > 12 ? " …" : ""}`);
+  if (missing.length) console.log(`    ${few(missing, SHOW_MISSING)}`);
   if (wrong.length) {
     console.error(`\n  ✗ ${wrong.length} zones eqlwiki knows are filed under an expansion this server doesn't run:`);
     for (const w of wrong) console.error(`      ${w}`);

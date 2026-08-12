@@ -21,7 +21,7 @@ import { mergeObservations, observeMobs, type MobKnowledge, type MobObservation 
 import { sameZone } from "../src/shared/sources";
 import type { KillLog } from "./kill-log";
 
-import { readJson, writeJson } from "./json-store";
+import { createSaver, readJson } from "./json-store";
 const log = createLogger("mob-knowledge");
 
 /** Reports arrive whenever a peer's tally changes; coalesce the writes. */
@@ -88,17 +88,12 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
   const file = path.join(userDataDir, "mob-knowledge.json");
   /** Peer name → their latest full set of observations. */
   let peers: Record<string, MobObservation[]> = read();
-  let timer: NodeJS.Timeout | null = null;
+  const saver = createSaver(file, "mob knowledge", () => ({ peers }), WRITE_DEBOUNCE_MS);
 
   function read(): Record<string, MobObservation[]> {
     // Absent or unreadable is nothing pooled — a bonus, never load-bearing.
     const parsed = readJson<{ peers?: Record<string, MobObservation[]> }>(file, {});
     return parsed.peers && typeof parsed.peers === "object" ? parsed.peers : {};
-  }
-
-  function write(): void {
-    timer = null;
-    writeJson(file, { peers }, { what: "mob knowledge" });
   }
 
   // Folded, so a zone's difficulty variants answer as one zone (ADR 0059) — and so a peer whose
@@ -125,17 +120,16 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
       // adding would double-count everything they'd already told us. Untrusted, so validated.
       peers[name] = sanitizeObservations(observations as unknown[]).slice(0, MAX_OBSERVATIONS_PER_PEER);
       log.debug("peer observations filed", { by: name, mobs: peers[name].length });
-      if (!timer) timer = setTimeout(write, WRITE_DEBOUNCE_MS);
+      saver.save();
     },
 
     forgetPeers() {
       peers = {};
-      write();
+      saver.flush();
     },
 
     flush() {
-      if (timer) clearTimeout(timer);
-      write();
+      saver.flush();
     },
   };
 }

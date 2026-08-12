@@ -51,11 +51,18 @@ function subsequence(short: string, long: string): boolean {
   return i === short.length;
 }
 
+/**
+ * The score an outright spelling match earns — the ceiling of `nameScore`, and the one score high
+ * enough to stand with no neighbour confirming it. Named because that second role is a separate
+ * decision from the number: see the `!hits` guard below.
+ */
+const EXACT_SCORE = 100;
+
 /** How much the file name looks like a contraction of this zone name (0 = not at all). */
 export function nameScore(short: string, zoneName: string): number {
   const stripped = bare(zoneName);
   const full = norm(zoneName);
-  if (short === stripped || short === full) return 100;
+  if (short === stripped || short === full) return EXACT_SCORE;
   let score = 0;
   if (stripped.startsWith(short) || full.startsWith(short)) score += 40;
   if (subsequence(short, stripped) || subsequence(short, full)) score += 30;
@@ -125,7 +132,7 @@ export function solveZoneNames(links: ZoneLinks): Record<string, string> {
       const hits = mutual(file, name);
       // Adjacency is what separates a finding from a guess. A name nothing confirms is only taken
       // when the spelling is an outright match — that's `sebilis` being offered "Western Cabilis".
-      if (!hits && score < 100) continue;
+      if (!hits && score < EXACT_SCORE) continue;
       claims.push({ file, name, total: score + hits * MUTUAL_WEIGHT, score, hits });
     }
   }

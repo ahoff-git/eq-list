@@ -11,7 +11,7 @@
  */
 
 import type { Zone } from "./types";
-import { normalizeZone } from "../sources";
+import { resolveZone } from "../zones/resolve";
 
 /**
  * Zone names worth stating by hand, with the file each belongs to. Every one is a standard
@@ -102,16 +102,21 @@ export const CURATED_ZONES: { name: string; file: string; sortingStr?: string }[
 ];
 
 /**
- * Find a zone by name. Prefers an exact key match, then falls back to `normalizeZone` so a log's
- * "The Feerrott" resolves regardless of case or article — which is how the map follows you. That
- * fold is shared with the wiki-side zone matching rather than repeated here, which is also what
- * makes a harder zone ("The Feerrott 3") land on the ordinary zone's map.
+ * Find a zone by name. Prefers an exact key match, then resolves against the list itself, so a log's
+ * "The Feerrott" lands regardless of case or article — which is how the map follows you — and a
+ * harder zone ("The Feerrott 3") lands on the ordinary zone's map.
+ *
+ * **Only the two strict tiers.** `resolveZone`'s looser ones are refused here on the rule this file
+ * already runs on: a wrong file is the one naming mistake that doesn't fail closed, because it draws
+ * a different zone under the right name and puts every position you plot somewhere else entirely. So
+ * the map takes `exact` and `order` — the latter being pure rephrasing, which cannot pick a
+ * different zone — and would rather show no map than the wrong one
+ * ([ADR 0068](../../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md)).
  */
 export function findZone(name: string, zones: Zone[]): Zone | undefined {
   const exact = zones.find((z) => z.key === name);
   if (exact) return exact;
-  const target = normalizeZone(name);
-  return zones.find((z) => normalizeZone(z.name) === target);
+  return resolveZone(name, zones, (z) => z.name)?.item;
 }
 
 /**

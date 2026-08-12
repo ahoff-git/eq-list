@@ -5,7 +5,14 @@ import { sortRows, type Sort } from "@/shared/sorting";
 import SortHeader from "./SortHeader";
 import type { FightStats, SpellStat } from "@/shared/types";
 
-import { figure } from "@/shared/format";
+import { figure, percent } from "@/shared/format";
+import { ratio } from "@/shared/numbers";
+/**
+ * A resist rate worth flagging. One in four casts wasted is the point where the spell is the problem
+ * rather than the luck — below that it's variance on a small number of casts.
+ */
+const HIGH_RESIST_RATE = 0.25;
+
 /**
  * Where your damage came from, spell by spell — and whether each spell earns its cast
  * time. Two figures do the real work here, and neither is in the log:
@@ -76,8 +83,8 @@ export default function SpellTable({ window }: { window: FightStats }) {
                 <td className="num-accent">{s.dpc || "—"}</td>
                 <td>{facts[s.spell]?.mana ?? "—"}</td>
                 <td className="num-accent">{perMana(s, facts[s.spell]) ?? "—"}</td>
-                <td className={s.resistRate >= 0.25 ? "num-bad" : undefined}>
-                  {s.resists ? `${Math.round(s.resistRate * 100)}%` : "—"}
+                <td className={s.resistRate >= HIGH_RESIST_RATE ? "num-bad" : undefined}>
+                  {s.resists ? percent(s.resistRate) : "—"}
                 </td>
                 <td>{s.fizzles + s.interrupts || "—"}</td>
               </tr>
@@ -144,7 +151,7 @@ function InvocationNotes({ window }: { window: FightStats }) {
               title={`${i.procs} spell landings with no cast of their own, over ${i.swings} swings. Free casts have no log message, so this is inferred — a second landing from one cast (an area spell) would look the same.`}
             >
               {i.procs} free cast{i.procs === 1 ? "" : "s"} in {i.swings} swings (
-              {(i.procRate * 100).toFixed(1)}%) · {i.procDamage.toLocaleString()} dmg
+              {percent(i.procRate, { places: 1 })}) · {i.procDamage.toLocaleString()} dmg
             </span>
           )}
         </div>
@@ -162,7 +169,7 @@ function perMana(s: SpellStat, facts?: SpellFacts): string | undefined {
   if (!facts?.mana || !s.lands) return undefined;
   const returned = s.damage + s.invocationHealed;
   if (!returned) return undefined;
-  return (Math.round((returned / s.lands / facts.mana) * 10) / 10).toString();
+  return ratio(returned, s.lands * facts.mana, 1).toString();
 }
 
 function detail(s: SpellStat, facts?: SpellFacts): string {
@@ -174,7 +181,7 @@ function detail(s: SpellStat, facts?: SpellFacts): string {
     .join(", ");
   const overheal =
     s.overhealed && s.healed + s.overhealed > 0
-      ? `${Math.round((s.overhealed / (s.healed + s.overhealed)) * 100)}% overhealed`
+      ? `${percent(ratio(s.overhealed, s.healed + s.overhealed))} overhealed`
       : "";
   return [
     `${s.lands} landed`,

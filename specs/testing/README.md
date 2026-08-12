@@ -37,7 +37,15 @@ unit-tested.
     sample even when an older or a peer's entry was stored under the decorated name).
   - `src/shared/kill-filters.ts` + `kill-confidence.ts` → `electron/tests/kill-filters.test.ts`
     (time windows, mob/drop matching, the confidence floor, and every tier having a distinct
-    glyph so the map doesn't depend on colour alone).
+    glyph so the map doesn't depend on colour alone). Plus **a peer's kill as an ordinary kill**
+    (`sharedAsKill`): kept by default because it's data, removed by `shared: false`, never yours
+    (`mine: false`), and — the part that needs pinning — **kept by every time window**, because no clock
+    travels with it and dropping a kill for not knowing when it happened would be worse than showing it.
+    A drop filter still excludes it, which is correct: no loot travels either, so it is no evidence about
+    drops. And `filterMobKnowledge`, the same filters over the 📖 panel: mob and drop narrow it, a time
+    window and a position floor **don't apply** (it's a lifetime tally, and "session" as a default would
+    hide last week), and `shared: false` keeps the mobs you have first-hand knowledge of while leaving a
+    pooled row's counts alone.
   - `electron/kill-log.ts` → `electron/tests/kill-log.test.ts` (placement from the last fix,
     confidence decay, the movement penalty, dead reckoning, and recording kills that can't be
     placed at all). Also the two halves of the zone fold, which pull opposite ways: reading kills
@@ -76,13 +84,28 @@ unit-tested.
     behind it: **a write that fails leaves the previous file completely intact** (forced by putting a
     directory where the temp file needs to go), no temp file survives a success, a missing file is the
     quiet fallback and a corrupt one the loud fallback. Touches a temp dir — what lands on disk is the
-    whole subject.
+    whole subject. Plus `createSaver`, the debounced writer **seven** stores had a copy of: what's pinned
+    is the cancellation, since that's where the copies could drift — a timer never released stops a store
+    saving for the rest of the session, and a `flush` that doesn't cancel lets a write land after the app
+    has quit. Including the one axis they genuinely differ on: a window being dragged wants only where it
+    landed (`restart`), while a log being eaten wants a write every so often no matter how long the stream
+    runs, or a busy camp would postpone it for ever.
+  - `src/shared/numbers.ts` → `electron/tests/numbers.test.ts` (`round`, `ratio`, `over` — the two bits
+    of arithmetic the whole app shares). Three lines each, pinned because of what they replaced: twenty-odd
+    hand-written copies of `d ? Math.round((n / d) * 10) / 10 : 0`, where the guard and the scale factor
+    are both easy to get wrong and neither failure shows up in a review. What's held is the contract the
+    call sites lean on — nothing to divide by is **0** (never `Infinity` or `NaN` reaching a panel as
+    `NaN%`), or **`undefined`** where zero would be a lie, and `places` is never assumed, since a default
+    of "whole numbers" would have turned every share in the damage tree into 0 or 1.
   - `src/shared/format.ts` → `electron/tests/format.test.ts` (the display formatters the panels share).
     Pinned because of how they arrived: `clock` existed in three components and `mins`/`duration` in
     **four**, under two names with **three** different answers to the same span — one dropped the
     seconds, one kept them, one showed a dash at zero. Every reading was wanted; sharing a name while
     disagreeing was the bug. The tests hold the option explicit, and hold "a timestamp that isn't one
-    reads as a gap". Locale wording is the browser's, so they assert structure, not words.
+    reads as a gap". Locale wording is the browser's, so they assert structure, not words. `percent`
+    arrived the same way — a dozen inline `Math.round(x * 100)`s and `(x * 100).toFixed(0)`s, two answers
+    to "what is half a percent" — and takes the **fraction**, so it composes with `ratio`; what's pinned
+    is that `0%` is a reading (a measured nothing is real) while an absent or non-finite value is a gap.
   - `src/shared/sorting.ts` → `electron/tests/sorting.test.ts` (what a header click does, and that a
     sort is stable and non-mutating — both of which its callers lean on).
   - `src/shared/tooltip.ts` → `electron/tests/tooltip.test.ts` (a hover card placed right of its
@@ -93,9 +116,17 @@ unit-tested.
     **a pack is named from its own labels only** — including that a folder's names don't change when
     another pack appears beside it, [ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md)).
     Touches a temp dir: "which folder did this come from" is the whole question.
+  - `src/shared/zones/resolve.ts` → `electron/tests/zone-resolve.test.ts` (matching a zone name against
+    the zones we know — [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)). Two
+    properties that pull against each other: it **resolves rephrasings** ("The Castle of Mistmoore" →
+    "Castle Mistmoore", a sub-zone → its parent) and it **refuses to guess** (ambiguity, weak spelling,
+    and a zone the list simply lacks all come back undefined, because a wrong zone is worse than none at
+    every call site). The safety half runs against the **real 344-zone table** rather than a fixture:
+    with every tier on, all 344 resolve to themselves and none to a neighbour — which a hand-picked list
+    could never show.
   - `src/shared/zones/expansions.ts` → `electron/tests/zone-expansions.test.ts` (which expansion a zone
     came with, and whether that means you can go there —
-    [ADR 0064](../decisions/0064-a-zone-belongs-to-an-expansion.md)). Checked in **both** directions,
+    [ADR 0065](../decisions/0065-a-zone-belongs-to-an-expansion.md)). Checked in **both** directions,
     because the two failure modes aren't equal: the zones it must exclude (Argath → Veil of Alaris, Vex
     Thal, the Plane of Knowledge), and — the half that matters — the zones it must **never** exclude,
     including ones the table has never heard of, which must fail open. Plus the generated table being

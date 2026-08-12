@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { fuzzyRank } from "@/shared/fuzzy";
 import type { Zone } from "@/shared/map/types";
+import { useDismiss } from "@/lib/hooks";
 
 /** How many matches to offer — enough to find a zone, few enough to read. */
 const MAX_MATCHES = 12;
@@ -52,15 +53,7 @@ export default function ZonePicker({
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Clicking away closes it. Registered only while open, so it isn't a permanent listener.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  useDismiss(boxRef, open, () => setOpen(false));
 
   const matches = useMemo(() => {
     const q = query.trim();

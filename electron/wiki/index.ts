@@ -73,8 +73,16 @@ export interface WikiClient {
   refresh(): Promise<void>;
 }
 
+/**
+ * Longest cache file name we'll write. A wiki title becomes a file name, and some are very long
+ * ("Spell: …" plus a rank); Windows caps a path at 260 characters, so a title is truncated well short
+ * of it to leave room for the cache directory. Collisions between two titles that agree for this many
+ * characters would only cost a re-fetch.
+ */
+const MAX_CACHE_KEY = 120;
+
 function cacheKey(title: string): string {
-  return title.replace(/[^a-z0-9]+/gi, "_").slice(0, 120);
+  return title.replace(/[^a-z0-9]+/gi, "_").slice(0, MAX_CACHE_KEY);
 }
 
 function toResult(title: string): SearchResult {

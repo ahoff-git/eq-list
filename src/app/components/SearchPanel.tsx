@@ -4,10 +4,23 @@ import { api } from "@/lib/api";
 import { useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/nav";
 import ItemLink from "./ItemLink";
+import WikiPageView from "./WikiPageView";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
-import type { SearchResult, WikiPage, ItemSource } from "@/shared/types";
+import type { SearchResult, WikiPage } from "@/shared/types";
 
 type Mode = "name" | "zone";
+
+/**
+ * How long to sit on a keystroke before asking the wiki.
+ *
+ * Every search is an IPC round trip and a wiki lookup, so typing "Rusty Short Sword" unthrottled is
+ * seventeen of them for one answer. Long enough to swallow a burst of typing, short enough that a
+ * pause between words already shows results.
+ */
+const SEARCH_DEBOUNCE_MS = 200;
+
+/** Below this a query matches nearly everything, so it's not worth asking. */
+const MIN_QUERY_CHARS = 2;
 
 /**
  * Search eqlwiki two ways, both typo-tolerant (see shared/fuzzy.ts):
@@ -60,7 +73,7 @@ export default function SearchPanel({
   // after the box is cleared).
   useEffect(() => {
     const a = api();
-    if (mode !== "name" || !a || term.trim().length < 2) {
+    if (mode !== "name" || !a || term.trim().length < MIN_QUERY_CHARS) {
       setResults([]);
       setBusy(false);
       return;
@@ -76,7 +89,7 @@ export default function SearchPanel({
       } finally {
         if (!cancelled) setBusy(false);
       }
-    }, 200);
+    }, SEARCH_DEBOUNCE_MS);
     return () => {
       cancelled = true;
       clearTimeout(id);
@@ -126,13 +139,13 @@ export default function SearchPanel({
   // Debounced zone suggestions (hidden once a zone is locked in).
   useEffect(() => {
     const a = api();
-    if (mode !== "zone" || !a || zoneTerm.trim().length < 2 || zoneTerm === selectedZone) {
+    if (mode !== "zone" || !a || zoneTerm.trim().length < MIN_QUERY_CHARS || zoneTerm === selectedZone) {
       setZoneSuggestions([]);
       return;
     }
     const id = setTimeout(async () => {
       setZoneSuggestions(await a.wiki.searchZones(zoneTerm));
-    }, 200);
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [zoneTerm, mode, selectedZone]);
 
@@ -199,62 +212,6 @@ export default function SearchPanel({
     } else if (e.key === "Escape") {
       setResults([]);
     }
-  }
-
-  const addItem = (p: WikiPage) => api()?.list.add({ name: p.title, wikiPath: p.wikiPath });
-  const addFullPage = (p: WikiPage) => api()?.list.addFromPage(p);
-  const addOne = (name: string, qty: number, wikiPath?: string) => api()?.list.add({ name, needed: qty, wikiPath });
-
-  const BLANK_ZONE = /^(various|unknown|none|n\/a)$/i;
-  // The mob's zone, for coordinate clicks (open the map there + drop a marker).
-  const cardZone = (() => {
-    for (const l of page?.card?.lines ?? []) {
-      const m = l.match(/^(?:Zone|Spawn Zone):\s*(.+)$/i);
-      if (m && !BLANK_ZONE.test(m[1].trim())) return m[1].trim();
-    }
-    return undefined;
-  })();
-
-  // Render a stat-card line: a Zone → map link; any embedded EQ coordinate → a map
-  // link that opens the mob's zone and marks that spot; otherwise plain text.
-  function cardLineNode(line: string): React.ReactNode {
-    const zoneM = line.match(/^(Zone|Spawn Zone):\s*(.+)$/i);
-    if (zoneM) {
-      const z = zoneM[2].trim();
-      if (BLANK_ZONE.test(z)) return line;
-      return (
-        <>
-          {zoneM[1]}:{" "}
-          <span className="link" title="View this zone on the map" onClick={() => api()?.map.openAt(z)}>
-            {z}
-          </span>
-        </>
-      );
-    }
-    if (cardZone) {
-      const re = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
-      const parts: React.ReactNode[] = [];
-      let last = 0;
-      let m: RegExpExecArray | null;
-      let i = 0;
-      while ((m = re.exec(line))) {
-        if (m.index > last) parts.push(line.slice(last, m.index));
-        const y = parseFloat(m[1]);
-        const x = parseFloat(m[2]);
-        const coord = m[0];
-        parts.push(
-          <span key={`c${i++}`} className="link" title="Show this spot on the map" onClick={() => api()?.map.openAt(cardZone, { y, x }, page?.title)}>
-            {coord}
-          </span>,
-        );
-        last = m.index + coord.length;
-      }
-      if (parts.length) {
-        if (last < line.length) parts.push(line.slice(last));
-        return <>{parts}</>;
-      }
-    }
-    return line;
   }
 
   return (
@@ -378,158 +335,8 @@ export default function SearchPanel({
         </div>
       )}
 
-      {page && (
-        <div className="page-detail">
-          <div className="row">
-            <button className="btn ghost sm" title="Back" onClick={() => nav.back()}>
-              ←
-            </button>
-            {nav.canForward && (
-              <button className="btn ghost sm" title="Forward" onClick={() => nav.forward()}>
-                →
-              </button>
-            )}
-            <h3>{page.title}</h3>
-            <span className={`badge kind-${page.kind}`}>{page.kind}</span>
-            {page.outOfEra && <span className="badge era-out">out of era</span>}
-            <span className="spacer" />
-            <button className="btn ghost sm" title="Open on eqlwiki" onClick={() => api()?.wiki.openInBrowser(page.wikiPath)}>
-              ↗ eqlwiki
-            </button>
-          </div>
-
-          {page.outOfEra && (
-            <p className="era-warning small">
-              ⚠ This is tagged out of era — it likely can’t be obtained on the current server yet.
-            </p>
-          )}
-
-          <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
-            {/* Quests & recipes: the whole point is to pull turn-ins/ingredients in
-                under their heading, so that's the primary action. A recipe also offers
-                adding just the crafted item (e.g. when it's itself a quest turn-in). */}
-            {(page.kind === "quest" || page.kind === "recipe") && (
-              <>
-                <button className="btn primary sm" onClick={() => addFullPage(page)}>
-                  {page.kind === "quest"
-                    ? `+ Add full quest${page.components.length ? ` (${page.components.length} items)` : ""}`
-                    : `+ Add full recipe${page.components.length ? ` (${page.components.length} ingredients)` : ""}`}
-                </button>
-                {page.kind === "recipe" && (
-                  <button className="btn sm" onClick={() => addItem(page)}>
-                    + Add just “{page.title}”
-                  </button>
-                )}
-              </>
-            )}
-            {page.kind === "mob" && page.components.length > 0 && (
-              <button className="btn primary sm" onClick={() => addFullPage(page)}>
-                + Add all {page.components.length} loot
-              </button>
-            )}
-            {(page.kind === "item" || page.kind === "page" || page.kind === "spell") && (
-              <>
-                <button className="btn primary sm" onClick={() => addItem(page)}>
-                  + Add “{page.title}”
-                </button>
-                {page.components.length > 0 && (
-                  <button className="btn sm" onClick={() => addFullPage(page)}>
-                    + Add all {page.components.length} ingredients
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-
-          {page.card && (
-            <div className="page-card">
-              {page.card.icon && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img className="pc-icon" src={page.card.icon} alt="" width={40} height={40} />
-              )}
-              <div className="pc-lines">
-                {page.card.lines.map((l, i) => (
-                  <div className="pc-line" key={i}>
-                    {cardLineNode(l)}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {page.components.length > 0 && (
-            <>
-              <h4 className="muted small" style={{ marginTop: 12 }}>
-                {page.kind === "quest" ? "Turn-in items" : page.kind === "mob" ? "Known loot" : "Ingredients"}
-              </h4>
-              <ul>
-                {page.components.map((c) => (
-                  <li key={c.name}>
-                    <span>
-                      {c.qty > 1 ? `${c.qty}× ` : ""}
-                      <ItemLink title={c.name} />
-                      {c.dropRate && (
-                        <span className="badge rarity" title="Drop rate">
-                          {c.dropRate}
-                        </span>
-                      )}
-                    </span>
-                    <button className="btn ghost sm" onClick={() => addOne(c.name, c.qty, c.wikiPath)}>
-                      + Add
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {page.kind === "quest" && page.components.length === 0 && (
-            <p className="muted small" style={{ marginTop: 12 }}>
-              Couldn’t auto-detect turn-in items for this quest — add them manually from the search box.
-            </p>
-          )}
-          {page.kind === "mob" && page.components.length === 0 && (
-            <p className="muted small" style={{ marginTop: 12 }}>No known loot listed — open it on eqlwiki to check.</p>
-          )}
-          {page.kind === "zone" && (
-            <p className="muted small" style={{ marginTop: 12 }}>Zone page — open it on eqlwiki to browse its contents.</p>
-          )}
-          {page.kind === "spell" && (
-            <p className="muted small" style={{ marginTop: 12 }}>
-              Spell — add it to watch for it dropping, or open it on eqlwiki for how to acquire it.
-            </p>
-          )}
-
-          {page.sources.length > 0 && <SourceList sources={page.sources} />}
-          {page.rewards.length > 0 && (
-            <>
-              <h4 className="muted small" style={{ marginTop: 12 }}>Rewards</h4>
-              <ul>
-                {page.rewards.map((r, i) => (
-                  <li key={i}>{r.item ? <ItemLink title={r.item} label={r.text} /> : r.text}</li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-      )}
+      {page && <WikiPageView page={page} />}
     </div>
   );
 }
 
-function SourceList({ sources }: { sources: ItemSource[] }) {
-  return (
-    <>
-      <h4 className="muted small" style={{ marginTop: 12 }}>How to get it</h4>
-      <ul>
-        {sources.map((s, i) => (
-          <li key={i}>
-            <span className={`badge kind-${s.kind}`}>{s.kind}</span>
-            <ItemLink title={s.where} />
-            {s.detail && <span className="muted small">{s.detail}</span>}
-          </li>
-        ))}
-      </ul>
-    </>
-  );
-}

@@ -1,4 +1,8 @@
-# 0064: A zone belongs to an expansion, and that's how we know it exists
+# 0065: A zone belongs to an expansion, and that's how we know it exists
+
+<!-- Filed as 0064, a number 0064-every-build-has-a-number had already taken; renumbered so a citation
+     of "ADR 0064" means one document. The decision itself is unchanged. -->
+
 
 ## Status
 

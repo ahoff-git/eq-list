@@ -4,8 +4,16 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_KILL_FILTERS, filterKills, windowMoves, type KillFilters } from "../../src/shared/kill-filters";
+import {
+  DEFAULT_KILL_FILTERS,
+  filterKills,
+  filterMobKnowledge,
+  sharedAsKill,
+  windowMoves,
+  type KillFilters,
+} from "../../src/shared/kill-filters";
 import { confidenceTier, CONFIDENCE_TIERS, PLOTTABLE_CONFIDENCE } from "../../src/shared/kill-confidence";
+import type { MobKnowledge } from "../../src/shared/mob-stats";
 import type { KillRecord } from "../../src/shared/types";
 
 const NOW = Date.parse("2026-07-29T12:00:00.000Z");
@@ -123,4 +131,100 @@ test("the same kills expire as the clock advances, with the filters untouched", 
     0,
     "eleven minutes old — the same kill and the same filters, a later clock",
   );
+});
+
+// ── peers' kills, which are kills ────────────────────────────────────────────────────────────────
+
+/** A kill as it arrives from a peer: where, what, and how much to believe it. Nothing else travels. */
+const fromPeer = { zone: "blackburrow", y: 100, x: 200, mob: "a gnoll pup", confidence: 0.9, by: "Bunny" };
+
+test("a shared kill becomes an ordinary kill record, marked with who shared it", () => {
+  const k = sharedAsKill(fromPeer, 0);
+  assert.equal(k.mob, "a gnoll pup");
+  assert.equal(k.sharedBy, "Bunny");
+  assert.equal(k.mine, false, "never yours — you didn't loot that corpse (ADR 0027)");
+  assert.deepEqual([k.y, k.x, k.confidence], [100, 200, 0.9]);
+  assert.equal(k.at, "", "no time travels with a shared kill, and an invented one would be a lie");
+  assert.equal(k.drops, undefined, "nor any loot — a peer shares the conclusion");
+  assert.notEqual(sharedAsKill(fromPeer, 1).id, k.id, "ids are distinct within one sender's batch");
+  assert.equal(sharedAsKill({ ...fromPeer, by: undefined }, 0).sharedBy, "a peer", "an unnamed sharer is still a sharer");
+});
+
+test("shared kills are kept by default, because a peer's kill is data", () => {
+  const kills = [kill({ mob: "a gnoll" }), sharedAsKill(fromPeer, 0)];
+  assert.equal(filterKills(kills, filters(), NOW).length, 2);
+  assert.equal(DEFAULT_KILL_FILTERS.shared, true);
+});
+
+test("`shared: false` leaves only what you saw yourself", () => {
+  const mine = kill({ mob: "a gnoll" });
+  const kills = [mine, sharedAsKill(fromPeer, 0), sharedAsKill({ ...fromPeer, by: "Ozzy" }, 0)];
+  assert.deepEqual(filterKills(kills, filters({ shared: false }), NOW), [mine]);
+});
+
+test("a time window keeps a shared kill rather than dropping it for having no clock", () => {
+  // The same rule as an unparseable timestamp: losing a kill because we don't know when it happened
+  // would be worse than showing it. It has a position, which is what the heatmap is about.
+  const kills = [sharedAsKill(fromPeer, 0)];
+  for (const window of ["10m", "1h", "session", "all"] as const) {
+    assert.equal(filterKills(kills, filters({ window }), NOW).length, 1, window);
+  }
+});
+
+test("the other filters still apply to a shared kill, and the drop ones exclude it", () => {
+  const kills = [sharedAsKill(fromPeer, 0)];
+  assert.equal(filterKills(kills, filters({ mob: "gnoll" }), NOW).length, 1);
+  assert.equal(filterKills(kills, filters({ mob: "orc" }), NOW).length, 0);
+  assert.equal(filterKills(kills, filters({ minConfidence: 0.95 }), NOW).length, 0, "confidence travels, so it's judged");
+  // No loot travels with a shared kill, so it is no evidence at all about drops — being excluded from
+  // a drop question is the correct answer, not a gap.
+  assert.equal(filterKills(kills, filters({ droppedOnly: true }), NOW).length, 0);
+  assert.equal(filterKills(kills, filters({ drop: "tooth" }), NOW).length, 0);
+});
+
+// ── the same filters over what those kills taught us ─────────────────────────────────────────────
+
+function known(p: { mob: string; myKills?: number; kills?: number; drops?: string[] }): MobKnowledge {
+  return {
+    mob: p.mob,
+    zone: "kerraridge",
+    kills: p.kills ?? 10,
+    myKills: p.myKills ?? 10,
+    drops: (p.drops ?? []).map((item) => ({ item, count: 1, rate: 0.1 })),
+    lastAt: new Date(NOW).toISOString(),
+    contributors: [],
+    copper: 0,
+    copperPerKill: 0,
+  };
+}
+
+test("the knowledge panel narrows by mob and by drop, like the list beside it", () => {
+  const mobs = [
+    known({ mob: "a kerran zealot", drops: ["Fine Steel Dagger"] }),
+    known({ mob: "a kerran mystic", drops: ["Cat Pelt"] }),
+  ];
+  assert.deepEqual(filterMobKnowledge(mobs, filters({ mob: "zealot" })).map((m) => m.mob), ["a kerran zealot"]);
+  assert.deepEqual(filterMobKnowledge(mobs, filters({ drop: "pelt" })).map((m) => m.mob), ["a kerran mystic"]);
+  assert.equal(filterMobKnowledge(mobs, filters({ droppedOnly: true })).length, 2);
+  assert.equal(filterMobKnowledge([known({ mob: "a rat" })], filters({ droppedOnly: true })).length, 0);
+});
+
+test("a time window and a position floor do not apply to a lifetime tally", () => {
+  // The reason the bar hides both controls here: 300 kills over three weeks is the point of this
+  // panel, and "session" (12h) as a default would hide what you learned last week.
+  const mobs = [known({ mob: "a kerran zealot" })];
+  assert.equal(filterMobKnowledge(mobs, filters({ window: "10m" })).length, 1);
+  assert.equal(filterMobKnowledge(mobs, filters({ minConfidence: 1 })).length, 1);
+});
+
+test("`shared: false` keeps the mobs you have first-hand knowledge of", () => {
+  const mine = known({ mob: "a kerran zealot", myKills: 4, kills: 40 });
+  const theirs = known({ mob: "a kerran mystic", myKills: 0, kills: 30 });
+
+  assert.equal(filterMobKnowledge([mine, theirs], filters()).length, 2, "pooled by default — it's data");
+  const own = filterMobKnowledge([mine, theirs], filters({ shared: false }));
+  assert.deepEqual(own.map((m) => m.mob), ["a kerran zealot"]);
+  // A row you contributed to keeps its pooled counts: it's still partly yours, and restating it as
+  // your own 4 kills would be a different claim about the same rate.
+  assert.equal(own[0].kills, 40);
 });

@@ -20,7 +20,7 @@ import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import type { XpProgress } from "../src/shared/types";
 
-import { readJson, writeJson } from "./json-store";
+import { createSaver, readJson } from "./json-store";
 const log = createLogger("xp-progress");
 
 /** Gains land often; coalesce the writes. */
@@ -38,13 +38,20 @@ export interface XpTracker {
   flush(): void;
 }
 
-const clampPct = (n: number): number => Math.min(99.999, Math.max(0, n));
+/**
+ * The highest "into the level" we'll hold. **Not 100**: at 100 you have levelled, and the log says so
+ * with its own line — so a stored 100 would mean "about to level" for ever if that line never came.
+ * Just below it, which reads the same to a player and can't be mistaken for the level-up itself.
+ */
+const ALMOST_LEVELLED = 99.999;
+
+const clampPct = (n: number): number => Math.min(ALMOST_LEVELLED, Math.max(0, n));
 
 export function createXpProgress(userDataDir: string, nowIso: () => string = () => new Date().toISOString()): XpTracker {
   const file = path.join(userDataDir, "xp-progress.json");
   const bus = new EventEmitter();
-  let timer: NodeJS.Timeout | null = null;
   let state: XpProgress = read();
+  const saver = createSaver(file, "xp progress", () => state, WRITE_DEBOUNCE_MS);
 
   function read(): XpProgress {
     // `clampPct(0)` is 0, so an absent or unreadable file validates to "nothing known yet".
@@ -57,13 +64,8 @@ export function createXpProgress(userDataDir: string, nowIso: () => string = () 
     };
   }
 
-  function write(): void {
-    timer = null;
-    writeJson(file, state, { what: "xp progress" });
-  }
-
   function changed(): XpProgress {
-    if (!timer) timer = setTimeout(write, WRITE_DEBOUNCE_MS);
+    saver.save();
     bus.emit("change", state);
     return state;
   }
@@ -105,8 +107,7 @@ export function createXpProgress(userDataDir: string, nowIso: () => string = () 
     onChange: (cb) => void bus.on("change", cb),
 
     flush() {
-      if (timer) clearTimeout(timer);
-      write();
+      saver.flush();
     },
   };
 }

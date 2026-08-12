@@ -21,6 +21,15 @@ const URL = "http://localhost:3000";
 const TSC = ["node_modules/typescript/bin/tsc", "-p", "tsconfig.electron.json"];
 const OUT_DIR = "dist-electron";
 
+/**
+ * How long after launch to ignore compiled-output changes. `tsc --watch` re-emits everything on its
+ * first pass, which would otherwise restart Electron the moment it finished starting.
+ */
+const STARTUP_QUIET_MS = 4_000;
+
+/** How long to wait for a burst of re-emitted files to finish before restarting. */
+const RESTART_DEBOUNCE_MS = 300;
+
 // 1. Initial compile — fail fast if the Electron code doesn't build.
 console.log("[dev-electron] compiling electron main/preload…");
 if (spawnSync(process.execPath, TSC, { stdio: "inherit" }).status !== 0) process.exit(1);
@@ -73,9 +82,9 @@ const startedAt = Date.now();
 let debounce = null;
 fs.watch(OUT_DIR, { recursive: true }, (_evt, file) => {
   if (!file || !String(file).endsWith(".js")) return;
-  if (Date.now() - startedAt < 4000) return;
+  if (Date.now() - startedAt < STARTUP_QUIET_MS) return;
   clearTimeout(debounce);
-  debounce = setTimeout(restart, 300);
+  debounce = setTimeout(restart, RESTART_DEBOUNCE_MS);
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

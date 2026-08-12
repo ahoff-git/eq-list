@@ -1,10 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
 import { describeCoins, formatCoins } from "@/shared/money";
 import type { MobKillStat, ZoneReport } from "@/shared/types";
 
 import { duration, when } from "@/shared/format";
+import { useRead } from "@/lib/hooks";
+/** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
+const NO_ZONES: ZoneReport[] = [];
+
 /**
  * "Is this camp worth it?" — the two tables that answer it.
  *
@@ -19,11 +21,9 @@ import { duration, when } from "@/shared/format";
  * `refreshKey` re-reads the zone table — history only changes when a fight ends.
  */
 export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]; refreshKey: string }) {
-  const [zones, setZones] = useState<ZoneReport[]>([]);
 
-  useEffect(() => {
-    void api()?.combat.zones().then(setZones);
-  }, [refreshKey]);
+
+  const zones = useRead((a) => a.combat.zones(), NO_ZONES, [refreshKey]);
 
   return (
     <>

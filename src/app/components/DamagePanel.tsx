@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useCombatStats, useHpEstimate } from "@/lib/hooks";
+import { useCombatStats, useHpEstimate, useRead } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
 import DamageMeter, { type DamageView } from "./DamageMeter";
 import SpellTable from "./SpellTable";
@@ -11,7 +11,8 @@ import { opponentOf } from "@/shared/damage-tree";
 import type { DamageAxis, DeathRecap, FightBest, FightStats, HpEstimate, StoredFight } from "@/shared/types";
 
 import { segCls, StatTile } from "./ui";
-import { duration, when } from "@/shared/format";
+import { duration, percent, when } from "@/shared/format";
+import { ratio } from "@/shared/numbers";
 /**
  * The damage meter. Two axes of choice, because they answer different questions:
  *   scope — this fight (what just happened) / the session / a past fight from history
@@ -63,6 +64,18 @@ const LAYOUTS = {
 /** A fight is "live" while the log has shown damage within this window. */
 const LIVE_MS = 10_000;
 
+/**
+ * How often to re-ask "is this fight still live?".
+ *
+ * Nothing arrives to say a fight went quiet — the label flips because time passed — so this is the
+ * resolution of "This fight" becoming "Last fight". Fine enough not to look stuck, coarse enough that
+ * an idle window isn't doing arithmetic every frame.
+ */
+const LIVE_CHECK_MS = 2_000;
+
+/** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
+const NO_BESTS: FightBest[] = [];
+
 export default function DamagePanel() {
   const stats = useCombatStats();
   const [scope, setScope] = useState<Scope>("fight");
@@ -78,7 +91,7 @@ export default function DamagePanel() {
   // the same rule history labels a fight by, so the ★ flag and the list agree on who you fought.
   const opponent = scope === "history" ? picked?.label : opponentOf(stats.fight);
   const best = scope === "fight" && opponent ? bests.find((b) => b.label === opponent) : undefined;
-  const fightDps = window?.durationSec ? Math.round((window.yourDealt / window.durationSec) * 10) / 10 : 0;
+  const fightDps = ratio(window?.yourDealt ?? 0, window?.durationSec ?? 0, 1);
   const isBest = !!best && fightDps >= best.dps && fightDps > 0;
 
   return (
@@ -148,13 +161,13 @@ export default function DamagePanel() {
             <StatTile
               label="All damage"
               value={fmt(window.totalDealt)}
-              hint="Every hit in the window, whoever landed it — and the 100% the shares below are taken against"
+              hint="Every hit in your party's fights, whoever landed it — and the 100% the shares below are taken against. Another group's fight at the same camp isn't counted."
             />
             <StatTile label="In combat" value={inCombat(window.durationSec)} />
             {petShare > 0 && (
               <StatTile
                 label="Pet share"
-                value={`${Math.round(petShare * 100)}%`}
+                value={percent(petShare)}
                 hint="Share of your side's damage dealt by your pet"
               />
             )}
@@ -251,7 +264,7 @@ function Deaths({ deaths }: { deaths: DeathRecap[] }) {
             <span className="spacer" />
             <span className="muted small">
               {fmt(d.totalTaken)} taken in the last {d.windowSec}s
-              {max ? ` · ${Math.round((d.totalTaken / max) * 100)}% of your health` : ""}
+              {max ? ` · ${percent(ratio(d.totalTaken, max))} of your health` : ""}
             </span>
           </div>
           <div className="death-sources">
@@ -320,17 +333,13 @@ function summaryLine(window: FightStats, opponent?: string): string {
 
 /** Personal bests, re-read when a fight ends — the only time they can change. */
 function useBests(refreshKey: string): FightBest[] {
-  const [bests, setBests] = useState<FightBest[]>([]);
-  useEffect(() => {
-    void api()?.combat.bests().then(setBests);
-  }, [refreshKey]);
-  return bests;
+  return useRead((a) => a.combat.bests(), NO_BESTS, [refreshKey]);
 }
 
 /** Your side's DPS over the window (you + pet), which is what people compare. */
 function yourDps(window: FightStats): string {
   const sec = Math.max(1, window.durationSec);
-  return window.yourDealt ? `${Math.round((window.yourDealt / sec) * 10) / 10}` : "—";
+  return window.yourDealt ? `${ratio(window.yourDealt, sec, 1)}` : "—";
 }
 
 const fmt = (n: number): string => n.toLocaleString();
@@ -360,7 +369,7 @@ function useLiveFight(endedAt: string): boolean {
   useEffect(() => {
     const check = () => setLive(!!endedAt && Date.now() - Date.parse(endedAt) < LIVE_MS);
     check();
-    const timer = setInterval(check, 2000);
+    const timer = setInterval(check, LIVE_CHECK_MS);
     return () => clearInterval(timer);
   }, [endedAt]);
   return live;

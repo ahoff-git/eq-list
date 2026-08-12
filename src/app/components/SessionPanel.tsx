@@ -7,6 +7,8 @@ import CampReport from "./CampReport";
 import type { FightStats, XpProgress } from "@/shared/types";
 
 import { StatTile } from "./ui";
+import { over, ratio, round } from "@/shared/numbers";
+import { clock, duration, percent } from "@/shared/format";
 /**
  * The session's "how's it going" screen: experience rate and where it's coming from,
  * how much of the session was actually spent fighting, and which mobs/zones pay best.
@@ -25,12 +27,14 @@ export default function SessionPanel() {
   // The two money ledgers are summed only here, for the evening's income — the point of the
   // split is per-mob and per-item comparison, and neither survives being averaged (ADR 0047).
   const coin = (session.copper ?? 0) + (session.soldCopper ?? 0);
-  const coinPerHour = session.spanSec ? Math.round(coin / (session.spanSec / 3600)) : 0;
+  // Whole copper: coin is an integer count of the smallest denomination, and a fractional one would
+  // be split back into denominations that don't exist (ADR 0047).
+  const coinPerHour = ratio(coin, session.spanSec / 3600, 0);
 
   return (
     <div>
       <div className="row" style={{ marginBottom: 12 }}>
-        <span className="muted small">Since {startedLabel(combat.startedAt)}</span>
+        <span className="muted small">Since {clock(combat.startedAt, { seconds: true })}</span>
         <span className="spacer" />
         <button className="btn ghost sm" onClick={resetSession} title="Clear the counters and the damage meter (recorded fights are kept)">
           Reset session
@@ -46,8 +50,8 @@ export default function SessionPanel() {
         />
         <StatTile
           label="Downtime"
-          value={session.spanSec ? `${Math.round((downtimeSec / session.spanSec) * 100)}%` : "—"}
-          hint={`${fmtDuration(downtimeSec)} not fighting, of ${fmtDuration(session.spanSec)} elapsed`}
+          value={percent(over(downtimeSec, session.spanSec))}
+          hint={`${duration(downtimeSec, { seconds: true })} not fighting, of ${duration(session.spanSec, { seconds: true })} elapsed`}
         />
         <StatTile label="Kills" value={session.kills} />
       </div>
@@ -117,7 +121,7 @@ function TimeToLevel({ xp, xpPerHour }: { xp: XpProgress; xpPerHour: number }) {
   }
 
   const remaining = Math.max(0, 100 - xp.intoLevel);
-  const hours = xpPerHour > 0 ? remaining / xpPerHour : 0;
+  const hours = ratio(remaining, xpPerHour);
 
   return (
     <span className="ttl" title={`${xp.intoLevel.toFixed(1)}% into the level · ${remaining.toFixed(1)}% to go`}>
@@ -126,34 +130,25 @@ function TimeToLevel({ xp, xpPerHour }: { xp: XpProgress; xpPerHour: number }) {
         prompt={`${xp.intoLevel.toFixed(0)}%`}
         why="How far into this level you are, kept current from your XP gains. Click to correct it."
         suffix="%"
-        initial={Math.round(xp.intoLevel * 10) / 10}
+        initial={round(xp.intoLevel, 1)}
         onSubmit={set}
       />
     </span>
   );
 }
 
-
-
 /** Percent of a level per hour, over the session's elapsed (not combat) time. */
 function ratePerHour(session: FightStats): number {
   if (!session.spanSec || !session.xpPct) return 0;
-  return Math.round((session.xpPct / (session.spanSec / 3600)) * 100) / 100;
+  return ratio(session.xpPct, session.spanSec / 3600, 2);
 }
 
+/** Past this there's no useful figure to give — at four days to level, the number isn't the point. */
+const TOO_LONG_HOURS = 100;
+
 function fmtHours(hours: number): string {
-  if (hours >= 100) return "ages";
+  if (hours >= TOO_LONG_HOURS) return "ages";
   if (hours >= 1) return `${hours.toFixed(1)}h`;
   return `${Math.round(hours * 60)}m`;
 }
 
-function fmtDuration(sec: number): string {
-  const m = Math.floor(sec / 60);
-  return m > 0 ? `${m}m ${sec % 60}s` : `${sec}s`;
-}
-
-function startedLabel(iso: string): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleTimeString();
-}

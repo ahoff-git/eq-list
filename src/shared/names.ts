@@ -68,22 +68,38 @@ export function zoneBaseName(name: string): string {
 }
 
 /**
- * **Zones the log and the maps call different things** — the other half of the mapping list, beside
+ * **Zones our sources call different things** — the other half of the mapping list, beside
  * `CURATED_ZONES` in `map/zones.ts`. That table says which *file* a zone is; this one says which
- * *name*, for a place the game and the mapmakers never agreed on.
+ * *name*, for a place the log, the mapmakers and the wikis never agreed on.
  *
  * Both sides are written folded (lower case, no leading "the"), because that is the form every
  * comparison reaches this table with. Fold to the **map's** name: the map is the thing on screen, so
  * that is the name the picker and the title should show.
  *
- * Add an entry only once the file is *identified* — by the zones it links to, and by whether your
- * own recorded positions land inside its geometry. Kerra Isle is `kerraridge`, named "Kerra Ridge" by
- * both packs' own labels: its only exit is to Toxxulia Forest, which is Kerra Isle's only neighbour,
- * and 454 of 463 positions recorded there sit inside its lines. A guess here is the one naming
- * mistake that doesn't fail closed — see the warning on `CURATED_ZONES`.
+ * **This is the short list on purpose.** Rephrasings resolve on their own now — "The Castle of
+ * Mistmoore" finds "Castle Mistmoore" without being told, and a sub-zone finds its parent — so an
+ * entry here is only for a pair *no rule can reach*, where the two names share no useful spelling
+ * ([ADR 0068](../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md)). Each one
+ * below is a pair the resolver was measured against and could not place.
+ *
+ * Add an entry only once the zone is *identified* — by the zones its file links to, and by whether
+ * your own recorded positions land inside its geometry. A guess here is the one naming mistake that
+ * doesn't fail closed: unlike the resolver, an alias has no candidate list to be outvoted by, so it
+ * is believed everywhere and forever. See the warning on `CURATED_ZONES`.
  */
 const ZONE_ALIASES: Record<string, string> = {
+  // Kerra Isle is `kerraridge`, named "Kerra Ridge" by both packs' own labels: its only exit is to
+  // Toxxulia Forest, which is Kerra Isle's only neighbour, and 454 of 463 positions recorded there
+  // sit inside its lines.
   "kerra isle": "kerra ridge",
+  // Fandom's name for `runnyeye`. Unreachable by spelling *and* by rank: scored against the whole
+  // expansion table, "RunnyEye Citadel" likes "Estate of Unrest" (0.38) better than "Clan Runnyeye"
+  // (0.32), so no threshold could have rescued it — which is exactly what this table is for. The
+  // later "The Liberation of Runnyeye" is a different zone and stays one.
+  "clan runnyeye": "runnyeye citadel",
+  // Fandom's name for `northro`. The words don't overlap enough to match ("northern"/"north" is an
+  // edit apart, "desert" is in neither the other's name), and "South Ro" is the same distance away.
+  "north ro": "northern desert of ro",
 };
 
 /**

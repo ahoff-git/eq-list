@@ -83,7 +83,7 @@ interface HoverTarget {
 function niceStep(span: number): number {
   const raw = span / 10;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  return Math.max(50, Math.round(raw / mag) * mag);
+  return Math.max(MIN_GRID_STEP, Math.round(raw / mag) * mag);
 }
 
 /**
@@ -100,6 +100,30 @@ const VECTOR_MAX_ZOOM = 30;
 const HIT_RADIUS = { pin: 9, self: 8, peer: 7, ping: 8, kill: 6, poi: 7 } as const;
 /** How far the pointer must travel before a press counts as a drag rather than a click. */
 const DRAG_SLOP = 4;
+
+/**
+ * How a kill dot is drawn from its confidence, which is the whole point of the heatmap: a guess has
+ * to *look* like a guess. Both the size and the opacity scale with it, from `weightFloor` (so a kill
+ * with no usable position is still a visible dot rather than nothing) up to a measured one.
+ */
+const KILL_DOT = {
+  /** Confidence below this still draws at this size — a dot you can't see says nothing at all. */
+  weightFloor: 0.15,
+  /** Radius in px at zero weight, and how much a full-confidence kill adds to it. */
+  baseRadius: 4,
+  weightedRadius: 8,
+  /** Opacity, likewise: a floor plus what confidence earns. */
+  baseAlpha: 0.15,
+  weightedAlpha: 0.45,
+  /** What everything unpicked drops to while a mob is hovered — dimmed, never hidden. */
+  fadedAlpha: 0.3,
+  /** A peer's kill is outlined rather than filled, so a shared heatmap stays legible. */
+  peerStroke: 0.7,
+  peerStrokeFaded: 0.2,
+} as const;
+
+/** The coarsest the coordinate grid gets, so a huge zone doesn't draw two lines and call it a grid. */
+const MIN_GRID_STEP = 50;
 
 /**
  * How long a fresh ping animates. A ping is a "look here" gesture, so it announces
@@ -187,7 +211,7 @@ export default function MapPanel({
    */
   bands?: ZBand[];
   /** Label kinds to leave off the map (see `poiKind`) — a busy zone is mostly labels. */
-  hiddenPoiKinds?: Set<PoiKind>;
+  hiddenPoiKinds?: ReadonlySet<PoiKind>;
   /**
    * Kills to pick out — one mob's, or a single kill by id. Set while a name is hovered, in the
    * kill list or the main window's Hunt tab, so pointing at it answers "where did those die?".
@@ -236,6 +260,9 @@ export default function MapPanel({
    * covers *is* its calibration (`vectorProjection`). Nothing here is authored or tuned — that
    * went with the bundled scans (ADR 0042).
    */
+  /** What `vectorProjection` hands back: the scale, the centre, and the extent it fitted. */
+  type MapProjection = NonNullable<ReturnType<typeof vectorProjection>>;
+
   const projection = useMemo(() => {
     if (!vector?.segments.length && !vector?.pois.length) return undefined;
     const bounds = mapBounds(vector);
@@ -445,8 +472,23 @@ export default function MapPanel({
     const ctx = c.getContext("2d");
     if (!ctx) return;
 
-    // The grid spans exactly what the map covers: its extent times the scale.
-    if (showGrid) {
+    // Layers, bottom to top. **The order is the whole point**: what's drawn later covers
+    // what came before, so history sits under anything live and your own pins sit over all of it.
+    if (showGrid) drawGrid(ctx, projection, view);
+    drawPois(ctx);
+    drawKills(ctx);
+    drawTrail(ctx);
+    drawPeers(ctx);
+    drawPings(ctx);
+    drawPins(ctx);
+
+    /**
+     * The coordinate grid, spanning exactly what the map covers.
+     *
+     * Takes the projection and the view rather than closing over them: the effect's own guard proves
+     * they exist, but that proof doesn't reach inside a nested function.
+     */
+    function drawGrid(ctx: CanvasRenderingContext2D, projection: MapProjection, view: MapView): void {
       const cx = projection.center.x;
       const cy = projection.center.y;
       const spanX = view.image.width * projection.scale;
@@ -468,142 +510,162 @@ export default function MapPanel({
           ctx.strokeStyle = origin ? MAP_COLORS.gridOrigin : MAP_COLORS.gridRing;
           ctx.stroke();
         }
-      }
+    }
     }
 
     // The map's own labelled points (zone exits, camps, NPCs) go under everything of ours.
     // Drawn here rather than with the geometry so the text stays a constant size as you
     // zoom, the way our other markers do — and the way the game's map behaves.
-    if (vector) {
-      ctx.save();
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      ctx.font = "10px sans-serif";
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
-      for (const poi of visiblePois) {
-        const p = toScreen(poi);
-        if (!p) continue;
-        ctx.fillStyle = poi.color ?? MAP_COLORS.poi;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 2, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.strokeText(poi.label, p.x + 4, p.y);
-        ctx.fillStyle = poi.color ?? MAP_COLORS.poiText;
-        ctx.fillText(poi.label, p.x + 4, p.y);
-      }
-      ctx.restore();
+    function drawPois(ctx: CanvasRenderingContext2D): void {
+      if (vector) {
+        ctx.save();
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.font = "10px sans-serif";
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
+        for (const poi of visiblePois) {
+          const p = toScreen(poi);
+          if (!p) continue;
+          ctx.fillStyle = poi.color ?? MAP_COLORS.poi;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2, 0, 2 * Math.PI);
+          ctx.fill();
+          ctx.strokeText(poi.label, p.x + 4, p.y);
+          ctx.fillStyle = poi.color ?? MAP_COLORS.poiText;
+          ctx.fillText(poi.label, p.x + 4, p.y);
+        }
+        ctx.restore();
+    }
     }
 
     // Kills go down first: they're history, and everything live belongs on top of them.
     // Confidence drives both size and opacity, so a guess is visibly a guess.
-    for (const kill of kills) {
-      const p = toScreen(kill);
-      if (!p) continue;
-      const weight = Math.max(0.15, kill.confidence);
-      // Hovering a mob's name picks its kills out here. Everything else fades rather than
-      // vanishing — a marker you can still see is context; one that disappears is a lie about
-      // what's on the map.
-      const picked = emphasized(kill);
-      const faded = !!picking && !picked;
-      const radius = 4 + weight * 8;
-      ctx.save();
-      ctx.globalAlpha = (0.15 + weight * 0.45) * (faded ? 0.3 : 1);
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI);
-      ctx.fillStyle = kill.color;
-      ctx.fill();
-      if (kill.peer) {
-        // Someone else's: outlined rather than filled, so a shared heatmap stays legible.
-        ctx.globalAlpha = faded ? 0.2 : 0.7;
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = kill.color;
-        ctx.stroke();
-      }
-      if (picked) {
-        // A ring outside the dot, so it reads at a glance without changing what the dot itself
-        // says about confidence — the size and colour still mean what they always did.
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = MAP_COLORS.emphasis;
+    function drawKills(ctx: CanvasRenderingContext2D): void {
+      for (const kill of kills) {
+        const p = toScreen(kill);
+        if (!p) continue;
+        const weight = Math.max(KILL_DOT.weightFloor, kill.confidence);
+        // Hovering a mob's name picks its kills out here. Everything else fades rather than
+        // vanishing — a marker you can still see is context; one that disappears is a lie about
+        // what's on the map.
+        const picked = emphasized(kill);
+        const faded = !!picking && !picked;
+        const radius = KILL_DOT.baseRadius + weight * KILL_DOT.weightedRadius;
+        ctx.save();
+        ctx.globalAlpha =
+          (KILL_DOT.baseAlpha + weight * KILL_DOT.weightedAlpha) * (faded ? KILL_DOT.fadedAlpha : 1);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, radius + 4, 0, 2 * Math.PI);
-        ctx.stroke();
-      }
-      if (showKillConfidence) {
-        ctx.globalAlpha = faded ? 0.35 : 0.9;
+        ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI);
         ctx.fillStyle = kill.color;
-        ctx.font = "10px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(kill.glyph, p.x, p.y);
-      }
-      ctx.restore();
+        ctx.fill();
+        if (kill.peer) {
+          // Someone else's: outlined rather than filled, so a shared heatmap stays legible.
+          ctx.globalAlpha = faded ? KILL_DOT.peerStrokeFaded : KILL_DOT.peerStroke;
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = kill.color;
+          ctx.stroke();
+        }
+        if (picked) {
+          // A ring outside the dot, so it reads at a glance without changing what the dot itself
+          // says about confidence — the size and colour still mean what they always did.
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = MAP_COLORS.emphasis;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius + 4, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+        if (showKillConfidence) {
+          ctx.globalAlpha = faded ? 0.35 : 0.9;
+          ctx.fillStyle = kill.color;
+          ctx.font = "10px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(kill.glyph, p.x, p.y);
+        }
+        ctx.restore();
+    }
     }
 
-    for (let i = 1; i < trail.length; i++) {
-      const a = toScreen(trail[i - 1]);
-      const b = toScreen(trail[i]);
-      if (a && b) drawLine(a.x, a.y, b.x, b.y, MAP_COLORS.trail, 2, ctx);
+    /** Your own path, from the /loc lines you typed. */
+    function drawTrail(ctx: CanvasRenderingContext2D): void {
+      for (let i = 1; i < trail.length; i++) {
+        const a = toScreen(trail[i - 1]);
+        const b = toScreen(trail[i]);
+        if (a && b) drawLine(a.x, a.y, b.x, b.y, MAP_COLORS.trail, 2, ctx);
     }
-    for (const peer of peers) {
-      const p = toScreen(peer);
-      if (p) drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.peer, size: 4 });
+    }
+
+    /** Everyone else sharing a position, then you on top of them. */
+    function drawPeers(ctx: CanvasRenderingContext2D): void {
+      for (const peer of peers) {
+        const p = toScreen(peer);
+        if (p) drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.peer, size: 4 });
     }
     if (loc) {
       const p = toScreen(loc);
       if (p) drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.self, size: 5 });
     }
-    ctx.textAlign = "center";
-    ctx.font = "12px sans-serif";
-    const now = Date.now();
-    for (const ping of pings) {
-      const p = toScreen(ping);
-      if (!p) continue;
-      // Fresh pings throw off expanding rings and a swollen dot that settles; older
-      // ones are just markers, so a ping stays findable after the animation ends.
-      const t = ping.at ? Math.min(1, (now - ping.at) / PING_ANIM_MS) : 1;
-      if (t < 1) {
-        ctx.save();
-        ctx.strokeStyle = MAP_COLORS.ping;
-        ctx.lineWidth = 2;
-        for (let i = 0; i < PING_RINGS; i++) {
-          const rt = t * PING_RINGS - i; // each ring starts a beat after the last
-          if (rt <= 0 || rt >= 1) continue;
-          ctx.globalAlpha = (1 - rt) * 0.9;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 6 + rt * 26, 0, 2 * Math.PI);
-          ctx.stroke();
-        }
-        ctx.restore();
-      }
-      drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.ping, size: 4 + (1 - t) * 3 });
-      ctx.fillStyle = MAP_COLORS.ping;
-      ctx.fillText(ping.name, p.x, p.y - 7 - (1 - t) * 3);
     }
-    for (const pin of pins) {
-      const p = toScreen(pin);
-      if (!p) continue;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
-      ctx.fillStyle = MAP_COLORS.pinHalo;
-      ctx.fill();
-      ctx.textBaseline = "middle";
-      ctx.font = "14px sans-serif";
-      ctx.fillStyle = pin.color;
-      ctx.fillText(pin.glyph, p.x, p.y);
-      if (pin.title) {
-        ctx.textBaseline = "top";
-        ctx.font = "11px sans-serif";
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
-        ctx.strokeText(pin.title, p.x, p.y + 9);
-        ctx.fillStyle = MAP_COLORS.pinTitle;
-        ctx.fillText(pin.title, p.x, p.y + 9);
-      }
+
+    /** Pings: expanding rings while fresh, a plain marker once settled. */
+    function drawPings(ctx: CanvasRenderingContext2D): void {
+      ctx.textAlign = "center";
+      ctx.font = "12px sans-serif";
+      const now = Date.now();
+      for (const ping of pings) {
+        const p = toScreen(ping);
+        if (!p) continue;
+        // Fresh pings throw off expanding rings and a swollen dot that settles; older
+        // ones are just markers, so a ping stays findable after the animation ends.
+        const t = ping.at ? Math.min(1, (now - ping.at) / PING_ANIM_MS) : 1;
+        if (t < 1) {
+          ctx.save();
+          ctx.strokeStyle = MAP_COLORS.ping;
+          ctx.lineWidth = 2;
+          for (let i = 0; i < PING_RINGS; i++) {
+            const rt = t * PING_RINGS - i; // each ring starts a beat after the last
+            if (rt <= 0 || rt >= 1) continue;
+            ctx.globalAlpha = (1 - rt) * 0.9;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 6 + rt * 26, 0, 2 * Math.PI);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+        drawCircle(p.x, p.y, ctx, { color: MAP_COLORS.ping, size: 4 + (1 - t) * 3 });
+        ctx.fillStyle = MAP_COLORS.ping;
+        ctx.fillText(ping.name, p.x, p.y - 7 - (1 - t) * 3);
+    }
+    }
+
+    /** Pins last, because they're the thing you put there deliberately. */
+    function drawPins(ctx: CanvasRenderingContext2D): void {
+      for (const pin of pins) {
+        const p = toScreen(pin);
+        if (!p) continue;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = MAP_COLORS.pinHalo;
+        ctx.fill();
+        ctx.textBaseline = "middle";
+        ctx.font = "14px sans-serif";
+        ctx.fillStyle = pin.color;
+        ctx.fillText(pin.glyph, p.x, p.y);
+        if (pin.title) {
+          ctx.textBaseline = "top";
+          ctx.font = "11px sans-serif";
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
+          ctx.strokeText(pin.title, p.x, p.y + 9);
+          ctx.fillStyle = MAP_COLORS.pinTitle;
+          ctx.fillText(pin.title, p.x, p.y + 9);
+        }
     }
 
     ctx.textBaseline = "alphabetic";
+    }
   }, [
     loc, trail, peers, pings, pins, kills, showKillConfidence, canvasSize, redrawKey,
     showGrid, toScreen, frame, view, applyView, vector, visiblePois, picking, emphasized, projection,
@@ -619,7 +681,6 @@ export default function MapPanel({
   function eqAt(e: React.MouseEvent<HTMLDivElement>): Loc | undefined {
     return view ? canvasToEqCoords(canvasAt(e), projection, view) : undefined;
   }
-
 
   /** The pin under the cursor (within a few px), if any. */
   function pinAt(e: React.MouseEvent<HTMLDivElement>): RenderPin | undefined {

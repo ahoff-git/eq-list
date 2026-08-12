@@ -6,6 +6,15 @@ import type { Rect } from "@/shared/types";
 type Phase = "select" | "loading";
 
 /**
+ * Below this (in px, either side) a drag was a click, not a selection.
+ *
+ * The selector covers the whole screen, so *some* mouse-up always lands on it — including the click of
+ * someone who has changed their mind. A few pixels of accidental travel shouldn't send a sliver of
+ * screen off to OCR; it should close, which is what the same click would have done on nothing.
+ */
+const MIN_SELECTION_PX = 6;
+
+/**
  * Fullscreen, transparent region selector for the screengrab lookup — one per
  * display, so you can grab from any monitor. The screen was already captured when
  * the hotkey fired (before this window appeared); dragging a box just tells main
@@ -43,7 +52,7 @@ export default function Select() {
   function onMouseUp() {
     const r = rect;
     dragStart.current = null;
-    if (!r || r.width < 6 || r.height < 6) {
+    if (!r || r.width < MIN_SELECTION_PX || r.height < MIN_SELECTION_PX) {
       close();
       return;
     }

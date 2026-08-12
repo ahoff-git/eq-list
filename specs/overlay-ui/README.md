@@ -140,7 +140,9 @@ list, hunt, search, damage, session, settings.
     which of us was in the room — opening on the dealer list showed a column of party members
     where the enemy belongs. Tiles above are the same either way, on purpose. A stored fight
     renders through the same views as a live one, so "dig into last night" and "how's this pull
-    going" are one screen.
+    going" are one screen. Everything it shows is **your party's fights** — another group's pull
+    at the same camp never reaches the tab
+    ([ADR 0067](../decisions/0067-the-meter-counts-your-party-s-fights.md)).
     - `DamageMeter` — bars scaled to the top row so relative contribution reads without
       arithmetic, with total, share and DPS; your rows (you + your pet) are tinted, and
       hover gives max hit, accuracy, crits, healing, active time, and — for your own rows —
@@ -323,6 +325,24 @@ list, hunt, search, damage, session, settings.
   `hooks.ts` (`useShoppingList`, `useSettings`, `useWatcherStatus`, `useLootFeed`,
   `useMatchFlashes`, `useCurrentZone`, `useEntrySources`, `useItemCard`) — subscribe on
   mount, unsubscribe on unmount — and `nav.tsx` (the in-app page history above).
+  Three lifecycles sit under those hooks, each written once because each has a failure that
+  nothing visibly reports: **`useLive`** (read, then follow, and *return the unsubscribe* — a
+  copy that forgets leaks a listener per mount), **`useRead`** / `useReading` (read again when
+  the question changes, and **discard an answer the question has moved on from** — without it,
+  expanding session B while A is still in flight can show B's heading over A's fights), and
+  **`useDismiss`** (close a popover on an outside click or Escape, listening only while open).
+  A component that wants one of these should call it rather than write the effect again. The map has two
+  more of its own in `src/lib/map/`: **`useFloors`** (which storeys are on screen, and the eight values
+  that follow from it — they have to agree, so they're derived together) and **`useHidden`** (a filter
+  stated as *what's left off*, shared by pins-by-kind, labels-by-kind and peers-by-name).
+- **A window is assembled, not written out.** The two big screens are compositions: the map window is a
+  `MapTitlebar`, a `MapToolbar`, the `MapPanel` canvas and its side panels (`MapFilters`, `MapUsers`,
+  `PinEditor`, `TravelPanel`, `KillList`, `MobKnowledge`); Settings is a stack of groups
+  (`LogSettings`, `ForgetData`, `CastAlertSettings` → `CastWatchRow`, `AlertStyleFields`); Search is a
+  box and a list next to a `WikiPageView`. Each was carved out of a component of several hundred lines,
+  and the cut is always the same one: a region with **state or behaviour of its own** becomes a
+  component, while a row of values stays where it is. `WindowButtons` is the smallest case of the same
+  rule — minimize/maximize/dismiss, so two title bars can't drift apart.
 - **Errors are logged, never drawn over the game** (`src/lib/error-reporting.ts`): Next's
   dev error overlay is hidden outright — by CSS the *main process* injects into every window
   it loads (`HIDE_DEV_OVERLAY` in `electron/windows.ts`), so it holds even for a compile

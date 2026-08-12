@@ -19,23 +19,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT, flag, helpIfAsked, opt } from "./lib/cli.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const argv = process.argv.slice(2);
-
-function opt(name, def) {
-  const i = argv.indexOf(`--${name}`);
-  if (i < 0) return def;
-  const v = argv[i + 1];
-  return v === undefined || v.startsWith("--") ? true : v;
-}
-const flag = (name) => argv.includes(`--${name}`);
-
-if (flag("help")) {
-  console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("*/")[0].replace(/^\/\*\*?/, ""));
-  process.exit(0);
-}
+helpIfAsked(import.meta.url);
 
 const from = String(opt("from", path.join(ROOT, "fixtures", "sample-eqlog.txt")));
 const toRaw = String(opt("to", path.join(ROOT, "replay-logs")));

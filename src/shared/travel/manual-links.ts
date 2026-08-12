@@ -23,7 +23,7 @@
  *  - **Which zones the server actually runs** — not here at all. `zones/expansions.ts` answers it for
  *    the whole app: the expansion table rules out everything past this server, and eqlwiki's live era
  *    flags close what it has but hasn't opened. Applied when the graph is *built*, so re-running the
- *    build can't reintroduce one (ADR 0064).
+ *    build can't reintroduce one (ADR 0065).
  *
  * A zone may be named **either way round** — "South Qeynos" or its map file `qeynos`. A file name
  * differs between packs while a zone's name doesn't, so nothing here has to guess which this pack
@@ -35,7 +35,7 @@ import type { TravelManual } from "./manual";
 // Zones this server hasn't got are no longer listed here at all: `src/shared/zones/expansions.ts`
 // knows which expansion every zone came with, so Argath, the Plane of Knowledge and ~350 others exclude
 // themselves, and eqlwiki's live era flags close Kunark and Velious until they open. Nothing to type,
-// and nothing to keep in step. See ADR 0064.
+// and nothing to keep in step. See ADR 0065.
 
 export const MANUAL_TRAVEL: TravelManual = {
   links: [

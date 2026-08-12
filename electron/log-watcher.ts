@@ -15,7 +15,7 @@ import { splitLine } from "../src/shared/log-parser";
 import { catchUpState, type CaughtUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
-import type { CoinEvent, LootEvent, LogLine, LoginEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
+import type { CoinEvent, LootEvent, LogLine, LoginEvent, PartyEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
@@ -62,6 +62,8 @@ export interface LogWatcher {
   onCoin(cb: (e: CoinEvent) => void): void;
   onCombat(cb: (e: CombatEvent) => void): void;
   onLevel(cb: (e: LevelEvent) => void): void;
+  /** Your group changing — who the damage meter counts as your side (ADR 0067). */
+  onParty(cb: (e: PartyEvent) => void): void;
   /** Logging in — the log's own mark for "a new sitting starts here" (ADR 0054). */
   onLogin(cb: (e: LoginEvent) => void): void;
   /**
@@ -355,6 +357,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onCoin: (cb) => void bus.on("coin", cb),
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
+    onParty: (cb) => void bus.on("party", cb),
     onLogin: (cb) => void bus.on("login", cb),
     onLine: (cb) => void bus.on("line", cb),
     onStatus: (cb) => void bus.on("status", cb),

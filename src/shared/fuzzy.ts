@@ -5,6 +5,34 @@
  * words, and word-order differences. Pure functions → a tested black box.
  */
 
+/**
+ * The scoring dial, in one place.
+ *
+ * These are tuned by feel against real EQ item names, and that's exactly why they need names: a bare
+ * `0.34` in the middle of the scorer says nothing about which way to move it, and the six of them were
+ * scattered across two functions. Each is documented by what it's *for*, so a search that ranks badly
+ * can be argued about in terms of the behaviour rather than the arithmetic.
+ *
+ * All scores are in [0, 1].
+ */
+const SCORE = {
+  /** A prefix hit is the strongest autocomplete signal; the rest rewards matching more of the word. */
+  prefixFloor: 0.9,
+  prefixLengthBonus: 0.1,
+  /** A substring hit, once the query is long enough that it isn't matching by accident. */
+  substring: 0.8,
+  substringMinChars: 3,
+  /** A query word matching almost nothing means this probably isn't the item at all. */
+  weakTokenBelow: 0.34,
+  weakTokenPenalty: 0.5,
+  /** Whole-query hits, which "feel right" and should outrank a good per-word average. */
+  wholePrefix: 0.95,
+  wholeSubstring: 0.85,
+  /** Extra words in the candidate cost a little, so the tighter of two names sorts first. */
+  perExtraWord: 0.02,
+  maxExtraWordPenalty: 0.06,
+} as const;
+
 /** Lowercase → alphanumeric word tokens ("Nillipus' March" → ["nillipus","march"]). */
 export function tokenize(s: string): string[] {
   return s
@@ -36,8 +64,8 @@ export function levenshtein(a: string, b: string): number {
 export function tokenSimilarity(q: string, c: string): number {
   if (q === c) return 1;
   // Prefix is the strongest autocomplete signal (typing the start of a word).
-  if (c.startsWith(q)) return 0.9 + 0.1 * (q.length / c.length);
-  if (q.length >= 3 && c.includes(q)) return 0.8;
+  if (c.startsWith(q)) return SCORE.prefixFloor + SCORE.prefixLengthBonus * (q.length / c.length);
+  if (q.length >= SCORE.substringMinChars && c.includes(q)) return SCORE.substring;
   const dist = levenshtein(q, c);
   return 1 - dist / Math.max(q.length, c.length);
 }
@@ -67,17 +95,19 @@ export function fuzzyScore(query: string, text: string): number {
   let score = total / qs.length;
 
   // If some query word matches almost nothing, this probably isn't the item.
-  if (worst < 0.34) score *= 0.5;
+  if (worst < SCORE.weakTokenBelow) score *= SCORE.weakTokenPenalty;
 
   // Whole-query contiguous matches feel the most "right" for autocomplete.
   const nq = qs.join(" ");
   const nc = cs.join(" ");
   if (nc === nq) return 1;
-  if (nc.startsWith(nq)) score = Math.max(score, 0.95);
-  else if (nc.includes(nq)) score = Math.max(score, 0.85);
+  if (nc.startsWith(nq)) score = Math.max(score, SCORE.wholePrefix);
+  else if (nc.includes(nq)) score = Math.max(score, SCORE.wholeSubstring);
 
   // Mild penalty for lots of extra words, so tighter names sort first.
-  if (cs.length > qs.length) score -= Math.min(0.06, (cs.length - qs.length) * 0.02);
+  if (cs.length > qs.length) {
+    score -= Math.min(SCORE.maxExtraWordPenalty, (cs.length - qs.length) * SCORE.perExtraWord);
+  }
 
   return Math.max(0, Math.min(1, score));
 }

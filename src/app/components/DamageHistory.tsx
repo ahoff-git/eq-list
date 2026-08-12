@@ -1,9 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useRead } from "@/lib/hooks";
 import type { SessionSummary, StoredFight } from "@/shared/types";
 
 import { clock, dayTime, duration } from "@/shared/format";
+/** A stable empty, so a render before the answer lands doesn't look like a change. */
+const NO_FIGHTS: StoredFight[] = [];
+
 /**
  * Browse past play: sessions (newest first) drill into their fights, and picking a
  * fight hands it back to the panel to render with the same meter/spell views as a live
@@ -16,31 +20,31 @@ export default function DamageHistory({
   picked: StoredFight | null;
   onPick: (fight: StoredFight | null) => void;
 }) {
-  const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [fights, setFights] = useState<StoredFight[]>([]);
   /** Bumped when history changes underneath us (a log was eaten), to re-read both lists. */
   const [refresh, setRefresh] = useState(0);
 
-  useEffect(() => {
-    void api()?.combat.sessions().then(setSessions);
-  }, [refresh]);
+  // `null` until the first answer lands, which is what tells "no history yet" from "not asked yet".
+  const sessions = useRead<SessionSummary[] | null>((a) => a.combat.sessions(), null, [refresh]);
+
+  // A session's fights, read when it's expanded (the list is per-session, not eager). Reading through
+  // the hook is what makes expanding B while A is still in flight safe — A's answer is discarded
+  // rather than landing under B's heading.
+  const fights = useRead((a) => (openId ? a.combat.fights(openId) : Promise.resolve(NO_FIGHTS)), NO_FIGHTS, [
+    openId,
+    refresh,
+  ]);
 
   // Eating a log files whole evenings at once, and it happens on another tab — without this the
   // new sittings only appear on a reopen.
   useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);
 
-  // Load a session's fights when it's expanded (the list is per-session, not eager).
-  useEffect(() => {
-    if (!openId) return void setFights([]);
-    void api()?.combat.fights(openId).then(setFights);
-  }, [openId, refresh]);
-
   async function clearAll() {
-    const remaining = await api()?.combat.clearHistory();
-    setSessions(remaining ?? []);
+    await api()?.combat.clearHistory();
     setOpenId(null);
     onPick(null);
+    // Re-read rather than trusting the returned list: main owns history, and one path to it is enough.
+    setRefresh((n) => n + 1);
   }
 
   if (sessions === null) return <div className="muted small">Loading history…</div>;

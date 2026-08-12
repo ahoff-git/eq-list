@@ -17,18 +17,19 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import MapPanel, { type RenderKill, type RenderPin } from "../components/MapPanel";
 import KillList from "../components/KillList";
 import MobKnowledgePanel from "../components/MobKnowledge";
-import { DEFAULT_KILL_FILTERS, filterKills, windowMoves, type KillFilters } from "@/shared/kill-filters";
-import PinButton from "../components/PinButton";
-import MaximizeButton from "../components/MaximizeButton";
-import ScaleButtons from "../components/ScaleButtons";
-import ZonePicker from "../components/ZonePicker";
+import { DEFAULT_KILL_FILTERS, filterKills, sharedAsKill, windowMoves, type KillFilters } from "@/shared/kill-filters";
 import { useMapSource, useVectorMap } from "@/lib/map/useMapSource";
+import { useFloors } from "@/lib/map/useFloors";
+import { useHidden } from "@/lib/map/useHidden";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { findZone, onLayer, sortZones } from "@/shared/map/zones";
-import { detectFloors, floorAt, mapZRange, type ZBand } from "@/shared/map/eqmap";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
-import { PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
-import MapFilters, { type HeightPick } from "../components/MapFilters";
+import { pinType, type MapPin, type PinKind } from "@/shared/map/pins";
+import MapFilters from "../components/MapFilters";
+import MapTitlebar from "../components/MapTitlebar";
+import MapToolbar from "../components/MapToolbar";
+import MapUsers from "../components/MapUsers";
+import PinEditor from "../components/PinEditor";
 import TravelPanel from "../components/TravelPanel";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
@@ -67,75 +68,32 @@ export default function MapWindow() {
   // The viewed-zone override persists so reopening the map returns to the zone you were
   // looking at (blank = follow your current zone).
   const [override, setOverride] = usePersistentState<string | null>(STORAGE_KEYS.mapZone, null);
-  // Which floors we're looking at (empty = all of them). Persisted like the zone override, and
-  // validated below rather than reset by an effect.
-  const [layerPicks, setLayerPicks] = usePersistentState<number[]>(STORAGE_KEYS.mapLayers, []);
   const zoneName = override ?? currentZone ?? "";
   const zone = useMemo(() => (zoneName ? findZone(zoneName, zones) : undefined), [zoneName, zones]);
   // The zone's geometry, loaded through the main process (null until it arrives).
   const vector = useVectorMap(sourceId, zone);
   /**
-   * Storeys the map's author labelled ("Level 3", "2nd Floor"). A map file holds every floor at
-   * once — which is what the game draws — so these let you isolate one. Read from the file's own
-   * labels, never guessed, so a zone that doesn't name its levels simply has none.
+   * Which storeys are on screen, and everything that follows from it — see `useFloors`. Held there
+   * rather than here because the eight values only mean anything together.
    */
-  const floors = useMemo(() => (vector ? detectFloors(vector) : []), [vector]);
-  /**
-   * The floors actually drawn. A floor pick belongs to the map it was made on, so travelling
-   * somewhere without those storeys falls back to showing all of them — which is also what an
-   * empty pick means, since hiding every floor would just blank the map.
-   */
-  const shownLayers = useMemo(() => {
-    const valid = layerPicks.filter((l) => floors.some((f) => f.layer === l));
-    return valid.length ? valid : floors.map((f) => f.layer);
-  }, [layerPicks, floors]);
-  /** The floor you're standing on, from your `/loc` height — marked in the picker. */
-  const yourFloor = loc ? floorAt(floors, loc.z) : undefined;
-  /** The height span this map covers, which is the scale a hand-set window is chosen within. */
-  const zRange = useMemo(() => (vector ? mapZRange(vector) : undefined), [vector]);
-  /**
-   * A hand-set height window, for a map whose author labelled no storeys. Held **with its zone**
-   * and ignored the moment you look at another: a z of 40 means a treetop in one zone and a sewer
-   * in the next, so this is the one filter that can't sensibly persist or travel.
-   */
-  const [heightPick, setHeightPick] = useState<{ zone: string; lo: number; hi: number } | null>(null);
-  const height: HeightPick | null = heightPick?.zone && heightPick.zone === zoneName ? heightPick : null;
+  const {
+    floors,
+    shownLayers,
+    setLayers,
+    yourFloor,
+    zRange,
+    height,
+    setHeight,
+    bands,
+    viewLayer,
+    viewLayers,
+  } = useFloors(vector, loc, zoneName);
   /**
    * Is there a map to draw? The zone is in the list because its file is on disk, so it counts
    * before the geometry arrives — otherwise switching zones flashes "no map for this zone".
    */
   const hasMap = !!zone?.file;
   const sourceLabel = sources.find((s) => s.id === sourceId)?.label ?? "maps";
-  /**
-   * The heights drawn, and the heights a label has to sit in to be drawn: the checked floors, or a
-   * hand-set window on a map that names none. Undefined draws the whole map, which is the default
-   * and what the game does.
-   */
-  const bands = useMemo<ZBand[] | undefined>(() => {
-    if (floors.length > 1) {
-      if (shownLayers.length === floors.length) return undefined;
-      return floors.filter((f) => shownLayers.includes(f.layer)).map(({ minZ, maxZ }) => ({ minZ, maxZ }));
-    }
-    if (!height || !zRange) return undefined;
-    // The outermost edges open out to infinity, so a handle at the end of its scale can't clip the
-    // top or bottom of the map by a rounding unit — the same reason `detectFloors` does it.
-    return [
-      {
-        minZ: height.lo <= zRange.minZ ? -Infinity : height.lo,
-        maxZ: height.hi >= zRange.maxZ ? Infinity : height.hi,
-      },
-    ];
-  }, [floors, shownLayers, height, zRange]);
-  /**
-   * The floor a pin or a ping you make now belongs to: the one floor in view, or none while several
-   * are — with more than one on screen there's no single storey to claim, so it belongs to the zone.
-   */
-  const viewLayer = floors.length > 1 && shownLayers.length === 1 ? shownLayers[0] : undefined;
-  /** The floors markers are filtered to. Undefined is every floor, so nothing is filtered out. */
-  const viewLayers = useMemo(
-    () => (floors.length > 1 && shownLayers.length < floors.length ? new Set(shownLayers) : undefined),
-    [floors.length, shownLayers],
-  );
   const zoneOptions = useMemo(() => sortZones(zones), [zones]);
   // The dropdown's options are places, so its value is a zone *name*; a saved pick may be
   // a key (or a zone we have no map for), so resolve it back to a name where we can.
@@ -213,7 +171,6 @@ export default function MapWindow() {
     api()?.win.setAlwaysOnTop(pinned);
   }, [pinned]);
 
-
   // Peer networking (awari). The WebRTC connection lives in the main window
   // (AwariHost); here we just read the brokered peer stream and send our pings/pins.
   // `connectPeers` gates the sharing UI (intent); the room self-clears if it drops.
@@ -229,19 +186,15 @@ export default function MapWindow() {
   const [tool, setTool] = useState<PinKind | "move" | null>(null);
   const heldPin = tool && tool !== "move" ? (tool as PinKind) : null;
   const moveMode = tool === "move";
-  const [hiddenKinds, setHiddenKinds] = useState<Set<PinKind>>(new Set());
+  // Transient: a filter set to look at one thing shouldn't still be on tomorrow.
+  const pinKinds = useHidden(useState<PinKind[]>([]));
   // Which kinds of *map* label to leave off — a busy zone is mostly labels, and which ones matter
   // depends on what you're doing there. Persisted as an array, since a Set isn't JSON.
-  const [hiddenPoiList, setHiddenPoiList] = usePersistentState<PoiKind[]>(STORAGE_KEYS.mapHiddenPoiKinds, []);
-  const hiddenPoiKinds = useMemo(() => new Set(hiddenPoiList), [hiddenPoiList]);
+  const poiKinds = useHidden(usePersistentState<PoiKind[]>(STORAGE_KEYS.mapHiddenPoiKinds, []));
   /** The label kinds this map actually has, in the filter's sections, with the color they wear here. */
   const poiGroups = useMemo(() => (vector ? poiGroupSummary(vector.pois) : []), [vector]);
-  /** Several kinds at once, so switching a whole section is one action rather than one per row. */
-  const togglePoiKinds = (kinds: PoiKind[], visible: boolean) =>
-    setHiddenPoiList((prev) =>
-      visible ? prev.filter((k) => !kinds.includes(k)) : [...new Set([...prev, ...kinds])],
-    );
-  const [hiddenSharers, setHiddenSharers] = useState<Set<string>>(new Set());
+  // Whose shared pins to leave off. Transient, like the pin-kind filter.
+  const hiddenSharers = useHidden(useState<string[]>([]));
   const [sharePinsOn, setSharePinsOn] = usePersistentState(STORAGE_KEYS.mapSharePins, false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
@@ -267,7 +220,17 @@ export default function MapWindow() {
   }, [connected, sharePinsOn, pins, broadcastPins]);
 
   // Kills are re-read when the main process says the log changed — see `useKills`.
-  const allKills = useKills(zoneKey);
+  const myKills = useKills(zoneKey);
+  /**
+   * **Everything recorded here, mine and peers' together.** A shared kill becomes an ordinary
+   * `KillRecord` (`sharedAsKill`) so one filter and one list describe the whole map — they used to go
+   * straight to the canvas, which left the dots and the rows disagreeing and made every filter apply to
+   * half the markers. `shared: false` in the filters is what takes them out again.
+   */
+  const allKills = useMemo(
+    () => [...myKills, ...room.peerKills.filter((k) => zoneMatch(k.zone)).map(sharedAsKill)],
+    [myKills, room.peerKills, zoneMatch],
+  );
   /**
    * The clock the kill window is measured against. A bounded window is a moving target and
    * `filterKills` reads the time when it's called, so memoizing on the kills and the filters alone
@@ -286,56 +249,51 @@ export default function MapWindow() {
   const showKillConfidence = settings?.overlay.showKillConfidence ?? true;
 
   // Only placed kills can go on the map; the rest stay in the list, labelled.
-  const renderKills = useMemo<RenderKill[]>(() => {
-    const local = kills
-      .filter((k) => k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
-      .map((k) => {
-        const tier = confidenceTier(k.confidence);
-        return {
-          y: k.y!,
-          x: k.x!,
-          confidence: k.confidence,
-          glyph: tier.glyph,
-          color: tier.color,
-          mob: k.mob,
-          id: k.id,
-          // The hover says what the dot is, when it happened, what dropped, and — the part a
-          // marker can't show — how much of its *position* to believe (see ADR 0023).
-          title: k.mob,
-          detail: [clock(k.at), k.drops?.length ? `dropped ${k.drops.join(", ")}` : "", `${tier.label}: ${tier.why}`]
-            .filter(Boolean)
-            .join(" · "),
-        };
-      });
-    const theirs = room.peerKills
-      .filter((k) => zoneMatch(k.zone))
-      .map((k) => {
-        const tier = confidenceTier(k.confidence);
-        return {
-          y: k.y,
-          x: k.x,
-          confidence: k.confidence,
-          glyph: tier.glyph,
-          color: tier.color,
-          peer: k.by,
-          mob: k.mob,
-          title: k.mob,
-          // Someone else's kill: say whose, since the position came from *their* `/loc`.
-          detail: `${k.by ?? "a peer"}'s kill · ${tier.label}: ${tier.why}`,
-        };
-      });
-    return [...local, ...theirs];
-  }, [kills, room.peerKills, zoneMatch]);
+  const renderKills = useMemo<RenderKill[]>(
+    () =>
+      kills
+        .filter((k) => k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
+        .map((k) => {
+          const tier = confidenceTier(k.confidence);
+          return {
+            y: k.y!,
+            x: k.x!,
+            confidence: k.confidence,
+            glyph: tier.glyph,
+            color: tier.color,
+            mob: k.mob,
+            id: k.id,
+            ...(k.sharedBy ? { peer: k.sharedBy } : {}),
+            // The hover says what the dot is, when it happened, what dropped, and — the part a
+            // marker can't show — how much of its *position* to believe (see ADR 0023). A shared one
+            // says whose it was instead of when: the position came from *their* `/loc`, and no time
+            // travels with it.
+            title: k.mob,
+            detail: [
+              k.sharedBy ? `${k.sharedBy}'s kill` : clock(k.at),
+              k.drops?.length ? `dropped ${k.drops.join(", ")}` : "",
+              `${tier.label}: ${tier.why}`,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          };
+        }),
+    [kills],
+  );
 
   // Share the placed kills for the zone in view (empty un-shares), so a camp's heatmap can
   // be pooled. Only the conclusion travels — the evidence behind it stays local.
+  //
+  // **Only ever your own.** Now that peers' kills are in the same list, re-sharing what's on screen
+  // would relay theirs back out under your name — and with three clients in a room that echoes round
+  // and round, each pass adding what the last one heard.
   const broadcastKills = room.shareKills;
   useEffect(() => {
     if (!connected) return;
     broadcastKills(
       shareKillsOn && zoneKey
         ? kills
-            .filter((k) => k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
+            .filter((k) => !k.sharedBy && k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
             .map((k) => ({ zone: zoneKey, y: k.y!, x: k.x!, mob: k.mob, confidence: k.confidence }))
         : [],
     );
@@ -351,7 +309,7 @@ export default function MapWindow() {
       ?.mobs.mine()
       .then((mine) => broadcastMobs(mine));
     // Re-shared as the kill count moves, which is when there's anything new to say.
-  }, [connected, shareKillsOn, allKills.length, broadcastMobs]);
+  }, [connected, shareKillsOn, myKills.length, broadcastMobs]);
 
   /**
    * Pin where a mob lives. The roam centre is a real coordinate, so this reuses the pin
@@ -407,17 +365,17 @@ export default function MapWindow() {
       };
     };
     const local = pins
-      .filter((p) => zoneMatch(p.zone) && onLayer(p, viewLayers) && !hiddenKinds.has(p.kind))
+      .filter((p) => zoneMatch(p.zone) && onLayer(p, viewLayers) && !pinKinds.hidden.has(p.kind))
       .map((p) => mk(p, true));
     const peer = room.peerPins
       .filter(
         (p) =>
-          zoneMatch(p.zone) && onLayer(p, viewLayers) && !hiddenKinds.has(p.kind) && !hiddenSharers.has(p.by ?? ""),
+          zoneMatch(p.zone) && onLayer(p, viewLayers) && !pinKinds.hidden.has(p.kind) && !hiddenSharers.hidden.has(p.by ?? ""),
       )
       .map((p) => mk(p, false));
     return [...local, ...peer];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pins, room.peerPins, zoneKey, viewLayers, hiddenKinds, hiddenSharers]);
+  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden]);
 
   function placePin(eq: { y: number; x: number }, clientX: number, clientY: number) {
     if (!heldPin || !zoneKey) return;
@@ -441,232 +399,60 @@ export default function MapWindow() {
     setPins((prev) => prev.filter((p) => p.id !== id));
     setSelected(null);
   }
-  function toggleSharer(name: string, visible: boolean) {
-    setHiddenSharers((prev) => {
-      const next = new Set(prev);
-      if (visible) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }
   const selectedPin = selected ? pins.find((p) => p.id === selected.id) : undefined;
   function clearZonePins() {
     setPins((prev) => prev.filter((p) => !zoneMatch(p.zone)));
     setFiltersOpen(false);
   }
-  function toggleKind(kind: PinKind, visible: boolean) {
-    setHiddenKinds((prev) => {
-      const next = new Set(prev);
-      if (visible) next.delete(kind);
-      else next.add(kind);
-      return next;
-    });
-  }
 
   return (
     <div className={`map-win ${maximized ? "maximized" : ""}`}>
-      <div className="titlebar">
-        <h1>
-          <span className="mark">🗺</span> {zone?.name ?? zoneName ?? "Map"}
-        </h1>
-        {/* A zone the chosen pack hasn't got is drawn from the game's own maps (ADR 0063). Said out
-            loud, because "this map looks different from the rest" should never be a mystery. */}
-        {zone?.source && zone.source !== sourceId && (
-          <span
-            className="muted small"
-            title={`${sourceLabel} has no map for this zone, so it's drawn from ${sources.find((s) => s.id === zone.source)?.label ?? zone.source}`}
-          >
-            · from {sources.find((s) => s.id === zone.source)?.label ?? zone.source}
-          </span>
-        )}
-        {connected && (
-          <span className="muted small" title="Peers sharing their location in this zone">
-            · {peers.length} nearby
-          </span>
-        )}
-        <span className="spacer" />
-        <select
-          className="map-source-select no-drag"
-          value={sourceId}
-          onChange={(e) => setSourceId(e.target.value)}
-          title={
-            "Which set of maps to draw.\n\n" +
-            "• Bundled images — the P99 scans that ship with EQ List. Hand-calibrated, and only ~15 zones.\n" +
-            "• Game maps — the .txt maps EverQuest itself draws, from <EverQuest>\\maps\\. Every zone, with labels, and no calibration needed.\n" +
-            "• A pack — any subfolder of maps\\ holding .txt maps: unzip Brewall's into <EverQuest>\\maps\\Brewall\\, Goodurden's into its own subfolder, and it appears here.\n\n" +
-            (mapsDir ? `Reading: ${mapsDir}` : "No maps folder found — it's located from your log folder in Settings (<EverQuest>\\Logs).")
-          }
-        >
-          {sources.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-              {s.files.length ? ` · ${s.files.length}` : ""}
-            </option>
-          ))}
-        </select>
-        <ZonePicker
-          zones={zoneOptions}
-          value={selectValue}
-          currentZone={currentZone}
-          onPick={setOverride}
-        />
-        {/* The storeys a map's author labelled — only when it declares more than one. There are no
-            per-file layers any more: one map file is one zone. A dropdown could only ever show one
-            floor at a time, so the picking happens in the 👁 panel and this says what's showing and
-            takes you there. */}
-        {floors.length > 1 && (
-          <button
-            className={`wc no-drag ${bands ? "on" : ""}`}
-            title="Which floors are drawn — the map file holds them all at once, as the game draws it."
-            onClick={() => setFiltersOpen(true)}
-          >
-            ⌂ {bands ? `${shownLayers.length}/${floors.length}` : "all"}
-          </button>
-        )}
-        <label className="follow-toggle no-drag" title="Snap the map to your zone when you travel">
-          <input type="checkbox" checked={followZone} onChange={(e) => setFollowZone(e.target.checked)} />
-          follow
-        </label>
-        <div className="win-controls no-drag">
-          {/* The map's own scale, separate from the main window's — see `mapFontScale`. */}
-          <ScaleButtons
-            scale={settings?.overlay.mapFontScale ?? 1}
-            onScale={(next) => api()?.settings.update({ overlay: { mapFontScale: next } })}
-            what="map"
-            range={MAP_UI_SCALE}
-          />
-          <PinButton pinned={pinned} onToggle={() => setPinned((p) => !p)} />
-          <button className="wc" title="Minimize" onClick={() => api()?.win.minimize()}>
-            —
-          </button>
-          <MaximizeButton />
-          <button className="wc" title="Close map" onClick={() => api()?.win.close()}>
-            ✕
-          </button>
-        </div>
-      </div>
+      <MapTitlebar
+        zone={zone}
+        zoneName={zoneName}
+        sources={sources}
+        sourceId={sourceId}
+        sourceLabel={sourceLabel}
+        onSource={setSourceId}
+        mapsDir={mapsDir}
+        zoneOptions={zoneOptions}
+        pickedZone={selectValue}
+        currentZone={currentZone}
+        onZone={setOverride}
+        peerCount={peers.length}
+        connected={connected}
+        floorCount={floors.length}
+        shownFloors={shownLayers.length}
+        filtered={!!bands}
+        onFloors={() => setFiltersOpen(true)}
+        followZone={followZone}
+        onFollowZone={setFollowZone}
+        scale={settings?.overlay.mapFontScale ?? 1}
+        onScale={(next) => api()?.settings.update({ overlay: { mapFontScale: next } })}
+        pinned={pinned}
+        onPinned={() => setPinned((p) => !p)}
+      />
 
-      {/* Pin toolbar: pick a pin up (click map to drop), or Move to drag pins. */}
-      <div className="map-toolbar no-drag">
-        {PIN_TYPES.map((t) => (
-          <button
-            key={t.key}
-            className={`pin-btn ${tool === t.key ? "held" : ""}`}
-            style={{ color: t.color }}
-            title={`${t.label} pin — pick up, then click the map to drop (click again to put away)`}
-            onClick={() => setTool((cur) => (cur === t.key ? null : t.key))}
-          >
-            {t.glyph}
-          </button>
-        ))}
-        <button
-          className={`pin-btn ${moveMode ? "held" : ""}`}
-          title="Move tool — drag your pins to reposition them"
-          onClick={() => setTool((cur) => (cur === "move" ? null : "move"))}
-        >
-          ✥
-        </button>
-        <span className="muted small">
-          {heldPin
-            ? `holding ${pinType(heldPin).label} — click map to drop`
-            : moveMode
-              ? "move mode — drag a pin"
-              : "pick a pin, or click to ping"}
-        </span>
-        <span className="spacer" />
-        <button
-          className="wc"
-          title="Clear the line drawn between your /loc positions"
-          onClick={trail.clear}
-          disabled={trail.points.length === 0}
-        >
-          ∿
-        </button>
-        <button
-          className={`wc ${filtersOpen ? "on" : ""}`}
-          title="What's drawn — floors or heights, your pins, the map's own labels, peers' pins"
-          onClick={() => setFiltersOpen((o) => !o)}
-        >
-          👁
-        </button>
-        <button
-          className={`wc ${travelOpen ? "on" : ""}`}
-          title="How to get from one zone to another — the route, and which ports to assume"
-          onClick={() => setTravelOpen((o) => !o)}
-        >
-          🧭
-        </button>
-        <button
-          className={`wc ${mobsOpen ? "on" : ""}`}
-          title="What killing things here has taught us — drop rates and roam areas"
-          onClick={() => setMobsOpen((o) => !o)}
-        >
-          📖
-        </button>
-        <button
-          className={`wc ${killsOpen ? "on" : ""}`}
-          title="Kills recorded here — the heatmap and its filters"
-          onClick={() => setKillsOpen((o) => !o)}
-        >
-          ☠{kills.length ? ` ${kills.length}` : ""}
-        </button>
-        {connected && (
-          <button
-            className={`wc pin ${shareKillsOn ? "on" : ""}`}
-            title="Share your kill locations, so the camp's heatmap is everyone's"
-            onClick={() => setShareKillsOn((s) => !s)}
-          >
-            ☣
-          </button>
-        )}
-        {connected && (
-          <button
-            className={`wc ${usersOpen ? "on" : ""}`}
-            title="Who else is connected"
-            onClick={() => setUsersOpen((o) => !o)}
-          >
-            👥{room.users.length ? ` ${room.users.length}` : ""}
-          </button>
-        )}
-        {connected && (
-          <button className={`wc pin ${sharePinsOn ? "on" : ""}`} title="Share my pins with peers" onClick={() => setSharePinsOn((s) => !s)}>
-            🔗
-          </button>
-        )}
-      </div>
+      <MapToolbar
+        tool={tool}
+        onTool={setTool}
+        onClearTrail={trail.clear}
+        trailLength={trail.points.length}
+        killCount={kills.length}
+        userCount={room.users.length}
+        connected={connected}
+        panels={{
+          filters: [filtersOpen, setFiltersOpen],
+          travel: [travelOpen, setTravelOpen],
+          mobs: [mobsOpen, setMobsOpen],
+          kills: [killsOpen, setKillsOpen],
+          users: [usersOpen, setUsersOpen],
+        }}
+        shares={{ kills: [shareKillsOn, setShareKillsOn], pins: [sharePinsOn, setSharePinsOn] }}
+      />
 
       {usersOpen && connected && (
-        <div className="map-users no-drag">
-          <div className="muted small">Connected users</div>
-          {room.users.length === 0 ? (
-            <p className="muted small">
-              Nobody else is in the room yet. Anyone else running EQ List with peer networking on
-              shows up here.
-            </p>
-          ) : (
-            room.users.map((u) => (
-              <div className="user-row" key={u.peerId}>
-                <span
-                  className={`dot ${u.sharingLoc ? "on" : ""}`}
-                  title={u.sharingLoc ? "Sharing their location" : "Connected, not sharing location"}
-                />
-                <span className="u-name">{u.name}</span>
-                {u.zone ? (
-                  <button
-                    className="btn ghost sm"
-                    title={`View ${u.zone}`}
-                    onClick={() => setOverride(findZone(u.zone, zones)?.name ?? u.zone)}
-                  >
-                    {u.zone}
-                  </button>
-                ) : (
-                  <span className="muted small">zone unknown</span>
-                )}
-                {u.pins > 0 && <span className="muted small">· {u.pins} pin{u.pins === 1 ? "" : "s"}</span>}
-              </div>
-            ))
-          )}
-        </div>
+        <MapUsers users={room.users} onZone={(zone) => setOverride(findZone(zone, zones)?.name ?? zone)} />
       )}
 
       {travelOpen && (
@@ -687,7 +473,9 @@ export default function MapWindow() {
       {mobsOpen && (
         <MobKnowledgePanel
           zone={zoneKey}
-          refreshKey={`${allKills.length}:${room.peerKills.length}`}
+          refreshKey={`${myKills.length}:${room.peerKills.length}`}
+          filters={killFilters}
+          onFilters={setKillFilters}
           onMarkMob={markMobArea}
         />
       )}
@@ -706,19 +494,19 @@ export default function MapWindow() {
         <MapFilters
           floors={floors}
           shownLayers={shownLayers}
-          onLayers={setLayerPicks}
+          onLayers={setLayers}
           yourFloor={yourFloor}
           zRange={zRange}
           height={height}
-          onHeight={(pick) => setHeightPick(pick && zoneName ? { zone: zoneName, ...pick } : null)}
-          hiddenPinKinds={hiddenKinds}
-          onPinKind={toggleKind}
+          onHeight={setHeight}
+          hiddenPinKinds={pinKinds.hidden}
+          onPinKind={pinKinds.setVisible}
           poiGroups={poiGroups}
-          hiddenPoiKinds={hiddenPoiKinds}
-          onPoiKinds={togglePoiKinds}
+          hiddenPoiKinds={poiKinds.hidden}
+          onPoiKinds={poiKinds.setVisible}
           sharers={sharers}
-          hiddenSharers={hiddenSharers}
-          onSharer={toggleSharer}
+          hiddenSharers={hiddenSharers.hidden}
+          onSharer={hiddenSharers.setVisible}
           zone={zoneKey}
           onClearPins={clearZonePins}
         />
@@ -730,7 +518,7 @@ export default function MapWindow() {
             zone={zone}
             vector={vector}
             bands={bands}
-            hiddenPoiKinds={hiddenPoiKinds}
+            hiddenPoiKinds={poiKinds.hidden}
             emphasis={emphasis}
             kills={renderKills}
             showKillConfidence={showKillConfidence}
@@ -785,35 +573,13 @@ export default function MapWindow() {
       </div>
 
       {selected && selectedPin && (
-        <div className="pin-menu" style={{ left: selected.x, top: selected.y }}>
-          <div className="pin-menu-head">
-            <span style={{ color: pinType(selectedPin.kind).color }}>{pinType(selectedPin.kind).glyph}</span>
-            {pinType(selectedPin.kind).label}
-          </div>
-          <input
-            className="field"
-            placeholder="Title (shown on the map)"
-            value={selectedPin.title ?? ""}
-            onChange={(e) => updatePin(selectedPin.id, { title: e.target.value })}
-            autoFocus
-          />
-          <textarea
-            className="field"
-            placeholder="Note (shown on hover)"
-            rows={2}
-            value={selectedPin.note ?? ""}
-            onChange={(e) => updatePin(selectedPin.id, { note: e.target.value })}
-          />
-          <div className="row" style={{ gap: 6 }}>
-            <button className="btn ghost sm" onClick={() => removePin(selectedPin.id)}>
-              Remove
-            </button>
-            <span className="spacer" />
-            <button className="btn sm" onClick={() => setSelected(null)}>
-              Done
-            </button>
-          </div>
-        </div>
+        <PinEditor
+          pin={selectedPin}
+          at={selected}
+          onChange={(patch) => updatePin(selectedPin.id, patch)}
+          onRemove={() => removePin(selectedPin.id)}
+          onDone={() => setSelected(null)}
+        />
       )}
 
     </div>

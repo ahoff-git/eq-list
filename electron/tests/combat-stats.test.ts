@@ -8,7 +8,7 @@ import { createCombatStats } from "../combat-stats";
 import { drillDown, sumDamage } from "../../src/shared/damage-tree";
 import type { DamageAxis } from "../../src/shared/types";
 import { parseCombat } from "../../src/shared/combat-parser";
-import { splitLine } from "../../src/shared/log-parser";
+import { parseParty, splitLine } from "../../src/shared/log-parser";
 import type { CoinEvent, CombatEvent, LootEvent, XpEvent } from "../../src/shared/types";
 
 /** `sec` seconds past midnight as mm:ss — seconds roll into minutes, as a clock does. */
@@ -834,4 +834,117 @@ test("a loot line the log put no price on adds no money", () => {
   t.recordKill("a coyote", stamp(20));
   t.recordSale({ ...sold("Bone Chips", "a coyote", 0, 21), fate: "kept", soldFor: undefined });
   assert.equal(t.snapshot().session.soldCopper, 0);
+});
+
+// ── whose fight is it: the meter is your party's, not the camp's (ADR 0067) ──
+/** Feed a party line, the way the watcher hands one over. */
+function group(t: ReturnType<typeof createCombatStats>, sec: number, message: string): void {
+  const event = parseParty(splitLine(`[Wed Jul 29 ${clock(sec)} 2026] ${message}`, 1)!);
+  assert.ok(event, `expected to parse: ${message}`);
+  t.recordParty(event);
+}
+
+/** The tracker as it runs in the app: it always knows the character's name (from the log file). */
+function yours(): ReturnType<typeof createCombatStats> {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  return t;
+}
+
+test("another group's fight at the same camp never reaches the meter", () => {
+  const t = yours();
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "A coyote bites YOU for 5 points of damage."],
+    // The camp next door, logged because it's in earshot. None of it is ours.
+    [3, "Randomguy slashes a gnoll for 40 points of damage."],
+    [4, "A gnoll bites Randomguy for 30 points of damage."],
+    [5, "Randomguy`s warder bites a gnoll for 8 points of damage."],
+  ]);
+
+  const s = t.snapshot().session;
+  assert.deepEqual(s.byCombatant.map((r) => r.name).sort(), ["You", "a coyote"]);
+  assert.equal(s.totalDealt, 15);
+});
+
+test("a group-mate is your side, so their pull is your fight", () => {
+  const t = yours();
+  group(t, 1, "Bunnyslayer has joined the group.");
+  feed(t, [
+    [2, "Bunnyslayer slashes a gnoll for 40 points of damage."],
+    [3, "A gnoll bites Bunnyslayer for 30 points of damage."],
+    [4, "Bunnyslayer`s warder bites a gnoll for 8 points of damage."],
+  ]);
+
+  const s = t.snapshot().session;
+  assert.deepEqual(
+    s.byCombatant.map((r) => r.name).sort(),
+    ["Bunnyslayer", "Bunnyslayer`s warder", "a gnoll"],
+  );
+  assert.equal(s.totalDealt, 78);
+  assert.equal(s.yourDealt, 0, "a group-mate's damage is the group's, not yours");
+});
+
+test("leaving the group takes their fights with them", () => {
+  const t = yours();
+  group(t, 1, "Bunnyslayer has joined the group.");
+  feed(t, [[2, "Bunnyslayer slashes a gnoll for 40 points of damage."]]);
+  group(t, 3, "Bunnyslayer has left the group.");
+  // A fresh pull of theirs, after they left: no longer our side, no longer our fight.
+  feed(t, [[120, "Bunnyslayer slashes a rat for 40 points of damage."]]);
+
+  const s = t.snapshot().session;
+  assert.equal(s.totalDealt, 40);
+  assert.equal(s.byCombatant.find((r) => r.name === "a rat"), undefined);
+});
+
+test("a stranger helping on your mob is part of your fight", () => {
+  const t = yours();
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    // Not in your group and never will be — but this is the mob you're on, and what it took
+    // is what the fight cost, whoever landed it.
+    [2, "Randomguy slashes a coyote for 40 points of damage."],
+  ]);
+
+  const s = t.snapshot().session;
+  assert.equal(s.totalDealt, 50);
+  assert.equal(s.byCombatant.find((r) => r.name === "a coyote")!.taken, 50);
+});
+
+test("a kill across the camp isn't yours to count", () => {
+  const t = yours();
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("coyote", stamp(5)); // ours: we fought it (and the kill line strips the article)
+  t.recordKill("gnoll", stamp(6)); // somebody else's, three tents over
+  t.recordXp(xp(1, 7));
+
+  const s = t.snapshot().session;
+  assert.equal(s.kills, 1);
+  assert.deepEqual(s.byMob.map((m) => m.mob), ["coyote"]);
+  // The experience is still yours — the log only ever writes it for you — and it lands on
+  // the kill that was ours.
+  assert.equal(s.byMob[0].xpPct, 1);
+});
+
+test("your own fight is metered before the group is ever announced", () => {
+  // The app starts mid-camp: the join lines scrolled past hours ago, so the roster is empty.
+  // Everyone hitting the mob you're hitting still counts, which is what keeps a group's meter
+  // whole without the log ever having said who's in it.
+  const t = yours();
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Bunnyslayer slashes a coyote for 40 points of damage."],
+    [3, "A coyote bites Bunnyslayer for 5 points of damage."],
+  ]);
+  assert.equal(t.snapshot().session.totalDealt, 55);
+});
+
+test("the roster survives a meter reset — clearing the meter doesn't disband your group", () => {
+  const t = yours();
+  group(t, 1, "Bunnyslayer has joined the group.");
+  t.reset();
+  feed(t, [[2, "Bunnyslayer slashes a gnoll for 40 points of damage."]]);
+  assert.deepEqual(t.party(), ["Bunnyslayer"]);
+  assert.equal(t.snapshot().session.totalDealt, 40);
 });

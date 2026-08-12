@@ -54,16 +54,16 @@ export default function MapFilters({
   /** The hand-set window, or null for the whole span. Only offered when there are no floors. */
   height: HeightPick | null;
   onHeight: (pick: HeightPick | null) => void;
-  hiddenPinKinds: Set<PinKind>;
+  hiddenPinKinds: ReadonlySet<PinKind>;
   onPinKind: (kind: PinKind, visible: boolean) => void;
   /** The label kinds this map actually has, in sections (see `poiGroupSummary`). */
   poiGroups: PoiGroupSummary[];
-  hiddenPoiKinds: Set<PoiKind>;
+  hiddenPoiKinds: ReadonlySet<PoiKind>;
   /** Several at once, so a group heading is one action rather than one per kind. */
   onPoiKinds: (kinds: PoiKind[], visible: boolean) => void;
   /** People currently sharing pins — one toggle each. */
   sharers: string[];
-  hiddenSharers: Set<string>;
+  hiddenSharers: ReadonlySet<string>;
   onSharer: (name: string, visible: boolean) => void;
   zone?: string;
   onClearPins: () => void;

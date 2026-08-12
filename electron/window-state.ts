@@ -15,7 +15,7 @@
 import { app, screen, type BrowserWindow } from "electron";
 import path from "node:path";
 
-import { readJson, writeJson } from "./json-store";
+import { createSaver, readJson } from "./json-store";
 export interface Bounds {
   x: number;
   y: number;
@@ -40,7 +40,6 @@ interface WindowState {
 
 // Lazily loaded so we don't touch app.getPath before `ready`.
 let state: WindowState | null = null;
-let writeTimer: NodeJS.Timeout | null = null;
 let quitting = false;
 
 function file(): string {
@@ -52,19 +51,13 @@ function get(): WindowState {
   }
   return state;
 }
-function writeNow(): void {
-  if (writeTimer) {
-    clearTimeout(writeTimer);
-    writeTimer = null;
-  }
-  // Was the one writer that never created its folder either, so a first run into a missing userData
-  // silently kept nothing.
-  writeJson(file(), get(), { pretty: true, what: "window positions" });
-}
-function persist(): void {
-  if (writeTimer) clearTimeout(writeTimer);
-  writeTimer = setTimeout(writeNow, 300);
-}
+
+/**
+ * `restart`, unlike every other store: a drag fires "moved" continuously and only where the window
+ * *stops* is worth keeping, so each frame pushes the write back rather than letting one land mid-drag.
+ * The path is a function because `app.getPath` can't be called before `ready`.
+ */
+const saver = createSaver(file, "window positions", get, 300, { pretty: true, restart: true });
 
 /** A window is usable if it overlaps some display's work area. */
 function isOnScreen(b: Bounds): boolean {
@@ -109,8 +102,8 @@ export function rememberBounds(role: Role, win: BrowserWindow): void {
     // window can report a "new" size it never had. Saving that noise would creep a pixel a launch.
     if (nearlySame(get()[role], next)) return;
     get()[role] = next;
-    if (immediate) writeNow();
-    else persist();
+    if (immediate) saver.flush();
+    else saver.save();
   };
   win.on("moved", () => save());
   win.on("resized", () => save());
@@ -121,7 +114,7 @@ export function rememberBounds(role: Role, win: BrowserWindow): void {
 export function setMaximized(role: Role, on: boolean): void {
   const s = get();
   s.maximized = { ...s.maximized, [role]: on };
-  persist();
+  saver.save();
 }
 
 /** Was this window maximized when we last saw it? */
@@ -137,7 +130,7 @@ export function isQuitting(): boolean {
 /** Remember whether the map window is open (so the next launch can restore it). */
 export function setMapOpen(open: boolean): void {
   get().mapOpen = open;
-  persist();
+  saver.save();
 }
 
 /** Whether the map window was open when we last recorded it. */
@@ -148,7 +141,7 @@ export function wasMapOpen(): boolean {
 /** Called on app before-quit: mark quitting and flush any pending write synchronously. */
 export function beginQuit(): void {
   quitting = true;
-  writeNow();
+  saver.flush();
 }
 
 /** Forget saved positions (used by "reset window positions"). */
@@ -159,5 +152,5 @@ export function resetPositions(): void {
   delete s.map;
   // A window "lost" behind a maximized frame is exactly what this button is for.
   delete s.maximized;
-  writeNow();
+  saver.flush();
 }

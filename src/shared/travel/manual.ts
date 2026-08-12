@@ -15,6 +15,7 @@
 
 import { zoneWalks } from "./build";
 import {
+  isCast,
   boundaryId,
   graphZones,
   positionsIn,
@@ -45,8 +46,9 @@ export interface TravelPlace {
  *   it is as unconditional as a zone line. No mode and no cost, because there's nothing to permit and
  *   nothing to charge.
  * - `pair` — a specific conveyance between specific places, which a route may be denied.
- * - `network` — the places joined through one hub, which is what "every ring reaches every other"
- *   means.
+ * - `network` — a destination on one hub, which is what "every ring reaches every other" means. For a
+ *   **cast** mode (druid, wizard) the edge runs out of the hub only: the place is somewhere you arrive,
+ *   never somewhere you walk to in order to leave.
  */
 export type ManualLink =
   | {
@@ -270,7 +272,19 @@ export function applyManual(graph: TravelGraph, manual: TravelManual): { graph: 
         nodes.push(hub);
         ids.add(hubId);
       }
-      for (const side of sides) for (const node of side) join(node, hub);
+      // A cast network's edges run **out of** the hub only, exactly as the build's do: a ring added by
+      // hand is a destination, not a stop you walk to. Anything else keeps both directions, because
+      // something you board is something you have to reach.
+      for (const side of sides) {
+        for (const node of side) {
+          if (isCast(link.mode)) {
+            edges.push({ from: hub.id, to: node.id, mode: link.mode, cost, why: link.why });
+            added += 1;
+          } else {
+            join(node, hub);
+          }
+        }
+      }
     } else {
       for (let i = 0; i < sides.length; i++) {
         for (let j = i + 1; j < sides.length; j++) {

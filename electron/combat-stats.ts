@@ -21,13 +21,17 @@
 import { EventEmitter } from "node:events";
 import { isYours } from "../src/shared/combat-parser";
 import { createDamageCells, rollUpDamage } from "../src/shared/damage-tree";
+import { createFightScope } from "../src/shared/fight-scope";
 import { createNameRegistry } from "../src/shared/name-registry";
+import { ratio, round } from "../src/shared/numbers";
+import { createParty } from "../src/shared/party";
 import type {
   CoinEvent,
   CombatEvent,
   DamageCell,
   DamageKind,
   LootEvent,
+  PartyEvent,
   XpEvent,
   CombatStats,
   CombatantStat,
@@ -98,6 +102,13 @@ export interface CombatTracker {
    * ("Kainos`s warder"). Pass "" when unknown — only the highlight depends on it.
    */
   setPlayer(name: string): void;
+  /**
+   * Your group changing. The roster decides who counts as your side, which is what keeps
+   * another group's pull out of your meter (see `src/shared/fight-scope.ts`).
+   */
+  recordParty(event: PartyEvent): void;
+  /** Who the tracker currently believes is grouped with you — for tests and diagnostics. */
+  party(): string[];
   snapshot(): CombatStats;
   reset(): void;
   /**
@@ -113,7 +124,12 @@ export interface CombatTracker {
   onFightEnd(cb: (fight: FightStats) => void): void;
   /** Close out the fight in progress — for app quit, so the last pull isn't lost. */
   flush(): void;
-  /** A mob died. Feeds time-to-kill and experience attribution. */
+  /**
+   * A mob died. Feeds time-to-kill and experience attribution. Only mobs **your side
+   * fought** count — the log reports every death in earshot, and a stranger's kill is
+   * neither your kill rate nor your camp's (the kill *log* keeps it regardless: where a mob
+   * died is worth knowing whoever killed it — [ADR 0027](../specs/decisions/0027-only-your-kills-count.md)).
+   */
   recordKill(mob: string, at: string): void;
   /**
    * An experience gain: counted, credited to the most recent kill, and split solo/party.
@@ -375,6 +391,12 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
    */
   const names = createNameRegistry();
   const canon = names.canon;
+  /**
+   * Who's grouped with you. Kept here rather than in the caller because it's exactly as
+   * long-lived as the tracker and nothing else needs it — and because "whose damage is this"
+   * is one question, answered in one place.
+   */
+  const party = createParty();
   let fight = createWindow(canon);
   let session = createWindow(canon);
   let startedAt = nowIso();
@@ -416,6 +438,14 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
 
   /** You or anything of yours, against the current `player` — see `isYours`. */
   const isMine = (name: string): boolean => isYours(name, player);
+  /** Your side: you and your pet, plus whoever is grouped with you and theirs. */
+  const isOurs = (name: string): boolean => isMine(name) || party.has(name);
+  /**
+   * The gate every combat event passes through: other people's fights are not this meter's
+   * business (see `fight-scope.ts`). It's applied *once*, here, so the fight window and the
+   * session window can never disagree about what happened.
+   */
+  const scope = createFightScope({ ours: isOurs, sidesKnown: () => !!player });
 
   /**
    * One meter row. The by-skill and by-spell splits are **derived** from this combatant's
@@ -437,7 +467,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       crits: t.crits,
       maxHit: t.maxHit,
       activeSec,
-      dps: Math.round((t.dealt / activeSec) * 10) / 10,
+      dps: ratio(t.dealt, activeSec, 1),
       mine: isMine(name),
       byStance: [...t.byStance.entries()]
         .map(([stanceName, m]) => ({
@@ -467,7 +497,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   };
 
   const spellRow = (spell: string, t: SpellTally): SpellStat => {
-    const avgCastSec = t.timed ? Math.round((t.castMs / t.timed / 1000) * 100) / 100 : 0;
+    const avgCastSec = ratio(t.castMs / 1000, t.timed, 2);
     const completed = t.lands + t.resists + t.blocked;
     return {
       spell,
@@ -488,8 +518,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       // inflate a spell whose casts were mostly untimed (all the damage, a fraction of
       // the time). For a DoT, `damage` includes its ticks — which is right: the whole
       // point is what one cast eventually earns.
-      dpc: t.lands && avgCastSec ? Math.round((t.damage / t.lands / avgCastSec) * 10) / 10 : 0,
-      resistRate: completed ? Math.round((t.resists / completed) * 100) / 100 : 0,
+      dpc: ratio(t.damage, t.lands * avgCastSec, 1),
+      resistRate: ratio(t.resists, completed, 2),
       overhealed: t.overhealed,
       invocationHealed: t.invocationHealed,
       resistedBy: [...t.resistedBy.entries()]
@@ -497,7 +527,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         .sort((a, b) => b.count - a.count || a.target.localeCompare(b.target)),
       byInvocation: [...t.byInvocation.entries()]
         .map(([mode, m]) => {
-          const modeCastSec = m.timed ? Math.round((m.castMs / m.timed / 1000) * 100) / 100 : 0;
+          const modeCastSec = ratio(m.castMs / 1000, m.timed, 2);
           return {
             mode,
             casts: m.casts,
@@ -505,7 +535,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
             damage: m.damage,
             healed: m.healed,
             avgCastSec: modeCastSec,
-            dpc: m.lands && modeCastSec ? Math.round((m.damage / m.lands / modeCastSec) * 10) / 10 : 0,
+            dpc: ratio(m.damage, m.lands * modeCastSec, 1),
             invocationHealed: m.invocationHealed,
             procs: m.procs,
             procDamage: m.procDamage,
@@ -522,14 +552,14 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     return {
       mob,
       kills: t.kills,
-      avgKillSec: t.kills ? Math.round((killSec / t.kills) * 10) / 10 : 0,
-      xpPct: Math.round(t.xpPct * 1000) / 1000,
-      xpPerMin: killSec > 0 ? Math.round((t.xpPct / (killSec / 60)) * 100) / 100 : 0,
+      avgKillSec: ratio(killSec, t.kills, 1),
+      xpPct: round(t.xpPct, 3),
+      xpPerMin: ratio(t.xpPct, killSec / 60, 2),
       copper: t.copper,
       soldCopper: t.soldCopper,
       // Both ledgers together, because "what is this mob worth per minute" is the one
       // question where the distinction stops mattering — it's all money off the same corpse.
-      copperPerMin: killSec > 0 ? Math.round((coin / (killSec / 60)) * 10) / 10 : 0,
+      copperPerMin: ratio(coin, killSec / 60, 1),
     };
   };
 
@@ -563,7 +593,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
         .map(([name, t]) => mobRow(name, t))
         .sort((a, b) => b.xpPerMin - a.xpPerMin || b.kills - a.kills || a.mob.localeCompare(b.mob)),
       kills: w.totals.kills,
-      xpPct: Math.round(w.totals.xpPct * 1000) / 1000,
+      xpPct: round(w.totals.xpPct, 3),
       xpGains: w.totals.xpGains,
       soloXp: w.totals.soloXp,
       partyXp: w.totals.partyXp,
@@ -578,7 +608,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
           swings: t.swings,
           procs: t.procs,
           procDamage: t.procDamage,
-          procRate: t.swings ? Math.round((t.procs / t.swings) * 1000) / 1000 : 0,
+          procRate: ratio(t.procs, t.swings, 3),
           healed: t.healed,
         }))
         .sort((a, b) => b.procs - a.procs || b.swings - a.swings),
@@ -804,6 +834,14 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       const endGap = resolved ? SETTLED_END_MS : ENGAGED_END_MS;
       const stale = !!lastCombatAt && at - lastCombatAt > endGap;
 
+      // A new pull is a new engagement, so the enemy set goes first — *before* this event is
+      // judged. It's what makes the first swing of a fight have to stand on its own: without
+      // it, a stranger fighting the twin of last pull's mob would open a fight of ours.
+      const swing = event.kind === "damage" || event.kind === "miss";
+      if (stale && swing) scope.reset();
+      // Somebody else's fight is somebody else's business (ADR 0067).
+      if (!scope.admits(event)) return;
+
       if (event.kind === "stance") {
         stance = event.stance;
         return void emit();
@@ -861,7 +899,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       // Swings (hit or miss) are what delimit a fight; the first one after a lull
       // starts a fresh row set. Heals and casts ride along — they belong to a fight only
       // while one is running, so downtime healing/buffing doesn't invent a "fight".
-      if (event.kind === "damage" || event.kind === "miss") {
+      if (swing) {
         if (stale) {
           endFight();
           fight = createWindow(canon);
@@ -880,8 +918,18 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       const next = name.trim();
       if (next === player) return;
       player = next;
+      // A different character is a different group; the old one's would silently widen this
+      // one's meter.
+      party.clear();
       emit(); // `mine` flags change, so the windows need a fresh snapshot
     },
+
+    recordParty(event) {
+      party.note(event);
+      // Nothing already tallied changes — the roster only decides what's admitted from here
+      // on — so there's nothing to re-summarize and no `emit()`.
+    },
+    party: () => party.members(),
 
     /**
      * A kill. Time-to-kill is the gap since the fight started or the previous kill in it,
@@ -893,6 +941,13 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       // parser, but a pet dying is not something you killed — and crediting experience
       // to it would put your own pet at the top of the "what's worth killing" table.
       if (isMine(mob)) return;
+      // Nor is a death across the camp yours. Every metric on the panel is your side's, and a
+      // kill nobody on your side was fighting moves the count, the time-to-kill and the per-mob
+      // rates alike (ADR 0067). Time-to-kill is measured from the fight, so a mob we never
+      // fought has no fight to measure it against in the first place. Until the player's own
+      // name is known, sides can't be told apart at all and every kill counts — the same call
+      // the scope makes about damage.
+      if (player && !scope.fought(mob)) return;
       const at = ms(atIso);
       const from = Math.max(fight.span.firstAt || at, lastKillAt || 0) || at;
       const took = Math.max(0, at - from);
@@ -978,7 +1033,10 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       lastLanding = null;
       incoming.length = 0;
       names.clear();
+      scope.reset();
       // The repertoire is knowledge about the character, not a tally, so a reset keeps it.
+      // Nor is the party roster: clearing the meter doesn't disband your group, and re-learning
+      // it would take until the next person joined, left or spoke.
       // The stance and invocation aren't session state — they're what the character is
       // doing right now, and a reset doesn't change that.
       emit();

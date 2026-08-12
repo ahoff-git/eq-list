@@ -89,13 +89,18 @@ export function itemDemands(groups: ListGroup[]): Map<string, ItemDemand[]> {
  */
 export function itemTotals(groups: ListGroup[]): Map<string, number> {
   const totals = new Map<string, number>();
-  for (const [key, demands] of itemDemands(groups)) {
-    totals.set(
-      key,
-      demands.reduce((n, d) => n + d.need, 0),
-    );
-  }
+  for (const [key, demands] of itemDemands(groups)) totals.set(key, totalNeed(demands));
   return totals;
+}
+
+/**
+ * How many of an item every claim on it wants, together.
+ *
+ * Named because three places asked it — this map, the entry row, and the hover that spells the row
+ * out — and "the total is the sum of the parts" is precisely the claim the hover makes to the user.
+ */
+export function totalNeed(demands: ItemDemand[]): number {
+  return demands.reduce((n, d) => n + d.need, 0);
 }
 
 export function groupByOrigin(

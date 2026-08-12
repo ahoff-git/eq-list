@@ -62,9 +62,8 @@ function chain(): TravelGraph {
     { id: "net:druid", kind: "hub" as const, label: "druid network", zones: [], at: {} },
   ];
   const ports: TravelEdge[] = [
-    { from: "a#ring", to: "net:druid", mode: "druid", cost: 0 },
+    // One way out of the hub only — a port is cast from where you stand, so a ring is an arrival.
     { from: "net:druid", to: "a#ring", mode: "druid", cost: 0 },
-    { from: "d#ring", to: "net:druid", mode: "druid", cost: 0 },
     { from: "net:druid", to: "d#ring", mode: "druid", cost: 0 },
   ];
   return graph(nodes, ports, { a: "Alpha", b: "Beta", c: "Gamma", d: "Delta" });
@@ -120,11 +119,29 @@ test("a druid port is not used unless it's asked for", () => {
 
   const ported = findRoute(chain(), from, to, { druid: true });
   assert.ok(ported);
-  // Stand on a's ring (no walk — it's at the start), port, walk 100 from d's ring to the target.
+  // Cast where you stand, arrive at d's ring, walk the last 100. **Nothing is charged for getting to a
+  // ring to leave** — that's the whole difference from a boat, which you have to go and board.
   assert.equal(ported.cost, 100);
   assert.deepEqual(ported.modes, ["druid"]);
-  assert.deepEqual(ported.steps.map((s) => s.node.id).slice(1, -1), ["a#ring", "net:druid", "d#ring"]);
+  assert.deepEqual(ported.steps.map((s) => s.node.id).slice(1, -1), ["net:druid", "d#ring"]);
   assert.deepEqual(files(ported), ["a", "d"], "the hub is in no zone, so it isn't one of them");
+});
+
+test("a port can be cast from a zone that has no ring of its own", () => {
+  // The thing the walk-to-the-ring model got wrong: a druid standing in b — which has no ring anywhere
+  // in it — can still port to d's. Every ring is a destination *from anywhere*.
+  const inB = { zone: "b", at: { y: 0, x: 500, z: 0 } };
+  const to = { zone: "d", at: { y: 0, x: 1000, z: 0 } };
+
+  const walked = findRoute(chain(), inB, to);
+  assert.ok(walked);
+  assert.deepEqual(walked.modes, [], "with no port allowed it's a walk out through the borders");
+
+  const ported = findRoute(chain(), inB, to, { druid: true });
+  assert.ok(ported);
+  assert.equal(ported.cost, 100, "the port is free; only the walk from d's ring is charged");
+  assert.deepEqual(ported.steps.map((s) => s.node.id).slice(1, -1), ["net:druid", "d#ring"]);
+  assert.ok(ported.cost < walked.cost, "and it's the route worth taking");
 });
 
 test("a zone you only pass through by conveyance is still a zone you went through", () => {

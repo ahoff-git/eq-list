@@ -21,7 +21,10 @@ as they drop and the damage meter can show how the fight went.
   (`You have slain X` / `X has been slain by Y`; player death is ignored),
   `parseLevel` (`You have gained a level! Welcome to level N!` — EQL puts both halves
   on one line, and the number is the only place the log states your level), and
-  `parseCoin` (`You receive <coins> from the corpse.` / `…from that item.`) and
+  `parseCoin` (`You receive <coins> from the corpse.` / `…from that item.`),
+  `parseParty` (`X has joined/left the group.`, removals, disbands — and **group chat**, which is
+  the only evidence a group formed before the app started ever produces; the same sentence about
+  *you* means the group changed rather than a member did) and
   `parseLogin` (`Welcome to EverQuest Legends!`). The tail of the coin line is the point of it:
   it's the only thing telling a mob's money from an auto-sold item's, and the two are counted
   separately — see [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md). The login line
@@ -97,9 +100,13 @@ as they drop and the damage meter can show how the fight went.
   status bar) and feeds `xp`/`kill`/`combat` into `combat-stats.ts` — the single session
   tracker — coalescing its snapshots before broadcast, since one poll can carry thousands
   of combat lines.
-- `electron/combat-stats.ts` — **the** session tracker: experience-gain counts (solo /
-  party) and kills, each gain credited to the mob that died in the last 15s (a heuristic;
-  EQ never says which mob paid); per-combatant damage dealt /
+- `electron/combat-stats.ts` — **the** session tracker. Everything below is scoped to **your
+  party's fights**: EQ logs every swing in earshot, so each event passes one gate first
+  (`src/shared/fight-scope.ts` + the roster in `src/shared/party.ts`) — your side, and whatever
+  your side is fighting, admitted whole; anyone else's fight, dropped whole
+  ([ADR 0067](../decisions/0067-the-meter-counts-your-party-s-fights.md)). It tallies
+  experience-gain counts (solo / party) and kills, each gain credited to the mob that died in
+  the last 15s (a heuristic; EQ never says which mob paid); per-combatant damage dealt /
   taken / healed, DPS over *active* combat time, max hit, accuracy and crits;
   **per-spell** casts / cast time / damage-per-second-of-casting / resist rate; and
   **per-mob** time-to-kill and experience rate, a per-second damage series, and a recap of

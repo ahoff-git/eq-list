@@ -23,11 +23,13 @@ world coordinates, so a map knows where it is. See
     space). Math derived in [data-model.md](./data-model.md).
   - `zones.ts` — `CURATED_ZONES` (the few names the solver gets wrong or can't reach, see
     **Zone names**),
-    `findZone` (the log's wording resolves: it folds through `normalizeZone` — the same fold the
-    wiki-side zone matching uses — so case, a leading "the", the apostrophe the maps and the log
-    write differently, a difficulty number and the ruleset tag beside it ("The Steamfont Mountains 2
-    (Adaptive)") all wash out and a harder zone still gets its map, see
-    [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)), `sortZones`,
+    `findZone` (the log's wording resolves through `resolveZone` — case, a leading "the", the
+    apostrophe the maps and the log write differently, a difficulty number and the ruleset tag beside
+    it ("The Steamfont Mountains 2 (Adaptive)") all wash out and a harder zone still gets its map,
+    see [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md) — plus **word order**, so "The
+    Castle of Mistmoore" finds "Mistmoore Castle". It takes only the resolver's two strict tiers: a
+    wrong file draws a different zone under the right name, so no map beats the wrong map, see
+    [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)), `sortZones`,
     and `onLayer` for floor-scoped markers (against the *set* of floors in view).
 - **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawLine`, `drawCircle`,
   `clearCanvas`. Geometry itself is drawn by `MapPanel` onto the static lower canvas, batched into
@@ -159,16 +161,23 @@ world coordinates, so a map knows where it is. See
   played the zone: your own recorded positions have to fall inside that file's geometry, because you
   cannot stand outside the zone you are in.
 
-  **The mapping list is two tables**, because a name can be wrong in two ways:
+  **A name that's merely phrased differently needs no table at all.** `resolveZone`
+  (`src/shared/zones/resolve.ts`) matches against the zone list itself, so "The Castle of Mistmoore",
+  "Mistmoore Castle" and "Castle Mistmoore" are one zone without anyone saying so — and because it's
+  handed the candidates rather than guessing from the string alone, it can refuse when two zones fit
+  ([ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)). What's left over is
+  **two tables**, because a name can still be wrong in two ways:
   - `CURATED_ZONES` (`src/shared/map/zones.ts`) — *which file* a zone is, for the names no pack's
     labels reach. A real log's zones drove the current set: `kerraridge`, `qeynos2`, `qeynos`, `qrg`,
     `freporte`, `erudsxing`, `erudnext`, `butcher`, `oot`, each identified by its exits (and
     `butcher` by a recorded position), lifting a real install from **15 of 30 zones resolving to 27**.
-  - `ZONE_ALIASES` (`src/shared/names.ts`) — *which name*, for a place the game and the mapmakers
-    never agreed on. The log says **Kerra Isle**; both packs' labels say **Kerra Ridge**, and 454 of
-    463 positions recorded there sit inside `kerraridge`'s lines, so the alias folds the log's name
-    onto the map's. It's part of `zoneKey`, so a kill recorded under one name and a map named the
-    other are one zone to the heatmap, the kill list, mob knowledge and the wiki's drop zones alike.
+  - `ZONE_ALIASES` (`src/shared/names.ts`) — *which name*, for a pair **no rule can reach**. The log
+    says **Kerra Isle**; both packs' labels say **Kerra Ridge**, and 454 of 463 positions recorded
+    there sit inside `kerraridge`'s lines, so the alias folds the log's name onto the map's. It's
+    part of `zoneKey`, so a kill recorded under one name and a map named the other are one zone to
+    the heatmap, the kill list, mob knowledge and the wiki's drop zones alike. It is also the
+    *riskier* of the two tables: an alias has no candidate list to be outvoted by, so it is believed
+    everywhere and forever, where a resolver match is always checked against what the caller has.
 
   The three zones that stayed unresolved after that were **coverage, not naming** — and they're
   answered under **Sources** above: a zone the chosen pack hasn't got is borrowed from the game's own
@@ -176,13 +185,20 @@ world coordinates, so a map knows where it is. See
   unmapped that any folder on the machine can draw.
 - **Only zones this server has** — a pack draws all 26 expansions of EverQuest, so `zonesFromSources`
   drops the ones that don't exist here (`zoneAvailable`, see
-  [ADR 0064](../decisions/0064-a-zone-belongs-to-an-expansion.md)): a fetched zone → expansion table rules
+  [ADR 0065](../decisions/0065-a-zone-belongs-to-an-expansion.md)): a fetched zone → expansion table rules
   out everything past this server, and eqlwiki's live era flags close what it has but hasn't opened. The
   same function the [travel](../travel/README.md) graph excludes by, so the picker can't offer a zone a
   route would refuse. It **fails open** — a zone the table has never heard of is kept, because losing a
   real zone is worse than offering an unreachable one, and Legends' own custom zones live in that gap.
   `zonesFromFiles` deliberately doesn't filter: "what is this folder's zone called" is a different
   question, and the naming rules above lean on it.
+- **A zone can be pinned to the game's own maps** (`STOCK_ONLY_ZONES`, `stockOnly`). A pack's map for a
+  particular zone can be the wrong one to use — drawn for a different era, or laid out unlike what EQ
+  Legends ships — and preferring your pack in general can't fix one bad file. So there's a short exception
+  list, keyed by map file (`lavastorm`), and `zonesFromSources` applies it by **withholding the pack's
+  file**: from there on "this zone comes from the backstop" has one cause and one code path, whether the
+  pack lacked it or was overruled. The titlebar says so either way, with the reason worded for which it
+  was. A zone the game's own maps haven't got keeps the pack's — drawn imperfectly beats not drawn.
 - **The zone picker** (`ZonePicker`) is a **type-to-find** box, not a dropdown: 568 zones in a
   `<select>` is a scroll rather than a choice. Ranking is the app's existing `fuzzyRank` (token
   overlap plus Levenshtein), over the zone name **and its file name** — the file is what a zone we
@@ -330,6 +346,32 @@ world coordinates, so a map knows where it is. See
   would leave a mob lit up for good. Emphasis by mob also lights **peers'** kills of the same mob,
   since "where did those die" includes what the room saw.
 
+  **A peer's kill is a kill.** Shared kills go into the same list, the same mob groups and the same
+  filters as your own, marked with who sent them (`sharedBy`, `sharedAsKill`) — they used to go straight
+  to the canvas and appear in no list at all, so the map had markers nothing on screen explained and every
+  filter applied to half the dots. `shared` in `KillFilters` takes them out again, and it's **on by
+  default**: a mob dying somewhere is evidence of where it spawns whoever watched it. What travels is only
+  where, what and how much to believe it — no time and no loot — so a shared kill shows a gap for its
+  clock and is excluded by a drop filter, which is the right answer rather than a hole: it is no evidence
+  about drops at all, for the same reason a bystander's kill in your own log isn't
+  ([ADR 0027](../decisions/0027-only-your-kills-count.md)). Sharing is one-way on purpose — the broadcast
+  filters `sharedBy` out, or three clients in a room would echo each other's kills round and round.
+
+  The filter bar is **one row whose shape doesn't change**, including the shared toggle, so nothing
+  reflows when a peer connects. It used to wrap onto a second line — the two selects each cap at 55% of
+  the bar by default, which cannot fit — and with the panel 45% of the window tall, the map was nearly
+  gone.
+
+  **One bar heads both panels** (`KillFilterBar`). The 📖 knowledge panel used to spend a row of its own
+  on "14 mobs observed in Kerra Ridge" and a button, so opening it and the ☠ list cost two rows saying two
+  different things before either list started. Now each panel is headed by the same bar over the same
+  `KillFilters`, so the row you spend is a row that filters — and each carries **the toolbar glyph that
+  opens it** (☠ / 📖), which is the only thing distinguishing two otherwise identical rows of controls.
+  Controls that mean nothing for a panel are **absent rather than inert**: the knowledge panel offers no
+  time window and no position floor, because those are facts about an individual kill while it is a
+  lifetime tally — see `filterMobKnowledge`, where `shared: false` drops the mobs that are *only* peers'
+  rather than restating a pooled rate you helped build as your own smaller sample.
+
   The **[Hunt tab](../overlay-ui/README.md) asks the same question from the other window**
   (`map.emphasize` → `KillEmphasis`, which is why that shape lives in shared types rather than
   beside the list). Both write one piece of state, so whichever cursor moved last is the one being
@@ -410,4 +452,5 @@ world coordinates, so a map knows where it is. See
 [overlay-ui](../overlay-ui/README.md) · [log-watching](../log-watching/README.md) ·
 [data-model](./data-model.md) · [ADR 0010](../decisions/0010-ported-map-core.md) ·
 [ADR 0011](../decisions/0011-awari-peer-location-sharing.md) ·
-[ADR 0015](../decisions/0015-peer-presence-via-hello.md)
+[ADR 0015](../decisions/0015-peer-presence-via-hello.md) ·
+[ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)

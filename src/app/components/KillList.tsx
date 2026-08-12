@@ -2,9 +2,10 @@
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { clock } from "@/shared/format";
-import { confidenceTier, CONFIDENCE_TIERS } from "@/shared/kill-confidence";
-import type { KillFilters, KillWindow } from "@/shared/kill-filters";
+import { confidenceTier } from "@/shared/kill-confidence";
+import type { KillFilters } from "@/shared/kill-filters";
 import ItemLink from "./ItemLink";
+import KillFilterBar from "./KillFilterBar";
 import type { KillEmphasis, KillRecord } from "@/shared/types";
 
 /** How many mob groups to show before the "show more" fold. Distinct mobs per zone are few. */
@@ -24,6 +25,16 @@ const MAX_HEAD_DROPS = 6;
  * **Hovering a row lights its kills up on the map** (`onEmphasize`) — a mob's row lights all of
  * them, an individual kill lights just that one. The list says what died; the map says where, and
  * pointing at a name is the natural way to ask "where were those?".
+ *
+ * **Peers' kills are in here too**, in the same groups as your own, marked with who shared them. They
+ * used to go straight to the canvas and appear in no list at all, which meant the map had markers
+ * nothing on screen explained and every filter applied to only half of them. A mob dying somewhere is
+ * evidence of where it spawns whoever saw it — so it's one list, with `shared` in the filters for when
+ * you want only what you saw yourself.
+ *
+ * The filter bar is **one row whose shape doesn't change**: every control is always there, including the
+ * shared toggle, so nothing reflows when a peer connects and starts sharing. It used to wrap onto a
+ * second line and eat the map.
  */
 export default function KillList({
   kills,
@@ -39,8 +50,6 @@ export default function KillList({
   onEmphasize?: (emphasis: KillEmphasis | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const set = <K extends keyof KillFilters>(key: K, value: KillFilters[K]) =>
-    onFilters({ ...filters, [key]: value });
 
   // One openable entry per mob (newest first), so 300 kills of the same thing read as a single
   // row with a count — not a wall of identical names. The map still plots every individual kill.
@@ -48,76 +57,27 @@ export default function KillList({
   const shownGroups = expanded ? groups : groups.slice(0, MAX_GROUPS);
   // The mobs actually present, so the filter offers real choices rather than a free-text box.
   const mobs = useMemo(() => [...new Set(kills.map((k) => k.mob))].sort(), [kills]);
+  const shared = useMemo(() => kills.filter((k) => k.sharedBy).length, [kills]);
 
   return (
     // Leaving the list clears the emphasis outright. The rows hand it back and forth between a mob
     // and one of its kills, so without a backstop here, walking the cursor out of a kill row would
     // leave that mob lit up on the map for good.
     <div className="kill-list no-drag" onMouseLeave={() => onEmphasize?.(null)}>
-      <div className="row wrap kill-filters">
-        <div className="segmented">
-          {(["10m", "1h", "session", "all"] as KillWindow[]).map((w) => (
-            <button
-              key={w}
-              className={`seg ${filters.window === w ? "active" : ""}`}
-              onClick={() => set("window", w)}
-              title={w === "all" ? "Every kill ever recorded" : `Kills in the last ${w}`}
-            >
-              {w}
-            </button>
-          ))}
-        </div>
-
-        <select
-          className="map-zone-select"
-          value={filters.mob}
-          onChange={(e) => set("mob", e.target.value)}
-          title="Only this mob"
-        >
-          <option value="">any mob</option>
-          {mobs.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-
-        <input
-          className="field sm kill-drop"
-          placeholder="dropped…"
-          value={filters.drop}
-          onChange={(e) => set("drop", e.target.value)}
-          title="Only kills that dropped an item matching this"
-        />
-
-        <label className="row" style={{ gap: 4 }} title="Only kills that dropped something">
-          <input
-            type="checkbox"
-            checked={filters.droppedOnly}
-            onChange={(e) => set("droppedOnly", e.target.checked)}
-          />
-          <span className="small">dropped</span>
-        </label>
-
-        <select
-          className="map-zone-select"
-          value={filters.minConfidence}
-          onChange={(e) => set("minConfidence", Number(e.target.value))}
-          title="Hide kills whose position is less trustworthy than this"
-        >
-          <option value={0}>any position</option>
-          {CONFIDENCE_TIERS.slice(0, 4).map((tier, i) => (
-            <option key={tier.label} value={[0.8, 0.5, 0.2, 0.01][i]}>
-              {tier.glyph} {tier.label} or better
-            </option>
-          ))}
-        </select>
-
-        <span className="spacer" />
-        <span className="muted small">
-          {groups.length} mob{groups.length === 1 ? "" : "s"} · {kills.length} kill{kills.length === 1 ? "" : "s"}
-        </span>
-      </div>
+      <KillFilterBar
+        icon="☠"
+        what="kills"
+        toggledBy="shows and hides this list"
+        filters={filters}
+        onFilters={onFilters}
+        mobs={mobs}
+        tally={
+          <>
+            {groups.length} mob{groups.length === 1 ? "" : "s"} · {kills.length} kill{kills.length === 1 ? "" : "s"}
+            {shared > 0 && <span title={`${shared} of them shared by other players`}> · {shared} shared</span>}
+          </>
+        }
+      />
 
       {kills.length === 0 ? (
         <p className="muted small">
@@ -185,9 +145,14 @@ function MobGroup({
   onEmphasize: ((emphasis: KillEmphasis | null) => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  const newest = group.kills[0];
+  // A shared kill carries no time, so it can't claim to be the newest — the heading shows the newest
+  // one that *has* a time, and falls back to nothing rather than to a dash-shaped lie.
+  const newest = group.kills.find((k) => k.at) ?? group.kills[0];
   const drops = useMemo(() => summarizeDrops(group.kills), [group.kills]);
-  const others = group.kills.filter((k) => k.mine === false).length;
+  const shared = group.kills.filter((k) => k.sharedBy).length;
+  // Someone else's kill *in your own log* — a bystander got the blow. Counted apart from a peer's,
+  // because the two are different facts: one you watched, the other you were told.
+  const others = group.kills.filter((k) => k.mine === false && !k.sharedBy).length;
   const headDrops = drops.slice(0, MAX_HEAD_DROPS);
 
   return (
@@ -205,9 +170,17 @@ function MobGroup({
         {others > 0 && (
           <span
             className="muted small"
-            title={`${others} killed by someone else — still evidence the mob is here, but not counted in your drop rates.`}
+            title={`${others} killed by someone else in earshot — still evidence the mob is here, but not counted in your drop rates.`}
           >
             {others} by others
+          </span>
+        )}
+        {shared > 0 && (
+          <span
+            className="muted small"
+            title={`${shared} shared by other players. Evidence of where this spawns; no evidence about what it drops for you.`}
+          >
+            {shared} shared
           </span>
         )}
         <span className="spacer" />
@@ -261,13 +234,22 @@ function KillRow({
       <span className="kr-time">{clock(kill.at)}</span>
       {showConfidence && <ConfidenceMark kill={kill} />}
       <span className="kr-mob">{kill.mob}</span>
-      {kill.mine === false && (
+      {kill.sharedBy ? (
         <span
           className="muted small"
-          title={`${kill.killer} killed this, not you. It still says the mob is here, but it doesn't count towards your drop rates — you never had the corpse.`}
+          title={`Shared by ${kill.sharedBy}. Their position, from their own /loc — evidence of where this spawns, and none about what it drops for you.`}
         >
-          by {kill.killer}
+          from {kill.sharedBy}
         </span>
+      ) : (
+        kill.mine === false && (
+          <span
+            className="muted small"
+            title={`${kill.killer} killed this, not you. It still says the mob is here, but it doesn't count towards your drop rates — you never had the corpse.`}
+          >
+            by {kill.killer}
+          </span>
+        )
       )}
       {kill.drops?.length ? (
         <span className="kr-drops">
@@ -279,7 +261,9 @@ function KillRow({
           ))}
         </span>
       ) : (
-        <span className="muted small">no drop</span>
+        <span className="muted small" title={kill.sharedBy ? "A peer shares the kill, not the loot" : undefined}>
+          {kill.sharedBy ? "—" : "no drop"}
+        </span>
       )}
       <span className="spacer" />
       <span className="muted small" title={tier.why}>

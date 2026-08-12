@@ -43,11 +43,23 @@ stating a fact.
     The other two kinds: a `place` sits in one zone (a druid ring, a spire, a dock), and a `hub` is a
     teleport network, in no zone at all.
 
+    **A port is cast from where you stand.** A druid or a wizard doesn't walk to a ring to leave — they
+    cast, wherever they are — so a hub's edges run **one way, out to its destinations**, and the search
+    enters the network for free from the start. Every ring in the world is therefore a destination from
+    every zone, *including zones with no ring in them at all*, and the only thing a port costs is the
+    walk from where it drops you. This was wrong at first: the graph made you walk to a ring to leave,
+    which priced a port at the cost of reaching one and left a druid in a ringless zone being told to
+    hike. It also means a **lone** ring is a network worth having, where under the old model it went
+    nowhere. A boat is the opposite and stays two-way: you have to go and board it.
+
     `zoneFileFor` is **the one answer to "which map file does this zone name mean"** — folded, then exact,
-    then tried as a file name. There were three of these (the builder resolving a label, the manual pass
-    resolving an entry, the router resolving an endpoint) and they disagreed about the fallback, so an
-    isolated zone resolved by its long name but not its file name and an excluded zone asked for by file
-    said "no such zone" instead of "not in the game". One rule now, shared.
+    then the same words in another order, then tried as a file name. There were three of these (the
+    builder resolving a label, the manual pass resolving an entry, the router resolving an endpoint) and
+    they disagreed about the fallback, so an isolated zone resolved by its long name but not its file name
+    and an excluded zone asked for by file said "no such zone" instead of "not in the game". One rule now,
+    shared. It stops at rephrasing: `resolveZone`'s `narrower` tier would route "East Commonlands" to
+    "Commonlands", which is a wrong answer that reads like a right one
+    ([ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)).
 
     **How you cross is `via`** — `boat` · `translocator` · `portal` · `spire` · `ring` — and **absent is
     the common case**, meaning an ordinary zone line with nothing to take. A boundary is a boundary
@@ -96,7 +108,7 @@ stating a fact.
     whole continents' worth, and the Plane of Knowledge is a hub that shortcuts half the world.
 
     **Asked, not listed** — and by the same function the map's zone list uses, so the two can't disagree
-    about which world you're in. `zoneAvailable` ([ADR 0064](../decisions/0064-a-zone-belongs-to-an-expansion.md))
+    about which world you're in. `zoneAvailable` ([ADR 0065](../decisions/0065-a-zone-belongs-to-an-expansion.md))
     combines the two halves of the answer: a **fetched zone → expansion table** rules out everything past
     this server for good (Argath, the Plane of Knowledge, ~350 others a pack draws), and **eqlwiki's live
     era flags** close the expansions the server does have but hasn't opened — Kunark and Velious today,
@@ -126,9 +138,12 @@ stating a fact.
     corpus is read, so a border found from one side as a plain zone line and from the other as a ferry
     still says so.
 
-    Only rings and spires are hubbed (`AUTO_NETWORKS`): a druid reaches any ring from any other, but a
-    boat runs between two *particular* docks, and hubbing those would say every dock in the world
-    reaches every other for free. Docks and gnomes are found, counted and left for the manual pass.
+    Only rings and spires are hubbed (`isCast`): a druid reaches any ring from any other, but a boat
+    runs between two *particular* docks, and hubbing those would say every dock in the world reaches
+    every other for free. Docks and gnomes are found, counted and left for the manual pass. The same
+    predicate decides the *direction* of those edges — what makes a ring network wire itself is what
+    makes it one-way, and both are "it's a spell" — so there is one list rather than two that have to
+    agree.
 
     **Walks are stored, not derived** — they're the substance of the graph, so they belong in the file
     where they can be read and corrected one distance at a time. With one node per border this is
@@ -255,7 +270,11 @@ stating a fact.
   reads the generated file, never its own output, so running it twice is running it once — and
   generating can't quietly drop hand-authored travel, it goes stale instead. Re-run the manual pass
   after every build. Both take `--help`; `travel:manual -- --route "A" "B" --druid` prints a route,
-  which is the quickest way to see whether the graph is any good.
+  which is the quickest way to see whether the graph is any good. Both are thin: argument parsing,
+  `--help` (printed from the script's own docblock, so usage can't drift from the file), and loading the
+  app's **compiled** modules out of `dist-electron` all come from `scripts/lib/cli.mjs` — there is no
+  second copy of the map format, the graph builder or the router in JavaScript, which is why these need
+  `npm run build:electron` first and say so when it's missing.
 - **Saying where it's thin.** A build reports the borders only one side drew (whose walks are guesses,
   not measurements), the destinations no map file answered to, the zones with no way in or out, and the
   labels that named nowhere. Those lists name zones by **map file**, deliberately and unlike a route's

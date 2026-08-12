@@ -69,3 +69,19 @@ export function duration(sec: number, opts?: { seconds?: boolean }): string {
 export function figure(n: number | undefined | null): string {
   return n ? n.toLocaleString() : NOTHING;
 }
+
+/**
+ * A fraction as a percentage: `0.372` → `37%`, or `37.2%` with `places: 1`.
+ *
+ * Takes the **fraction**, not the percentage, so it composes with
+ * [`ratio`](./numbers.ts) — `percent(ratio(hits, swings))` — and there's one place where the
+ * ×100 happens. It was written inline a dozen times, half as `Math.round(x * 100)` and half as
+ * `(x * 100).toFixed(0)`, which are two answers to "what is 0.5 of a percent" living in one app.
+ *
+ * Zero prints as `0%`: unlike a tally, a measured nothing is a real reading. Only an absent or
+ * non-finite value is a gap — which is what an unguarded division used to put on screen as `NaN%`.
+ */
+export function percent(fraction: number | undefined | null, opts?: { places?: number }): string {
+  if (fraction == null || !Number.isFinite(fraction)) return NOTHING;
+  return `${(fraction * 100).toFixed(opts?.places ?? 0)}%`;
+}

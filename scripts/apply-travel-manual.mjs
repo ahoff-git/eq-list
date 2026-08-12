@@ -19,41 +19,16 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { ROOT, argv, dirOpt, flag, helpIfAsked, load, opt } from "./lib/cli.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const require = createRequire(import.meta.url);
-const argv = process.argv.slice(2);
-
-function opt(name, fallback) {
-  const i = argv.indexOf(`--${name}`);
-  if (i < 0) return fallback;
-  const value = argv[i + 1];
-  return value === undefined || value.startsWith("--") ? true : value;
-}
-const flag = (name) => argv.includes(`--${name}`);
-
-if (flag("help")) {
-  console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("*/")[0].replace(/^\/\*\*?/, ""));
-  process.exit(0);
-}
-
-function load(module) {
-  const file = path.join(ROOT, "dist-electron", module);
-  if (!fs.existsSync(file)) {
-    console.error(`Missing ${path.relative(ROOT, file)} — run: npm run build:electron`);
-    process.exit(1);
-  }
-  return require(file);
-}
+helpIfAsked(import.meta.url);
 
 const { graphPath, readGraph, routedPath, writeGraph } = load("electron/travel-graph.js");
 const { applyManual } = load("src/shared/travel/manual.js");
 const { MANUAL_TRAVEL } = load("src/shared/travel/manual-links.js");
 const { findRoute, stepCrossing } = load("src/shared/travel/route.js");
 
-const dir = typeof opt("out") === "string" ? path.resolve(String(opt("out"))) : path.join(ROOT, "data");
+const dir = dirOpt("out", "data");
 const only = opt("source");
 
 /** Which sources have a generated graph waiting. */

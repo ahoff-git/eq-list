@@ -15,14 +15,18 @@
  * which is exactly what a zone line is — so a paired-up ferry becomes a border between the two zones,
  * positioned at each end's dock, rather than a priced ride you might not be allowed to take.
  *
- * Ports are the exception: a druid ring and a spire are `place` nodes in one zone, joined through a hub
- * by an edge naming the conveyance, because taking one needs a class you may not have.
+ * Ports are the exception twice over. A druid ring and a spire are `place` nodes in one zone, reached
+ * through a hub by an edge naming the conveyance, because taking one needs a class you may not have —
+ * and those edges run **one way, out of the hub**, because a port is *cast from wherever you're
+ * standing*. You don't walk to a ring to leave; you walk to one only when it's where you arrive. So
+ * every ring in the world is a destination from every zone, including zones that have no ring at all.
  *
  * See [ADR 0062](../../../specs/decisions/0062-a-travel-graph-of-zone-lines.md). Pure, so the builder
  * (main process) and any consumer (renderer) share it.
  */
 
 import { normalizeZone } from "../sources";
+import { resolveZone } from "../zones/resolve";
 
 /** An EQ world position, `/loc` order plus height. */
 export interface TravelAt {
@@ -73,6 +77,28 @@ export const CROSSING_WORDS: Record<TravelCrossing, string> = {
   spire: "spire",
   ring: "ring",
 };
+
+/**
+ * The conveyances you **cast**, as against the ones you board.
+ *
+ * This is the single most important distinction in the graph, and two things follow from it:
+ *
+ *  - **A network wires itself.** A druid reaches *any* ring from any other and a wizard any spire, so
+ *    finding two of them is finding a network — no pairing needed. A boat runs between two particular
+ *    docks and a translocator gnome between particular gnomes, so those are `manual-links.ts`'s job.
+ *  - **Its edges are one-way.** A port is cast from wherever you're standing, so a ring is somewhere
+ *    you *arrive* and never somewhere you have to walk to first. A boat you have to go and board, which
+ *    is a walk like any other.
+ *
+ * Get the second one wrong and every route through a port is priced at the cost of reaching the nearest
+ * ring — which is how a druid in a zone with no ring at all was told to walk.
+ */
+export const CAST_MODES = ["druid", "wizard"] as const;
+
+/** Is this a spell you cast from where you stand, rather than something you have to reach? */
+export function isCast(mode: TravelMode): mode is (typeof CAST_MODES)[number] {
+  return (CAST_MODES as readonly string[]).includes(mode);
+}
 
 /**
  * Which network a crossing belongs to, for the parts that care about *permission* rather than wording:
@@ -130,9 +156,11 @@ export type TravelOptions = Partial<Record<TravelToggle, boolean>>;
  *
  * - `boundary` — the border between two zones, in both of them. The reason the graph works.
  * - `place` — somewhere in *one* zone you can travel from: a druid ring, a spire, a dock.
- * - `hub` — a teleport network, in no zone at all. Every druid ring reaches every other, which is a
- *   clique; a hub with a free edge to each member has the same shortest paths, a fraction of the
- *   edges, and one node to skip when druids are switched off.
+ * - `hub` — a teleport network, in no zone at all: a free edge **out** to each of its destinations,
+ *   entered for free from wherever the route starts (`findRoute`). Every druid ring reaches every other,
+ *   which is a clique, and a hub has the same shortest paths with a fraction of the edges — plus one
+ *   node to skip when druids are switched off. Nothing points *into* it from the map, which is what
+ *   says you cast a port rather than travelling to one.
  */
 export type TravelNodeKind = "boundary" | "place" | "hub";
 
@@ -254,11 +282,15 @@ export function boundaryId(a: string, b: string): string {
  * map file. So an isolated zone could be routed to by its long name but not by its file name, and an
  * excluded zone asked for by file came back "no such zone" instead of "not in the game".
  *
- * A name resolves **exactly after folding**, never by containment: `zoneMatches`' loose reading is right
- * for meeting the wiki halfway and quite wrong here, since "commonlands" sits inside "east commonlands"
- * ([ADR 0059](../../../specs/decisions/0059-a-zone-s-variants-are-one-zone.md)). Failing that, the name
- * is tried **as a file** — which is what a zone nobody could name is called, and what someone who knows
- * EverQuest would type.
+ * A name resolves **exactly after folding, or by rephrasing** — never by containment. "The Castle of
+ * Mistmoore" and "Mistmoore Castle" are the same words in a different order and so the same zone, but
+ * "commonlands" merely sits *inside* "east commonlands" and is a different one
+ * ([ADR 0059](../../../specs/decisions/0059-a-zone-s-variants-are-one-zone.md)), which is why the
+ * resolver's `narrower` tier is left off here: a route to the wrong end of the Commonlands is a wrong
+ * answer that reads like a right one
+ * ([ADR 0068](../../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md)). Failing that,
+ * the name is tried **as a file** — which is what a zone nobody could name is called, and what someone
+ * who knows EverQuest would type.
  */
 export function zoneFileFor(
   zoneNames: Record<string, string>,
@@ -266,11 +298,9 @@ export function zoneFileFor(
   files: ReadonlySet<string>,
   name: string,
 ): string | undefined {
-  const wanted = normalizeZone(name);
-  if (!wanted) return undefined;
-  for (const [file, zoneName] of Object.entries(zoneNames)) {
-    if (normalizeZone(zoneName) === wanted) return file;
-  }
+  if (!normalizeZone(name)) return undefined;
+  const match = resolveZone(name, Object.entries(zoneNames), ([, zoneName]) => zoneName);
+  if (match) return match.item[0];
   const bare = name.trim().toLowerCase();
   return files.has(bare) || zoneNames[bare] !== undefined ? bare : undefined;
 }

@@ -7,6 +7,7 @@
  * lookup needs a network connection. Recognition failures degrade to "" rather
  * than throwing, so a bad capture just yields no matches.
  */
+import type { Worker } from "tesseract.js";
 import { createLogger } from "../src/shared/logging";
 
 const log = createLogger("ocr");
@@ -16,10 +17,12 @@ export interface Ocr {
 }
 
 export function createOcr(cachePath: string): Ocr {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let workerPromise: Promise<any> | null = null;
+  // The type comes from a **type-only** import, which is erased at compile time — so naming the
+  // worker properly doesn't undo the lazy `await import` below, which is what keeps the WASM and the
+  // language model out of startup.
+  let workerPromise: Promise<Worker> | null = null;
 
-  async function getWorker() {
+  async function getWorker(): Promise<Worker> {
     if (!workerPromise) {
       log.debug("initializing tesseract worker");
       const tesseract = await import("tesseract.js");

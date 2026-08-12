@@ -174,7 +174,7 @@ test("a zone name resolves through EverQuest's backtick as well as a typed apost
   assert.deepEqual(graph.nodes.map((n) => n.id), ["akanon|steamfontmts"]);
 });
 
-test("a teleport network becomes a hub; one zone's worth of rings is not a network", () => {
+test("a teleport network is a hub with one-way edges out to its destinations", () => {
   const { graph, report } = buildTravelGraph(
     { id: "stock" },
     [zone("lfaydark", [place("ring")]), zone("gfaydark", [place("ring")]), zone("crushbone", [place("spire", "Spires")])],
@@ -184,10 +184,21 @@ test("a teleport network becomes a hub; one zone's worth of rings is not a netwo
   const hub = graph.nodes.find((n) => n.id === "net:druid");
   assert.equal(hub?.kind, "hub");
   assert.deepEqual(hub?.zones, [], "a network is in no zone");
-  assert.equal(graph.edges.filter((e) => e.mode === "druid").length, 4, "two members, both ways");
 
-  // The lone spire keeps its node — a person may pair it — but an empty hub would be a lie.
-  assert.equal(graph.nodes.some((n) => n.id === "net:wizard"), false);
+  // **One way, and that's the point.** A druid casts from where they stand, so a ring is somewhere you
+  // arrive; there is no edge for walking to one in order to leave. An edge back into the hub would say
+  // you had to, and would price a port at the cost of reaching the nearest ring.
+  const druid = graph.edges.filter((e) => e.mode === "druid");
+  assert.deepEqual(
+    druid.map((e) => `${e.from}→${e.to}`).sort(),
+    ["net:druid→gfaydark#druid-rings", "net:druid→lfaydark#druid-rings"],
+  );
+
+  // A **lone** spire is still a network: one destination reachable from the whole world is a real edge.
+  // (Under the old walk-there-first model it went nowhere, so it got no hub at all.)
+  const spires = graph.edges.filter((e) => e.mode === "wizard");
+  assert.equal(graph.nodes.some((n) => n.id === "net:wizard"), true);
+  assert.deepEqual(spires.map((e) => `${e.from}→${e.to}`), ["net:wizard→crushbone#spires"]);
   assert.ok(graph.nodes.some((n) => n.label === "Spires"));
   assert.deepEqual(report.networks, [
     { network: "druid", zones: ["gfaydark", "lfaydark"] },

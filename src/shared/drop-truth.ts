@@ -20,12 +20,43 @@
  */
 import { normalizeItemName } from "./grouping";
 import { itemBaseName } from "./names";
+import { percent } from "./format";
+import { round } from "./numbers";
 
 /** How much evidence before "never seen it" is worth remarking on. */
 export const SUSPICIOUS_AFTER_KILLS = 25;
 
 /** How much before an observed rate is worth preferring to the wiki's. */
 export const TRUST_OBSERVED_AFTER_KILLS = 15;
+
+/** Under this a drop is rare enough that a whole percent hides the difference between 1-in-100 and
+ *  1-in-300 — so it gets a decimal. */
+const RARE_BELOW = 0.1;
+
+/** How much before it stops being "indicative" and becomes a figure you'd quote. */
+export const SETTLED_AFTER_KILLS = 50;
+
+/** How far a rate out of this many kills should be trusted. Matches the `md-rate` CSS classes. */
+export type RateConfidence = "solid" | "fair" | "thin";
+
+/**
+ * The sample-size ladder for an observed rate.
+ *
+ * The mob panel had these two thresholds written as bare `50` and `15`, **twice** — once to pick the
+ * CSS class and again to word the hover — and its `15` was silently the same decision as
+ * `TRUST_OBSERVED_AFTER_KILLS` above, with nothing tying them together. Moving the line at which we
+ * start believing our own kills would have left the dimming and the tooltip disagreeing with the
+ * reconciliation.
+ *
+ * Note this is about **sample size**, not position — the ladder in
+ * [kill-confidence.ts](./kill-confidence.ts) answers "where did this happen", a different question
+ * with its own tiers.
+ */
+export function rateConfidence(kills: number): RateConfidence {
+  if (kills >= SETTLED_AFTER_KILLS) return "solid";
+  if (kills >= TRUST_OBSERVED_AFTER_KILLS) return "fair";
+  return "thin";
+}
 
 export type DropVerdict = "confirmed" | "undocumented" | "unseen";
 
@@ -99,7 +130,7 @@ export function reconcileDrops(
         verdict: !listed ? "undocumented" : seen > 0 ? "confirmed" : "unseen",
         kills,
         seen,
-        observedRate: kills ? Math.round((seen / kills) * 1000) / 1000 : undefined,
+        observedRate: kills ? round(seen / kills, 3) : undefined,
         wikiRate: fromWiki?.rate,
         trustObserved,
         // A wiki claim is only suspicious once we've killed the thing enough times that its
@@ -117,15 +148,23 @@ export function reconcileDrops(
  */
 export function bestRate(truth: DropTruth): { text: string; source: "observed" | "wiki" | "none" } {
   if (truth.trustObserved && truth.observedRate !== undefined) {
-    return { text: formatRate(truth.observedRate), source: "observed" };
+    return { text: dropRate(truth.observedRate), source: "observed" };
   }
   if (truth.wikiRate) return { text: truth.wikiRate, source: "wiki" };
   if (truth.observedRate !== undefined && truth.seen > 0) {
-    return { text: formatRate(truth.observedRate), source: "observed" };
+    return { text: dropRate(truth.observedRate), source: "observed" };
   }
   return { text: "—", source: "none" };
 }
 
-function formatRate(rate: number): string {
-  return `${(rate * 100).toFixed(rate < 0.1 ? 1 : 0)}%`;
+/**
+ * An observed drop rate. Exported because the mob panel shows the same number and had grown its own
+ * copy of this line — and a rate that reads `2%` in one place and `1.5%` in another is two different
+ * claims about the same kills.
+ *
+ * The extra decimal below 10% is the point: rare drops are where the interesting differences are, and
+ * `0%` for one drop in 300 kills says the opposite of what was measured.
+ */
+export function dropRate(rate: number): string {
+  return percent(rate, { places: rate < RARE_BELOW ? 1 : 0 });
 }

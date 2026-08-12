@@ -37,6 +37,7 @@ import type {
   LocEvent,
   LevelEvent,
   LoginEvent,
+  PartyEvent,
 } from "./types";
 
 const MONTHS: Record<string, number> = {
@@ -263,6 +264,65 @@ const LOGIN_RE = /^Welcome to EverQuest\b.*!$/;
 export function parseLogin(line: LogLine): LoginEvent | null {
   if (!LOGIN_RE.test(line.message)) return null;
   return { kind: "login", logId: line.logId, raw: line.raw, at: line.at };
+}
+
+/**
+ * Your group, one line at a time.
+ *
+ * EQ never lists a group's membership — it only announces the *changes* — so a roster can
+ * only ever be assembled from these, and only from the moment we start reading. That's why
+ * **group chat counts as membership**: a group formed before the app started announces
+ * nothing, but its members talk, and "Bunnyslayer tells the group" is a statement that
+ * Bunnyslayer is in it. It's evidence, not an event, and it's the only evidence a
+ * long-standing group ever produces.
+ *
+ * Wordings vary between clients and servers, so each shape is listed rather than generalized
+ * — a pattern that never matches costs nothing, and a *loose* one that matches chat would put
+ * whatever someone typed into the roster. Anything unmatched simply isn't a party line.
+ *
+ * `whenYou` is what the line means when the name it captured is **you**: "You have left the
+ * group" is the same sentence as "Soandso has left the group" and means something completely
+ * different, so every named pattern says which. `null` means the line is only evidence that
+ * you're grouped, which we can't act on — dropped rather than mistaken for a change.
+ */
+const PARTY_PATTERNS: { re: RegExp; change: PartyEvent["change"]; whenYou: PartyEvent["change"] | null }[] = [
+  { re: /^(?<who>.+?) (?:has|have) joined the group\.$/, change: "joined", whenYou: "cleared" },
+  { re: /^(?<who>.+?) joins the group\.$/, change: "joined", whenYou: "cleared" },
+  // You accepting an invite: the only line that names the group you're joining, so it's also
+  // the only one that can seed a roster at the moment you join one.
+  { re: /^You notify (?<who>.+?) that you agree to join the group\.$/, change: "joined", whenYou: null },
+  { re: /^(?<who>.+?) (?:has|have) left the group\.$/, change: "left", whenYou: "cleared" },
+  { re: /^(?<who>.+?) leaves the group\.$/, change: "left", whenYou: "cleared" },
+  { re: /^(?<who>.+?) (?:(?:has|have) been|was|were) removed from the group\.$/, change: "left", whenYou: "cleared" },
+  { re: /^You remove (?<who>.+?) from the (?:group|party)\.$/, change: "left", whenYou: null },
+  // The group ending, in the wordings that name nobody.
+  { re: /^Your group has been disbanded\.$/, change: "cleared", whenYou: "cleared" },
+  { re: /^You (?:have )?disband(?:ed)? (?:the|your) group\.$/, change: "cleared", whenYou: "cleared" },
+  // Group chat — see above. Deliberately last: it's the loosest pattern here.
+  { re: /^(?<who>.+?) tells the group, /, change: "joined", whenYou: null },
+];
+
+/** "you" / "your" / "YOU" — every way the log writes the reader. */
+const YOU_RE = /^(?:you|your)$/i;
+
+export function parseParty(line: LogLine): PartyEvent | null {
+  for (const { re, change, whenYou } of PARTY_PATTERNS) {
+    const m = line.message.match(re);
+    if (!m) continue;
+    const who = m.groups?.who?.trim();
+    const mine = !who || YOU_RE.test(who);
+    const resolved = mine ? whenYou : change;
+    if (!resolved) return null;
+    return {
+      kind: "party",
+      change: resolved,
+      who: resolved === "cleared" ? undefined : who,
+      logId: line.logId,
+      raw: line.raw,
+      at: line.at,
+    };
+  }
+  return null;
 }
 
 // "Your Location is 1234.5, -678.9, 42.0" → LocEvent. EQ reports the triple y-first.

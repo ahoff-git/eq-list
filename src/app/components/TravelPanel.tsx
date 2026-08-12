@@ -29,7 +29,7 @@ const CONVEYANCES: {
   {
     key: "druid",
     label: "Druid ports",
-    hint: "You can get to a druid ring and be ported — you're a druid, or someone will oblige. Off by default: a route that assumed a port you can't get is advice you can't take.",
+    hint: "A druid will port you — you're one, or someone will oblige. It's cast where you stand, so a ring is only ever where you arrive. Off by default: a route that assumed a port you can't get is advice you can't take.",
   },
   {
     key: "wizard",
@@ -43,9 +43,12 @@ const CONVEYANCES: {
   },
 ];
 
+/** Past this a distance is shown in thousands: five digits of world units read as noise. */
+const UNITS_IN_K = 1000;
+
 /** A distance in EQ world units, as a figure a person can compare. */
 function units(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
+  return n >= UNITS_IN_K ? `${(n / UNITS_IN_K).toFixed(1)}k` : `${Math.round(n)}`;
 }
 
 /** What a refusal means, in a sentence. Four situations, four different things to do about them. */

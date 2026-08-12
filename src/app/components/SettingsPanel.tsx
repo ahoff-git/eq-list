@@ -1,143 +1,28 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useSettings, useWatcherStatus, useAppInfo } from "@/lib/hooks";
+import { useState } from "react";
+import { useAppInfo, useSettings, useWatcherStatus } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { characterFromLogFile } from "@/shared/log-parser";
-import { MAP_UI_SCALE, UI_SCALE } from "@/shared/constants";
-import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
-import { alertStyle } from "@/shared/cast-alerts";
-import AlertStyleFields from "./AlertStyleFields";
-import type {
-  CastWatch,
-  DeepPartial,
-  DisplayInfo,
-  LogImportResult,
-  Settings,
-} from "@/shared/types";
+import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
+import CastAlertSettings from "./CastAlertSettings";
+import LogSettings from "./LogSettings";
+import { percent } from "@/shared/format";
+import type { DeepPartial, Settings } from "@/shared/types";
 
 /** Log location, match strictness, overlay look, and the debug toggle. */
 export default function SettingsPanel() {
   const settings = useSettings();
   const status = useWatcherStatus();
   const info = useAppInfo();
-  const [digesting, setDigesting] = useState(false);
-  // Which watch's own-style editor is expanded (only one at a time).
-  const [styling, setStyling] = useState<string | null>(null);
-  const [digested, setDigested] = useState<LogImportResult | null>(null);
-  // Connected monitors, for the alert-overlay "which screen" picker (only offered with >1).
-  const [displays, setDisplays] = useState<DisplayInfo[]>([]);
-  useEffect(() => {
-    void api()?.display.list().then(setDisplays);
-  }, []);
-  // True while placing a custom alert spot (the overlay is catching a click).
-  const [placing, setPlacing] = useState(false);
 
   if (!settings) return <p className="muted">Loading settings…</p>;
 
   const patch = (p: DeepPartial<Settings>) => api()?.settings.update(p);
   const derivedName = characterFromLogFile(status.file) ?? "";
 
-  // Cast alerts: watches are a whole-array replace (deepMerge swaps arrays wholesale).
-  const ca = settings.castAlerts;
-  const setWatches = (watches: CastWatch[]) => patch({ castAlerts: { watches } });
-  const updateWatch = (id: string, p: Partial<CastWatch>) =>
-    setWatches(ca.watches.map((w) => (w.id === id ? { ...w, ...p } : w)));
-  const removeWatch = (id: string) => setWatches(ca.watches.filter((w) => w.id !== id));
-  const addWatch = () => setWatches([...ca.watches, { id: crypto.randomUUID(), spell: "", enabled: true }]);
-  // Add a suggested watch, unless an identical substring is already on the list. A line
-  // suggestion ("invites you") is about what the game said, so it isn't also matched as a spell.
-  const addSuggestion = (s: CastSuggestion) => {
-    if (ca.watches.some((w) => w.spell.trim().toLowerCase() === s.spell.trim().toLowerCase())) return;
-    const line = s.onLine ? { onLine: true, onCast: false } : {};
-    setWatches([...ca.watches, { id: crypto.randomUUID(), spell: s.spell, enabled: true, ...line }]);
-  };
-
-  // Custom alert spots (locations): a whole-array replace, like watches.
-  const setLocations = (locations: typeof ca.locations) => patch({ castAlerts: { locations } });
-  const renameLocation = (id: string, name: string) =>
-    setLocations(ca.locations.map((l) => (l.id === id ? { ...l, name } : l)));
-  const removeLocation = (id: string) => setLocations(ca.locations.filter((l) => l.id !== id));
-  // Let the user click a point on the overlay; add it as a named spot they can then rename / pick.
-  const placeSpot = async () => {
-    setPlacing(true);
-    try {
-      const p = await api()?.alerts.placeLocation();
-      if (p) setLocations([...ca.locations, { id: crypto.randomUUID(), name: `Spot ${ca.locations.length + 1}`, ...p }]);
-    } finally {
-      setPlacing(false);
-    }
-  };
-
-  async function browse() {
-    const dir = await api()?.settings.pickLogDir();
-    if (dir) patch({ logDir: dir });
-  }
-
-  async function digestLog() {
-    setDigesting(true);
-    try {
-      const res = await api()?.log.import();
-      if (res) setDigested(res);
-    } finally {
-      setDigesting(false);
-    }
-  }
-
   return (
     <div>
-      <div className="setting">
-        <label>EverQuest log folder</label>
-        <div className="row">
-          <input className="field" value={settings.logDir} onChange={(e) => patch({ logDir: e.target.value })} />
-          <button className="btn" onClick={browse}>
-            Browse…
-          </button>
-        </div>
-        <span className="hint">
-          {status.watching ? `Watching ${fileName(status.file)}` : status.error ?? "Not watching"}
-        </span>
-      </div>
-
-      <div className="setting">
-        <label>Specific log file (optional)</label>
-        <input
-          className="field"
-          placeholder="Auto — follow the most recently written eqlog_*.txt"
-          value={settings.activeLogFile}
-          onChange={(e) => patch({ activeLogFile: e.target.value })}
-        />
-        <span className="hint">Leave blank to auto-detect the active character.</span>
-      </div>
-
-      <div className="setting">
-        <label>Digest a past log</label>
-        <div className="row">
-          <button className="btn" onClick={digestLog} disabled={digesting}>
-            {digesting ? "Digesting…" : "Eat a log file…"}
-          </button>
-        </div>
-        <span className="hint">
-          Pick an old EverQuest log and fold its kills, drops and locations into your learned mob
-          data (observed drop rates + roam areas), and its <b>fights into the Damage tab’s history</b>,
-          one play session per login — without watching it live. Your live combat/session stats
-          aren’t touched. Eating the same log twice is safe: every kill, drop and fight is keyed by
-          the log line behind it, so nothing lands twice. Results appear right away: the Hunt tab
-          pools every zone, while the map shows the zone you’re viewing (only kills the log placed
-          with a nearby <kbd>/loc</kbd> get a marker).
-          {digested && (
-            <>
-              {" "}
-              <b>
-                Digested {digested.kills} kills / {digested.drops} drops / {digested.fights} fights /{" "}
-                {digested.loot} looted
-              </b>{" "}
-              from {fileName(digested.file)}
-              {digested.sessions > 0 && ` across ${digested.sessions} play session${digested.sessions === 1 ? "" : "s"}`}.
-            </>
-          )}
-        </span>
-      </div>
-
+      <LogSettings settings={settings} patch={patch} />
       <ForgetData />
 
       <div className="setting">
@@ -154,19 +39,19 @@ export default function SettingsPanel() {
       </div>
 
       <div className="setting">
-        <label>Window opacity — {(settings.overlay.opacity * 100).toFixed(0)}%</label>
+        <label>Window opacity — {percent(settings.overlay.opacity)}</label>
         <input
           type="range"
-          min={0.2}
-          max={1}
-          step={0.05}
+          min={OVERLAY_OPACITY.min}
+          max={OVERLAY_OPACITY.max}
+          step={OVERLAY_OPACITY.step}
           value={settings.overlay.opacity}
           onChange={(e) => patch({ overlay: { opacity: Number(e.target.value) } })}
         />
       </div>
 
       <div className="setting">
-        <label>Interface scale — {(settings.overlay.fontScale * 100).toFixed(0)}%</label>
+        <label>Interface scale — {percent(settings.overlay.fontScale)}</label>
         <input
           type="range"
           min={UI_SCALE.min}
@@ -183,7 +68,7 @@ export default function SettingsPanel() {
       </div>
 
       <div className="setting">
-        <label>Map window scale — {(settings.overlay.mapFontScale * 100).toFixed(0)}%</label>
+        <label>Map window scale — {percent(settings.overlay.mapFontScale)}</label>
         <input
           type="range"
           min={MAP_UI_SCALE.min}
@@ -195,7 +80,7 @@ export default function SettingsPanel() {
         <span className="hint">
           Kept separate because the two windows want different sizes: the list is text you shrink
           to reclaim desk space, the map is a picture you want as large as it will go — so this one
-          goes past 100%, up to {Math.round(MAP_UI_SCALE.max * 100)}%. Either window&apos;s
+          goes past 100%, up to {percent(MAP_UI_SCALE.max)}. Either window&apos;s
           A− / A+ buttons move its own value.
         </span>
       </div>
@@ -262,256 +147,7 @@ export default function SettingsPanel() {
         )}
       </div>
 
-      <div className="setting">
-        <label className="row" style={{ gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={ca.enabled}
-            onChange={(e) => patch({ castAlerts: { enabled: e.target.checked } })}
-          />
-          Cast alerts — flash when a watched spell is being cast (to prep a dispel)
-        </label>
-        <span className="hint">
-          Watches the log for “<i>… begins casting <b>&lt;spell&gt;</b></i>” and flashes a banner so you can
-          react before it lands. Matching is by substring, case-insensitive, so “Fear” catches any spell whose
-          name contains it. Enemy casts the log doesn’t name (“begins to cast a spell”) can’t be identified.
-          Tick <b>line</b> on a watch to match the words of a whole log line instead — “invites you” catches
-          “<i>BunnySlayer invites you to a party</i>”.
-        </span>
-        {ca.enabled && (
-          <div style={{ marginTop: 8 }}>
-            <div className="row" style={{ gap: 14, marginBottom: 8 }}>
-              <label className="row" style={{ gap: 6 }}>
-                <input type="checkbox" checked={ca.sound} onChange={(e) => patch({ castAlerts: { sound: e.target.checked } })} />
-                Beep
-              </label>
-              <label className="row" style={{ gap: 6 }}>
-                <input type="checkbox" checked={ca.flash} onChange={(e) => patch({ castAlerts: { flash: e.target.checked } })} />
-                Screen flash
-              </label>
-              <label className="row" style={{ gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={ca.includeSelf}
-                  onChange={(e) => patch({ castAlerts: { includeSelf: e.target.checked } })}
-                />
-                Include my own casts
-              </label>
-            </div>
-            {ca.watches.map((w) => (
-              <div key={w.id} style={{ marginBottom: 4 }}>
-                <div className="row" style={{ gap: 6 }}>
-                <input type="checkbox" checked={w.enabled} onChange={(e) => updateWatch(w.id, { enabled: e.target.checked })} />
-                <input
-                  className="field"
-                  value={w.spell}
-                  placeholder={w.onLine ? "words from a log line" : "spell name (or part of it)"}
-                  onChange={(e) => updateWatch(w.id, { spell: e.target.value })}
-                />
-                {/* Only meaningful while this watch is looking at casts — a fade or a line names
-                    no caster to classify. */}
-                {w.onCast !== false && (
-                  <label
-                    className="row"
-                    style={{ gap: 4 }}
-                    title="Also alert when a player, pet, or named NPC casts this — not just ordinary mobs. Off keeps a groupmate's cast (e.g. BunnySlayer's Charm) quiet."
-                  >
-                    <input
-                      type="checkbox"
-                      checked={!!w.includePlayers}
-                      onChange={(e) => updateWatch(w.id, { includePlayers: e.target.checked })}
-                    />
-                    <span className="small muted">players</span>
-                  </label>
-                )}
-                {/* Which prompt this watch is for. Casting means "stop that"; fading means "do
-                    that again", and plenty of spells are only worth one or the other. */}
-                <label
-                  className="row"
-                  style={{ gap: 4 }}
-                  title="Alert when this spell begins casting — the dispel-prep warning. Turn it off for a watch that only cares about the spell fading."
-                >
-                  <input
-                    type="checkbox"
-                    checked={w.onCast !== false}
-                    onChange={(e) => updateWatch(w.id, { onCast: e.target.checked })}
-                  />
-                  <span className="small muted">cast</span>
-                </label>
-                <label
-                  className="row"
-                  style={{ gap: 4 }}
-                  title="Alert when this spell fades — your root wearing off a mob, your Spirit of Wolf expiring. Note EQ words some fades per spell (&quot;Your strength fades.&quot;) and names no spell, so match those words instead."
-                >
-                  <input
-                    type="checkbox"
-                    checked={!!w.onFade}
-                    onChange={(e) => updateWatch(w.id, { onFade: e.target.checked })}
-                  />
-                  <span className="small muted">fades</span>
-                </label>
-                {/* Points the same text at whole log lines, so a watch can catch anything the game
-                    says — a party invite, a tell — not only a spell. */}
-                <label
-                  className="row"
-                  style={{ gap: 4 }}
-                  title="Alert when these words appear anywhere in a log line — “invites you” for a party invite, “tells you” for a private message. Matches what the game printed, not a spell name."
-                >
-                  <input
-                    type="checkbox"
-                    checked={!!w.onLine}
-                    onChange={(e) => updateWatch(w.id, { onLine: e.target.checked })}
-                  />
-                  <span className="small muted">line</span>
-                </label>
-                {/* Its own look and sound, so two emergencies can be told apart without reading
-                    the banner. A watch either follows the defaults or carries a full style. */}
-                <button
-                  className={`btn ghost sm ${w.style ? "on" : ""}`}
-                  title={
-                    w.style
-                      ? "This alert has its own style — click to go back to the defaults"
-                      : "Give this alert its own color, sound, position, motion and duration"
-                  }
-                  onClick={() => {
-                    updateWatch(w.id, { style: w.style ? undefined : { ...alertStyle(ca) } });
-                    setStyling(w.style ? null : w.id);
-                  }}
-                >
-                  🎨
-                </button>
-                <button className="btn ghost sm" title="Remove" onClick={() => removeWatch(w.id)}>
-                  ✕
-                </button>
-                </div>
-                {/* Open only for the watch being styled, so a long list stays readable. */}
-                {w.style && styling === w.id && (
-                  <div className="watch-style">
-                    <span className="hint" style={{ display: "block", marginBottom: 4 }}>
-                      This alert&apos;s own style. It started as a copy of the defaults, so editing
-                      the defaults later won&apos;t move it — 🎨 again to give it back.
-                    </span>
-                    <AlertStyleFields
-                      style={alertStyle(ca, w)}
-                      locations={ca.locations}
-                      onChange={(over) => updateWatch(w.id, { style: { ...w.style, ...over } })}
-                    />
-                    <div className="row" style={{ gap: 8, marginTop: 4 }}>
-                      <button className="btn ghost sm" onClick={() => void api()?.alerts.test(w.id)}>
-                        Test this alert
-                      </button>
-                      <button className="btn ghost sm" onClick={() => setStyling(null)}>
-                        Done
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-            <div className="row" style={{ gap: 8, marginTop: 6 }}>
-              <button className="btn sm" onClick={addWatch}>
-                + Add watch
-              </button>
-              <button className="btn sm" onClick={() => api()?.alerts.test()} title="Preview the alert banner (and beep)">
-                Test alert
-              </button>
-            </div>
-
-            <div className="cast-suggest">
-              <span className="hint" style={{ display: "block", margin: "10px 0 4px" }}>
-                Suggested — common crowd control, grouped by effect, plus things <i>said to you</i>.
-                Many CC spells aren’t named “Fear” or “Charm” (this server’s root is <i>Instill</i>),
-                so click to watch a whole family. ✓ means it’s already on your list.
-              </span>
-              {CAST_SUGGESTIONS.map((group) => (
-                <div className="row wrap cs-row" key={group.category}>
-                  <span className="muted small cs-cat">{group.category}</span>
-                  {group.suggestions.map((s) => {
-                    const added = isWatched(ca.watches, s);
-                    return (
-                      <button
-                        key={s.spell}
-                        className={`btn sm ghost cs-chip ${added ? "added" : ""}`}
-                        title={s.note}
-                        disabled={added}
-                        onClick={() => addSuggestion(s)}
-                      >
-                        {added ? "✓ " : "+ "}
-                        {s.label ?? s.spell}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-
-            <div className="alert-style">
-              <span className="hint" style={{ display: "block", margin: "12px 0 6px" }}>
-                Alert style — color, sound, where it shows and how it moves. The banner floats over the
-                game in its own overlay; the beep comes from this window.
-              </span>
-
-              <AlertStyleFields
-                style={ca}
-                locations={ca.locations}
-                onChange={(over) => patch({ castAlerts: over })}
-              />
-
-              <div className="row astyle-row" style={{ alignItems: "flex-start" }}>
-                <span className="astyle-label">Custom spots</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {ca.locations.length === 0 && (
-                    <span className="muted small">
-                      None yet — place one to pin an alert anywhere on the overlay, then pick it in Position.
-                    </span>
-                  )}
-                  {ca.locations.map((loc) => (
-                    <div className="row" key={loc.id} style={{ gap: 6, marginBottom: 4 }}>
-                      <input
-                        className="field sm"
-                        value={loc.name}
-                        onChange={(e) => renameLocation(loc.id, e.target.value)}
-                      />
-                      <span className="muted small" style={{ whiteSpace: "nowrap" }}>
-                        {Math.round(loc.fx * 100)}%, {Math.round(loc.fy * 100)}%
-                      </span>
-                      <button className="btn ghost sm" title="Remove this spot" onClick={() => removeLocation(loc.id)}>
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    className="btn sm"
-                    style={{ marginTop: 4 }}
-                    onClick={placeSpot}
-                    disabled={placing}
-                    title="Click a point on the alert overlay to place a spot alerts can appear at"
-                  >
-                    {placing ? "Click the overlay… (Esc to cancel)" : "＋ Place a spot"}
-                  </button>
-                </div>
-              </div>
-
-              {displays.length > 1 && (
-                <div className="row astyle-row">
-                  <span className="astyle-label">Monitor</span>
-                  <select
-                    className="field sm"
-                    value={String(ca.displayId ?? displays.find((d) => d.primary)?.id ?? "")}
-                    onChange={(e) => patch({ castAlerts: { displayId: Number(e.target.value) } })}
-                  >
-                    {displays.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      <CastAlertSettings settings={settings} patch={patch} />
 
       <div className="setting">
         <span className="hint">
@@ -644,7 +280,3 @@ function Toggle({
   );
 }
 
-function fileName(p?: string): string {
-  if (!p) return "";
-  return p.split(/[\\/]/).pop() ?? p;
-}

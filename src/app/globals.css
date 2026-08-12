@@ -1185,7 +1185,8 @@ kbd {
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   font-size: 12px;
-  max-height: 45%;
+  /* Same share as the kill list: both can be open at once, above the map they describe. */
+  max-height: 40%;
   overflow-y: auto;
 }
 .mob-knowledge p { margin: 0; }
@@ -1210,11 +1211,25 @@ kbd {
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   font-size: 12px;
-  max-height: 45%;
+  /* The map is the point; this describes it. Two of these panels open at once was already most of the
+     window, so the list gets a smaller share and scrolls. */
+  max-height: 40%;
   overflow-y: auto;
 }
 .kill-filters .seg { padding: 3px 9px; font-size: 11px; }
 .kill-drop { width: 110px; }
+/* **One row, whatever's in it.** The shared `max-width: 55%` on a select means two of them can't fit
+   beside each other — so the bar wrapped onto a second line, and with the panel already 40% tall that
+   left almost no map. Capped in px because what has to fit is the rest of the bar, not a fraction of
+   it; the full text is still there in the dropdown. */
+.kill-filters .map-zone-select { max-width: 118px; text-overflow: ellipsis; }
+.kill-tally { white-space: nowrap; }
+/* Which panel this is, in the glyph its toolbar button wears — two rows of controls that look alike
+   otherwise, and the ☠/📖 is the whole of what tells them apart. */
+.kf-what { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.kf-icon { font-size: 13px; }
+/* Both panels are headed by the same bar, so it's styled once for both. */
+.mob-knowledge .kill-filters .seg { padding: 3px 9px; font-size: 11px; }
 .kill-rows { display: flex; flex-direction: column; gap: 1px; }
 .kill-row { display: flex; align-items: baseline; gap: 8px; }
 .kill-row .kr-time { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }

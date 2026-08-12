@@ -136,6 +136,11 @@ export function importLog(
       case "xp":
         combat?.recordXp(event);
         break;
+      case "party":
+        // The group as it was that evening, so an eaten log's fights are scoped the same way a
+        // watched one's are (ADR 0067).
+        combat?.recordParty(event);
+        break;
       case "login":
         // Close the sitting that just ended before the id changes, so its last fight files under
         // it — the same order `main.ts` uses on a live login.

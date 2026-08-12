@@ -13,6 +13,16 @@ a real run. This is a *verification* list, not open work — open work lives in 
   fight (the "This fight" totals don't reset), and it's only the mob dying that starts the next one
   ([ADR 0036](../decisions/0036-a-fight-ends-on-death-not-a-lull.md)). See
   [ADR 0014](../decisions/0014-damage-meter-from-the-log.md).
+- **Party scoping, live — the group lines are the unverified part.** The meter now counts only
+  your party's fights ([ADR 0067](../decisions/0067-the-meter-counts-your-party-s-fights.md)),
+  and the roster is read off group lines whose wording this sandbox has never seen: only
+  "Bunnyslayer invites you to join a group." appears in a real EQL log. So in a group, confirm
+  the log's actual words for someone **joining**, **leaving**, being **removed** and the group
+  **disbanding**, and that `parseParty` matches them (paste the line into
+  `electron/tests/party.test.ts` if not). Then, at a **shared camp**, confirm the tab shows your
+  group and your mobs and *not* the group next door, that a group-mate's row appears (it should,
+  even before anyone speaks, as long as you're on the same mob), and that the Session tab's kill
+  count doesn't creep while somebody else farms nearby.
 - **Damage breakdown, live.** Click a Dealt row and confirm the **Melee / Spells / Special** groups
   open, Melee + Spells sum to the row's total, weapons read sensibly (Hit / Crush / Kick / Pierce
   for a beastlord), and `(Critical)` / `(Riposte)` show under Special. See `combat-stats.ts` and the
@@ -209,6 +219,34 @@ a real run. This is a *verification* list, not open work — open work lives in 
   confirm: it opens from the map toolbar and remembers being open; **From** defaults to your zone and
   **To** to the map you're viewing; a zone in the route shows that zone's map; the three checkboxes
   persist (they're `Settings.travel`) and changing one re-asks for the route.
+
+  **Ports, since the model changed** ([ADR 0066](../decisions/0066-a-port-is-cast-from-where-you-stand.md)):
+  with **Druid** on, a route out of a zone that has *no* ring should still port — the answer should read
+  "port to <somewhere>, then walk", with no leg for reaching a ring first. Worth checking against how you'd
+  actually travel it, because the graph now claims any ring is reachable from anywhere, and a zone that
+  forbids teleporting would make that claim wrong in a way only playing it can show. Re-run
+  `npm run travel:build` first: a graph stored before the change lacks the hubs a lone ring should have.
+
+- **The ☠ list with a peer sharing, unseen.** The filter bar is now one row and shared kills are rows in
+  it, but neither has been looked at — the sandbox is headless and this needs two clients. To confirm: the
+  bar stays on **one line** (it wrapped before, which with a 40%-tall panel left almost no map) and
+  doesn't reflow when a peer connects; a peer's kills appear in the same mob groups as yours, marked
+  "from <name>", with "N shared" on the group heading and in the tally; unticking **shared** removes them
+  from the list *and the map together*, which is the thing that was broken. Also worth watching with three
+  clients: kills must not multiply — the broadcast filters shared ones out, so nobody relays anybody
+  else's, but an echo would show up as a count that climbs on its own.
+
+  With **both** panels open, check there are now exactly **two rows of chrome, both of them filters** —
+  one headed ☠, one headed 📖 — where there used to be a filter row plus a "14 mobs observed" row. The
+  filters are shared, so typing a mob in one narrows the other; that's intended, and worth confirming it
+  reads as helpful rather than surprising.
+
+- **A zone pinned to the game's own maps, unseen.** `STOCK_ONLY_ZONES` currently holds **Lavastorm
+  Mountains**. With a pack selected that *has* its own lavastorm map, the map window should draw the
+  game's, mark "· from Game maps" in the titlebar, and its hover should say the zone is *always* drawn
+  from there — not the "your pack hasn't got it" wording. The zone must appear exactly once in the picker.
+  Note the travel graph still harvests that zone's exit labels from the **chosen pack's** file, so a route
+  through Lavastorm and the map you're looking at can disagree until the graph borrows too (see todo).
 
   The layout is what to look at hardest, because it's what was reported wrong and the fix was reasoned
   from the CSS rather than seen: a zone picker's dropdown must open **over the map**, not be clipped at

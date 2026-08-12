@@ -88,6 +88,17 @@ const DEV_URL = "http://localhost:3000";
 const APP_URL = "app://local";
 const PRELOAD = path.join(__dirname, "preload.js");
 
+/**
+ * How long after creating a full-display window to re-assert its bounds.
+ *
+ * Both the alert overlay and the screengrab selector have to cover exactly one monitor, and on a
+ * mixed-DPI setup Electron reports the bounds in the *primary* display's scale factor until the
+ * window is realized — so the first `setBounds` can land the window half off-screen. Re-asserting
+ * once the frame exists fixes it; a beat later than "ready-to-show", because some builds only honour
+ * the resize then. Short enough not to be visible, long enough to be after realization.
+ */
+const REALIZE_DELAY_MS = 60;
+
 /** The app/taskbar icon — the same .ico the tray and web favicon use, packaged in out/. */
 function windowIcon(): string {
   return path.join(app.getAppPath(), "out", "favicon.ico");
@@ -336,7 +347,7 @@ function coverDisplay(win: BrowserWindow, display: Electron.Display): void {
     if (!win.isDestroyed()) win.setBounds(display.bounds);
   };
   apply();
-  setTimeout(apply, 60);
+  setTimeout(apply, REALIZE_DELAY_MS);
 }
 
 /** Tear down the alert overlay (when cast alerts are turned off) — nothing to show, no window. */
@@ -383,7 +394,7 @@ export function createLookupWindow(bounds: { x: number; y: number; width: number
   win.once("ready-to-show", () => {
     cover();
     win.show();
-    setTimeout(cover, 60); // some Electron builds only honor the resize once realized
+    setTimeout(cover, REALIZE_DELAY_MS); // some builds only honour the resize once realized
   });
   load(win, "select");
   return win;

@@ -20,6 +20,7 @@ import { prettyZoneName } from "../map/map-sources";
 import {
   crossingOfMode,
   graphZones,
+  isCast,
   TRAVEL_DEFAULTS,
   zoneDistance,
   type TravelAt,
@@ -223,11 +224,24 @@ export function findRoute(
     bag.push(hop);
     outgoing.set(id, bag);
   };
+  /**
+   * The port networks this route may use, by the mode that opens them.
+   *
+   * Learned from the edges rather than from the node, and only from edges that **survived the toggle** —
+   * so a network you can't use is never even found, and there's one filter rather than two that have to
+   * agree.
+   */
+  const hubs = new Map<string, TravelMode>();
   for (const edge of graph.edges) {
     if (edge.mode !== "walk" && !allowed[edge.mode]) continue;
     const across = edge.zone ? named(edge.zone) : undefined;
     add(edge.from, { to: edge.to, mode: edge.mode, cost: edge.cost, across, assumed: !!edge.assumed });
+    if (byId.get(edge.from)?.kind === "hub" && isCast(edge.mode)) hubs.set(edge.from, edge.mode);
   }
+  // **A port is cast from where you stand.** You don't walk to a druid ring to leave — you walk to one
+  // only when it's where you're going — so the network is entered for free from the start, wherever the
+  // start is. Casting later can never help: every destination was already free at step zero.
+  for (const [hub, mode] of hubs) add(START, { to: hub, mode, cost: 0, assumed: false });
   // The two ends, wired in by the same rule as everything else: with no position given there is
   // nothing to charge, and the route says that figure is a stand-in.
   for (const node of graph.nodes) {

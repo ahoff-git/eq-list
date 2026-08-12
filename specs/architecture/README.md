@@ -45,7 +45,11 @@ in the main process and all UI in the renderer.
     doesn't depend on when it was launched
     ([ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md)).
   - `wiki/` — the eqlwiki data source; see [wiki-data](../wiki-data/README.md).
-  - `ipc.ts` — request/response handlers behind `window.eql`.
+  - `ipc.ts` — request/response handlers behind `window.eql`. One registrar per subject
+    (`registerListIpc`, `registerSettingsIpc`, `registerWikiIpc`, `registerStatsIpc`, `registerAppIpc`,
+    `registerWindowIpc`, `registerPeerIpc`), each taking the same `IpcContext` and destructuring what
+    its own handlers name, so `registerIpc` reads as a table of contents rather than a flat list of
+    every channel in the app.
 - **Renderer** (`src/app/`, `src/lib/`) is a static SPA: control window (`page.tsx`)
   and overlay (`overlay/page.tsx`). It never imports Node/Electron — it only calls
   the typed `window.eql` bridge.
@@ -58,6 +62,12 @@ in the main process and all UI in the renderer.
   ([ADR 0053](../decisions/0053-damage-is-cells-rolled-up.md)), and `names.ts`, which states once
   which numbers in a name are part of its identity — an item's grade and a zone's difficulty are
   not ([ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)).
+  Three small modules are there because *both* sides did the same arithmetic by hand: `numbers.ts`
+  (`round`, and `ratio`/`over` for a divide whose denominator can legitimately be zero — the guard
+  matters, since `NaN%` on screen is what an unguarded rate looks like), `format.ts` (the strings the
+  panels show, including `percent`, which takes the fraction so it composes with `ratio`), and
+  `constants.ts` (the numbers both processes have to agree on — the scale ranges, and the opacity floor
+  the renderer bounds a slider with and main clamps IPC against).
 
 ## Data flow
 - Renderer → main: `window.eql.*` → `ipcRenderer.invoke` → `ipcMain.handle` → store/wiki/watcher.

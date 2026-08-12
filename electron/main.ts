@@ -276,6 +276,9 @@ if (!app.requestSingleInstanceLock()) {
     combat.recordCoin(event);
     if (killLog.noteCoin(event)) killsChanged();
   });
+  // Who's grouped with you decides whose fights the meter counts (ADR 0067). Nothing else
+  // needs it, so it goes straight to the tracker that does.
+  watcher.onParty((event) => combat.recordParty(event));
   watcher.onXp((event) => {
     combat.recordXp(event);
     if (event.pct) xp.addGain(event.pct); // creeps the player-stated "into level" forward

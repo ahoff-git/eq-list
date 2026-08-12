@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { type DependencyList, type RefObject, useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { setRendererDebug } from "@/shared/logging";
 import { UI_SCALE, clampScale, type ScaleRange } from "@/shared/constants";
@@ -23,6 +23,7 @@ import type {
 } from "@/shared/types";
 import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
 import { mergeLootFeed } from "@/shared/loot-feed";
+import { ratio } from "@/shared/numbers";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -60,6 +61,76 @@ function useLive<T>(source: LiveSource<T>, initial: T): T {
     return source.follow(a, setValue);
   }, [source]);
   return value;
+}
+
+/**
+ * Read something from the main process now, and again whenever `deps` change — **discarding an answer
+ * the deps have already moved on from.**
+ *
+ * The other half of `useLive`: a value nothing pushes, that has to be asked for again when the question
+ * changes. Seven places wrote the effect out, and the ones that left out the cancellation had a real
+ * race in them: clicking session A then B fires two reads, and if A's reply lands second the panel shows
+ * B selected with A's fights in it. Nothing throws; the numbers are simply the wrong session's.
+ *
+ * `deps` is the caller's own dependency list, which the lint rule can't see through a wrapper — so the
+ * suppression lives here once instead of at every call site.
+ */
+export function useReading<T>(
+  read: (a: Eql) => Promise<T>,
+  initial: T,
+  deps: DependencyList,
+): { value: T; loading: boolean } {
+  const [value, setValue] = useState<T>(initial);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    const a = api();
+    if (!a) return; // prerender, or a plain browser: the initial value stands
+    let current = true;
+    setLoading(true);
+    void read(a).then((next) => {
+      if (!current) return; // superseded — the newer read owns the state now
+      setValue(next);
+      setLoading(false);
+    });
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return { value, loading };
+}
+
+/** `useReading` for the usual case: the value, and no interest in whether it's arrived yet. */
+export function useRead<T>(read: (a: Eql) => Promise<T>, initial: T, deps: DependencyList): T {
+  return useReading(read, initial, deps).value;
+}
+
+/**
+ * Close a popover when the user clicks outside `inside`, or presses Escape.
+ *
+ * Both the tab overflow menu and the zone picker had this, and they'd already drifted: one closed on
+ * Escape and the other only did while its input had focus, so the same gesture dismissed one and not
+ * the other. Listening happens **only while open**, so a closed popover leaves nothing attached.
+ */
+export function useDismiss(inside: RefObject<HTMLElement | null>, open: boolean, close: () => void): void {
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!inside.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+    // `close` is a fresh closure each render; re-subscribing per render would be pointless churn, so
+    // what this follows is whether the popover is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 }
 
 const LIVE = {
@@ -107,6 +178,10 @@ const EMPTY_FIGHT: FightStats = {
   invocations: [],
 };
 
+const EMPTY_PRICES: ItemPrice[] = [];
+const NO_SOURCES: Record<string, ItemSource[]> = {};
+const NO_FACTS: Record<string, SpellFacts> = {};
+const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
 const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };
 const NO_WATCHER: WatcherStatus = { watching: false };
 const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
@@ -179,7 +254,7 @@ function mergeDropLists(a: MobKnowledge, b: MobKnowledge): MobKnowledge["drops"]
   const counts = new Map<string, number>();
   for (const d of [...a.drops, ...b.drops]) counts.set(d.item, (counts.get(d.item) ?? 0) + d.count);
   return [...counts.entries()]
-    .map(([item, count]) => ({ item, count, rate: kills ? Math.round((count / kills) * 1000) / 1000 : 0 }))
+    .map(([item, count]) => ({ item, count, rate: ratio(count, kills, 3) }))
     .sort((x, y) => y.rate - x.rate || x.item.localeCompare(y.item));
 }
 
@@ -329,11 +404,7 @@ export function useLootFeed(limit = 40): LootEvent[] {
  * can change it, and the loot feed already knows when one arrives.
  */
 export function useItemPrices(refreshKey: unknown): ItemPrice[] {
-  const [prices, setPrices] = useState<ItemPrice[]>([]);
-  useEffect(() => {
-    void api()?.loot.prices().then(setPrices);
-  }, [refreshKey]);
-  return prices;
+  return useRead((a) => a.loot.prices(), EMPTY_PRICES, [refreshKey]);
 }
 
 /**
@@ -346,38 +417,19 @@ export function useEntrySources(entries: ShoppingListEntry[]): {
   sources: Record<string, ItemSource[]>;
   loading: boolean;
 } {
-  const [sources, setSources] = useState<Record<string, ItemSource[]>>({});
-  const [loading, setLoading] = useState(false);
+  // Keyed on the name set, not the array identity, so this doesn't refetch every render.
   const key = entries
     .map((e) => e.name)
     .sort()
     .join("|");
-
-  useEffect(() => {
-    const a = api();
-    if (!a || entries.length === 0) {
-      setSources({});
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    void (async () => {
-      const pairs = await Promise.all(
-        entries.map(async (e) => [e.name, (await a.wiki.getPage(e.name))?.sources ?? []] as const),
-      );
-      if (!cancelled) {
-        setSources(Object.fromEntries(pairs));
-        setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Keyed on the name set (`key`), not the array identity, to avoid refetching every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-
+  const { value: sources, loading } = useReading(
+    async (a) =>
+      Object.fromEntries(
+        await Promise.all(entries.map(async (e) => [e.name, (await a.wiki.getPage(e.name))?.sources ?? []] as const)),
+      ),
+    NO_SOURCES,
+    [key],
+  );
   return { sources, loading };
 }
 
@@ -398,35 +450,26 @@ export interface SpellFacts {
  * fallback. Refetches only when the set of spells changes.
  */
 export function useSpellFacts(spells: { spell: string; rank?: string }[]): Record<string, SpellFacts> {
-  const [facts, setFacts] = useState<Record<string, SpellFacts>>({});
+  // Keyed on the spell set, not array identity (`wiki.getPage` is cached in main).
   const key = spells
     .map((s) => `${s.spell}|${s.rank ?? ""}`)
     .sort()
     .join(",");
-
-  useEffect(() => {
-    const a = api();
-    if (!a || spells.length === 0) return;
-    let cancelled = false;
-    void (async () => {
-      const pairs = await Promise.all(
-        spells.map(async ({ spell, rank }) => {
-          const page =
-            (rank ? await a.wiki.getPage(`Spell: ${spell} ${rank}`) : null) ??
-            (await a.wiki.getPage(`Spell: ${spell}`));
-          return [spell, factsFromCard(page?.card?.lines ?? [])] as const;
-        }),
-      );
-      if (!cancelled) setFacts(Object.fromEntries(pairs));
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Keyed on the spell set, not array identity (`wiki.getPage` is cached in main).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-
-  return facts;
+  return useRead(
+    async (a) =>
+      Object.fromEntries(
+        await Promise.all(
+          spells.map(async ({ spell, rank }) => {
+            const page =
+              (rank ? await a.wiki.getPage(`Spell: ${spell} ${rank}`) : null) ??
+              (await a.wiki.getPage(`Spell: ${spell}`));
+            return [spell, factsFromCard(page?.card?.lines ?? [])] as const;
+          }),
+        ),
+      ),
+    NO_FACTS,
+    [key],
+  );
 }
 
 /** Pull the two numbers we want out of a spell card's "Label: value" lines. */
@@ -445,35 +488,25 @@ function factsFromCard(lines: string[]): SpellFacts {
  * and index its loot components' `dropRate`. Refetches only when the mob set changes.
  */
 export function useMobLoot(mobNames: string[]): Record<string, Record<string, string>> {
-  const [loot, setLoot] = useState<Record<string, Record<string, string>>>({});
   const key = mobNames
     .slice()
     .sort()
     .join("|");
-  useEffect(() => {
-    const a = api();
-    if (!a || mobNames.length === 0) {
-      setLoot({});
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const pairs = await Promise.all(
-        mobNames.map(async (mob) => {
-          const page = await a.wiki.getPage(mob);
-          const rates: Record<string, string> = {};
-          for (const c of page?.components ?? []) if (c.dropRate) rates[c.name] = c.dropRate;
-          return [mob, rates] as const;
-        }),
-      );
-      if (!cancelled) setLoot(Object.fromEntries(pairs));
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  return loot;
+  return useRead(
+    async (a) =>
+      Object.fromEntries(
+        await Promise.all(
+          mobNames.map(async (mob) => {
+            const page = await a.wiki.getPage(mob);
+            const rates: Record<string, string> = {};
+            for (const c of page?.components ?? []) if (c.dropRate) rates[c.name] = c.dropRate;
+            return [mob, rates] as const;
+          }),
+        ),
+      ),
+    NO_MOB_LOOT,
+    [key],
+  );
 }
 
 // The item stat card, memoized per title across the session — a name can appear in

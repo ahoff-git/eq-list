@@ -164,6 +164,21 @@ export interface LoginEvent extends LogEventBase {
   kind: "login";
 }
 
+/**
+ * Your group changing. The log never lists a group's membership, so this is the only way to
+ * learn it: one line at a time, as people arrive and leave (see `parseParty`).
+ *
+ * `cleared` is every wording that means "the group you were in is no longer the group you're
+ * in" — disbanded, removed, you left, you joined a fresh one — because they all have the same
+ * consequence: what we knew about the roster is now wrong.
+ */
+export interface PartyEvent extends LogEventBase {
+  kind: "party";
+  change: "joined" | "left" | "cleared";
+  /** Who — absent on `cleared`, which names nobody but you. */
+  who?: string;
+}
+
 export type LogEvent =
   | LootEvent
   | ZoneEvent
@@ -172,7 +187,8 @@ export type LogEvent =
   | LocEvent
   | LevelEvent
   | CoinEvent
-  | LoginEvent;
+  | LoginEvent
+  | PartyEvent;
 
 // ─── Combat events (see combat-parser.ts) ───────────────────────────────────
 
@@ -958,6 +974,16 @@ export interface KillRecord {
    * you never looted those corpses. Absent on records stored before it was captured.
    */
   mine?: boolean;
+  /**
+   * The peer who shared this, when it came from someone else's client rather than your own log.
+   *
+   * Their kills are **data like any other** — a mob dying somewhere is evidence of where it spawns,
+   * whoever watched it — so a shared kill goes in the same list, the same groups and the same filters,
+   * and only says whose it was. It never counts towards *your* drop rates for the same reason a
+   * bystander's kill in your own log doesn't ([ADR 0027](../../specs/decisions/0027-only-your-kills-count.md)):
+   * you never had the corpse. Absent on your own records, which is what "mine" means here.
+   */
+  sharedBy?: string;
   zone?: string;
   /** The last known position — absent if the log had never reported one. */
   y?: number;

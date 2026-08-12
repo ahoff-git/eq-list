@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useDismiss } from "@/lib/hooks";
 
 export interface TabItem {
   key: string;
@@ -63,20 +64,7 @@ export default function TabBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
 
-  // Dismiss the menu on an outside click or Escape.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!rowRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
+  useDismiss(rowRef, menuOpen, () => setMenuOpen(false));
 
   const visible = items.slice(0, visibleCount);
   const overflow = items.slice(visibleCount);

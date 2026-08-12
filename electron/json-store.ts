@@ -75,3 +75,55 @@ export function writeJson(file: string, data: unknown, opts?: { pretty?: boolean
     return false;
   }
 }
+
+/** A store's disk half: note that something changed, and force it out when it matters. */
+export interface Saver {
+  /** Something changed. Writes shortly, coalescing everything else in the same burst. */
+  save(): void;
+  /** Write now, cancelling any pending write. For quitting, and for "I need this on disk". */
+  flush(): void;
+}
+
+/**
+ * Coalesce a store's writes: a burst of changes becomes one write, `afterMs` after the first of them.
+ *
+ * Seven stores had this, six of them character for character — a `timer`, a `write` that nulls it, and a
+ * `flush` that clears it and writes. Observations arrive in clusters (every hit of a fight, every peer
+ * report), so the debounce is real work; the duplication was in the **cancellation**, which is the part
+ * that bites. Drop the `timer = null` and the store writes once and never again; drop the `clearTimeout`
+ * in `flush` and a write lands after the app has finished quitting, on a state nobody will read back.
+ *
+ * `snapshot` is called at write time rather than at save time, so it sees the newest state and a burst
+ * costs one serialization, not one per change. `file` may be a function for a store whose path isn't
+ * known until Electron is ready.
+ */
+export function createSaver(
+  file: string | (() => string),
+  what: string,
+  snapshot: () => unknown,
+  afterMs: number,
+  opts?: { pretty?: boolean; restart?: boolean },
+): Saver {
+  let timer: NodeJS.Timeout | null = null;
+
+  function write(): void {
+    timer = null;
+    writeJson(typeof file === "string" ? file : file(), snapshot(), { what, pretty: opts?.pretty });
+  }
+
+  return {
+    save() {
+      // The one axis these stores genuinely differ on. By default the timer is *not* restarted, so a
+      // steady stream of changes still reaches disk every `afterMs` instead of being postponed for ever
+      // — right for a log being eaten. `restart` waits for the changes to stop, which is right for a
+      // window being dragged: the frames in between are noise and only where it lands is worth keeping.
+      if (opts?.restart && timer) clearTimeout(timer);
+      else if (timer) return;
+      timer = setTimeout(write, afterMs);
+    },
+    flush() {
+      if (timer) clearTimeout(timer);
+      write();
+    },
+  };
+}

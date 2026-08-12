@@ -19,7 +19,7 @@
  *
  * A pack also draws **far more of EverQuest than this server runs** — Brewall's covers all 26
  * expansions — so `zonesFromSources` drops the zones that don't exist here, by the one test the whole
- * app shares (`zoneAvailable`, see [ADR 0064](../../../specs/decisions/0064-a-zone-belongs-to-an-expansion.md)).
+ * app shares (`zoneAvailable`, see [ADR 0065](../../../specs/decisions/0065-a-zone-belongs-to-an-expansion.md)).
  * It fails open: a zone the expansion table has never heard of is kept, because losing a real zone is
  * much worse than offering an unreachable one. `zonesFromFiles` does **not** filter — it answers "what
  * is this folder's zone called", which is a different question, and the naming tests lean on it.
@@ -34,6 +34,25 @@ import { zoneAvailable } from "../zones/expansions";
  * backstop a pack's missing zone is borrowed from (`zonesFromSources`).
  */
 export const STOCK_SOURCE_ID = "stock";
+
+/**
+ * Zones always drawn from the **game's own maps**, whatever pack you've chosen.
+ *
+ * A pack's map can be worse than the game's for a particular zone — drawn for a different era, or laid
+ * out in a way that doesn't match what EQ Legends ships — and no amount of preferring your pack in
+ * general fixes one bad file. So this is the exception list, keyed by **map file / zone short name**
+ * (`lavastorm`), which is the one name a source is guaranteed to know a zone by.
+ *
+ * It's a coverage decision like the borrowing below, not a naming one: a zone here is still drawn from
+ * exactly one file, and still named by the folder that draws it (ADR 0061). Add a line when a pack's map
+ * for a zone turns out to be the wrong one to use.
+ */
+export const STOCK_ONLY_ZONES: readonly string[] = ["lavastorm"];
+
+/** Is this zone one we always draw from the game's own maps? Matched on the file / short name. */
+export function stockOnly(file: string | undefined): boolean {
+  return !!file && STOCK_ONLY_ZONES.includes(file.trim().toLowerCase());
+}
 
 /** A place maps can be loaded from. */
 export interface MapSource {
@@ -117,14 +136,24 @@ export interface NamedSource {
  * them unreachable.
  */
 export function zonesFromSources(chosen: NamedSource, backstop?: NamedSource): Zone[] {
-  const mine = zonesFromFiles(chosen.id, chosen.files, chosen.solved);
   const offered = (zones: Zone[]) => zones.filter((z) => zoneAvailable(z.name));
-  if (!backstop || backstop.id === chosen.id) return offered(mine);
+  // With no backstop there's nothing to take from, so even a `STOCK_ONLY_ZONES` entry keeps the pack's
+  // map: a zone drawn imperfectly beats a zone not drawn at all.
+  if (!backstop || backstop.id === chosen.id) return offered(zonesFromFiles(chosen.id, chosen.files, chosen.solved));
 
-  const have = new Set(chosen.files);
-  const missing = backstop.files.filter((short) => !have.has(short));
-  if (!missing.length) return offered(mine);
+  // The exception list is applied by *withholding* the pack's file, so from here on "this zone comes
+  // from the backstop" has one cause and one code path — whether the pack lacked it or was overruled.
+  const stockHas = new Set(backstop.files);
+  const mine = zonesFromFiles(
+    chosen.id,
+    chosen.files.filter((short) => !(stockOnly(short) && stockHas.has(short))),
+    chosen.solved,
+  );
+
+  const have = new Set(mine.map((z) => z.file));
+  const fromStock = backstop.files.filter((short) => !have.has(short));
+  if (!fromStock.length) return offered(mine);
 
   const names = new Set(mine.map((z) => z.name));
-  return offered([...mine, ...zonesFromFiles(backstop.id, missing, backstop.solved).filter((z) => !names.has(z.name))]);
+  return offered([...mine, ...zonesFromFiles(backstop.id, fromStock, backstop.solved).filter((z) => !names.has(z.name))]);
 }

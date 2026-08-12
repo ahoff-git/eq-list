@@ -11,8 +11,10 @@
  *  2. **Walks within a zone are the edges.** For each zone, every pair of its nodes gets an edge
  *     weighted by the distance between them *in that zone*. Crossing the boundary itself needs no
  *     edge at all: standing at the node is standing in both zones.
- *  3. **A teleport network collapses to a hub** — a free edge to each member. Only rings and spires;
- *     a boat runs between two particular docks (see `AUTO_NETWORKS`).
+ *  3. **A teleport network collapses to a hub** — a free edge *out* to each of its destinations. Only
+ *     rings and spires; a boat runs between two particular docks (see `AUTO_NETWORKS`). The edges are
+ *     one-way on purpose: a druid or a wizard casts from where they stand, so every ring is somewhere
+ *     you arrive and nowhere you have to walk to first.
  *
  * Pure — the file reading is `electron/travel-graph.ts`.
  */
@@ -20,6 +22,7 @@
 import type { ZoneHarvest } from "./harvest";
 import {
   boundaryId,
+  isCast,
   networkOfCrossing,
   slug,
   zoneFileFor,
@@ -33,19 +36,15 @@ import {
 } from "./types";
 
 /**
- * The networks that really are networks. A druid reaches **any** ring from any other, and a wizard
- * any spire, so finding two of them is finding a network — no pairing needed.
+ * Is this a network the labels alone can wire up — and, if so, a mode a route can be denied?
  *
- * A boat and a gnome are not like that: they run between *particular* ends. Hubbing them would make
- * every dock in the world mutually reachable for nothing, which is the kind of wrong that produces a
- * confident, useless route. So their nodes are found and reported, and the runs between them are
- * `manual-links.ts`'s job — a boat's becoming a boundary rather than an edge.
+ * The same question as `isCast`: what makes a ring network wire itself is what makes it one-way, and
+ * both are "it's a spell". Hubbing a boat instead would make every dock in the world mutually reachable
+ * for nothing, which is the kind of wrong that produces a confident, useless route — so a boat's and a
+ * gnome's nodes are found, reported, and left to `manual-links.ts`.
  */
-const AUTO_NETWORKS = ["druid", "wizard"] as const;
-
-/** Is this a network the labels alone can wire up — and, if so, a mode a route can be denied? */
 function isAutoNetwork(network: TravelNetwork): network is TravelToggle {
-  return (AUTO_NETWORKS as readonly string[]).includes(network);
+  return network !== "boat" && isCast(network);
 }
 
 /** What a build found, and — the half worth reading — what it couldn't. */
@@ -247,16 +246,19 @@ export function buildTravelGraph(
   for (const [network, found] of members) {
     const zones = [...new Set(found.flatMap((n) => n.zones))].sort();
     networks.push({ network, zones });
-    // Boats and gnomes are found, listed, and left to be paired by hand. And one zone's worth of
-    // rings is not a network — there's nowhere to go — so the nodes stay but the hub doesn't,
-    // because an empty hub is a lie.
-    if (!isAutoNetwork(network) || zones.length < 2) continue;
+    // Boats and gnomes are found, listed, and left to be paired by hand — they run between
+    // *particular* ends, so there's no network to wire.
+    if (!isAutoNetwork(network) || !found.length) continue;
     const hub: TravelNode = { id: `net:${network}`, kind: "hub", label: `${network} network`, zones: [], at: {} };
     nodes.push(hub);
-    for (const node of found) {
-      edges.push({ from: node.id, to: hub.id, mode: network, cost: 0 });
-      edges.push({ from: hub.id, to: node.id, mode: network, cost: 0 });
-    }
+    // **One way only, into the network's destinations.** A port is cast from wherever you're standing,
+    // not from the ring — so the ring is somewhere you *arrive*, and there is no edge for walking to
+    // one in order to leave. Entering the network is free from anywhere, which is `findRoute`'s job
+    // since "anywhere" includes the middle of a zone, where no node is.
+    //
+    // It also means a **single** ring is a network worth having: one destination reachable from the
+    // whole world is a real edge, where under a walk-there-first model it went nowhere.
+    for (const node of found) edges.push({ from: hub.id, to: node.id, mode: network, cost: 0 });
   }
 
   const linked = new Set<string>();
