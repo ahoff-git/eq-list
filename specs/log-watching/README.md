@@ -44,14 +44,21 @@ as they drop and the damage meter can show how the fight went.
 - `src/shared/money.ts` — a **pure** black box beside the parser: coin in and out of copper,
   which is the canonical unit everywhere (1p = 10g = 100s = 1000c). Denominations exist only
   in its formatters, so nothing else has to normalise them.
+- `src/shared/dot-attribution.ts` — a spell → caster memory beside the parser, because a DoT's
+  ticks are worded without one (`A coyote has taken 5 damage by Engulfing Darkness.`) and the
+  parser, being stateless, can only stand the spell's own name in as the attacker. The cast line
+  one line earlier says who cast it, so `note()` learns from every `cast` event and `resolve()`
+  puts the caster back before anything downstream reads it — without which every tick of your own
+  DoTs, nearly all of a DoT's damage, is filed to a combatant that doesn't exist
+  ([ADR 0071](../decisions/0071-a-dot-tick-belongs-to-whoever-cast-it.md)).
 - `src/shared/combat-parser.ts` — the same idea for combat, and the bulk of a real log:
   melee swings, spell/proc damage, damage shields, DoT ticks, misses and heals, plus the
   `(Critical)`/`(Riposte)` qualifier that trails *after* the sentence. It also follows the
   **casting lifecycle** — `cast` (`You begin casting X`) and `spell-outcome`
   (fizzle / interrupted / resisted / blocked) — which is what makes cast times and resist
   rates measurable at all, plus your own `death` (`You have been slain by X!`, which
-  `parseKill` deliberately ignores), `buff-faded` (`Your [pet's] X spell has worn off.` —
-  the pet flag matters, since a pet's buff can't change *your* totals), and the two combat
+  `parseKill` deliberately ignores), `buff-faded` (see [below](#how-a-fade-is-worded) — the pet
+  flag matters, since a pet's buff can't change *your* totals), and the two combat
   **modes**: `stance` (`You assume an evasive stance.`) and `invocation` (`You begin
   reciting the empowering invocation.`). Only the *naming* line is usable — "You begin to
   change your stance." doesn't say which — and the names aren't enumerated, which is how
@@ -190,6 +197,36 @@ as they drop and the damage meter can show how the fight went.
   *derived* from it rather than tallied twice. See
   [ADR 0053](../decisions/0053-damage-is-cells-rolled-up.md).
 - Loot→list matching lives in the [store](../architecture/README.md), not here.
+
+## How a fade is worded
+The generic sentence covers three cases — `Your X spell has worn off.`, `Your pet's X spell has
+worn off.`, `Your X spell has worn off of <someone>.` — **except that EQL never prints the first
+one**. Counted on a real 15MB log: 134 with a target, 63 without, and every one of those 63 a
+pet's. Not a single generic line for a buff on you.
+
+A buff leaving *you* is always EQ's **per-spell flavour text**, in three shapes:
+
+```
+Your strength fades.  /  The light breeze fades.          145 lines
+The spirit of travel leaves you.  /  Your strength leaves you.   94 lines
+Your speed returns to normal.                               4 lines
+```
+
+Both articles turn up and nothing about the spell predicts which, so both are accepted. `spell`
+holds the words the log used (`light breeze`, `spirit of travel`) because there is no name to hold
+— which is what a fade **alert** has to match on, and why a watch carries a separate message for
+the wording you actually want on screen ([overlay UI](../overlay-ui/README.md)). Together the three
+shapes take self-fades from 69 to **248** on that log, with the pet and targeted counts unmoved.
+
+`<Name> fades away.` is somebody gating out, not a spell (50 in the same log). Requiring `fades.`
+to *end* the line is the whole of what keeps them out, now that `The` is accepted too.
+
+Two wordings are deliberately **not** matched: `The mystical path fades away.` and `The echo of
+healing fades away.` are genuine spell fades (32 lines) that collide with the gate-out sentence, and
+a mob named "The …" gating would fire them. They stay out of the parser for good — no pattern can
+separate them — and are alertable as **raw text** instead, where the spell's own words can't be a
+player's name. That's the general answer to any line no parser models, and both are offered as
+suggestions ([overlay UI](../overlay-ui/README.md)).
 
 ## Invocation side-effects
 Two invocations do more than scale numbers, and both are now accounted for

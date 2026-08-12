@@ -101,7 +101,7 @@ if (era.zones.length) console.log(`out of era: ${era.zones.length} zones, per th
 else console.log(`out of era: nothing from the wiki (${era.why}) — only the hand-listed zones are excluded`);
 
 for (const source of wanted) {
-  const { graph, report } = buildFromSource(source, era.zones);
+  const { graph, report } = await buildFromSource(source, era.zones);
   const file = graphPath(outDir, source.id);
   writeGraph(file, graph);
 

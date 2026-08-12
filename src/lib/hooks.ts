@@ -313,10 +313,12 @@ export function useUiScale(scale: number | undefined, range: ScaleRange = UI_SCA
  * change clobbered it (the button read "on" while the window quietly went translucent). The
  * window opens at the saved opacity (its constructor) and this takes over from there.
  *
+ * The saved value is **shared** (`overlay.opacity`, one look for the app) but the override is
+ * **per window**: this state is local to each renderer and the IPC applies to whichever window
+ * sent it, so the map can be flipped solid to read it while the list stays translucent.
+ *
  * `saved` is `undefined` until settings load, which is when to leave the window alone — the
  * constructor already set it right, and applying a fallback would flash it opaque on launch.
- * Each window passes its own setting (`overlay.opacity`, `overlay.mapOpacity`); the IPC applies
- * to whichever window sent it.
  */
 export function useWindowOpacity(saved: number | undefined): { opaque: boolean; toggle: () => void } {
   const [opaque, setOpaque] = useState(false);

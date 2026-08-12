@@ -11,9 +11,13 @@
  * "Cajol" catches Cajoling Whispers. Pure data, so the renderer that draws it and the test that
  * pins it down share one source. Categories and picks were checked against eqlwiki.com.
  *
- * The same list carries the **line** watches (`onLine`) — a party invite, a tell. Those match the
- * whole log line rather than a spell name, and the wording is the part nobody remembers, which is
- * exactly what a suggestion is for.
+ * The same list carries the **raw-text** watches (`onLine`) — a party invite, a tell, a buff
+ * leaving you. Those match the whole log line rather than a spell name, and the wording is the part
+ * nobody remembers, which is exactly what a suggestion is for.
+ *
+ * A raw-text suggestion can carry its own `message`, because the words it has to *match* and the
+ * words worth reading mid-fight are rarely the same sentence — "the mystical path fades away" is
+ * what EQ prints; "Recast Levitate" is what you want on screen.
  */
 
 export interface CastSuggestion {
@@ -28,6 +32,8 @@ export interface CastSuggestion {
   onLine?: boolean;
   /** What the chip says, when the substring itself would be cryptic ("invites you" → "Party invite"). */
   label?: string;
+  /** The banner's wording, when the sentence being matched isn't one worth reading. */
+  message?: string;
 }
 
 export interface CastSuggestionGroup {
@@ -71,6 +77,30 @@ export const CAST_SUGGESTIONS: readonly CastSuggestionGroup[] = [
       { spell: "Immobil", note: "Immobilize" },
       { spell: "Fetter", note: "Fetter (higher-level root)" },
       { spell: "Paralyz", note: "Paralyzing Earth" },
+    ],
+  },
+  {
+    // The two fades the parser deliberately won't take: EQ ends both with "fades away.", which is
+    // also how it says somebody gated out ("Bunnyslayer fades away."), and no shape tells them
+    // apart. As raw text they're unambiguous — the spell's own words can't be a player's name — so
+    // the thing a pattern can't do safely, a watch does exactly. Counts are from a real 195k-line
+    // log. Neither sentence names its spell, hence the `message`: match EQ's words, read your own.
+    category: "Faded",
+    suggestions: [
+      {
+        spell: "mystical path fades away",
+        onLine: true,
+        label: "Mystical path",
+        message: "Mystical path gone",
+        note: "“The mystical path fades away.” — 17 in a real log, paired with “A mystical path appears before you.” Raw text, because the sentence ends like a player gating out.",
+      },
+      {
+        spell: "echo of healing fades away",
+        onLine: true,
+        label: "Echo of healing",
+        message: "Echo of healing gone",
+        note: "“The echo of healing fades away.” — 15 in a real log. Raw text for the same reason: “fades away.” is also how somebody gating out reads.",
+      },
     ],
   },
   {

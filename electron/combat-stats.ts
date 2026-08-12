@@ -21,6 +21,7 @@
 import { EventEmitter } from "node:events";
 import { isYours } from "../src/shared/combat-parser";
 import { createDamageCells, rollUpDamage } from "../src/shared/damage-tree";
+import { createDotAttribution } from "../src/shared/dot-attribution";
 import { createFightScope } from "../src/shared/fight-scope";
 import { createNameRegistry } from "../src/shared/name-registry";
 import { ratio, round } from "../src/shared/numbers";
@@ -246,6 +247,10 @@ interface SpellTally {
   casts: number;
   lands: number;
   ticks: number;
+  /** Of `damage`, the part the ticks did — kept apart so the split is readable, not inferred. */
+  tickDamage: number;
+  /** The biggest single tick. Separate from `maxHit`, which stays "biggest *landing*". */
+  maxTick: number;
   fizzles: number;
   interrupts: number;
   resists: number;
@@ -281,7 +286,8 @@ function emptyMob(): MobTally {
 
 function emptySpell(): SpellTally {
   return {
-    casts: 0, lands: 0, ticks: 0, fizzles: 0, interrupts: 0, resists: 0, blocked: 0,
+    casts: 0, lands: 0, ticks: 0, tickDamage: 0, maxTick: 0,
+    fizzles: 0, interrupts: 0, resists: 0, blocked: 0,
     damage: 0, healed: 0, maxHit: 0, castMs: 0, timed: 0, overhealed: 0,
     invocationHealed: 0,
     resistedBy: new Map(),
@@ -434,6 +440,12 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
    * are castless by nature and would otherwise every single one read as a free cast.
    */
   const castRepertoire = new Set<string>();
+  /**
+   * Who cast the DoT that's ticking. Like the repertoire above, this is knowledge about who
+   * casts what rather than a tally, so `reset()` keeps it — and a DoT mid-flight when the meter
+   * is cleared goes on being attributed instead of dropping into a phantom row.
+   */
+  const dots = createDotAttribution();
   let currentZone: string | null = null;
 
   /** You or anything of yours, against the current `player` — see `isYours`. */
@@ -505,6 +517,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       casts: t.casts,
       lands: t.lands,
       ticks: t.ticks,
+      tickDamage: t.tickDamage,
+      maxTick: t.maxTick,
       fizzles: t.fizzles,
       interrupts: t.interrupts,
       resists: t.resists,
@@ -662,6 +676,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
           mode.damage += event.amount;
           if (event.tick) {
             sp.ticks += 1;
+            sp.tickDamage += event.amount;
+            sp.maxTick = Math.max(sp.maxTick, event.amount);
           } else {
             sp.lands += 1;
             mode.lands += 1;
@@ -819,7 +835,13 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   }
 
   return {
-    record(event) {
+    record(raw) {
+      // A DoT tick names no caster in this log's short form, so the caster is put back from the
+      // cast line first — before the scope, the rows, the cells or the spell table read the
+      // attacker, all of which would otherwise file your own DoT under the spell's name
+      // (ADR 0071). Noting comes first so a cast and its own first tick in the same second work.
+      dots.note(raw);
+      const event = dots.resolve(raw);
       const at = ms(event.at);
       // An unparseable timestamp would read as 1970 and wreck every span it touched, so
       // the event is dropped instead. (Nothing in a real log does this — but the whole

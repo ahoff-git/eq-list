@@ -720,6 +720,25 @@ button {
 .stat-table .num-accent { color: var(--accent); }
 .stat-table .num-bad { color: var(--bad); }
 .spell-table .spell-melee td { color: var(--text-dim); font-style: italic; }
+/* Click a spell for its breakdown — the caret sits in the name cell so the numeric columns
+   keep their alignment. */
+.spell-table .spell-row.expandable { cursor: pointer; }
+.spell-table .spell-row.expandable:hover { background: var(--bg-raised); }
+.spell-table .spell-row .caret { color: var(--text-dim); font-size: 10px; }
+/* The panel under a row: every figure the tracker keeps, grouped by the question it answers.
+   Wraps rather than scrolling, since it's prose-shaped and the table beside it already scrolls. */
+.spell-table .spell-detail td { padding: 0; border-bottom: 1px solid var(--border); }
+.spell-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 10px 8px 20px;
+  white-space: normal;
+}
+.spell-group { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+/* Captions share `.dmg-caption` with the damage drill-down: same job, same look. */
+.spell-group > .dmg-caption { flex: none; width: 82px; padding-top: 0; }
+.spell-stat { font-variant-numeric: tabular-nums; }
 /* Per-invocation rows under a spell, when the split-by-mode setting is on. */
 .spell-table .spell-mode td { color: var(--text-dim); border-bottom-color: transparent; }
 .spell-table .spell-mode td:first-child { padding-left: 20px; }
@@ -854,9 +873,26 @@ button {
 .hist-fight:first-child { border-top: 0; }
 .hist-fight:hover { background: var(--bg-input); color: var(--text); }
 .hist-fight.on { background: var(--bg-input); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
-.hist-fight .hf-when { font-family: var(--mono); }
+.hist-fight .hf-when { font-family: var(--mono); white-space: nowrap; }
 .hist-fight .hf-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .hist-fight .hf-dmg { color: var(--accent); font-variant-numeric: tabular-nums; }
+/* A zone name is long and the mob's name is the thing being read, so the zone takes a fixed
+   share of the row and clips rather than pushing the label out of it. */
+.hist-fight .hf-zone { flex: 0 1 11ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Search results are fights straight in the list, with no sitting to sit inside — so the box the
+   session drew around them is drawn here instead. */
+.hist-found {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex: none;
+}
+/* Nothing to be indented under out here — the tree's indent is what hangs a fight off its sitting. */
+.hist-found .hist-fight { padding-left: 10px; }
+/* Not `.field.sm`, the app's 58px *numeric* input: this holds a mob's name. It gives up width
+   before the tally and the Clear button do, since those are one line and it can hold a partial word. */
+.hist-search { flex: 0 1 180px; padding: 3px 7px; font-size: 12px; }
 .hist-picked {
   display: flex;
   align-items: baseline;

@@ -54,8 +54,9 @@ export default function Home() {
   // This window scales itself: the scale is a CSS zoom per document, because Chromium's own zoom
   // is per-origin and every window here shares one (see `useUiScale`).
   useUiScale(settings?.overlay.fontScale);
-  // Transient "full opacity" toggle: flip between 100% and the settings slider value. The
-  // renderer owns the live value (see `useWindowOpacity`); the map window has its own.
+  // Transient "full opacity" toggle: flip between 100% and the settings slider value. The renderer
+  // owns the live value (see `useWindowOpacity`); the map window has its own toggle over the same
+  // saved value, so flipping one window solid leaves the other as it was.
   const { opaque, toggle: toggleOpaque } = useWindowOpacity(settings ? sliderOpacity : undefined);
   // Owned here so the Hunt tab's zone filter survives switching tabs (and, persisted,
   // reopening the window).

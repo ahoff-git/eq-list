@@ -76,13 +76,16 @@ test("spell damage carries its type and spell, and isn't counted as melee", () =
   assert.equal(e.melee, false);
 });
 
-test("a DoT tick with no named caster is attributed to the DoT", () => {
+test("a DoT tick with no named caster stands in the DoT's name, and says it did", () => {
   const e = parse("Kainos`s warder has taken 1 damage by Plague Rat Disease.") as DamageEvent;
   assert.equal(e.kind, "damage");
   assert.equal(e.target, "Kainos`s warder");
   assert.equal(e.attacker, "Plague Rat Disease");
   assert.equal(e.spell, "Plague Rat Disease");
   assert.equal(e.amount, 1);
+  // The flag is what lets `dot-attribution.ts` put the real caster back (ADR 0071); without it
+  // the stand-in name is indistinguishable from a mob that happens to be called that.
+  assert.equal(e.casterUnknown, true);
 });
 
 test("a DoT tick on you names the mob that applied it", () => {
@@ -90,6 +93,8 @@ test("a DoT tick on you names the mob that applied it", () => {
   assert.equal(e.target, SELF);
   assert.equal(e.attacker, "a large plague rat");
   assert.equal(e.spell, "Plague Rat Disease");
+  // This form stated the caster, so there's nothing to resolve.
+  assert.equal(e.casterUnknown, undefined);
 });
 
 test("misses parse for both the pet and you", () => {
@@ -303,7 +308,7 @@ test("combatant() folds case/articles so one mob is one row", () => {
 });
 
 // ── fades ──────────────────────────────────────────────────────────────────────
-// All four shapes are lines from a real log. Whose spell it was decides who cares: only your
+// Every shape here is a line from a real log. Whose spell it was decides who cares: only your
 // own can move your maximum hit points, while a watch waiting to re-root wants the third.
 
 test("a buff fading on you, on your pet, and on something you cast it at", () => {
@@ -328,16 +333,28 @@ test("a buff fading on you, on your pet, and on something you cast it at", () =>
 });
 
 test("EQ's per-spell fade wording is kept as the words it used", () => {
-  // These name no spell at all — "Fleeting Fury" expiring says "Your fury fades."
+  // A buff leaving *you* is only ever worded this way — EQL prints no generic "worn off." for it —
+  // so these lines are the whole of what a fade watch on your own buffs has to go on.
   for (const [text, words] of [
     ["Your fury fades.", "fury"],
     ["Your surge of strength fades.", "surge of strength"],
     ["Your sense of center fades.", "sense of center"],
+    // Same sentence, the other article: nothing about the spell says which one it gets.
+    ["The light breeze fades.", "light breeze"],
+    ["The aura of protection fades.", "aura of protection"],
+    // A second shape entirely, and the commonest of them in a real log (94 lines).
+    ["The spirit of travel leaves you.", "spirit of travel"],
+    ["The spirit of wolf leaves you.", "spirit of wolf"],
+    ["Your strength leaves you.", "strength"],
+    // …and a third, for the spells that describe what went back to how it was.
+    ["Your speed returns to normal.", "speed"],
+    ["Your skin returns to normal.", "skin"],
   ] as const) {
     const event = parse(text) as BuffFadedEvent;
     assert.equal(event?.kind, "buff-faded", text);
     assert.equal(event.spell, words);
     assert.equal(event.target, undefined); // still your own buff
+    assert.equal(event.pet, false);
   }
 });
 
@@ -345,6 +362,17 @@ test("somebody gating out is not a spell fading", () => {
   // "Bunnyslayer fades away." is a person leaving, and 18 of those an evening would be noise.
   assert.equal(parse("Bunnyslayer fades away."), null);
   assert.equal(parse("A wild tiger fades away."), null);
+  // The fade patterns take "The" as well as "Your" now, so the one thing keeping a mob named
+  // "The …" out is that a gate says "fades away." and a fade says "fades." — pin that down.
+  assert.equal(parse("The Ancient One fades away."), null);
+});
+
+test("a buff landing is not a buff fading", () => {
+  // The flavour text comes in pairs and only one half of each is a fade; matching on the spell's
+  // words alone would fire the "re-cast!" prompt at the moment it was cast.
+  assert.equal(parse("A light breeze slips through your mind."), null);
+  assert.equal(parse("Your feet move faster."), null);
+  assert.equal(parse("You feel a traveling spirit enter you."), null);
 });
 
 test("a spell wearing off you by name is still your own", () => {

@@ -1,17 +1,26 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { useRead } from "@/lib/hooks";
-import type { SessionSummary, StoredFight } from "@/shared/types";
+import { useRead, useReading } from "@/lib/hooks";
+import type { FightSearch, SessionSummary, StoredFight } from "@/shared/types";
 
 import { clock, dayTime, duration } from "@/shared/format";
 /** A stable empty, so a render before the answer lands doesn't look like a change. */
 const NO_FIGHTS: StoredFight[] = [];
 
+/** The same, for a search nobody has typed into yet. */
+const NO_MATCHES: FightSearch = { fights: NO_FIGHTS, total: 0 };
+
 /**
  * Browse past play: sessions (newest first) drill into their fights, and picking a
  * fight hands it back to the panel to render with the same meter/spell views as a live
  * one. Fights are filed by the main process as they end, so this survives restarts.
+ *
+ * **Searching cuts across sessions.** "Where did I fight those minotaurs" is a question about
+ * the whole history, and answering it by opening a fortnight of sittings one at a time is no
+ * answer — so a term replaces the session tree with the matching fights themselves, newest
+ * first, each saying which day and zone it came from. Main does the matching, because main is
+ * what holds every fight (the tree only ever loads the session you opened).
  */
 export default function DamageHistory({
   picked,
@@ -21,8 +30,10 @@ export default function DamageHistory({
   onPick: (fight: StoredFight | null) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [term, setTerm] = useState("");
   /** Bumped when history changes underneath us (a log was eaten), to re-read both lists. */
   const [refresh, setRefresh] = useState(0);
+  const needle = term.trim();
 
   // `null` until the first answer lands, which is what tells "no history yet" from "not asked yet".
   const sessions = useRead<SessionSummary[] | null>((a) => a.combat.sessions(), null, [refresh]);
@@ -35,6 +46,16 @@ export default function DamageHistory({
     refresh,
   ]);
 
+  // Asked per keystroke — history lives in memory in main, and the hook drops the answers a newer
+  // letter has already superseded, so there's nothing here a debounce would save. `loading` is only
+  // used to keep the first letter typed from flashing "nothing matches" before any answer exists.
+  const { value: found, loading: searching } = useReading<FightSearch>(
+    (a) => (needle ? a.combat.searchFights(needle) : Promise.resolve(NO_MATCHES)),
+    NO_MATCHES,
+    [needle, refresh],
+  );
+  const unanswered = searching && found.total === 0;
+
   // Eating a log files whole evenings at once, and it happens on another tab — without this the
   // new sittings only appear on a reopen.
   useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);
@@ -42,6 +63,7 @@ export default function DamageHistory({
   async function clearAll() {
     await api()?.combat.clearHistory();
     setOpenId(null);
+    setTerm(""); // a search over nothing is just a box asking you why you typed in it
     onPick(null);
     // Re-read rather than trusting the returned list: main owns history, and one path to it is enough.
     setRefresh((n) => n + 1);
@@ -61,8 +83,15 @@ export default function DamageHistory({
   return (
     <div className="history">
       <div className="row">
+        <input
+          className="field hist-search"
+          placeholder="Search mob or zone…"
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          title="Show only fights whose mob name or zone matches — every word has to match, in either field"
+        />
         <span className="muted small">
-          {sessions.length} session{sessions.length === 1 ? "" : "s"} recorded
+          {needle ? (unanswered ? "searching…" : matchTally(found)) : sessionTally(sessions.length)}
         </span>
         <span className="spacer" />
         <button className="btn ghost sm" onClick={clearAll}>
@@ -73,18 +102,62 @@ export default function DamageHistory({
       {/* The list scrolls inside itself: it's an index, and a fortnight of play in an
           always-on-top float otherwise pushes the fight you picked off the bottom of the tab. */}
       <div className="hist-list">
-        {sessions.map((s) => (
-          <Session
-            key={s.sessionId}
-            summary={s}
-            open={openId === s.sessionId}
-            onToggle={() => setOpenId(openId === s.sessionId ? null : s.sessionId)}
-            fights={openId === s.sessionId ? fights : []}
-            picked={picked}
-            onPick={onPick}
-          />
-        ))}
+        {needle ? (
+          <Matches fights={found.fights} quiet={unanswered} picked={picked} onPick={onPick} />
+        ) : (
+          sessions.map((s) => (
+            <Session
+              key={s.sessionId}
+              summary={s}
+              open={openId === s.sessionId}
+              onToggle={() => setOpenId(openId === s.sessionId ? null : s.sessionId)}
+              fights={openId === s.sessionId ? fights : []}
+              picked={picked}
+              onPick={onPick}
+            />
+          ))
+        )}
       </div>
+    </div>
+  );
+}
+
+/** "12 sessions recorded" — what the tree is a list of. */
+const sessionTally = (count: number): string => `${count} session${count === 1 ? "" : "s"} recorded`;
+
+/**
+ * What the search found, and — when the store capped it — that what's on screen is only the
+ * newest slice of it. A truncated list that reads like the whole answer would quietly turn
+ * "I never fought that here" into a wrong conclusion.
+ */
+function matchTally(found: FightSearch): string {
+  if (found.total === 0) return "no matching fights";
+  const shown = found.fights.length;
+  const matched = `${found.total} matching fight${found.total === 1 ? "" : "s"}`;
+  return shown < found.total ? `${matched} · newest ${shown} shown` : matched;
+}
+
+/** Search results: fights from across every session, so each one says which day it was. */
+function Matches({
+  fights,
+  quiet,
+  picked,
+  onPick,
+}: {
+  fights: StoredFight[];
+  /** No answer has landed yet — say nothing rather than "nothing matches", which isn't known. */
+  quiet: boolean;
+  picked: StoredFight | null;
+  onPick: (fight: StoredFight | null) => void;
+}) {
+  if (fights.length === 0) {
+    return quiet ? null : <p className="muted small">No fight&apos;s mob or zone matches that.</p>;
+  }
+  return (
+    <div className="hist-fights hist-found">
+      {fights.map((f) => (
+        <Fight key={f.id} fight={f} when={dayTime(f.stats.startedAt)} withZone picked={picked} onPick={onPick} />
+      ))}
     </div>
   );
 }
@@ -119,20 +192,44 @@ function Session({
       {open && (
         <div className="hist-fights">
           {fights.map((f) => (
-            <button
-              className={`hist-fight ${picked?.id === f.id ? "on" : ""}`}
-              key={f.id}
-              onClick={() => onPick(picked?.id === f.id ? null : f)}
-            >
-              <span className="hf-when">{clock(f.stats.startedAt, { seconds: true })}</span>
-              <span className="hf-label">{f.label}</span>
-              <span className="muted small">{f.stats.durationSec}s</span>
-              <span className="hf-dmg">{f.stats.yourDealt.toLocaleString()}</span>
-            </button>
+            // Inside a sitting the day is a given, so the row spends its width on the clock alone.
+            <Fight key={f.id} fight={f} when={clock(f.stats.startedAt, { seconds: true })} picked={picked} onPick={onPick} />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * One fight in a list — the row you click to break it down. Shared by the session tree and the
+ * search results so a fight looks and behaves the same however you found it; what differs is only
+ * how much of *when* has to be spelled out, and whether the zone is worth a column.
+ */
+function Fight({
+  fight,
+  when,
+  withZone = false,
+  picked,
+  onPick,
+}: {
+  fight: StoredFight;
+  /** Already-formatted time — a clock within one sitting, a date and time across many. */
+  when: string;
+  /** Show the zone, for a list where it's why the row is here rather than a constant. */
+  withZone?: boolean;
+  picked: StoredFight | null;
+  onPick: (fight: StoredFight | null) => void;
+}) {
+  const on = picked?.id === fight.id;
+  return (
+    <button className={`hist-fight ${on ? "on" : ""}`} onClick={() => onPick(on ? null : fight)}>
+      <span className="hf-when">{when}</span>
+      <span className="hf-label">{fight.label}</span>
+      {withZone && <span className="hf-zone muted">{fight.zone ?? "—"}</span>}
+      <span className="muted small">{fight.stats.durationSec}s</span>
+      <span className="hf-dmg">{fight.stats.yourDealt.toLocaleString()}</span>
+    </button>
   );
 }
 

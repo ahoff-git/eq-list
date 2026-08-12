@@ -98,9 +98,9 @@ world coordinates, so a map knows where it is. See
   window's and one that may go **above 100%** — `MAP_UI_SCALE`, since a map is a picture you lean
   into rather than an overlay to shrink; see
   [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)), its own **◐ opacity**
-  toggle (the shared `OpacityButton`, flipping `overlay.mapOpacity` — a separate value from the main
-  window's, and one that starts **solid**, since a map is a picture to read rather than text to see
-  past), **minimize**,
+  toggle (the shared `OpacityButton`. The saved opacity is the app-wide `overlay.opacity`, but the
+  flip-to-solid is *this window's* — a map you're leaning into wants clear glass without the list
+  going solid with it), **minimize**,
   **maximize/restore**, a **pin** (per-window always-on-top, via the shared `PinButton`) and a
   **⌂ floors** button saying how many storeys are drawn, which opens the 👁 panel to change it (only
   when the map labels more than one — see **Floors and heights**). A zone with
@@ -149,9 +149,16 @@ world coordinates, so a map knows where it is. See
   Brewall eight zone names its labels state outright (Unrest, Sebilis, Dalnir, Kurn's Tower, the City
   of Mist, the Akheva Ruins, Trakanon's Teeth, Neriak Commons) and rewrote seven more. The price is
   that the game's own maps, which label few exits, name 54 of 133 files rather than borrowing their
-  way to more; the catalogue covers the zones that matter and the rest show their file name. It runs
-  on demand per pack (~1s for 568 files) and the picker relabels itself when it lands, so nothing
-  waits on it. Priority is **catalogue → solved → the file's own name**: the
+  way to more; the catalogue covers the zones that matter and the rest show their file name.
+
+  Naming a folder is **paid once and remembered** in `userData/map-zone-names.json`, against a
+  signature of the folder's file count, total bytes and newest mtime
+  ([ADR 0072](../decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md)). It reads every map
+  in the folder — 199 MB across 1,321 files for a real install's two sources — and it used to do that
+  on every launch, synchronously, the moment the map window mounted: about a second of frozen app and
+  a disk storm to go with it. A first run after installing a pack still pays it, now a few files at a
+  time off the main thread (`readFolderPois`, sieving `P` lines out of the raw bytes), and the picker
+  is usable by file name while that's in flight. Priority is **catalogue → solved → the file's own name**: the
   curated names win because the solver is occasionally sure and wrong (it offers `neriaka` the
   Fourth Gate, which is a different file), and a zone still nameless shows as `gukbottom`, which is
   honest and selectable.
@@ -456,4 +463,5 @@ world coordinates, so a map knows where it is. See
 [data-model](./data-model.md) · [ADR 0010](../decisions/0010-ported-map-core.md) ·
 [ADR 0011](../decisions/0011-awari-peer-location-sharing.md) ·
 [ADR 0015](../decisions/0015-peer-presence-via-hello.md) ·
-[ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)
+[ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md) ·
+[ADR 0072](../decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md)

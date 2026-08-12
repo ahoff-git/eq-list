@@ -33,11 +33,23 @@ export default function CastWatchRow({
     <div style={{ marginBottom: 4 }}>
       <div className="row" style={{ gap: 6 }}>
       <input type="checkbox" checked={w.enabled} onChange={(e) => onChange({ enabled: e.target.checked })} />
+      {/* Trigger then message, left to right: match this, say that. They're separate on purpose —
+          a fade has to be matched on the words EQ used ("light breeze"), which is rarely the
+          wording you want to read mid-fight. */}
       <input
         className="field"
+        style={{ flex: 3, minWidth: 0 }}
         value={w.spell}
-        placeholder={w.onLine ? "words from a log line" : "spell name (or part of it)"}
+        placeholder={w.onLine ? "words the log printed" : "spell name (or part of it)"}
         onChange={(e) => onChange({ spell: e.target.value })}
+      />
+      <input
+        className="field"
+        style={{ flex: 2, minWidth: 0 }}
+        value={w.message ?? ""}
+        placeholder="alert says… (optional)"
+        title="What the banner should say when this fires. Leave it empty to get the usual sentence — “Root faded”, “a gnoll casting Fear”."
+        onChange={(e) => onChange({ message: e.target.value })}
       />
       {/* Only meaningful while this watch is looking at casts — a fade or a line names
           no caster to classify. */}
@@ -81,19 +93,20 @@ export default function CastWatchRow({
         />
         <span className="small muted">fades</span>
       </label>
-      {/* Points the same text at whole log lines, so a watch can catch anything the game
-          says — a party invite, a tell — not only a spell. */}
+      {/* The escape hatch: points the same text at whole log lines, so anything the game prints is
+          alertable whether or not a parser models it. "line" said what it matched against but not
+          what it was *for*, and it's the answer to most "why doesn't this alert?" questions. */}
       <label
         className="row"
         style={{ gap: 4 }}
-        title="Alert when these words appear anywhere in a log line — “invites you” for a party invite, “tells you” for a private message. Matches what the game printed, not a spell name."
+        title="Match these words anywhere in a log line, exactly as the game printed it — “invites you” for a party invite, “tells you” for a tell, “the mystical path fades away” for a buff the parser can't model. Anything in your log can be a trigger this way; pair it with a message to say what you want."
       >
         <input
           type="checkbox"
           checked={!!w.onLine}
           onChange={(e) => onChange({ onLine: e.target.checked })}
         />
-        <span className="small muted">line</span>
+        <span className="small muted">raw text</span>
       </label>
       {/* Its own look and sound, so two emergencies can be told apart without reading
           the banner. A watch either follows the defaults or carries a full style. */}

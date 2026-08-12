@@ -213,6 +213,13 @@ export interface DamageEvent extends LogEventBase {
   /** True for a damage-over-time tick, as opposed to a spell first landing. */
   tick?: boolean;
   /**
+   * True when the line stated no caster, so `attacker` is only the DoT's own name standing in
+   * for one. The log gives the caster a line earlier ("You begin casting X"), which is what
+   * `dot-attribution.ts` puts back — and it clears this flag when it does
+   * ([ADR 0071](../../specs/decisions/0071-a-dot-tick-belongs-to-whoever-cast-it.md)).
+   */
+  casterUnknown?: boolean;
+  /**
    * True for a damage shield ("A female rat is burned by Kainos`s warder's flames …"): the
    * wearer dealt it by *being hit*, not by attacking. There's no spell to name, so `spell`
    * holds the log's source word ("flames") — this flag is what says it isn't a cast.
@@ -535,6 +542,13 @@ export interface SpellStat {
   lands: number;
   /** Later damage-over-time ticks from those landings. */
   ticks: number;
+  /**
+   * Of `damage`, what the ticks did — so a DoT's total can be read as "the hit plus what it
+   * ticked for" rather than one opaque number. Absent on fights stored before it was recorded.
+   */
+  tickDamage?: number;
+  /** The biggest single tick, which is what a DoT's *rate* is felt as. Absent on old fights. */
+  maxTick?: number;
   fizzles: number;
   interrupts: number;
   resists: number;
@@ -786,6 +800,16 @@ export interface FightBest {
   yourDealt: number;
   dps: number;
   at: string;
+}
+
+/**
+ * What a history search came back with: the matching fights, newest first and **capped** by the
+ * store, plus how many matched altogether. The total is what lets the list say "the newest 100 of
+ * 342" — a truncated answer that looks complete is worse than no answer.
+ */
+export interface FightSearch {
+  fights: StoredFight[];
+  total: number;
 }
 
 /** A play session, derived by grouping stored fights. */
@@ -1109,6 +1133,13 @@ export interface CastWatch {
    */
   onLine?: boolean;
   /**
+   * What the banner should say, instead of the sentence built from `spell`. The trigger and the
+   * message are separate things: a watch has to match the words the *log* used ("light breeze"),
+   * while the prompt you want on screen is your own ("RE-CAST BREEZE"). Empty or absent keeps the
+   * built sentence, which is right whenever the spell's name is already the whole message.
+   */
+  message?: string;
+  /**
    * This watch's own look and sound, overriding the defaults field by field. Absent means it
    * follows them — which is what every watch does until you give it one. Partial so a style
    * saved before a new field existed still picks that field up from the defaults.
@@ -1217,6 +1248,12 @@ export interface CastAlertEvent {
    */
   text?: string;
   /**
+   * The matching watch's own wording (`CastWatch.message`), if it gave one — shown in place of the
+   * sentence the banner would otherwise build. Resolved here rather than in the overlay for the
+   * same reason the style is: the overlay never sees the watch that matched.
+   */
+  message?: string;
+  /**
    * The look and sound this alert should use, already resolved from the defaults and the watch's
    * own overrides (`alertStyle`). Carried with the alert so the overlay renders what *this* watch
    * asked for — it can't work that out itself, and an alert already up mustn't be restyled by
@@ -1228,7 +1265,12 @@ export interface CastAlertEvent {
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 export interface OverlaySettings {
-  opacity: number; // 0.2 .. 1
+  /**
+   * Translucency for **every** window (0.2–1) — one look for the whole app, unlike the scale,
+   * which the map holds its own copy of. Each window's titlebar ◐ can still flip *itself* to
+   * fully opaque without touching this or the other windows (see `useWindowOpacity`).
+   */
+  opacity: number;
   alwaysOnTop: boolean;
   fontScale: number; // 0.6 .. 1 — see UI_SCALE / ADR 0026 (kept its name to not break saved settings)
   /**
@@ -1237,13 +1279,6 @@ export interface OverlaySettings {
    * picture you enlarge to read. Same range, its own A−/A+ buttons in the map titlebar.
    */
   mapFontScale: number;
-  /**
-   * The **map window's** opacity, kept apart from `opacity` for the same reason as the scale:
-   * a translucent column of text is still readable over the game, a translucent map is not —
-   * so the map starts opaque and is dimmed only if you want it to be. Same 0.2–1 range, its own
-   * ◐ toggle in the map titlebar.
-   */
-  mapOpacity: number;
   showObtained: boolean; // keep completed items visible
   /** Auto-narrow the overlay to the zone you're in (from the log) as you travel. */
   followZone: boolean;
@@ -1546,6 +1581,11 @@ export interface EqlApi {
     bests(): Promise<FightBest[]>;
     /** The stored fights of one session, newest first. */
     fights(sessionId: string): Promise<StoredFight[]>;
+    /**
+     * Stored fights whose mob name or zone matches `term`, across every session — newest first,
+     * capped by the store, with the full match count alongside.
+     */
+    searchFights(term: string): Promise<FightSearch>;
     /** Forget all stored history (the live meter is untouched). */
     clearHistory(): Promise<SessionSummary[]>;
   };

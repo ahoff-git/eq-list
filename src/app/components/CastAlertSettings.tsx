@@ -44,12 +44,14 @@ export default function CastAlertSettings({
     setWatches(ca.watches.map((w) => (w.id === id ? { ...w, ...p } : w)));
   const removeWatch = (id: string) => setWatches(ca.watches.filter((w) => w.id !== id));
   const addWatch = () => setWatches([...ca.watches, { id: crypto.randomUUID(), spell: "", enabled: true }]);
-  // Add a suggested watch, unless an identical substring is already on the list. A line
-  // suggestion ("invites you") is about what the game said, so it isn't also matched as a spell.
+  // Add a suggested watch, unless an identical substring is already on the list. A raw-text
+  // suggestion ("invites you") is about what the game said, so it isn't also matched as a spell,
+  // and it brings its own wording where EQ's sentence isn't one worth reading mid-fight.
   const addSuggestion = (s: CastSuggestion) => {
     if (ca.watches.some((w) => w.spell.trim().toLowerCase() === s.spell.trim().toLowerCase())) return;
     const line = s.onLine ? { onLine: true, onCast: false } : {};
-    setWatches([...ca.watches, { id: crypto.randomUUID(), spell: s.spell, enabled: true, ...line }]);
+    const message = s.message ? { message: s.message } : {};
+    setWatches([...ca.watches, { id: crypto.randomUUID(), spell: s.spell, enabled: true, ...line, ...message }]);
   };
 
   // Custom alert spots (locations): a whole-array replace, like watches.
@@ -127,9 +129,11 @@ export default function CastAlertSettings({
 
             <div className="cast-suggest">
               <span className="hint" style={{ display: "block", margin: "10px 0 4px" }}>
-                Suggested — common crowd control, grouped by effect, plus things <i>said to you</i>.
-                Many CC spells aren’t named “Fear” or “Charm” (this server’s root is <i>Instill</i>),
-                so click to watch a whole family. ✓ means it’s already on your list.
+                Suggested — common crowd control, grouped by effect, plus buffs <i>fading</i> and
+                things <i>said to you</i>. Many CC spells aren’t named “Fear” or “Charm” (this
+                server’s root is <i>Instill</i>), so click to watch a whole family. ✓ means it’s
+                already on your list. Anything else in your log works too: add a watch, tick
+                <b> raw text</b>, and paste the sentence.
               </span>
               {CAST_SUGGESTIONS.map((group) => (
                 <div className="row wrap cs-row" key={group.category}>

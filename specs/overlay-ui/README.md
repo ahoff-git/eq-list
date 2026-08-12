@@ -23,12 +23,13 @@ list, hunt, search, damage, session, settings.
   hold two scales). **The map window scales separately** (`overlay.mapFontScale`, its own A− / A+):
   one window is a column of text you shrink to reclaim desk space, the other is a picture you
   enlarge to read. A shell inside a scaled window must size with **percentages, not `vh`** — a `vh`
-  length is scaled by the zoom and comes up short. **Opacity** splits the same way
-  (`overlay.opacity` here, `overlay.mapOpacity` for the map, which starts **solid** — text stays
-  readable through the glass, a map doesn't) and is also the exception to "main applies it": each
-  window opens at its own saved value (constructor) and its **renderer** owns it thereafter
-  (`useWindowOpacity`), so the transient ◐ toggle — the shared `OpacityButton`, in both title
-  bars — isn't clobbered when the main process reacts to some other settings change.
+  length is scaled by the zoom and comes up short. **Opacity** does *not* split that
+  way: `overlay.opacity` is one value for every window (one look for the app), while the **transient
+  ◐ override is per window** — the shared `OpacityButton` sits in both title bars and each flips only
+  its own window, so you can read the map through clear glass without clearing the list. It is also
+  the exception to "main applies it": a window opens at the saved value (constructor) and its
+  **renderer** owns it thereafter (`useWindowOpacity`), so the override isn't clobbered when the main
+  process reacts to some other settings change.
   Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
   tray. One window, styled once; see [ADR 0009](../decisions/0009-single-window-with-tray.md).
@@ -45,6 +46,12 @@ list, hunt, search, damage, session, settings.
   windows have it; the **cast-alert overlay does not**, being click-through and
   `maximizable: false`, which is also why the main process can just ask `isMaximizable()`
   rather than track which window is the exception.
+- **Launch order** (`main.ts`, `afterLoad`): the control window is created first and on its own; the
+  **cast-alert overlay** and the **restored map window** follow once it has loaded (or at a 4s deadline,
+  since a window that fails to load never reports one and no overlay means no alerts). Each of the three
+  is a whole Chromium renderer parsing the app bundle, and creating them in the same tick spiked every
+  core at once — a launch stutter you could feel in the mouse — for nothing, since none of them can show
+  anything until it has loaded anyway.
 - **System tray** (`main.ts`): show/hide plus the **dev-only** options kept out of the
   UI — Debug logging, Open debug log, Open developer tools (on the focused/main
   window), Reset window position, and Quit. The tray is the only way to fully exit
@@ -183,11 +190,17 @@ list, hunt, search, damage, session, settings.
       average **measured** cast time, **dmg/s cast** (the efficiency column — a slow nuke
       and a fast one that hit the same are not equally good), **mana** and **dmg/mana**
       (cost comes from the spell's wiki page — the log never states it), **resist %** (red
-      past 25%) and failed casts. The hover also shows the wiki's *stated* cast time next
-      to the measured one (which is how a mispaired cast gives itself away) and the row's
-      **per-invocation split** — the same spell can hit for 2.3× as much and cast faster
-      under a different invocation, so the blended row is a starting point, not an answer.
-      See [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md). Sortable by any of those
+      past 25%) and failed casts. **Click a row for its breakdown** — grouped by the question it
+      answers, and each group hidden when it has nothing to report, so a plain nuke shows two
+      lines and a complicated one shows six. It holds the landing figures, the **over-time
+      split** (how many ticks, what they did, the biggest, and what share of the spell's total
+      they are — on a DoT that share is nearly all of it,
+      [ADR 0071](../decisions/0071-a-dot-tick-belongs-to-whoever-cast-it.md)), what the failed
+      casts cost and who resisted, the healing, the wiki's *stated* cast time next to the measured
+      one (which is how a mispaired cast gives itself away), and the row's **per-invocation
+      split** — the same spell can hit for 2.3× as much and cast faster under a different
+      invocation, so the blended row is a starting point, not an answer. See
+      [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md). Sortable by any of those
       (`SortHeader` + `src/shared/sorting.ts`, shared with the loot tab — click a column to sort,
       click again to flip); melee is a synthetic row so the pie adds
       up. Cast times come from the log's one-second resolution — trust the averages, not a
@@ -201,6 +214,14 @@ list, hunt, search, damage, session, settings.
       [ADR 0054](../decisions/0054-a-sitting-is-a-login.md). The session list **scrolls inside
       itself** (`.hist-list`): it's an index, and a fortnight of it otherwise pushed the metrics
       for the fight you picked off the bottom of the tab. "Clear history" forgets all of it.
+      A **search box cuts across sessions**: a term replaces the tree with the matching fights
+      themselves (day, mob, zone, damage), because "where did I fight those minotaurs" is a
+      question about the whole history and opening a fortnight of sittings one at a time is no
+      answer. Matching is `shared/fight-search.ts` — every word must appear in the fight's **mob
+      name or zone**, the two things a player remembers — and it runs in **main**, which is what
+      holds every fight (the tree only ever loads the session you opened). Results are capped at
+      the newest 100 and the tally says how many matched, since a fight carries its whole
+      breakdown and a truncated list that reads like the whole answer is a wrong conclusion.
     - `Sparkline` — your damage per second across the fight, because a steady grind and a
       burst that fell off a cliff can share a DPS number but never a silhouette.
     - **Deaths** — what killed you, and what was landing in the 15s before it. The log
@@ -238,7 +259,7 @@ list, hunt, search, damage, session, settings.
     is still the only highlight rule: it's free and it can't cry wolf. Names are `ItemLink`s. The
     header's tallies count the rows **on screen**, so they describe what you filtered to. See
     [ADR 0058](../decisions/0058-a-ledger-needs-filters-and-a-column-to-sort-by.md).
-  - `SettingsPanel` — log folder, match mode, window + map opacity / interface + map scale, keep-completed,
+  - `SettingsPanel` — log folder, match mode, window opacity / interface + map scale, keep-completed,
     follow-your-zone, **cast alerts** (the watched-spell list + beep/**screen-flash**/include-self
     toggles, a **Test alert** button that fires a sample down the real broadcast path,
     **Suggested** click-to-add chips of common crowd control grouped by effect — see
@@ -284,18 +305,36 @@ list, hunt, search, damage, session, settings.
 
     A watch can also alert when its spell **fades** (`matchFade`) — the opposite prompt, "re-cast
     it": your root wearing off a mob, your Spirit of Wolf expiring. Off by default, and separable
-    from the cast alert, so a buff can be fade-only. The parser reports all four shapes a real log
-    uses, including your spell wearing off *something else* and EQ's per-spell flavour wording
-    ("Your strength fades."), which names no spell — such a watch matches those words instead.
+    from the cast alert, so a buff can be fade-only. **A fade on you is always flavour text** —
+    EQL prints the generic "worn off." sentence for your pet and for spells you cast on others,
+    never for a buff on you — so the watch matches the words the log used ("light breeze", "spirit
+    of travel") rather than the spell's name. Often they're the same word; where they aren't
+    (Fleeting Fury → "your fury fades"), the **message** field is what puts the spell's real name
+    back on the banner. See [log watching](../log-watching/README.md) for the shapes.
 
-    A watch can also be pointed at the **whole log line** (`onLine` / `matchLine`) instead of a
-    spell name — "invites you" catches "*BunnySlayer invites you to a party*", "tells you" catches a
-    private message. That's how anything the game prints becomes alertable without a parser and an
-    event kind per sentence: the watcher offers every split line on `onLine`, and `watchesLines`
-    skips the match when nobody's watching. Its banner shows the log's own words with no call to
-    action (💬), because unlike "dispel!" there is nothing to prompt. The **Suggested** chips offer
-    the party invite and the tell by label, since the wording is the unmemorable part.
+    A watch can also be pointed at **raw text** — the whole log line (`onLine` / `matchLine`)
+    instead of a spell name. "invites you" catches "*BunnySlayer invites you to a party*", "tells
+    you" catches a private message, "the mystical path fades away" catches a buff the parser
+    [won't take](../log-watching/README.md#how-a-fade-is-worded). This is the **escape hatch**, and
+    the answer to most "why doesn't this alert?": anything the game prints becomes alertable without
+    a parser and an event kind per sentence, because the watcher offers *every* split line on
+    `onLine` before parsing it, parsed or not. `watchesLines` skips the match when nobody's
+    watching. Its banner shows the log's own words with no call to action (💬), because unlike
+    "dispel!" there is nothing to prompt — unless the watch gave a **message**, which is how a
+    sentence that names no spell still reads as an instruction.
+
+    The checkbox says *raw text* rather than *line*: what it matches against was never the thing
+    users needed to know, and phrasing it as a mechanism hid that it's the general answer.
+
+    The **Suggested** chips offer the party invite, the tell, and the two unparseable fades by
+    label with wording attached, since the exact sentence is the unmemorable part.
     See [ADR 0050](../decisions/0050-a-watch-can-read-a-whole-log-line.md).
+
+    A watch's **trigger and its message are separate fields**. The trigger has to be the words the
+    log actually printed; the wording you want to read mid-fight rarely is. Setting `message` puts
+    that sentence on the banner in place of the built one, and drops the "re-cast!"/"dispel!" hint —
+    your own wording already says what to do. Resolved in the main process beside the style, and for
+    the same reason: the overlay never sees the watch that matched.
 
     Appearance is **per alert**, not per window: `alertStyle` resolves the matching watch's
     overrides over the defaults in the main process, and the resolved `AlertStyle` travels *with*

@@ -173,7 +173,9 @@ function avoidanceKind(word: string): MissEvent["avoidance"] {
 }
 
 // Damage-over-time ticks. The "from <dot> by <source>" form names who applied it;
-// the shorter "by <dot>" form doesn't, so the DoT itself becomes the attacker.
+// the shorter "by <dot>" form doesn't, so the DoT itself becomes the attacker and the event
+// says so (`casterUnknown`) — `dot-attribution.ts` is what puts the caster back, from the
+// cast line the log wrote earlier.
 const DOT_FROM_RE = /^(?<target>.+?) (?:has|have) taken (?<amount>\d+) damage from (?<spell>.+?) by (?<attacker>.+?)\.$/;
 const DOT_BY_RE = /^(?<target>.+?) (?:has|have) taken (?<amount>\d+) damage by (?<spell>.+?)\.$/;
 
@@ -196,22 +198,36 @@ const CAST_RE = /^(?<caster>.+?) begins? casting (?<spell>.+?)\.$/;
 const DEATH_RES = [/^You have been slain by (?<killer>.+?)!$/, /^You died\.$/];
 
 /**
- * A spell expiring, in the four shapes a real log produces:
+ * A spell expiring. The generic sentence covers three cases:
  *
  *     Your Spirit of Wolf spell has worn off.                    a buff on you
  *     Your pet's Burst of Strength spell has worn off.            one on your pet
  *     Your Root spell has worn off of a wild tiger.               one you cast on something else
- *     Your strength fades.                                        the same thing, worded per spell
  *
- * The last form is EQ's own per-spell flavour text and names no spell, so `spell` holds the
- * words the log used ("strength", "sense of center"). Whose buff it was decides who cares:
- * only your own can move *your* maximum hit points, while a watch waiting to re-root a mob
- * wants exactly the third form. Note `<Name> fades away.` is somebody gating out, not a spell —
- * anchoring on "Your" and "fades." keeps it out.
+ * …except that EQL **never prints the first one**. Measured on a 15MB log: 134 "worn off of
+ * <someone>", 63 "worn off." — every one of the 63 a pet's — and not a single generic line for a
+ * buff on you. A buff leaving *you* is always EQ's per-spell flavour text instead, which is why a
+ * fade watch appeared to fire only for other people:
+ *
+ *     Your strength fades. / The light breeze fades.              (145 lines)
+ *     The spirit of travel leaves you. / Your strength leaves you. (94 lines)
+ *     Your speed returns to normal.                                (4 lines)
+ *
+ * Flavour text names no spell, so `spell` holds the words the log used ("light breeze", "spirit
+ * of travel"). Often that *is* the spell — a Breeze watch matches "the light breeze fades" — but
+ * where it isn't ("Fleeting Fury" → "your fury fades"), the watch has to hold the words.
+ *
+ * Both articles appear ("Your strength fades", "The light breeze fades") and neither predicts
+ * which, so both are accepted. Note `<Name> fades away.` is somebody gating out, not a spell —
+ * requiring "fades." to *end* the line keeps all 50 of those out.
  */
 const FADE_RES = [
   /^Your (?<pet>pet's )?(?<spell>.+?) spell has worn off(?: of (?<target>.+?))?\.$/,
-  /^Your (?<spell>.+?) fades\.$/,
+  /^(?:Your|The) (?<spell>.+?) fades\.$/,
+  /^(?:Your|The) (?<spell>.+?) leaves you\.$/,
+  // "Your speed returns to normal." (snare/haste), "Your skin returns to normal." — plural for
+  // the spells that word it about a pair of something.
+  /^Your (?<spell>.+?) returns? to normal\.$/,
 ];
 
 /**
@@ -294,6 +310,8 @@ export function parseCombat(line: LogLine): CombatEvent | null {
       melee: false,
       // Flagged so per-spell stats can tell one cast landing from its later ticks.
       tick: true,
+      // The short form named nobody, so `attacker` above is the DoT standing in for a caster.
+      casterUnknown: attacker ? undefined : true,
       logId,
       at,
       raw,

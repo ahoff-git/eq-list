@@ -190,6 +190,20 @@ test("a line watch obeys the master switch, its own switch, and the liveness rul
   assert.equal(matchLine(line(INVITE), lineWatch(), NOW + LIVE_WITHIN_MS + 1000), null);
 });
 
+// The escape hatch doing the job the parser can't: "The mystical path fades away." is a spell and
+// "Bunnyslayer fades away." is a player gating out, and no pattern separates them — but the spell's
+// own words do, because a player's name can't contain them. 50 gate-outs in a real log stay quiet.
+test("a raw-text watch alerts on a fade the parser deliberately won't take", () => {
+  const w = settings({
+    watches: [{ id: "path", spell: "mystical path fades away", enabled: true, onLine: true, onCast: false }],
+  });
+  assert.equal(matchLine(line("The mystical path fades away."), w, NOW)?.id, "path");
+  assert.equal(matchLine(line("Bunnyslayer fades away."), w, NOW), null);
+  assert.equal(matchLine(line("The Ancient One fades away."), w, NOW), null);
+  // The half that isn't a fade at all stays quiet too.
+  assert.equal(matchLine(line("A mystical path appears before you."), w, NOW), null);
+});
+
 test("a blank line watch matches nothing, rather than every line", () => {
   assert.equal(matchLine(line(INVITE), lineWatch({ spell: "  " }), NOW), null);
 });

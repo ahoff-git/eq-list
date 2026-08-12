@@ -73,6 +73,28 @@ function coalesce(ms: number, fn: () => void): () => void {
  */
 const KILLS_NOTICE_MS = 500;
 
+/**
+ * A deadline on waiting for the control window before starting its siblings anyway.
+ *
+ * The wait is for `did-finish-load`, which a window that fails to load never fires — and the cast-alert
+ * overlay never being created means no alerts at all, which is a feature silently gone rather than a slow
+ * launch. So the deferral gives up: long enough that the ordinary case really is "after the window is up",
+ * short enough that a broken load costs a couple of seconds rather than the feature.
+ */
+const SIBLING_WINDOW_DEADLINE_MS = 4000;
+
+/** Run `fn` once `win` has loaded — or at `SIBLING_WINDOW_DEADLINE_MS`, whichever comes first. */
+function afterLoad(win: BrowserWindow, fn: () => void): void {
+  let ran = false;
+  const once = () => {
+    if (ran) return;
+    ran = true;
+    fn();
+  };
+  win.webContents.once("did-finish-load", once);
+  setTimeout(once, SIBLING_WINDOW_DEADLINE_MS);
+}
+
 /** Mirror the debug toggle into the env flag that logging.ts reads. */
 function syncDebugFlag(settings: Settings): void {
   if (settings.debug) process.env.EQL_DEBUG = "1";
@@ -168,6 +190,7 @@ if (!app.requestSingleInstanceLock()) {
     updates,
     mobs,
     lookup,
+    userData,
     logFile,
     getCurrentZone: () => currentZone,
     getCurrentLoc: () => currentLoc,
@@ -206,7 +229,6 @@ if (!app.requestSingleInstanceLock()) {
     }
     createAlertWindow(settings.castAlerts.displayId);
   }
-  syncAlertWindow(store.getSettings());
 
   store.onList((list) => broadcast(CH.listChanged, list));
   store.onSettings((settings) => {
@@ -307,13 +329,15 @@ if (!app.requestSingleInstanceLock()) {
     const alerts = store.getSettings().castAlerts;
     const cast = event.kind === "cast" ? matchCast(event, alerts) : null;
     const fade = event.kind === "buff-faded" ? matchFade(event, alerts) : null;
-    // The style is resolved here, from the watch that matched, and travels with the alert.
+    // The style and the wording are both resolved here, from the watch that matched, and travel
+    // with the alert — the overlay window never sees the watch itself.
     if (cast && event.kind === "cast") {
       raiseAlert({
         caster: event.caster,
         spell: event.spell,
         at: event.at,
         event: "cast",
+        message: cast.message,
         style: alertStyle(alerts, cast),
       });
     } else if (fade && event.kind === "buff-faded") {
@@ -323,6 +347,7 @@ if (!app.requestSingleInstanceLock()) {
         at: event.at,
         event: "fade",
         target: event.pet ? "your pet" : event.target,
+        message: fade.message,
         style: alertStyle(alerts, fade),
       });
     }
@@ -341,6 +366,7 @@ if (!app.requestSingleInstanceLock()) {
       text: line.message,
       at: line.at,
       event: "line",
+      message: watch.message,
       style: alertStyle(alerts, watch),
     });
   });
@@ -451,11 +477,20 @@ if (!app.requestSingleInstanceLock()) {
     ],
   };
 
-  createMainWindow(store.getSettings().overlay);
-  // Restore the map window if it was open last session.
-  if (wasMapOpen()) createMapWindow(store.getSettings().overlay);
+  const mainWin = createMainWindow(store.getSettings().overlay);
   createTray();
   startWatcher();
+
+  // The control window is the one being waited for; the other two are its siblings, and each is a
+  // whole Chromium renderer parsing the app bundle. Created in the same tick they spiked every core
+  // at once — the launch stutter you could feel in the mouse — for no gain, since none of them can
+  // show anything until they've loaded anyway. Started once the control window has painted instead.
+  afterLoad(mainWin, () => {
+    syncAlertWindow(store.getSettings());
+    // Restore the map window if it was open last session.
+    if (wasMapOpen()) createMapWindow(store.getSettings().overlay);
+    log.debug("sibling windows started");
+  });
   log.debug("app ready");
 
   app.on("activate", () => {

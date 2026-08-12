@@ -38,6 +38,7 @@ export const CH = {
   combatReset: "combat:reset",
   combatSessions: "combat:sessions",
   combatFights: "combat:fights",
+  combatSearchFights: "combat:searchFights",
   combatZones: "combat:zones",
   combatBests: "combat:bests",
   combatClearHistory: "combat:clearHistory",

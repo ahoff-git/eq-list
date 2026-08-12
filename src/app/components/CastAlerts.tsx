@@ -132,8 +132,14 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
  * What one banner shows. The three prompts are told apart by their icon before a word is read:
  * a cast says stop that, a fade says do it again, and a line is the game talking — so it shows the
  * log's own sentence and offers no call to action, because there isn't one to give.
+ *
+ * A watch that gave its own `message` gets that instead, and no hint: the point of writing your own
+ * wording is that it already says what to do, and "re-cast!" under "RE-CAST BREEZE" is noise. The
+ * icon stays, since which kind of prompt it is doesn't change with the words.
  */
 function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: string } {
+  const icon = a.event === "line" ? "💬" : a.event === "fade" ? "⏳" : "⚠";
+  if (a.message?.trim()) return { icon, body: <b>{a.message}</b> };
   if (a.event === "line") return { icon: "💬", body: <b>{a.text || a.spell}</b> };
   if (a.event === "fade") {
     return {

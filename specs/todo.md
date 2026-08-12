@@ -21,6 +21,16 @@ _Ready to build (decided, not started):_
   lines agree, so the rank needs carrying alongside the canonical name (it's still in `raw`).
 _Next up:_
 
+- **A replayed gap is read and parsed in one tick.** Startup no longer stalls on the maps
+  ([ADR 0072](./decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md)), but the other thing
+  that begins at launch still can: `log-watcher.poll()` reads *everything* appended since the cursor in
+  a single `readNew(offset, size)` and runs the whole batch through `splitLine` → `parseSplitLine` → the
+  handlers without yielding. Measured on a real log, parsing alone is ~20ms/MB and the downstream fan-out
+  (meter, kill log, HP, alerts) costs more than the parse — so play for an evening with the app closed
+  and the first poll is a multi-second freeze, ADR 0044's "read it as the news it is" paid all at once.
+  The fix is a byte cap per pass, continuing on the next tick until caught up, which `catchingUp` already
+  has the shape for; the care needed is that `onCaughtUp` must still fire once, after the last chunk.
+
 - **Three expansion pages the zone table can't read.** `scripts/fetch-zone-expansions.mjs` gets 22 of 25
   expansions; **Omens of War**, **Ring of Scale** and **The Darkened Sea** write their zone lists in a
   shape neither of the two it handles matches, so it skips them and says so
@@ -123,9 +133,3 @@ _To discuss:_
   questions rather than new mechanisms: an **ignore list** (trash you never want to see again —
   persisted, unlike the per-window filters), and the broader rule **"used by a quest in my level
   range in this zone"**, which needs the wiki's quest data per item and a level to compare against.
-
-- Damage history tab should have a search box for reducing the number of records shown to just those that include the searched term
-  - Search field should focus on mob name and zone  
-- DoT damage is not being counted correctly. It hits way more than is being parsed from the logs. 
-  - There is an initial cast + damage logged and then every damage tic should be added to that spell's damage. 
-    - Tic damage should be shown as a spell total and with an expandable section showing damage stats, like how many times it ticed, or resisted etc

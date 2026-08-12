@@ -36,6 +36,21 @@ test("a line suggestion says so, and reads as words rather than a spell name", (
   assert.ok(lines.some((s) => s.spell === "asked you to join"), "an instance invite is offered too");
 });
 
+test("the fades a pattern can't take safely are offered as raw text instead", () => {
+  // "The mystical path fades away." is a spell; "Bunnyslayer fades away." is a player gating out.
+  // Nothing about their shape separates them, so the parser takes neither — a raw-text watch on
+  // the spell's own words is what makes them alertable without 50 false alarms an evening.
+  const all = CAST_SUGGESTIONS.flatMap((g) => g.suggestions);
+  for (const words of ["mystical path fades away", "echo of healing fades away"]) {
+    const s = all.find((x) => x.spell === words);
+    assert.ok(s, `${words} is offered`);
+    assert.equal(s.onLine, true, `${words} matches raw text, not a spell name`);
+    assert.ok(s.message?.trim(), `${words} brings its own wording — the log's sentence names no spell`);
+    // The whole point: it can't collide with somebody gating out.
+    assert.ok(!"bunnyslayer fades away.".includes(words), `${words} is not in a gate-out line`);
+  }
+});
+
 test("isWatched folds case and whitespace like a real watch", () => {
   const watches = [{ spell: "Root" }, { spell: " terror " }];
   assert.equal(isWatched(watches, { spell: "Root", note: "" }), true);

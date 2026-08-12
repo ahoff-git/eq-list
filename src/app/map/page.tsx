@@ -126,10 +126,10 @@ export default function MapWindow() {
   const settings = useSettings();
   // The map's own scale, separate from the main window's (see `useUiScale`).
   useUiScale(settings?.overlay.mapFontScale, MAP_UI_SCALE);
-  // And its own translucency, likewise: a map is a picture you read, so it's usually the window
-  // you want more solid than the list. `undefined` until settings load leaves it alone.
-  const mapOpacity = settings?.overlay.mapOpacity ?? 1;
-  const { opaque, toggle: toggleOpaque } = useWindowOpacity(settings ? mapOpacity : undefined);
+  // Translucency, on the other hand, is one value for the whole app — but the ◐ that flips *this*
+  // window to solid is its own, so the map can be read without clearing the list.
+  const sliderOpacity = settings?.overlay.opacity ?? 1;
+  const { opaque, toggle: toggleOpaque } = useWindowOpacity(settings ? sliderOpacity : undefined);
   useRendererDebug();
 
   // Travelling puts the map back on you (on by default): picking a zone by hand — or
@@ -435,7 +435,7 @@ export default function MapWindow() {
         scale={settings?.overlay.mapFontScale ?? 1}
         onScale={(next) => api()?.settings.update({ overlay: { mapFontScale: next } })}
         opaque={opaque}
-        opacity={mapOpacity}
+        opacity={sliderOpacity}
         onOpaque={toggleOpaque}
         pinned={pinned}
         onPinned={() => setPinned((p) => !p)}

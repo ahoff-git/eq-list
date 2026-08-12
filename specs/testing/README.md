@@ -12,6 +12,11 @@ unit-tested.
     grammar: melee/spell/shield/DoT damage, misses, heals, `(Critical)`/`(Riposte)`
     qualifiers, overheals, and the casting lifecycle — casts, fizzles, interrupts,
     resists, blocks). Every input line is **verbatim from a real log**.
+  - `src/shared/dot-attribution.ts` → `electron/tests/dot-attribution.test.ts` (a caster-less DoT
+    tick credited to whoever was last seen casting that spell — including across the rank the cast
+    line states, a group-mate's DoT staying theirs, and the two cases that must be left exactly as
+    the log wrote them: a spell nobody was seen casting, and the long tick form that names its own
+    caster. Plus that resolving never mutates the event it was given.)
   - `electron/combat-stats.ts` → `electron/tests/combat-stats.test.ts` (per-combatant
     tallies, fight boundaries, active-time DPS, `mine` flagging, and the per-spell
     numbers: measured cast time, rank-folding, resist rate, and the dmg/s-cast formula

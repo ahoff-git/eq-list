@@ -22,19 +22,30 @@ import { MANUAL_TRAVEL } from "../src/shared/travel/manual-links";
 import { outOfEraSet, zoneAvailable } from "../src/shared/zones/expansions";
 import { answerRoute, type TravelAnswer, type TravelEnd } from "../src/shared/travel/route";
 import type { TravelGraph, TravelOptions } from "../src/shared/travel/types";
-import { createZoneNamer, readZonePois } from "./eq-maps";
+import { createZoneNamer, readFolderPois } from "./eq-maps";
 import { readJson, writeJson } from "./json-store";
+
+/** The app's gazetteer, passed in so a graph is built from the naming everything else already has. */
+type ZoneNamer = ReturnType<typeof createZoneNamer>;
 
 const log = createLogger("travel-graph");
 
 /** Every zone in a source, harvested for travel points. */
-export function harvestSource(source: Pick<MapSource, "dir" | "files">): ZoneHarvest[] {
-  return source.files.map((short) => harvestZone(short, readZonePois(source.dir, short)));
+export async function harvestSource(source: Pick<MapSource, "dir" | "files">): Promise<ZoneHarvest[]> {
+  const pois = await readFolderPois(source);
+  return source.files.map((short) => harvestZone(short, pois.get(short) ?? []));
 }
 
-/** `file → long name` for a source: the catalogue, then that pack's own solved names. */
-export function zoneNamesFor(source: MapSource): Record<string, string> {
-  const solved = createZoneNamer().names(source);
+/**
+ * `file → long name` for a source: the catalogue, then that pack's own solved names.
+ *
+ * Takes the app's `namer` rather than making one, so naming a folder costs one scan for the whole app
+ * — and none at all once the gazetteer is cached. A fresh namer here meant the build read the folder
+ * twice over (once to name it, once to harvest it) and threw the naming away afterwards, while the
+ * copy the map window had already paid for sat unused.
+ */
+export async function zoneNamesFor(source: MapSource, namer: ZoneNamer): Promise<Record<string, string>> {
+  const solved = await namer.names(source);
   const names: Record<string, string> = {};
   for (const zone of zonesFromFiles(source.id, source.files, solved)) {
     if (zone.file) names[zone.file] = zone.name;
@@ -63,12 +74,13 @@ export function absentZonesFor(zoneNames: Record<string, string>, outOfEra: read
  * **exclusions are not**: a zone the server hasn't got is left out at creation, so re-running this
  * can't reintroduce one and there's no second pass to remember.
  */
-export function buildFromSource(
+export async function buildFromSource(
   source: MapSource,
   outOfEra: readonly string[] = [],
-): { graph: TravelGraph; report: TravelBuildReport } {
-  const zoneNames = zoneNamesFor(source);
-  const harvests = harvestSource(source);
+  namer: ZoneNamer = createZoneNamer(),
+): Promise<{ graph: TravelGraph; report: TravelBuildReport }> {
+  const zoneNames = await zoneNamesFor(source, namer);
+  const harvests = await harvestSource(source);
   const absent = absentZonesFor(zoneNames, outOfEra);
   const built = buildTravelGraph({ id: source.id, dir: source.dir }, harvests, zoneNames, absent);
   log.debug("built travel graph", {
@@ -114,8 +126,9 @@ export function readGraph(file: string): TravelGraph | undefined {
  * **Built at runtime rather than read from a file.** The scripts write `data/travel-graph.*.json` for
  * you to read and argue with, but the app doesn't load them: a graph belongs to whichever pack you
  * picked, so a stored one would be an artifact to keep in step with a choice the user can change from
- * the titlebar. Building it costs one pass over the folder's labels — the same read `createZoneNamer`
- * already makes, ~1s for 568 files — so it's asked for lazily and kept.
+ * the titlebar. Building it costs one pass over the folder's labels — ~1s for 568 files — so it's asked
+ * for lazily and kept, and the pass is the shared `readFolderPois`, which reads a few files at a time
+ * off the main thread rather than blocking on the whole folder.
  *
  * The hand-authored pass is applied here, every time, so the travel in `manual-links.ts` is part of
  * what the app routes over and not something only the scripts see. So is `outOfEraZones`, which is why
@@ -125,6 +138,8 @@ export function readGraph(file: string): TravelGraph | undefined {
 export function createTravelRouter(deps: {
   /** Zones the server has out of era, from the wiki (`WikiClient.outOfEraZones`). */
   outOfEraZones?: () => Promise<string[]>;
+  /** The app's gazetteer, so the graph is named from the scan the map window already paid for. */
+  namer?: ZoneNamer;
 }): {
   graph: (source: MapSource) => Promise<TravelGraph>;
   answer: (
@@ -151,7 +166,7 @@ export function createTravelRouter(deps: {
     }
     if (!outOfEra.length) log.warn("no out-of-era zone list — a route may go through a zone the server hasn't opened");
 
-    const { graph: read, report } = buildFromSource(source, outOfEra);
+    const { graph: read, report } = await buildFromSource(source, outOfEra, deps.namer);
     const { graph: routed, report: manual } = applyManual(read, MANUAL_TRAVEL);
     log.debug("travel graph ready", {
       source: source.id,

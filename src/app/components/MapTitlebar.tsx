@@ -144,7 +144,7 @@ export default function MapTitlebar({
       <div className="win-controls no-drag">
         {/* The map's own scale, separate from the main window's — see `mapFontScale`. */}
         <ScaleButtons scale={scale} onScale={onScale} what="map" range={MAP_UI_SCALE} />
-        {/* Likewise its own translucency — see `mapOpacity`. */}
+        {/* The saved opacity is app-wide; this flips *this* window solid — see `useWindowOpacity`. */}
         <OpacityButton opaque={opaque} opacity={opacity} onToggle={onOpaque} />
         <PinButton pinned={pinned} onToggle={onPinned} />
         {/* Closed for real, not hidden — the map is opened on demand. */}

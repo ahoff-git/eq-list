@@ -318,14 +318,94 @@ test("DoT ticks add damage to the spell but aren't extra landings", () => {
   t.setPlayer("Kainos");
   feed(t, [
     [1, "You begin casting Engulfing Darkness."],
+    [2, "You hit a coyote for 8 points of disease damage by Engulfing Darkness."],
     [3, "A coyote has taken 5 damage by Engulfing Darkness."],
-    [9, "A coyote has taken 5 damage by Engulfing Darkness."],
+    [9, "A coyote has taken 6 damage by Engulfing Darkness."],
   ]);
-  // The DoT's own damage lines name no caster, so they land under the DoT — what matters
-  // here is that a tick is never counted as a fresh cast.
-  const s = t.snapshot().session.spells.find((x) => x.spell === "Engulfing Darkness");
-  assert.equal(s?.casts, 1);
-  assert.equal(s?.lands ?? 0, 0);
+  const s = t.snapshot().session.spells.find((x) => x.spell === "Engulfing Darkness")!;
+  assert.equal(s.casts, 1);
+  // One cast, one landing — a tick is never counted as a fresh cast, however many arrive.
+  assert.equal(s.lands, 1);
+  assert.equal(s.ticks, 2);
+  // …and every one of them is that spell's damage: 8 landed + 5 + 6 ticked (ADR 0071).
+  assert.equal(s.damage, 19);
+  assert.equal(s.tickDamage, 11);
+  assert.equal(s.maxTick, 6);
+  // `maxHit` stays "biggest landing", so the two figures don't blur into each other.
+  assert.equal(s.maxHit, 8);
+});
+
+// The bug this fixes: EQ Legends words a DoT's ticks without a caster, so before ADR 0071 the
+// ticks — nearly all of a DoT's damage — landed in a phantom row named after the spell, and the
+// spell's own row showed the first hit only.
+test("a caster-less DoT tick is your damage, not a combatant named after the spell", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin casting Engulfing Darkness."],
+    [2, "You hit a coyote for 8 points of disease damage by Engulfing Darkness."],
+    [3, "A coyote has taken 5 damage by Engulfing Darkness."],
+    [9, "A coyote has taken 6 damage by Engulfing Darkness."],
+  ]);
+  const fight = t.snapshot().fight;
+  assert.equal(fight.byCombatant.find((r) => r.name === "Engulfing Darkness"), undefined);
+  const you = fight.byCombatant.find((r) => r.name === "You")!;
+  assert.equal(you.dealt, 19);
+  assert.equal(fight.yourDealt, 19);
+  // The cast landing and its ticks are one source on your row, which is what a DoT is.
+  assert.deepEqual(you.bySpell.find((x) => x.spell === "Engulfing Darkness"), {
+    spell: "Engulfing Darkness",
+    hits: 3,
+    damage: 19,
+    maxHit: 8,
+  });
+});
+
+test("a mob's DoT on you stays the mob's, and never reads as one of your spells", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    // You have to be in a fight with it for its lines to count at all (ADR 0067).
+    [1, "You pierce a large plague rat for 6 points of damage."],
+    // The long form names the caster; the short one names nobody and nobody cast it, so the
+    // DoT stands as its own attacker — the log's limit, not a guess.
+    [2, "You have taken 1 damage from Plague Rat Disease by a large plague rat."],
+    [8, "Kainos`s warder has taken 1 damage by Plague Rat Disease."],
+  ]);
+  const fight = t.snapshot().fight;
+  assert.equal(fight.spells.find((s) => s.spell === "Plague Rat Disease"), undefined);
+  assert.equal(fight.byCombatant.find((r) => r.name === "a large plague rat")?.dealt, 1);
+  assert.equal(fight.byCombatant.find((r) => r.name === "Plague Rat Disease")?.dealt, 1);
+});
+
+test("a group-mate's DoT ticks are their damage, not yours", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 6 points of damage."],
+    [2, "Hullshamancer begins casting Engulfing Darkness."],
+    [3, "A coyote has taken 5 damage by Engulfing Darkness."],
+  ]);
+  const fight = t.snapshot().fight;
+  assert.equal(fight.byCombatant.find((r) => r.name === "Hullshamancer")?.dealt, 5);
+  assert.equal(fight.yourDealt, 6);
+  // Their spell, so it stays out of *your* spell table (which is only ever about your casts).
+  assert.equal(fight.spells.find((s) => s.spell === "Engulfing Darkness"), undefined);
+});
+
+// A DoT outlives the pull that started it, and a tick is not a swing — so ticks alone must not
+// open a fight, but they must still count towards the one they belong to.
+test("a DoT that ticks past the end of a fight still counts as your damage", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin casting Engulfing Darkness."],
+    [2, "You hit a coyote for 8 points of disease damage by Engulfing Darkness."],
+    [8, "A coyote has taken 5 damage by Engulfing Darkness."],
+  ]);
+  const session = t.snapshot().session;
+  assert.equal(session.yourDealt, 13);
+  assert.equal(session.spells.find((s) => s.spell === "Engulfing Darkness")?.tickDamage, 5);
 });
 
 test("other people's spells stay out of your spell table", () => {

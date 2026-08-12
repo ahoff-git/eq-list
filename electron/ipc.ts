@@ -44,6 +44,8 @@ export interface IpcContext {
   updates: UpdateChecker;
   mobs: MobKnowledgeStore;
   lookup: Lookup;
+  /** The app's own data folder — where the stores and the remembered zone names live. */
+  userData: string;
   /** Path to the debug log file. */
   logFile: string;
   /** The player's current zone (tracked from the log in main.ts). */
@@ -58,14 +60,17 @@ export interface IpcContext {
 }
 
 export function registerIpc(context: IpcContext): void {
-  const { wiki } = context;
+  const { wiki, userData } = context;
   // Parsed map files, kept for the life of the app: they don't change under us, and a zone
   // is up to 800KB of text that several windows may ask for.
   const mapReader = createMapReader();
-  const zoneNamer = createZoneNamer();
+  // Naming a folder reads every map in it, so the answer is kept in userData between runs — see
+  // `createZoneNamer`. One namer for the app: the map window, the borrowed-zone backstop and the
+  // travel graph all want the same folders named, and this is what makes that one scan.
+  const zoneNamer = createZoneNamer(userData);
   // The wiki is what knows which zones the server has open, so the graph asks it rather than carrying
   // a list of its own (see `absentZonesFor`).
-  const travel = createTravelRouter({ outOfEraZones: () => wiki.outOfEraZones() });
+  const travel = createTravelRouter({ outOfEraZones: () => wiki.outOfEraZones(), namer: zoneNamer });
 
   const shared: SharedIpc = { mapReader, zoneNamer, travel };
 
@@ -146,6 +151,8 @@ function registerSettingsIpc(context: IpcContext): void {
       caster: "Test",
       spell,
       at: new Date().toISOString(),
+      // Its own wording too, or the preview would show a sentence the real alert never uses.
+      message: watch?.message,
       style: alertStyle(alerts, watch),
       ...shape,
     } satisfies CastAlertEvent);
@@ -263,6 +270,7 @@ function registerStatsIpc(context: IpcContext): void {
   });
   ipcMain.handle(CH.combatSessions, () => history.sessions());
   ipcMain.handle(CH.combatFights, (_e, sessionId: string) => history.fights(sessionId));
+  ipcMain.handle(CH.combatSearchFights, (_e, term: string) => history.search(term));
   ipcMain.handle(CH.combatZones, () => history.zones());
   ipcMain.handle(CH.combatBests, () => history.bests());
   ipcMain.handle(CH.xpGet, () => xp.state());

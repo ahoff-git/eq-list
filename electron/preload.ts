@@ -82,6 +82,7 @@ const api: EqlApi = {
     onChanged: (cb) => on(CH.combatChanged, cb),
     sessions: () => ipcRenderer.invoke(CH.combatSessions),
     fights: (sessionId) => ipcRenderer.invoke(CH.combatFights, sessionId),
+    searchFights: (term) => ipcRenderer.invoke(CH.combatSearchFights, term),
     zones: () => ipcRenderer.invoke(CH.combatZones),
     bests: () => ipcRenderer.invoke(CH.combatBests),
     clearHistory: () => ipcRenderer.invoke(CH.combatClearHistory),

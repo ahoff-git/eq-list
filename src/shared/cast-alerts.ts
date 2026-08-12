@@ -113,8 +113,11 @@ function stale(at: string, now: number): boolean {
  * irrelevant, and a fade on you, on your pet and on your target are all reportable. What the
  * player asked for is the prompt itself: "your root is gone, re-root".
  *
- * One honest limit: EQ words some fades per spell ("Your strength fades.") and names no spell at
- * all, so such a watch has to match those words rather than the spell's name.
+ * One honest limit, and it's the common case rather than a corner: a fade **on you** is always
+ * worded per spell ("The light breeze fades.", "The spirit of travel leaves you.") and names no
+ * spell, because EQL never prints the generic "worn off." sentence for your own buffs. So a watch
+ * for one has to hold the words the log used, not the spell's name — often the same word, and
+ * where it isn't, the watch's `message` is what puts the real name back on the banner.
  */
 export function matchFade(
   event: Pick<BuffFadedEvent, "spell" | "at">,

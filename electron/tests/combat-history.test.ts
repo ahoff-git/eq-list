@@ -266,6 +266,42 @@ test("the oldest fights are dropped once the cap is hit", () => {
   assert.equal(fights.at(-1)!.label, "fight-5"); // first five dropped
 });
 
+test("searching finds fights by mob and by zone, across sessions", () => {
+  const h = createCombatHistory(tempDir(), "s");
+  h.add(fight(1, 10, 1, "Minotaur Lord"), "Steamfont Mountains");
+  h.add(fight(2, 10, 1, "a coyote"), "Steamfont Mountains");
+  h.startSession("2026-07-29T21:00:00");
+  h.add(fight(3, 10, 1, "a minotaur guard"), "Steamfont Mountains");
+  h.add(fight(4, 10, 1, "a rat"), "Ak'Anon");
+
+  // By mob, case-insensitively, however many sittings it spans — newest first.
+  assert.deepEqual(h.search("minotaur").fights.map((f) => f.label), ["a minotaur guard", "Minotaur Lord"]);
+  // By zone, for the fights whose names have nothing in common.
+  assert.equal(h.search("ak'anon").total, 1);
+  assert.equal(h.search("steamfont").total, 3);
+  // Every word has to match, in either field — which is what makes "mob + where" one search.
+  assert.deepEqual(h.search("coyote steam").fights.map((f) => f.label), ["a coyote"]);
+  assert.equal(h.search("coyote akanon").total, 0);
+  // A fight with no zone on record is matched on its name alone, not dropped.
+  const noZone = createCombatHistory(tempDir(), "s");
+  noZone.add(fight(1, 10, 1, "a coyote"));
+  assert.equal(noZone.search("coyote").total, 1);
+});
+
+test("a search sends back the newest matches and says how many it left out", () => {
+  const h = createCombatHistory(tempDir(), "s");
+  for (let i = 0; i < 120; i++) h.add(fight(i, i, 0, `a coyote ${i}`));
+
+  const capped = h.search("coyote", 10);
+  assert.equal(capped.total, 120, "the count is every match, not the slice");
+  assert.equal(capped.fights.length, 10);
+  assert.equal(capped.fights[0].label, "a coyote 119"); // newest, as the list shows them
+  // Under the cap, the two agree.
+  const few = h.search(" coyote 100 ", 10);
+  assert.deepEqual(few.fights.map((f) => f.label), ["a coyote 100"]);
+  assert.equal(few.total, 1);
+});
+
 test("zones aggregate every recorded fight, best experience rate first", () => {
   const h = createCombatHistory(tempDir(), "s");
   // Two fights in a good camp, one in a slow one.
