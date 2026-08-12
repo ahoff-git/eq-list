@@ -7,6 +7,7 @@ import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
 import CastAlertSettings from "./CastAlertSettings";
 import LogSettings from "./LogSettings";
 import { percent } from "@/shared/format";
+import { CheckField } from "./ui";
 import type { DeepPartial, Settings } from "@/shared/types";
 
 /** Log location, match strictness, overlay look, and the debug toggle. */
@@ -264,6 +265,7 @@ function ForgetData() {
   );
 }
 
+/** A setting that's a yes or a no: the shared `CheckField`, in the frame every setting sits in. */
 function Toggle({
   label,
   checked,
@@ -277,10 +279,7 @@ function Toggle({
 }) {
   return (
     <div className="setting">
-      <label className="row" style={{ gap: 8, opacity: disabled ? 0.5 : 1 }}>
-        <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-        {label}
-      </label>
+      <CheckField className="setting-check" label={label} checked={checked} disabled={disabled} onChange={onChange} />
     </div>
   );
 }

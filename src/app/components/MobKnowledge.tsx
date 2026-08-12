@@ -6,7 +6,10 @@ import ItemLink from "./ItemLink";
 import type { MobKnowledge } from "@/shared/mob-stats";
 import { dropRate, rateConfidence } from "@/shared/drop-truth";
 import { filterMobKnowledge, type KillFilters } from "@/shared/kill-filters";
+import { count, countOf } from "@/shared/format";
+import { distinctSorted } from "@/shared/sorting";
 import KillFilterBar from "./KillFilterBar";
+import { Caret } from "./ui";
 
 /**
  * What killing things has taught us: how often each mob drops what, what it carries, and
@@ -45,7 +48,7 @@ export default function MobKnowledgePanel({
   const [open, setOpen] = useState<string | null>(null);
   const mobs = useMemo(() => filterMobKnowledge(all, filters), [all, filters]);
   // The picker offers what's here *before* filtering, or choosing a mob would empty its own list.
-  const names = useMemo(() => [...new Set(all.map((m) => m.mob))].sort(), [all]);
+  const names = useMemo(() => distinctSorted(all.map((m) => m.mob)), [all]);
 
   useEffect(() => {
     const a = api();
@@ -83,9 +86,7 @@ export default function MobKnowledgePanel({
         withPosition={false}
         tally={
           <>
-            {mobs.length}
-            {mobs.length === all.length ? "" : ` of ${all.length}`} mob{all.length === 1 ? "" : "s"} observed
-            {zone ? ` in ${zone}` : ""}
+            {countOf(mobs.length, all.length, "mob")} observed{zone ? ` in ${zone}` : ""}
           </>
         }
       >
@@ -100,8 +101,7 @@ export default function MobKnowledgePanel({
 
       {mobs.length === 0 && (
         <p className="muted small">
-          Nothing here matches the filters — {all.length} mob{all.length === 1 ? " is" : "s are"} known in this
-          zone.
+          Nothing here matches the filters — {count(all.length, "mob is", "mobs are")} known in this zone.
         </p>
       )}
 
@@ -111,8 +111,9 @@ export default function MobKnowledgePanel({
         return (
           <div className={`mob-row ${open === key ? "open" : ""}`} key={key}>
             <div className="mob-head" onClick={() => setOpen(open === key ? null : key)}>
-              <span className="caret">{open === key ? "▾" : "▸"}</span>
-              <span className="mob-name">{mob.mob}</span>
+              <Caret open={open === key} />
+              {/* A link, like the mob's name in the ☠ list beside it — the head still opens the row. */}
+              <ItemLink title={mob.mob} className="mob-name" />
               <span
                 className="muted small"
                 title={
@@ -121,7 +122,7 @@ export default function MobKnowledgePanel({
                     : "All your own kills"
                 }
               >
-                {mob.kills} kill{mob.kills === 1 ? "" : "s"}
+                {count(mob.kills, "kill")}
                 {pooled > 0 ? ` (${mob.myKills} yours)` : ""}
               </span>
               {mob.copper > 0 && (

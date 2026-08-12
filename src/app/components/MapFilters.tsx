@@ -1,6 +1,7 @@
 "use client";
 import type { PoiGroupSummary, PoiKind } from "@/shared/map/poi-kinds";
 import { PIN_TYPES, type PinKind } from "@/shared/map/pins";
+import { CheckField } from "./ui";
 import type { MapFloor, ZBand } from "@/shared/map/eqmap";
 
 /** A hand-set height window, in EQ `/loc` z — what a map with no labelled storeys gets instead. */
@@ -100,15 +101,18 @@ export default function MapFilters({
             </button>
           </header>
           {floors.map((f) => (
-            <label key={f.layer} className="row" title="The map file holds every floor at once, as the game draws it. Pins and pings you make belong to the floor you made them on — which needs exactly one floor in view.">
-              <input
-                type="checkbox"
-                checked={shownLayers.includes(f.layer)}
-                onChange={(e) => onLayers(toggle(shownLayers, f.layer, e.target.checked, allLayers))}
-              />
-              {f.label}
-              {yourFloor?.layer === f.layer && <span className="muted small">· you</span>}
-            </label>
+            <CheckField
+              key={f.layer}
+              checked={shownLayers.includes(f.layer)}
+              onChange={(on) => onLayers(toggle(shownLayers, f.layer, on, allLayers))}
+              title="The map file holds every floor at once, as the game draws it. Pins and pings you make belong to the floor you made them on — which needs exactly one floor in view."
+              label={
+                <>
+                  {f.label}
+                  {yourFloor?.layer === f.layer && <span className="muted small">· you</span>}
+                </>
+              }
+            />
           ))}
         </section>
       )}
@@ -154,14 +158,16 @@ export default function MapFilters({
           <span className="muted small">My pins</span>
         </header>
         {PIN_TYPES.map((t) => (
-          <label key={t.key} className="row">
-            <input
-              type="checkbox"
-              checked={!hiddenPinKinds.has(t.key)}
-              onChange={(e) => onPinKind(t.key, e.target.checked)}
-            />
-            <span style={{ color: t.color }}>{t.glyph}</span> {t.label}
-          </label>
+          <CheckField
+            key={t.key}
+            checked={!hiddenPinKinds.has(t.key)}
+            onChange={(visible) => onPinKind(t.key, visible)}
+            label={
+              <>
+                <span style={{ color: t.color }}>{t.glyph}</span> {t.label}
+              </>
+            }
+          />
         ))}
       </section>
 
@@ -171,32 +177,31 @@ export default function MapFilters({
         return (
           <section key={group.group}>
             <header>
-              <label className="row">
-                <input
-                  type="checkbox"
-                  checked={shown.length > 0}
-                  // Half the group off reads as "on" and switches the rest off, which is the
-                  // gesture you meant: one click clears the section.
-                  ref={(el) => {
-                    if (el) el.indeterminate = shown.length > 0 && shown.length < kinds.length;
-                  }}
-                  onChange={() => onPoiKinds(kinds, shown.length === 0)}
-                />
-                <span className="group-name">{group.label}</span>
-              </label>
+              <CheckField
+                checked={shown.length > 0}
+                // Half the group off reads as "on" and switches the rest off, which is the
+                // gesture you meant: one click clears the section.
+                indeterminate={shown.length > 0 && shown.length < kinds.length}
+                onChange={() => onPoiKinds(kinds, shown.length === 0)}
+                label={<span className="group-name">{group.label}</span>}
+              />
               <span className="muted small">{group.count}</span>
             </header>
             {group.kinds.map((k) => (
-              <label key={k.kind} className="row indent" title={k.hint}>
-                <input
-                  type="checkbox"
-                  checked={!hiddenPoiKinds.has(k.kind)}
-                  onChange={(e) => onPoiKinds([k.kind], e.target.checked)}
-                />
-                {/* The color these wear on *this* map — how you recognise them on screen. */}
-                <span className="poi-dot" style={{ background: k.color ?? "#8ba0bd" }} />
-                {k.label} <span className="muted small">{k.count}</span>
-              </label>
+              <CheckField
+                key={k.kind}
+                className="indent"
+                checked={!hiddenPoiKinds.has(k.kind)}
+                onChange={(visible) => onPoiKinds([k.kind], visible)}
+                title={k.hint}
+                label={
+                  <>
+                    {/* The color these wear on *this* map — how you recognise them on screen. */}
+                    <span className="poi-dot" style={{ background: k.color ?? "#8ba0bd" }} />
+                    {k.label} <span className="muted small">{k.count}</span>
+                  </>
+                }
+              />
             ))}
           </section>
         );
@@ -208,14 +213,12 @@ export default function MapFilters({
             <span className="muted small">Shared by</span>
           </header>
           {sharers.map((name) => (
-            <label key={name} className="row">
-              <input
-                type="checkbox"
-                checked={!hiddenSharers.has(name)}
-                onChange={(e) => onSharer(name, e.target.checked)}
-              />
-              {name}
-            </label>
+            <CheckField
+              key={name}
+              checked={!hiddenSharers.has(name)}
+              onChange={(visible) => onSharer(name, visible)}
+              label={name}
+            />
           ))}
         </section>
       )}

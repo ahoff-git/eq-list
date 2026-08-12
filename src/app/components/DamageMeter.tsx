@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { drillDown } from "@/shared/damage-tree";
 import type { CombatantStat, DamageAxis, DamageCell, DamageNode, SpecialHitStat } from "@/shared/types";
-import { percent } from "@/shared/format";
+import { count, percent } from "@/shared/format";
+import { Caret, caretGlyph } from "./ui";
 import { ratio } from "@/shared/numbers";
 
 /** Which number the bars are showing. */
@@ -65,7 +66,7 @@ export default function DamageMeter({
               onClick={canExpand ? () => setOpen(isOpen ? null : row.name) : undefined}
             >
               <div className="meter-bar" style={{ width: `${top > 0 ? Math.max(2, (v / top) * 100) : 0}%` }} />
-              {canExpand && <span className="meter-caret">{isOpen ? "▾" : "▸"}</span>}
+              {canExpand && <Caret open={isOpen} className="meter-caret" />}
               <span className="meter-name">{row.name}</span>
               <span className="meter-nums">
                 {v.toLocaleString()} <span className="muted">({percent(ratio(v, total))})</span>
@@ -149,7 +150,9 @@ function Node({ node, startOpen }: { node: DamageNode; startOpen: boolean }) {
         onClick={canExpand ? () => setOpen((o) => !o) : undefined}
       >
         <div className="dmg-share" style={{ width: `${Math.max(1, node.share * 100)}%` }} />
-        <span className="caret">{canExpand ? (open ? "▾" : "▸") : ""}</span>
+        {/* The span stays whether or not there's a glyph in it: it's the column the labels line up
+            against, and a leaf node without it sits two characters left of its siblings. */}
+        <span className="caret">{canExpand ? caretGlyph(open) : ""}</span>
         <span className="dmg-label">{node.label}</span>
         <span className="spacer" />
         <span className="dmg-nums">
@@ -287,7 +290,7 @@ function detail(row: CombatantStat, view: DamageView, canExpand: boolean): strin
     `${row.dealt.toLocaleString()} dealt · ${row.taken.toLocaleString()} taken`,
     `max hit ${row.maxHit.toLocaleString()}`,
     swings > 0 ? `${percent(ratio(row.hits, swings))} of ${swings} swings landed` : "",
-    row.crits > 0 ? `${row.crits} critical${row.crits === 1 ? "" : "s"}` : "",
+    row.crits > 0 ? count(row.crits, "critical") : "",
     row.healed > 0 ? `healed ${row.healed.toLocaleString()}` : "",
     `active ${row.activeSec}s`,
     canExpand ? (view === "dealt" ? "click for what it hit, how, and with what" : "click for who hit it, how, and with what") : "",

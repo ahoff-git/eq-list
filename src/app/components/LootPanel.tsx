@@ -24,8 +24,8 @@ import ItemLink from "./ItemLink";
 import SortHeader from "./SortHeader";
 import type { ItemPrice, LootEvent, LootFate } from "@/shared/types";
 
-import { clock, when } from "@/shared/format";
-import { segCls } from "./ui";
+import { clock, count, countOf, when } from "@/shared/format";
+import { CheckField, Empty, PickField, segCls } from "./ui";
 /**
  * Everything that has dropped and what became of it — kept, sold, stored in a depot, or consumed
  * to make something else. The log distinguishes all four and they matter differently: a sold item
@@ -92,13 +92,10 @@ export default function LootPanel() {
 
   if (drops.length === 0) {
     return (
-      <div className="empty">
-        <p>Nothing has dropped yet.</p>
-        <p className="small">
-          Loot lines appear here as they happen — what dropped, from what, and where it went. The
-          list is kept, so it will still be here next time you open the app.
-        </p>
-      </div>
+      <Empty
+        title="Nothing has dropped yet."
+        hint="Loot lines appear here as they happen — what dropped, from what, and where it went. The list is kept, so it will still be here next time you open the app."
+      />
     );
   }
 
@@ -125,7 +122,7 @@ export default function LootPanel() {
         {view === "drops" && (
           <>
             <span className="muted small" title="Drops shown, of the whole ledger">
-              {isFiltered(filters) ? `${shown.length} of ${drops.length}` : `${drops.length} drop${drops.length === 1 ? "" : "s"}`}
+              {countOf(shown.length, drops.length, "drop")}
             </span>
             {LOOT_FATES.filter((fate) => totals[fate] > 0).map((fate) => (
               <span key={fate} className={`fate-tally f-${fate}`}>
@@ -187,28 +184,20 @@ function LootFilterBar({
         title="Only drops whose name contains this"
       />
 
-      <select
-        className="select-sm"
+      <PickField
         value={filters.source}
-        onChange={(e) => set("source", e.target.value)}
+        onChange={(source) => set("source", source)}
+        blank="any corpse"
+        options={sources.map((s) => ({ value: s, label: s }))}
         title="Only drops off this corpse"
-      >
-        <option value="">any corpse</option>
-        {sources.map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
+      />
 
-      <label className="row" style={{ gap: 4 }} title="Only drops that are on your shopping list">
-        <input
-          type="checkbox"
-          checked={filters.wantedOnly}
-          onChange={(e) => set("wantedOnly", e.target.checked)}
-        />
-        <span className="small">on my list</span>
-      </label>
+      <CheckField
+        label="on my list"
+        checked={filters.wantedOnly}
+        onChange={(on) => set("wantedOnly", on)}
+        title="Only drops that are on your shopping list"
+      />
 
       {isFiltered(filters) && (
         <button className="btn ghost sm" onClick={() => onFilters(DEFAULT_LOOT_FILTERS)} title="Show everything again">
@@ -239,12 +228,7 @@ function DropTable({
   onSort: (next: Sort<LootSortKey>) => void;
 }) {
   if (drops.length === 0) {
-    return (
-      <div className="empty">
-        <p>No drops match these filters.</p>
-        <p className="small">Widen them — the whole ledger is still there.</p>
-      </div>
-    );
+    return <Empty title="No drops match these filters." hint="Widen them — the whole ledger is still there." />;
   }
 
   return (
@@ -279,7 +263,9 @@ function DropTable({
                 <td>
                   <ItemLink title={drop.item} className="lt-item" />
                 </td>
-                <td className="muted">{drop.source}</td>
+                {/* Whose corpse it came off is a mob name like any other — worth a look-up, since
+                    "what else does this thing drop" is the next question a ledger raises. */}
+                <td className="muted">{drop.source ? <ItemLink title={drop.source} /> : ""}</td>
                 <td className="muted">{drop.detail ? detailLabel(drop) : ""}</td>
               </tr>
             );
@@ -305,13 +291,10 @@ function PriceTable({
 }) {
   if (prices.length === 0) {
     return (
-      <div className="empty">
-        <p>No prices yet.</p>
-        <p className="small">
-          A price comes from an auto-sell line — the only place the log ever states one. Sell some
-          trash and it fills in here, item by item.
-        </p>
-      </div>
+      <Empty
+        title="No prices yet."
+        hint="A price comes from an auto-sell line — the only place the log ever states one. Sell some trash and it fills in here, item by item."
+      />
     );
   }
   const earned = prices.reduce((n, p) => n + p.copper, 0);
@@ -337,7 +320,7 @@ function PriceTable({
           </thead>
           <tbody>
             {prices.map((p) => (
-              <tr key={p.item} title={`${p.sales} sale${p.sales === 1 ? "" : "s"}, last ${when(p.lastAt)}`}>
+              <tr key={p.item} title={`${count(p.sales, "sale")}, last ${when(p.lastAt)}`}>
                 <td>
                   <ItemLink title={p.item} />
                 </td>
@@ -370,8 +353,3 @@ function detailLabel(drop: LootEvent): string {
       return drop.detail ?? "";
   }
 }
-
-
-
-/** The shared segmented-control button (same one the damage and search tabs use). */
-

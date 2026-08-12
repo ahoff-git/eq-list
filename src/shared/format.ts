@@ -71,6 +71,30 @@ export function figure(n: number | undefined | null): string {
 }
 
 /**
+ * A tally with its noun, pluralized: `count(1, "kill")` → `1 kill`, `count(3, "kill")` → `3 kills`.
+ *
+ * The rule is one line, and it was written out as `${n} thing${n === 1 ? "" : "s"}` in twenty-odd
+ * places — a fact about English restated once per panel, and each restatement a chance to get a
+ * count of nothing wrong. Irregular wording passes its own plural: `count(n, "mob is", "mobs are")`.
+ */
+export function count(n: number, singular: string, plural = `${singular}s`): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
+ * How many of how many, when a filter is narrowing a list: `12 of 340 drops`, or plainly
+ * `340 drops` when nothing is hidden.
+ *
+ * The "of" only appears when it means something. A list that always said "340 of 340" would spend
+ * its words saying nothing, and one that said "12 drops" while hiding 328 would be a lie of
+ * omission — which is why both panels that filter a ledger reached for this shape independently.
+ */
+export function countOf(shown: number, total: number, singular: string, plural?: string): string {
+  const all = count(total, singular, plural);
+  return shown === total ? all : `${shown} of ${all}`;
+}
+
+/**
  * A fraction as a percentage: `0.372` → `37%`, or `37.2%` with `places: 1`.
  *
  * Takes the **fraction**, not the percentage, so it composes with

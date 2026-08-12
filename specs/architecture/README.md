@@ -65,7 +65,8 @@ in the main process and all UI in the renderer.
   Three small modules are there because *both* sides did the same arithmetic by hand: `numbers.ts`
   (`round`, and `ratio`/`over` for a divide whose denominator can legitimately be zero — the guard
   matters, since `NaN%` on screen is what an unguarded rate looks like), `format.ts` (the strings the
-  panels show, including `percent`, which takes the fraction so it composes with `ratio`), and
+  panels show, including `percent`, which takes the fraction so it composes with `ratio`, and `count` /
+  `countOf`, which say "1 kill" and "12 of 340 drops" once rather than once per panel), and
   `constants.ts` (the numbers both processes have to agree on — the scale ranges, and the opacity floor
   the renderer bounds a slider with and main clamps IPC against).
 

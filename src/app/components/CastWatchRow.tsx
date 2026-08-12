@@ -2,6 +2,7 @@
 import { api } from "@/lib/api";
 import { alertStyle } from "@/shared/cast-alerts";
 import AlertStyleFields from "./AlertStyleFields";
+import { CheckField } from "./ui";
 import type { CastAlertSettings, CastWatch } from "@/shared/types";
 
 /**
@@ -54,60 +55,36 @@ export default function CastWatchRow({
       {/* Only meaningful while this watch is looking at casts — a fade or a line names
           no caster to classify. */}
       {w.onCast !== false && (
-        <label
-          className="row"
-          style={{ gap: 4 }}
+        <CheckField
+          label={<span className="small muted">players</span>}
+          checked={!!w.includePlayers}
+          onChange={(includePlayers) => onChange({ includePlayers })}
           title="Also alert when a player, pet, or named NPC casts this — not just ordinary mobs. Off keeps a groupmate's cast (e.g. BunnySlayer's Charm) quiet."
-        >
-          <input
-            type="checkbox"
-            checked={!!w.includePlayers}
-            onChange={(e) => onChange({ includePlayers: e.target.checked })}
-          />
-          <span className="small muted">players</span>
-        </label>
+        />
       )}
       {/* Which prompt this watch is for. Casting means "stop that"; fading means "do
           that again", and plenty of spells are only worth one or the other. */}
-      <label
-        className="row"
-        style={{ gap: 4 }}
+      <CheckField
+        label={<span className="small muted">cast</span>}
+        checked={w.onCast !== false}
+        onChange={(onCast) => onChange({ onCast })}
         title="Alert when this spell begins casting — the dispel-prep warning. Turn it off for a watch that only cares about the spell fading."
-      >
-        <input
-          type="checkbox"
-          checked={w.onCast !== false}
-          onChange={(e) => onChange({ onCast: e.target.checked })}
-        />
-        <span className="small muted">cast</span>
-      </label>
-      <label
-        className="row"
-        style={{ gap: 4 }}
+      />
+      <CheckField
+        label={<span className="small muted">fades</span>}
+        checked={!!w.onFade}
+        onChange={(onFade) => onChange({ onFade })}
         title="Alert when this spell fades — your root wearing off a mob, your Spirit of Wolf expiring. Note EQ words some fades per spell (&quot;Your strength fades.&quot;) and names no spell, so match those words instead."
-      >
-        <input
-          type="checkbox"
-          checked={!!w.onFade}
-          onChange={(e) => onChange({ onFade: e.target.checked })}
-        />
-        <span className="small muted">fades</span>
-      </label>
+      />
       {/* The escape hatch: points the same text at whole log lines, so anything the game prints is
           alertable whether or not a parser models it. "line" said what it matched against but not
           what it was *for*, and it's the answer to most "why doesn't this alert?" questions. */}
-      <label
-        className="row"
-        style={{ gap: 4 }}
+      <CheckField
+        label={<span className="small muted">raw text</span>}
+        checked={!!w.onLine}
+        onChange={(onLine) => onChange({ onLine })}
         title="Match these words anywhere in a log line, exactly as the game printed it — “invites you” for a party invite, “tells you” for a tell, “the mystical path fades away” for a buff the parser can't model. Anything in your log can be a trigger this way; pair it with a message to say what you want."
-      >
-        <input
-          type="checkbox"
-          checked={!!w.onLine}
-          onChange={(e) => onChange({ onLine: e.target.checked })}
-        />
-        <span className="small muted">raw text</span>
-      </label>
+      />
       {/* Its own look and sound, so two emergencies can be told apart without reading
           the banner. A watch either follows the defaults or carries a full style. */}
       <button

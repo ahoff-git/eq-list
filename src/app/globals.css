@@ -293,6 +293,15 @@ button {
   gap: 8px;
 }
 .row.wrap { flex-wrap: wrap; }
+/* A checkbox and its label (`CheckField`). Tighter than a plain row on purpose: the label belongs to
+   the box next to it, so it sits closer than two neighbouring controls do. Panels that want their own
+   spacing say so with a more specific rule (`.map-filters .row`, `.setting-check`) rather than an
+   inline style, which is how these came to be 4px, 5px and 8px apart doing the same job. */
+.check-field { gap: 4px; }
+/* The filter bars are 12px throughout; a setting is a full-size line of prose with room to breathe. */
+.kill-filters .check-field,
+.loot-filters .check-field { font-size: 12px; }
+.setting-check { gap: 8px; }
 
 /* ── search ──────────────────────────────────────────────────── */
 /* segmented control (search mode toggle) */

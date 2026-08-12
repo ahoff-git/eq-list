@@ -1,10 +1,12 @@
 "use client";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { clock } from "@/shared/format";
+import { clock, count } from "@/shared/format";
 import { confidenceTier } from "@/shared/kill-confidence";
 import type { KillFilters } from "@/shared/kill-filters";
-import ItemLink from "./ItemLink";
+import { distinctSorted } from "@/shared/sorting";
+import ItemLink, { NameList } from "./ItemLink";
+import { Caret } from "./ui";
 import KillFilterBar from "./KillFilterBar";
 import type { KillEmphasis, KillRecord } from "@/shared/types";
 
@@ -56,7 +58,7 @@ export default function KillList({
   const groups = useMemo(() => groupByMob(kills), [kills]);
   const shownGroups = expanded ? groups : groups.slice(0, MAX_GROUPS);
   // The mobs actually present, so the filter offers real choices rather than a free-text box.
-  const mobs = useMemo(() => [...new Set(kills.map((k) => k.mob))].sort(), [kills]);
+  const mobs = useMemo(() => distinctSorted(kills.map((k) => k.mob)), [kills]);
   const shared = useMemo(() => kills.filter((k) => k.sharedBy).length, [kills]);
 
   return (
@@ -73,7 +75,7 @@ export default function KillList({
         mobs={mobs}
         tally={
           <>
-            {groups.length} mob{groups.length === 1 ? "" : "s"} · {kills.length} kill{kills.length === 1 ? "" : "s"}
+            {count(groups.length, "mob")} · {count(kills.length, "kill")}
             {shared > 0 && <span title={`${shared} of them shared by other players`}> · {shared} shared</span>}
           </>
         }
@@ -164,8 +166,10 @@ function MobGroup({
         onMouseEnter={() => onEmphasize?.({ mob: group.mob })}
         onMouseLeave={() => onEmphasize?.(null)}
       >
-        <span className="caret">{open ? "▾" : "▸"}</span>
-        <span className="kr-mob">{group.mob}</span>
+        <Caret open={open} />
+        {/* The mob's name is a link like any other name in the app — clicking it looks the mob up
+            rather than opening the row, which is what the caret and the rest of the head are for. */}
+        <ItemLink title={group.mob} className="kr-mob" />
         <span className="kg-count muted small">×{group.kills.length}</span>
         {others > 0 && (
           <span
@@ -186,13 +190,10 @@ function MobGroup({
         <span className="spacer" />
         {headDrops.length > 0 && (
           <span className="kr-drops">
-            {headDrops.map((d, i) => (
-              <span key={d.item}>
-                {i > 0 && ", "}
-                <ItemLink title={d.item} />
-                {d.count > 1 && <span className="muted small"> ×{d.count}</span>}
-              </span>
-            ))}
+            <NameList
+              names={headDrops.map((d) => d.item)}
+              extra={(_, i) => headDrops[i].count > 1 && <span className="muted small"> ×{headDrops[i].count}</span>}
+            />
             {drops.length > headDrops.length && (
               <span className="muted small"> +{drops.length - headDrops.length}</span>
             )}
@@ -233,7 +234,7 @@ function KillRow({
     >
       <span className="kr-time">{clock(kill.at)}</span>
       {showConfidence && <ConfidenceMark kill={kill} />}
-      <span className="kr-mob">{kill.mob}</span>
+      <ItemLink title={kill.mob} className="kr-mob" />
       {kill.sharedBy ? (
         <span
           className="muted small"
@@ -252,14 +253,7 @@ function KillRow({
         )
       )}
       {kill.drops?.length ? (
-        <span className="kr-drops">
-          {kill.drops.map((d, i) => (
-            <span key={`${d}-${i}`}>
-              {i > 0 && ", "}
-              <ItemLink title={d} />
-            </span>
-          ))}
-        </span>
+        <NameList names={kill.drops} className="kr-drops" />
       ) : (
         <span className="muted small" title={kill.sharedBy ? "A peer shares the kill, not the loot" : undefined}>
           {kill.sharedBy ? "—" : "no drop"}
@@ -302,6 +296,3 @@ export function ConfidenceMark({ kill }: { kill: KillRecord }) {
     </span>
   );
 }
-
-/** A kill's time of day, as the list and the map's hover both show it. */
-

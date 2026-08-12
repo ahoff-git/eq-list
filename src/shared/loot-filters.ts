@@ -10,7 +10,7 @@
  */
 import type { ItemPrice, LootEvent, LootFate } from "./types";
 import { normalizeItemName } from "./grouping";
-import { sortRows, type Sort } from "./sorting";
+import { distinctSorted, sortRows, type Sort } from "./sorting";
 
 /** Every fate, in the order the tab lists them — also the option list for the filter. */
 export const LOOT_FATES: LootFate[] = ["kept", "sold", "stored", "combined"];
@@ -57,7 +57,7 @@ export function filterLoot(
 
 /** The corpses present, so the filter offers real choices rather than a free-text box. */
 export function lootSources(drops: readonly LootEvent[]): string[] {
-  return [...new Set(drops.map((d) => d.source).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return distinctSorted(drops.map((d) => d.source).filter(Boolean));
 }
 
 /** How many of each fate, counting stacks — the tallies beside the header. */

@@ -4,6 +4,7 @@ import type { MobKillStat, ZoneReport } from "@/shared/types";
 
 import { duration, when } from "@/shared/format";
 import { useRead } from "@/lib/hooks";
+import ItemLink from "./ItemLink";
 /** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_ZONES: ZoneReport[] = [];
 
@@ -55,7 +56,11 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
             <tbody>
               {byMob.map((m) => (
                 <tr key={m.mob}>
-                  <td>{m.mob}</td>
+                  {/* "Is this camp worth it?" is usually followed by "what does it drop?" — so the
+                      mob's name is the same link it is in every other list. */}
+                  <td>
+                    <ItemLink title={m.mob} />
+                  </td>
                   <td>{m.kills}</td>
                   <td>{m.avgKillSec ? `${m.avgKillSec}s` : "—"}</td>
                   <td>{m.xpPct ? `${m.xpPct}%` : "—"}</td>
@@ -95,7 +100,9 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
             <tbody>
               {zones.map((z) => (
                 <tr key={z.zone} title={`Last fought ${when(z.lastAt)}`}>
-                  <td>{z.zone}</td>
+                  <td>
+                    <ItemLink title={z.zone} />
+                  </td>
                   <td>{z.fights}</td>
                   <td>{z.kills}</td>
                   <td>{duration(z.combatSec)}</td>

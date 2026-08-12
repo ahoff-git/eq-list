@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 import { CONFIDENCE_TIERS } from "@/shared/kill-confidence";
 import type { KillFilters, KillWindow } from "@/shared/kill-filters";
+import { CheckField, PickField, segCls } from "./ui";
 
 /** The confidence floors the picker offers, matching `CONFIDENCE_TIERS` best-first. */
 const CONFIDENCE_FLOORS = [0.8, 0.5, 0.2, 0.01];
@@ -67,7 +68,7 @@ export default function KillFilterBar({
           {(["10m", "1h", "session", "all"] as KillWindow[]).map((w) => (
             <button
               key={w}
-              className={`seg ${filters.window === w ? "active" : ""}`}
+              className={segCls(filters.window === w)}
               onClick={() => set("window", w)}
               title={w === "all" ? "Every kill ever recorded" : `Kills in the last ${w}`}
             >
@@ -77,19 +78,14 @@ export default function KillFilterBar({
         </div>
       )}
 
-      <select
+      <PickField
         className="map-zone-select"
         value={filters.mob}
-        onChange={(e) => set("mob", e.target.value)}
+        onChange={(mob) => set("mob", mob)}
+        blank="any mob"
+        options={mobs.map((m) => ({ value: m, label: m }))}
         title="Only this mob"
-      >
-        <option value="">any mob</option>
-        {mobs.map((m) => (
-          <option key={m} value={m}>
-            {m}
-          </option>
-        ))}
-      </select>
+      />
 
       <input
         className="field sm kill-drop"
@@ -99,36 +95,36 @@ export default function KillFilterBar({
         title="Only kills that dropped an item matching this"
       />
 
-      <label className="row" style={{ gap: 4 }} title="Only kills that dropped something">
-        <input type="checkbox" checked={filters.droppedOnly} onChange={(e) => set("droppedOnly", e.target.checked)} />
-        <span className="small">dropped</span>
-      </label>
+      <CheckField
+        label="dropped"
+        checked={filters.droppedOnly}
+        onChange={(on) => set("droppedOnly", on)}
+        title="Only kills that dropped something"
+      />
 
       {/* Always here, whether or not anyone is sharing — a bar that grows a control when a peer
           connects is a bar that reflows while you're using it. */}
-      <label
-        className="row"
-        style={{ gap: 4 }}
+      <CheckField
+        label="shared"
+        checked={filters.shared}
+        onChange={(on) => set("shared", on)}
         title="Include what other players have shared. A mob dying somewhere is evidence of where it spawns whoever saw it — but it says nothing about what it drops for you, so shared kills never count towards your own rates."
-      >
-        <input type="checkbox" checked={filters.shared} onChange={(e) => set("shared", e.target.checked)} />
-        <span className="small">shared</span>
-      </label>
+      />
 
       {withPosition && (
-        <select
+        <PickField
           className="map-zone-select"
           value={filters.minConfidence}
-          onChange={(e) => set("minConfidence", Number(e.target.value))}
+          // The one numeric filter, so it's the one that converts. "Any" is 0 here rather than blank.
+          onChange={(floor) => set("minConfidence", Number(floor))}
+          blank="any position"
+          blankValue="0"
+          options={CONFIDENCE_TIERS.slice(0, CONFIDENCE_FLOORS.length).map((tier, i) => ({
+            value: String(CONFIDENCE_FLOORS[i]),
+            label: `${tier.glyph} ${tier.label} or better`,
+          }))}
           title="Hide kills whose position is less trustworthy than this"
-        >
-          <option value={0}>any position</option>
-          {CONFIDENCE_TIERS.slice(0, CONFIDENCE_FLOORS.length).map((tier, i) => (
-            <option key={tier.label} value={CONFIDENCE_FLOORS[i]}>
-              {tier.glyph} {tier.label} or better
-            </option>
-          ))}
-        </select>
+        />
       )}
 
       <span className="spacer" />

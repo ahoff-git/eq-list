@@ -71,6 +71,24 @@ list, hunt, search, damage, session, settings.
   Browser-style **back/forward** walks the stack: mouse thumb buttons (forwarded from
   main as `app-command` on `CH.navCommand`) and **Alt+←/→**. Only the explicit
   "↗ eqlwiki" button leaves the app. See [ADR 0008](../decisions/0008-in-app-page-navigation.md).
+  **"Every name" means every name**: the mob a kill row is about, the mob a knowledge row tallies, the
+  corpse a drop came off, the zone a hunt points at, and the mob and zone in the camp report are all
+  `ItemLink`s too — they were plain text, so the same word was a link in one panel and inert in the one
+  beside it. A click on a name **stops there** (`stopPropagation`): these sit inside rows that are
+  themselves clickable, and a click that both opened the page and toggled the row would do the second
+  thing to whatever the first thing scrolled into view. Several names on one line — what a kill
+  dropped, who drops an item in a zone — are a `NameList`, so the comma between them is written once.
+- **Shared presentational bits** (`components/ui.tsx`, no app knowledge in it): `StatTile` (a figure
+  with its name under it, and a hover saying where the figure came from), `segCls` (a segmented
+  control's button), `CheckField` (a checkbox and its label — including the "some of this group" state
+  the map's label filter needs), `PickField` (a filter dropdown with its "any mob" / "any corpse" choice
+  at the top), `Caret` / `caretGlyph` (which way an openable row's ▾ / ▸ points) and `Empty` (a panel
+  with nothing in it yet: what's missing, and **what would fill it in** — a blank panel that doesn't say
+  what feeds it looks broken). Each of these existed anywhere from six to a dozen times over, with
+  per-panel spacing baked into inline styles; spacing is now the stylesheet's (`.check-field`, and a more
+  specific rule where a panel really does want its own). The strings panels count things with are shared
+  too — `count` / `countOf` in `src/shared/format.ts`, so "1 kill" / "12 of 340 drops" is one rule rather
+  than one per tally.
 - **Tab bar** (`components/TabBar.tsx`): the row of tab buttons. When the window is too
   narrow to show them all, the ones that don't fit collapse into a **» menu** (a
   dropdown) instead of shrinking their labels off the edge — so every tab stays reachable
@@ -201,8 +219,8 @@ list, hunt, search, damage, session, settings.
       split** — the same spell can hit for 2.3× as much and cast faster under a different
       invocation, so the blended row is a starting point, not an answer. See
       [ADR 0020](../decisions/0020-split-by-stance-and-invocation.md). Sortable by any of those
-      (`SortHeader` + `src/shared/sorting.ts`, shared with the loot tab — click a column to sort,
-      click again to flip); melee is a synthetic row so the pie adds
+      (`SortHeader` + `src/shared/sorting.ts` — click a column to sort, click again to flip; the same
+      module orders a filter dropdown's names, `distinctSorted`); melee is a synthetic row so the pie adds
       up. Cast times come from the log's one-second resolution — trust the averages, not a
       single reading.
     - `DamageHistory` — **play sessions** (newest first) → their fights → pick one to break it

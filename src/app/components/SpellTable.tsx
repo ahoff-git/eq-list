@@ -3,9 +3,10 @@ import { Fragment, useState } from "react";
 import { useSettings, useSpellFacts, type SpellFacts } from "@/lib/hooks";
 import { sortRows, type Sort } from "@/shared/sorting";
 import SortHeader from "./SortHeader";
+import { Caret, Empty } from "./ui";
 import type { FightStats, SpellStat } from "@/shared/types";
 
-import { figure, percent } from "@/shared/format";
+import { count, figure, percent } from "@/shared/format";
 import { ratio } from "@/shared/numbers";
 /**
  * A resist rate worth flagging. One in four casts wasted is the point where the spell is the problem
@@ -56,10 +57,10 @@ export default function SpellTable({ window }: { window: FightStats }) {
 
   if (!window.spells.length && melee <= 0) {
     return (
-      <div className="empty">
-        <p>No spells cast yet.</p>
-        <p className="small">Cast something — cast times are measured from the log as spells land.</p>
-      </div>
+      <Empty
+        title="No spells cast yet."
+        hint="Cast something — cast times are measured from the log as spells land."
+      />
     );
   }
 
@@ -91,7 +92,7 @@ export default function SpellTable({ window }: { window: FightStats }) {
                 onClick={() => setOpen(open === s.spell ? null : s.spell)}
               >
                 <td>
-                  <span className="caret">{open === s.spell ? "▾" : "▸"}</span> {s.spell}
+                  <Caret open={open === s.spell} /> {s.spell}
                 </td>
                 <td>{s.casts || "—"}</td>
                 <td>{figure(s.damage)}</td>
@@ -174,7 +175,7 @@ function InvocationNotes({ window }: { window: FightStats }) {
             <span
               title={`${i.procs} spell landings with no cast of their own, over ${i.swings} swings. Free casts have no log message, so this is inferred — a second landing from one cast (an area spell) would look the same.`}
             >
-              {i.procs} free cast{i.procs === 1 ? "" : "s"} in {i.swings} swings (
+              {count(i.procs, "free cast")} in {i.swings} swings (
               {percent(i.procRate, { places: 1 })}) · {i.procDamage.toLocaleString()} dmg
             </span>
           )}
@@ -308,7 +309,7 @@ function statGroups(s: SpellStat, facts?: SpellFacts): StatGroup[] {
     s.byInvocation.length > 1
       ? s.byInvocation.map((m) => ({
           label: m.mode,
-          value: `${m.casts} cast${m.casts === 1 ? "" : "s"}`,
+          value: count(m.casts, "cast"),
           title: [
             `${m.damage.toLocaleString()} damage`,
             m.avgCastSec ? `${m.avgCastSec.toFixed(1)}s average cast` : "",

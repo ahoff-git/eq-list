@@ -1,6 +1,7 @@
 "use client";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useDismiss } from "@/lib/hooks";
+import { count } from "@/shared/format";
 
 export interface TabItem {
   key: string;
@@ -82,7 +83,7 @@ export default function TabBar({
         <div className="tab-more no-drag">
           <button
             className={`tab ${overflowActive ? "active" : ""}`}
-            title={`${overflow.length} more tab${overflow.length === 1 ? "" : "s"}`}
+            title={count(overflow.length, "more tab")}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((o) => !o)}

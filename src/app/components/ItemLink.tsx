@@ -16,6 +16,10 @@ import type { ItemCard } from "@/shared/types";
  *
  * The map window has no page view of its own, so a click there hands the name to the
  * control window's Search instead of navigating in place.
+ *
+ * **A click stops here.** Names sit inside rows that are themselves clickable — a kill group opens,
+ * a mob's knowledge unfolds — and a click that did both would open the page *and* toggle the row
+ * out from under it. Clicking a name means one thing: look this up.
  */
 export default function ItemLink({
   title,
@@ -28,7 +32,11 @@ export default function ItemLink({
 }) {
   const nav = useOptionalNav();
   const hover = useCardHover(title);
-  const open = () => (nav ? nav.openPage(title) : void api()?.search.show(title));
+  const open = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (nav) nav.openPage(title);
+    else void api()?.search.show(title);
+  };
   return (
     <span
       className={`link item-link${className ? ` ${className}` : ""}`}
@@ -39,6 +47,43 @@ export default function ItemLink({
     >
       {label ?? title}
       {hover.tip}
+    </span>
+  );
+}
+
+/**
+ * Several names on one line — "what it dropped", "who drops it here" — comma-separated.
+ *
+ * Four lists were building this by hand, each with its own `{i > 0 && ", "}` and its own answer to
+ * what a name's React key is (one of them the item name, one the index, one both). The separator is a
+ * detail of how a list of names is written, not of what any panel means, so it lives here with the
+ * link itself.
+ *
+ * `extra` is what a list has to say about an individual name — a count, a rate — placed after it and
+ * outside the link, so it isn't part of what you click.
+ */
+export function NameList({
+  names,
+  extra,
+  className,
+}: {
+  names: readonly string[];
+  /** Given the position too, so a caller with a parallel list of counts needn't search it. */
+  extra?: (name: string, index: number) => React.ReactNode;
+  /** The wrapper's class — each list has its own idea of how wide and how wrapped it is. */
+  className?: string;
+}) {
+  return (
+    <span className={className}>
+      {names.map((name, i) => (
+        // Keyed by position as well as name: a mob can drop two of a thing, and the same name twice
+        // in one list is two rows claiming one key.
+        <span key={`${name}-${i}`}>
+          {i > 0 && ", "}
+          <ItemLink title={name} />
+          {extra?.(name, i)}
+        </span>
+      ))}
     </span>
   );
 }

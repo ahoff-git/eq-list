@@ -10,7 +10,7 @@ import AskValue from "./AskValue";
 import { opponentOf } from "@/shared/damage-tree";
 import type { DamageAxis, DeathRecap, FightBest, FightStats, HpEstimate, StoredFight } from "@/shared/types";
 
-import { segCls, StatTile } from "./ui";
+import { Empty, segCls, StatTile } from "./ui";
 import { duration, percent, when } from "@/shared/format";
 import { ratio } from "@/shared/numbers";
 /**
@@ -194,10 +194,10 @@ export default function DamagePanel() {
           {view === "spells" ? (
             <SpellTable window={window} />
           ) : window.byCombatant.length === 0 ? (
-            <div className="empty">
-              <p>No combat yet{scope === "fight" ? " this fight" : " this session"}.</p>
-              <p className="small">Swing at something — this fills in from the log as damage lands.</p>
-            </div>
+            <Empty
+              title={`No combat yet${scope === "fight" ? " this fight" : " this session"}.`}
+              hint="Swing at something — this fills in from the log as damage lands."
+            />
           ) : (
             <DamageMeter
               rows={window.byCombatant}

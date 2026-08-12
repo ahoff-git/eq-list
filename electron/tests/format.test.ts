@@ -11,7 +11,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clock, dayTime, duration, figure, percent, when } from "../../src/shared/format";
+import { clock, count, countOf, dayTime, duration, figure, percent, when } from "../../src/shared/format";
 
 test("a duration says minutes, and seconds only when asked", () => {
   // The distinction the two copies disagreed about.
@@ -64,6 +64,23 @@ test("a tally of nothing reads as nothing, and a real one reads with separators"
   assert.equal(figure(null), "—");
   assert.equal(figure(12345), (12345).toLocaleString());
   assert.notEqual(figure(1), "—", "one is a real number");
+});
+
+test("a tally pluralizes its noun, and only one of anything is singular", () => {
+  assert.equal(count(1, "kill"), "1 kill");
+  assert.equal(count(3, "kill"), "3 kills");
+  // The case a hand-written `n === 1 ? "" : "s"` gets right by accident and a `n > 1` gets wrong.
+  assert.equal(count(0, "kill"), "0 kills");
+  // Irregular wording is the caller's to give, so the helper never has to know any English.
+  assert.equal(count(1, "mob is", "mobs are"), "1 mob is");
+  assert.equal(count(4, "mob is", "mobs are"), "4 mobs are");
+});
+
+test("\"of\" appears only when a filter is actually hiding something", () => {
+  assert.equal(countOf(340, 340, "drop"), "340 drops", "nothing hidden, so nothing to compare against");
+  assert.equal(countOf(12, 340, "drop"), "12 of 340 drops");
+  assert.equal(countOf(0, 340, "drop"), "0 of 340 drops", "filtered down to nothing still says what of");
+  assert.equal(countOf(1, 1, "drop"), "1 drop");
 });
 
 test("a percentage takes the fraction, and 0% is a reading rather than a gap", () => {

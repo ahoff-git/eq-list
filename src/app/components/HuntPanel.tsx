@@ -15,6 +15,8 @@ import ZonePicker from "./ZonePicker";
 import { api } from "@/lib/api";
 import { buildHunt, neededEntries, huntInputsFor } from "@/shared/hunt";
 import { zoneMatches, sourceZones } from "@/shared/sources";
+import { distinct } from "@/shared/sorting";
+import { CheckField, Empty } from "./ui";
 import type { Zone } from "@/shared/map/types";
 
 /** How many zones the picker offers unfiltered — the hunt's list is short, so show it all. */
@@ -67,7 +69,7 @@ export default function HuntPanel({
   const noSource = needed.filter((e) => !covered.has(e.name));
 
   // Drop rates come from each mob's loot page (the item's "Drops From" has none).
-  const mobNames = useMemo(() => [...new Set(allZones.flatMap((z) => z.mobs.map((m) => m.mob)))], [allZones]);
+  const mobNames = useMemo(() => distinct(allZones.flatMap((z) => z.mobs.map((m) => m.mob))), [allZones]);
   const mobLoot = useMobLoot(mobNames);
   // The wiki describes an older, since-modified game, so its rates are a starting point. Our
   // own kills are this build — they take over once there are enough of them, and either way
@@ -103,10 +105,7 @@ export default function HuntPanel({
 
   if (needed.length === 0) {
     return (
-      <div className="empty">
-        <p>Nothing left to hunt.</p>
-        <p className="small">Everything on your list is complete — add more on the Search tab.</p>
-      </div>
+      <Empty title="Nothing left to hunt." hint="Everything on your list is complete — add more on the Search tab." />
     );
   }
 
@@ -132,10 +131,13 @@ export default function HuntPanel({
             onPickedZone(name);
           }}
         />
-        <label className="follow-toggle" title="Narrow to the zone you're in, and move with you (the same Settings toggle)">
-          <input type="checkbox" checked={followZone} onChange={(e) => setFollowZone(e.target.checked)} />
-          follow
-        </label>
+        <CheckField
+          className="follow-toggle"
+          label="follow"
+          checked={followZone}
+          onChange={(on) => void setFollowZone(on)}
+          title="Narrow to the zone you're in, and move with you (the same Settings toggle)"
+        />
       </div>
 
       {loading && zones.length === 0 && <p className="muted">Looking up drop sources…</p>}
@@ -152,7 +154,9 @@ export default function HuntPanel({
         return (
           <div className={`hunt-zone ${here ? "here" : ""}`} key={z.zone}>
             <div className="hunt-zone-head">
-              <span className="hz-name">{z.zone}</span>
+              {/* A zone has a wiki page too, and "what else is in here" is the question a hunt
+                  raises next — so its name opens like every other name in the app. */}
+              <ItemLink title={z.zone} className="hz-name" />
               {here && <span className="badge kind-drop">you are here</span>}
             </div>
             {z.mobs.map((m) => {

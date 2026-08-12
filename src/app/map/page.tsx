@@ -38,6 +38,7 @@ import { MAP_UI_SCALE } from "@/shared/constants";
 import type { KillEmphasis } from "@/shared/types";
 
 import { clock } from "@/shared/format";
+import { distinctSorted } from "@/shared/sorting";
 /**
  * How often to re-apply a moving kill window. A kill's own resolution is a second and the shortest
  * window is ten minutes, so this only has to be fine enough that a row leaves the list at roughly
@@ -348,9 +349,10 @@ export default function MapWindow() {
     () => room.pings.filter((p) => zoneMatch(p.zone) && onLayer(p, viewLayers)),
     [room.pings, zoneMatch, viewLayers],
   );
-  // Distinct people currently sharing pins — each gets its own visibility toggle.
+  // Distinct people currently sharing pins — each gets its own visibility toggle, listed the way
+  // every other picker of names is (`distinctSorted`), so the toggles don't reorder as pins arrive.
   const sharers = useMemo(
-    () => [...new Set(room.peerPins.map((p) => p.by).filter((b): b is string => !!b))],
+    () => distinctSorted(room.peerPins.map((p) => p.by).filter((b): b is string => !!b)),
     [room.peerPins],
   );
 

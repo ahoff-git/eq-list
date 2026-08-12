@@ -6,6 +6,7 @@ import { useRead } from "@/lib/hooks";
 import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
 import AlertStyleFields from "./AlertStyleFields";
 import CastWatchRow from "./CastWatchRow";
+import { CheckField } from "./ui";
 import type { CastWatch, DeepPartial, DisplayInfo, Settings } from "@/shared/types";
 
 /** A stable empty, so a render before the monitor list arrives doesn't look like a change. */
@@ -72,14 +73,12 @@ export default function CastAlertSettings({
 
   return (
       <div className="setting">
-        <label className="row" style={{ gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={ca.enabled}
-            onChange={(e) => patch({ castAlerts: { enabled: e.target.checked } })}
-          />
-          Cast alerts — flash when a watched spell is being cast (to prep a dispel)
-        </label>
+        <CheckField
+          className="setting-check"
+          label="Cast alerts — flash when a watched spell is being cast (to prep a dispel)"
+          checked={ca.enabled}
+          onChange={(enabled) => patch({ castAlerts: { enabled } })}
+        />
         <span className="hint">
           Watches the log for “<i>… begins casting <b>&lt;spell&gt;</b></i>” and flashes a banner so you can
           react before it lands. Matching is by substring, case-insensitive, so “Fear” catches any spell whose
@@ -90,22 +89,13 @@ export default function CastAlertSettings({
         {ca.enabled && (
           <div style={{ marginTop: 8 }}>
             <div className="row" style={{ gap: 14, marginBottom: 8 }}>
-              <label className="row" style={{ gap: 6 }}>
-                <input type="checkbox" checked={ca.sound} onChange={(e) => patch({ castAlerts: { sound: e.target.checked } })} />
-                Beep
-              </label>
-              <label className="row" style={{ gap: 6 }}>
-                <input type="checkbox" checked={ca.flash} onChange={(e) => patch({ castAlerts: { flash: e.target.checked } })} />
-                Screen flash
-              </label>
-              <label className="row" style={{ gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={ca.includeSelf}
-                  onChange={(e) => patch({ castAlerts: { includeSelf: e.target.checked } })}
-                />
-                Include my own casts
-              </label>
+              <CheckField label="Beep" checked={ca.sound} onChange={(sound) => patch({ castAlerts: { sound } })} />
+              <CheckField label="Screen flash" checked={ca.flash} onChange={(flash) => patch({ castAlerts: { flash } })} />
+              <CheckField
+                label="Include my own casts"
+                checked={ca.includeSelf}
+                onChange={(includeSelf) => patch({ castAlerts: { includeSelf } })}
+              />
             </div>
             {ca.watches.map((w) => (
               <CastWatchRow

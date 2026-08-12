@@ -1,4 +1,5 @@
 "use client";
+import { count } from "@/shared/format";
 import type { ConnectedUser } from "@/lib/map/useAwariRoom";
 
 /**
@@ -34,9 +35,7 @@ export default function MapUsers({ users, onZone }: { users: ConnectedUser[]; on
               <span className="muted small">zone unknown</span>
             )}
             {u.pins > 0 && (
-              <span className="muted small">
-                · {u.pins} pin{u.pins === 1 ? "" : "s"}
-              </span>
+              <span className="muted small">· {count(u.pins, "pin")}</span>
             )}
           </div>
         ))

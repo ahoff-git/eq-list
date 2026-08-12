@@ -5,6 +5,7 @@ import { useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/nav";
 import ItemLink from "./ItemLink";
 import WikiPageView from "./WikiPageView";
+import { CheckField, segCls } from "./ui";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
 import type { SearchResult, WikiPage } from "@/shared/types";
 
@@ -217,10 +218,10 @@ export default function SearchPanel({
   return (
     <div>
       <div className="segmented" style={{ marginBottom: 10 }}>
-        <button className={`seg ${mode === "name" ? "active" : ""}`} onClick={() => switchMode("name")}>
+        <button className={segCls(mode === "name")} onClick={() => switchMode("name")}>
           By name
         </button>
-        <button className={`seg ${mode === "zone" ? "active" : ""}`} onClick={() => switchMode("zone")}>
+        <button className={segCls(mode === "zone")} onClick={() => switchMode("zone")}>
           By zone
         </button>
       </div>
@@ -237,14 +238,12 @@ export default function SearchPanel({
           {refreshing ? "↻ Refreshing…" : "↻ Refresh list"}
         </button>
         <span className="spacer" />
-        <label className="row muted small" style={{ gap: 5 }}>
-          <input
-            type="checkbox"
-            checked={hideEra}
-            onChange={(e) => api()?.settings.update({ hideOutOfEra: e.target.checked })}
-          />
-          Hide out of era
-        </label>
+        <CheckField
+          className="muted small"
+          label="Hide out of era"
+          checked={hideEra}
+          onChange={(hide) => void api()?.settings.update({ hideOutOfEra: hide })}
+        />
       </div>
 
       {mode === "name" && !nav.current && (

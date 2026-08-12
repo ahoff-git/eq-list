@@ -2,7 +2,9 @@
 import { useState } from "react";
 import { useShoppingList, useMatchFlashes, useCurrentZone } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import ItemLink from "./ItemLink";
+import ItemLink, { NameList } from "./ItemLink";
+import { count } from "@/shared/format";
+import { Caret, caretGlyph, Empty } from "./ui";
 import { effectiveNeeded, groupByOrigin, itemDemands, normalizeItemName, totalNeed, type ItemDemand, type ListGroup } from "@/shared/grouping";
 import {
   groupDropsByZone,
@@ -36,15 +38,14 @@ export default function ListPanel() {
   return (
     <div>
       {list.entries.length === 0 ? (
-        <div className="empty">
-          <p>Your shopping list is empty.</p>
-          <p className="small">Find items, quests, or recipes on the Search tab and add them here.</p>
-        </div>
+        <Empty
+          title="Your shopping list is empty."
+          hint="Find items, quests, or recipes on the Search tab and add them here."
+        />
       ) : (
         <div className="row" style={{ marginBottom: 12 }}>
           <span className="muted small">
-            {list.entries.length} item{list.entries.length === 1 ? "" : "s"} watched · {groups.length} group
-            {groups.length === 1 ? "" : "s"}
+            {count(list.entries.length, "item")} watched · {count(groups.length, "group")}
           </span>
           <span className="spacer" />
           <button className="btn ghost sm" onClick={() => api()?.list.clear()}>
@@ -59,7 +60,7 @@ export default function ListPanel() {
           return (
             <div className={`group ${g.complete ? "done" : ""}`} key={g.key}>
               <div className="group-header" onClick={() => toggle(g.key)}>
-                <span className="caret">{isCollapsed ? "▸" : "▾"}</span>
+                <Caret open={!isCollapsed} />
                 {g.kind && <span className={`badge kind-${g.kind}`}>{g.kind}</span>}
                 <span className="group-label">{g.label}</span>
                 <span className="spacer" />
@@ -175,7 +176,7 @@ function EntryRow({
     <div className="entry-wrap">
       <div className={cls}>
         <button className="entry-caret" title="Where to get it" onClick={toggle}>
-          {open ? "▾" : "▸"}
+          {caretGlyph(open)}
         </button>
         <ItemLink title={entry.name} className="entry-name" />
         {/* "5 of 3 (10)" — you have 5, this group wants 3, everything wants 10 between
@@ -216,7 +217,7 @@ function EntryRow({
                 <button className="entry-more" onClick={() => setShowOthers((s) => !s)}>
                   {showOthers
                     ? "− hide other zones"
-                    : `+ ${split.elsewhere.length} other zone${split.elsewhere.length === 1 ? "" : "s"}`}
+                    : `+ ${count(split.elsewhere.length, "other zone")}`}
                 </button>
               )}
               {(split.here.length === 0 || showOthers) && split.elsewhere.map((d) => <ZoneRow key={d.zone} drops={d} />)}
@@ -252,14 +253,7 @@ function ZoneRow({ drops, here }: { drops: ZoneDrops; here?: boolean }) {
     <div className={`drop-zone ${here ? "here" : ""}`}>
       <span className="src-kind k-drop">kill</span>
       <span className="dz-name">{drops.zone}</span>
-      <span className="dz-mobs">
-        {drops.mobs.map((m, i) => (
-          <span key={m}>
-            {i > 0 && ", "}
-            <ItemLink title={m} />
-          </span>
-        ))}
-      </span>
+      <NameList names={drops.mobs} className="dz-mobs" />
     </div>
   );
 }

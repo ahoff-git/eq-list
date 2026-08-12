@@ -4,7 +4,8 @@ import { api } from "@/lib/api";
 import { useRead, useReading } from "@/lib/hooks";
 import type { FightSearch, SessionSummary, StoredFight } from "@/shared/types";
 
-import { clock, dayTime, duration } from "@/shared/format";
+import { clock, count, dayTime, duration } from "@/shared/format";
+import { Caret, Empty } from "./ui";
 /** A stable empty, so a render before the answer lands doesn't look like a change. */
 const NO_FIGHTS: StoredFight[] = [];
 
@@ -73,10 +74,10 @@ export default function DamageHistory({
 
   if (sessions.length === 0) {
     return (
-      <div className="empty">
-        <p>No past fights recorded yet.</p>
-        <p className="small">Each fight is filed when it ends, so history builds up as you play.</p>
-      </div>
+      <Empty
+        title="No past fights recorded yet."
+        hint="Each fight is filed when it ends, so history builds up as you play."
+      />
     );
   }
 
@@ -123,7 +124,7 @@ export default function DamageHistory({
 }
 
 /** "12 sessions recorded" — what the tree is a list of. */
-const sessionTally = (count: number): string => `${count} session${count === 1 ? "" : "s"} recorded`;
+const sessionTally = (sessions: number): string => `${count(sessions, "session")} recorded`;
 
 /**
  * What the search found, and — when the store capped it — that what's on screen is only the
@@ -133,7 +134,7 @@ const sessionTally = (count: number): string => `${count} session${count === 1 ?
 function matchTally(found: FightSearch): string {
   if (found.total === 0) return "no matching fights";
   const shown = found.fights.length;
-  const matched = `${found.total} matching fight${found.total === 1 ? "" : "s"}`;
+  const matched = count(found.total, "matching fight");
   return shown < found.total ? `${matched} · newest ${shown} shown` : matched;
 }
 
@@ -181,10 +182,10 @@ function Session({
   return (
     <div className={`hist-session ${open ? "open" : ""}`}>
       <div className="hist-head" onClick={onToggle}>
-        <span className="caret">{open ? "▾" : "▸"}</span>
+        <Caret open={open} />
         <span className="hist-when">{dayTime(summary.startedAt)}</span>
         <span className="muted small">
-          {summary.fights} fight{summary.fights === 1 ? "" : "s"} · {duration(summary.combatSec, { seconds: true })} fighting
+          {count(summary.fights, "fight")} · {duration(summary.combatSec, { seconds: true })} fighting
         </span>
         <span className="spacer" />
         <span className="hist-dmg">{summary.yourDealt.toLocaleString()} dealt</span>
@@ -232,7 +233,3 @@ function Fight({
     </button>
   );
 }
-
-
-
-

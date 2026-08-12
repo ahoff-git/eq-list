@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useWatcherStatus } from "@/lib/hooks";
+import { count } from "@/shared/format";
 import type { DeepPartial, LogImportResult, Settings } from "@/shared/types";
 
 /**
@@ -85,7 +86,7 @@ export default function LogSettings({
                 {digested.loot} looted
               </b>{" "}
               from {fileName(digested.file)}
-              {digested.sessions > 0 && ` across ${digested.sessions} play session${digested.sessions === 1 ? "" : "s"}`}.
+              {digested.sessions > 0 && ` across ${count(digested.sessions, "play session")}`}.
             </>
           )}
         </span>

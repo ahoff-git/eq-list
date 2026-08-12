@@ -7,6 +7,9 @@
  * about whether the first click sorts up or down.
  *
  * Pure and DOM-free — the header component renders it, this decides it.
+ *
+ * The same reasoning covers `distinctSorted`: a filter's dropdown is a list of names in an order, and
+ * the order a name belongs in is this module's business wherever the list is shown.
  */
 
 /** Which column a table is sorted by, and which way. */
@@ -23,6 +26,25 @@ export interface Sort<K extends string> {
  */
 export function nextSort<K extends string>(current: Sort<K>, key: K, startDesc = true): Sort<K> {
   return current.key === key ? { key, desc: !current.desc } : { key, desc: startDesc };
+}
+
+/**
+ * The distinct values in the order they first appear — the shape "one row per mob" is built from.
+ */
+export function distinct<T>(values: Iterable<T>): T[] {
+  return [...new Set(values)];
+}
+
+/**
+ * The distinct values in the order a picker should offer them.
+ *
+ * Every filter bar with a "which mob / whose corpse" dropdown derives its options this way, and they
+ * were each doing it by hand — three spellings of `[...new Set(…)].sort()`, two of them the bare
+ * `sort()` that orders by code unit rather than by how a name reads. Ordered by `compareValues`, so
+ * a picker and a sorted column can't disagree about where a name belongs.
+ */
+export function distinctSorted<T extends string | number>(values: Iterable<T>): T[] {
+  return distinct(values).sort(compareValues);
 }
 
 /** Compare two cell values: numbers numerically, anything else as text. */

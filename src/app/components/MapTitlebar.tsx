@@ -6,6 +6,7 @@ import PinButton from "./PinButton";
 import ScaleButtons from "./ScaleButtons";
 import WindowButtons from "./WindowButtons";
 import ZonePicker from "./ZonePicker";
+import { CheckField } from "./ui";
 import { stockOnly, type MapSource } from "@/shared/map/map-sources";
 import type { Zone } from "@/shared/map/types";
 
@@ -137,10 +138,13 @@ export default function MapTitlebar({
           ⌂ {filtered ? `${shownFloors}/${floorCount}` : "all"}
         </button>
       )}
-      <label className="follow-toggle no-drag" title="Snap the map to your zone when you travel">
-        <input type="checkbox" checked={followZone} onChange={(e) => onFollowZone(e.target.checked)} />
-        follow
-      </label>
+      <CheckField
+        className="follow-toggle no-drag"
+        label="follow"
+        checked={followZone}
+        onChange={onFollowZone}
+        title="Snap the map to your zone when you travel"
+      />
       <div className="win-controls no-drag">
         {/* The map's own scale, separate from the main window's — see `mapFontScale`. */}
         <ScaleButtons scale={scale} onScale={onScale} what="map" range={MAP_UI_SCALE} />

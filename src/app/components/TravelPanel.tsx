@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import ZonePicker from "./ZonePicker";
+import { CheckField } from "./ui";
+import { count } from "@/shared/format";
 import type { Zone } from "@/shared/map/types";
 import type { TravelAnswer, TravelSettings } from "@/shared/types";
 import { stepCrossing, type TravelRoute, type TravelStep } from "@/shared/travel/route";
@@ -58,7 +60,7 @@ function units(n: number): string {
 
 /** What a refusal means, in a sentence. Four situations, four different things to do about them. */
 function refusalText(answer: TravelAnswer, to: string): string {
-  const seen = `Read ${answer.knows.borders} border${answer.knows.borders === 1 ? "" : "s"} across ${answer.knows.zones} zone${answer.knows.zones === 1 ? "" : "s"}.`;
+  const seen = `Read ${count(answer.knows.borders, "border")} across ${count(answer.knows.zones, "zone")}.`;
   switch (answer.refused) {
     case "no-graph":
       return "No travel graph — no maps were found, or none of them label their exits. Pick a map source with labelled zone lines (a pack like Brewall's labels far more than the game's own maps do).";
@@ -227,10 +229,14 @@ export default function TravelPanel({
 
         <div className="travel-options">
           {CONVEYANCES.map(({ key, label, hint }) => (
-            <label key={key} className="travel-opt" title={hint}>
-              <input type="checkbox" checked={travel[key]} onChange={(e) => onTravel({ [key]: e.target.checked })} />
-              {label}
-            </label>
+            <CheckField
+              key={key}
+              className="travel-opt"
+              label={label}
+              checked={travel[key]}
+              onChange={(on) => onTravel({ [key]: on })}
+              title={hint}
+            />
           ))}
           {/* Said once, here, because it's the question the missing "Boats" checkbox raises. */}
           <span
