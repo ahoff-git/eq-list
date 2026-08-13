@@ -26,6 +26,7 @@ import { createFightScope } from "../src/shared/fight-scope";
 import { createNameRegistry } from "../src/shared/name-registry";
 import { ratio, round } from "../src/shared/numbers";
 import { createParty } from "../src/shared/party";
+import { createPetRegistry } from "../src/shared/pet-registry";
 import type {
   CoinEvent,
   CombatEvent,
@@ -37,6 +38,7 @@ import type {
   CombatStats,
   CombatantStat,
   DeathRecap,
+  FightEndReason,
   FightStats,
   MobKillStat,
   SpellStat,
@@ -448,8 +450,15 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   const dots = createDotAttribution();
   let currentZone: string | null = null;
 
-  /** You or anything of yours, against the current `player` — see `isYours`. */
-  const isMine = (name: string): boolean => isYours(name, player);
+  /**
+   * Pets the game has confirmed are yours, by having one tell *you* it was attacking. It's the
+   * only way a pet with its own name can be known — the possessive form `isYours` reads never
+   * appears for one. See `pet-registry.ts`.
+   */
+  const pets = createPetRegistry();
+
+  /** You or anything of yours, against the current `player` — see `isYours` and `pets`. */
+  const isMine = (name: string): boolean => isYours(name, player) || pets.has(name);
   /** Your side: you and your pet, plus whoever is grouped with you and theirs. */
   const isOurs = (name: string): boolean => isMine(name) || party.has(name);
   /**
@@ -787,9 +796,13 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     }
   }
 
-  /** Hand the finished fight to whoever files history, if it had any damage in it. */
-  function endFight(): void {
-    if (fight.span.firstAt) bus.emit("fightEnd", summarize(fight));
+  /**
+   * Hand the finished fight to whoever files history, if it had any damage in it, stamped with
+   * why it ended. `cut` is the caller saying "the log didn't end this, I did" — a reset or a
+   * flush — which is a different fact from a fight the log itself closed.
+   */
+  function endFight(reason: FightEndReason): void {
+    if (fight.span.firstAt) bus.emit("fightEnd", { ...summarize(fight), endReason: reason });
   }
 
   /**
@@ -852,9 +865,18 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       // *resolved* — the last thing to happen was a death (a kill, or yours), so this quiet is the
       // pause before the next pull. While it's unresolved (the enemy's still up and, in this game,
       // still chasing), tolerate a much longer silence before splitting into a new fight.
-      const resolved = lastKillAt >= lastCombatAt || lastDeathAt >= lastCombatAt;
+      const killResolved = lastKillAt >= lastCombatAt;
+      const deathResolved = lastDeathAt >= lastCombatAt;
+      const resolved = killResolved || deathResolved;
       const endGap = resolved ? SETTLED_END_MS : ENGAGED_END_MS;
       const stale = !!lastCombatAt && at - lastCombatAt > endGap;
+      // The same branch, named — see `FightEndReason`. When both resolved it, the later one
+      // is what actually finished the fight (you killed it, then died to its friend).
+      const endReason: FightEndReason = !resolved
+        ? "timeout"
+        : killResolved && (!deathResolved || lastKillAt >= lastDeathAt)
+          ? "kill"
+          : "death";
 
       // A new pull is a new engagement, so the enemy set goes first — *before* this event is
       // judged. It's what makes the first swing of a fight have to stand on its own: without
@@ -863,6 +885,13 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       if (stale && swing) scope.reset();
       // Somebody else's fight is somebody else's business (ADR 0067).
       if (!scope.admits(event)) return;
+
+      if (event.kind === "pet-engage") {
+        // Learned before anything else reads an attacker, so the pet's very first swing —
+        // which can share this second — already counts as yours.
+        pets.note(event.pet);
+        return;
+      }
 
       if (event.kind === "stance") {
         stance = event.stance;
@@ -923,7 +952,7 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       // while one is running, so downtime healing/buffing doesn't invent a "fight".
       if (swing) {
         if (stale) {
-          endFight();
+          endFight(endReason);
           fight = createWindow(canon);
         }
         lastCombatAt = at;
@@ -941,8 +970,10 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       if (next === player) return;
       player = next;
       // A different character is a different group; the old one's would silently widen this
-      // one's meter.
+      // one's meter. The same goes for pets: the last character's are not this one's, and a
+      // stale name here would credit a stranger's damage to you.
       party.clear();
+      pets.clear();
       emit(); // `mine` flags change, so the windows need a fresh snapshot
     },
 
@@ -1041,9 +1072,10 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     },
     zone: () => currentZone,
     snapshot,
-    flush: endFight,
+    // A flush is the app's doing, not the log's — the tracker closing, or a character switch.
+    flush: () => endFight("cut"),
     reset() {
-      endFight(); // don't lose the fight in progress just because the meter was cleared
+      endFight("cut"); // don't lose the fight in progress just because the meter was cleared
       fight = createWindow(canon);
       session = createWindow(canon);
       startedAt = nowIso();
@@ -1058,7 +1090,10 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       scope.reset();
       // The repertoire is knowledge about the character, not a tally, so a reset keeps it.
       // Nor is the party roster: clearing the meter doesn't disband your group, and re-learning
-      // it would take until the next person joined, left or spoke.
+      // it would take until the next person joined, left or spoke. Pets are the same kind of
+      // thing and kept for the same reason, with a sharper edge: a pet only announces itself
+      // when you *order* it onto something, so a forgotten one would go uncounted until the
+      // next pull — a reset mid-fight would silently drop the rest of that fight's pet damage.
       // The stance and invocation aren't session state — they're what the character is
       // doing right now, and a reset doesn't change that.
       emit();

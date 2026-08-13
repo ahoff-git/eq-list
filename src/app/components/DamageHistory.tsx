@@ -223,13 +223,32 @@ function Fight({
   onPick: (fight: StoredFight | null) => void;
 }) {
   const on = picked?.id === fight.id;
+  const ending = END_MARK[fight.stats.endReason ?? "kill"];
   return (
     <button className={`hist-fight ${on ? "on" : ""}`} onClick={() => onPick(on ? null : fight)}>
       <span className="hf-when">{when}</span>
       <span className="hf-label">{fight.label}</span>
       {withZone && <span className="hf-zone muted">{fight.zone ?? "—"}</span>}
+      {ending && (
+        <span className="muted small" title={ending.why}>
+          {ending.mark}
+        </span>
+      )}
       <span className="muted small">{fight.stats.durationSec}s</span>
       <span className="hf-dmg">{fight.stats.yourDealt.toLocaleString()}</span>
     </button>
   );
 }
+
+/**
+ * How a fight ended, when that's worth saying. A kill is the ordinary case and gets no mark —
+ * decorating every row would bury the three that mean "this row isn't what it looks like".
+ * A fight stored before the reason was recorded reads as a kill here, which is what the vast
+ * majority of them were; the alternative is a mark on years of old rows that means nothing.
+ */
+const END_MARK: Record<string, { mark: string; why: string } | null> = {
+  kill: null,
+  death: { mark: "☠", why: "Ended when you died" },
+  timeout: { mark: "⏱", why: "Nothing killed anything — the mob fled, you zoned, or the log went quiet" },
+  cut: { mark: "✂", why: "Banked mid-fight: the meter was reset, or the app closed" },
+};

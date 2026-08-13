@@ -24,6 +24,28 @@ features for later in [../ideas.md](../ideas.md).
   group and your mobs and *not* the group next door, that a group-mate's row appears (it should,
   even before anyone speaks, as long as you're on the same mob), and that the Session tab's kill
   count doesn't creep while somebody else farms nearby.
+- **A named pet, live — the engage line is the whole unverified part.**
+  ([ADR 0077](../decisions/0077-a-pet-is-proven-not-guessed.md).) Every pet in this sandbox's sample
+  log is a warder, written possessively, so **no real EQL log here contains a pet attack
+  confirmation** — the wording is taken from a neighbour's parser, not observed by us. With a
+  magician or necromancer pet: order it onto something and confirm the log's actual words for the
+  confirmation (we expect `Garn told you, 'Attacking a coyote Master.'`, and accept `tells` too). If
+  it differs, paste the line into `electron/tests/pet-registry.test.ts` and widen `PET_ENGAGE_RE`.
+  Then confirm the pet's row appears **highlighted as yours** and its damage is in `yourDealt` —
+  before this, a named pet's whole fight was dropped, so the symptom of a wrong pattern is a meter
+  that's merely low rather than one that errors. Worth also confirming the pet's *first* swing counts
+  when you send it in ahead of you, and that a **group-mate** never turns up flagged as yours.
+- **Fight end reasons, live.** ([ADR 0078](../decisions/0078-a-fight-records-why-it-ended.md).) In
+  History, confirm ordinary pulls carry **no** mark, a fight you died in shows ☠, and a mob that
+  fled or a zone-out shows ⏱. The one to actually go and cause is the ⏱: it needs a fight nothing
+  resolved, which a sandbox can only simulate.
+- **The unread-line tally, on a real log.** ([ADR 0079](../decisions/0079-an-unread-line-is-counted-by-its-shape.md).)
+  Turn on Debug logging, let the app replay a real evening's gap, and read `unparsed lines` in the
+  debug log. Two things to check, and both are judgement calls only a real log can settle: that
+  **chat is in `ignored` rather than in the shapes** (if a channel wording we don't recognise shows
+  up as a shape, add it to `IGNORED`), and that the top shapes are genuinely unmodelled game
+  sentences rather than a parser we broke. Anything in that list worth reading *is* a parser gap —
+  file it. On the 95-line sample it reports 6 ignored and 4 shapes, all four real.
 - **Damage breakdown, live.** Click a Dealt row and confirm the **Melee / Spells / Special** groups
   open, Melee + Spells sum to the row's total, weapons read sensibly (Hit / Crush / Kick / Pierce
   for a beastlord), and `(Critical)` / `(Riposte)` show under Special. See `combat-stats.ts` and the

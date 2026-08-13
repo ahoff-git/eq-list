@@ -193,7 +193,7 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | The game's own data files | `SPELL_FORMAT.md` — **eql-info** · `eql_spell_db.py`, `eql_verified_spells.py` — **eql-log-reader** · `FadeMessageCatalog.cs` — **EQBuddy** |
 | A Project Quarm baseline | `eql_atlas_baseline_build.py`, `eql_quest_db_build.py`, `ARCHITECTURE.md` §2 — **eql-log-reader** |
 | A borrowed claim promoted to proven | `QuestState.confirmed` in `eql_quest.py` — **eql-log-reader** |
-| Unmatched log lines, counted and shown | `CombatTracker.unmatched` in `eql_combat_tracker.py` — **eql-log-reader** |
+| Unmatched log lines *(shipped — [ADR 0079](./decisions/0079-an-unread-line-is-counted-by-its-shape.md))* | `CombatTracker.unmatched` in `eql_combat_tracker.py` — **eql-log-reader** |
 | In-zone A\* (and why not) | `_nav_graph()` / `_nav_path()` in `eql_atlas_map.py` — **eql-log-reader** |
 | Provenance manifests / client-derived datasets | `src/data/eql-client/manifest.json`, `scripts/extract-eql-reference.mjs` — **everquest-legends-mcp** |
 | Data-integrity tests | `src/lib/maps.test.ts` — **everquest-legends-companion** |
@@ -201,8 +201,8 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | Gate a shared emote on your own cast | `README.md` → *Self-only combat clocks* — **eql-alerts** |
 | Permanent buffs on Legends | `samples/eql_permanent_buffs.json` — **eql-alerts** |
 | Rank-aware durations | `src-tauri/src/engine.rs` — **eql-alerts** |
-| A fight records why it ended | `internal/combat/combat.go` (`EndReason`, `ForgetEnemies`) — **eqdps** |
-| Pet proof and the bystander rule | `src-tauri/src/fight/mod.rs` (~735, ~975, `looks_like_npc`) — **eql-meter** |
+| A fight records why it ended *(shipped — [ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md))* | `internal/combat/combat.go` (`EndReason`, `ForgetEnemies`) — **eqdps** |
+| Pet proof and the bystander rule *(shipped — [ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md))* | `src-tauri/src/fight/mod.rs` (~735, ~975, `looks_like_npc`) — **eql-meter** |
 
 Two items on this page have **no** prior art to read, and that's worth knowing before starting them:
 the *command channel* in [ideas.md](./ideas.md) exists only in eql-log-reader's `eql_atlas.py`, and

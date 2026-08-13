@@ -15,14 +15,13 @@
  * fills the History tab with the same evenings you'd have seen had the app been running.
  */
 import fs from "node:fs";
-import { parseLine, type ParsedEvent } from "../src/shared/parse-line";
+import { isCombatEvent, parseLine } from "../src/shared/parse-line";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createCombatStats } from "./combat-stats";
 import { loginSession } from "./combat-history";
 import type { CombatHistory } from "./combat-history";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
-import type { CombatEvent } from "../src/shared/types";
 
 export interface LogImportResult {
   /** Lines read from the file. */
@@ -44,21 +43,6 @@ export interface LogImportResult {
   /** Drops **newly** added to the loot feed (and so to the prices derived from it). */
   loot: number;
 }
-
-/** The combat kinds the tracker takes — the same set the watcher feeds it live. */
-const COMBAT_KINDS = new Set([
-  "damage",
-  "miss",
-  "heal",
-  "cast",
-  "spell-outcome",
-  "death",
-  "buff-faded",
-  "stance",
-  "invocation",
-]);
-
-const isCombat = (event: ParsedEvent): event is CombatEvent => COMBAT_KINDS.has(event.kind);
 
 /**
  * Digest `file` into every store that can take it — the kill log, and whichever of `history` and
@@ -149,7 +133,7 @@ export function importLog(
         sessions++;
         break;
       default:
-        if (isCombat(event)) combat?.record(event);
+        if (isCombatEvent(event)) combat?.record(event);
     }
   }
   combat?.flush(); // the log ended mid-sitting; its last fight is still a fight

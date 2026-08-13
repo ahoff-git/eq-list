@@ -323,6 +323,23 @@ export interface BuffFadedEvent extends LogEventBase {
   target?: string;
 }
 
+/**
+ * A pet of yours confirming an attack order: `Garn told you, 'Attacking a coyote Master.'`
+ *
+ * The line is *addressed to you* — the game sends a pet's confirmation to its own owner and
+ * nobody else — so receiving one is **proof** the pet is yours, not a guess. That matters
+ * because the log gives no other way to know: a pet with its own name ("Garn hits a coyote")
+ * is written exactly like a player, and the possessive form the rest of the parser leans on
+ * (`<Owner>`s warder`) never appears for one. See `pet-registry.ts`.
+ */
+export interface PetEngageEvent extends LogEventBase {
+  kind: "pet-engage";
+  /** The pet's own name, as the log spells it. */
+  pet: string;
+  /** What it was ordered onto. Kept because it names an enemy, same as a swing would. */
+  target: string;
+}
+
 export type CombatEvent =
   | DamageEvent
   | MissEvent
@@ -332,7 +349,8 @@ export type CombatEvent =
   | DeathEvent
   | BuffFadedEvent
   | StanceEvent
-  | InvocationEvent;
+  | InvocationEvent
+  | PetEngageEvent;
 
 // ─── Damage meter ───────────────────────────────────────────────────────────
 
@@ -665,6 +683,24 @@ export interface DeathRecap {
   windowSec: number;
 }
 
+/**
+ * Why a fight stopped being the current fight.
+ *
+ * [ADR 0036](../../specs/decisions/0036-a-fight-ends-on-death-not-a-lull.md) already draws the
+ * distinction that matters — a **resolved** fight (something died) closes after a short quiet,
+ * while an unresolved one needs a much longer silence — and the tracker computes which applied.
+ * Naming it is what makes an odd row explicable: a fight that ran 90 seconds and ended in a
+ * `timeout` is a mob that fled, a kite that ended, a zone-out or a lagging log, and reads
+ * completely differently from the same 90 seconds ending in a `kill`.
+ *
+ * - `kill` — the last thing to happen was something dying to you.
+ * - `death` — the last thing to happen was *your* death.
+ * - `timeout` — nothing resolved it; the enemy was presumably still up when the log went quiet.
+ * - `cut` — the fight didn't end in the log at all. The meter was reset, or the tracker was
+ *   flushed (app closing, character switching), and the fight was banked mid-flow.
+ */
+export type FightEndReason = "kill" | "death" | "timeout" | "cut";
+
 /** Damage totals over a window: one fight, or the whole session. */
 export interface FightStats {
   /** Log timestamps of the first and last damage in the window ("" when empty). */
@@ -725,6 +761,16 @@ export interface FightStats {
    * frozen with whatever the maths said at the time. See ADR 0021.
    */
   logIds?: { from: number; to: number };
+  /**
+   * Why this fight ended — see `FightEndReason`. Only meaningful on a **finished** fight, so
+   * the live window carries it once it's been banked and never before.
+   *
+   * Absent has exactly one meaning: the fight was stored before this was recorded ([ADR
+   * 0021](../../specs/decisions/0021-stored-fights-keep-their-source.md) — old records keep the
+   * shape they were written with). A fight the log didn't end says `cut` rather than nothing,
+   * so "we don't know" and "nothing ended it" stay tellable apart.
+   */
+  endReason?: FightEndReason;
 }
 
 /**

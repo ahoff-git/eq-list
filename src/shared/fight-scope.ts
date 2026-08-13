@@ -98,6 +98,13 @@ export function createFightScope({ ours, sidesKnown = () => true }: FightScopeOp
         case "cast":
         case "spell-outcome":
           return !sidesKnown() || inFight(event.caster);
+        case "pet-engage":
+          // Addressed to you by your own pet, so it's yours by construction — and it names
+          // what the pet was sent at, which is an enemy on the same "our side swung at it"
+          // grounds a swing would be. Engaging here is what lets the pet's *first* hit land
+          // inside the fight rather than having to open one on its own.
+          enemies.add(mobKey(event.target));
+          return true;
         case "death":
         case "stance":
         case "invocation":

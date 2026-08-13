@@ -46,6 +46,7 @@ import type {
   HealEvent,
   InvocationEvent,
   MissEvent,
+  PetEngageEvent,
   StanceEvent,
   SpellOutcome,
   SpellOutcomeEvent,
@@ -189,6 +190,21 @@ const HEAL_RE = /^(?<healer>.+?) healed (?<target>.+?) for (?<amount>\d+)(?: \((
 // spell actually took. "You begin to change your invocation." is memorization, not a
 // cast, and doesn't match ("begin to change" ≠ "begin casting").
 const CAST_RE = /^(?<caster>.+?) begins? casting (?<spell>.+?)\.$/;
+
+/**
+ * A pet confirming an attack order to its owner: `Garn told you, 'Attacking a coyote Master.'`
+ *
+ * The pet's name is one token (EQ names pets without spaces), and the quote is written with
+ * apostrophes in every line seen — but both are kept loose, since the cost of a stray quote
+ * style is a pet whose damage silently stops counting. `tells`/`told` likewise: the tense is
+ * not worth a bug report to confirm.
+ *
+ * Matching the trailing `Master.` is what keeps this off ordinary tells — a player saying
+ * "Attacking the left one Master." to you is the only false positive available, and they'd
+ * have to be named like a pet and say the word. See `PetEngageEvent`.
+ */
+const PET_ENGAGE_RE =
+  /^(?<pet>\S+) (?:tells|told) you, ['"](?:Attacking |Attacking, )(?<target>.+?) Master\.['"]$/i;
 
 /**
  * Your own death. `parseKillLine` deliberately ignores these (they're not kills you
@@ -395,6 +411,18 @@ export function parseCombat(line: LogLine): CombatEvent | null {
       at,
       raw,
     } satisfies InvocationEvent;
+  }
+
+  const petEngage = message.match(PET_ENGAGE_RE);
+  if (petEngage?.groups) {
+    return {
+      kind: "pet-engage",
+      pet: petEngage.groups.pet,
+      target: combatant(petEngage.groups.target),
+      logId,
+      at,
+      raw,
+    } satisfies PetEngageEvent;
   }
 
   const cast = message.match(CAST_RE);

@@ -21,6 +21,38 @@ import type { CombatEvent, LogEvent, LogLine } from "./types";
 /** Everything a log line can turn into. */
 export type ParsedEvent = LogEvent | CombatEvent;
 
+/**
+ * The kinds that are *combat*, as a total map of `CombatEvent["kind"]` — so adding a combat
+ * event without listing it here is a **compile error**.
+ *
+ * It lives here, once, because two places need the answer and they must not disagree: the live
+ * watcher's `combat` channel and the log importer's replay. This has already gone wrong the
+ * loose way — `stance` and `invocation` were absent from the watcher's copy, so the tracker
+ * never learned which mode was in force and filed every swing under "unknown", leaving the
+ * whole of [ADR 0020](../../specs/decisions/0020-split-by-stance-and-invocation.md) dark against
+ * a log with 243 of those lines. The failure is silent by nature: the events parse, they're
+ * emitted, and nothing listens. A drift between the *two* copies is worse still, since the same
+ * evening would then read differently live than re-imported, which
+ * [ADR 0033](../../specs/decisions/0033-eating-a-log-is-idempotent.md) exists to prevent.
+ */
+const COMBAT_KINDS: Record<CombatEvent["kind"], true> = {
+  damage: true,
+  miss: true,
+  heal: true,
+  cast: true,
+  "spell-outcome": true,
+  death: true,
+  "buff-faded": true,
+  stance: true,
+  invocation: true,
+  "pet-engage": true,
+};
+
+/** Is this parsed event one the damage meter takes? Narrows, so callers keep their types. */
+export function isCombatEvent(event: ParsedEvent): event is CombatEvent {
+  return event.kind in COMBAT_KINDS;
+}
+
 /** The matchers, in cost order. */
 const MATCHERS: ((line: LogLine) => ParsedEvent | null)[] = [
   parseCombat,

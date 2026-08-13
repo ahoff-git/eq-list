@@ -10,7 +10,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
-import { parseSplitLine } from "../src/shared/parse-line";
+import { isCombatEvent, parseSplitLine } from "../src/shared/parse-line";
+import { createUnmatchedLines, type UnmatchedLines } from "../src/shared/unmatched-lines";
 import { splitLine } from "../src/shared/log-parser";
 import { catchUpState, type CaughtUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
@@ -19,27 +20,6 @@ import type { CoinEvent, LootEvent, LogLine, LoginEvent, PartyEvent, ZoneEvent, 
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
-
-/**
- * Event kinds that make up the combat stream. They're emitted under their own kind *and*
- * as "combat", so the damage meter can take one subscription while anything interested in
- * a single kind (a death, say) can still have just that.
- */
-const COMBAT_KINDS = new Set([
-  "damage",
-  "miss",
-  "heal",
-  "cast",
-  "spell-outcome",
-  "death",
-  "buff-faded",
-  // The two mode lines. They were missing here, which meant the tracker never learned which
-  // stance or invocation was in force and filed every swing and cast under "unknown" — the whole
-  // of [ADR 0020](../specs/decisions/0020-split-by-stance-and-invocation.md), dark. A real log has
-  // 243 of them. They're parsed, they were emitted on their own channels, and nothing listened.
-  "stance",
-  "invocation",
-]);
 
 /** What one pass of catching a log up came to — see `onCaughtUp`. */
 export interface CaughtUp {
@@ -79,6 +59,11 @@ export interface LogWatcher {
    * with `bytes: 0` when there was nothing to catch up on.
    */
   onCaughtUp(cb: (info: CaughtUp) => void): void;
+  /**
+   * Lines no parser claimed, tallied by shape — the calibration loop behind Settings' debug
+   * section. The watcher owns it because it owns the one place every line is already parsed.
+   */
+  unmatched(): UnmatchedLines;
 }
 
 /** Every eqlog_*.txt currently in a dir, absolute. */
@@ -136,6 +121,11 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
   /** Monotonic line counter — an event's `logId`, so it can point back at its line. */
   let logId = 0;
   let status: WatcherStatus = { watching: false };
+  /**
+   * Lines nothing parsed, by shape. Lives for the run rather than per file: a wording we can't
+   * read is a fact about the grammar, not about which character produced it.
+   */
+  const unmatched = createUnmatchedLines();
 
   function setStatus(next: WatcherStatus) {
     if (next.watching === status.watching && next.file === status.file && next.error === status.error) return;
@@ -288,10 +278,16 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
           if (!line) continue;
           bus.emit("line", line);
           const event = parseSplitLine(line);
-          if (!event) continue;
+          // A line nothing claimed is the only evidence we get that the grammar has a hole in
+          // it. Counting it here — the one place every line passes through already parsed —
+          // costs a map lookup and is what makes the gap findable (see `unmatched-lines.ts`).
+          if (!event) {
+            unmatched.note(line.message);
+            continue;
+          }
           if (catchingUp) catchingUp.lastAt = event.at;
           bus.emit(event.kind === "loot" ? "loot" : event.kind, event);
-          if (COMBAT_KINDS.has(event.kind)) bus.emit("combat", event);
+          if (isCombatEvent(event)) bus.emit("combat", event);
         }
         // Only now — the lines are ingested, so it's safe to say we've read them. A crash
         // between the two would replay this batch, which is why the write isn't deferred.
@@ -362,5 +358,6 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onLine: (cb) => void bus.on("line", cb),
     onStatus: (cb) => void bus.on("status", cb),
     onCaughtUp: (cb) => void bus.on("caughtUp", cb),
+    unmatched: () => unmatched,
   };
 }

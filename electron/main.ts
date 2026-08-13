@@ -381,6 +381,13 @@ if (!app.requestSingleInstanceLock()) {
     if (!bytes) return;
     const continuing = isSameSitting(lastAt);
     log.debug("log gap replayed", { file, bytes, lastAt, continuing });
+    // A replayed gap is the best sample we ever get of what the grammar can't read — a whole
+    // evening at once — so this is where the tally is worth printing. Debug-gated like
+    // everything else, and by *shape* rather than by line: see `unmatched-lines.ts` on why the
+    // list is a debugging aid to read rather than something to attach to a report.
+    const lines = watcher.unmatched();
+    const { seen, ignored, shapes, dropped } = lines.stats();
+    if (seen) log.debug("unparsed lines", { seen, ignored, shapes, dropped, top: lines.top(15) });
     if (!continuing) combat.reset();
   });
   // Fights are filed as they end, so history survives a crash as well as a clean quit.

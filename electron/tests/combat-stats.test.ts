@@ -198,6 +198,140 @@ test("your rows are flagged — you and your pet, not the mobs", () => {
   assert.equal(s.fight.yourTaken, 5);
 });
 
+test("a named pet's damage is dropped until the game says the pet is yours", () => {
+  // The bug this pins: a pet with its own name is written exactly like a stranger, so with
+  // neither side of the exchange recognised as ours, `fight-scope` reads the whole fight as
+  // somebody else's and drops it — the damage went *missing*, not merely onto the wrong row.
+  const before = tracker();
+  before.setPlayer("Kainos");
+  feed(before, [[1, "Garn hits a coyote for 12 points of damage."]]);
+  assert.equal(before.snapshot().fight.yourDealt, 0, "a name alone must never be claimed as yours");
+
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    // The game addresses this to the pet's owner and nobody else, which is what makes it proof.
+    [1, "Garn told you, 'Attacking a coyote Master.'"],
+    [2, "Garn hits a coyote for 12 points of damage."],
+    [3, "A coyote bites Garn for 3 points of damage."],
+  ]);
+
+  const s = t.snapshot();
+  assert.equal(s.fight.yourDealt, 12);
+  assert.ok(
+    s.fight.byCombatant.find((r) => r.name === "Garn")?.mine,
+    "the pet's row should be flagged as yours",
+  );
+});
+
+test("a pet's engage names the enemy, so the pet can open the fight alone", () => {
+  // A pet sent in ahead of you swings first. Without the engage line admitting the coyote,
+  // that first hit would have to open a fight on its own — and it can't, because at that
+  // moment nothing has established the coyote is anyone's enemy.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "Garn told you, 'Attacking a coyote Master.'"],
+    [2, "Garn hits a coyote for 7 points of damage."],
+    [9, "You pierce a coyote for 10 points of damage."],
+  ]);
+
+  const s = t.snapshot();
+  assert.equal(s.fight.yourDealt, 17, "both the pet's opener and your own swing are one fight");
+});
+
+test("a group-mate is not adopted as a pet by having a pet-shaped name", () => {
+  // The trap the registry exists to avoid: in a damage line "Galactic" and "Garn" are the
+  // same shape, so anything that guessed from the name would quietly count a group-mate's
+  // damage as your own.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  t.recordParty(parseParty(splitLine("[Wed Jul 29 00:00:01 2026] Galactic has joined the group.", 1)!)!);
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Galactic hits a coyote for 40 points of damage."],
+  ]);
+
+  const s = t.snapshot();
+  // The group-mate's damage counts toward the fight (it's your side's fight) but is not yours.
+  assert.equal(s.fight.yourDealt, 10);
+  assert.equal(s.fight.byCombatant.find((r) => r.name === "Galactic")?.mine, false);
+});
+
+test("switching character forgets the last one's pets", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [[1, "Garn told you, 'Attacking a coyote Master.'"]]);
+  t.setPlayer("Someone");
+  feed(t, [[2, "Garn hits a coyote for 12 points of damage."]]);
+
+  assert.equal(t.snapshot().fight.yourDealt, 0, "the old character's pet is not this one's");
+});
+
+/** The reasons banked fights ended with, in order — what `fightEnd` carried. */
+function endReasons(t: ReturnType<typeof createCombatStats>): (string | undefined)[] {
+  const seen: (string | undefined)[] = [];
+  t.onFightEnd((f) => seen.push(f.endReason));
+  return seen;
+}
+
+test("a fight that ended in a kill says so", () => {
+  const t = tracker();
+  const reasons = endReasons(t);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(2));
+  // Past SETTLED_END_MS, so the resolved fight closes and the next swing opens a new one.
+  feed(t, [[40, "You pierce a rat for 10 points of damage."]]);
+  assert.deepEqual(reasons, ["kill"]);
+});
+
+test("a fight that ended in your death says so", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [
+    [1, "A coyote bites YOU for 5 points of damage."],
+    [2, "You have been slain by a coyote!"],
+    [40, "You pierce a rat for 10 points of damage."],
+  ]);
+  assert.deepEqual(reasons, ["death"]);
+});
+
+test("a fight nothing resolved is a timeout, not a kill", () => {
+  // The mob was still up when the log went quiet — it fled, you zoned, or the log lagged.
+  // It takes the *long* gap to close, which is what tells it apart from a settled fight.
+  const t = tracker();
+  const reasons = endReasons(t);
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [200, "You pierce a rat for 10 points of damage."],
+  ]);
+  assert.deepEqual(reasons, ["timeout"]);
+});
+
+test("a reset banks the fight as cut, not as something the log ended", () => {
+  const t = tracker();
+  const reasons = endReasons(t);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.reset();
+  assert.deepEqual(reasons, ["cut"]);
+});
+
+test("the later of a kill and a death is what ended the fight", () => {
+  // You kill one, its friend kills you: the death is the last word.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(2));
+  feed(t, [
+    [3, "A rat bites YOU for 5 points of damage."],
+    [4, "You have been slain by a rat!"],
+    [40, "You pierce a bat for 10 points of damage."],
+  ]);
+  assert.deepEqual(reasons, ["death"]);
+});
+
 test("fight duration and window timestamps come from the log", () => {
   const t = tracker();
   feed(t, [

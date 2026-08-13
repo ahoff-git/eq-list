@@ -208,27 +208,6 @@ lineage. Most of what follows is about widening the input, not the output.
   sentence, not a substring) and in being clear that confirmation is per character and permanent, while
   its absence means nothing at all.
 
-- **Unmatched log lines, counted and shown.** Every line our parsers don't recognise is currently
-  discarded silently. eql-log-reader keeps them in `CombatTracker.unmatched` (a bounded deque in
-  `eql_combat_tracker.py`), surfaced by `show_unmatched()` in `eql_dps_meter.py` and a Diagnostics tab in
-  `eql_session_report.py`; its `ARCHITECTURE.md` calls that plainly *"the calibration loop that has
-  driven most parser fixes"* —
-  which matches our experience from the other direction, since [log-parser.test.ts](../electron/tests/log-parser.test.ts)
-  notes lines that "were silently unparsed (or under-counted) before" and only got fixed once somebody
-  noticed. Tests can only cover lines we already thought of; this is how the others turn up, from real
-  play, without asking anyone to send us a log. Small: a counter keyed by a shape-normalised line
-  (digits and names folded to placeholders, so a thousand variations collapse to one row), capped, top-N
-  in Settings behind the existing debug toggle.
-
-  Two details that decide whether it's useful or noise. First, **privacy**: a raw log line can hold
-  another player's name or chat, so what's *kept* should be the normalised shape, and what's shown
-  should be safe to paste into an issue. Second, the bucket needs a sibling category of
-  **matched-and-ignored** — eql-log-reader's parser deliberately matches third-party combat, damage
-  shields and pet chatter *in order to drop them*, with comments saying so precisely because otherwise
-  they'd swamp `unmatched` and hide the lines that actually reveal a gap. Ours would need the same for
-  chat, tells and everyone else's fights: a line we've decided not to model is not a line we failed to
-  read, and the list is only worth opening if it holds the second kind.
-
 - **In-zone A\*, revisited with new evidence — and the evidence says no.** Recorded because it will come
   up again. eql-log-reader draws a guide line by A* over the map's own geometry, which is precisely what
   [ADR 0049 was retired](./decisions/0062-a-travel-graph-of-zone-lines.md) for and what
@@ -291,7 +270,12 @@ table, which covers every item on this page.
 
 What this pass turned up is different in kind from the last two: less "here is a feature we lack" and
 more **"here is a log line, a game command, or a distinction that does the work a heuristic is
-currently doing"**. Three of the six are smaller than they look because the plumbing already exists.
+currently doing"**.
+
+Three of the six are **done** and have left this list: the named-pet proof and the bystander rule
+([ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md)), a fight recording why it ended
+([ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md)), and the unread-line tally
+([ADR 0079](./decisions/0079-an-unread-line-is-counted-by-its-shape.md)). What's left:
 
 - **`/out inventory` writes a file, and we never look at it.** The game will dump every bag, bank slot,
   depot and key-ring row to `<Char>_<server>-Inventory.txt` on command — and we are a **shopping list**
@@ -369,32 +353,3 @@ currently doing"**. Three of the six are smaller than they look because the plum
   cost second (which is the ideas.md item, now unblocked). Worth fixing the ideas.md note in the same
   change, so the next reader isn't told to build something that exists.
 
-- **A fight knows why it ended and throws the answer away.**
-  [ADR 0036](./decisions/0036-a-fight-ends-on-death-not-a-lull.md) already draws the distinction —
-  a **resolved** fight (something died; `lastKillAt`/`lastDeathAt` at or after the last swing) closes
-  after `SETTLED_END_MS`, while an **unresolved** one needs `ENGAGED_END_MS` of total silence. Those are
-  two genuinely different endings and the code computes which one applied, then records neither. eqdps
-  keeps it as a field: every fight carries an `EndReason` of a death, an `idle timeout`, or
-  `enemies forgot you`.
-
-  Worth having because an unresolved fight is a *different artifact* from a kill — it's a mob that
-  fled, a kite that ended, a zone-out, or a log that lagged — and a row of history that says which is
-  explicable where a bare duration is just odd. It's one field on the stored record, set where the
-  branch already is; the care is that [ADR 0021](./decisions/0021-stored-fights-keep-their-source.md)
-  means old stored fights won't have it, so absent must read as "not recorded" rather than as a value.
-
-- **A named pet can prove it's yours; a bystander must not open a fight.** Two rules from eql-meter,
-  same file. Our pet handling reads the log's possessive — `<Owner>`s warder`, with a backtick — which
-  [party.ts](../src/shared/party.ts) uses to credit a group-mate's pet to the group-mate. That works
-  exactly as far as the pet's name contains its owner's, and **a named pet's doesn't**. The second
-  signal covers it: a pet engage tell, `"Garn told you, 'Attacking <mob> Master.'"`, is only ever
-  delivered **to that pet's own owner**, so receiving one is proof rather than inference — you cannot
-  see another player's pet confirm orders. (EQBuddy learns pet names from the same "Master." chatter,
-  which is two independent projects on one line.)
-
-  The companion rule is the bystander guard, and it's [ADR 0067](./decisions/0067-the-meter-counts-your-party-s-fights.md)
-  approached from the other end: *only you or your pet may open a fight*. Ours filters by admitting
-  your side's fights whole; theirs refuses to let `Orc hits Bob` in an open-world camp create a fight
-  named after a stranger in the first place. Same goal, and the opening rule is the cheaper half —
-  worth checking ours can't be induced to open one, since a fight that should never have existed is
-  not something a downstream filter can tidy away.
