@@ -84,8 +84,14 @@ export const CH = {
   /** Sent to a window when it maximizes or restores, so its titlebar button can follow. */
   winMaximizeChanged: "evt:winMaximized",
   winHide: "win:hide",
+  /** How this window was left (pinned / opaque / click-through) — read once, on load. */
+  winGetState: "win:getState",
+  /** Remember a change to one of them, so the next launch opens the window that way. */
+  winSaveState: "win:saveState",
   winSetOpacity: "win:setOpacity",
   winSetAlwaysOnTop: "win:setAlwaysOnTop",
+  /** Let this window's clicks fall through to the game (or take them back) — see `useClickThrough`. */
+  winSetClickThrough: "win:setClickThrough",
   winClose: "win:close",
   winResetPositions: "win:resetPositions",
   // awari peer networking (brokered by the main process; see ADR 0012)

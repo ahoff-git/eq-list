@@ -296,12 +296,16 @@ export default function MapPanel({
    * Is this kill one of the ones being pointed at? By id when there is one, else by mob — folded
    * through `mobKey`, because the name being pointed at may be the wiki's ("a Gnoll Pup") while
    * the kill log strips the article and keeps the log's case ("gnoll pup"). It's the same mob.
+   *
+   * Several mobs can be asked for at once (a drop's sources), and they're one ask: a kill matching
+   * any of them is rung, and the rest of the map fades once, not once per name.
    */
-  const matches = useCallback(
-    (kill: RenderKill, want: KillEmphasis): boolean =>
-      want.id ? kill.id === want.id : !!want.mob && !!kill.mob && mobKey(kill.mob) === mobKey(want.mob),
-    [],
-  );
+  const matches = useCallback((kill: RenderKill, want: KillEmphasis): boolean => {
+    if (want.id) return kill.id === want.id;
+    if (!kill.mob) return false;
+    const key = mobKey(kill.mob);
+    return !!want.mobs?.some((mob) => mobKey(mob) === key);
+  }, []);
 
   /**
    * The emphasis actually in force. An ask that picks out nothing here — the Hunt tab pointing at a

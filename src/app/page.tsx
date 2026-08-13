@@ -14,6 +14,7 @@ import StatusBar from "./components/StatusBar";
 import LandingView from "./components/LandingView";
 import PinButton from "./components/PinButton";
 import OpacityButton from "./components/OpacityButton";
+import ClickThroughButton from "./components/ClickThroughButton";
 import CastAlerts from "./components/CastAlerts";
 import UpdateBanner from "./components/UpdateBanner";
 import TabBar, { type TabItem } from "./components/TabBar";
@@ -21,6 +22,8 @@ import { useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScal
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
+import { PASS_THROUGH, useClickThrough } from "@/lib/clickThrough";
+import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
@@ -45,7 +48,9 @@ export default function Home() {
   const settings = useSettings();
   // This window owns the awari connection, so its diagnostics are the ones worth having.
   useRendererDebug();
-  const pinned = settings?.overlay.alwaysOnTop ?? true;
+  // Pin, ◐ and 👻 are all *this window's* remembered state, restored by main when it opens and
+  // written back as you flip them (ADR 0074) — the map keeps its own answers to the same three.
+  const { pinned, toggle: togglePinned } = useWindowPin();
   const sliderOpacity = settings?.overlay.opacity ?? 1;
   // Scale lives in settings (main applies it as the window's zoom factor); the titlebar just
   // nudges it, so the Settings slider and these buttons are the same one value. The map window
@@ -54,10 +59,11 @@ export default function Home() {
   // This window scales itself: the scale is a CSS zoom per document, because Chromium's own zoom
   // is per-origin and every window here shares one (see `useUiScale`).
   useUiScale(settings?.overlay.fontScale);
-  // Transient "full opacity" toggle: flip between 100% and the settings slider value. The renderer
-  // owns the live value (see `useWindowOpacity`); the map window has its own toggle over the same
-  // saved value, so flipping one window solid leaves the other as it was.
+  // The ◐ override: this window at 100% rather than the settings slider. The map window has its own
+  // over the same saved value, so flipping one window solid leaves the other as it was.
   const { opaque, toggle: toggleOpaque } = useWindowOpacity(settings ? sliderOpacity : undefined);
+  // Clicks over the panel go to the game; the titlebar, tabs and status bar stay ours.
+  const clickThrough = useClickThrough();
   // Owned here so the Hunt tab's zone filter survives switching tabs (and, persisted,
   // reopening the window).
   const [huntZone, setHuntZone] = usePersistentState<string | null>(STORAGE_KEYS.huntZone, null);
@@ -119,9 +125,10 @@ export default function Home() {
               onScale={(next) => api()?.settings.update({ overlay: { fontScale: next } })}
             />
             <OpacityButton opaque={opaque} opacity={sliderOpacity} onToggle={toggleOpaque} />
+            <ClickThroughButton on={clickThrough.on} what="the list" onToggle={clickThrough.toggle} />
             <PinButton
               pinned={pinned}
-              onToggle={() => api()?.settings.update({ overlay: { alwaysOnTop: !pinned } })}
+              onToggle={togglePinned}
               title={`Always on top: ${pinned ? "on" : "off"} · ${OVERLAY_HOTKEY.label} shows/hides`}
             />
             {/* Hide, not close: the app keeps watching the log from the tray. */}
@@ -133,7 +140,8 @@ export default function Home() {
 
         <TabBar items={tabItems} active={tab} onSelect={(k) => setTab(k as Tab)} />
 
-        <div className="panel">
+        {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}
+        <div className="panel" {...PASS_THROUGH}>
           {tab === "list" && <ListPanel />}
           {tab === "hunt" && <HuntPanel pickedZone={huntZone} onPickedZone={setHuntZone} />}
           {tab === "loot" && <LootPanel />}

@@ -15,6 +15,8 @@ import {
 } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { PASS_THROUGH, useClickThrough } from "@/lib/clickThrough";
+import { useWindowPin } from "@/lib/windowToggles";
 import MapPanel, { type RenderKill, type RenderPin } from "../components/MapPanel";
 import KillList from "../components/KillList";
 import MobKnowledgePanel from "../components/MobKnowledge";
@@ -24,6 +26,7 @@ import { useFloors } from "@/lib/map/useFloors";
 import { useHidden } from "@/lib/map/useHidden";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { findZone, onLayer, sortZones } from "@/shared/map/zones";
+import { sameZoneOrMisspelling } from "@/shared/zones/spelling";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import MapFilters from "../components/MapFilters";
@@ -116,7 +119,10 @@ export default function MapWindow() {
    * depend on it honestly instead of silencing the lint rule.
    */
   const zoneMatch = useCallback(
-    (z: string) => !!zoneKey && (findZone(z, zones)?.name ?? z) === zoneKey,
+    // Canonicalised through the zone list where we can, then compared the way every other "is this
+    // here?" is: folded, and tolerant of a letter (ADR 0059, ADR 0075). A peer sharing kills from a
+    // pack that spells the zone differently is in the zone you're looking at.
+    (z: string) => !!zoneKey && sameZoneOrMisspelling(findZone(z, zones)?.name ?? z, zoneKey),
     [zoneKey, zones],
   );
   // The zone list, reachable from the subscribe-once effects below without making them
@@ -131,6 +137,10 @@ export default function MapWindow() {
   // window to solid is its own, so the map can be read without clearing the list.
   const sliderOpacity = settings?.overlay.opacity ?? 1;
   const { opaque, toggle: toggleOpaque } = useWindowOpacity(settings ? sliderOpacity : undefined);
+  // Clicks over the map itself go to the game — the titlebar, toolbar and any open side panel
+  // stay ours. Its own remembered value: seeing through the map and seeing through the list are
+  // wanted at different moments (the same reason the ◐ override is per window).
+  const clickThrough = useClickThrough();
   useRendererDebug();
 
   // Travelling puts the map back on you (on by default): picking a zone by hand — or
@@ -171,11 +181,9 @@ export default function MapWindow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The map window has its own always-on-top pin, persisted so it comes back as you left it.
-  const [pinned, setPinned] = usePersistentState(STORAGE_KEYS.mapPinned, true);
-  useEffect(() => {
-    api()?.win.setAlwaysOnTop(pinned);
-  }, [pinned]);
+  // The map window has its own always-on-top pin, remembered against this window (ADR 0074) so it
+  // comes back as you left it — and applied by main when it opens, before the renderer is up.
+  const { pinned, toggle: togglePinned } = useWindowPin();
 
   // Peer networking (awari). The WebRTC connection lives in the main window
   // (AwariHost); here we just read the brokered peer stream and send our pings/pins.
@@ -440,7 +448,9 @@ export default function MapWindow() {
         opacity={sliderOpacity}
         onOpaque={toggleOpaque}
         pinned={pinned}
-        onPinned={() => setPinned((p) => !p)}
+        onPinned={togglePinned}
+        clickThrough={clickThrough.on}
+        onClickThrough={clickThrough.toggle}
       />
 
       <MapToolbar
@@ -487,6 +497,7 @@ export default function MapWindow() {
           filters={killFilters}
           onFilters={setKillFilters}
           onMarkMob={markMobArea}
+          onEmphasize={setEmphasis}
         />
       )}
 
@@ -522,7 +533,8 @@ export default function MapWindow() {
         />
       )}
 
-      <div className="map-body">
+      {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}
+      <div className="map-body" {...PASS_THROUGH}>
         {hasMap ? (
           <MapPanel
             zone={zone}

@@ -51,8 +51,9 @@ test("the todo's case: three spellings of one castle all land on the table's", (
 
 test("every zone in the game resolves to itself, and never to another", () => {
   // The one property that makes the loose tiers safe to ship: run the whole table against itself
-  // with every tier switched on and nothing may drift onto a neighbour.
-  const resolver = createZoneResolver(ALL_ZONES, name, { narrow: true, fuzzy: true });
+  // with every tier switched on and nothing may drift onto a neighbour. (What the `typo` tier does to
+  // a name that *isn't* in the table is its own corpus test — see zone-spelling.test.ts.)
+  const resolver = createZoneResolver(ALL_ZONES, name, { typo: true, narrow: true, fuzzy: true });
   for (const zone of ALL_ZONES) {
     const match = resolver.resolve(zone);
     assert.equal(zoneKey(match?.item ?? ""), zoneKey(zone), `${zone} resolved to ${match?.item}`);

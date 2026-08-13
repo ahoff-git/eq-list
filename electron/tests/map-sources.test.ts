@@ -32,19 +32,22 @@ test("a curated zone takes its own file, and nothing else does", () => {
 
 test("a zone we can't name keeps its file name, and is still offered", () => {
   const zones = zonesFromFiles("brewall", FILES);
-  assert.equal(zones.find((z) => z.file === "gukbottom")?.name, "Gukbottom");
+  // `commonlands` is a file the gazetteer has no name for — the classic zone is `commons`.
+  assert.equal(zones.find((z) => z.file === "commonlands")?.name, "Commonlands");
   assert.equal(zones.length, FILES.length);
   assert.ok(zones.every((z) => z.file && z.key.startsWith("brewall:")));
 });
 
 test("a solved name is used where nothing curated applies", () => {
-  const zones = zonesFromFiles("brewall", ["gukbottom", "kithicor"], {
-    gukbottom: "Ruins of Old Guk",
-    kithicor: "Kithicor Forest",
+  // Invented short names on purpose: the gazetteer names 80-odd real files, so a test about the
+  // *solver* has to ask about a file no table could have named (a pack's own custom map).
+  const zones = zonesFromFiles("brewall", ["someplace", "elsewhere"], {
+    someplace: "Ruins of Old Guk",
+    elsewhere: "Kithicor Forest",
   });
   const byFile = new Map(zones.map((z) => [z.file!, z.name]));
-  assert.equal(byFile.get("gukbottom"), "Ruins of Old Guk");
-  assert.equal(byFile.get("kithicor"), "Kithicor Forest");
+  assert.equal(byFile.get("someplace"), "Ruins of Old Guk");
+  assert.equal(byFile.get("elsewhere"), "Kithicor Forest");
 });
 
 test("the curated list outranks a solved name", () => {
@@ -61,6 +64,17 @@ test("no two zones share a name — that would be one place listed twice", () =>
   assert.equal(new Set(names).size, names.length, `duplicates: ${names.join(", ")}`);
   assert.equal(names.filter((n) => n === "Toxxulia Forest").length, 1);
   assert.equal(names.filter((n) => n === "Northern Desert of Ro").length, 1);
+});
+
+test("a name a letter out is the same claim, not a second zone", () => {
+  // The reported case: the pack's label for `tox` misspells the forest, so uniqueness by exact string
+  // let the same place into the picker twice — once with a map, once without (ADR 0075).
+  const zones = zonesFromFiles("stock", FILES, { tox: "Toxulia Forest", nro: "Northern Desert of Roo" });
+  const byFile = new Map(zones.map((z) => [z.file!, z.name]));
+  assert.equal(byFile.get("toxxulia"), "Toxxulia Forest");
+  assert.equal(byFile.get("tox"), "Tox", "the loser falls back to its file name");
+  assert.equal(byFile.get("nro"), "Nro");
+  assert.equal(zones.filter((z) => z.name.toLowerCase().includes("tox")).length, 2, "one zone, one map, one stub");
 });
 
 test("the loser of a duplicate stays reachable under its file name", () => {
@@ -84,8 +98,15 @@ test("prettyZoneName only capitalizes — it doesn't invent words", () => {
 test("every curated zone is one entry with a file, and no file is claimed twice", () => {
   const files = CURATED_ZONES.map((z) => z.file);
   assert.equal(new Set(files).size, files.length, "a file is curated twice");
-  const names = CURATED_ZONES.map((z) => z.name);
-  assert.equal(new Set(names).size, names.length, "a name is curated twice");
+  // A **name** may repeat, and deliberately does: `tox` and `toxxulia` are one forest under two
+  // short names, so both are listed and `zonesFromFiles` gives the name to whichever the folder has
+  // (ADR 0076). What must hold is that a repeat is always a second *candidate* — never a third — and
+  // that the entry which wins is the one we verified. See `zone-gazetteer.test.ts` for the pairs.
+  const byName = new Map<string, string[]>();
+  for (const zone of CURATED_ZONES) byName.set(zone.name, [...(byName.get(zone.name) ?? []), zone.file]);
+  for (const [name, claimed] of byName) {
+    assert.ok(claimed.length <= 2, `${name} is claimed by ${claimed.length} files: ${claimed.join(", ")}`);
+  }
 });
 
 test("findZone matches a log's wording — case, and a leading 'the'", () => {
@@ -140,13 +161,15 @@ test("the chosen pack's zones are its own, and a zone it lacks is borrowed from 
 });
 
 test("a borrowed zone is named by the folder it came from, never by the pack that lacked it", () => {
+  // Invented files again: naming has to come from the *solved* names for this to say anything, and a
+  // real short name would be answered by the gazetteer before either folder got a word in.
   const zones = zonesFromSources(
-    { id: "brewall", files: ["gukbottom"], solved: { gukbottom: "Ruins of Old Guk" } },
-    { id: "stock", files: ["gukbottom", "kithicor"], solved: { kithicor: "Kithicor Forest", gukbottom: "Something Else" } },
+    { id: "brewall", files: ["someplace"], solved: { someplace: "Ruins of Old Guk" } },
+    { id: "stock", files: ["someplace", "elsewhere"], solved: { elsewhere: "Kithicor Forest", someplace: "Something Else" } },
   );
   const byFile = new Map(zones.map((z) => [z.file, z.name]));
-  assert.equal(byFile.get("gukbottom"), "Ruins of Old Guk", "the pack's own name for its own file");
-  assert.equal(byFile.get("kithicor"), "Kithicor Forest", "the backstop's name for the borrowed file");
+  assert.equal(byFile.get("someplace"), "Ruins of Old Guk", "the pack's own name for its own file");
+  assert.equal(byFile.get("elsewhere"), "Kithicor Forest", "the backstop's name for the borrowed file");
 });
 
 test("the pack wins a name collision, so one place is never two entries", () => {
@@ -156,6 +179,24 @@ test("the pack wins a name collision, so one place is never two entries", () => 
     { id: "stock", files: ["oldblackburrow"], solved: { oldblackburrow: "Blackburrow" } },
   );
   assert.deepEqual(zones.map((z) => [z.name, z.source]), [["Blackburrow", "brewall"]]);
+});
+
+test("a borrowed zone doesn't sneak in under a misspelling of one the pack already draws", () => {
+  // Where the duplicate usually came from: two folders labelling one place, one of them a letter out,
+  // so the picker offered both and only one of them drew the map you wanted.
+  const zones = zonesFromSources(
+    { id: "brewall", files: ["toxxulia"] },
+    { id: "stock", files: ["tox"], solved: { tox: "Toxulia Forest" } },
+  );
+  assert.deepEqual(zones.map((z) => [z.name, z.source]), [["Toxxulia Forest", "brewall"]]);
+});
+
+test("findZone reaches a pack whose label is a letter out", () => {
+  // Otherwise the log's zone has no map at all: nothing in the folder answers to the name it says.
+  const zones = zonesFromFiles("brewall", ["tox"], { tox: "Toxulia Forest" });
+  assert.equal(findZone("Toxxulia Forest", zones)?.file, "tox");
+  // But it still won't reach a zone that merely looks like the one asked for.
+  assert.equal(findZone("West Commonlands", zonesFromFiles("stock", ["ecommons"]))?.file, undefined);
 });
 
 test("with no backstop, or when the backstop is the chosen source, nothing changes", () => {

@@ -77,7 +77,7 @@ export default function HuntPanel({
   const known = useMobKnowledge(mobNames.join("|"));
 
   /** Ask the map to ring this mob's kills (null takes the ask back). */
-  const emphasize = (mob: string | null) => api()?.map.emphasize(mob ? { mob } : null);
+  const emphasize = (mob: string | null) => api()?.map.emphasize(mob ? { mobs: [mob] } : null);
   // Leaving the tab fires no `mouseleave`, so without this the map stays lit with nothing
   // pointing at it — the same backstop the kill list has, for the one exit a row can't see.
   useEffect(() => () => void api()?.map.emphasize(null), []);

@@ -21,14 +21,17 @@ world coordinates, so a map knows where it is. See
     the maths share), `eqToCanvasCoords` / `canvasToEqCoords`, exact inverses that take a projection
     and return `undefined` without one, and `clampPan` (a zoomed map can't be dragged off into blank
     space). Math derived in [data-model.md](./data-model.md).
-  - `zones.ts` — `CURATED_ZONES` (the few names the solver gets wrong or can't reach, see
-    **Zone names**),
+  - `zones.ts` — `CURATED_ZONES` (re-exported from `zones/gazetteer.ts`, which owns every name we can
+    state and which file it belongs to — see **Zone names**),
     `findZone` (the log's wording resolves through `resolveZone` — case, a leading "the", the
     apostrophe the maps and the log write differently, a difficulty number and the ruleset tag beside
     it ("The Steamfont Mountains 2 (Adaptive)") all wash out and a harder zone still gets its map,
     see [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md) — plus **word order**, so "The
-    Castle of Mistmoore" finds "Mistmoore Castle". It takes only the resolver's two strict tiers: a
-    wrong file draws a different zone under the right name, so no map beats the wrong map, see
+    Castle of Mistmoore" finds "Mistmoore Castle", and **one letter**, so a pack's "Toxulia Forest"
+    draws the log's "Toxxulia Forest"
+    ([ADR 0075](../decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)). It takes only the tiers
+    that cannot pick a *different* zone: a wrong file draws one under the right name, so no map beats
+    the wrong map, see
     [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)), `sortZones`,
     and `onLayer` for floor-scoped markers (against the *set* of floors in view).
 - **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawLine`, `drawCircle`,
@@ -97,11 +100,19 @@ world coordinates, so a map knows where it is. See
   title bar carries its own **A− / A+** (`overlay.mapFontScale`, a *separate* value from the main
   window's and one that may go **above 100%** — `MAP_UI_SCALE`, since a map is a picture you lean
   into rather than an overlay to shrink; see
-  [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)), its own **◐ opacity**
+  [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)) — the map's **pin, ◐ and
+  👻 are its own**, remembered against this window beside its bounds and restored when it reopens
+  ([ADR 0074](../decisions/0074-how-a-window-was-left-is-window-state.md)), which is what ended the map
+  opening pinned according to the *main* window's setting — its own **◐ opacity**
   toggle (the shared `OpacityButton`. The saved opacity is the app-wide `overlay.opacity`, but the
   flip-to-solid is *this window's* — a map you're leaning into wants clear glass without the list
-  going solid with it), **minimize**,
-  **maximize/restore**, a **pin** (per-window always-on-top, via the shared `PinButton`) and a
+  going solid with it), a **👻 click-through** toggle (`ClickThroughButton` + `useClickThrough`,
+  per window for the same reason the ◐ is) that hands clicks landing **on the map
+  itself** to the game while the title bar, toolbar and any open side panel stay clickable — so you
+  can fight through the map instead of moving it, at the cost of not being able to pan, zoom, ping or
+  drop a pin until you turn it off; see
+  [ADR 0073](../decisions/0073-a-click-through-window-keeps-its-chrome.md) — **minimize**,
+  **maximize/restore**, a **pin** (this window's own always-on-top, via the shared `PinButton`) and a
   **⌂ floors** button saying how many storeys are drawn, which opens the 👁 panel to change it (only
   when the map labels more than one — see **Floors and heights**). A zone with
   **no map file** shows a clear empty panel: it names the zone, says which map set was looked in,
@@ -176,18 +187,46 @@ world coordinates, so a map knows where it is. See
   "Mistmoore Castle" and "Castle Mistmoore" are one zone without anyone saying so — and because it's
   handed the candidates rather than guessing from the string alone, it can refuse when two zones fit
   ([ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)). What's left over is
-  **two tables**, because a name can still be wrong in two ways:
-  - `CURATED_ZONES` (`src/shared/map/zones.ts`) — *which file* a zone is, for the names no pack's
-    labels reach. A real log's zones drove the current set: `kerraridge`, `qeynos2`, `qeynos`, `qrg`,
-    `freporte`, `erudsxing`, `erudnext`, `butcher`, `oot`, each identified by its exits (and
-    `butcher` by a recorded position), lifting a real install from **15 of 30 zones resolving to 27**.
+  **one gazetteer with two views** (`src/shared/zones/gazetteer.ts`), because a name can still be
+  wrong in two ways:
+  - `CURATED_ZONES` — *which file* a zone is, for the names no pack's labels reach. Re-exported from
+    `map/zones.ts`, where its readers have always found it.
   - `ZONE_ALIASES` (`src/shared/names.ts`) — *which name*, for a pair **no rule can reach**. The log
-    says **Kerra Isle**; both packs' labels say **Kerra Ridge**, and 454 of 463 positions recorded
-    there sit inside `kerraridge`'s lines, so the alias folds the log's name onto the map's. It's
-    part of `zoneKey`, so a kill recorded under one name and a map named the other are one zone to
-    the heatmap, the kill list, mob knowledge and the wiki's drop zones alike. It is also the
-    *riskier* of the two tables: an alias has no candidate list to be outvoted by, so it is believed
-    everywhere and forever, where a resolver match is always checked against what the caller has.
+    says **Kerra Isle**, the wiki says **Kerra Island**, both packs' labels say **Kerra Ridge**, and
+    454 of 463 positions recorded there sit inside `kerraridge`'s lines, so the aliases fold the other
+    names onto the map's. It's part of `zoneKey`, so a kill recorded under one name and a map named the
+    other are one zone to the heatmap, the kill list, mob knowledge and the wiki's drop zones alike.
+    It is also the *riskier* of the two views: an alias has no candidate list to be outvoted by, so it
+    is believed everywhere and forever, where a resolver match is always checked against what the
+    caller has.
+
+  Both are **derived from a supplied table** — `eql-classic-zone-maps.json`, the EQL wiki's own in-era
+  Zones page mapped to EverQuest short names
+  ([ADR 0076](../decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)). It earned that place by
+  confirming twenty-four of the thirty-one names this repo had verified the hard way — same name, same file — including the two that cost the most
+  (`qey2hh1` is West Karana, `qeytoqrg` is Qeynos Hills) and by explaining the solver's worst
+  confident-wrong answer: `neriaka` is the Foreign Quarter, and the Fourth Gate it kept offering is
+  `neriakd`, a file nothing had a name for. It names **83 files where we had 31**, and 76 of those now
+  place in an expansion (up from 15) — which matters beyond the picker, since an unnamed zone is
+  also outside the era check and the travel graph.
+
+  **What we verified ourselves still comes first**, since a canonical name is what the expansion lookup
+  and stored pins are keyed by; where the two disagree about a *file* (`tox`/`toxxulia`,
+  `steamfont`/`steamfontmts`, `nro`/`northro`) the loser stays as a **candidate**, so a folder with only
+  the other file is named rather than showing "Tox". The alias side is filtered — nothing under four
+  characters, no label covering several maps, and **no bracketed spelling**, because the fold reads a
+  trailing parenthetical as a ruleset tag and `Qeynos (North)` folds to `qeynos`, which renamed a whole
+  city to one of its halves until a test caught it.
+
+  **A name a letter out needs no table either.** A pack's label says `Toxulia Forest` where the game's
+  own maps and the log say `Toxxulia Forest`, which used to leave the zone in the picker **twice** —
+  once with a map and once without — and hid an evening's kills behind whichever spelling you weren't
+  looking at. One edit, same last character, long enough that a letter isn't most of the name, is the
+  whole rule (`src/shared/zones/spelling.ts`); measured across all 361 shipped zone names it merges
+  nothing real, and the picker, `findZone`, the kill query and the pooled tallies all take it
+  ([ADR 0075](../decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)). Uniqueness in
+  `zonesFromFiles` is judged by it too, so the losing file falls back to its own name (`Tox`) instead
+  of standing in the list as a second forest.
 
   The three zones that stayed unresolved after that were **coverage, not naming** — and they're
   answered under **Sources** above: a zone the chosen pack hasn't got is borrowed from the game's own
@@ -334,12 +373,35 @@ world coordinates, so a map knows where it is. See
   peers' arrives over the room and is stored separately, so every figure can still say how much
   of it you saw yourself. `src/shared/mob-stats.ts` does the rolling-up and the pooling; see
   [ADR 0024](../decisions/0024-mob-knowledge.md).
+
+  **Both directions of the panel point at the map.** Hovering a mob rings its kills, and hovering one
+  of its **drops** rings the kills of *every* mob known to give that item up — the loot table read
+  backwards (`dropSources`, indexed once per zone). "Where do snake fangs come from" is one question
+  with several answers, which is why an emphasis names a **set** of mobs rather than one; nothing
+  else can answer it, since the wiki's `ItemSource` knows a mob and a zone but never a position, and
+  only our own kills know where a thing was standing when it died. The sources are read from
+  everything known here rather than from the filtered rows: narrowing the list to one mob is a
+  question about the list, and it shouldn't quietly narrow the answer too. A drop off more than one
+  mob says so on its row ("2 sources"), because the row sits under a single mob and can't otherwise
+  admit that it's speaking for one of several.
+
+  **A typed drop is a search, so the panel opens what it found.** The rows a drop filter matched
+  expand themselves and the matching line is marked (`matchesDrop`, the same rule the filter itself
+  applies — a second implementation here would highlight lines the filter didn't keep). Left closed,
+  the panel answered "these four mobs" to a question that asked about one item, and finding it meant
+  clicking a caret on every row. With the mob picker beside it, that's the panel's two ways in:
+  **find a mob** and read what it drops, or **find a drop** and see who has it — either way, hovering
+  the answer shows it on the map.
 - **Kill heatmap** (the ☠ toolbar panel) — where kills happened, drawn from the recorded kill
   log (`electron/kill-log.ts`), asked for **by zone — every variant of it**. One Steamfont is drawn
   by one map file, so a kill at `The Steamfont Mountains 2 (Adaptive)` belongs on the ordinary map:
-  `killLog.kills(zone)` matches through `sameZone` (exact after folding, *not* the loose
-  `zoneMatches` — `commonlands` sits inside `east commonlands`), and mob observations tally under
-  the same folded key. See [ADR 0059](../decisions/0059-a-zone-s-variants-are-one-zone.md).
+  `killLog.kills(zone)` matches through `sameZoneOrMisspelling` — the fold, *not* the loose
+  `zoneMatches` (`commonlands` sits inside `east commonlands`), plus one edit of slack, because the
+  name asked with is usually a map pack's label rather than the log's wording and a pack that spells
+  the forest `Toxulia` would otherwise answer an evening in `Toxxulia Forest` with nothing at all.
+  Mob observations tally under the same fold, with one spelling of a zone chosen per batch. See
+  [ADR 0059](../decisions/0059-a-zone-s-variants-are-one-zone.md) and
+  [ADR 0075](../decisions/0075-a-zone-s-misspelling-is-the-same-zone.md).
   Each dot fades and shrinks with **confidence**, and carries the
   marker from `src/shared/kill-confidence.ts` — the same glyph the kill list shows, so a faint
   dot and its row agree. Anything below "approximate" isn't plotted at all: it stays in the
@@ -353,8 +415,14 @@ world coordinates, so a map knows where it is. See
   ring sits *outside* the dot so the dot's own size and colour still mean what they always did
   (confidence). Leaving the list clears it outright: the rows hand the emphasis back and forth
   between a mob and one of its kills, so without that backstop, walking the cursor out of a kill row
-  would leave a mob lit up for good. Emphasis by mob also lights **peers'** kills of the same mob,
-  since "where did those die" includes what the room saw.
+  would leave a mob lit up for good — the 📖 panel has the same backstop, since its rows hand the
+  emphasis between a mob and one of its drops. Emphasis by mob also lights **peers'** kills of the
+  same mob, since "where did those die" includes what the room saw.
+
+  **An emphasis names a set of mobs** (`KillEmphasis.mobs`), not one. A row hovers a single name, but
+  a drop in the 📖 panel asks about every mob that gives it up, and that is *one* question with
+  several answers: a kill matching any of them is rung, and the rest of the map fades once rather
+  than once per name.
 
   **A peer's kill is a kill.** Shared kills go into the same list, the same mob groups and the same
   filters as your own, marked with who sent them (`sharedBy`, `sharedAsKill`) — they used to go straight
@@ -381,6 +449,15 @@ world coordinates, so a map knows where it is. See
   time window and no position floor, because those are facts about an individual kill while it is a
   lifetime tally — see `filterMobKnowledge`, where `shared: false` drops the mobs that are *only* peers'
   rather than restating a pooled rate you helped build as your own smaller sample.
+
+  **Two filters that can't both be answered are not left standing.** A picked mob that has never dropped
+  anything and "dropped" have no common set, and the panel that resulted said only "nothing matches" while
+  the mob's name still sat in the picker — so the checkbox looked like the thing that broke. Ticking the
+  box now releases the mob (`withDroppedOnly`, the newer click being the newer intent), and while it's on
+  the picker offers only mobs that have dropped something, so neither order of clicks reaches the dead end.
+  The choices carry that fact with them (`mobChoices` → `MobChoice.dropped`), read off kills in the ☠ list
+  and off the lifetime tally in the 📖 panel. Both are `kill-filters.ts`'s, not the bar's: a rule about
+  which filters can coexist belongs beside the filters, and the bar is one of two rendering the same box.
 
   The **[Hunt tab](../overlay-ui/README.md) asks the same question from the other window**
   (`map.emphasize` → `KillEmphasis`, which is why that shape lives in shared types rather than

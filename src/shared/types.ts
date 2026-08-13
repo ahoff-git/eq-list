@@ -1058,7 +1058,7 @@ export interface KillRecord {
 }
 
 /**
- * Which kills the map should pick out: one mob's, or a single kill by id. Transient — it lives
+ * Which kills the map should pick out: some mobs', or a single kill by id. Transient — it lives
  * for as long as a cursor rests on a name, and is never stored.
  *
  * It sits in shared types rather than beside the kill list because it's asked for from two
@@ -1066,7 +1066,12 @@ export interface KillRecord {
  * are the same question — "where did those die?" — so they send the same shape.
  */
 export interface KillEmphasis {
-  mob?: string;
+  /**
+   * The mobs to ring. Usually one — a hovered row — but pointing at a *drop* asks about every mob
+   * known to give it up, and "where do snake fangs come from" is one question with several answers,
+   * not several questions. A list rather than a name for exactly that reason.
+   */
+  mobs?: string[];
   id?: string;
 }
 
@@ -1264,6 +1269,27 @@ export interface CastAlertEvent {
 
 // ─── Settings ───────────────────────────────────────────────────────────────
 
+/**
+ * **How a window was left** — the per-window condition restored on the next launch, stored beside
+ * that window's bounds in `window-state.json` rather than in Settings
+ * ([ADR 0074](../../specs/decisions/0074-how-a-window-was-left-is-window-state.md)).
+ *
+ * Each of these is a fact about *one* window ("this one is pinned, this one is see-through"), not a
+ * preference for the app — which is why none of them is a setting, and why the two windows can
+ * disagree. What the app-wide preference *is* (how translucent, how large) stays in
+ * `OverlaySettings`; these say what each window did with it.
+ *
+ * Every field is optional: absent means "never said", which is what lets a default change.
+ */
+export interface WindowToggles {
+  /** Always-on-top (📌). */
+  pinned?: boolean;
+  /** The ◐ override: this window at full opacity rather than the saved slider. */
+  opaque?: boolean;
+  /** Click-through (👻) — clicks over the window's pass-through region go to the game. */
+  clickThrough?: boolean;
+}
+
 export interface OverlaySettings {
   /**
    * Translucency for **every** window (0.2–1) — one look for the whole app, unlike the scale,
@@ -1271,7 +1297,6 @@ export interface OverlaySettings {
    * fully opaque without touching this or the other windows (see `useWindowOpacity`).
    */
   opacity: number;
-  alwaysOnTop: boolean;
   fontScale: number; // 0.6 .. 1 — see UI_SCALE / ADR 0026 (kept its name to not break saved settings)
   /**
    * The **map window's** scale, kept apart from `fontScale` because the two windows want
@@ -1775,10 +1800,23 @@ export interface EqlApi {
     onMaximizeChanged(cb: (maximized: boolean) => void): Unsubscribe;
     /** Hide the window to the tray (the app keeps running; reshow via tray/hotkey). */
     hide(): void;
+    /**
+     * How this window was left — what its title-bar toggles should read on load. Empty for a
+     * window that keeps no state (the alert overlay, the screengrab selector) and on the web.
+     */
+    getState(): Promise<WindowToggles>;
+    /** Remember a toggle's new value against this window, for the next launch. */
+    saveState(patch: WindowToggles): void;
     /** Set the live window opacity (0.2–1), transient — does not change the saved setting. */
     setOpacity(value: number): void;
     /** Toggle this window's always-on-top (per-window; used by the map's pin). */
     setAlwaysOnTop(enabled: boolean): void;
+    /**
+     * Pass this window's clicks through to whatever is behind it (the game), or take them back.
+     * Called as the cursor crosses between the window's pass-through region and its controls —
+     * drive it with `useClickThrough` rather than by hand.
+     */
+    setClickThrough(enabled: boolean): void;
     close(): void;
     /** Forget saved positions and recenter windows (for "lost" windows). */
     resetPositions(): Promise<void>;

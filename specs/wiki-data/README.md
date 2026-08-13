@@ -104,10 +104,22 @@ shopping list.
   because a *stale* answer only over-excludes for a while, while a *missing* one produces a wrong route.
   It's the one index whose consumer isn't the search UI.
 
+- **The zone gazetteer** — the one thing from this wiki that **ships as data** rather than being
+  fetched: `src/shared/zones/eql-classic-zone-maps.json`, the EQL wiki's own in-era Zones page (Classic,
+  Odus, the Planes, Antonica, Faydwer — Kunark and Velious excluded as out of era) mapped to EverQuest
+  short names, with a display name and the aliases for each. `zones/gazetteer.ts` derives from it both
+  "which map **file** a zone is" and "which **names** mean it"
+  ([ADR 0076](../decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)).
+  It's shipped rather than fetched because the map window needs a name *before* anything is on screen
+  and because these facts about EverQuest don't change — unlike the era flags above, which do.
+  It is data supplied from outside, so it is **checked rather than trusted**:
+  `electron/tests/zone-gazetteer.test.ts` is the review a re-supplied file has to pass.
+
 ## Non-responsibilities
 - No build-time data generation — data is fetched at runtime and cached
   (see [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md)); contrast the
-  `eql-buff-calc` sample which bakes JSON at build.
+  `eql-buff-calc` sample which bakes JSON at build. The zone gazetteer above is the one shipped
+  table, and it is *supplied*, not generated.
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
 - Drop rates live on the **mob** page (per loot line — a `(X%)` chance or a rarity

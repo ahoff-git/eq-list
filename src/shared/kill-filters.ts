@@ -6,6 +6,7 @@
  * to have only one implementation. Pure and DOM-free, so it's testable on its own.
  */
 import type { MobKnowledge } from "./mob-stats";
+import { compareValues } from "./sorting";
 import type { KillRecord } from "./types";
 
 /** How far back to look. */
@@ -106,20 +107,47 @@ export function sharedAsKill(shared: SharedKillLike, index: number): KillRecord 
   };
 }
 
+/** Substring match, folded — how every free-text filter here reads. An empty filter asks nothing. */
+const contains = (value: string, filter: string): boolean => {
+  const needle = filter.trim().toLowerCase();
+  return !needle || value.toLowerCase().includes(needle);
+};
+
+/**
+ * Does this name answer the mob filter? The filter is a *substring*, not a name — the picker offers
+ * whole names but the map's "show me this one" and a half-typed fragment land in the same field — so
+ * the rule for "is this the mob we're asking about" lives in one place, and the filter bar can ask it
+ * about a mob as easily as the panels ask it about a row.
+ */
+export function matchesMob(name: string, filter: string): boolean {
+  return contains(name, filter);
+}
+
+/**
+ * Does this item answer the drop filter? `matchesMob`'s counterpart, and exported for the same
+ * reason: the 📖 panel marks the drop row that matched and opens the mob holding it, which is asking
+ * the filter's own question about a single item. A second implementation of "matched" there would be
+ * a search that highlights rows the filter didn't keep.
+ */
+export function matchesDrop(item: string, filter: string): boolean {
+  return contains(item, filter);
+}
+
 /** Apply the filters. `now` is injectable so the time window is testable. */
 export function filterKills(kills: KillRecord[], filters: KillFilters, now = Date.now()): KillRecord[] {
   const cutoff = now - WINDOW_MS[filters.window];
-  const mob = filters.mob.trim().toLowerCase();
-  const drop = filters.drop.trim().toLowerCase();
+  const drop = filters.drop.trim();
 
   return kills.filter((k) => {
     const at = Date.parse(k.at);
     // An unparseable timestamp is kept rather than silently dropped — losing a kill because
     // its clock looked odd would be worse than showing it.
     if (!Number.isNaN(at) && at < cutoff) return false;
-    if (mob && !k.mob.toLowerCase().includes(mob)) return false;
+    if (!matchesMob(k.mob, filters.mob)) return false;
     if (filters.droppedOnly && !k.drops?.length) return false;
-    if (drop && !k.drops?.some((d) => d.toLowerCase().includes(drop))) return false;
+    // Guarded on `drop` rather than left to `matchesDrop`: with no filter typed, a kill that dropped
+    // nothing has nothing for `some` to be true about, and would be filtered out by an empty ask.
+    if (drop && !k.drops?.some((d) => matchesDrop(d, drop))) return false;
     if (k.confidence < filters.minConfidence) return false;
     if (!filters.shared && k.sharedBy) return false;
     return true;
@@ -147,14 +175,56 @@ export function filterKills(kills: KillRecord[], filters: KillFilters, now = Dat
  *    restating it as your own smaller sample would be a different claim.
  */
 export function filterMobKnowledge(mobs: MobKnowledge[], filters: KillFilters): MobKnowledge[] {
-  const mob = filters.mob.trim().toLowerCase();
-  const drop = filters.drop.trim().toLowerCase();
+  const drop = filters.drop.trim();
 
   return mobs.filter((m) => {
-    if (mob && !m.mob.toLowerCase().includes(mob)) return false;
+    if (!matchesMob(m.mob, filters.mob)) return false;
     if (filters.droppedOnly && !m.drops.length) return false;
-    if (drop && !m.drops.some((d) => d.item.toLowerCase().includes(drop))) return false;
+    // Guarded like `filterKills`: an empty ask must not hide the mobs that have never dropped.
+    if (drop && !m.drops.some((d) => matchesDrop(d.item, drop))) return false;
     if (!filters.shared && m.myKills === 0) return false;
     return true;
   });
+}
+
+/** One choice the mob picker offers: a name, and whether that mob has ever given anything up. */
+export interface MobChoice {
+  mob: string;
+  /**
+   * Has anything ever come off it? Carried alongside the name because a picker that offers a mob
+   * and a `droppedOnly` filter that then hides it are the same fact seen twice — see `withDroppedOnly`.
+   */
+  dropped: boolean;
+}
+
+/**
+ * The mobs a filter bar can offer, from whichever rows the panel has: kills (`drops?: string[]`) or
+ * mob knowledge (`drops: DropStat[]`). One choice per name, ordered the way every other picker is.
+ *
+ * Here rather than in either panel for the same reason as `lootSources`: "the choices this filter
+ * has" is the filter module's business, and two bars filtering one object must offer the same names.
+ */
+export function mobChoices(rows: Iterable<{ mob: string; drops?: readonly unknown[] }>): MobChoice[] {
+  const dropped = new Map<string, boolean>();
+  for (const row of rows) dropped.set(row.mob, (dropped.get(row.mob) ?? false) || !!row.drops?.length);
+  return [...dropped]
+    .map(([mob, dropped]) => ({ mob, dropped }))
+    .sort((a, b) => compareValues(a.mob, b.mob));
+}
+
+/**
+ * Turn "dropped" on or off — releasing a picked mob that has never dropped anything.
+ *
+ * The two can't both be satisfied, and the panel left behind says only "nothing matches" while the
+ * mob's name still sits in the picker, so the box you just ticked looks like the thing that broke.
+ * The tick is the newer intent, so it wins: the mob is let go rather than the question made
+ * unanswerable. Turning "dropped" back off never touches the mob — nothing is in conflict then, and
+ * a filter that forgot your pick on the way out would be its own surprise.
+ *
+ * A rule about which filters can coexist, so it lives beside them and not in the bar that renders
+ * the checkbox — the bar is one of two, and both toggle the same box.
+ */
+export function withDroppedOnly(filters: KillFilters, on: boolean, mobs: MobChoice[]): KillFilters {
+  const answerable = mobs.some((m) => m.dropped && matchesMob(m.mob, filters.mob));
+  return { ...filters, droppedOnly: on, mob: on && !answerable ? "" : filters.mob };
 }

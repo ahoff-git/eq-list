@@ -6,15 +6,27 @@
  * pinned always-on-top and hidden to the tray. In dev the renderer is the `next dev`
  * server; in prod it's the exported bundle served over app:// (see protocol.ts).
  *
- * The window restores its last position (window-state.ts). DevTools only open when
- * EQL_DEVTOOLS is set, not on every dev run.
+ * A window reopens the way it was left — position, size, maximized, and its title-bar toggles
+ * (pinned / ◐ opaque / 👻 click-through), all from window-state.ts and applied here as the window
+ * is created, so none of it arrives a frame late. DevTools only open when EQL_DEVTOOLS is set,
+ * not on every dev run.
  */
 import { app, BrowserWindow, screen } from "electron";
 import path from "node:path";
-import { savedBounds, rememberBounds, setMapOpen, isQuitting, setMaximized, wasMaximized, type Bounds } from "./window-state";
+import {
+  savedBounds,
+  rememberBounds,
+  setMapOpen,
+  isQuitting,
+  setMaximized,
+  wasMaximized,
+  windowToggles,
+  type Bounds,
+} from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
+import { windowOpacity } from "../src/shared/constants";
 import { createLogger } from "../src/shared/logging";
-import type { OverlaySettings } from "../src/shared/types";
+import type { OverlaySettings, WindowToggles } from "../src/shared/types";
 
 /**
  * Bridge a window's renderer console into the main-process log, so renderer output
@@ -54,6 +66,22 @@ function reportMaximize(role: "main" | "map", win: BrowserWindow): void {
     send();
   });
   win.webContents.on("did-finish-load", send);
+}
+
+/**
+ * Put a newly created window into the condition it was left in — the rest of "how a window was
+ * left" ([ADR 0074](../specs/decisions/0074-how-a-window-was-left-is-window-state.md)), after
+ * the bounds and the maximize.
+ *
+ * Opacity isn't here: it goes in the **constructor** instead (`windowOpacity`), because a window
+ * shown translucent and corrected a frame later is a visible flash, while these two aren't.
+ */
+function applyToggles(win: BrowserWindow, toggles: WindowToggles): void {
+  // Pinned is the default: the app is a float over the game, and a float behind it is no use.
+  win.setAlwaysOnTop(toggles.pinned ?? true, "screen-saver");
+  // The renderer's `useClickThrough` takes it from here; this is so the very first click lands
+  // where the user left it pointing, rather than waiting for the window to finish loading.
+  if (toggles.clickThrough) win.setIgnoreMouseEvents(true, { forward: true });
 }
 
 /** Open maximized if that's how it was left — the same courtesy a normal window extends. */
@@ -155,6 +183,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
     return mainWindow;
   }
   const bounds = savedBounds("main");
+  const toggles = windowToggles("main");
   mainWindow = new BrowserWindow({
     width: 460,
     height: 780,
@@ -167,10 +196,10 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
     resizable: true,
     title: "EQ List",
     icon: windowIcon(),
-    alwaysOnTop: overlay?.alwaysOnTop ?? true,
-    // Set the saved opacity up front so the window opens at the right translucency (no flash),
-    // then the renderer owns it — see `applyOverlaySettings`.
-    opacity: overlay?.opacity ?? 1,
+    alwaysOnTop: toggles.pinned ?? true,
+    // Opened at the translucency it was left at — the saved slider, or full if its ◐ was on —
+    // so there's no flash; the renderer owns it from then on (`useWindowOpacity`).
+    opacity: windowOpacity(toggles.opaque, overlay?.opacity ?? 1),
     backgroundColor: "#00000000",
     webPreferences: {
       preload: PRELOAD,
@@ -184,7 +213,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
   rememberBounds("main", mainWindow);
   reportMaximize("main", mainWindow);
   pipeRendererConsole(mainWindow, "main");
-  if (overlay) applyOverlaySettings(overlay);
+  applyToggles(mainWindow, toggles);
   mainWindow.once("ready-to-show", () => {
     if (mainWindow) restoreMaximized("main", mainWindow);
     mainWindow?.show();
@@ -218,6 +247,7 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
     return mapWindow;
   }
   const bounds = savedBounds("map");
+  const toggles = windowToggles("map");
   mapWindow = new BrowserWindow({
     width: 680,
     height: 720,
@@ -230,10 +260,10 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
     resizable: true,
     title: "EQ List — Map",
     icon: windowIcon(),
-    alwaysOnTop: overlay?.alwaysOnTop ?? true,
-    // The same saved opacity as the main window (one look for the app), set up front for the same
-    // reason (no flash) and owned by this window's renderer from then on — including its own ◐.
-    opacity: overlay?.opacity ?? 1,
+    alwaysOnTop: toggles.pinned ?? true,
+    // The same saved slider as the main window (one look for the app), but this window's own ◐ —
+    // set up front for the same reason (no flash) and owned by its renderer from then on.
+    opacity: windowOpacity(toggles.opaque, overlay?.opacity ?? 1),
     backgroundColor: "#00000000",
     webPreferences: {
       preload: PRELOAD,
@@ -248,7 +278,7 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
   reportMaximize("map", mapWindow);
   pipeRendererConsole(mapWindow, "map");
   setMapOpen(true); // so the next launch restores it (see main.ts startup)
-  if (overlay) mapWindow.setAlwaysOnTop(overlay.alwaysOnTop, "screen-saver");
+  applyToggles(mapWindow, toggles);
   mapWindow.once("ready-to-show", () => {
     if (mapWindow) restoreMaximized("map", mapWindow);
     mapWindow?.show();
@@ -420,18 +450,14 @@ export function showInSearch(text: string): void {
 }
 
 /**
- * Push always-on-top onto the app window, and the interface scale onto **every** window — the
- * map is a sibling window and should shrink with the rest of the app, not separately.
- *
- * Opacity is deliberately **not** set here. It has a transient override (the titlebar's ◐ "fully
- * opaque" toggle) that lives in the renderer, and re-applying the saved value on every settings
- * change used to clobber it — the ◐ would read "on" while the window quietly went translucent. Every
- * window opens at the saved opacity (constructor) and its own renderer owns it from then on, which is
- * also what lets each ◐ be independent while the saved value is shared.
+ * Which of our two persisted windows this is, or null for the ones that keep no state (the alert
+ * overlay, the screengrab selectors). The renderer never says which window it is — it doesn't know —
+ * so anything stored per window is keyed by asking the sender's window this.
  */
-export function applyOverlaySettings(overlay: OverlaySettings): void {
-  const win = mainWindow;
-  if (!win || win.isDestroyed()) return;
-  win.setAlwaysOnTop(overlay.alwaysOnTop, "screen-saver");
+export function roleOf(win: BrowserWindow | null): "main" | "map" | null {
+  if (!win || win.isDestroyed()) return null;
+  if (win === mainWindow) return "main";
+  if (win === mapWindow) return "map";
+  return null;
 }
 

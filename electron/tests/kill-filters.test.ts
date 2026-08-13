@@ -8,8 +8,11 @@ import {
   DEFAULT_KILL_FILTERS,
   filterKills,
   filterMobKnowledge,
+  matchesDrop,
+  mobChoices,
   sharedAsKill,
   windowMoves,
+  withDroppedOnly,
   type KillFilters,
 } from "../../src/shared/kill-filters";
 import { confidenceTier, CONFIDENCE_TIERS, PLOTTABLE_CONFIDENCE } from "../../src/shared/kill-confidence";
@@ -69,6 +72,11 @@ test("mob and drop filters match on a substring, case-insensitively", () => {
     filterKills(kills, filters({ drop: "meat" }), NOW).map((k) => k.mob),
     ["a coyote"],
   );
+  // The same rule, asked about one row: the 📖 panel marks the drop the search was for, and a
+  // second implementation of "matched" there would highlight lines the filter didn't keep.
+  assert.equal(matchesDrop("Chunk of Meat", " MEAT "), true);
+  assert.equal(matchesDrop("Chunk of Meat", "fang"), false);
+  assert.equal(matchesDrop("Chunk of Meat", ""), true, "an empty filter asks nothing");
 });
 
 test("'dropped' keeps only kills that gave something up", () => {
@@ -131,6 +139,45 @@ test("the same kills expire as the clock advances, with the filters untouched", 
     0,
     "eleven minutes old — the same kill and the same filters, a later clock",
   );
+});
+
+// ── the choices the bar offers, and the pairs of filters it must not let you build ──────────────
+
+test("the mob picker's choices carry whether the mob has ever dropped anything", () => {
+  const choices = mobChoices([
+    kill({ mob: "a kobold", drops: ["Bone Chips"] }),
+    kill({ mob: "a kobold" }), // one dry kill doesn't undo what the mob is known to drop
+    kill({ mob: "a bat" }),
+  ]);
+  assert.deepEqual(choices, [
+    { mob: "a bat", dropped: false },
+    { mob: "a kobold", dropped: true },
+  ]);
+  // The same helper reads mob knowledge, whose drops are counted rows rather than names.
+  assert.deepEqual(mobChoices([known({ mob: "a rat" }), known({ mob: "a kerran", drops: ["Cat Pelt"] })]), [
+    { mob: "a kerran", dropped: true },
+    { mob: "a rat", dropped: false },
+  ]);
+});
+
+test("ticking 'dropped' lets go of a mob that has never dropped anything", () => {
+  // The bug: the two filters have no common answer, so the panel emptied and said nothing about
+  // which of the two did it — the mob's name still sat in the picker.
+  const choices = mobChoices([kill({ mob: "a bat" }), kill({ mob: "a kobold", drops: ["Bone Chips"] })]);
+  const next = withDroppedOnly(filters({ mob: "a bat" }), true, choices);
+  assert.equal(next.droppedOnly, true);
+  assert.equal(next.mob, "", "the box you just ticked is the newer intent, so it wins");
+
+  // A mob that does drop is kept: nothing is in conflict.
+  assert.equal(withDroppedOnly(filters({ mob: "a kobold" }), true, choices).mob, "a kobold");
+  // And the mob filter matches on a substring, so what's released is judged the same way.
+  assert.equal(withDroppedOnly(filters({ mob: "kob" }), true, choices).mob, "kob");
+});
+
+test("turning 'dropped' back off keeps the mob you picked", () => {
+  const choices = mobChoices([kill({ mob: "a kobold", drops: ["Bone Chips"] })]);
+  const off = withDroppedOnly(filters({ mob: "a bat", droppedOnly: true }), false, choices);
+  assert.deepEqual([off.droppedOnly, off.mob], [false, "a bat"], "nothing is in conflict on the way out");
 });
 
 // ── peers' kills, which are kills ────────────────────────────────────────────────────────────────

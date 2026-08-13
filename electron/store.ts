@@ -68,7 +68,6 @@ const DEFAULT_SETTINGS: Settings = {
   },
   overlay: {
     opacity: 0.9,
-    alwaysOnTop: true,
     fontScale: 0.9,
     // The map is a picture: it starts at full size rather than the main window's 90%.
     mapFontScale: 1,

@@ -51,7 +51,10 @@ test("a zone this server has is available, whichever way its name is written", (
 test("a zone the table has never heard of is available — it fails open", () => {
   // Legends has custom zones, and eqlwiki names 28 zones differently from fandom. Excluding those
   // would remove real places from the map and every route, so the unknown answer is "yes".
-  for (const zone of ["New Sebilis Expedition", "EQL Tutorial", "Gukbottom", "Somewhere Invented"]) {
+  //
+  // `Gukbottom` used to stand in here as a file name nothing could place; the gazetteer folds it onto
+  // Lower Guk now (ADR 0076), which is the point of it — so this asks with names no table can know.
+  for (const zone of ["New Sebilis Expedition", "EQL Tutorial", "Somewhere Invented", "Brewalls Own Map"]) {
     assert.equal(zoneExpansion(zone), undefined, `${zone} is not in the table`);
     assert.equal(zoneAvailable(zone), true, `${zone} must not be excluded`);
   }

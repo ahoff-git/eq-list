@@ -21,7 +21,7 @@
  */
 import { stripArticle } from "./log-parser";
 import { normalizeZone } from "./sources";
-import { zoneBaseName } from "./names";
+import { createZoneCanon } from "./zones/spelling";
 import type { KillRecord } from "./types";
 import { ratio } from "./numbers";
 
@@ -59,6 +59,14 @@ export interface MobObservation {
   by?: string;
 }
 
+/**
+ * The key to look a drop up by. Loot lines name an item in full and always the same way, so unlike
+ * `mobKey` there is nothing to strip — only case and stray space to fold.
+ */
+export function dropKey(item: string): string {
+  return item.toLowerCase().trim();
+}
+
 /** One item's observed drop rate. */
 export interface MobDrop {
   item: string;
@@ -86,12 +94,40 @@ export interface MobKnowledge {
 }
 
 /**
+ * Every item we've seen drop, and which mobs give it up.
+ *
+ * The loot table read backwards. A `MobKnowledge` answers "what does this drop"; "where does this
+ * come from" is the question a hunter actually asks, and nothing else can answer it — the wiki's
+ * `ItemSource` names a mob and a zone but never a position, and only our own kills know where a
+ * thing was standing when it died. Built once as an index rather than scanned per lookup, because
+ * the asker is a list of drop rows and every row wants its own answer.
+ *
+ * A mob appears once per item however many zones it was tallied in: the answer is a set of mobs to
+ * point at, and the same puma behind two doors is one thing to go looking for.
+ */
+export function dropSources(known: MobKnowledge[]): Map<string, string[]> {
+  const byItem = new Map<string, string[]>();
+  for (const mob of known) {
+    for (const drop of mob.drops) {
+      const key = dropKey(drop.item);
+      const mobs = byItem.get(key);
+      if (!mobs) byItem.set(key, [mob.mob]);
+      else if (!mobs.includes(mob.mob)) mobs.push(mob.mob);
+    }
+  }
+  return byItem;
+}
+
+/**
  * Key a mob to its zone: the same mob elsewhere is a different animal to a hunter.
  *
  * The zone folds through `normalizeZone`, so a zone's difficulty variants are one zone and their
  * kills are one sample (ADR 0059). Folding *here*, at the key, is also what makes it retroactive
  * and version-tolerant: observations already retired under a decorated name, and a peer's sent by
  * a build that never folded, merge into the same tally with no migration and no lost counts.
+ *
+ * The zone handed in has already been through the batch's `createZoneCanon`, which is the part a fold
+ * can't do: it settles which of two *spellings* of a zone this tally answers to (ADR 0075).
  */
 const keyOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${normalizeZone(zone)}`;
 
@@ -108,18 +144,21 @@ const keyOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${nor
  */
 export function observeMobs(kills: KillRecord[]): MobObservation[] {
   const byKey = new Map<string, MobObservation & { points: { y: number; x: number }[] }>();
+  // One spelling per zone, taken from the log's own wording across these records — so a stretch of
+  // an evening filed under a misspelling doesn't become a second camp (ADR 0075).
+  const canonZone = createZoneCanon(kills.map((k) => k.zone));
 
   for (const kill of kills) {
     if (!kill.zone) continue;
     // Loot — an item or coin — is proof you had the corpse, whoever landed the killing blow.
     if (kill.mine === false && !kill.drops?.length && !kill.coin) continue;
-    const key = keyOf(kill.mob, kill.zone);
+    const key = keyOf(kill.mob, canonZone(kill.zone));
     let obs = byKey.get(key);
     if (!obs) {
       // Named for the zone, not for the door you came in by: this tally now pools every
       // difficulty, so claiming the first one seen would misdescribe its own sample. The
       // record still has the log's full wording; the observation is about the place.
-      const zone = zoneBaseName(kill.zone);
+      const zone = canonZone(kill.zone);
       obs = { mob: kill.mob, zone, kills: 0, drops: {}, copper: 0, lastAt: kill.at, points: [] };
       byKey.set(key, obs);
     }
@@ -159,14 +198,15 @@ function areaOf(points: { y: number; x: number }[]): MobObservation["area"] {
  */
 export function sumObservations(...groups: MobObservation[][]): MobObservation[] {
   const byKey = new Map<string, MobObservation & { areas: NonNullable<MobObservation["area"]>[] }>();
+  const canonZone = createZoneCanon(groups.flatMap((group) => group.map((obs) => obs.zone)));
   for (const group of groups) {
     for (const obs of group) {
-      const key = keyOf(obs.mob, obs.zone);
+      const key = keyOf(obs.mob, canonZone(obs.zone));
       let sum = byKey.get(key);
       if (!sum) {
         // Base name, as in `observeMobs`: what's summed here can include tallies retired under a
         // decorated name, and the sum is about the zone rather than any one door into it.
-        const zone = zoneBaseName(obs.zone);
+        const zone = canonZone(obs.zone);
         sum = { mob: obs.mob, zone, kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, areas: [] };
         byKey.set(key, sum);
       }
@@ -187,15 +227,19 @@ export function sumObservations(...groups: MobObservation[][]): MobObservation[]
  */
 export function mergeObservations(mine: MobObservation[], theirs: MobObservation[]): MobKnowledge[] {
   const byKey = new Map<string, MobKnowledge & { areas: NonNullable<MobObservation["area"]>[] }>();
+  // Yours first, so on a tie the spelling *your* log uses is the one the pooled row is filed under —
+  // a peer whose map pack labels the zone a letter differently joins your tally instead of starting
+  // a second one beside it (ADR 0075).
+  const canonZone = createZoneCanon([...mine, ...theirs].map((obs) => obs.zone));
 
   const fold = (obs: MobObservation, isMine: boolean) => {
-    const key = keyOf(obs.mob, obs.zone);
+    const key = keyOf(obs.mob, canonZone(obs.zone));
     let known = byKey.get(key);
     if (!known) {
       known = {
         mob: obs.mob,
         // Base name again — a peer's build may not fold, and the pool is about the zone.
-        zone: zoneBaseName(obs.zone),
+        zone: canonZone(obs.zone),
         kills: 0,
         myKills: 0,
         drops: [],

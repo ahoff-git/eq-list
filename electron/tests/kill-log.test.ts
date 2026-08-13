@@ -163,6 +163,18 @@ test("a zone's difficulty variants read back as one zone", () => {
   assert.deepEqual(k.kills("Ak'Anon").map((x) => x.mob), ["elsewhere"]);
 });
 
+// The name the map window asks with is usually a map pack's label, not the log's wording — so a pack
+// that spells the forest with one x has to reach an evening recorded with two (ADR 0075).
+test("a zone asked for a letter out still answers with its kills", () => {
+  const k = createKillLog(tempDir());
+  kill(k, "a kerran", 1, "Toxxulia Forest");
+  kill(k, "elsewhere", 2, "East Commonlands");
+
+  assert.deepEqual(k.kills("Toxulia Forest").map((x) => x.mob), ["a kerran"]);
+  // And the looseness stops at a misspelling: two real zones are still two zones.
+  assert.deepEqual(k.kills("West Commonlands").map((x) => x.mob), []);
+});
+
 // Zoning teleports you, and stepping between two difficulties of one zone is no exception: you
 // arrive at the zone-in point, so the fix you took on the other side is wrong rather than stale.
 test("a fix from another difficulty of the same zone can't place a kill", () => {

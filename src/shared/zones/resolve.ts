@@ -15,24 +15,29 @@
  * which stays the strict identity fold that kill records and drop rates key on
  * ([ADR 0059](../../../specs/decisions/0059-a-zone-s-variants-are-one-zone.md)).
  *
- * Four tiers, tried in order, each only reached when the one above found nothing:
+ * Five tiers, tried in order, each only reached when the one above found nothing:
  *
  *   `exact`     — `zoneKey` equality, curated aliases included. What every call site did before.
  *   `order`     — the same words in any order, ignoring "the"/"of". "The Castle of Mistmoore".
+ *   `typo`      — one letter out: a pack's "Toxulia Forest" is the log's "Toxxulia Forest".
  *   `narrower`  — the name says everything a candidate says and more: "North Qeynos" → "Qeynos".
  *   `fuzzy`     — spelling alone, and only when it wins by a clear margin.
  *
- * `narrower` and `fuzzy` are opt-in, because how wrong a wrong answer is depends on who's asking —
- * see [ADR 0068](../../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md).
+ * `typo`, `narrower` and `fuzzy` are opt-in, because how wrong a wrong answer is depends on who's
+ * asking — see [ADR 0068](../../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md).
+ * `typo` sits above the other two because, unlike them, it cannot name a *different* zone: the rule it
+ * runs on is measured against the whole shipped table
+ * ([ADR 0075](../../../specs/decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)).
  *
  * Pure and dependency-free apart from the fold and the scorer it reuses → a tested black box.
  */
 
 import { fuzzyScore } from "../fuzzy";
-import { zoneKey } from "../names";
+import { zoneFold, zoneKey } from "../names";
+import { sameZoneOrMisspelling } from "./spelling";
 
 /** Which tier answered — how much of a stretch the match was, for a caller that cares. */
-export type ZoneMatchHow = "exact" | "order" | "narrower" | "fuzzy";
+export type ZoneMatchHow = "exact" | "order" | "typo" | "narrower" | "fuzzy";
 
 export interface ZoneMatch<T> {
   /** The candidate that won. */
@@ -45,6 +50,8 @@ export interface ZoneMatch<T> {
 }
 
 export interface ZoneResolveOptions {
+  /** Allow a name one edit away from a candidate to be that candidate ("Toxulia" → "Toxxulia"). */
+  typo?: boolean;
   /** Allow a name to resolve to a broader zone it contains ("Neriak Commons" → "Neriak"). */
   narrow?: boolean;
   /** Allow a spelling-only match, gated on `MIN_FUZZY_SCORE` and `MIN_FUZZY_MARGIN`. */
@@ -74,7 +81,16 @@ const MIN_FUZZY_MARGIN = 0.08;
  * than "erud" and a stray "s"), punctuation split on, filler dropped.
  */
 export function zoneWords(name: string): string[] {
-  return zoneKey(name)
+  return wordsOf(zoneKey(name));
+}
+
+/**
+ * The word-splitting half, over a name that is **already folded**. Separate because a caller with a
+ * particular fold in hand must not have another one applied over the top of it — which is exactly
+ * what `spellings` needs, and what silently undid it when this was one function.
+ */
+function wordsOf(folded: string): string[] {
+  return folded
     .replace(/'/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
@@ -84,7 +100,24 @@ export function zoneWords(name: string): string[] {
 
 /** The `order` tier's key: the identifying words, sorted, so phrasing stops mattering. */
 export function zoneOrderKey(name: string): string {
-  return zoneWords(name).slice().sort().join(" ");
+  return orderOf(zoneWords(name));
+}
+
+const orderOf = (words: string[]): string => words.slice().sort().join(" ");
+
+/**
+ * Both wordings of a name: as an alias rewrote it, and as it was actually written.
+ *
+ * `zoneKey` may *replace* a name — the gazetteer knows "North Kaladim" is "Northern Kaladim"
+ * ([ADR 0076](../../../specs/decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)) — and the
+ * looser tiers work on words, so a rewrite can move a name *away* from a candidate that was a
+ * rephrasing of the original ("Kaladim North"). Trying both keeps the invariant that matters as the
+ * alias table grows: **an alias can only ever add a match, never cost one.**
+ */
+function spellings(name: string): string[] {
+  const raw = zoneFold(name);
+  const aliased = zoneKey(name);
+  return aliased === raw ? [aliased] : [aliased, raw];
 }
 
 /** A candidate with its keys worked out once, so a resolver built over a fixed list isn't quadratic. */
@@ -94,6 +127,9 @@ interface Entry<T> {
   key: string;
   order: string;
   words: string[];
+  /** The same two, from the rule-only fold — the name before any alias replaced it. */
+  rawOrder: string;
+  rawWords: string[];
 }
 
 export interface ZoneResolver<T> {
@@ -123,7 +159,16 @@ export function createZoneResolver<T>(
     const key = zoneKey(name);
     // A candidate with no name can never be matched, and would swallow an empty query.
     if (!key) continue;
-    entries.push({ item, name, key, order: zoneOrderKey(name), words: zoneWords(name) });
+    entries.push({
+      item,
+      name,
+      key,
+      order: zoneOrderKey(name),
+      words: zoneWords(name),
+      // The rephrasings of the name *as written*, which an alias may have replaced — see `spellings`.
+      rawOrder: orderOf(wordsOf(zoneFold(name))),
+      rawWords: wordsOf(zoneFold(name)),
+    });
   }
 
   const byKey = new Map<string, Entry<T>>();
@@ -131,9 +176,11 @@ export function createZoneResolver<T>(
   for (const entry of entries) {
     // First wins, matching the caller's own list order — the same rule `groupDropsByZone` uses.
     if (!byKey.has(entry.key)) byKey.set(entry.key, entry);
-    const sharing = byOrder.get(entry.order);
-    if (sharing) sharing.push(entry);
-    else byOrder.set(entry.order, [entry]);
+    for (const order of new Set([entry.order, entry.rawOrder])) {
+      const sharing = byOrder.get(order);
+      if (sharing) sharing.push(entry);
+      else byOrder.set(order, [entry]);
+    }
   }
 
   /** Answers so far, keyed by the folded query — including the misses, which cost the most to find. */
@@ -146,16 +193,27 @@ export function createZoneResolver<T>(
     ...(score === undefined ? {} : { score }),
   });
 
+  /**
+   * One letter out. Fails closed like every other tier: two candidates a keystroke from the query is
+   * the ambiguity `sole` exists to refuse, even though the rule says all three are one zone.
+   */
+  const misspelled = (name: string): ZoneMatch<T> | undefined => {
+    const near = entries.filter((e) => sameZoneOrMisspelling(name, e.name));
+    const one = sole(near);
+    return one && found(one, "typo");
+  };
+
   /** The name says everything a candidate says and more — the candidate is the broader zone. */
   const narrower = (words: string[]): ZoneMatch<T> | undefined => {
     const mine = new Set(words);
-    const contained = entries.filter(
-      (e) => e.words.length && e.words.length < words.length && e.words.every((w) => mine.has(w)),
-    );
+    // Either wording of the candidate may be the one contained in the query — see `spellings`.
+    const fits = (e: Entry<T>) =>
+      [e.words, e.rawWords].filter((w) => w.length && w.length < words.length && w.every((x) => mine.has(x)))[0];
+    const contained = entries.map((e) => ({ e, words: fits(e) })).filter((c): c is { e: Entry<T>; words: string[] } => !!c.words);
     if (!contained.length) return undefined;
     // The most specific candidate that still fits: "Neriak Fourth Gate" over "Neriak", when both do.
-    const most = Math.max(...contained.map((e) => e.words.length));
-    const best = sole(contained.filter((e) => e.words.length === most));
+    const most = Math.max(...contained.map((c) => c.words.length));
+    const best = sole(contained.filter((c) => c.words.length === most).map((c) => c.e));
     return best && found(best, "narrower");
   };
 
@@ -187,12 +245,19 @@ export function createZoneResolver<T>(
     const exact = byKey.get(key);
     if (exact) return found(exact, "exact");
 
-    const sharingOrder = byOrder.get(zoneOrderKey(name));
-    if (sharingOrder) {
-      const order = sole(sharingOrder);
+    for (const order of spellings(name).map((s) => orderOf(wordsOf(s)))) {
+      const sharingOrder = byOrder.get(order);
+      if (!sharingOrder) continue;
+      const one = sole(sharingOrder);
       // Two different zones sharing a word order is the ambiguity this tier exists to refuse;
       // falling through to a looser tier would only guess between the same two.
-      return order && found(order, "order");
+      if (one) return found(one, "order");
+      return undefined;
+    }
+
+    if (opts.typo) {
+      const near = misspelled(name);
+      if (near) return near;
     }
 
     if (opts.narrow) {

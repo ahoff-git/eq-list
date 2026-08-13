@@ -58,6 +58,24 @@ export function rateConfidence(kills: number): RateConfidence {
   return "thin";
 }
 
+/**
+ * Why a rate is dimmed or not — the wording for each rung of the ladder above.
+ *
+ * It lives here with the thresholds rather than in the panel, because two panels now show the same
+ * rate: the map's 📖 list and a mob's own page. A sentence that said "worth trusting" in one and
+ * "indicative" in the other, off the same kills, would be two different claims.
+ */
+export function rateWhy(kills: number): string {
+  switch (rateConfidence(kills)) {
+    case "solid":
+      return `Out of ${kills} kills — a rate worth trusting.`;
+    case "fair":
+      return `Out of ${kills} kills — indicative, not settled.`;
+    default:
+      return `Out of only ${kills} kills. Treat this as a hint; kill more (or pool with peers).`;
+  }
+}
+
 export type DropVerdict = "confirmed" | "undocumented" | "unseen";
 
 /** One item, as both sources see it. */

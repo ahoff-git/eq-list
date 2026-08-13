@@ -28,6 +28,7 @@
 import { CURATED_ZONES } from "./zones";
 import type { Zone } from "./types";
 import { zoneAvailable } from "../zones/expansions";
+import { firstUnclaimed, sameZoneOrMisspelling } from "../zones/spelling";
 
 /**
  * The game's own `maps/` folder — the one source every install has, which is what makes it the
@@ -80,9 +81,13 @@ export function prettyZoneName(short: string): string {
 /**
  * The zones a source offers: one per map file, named as well as we can manage.
  *
- * Names are kept unique. Two files answering to one zone name would be two entries for one place —
- * `tox` and `toxxulia` are the same zone twice — and only one of them would ever be reachable, so
- * the loser keeps its file name and stays in the list.
+ * Names are kept unique, and **a misspelling doesn't count as a different name**
+ * ([ADR 0075](../../../specs/decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)). Two files
+ * answering to one zone name would be two entries for one place — `tox` and `toxxulia` are the same
+ * zone twice — and only one of them would ever be reachable, so the loser keeps its file name and
+ * stays in the list. Uniqueness by exact string alone let that duplicate straight back in whenever a
+ * pack's label was a letter out: a curated "Toxxulia Forest" and a solved "Toxulia Forest" are two
+ * rows in the picker, one of which draws nothing you were looking for.
  */
 export function zonesFromFiles(
   sourceId: string,
@@ -92,11 +97,13 @@ export function zonesFromFiles(
 ): Zone[] {
   const available = new Set(files);
   const curated = new Map<string, { name: string; sortingStr?: string }>();
-  const taken = new Set<string>();
+  /** Names spoken for. An array rather than a Set: claiming is a scan, not a lookup (`firstUnclaimed`). */
+  const taken: string[] = [];
   for (const zone of CURATED_ZONES) {
-    if (!available.has(zone.file) || curated.has(zone.file) || taken.has(zone.name)) continue;
+    if (!available.has(zone.file) || curated.has(zone.file)) continue;
+    if (taken.some((t) => sameZoneOrMisspelling(t, zone.name))) continue;
     curated.set(zone.file, zone);
-    taken.add(zone.name);
+    taken.push(zone.name);
   }
 
   return files.map((short) => {
@@ -105,8 +112,10 @@ export function zonesFromFiles(
     if (own) {
       return { name: own.name, sortingStr: own.sortingStr, key: `${sourceId}:${short}`, file: short, source: sourceId };
     }
-    const name = [solved[short], prettyZoneName(short)].find((c) => c && !taken.has(c)) ?? short;
-    taken.add(name);
+    // The file's own name is the backstop, and it can be claimed too — a zone with nothing left to
+    // be called keeps its short name, which is honest and still selectable.
+    const name = firstUnclaimed([solved[short], prettyZoneName(short)], taken) ?? short;
+    taken.push(name);
     return { name, key: `${sourceId}:${short}`, file: short, source: sourceId };
   });
 }
@@ -154,6 +163,14 @@ export function zonesFromSources(chosen: NamedSource, backstop?: NamedSource): Z
   const fromStock = backstop.files.filter((short) => !have.has(short));
   if (!fromStock.length) return offered(mine);
 
-  const names = new Set(mine.map((z) => z.name));
-  return offered([...mine, ...zonesFromFiles(backstop.id, fromStock, backstop.solved).filter((z) => !names.has(z.name))]);
+  // Borrowing is where the duplicate name most often comes from: the two folders label the same
+  // place, one of them a letter out, so the pack's zone and the borrowed one both make the list. A
+  // misspelling is the same claim as the name itself (ADR 0075), so the borrowed row loses.
+  const names = mine.map((z) => z.name);
+  return offered([
+    ...mine,
+    ...zonesFromFiles(backstop.id, fromStock, backstop.solved).filter(
+      (z) => !names.some((n) => sameZoneOrMisspelling(n, z.name)),
+    ),
+  ]);
 }

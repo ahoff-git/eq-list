@@ -129,6 +129,24 @@ unit-tested.
     every call site). The safety half runs against the **real 344-zone table** rather than a fixture:
     with every tier on, all 344 resolve to themselves and none to a neighbour — which a hand-picked list
     could never show.
+  - `src/shared/zones/gazetteer.ts` → `electron/tests/zone-gazetteer.test.ts` (the supplied zone table,
+    and the two views derived from it —
+    [ADR 0076](../decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)). The data comes from
+    outside, so this is a **review, not a unit test**: it is what a re-supplied file has to pass. Almost
+    all of it is about what must *not* happen, because going from 3 hand-written aliases to 250-odd
+    derived ones feeds the fold that keys every kill record — no alias may rename a zone we name, none
+    may fold two of the fandom table's distinct zones together, no bracketed spelling may get in (the
+    real bug it caught: `Qeynos (North)` folds to `qeynos`, renaming the city to its own half), and
+    nothing the gazetteer names may end up *excluded* from the picker by the era filter. Plus the two
+    entries it independently confirms, which are why it's believed at all.
+  - `src/shared/zones/spelling.ts` → `electron/tests/zone-spelling.test.ts` (the same zone spelled wrong
+    — [ADR 0075](../decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)). The rule is one edit
+    wide, so the whole risk is in what it **refuses**, and the load-bearing test is a corpus one: over
+    all 361 zone names the app ships, no two are one edit apart. It stays honest if the expansion table
+    is ever regenerated, and it's why one edit is the ceiling — at two, the same corpus offers twelve
+    real pairs (East/West Karana, North/South Qeynos). Plus the property that makes the resolver's
+    `typo` tier shippable: a typo of any zone resolves back to *that* zone or to nothing, never to
+    another, since a name can sit one edit from two zones that are two apart.
   - `src/shared/zones/expansions.ts` → `electron/tests/zone-expansions.test.ts` (which expansion a zone
     came with, and whether that means you can go there —
     [ADR 0065](../decisions/0065-a-zone-belongs-to-an-expansion.md)). Checked in **both** directions,

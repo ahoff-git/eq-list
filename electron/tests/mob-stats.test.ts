@@ -5,7 +5,16 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeObservations, mobKey, observeMobs, sumObservations, type MobObservation } from "../../src/shared/mob-stats";
+import {
+  dropKey,
+  dropSources,
+  mergeObservations,
+  mobKey,
+  observeMobs,
+  sumObservations,
+  type MobKnowledge,
+  type MobObservation,
+} from "../../src/shared/mob-stats";
 import type { KillRecord } from "../../src/shared/types";
 
 test("mobKey folds the wiki's article and case onto the kill log's stripped name", () => {
@@ -117,6 +126,42 @@ test("a tally stored under a decorated zone merges with the plain one", () => {
   ]);
   assert.equal(pooled.kills, 11);
   assert.equal(pooled.myKills, 1);
+});
+
+// The other spelling problem (ADR 0075): a map pack's label is a letter out, so a peer's tally for
+// the zone you're standing in used to sit beside yours as a second camp with its own thin rate.
+test("two spellings of one zone are one tally, under the spelling seen most", () => {
+  const obs = observeMobs([
+    kill({ mob: "a rat", zone: "Toxxulia Forest", drops: ["Rat Ear"] }),
+    kill({ mob: "a rat", zone: "Toxulia Forest" }),
+    kill({ mob: "a rat", zone: "Toxxulia Forest" }),
+  ]);
+  assert.equal(obs.length, 1);
+  assert.equal(obs[0].kills, 3);
+  assert.equal(obs[0].zone, "Toxxulia Forest");
+
+  const theirs: MobObservation = {
+    mob: "a rat",
+    zone: "Toxulia Forest",
+    kills: 20,
+    drops: { "Rat Ear": 5 },
+    lastAt: "2026-07-29T01:00:00.000Z",
+    by: "Fippy",
+  };
+  const [pooled] = mergeObservations(obs, [theirs]);
+  assert.equal(pooled.kills, 23);
+  assert.equal(pooled.myKills, 3);
+  // Yours names the pool even though they out-killed you: it's the spelling your own log uses.
+  assert.equal(pooled.zone, "Toxxulia Forest");
+  assert.deepEqual(pooled.contributors, ["Fippy"]);
+});
+
+test("zones that merely look alike stay two tallies", () => {
+  const obs = observeMobs([
+    kill({ mob: "a rat", zone: "East Commonlands" }),
+    kill({ mob: "a rat", zone: "West Commonlands" }),
+  ]);
+  assert.equal(obs.length, 2, "a rate for one camp must never absorb the other's kills");
 });
 
 test("the roam area is the middle of where you killed it, and how far that spreads", () => {
@@ -267,4 +312,56 @@ test("coin you took is proof the corpse was yours, whoever landed the blow", () 
   const [obs] = observeMobs([kill({ mob: "a coyote", killer: "Bunnyslayer", mine: false, coin: 30 })]);
   assert.equal(obs.kills, 1, "you looted it, so it counts");
   assert.equal(obs.copper, 30);
+});
+
+/** A tally with just the parts `dropSources` reads. */
+function known(mob: string, zone: string, items: string[]): MobKnowledge {
+  return {
+    mob,
+    zone,
+    kills: 10,
+    myKills: 10,
+    drops: items.map((item) => ({ item, count: 1, rate: 0.1 })),
+    lastAt: "2026-07-29T01:00:00.000Z",
+    contributors: [],
+    copper: 0,
+    copperPerKill: 0,
+  };
+}
+
+test("dropKey folds case and stray space, and nothing else", () => {
+  assert.equal(dropKey("  Snake Fang "), dropKey("snake fang"));
+  // Unlike a mob's name, an item's article is part of it — the loot line names it in full.
+  assert.notEqual(dropKey("a Shiny Brass Idol"), dropKey("Shiny Brass Idol"));
+});
+
+test("a drop knows every mob it comes off, not just the one it's listed under", () => {
+  const sources = dropSources([
+    known("a puma", "Kerra Ridge", ["Puma Skin", "Snake Fang"]),
+    known("a snake", "Kerra Ridge", ["Snake Fang"]),
+    known("a bat", "Kerra Ridge", ["Bat Wing"]),
+  ]);
+  assert.deepEqual(sources.get(dropKey("Snake Fang")), ["a puma", "a snake"]);
+  assert.deepEqual(sources.get(dropKey("Bat Wing")), ["a bat"]);
+  assert.equal(sources.get(dropKey("Puma Skin"))?.length, 1);
+});
+
+test("an item is looked up however it was written down", () => {
+  const sources = dropSources([known("a puma", "Kerra Ridge", ["  SNAKE fang"])]);
+  assert.deepEqual(sources.get(dropKey("Snake Fang")), ["a puma"]);
+});
+
+test("the same mob behind two doors is one thing to go looking for", () => {
+  // Zones are tallied separately, but the answer to "where is this from" is a set of mobs to
+  // point at — naming the puma twice would ring nothing extra and read as two of them.
+  const sources = dropSources([
+    known("a puma", "Kerra Ridge", ["Puma Skin"]),
+    known("a puma", "Blackburrow", ["Puma Skin"]),
+  ]);
+  assert.deepEqual(sources.get(dropKey("Puma Skin")), ["a puma"]);
+});
+
+test("an item nothing here drops has no sources rather than an empty answer", () => {
+  const sources = dropSources([known("a puma", "Kerra Ridge", ["Puma Skin"])]);
+  assert.equal(sources.get(dropKey("Rusty Dagger")), undefined);
 });

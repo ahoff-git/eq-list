@@ -3,8 +3,7 @@ import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { clock, count } from "@/shared/format";
 import { confidenceTier } from "@/shared/kill-confidence";
-import type { KillFilters } from "@/shared/kill-filters";
-import { distinctSorted } from "@/shared/sorting";
+import { mobChoices, type KillFilters } from "@/shared/kill-filters";
 import ItemLink, { NameList } from "./ItemLink";
 import { Caret } from "./ui";
 import KillFilterBar from "./KillFilterBar";
@@ -57,8 +56,10 @@ export default function KillList({
   // row with a count — not a wall of identical names. The map still plots every individual kill.
   const groups = useMemo(() => groupByMob(kills), [kills]);
   const shownGroups = expanded ? groups : groups.slice(0, MAX_GROUPS);
-  // The mobs actually present, so the filter offers real choices rather than a free-text box.
-  const mobs = useMemo(() => distinctSorted(kills.map((k) => k.mob)), [kills]);
+  // The mobs actually present, so the filter offers real choices rather than a free-text box —
+  // each carrying whether it has ever dropped anything, which is what the "dropped" box needs to
+  // know before it hides one.
+  const mobs = useMemo(() => mobChoices(kills), [kills]);
   const shared = useMemo(() => kills.filter((k) => k.sharedBy).length, [kills]);
 
   return (
@@ -163,7 +164,7 @@ function MobGroup({
         className="kill-group-head"
         onClick={() => setOpen((o) => !o)}
         // Hovering the mob picks out every one of its kills on the map.
-        onMouseEnter={() => onEmphasize?.({ mob: group.mob })}
+        onMouseEnter={() => onEmphasize?.({ mobs: [group.mob] })}
         onMouseLeave={() => onEmphasize?.(null)}
       >
         <Caret open={open} />
@@ -230,7 +231,7 @@ function KillRow({
       // One kill, so the map points at exactly where this one died. The group's own hover fires
       // again on the way out, which is why leaving sends null rather than the group.
       onMouseEnter={() => onEmphasize?.({ id: kill.id })}
-      onMouseLeave={() => onEmphasize?.({ mob: kill.mob })}
+      onMouseLeave={() => onEmphasize?.({ mobs: [kill.mob] })}
     >
       <span className="kr-time">{clock(kill.at)}</span>
       {showConfidence && <ConfidenceMark kill={kill} />}

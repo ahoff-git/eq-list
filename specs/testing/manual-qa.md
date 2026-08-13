@@ -2,7 +2,8 @@
 
 Features that are **built, typechecked and unit-tested, but not yet exercised for real** — in the
 game, on a Windows install, or across two clients. The dev sandbox can't run these; confirm each on
-a real run. This is a *verification* list, not open work — open work lives in [../todo.md](../todo.md).
+a real run. This is a *verification* list, not open work — open work lives in [../todo.md](../todo.md),
+features for later in [../ideas.md](../ideas.md).
 
 ## In-game — one client
 
@@ -97,6 +98,16 @@ a real run. This is a *verification* list, not open work — open work lives in 
   case that needed a backstop: leave the list from *inside* an expanded kill row and confirm the
   emphasis clears rather than sticking. On a camp with hundreds of kills, check the ring still reads
   at a glance and that the dimming doesn't make the heatmap look empty.
+- **📖 panel → map emphasis.** Open the knowledge panel on a zone you've camped and run the cursor
+  down it: hovering a **mob row** should ring that mob's dots exactly as the ☠ list does. Open a mob
+  and hover one of its **drops** — every mob known to give that item up should ring at once, not just
+  the one whose row you're inside. Find a trash item two or three mobs share (Bone Chips, a fang) and
+  confirm the row says "2 sources" and that hovering it lights all of them. Then the backstop: leave
+  the panel from inside an open drop list and confirm the emphasis clears rather than sticking.
+- **📖 panel → finding a drop.** Type part of an item into the "dropped…" box and confirm the mobs
+  that drop it **open themselves**, with the matching line marked and its neighbours in the same loot
+  table left plain. Clear the box and confirm the rows collapse back to whatever you had open by hand,
+  and that mobs which have never dropped anything are still listed (an empty search asks nothing).
 - **Hunt tab → map emphasis** (two windows). With the map open on a zone you've camped, run the
   cursor down the Hunt tab's mob rows: a mob you've killed here should ring its dots. Then the three
   cases that must do **nothing at all** — a mob from another zone, a mob you've never killed, and
@@ -182,6 +193,25 @@ a real run. This is a *verification* list, not open work — open work lives in 
   every scale below 100%, check **no gap** appears at the bottom or right of either window — the
   shells size in percentages now, and a `vh` length would come up short. Both values should survive
   a restart.
+- **Click-through, both windows** ([ADR 0073](../decisions/0073-a-click-through-window-keeps-its-chrome.md)).
+  The whole point is that clicks reach *the game*, which no sandbox can judge. With EQ running,
+  press 👻 in the map's title bar and confirm: clicking **on the map** turns the character / attacks
+  the mob under it, while the title bar, the toolbar and an open side panel still take clicks
+  normally — and that 👻 itself still works, so the mode can be turned off. Then the crossings, which
+  is where this can go wrong: sweep the cursor from the map onto the toolbar and click immediately
+  (it should register), and start a drag on the title bar that travels **across** the map (the window
+  should keep moving, not drop the drag half-way). Same again in the main window over the panel, with
+  the tab bar still switching tabs. Confirm hovering an item name over the panel still pops its stat
+  card while the click goes through. Leave both on, restart the app, and confirm each window comes
+  back in the mode you left it — and that the mode never survives as a window you *can't* dismiss.
+- **How a window was left, restored** ([ADR 0074](../decisions/0074-how-a-window-was-left-is-window-state.md)).
+  Set the two windows to *different* states — the list unpinned, translucent, click-through off; the
+  map pinned, ◐ solid, 👻 on — move and resize both, then quit from the tray and relaunch. Each should
+  come back exactly as left, **with no flicker**: the point of applying this at creation is that
+  neither window is ever briefly translucent, unpinned or clickable on its way to being right. The
+  map is the one that used to be wrong, so check it specifically: it must open with *its* pin, not
+  the list's. Then confirm the two stay independent (flipping the list's ◐ doesn't touch the map's)
+  and that **Reset window position** recenters without unpinning anything.
 - **Maximize / restore, both windows.** Our windows are frameless *and transparent*, which is
   the combination Electron is historically twitchy about when maximized, so this wants eyes on
   Windows: the ▢ button should fill the work area **without covering the taskbar**, ❐ should
@@ -237,6 +267,45 @@ a real run. This is a *verification* list, not open work — open work lives in 
   The claim to test in game is the coordinate itself: evacuate and see whether you land where the
   mapmaker drew it. A safe point in the wrong place is a free ride to the wrong end of the zone, and it
   would look exactly like a good route here.
+
+  **The hand-authored table, unverified in game.** `manual-links.ts` ships classic-EverQuest boat runs
+  as a starting point, never checked on EQ Legends, and **no translocator gnomes at all** — nothing
+  about a Legends-only NPC can be read off a map or reasonably guessed, so that section is empty on
+  purpose (with both shapes to copy from in a comment: a border if anyone can walk up to it, a `gnome`
+  -mode link if it needs a class, a faction or a fee). `npm run travel:manual` prints which entries
+  found a real label, which named a zone this pack has no map for, and which are malformed — that's the
+  list to work through. The same run prints the destinations no map file answered to and the zones with
+  no way in or out, which is where the graph is actually thin.
+
+- **A mob's page, saying what you've killed** ([ADR 0025](../decisions/0025-observation-over-the-wiki.md),
+  `MobKills`). Open a mob you've farmed and confirm the block under its loot list: one row per zone,
+  the kill count matching the ☠ list's for that camp, observed rates dimmed by sample size, and the
+  coin-per-kill figure agreeing with the camp report's. Then the two map paths, which is the part with
+  nothing behind it in the sandbox: the **zone name** opens the map there, and the **±N** button opens
+  it *and* drops a marker at the roam centre — the same gesture a wiki `Location:` coordinate already
+  had. With the map already open, hovering the block should ring that mob's kills; with it closed,
+  hovering must not open a window. A mob you've never killed should say so rather than showing an empty
+  block.
+
+- **The zone picker, now that 83 files have names**
+  ([ADR 0076](../decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)). A supplied gazetteer
+  replaced the 31 hand-verified names, so most of the picker is names nobody here has seen against a
+  real folder. The check that matters is the one the whole table can't fail closed on: **pick a few
+  newly-named zones and confirm the map drawn is the zone the name claims** — `Lower Guk` (`gukbottom`),
+  `Nagafen's Lair` (`soldungb`), `Solusek's Eye` (`soldunga`), `The Ruins of Old Paineel` (`hole`),
+  `West Commonlands` (`commons`) and `Neriak Palace` (`neriakd`) are the ones worth opening, since a
+  wrong file draws another zone under the right name. Also confirm the `tutorial` / `tutoriala` pair:
+  the table lists a "Tutorial Zone" and this server's own is "EverQuest Legends Tutorial", and if both
+  files exist they may be one place shown twice.
+
+- **The zone picker, with two packs and a misspelling**
+  ([ADR 0075](../decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)). The measured case is
+  `Toxxulia Forest` / `Toxulia Forest`, which used to be two rows. Confirm the picker now lists each
+  place **once**, that the row draws a real map, and that the kills you recorded there appear whichever
+  pack is selected — that last one is the whole point, and it needs a real `userData` kill log plus two
+  map folders to show. Worth scanning the picker for any *other* pair the eye reads as one place: the
+  rule is one edit wide on purpose, so a two-letter difference (`Kithicor Forest` / `Kithikor Woods`)
+  is still two rows and would want an entry in `ZONE_ALIASES` instead.
 
 - **The ☠ list with a peer sharing, unseen.** The filter bar is now one row and shared kills are rows in
   it, but neither has been looked at — the sandbox is headless and this needs two clients. To confirm: the

@@ -1,12 +1,16 @@
 /**
- * window-state.ts — remembers window positions and whether the map window was open,
- * persisted to `userData/window-state.json`.
+ * window-state.ts — **how each window was left**: where it sat, how big it was, whether it was
+ * maximized, and the three title-bar toggles it carries (pinned, ◐ opaque, 👻 click-through).
+ * Persisted to `userData/window-state.json` and applied when the window is created, so the app
+ * comes back the way you left it — see
+ * [ADR 0074](../specs/decisions/0074-how-a-window-was-left-is-window-state.md).
  *
  * Kept separate from settings on purpose: bounds change on every drag/resize, and
  * routing that through the reactive settings store would spam settings:changed
  * (which restyles the overlay and re-checks the watcher). This is plain state with
- * no broadcasts. Bounds are validated against the current displays so a window
- * saved on a now-disconnected monitor doesn't reopen off-screen.
+ * no broadcasts. The toggles belong here for a second reason — they're per *window*,
+ * and the two windows are meant to disagree. Bounds are validated against the current
+ * displays so a window saved on a now-disconnected monitor doesn't reopen off-screen.
  *
  * Writes on move/resize are debounced, but on window close and on app quit they
  * flush synchronously — otherwise the app exits before the timer fires and the
@@ -14,6 +18,7 @@
  */
 import { app, screen, type BrowserWindow } from "electron";
 import path from "node:path";
+import type { WindowToggles } from "../src/shared/types";
 
 import { createSaver, readJson } from "./json-store";
 export interface Bounds {
@@ -36,6 +41,8 @@ interface WindowState {
    * which stay the size to restore *to*, exactly as a normal window behaves.
    */
   maximized?: Partial<Record<Role, boolean>>;
+  /** Each window's title-bar toggles as it was last left (see `WindowToggles`). */
+  toggles?: Partial<Record<Role, WindowToggles>>;
 }
 
 // Lazily loaded so we don't touch app.getPath before `ready`.
@@ -120,6 +127,21 @@ export function setMaximized(role: Role, on: boolean): void {
 /** Was this window maximized when we last saw it? */
 export function wasMaximized(role: Role): boolean {
   return !!get().maximized?.[role];
+}
+
+/**
+ * How this window's title-bar toggles were left. Read when the window is created, so it opens
+ * pinned/opaque/click-through as you left it rather than arriving that way a frame later.
+ */
+export function windowToggles(role: Role): WindowToggles {
+  return get().toggles?.[role] ?? {};
+}
+
+/** Remember a change to one of them. A patch, so a window only states what it changed. */
+export function setWindowToggles(role: Role, patch: WindowToggles): void {
+  const s = get();
+  s.toggles = { ...s.toggles, [role]: { ...s.toggles?.[role], ...patch } };
+  saver.save();
 }
 
 /** True once the app has begun quitting — lets close handlers skip "user closed" logic. */

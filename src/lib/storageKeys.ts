@@ -24,8 +24,6 @@ export const STORAGE_KEYS = {
   mapLayers: "eqlist.map.layers",
   /** Map window: whether zoning in-game snaps the map back to your zone. */
   mapFollowZone: "eqlist.map.followZone",
-  /** Map window: always-on-top. */
-  mapPinned: "eqlist.map.pinned",
   /** Map window: share-my-pins toggle. */
   mapSharePins: "eqlist.map.sharePins",
   /** Map window: the kills panel's visibility. */

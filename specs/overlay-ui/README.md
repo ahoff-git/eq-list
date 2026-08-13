@@ -8,14 +8,17 @@ list, hunt, search, damage, session, settings.
 ## Responsibilities
 - **Window shell** (`src/app/page.tsx`, `.app.glass`): frameless, transparent,
   resizable, translucent. The **title bar** is the drag handle and carries the window
-  controls — an **opacity toggle** (flip between 100% and the settings slider value,
-  transient via `win.setOpacity`), **pin** (always-on-top, toggles `overlay.alwaysOnTop`
-  — the shared `PinButton`, gray off / red on, same as the map window), **minimize**,
+  controls — an **opacity toggle** (◐, flip between 100% and the settings slider value),
+  **pin** (always-on-top — the shared `PinButton`, gray off / red on, same as the map window),
+  **click-through** (👻, below), **minimize**,
   **interface scale** (the shared `ScaleButtons`: A− / A+, stepping `overlay.fontScale` over
   `UI_SCALE` — 60%–100%, the same value the Settings slider holds), **maximize/restore** (the
   shared `MaximizeButton`, see below) and **hide-to-tray** (`win.hide()`).
-  **Always-on-top** and the interface **scale** come from settings and are applied by the main
-  process (`applyOverlaySettings`). The **scale** is applied by each window's *own renderer*, as a
+  **Pin, ◐ and 👻 are not settings**: they're *how this window was left*, so they live beside its
+  bounds in `window-state.json` (`WindowToggles`), are applied by the main process when it **creates**
+  the window, and are read back by the renderer through one `useWindowToggle` —
+  [ADR 0074](../decisions/0074-how-a-window-was-left-is-window-state.md). The two windows therefore
+  hold independent answers to all three. The interface **scale** is a setting, and is applied by each window's *own renderer*, as a
   CSS `zoom` on the document root (`useUiScale`) — see
   [ADR 0026](../decisions/0026-interface-scale-only-shrinks.md) for why 100% is the ceiling and
   [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md) for why it can't be
@@ -23,13 +26,24 @@ list, hunt, search, damage, session, settings.
   hold two scales). **The map window scales separately** (`overlay.mapFontScale`, its own A− / A+):
   one window is a column of text you shrink to reclaim desk space, the other is a picture you
   enlarge to read. A shell inside a scaled window must size with **percentages, not `vh`** — a `vh`
-  length is scaled by the zoom and comes up short. **Opacity** does *not* split that
-  way: `overlay.opacity` is one value for every window (one look for the app), while the **transient
-  ◐ override is per window** — the shared `OpacityButton` sits in both title bars and each flips only
-  its own window, so you can read the map through clear glass without clearing the list. It is also
-  the exception to "main applies it": a window opens at the saved value (constructor) and its
-  **renderer** owns it thereafter (`useWindowOpacity`), so the override isn't clobbered when the main
-  process reacts to some other settings change.
+  length is scaled by the zoom and comes up short. **Opacity** splits differently again:
+  `overlay.opacity` is one setting for every window (one look for the app), while the **◐ override is
+  window state** — the shared `OpacityButton` sits in both title bars and each flips only its own
+  window, so you can read the map through clear glass without clearing the list. The two meet in
+  `windowOpacity(opaque, saved)`, the one rule both ends use: main opens the window at that value
+  (constructor, so no flash) and its **renderer** owns it thereafter (`useWindowOpacity`), which is
+  the only end that knows both halves.
+  **Click-through** (the 👻 toggle, `ClickThroughButton` + `useClickThrough`, in both title bars and
+  remembered per window) hands the window's clicks to the game — but only over **one region**: the
+  list's `.panel` and the map's `.map-body`, marked by spreading `PASS_THROUGH` onto them. The chrome
+  around it — title bar, tab bar, toolbar, status bar, any open side panel — stays a window, which is
+  what keeps the mode escapable, since the button that ends it is in the title bar. Electron's
+  `setIgnoreMouseEvents(…, { forward: true })` still delivers mouse *moves* to a window that can't be
+  clicked, so the renderer sees the cursor reach a control and asks for the window back at the
+  crossing; a held button holds the window, so a drag off the title bar isn't dropped mid-gesture. The
+  wheel is **not** forwarded, so the region is a glance and not a surface: no scrolling, no zooming,
+  no clicking a row — hover, and therefore every stat card and tooltip, still works. See
+  [ADR 0073](../decisions/0073-a-click-through-window-keeps-its-chrome.md).
   Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
   tray. One window, styled once; see [ADR 0009](../decisions/0009-single-window-with-tray.md).
@@ -78,6 +92,19 @@ list, hunt, search, damage, session, settings.
   themselves clickable, and a click that both opened the page and toggled the row would do the second
   thing to whatever the first thing scrolled into view. Several names on one line — what a kill
   dropped, who drops an item in a zone — are a `NameList`, so the comma between them is written once.
+- **A page carries the evidence, not just the claim** (`components/WikiPageView.tsx`). A wiki page is
+  someone else's sample of an older build ([ADR 0025](../decisions/0025-observation-over-the-wiki.md)),
+  so a **mob's** page ends with `MobKills`: what your own kills taught, one block per zone you've
+  killed it in — the count, how much of it was yours, coin per kill, the observed rates dimmed by
+  sample size (`rateWhy`, shared with the map's 📖 panel so the same kills can't be described two
+  ways), and the roam area. It's the map panel's data asked the other way round — **by mob** rather
+  than by zone (`useMobZones`), which is the question a page raises and the panel can't answer.
+- **Every position on a page opens the map.** A stat card's `Zone:` views that zone
+  (`api().map.openAt`), an embedded `(y, x)` opens it *and* drops a marker there, and a mob's observed
+  roam centre does the same with its spread in the title — a page is text, and where a thing lives is
+  the one part of it that belongs on a map. Hovering a `MobKills` block rings that mob's kills on a map
+  that's **already open** (`map.emphasize`, the Hunt tab's gesture); it never opens one, since a window
+  that appears because the cursor crossed a name is a window nobody asked for.
 - **Shared presentational bits** (`components/ui.tsx`, no app knowledge in it): `StatTile` (a figure
   with its name under it, and a hover saying where the figure came from), `segCls` (a segmented
   control's button), `CheckField` (a checkbox and its label — including the "some of this group" state
@@ -391,7 +418,9 @@ list, hunt, search, damage, session, settings.
   the question changes, and **discard an answer the question has moved on from** — without it,
   expanding session B while A is still in flight can show B's heading over A's fights), and
   **`useDismiss`** (close a popover on an outside click or Escape, listening only while open).
-  A component that wants one of these should call it rather than write the effect again. The map has two
+  A component that wants one of these should call it rather than write the effect again. **`clickThrough.ts`**
+  is a fourth of the same kind — a window-level lifecycle (cursor listeners on, mode restored on the way
+  out) that only a window's own renderer can run. The map has two
   more of its own in `src/lib/map/`: **`useFloors`** (which storeys are on screen, and the eight values
   that follow from it — they have to agree, so they're derived together) and **`useHidden`** (a filter
   stated as *what's left off*, shared by pins-by-kind, labels-by-kind and peers-by-name).
@@ -420,9 +449,11 @@ list, hunt, search, damage, session, settings.
 ## Non-responsibilities
 - No business logic or persistence in the renderer — it calls `window.eql` and renders
   store state.
-- Window creation and always-on-top are applied by the main process
-  (`electron/windows.ts`); the UI only requests them. (Opacity is the one exception — each window's
-  renderer owns its live value so the transient ◐ toggle survives unrelated settings changes.)
+- Window creation, and restoring how a window was left (bounds, maximized, pinned, ◐, 👻), are the
+  main process's (`electron/windows.ts` + `window-state.ts`); the UI only flips them and says so
+  (`win.saveState`). Once a window is up, its **live** opacity and **which clicks it takes** are the
+  renderer's: only it knows whether its ◐ is on and what the cursor is over, so main just does as
+  it's told — one `setOpacity`, one `setIgnoreMouseEvents` per crossing.
 
 ## See also
 [architecture](../architecture/README.md) ·

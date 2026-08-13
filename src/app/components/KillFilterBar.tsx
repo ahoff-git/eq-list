@@ -1,7 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
 import { CONFIDENCE_TIERS } from "@/shared/kill-confidence";
-import type { KillFilters, KillWindow } from "@/shared/kill-filters";
+import { withDroppedOnly, type KillFilters, type KillWindow, type MobChoice } from "@/shared/kill-filters";
 import { CheckField, PickField, segCls } from "./ui";
 
 /** The confidence floors the picker offers, matching `CONFIDENCE_TIERS` best-first. */
@@ -44,8 +44,12 @@ export default function KillFilterBar({
   toggledBy: string;
   filters: KillFilters;
   onFilters: (next: KillFilters) => void;
-  /** The mobs actually present, so the picker offers real choices rather than a free-text box. */
-  mobs: string[];
+  /**
+   * The mobs actually present, so the picker offers real choices rather than a free-text box —
+   * each with whether it has ever dropped anything, which is what keeps it and the "dropped" box
+   * from being able to ask for a set that cannot exist.
+   */
+  mobs: MobChoice[];
   withWindow?: boolean;
   withPosition?: boolean;
   /** What this panel counts, right-aligned — the one part that differs between them. */
@@ -55,6 +59,14 @@ export default function KillFilterBar({
 }) {
   const set = <K extends keyof KillFilters>(key: K, value: KillFilters[K]) =>
     onFilters({ ...filters, [key]: value });
+
+  // While "dropped" is on, a mob that has never dropped anything isn't a choice — offering it is
+  // offering an empty panel. Same rule as `withDroppedOnly`, seen from the other control: neither
+  // order of clicks can reach a pair of filters with no answer.
+  const pickable = filters.droppedOnly ? mobs.filter((m) => m.dropped) : mobs;
+  // Does ticking the box let the picked mob go? Worth saying in the hover *before* it happens —
+  // a filter that quietly resets another filter is only kind if you saw it coming.
+  const releasesMob = !!filters.mob && !filters.droppedOnly && !withDroppedOnly(filters, true, mobs).mob;
 
   return (
     <div className="row wrap kill-filters">
@@ -83,8 +95,12 @@ export default function KillFilterBar({
         value={filters.mob}
         onChange={(mob) => set("mob", mob)}
         blank="any mob"
-        options={mobs.map((m) => ({ value: m, label: m }))}
-        title="Only this mob"
+        options={pickable.map((m) => ({ value: m.mob, label: m.mob }))}
+        title={
+          filters.droppedOnly
+            ? "Only this mob — while 'dropped' is on, only mobs that have dropped something are offered"
+            : "Only this mob"
+        }
       />
 
       <input
@@ -98,8 +114,10 @@ export default function KillFilterBar({
       <CheckField
         label="dropped"
         checked={filters.droppedOnly}
-        onChange={(on) => set("droppedOnly", on)}
-        title="Only kills that dropped something"
+        onChange={(on) => onFilters(withDroppedOnly(filters, on, mobs))}
+        title={`Only kills that dropped something${
+          releasesMob ? ` — ${filters.mob} never has, so ticking this goes back to any mob` : ""
+        }`}
       />
 
       {/* Always here, whether or not anyone is sharing — a bar that grows a control when a peer

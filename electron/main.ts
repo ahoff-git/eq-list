@@ -25,7 +25,7 @@ import { createMobKnowledge } from "./mob-knowledge";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, createMapWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, applyOverlaySettings, showInSearch } from "./windows";
+import { createMainWindow, createMapWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, showInSearch } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
@@ -234,7 +234,9 @@ if (!app.requestSingleInstanceLock()) {
   store.onSettings((settings) => {
     syncDebugFlag(settings);
     broadcast(CH.settingsChanged, settings);
-    applyOverlaySettings(settings.overlay);
+    // Nothing in `overlay` is pushed onto a window from here: the scale is applied by each
+    // renderer (ADR 0041), the opacity slider by each window's own `useWindowOpacity` (which
+    // knows whether its ◐ is on), and always-on-top is now that window's own state (ADR 0074).
     syncAlertWindow(settings);
     tray?.setContextMenu(buildTrayMenu()); // keep the "Debug logging" checkbox in sync
     // Only re-target the watcher when the log location actually changed.

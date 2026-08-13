@@ -18,7 +18,7 @@
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { mergeObservations, observeMobs, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
-import { sameZone } from "../src/shared/sources";
+import { sameZoneOrMisspelling } from "../src/shared/zones/spelling";
 import type { KillLog } from "./kill-log";
 
 import { createSaver, readJson } from "./json-store";
@@ -97,9 +97,11 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
   }
 
   // Folded, so a zone's difficulty variants answer as one zone (ADR 0059) — and so a peer whose
-  // build stamped the decorated name is still found when you ask for the plain one.
+  // build stamped the decorated name is still found when you ask for the plain one. A misspelling
+  // counts too (ADR 0075), which is the same peer's other spelling problem: their map pack labels the
+  // zone a letter differently, and their whole tally for it would be filtered out of yours.
   const forZone = (obs: MobObservation[], zone?: string): MobObservation[] =>
-    zone ? obs.filter((o) => sameZone(o.zone, zone)) : obs;
+    zone ? obs.filter((o) => sameZoneOrMisspelling(o.zone, zone)) : obs;
 
   return {
     mine: (zone) => forZone(killLog.observations(), zone),

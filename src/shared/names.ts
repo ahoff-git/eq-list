@@ -12,9 +12,12 @@
  * list, a drop rate — and kept verbatim wherever the log is *shown*, because the grade is the
  * point of the loot line and the difficulty is the point of comparing two camps.
  *
- * Pure and dependency-free. Both readers live here so the shapes the number comes in are stated
- * once; see [ADR 0057](../../specs/decisions/0057-a-grade-is-not-an-identity.md).
+ * Both readers live here so the shapes the number comes in are stated once; see
+ * [ADR 0057](../../specs/decisions/0057-a-grade-is-not-an-identity.md). The only thing it depends on
+ * is the zone gazetteer, which is data.
  */
+
+import { ZONE_NAME_PAIRS } from "./zones/gazetteer";
 
 /** An item's grade is written as a plus and a number, always last: "Crushbone Belt +5". */
 const ITEM_GRADE_RE = /\s*\+\s*(\d+)\s*$/;
@@ -69,49 +72,70 @@ export function zoneBaseName(name: string): string {
 
 /**
  * **Zones our sources call different things** — the other half of the mapping list, beside
- * `CURATED_ZONES` in `map/zones.ts`. That table says which *file* a zone is; this one says which
- * *name*, for a place the log, the mapmakers and the wikis never agreed on.
+ * `CURATED_ZONES`. That table says which *file* a zone is; this one says which *name*, for a place
+ * the log, the mapmakers and the wikis never agreed on. Both are now **two views of one gazetteer**
+ * (`zones/gazetteer.ts`), so a name learned once is known to both
+ * ([ADR 0076](../../specs/decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)).
  *
- * Both sides are written folded (lower case, no leading "the"), because that is the form every
+ * Both sides are stored folded (lower case, no leading "the"), because that is the form every
  * comparison reaches this table with. Fold to the **map's** name: the map is the thing on screen, so
  * that is the name the picker and the title should show.
  *
- * **This is the short list on purpose.** Rephrasings resolve on their own now — "The Castle of
- * Mistmoore" finds "Castle Mistmoore" without being told, and a sub-zone finds its parent — so an
- * entry here is only for a pair *no rule can reach*, where the two names share no useful spelling
- * ([ADR 0068](../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md)). Each one
- * below is a pair the resolver was measured against and could not place.
- *
- * Add an entry only once the zone is *identified* — by the zones its file links to, and by whether
- * your own recorded positions land inside its geometry. A guess here is the one naming mistake that
- * doesn't fail closed: unlike the resolver, an alias has no candidate list to be outvoted by, so it
- * is believed everywhere and forever. See the warning on `CURATED_ZONES`.
+ * An alias is the one naming mistake that doesn't fail closed: unlike the resolver, it has no
+ * candidate list to be outvoted by, so it is believed everywhere and forever — which is why the
+ * gazetteer's are checked by `electron/tests/zone-gazetteer.test.ts` (no alias may rename a different
+ * zone, and no two may disagree) rather than merely trusted.
  */
-const ZONE_ALIASES: Record<string, string> = {
-  // Kerra Isle is `kerraridge`, named "Kerra Ridge" by both packs' own labels: its only exit is to
-  // Toxxulia Forest, which is Kerra Isle's only neighbour, and 454 of 463 positions recorded there
-  // sit inside its lines.
-  "kerra isle": "kerra ridge",
-  // Fandom's name for `runnyeye`. Unreachable by spelling *and* by rank: scored against the whole
-  // expansion table, "RunnyEye Citadel" likes "Estate of Unrest" (0.38) better than "Clan Runnyeye"
-  // (0.32), so no threshold could have rescued it — which is exactly what this table is for. The
-  // later "The Liberation of Runnyeye" is a different zone and stays one.
-  "clan runnyeye": "runnyeye citadel",
-  // Fandom's name for `northro`. The words don't overlap enough to match ("northern"/"north" is an
-  // edit apart, "desert" is in neither the other's name), and "South Ro" is the same distance away.
+const HAND_ALIASES: Record<string, string> = {
+  // Fandom's name for `northro`, which the gazetteer knows only as "North Ro". The words don't
+  // overlap enough to match ("northern"/"north" is an edit apart, "desert" is in neither the other's
+  // name), and "South Ro" is the same distance away — so the pair still has to be stated, and it
+  // must fold *to* the fandom spelling, since that's what the expansion lookup is keyed by.
   "north ro": "northern desert of ro",
 };
 
 /**
- * The one fold behind every "is this the same zone?" — the key that kill records, mob knowledge, the
- * map lookup, hunt grouping and the wiki's drop zones all compare on.
+ * Every name that means another zone's name, folded: the gazetteer's pairs, then the hand table,
+ * which wins.
  *
- * Decoration off (difficulty, ruleset), then case, a leading "the" and spacing normalised, then any
- * alias applied. `normalizeZone` in `sources.ts` is this function; it lives here because the rule is
- * about what a zone *name* means, and nothing else in this module has dependencies either.
+ * Three rules, each of which a test pins:
+ *  - **identity pairs are dropped** — a spelling that already folds onto its canonical is a no-op;
+ *  - **first wins** among the gazetteer's own, so a re-supplied table can't silently flip a name;
+ *  - **chains are resolved here**, once, because `zoneKey` does a single lookup — an alias pointing
+ *    at a name that is itself an alias would otherwise fold only half way.
  */
-export function zoneKey(name: string): string {
-  const folded = zoneBaseName(name)
+const ZONE_ALIASES: Record<string, string> = buildZoneAliases();
+
+function buildZoneAliases(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const { alias, canonical } of ZONE_NAME_PAIRS) {
+    const key = zoneFold(alias);
+    const value = zoneFold(canonical);
+    if (!key || !value || key === value) continue;
+    if (out[key] === undefined) out[key] = value;
+  }
+  for (const [key, value] of Object.entries(HAND_ALIASES)) out[key] = value;
+
+  // Follow each value while it is itself a key, so one lookup is always enough. Bounded by the
+  // number of entries, so a cycle can't spin.
+  for (const key of Object.keys(out)) {
+    let value = out[key];
+    for (let hops = 0; out[value] !== undefined && out[value] !== value && hops < 8; hops++) value = out[value];
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * A zone name folded by **rule alone** — the part of `zoneKey` that needs no vocabulary, which is
+ * also what the alias table's own keys are built with (so it can't be self-referential).
+ *
+ * Exported for the resolver, which needs to see a name *as written* as well as after an alias
+ * replaced it (`spellings` in `zones/resolve.ts`). Nothing should key on this: two spellings of one
+ * zone fold differently here, which is the whole reason the alias table exists.
+ */
+export function zoneFold(name: string): string {
+  return zoneBaseName(name)
     .toLowerCase()
     // **The apostrophe.** EverQuest's map labels write a backtick — `Erud\`s Crossing`,
     // `Kurn\`s Tower`, `Dagnor\`s Cauldron` — while the log writes a typewriter one (verified
@@ -121,5 +145,17 @@ export function zoneKey(name: string): string {
     .replace(/^the\s+/, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * The one fold behind every "is this the same zone?" — the key that kill records, mob knowledge, the
+ * map lookup, hunt grouping and the wiki's drop zones all compare on.
+ *
+ * Decoration off (difficulty, ruleset), then case, a leading "the" and spacing normalised, then any
+ * alias applied. `normalizeZone` in `sources.ts` is this function; it lives here because the rule is
+ * about what a zone *name* means.
+ */
+export function zoneKey(name: string): string {
+  const folded = zoneFold(name);
   return ZONE_ALIASES[folded] ?? folded;
 }

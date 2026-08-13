@@ -1,6 +1,7 @@
 "use client";
 import { api } from "@/lib/api";
 import { MAP_UI_SCALE } from "@/shared/constants";
+import ClickThroughButton from "./ClickThroughButton";
 import OpacityButton from "./OpacityButton";
 import PinButton from "./PinButton";
 import ScaleButtons from "./ScaleButtons";
@@ -49,6 +50,8 @@ export default function MapTitlebar({
   onOpaque,
   pinned,
   onPinned,
+  clickThrough,
+  onClickThrough,
 }: {
   zone: Zone | undefined;
   zoneName: string;
@@ -82,6 +85,9 @@ export default function MapTitlebar({
   onOpaque: () => void;
   pinned: boolean;
   onPinned: () => void;
+  /** Whether clicks over the map go to the game (this bar keeps working either way). */
+  clickThrough: boolean;
+  onClickThrough: () => void;
 }) {
   const drawnBy = sources.find((s) => s.id === zone?.source)?.label ?? zone?.source;
   // Two reasons a zone comes from elsewhere, and they mean opposite things about your pack: it hasn't
@@ -150,6 +156,8 @@ export default function MapTitlebar({
         <ScaleButtons scale={scale} onScale={onScale} what="map" range={MAP_UI_SCALE} />
         {/* The saved opacity is app-wide; this flips *this* window solid — see `useWindowOpacity`. */}
         <OpacityButton opaque={opaque} opacity={opacity} onToggle={onOpaque} />
+        {/* Fight through the map: the canvas passes clicks to the game, this bar doesn't. */}
+        <ClickThroughButton on={clickThrough} what="the map" onToggle={onClickThrough} />
         <PinButton pinned={pinned} onToggle={onPinned} />
         {/* Closed for real, not hidden — the map is opened on demand. */}
         <WindowButtons dismissTitle="Close map" dismiss={() => api()?.win.close()} />

@@ -15,5 +15,12 @@ Start here, then branch out by area:
 - [travel](./travel/README.md) — the zone-line graph behind "how do I get from here to there?".
 - [testing](./testing/README.md) — what's a tested black box and how to run it.
 
-Decisions are logged as ADRs in [decisions/](./decisions/README.md). Open work is
-tracked in [todo.md](./todo.md).
+Decisions are logged as ADRs in [decisions/](./decisions/README.md). Everything not yet
+built has one of four homes, so no list has to be read to find out whether it's the right
+one:
+
+- [todo.md](./todo.md) — **open work**: a bug, or a decided change someone means to make.
+- [ideas.md](./ideas.md) — **features for later**, that nothing is waiting on.
+- [decisions/README.md](./decisions/README.md) `## Open Questions` — what needs **deciding**
+  before it can be built.
+- [testing/manual-qa.md](./testing/manual-qa.md) — built and tested, but never **run for real**.

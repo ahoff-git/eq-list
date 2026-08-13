@@ -37,6 +37,16 @@ export const MAP_UI_SCALE = { min: 0.6, max: 2, step: 0.05 } as const;
  */
 export const OVERLAY_OPACITY = { min: 0.2, max: 1, step: 0.05 } as const;
 
+/**
+ * A window's live opacity: the ◐ override wins over the saved slider, and nothing else decides it.
+ * Both ends need the same rule — main to open the window at the right translucency, the renderer to
+ * re-apply it when either half changes — and a window that opened by one rule and settled by
+ * another is exactly the flash this avoids.
+ */
+export function windowOpacity(opaque: boolean | undefined, saved: number): number {
+  return opaque ? OVERLAY_OPACITY.max : saved;
+}
+
 export type ScaleRange = { min: number; max: number; step: number };
 
 /** Clamp a stored or user-supplied scale into a range, rounded to whole percent. */

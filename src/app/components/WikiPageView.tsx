@@ -2,6 +2,7 @@
 import { api } from "@/lib/api";
 import { useNav } from "@/lib/nav";
 import ItemLink from "./ItemLink";
+import MobKills from "./MobKills";
 import type { ItemSource, WikiPage } from "@/shared/types";
 
 /**
@@ -186,6 +187,9 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
       {page.kind === "mob" && page.components.length === 0 && (
         <p className="muted small" style={{ marginTop: 12 }}>No known loot listed — open it on eqlwiki to check.</p>
       )}
+      {/* The wiki's claims are above; this is what killing the thing actually taught us, and it's the
+          one place on the page that can open a map (see `MobKills`). */}
+      {page.kind === "mob" && <MobKills mob={page.title} />}
       {page.kind === "zone" && (
         <p className="muted small" style={{ marginTop: 12 }}>Zone page — open it on eqlwiki to browse its contents.</p>
       )}

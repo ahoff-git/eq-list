@@ -13,8 +13,8 @@ import { importLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { createTravelRouter } from "./travel-graph";
 import { alertStyle } from "../src/shared/cast-alerts";
-import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, showInSearch } from "./windows";
-import { resetPositions } from "./window-state";
+import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, showInSearch } from "./windows";
+import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
 import type { LogWatcher } from "./log-watcher";
@@ -27,7 +27,7 @@ import type { LootLog } from "./loot-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
-import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, TravelAnswer, TravelEnd, TravelOptions } from "../src/shared/types";
+import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 
 const log = createLogger("ipc");
@@ -447,6 +447,18 @@ function registerPeerIpc(context: IpcContext): void {
   });
   // Hide to tray (single-window app): keep the process alive so the tray/hotkey can reshow.
   ipcMain.on(CH.winHide, (e) => BrowserWindow.fromWebContents(e.sender)?.hide());
+  // How this window was left, and remembering a change to it (see ADR 0074). The renderer doesn't
+  // know which window it is, so the role comes from the sender; a window that keeps no state reads
+  // as "never said" and writes nowhere. Applying is still the appliers' job below — this only
+  // remembers, so a per-crossing click-through flip can't be mistaken for the user's choice.
+  ipcMain.handle(CH.winGetState, (e) => {
+    const role = roleOf(BrowserWindow.fromWebContents(e.sender));
+    return role ? windowToggles(role) : {};
+  });
+  ipcMain.on(CH.winSaveState, (e, patch: WindowToggles) => {
+    const role = roleOf(BrowserWindow.fromWebContents(e.sender));
+    if (role) setWindowToggles(role, patch);
+  });
   // Transient opacity (the "full opacity" toggle) — doesn't touch the saved setting.
   ipcMain.on(CH.winSetOpacity, (e, value: number) =>
     BrowserWindow.fromWebContents(e.sender)?.setOpacity(
@@ -455,6 +467,13 @@ function registerPeerIpc(context: IpcContext): void {
   );
   ipcMain.on(CH.winSetAlwaysOnTop, (e, enabled: boolean) =>
     BrowserWindow.fromWebContents(e.sender)?.setAlwaysOnTop(!!enabled, "screen-saver"),
+  );
+  // Click-through, asked for region by region as the cursor moves (see `useClickThrough`).
+  // `forward` is what makes it a *mode* rather than a wall: mouse **moves** still reach the
+  // renderer while clicks go to the game, so the window can see the cursor arrive over a
+  // control and ask for itself back. Windows/macOS only; on Linux it degrades to all-or-nothing.
+  ipcMain.on(CH.winSetClickThrough, (e, enabled: boolean) =>
+    BrowserWindow.fromWebContents(e.sender)?.setIgnoreMouseEvents(!!enabled, { forward: true }),
   );
   ipcMain.on(CH.winClose, (e) => BrowserWindow.fromWebContents(e.sender)?.close());
   // Forget saved position and recenter the window (for a "lost" window).

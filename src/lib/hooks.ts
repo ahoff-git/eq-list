@@ -1,8 +1,9 @@
 "use client";
-import { type DependencyList, type RefObject, useCallback, useEffect, useState } from "react";
+import { type DependencyList, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { setRendererDebug } from "@/shared/logging";
-import { UI_SCALE, clampScale, type ScaleRange } from "@/shared/constants";
+import { UI_SCALE, clampScale, windowOpacity, type ScaleRange } from "@/shared/constants";
+import { useWindowToggle } from "./windowToggles";
 import type {
   ShoppingList,
   Settings,
@@ -208,44 +209,71 @@ export function useHpEstimate(): HpEstimate {
 }
 
 /**
- * Pooled mob knowledge (yours plus peers'), keyed by mob name for quick lookup. Used wherever
- * the wiki's claims need checking against what we've actually killed.
+ * Everything known about every mob, in every zone it's known in — yours pooled with peers'.
+ *
+ * The one fetch behind the two views below, because they ask the same question and differ only in how
+ * they shape the answer: one folds the zones away, the other is *about* them.
  */
-export function useMobKnowledge(refreshKey: unknown): Record<string, MobKnowledge> {
-  const [known, setKnown] = useState<Record<string, MobKnowledge>>({});
+function useAllMobs(refreshKey?: unknown): MobKnowledge[] {
+  const [mobs, setMobs] = useState<MobKnowledge[]>([]);
   useEffect(() => {
     const a = api();
     if (!a) return;
-    const load = () =>
-      void a.mobs.all().then((mobs) => {
-        // A mob can be known in several zones; fold them together, since "does it drop this"
-        // isn't a per-zone question.
-        // Keyed by `mobKey` (article- and case-folded) so a wiki name like "a gnoll" finds
-        // knowledge filed under the kill's stripped "gnoll".
-        const byMob: Record<string, MobKnowledge> = {};
-        for (const m of mobs) {
-          const key = mobKey(m.mob);
-          const cur = byMob[key];
-          if (!cur) {
-            byMob[key] = m;
-            continue;
-          }
-          byMob[key] = {
-            ...cur,
-            kills: cur.kills + m.kills,
-            myKills: cur.myKills + m.myKills,
-            drops: mergeDropLists(cur, m),
-            contributors: [...new Set([...cur.contributors, ...m.contributors])],
-          };
-        }
-        setKnown(byMob);
-      });
+    const load = () => void a.mobs.all().then(setMobs);
     load();
     // Mob knowledge is derived from the kill log, so a bulk kill change (import / clear) means
     // refetch — not just when the caller's refreshKey ticks over.
     return a.kills.onChanged(load);
   }, [refreshKey]);
-  return known;
+  return mobs;
+}
+
+/**
+ * Pooled mob knowledge (yours plus peers'), keyed by mob name for quick lookup. Used wherever
+ * the wiki's claims need checking against what we've actually killed.
+ */
+export function useMobKnowledge(refreshKey: unknown): Record<string, MobKnowledge> {
+  const mobs = useAllMobs(refreshKey);
+  return useMemo(() => {
+    // A mob can be known in several zones; fold them together, since "does it drop this"
+    // isn't a per-zone question.
+    // Keyed by `mobKey` (article- and case-folded) so a wiki name like "a gnoll" finds
+    // knowledge filed under the kill's stripped "gnoll".
+    const byMob: Record<string, MobKnowledge> = {};
+    for (const m of mobs) {
+      const key = mobKey(m.mob);
+      const cur = byMob[key];
+      if (!cur) {
+        byMob[key] = m;
+        continue;
+      }
+      byMob[key] = {
+        ...cur,
+        kills: cur.kills + m.kills,
+        myKills: cur.myKills + m.myKills,
+        drops: mergeDropLists(cur, m),
+        contributors: [...new Set([...cur.contributors, ...m.contributors])],
+      };
+    }
+    return byMob;
+  }, [mobs]);
+}
+
+/**
+ * What we know about **one** mob, one row per zone it's been killed in, most kills first.
+ *
+ * The per-zone shape is the point: a rate is a fact about a camp, and the zone is also the only thing
+ * that can open a map. `useMobKnowledge` above folds the zones together, which is right for "does it
+ * drop this" and useless for "where do I go".
+ */
+export function useMobZones(mob: string | null): MobKnowledge[] {
+  const mobs = useAllMobs();
+  return useMemo(() => {
+    if (!mob) return [];
+    // Folded, so the wiki's "a gnoll pup" finds the kill log's "gnoll pup".
+    const key = mobKey(mob);
+    return mobs.filter((m) => mobKey(m.mob) === key);
+  }, [mobs, mob]);
 }
 
 /** Sum two zones' drop counts for the same mob, then re-derive the rates from the total. */
@@ -306,27 +334,26 @@ export function useUiScale(scale: number | undefined, range: ScaleRange = UI_SCA
 }
 
 /**
- * Own this window's live opacity, and the transient "fully opaque" toggle beside it.
+ * Own this window's live opacity, and the ◐ "fully opaque" toggle beside it.
  *
- * The **renderer** owns the value rather than the main process: the ◐ toggle is a transient
- * override of the saved setting, and re-applying the saved value from main on every settings
- * change clobbered it (the button read "on" while the window quietly went translucent). The
- * window opens at the saved opacity (its constructor) and this takes over from there.
+ * Two values meet here and neither is the other's business: **how translucent the app is** is one
+ * app-wide preference (`overlay.opacity`, the Settings slider), while **whether this window is
+ * flipped solid** is that window's own remembered state — so leaning into the map to read it never
+ * clears the list, and both come back as you left them (`useWindowToggle`, ADR 0074).
  *
- * The saved value is **shared** (`overlay.opacity`, one look for the app) but the override is
- * **per window**: this state is local to each renderer and the IPC applies to whichever window
- * sent it, so the map can be flipped solid to read it while the list stays translucent.
+ * The **renderer** applies the product of the two rather than the main process: it's the only end
+ * that knows both, and re-applying the saved slider from main on every settings change used to
+ * clobber the override — the button read "on" while the window quietly went translucent.
  *
- * `saved` is `undefined` until settings load, which is when to leave the window alone — the
- * constructor already set it right, and applying a fallback would flash it opaque on launch.
+ * `saved` is `undefined` until settings load, which is when to leave the window alone — its
+ * constructor already opened it at the right value, and applying a fallback would flash it.
  */
 export function useWindowOpacity(saved: number | undefined): { opaque: boolean; toggle: () => void } {
-  const [opaque, setOpaque] = useState(false);
-  const toggle = useCallback(() => setOpaque((o) => !o), []);
+  const { on: opaque, loaded, toggle } = useWindowToggle("opaque");
   useEffect(() => {
-    if (saved === undefined) return;
-    api()?.win.setOpacity(opaque ? 1 : saved);
-  }, [opaque, saved]);
+    if (!loaded || saved === undefined) return;
+    api()?.win.setOpacity(windowOpacity(opaque, saved));
+  }, [opaque, saved, loaded]);
   return { opaque, toggle };
 }
 

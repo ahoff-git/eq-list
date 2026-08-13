@@ -24,9 +24,13 @@ in the main process and all UI in the renderer.
     only when `EQL_DEVTOOLS` is set. Each window's renderer console is piped into the
     main-process log (`renderer:<role>`), so renderer output lands in the same terminal
     + debug file as the main process instead of only that window's DevTools.
-  - `window-state.ts` — persists window positions + whether the map window was open
-    (so the next launch reopens it), in a file separate from settings (bounds change
-    constantly; routing them through the reactive store would spam change events).
+  - `window-state.ts` — **how each window was left**: its position and size, whether it was
+    maximized, whether the map window was open (so the next launch reopens it), and its three
+    title-bar toggles — pinned, ◐ opaque, 👻 click-through (`WindowToggles`, applied by `windows.ts`
+    as the window is created; see
+    [ADR 0074](../decisions/0074-how-a-window-was-left-is-window-state.md)). A file separate from
+    settings, for two reasons: bounds change constantly and routing them through the reactive store
+    would spam change events, and all of this is per *window* rather than a preference for the app.
     Off-screen bounds are ignored, bounds bigger than the display they sit on are shrunk to
     fit it, and a "reset window positions" action recenters lost windows. On restore, `windows.ts`
     re-asserts the saved bounds with `setBounds` after creation: the constructor sizes a new
