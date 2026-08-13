@@ -98,7 +98,12 @@ features for later in [../ideas.md](../ideas.md).
   and that actually zoning in-game clears a hand-picked zone override so the map follows you again.
 - **Screengrab lookup, end-to-end.** Verify the `Ctrl/Cmd+Shift+L` flow: region select → capture →
   Tesseract OCR accuracy → fuzzy match. First OCR downloads the English model (needs network); tune
-  the crop / text cleanup if accuracy is poor.
+  the crop / text cleanup if accuracy is poor. Since
+  [ADR 0081](../decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md) the box may show a
+  **corrected** reading, so grab an item with an `rn` in it (Morning Star) and confirm the Search box
+  says "Morning Star" rather than "Moming Star" — and, the other way, that grabbing an item the wiki
+  has no page for still shows what OCR actually read. The debug log prints the readings offered and
+  the one chosen (`lookup` / `wiki` channels).
 - **Map window, real run.** Confirm the map window opens (🗺 button), draws the zone, and plots the
   player dot on a `/loc` line.
 - **The game's own maps, drawn (source dropdown).** Verified against the real install in the
@@ -229,6 +234,83 @@ features for later in [../ideas.md](../ideas.md).
   the fixture if nobody's around to invite you. Also worth feeling out the practical cost of a broad
   watch: **tells you** fired 123 times in two weeks of real play, which is a beep and a banner each
   — check whether that's welcome or wants a cooldown (still open in that ADR).
+- **Delayed alerts — the two cues, and the death rule.**
+  ([ADR 0082](../decisions/0082-an-alert-can-be-scheduled.md).) The schedule and the queue are
+  unit-tested with injected timers, so what a real run adds is whether a *cue* is actually useful at
+  the moment it lands. Two to set up: a watch on your own mez (include-self on) with delay **25** and
+  message `RECAST MEZ`, and one on a placeholder's death — a raw-text watch on its name — with **8m**.
+  Confirm the banner arrives late rather than at the match, that nothing else is late with it (the
+  Damage tab counts the cast immediately, the ☠ list the kill), and that the wording is what makes the
+  late banner legible: without a `message` it reads like a live alert about something that already
+  happened. Then the rule that needs dying: cast the mez, **die inside 25 s**, and confirm the recast
+  cue does *not* fire — then die with the 8m cue waiting and confirm it still does. Finally, turn cast
+  alerts off with a cue waiting and confirm it never arrives. Typing nonsense in the box should mark
+  the field red and alert immediately rather than swallowing the alert.
+- **A watch as a rule — conditions, exclusions, and calling a cue off.**
+  ([ADR 0084](../decisions/0084-a-watch-is-a-rule-not-a-substring.md).) The evaluator is unit-tested
+  against hand-built subjects; what a real run adds is whether the *fields* carry what we think they
+  do on this server's own wording, and whether the redesigned row is usable at speed. Three to build
+  and then play with for an evening:
+  1. **An exclusion.** A cast watch on something your own pet also casts, with `caster` `contains`
+     `warder`, excluded. Confirm the mob's cast alerts and your warder's doesn't — the field the
+     exclusion reads is the same log name `isNamedCaster` judges, so a pet named without the
+     possessive is the case to try if you have one.
+  2. **A zone condition.** Any watch plus `zone` `contains` your current zone. Confirm it fires
+     here and goes quiet the moment you zone out — the zone comes from the app's own tracking, so
+     this is really a test that the two agree while travelling.
+  3. **A cancel.** The 25 s re-mez cue from the delayed-alerts item above, plus **stop it when**
+     `line` `contains` `has been slain`. Mez, kill the mob inside 25 s, and confirm the reminder
+     never arrives; then mez and let it ride, and confirm it does. Worth also setting a **repeat** of
+     2 or 3 on that one to feel whether a repeating cue is helpful or maddening, since that's a
+     judgement no test can make.
+
+  Then the row itself: chips should say what each watch does without opening it, ⚟ / ⏱ / 🎨 should
+  open one drawer at a time across the whole list, and a deliberately broken watch (delay `soon`, or
+  a repeat with nothing to stop it) should show ⚠ with the explanation. Finally the compatibility
+  claim, which is the one worth checking on **your own settings file rather than a fresh one**: every
+  watch you already had must behave exactly as before, untouched.
+- **Testing a rule against your own log — the replay.**
+  ([ADR 0085](../decisions/0085-a-rule-can-be-tested-shared-and-borrowed.md).) The one that needs a
+  *real* log more than anything else here, because its whole purpose is to answer "does my wording
+  match what EQ actually prints". Play for twenty minutes so the buffer fills, then open ✓ on a few
+  rules and read the hits. What to confirm: the count of scanned lines climbs as you play; a rule you
+  know fires shows the lines you expect, with the log's own sentence readable; the ⚠ / ✖ list agrees
+  with the chip on the row; and — the real test — write a rule for something you *saw* happen this
+  session and see whether your first guess at the wording actually matches it. If it doesn't, that's
+  the feature working. Also worth checking right after a launch, where the honest answer is "nothing
+  logged yet this session" rather than a confident zero.
+- **The library, the share string, duplicate and saved styles.** Add two or three library rules and
+  confirm each behaves as its card claimed (open one afterwards — the card's chips should match the
+  row's). Add one with a ✎ note and confirm it opens for editing rather than sitting there matching
+  nothing. Then: **⧉** a rule and confirm the copy lands beside it, opens, and is independent.
+  **Copy all**, paste into a text file, clear a rule, and paste it back — it should arrive at the
+  bottom, enabled, with the same behaviour and a *different* id (check nothing was overwritten).
+  Paste deliberate junk and confirm it's refused with a sentence. Finally **saved styles**: make one,
+  put two rules in it, Test both (they should look identical), change the style once **in the Saved
+  styles list** and confirm both change — then delete it and confirm those rules fall back to the
+  defaults rather than going silent.
+- **The one-time rule conversion, on your own settings file.**
+  ([ADR 0087](../decisions/0087-an-old-rule-is-converted-once-and-the-path-is-one-module.md).) This is
+  the item to do **before** anything else in this section, and it wants a settings file that predates
+  the rule model — ideally a backup of one, since the interesting cases are watches with their own
+  copied styles. Launch with Debug logging on and read `upgraded alert rules` in the debug log: it
+  reports how many rules had `onCast` written out, how many were re-pointed at raw text, and how many
+  looks were folded into shared styles. Then confirm, in Settings: every rule you had is still there
+  and still ticked the same way; rules that shared a look now **wear the same saved style** (change it
+  once in Saved styles and both change); a rule whose look was just the defaults shows "the defaults"
+  rather than a copy; and — the claim worth actually testing — each rule still fires on what it fired
+  on before. `settings.pre-schema-1.json` should be sitting beside `settings.json` in the app's data
+  folder, and a second launch should log nothing at all.
+- **The three style edit paths.**
+  ([ADR 0086](../decisions/0086-editing-a-shared-style-from-a-rule-forks-it.md).) The rule is that
+  changing one rule's look never changes another's, and the only way to see it working is to try to
+  break it. With one saved style worn by **two** rules: open the first rule's 🎨, read the note (it
+  should name the style, say two rules wear it, and point at Saved styles), change the colour, and
+  confirm a **new** style appeared named after the original, that this rule now wears it, that the
+  other rule is untouched, and that nothing on screen jumped when it forked. Change the colour again
+  and confirm **no second copy** appears. Then the sole-wearer case: a style only one rule wears
+  should edit in place with no copy at all. Finally a rule on the defaults — editing it should fork
+  rather than quietly restyling every other rule that follows the defaults.
 - **Separate map scale.** Confirm the map window's A− / A+ move **only** the map and the main
   window's move only the main window (this was broken: Chromium's zoom is per-origin, so one number
   won for both — [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)). At
@@ -328,6 +410,16 @@ features for later in [../ideas.md](../ideas.md).
   had. With the map already open, hovering the block should ring that mob's kills; with it closed,
   hovering must not open a window. A mob you've never killed should say so rather than showing an empty
   block.
+
+- **The zone migration, run from inside the app.** ([ADR 0083](../decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md),
+  `electron/migrations.ts`.) It has already been **run against the author's real store** — 338 of 2947
+  records placed, 0 left, no other field touched, 140 ms for a 15 MB log, and 2609 records that already
+  had a zone agreed with the log's timeline exactly. What that run *didn't* exercise is the in-app path:
+  it was driven directly rather than from `main.ts`. So the store is now stamped `schema: 2` and won't
+  run again — to confirm the startup path, restore `kill-log.pre-schema-2.json` over `kill-log.json`
+  (or delete its `schema` field) with the app closed, then start it with Debug logging on and confirm
+  `filled in zones the log stated` appears in the debug log, the app doesn't stutter at launch, and the
+  Session tab's per-zone table gains the kills (Blackburrow was the big one: 130 → 244).
 
 - **The zone picker, now that 83 files have names**
   ([ADR 0076](../decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)). A supplied gazetteer

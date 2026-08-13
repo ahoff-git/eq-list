@@ -24,6 +24,7 @@ import {
 } from "./api";
 import { parseWikiPage } from "./parse";
 import { fuzzyRank } from "../../src/shared/fuzzy";
+import { bestReading } from "../../src/shared/ocr-variants";
 import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
 import type { SearchResult, WikiPage } from "../../src/shared/types";
@@ -65,6 +66,15 @@ export interface WikiClient {
    * offline — see `outOfEraZones` for what happens when the lookup fails.
    */
   outOfEraZones(): Promise<string[]>;
+  /**
+   * Of several readings of one OCR grab — the raw text and its corrections, in order
+   * (`ocr-variants.ts`) — the one that best matches a page title we mirror.
+   *
+   * Local and synchronous, because it runs between the grab and the Search box: the mirrored index
+   * or nothing. A cold index answers with the raw reading rather than waiting on the network, which
+   * is only the behaviour that existed before.
+   */
+  bestKnownReading(readings: readonly string[]): string;
   /**
    * Force a re-fetch of the mirrored search indexes now, instead of waiting out the weekly TTL —
    * so a page added to the wiki shows up in search straight away. Also drops the session's
@@ -261,6 +271,13 @@ export function createWikiClient(cacheDir: string): WikiClient {
       // After the zone index, since it's derived from it.
       await outEraZoneIndex.refresh();
       log.debug("wiki indexes refreshed on demand");
+    },
+
+    bestKnownReading(readings) {
+      titleIndex.ensureFresh();
+      const chosen = bestReading(readings, titleIndex.get() ?? []);
+      if (chosen !== readings[0]) log.debug(`OCR reading corrected: ${JSON.stringify(readings[0])} → ${JSON.stringify(chosen)}`);
+      return chosen;
     },
 
     async search(term) {

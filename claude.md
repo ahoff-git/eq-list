@@ -1,9 +1,10 @@
 # Project rules
 
-- Prefer changes that keep the code easy to modify.
-- Code reuse is ideal.
-- Avoid duplicating knowledge or intent.
-- Choose readable, obvious solutions over clever ones.
+- Functional Decomposition by default:
+  - Prefer changes that keep the code easy to modify.
+  - Code reuse is ideal.
+  - Avoid duplicating knowledge or intent.
+  - Choose readable, obvious solutions over clever ones.
 - Log debugging messages using the method defined in logging.ts, they should be disabled by default but easily enabled. 
 - Give each function, component, and module one clear job.
 - Prefer composition and factory functions over inheritance-heavy designs.

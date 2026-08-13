@@ -14,6 +14,10 @@ in the main process and all UI in the renderer.
     front (each at its own **native** resolution, so differing monitor resolutions
     aren't stretched/distorted), shows a per-monitor transparent selector; the crop
     is OCR'd (Tesseract.js) and the text is routed into the control window's Search box.
+    What OCR read is **corrected before it's searched** — `src/shared/ocr-variants.ts` holds
+    the EQ-font confusion table (`rn` read as `m`, …) and the wiki's mirrored titles pick
+    between the readings; see
+    [ADR 0081](../decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md).
   - `combat-stats.ts` — the one session tracker: experience/kill counters, per-combatant
     and per-spell tallies, per-mob rates; `combat-history.ts` — finished fights persisted
     for later; `xp-progress.ts` / `hp-estimate.ts` — persistent player state that outlives

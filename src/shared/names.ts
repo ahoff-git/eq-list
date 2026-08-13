@@ -37,6 +37,17 @@ const ZONE_DIFFICULTY_RE = /\s+\+?\(?(\d+)\)?\s*$/;
  */
 const ZONE_MODE_RE = /\s*\(\s*([A-Za-z][^()]*?)\s*\)\s*$/;
 
+/**
+ * The same fact, written the game's *other* way: `Nagafen's Lair - Solo`, `Kedge Keep - Solo`. Found in
+ * a real peer's observations — so this is the game's wording, not a guess — and it means a zone opened
+ * under a ruleset exactly as the parenthesised form does.
+ *
+ * Safe to fold because **no zone name contains " - "**: measured across all 361 the app ships (the
+ * hyphens it does have are inside a word — `Cazic-Thule`, `Takish-Hiz`), and a test pins it. Requires
+ * spaces around the dash for that reason.
+ */
+const ZONE_DASH_MODE_RE = /\s+-\s+([A-Za-z][A-Za-z ]*?)\s*$/;
+
 const numberIn = (name: string, re: RegExp): number | undefined => {
   const m = re.exec(name.trim());
   return m ? Number(m[1]) : undefined;
@@ -54,20 +65,26 @@ export function itemBaseName(name: string): string {
   return nameWithout(name, ITEM_GRADE_RE);
 }
 
-/** The ruleset tag a zone carries ("Blackburrow 2 (Adaptive)" → "Adaptive"), or undefined. */
+/** The ruleset tag a zone carries ("Blackburrow 2 (Adaptive)" → "Adaptive", "Kedge Keep - Solo" → "Solo"). */
 export function zoneMode(name: string): string | undefined {
-  const m = ZONE_MODE_RE.exec(name.trim());
+  const trimmed = name.trim();
+  const m = ZONE_MODE_RE.exec(trimmed) ?? ZONE_DASH_MODE_RE.exec(trimmed);
   return m ? m[1] : undefined;
 }
 
 /** How much harder a zone was made ("Blackburrow 3" → 3), or undefined for the ordinary zone. */
 export function zoneDifficulty(name: string): number | undefined {
-  return numberIn(nameWithout(name, ZONE_MODE_RE), ZONE_DIFFICULTY_RE);
+  return numberIn(withoutMode(name), ZONE_DIFFICULTY_RE);
 }
 
 /** A zone name without its difficulty or ruleset — the zone one map and one wiki page describe. */
 export function zoneBaseName(name: string): string {
-  return nameWithout(nameWithout(name, ZONE_MODE_RE), ZONE_DIFFICULTY_RE);
+  return nameWithout(withoutMode(name), ZONE_DIFFICULTY_RE);
+}
+
+/** Either spelling of the ruleset tag off — the game writes both, and they mean the same thing. */
+function withoutMode(name: string): string {
+  return nameWithout(nameWithout(name, ZONE_MODE_RE), ZONE_DASH_MODE_RE);
 }
 
 /**
@@ -92,6 +109,24 @@ const HAND_ALIASES: Record<string, string> = {
   // name), and "South Ro" is the same distance away — so the pair still has to be stated, and it
   // must fold *to* the fandom spelling, since that's what the expansion lookup is keyed by.
   "north ro": "northern desert of ro",
+  /*
+   * **The three names a real EQL log turned out to use.** Found in a peer's shared observations, which
+   * are derived from *their* log — so this is the game's own wording, which is the wording data is
+   * stored under (ADR 0083) and therefore the wording that has to resolve.
+   *
+   * Each is identified, per the warning above, not guessed:
+   *
+   *   city of guk / ruins of old guk — EverQuest's long names for `guktop` and `gukbottom`. The peer
+   *     has both and neither "Upper Guk" nor "Lower Guk", which is what the gazetteer calls them;
+   *     fandom lists exactly two Guk zones in Original Release, so there is nothing else they could be.
+   *   temple of cazic-thule — fandom's own name for `cazicthule`, where the gazetteer's display name is
+   *     the bare "Cazic-Thule". One zone in Original Release, not two, and the words overlap too little
+   *     for the order tier to pair them ("temple" is in one name only). Folding them also lets the
+   *     expansion lookup place the zone, which it couldn't before.
+   */
+  "city of guk": "upper guk",
+  "ruins of old guk": "lower guk",
+  "temple of cazic-thule": "cazic-thule",
 };
 
 /**

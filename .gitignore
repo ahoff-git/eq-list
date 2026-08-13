@@ -51,3 +51,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# A machine-local pointer at a real EQ Legends install, for the opt-in `*.live.test.ts` checks
+# (see electron/tests/game-data.ts). Holds an absolute path, so it is yours and never ours.
+/fixtures/local-game-dir.txt

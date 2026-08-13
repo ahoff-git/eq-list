@@ -12,7 +12,7 @@ import { WIKI_BASE } from "./wiki/api";
 import { importLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { createTravelRouter } from "./travel-graph";
-import { alertStyle } from "../src/shared/cast-alerts";
+import { sampleAlert } from "./alert-router";
 import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, showInSearch } from "./windows";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
 import type { Store } from "./store";
@@ -27,6 +27,7 @@ import type { LootLog } from "./loot-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
+import type { RecentLines } from "./recent-lines";
 import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 
@@ -57,6 +58,8 @@ export interface IpcContext {
   /** Push an event to every window (owned by main.ts). */
   broadcast: (channel: string, payload: unknown) => void;
   watcher: LogWatcher;
+  /** The last few thousand log lines, for testing an alert rule against what really happened. */
+  recent: RecentLines;
 }
 
 export function registerIpc(context: IpcContext): void {
@@ -141,21 +144,9 @@ function registerSettingsIpc(context: IpcContext): void {
       (watchId && alerts.watches.find((w) => w.id === watchId)) ||
       alerts.watches.find((w) => w.enabled && w.spell.trim());
     getAlertWindow()?.moveTop(); // you're on the Settings tab, so raise the overlay above it
-    const spell = watch?.spell.trim() || "Fear";
-    // A line watch draws a different banner (the game's own sentence, no "dispel!"), so its test
-    // has to be one too — otherwise styling one previews a shape it will never take.
-    const shape: Partial<CastAlertEvent> = watch?.onLine
-      ? { caster: "", event: "line", text: `A log line containing “${spell}”` }
-      : { caster: "Test" };
-    broadcast(CH.castAlert, {
-      caster: "Test",
-      spell,
-      at: new Date().toISOString(),
-      // Its own wording too, or the preview would show a sentence the real alert never uses.
-      message: watch?.message,
-      style: alertStyle(alerts, watch),
-      ...shape,
-    } satisfies CastAlertEvent);
+    // The payload is built by `alert-router.ts`, beside the live ones, so a preview can't drift into
+    // showing a banner the real alert never draws.
+    broadcast(CH.castAlert, sampleAlert(alerts, watch || undefined, new Date().toISOString()));
   });
 
   // ── placing a custom alert spot ──
@@ -184,6 +175,14 @@ function registerSettingsIpc(context: IpcContext): void {
     placeResolve?.(point ?? null);
     placeResolve = null;
   });
+
+  // The lines the log has produced lately, so Settings can test an alert rule against what really
+  // happened instead of asking the player to go and make it happen again. Read-only and in memory
+  // (`recent-lines.ts`); the *judging* is pure and runs in the renderer (`dryRun`), because it wants
+  // to re-run on every keystroke.
+  ipcMain.handle(CH.logRecent, (_e, count?: number) =>
+    context.recent.all(typeof count === "number" ? count : undefined),
+  );
 
   // "Eat" a log file: a catch-up that digests it into every store that can take it — the kill log
   // (→ mob knowledge), combat history, and the loot feed (→ prices). The kill log flags your own

@@ -62,39 +62,21 @@ everything else, so this list can stay short enough to read:
 
 ## From the neighbours
 
-Five changes decided by reading **EQBuddy** and **eql-tooltip**, both of which solve our problems for
+Changes decided by reading **EQBuddy** and **eql-tooltip**, both of which solve our problems for
 a different player and got somewhere we haven't. Taken because the knowledge in them is *empirical* —
 which letters OCR confuses in EQ's font, what a player actually wants an alert to do — and that is
 the kind of thing worth borrowing rather than rediscovering a year later.
 
 Every repo named below, and the file to open in it, is in [neighbours.md](./neighbours.md).
 
-- **OCR is corrected before it is searched.** `cleanText` in `electron/lookup.ts` strips junk characters
-  and stops; whatever survives goes to the Search box, where [fuzzy.ts](../src/shared/fuzzy.ts) has to
-  absorb the damage as if it were a typo. But an OCR slip is not a typo — it is a *specific, repeatable*
-  misreading of EQ's small font, and eql-tooltip has the tally, in `OcrVariants()` in
-  `EqWikiOverlay/Wiki/EqlWikiProvider.cs`: `rn` read as `m` ("Morning Star" → "Moming Star") is the
-  common one, with `q`→`g` and `0`→`o` behind it. Correcting before the search is
-  what recovers a name fuzzy ranking alone can't, because the damage is one edit spread across a token
-  boundary rather than a letter off. The shape: a pure `ocr-variants.ts` yielding the raw text plus its
-  corrected variants in order, deduped, fed through `fuzzyRank`, best score wins. A black box with the
-  confusion table as its tested surface — so when a new misreading shows up in the field, one list grows
-  and nothing else moves.
+- **A watch can hold a regex, and can't hang the watcher.** *Smaller than it was:*
+  [ADR 0084](./decisions/0084-a-watch-is-a-rule-not-a-substring.md) took the cases this item led with
+  — "either spelling of this raid call" is now `match: any` with a second condition, and an anchored
+  match is `starts` / `ends` — without a pattern language or its hazards. What's left is genuine
+  patterns: a number in the sentence, a name shape, anything a fixed string can't describe. Worth
+  asking first whether that's a real request or a completionist one, because the cost below hasn't
+  moved at all.
 
-- **An alert can be scheduled, not just raised.** Every alert fires the instant it matches, which is
-  right for "dispel, now" and wrong for everything shaped like a reminder. A *delay* per watch (up to
-  30 minutes, seconds by default, `m` for minutes) turns the same watch into a cue: match your mez and
-  sound 25 s later to mean "recast it"; match a placeholder's death and sound at 8 m to mean "it's back".
-  This is the cheapest route to timers we have — no timer subsystem, no catalog, just the watch list we
-  already ship. Two rules to carry over from EQBuddy — see `AlertDelaySeconds` and `IsCombatCue` in
-  `src/EQBuddy.Core/TrackedRule.cs` — both learned the hard way: only the **alert** waits (counts and the
-  ledger update immediately, or the app is lying about what it saw), and a **death cancels a short cue
-  but not a long one** — a reminder to recast is noise once you're dead, but dying doesn't change when a
-  mob pops. The natural split is a pure "what should fire, and when" function next to `matchCast` in
-  [cast-alerts.ts](../src/shared/cast-alerts.ts), with the scheduling itself in main.
-
-- **A watch can hold a regex, and can't hang the watcher.** `matchesWatch` is `text.includes(needle)`
-  and nothing else, so a watch can't say "either spelling of this raid call" without being two watches.
   A per-watch `.*` toggle makes the text a real `RegExp` (case-insensitive, as the plain mode already
   is). The care is entirely in the failure modes, and both are ours to own now that
   [ADR 0050](./decisions/0050-a-watch-can-read-a-whole-log-line.md) points watches at *every* line: an
@@ -156,7 +138,8 @@ lineage. Most of what follows is about widening the input, not the output.
   **358 sentences are shared by more than one obtainable spell** — every haste in the game reuses one
   line — so a lookup must return a *candidate list plus a display label*, never a single answer; and
   plenty of spells fade **silently** (Burnout's `SPELLGONE` is empty), for which EQBuddy's note is that
-  a delay-cue rule is the honest tool, which is the alert-scheduling item above. The parse is trivial
+  a delay-cue rule is the honest tool — which now ships
+  ([ADR 0082](./decisions/0082-an-alert-can-be-scheduled.md)). The parse is trivial
   next to `spell-file.ts` — six columns, a header naming them — so nearly all the work is deciding how
   an ambiguous fade presents itself in a watch.
 
@@ -309,9 +292,11 @@ Four of the six are **done** and have left this list: rank-aware spell costs
 
   We already parse both halves: `combatant()` folds you to `SELF` and the cast event carries the
   spell, so this is a small pending-cast map keyed by canonical spell name with a short expiry, read
-  where a shared-emote watch fires. It is also **the same machinery as the delayed-alerts item above**
-  — a thing that happened, remembered briefly, acted on when a second thing does or doesn't follow —
-  so the two want designing together rather than twice.
+  where a shared-emote watch fires. It is the **same shape as a delayed alert**
+  ([ADR 0082](./decisions/0082-an-alert-can-be-scheduled.md)) — a thing that happened, remembered
+  briefly, acted on when a second thing does or doesn't follow — so `alert-queue.ts` is the neighbour
+  to read before starting, even though the state it keeps is the mirror image (a cue waits to *fire*,
+  a pending cast waits to be *matched*).
 
   Note the honest edge eql-alerts also documents: some upgrade ranks still share one emote line
   (their example is Dazzle upgrading the generic mesmerize sentence), so the gate identifies *whose*
@@ -325,9 +310,10 @@ Four of the six are **done** and have left this list: rank-aware spell costs
   both strips their countdowns **and** silences their cast alerts, because a toast for a buff that
   never ends is pure noise.
 
-  This bites us in two places, one of them already on this page: any buff timer we build, and the
-  **spoken/delayed alert** items above, where a "recast it" cue for a permanent buff is worse than
-  useless. It costs nothing to carry the list; it costs a bug report to discover it. Files under the
+  This bites us in two places: any buff timer we build, and the alerts that now prompt a recast — the
+  **spoken alert** item above, and the **delay cue** that shipped as
+  [ADR 0082](./decisions/0082-an-alert-can-be-scheduled.md), where a "recast it" 25 s after a
+  permanent buff is worse than useless. It costs nothing to carry the list; it costs a bug report to discover it. Files under the
   same heading as the wider trap — *EQL is not classic EQ* — which the whole of
   [neighbours.md](./neighbours.md) is a standing reminder of.
 

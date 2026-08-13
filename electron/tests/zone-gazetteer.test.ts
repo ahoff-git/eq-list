@@ -93,6 +93,14 @@ test("one zone under two short names is a candidate, not a duplicate", () => {
   assert.deepEqual(zonesFromFiles("stock", ["steamfont"]).map((z) => z.name), ["Steamfont Mountains"]);
 });
 
+test("no zone name contains ' - ', which is what lets it mean a ruleset", () => {
+  // The game writes `Nagafen's Lair - Solo` as well as `… 2 (Adaptive)`, and `zoneBaseName` folds the
+  // dash form away. That is only safe while no real name uses the separator — the hyphens in the corpus
+  // are all inside a word (`Cazic-Thule`, `Takish-Hiz`), so this is the claim to keep honest.
+  const names = [...ZONE_EXPANSIONS.flatMap((e) => e.zones), ...CURATED_ZONES.map((z) => z.name)];
+  assert.deepEqual(names.filter((n) => n.includes(" - ")), []);
+});
+
 test("no alias renames a zone we name", () => {
   const byKey = new Map(CURATED_ZONES.map((z) => [zoneKey(z.name), z.file]));
   const renamed: string[] = [];

@@ -218,6 +218,20 @@ world coordinates, so a map knows where it is. See
   trailing parenthetical as a ruleset tag and `Qeynos (North)` folds to `qeynos`, which renamed a whole
   city to one of its halves until a test caught it.
 
+  **The game writes a ruleset two ways.** `The Steamfont Mountains 2 (Adaptive)` is the shape
+  [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md) was written for; a real peer's
+  observations turned out to carry the other, `Nagafen's Lair - Solo`, and left unfolded it is a second
+  camp with its own thin drop rates. Both fold now (`zoneMode`, `zoneBaseName`), and the dash form is
+  safe to fold because **no zone name the app ships contains " - "** — the hyphens in the corpus are all
+  inside a word (`Cazic-Thule`, `Takish-Hiz`), which a test pins.
+
+  The same peer's rows are also why three aliases are stated by hand: `The City of Guk` and
+  `The Ruins of Old Guk` are EverQuest's own long names for `guktop` / `gukbottom`, where the gazetteer
+  says Upper and Lower Guk, and `Temple of Cazic-Thule` is fandom's name for the zone it calls plain
+  `Cazic-Thule`. All three are the wording a **log** uses, which is the wording data is stored under
+  ([ADR 0083](../decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)) and therefore the
+  wording that has to resolve.
+
   **A name a letter out needs no table either.** A pack's label says `Toxulia Forest` where the game's
   own maps and the log say `Toxxulia Forest`, which used to leave the zone in the picker **twice** —
   once with a map and once without — and hid an evening's kills behind whichever spelling you weren't
@@ -395,11 +409,13 @@ world coordinates, so a map knows where it is. See
 - **Kill heatmap** (the ☠ toolbar panel) — where kills happened, drawn from the recorded kill
   log (`electron/kill-log.ts`), asked for **by zone — every variant of it**. One Steamfont is drawn
   by one map file, so a kill at `The Steamfont Mountains 2 (Adaptive)` belongs on the ordinary map:
-  `killLog.kills(zone)` matches through `sameZoneOrMisspelling` — the fold, *not* the loose
-  `zoneMatches` (`commonlands` sits inside `east commonlands`), plus one edit of slack, because the
-  name asked with is usually a map pack's label rather than the log's wording and a pack that spells
-  the forest `Toxulia` would otherwise answer an evening in `Toxxulia Forest` with nothing at all.
-  Mob observations tally under the same fold, with one spelling of a zone chosen per batch. See
+  `killLog.kills(zone)` matches through `samePlace` — *not* the loose `zoneMatches` (`commonlands`
+  sits inside `east commonlands`), and not a raw string either, since the name asked with is usually a
+  map pack's label rather than the log's wording and a pack that spells the forest `Toxulia` would
+  answer an evening in `Toxxulia Forest` with nothing at all. **Every record keeps the log's own
+  wording, and the grouping happens on the way out**
+  ([ADR 0083](../decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)), so correcting a
+  mapping table corrects a heatmap, a drop rate and a camp report that are already on disk. See also
   [ADR 0059](../decisions/0059-a-zone-s-variants-are-one-zone.md) and
   [ADR 0075](../decisions/0075-a-zone-s-misspelling-is-the-same-zone.md).
   Each dot fades and shrinks with **confidence**, and carries the

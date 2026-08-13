@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted
+Accepted — the `keyOf` third of the decision below is **superseded by
+[0083](./0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)**, which moves that fold from the
+stored key to the read. "One Steamfont is one camp" stands; it is now grouped when the data is read
+rather than folded when it is written, because `keyOf` also keys what gets *stored* — which this ADR
+described as a question rather than storage, and which it wasn't.
 
 ## Context
 

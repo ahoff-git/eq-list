@@ -23,35 +23,30 @@
  * how "BunnySlayer invites you to a party" raises an alert without a parser and an event kind for
  * every sentence the game can print. Same list, same styles, same overlay.
  *
+ * Past the trigger, a watch may carry **conditions** — "not from a warder", "only in Lower Guk",
+ * "either spelling". Those are [watch-conditions.ts](./watch-conditions.ts)'s business, not this
+ * file's: everything here is about *the event* (whose cast may fire a watch, how recent it must be,
+ * which kind of prompt it is), and everything there is about *the watch*. What joins them is the
+ * `WatchSubject` each matcher builds — the same fields whatever kind of line it came from.
+ *
+ * Three neighbours own the rest of an alert, and none of it is here: *when* it speaks is
+ * [alert-schedule.ts](./alert-schedule.ts), *how it looks* is [alert-styles.ts](./alert-styles.ts),
+ * and *what the banner says* is built where the alert is raised (`electron/alert-router.ts`).
+ *
  * No I/O, no state: a black box the main process feeds and tests pin down. (Note it can
  * only match casts the log *names*; generic "begins to cast a spell" lines carry no name.)
  */
 import { SELF } from "./combat-parser";
-import type { AlertStyle, BuffFadedEvent, CastEvent, CastAlertSettings, CastWatch, LogLine } from "./types";
+import { conditionsHold, watchSpeaks, type WatchSubject } from "./watch-conditions";
+import type { BuffFadedEvent, CastEvent, CastAlertSettings, CastWatch, LogLine } from "./types";
 
 /**
- * The style an alert should use: the watch's overrides laid over the defaults, field by field.
- *
- * Resolved **here**, at the moment of the alert, and sent with it — rather than letting the
- * overlay read the settings itself. The overlay would only know the defaults, so a watch's own
- * color would never reach the screen; and an alert already on screen shouldn't restyle itself
- * because a later alert had different ideas.
+ * What the app knows that the line doesn't. Passed in rather than read, because this file has no
+ * state — and optional, because a caller that doesn't track the zone simply has no zone conditions.
  */
-export function alertStyle(settings: CastAlertSettings, watch?: CastWatch | null): AlertStyle {
-  const base: AlertStyle = {
-    sound: settings.sound,
-    flash: settings.flash,
-    color: settings.color,
-    soundName: settings.soundName,
-    position: settings.position,
-    durationMs: settings.durationMs,
-    animation: settings.animation,
-  };
-  const over = watch?.style;
-  if (!over) return base;
-  // Only the keys the watch actually set: `{ color: undefined }` must not blank out a default.
-  const set = Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined));
-  return { ...base, ...set };
+export interface MatchContext {
+  /** The zone you're in, for a `zone` condition. `null` — not zoned in yet — reads as no zone. */
+  zone?: string | null;
 }
 
 /**
@@ -69,34 +64,74 @@ function isNamedCaster(caster: string): boolean {
   return caster !== SELF && !/^(?:an?|the)\s/i.test(caster);
 }
 
-/** The watch a cast matches (first enabled one whose text is in the spell name), or null. */
+/** The watch a cast matches (the first enabled one it satisfies), or null. */
 export function matchCast(
-  event: Pick<CastEvent, "caster" | "spell" | "at">,
+  event: Pick<CastEvent, "caster" | "spell" | "at"> & Partial<Pick<CastEvent, "raw">>,
   settings: CastAlertSettings,
   now: number = Date.now(),
+  context: MatchContext = {},
 ): CastWatch | null {
   if (!settings.enabled) return null;
-  if (event.caster === SELF && !settings.includeSelf) return null;
   // An unreadable timestamp can't be judged stale, so it's allowed through: missing an alert
   // is the worse failure of the two.
   if (stale(event.at, now)) return null;
+  const self = event.caster === SELF;
   const named = isNamedCaster(event.caster);
-  const spell = event.spell.toLowerCase();
-  for (const w of settings.watches) {
-    if (!w.enabled) continue;
+  const subject = subjectOf(event.spell, event, context, { caster: event.caster });
+  return firstWatch(settings, subject, (w) => {
     // Unset means on: every watch that predates the choice is a cast watch.
-    if (w.onCast === false) continue;
+    if (w.onCast === false) return false;
+    // Your own casts: the watch's own answer if it gave one, otherwise the group's. Per watch
+    // because a "recast it" cue is *only* ever about your own casting.
+    if (self) return w.includeSelf ?? settings.includeSelf;
     // A named caster (player / pet / named NPC) only fires a watch that opted them in.
-    if (named && !w.includePlayers) continue;
-    if (matchesWatch(w, spell)) return w;
+    return !named || !!w.includePlayers;
+  });
+}
+
+/**
+ * What the log said, as conditions read it. `text` is whatever this kind of event offers the
+ * trigger; `line` is always the sentence it came from, so a `line` condition works even on an event
+ * the parser modelled.
+ */
+function subjectOf(
+  text: string,
+  event: { raw?: string },
+  context: MatchContext,
+  extra: Partial<WatchSubject> = {},
+): WatchSubject {
+  return { subject: text, line: event.raw ?? text, zone: context.zone, ...extra };
+}
+
+/**
+ * The first enabled watch that this subject satisfies — the shared spine of all three matchers.
+ *
+ * `wants` is the part each matcher owns: which watches are even eligible for this kind of event.
+ * Everything after it is common, which is what keeps a condition behaving identically whether the
+ * line was a cast, a fade or something no parser models.
+ */
+function firstWatch(
+  settings: CastAlertSettings,
+  subject: WatchSubject,
+  wants: (w: CastWatch) => boolean,
+): CastWatch | null {
+  for (const w of settings.watches) {
+    if (!w.enabled || !wants(w)) continue;
+    if (!watchSpeaks(w)) continue; // a blank watch matches nothing, however it got that way
+    if (conditionsHold(w, subject, triggerHit(w, subject.subject))) return w;
   }
   return null;
 }
 
-/** Is this watch's text in what it was pointed at — a spell name, or a whole line? (Both lowercased.) */
-function matchesWatch(w: CastWatch, text: string): boolean {
+/**
+ * Does the watch's own trigger text appear in what it was pointed at? `null` when the trigger is
+ * blank — a watch may now be nothing but conditions, and a blank trigger has to step aside for them
+ * rather than fail them (see `conditionsHold`).
+ */
+function triggerHit(w: CastWatch, text: string): boolean | null {
   const needle = w.spell.trim().toLowerCase();
-  return !!needle && text.includes(needle);
+  if (!needle) return null;
+  return text.toLowerCase().includes(needle);
 }
 
 /** Too old to act on — the same liveness rule casts get, for the same reason. */
@@ -120,18 +155,17 @@ function stale(at: string, now: number): boolean {
  * where it isn't, the watch's `message` is what puts the real name back on the banner.
  */
 export function matchFade(
-  event: Pick<BuffFadedEvent, "spell" | "at">,
+  event: Pick<BuffFadedEvent, "spell" | "at"> & Partial<Pick<BuffFadedEvent, "target" | "pet" | "raw">>,
   settings: CastAlertSettings,
   now: number = Date.now(),
+  context: MatchContext = {},
 ): CastWatch | null {
   if (!settings.enabled) return null;
   if (stale(event.at, now)) return null;
-  const spell = event.spell.toLowerCase();
-  for (const w of settings.watches) {
-    if (!w.enabled || !w.onFade) continue;
-    if (matchesWatch(w, spell)) return w;
-  }
-  return null;
+  // "your pet" rather than the pet's name, so a `target` condition reads the way the banner does.
+  const target = event.pet ? "your pet" : event.target;
+  const subject = subjectOf(event.spell, event, context, { target });
+  return firstWatch(settings, subject, (w) => !!w.onFade);
 }
 
 /**
@@ -149,18 +183,24 @@ export function matchLine(
   line: Pick<LogLine, "message" | "at">,
   settings: CastAlertSettings,
   now: number = Date.now(),
+  context: MatchContext = {},
 ): CastWatch | null {
   if (!settings.enabled) return null;
   if (stale(line.at, now)) return null;
-  const message = line.message.toLowerCase();
-  for (const w of settings.watches) {
-    if (!w.enabled || !w.onLine) continue;
-    if (matchesWatch(w, message)) return w;
-  }
-  return null;
+  return firstWatch(settings, lineSubject(line.message, context), (w) => !!w.onLine);
+}
+
+/**
+ * A whole log line as a subject: it is both the thing the trigger reads and the line itself.
+ *
+ * Exported because a waiting cue is called off by the log's own words (`CastWatch.cancelWhen`), and
+ * that check has to read a line exactly the way a line watch does — one definition, not two.
+ */
+export function lineSubject(message: string, context: MatchContext = {}): WatchSubject {
+  return { subject: message, line: message, zone: context.zone };
 }
 
 /** Does any enabled watch look at raw lines? Lets a caller skip the work when none does. */
 export function watchesLines(settings: CastAlertSettings): boolean {
-  return settings.enabled && settings.watches.some((w) => w.enabled && w.onLine && !!w.spell.trim());
+  return settings.enabled && settings.watches.some((w) => w.enabled && w.onLine && watchSpeaks(w));
 }

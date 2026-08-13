@@ -11,6 +11,7 @@
 import { desktopCapturer, screen, type BrowserWindow, type WebContents, type NativeImage } from "electron";
 import { createLookupWindow } from "./windows";
 import { createLogger } from "./../src/shared/logging";
+import { ocrReadings } from "../src/shared/ocr-variants";
 import type { Ocr } from "./ocr";
 import type { Rect } from "../src/shared/types";
 
@@ -22,6 +23,15 @@ export interface Lookup {
   capture(rect: Rect, view: { width: number; height: number }, sender: WebContents): Promise<string>;
   cancel(): void;
 }
+
+/**
+ * Which of several readings of one grab to search for — the raw text and its OCR corrections, in
+ * order (`ocr-variants.ts`). Injected because judging them needs the names we know, which is the
+ * wiki's index and none of this module's business; the default believes what OCR read.
+ */
+export type PickReading = (readings: readonly string[]) => string;
+
+const believeOcr: PickReading = (readings) => readings[0] ?? "";
 
 interface Selector {
   win: BrowserWindow;
@@ -55,6 +65,51 @@ function cleanText(text: string): string {
 }
 
 /**
+ * What OCR returned → the text we hand to Search: junk stripped, then the font's own misreadings
+ * corrected against what we know ([ADR 0081](../specs/decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md)).
+ * Two steps, both elsewhere — this only says they happen in that order.
+ */
+function readingOf(raw: string, pick: PickReading): string {
+  const readings = ocrReadings(cleanText(raw));
+  if (readings.length < 2) return readings[0] ?? "";
+  const chosen = pick(readings);
+  log.debug(`readings ${JSON.stringify(readings)} → ${JSON.stringify(chosen)}`);
+  return chosen;
+}
+
+/**
+ * The selected region mapped from the window's viewport onto image pixels, by ratio. This is
+ * unit-agnostic: whether the window reports client coords in DIP or physical px, image/view
+ * converts correctly. Assumes the window covers the display. Clamped, so a drag that ends off the
+ * edge crops to it rather than failing.
+ */
+function cropIn(image: { width: number; height: number }, rect: Rect, view: { width: number; height: number }): Rect {
+  const rx = image.width / Math.max(1, view.width);
+  const ry = image.height / Math.max(1, view.height);
+  const x = Math.max(0, Math.min(Math.round(rect.x * rx), image.width - 1));
+  const y = Math.max(0, Math.min(Math.round(rect.y * ry), image.height - 1));
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.min(Math.round(rect.width * rx), image.width - x)),
+    height: Math.max(1, Math.min(Math.round(rect.height * ry), image.height - y)),
+  };
+}
+
+/** The grab as Tesseract wants it: cropped to the selection, then enlarged per `UPSCALE`. */
+function forOcr(image: NativeImage, crop: Rect): NativeImage {
+  const cropped = crop.width > MIN_CROP_PX && crop.height > MIN_CROP_PX ? image.crop(crop) : image;
+  const size = cropped.getSize();
+  const factor = Math.max(1, Math.min(UPSCALE.maxFactor, UPSCALE.targetWidth / Math.max(1, size.width)));
+  if (factor <= UPSCALE.worthIt) return cropped;
+  return cropped.resize({
+    width: Math.round(size.width * factor),
+    height: Math.round(size.height * factor),
+    quality: "best",
+  });
+}
+
+/**
  * Screenshot each display at its OWN native resolution and map display id → image.
  * A single shared thumbnailSize would stretch monitors whose resolution/aspect
  * differs from it (distorting the OCR image and the crop), so we request each
@@ -84,8 +139,11 @@ async function grabAllDisplays(displays: Electron.Display[]): Promise<Map<number
   return byId;
 }
 
-/** `onText` receives the recognized text (empty string if none) to route to Search. */
-export function createLookup(ocr: Ocr, onText: (text: string) => void): Lookup {
+/**
+ * `onText` receives the recognized text (empty string if none) to route to Search; `pickReading`
+ * chooses between OCR's raw reading and its corrections, defaulting to the raw one.
+ */
+export function createLookup(ocr: Ocr, onText: (text: string) => void, pickReading: PickReading = believeOcr): Lookup {
   let selectors: Selector[] = [];
   // `open()` captures the screens (100s of ms) before it assigns `selectors`. It's
   // reachable from both the hotkey and IPC, so guard against a second call racing inside
@@ -143,18 +201,7 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void): Lookup {
       try {
         const img = sel.image;
         const isize = img.getSize();
-        // Map the selection from the window's viewport to image pixels by ratio. This
-        // is unit-agnostic: whether the window reports client coords in DIP or physical
-        // px, image/view converts correctly. Assumes the window covers the display.
-        const rx = isize.width / Math.max(1, view.width);
-        const ry = isize.height / Math.max(1, view.height);
-        let x = Math.round(rect.x * rx);
-        let y = Math.round(rect.y * ry);
-        x = Math.max(0, Math.min(x, isize.width - 1));
-        y = Math.max(0, Math.min(y, isize.height - 1));
-        const w = Math.max(1, Math.min(Math.round(rect.width * rx), isize.width - x));
-        const h = Math.max(1, Math.min(Math.round(rect.height * ry), isize.height - y));
-        const crop = { x, y, width: w, height: h };
+        const crop = cropIn(isize, rect, view);
         const cb = (() => {
           try {
             return sel.win.getContentBounds();
@@ -167,14 +214,7 @@ export function createLookup(ocr: Ocr, onText: (text: string) => void): Lookup {
             ` displaySize=${sel.display.size.width}x${sel.display.size.height} scale=${sel.display.scaleFactor}` +
             ` content=${JSON.stringify(cb)} img=${isize.width}x${isize.height} → ${JSON.stringify(crop)}`,
         );
-        const cropped = w > MIN_CROP_PX && h > MIN_CROP_PX ? img.crop(crop) : img;
-        const cs = cropped.getSize();
-        const factor = Math.max(1, Math.min(UPSCALE.maxFactor, UPSCALE.targetWidth / Math.max(1, cs.width)));
-        const image =
-          factor > UPSCALE.worthIt
-            ? cropped.resize({ width: Math.round(cs.width * factor), height: Math.round(cs.height * factor), quality: "best" })
-            : cropped;
-        const text = cleanText(await ocr.recognize(image.toPNG()));
+        const text = readingOf(await ocr.recognize(forOcr(img, crop).toPNG()), pickReading);
         log.debug("OCR text:", JSON.stringify(text));
         closeAll(); // done — close the last selector; main brings itself forward
         onText(text);

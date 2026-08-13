@@ -185,7 +185,7 @@ The tables above go repo → file. This one goes the other way, for picking up a
 
 | Item in `todo.md` | Read this, in this repo |
 |---|---|
-| OCR corrected before it is searched | `OcrVariants()`, `EqWikiOverlay/Wiki/EqlWikiProvider.cs` — **eql-tooltip** |
+| OCR corrected before it is searched *(shipped — [ADR 0081](./decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md))* | `OcrVariants()`, `EqWikiOverlay/Wiki/EqlWikiProvider.cs` — **eql-tooltip** |
 | An alert can be scheduled, not just raised | `TrackedRule.cs` (`AlertDelaySeconds`, `IsCombatCue`) — **EQBuddy** · `src-tauri/src/engine.rs` — **eql-alerts** |
 | A watch can hold a regex, and can't hang the watcher | `TrackedRule.cs` (`RegexMatchTimeoutException`) — **EQBuddy** |
 | A named's respawn is learned from your own kills | `SpawnTimers.cs` · `SpawnCatalog.cs` · `SpawnOverrides.cs` — **EQBuddy** · `eql_atlas_baseline.json.gz` — **eql-log-reader** |

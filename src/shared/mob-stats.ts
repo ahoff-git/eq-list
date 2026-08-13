@@ -16,12 +16,18 @@
  * observations of the same mob are one much better sample. It's also far smaller than the kills
  * behind it, and carries none of the observer's movements.
  *
+ * **Two of these functions write and one reads, and they treat a zone name differently on purpose.**
+ * `observeMobs` and `sumObservations` produce what gets stored and shared, so they key on the zone
+ * **as the log wrote it** — two spellings of a camp are two rows. `mergeObservations` is the
+ * aggregation, so it groups those rows by *place* and labels them from the mapping table
+ * ([ADR 0083](../../specs/decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)). That's
+ * what keeps a drop rate re-derivable: fix the table and every rate ever computed follows.
+ *
  * Pure and DOM-free: main derives observations from the kill log, the renderer merges them for
  * display, and both use exactly this code.
  */
 import { stripArticle } from "./log-parser";
-import { normalizeZone } from "./sources";
-import { createZoneCanon } from "./zones/spelling";
+import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
 import { ratio } from "./numbers";
 
@@ -119,17 +125,19 @@ export function dropSources(known: MobKnowledge[]): Map<string, string[]> {
 }
 
 /**
- * Key a mob to its zone: the same mob elsewhere is a different animal to a hunter.
+ * Key a mob to its zone **as the log wrote it** — the key an observation is *stored* under.
  *
- * The zone folds through `normalizeZone`, so a zone's difficulty variants are one zone and their
- * kills are one sample (ADR 0059). Folding *here*, at the key, is also what makes it retroactive
- * and version-tolerant: observations already retired under a decorated name, and a peer's sent by
- * a build that never folded, merge into the same tally with no migration and no lost counts.
- *
- * The zone handed in has already been through the batch's `createZoneCanon`, which is the part a fold
- * can't do: it settles which of two *spellings* of a zone this tally answers to (ADR 0075).
+ * Verbatim on purpose. An observation is written to disk (a retired tally) and sent to peers, so
+ * anything folded in here is an assumption baked into data we can no longer re-derive: a table fixed
+ * tomorrow could not fix yesterday's rows, and the difficulty the log stated would be gone
+ * ([ADR 0083](../../specs/decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md), which
+ * moves ADR 0059's fold from this key to the read). Two spellings of one camp are therefore two rows
+ * here, and one row in everything derived from them — space is cheap, and a lost fact isn't.
  */
-const keyOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${normalizeZone(zone)}`;
+const keyOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${zone.trim()}`;
+
+/** The key a *derived* tally groups under: one per place, from the mapping table (`placeKey`). */
+const groupOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${placeKey(zone)}`;
 
 /**
  * Roll your kill log up into observations. Kills with no zone are skipped — a drop rate that
@@ -144,22 +152,17 @@ const keyOf = (mob: string, zone: string): string => `${mob.toLowerCase()}|${nor
  */
 export function observeMobs(kills: KillRecord[]): MobObservation[] {
   const byKey = new Map<string, MobObservation & { points: { y: number; x: number }[] }>();
-  // One spelling per zone, taken from the log's own wording across these records — so a stretch of
-  // an evening filed under a misspelling doesn't become a second camp (ADR 0075).
-  const canonZone = createZoneCanon(kills.map((k) => k.zone));
 
   for (const kill of kills) {
     if (!kill.zone) continue;
     // Loot — an item or coin — is proof you had the corpse, whoever landed the killing blow.
     if (kill.mine === false && !kill.drops?.length && !kill.coin) continue;
-    const key = keyOf(kill.mob, canonZone(kill.zone));
+    const key = keyOf(kill.mob, kill.zone);
     let obs = byKey.get(key);
     if (!obs) {
-      // Named for the zone, not for the door you came in by: this tally now pools every
-      // difficulty, so claiming the first one seen would misdescribe its own sample. The
-      // record still has the log's full wording; the observation is about the place.
-      const zone = canonZone(kill.zone);
-      obs = { mob: kill.mob, zone, kills: 0, drops: {}, copper: 0, lastAt: kill.at, points: [] };
+      // The log's own wording, kept: this is a summary of records that may be about to age out, so it
+      // has to be the thing a later, better mapping table can still be pointed at (ADR 0083).
+      obs = { mob: kill.mob, zone: kill.zone.trim(), kills: 0, drops: {}, copper: 0, lastAt: kill.at, points: [] };
       byKey.set(key, obs);
     }
     obs.kills += 1;
@@ -198,16 +201,14 @@ function areaOf(points: { y: number; x: number }[]): MobObservation["area"] {
  */
 export function sumObservations(...groups: MobObservation[][]): MobObservation[] {
   const byKey = new Map<string, MobObservation & { areas: NonNullable<MobObservation["area"]>[] }>();
-  const canonZone = createZoneCanon(groups.flatMap((group) => group.map((obs) => obs.zone)));
   for (const group of groups) {
     for (const obs of group) {
-      const key = keyOf(obs.mob, canonZone(obs.zone));
+      // Verbatim, like `observeMobs`: the result of this is what gets *written*, so a tally retired
+      // under `Blackburrow 3` stays under `Blackburrow 3` and is grouped when it's read (ADR 0083).
+      const key = keyOf(obs.mob, obs.zone);
       let sum = byKey.get(key);
       if (!sum) {
-        // Base name, as in `observeMobs`: what's summed here can include tallies retired under a
-        // decorated name, and the sum is about the zone rather than any one door into it.
-        const zone = canonZone(obs.zone);
-        sum = { mob: obs.mob, zone, kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, areas: [] };
+        sum = { mob: obs.mob, zone: obs.zone.trim(), kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, areas: [] };
         byKey.set(key, sum);
       }
       sum.kills += obs.kills;
@@ -224,22 +225,25 @@ export function sumObservations(...groups: MobObservation[][]): MobObservation[]
  * Pool observations into per-mob knowledge. `mine` is kept apart in the result so a rate can
  * always be traced back to how much of it you saw yourself — pooled data is more useful *and*
  * less verifiable, and the reader should be able to tell.
+ *
+ * **This is the aggregation**, and the only place a zone's variants become one camp: grouped by
+ * `placeKey` and labelled with the mapping table's name for the place (ADR 0083). Nothing here is
+ * stored, so it re-derives from the raw rows every time it's asked — which is what makes a correction
+ * to the table correct every rate ever derived, and makes the answer independent of the order the
+ * rows arrive in.
  */
 export function mergeObservations(mine: MobObservation[], theirs: MobObservation[]): MobKnowledge[] {
   const byKey = new Map<string, MobKnowledge & { areas: NonNullable<MobObservation["area"]>[] }>();
-  // Yours first, so on a tie the spelling *your* log uses is the one the pooled row is filed under —
-  // a peer whose map pack labels the zone a letter differently joins your tally instead of starting
-  // a second one beside it (ADR 0075).
-  const canonZone = createZoneCanon([...mine, ...theirs].map((obs) => obs.zone));
 
   const fold = (obs: MobObservation, isMine: boolean) => {
-    const key = keyOf(obs.mob, canonZone(obs.zone));
+    const key = groupOf(obs.mob, obs.zone);
     let known = byKey.get(key);
     if (!known) {
       known = {
         mob: obs.mob,
-        // Base name again — a peer's build may not fold, and the pool is about the zone.
-        zone: canonZone(obs.zone),
+        // The place, named by the table rather than by whichever row arrived first — so a peer whose
+        // pack spells it differently, and an evening spent at difficulty 3, read as one camp.
+        zone: placeName(obs.zone),
         kills: 0,
         myKills: 0,
         drops: [],

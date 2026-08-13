@@ -18,6 +18,7 @@ export const CH = {
   settingsUpdate: "settings:update",
   settingsPickLogDir: "settings:pickLogDir",
   logImport: "log:import",
+  logRecent: "log:recent", // the last few thousand lines, for testing an alert rule against them
   lootRecent: "loot:recent",
   lootPrices: "loot:prices",
   alertsTest: "alerts:test",

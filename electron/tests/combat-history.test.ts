@@ -320,6 +320,27 @@ test("zones aggregate every recorded fight, best experience rate first", () => {
   assert.equal(worst.xpPerMin, 0.25);
 });
 
+test("one camp is one row, whatever the log called the zone that evening", () => {
+  // The fights keep the log's own wording — difficulty, ruleset, the pack's spelling — and the report
+  // groups them by **place** when it's read (ADR 0083). Split, a camp played at two difficulties reads
+  // as two rows that each look half as good as the evening actually was.
+  const h = createCombatHistory(tempDir(), "s");
+  h.add(fight(1, 100, 10, "a rat", { durationSec: 60, kills: 2, xpPct: 2 }), "Toxxulia Forest");
+  h.add(fight(2, 100, 10, "a rat", { durationSec: 60, kills: 2, xpPct: 2 }), "The Toxxulia Forest 3 (Adaptive)");
+  h.add(fight(3, 100, 10, "a rat", { durationSec: 60, kills: 2, xpPct: 2 }), "Toxulia Forest");
+
+  const zones = h.zones();
+  assert.equal(zones.length, 1, `three wordings of one camp: ${zones.map((z) => z.zone).join(", ")}`);
+  assert.equal(zones[0].zone, "Toxxulia Forest", "labelled by the mapping table");
+  assert.equal(zones[0].fights, 3);
+  assert.equal(zones[0].kills, 6);
+  // The fight rows themselves are untouched, so a later, better table can be pointed at them again.
+  assert.deepEqual(
+    h.search("rat", 10).fights.map((f) => f.zone).sort(),
+    ["The Toxxulia Forest 3 (Adaptive)", "Toxulia Forest", "Toxxulia Forest"],
+  );
+});
+
 test("a fight with no known zone is left out of the zone report", () => {
   const h = createCombatHistory(tempDir(), "s");
   h.add(fight(1, 10, 1)); // the log hadn't told us a zone yet

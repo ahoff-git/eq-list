@@ -43,6 +43,33 @@ test("the ruleset a harder zone scales by folds away with the number", () => {
   assert.equal(zoneMode("Greater Faydark (Hardcore)"), "Hardcore");
 });
 
+test("the game writes a ruleset two ways, and both fold", () => {
+  // The second wording came out of a real peer's observations — `Nagafen's Lair - Solo` beside
+  // `Nagafen's Lair` — so it's the game's, not a guess, and left unfolded it is a second camp.
+  assert.equal(zoneBaseName("Nagafen's Lair - Solo"), "Nagafen's Lair");
+  assert.equal(zoneMode("Nagafen's Lair - Solo"), "Solo");
+  assert.equal(zoneKey("Kedge Keep - Solo"), zoneKey("Kedge Keep"));
+  // Both decorations at once, in either order of reading.
+  assert.equal(zoneBaseName("Cazic-Thule 3 - Solo"), "Cazic-Thule");
+  assert.equal(zoneDifficulty("Cazic-Thule 3 - Solo"), 3);
+  assert.equal(zoneMode("Cazic-Thule 3 - Solo"), "Solo");
+  // **Spaces around the dash are required**, because a hyphen inside a word is part of the name —
+  // and no zone the app ships has " - " in it, which is what makes this safe to fold at all.
+  assert.equal(zoneBaseName("Cazic-Thule"), "Cazic-Thule");
+  assert.equal(zoneBaseName("Takish-Hiz"), "Takish-Hiz");
+  assert.equal(zoneMode("Kor-Sha Laboratory"), undefined);
+});
+
+test("the names a real log uses reach the zones we name", () => {
+  // EverQuest's own long names for `guktop` / `gukbottom`, and fandom's for `cazicthule` — all three
+  // observed in a peer's log, where our gazetteer's shorter names never appear.
+  assert.equal(zoneKey("The City of Guk"), zoneKey("Upper Guk"));
+  assert.equal(zoneKey("The Ruins of Old Guk"), zoneKey("Lower Guk"));
+  assert.equal(zoneKey("Temple of Cazic-Thule"), zoneKey("Cazic-Thule"));
+  // Still two Guks, which is the thing an alias must never undo.
+  assert.notEqual(zoneKey("The City of Guk"), zoneKey("The Ruins of Old Guk"));
+});
+
 test("an ordinary zone reports no difficulty", () => {
   assert.equal(zoneDifficulty("Greater Faydark"), undefined);
   assert.equal(zoneBaseName("Greater Faydark"), "Greater Faydark");

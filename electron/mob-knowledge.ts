@@ -18,7 +18,7 @@
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { mergeObservations, observeMobs, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
-import { sameZoneOrMisspelling } from "../src/shared/zones/spelling";
+import { samePlace } from "../src/shared/zones/place";
 import type { KillLog } from "./kill-log";
 
 import { createSaver, readJson } from "./json-store";
@@ -96,12 +96,12 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
     return parsed.peers && typeof parsed.peers === "object" ? parsed.peers : {};
   }
 
-  // Folded, so a zone's difficulty variants answer as one zone (ADR 0059) — and so a peer whose
-  // build stamped the decorated name is still found when you ask for the plain one. A misspelling
-  // counts too (ADR 0075), which is the same peer's other spelling problem: their map pack labels the
-  // zone a letter differently, and their whole tally for it would be filtered out of yours.
+  // Asked by place, not by string (`samePlace`, ADR 0083): rows are stored with whatever the log — or
+  // a peer's log — called the zone, so the question has to reach every difficulty variant (ADR 0059)
+  // and every spelling of it (ADR 0075). A peer whose pack labels the zone a letter differently would
+  // otherwise have their whole tally for the camp you're standing in filtered out of yours.
   const forZone = (obs: MobObservation[], zone?: string): MobObservation[] =>
-    zone ? obs.filter((o) => sameZoneOrMisspelling(o.zone, zone)) : obs;
+    zone ? obs.filter((o) => samePlace(o.zone, zone)) : obs;
 
   return {
     mine: (zone) => forZone(killLog.observations(), zone),

@@ -104,6 +104,40 @@ export function CheckField({
   );
 }
 
+/**
+ * One labelled row of a settings block: a name in a fixed column, the controls beside it, and an
+ * optional aside that says what the current choice *means*.
+ *
+ * Every alert panel was spelling this out as `<div className="row astyle-row"><span
+ * className="astyle-label">…`, which is how the label column ended up 62px in one place and
+ * unstyled in another. It matters more than it looks: these rows are read down the left edge, so a
+ * label that doesn't line up is a row that gets skipped.
+ *
+ * `note` is deliberately not a tooltip — for a rule's timing, "re-cast it and the countdown
+ * restarts" is the difference between a setting you pick and a setting you guess at.
+ */
+export function ConfigRow({
+  label,
+  note,
+  children,
+  align,
+}: {
+  label: ReactNode;
+  /** What this choice does, in the panel rather than behind a hover. */
+  note?: ReactNode;
+  children: ReactNode;
+  /** Top-align for a row whose control is a list rather than a single widget. */
+  align?: "top";
+}) {
+  return (
+    <div className="row astyle-row" style={align === "top" ? { alignItems: "flex-start" } : undefined}>
+      <span className="astyle-label">{label}</span>
+      {children}
+      {note && <span className="muted small">{note}</span>}
+    </div>
+  );
+}
+
 /** One choice a `PickField` offers. `value` is what comes back; `label` is what's read. */
 export interface PickOption {
   value: string;

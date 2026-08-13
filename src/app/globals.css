@@ -108,6 +108,11 @@ button {
   outline: none;
   border-color: var(--accent-dim);
 }
+/* Text the app couldn't read — said where it was typed, rather than by refusing to save it. */
+.field.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+}
 
 .badge {
   display: inline-block;
@@ -1667,15 +1672,111 @@ kbd {
 }
 .astyle .swatch.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--accent); }
 
-/* A watch's own alert style, tucked under its row in Settings. Indented so it reads as
-   belonging to that watch rather than to the list. */
-.watch-style {
+/* One watch in Settings: a line to read, and a drawer that opens under it. The open row is tinted
+   so it's clear which watch the drawer belongs to when several sit close together. */
+.watch { margin-bottom: 4px; }
+.watch.open {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  padding: 4px;
+  margin: 4px -4px;
+}
+
+/* A folded watch's rule, in chips — what it fires on, what narrows it, when it speaks. Clickable,
+   because reading the summary is how you decide to open the thing. */
+.watch-sum {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+/* A chip: one fact about a rule, in a pill. Defined once — the row's summary, the library's cards
+   and the replay's hit list all say the same things about a rule, and they have to look alike or
+   the library stops teaching the row's vocabulary. */
+.chip {
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.chip.when { color: var(--accent); border-color: var(--accent-dim); }
+.chip.error { color: var(--bad); border-color: var(--bad); cursor: help; }
+/* A warning is the app's gold rather than its red: "probably won't do what you meant" is not
+   "cannot work", and the two must not read the same at a glance. */
+.chip.warning { color: var(--accent); border-color: var(--accent-dim); cursor: help; }
+
+/* A drawer (what sets it off / when it speaks / how it looks), tucked under its row. Indented so it
+   reads as belonging to that watch rather than to the list. */
+.watch-pane {
   margin: 4px 0 8px 22px;
   padding: 6px 8px;
   border-left: 2px solid var(--border);
   background: rgba(255, 255, 255, 0.02);
   border-radius: 0 6px 6px 0;
 }
+.watch-pane.warn { border-left-color: var(--bad); color: var(--bad); font-size: 12px; }
+.watch-pane.warn div + div { margin-top: 4px; }
+
+/* What's wrong with a rule, and what it would have caught. Errors and warnings are told apart by
+   colour as well as by glyph, because the difference is "can't work" versus "probably won't". */
+.wc-issue { font-size: 12px; margin-bottom: 3px; }
+.wc-issue.error { color: var(--bad); }
+.wc-issue.warning { color: var(--accent); }
+.wc-issue.ok { color: var(--good); }
+.watch-check .wc-hits { margin-top: 6px; max-height: 190px; overflow-y: auto; }
+/* A matched line, laid out in three columns so the eye can run down the log's own words — which
+   is the column that answers "is my wording right?". */
+.wc-hit { display: flex; gap: 6px; align-items: baseline; font-size: 12px; padding: 2px 0; }
+.wc-hit .wc-when { flex: 0 0 auto; }
+.wc-hit .wc-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wc-hit .chip { font-size: 10px; padding: 0 5px; }
+
+/* The library and the share box: both are folded away behind their own button, since neither is
+   part of the ordinary business of editing a list of rules. */
+.watch-library .wl-body,
+.watch-share .ws-body {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0 6px 6px 0;
+}
+.wl-group { margin-bottom: 10px; }
+.wl-cat { font-size: 12px; color: var(--accent); margin-bottom: 2px; }
+.wl-rule { margin: 6px 0 6px 4px; }
+.wl-rule .wl-what { display: block; margin: 2px 0 0 4px; }
+.wl-rule .wl-fill { display: block; margin-left: 4px; color: var(--accent); }
+
+/* A saved style: its name, how many rules wear it, and the same controls the defaults get. */
+.saved-style {
+  margin-bottom: 8px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+/* The widths a rule's drawers use. Two sizes rather than the five arbitrary pixel counts these
+   started as: `.pick` fits a phrase ("start over"), `.pick.wide` fits one with a qualifier
+   ("auto (no — it's a long cue)"), and `.time` fits a delay ("1m 30s"). Named for the job so a
+   fourth control can't invent a sixth width. */
+.watch-pane .pick { width: 132px; }
+.watch-pane .pick.wide { width: 176px; }
+.watch-pane .time { width: 68px; }
+
+/* One condition row: fixed-width pickers so the text boxes line up down the list, which is what
+   makes several conditions readable as a rule rather than as a pile of controls. */
+.watch-cond { gap: 4px; margin-bottom: 4px; align-items: center; }
+.watch-cond .cond-field { width: 88px; }
+.watch-cond .cond-op { width: 92px; }
+/* `and` / `not` — the same width either way, so flipping one doesn't shuffle the row. */
+.watch-cond .cond-not { width: 38px; text-align: center; }
+.watch-cond .cond-not.on { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
 
 /* The color swatch beside a map-label toggle — the color those labels actually are on this map. */
 .poi-dot {

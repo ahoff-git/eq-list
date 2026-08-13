@@ -38,8 +38,12 @@ unit-tested.
   - `src/shared/mob-stats.ts` → `electron/tests/mob-stats.test.ts` (rolling kills up into
     observations, observed drop rates and their denominators, roam areas ignoring untrustworthy
     positions, and pooling a peer's counts while keeping provenance — including that a pooled
-    area *widens* rather than averaging inward, and that a zone's difficulty variants tally as one
-    sample even when an older or a peer's entry was stored under the decorated name).
+    area *widens* rather than averaging inward). Also the storage/aggregation split
+    ([ADR 0083](../decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)): a **stored**
+    observation keeps the log's zone name verbatim, variant and all, while the **pooled** view is one
+    camp per place named from the mapping table — asserted together, since the pair is the point, plus
+    the repeatability property (a reversed input aggregates identically) and that two zones which merely
+    look alike are never pooled by either.
   - `src/shared/kill-filters.ts` + `kill-confidence.ts` → `electron/tests/kill-filters.test.ts`
     (time windows, mob/drop matching, the confidence floor, and every tier having a distinct
     glyph so the map doesn't depend on colour alone). Plus **a peer's kill as an ordinary kill**
@@ -129,6 +133,23 @@ unit-tested.
     every call site). The safety half runs against the **real 344-zone table** rather than a fixture:
     with every tier on, all 344 resolve to themselves and none to a neighbour — which a hand-picked list
     could never show.
+  - `electron/migrations.ts` → `electron/tests/migrations.test.ts` (one-time repairs to data already on
+    disk — [ADR 0083](../decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)). A migration
+    edits the player's own recorded history, so what it must **not** do carries the tests: never
+    overwrite a zone a record already has (the record's wording came from the log; ours would be a
+    reading of it), never choose when two characters' logs disagree about where you were, leave a record
+    the log can't speak for unplaced, and lose nothing when it can't run — with the backup written only
+    when there is actually something to repair, and the whole thing idempotent. Touches a temp dir and
+    writes a synthetic log: what lands in the file *is* the feature.
+  - `src/shared/zones/place.ts` → `electron/tests/zone-place.test.ts` (which place a *recorded* zone
+    name means — [ADR 0083](../decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)). Data
+    is stored with the in-game name and grouped when it's read, so this is the module every aggregation
+    goes through, and two properties carry it: the answer is a **property of the name alone** (asserted
+    by asking in different company, and by aggregating a reversed input to the same result — "repeatable
+    and fixable" is only true if nothing about the batch can move it), and a zone **no table knows keeps
+    its own name** rather than being guessed into a neighbour's. Plus the deliberate asymmetry: a *key*
+    comes from the table, while `samePlace` — a filter — may also take the one-edit rule, because a row
+    shown wrongly is recoverable and a merged sample isn't.
   - `src/shared/zones/gazetteer.ts` → `electron/tests/zone-gazetteer.test.ts` (the supplied zone table,
     and the two views derived from it —
     [ADR 0076](../decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)). The data comes from
@@ -256,9 +277,51 @@ takes `--loop`, `--loot-only`, `--interval`, `--jitter`, `--from <real log>`,
 `--to <dir|file>`, `--keep-timestamps`, `--append` (see the file header, or
 `npm run sim -- --help`).
 
+## Testing against a real game install
+
+Almost everything this app reads belongs to the player: their **log**, which carries their
+character's name and other people's chat, and their **game install**, which is tens of megabytes of
+Daybreak's data. Neither can be committed — the first for privacy, the second because it isn't ours
+to redistribute — so committed fixtures are small, and `fixtures/spells_us_sample.txt` is outright
+**synthetic**, built to a documented layout rather than copied from a real file.
+
+That leaves a gap worth naming: a synthetic fixture proves we read *the format we believe exists*,
+and can never prove the format. When that gap was closed by hand once, the live `spells_us.txt`
+turned out to have **173 columns where the reference documented 171**
+([ADR 0080](../decisions/0080-the-game-s-own-spell-file.md)) — harmless, because nothing validates a
+width, but invisible to any fixture we write ourselves.
+
+So `electron/tests/game-data.ts` gives an **opt-in** handle on a real install, and `*.live.test.ts`
+files use it. Point it at one and they run; don't and they *skip*, so CI and anyone without the game
+are unaffected. Two ways to point it, the env var winning when both are set:
+
+```bash
+EQL_GAME_DIR="…/Installed Games/EverQuest Legends" npm test
+```
+
+…or write the path into **`fixtures/local-game-dir.txt`**, which is gitignored — one line, no
+quoting. A path that doesn't exist, or doesn't hold `spells_us.txt`, reads as "not configured"
+rather than failing every live test.
+
+**The rule these tests follow: assert game data, never your data.** A spell's name, mana cost and
+class levels are Daybreak's facts — the same for every player, stable for decades, and safe to
+write down. Your install path, your character names and anything out of your log are not, so no
+live test puts the resolved path in a test name, an assertion message or its output; a failure says
+*what* disagreed, not where the file was. Nothing about the machine reaches the repo.
+
+A real **log** is a different matter again, and deliberately has no helper here: it's the most
+sensitive file of the set, and the thing it's most useful for — feeding a whole evening through the
+parsers to see what they couldn't read — is the unread-line tally
+([ADR 0079](../decisions/0079-an-unread-line-is-counted-by-its-shape.md)), which is a debug-log
+activity rather than an assertion. If a real line ever needs pinning as a fixture, sanitise it
+first: no chat or tells, character names replaced.
+
 ## Guidance
 - New pure logic (e.g. the wiki HTML parser) should get its own `*.test.ts` under
   `electron/tests/` with a captured HTML fixture, so it becomes a black box too.
+- Anything read from the player's install gets a synthetic fixture for the everyday suite **and** a
+  `*.live.test.ts` that checks the same reading against a real one — see above. The two answer
+  different questions and neither replaces the other.
 - Treat passing black boxes as frozen: don't edit them without cause, and don't
   re-verify them when unrelated code changes.
 

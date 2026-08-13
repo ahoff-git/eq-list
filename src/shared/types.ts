@@ -1192,20 +1192,75 @@ export interface HpEstimate {
 // ─── Cast alerts (dispel prep) ──────────────────────────────────────────────
 
 /**
+ * Which part of what the log said a condition reads.
+ *
+ * `subject` is whatever the watch's own trigger matches — the spell name for a cast or a fade, the
+ * whole sentence for a raw-text watch — so a condition can narrow the same thing the trigger widened
+ * without having to know which kind of event it turned out to be.
+ */
+export type WatchField = "subject" | "caster" | "target" | "line" | "zone";
+
+/** How a condition compares its text. `contains` is the rule every watch had before conditions. */
+export type WatchOp = "contains" | "exact" | "starts" | "ends";
+
+/**
+ * One extra thing that must (or must not) be true for a watch to fire.
+ *
+ * Conditions are how a watch stops being one substring: "Fear, but not from a warder", "any tell,
+ * but only in Lower Guk", "Mesmerize *or* Dazzle". Everything about them is case-insensitive, like
+ * the trigger, and a blank `text` is ignored rather than matching everything — a half-typed
+ * condition must not quietly change what a watch does.
+ */
+export interface WatchCondition {
+  field: WatchField;
+  op: WatchOp;
+  text: string;
+  /**
+   * Invert it: the watch fires only when this *doesn't* match. An exclusion is always an extra hurdle
+   * (it is `and not`, never `or not`) whatever `match` says, because "any of these, or not that" is
+   * not a thing anyone means.
+   */
+  exclude?: boolean;
+}
+
+/**
  * A spell to watch for being cast, so the user gets a heads-up to prep a dispel/cure.
  * `spell` is matched case-insensitively as a **substring** of the cast spell's name, so
  * "Fear" catches any spell whose name contains it.
+ *
+ * Everything past `spell` is optional and absent means the behaviour the watch had before that field
+ * existed, which is what lets a settings file written by any older build keep working untouched.
  */
 export interface CastWatch {
   id: string;
   spell: string;
   enabled: boolean;
   /**
+   * Extra conditions on the same match (see `WatchCondition`). Empty or absent is a watch that is
+   * only its trigger, which is every watch until one asks for more.
+   */
+  conditions?: WatchCondition[];
+  /**
+   * Whether the trigger and the **included** conditions must *all* hold (default) or *any* of them.
+   * `any` is how one watch covers a family the trigger can't spell as a substring — "Mesmerize" or
+   * "Dazzle" — and it never loosens an exclusion, which is always `and not`.
+   */
+  match?: "all" | "any";
+  /**
    * Also alert when this spell is cast by a *named* caster — another player, a pet, or a named
    * NPC (anyone whose log name has no "a/an/the" article), not just an ordinary mob. Off by
    * default: a groupmate casting Charm isn't a threat to prep against. See `matchCast`.
    */
   includePlayers?: boolean;
+  /**
+   * Whether **your own** casts fire this watch, overriding `CastAlertSettings.includeSelf` for this
+   * one. Absent follows the group setting, which is what every watch did before rules existed.
+   *
+   * It has to be per watch as well as global, because the whole class of self-cued reminders — "you
+   * cast mez, so recast it in 25 s" — is *only* about your own casts, and turning the group setting
+   * on to get one of them would make every other watch fire on you too.
+   */
+  includeSelf?: boolean;
   /**
    * Alert when the spell **begins casting**. Defaults to on when unset (every watch predates
    * the choice); turn it off for a watch that only cares about the fade.
@@ -1232,11 +1287,75 @@ export interface CastWatch {
    */
   message?: string;
   /**
-   * This watch's own look and sound, overriding the defaults field by field. Absent means it
-   * follows them — which is what every watch does until you give it one. Partial so a style
-   * saved before a new field existed still picks that field up from the defaults.
+   * Hold this watch's alert for a while instead of raising it the moment it matches, which turns a
+   * warning into a **cue**: "recast the mez" 25 s after you cast it, "the placeholder's back" 8 m
+   * after it died. Stored as the player typed it (`25`, `25s`, `8m` — bare is seconds, up to 30
+   * minutes); absent or empty means fire now, which is every watch until one asks otherwise. Only
+   * the *alert* waits — nothing else this line feeds is delayed. See `alertCue` in
+   * `alert-schedule.ts`.
+   */
+  delay?: string;
+  /**
+   * Say it again this many times after the first, one `delay` apart — "recast it" every 30 s until
+   * something stops it. Absent or 0 is a single alert. Worth having only alongside a way to stop it,
+   * which is what `cancelWhen` and `cancelOnDeath` are for; capped, because a runaway repeat is the
+   * one setting that could make the overlay unusable.
+   */
+  repeat?: number;
+  /**
+   * What a *second* match does while this watch's cue is still waiting.
+   *
+   * `restart` (the default) is what a recast reminder wants — mez again and the 25 s starts again.
+   * `queue` is what a spawn timer wants — two placeholders died, so two cues are due. `ignore` keeps
+   * the first cue's timing whatever else happens. Irrelevant to a watch with no delay: nothing to
+   * collide with when the alert has already fired.
+   */
+  retrigger?: "restart" | "queue" | "ignore";
+  /**
+   * Whether your own death calls this cue off. `auto` (the default) reads it from the delay's own
+   * length — under a minute is a cue about the fight you were in, and "recast it" is noise from a
+   * corpse, while a spawn timer doesn't care that you died. The other two say so outright, for the
+   * cue where the rule of thumb is wrong. See `alertCue`.
+   */
+  cancelOnDeath?: "auto" | "always" | "never";
+  /**
+   * Words that call this watch's waiting cue off — "the mob is dead, stop telling me to re-mez it".
+   *
+   * Matched against **whole log lines** as they arrive, whatever the watch itself is pointed at,
+   * because by the time a cue is waiting the thing that should stop it is rarely the same shape as
+   * the thing that started it. A line names no caster we can classify, so `caster` and `target`
+   * conditions never hold here; `subject`, `line` and `zone` all do.
+   */
+  cancelWhen?: WatchCondition[];
+  /**
+   * A **saved style** this watch wears (`CastAlertSettings.styles`), by id. The point of a saved
+   * style is that "how an emergency looks" is a decision worth making once: six watches can share
+   * one red-and-loud look, and changing it — in the Saved styles list — changes all six. An id that
+   * no longer resolves falls back to the defaults rather than to nothing.
+   *
+   * A watch wears a saved style **or** has a `style` of its own; changing a shared one from the
+   * watch forks it instead of layering (`alert-styles.ts`). The two fields can still both be set on
+   * a settings file written before that was settled, and `alertStyle` keeps reading them in order.
+   */
+  styleId?: string;
+  /**
+   * This watch's **own** look and sound, belonging to it alone — a style with no name, and nobody
+   * else wearing it. Absent means it follows whatever is below: its saved style, or the defaults.
+   * Partial, so a look saved before a field existed still picks that field up from below.
    */
   style?: Partial<AlertStyle>;
+}
+
+/**
+ * A look and sound with a name, so more than one watch can wear it.
+ *
+ * Held in the settings rather than copied into each watch, which is the whole difference: a copy is
+ * a decision frozen at the moment it was made, and this is one you can still change your mind about.
+ */
+export interface NamedAlertStyle {
+  id: string;
+  name: string;
+  style: AlertStyle;
 }
 
 /** A preset spot for the alert banner on the overlay. */
@@ -1304,6 +1423,11 @@ export interface CastAlertSettings extends AlertStyle {
   /** Also alert on YOUR own casts (off by default — you know what you're casting). */
   includeSelf: boolean;
   watches: CastWatch[];
+  /**
+   * Named looks a watch can wear by id (`CastWatch.styleId`), so "the loud red one" is a decision
+   * made once and shared. Absent on a settings file written before they existed.
+   */
+  styles?: NamedAlertStyle[];
   /**
    * Custom spots the user placed with the mouse, referenced by a `position` of `loc:<id>`. Shared
    * across the defaults and every watch, so one placement serves all. See `AlertLocation`.
@@ -1654,6 +1778,12 @@ export interface EqlApi {
      * what was digested, or null if the picker was cancelled. Live combat stats are untouched.
      */
     import(): Promise<LogImportResult | null>;
+    /**
+     * The last few thousand lines the log produced this session, oldest first — what Settings
+     * replays a rule against (`dryRun`). In memory only, so it's empty right after a launch and
+     * fills as you play; the count it returns is what makes "no matches" mean something.
+     */
+    recent(count?: number): Promise<LogLine[]>;
   };
   /** "A newer build is out" notification (rolling `latest` release; no auto-updater). */
   update: {

@@ -26,7 +26,7 @@ import { useFloors } from "@/lib/map/useFloors";
 import { useHidden } from "@/lib/map/useHidden";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
 import { findZone, onLayer, sortZones } from "@/shared/map/zones";
-import { sameZoneOrMisspelling } from "@/shared/zones/spelling";
+import { samePlace } from "@/shared/zones/place";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import MapFilters from "../components/MapFilters";
@@ -120,9 +120,9 @@ export default function MapWindow() {
    */
   const zoneMatch = useCallback(
     // Canonicalised through the zone list where we can, then compared the way every other "is this
-    // here?" is: folded, and tolerant of a letter (ADR 0059, ADR 0075). A peer sharing kills from a
-    // pack that spells the zone differently is in the zone you're looking at.
-    (z: string) => !!zoneKey && sameZoneOrMisspelling(findZone(z, zones)?.name ?? z, zoneKey),
+    // here?" is — by **place**, so a difficulty variant, a peer's pack's spelling and the map's own
+    // name for the zone all answer alike (`samePlace`, ADR 0083).
+    (z: string) => !!zoneKey && samePlace(findZone(z, zones)?.name ?? z, zoneKey),
     [zoneKey, zones],
   );
   // The zone list, reachable from the subscribe-once effects below without making them
@@ -308,7 +308,11 @@ export default function MapWindow() {
       shareKillsOn && zoneKey
         ? kills
             .filter((k) => !k.sharedBy && k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
-            .map((k) => ({ zone: zoneKey, y: k.y!, x: k.x!, mob: k.mob, confidence: k.confidence }))
+            // Tagged with the zone **the kill was recorded in**, not the one you're looking at: the
+            // receiver groups by place like every other reader (ADR 0083), and sending them our label
+            // for the camp would put our naming assumptions into their data. `zoneKey` only stands in
+            // for a kill filed before the log had told us a zone.
+            .map((k) => ({ zone: k.zone ?? zoneKey, y: k.y!, x: k.x!, mob: k.mob, confidence: k.confidence }))
         : [],
     );
   }, [connected, shareKillsOn, kills, zoneKey, broadcastKills]);

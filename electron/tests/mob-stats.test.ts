@@ -92,54 +92,61 @@ test("kills with no zone are skipped — an unplaceable rate compares to nothing
   assert.deepEqual(observeMobs([kill({ mob: "a rat", zone: undefined })]), []);
 });
 
-// One Steamfont, whatever the door was set to (ADR 0059). The difficulty changes what the mobs
-// hit for; it doesn't make it a different animal in a different place.
-test("a zone's difficulty variants are one tally, named for the zone", () => {
+// **What's stored is what the log said** (ADR 0083). An observation is written to disk and sent to
+// peers, so it keeps the zone name verbatim — difficulty, ruleset, spelling and all — and every "these
+// are one camp" judgement waits until something reads it.
+test("a stored observation keeps the log's own zone name, variant and all", () => {
   const obs = observeMobs([
     kill({ mob: "a rat", zone: "The Steamfont Mountains", drops: ["Rat Ear"] }),
     kill({ mob: "a rat", zone: "The Steamfont Mountains 2 (Adaptive)", drops: ["Rat Ear"] }),
     kill({ mob: "a rat", zone: "Steamfont Mountains 3" }),
   ]);
-  assert.equal(obs.length, 1);
-  assert.equal(obs[0].kills, 3);
-  assert.deepEqual(obs[0].drops, { "Rat Ear": 2 });
-  // Named for the place, not the first door seen — the sample is no longer one variant's.
-  assert.equal(obs[0].zone, "The Steamfont Mountains");
+  assert.deepEqual(
+    obs.map((o) => `${o.zone} ×${o.kills}`),
+    ["The Steamfont Mountains ×1", "The Steamfont Mountains 2 (Adaptive) ×1", "Steamfont Mountains 3 ×1"],
+    "a variant must not be rewritten into a name the log never used",
+  );
+  // Summing is storage too — it's how a record that ages out keeps what it taught (ADR 0056) — so it
+  // keeps the wording as well, and only adds up rows that are genuinely the same row.
+  const summed = sumObservations(obs, obs);
+  assert.deepEqual(summed.map((o) => o.kills), [2, 2, 2]);
+  assert.deepEqual(summed.map((o) => o.zone), obs.map((o) => o.zone));
 });
 
-// Retired tallies and peers' carry whatever their build stamped. Folding at the key is what makes
-// merging them retroactive: no migration, and no sample split in two by a spelling.
-test("a tally stored under a decorated zone merges with the plain one", () => {
+// One Steamfont, whatever the door was set to (ADR 0059). The difficulty changes what the mobs hit
+// for; it doesn't make it a different animal in a different place — so the *aggregation* pools them.
+test("the pooled view is one camp per place, named by the mapping table", () => {
+  const mine = observeMobs([
+    kill({ mob: "a rat", zone: "The Steamfont Mountains", drops: ["Rat Ear"] }),
+    kill({ mob: "a rat", zone: "The Steamfont Mountains 2 (Adaptive)", drops: ["Rat Ear"] }),
+    kill({ mob: "a rat", zone: "Steamfont Mountains 3" }),
+  ]);
   const older: MobObservation = {
     mob: "a rat",
     zone: "Steamfont Mountains 2 (Adaptive)",
     kills: 10,
     drops: { "Rat Ear": 4 },
     lastAt: "2026-07-29T01:00:00.000Z",
+    by: "Fippy",
   };
-  const [summed] = sumObservations([older], observeMobs([kill({ mob: "a rat", zone: "Steamfont Mountains" })]));
-  assert.equal(summed.kills, 11);
-  assert.equal(summed.zone, "Steamfont Mountains");
-
-  const [pooled] = mergeObservations(observeMobs([kill({ mob: "a rat", zone: "Steamfont Mountains" })]), [
-    { ...older, by: "Fippy" },
-  ]);
-  assert.equal(pooled.kills, 11);
-  assert.equal(pooled.myKills, 1);
+  const pooled = mergeObservations(mine, [older]);
+  assert.equal(pooled.length, 1);
+  assert.equal(pooled[0].kills, 13);
+  assert.equal(pooled[0].myKills, 3);
+  assert.deepEqual(pooled[0].drops, [{ item: "Rat Ear", count: 6, rate: 0.462 }]);
+  // The table's name for the place, so it can't depend on which row happened to arrive first.
+  assert.equal(pooled[0].zone, "Steamfont Mountains");
 });
 
 // The other spelling problem (ADR 0075): a map pack's label is a letter out, so a peer's tally for
 // the zone you're standing in used to sit beside yours as a second camp with its own thin rate.
-test("two spellings of one zone are one tally, under the spelling seen most", () => {
-  const obs = observeMobs([
+test("two spellings of one zone pool into one camp, under the name we show", () => {
+  const mine = observeMobs([
     kill({ mob: "a rat", zone: "Toxxulia Forest", drops: ["Rat Ear"] }),
     kill({ mob: "a rat", zone: "Toxulia Forest" }),
     kill({ mob: "a rat", zone: "Toxxulia Forest" }),
   ]);
-  assert.equal(obs.length, 1);
-  assert.equal(obs[0].kills, 3);
-  assert.equal(obs[0].zone, "Toxxulia Forest");
-
+  assert.equal(mine.length, 2, "stored as the log spelled them");
   const theirs: MobObservation = {
     mob: "a rat",
     zone: "Toxulia Forest",
@@ -148,20 +155,37 @@ test("two spellings of one zone are one tally, under the spelling seen most", ()
     lastAt: "2026-07-29T01:00:00.000Z",
     by: "Fippy",
   };
-  const [pooled] = mergeObservations(obs, [theirs]);
+  const [pooled] = mergeObservations(mine, [theirs]);
   assert.equal(pooled.kills, 23);
   assert.equal(pooled.myKills, 3);
-  // Yours names the pool even though they out-killed you: it's the spelling your own log uses.
+  // Not "the spelling seen most" — the gazetteer's, so the same rows always read the same way.
   assert.equal(pooled.zone, "Toxxulia Forest");
   assert.deepEqual(pooled.contributors, ["Fippy"]);
 });
 
+test("aggregating is repeatable — the answer doesn't depend on the order rows arrive", () => {
+  // The property that "entirely repeatable and fixable" needs: no clustering, no first-seen or
+  // most-seen naming, nothing that a different order could answer differently.
+  const rows: MobObservation[] = ["Toxxulia Forest", "Toxulia Forest", "The Toxxulia Forest 3"].map((zone, i) => ({
+    mob: "a rat",
+    zone,
+    kills: i + 1,
+    drops: { "Rat Ear": 1 },
+    lastAt: `2026-07-2${i + 1}T01:00:00.000Z`,
+  }));
+  const forwards = mergeObservations(rows, []);
+  const backwards = mergeObservations([...rows].reverse(), []);
+  assert.deepEqual(backwards, forwards);
+  assert.equal(forwards.length, 1);
+  assert.equal(forwards[0].kills, 6);
+  assert.equal(forwards[0].zone, "Toxxulia Forest");
+});
+
 test("zones that merely look alike stay two tallies", () => {
-  const obs = observeMobs([
-    kill({ mob: "a rat", zone: "East Commonlands" }),
-    kill({ mob: "a rat", zone: "West Commonlands" }),
-  ]);
-  assert.equal(obs.length, 2, "a rate for one camp must never absorb the other's kills");
+  const kills = [kill({ mob: "a rat", zone: "East Commonlands" }), kill({ mob: "a rat", zone: "West Commonlands" })];
+  assert.equal(observeMobs(kills).length, 2, "a rate for one camp must never absorb the other's kills");
+  // And they must not be pooled by the aggregation either — this is the merge that would hide it.
+  assert.equal(mergeObservations(observeMobs(kills), []).length, 2);
 });
 
 test("the roam area is the middle of where you killed it, and how far that spreads", () => {

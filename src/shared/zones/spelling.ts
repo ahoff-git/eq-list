@@ -26,7 +26,7 @@
  */
 
 import { levenshtein } from "../fuzzy";
-import { zoneBaseName, zoneKey } from "../names";
+import { zoneKey } from "../names";
 
 /** How far apart two spellings of one zone may be. One. See the module note for why. */
 const MAX_EDITS = 1;
@@ -78,52 +78,4 @@ function isMisspelling(a: string, b: string): boolean {
 /** The first name that isn't already claimed by one of `taken` — the same name, or a misspelling. */
 export function firstUnclaimed(candidates: (string | undefined)[], taken: readonly string[]): string | undefined {
   return candidates.find((c) => !!c && !taken.some((t) => sameZoneOrMisspelling(t, c)));
-}
-
-/**
- * One spelling per zone, chosen from the names in front of you.
- *
- * A fold can't do this: it takes one string and must be right about a name it has never seen, so it
- * has no way to know which of two spellings is the real one. Handed the whole batch, the answer is
- * available — **the spelling that turns up most often wins**, ties going to the one seen first. For a
- * kill log that means the log's own wording beats a peer's pack's label, which is the right way round:
- * you have thousands of the former and one of the latter.
- *
- * Returned as a function so a caller can key every row through it. Names are answered as **base**
- * names (no difficulty, no ruleset — see `zoneBaseName`), since a tally is about the place. A name the
- * batch never contained is answered with its own base name rather than a guess.
- */
-export function createZoneCanon(names: Iterable<string | undefined>): (name: string | undefined) => string {
-  /** Per fold key: how often it was seen, its own spelling, and where in the batch it first appeared. */
-  const seen = new Map<string, { base: string; count: number; at: number }>();
-  let at = 0;
-  for (const name of names) {
-    if (!name) continue;
-    const key = zoneKey(name);
-    if (!key) continue;
-    const already = seen.get(key);
-    if (already) already.count += 1;
-    else seen.set(key, { base: zoneBaseName(name), count: 1, at: at++ });
-  }
-
-  /** Fold key → the spelling every variant of it answers to. */
-  const canon = new Map<string, string>();
-  /** One representative per cluster, in first-seen order, so the clustering itself is stable. */
-  const clusters: { keys: string[]; spelling: string }[] = [];
-  const inOrder = [...seen.keys()].sort((a, b) => seen.get(a)!.at - seen.get(b)!.at);
-  for (const key of inOrder) {
-    const spelling = zoneSpelling(key);
-    const mine = clusters.find((c) => isMisspelling(c.spelling, spelling));
-    if (mine) mine.keys.push(key);
-    else clusters.push({ keys: [key], spelling });
-  }
-  for (const cluster of clusters) {
-    // Most seen wins; the sort above already put the earliest first, and `reduce` keeps it on a tie.
-    const best = cluster.keys.reduce((won, key) =>
-      (seen.get(key)!.count > seen.get(won)!.count ? key : won),
-    );
-    for (const key of cluster.keys) canon.set(key, seen.get(best)!.base);
-  }
-
-  return (name) => (name && canon.get(zoneKey(name))) || zoneBaseName(name ?? "");
 }

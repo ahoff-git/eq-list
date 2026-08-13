@@ -5,7 +5,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alertStyle, LIVE_WITHIN_MS, matchCast, matchFade, matchLine, watchesLines } from "../../src/shared/cast-alerts";
+import { LIVE_WITHIN_MS, matchCast, matchFade, matchLine, watchesLines } from "../../src/shared/cast-alerts";
+import { alertStyle } from "../../src/shared/alert-styles";
 import type { CastAlertSettings, CastWatch } from "../../src/shared/types";
 
 /** A cast that just happened — the timing rule has its own tests below. */
@@ -216,6 +217,106 @@ test("watchesLines answers whether any line matching is worth doing at all", () 
   assert.equal(watchesLines(settings({ enabled: false, watches: lineWatch().watches })), false);
 });
 
+// ── conditions, through the real matchers ──────────────────────────────────────
+// `watch-conditions.test.ts` pins the rules themselves; these pin the wiring — that each matcher
+// hands the evaluator the right subject, so the same condition means the same thing whether the
+// line was a cast, a fade or something no parser models.
+
+const CAST_LINE = "a dark elf priest begins casting Mesmerization.";
+const casting = (over: Partial<Parameters<typeof matchCast>[0]> = {}) => ({
+  caster: "a dark elf priest",
+  spell: "Mesmerization",
+  at: "2026-07-29T21:00:00",
+  raw: CAST_LINE,
+  ...over,
+});
+const withConditions = (conditions: CastWatch["conditions"], over: Partial<CastWatch> = {}) =>
+  settings({ watches: [{ id: "mez", spell: "Mesmeri", enabled: true, includePlayers: true, conditions, ...over }] });
+
+test("a condition on the caster narrows a trigger that was too wide", () => {
+  const notMine = withConditions([{ field: "caster", op: "contains", text: "warder", exclude: true }]);
+  assert.equal(matchCast(casting(), notMine, NOW)?.id, "mez");
+  assert.equal(matchCast(casting({ caster: "Kainos`s warder" }), notMine, NOW), null);
+});
+
+test("a condition can read the whole line even for an event the parser modelled", () => {
+  const s = withConditions([{ field: "line", op: "contains", text: "begins casting" }]);
+  assert.equal(matchCast(casting(), s, NOW)?.id, "mez");
+  // Same spell, a line that doesn't say it — no `raw` at all, so the line reads as the spell name.
+  assert.equal(matchCast({ caster: "a dark elf priest", spell: "Mesmerization", at: casting().at }, s, NOW), null);
+});
+
+test("a zone condition uses what the app knows, not what the line said", () => {
+  const s = withConditions([{ field: "zone", op: "contains", text: "Lower Guk" }]);
+  assert.equal(matchCast(casting(), s, NOW, { zone: "Lower Guk" })?.id, "mez");
+  assert.equal(matchCast(casting(), s, NOW, { zone: "Befallen" }), null);
+  assert.equal(matchCast(casting(), s, NOW), null); // no zone known: the condition can't hold
+});
+
+test("a fade's target is offered as the banner words it", () => {
+  const s = withConditions([{ field: "target", op: "exact", text: "your pet" }], { onFade: true });
+  assert.equal(matchFade({ spell: "Mesmerization", at: "2026-07-29T21:00:00", pet: true }, s, NOW)?.id, "mez");
+  assert.equal(matchFade({ spell: "Mesmerization", at: "2026-07-29T21:00:00", target: "a gnoll" }, s, NOW), null);
+});
+
+test("`any` lets one line watch cover two sentences that share no words", () => {
+  // The two invite wordings ADR 0050 had to ship as two chips.
+  const s = settings({
+    watches: [
+      {
+        id: "invite",
+        spell: "invites you",
+        enabled: true,
+        onLine: true,
+        onCast: false,
+        match: "any",
+        conditions: [{ field: "subject", op: "contains", text: "asked you to join" }],
+      },
+    ],
+  });
+  assert.equal(matchLine(line(INVITE), s, NOW)?.id, "invite");
+  assert.equal(matchLine(line("Bunnyslayer has asked you to join the instance: Befallen"), s, NOW)?.id, "invite");
+  assert.equal(matchLine(line("You have entered Befallen."), s, NOW), null);
+});
+
+test("a watch can be nothing but conditions", () => {
+  // "tell me anything BunnySlayer casts", which no single substring can say.
+  const s = settings({
+    watches: [
+      {
+        id: "bunny",
+        spell: "",
+        enabled: true,
+        includePlayers: true,
+        conditions: [{ field: "caster", op: "exact", text: "BunnySlayer" }],
+      },
+    ],
+  });
+  assert.equal(matchCast(casting({ caster: "BunnySlayer", spell: "Anything At All" }), s, NOW)?.id, "bunny");
+  assert.equal(matchCast(casting(), s, NOW), null);
+});
+
+test("watchesLines counts a line watch that carries its meaning in a condition", () => {
+  const conditionOnly = settings({
+    watches: [
+      { id: "x", spell: "", enabled: true, onLine: true, conditions: [{ field: "line", op: "contains", text: "tells you" }] },
+    ],
+  });
+  assert.equal(watchesLines(conditionOnly), true);
+  // …and still refuses the watch that says nothing at all.
+  const mute = settings({ watches: [{ id: "x", spell: " ", enabled: true, onLine: true }] });
+  assert.equal(watchesLines(mute), false);
+});
+
+test("the caster and liveness rules still come first, whatever the conditions say", () => {
+  // A condition can widen what a watch reads; it must not smuggle a watch past the rules about
+  // *the event*, or "players" and the live window would quietly stop meaning anything.
+  const s = withConditions([{ field: "caster", op: "contains", text: "bunny" }], { includePlayers: false });
+  assert.equal(matchCast(casting({ caster: "BunnySlayer" }), s, NOW), null);
+  const live = withConditions([{ field: "caster", op: "contains", text: "dark elf" }]);
+  assert.equal(matchCast(casting(), live, NOW + LIVE_WITHIN_MS + 1000), null);
+});
+
 // ── per-alert style ────────────────────────────────────────────────────────────
 // Two emergencies shouldn't look alike, so a watch may carry its own style. Resolved in the
 // main process and sent with the alert — the overlay only knows the defaults.
@@ -256,6 +357,71 @@ test("an explicitly undefined override doesn't blank out the default", () => {
   const style = alertStyle(s, s.watches[0]);
   assert.equal(style.color, "#e5534b");
   assert.equal(style.position, "center");
+});
+
+// ── saved styles ───────────────────────────────────────────────────────────────
+// A look with a name, worn by several watches — so changing it changes all of them, which is the
+// whole difference between wearing one and having copied one.
+
+const SAVED = { id: "loud", name: "Loud", style: { sound: true, flash: true, color: "#a371f7", soundName: "alarm", position: "center" as const, durationMs: 9000, animation: "wiggle" as const } };
+
+test("a watch wears a saved style, over the defaults", () => {
+  const s = settings({ styles: [SAVED], watches: [{ id: "w", spell: "Fear", enabled: true, styleId: "loud" }] });
+  assert.deepEqual(alertStyle(s, s.watches[0]), SAVED.style);
+});
+
+test("a watch's own tweaks sit on top of the style it wears", () => {
+  const s = settings({
+    styles: [SAVED],
+    watches: [{ id: "w", spell: "Fear", enabled: true, styleId: "loud", style: { color: "#46c86b" } }],
+  });
+  const style = alertStyle(s, s.watches[0]);
+  assert.equal(style.color, "#46c86b"); // its own
+  assert.equal(style.soundName, "alarm"); // the saved style's
+  assert.equal(style.animation, "wiggle");
+});
+
+test("a style that was deleted falls back to the defaults rather than to nothing", () => {
+  // Same call as a deleted custom spot: an alert that can't be styled must still be seen.
+  const s = settings({ styles: [], watches: [{ id: "w", spell: "Fear", enabled: true, styleId: "gone" }] });
+  assert.equal(alertStyle(s, s.watches[0]).color, "#e5534b");
+});
+
+test("two watches can wear one style, and it's the same object's values both times", () => {
+  const s = settings({
+    styles: [SAVED],
+    watches: [
+      { id: "a", spell: "Fear", enabled: true, styleId: "loud" },
+      { id: "b", spell: "Charm", enabled: true, styleId: "loud" },
+    ],
+  });
+  assert.deepEqual(alertStyle(s, s.watches[0]), alertStyle(s, s.watches[1]));
+});
+
+// ── your own casts, per watch ──────────────────────────────────────────────────
+
+test("a watch can take your own casts without the group setting being on", () => {
+  // The whole class of "you cast it, so recast it" reminders needs this, and turning the group
+  // setting on to get one of them would make every other watch fire on you too.
+  const mine = settings({ watches: [{ id: "mez", spell: "Mesmeri", enabled: true, includeSelf: true }] });
+  assert.equal(matchCast(cast("You", "Mesmerize"), mine, NOW)?.id, "mez");
+  // …and the neighbouring watch still doesn't.
+  const both = settings({
+    watches: [
+      { id: "mez", spell: "Mesmeri", enabled: true, includeSelf: true },
+      { id: "fear", spell: "Fear", enabled: true },
+    ],
+  });
+  assert.equal(matchCast(cast("You", "Fear"), both, NOW), null);
+});
+
+test("a watch can also refuse your casts while the group setting takes them", () => {
+  const s = settings({
+    includeSelf: true,
+    watches: [{ id: "fear", spell: "Fear", enabled: true, includeSelf: false }],
+  });
+  assert.equal(matchCast(cast("You", "Fear"), s, NOW), null);
+  assert.equal(matchCast(cast("a gnoll", "Fear"), s, NOW)?.id, "fear");
 });
 
 test("the defaults are never mutated by resolving a style", () => {

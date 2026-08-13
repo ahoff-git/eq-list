@@ -13,6 +13,9 @@ import { createStore } from "./store";
 import { createWikiClient } from "./wiki";
 import { createLogWatcher } from "./log-watcher";
 import { createLogCursor } from "./log-cursor";
+import { runMigrations } from "./migrations";
+import { createAlertQueue } from "./alert-queue";
+import { createRecentLines } from "./recent-lines";
 import { isSameSitting } from "../src/shared/log-catchup";
 import { createCombatStats } from "./combat-stats";
 import { createSpellCatalog } from "./spells";
@@ -32,7 +35,7 @@ import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
 import { characterFromLogFile } from "../src/shared/log-parser";
-import { alertStyle, matchCast, matchFade, matchLine, watchesLines } from "../src/shared/cast-alerts";
+import { createAlertRouter } from "./alert-router";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -158,6 +161,10 @@ if (!app.requestSingleInstanceLock()) {
 
   const store = createStore(userData);
   const wiki = createWikiClient(path.join(userData, "wiki-cache"));
+  // One-time repairs to data already on disk, before anything reads it. Chief among them: a kill
+  // recorded before the log had named the zone is stored unplaced, and so counts towards no drop
+  // rate and no heatmap — the log itself knows where you were, so it fills them in (ADR 0083).
+  runMigrations(userData, store.getSettings().logDir);
   // Where we had read to when we last ran, so anything logged since is read as the news it is
   // rather than being skipped ([ADR 0044](../specs/decisions/0044-the-log-position-outlives-the-app.md)).
   const cursor = createLogCursor(userData);
@@ -174,17 +181,22 @@ if (!app.requestSingleInstanceLock()) {
   const updates = createUpdateChecker(userData, app.getVersion());
   const mobs = createMobKnowledge(userData, killLog);
   const ocr = createOcr(path.join(userData, "tesseract-cache"));
-  const lookup = createLookup(ocr, showInSearch);
+  // The wiki's mirrored titles are what tell an OCR misreading from a name we simply don't have.
+  const lookup = createLookup(ocr, showInSearch, (readings) => wiki.bestKnownReading(readings));
 
   let currentZone: string | null = null;
   let currentLoc: LocEvent | null = null;
   let appInfo: AppInfo = { hotkeys: [], logFile };
+  // A window of the lines just gone past, so an alert rule can be tested against what the game
+  // really said rather than by waiting for it to happen again (`recent-lines.ts`).
+  const recent = createRecentLines();
 
   syncDebugFlag(store.getSettings());
   registerIpc({
     store,
     wiki,
     watcher,
+    recent,
     combat,
     history,
     xp,
@@ -225,12 +237,28 @@ if (!app.requestSingleInstanceLock()) {
     watcher.start(s.logDir, s.activeLogFile);
   }
 
+  /** Put an alert on the overlay, above the app windows as well as the game. */
+  function raiseAlert(alert: CastAlertEvent): void {
+    getAlertWindow()?.moveTop();
+    broadcast(CH.castAlert, alert);
+  }
+  // The whole alert path — match, style, and hold a cue until it's due — lives in one place
+  // (`alert-router.ts`). Main's part is telling it where the player is and where a banner goes.
+  const alerts = createAlertRouter({
+    getSettings: () => store.getSettings().castAlerts,
+    getZone: () => currentZone,
+    raise: raiseAlert,
+  });
+
   // The click-through alert overlay exists only while cast alerts are on — no point floating an
   // invisible window over the game otherwise, and turning alerts off should take it away.
   // Changing the chosen monitor *moves* it (`createAlertWindow` re-covers the display), rather
   // than racing a teardown against its replacement.
   function syncAlertWindow(settings: Settings): void {
     if (!settings.castAlerts.enabled) {
+      // Alerts off is a request for silence, including from the cues already waiting — there'd be
+      // no overlay left to show them on anyway.
+      alerts.clear();
       closeAlertWindow();
       return;
     }
@@ -325,59 +353,18 @@ if (!app.requestSingleInstanceLock()) {
     combat.reset();
     history.startSession(event.at);
   });
-  /** Put an alert on the overlay, above the app windows as well as the game. */
-  function raiseAlert(alert: CastAlertEvent): void {
-    getAlertWindow()?.moveTop();
-    broadcast(CH.castAlert, alert);
-  }
   watcher.onCombat((event) => {
     combat.record(event);
     hp.record(event);
-    // Dispel prep: flash the overlay when a watched spell begins casting — and, for a watch
-    // that asked, when one fades ("your root is gone, re-root").
-    const alerts = store.getSettings().castAlerts;
-    const cast = event.kind === "cast" ? matchCast(event, alerts) : null;
-    const fade = event.kind === "buff-faded" ? matchFade(event, alerts) : null;
-    // The style and the wording are both resolved here, from the watch that matched, and travel
-    // with the alert — the overlay window never sees the watch itself.
-    if (cast && event.kind === "cast") {
-      raiseAlert({
-        caster: event.caster,
-        spell: event.spell,
-        at: event.at,
-        event: "cast",
-        message: cast.message,
-        style: alertStyle(alerts, cast),
-      });
-    } else if (fade && event.kind === "buff-faded") {
-      raiseAlert({
-        caster: "",
-        spell: event.spell,
-        at: event.at,
-        event: "fade",
-        target: event.pet ? "your pet" : event.target,
-        message: fade.message,
-        style: alertStyle(alerts, fade),
-      });
-    }
+    // The alert path runs *after* the meter and the HP estimate, always: only an alert may ever wait
+    // or be dropped, never the ledger. What it does with the event is `alert-router.ts`.
+    alerts.combat(event);
   });
-  // The log says plenty no parser models — "BunnySlayer invites you to a party", a tell. A watch
-  // pointed at raw lines catches those. Every line comes through here, so the cheap "is anyone
-  // even watching lines?" check comes first; only then do we match.
   watcher.onLine((line) => {
-    const alerts = store.getSettings().castAlerts;
-    if (!watchesLines(alerts)) return;
-    const watch = matchLine(line, alerts);
-    if (!watch) return;
-    raiseAlert({
-      caster: "",
-      spell: watch.spell,
-      text: line.message,
-      at: line.at,
-      event: "line",
-      message: watch.message,
-      style: alertStyle(alerts, watch),
-    });
+    // Kept whatever the alert settings say: the point of the window is to have the lines already
+    // when somebody sits down to write a rule about them.
+    recent.add(line);
+    alerts.line(line);
   });
   // Everything logged while the app was closed has just been fed through the live path, which is
   // what makes the app's state independent of when it was launched. The one thing that *isn't*

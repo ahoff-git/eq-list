@@ -11,7 +11,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createZoneCanon, sameZoneOrMisspelling, zoneSpelling } from "../../src/shared/zones/spelling";
+import { sameZoneOrMisspelling, zoneSpelling } from "../../src/shared/zones/spelling";
 import { createZoneResolver } from "../../src/shared/zones/resolve";
 import { ZONE_EXPANSIONS } from "../../src/shared/zones/expansions";
 import { CURATED_ZONES } from "../../src/shared/map/zones";
@@ -95,20 +95,7 @@ test("the tier only answers when one candidate is near, and only when asked", ()
   assert.equal(createZoneResolver(zones, name, { typo: true }).resolve("Nektulos Forest")?.how, "exact");
 });
 
-test("one spelling wins a batch, and it's the one you see most", () => {
-  // Two of the log's spelling and one of a peer's pack's: the log wins, and both answer to it.
-  const canon = createZoneCanon(["Toxxulia Forest", "Toxulia Forest", "Toxxulia Forest"]);
-  assert.equal(canon("Toxulia Forest"), "Toxxulia Forest");
-  assert.equal(canon("Toxxulia Forest"), "Toxxulia Forest");
-  // Ties go to the spelling seen first.
-  const tied = createZoneCanon(["Toxulia Forest", "Toxxulia Forest"]);
-  assert.equal(tied("Toxxulia Forest"), "Toxulia Forest");
-  // Decoration is off, because a tally is about the place (ADR 0059).
-  assert.equal(createZoneCanon(["Blackburrow 3 (Adaptive)"])("Blackburrow"), "Blackburrow");
-  // A zone the batch never mentioned is answered with its own name, not a guess at a neighbour's.
-  assert.equal(canon("Nektulos Forest"), "Nektulos Forest");
-  assert.equal(canon(undefined), "");
-  // And zones that merely look alike are kept apart here too.
-  const pair = createZoneCanon(["East Commonlands", "West Commonlands"]);
-  assert.equal(pair("West Commonlands"), "West Commonlands");
-});
+// Naming a group of spellings used to live here, as "whichever the batch used most". It doesn't any
+// more: a name chosen from the data makes the same records aggregate differently on different days, so
+// the canonical name comes from the mapping table instead (`placeName`, ADR 0083 —
+// `zone-place.test.ts`). What's left in this module is the *rule*, which only ever answers a filter.

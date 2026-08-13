@@ -316,9 +316,15 @@ list, hunt, search, damage, session, settings.
     **duration**, and — with more than one monitor — which **display** the overlay covers. Those
     controls are `AlertStyleFields`, used twice: once for the **defaults** and again for a watch
     with a style **of its own** (🎨 on its row, which copies the defaults and then lets you tune
-    them, with a Test button that previews *that* watch). Each watch also chooses which prompts
-    it wants — **cast**, **fades**, **line**, or any mix; the include-players toggle only shows
-    while a watch is watching casts, since a fade and a line name no caster),
+    them, with a Test button that previews *that* watch). A watch is a **row plus three drawers**
+    (`CastWatchRow`, [ADR 0084](../decisions/0084-a-watch-is-a-rule-not-a-substring.md)): the row
+    holds the two fields edited constantly — trigger and message — and **chips** summarising the rest
+    (`cast · fades`, `2 conditions`, `25s ×3`, and ⚠ when something won't do what it looks like),
+    while **⚟** opens what sets it off (the **cast** / **fades** / **raw text** ticks, **players too**,
+    the **all/any** fold and the condition rows), **⏱** when it speaks (delay, repeat, what a second
+    match does, whether dying cancels it, and the lines that call it off) and **🎨** its own style.
+    One drawer is open at a time across the list, and the timing controls past the delay stay hidden
+    until there *is* a delay, so an ordinary watch is still one row and one empty box),
     **"Eat a log file"** (a **catch-up**: digest a past log into every bucket it can fill — learned
     mob data, the **Damage tab's history** one play session per login with the fights whole, and the
     **loot feed** with the prices it teaches; see `electron/log-import.ts`,
@@ -337,9 +343,14 @@ list, hunt, search, damage, session, settings.
   - `StatusBar` — watcher state, current zone, and the last drop seen. A drop moves the
     matching list entries by the **quantity the log reported**, so a looted stack of 2
     advances the count by 2.
-  - `CastAlerts` — dispel-prep alert. The main process matches every `cast` event
-    (`<caster> begins casting <spell>`) against the user's watch list (`matchCast`, pure)
-    and broadcasts a `castAlert`; this shows a banner and, per the Settings toggles, **beeps**
+  - `CastAlerts` — dispel-prep alert. The whole main-process path is one module
+    (`electron/alert-router.ts`, [ADR 0087](../decisions/0087-an-old-rule-is-converted-once-and-the-path-is-one-module.md)):
+    it matches every `cast` event (`<caster> begins casting <spell>`) against the user's watch list
+    (`matchCast`, pure), builds the banner, and hands it to the queue, which raises it now or holds it
+    as a cue. Main's own part is only the ordering — the meter and the HP estimate take a line first,
+    always. Rules written by an older build are converted once at startup
+    (`watch-upgrade.ts` via `migrations.ts`), which writes down what used to be implicit and folds
+    duplicated looks into shared styles. It broadcasts a `castAlert`; this shows a banner and, per the Settings toggles, **beeps**
     and/or **flashes a red border**. The visuals render in a **dedicated click-through overlay
     window** (`src/app/alert/page.tsx`, `createAlertWindow`) pinned over the game, so the alert
     lands where you're looking; the always-alive main window owns the **beep** (a click-through
@@ -381,6 +392,55 @@ list, hunt, search, damage, session, settings.
     your own wording already says what to do. Resolved in the main process beside the style, and for
     the same reason: the overlay never sees the watch that matched.
 
+    A watch can also be **scheduled rather than raised**: a `delay` turns the same match into a *cue*
+    — watch your own mez with `25` to be told to recast it, a placeholder's death with `8m` to be told
+    it's back. That is the whole of our timers, for one field, because the watch list already says
+    what the player cares about. `alert-schedule.ts` (pure) decides *when* and whether a death should
+    call it off; `electron/alert-queue.ts` holds the waiting ones. **Only the alert waits** — the
+    meter, the kill log and the ledger all take the line as it's read — and **your death cancels a
+    short cue but not a long one**, since "recast it" is noise from a corpse while a spawn timer
+    doesn't care. A cue's banner is indistinguishable from an immediate alert, which is why a delayed
+    watch usually wants a `message`. See
+    [ADR 0082](../decisions/0082-an-alert-can-be-scheduled.md).
+
+    Past its trigger a watch carries **conditions** — a field (`subject` / `caster` / `target` /
+    `line` / `zone`), an operator (`contains` / `exact` / `starts` / `ends`), some text, and
+    optionally *not*. That is what says "Charm, but not from my own warder", "only in Lower Guk", or —
+    with **any** instead of **all** — "either of these two wordings" in one watch. The rules are
+    `watch-conditions.ts`, pure: an **exclusion is always `and not`** whatever the fold says, a
+    **blank row says nothing**, and a **blank trigger steps aside** so a watch can be nothing but
+    conditions, while a watch that says nothing at all still matches nothing. Everything about *the
+    event* — your own casts, named casters, the live window — stays in `cast-alerts.ts`, which builds
+    the `WatchSubject` the conditions read; the zone is handed in, since no line says it.
+
+    A waiting cue can also be **called off**: `cancelWhen` matches whole log lines as they arrive
+    ("has been slain" ends a re-mez reminder), `retrigger` says whether a second match restarts,
+    queues or is ignored, and `repeat` says it again — bounded, and refused unless something can stop
+    it. `summarizeWatch` says the whole rule back in a few words for the row's chips, and names the
+    combinations that would fail silently. See
+    [ADR 0084](../decisions/0084-a-watch-is-a-rule-not-a-substring.md).
+
+    A rule can be **checked** (✓): `checkWatch` lists what's wrong with it — errors that can't work,
+    warnings that probably won't — and `dryRun` **replays it against the last 2000 log lines**
+    (`recent-lines.ts` in main, `log.recent()` over IPC), saying which of them it would have fired on
+    and how many would have cancelled it. The judging is pure and runs in the renderer, so it
+    re-answers as the rule is typed. It reuses the real matchers, with `now` set to each line's own
+    timestamp and the rule matched alone — the question is what *this rule* does, not what the app
+    currently does. Also **⧉ duplicate**, a **library** of worked rules (`watch-library.ts`, each one
+    passing the same check a hand-made rule gets), **share strings** (`watch-share.ts`, `EQLW1:…` —
+    one line, whitelisted on import, ids regenerated, always added rather than merged, and carrying
+    no style), and **saved styles** (`NamedAlertStyle`, worn by `styleId`) so several rules share one
+    look. See [ADR 0085](../decisions/0085-a-rule-can-be-tested-shared-and-borrowed.md).
+
+    A rule **wears one look** — the defaults, a saved style, or one of its own — and the 🎨 picker
+    says which. Changing it there can never restyle another rule
+    ([ADR 0086](../decisions/0086-editing-a-shared-style-from-a-rule-forks-it.md)): `alert-styles.ts`
+    edits its own look in place, edits a saved style **nobody else wears** in place, and otherwise
+    **forks** — a new style named after its parent, starting from what the rule looked like a moment
+    ago. The drawer says which of the three will happen *before* the edit. Changing a shared style
+    for everyone is the **Saved styles** list under Alert style, which edits in place and shows each
+    style's wearer count — two intents, two places, no mode switch.
+
     Appearance is **per alert**, not per window: `alertStyle` resolves the matching watch's
     overrides over the defaults in the main process, and the resolved `AlertStyle` travels *with*
     the alert. It has to — the overlay only knows the defaults, so nothing per-watch could reach
@@ -407,7 +467,10 @@ list, hunt, search, damage, session, settings.
   captured), then puts a selector over each monitor showing its frozen shot — so you
   can grab from anywhere. Dragging crops that display's frozen image; it's OCR'd
   (Tesseract.js) and the text is dropped into the Search tab (`search.onPrefill`),
-  where the normal fuzzy search takes over.
+  where the normal fuzzy search takes over. What lands in the box is the *corrected*
+  reading where the font fooled OCR ("Moming Star" → "Morning Star") and the raw one
+  otherwise — always editable, never a guess with nothing behind it. See
+  [ADR 0081](../decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md).
 - **Client glue** (`src/lib/`): `api.ts` (null-safe access to `window.eql`),
   `hooks.ts` (`useShoppingList`, `useSettings`, `useWatcherStatus`, `useLootFeed`,
   `useMatchFlashes`, `useCurrentZone`, `useEntrySources`, `useItemCard`) — subscribe on

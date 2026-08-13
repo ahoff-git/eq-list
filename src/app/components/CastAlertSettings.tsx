@@ -5,9 +5,20 @@ import { percent } from "@/shared/format";
 import { useRead } from "@/lib/hooks";
 import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
 import AlertStyleFields from "./AlertStyleFields";
-import CastWatchRow from "./CastWatchRow";
-import { CheckField } from "./ui";
-import type { CastWatch, DeepPartial, DisplayInfo, Settings } from "@/shared/types";
+import CastWatchRow, { type WatchPane } from "./CastWatchRow";
+import WatchLibrary from "./WatchLibrary";
+import WatchShare from "./WatchShare";
+import {
+  alertStyle,
+  applyStyleEdit,
+  nameOwnStyle,
+  newStyleId,
+  nextStyleName,
+  OWN_STYLE,
+} from "@/shared/alert-styles";
+import type { LibraryRule } from "@/shared/watch-library";
+import { CheckField, ConfigRow } from "./ui";
+import type { AlertStyle, CastWatch, DeepPartial, DisplayInfo, NamedAlertStyle, Settings } from "@/shared/types";
 
 /** A stable empty, so a render before the monitor list arrives doesn't look like a change. */
 const NO_DISPLAYS: DisplayInfo[] = [];
@@ -31,8 +42,9 @@ export default function CastAlertSettings({
   settings: Settings;
   patch: (p: DeepPartial<Settings>) => void;
 }) {
-  // Which watch's own-style editor is expanded (only one at a time).
-  const [styling, setStyling] = useState<string | null>(null);
+  // Which watch is unfolded, and at which drawer — one across the whole list, so a long list of
+  // watches stays a list rather than a wall of editors.
+  const [open, setOpen] = useState<{ id: string; pane: WatchPane } | null>(null);
   // True while placing a custom alert spot (the overlay is catching a click).
   const [placing, setPlacing] = useState(false);
   // Connected monitors, for the alert-overlay "which screen" picker (only offered with >1).
@@ -45,6 +57,83 @@ export default function CastAlertSettings({
     setWatches(ca.watches.map((w) => (w.id === id ? { ...w, ...p } : w)));
   const removeWatch = (id: string) => setWatches(ca.watches.filter((w) => w.id !== id));
   const addWatch = () => setWatches([...ca.watches, { id: crypto.randomUUID(), spell: "", enabled: true }]);
+  /**
+   * Copy a rule, next to the one it came from and already open.
+   *
+   * The quickest route to "the same but for X" — which is what most second rules are — and it opens
+   * because a duplicate you can't tell apart from its original is a trap. Its own style *tweaks*
+   * come along; a saved style is shared by id, so the copy simply wears the same one.
+   */
+  const duplicateWatch = (id: string) => {
+    const from = ca.watches.find((w) => w.id === id);
+    if (!from) return;
+    const copy: CastWatch = { ...from, id: crypto.randomUUID(), conditions: from.conditions?.map((c) => ({ ...c })) };
+    const at = ca.watches.findIndex((w) => w.id === id) + 1;
+    setWatches([...ca.watches.slice(0, at), copy, ...ca.watches.slice(at)]);
+    setOpen({ id: copy.id, pane: "match" });
+  };
+  /** Take a library rule, and open it when it's carrying a word only the player can supply. */
+  const addLibraryRule = (rule: LibraryRule) => {
+    const added: CastWatch = { id: crypto.randomUUID(), enabled: true, ...rule.watch };
+    setWatches([...ca.watches, added]);
+    if (rule.fill) setOpen({ id: added.id, pane: "match" });
+  };
+
+  // Saved styles: a look with a name, worn by id, so changing it **here** changes every rule
+  // wearing it. That is the deliberate path; changing one from inside a rule forks it instead
+  // (`alert-styles.ts`), which is why the two live in different places and read differently.
+  const setStyles = (styles: NamedAlertStyle[]) => patch({ castAlerts: { styles } });
+  const saved = ca.styles ?? [];
+  const saveStyle = () =>
+    setStyles([...saved, { id: newStyleId(saved), name: nextStyleName(saved), style: alertStyle(ca) }]);
+
+  /**
+   * A rule's look changed. Which of the three things that means — its own look, a saved style
+   * nobody else wears, or a fork of a shared one — is `applyStyleEdit`'s call, and both halves are
+   * written in **one** patch: a rule pointing at a style that doesn't exist yet would render as the
+   * defaults for a frame.
+   */
+  const editWatchStyle = (id: string, over: Partial<AlertStyle>) => {
+    const watch = ca.watches.find((w) => w.id === id);
+    if (!watch) return;
+    const edit = applyStyleEdit(ca, watch, over);
+    patch({
+      castAlerts: {
+        styles: edit.styles,
+        watches: ca.watches.map((w) => (w.id === id ? { ...w, ...edit.watch } : w)),
+      },
+    });
+  };
+  /** Wear a different look: a saved style by id, its own, or the defaults. */
+  const wearStyle = (id: string, choice: string) => {
+    const watch = ca.watches.find((w) => w.id === id);
+    if (!watch) return;
+    if (choice === OWN_STYLE) {
+      // Keeping its own look means baking in what it looks like now, so nothing changes on screen.
+      updateWatch(id, { styleId: undefined, style: watch.style ?? { ...alertStyle(ca, watch) } });
+      return;
+    }
+    // Wearing something means wearing it — any own look is dropped, or the picker would be lying.
+    updateWatch(id, { styleId: choice || undefined, style: undefined });
+  };
+  /** Promote a rule's own look into the shared list. */
+  const nameWatchStyle = (id: string) => {
+    const watch = ca.watches.find((w) => w.id === id);
+    if (!watch) return;
+    const edit = nameOwnStyle(ca, watch);
+    patch({
+      castAlerts: {
+        styles: edit.styles,
+        watches: ca.watches.map((w) => (w.id === id ? { ...w, ...edit.watch } : w)),
+      },
+    });
+  };
+  const renameStyle = (id: string, name: string) => setStyles(saved.map((s) => (s.id === id ? { ...s, name } : s)));
+  const updateStyle = (id: string, over: Partial<AlertStyle>) =>
+    setStyles(saved.map((s) => (s.id === id ? { ...s, style: { ...s.style, ...over } } : s)));
+  // A watch wearing a deleted style falls back to the defaults on its own (`alertStyle`), so the
+  // rules that referenced it are left alone rather than rewritten behind the player's back.
+  const removeStyle = (id: string) => setStyles(saved.filter((s) => s.id !== id));
   // Add a suggested watch, unless an identical substring is already on the list. A raw-text
   // suggestion ("invites you") is about what the game said, so it isn't also matched as a spell,
   // and it brings its own wording where EQ's sentence isn't one worth reading mid-fight.
@@ -83,8 +172,13 @@ export default function CastAlertSettings({
           Watches the log for “<i>… begins casting <b>&lt;spell&gt;</b></i>” and flashes a banner so you can
           react before it lands. Matching is by substring, case-insensitive, so “Fear” catches any spell whose
           name contains it. Enemy casts the log doesn’t name (“begins to cast a spell”) can’t be identified.
-          Tick <b>line</b> on a watch to match the words of a whole log line instead — “invites you” catches
-          “<i>BunnySlayer invites you to a party</i>”.
+          Each watch has three drawers: <b>⚟</b> what sets it off (casts, fades, raw log text, and any
+          number of <b>conditions</b> — “caster isn’t your warder”, “zone is Lower Guk”, or a second
+          spelling), <b>⏱</b> when it speaks (a <b>delay</b> turns a warning into a reminder: your own mez
+          with “25” to be told to recast it, a placeholder’s death with “8m” to be told it’s back — plus
+          repeats and the words that call one off), <b>🎨</b> how it looks, and <b>✓</b> a check — what’s
+          wrong with the rule, and which of the log’s recent lines it <i>would</i> have fired on. The chips
+          on each row say what it currently does; <b>⧉</b> copies a rule.
         </span>
         {ca.enabled && (
           <div style={{ marginTop: 8 }}>
@@ -102,19 +196,25 @@ export default function CastAlertSettings({
                 key={w.id}
                 watch={w}
                 alerts={ca}
-                styling={styling === w.id}
-                onStyling={(open) => setStyling(open ? w.id : null)}
+                open={open?.id === w.id ? open.pane : null}
+                onOpen={(pane) => setOpen(pane ? { id: w.id, pane } : null)}
                 onChange={(p) => updateWatch(w.id, p)}
                 onRemove={() => removeWatch(w.id)}
+                onDuplicate={() => duplicateWatch(w.id)}
+                onStyleEdit={(over) => editWatchStyle(w.id, over)}
+                onWear={(choice) => wearStyle(w.id, choice)}
+                onNameStyle={() => nameWatchStyle(w.id)}
               />
             ))}
-            <div className="row" style={{ gap: 8, marginTop: 6 }}>
+            <div className="row wrap" style={{ gap: 8, marginTop: 6 }}>
               <button className="btn sm" onClick={addWatch}>
                 + Add watch
               </button>
               <button className="btn sm" onClick={() => api()?.alerts.test()} title="Preview the alert banner (and beep)">
                 Test alert
               </button>
+              <WatchLibrary watches={ca.watches} onAdd={addLibraryRule} />
+              <WatchShare watches={ca.watches} onImport={(added) => setWatches([...ca.watches, ...added])} />
             </div>
 
             <div className="cast-suggest">
@@ -158,6 +258,56 @@ export default function CastAlertSettings({
                 locations={ca.locations}
                 onChange={(over) => patch({ castAlerts: over })}
               />
+
+              {/* Saved styles: the same controls again, once per named look. **This** is the place a
+                  shared style is changed for everyone wearing it — doing the same thing from inside
+                  a rule forks instead, which is why the two are different places rather than one
+                  place with a mode. */}
+              <ConfigRow label="Saved styles" align="top">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span className="hint" style={{ display: "block", marginBottom: 4 }}>
+                    A look with a name, worn by any number of rules. Editing one <b>here</b> changes every
+                    rule wearing it — that&apos;s what it&apos;s for. Changing it from inside a rule makes that
+                    rule a copy instead, so one rule can never quietly restyle the others.
+                  </span>
+                  {saved.length === 0 && (
+                    <span className="muted small">
+                      None yet — save the style above as a named one to share it between rules, then pick it
+                      in a rule&apos;s 🎨 drawer.
+                    </span>
+                  )}
+                  {saved.map((s) => (
+                    <div key={s.id} className="saved-style">
+                      <div className="row" style={{ gap: 6 }}>
+                        <input
+                          className="field"
+                          style={{ flex: 1, minWidth: 0 }}
+                          value={s.name}
+                          onChange={(e) => renameStyle(s.id, e.target.value)}
+                        />
+                        <span className="muted small" style={{ whiteSpace: "nowrap" }}>
+                          worn by {ca.watches.filter((w) => w.styleId === s.id).length}
+                        </span>
+                        <button
+                          className="btn ghost sm"
+                          title="Delete this style — rules wearing it fall back to the defaults"
+                          onClick={() => removeStyle(s.id)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <AlertStyleFields
+                        style={s.style}
+                        locations={ca.locations}
+                        onChange={(over) => updateStyle(s.id, over)}
+                      />
+                    </div>
+                  ))}
+                  <button className="btn sm" style={{ marginTop: 4 }} onClick={saveStyle}>
+                    ＋ Save the style above
+                  </button>
+                </div>
+              </ConfigRow>
 
               <div className="row astyle-row" style={{ alignItems: "flex-start" }}>
                 <span className="astyle-label">Custom spots</span>
