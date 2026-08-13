@@ -94,6 +94,44 @@ with a different provenance, and still does no routing inside one.
 - [0076: A supplied gazetteer outranks our guesses](./0076-a-supplied-gazetteer-outranks-our-guesses.md) — *the leftovers of [0068](./0068-a-zone-name-resolves-against-what-we-know.md) were two hand-written tables — which **file** a zone is (31 entries) and which **name** means it (3) — each entry costing a real investigation, because a wrong file draws another zone's map under the right name. A real folder holds ~130 files, so the picker offered `Gukbottom` and `Soldungb`, and an unnamed zone can't be placed in an era or a route either. A supplied gazetteer (the EQL wiki's in-era Zones page → EverQuest short names, 62 labels over 78 files) now **derives both tables**, and it earned that by confirming twenty-four of the thirty-one names we'd verified the hard way, exactly — including `qey2hh1` = West Karana and `qeytoqrg` = Qeynos Hills — and by explaining the solver's worst wrong answer (the Fourth Gate is `neriakd`). Ours still win where they disagree, the loser becoming a **candidate** file rather than a lost one. The alias side is filtered (nothing under four characters, no multi-map label, and **no bracketed spelling** — `Qeynos (North)` folds to `qeynos` and renamed a whole city), and `resolveZone` now tries both wordings so an alias can only ever add a match. 83 files named, 76 of them placed in an expansion, up from 31 and ~15*
 
 ## Open Questions
+
+*The four below came out of reading the other EQ Legends tools ([neighbours.md](../neighbours.md));
+the work they'd unblock is in [todo.md](../todo.md) `## From the neighbours, second pass`.*
+
+- **May we read the player's installed game files beyond `maps/`?** We already read the install — the
+  map pack is theirs, on their disk ([ADR 0042](./0042-only-the-game-s-own-maps.md)). `spells_us.txt`,
+  `spells_us_str.txt` and `dbstr_us.txt` sit beside it and answer things we've written down as
+  unanswerable, chiefly which spell a nameless wear-off line belongs to. But a map file is a stable
+  format we already parse, and the spell file is a 171-column layout that EQL **has shifted mid-patch**
+  by inserting a column — so this is a standing maintenance commitment, on a file we don't ship and
+  can't version, in a way `maps/` never was. Is "read it defensively, degrade to blank facts" enough, or
+  does depending on a weekly-patched client file cross a line the map pack didn't?
+- **Is a second reference source worth taking from a different game?**
+  [ADR 0003](./0003-eqlwiki-runtime-data-source.md) chose eqlwiki because it is *this* game's wiki. The
+  Project Quarm distillation a neighbour ships is richer than the wiki on the three things we most want
+  seeded — named spawn points, respawn timers, drop percentages — and is EQL's lineage rather than EQL.
+  [ADR 0025](./0025-observation-over-the-wiki.md) already says observation outranks the wiki, so the
+  machinery for "shown as a claim, overruled by what you saw" exists. Against it: the wiki is at least
+  *edited by people playing this game*, and a wrong number from a sibling game is wrong in a way no
+  amount of careful labelling makes the player's problem less annoying. Also a licensing question, not
+  just a design one.
+- **Does a dungeons-only guide line reopen in-zone routing?** ADR 0049 was retired and
+  [ADR 0062](./0062-a-travel-graph-of-zone-lines.md) narrowed the map's non-responsibility to "no
+  routing inside a zone", because an `L` record is a wall in a dungeon and a contour outdoors, so a
+  drawn route is a guess dressed as advice. A neighbour ships one anyway and it doesn't refute the
+  objection — it paths *along the drawn lines*, which parallels a corridor and traces a hillside. But
+  the objection is really about *outdoors*: where the geometry is known to be walls, the guess is
+  sound. If we end up reading `spells_us.txt` we get `zone_type` (outdoor/dungeon) for free. Is a route
+  that refuses to draw outdoors a different enough claim to be worth costing, or does a feature that
+  works in half the world read as broken in the other half?
+- **Should interface scale grow as well as shrink?**
+  [ADR 0026](./0026-interface-scale-only-shrinks.md) caps at 100% — the overlay's job is to take less
+  of the screen, and a magnified overlay is a bigger thing between the player and the game. Two
+  neighbours ship the opposite hard: presets at 100 / 200 / 250%, with layouts that grow rather than
+  clip, offered in the same menu as the theme. They are serving the same players we are, and EQ's
+  audience is twenty-five years older than it was. Is our cap a considered stance or an untested
+  assumption?
+
 - **OCR beyond item lookup — is a live health trace wanted?** It's ruled out for the **experience
   bar** (the log's gains plus a level-up baseline solve it exactly,
   [ADR 0017](./0017-camp-efficiency-and-asking-the-player.md)) and for **mana cost** (the wiki states

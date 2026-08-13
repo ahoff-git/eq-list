@@ -72,6 +72,33 @@ outcome goes in an ADR, a README, or the code — never here).
   fact that makes a route need a boat, and is currently only implied by the graph having no edges
   between them. Worth having in mind before either grows its own continent list.
 
+## Talking to the app from inside the game
+
+- **A private chat channel as a command line — a maybe, logged because it's the best idea we've seen
+  from anyone.** The problem it solves is the one under *The `/loc` nag* above and under every
+  click-through toggle we ship: while the game has focus, the app is read-only furniture. You can't
+  ask it anything without leaving the game.
+  **eql-log-reader**'s answer (in `eql_atlas.py`; see [neighbours.md](./neighbours.md)) is to make the
+  log an **input** as well as a source. You `/join` a password-protected channel only you are in, and type
+  `/1 find batwing` in game; the tool reads your own words back out of the log and answers on the
+  overlay. Their verbs are `find`, `guide`, `quest`, `zone`, `note`, `clear`, `help`; ours would be
+  smaller and obvious — add an item to the list, ask who drops one, drop a note, and whatever finally
+  makes `/loc` cheap.
+
+  Their safety model is the part worth copying intact, and it's better than it first sounds: **only
+  `You tell <chan>` lines are ever parsed**, so the log itself authenticates the speaker and
+  impersonation is structurally impossible rather than merely unlikely. Commands stay locked until a
+  `/list` proves the channel has exactly one member, and anyone else speaking re-locks them instantly.
+  Says, tells, group and public channels are never read. The password appears in plaintext in your own
+  log, so the setup instructions have to say *throwaway password, one channel per character* in those
+  words.
+
+  Why it's a maybe and not work: it asks the player to do real in-game setup before anything happens
+  (`/join`, `/autojoin`, confirm with `/list`), and it depends on chat timestamps being on, which we
+  don't currently require. That's a big ask to justify for a shopping list — it earns its keep once
+  there's enough to *ask* the app that leaving the game to do it is the annoyance. Worth revisiting
+  when the map, hunt and travel panels have accumulated that much.
+
 ## Wiki data
 
 - **Damage per mana.** eqlwiki states a spell's mana cost — verified, `Mana 7` in

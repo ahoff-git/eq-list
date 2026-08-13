@@ -24,3 +24,6 @@ one:
 - [decisions/README.md](./decisions/README.md) `## Open Questions` — what needs **deciding**
   before it can be built.
 - [testing/manual-qa.md](./testing/manual-qa.md) — built and tested, but never **run for real**.
+
+[neighbours.md](./neighbours.md) is the address book for the other EQ Legends tools — what each one
+is and which file to open, for the notes in `todo.md` that begin "a neighbour does this".
