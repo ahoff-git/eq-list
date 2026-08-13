@@ -101,10 +101,14 @@ outcome goes in an ADR, a README, or the code — never here).
 
 ## Wiki data
 
-- **Damage per mana.** eqlwiki states a spell's mana cost — verified, `Mana 7` in
-  `fixtures/wiki/spell-burst-of-fire.html` — so this is a wiki lookup, not OCR. One wrinkle: cost is
-  per *rank*, and `spellName()` strips the rank to make cast and damage lines agree, so the rank needs
-  carrying alongside the canonical name (it's still in `raw`).
+- **The spell file's other columns.** Damage per mana is done
+  ([ADR 0080](./decisions/0080-the-game-s-own-spell-file.md)) and reading `spells_us.txt` brought
+  three more fields with it that nothing consumes yet: **cast time**, **recast time**, and
+  **per-class levels**. The first is the interesting one — we *measure* cast time from the log
+  already, so having the file's stated figure beside it turns a number into a comparison ("your 2.5s
+  nuke is taking 3.1s") which is the shape of a real finding about haste or interruption. The last
+  would let anything that asks "can this character even cast that" answer honestly. All three are
+  already parsed; the open part is what a UI does with them.
 - **Ask-the-user, applied elsewhere.** `AskValue` +
   [ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md) established the pattern (hover
   for why, click to fill in) and it now backs two figures: experience into the level, and maximum

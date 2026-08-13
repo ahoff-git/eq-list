@@ -15,6 +15,7 @@ import { createLogWatcher } from "./log-watcher";
 import { createLogCursor } from "./log-cursor";
 import { isSameSitting } from "../src/shared/log-catchup";
 import { createCombatStats } from "./combat-stats";
+import { createSpellCatalog } from "./spells";
 import { createCombatHistory } from "./combat-history";
 import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";
@@ -161,7 +162,10 @@ if (!app.requestSingleInstanceLock()) {
   // rather than being skipped ([ADR 0044](../specs/decisions/0044-the-log-position-outlives-the-app.md)).
   const cursor = createLogCursor(userData);
   const watcher = createLogWatcher(cursor);
-  const combat = createCombatStats();
+  // The game's own spell file, for the facts the log never states — mana above all. Lazy and
+  // entirely optional: no install, no file, no mana figures, and nothing else changes.
+  const spells = createSpellCatalog();
+  const combat = createCombatStats(undefined, (spell, rank) => spells.find(spell, rank)?.mana);
   const history = createCombatHistory(userData);
   const xp = createXpProgress(userData);
   const hp = createHpEstimate(userData);
@@ -215,6 +219,9 @@ if (!app.requestSingleInstanceLock()) {
   function startWatcher(): void {
     const s = store.getSettings();
     watchKey = `${s.logDir}|${s.activeLogFile}`;
+    // The spell file lives in the same install the maps do, so a changed log folder may mean a
+    // different one — tell the catalog before the first line arrives.
+    spells.setLogDir(s.logDir);
     watcher.start(s.logDir, s.activeLogFile);
   }
 

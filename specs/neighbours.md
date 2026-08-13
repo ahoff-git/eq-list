@@ -200,7 +200,7 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | `/out inventory` | `main.js` (`pollInv`) + `renderer/app.js` (`INV_SECTIONS`, `WORN_RX`) — **eqltools-companion** · `internal/inventorysync/observer.go` — **eqdps** |
 | Gate a shared emote on your own cast | `README.md` → *Self-only combat clocks* — **eql-alerts** |
 | Permanent buffs on Legends | `samples/eql_permanent_buffs.json` — **eql-alerts** |
-| Rank-aware durations | `src-tauri/src/engine.rs` — **eql-alerts** |
+| Rank-aware costs *(shipped — [ADR 0080](./decisions/0080-the-game-s-own-spell-file.md))* | `src-tauri/src/engine.rs` — **eql-alerts** · `SPELL_FORMAT.md` — **eql-info** |
 | A fight records why it ended *(shipped — [ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md))* | `internal/combat/combat.go` (`EndReason`, `ForgetEnemies`) — **eqdps** |
 | Pet proof and the bystander rule *(shipped — [ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md))* | `src-tauri/src/fight/mod.rs` (~735, ~975, `looks_like_npc`) — **eql-meter** |
 

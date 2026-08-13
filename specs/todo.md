@@ -138,40 +138,30 @@ The theme running through them is that **we read the log, the wiki and the map f
 there** — while the game ships several more files, and two public databases describe this game's
 lineage. Most of what follows is about widening the input, not the output.
 
-- **The game's own data files are a source we don't read.** Nothing in the tree touches `spells_us.txt`,
-  `spells_us_str.txt` or `dbstr_us.txt`, and each answers a question we've already written down as
-  unanswerable. The first is the prize: [cast-alerts.ts](../src/shared/cast-alerts.ts) records as an
-  honest limit that *"a fade **on you** is always worded per spell ('The light breeze fades.') and names
-  no spell... so a watch for one has to hold the words the log used"* — and `spells_us_str.txt` **is**
-  the table mapping those sentences back to their spell. The limit is a missing input, not a property of
-  the log. EQBuddy hand-maintains the same map in `src/EQBuddy.Core/FadeMessageCatalog.cs`, whose doc
-  comment is worth reading before we start: it records that one wear-off line often belongs to *several*
-  spells (every haste in the game shares one sentence), so entries need a candidate list and a display
-  label rather than a single answer — and that some spells fade silently, for which it says a delay-cue
-  rule is the honest tool, which is the alert-scheduling item above. We can derive what they typed.
-  `spells_us.txt` then carries mana cost, cast/recast, buff duration and per-class levels, which retires
-  the wiki-lookup plan (and its rank wrinkle) under *Damage per mana* in [ideas.md](./ideas.md) and is
-  what any buff-timer would need.
+- **`spells_us_str.txt` names the spell behind a nameless fade — verified.**
+  `spells_us.txt` is now read ([ADR 0080](./decisions/0080-the-game-s-own-spell-file.md)); its sibling
+  is the remaining prize, and a real install has since confirmed it does exactly what we hoped.
+  [cast-alerts.ts](../src/shared/cast-alerts.ts) records as an honest limit that *"a fade **on you** is
+  always worded per spell ('The light breeze fades.', 'The spirit of travel leaves you.') and names no
+  spell"* — and the file's own header row says `#SPELLINDEX^CASTERMETXT^CASTEROTHERTXT^CASTEDMETXT^CASTEDOTHERTXT^SPELLGONE`,
+  where **column 5 is that sentence** and column 0 joins straight to the spell id we already parse.
+  Checked against the real file: spell 278 (Spirit of Wolf) carries
+  `"The spirit of wolf leaves you."` — the very shape cast-alerts calls unmappable. The limit is a
+  missing input, not a property of the log.
 
-  The format is documented rather than guessed, by
-  [Amerzel/eql-info](https://github.com/Amerzel/eql-info) — a Flask spell browser whose `SPELL_FORMAT.md`
-  derives the layout by statistically diffing EQL's file against Live EverQuest's (which is publicly
-  documented) and the older EQEmu 237-field reference. What it establishes, and what we'd rely on:
-  **EQL's format is Live's format** — 171 caret-delimited columns, of which `[0..164]` are bitwise
-  identical to Live's for 99%+ of shared spells, with five EQL-specific columns appended at 165–169
-  (four are reserved sentinels) and the pipe-delimited effects blob last. The columns we'd want are all
-  early and stable: `mana` at 14, `cast_time` at 8, `recast_time` at 10, `buff_duration_formula`/
-  `buff_duration` at 11/12, and `classes[16]` at 36–51 (per-class minimum level, `255` = unavailable).
-  Two cautions carried from the source: EQL **inserts** columns by patch (a 2026-06-29 patch added one
-  at index 103 and shifted everything after), so the effects blob must be located **by content, not
-  index**, and anything derived from the effect formulas is EQEmu's *classic-era* reference math rather
-  than EQL's server code — an estimate that must be labelled one. Also note the file ships L1–125 while
-  the server is L1–50, so ~74k spells need gating down to what's obtainable; eql-info maintains
-  hand-verified per-class lists for exactly that.
+  Measured on a live install, so the design can be settled before any code: **73,963 rows, 28,333 with
+  a fade sentence, 5,010 of those on a spell obtainable at level 50 or under, across 4,357 distinct
+  sentences.** Two facts decide the shape, and both confirm what EQBuddy learned the hard way in
+  `src/EQBuddy.Core/FadeMessageCatalog.cs` (worth reading whole before starting):
+  **358 sentences are shared by more than one obtainable spell** — every haste in the game reuses one
+  line — so a lookup must return a *candidate list plus a display label*, never a single answer; and
+  plenty of spells fade **silently** (Burnout's `SPELLGONE` is empty), for which EQBuddy's note is that
+  a delay-cue rule is the honest tool, which is the alert-scheduling item above. The parse is trivial
+  next to `spell-file.ts` — six columns, a header naming them — so nearly all the work is deciding how
+  an ambiguous fade presents itself in a watch.
 
-  Care: these are the player's own installed files, read-only, and we already know where the install is
-  (we read `maps/` from it). Nothing ships; the parse degrades to blank facts when a file is absent,
-  the way the map degrades when a pack is.
+  `dbstr_us.txt` (9.8 MB, also present) is the third of these and still unexamined; it's where
+  AA and item description strings live.
 
 - **A Project Quarm baseline, as a seed layer under our own observations.** The spawn-timer item above
   says "seeded by the wiki's figure where it has one", and the wiki often hasn't. eql-log-reader ships a
@@ -272,7 +262,8 @@ What this pass turned up is different in kind from the last two: less "here is a
 more **"here is a log line, a game command, or a distinction that does the work a heuristic is
 currently doing"**.
 
-Three of the six are **done** and have left this list: the named-pet proof and the bystander rule
+Four of the six are **done** and have left this list: rank-aware spell costs
+([ADR 0080](./decisions/0080-the-game-s-own-spell-file.md)), the named-pet proof and the bystander rule
 ([ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md)), a fight recording why it ended
 ([ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md)), and the unread-line tally
 ([ADR 0079](./decisions/0079-an-unread-line-is-counted-by-its-shape.md)). What's left:
@@ -339,17 +330,4 @@ Three of the six are **done** and have left this list: the named-pet proof and t
   useless. It costs nothing to carry the list; it costs a bug report to discover it. Files under the
   same heading as the wider trap — *EQL is not classic EQ* — which the whole of
   [neighbours.md](./neighbours.md) is a standing reminder of.
-
-- **The rank is already parsed; nothing scales anything by it.** [ideas.md](./ideas.md)'s *Damage per
-  mana* says "the rank needs carrying alongside the canonical name (it's still in `raw`)" — that note
-  is **stale**. `spellRank()` in [combat-parser.ts](../src/shared/combat-parser.ts) already extracts the
-  trailing roman numeral and the cast event already carries it, precisely so `spellName()` can strip it
-  and make the cast and damage lines agree. So the carrying is done; what's missing is a consumer.
-
-  eql-alerts is the worked example of what a consumer looks like: store the **unranked** figure from
-  the wiki as the base, then scale it by the roman rank at cast time (~7% per tier in their engine).
-  That turns one wiki number into a whole spell line's worth of correct ones, which matters because the
-  wiki documents ranks unevenly. The same trick applies to any per-rank quantity — duration first, mana
-  cost second (which is the ideas.md item, now unblocked). Worth fixing the ideas.md note in the same
-  change, so the next reader isn't told to build something that exists.
 

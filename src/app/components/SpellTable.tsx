@@ -75,7 +75,7 @@ export default function SpellTable({ window }: { window: FightStats }) {
             <th>Healed</th>
             <SortHeader label="Cast" column="avgCastSec" sort={sort} onSort={setSort} title="Average measured cast time" />
             <SortHeader label="Dmg/s cast" column="dpc" sort={sort} onSort={setSort} title="Damage per second spent casting" />
-            <th title="Mana cost, from the spell's wiki page">Mana</th>
+            <th title="Mana per cast — from the game's own spell file where we can read it, otherwise the wiki's figure">Mana</th>
             <th title="What a point of mana bought: damage, plus any healing the invocation granted off it">
               Per mana
             </th>
@@ -99,7 +99,7 @@ export default function SpellTable({ window }: { window: FightStats }) {
                 <td>{figure(s.healed)}</td>
                 <td>{s.avgCastSec ? `${s.avgCastSec.toFixed(1)}s` : "—"}</td>
                 <td className="num-accent">{s.dpc || "—"}</td>
-                <td>{facts[s.spell]?.mana ?? "—"}</td>
+                <td>{manaCost(s, facts[s.spell]) ?? "—"}</td>
                 <td className="num-accent">{perMana(s, facts[s.spell]) ?? "—"}</td>
                 <td className={s.resistRate >= HIGH_RESIST_RATE ? "num-bad" : undefined}>
                   {s.resists ? percent(s.resistRate) : "—"}
@@ -190,11 +190,31 @@ function InvocationNotes({ window }: { window: FightStats }) {
  * invocation that heals you off your damage, mana buys health too — so the healing is added
  * in rather than making the spell look wasteful. The breakdown spells out the split.
  */
+/**
+ * What one cast costs. **Two sources, and the game's own file wins.**
+ *
+ * `s.manaCost` comes from the player's `spells_us.txt` — exact, per rank, local, and computed in
+ * the tracker, which is why a *stored* fight carries it. The wiki's figure is the fallback for an
+ * install we can't find the file in (a custom path, a moved Logs folder), and it's per-rank too,
+ * so the two normally agree. See [ADR 0080](../../../specs/decisions/0080-the-game-s-own-spell-file.md).
+ */
+function manaCost(s: SpellStat, facts?: SpellFacts): number | undefined {
+  return s.manaCost ?? facts?.mana;
+}
+
+/**
+ * What a point of mana bought. Prefers the figure the tracker already computed — one definition,
+ * in one place, and the one that gets persisted — and only falls back to computing it here when
+ * the cost came from the wiki instead.
+ *
+ * The fallback divides by casts, not landings, so a fizzle costs what it really cost.
+ */
 function perMana(s: SpellStat, facts?: SpellFacts): string | undefined {
-  if (!facts?.mana || !s.lands) return undefined;
+  if (s.damagePerMana !== undefined) return s.damagePerMana.toString();
+  if (!facts?.mana || !s.casts) return undefined;
   const returned = s.damage + s.invocationHealed;
   if (!returned) return undefined;
-  return ratio(returned, s.lands * facts.mana, 1).toString();
+  return ratio(returned, s.casts * facts.mana, 1).toString();
 }
 
 /**

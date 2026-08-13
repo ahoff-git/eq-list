@@ -575,6 +575,36 @@ export interface SpellStat {
   damage: number;
   healed: number;
   maxHit: number;
+  /**
+   * What one cast costs in mana, from the game's own `spells_us.txt` — the log never says.
+   * **Absent means unknown** (no spell file, or a name it doesn't list); `0` is a real answer
+   * and means the spell is free, as bard songs are. The two must not be conflated.
+   *
+   * Read for the **rank actually cast** where the log gave one, so a rank VI nuke quotes its own
+   * cost rather than the base spell's. See `electron/spells.ts`.
+   */
+  manaCost?: number;
+  /**
+   * Mana this spell has cost over the window — `casts × manaCost`. Absent when the cost is.
+   *
+   * **Derived, not observed.** The log reports no mana, so this assumes every cast begun spends
+   * its mana, including one that fizzled or was interrupted — which is how EQ has always behaved,
+   * and is why a fizzle stings. If that's wrong for some spell, this over-counts it.
+   */
+  manaSpent?: number;
+  /**
+   * What a point of mana bought — damage, **plus** any healing the invocation granted off that
+   * damage, since the mana paid for both and damage alone understates the spell.
+   *
+   * Absent when the cost is unknown, and **absent rather than zero for a spell that costs
+   * nothing**: dividing by no mana isn't an efficiency, it's a different kind of spell.
+   *
+   * Divided by mana *spent*, not mana that landed — a fizzle costs you the same and should
+   * hurt the figure.
+   */
+  damagePerMana?: number;
+  /** Healing per point of mana, on the same terms — for spells whose job is healing. */
+  healPerMana?: number;
   /** Mean measured cast time, seconds (0 when no cast could be timed). */
   avgCastSec: number;
   /**
@@ -731,6 +761,17 @@ export interface FightStats {
   damageCells?: DamageCell[];
   /** Your spells in this window, most damaging first. */
   spells: SpellStat[];
+  /**
+   * Mana your spells cost in this window, summed from the ones we have a cost for. Absent when
+   * no spell file is loaded; a partial figure when only some spells were found, which is why it
+   * travels with `manaKnownCasts` rather than alone.
+   */
+  manaSpent?: number;
+  /**
+   * How many of the window's casts had a known cost, and how many there were. What lets a UI say
+   * "1,240 mana over 38 of 41 casts" instead of quietly presenting a short total as the whole.
+   */
+  manaKnownCasts?: { known: number; total: number };
   /** What you killed here, and what it cost/earned. Best rate first. */
   byMob: MobKillStat[];
   /** Kills and experience credited within the window. */

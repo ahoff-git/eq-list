@@ -354,6 +354,120 @@ test("reset clears both windows", () => {
   assert.equal(s.session.totalDealt, 0);
 });
 
+// ── mana, from the game's own spell file (the log never states it) ──
+
+/** A tracker that knows what spells cost — the shape `main.ts` builds from the spell catalog. */
+const meteredTracker = (costs: Record<string, number>) =>
+  createCombatStats(
+    () => "2026-07-29T00:00:00.000Z",
+    (spell, rank) => costs[rank ? `${spell} ${rank}` : spell] ?? costs[spell],
+  );
+
+/** The row for one spell in the current fight. */
+const spellRow = (t: ReturnType<typeof createCombatStats>, name: string) =>
+  t.snapshot().session.spells.find((s) => s.spell === name);
+
+test("a spell's mana cost and total spend come from the spell file", () => {
+  const t = meteredTracker({ "Burst of Fire": 7 });
+  feed(t, [
+    [1, "You begin casting Burst of Fire."],
+    [2, "You hit a coyote for 30 points of fire damage by Burst of Fire."],
+    [5, "You begin casting Burst of Fire."],
+    [6, "You hit a coyote for 20 points of fire damage by Burst of Fire."],
+  ]);
+
+  const row = spellRow(t, "Burst of Fire");
+  assert.equal(row?.manaCost, 7);
+  assert.equal(row?.manaSpent, 14, "two casts at 7");
+  assert.equal(row?.damagePerMana, 3.57, "50 damage for 14 mana, to two places");
+});
+
+test("damage per mana is the point of all this", () => {
+  // A big nuke and a small one, priced: the cheap one is the efficient one even though the
+  // expensive one does more damage. This is the figure the log alone can never produce.
+  const t = meteredTracker({ "Big Nuke": 100, "Small Nuke": 10 });
+  feed(t, [
+    [1, "You begin casting Big Nuke."],
+    [2, "You hit a coyote for 200 points of fire damage by Big Nuke."],
+    [5, "You begin casting Small Nuke."],
+    [6, "You hit a coyote for 50 points of fire damage by Small Nuke."],
+  ]);
+
+  assert.equal(spellRow(t, "Big Nuke")?.damagePerMana, 2);
+  assert.equal(spellRow(t, "Small Nuke")?.damagePerMana, 5);
+});
+
+test("a rank is priced as itself, not as the base spell", () => {
+  const t = meteredTracker({ "Shock of Lightning": 20, "Shock of Lightning VI": 110 });
+  feed(t, [
+    [1, "You begin casting Shock of Lightning VI."],
+    [2, "You hit a coyote for 300 points of magic damage by Shock of Lightning."],
+  ]);
+  assert.equal(spellRow(t, "Shock of Lightning")?.manaCost, 110);
+});
+
+test("a fizzle still costs its mana", () => {
+  // The log reports no mana, so spend is derived from casts *begun* — which is how EQ behaves,
+  // and why a fizzle stings. Pinned because it's an assumption, not an observation.
+  const t = meteredTracker({ "Burst of Fire": 7 });
+  feed(t, [
+    [1, "You begin casting Burst of Fire."],
+    [2, "Your Burst of Fire spell fizzles!"],
+  ]);
+  assert.equal(spellRow(t, "Burst of Fire")?.manaSpent, 7);
+});
+
+test("a free spell has no efficiency rather than an infinite one", () => {
+  // Zero mana is a real answer (bard songs), and dividing by it isn't an efficiency.
+  const t = meteredTracker({ "Chant of Battle": 0 });
+  feed(t, [
+    [1, "You begin casting Chant of Battle."],
+    [2, "You hit a coyote for 10 points of magic damage by Chant of Battle."],
+  ]);
+  const row = spellRow(t, "Chant of Battle");
+  assert.equal(row?.manaCost, 0, "free is a fact, not a blank");
+  assert.equal(row?.damagePerMana, undefined);
+});
+
+test("an unpriced spell stays blank instead of reading as free", () => {
+  const t = meteredTracker({});
+  feed(t, [
+    [1, "You begin casting Mystery Spell."],
+    [2, "You hit a coyote for 10 points of magic damage by Mystery Spell."],
+  ]);
+  const row = spellRow(t, "Mystery Spell");
+  assert.equal(row?.manaCost, undefined);
+  assert.equal(row?.manaSpent, undefined);
+  assert.equal(row?.damagePerMana, undefined);
+});
+
+test("the window's mana total says how much of itself it covers", () => {
+  const t = meteredTracker({ "Burst of Fire": 7 });
+  feed(t, [
+    [1, "You begin casting Burst of Fire."],
+    [2, "You hit a coyote for 30 points of fire damage by Burst of Fire."],
+    [5, "You begin casting Mystery Spell."],
+    [6, "You hit a coyote for 10 points of magic damage by Mystery Spell."],
+  ]);
+
+  const s = t.snapshot().session;
+  assert.equal(s.manaSpent, 7);
+  assert.deepEqual(s.manaKnownCasts, { known: 1, total: 2 }, "a partial total must say it's partial");
+});
+
+test("with no spell file there are no mana figures at all", () => {
+  // The default tracker — and the state of every install without the game's file.
+  const t = tracker();
+  feed(t, [
+    [1, "You begin casting Burst of Fire."],
+    [2, "You hit a coyote for 30 points of fire damage by Burst of Fire."],
+  ]);
+  const s = t.snapshot().session;
+  assert.equal(s.manaSpent, undefined);
+  assert.equal(s.manaKnownCasts, undefined);
+  assert.equal(spellRow(t, "Burst of Fire")?.manaCost, undefined);
+});
+
 // ── per-spell stats: cast time and resist rate, both measured from the log ──
 test("a spell's cast time is the gap from 'begin casting' to the effect landing", () => {
   const t = tracker();

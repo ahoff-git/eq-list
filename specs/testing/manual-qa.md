@@ -46,6 +46,26 @@ features for later in [../ideas.md](../ideas.md).
   up as a shape, add it to `IGNORED`), and that the top shapes are genuinely unmodelled game
   sentences rather than a parser we broke. Anything in that list worth reading *is* a parser gap —
   file it. On the 95-line sample it reports 6 ignored and 4 shapes, all four real.
+- **The spell file — format confirmed, the live pipeline is what's left.**
+  ([ADR 0080](../decisions/0080-the-game-s-own-spell-file.md).) The *parse* has since been run
+  against a real `EverQuest Legends` install and every assumption held — 173 columns (not the
+  documented 171, and it didn't matter), 73,963 rows in ~400 ms, and mana values spot-checked
+  correct against classic knowledge. See the ADR's verification note. `fixtures/spells_us_sample.txt`
+  stays synthetic, since a real spell file is the player's game data and can't ship here.
+
+  What a real install still can't tell us from outside the app is whether the **running app** picks
+  it up. So, while playing:
+  1. Debug logging on; confirm `read N spells from …` appears in the debug log, with N in the tens
+     of thousands. Nothing at all means `findSpellFile` didn't locate the install — the likely
+     cause is a Logs folder moved out of it.
+  2. Cast something and confirm the **Mana** column fills in the Spells table, and **Per mana**
+     with it. A `—` in Mana while the debug line says N spells means the *name* didn't match: check
+     what `spellName()` produced against the file's spelling.
+  3. Cast a **rank II+** spell and confirm the cost is that rank's, not the base's. Real data says
+     these differ a lot — Burnout is 35 / 75 / 150 across its ranks — so a rank misread is obvious
+     rather than subtle.
+  4. Rename the file and confirm the graceful path: Mana falls back to the wiki's figure, and with
+     no network shows `—` rather than breaking the table.
 - **Damage breakdown, live.** Click a Dealt row and confirm the **Melee / Spells / Special** groups
   open, Melee + Spells sum to the row's total, weapons read sensibly (Hit / Crush / Kick / Pierce
   for a beastlord), and `(Critical)` / `(Riposte)` show under Special. See `combat-stats.ts` and the

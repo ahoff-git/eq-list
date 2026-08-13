@@ -391,7 +391,18 @@ function createWindow(canon: (name: string) => string) {
 
 type Window = ReturnType<typeof createWindow>;
 
-export function createCombatStats(nowIso: () => string = () => new Date().toISOString()): CombatTracker {
+/**
+ * What one cast costs, if we can find out. Injected rather than imported so the tracker stays
+ * free of I/O and a test can answer for a spell without a game install — the same reason `nowIso`
+ * is a parameter. Returning `undefined` (no spell file, unknown spell) is normal and every mana
+ * figure simply goes absent.
+ */
+export type ManaLookup = (spell: string, rank?: string) => number | undefined;
+
+export function createCombatStats(
+  nowIso: () => string = () => new Date().toISOString(),
+  manaFor: ManaLookup = () => undefined,
+): CombatTracker {
   const bus = new EventEmitter();
   /**
    * One spelling per creature, so a sentence-initial capital doesn't split a row in two.
@@ -520,9 +531,24 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
   const spellRow = (spell: string, t: SpellTally): SpellStat => {
     const avgCastSec = ratio(t.castMs / 1000, t.timed, 2);
     const completed = t.lands + t.resists + t.blocked;
+    // Priced at the rank actually cast, so a rank VI nuke quotes its own cost. Undefined stays
+    // undefined all the way down: an unknown cost must never become a zero, or a spell we can't
+    // price and a spell that's free end up on the same row.
+    const manaCost = manaFor(spell, t.rank);
+    const manaSpent = manaCost === undefined ? undefined : manaCost * t.casts;
+    // Efficiency needs mana actually spent. A free spell has no efficiency — it has a different
+    // shape entirely — so it gets absence rather than a division by zero dressed up as a number.
+    const perMana = (amount: number) =>
+      manaSpent ? ratio(amount, manaSpent, 2) : undefined;
     return {
       spell,
       rank: t.rank,
+      manaCost,
+      manaSpent,
+      // The invocation's healing was bought by the same mana, so it counts toward what the
+      // spell returned — the definition the Spells table has always shown.
+      damagePerMana: perMana(t.damage + t.invocationHealed),
+      healPerMana: perMana(t.healed),
       casts: t.casts,
       lands: t.lands,
       ticks: t.ticks,
@@ -586,6 +612,26 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     };
   };
 
+  /**
+   * The window's mana bill, and how much of the window it actually covers. Reported together
+   * because a total assembled from *some* of the casts is misleading on its own — a UI that shows
+   * "1,240 mana" without "over 38 of 41 casts" is quietly presenting a partial figure as a whole.
+   * Absent entirely when nothing could be priced, so no spell file means no mana row rather than
+   * a confident zero.
+   */
+  function manaTotals(spells: SpellStat[]): Pick<FightStats, "manaSpent" | "manaKnownCasts"> {
+    let manaSpent = 0;
+    let known = 0;
+    let total = 0;
+    for (const s of spells) {
+      total += s.casts;
+      if (s.manaSpent === undefined) continue;
+      manaSpent += s.manaSpent;
+      known += s.casts;
+    }
+    return known ? { manaSpent, manaKnownCasts: { known, total } } : {};
+  }
+
   const summarize = (w: Window): FightStats => {
     const cells = w.damage.cells();
     // Each row only needs its own hits, so index the cells by attacker once rather than
@@ -599,6 +645,9 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
     const byCombatant = [...w.tallies.entries()]
       .map(([name, t]) => row(name, t, byAttacker.get(name) ?? []))
       .sort((a, b) => b.dealt - a.dealt || b.taken - a.taken || a.name.localeCompare(b.name));
+    const spells = [...w.spells.entries()]
+      .map(([name, t]) => spellRow(name, t))
+      .sort((a, b) => b.damage - a.damage || b.healed - a.healed || a.spell.localeCompare(b.spell));
     return {
       startedAt: w.span.firstAt ? new Date(w.span.firstAt).toISOString() : "",
       endedAt: w.span.lastAt ? new Date(w.span.lastAt).toISOString() : "",
@@ -609,9 +658,8 @@ export function createCombatStats(nowIso: () => string = () => new Date().toISOS
       byCombatant,
       damageCells: cells,
       spanSec: w.span.firstAt ? Math.max(1, Math.round((w.span.lastAt - w.span.firstAt) / 1000)) : 0,
-      spells: [...w.spells.entries()]
-        .map(([name, t]) => spellRow(name, t))
-        .sort((a, b) => b.damage - a.damage || b.healed - a.healed || a.spell.localeCompare(b.spell)),
+      spells,
+      ...manaTotals(spells),
       byMob: [...w.mobs.entries()]
         .map(([name, t]) => mobRow(name, t))
         .sort((a, b) => b.xpPerMin - a.xpPerMin || b.kills - a.kills || a.mob.localeCompare(b.mob)),
