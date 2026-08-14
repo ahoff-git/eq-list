@@ -304,8 +304,9 @@ list, hunt, search, damage, session, settings.
     is still the only highlight rule: it's free and it can't cry wolf. Names are `ItemLink`s. The
     header's tallies count the rows **on screen**, so they describe what you filtered to. See
     [ADR 0058](../decisions/0058-a-ledger-needs-filters-and-a-column-to-sort-by.md).
-  - `SettingsPanel` — log folder, match mode, window opacity / interface + map scale, keep-completed,
-    follow-your-zone, **cast alerts** (the watched-spell list + beep/**screen-flash**/include-self
+  - `AlertsPanel` — **its own tab**, not a group inside Settings
+    ([ADR 0088](../decisions/0088-alerts-are-a-tab-not-a-setting.md)): the rule list + beep /
+    **screen-flash** / include-self
     toggles, a **Test alert** button that fires a sample down the real broadcast path,
     **Suggested** click-to-add chips of common crowd control grouped by effect — see
     `src/shared/cast-suggestions.ts`, since EQ names most CC off-theme — and an **Alert style**
@@ -314,9 +315,12 @@ list, hunt, search, damage, session, settings.
     mouse** — a **Custom spots** manager places/names/deletes them, [ADR 0045](../decisions/0045-place-a-custom-alert-spot.md)),
     **motion** (pulse/wiggle/float/none),
     **duration**, and — with more than one monitor — which **display** the overlay covers. Those
-    controls are `AlertStyleFields`, used twice: once for the **defaults** and again for a watch
-    with a style **of its own** (🎨 on its row, which copies the defaults and then lets you tune
-    them, with a Test button that previews *that* watch). A watch is a **row plus three drawers**
+    controls are `AlertStyleFields`, and **only one of them is on screen at a time**
+    ([ADR 0090](../decisions/0090-one-style-editor-at-a-time.md)): every look — the defaults, each
+    saved style, a rule's own — is a one-line `StyleRow` (colour dot, name, `chirp · Top center ·
+    Pulse`, **worn by N**) with a 🎨 that opens the single editor beneath it. Creating a style opens
+    it too, so making and editing are one gesture, and the tab's `OpenTarget` state is what stops a
+    rule's drawer and a saved style being open together. A watch is a **row plus four drawers**
     (`CastWatchRow`, [ADR 0084](../decisions/0084-a-watch-is-a-rule-not-a-substring.md)): the row
     holds the two fields edited constantly — trigger and message — and **chips** summarising the rest
     (`cast · fades`, `2 conditions`, `25s ×3`, and ⚠ when something won't do what it looks like),
@@ -324,7 +328,12 @@ list, hunt, search, damage, session, settings.
     the **all/any** fold and the condition rows), **⏱** when it speaks (delay, repeat, what a second
     match does, whether dying cancels it, and the lines that call it off) and **🎨** its own style.
     One drawer is open at a time across the list, and the timing controls past the delay stay hidden
-    until there *is* a delay, so an ordinary watch is still one row and one empty box),
+    until there *is* a delay, so an ordinary watch is still one row and one empty box. The tab sits
+    **fourth**, because `TabBar` collapses overflow from the end and only six fit at the default
+    width — last would have made it *less* reachable than it was inside Settings — and its label
+    carries the live rule count, or `(off)`, since a silenced overlay looks exactly like a quiet one.
+  - `SettingsPanel` — log folder, match mode, window opacity / interface + map scale, keep-completed,
+    follow-your-zone,
     **"Eat a log file"** (a **catch-up**: digest a past log into every bucket it can fill — learned
     mob data, the **Damage tab's history** one play session per login with the fights whole, and the
     **loot feed** with the prices it teaches; see `electron/log-import.ts`,
@@ -420,10 +429,26 @@ list, hunt, search, damage, session, settings.
     combinations that would fail silently. See
     [ADR 0084](../decisions/0084-a-watch-is-a-rule-not-a-substring.md).
 
+    A rule's text boxes **complete from the log** ([ADR 0091](../decisions/0091-a-rule-is-typed-with-the-log-s-help.md)):
+    `log-vocabulary.ts` gathers every spell, caster, fade target and zone the log named into a trie,
+    read once when the tab opens, and `SuggestField` offers the rest of the word **greyed behind the
+    caret** (Tab or → to take it) when what you typed starts a term — or a **dropdown** when it
+    doesn't, since a term that merely *contains* what you typed ("sme" → Mesmerization) or a near-miss
+    spelling has no remainder to grey. A condition completes from the vocabulary matching its field.
+    All the boxes are `TextField`s, which own their own text so the settings round trip can't throw
+    the caret to the end mid-word.
+
     A rule can be **checked** (✓): `checkWatch` lists what's wrong with it — errors that can't work,
-    warnings that probably won't — and `dryRun` **replays it against the last 2000 log lines**
-    (`recent-lines.ts` in main, `log.recent()` over IPC), saying which of them it would have fired on
-    and how many would have cancelled it. The judging is pure and runs in the renderer, so it
+    warnings that probably won't — and `dryRun` **replays it against the tail of the log file**
+    (`log-tail.ts` in main, `log.recent(bytes)` over IPC, as **text** the renderer parses), saying
+    which of its lines the rule would have fired on and how many would have cancelled it — **one row
+    per distinct sentence**, since lines differing only by their numbers are folded together and
+    counted, so twenty copies of one hit can't crowd out the differently-worded one. The file
+    rather than a record of this session, because a rule is written *after* the evening that prompted
+    it — a session buffer answered "nothing logged yet" to the one person it was built for. **Search
+    further back** climbs `TAIL_STEPS` (512 KB → 32 MB) for a rule about something rare, and the
+    answer says which it is: "in the last N lines" or "in the whole log"
+    ([ADR 0089](../decisions/0089-a-rule-is-checked-against-the-log-file.md)). The judging is pure and runs in the renderer, so it
     re-answers as the rule is typed. It reuses the real matchers, with `now` set to each line's own
     timestamp and the rule matched alone — the question is what *this rule* does, not what the app
     currently does. Also **⧉ duplicate**, a **library** of worked rules (`watch-library.ts`, each one
@@ -490,7 +515,9 @@ list, hunt, search, damage, session, settings.
 - **A window is assembled, not written out.** The two big screens are compositions: the map window is a
   `MapTitlebar`, a `MapToolbar`, the `MapPanel` canvas and its side panels (`MapFilters`, `MapUsers`,
   `PinEditor`, `TravelPanel`, `KillList`, `MobKnowledge`); Settings is a stack of groups
-  (`LogSettings`, `ForgetData`, `CastAlertSettings` → `CastWatchRow`, `AlertStyleFields`); Search is a
+  (`LogSettings`, `ForgetData`), and Alerts is its own (`AlertsPanel` → `CastWatchRow` →
+  `WatchConditionRows` / `WatchTimingFields` / `WatchCheck` / `AlertStyleFields`, plus `WatchLibrary`
+  and `WatchShare`); Search is a
   box and a list next to a `WikiPageView`. Each was carved out of a component of several hundred lines,
   and the cut is always the same one: a region with **state or behaviour of its own** becomes a
   component, while a row of values stays where it is. `WindowButtons` is the smallest case of the same

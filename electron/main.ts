@@ -15,7 +15,6 @@ import { createLogWatcher } from "./log-watcher";
 import { createLogCursor } from "./log-cursor";
 import { runMigrations } from "./migrations";
 import { createAlertQueue } from "./alert-queue";
-import { createRecentLines } from "./recent-lines";
 import { isSameSitting } from "../src/shared/log-catchup";
 import { createCombatStats } from "./combat-stats";
 import { createSpellCatalog } from "./spells";
@@ -187,16 +186,12 @@ if (!app.requestSingleInstanceLock()) {
   let currentZone: string | null = null;
   let currentLoc: LocEvent | null = null;
   let appInfo: AppInfo = { hotkeys: [], logFile };
-  // A window of the lines just gone past, so an alert rule can be tested against what the game
-  // really said rather than by waiting for it to happen again (`recent-lines.ts`).
-  const recent = createRecentLines();
 
   syncDebugFlag(store.getSettings());
   registerIpc({
     store,
     wiki,
     watcher,
-    recent,
     combat,
     history,
     xp,
@@ -360,12 +355,7 @@ if (!app.requestSingleInstanceLock()) {
     // or be dropped, never the ledger. What it does with the event is `alert-router.ts`.
     alerts.combat(event);
   });
-  watcher.onLine((line) => {
-    // Kept whatever the alert settings say: the point of the window is to have the lines already
-    // when somebody sits down to write a rule about them.
-    recent.add(line);
-    alerts.line(line);
-  });
+  watcher.onLine((line) => alerts.line(line));
   // Everything logged while the app was closed has just been fed through the live path, which is
   // what makes the app's state independent of when it was launched. The one thing that *isn't*
   // simply "state" is the live meter: its totals mean "this sitting". Restart mid-camp and carrying

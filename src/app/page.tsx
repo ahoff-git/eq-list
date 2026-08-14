@@ -8,6 +8,8 @@ import ListPanel from "./components/ListPanel";
 import HuntPanel from "./components/HuntPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
+import AlertsPanel from "./components/AlertsPanel";
+import type { Settings } from "@/shared/types";
 import DamagePanel from "./components/DamagePanel";
 import LootPanel from "./components/LootPanel";
 import StatusBar from "./components/StatusBar";
@@ -27,7 +29,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "settings";
+type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "alerts" | "settings";
 
 /**
  * The single app window: a frameless, translucent float (the "overlay" look) that
@@ -92,6 +94,12 @@ export default function Home() {
     { key: "list", label: list.entries.length ? `List (${list.entries.length})` : "List" },
     { key: "hunt", label: "Hunt" },
     { key: "loot", label: "Loot" },
+    // Fourth, not last but one. `TabBar` collapses whatever doesn't fit into its » menu from the
+    // **end**, and at the window's default width only six tabs fit — so putting alerts after
+    // Settings would have left the feature *less* reachable than when it was a group inside
+    // Settings. The count is the *enabled* rules, since that's what's live, and "off" is worth
+    // saying out loud here: a silent overlay looks identical to one with nothing to say.
+    { key: "alerts", label: alertsLabel(settings?.castAlerts) },
     { key: "search", label: "Search" },
     { key: "damage", label: "Damage" },
     { key: "session", label: "Session" },
@@ -148,6 +156,7 @@ export default function Home() {
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
           {tab === "damage" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
+          {tab === "alerts" && <AlertsPanel />}
           {tab === "settings" && <SettingsPanel />}
         </div>
 
@@ -155,6 +164,20 @@ export default function Home() {
       </div>
     </NavProvider>
   );
+}
+
+/**
+ * What the Alerts tab says about itself: how many rules are live, or that none of them are.
+ *
+ * `(off)` earns its place because the failure it describes is invisible — an overlay with alerts
+ * switched off looks exactly like one with nothing to warn you about, and you'd only find out during
+ * the fight where it mattered.
+ */
+function alertsLabel(alerts: Settings["castAlerts"] | undefined): string {
+  if (!alerts) return "Alerts";
+  if (!alerts.enabled) return "Alerts (off)";
+  const live = alerts.watches.filter((w) => w.enabled).length;
+  return live ? `Alerts (${live})` : "Alerts";
 }
 
 /**

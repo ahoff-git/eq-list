@@ -2,6 +2,7 @@
 import { COMBAT_CUE_WITHIN_SECONDS, formatDelay, MAX_REPEAT, parseDelay } from "@/shared/alert-schedule";
 import WatchConditionRows from "./WatchConditionRows";
 import { ConfigRow } from "./ui";
+import type { Vocabulary } from "@/shared/log-vocabulary";
 import type { CastWatch } from "@/shared/types";
 
 /**
@@ -16,9 +17,12 @@ import type { CastWatch } from "@/shared/types";
 export default function WatchTimingFields({
   watch: w,
   onChange,
+  vocabulary,
 }: {
   watch: CastWatch;
   onChange: (patch: Partial<CastWatch>) => void;
+  /** The log's own words, for completing the lines that call a cue off. */
+  vocabulary: Vocabulary;
 }) {
   const seconds = parseDelay(w.delay);
   const delayed = !!seconds;
@@ -104,6 +108,7 @@ export default function WatchTimingFields({
               <WatchConditionRows
                 conditions={w.cancelWhen ?? []}
                 onChange={(cancelWhen) => onChange({ cancelWhen })}
+                vocabulary={vocabulary}
                 allowExclude={false}
                 addLabel="+ Cancel on"
                 empty="Nothing calls this off early. Add a line to watch for — “has been slain” to drop a re-mez reminder once the mob is dead."

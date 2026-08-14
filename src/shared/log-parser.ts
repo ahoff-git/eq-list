@@ -75,6 +75,27 @@ export function splitLine(raw: string, logId = 0): LogLine | null {
   };
 }
 
+/**
+ * A stretch of log text as lines, numbered in order, dropping anything that isn't one.
+ *
+ * The counterpart to reading a slice of the file rather than following it: the tail arrives as text
+ * (a string crosses the IPC boundary for a fraction of what tens of thousands of small objects
+ * would cost), so whoever uses it does this. Continuation lines and blanks are dropped by
+ * `splitLine`, which is what makes the count it returns a count of *log lines*.
+ */
+export function parseLogText(text: string, firstId = 1): LogLine[] {
+  const lines: LogLine[] = [];
+  let id = firstId;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = splitLine(raw, id);
+    if (line) {
+      lines.push(line);
+      id += 1;
+    }
+  }
+  return lines;
+}
+
 /** Strip a leading English article so names match the wiki / shopping list. */
 export function stripArticle(name: string): string {
   return name.replace(/^(?:an?|the) /i, "").trim();

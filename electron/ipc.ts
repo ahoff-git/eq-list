@@ -27,7 +27,7 @@ import type { LootLog } from "./loot-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { Lookup } from "./lookup";
-import type { RecentLines } from "./recent-lines";
+import { readLogTail } from "./log-tail";
 import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 
@@ -58,8 +58,6 @@ export interface IpcContext {
   /** Push an event to every window (owned by main.ts). */
   broadcast: (channel: string, payload: unknown) => void;
   watcher: LogWatcher;
-  /** The last few thousand log lines, for testing an alert rule against what really happened. */
-  recent: RecentLines;
 }
 
 export function registerIpc(context: IpcContext): void {
@@ -176,12 +174,12 @@ function registerSettingsIpc(context: IpcContext): void {
     placeResolve = null;
   });
 
-  // The lines the log has produced lately, so Settings can test an alert rule against what really
-  // happened instead of asking the player to go and make it happen again. Read-only and in memory
-  // (`recent-lines.ts`); the *judging* is pure and runs in the renderer (`dryRun`), because it wants
-  // to re-run on every keystroke.
-  ipcMain.handle(CH.logRecent, (_e, count?: number) =>
-    context.recent.all(typeof count === "number" ? count : undefined),
+  // The tail of the log being watched, so the Alerts tab can test a rule against what the game
+  // really said — including last night, which is the case a session buffer got wrong
+  // (`log-tail.ts`). Read on demand; the *judging* is pure and runs in the renderer (`dryRun`),
+  // because it re-answers on every keystroke while a rule is being written.
+  ipcMain.handle(CH.logRecent, (_e, bytes?: number) =>
+    readLogTail(context.watcher.status().file, typeof bytes === "number" ? bytes : undefined),
   );
 
   // "Eat" a log file: a catch-up that digests it into every store that can take it — the kill log

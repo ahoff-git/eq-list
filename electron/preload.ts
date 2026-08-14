@@ -54,7 +54,7 @@ const api: EqlApi = {
   },
   log: {
     import: () => ipcRenderer.invoke(CH.logImport),
-    recent: (count) => ipcRenderer.invoke(CH.logRecent, count),
+    recent: (bytes) => ipcRenderer.invoke(CH.logRecent, bytes),
   },
   update: {
     current: () => ipcRenderer.invoke(CH.updateCurrent),

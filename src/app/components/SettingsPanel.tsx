@@ -4,13 +4,17 @@ import { useAppInfo, useSettings, useWatcherStatus } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
-import CastAlertSettings from "./CastAlertSettings";
 import LogSettings from "./LogSettings";
 import { percent } from "@/shared/format";
 import { CheckField } from "./ui";
 import type { DeepPartial, Settings } from "@/shared/types";
 
-/** Log location, match strictness, overlay look, and the debug toggle. */
+/**
+ * Log location, match strictness, overlay look, and the debug toggle.
+ *
+ * Alerts used to be here and are their own tab now (`AlertsPanel`): a rule is something you build and
+ * come back to, not a preference you set once, and it had grown to several screens of its own.
+ */
 export default function SettingsPanel() {
   const settings = useSettings();
   const status = useWatcherStatus();
@@ -152,8 +156,6 @@ export default function SettingsPanel() {
           />
         )}
       </div>
-
-      <CastAlertSettings settings={settings} patch={patch} />
 
       <div className="setting">
         <span className="hint">

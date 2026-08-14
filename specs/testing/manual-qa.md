@@ -196,12 +196,12 @@ features for later in [../ideas.md](../ideas.md).
   after launch, and while the main window is hidden to tray), and that a groupmate casting a watched
   spell stays quiet until that watch's **players** toggle is on. Turning cast alerts off should make
   the overlay window go away. See [ADR 0035](../decisions/0035-cast-alert-overlay-window.md).
-- **Alert style options.** In Settings → Alert style, confirm each takes effect (Test alert):
+- **Alert style options.** In Alerts → Alert style, confirm each takes effect (Test alert):
   **colour** tints both banner border and flash; the **sound** picker's Preview plays and the chosen
   beep is what fires; **position** moves the banner (all six spots); **motion** (pulse/wiggle/float/
   none) changes it; **duration** changes how long it lingers; and on a multi-monitor rig the
   **monitor** dropdown moves the overlay to the chosen display (it recreates on change).
-- **Custom alert spots.** In Settings → Alert style → Custom spots, click **Place a spot**: the
+- **Custom alert spots.** In Alerts → Alert style → Custom spots, click **Place a spot**: the
   overlay should dim, show "Click where alerts should appear", and a preview banner should track the
   cursor on the chosen monitor. A click adds a named spot (Esc cancels); it then appears in the
   **Position** dropdown (defaults and per-watch). Pick it and Test — the banner lands where you
@@ -270,15 +270,22 @@ features for later in [../ideas.md](../ideas.md).
   claim, which is the one worth checking on **your own settings file rather than a fresh one**: every
   watch you already had must behave exactly as before, untouched.
 - **Testing a rule against your own log — the replay.**
-  ([ADR 0085](../decisions/0085-a-rule-can-be-tested-shared-and-borrowed.md).) The one that needs a
+  ([ADR 0085](../decisions/0085-a-rule-can-be-tested-shared-and-borrowed.md),
+  [ADR 0089](../decisions/0089-a-rule-is-checked-against-the-log-file.md).) The one that needs a
   *real* log more than anything else here, because its whole purpose is to answer "does my wording
-  match what EQ actually prints". Play for twenty minutes so the buffer fills, then open ✓ on a few
-  rules and read the hits. What to confirm: the count of scanned lines climbs as you play; a rule you
-  know fires shows the lines you expect, with the log's own sentence readable; the ⚠ / ✖ list agrees
-  with the chip on the row; and — the real test — write a rule for something you *saw* happen this
-  session and see whether your first guess at the wording actually matches it. If it doesn't, that's
-  the feature working. Also worth checking right after a launch, where the honest answer is "nothing
-  logged yet this session" rather than a confident zero.
+  match what EQ actually prints". It reads the **file**, so start with the case that used to fail:
+  open the app having *not* played since launch, open ✓ on a rule you know fires, and confirm it
+  reports matches from an earlier session rather than "nothing logged yet". Then, with a real
+  evening's log: a rule you know fires shows the lines you expect with the log's own sentence
+  readable; the ⚠ / ✖ list agrees with the chip on the row; the scanned-line count is in the
+  thousands (it's the last 512 KB, so a huge log doesn't slow it down — worth confirming the drawer
+  opens instantly on a 15 MB one). Then **⤢ Search further back**: each press should report a bigger
+  line count, the wording should switch to "in the whole log (N lines)" once it reaches the start,
+  and the button should then disappear. Time the deepest step on a real 15 MB log — it reads 32 MB,
+  so if that's an uncomfortable wait the ladder wants a rung removing. The real test is to write a
+  rule for something you *saw* happen and find out whether your first guess at the wording matches
+  it; if it doesn't, that's the feature working. Finally, with the log folder unset or wrong, confirm
+  it says so rather than reporting a confident zero.
 - **The library, the share string, duplicate and saved styles.** Add two or three library rules and
   confirm each behaves as its card claimed (open one afterwards — the card's chips should match the
   row's). Add one with a ✎ note and confirm it opens for editing rather than sitting there matching
@@ -286,8 +293,8 @@ features for later in [../ideas.md](../ideas.md).
   **Copy all**, paste into a text file, clear a rule, and paste it back — it should arrive at the
   bottom, enabled, with the same behaviour and a *different* id (check nothing was overwritten).
   Paste deliberate junk and confirm it's refused with a sentence. Finally **saved styles**: make one,
-  put two rules in it, Test both (they should look identical), change the style once **in the Saved
-  styles list** and confirm both change — then delete it and confirm those rules fall back to the
+  put two rules in it, Test both (they should look identical), change the style once **from its own
+  row's 🎨** and confirm both change — then delete it and confirm those rules fall back to the
   defaults rather than going silent.
 - **The one-time rule conversion, on your own settings file.**
   ([ADR 0087](../decisions/0087-an-old-rule-is-converted-once-and-the-path-is-one-module.md).) This is
@@ -301,6 +308,25 @@ features for later in [../ideas.md](../ideas.md).
   rather than a copy; and — the claim worth actually testing — each rule still fires on what it fired
   on before. `settings.pre-schema-1.json` should be sitting beside `settings.json` in the app's data
   folder, and a second launch should log nothing at all.
+- **Typing a rule, with a real log behind it.**
+  ([ADR 0091](../decisions/0091-a-rule-is-typed-with-the-log-s-help.md).) The three things to feel
+  rather than read. **The caret**: click into the middle of an existing trigger and type — the cursor
+  must stay where you put it, letter after letter (this was the bug: it jumped to the end every
+  time). **The completions**: with an evening's log, type the first few letters of a spell you know
+  you saw and confirm the rest appears greyed and Tab takes it; then type a fragment from the
+  *middle* of one ("sme") and confirm the dropdown finds it; then misspell one deliberately. The
+  count beside the buttons says how many words it learned — if that's zero or tiny, the log slice is
+  the thing to look at, not the suggestions. The judgement call only real use can settle is whether
+  the fuzzy floor is right: too many wrong offers and it wants raising, too few and lowering.
+  **The hit list**: run a check on a rule that fires constantly (a mob's name) and confirm you get
+  *different* sentences with ×N counts rather than twenty copies of one.
+- **One style editor at a time.**
+  ([ADR 0090](../decisions/0090-one-style-editor-at-a-time.md).) With two or three saved styles,
+  confirm the section is a **line per look** — dot, name, what it does, worn-by count — and that
+  opening one 🎨 closes whatever was open, *including* a rule's own 🎨 drawer and the defaults'. The
+  claim to check by eye is that there is never more than one grid of swatches on screen. Then
+  **＋ New saved style**: it should appear already open for editing, and the row's summary should
+  change as you edit it.
 - **The three style edit paths.**
   ([ADR 0086](../decisions/0086-editing-a-shared-style-from-a-rule-forks-it.md).) The rule is that
   changing one rule's look never changes another's, and the only way to see it working is to try to

@@ -1,6 +1,23 @@
 "use client";
 import { WATCH_FIELDS, WATCH_OPS } from "@/shared/watch-conditions";
+import SuggestField from "./SuggestField";
+import type { Vocabulary, VocabularyKind } from "@/shared/log-vocabulary";
 import type { WatchCondition, WatchField, WatchOp } from "@/shared/types";
+
+/**
+ * Which of the log's vocabularies completes a condition on this field.
+ *
+ * `subject` is a spell for a cast or a fade and a sentence for a raw-text rule; offering spell names
+ * is right for the first and harmless for the second, since a sentence rarely starts with one.
+ * `line` is deliberately absent — a whole sentence is not a term, and a term offered where a
+ * sentence belongs is a suggestion that can only be wrong.
+ */
+const VOCABULARY_FOR: Partial<Record<WatchField, VocabularyKind>> = {
+  subject: "spell",
+  caster: "caster",
+  target: "target",
+  zone: "zone",
+};
 
 /**
  * The editor for a list of conditions — one row each, a field, an operator and some text.
@@ -15,6 +32,7 @@ export default function WatchConditionRows({
   onChange,
   allowExclude = true,
   addLabel,
+  vocabulary,
   empty,
 }: {
   conditions: WatchCondition[];
@@ -22,6 +40,8 @@ export default function WatchConditionRows({
   /** Offer the ✓/✕ invert toggle. Off for cancels, where inverting is meaningless. */
   allowExclude?: boolean;
   addLabel: string;
+  /** The log's own words, for completing a condition's text. */
+  vocabulary: Vocabulary;
   /** What to say when there are none — the place to explain what these rows would be for. */
   empty: string;
 }) {
@@ -71,12 +91,18 @@ export default function WatchConditionRows({
               </option>
             ))}
           </select>
-          <input
+          {/* The words are what's read and edited, so they take whatever the row has left — and they
+              complete from the matching half of the log's vocabulary, so a `caster` condition offers
+              casters and a `zone` one offers zones. A `line` condition is a sentence, which the
+              vocabulary doesn't hold, so it offers nothing rather than a term out of context. */}
+          <SuggestField
+            slot="cond-text"
             className="field"
-            style={{ flex: 1, minWidth: 0 }}
             value={c.text}
+            vocabulary={vocabulary}
+            kind={VOCABULARY_FOR[c.field]}
             placeholder="words to look for"
-            onChange={(e) => patch(i, { text: e.target.value })}
+            onChange={(text) => patch(i, { text })}
           />
           <button className="btn ghost sm" title="Remove this condition" onClick={() => remove(i)}>
             ✕

@@ -28,6 +28,7 @@ import { lineSubject, matchCast, matchFade, matchLine } from "./cast-alerts";
 import { parseSplitLine } from "./parse-line";
 import { alertCue, parseDelay, usableCancels } from "./alert-schedule";
 import { activeConditions, conditionMatches, describeCondition, wantsCast, watchSpeaks } from "./watch-conditions";
+import { lineShape } from "./unmatched-lines";
 import type { CastAlertSettings, CastWatch, LogLine, WatchCondition } from "./types";
 
 /**
@@ -148,17 +149,23 @@ function sameTrigger(a: CastWatch, b: CastWatch): boolean {
 
 // ── the replay ─────────────────────────────────────────────────────────────────
 
-/** One line the rule would have fired on. */
+/** One line the rule would have fired on — or a group of lines that only differ by their numbers. */
 export interface DryRunHit {
   at: string;
   /** The log's own sentence, so the player recognises what they're looking at. */
   line: string;
   /** Which prompt it would have been. */
   event: "cast" | "fade" | "line";
+  /**
+   * How many lines this stands for. More than one when they share a *shape* — the same sentence
+   * with different numbers in it — which is what stops twenty identical hits crowding out the one
+   * differently-worded line that would have told you something.
+   */
+  times: number;
 }
 
 export interface DryRunResult {
-  /** The matches, newest first, capped at `limit`. */
+  /** The matches, newest first, one per distinct sentence, capped at `limit`. */
   hits: DryRunHit[];
   /** How many matched in total — `hits.length` when it's under the cap. */
   total: number;
@@ -201,9 +208,39 @@ export function dryRun(
     const hit = matchOne(watch, only, line, event, now, context);
     if (!hit) continue;
     total += 1;
-    hits.push({ at: line.at, line: line.message, event: hit });
+    hits.push({ at: line.at, line: line.message, event: hit, times: 1 });
   }
-  return { hits: hits.slice(-limit).reverse(), total, scanned: lines.length, cancels: cancelled };
+  return { hits: distinct(hits, limit), total, scanned: lines.length, cancels: cancelled };
+}
+
+/**
+ * The **last `limit` distinct** hits, newest first — lines that differ only by their numbers folded
+ * into one, carrying a count.
+ *
+ * Without this the list is a sample of the last twenty *lines*, which for the rules people actually
+ * write ("hits YOU for", a mob's name) is twenty copies of one sentence. What a person is reading
+ * the list for is variety — is it catching the thing I meant, and what *else* is it catching — so
+ * the twenty slots go to twenty different sentences. `lineShape` does the folding, the same digit
+ * rule the unread-line tally uses, and the **newest** example of each is kept because it's the one
+ * whose numbers are worth seeing.
+ */
+function distinct(hits: DryRunHit[], limit: number): DryRunHit[] {
+  const byShape = new Map<string, DryRunHit>();
+  // Newest first, so the first of each shape we meet is the one we keep.
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const hit = hits[i];
+    const key = `${hit.event}:${lineShape(hit.line)}`;
+    const seen = byShape.get(key);
+    if (seen) seen.times += 1;
+    else if (byShape.size < limit) byShape.set(key, hit);
+    // Past the limit a new shape is dropped rather than displacing one: the caller already says how
+    // many matched in total, and a list that reshuffles as it fills is harder to read than a full one.
+    else {
+      const overflow = byShape.get(key);
+      if (overflow) overflow.times += 1;
+    }
+  }
+  return [...byShape.values()];
 }
 
 /** Which prompt, if any, this one line would have raised — the live path's own three questions. */

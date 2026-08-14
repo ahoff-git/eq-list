@@ -1585,6 +1585,21 @@ export interface TravelSettings {
 
 // ─── Watcher status ─────────────────────────────────────────────────────────
 
+/**
+ * A slice of the log file, as read for a rule's check (`log.recent`).
+ *
+ * **Text, not lines**: at the deep end of the ladder this is tens of thousands of lines, and a
+ * structured-clone of that many small objects across the IPC boundary costs far more than the
+ * string they came from — while parsing on the far side is work the replay was going to do anyway.
+ */
+export interface LogTail {
+  /** Whole lines only — a slice starting mid-file has its part-line dropped. */
+  text: string;
+  bytes: number;
+  /** The read reached the start of the file: there is no "further back" left to search. */
+  whole: boolean;
+}
+
 export interface WatcherStatus {
   watching: boolean;
   file?: string;
@@ -1779,11 +1794,12 @@ export interface EqlApi {
      */
     import(): Promise<LogImportResult | null>;
     /**
-     * The last few thousand lines the log produced this session, oldest first — what Settings
-     * replays a rule against (`dryRun`). In memory only, so it's empty right after a launch and
-     * fills as you play; the count it returns is what makes "no matches" mean something.
+     * The tail of the log being watched, as **text** — what the Alerts tab replays a rule against
+     * (`dryRun`, after `parseLogText`). Read from the file on each call, so it covers last night as
+     * well as this minute, and `bytes` says how far back to go (`TAIL_STEPS`, the "search further
+     * back" ladder). Empty only when there's no log to read; `whole` means there is no further back.
      */
-    recent(count?: number): Promise<LogLine[]>;
+    recent(bytes?: number): Promise<LogTail>;
   };
   /** "A newer build is out" notification (rolling `latest` release; no auto-updater). */
   update: {

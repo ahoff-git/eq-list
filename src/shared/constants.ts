@@ -71,6 +71,19 @@ export const LOOKUP_HOTKEY = {
   label: "Ctrl/Cmd+Shift+L",
 } as const;
 
+/**
+ * How far back a rule's **check** may look through the log, in bytes — each step the next press of
+ * "further back" (`log-tail.ts` reads it; the Alerts tab climbs it).
+ *
+ * The first step is about an evening of ordinary play: the answer to nearly every question, and
+ * quick enough to feel like no wait at all. Widening is the reader's choice because the right
+ * window depends on what they're looking for — a rule about a named or a raid call may have two
+ * examples in a month — and only they know. The last step is past the size of any real EQ log
+ * we've measured (a heavy player's was 15 MB), so in practice the ladder ends at "all of it"
+ * rather than at a cap somebody would hit. The same widening the watcher does to find a zone line.
+ */
+export const TAIL_STEPS = [512 * 1024, 2 * 1024 * 1024, 8 * 1024 * 1024, 32 * 1024 * 1024];
+
 // ─── External endpoints ───────────────────────────────────────────────────────
 // One home for cross-cutting external URLs so they're named, not sprinkled through
 // the code. (The eqlwiki API base lives with its client in `electron/wiki/api.ts`

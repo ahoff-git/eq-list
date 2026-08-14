@@ -68,7 +68,7 @@ export default function AlertStyleFields({
 
       <div className="row astyle-row">
         <span className="astyle-label">Sound</span>
-        <select className="field sm" value={style.soundName} onChange={(e) => onChange({ soundName: e.target.value })}>
+        <select className="field sm pick" value={style.soundName} onChange={(e) => onChange({ soundName: e.target.value })}>
           {ALERT_SOUNDS.map((s) => (
             <option key={s.name} value={s.name}>
               {s.label}
@@ -83,7 +83,7 @@ export default function AlertStyleFields({
       <div className="row wrap astyle-row">
         <span className="astyle-label">Position</span>
         <select
-          className="field sm"
+          className="field sm pick wide"
           value={style.position}
           onChange={(e) => onChange({ position: e.target.value as AlertPositionValue })}
         >
@@ -106,7 +106,7 @@ export default function AlertStyleFields({
           Motion
         </span>
         <select
-          className="field sm"
+          className="field sm pick"
           value={style.animation}
           onChange={(e) => onChange({ animation: e.target.value as AlertAnimation })}
         >

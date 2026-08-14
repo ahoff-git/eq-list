@@ -1,5 +1,5 @@
 "use client";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
  * ui.tsx — the small presentational bits more than one panel uses.
@@ -105,6 +105,50 @@ export function CheckField({
 }
 
 /**
+ * A text box whose caret survives being typed in.
+ *
+ * The bug it fixes, which every field bound straight to Settings had: a keystroke goes
+ * `onChange` → IPC → the main store → a broadcast back → `useSettings` → re-render, and until that
+ * lap finishes React re-renders the input with the value it had *before* the keystroke. The DOM
+ * value is rewritten under the cursor, and a rewritten value puts the caret at the end — so editing
+ * the middle of "Mesmerization" threw you to the end of it on every letter.
+ *
+ * So the box owns its own text and only *pushes* upward. An upstream value is adopted when it isn't
+ * the echo of what we last sent — which is what keeps a rule loaded from elsewhere (an import, a
+ * library rule, a duplicate) landing in the field, without the round trip fighting the typist.
+ */
+export function TextField({
+  value,
+  onChange,
+  className = "field",
+  ...rest
+}: {
+  value: string;
+  onChange: (value: string) => void;
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+  const [text, setText] = useState(value);
+  /** The last value this field put upstream — anything else arriving is a genuine outside change. */
+  const sent = useRef(value);
+  useEffect(() => {
+    if (value === sent.current) return;
+    sent.current = value;
+    setText(value);
+  }, [value]);
+  return (
+    <input
+      {...rest}
+      className={className}
+      value={text}
+      onChange={(e) => {
+        sent.current = e.target.value;
+        setText(e.target.value);
+        onChange(e.target.value);
+      }}
+    />
+  );
+}
+
+/**
  * One labelled row of a settings block: a name in a fixed column, the controls beside it, and an
  * optional aside that says what the current choice *means*.
  *
@@ -133,7 +177,7 @@ export function ConfigRow({
     <div className="row astyle-row" style={align === "top" ? { alignItems: "flex-start" } : undefined}>
       <span className="astyle-label">{label}</span>
       {children}
-      {note && <span className="muted small">{note}</span>}
+      {note && <span className="muted small cfg-note">{note}</span>}
     </div>
   );
 }

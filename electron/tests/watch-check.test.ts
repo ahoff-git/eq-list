@@ -195,12 +195,58 @@ test("your own casts follow the watch's own answer during a replay", () => {
 });
 
 test("the hit list is capped while the total isn't — a rule can be too eager to list", () => {
+  // Distinct by *letters*: varying the number would be one shape, which is the next test's point.
+  // Article-led, or `isNamedCaster` reads them as players and a cast watch skips them.
   const many = Array.from({ length: 40 }, (_, i) =>
-    splitLine(`[Wed Jul 29 21:0${i % 10}:00 2026] a gnoll pup begins casting Mesmerize.`, i)!,
+    splitLine(
+      `[Wed Jul 29 21:00:00 2026] a gnoll ${"abcdefghijklmnopqrstuvwxyz"[i % 26]}${i > 25 ? "z" : ""} begins casting Mesmerize.`,
+      i,
+    )!,
   );
   const result = dryRun(watch(), settings(), many, 5);
   assert.equal(result.total, 40);
   assert.equal(result.hits.length, 5);
+});
+
+// ── one row per distinct sentence ──────────────────────────────────────────────
+// The list is read for *variety* — is it catching what I meant, and what else is it catching — so
+// twenty copies of one sentence would waste every slot it has.
+
+test("lines that differ only by their numbers are one row, counted", () => {
+  const lines = [1, 2, 3, 4].map((n) =>
+    splitLine(`[Wed Jul 29 21:00:0${n} 2026] a gnoll pup begins casting Mesmerize for ${n * 10} points.`, n)!,
+  );
+  const result = dryRun(watch(), settings(), lines);
+  assert.equal(result.total, 4);
+  assert.equal(result.hits.length, 1);
+  assert.equal(result.hits[0].times, 4);
+  // The newest example is the one kept — its numbers are the ones worth seeing.
+  assert.match(result.hits[0].line, /40 points/);
+});
+
+test("differently-worded lines each keep a row of their own", () => {
+  const lines = [
+    "[Wed Jul 29 21:00:01 2026] a gnoll pup begins casting Mesmerize.",
+    "[Wed Jul 29 21:00:02 2026] a gnoll pup begins casting Mesmerize.",
+    "[Wed Jul 29 21:00:03 2026] a froglok tad begins casting Mesmerize.",
+  ].map((raw, i) => splitLine(raw, i)!);
+  const result = dryRun(watch(), settings(), lines);
+  assert.equal(result.total, 3);
+  assert.deepEqual(result.hits.map((h) => h.times), [1, 2]); // newest first: the froglok, then the pup
+  assert.match(result.hits[0].line, /froglok/);
+});
+
+test("the cap counts distinct sentences, so twenty of one can't crowd out the others", () => {
+  const noise = Array.from({ length: 20 }, (_, i) =>
+    splitLine(`[Wed Jul 29 21:00:00 2026] a gnoll pup begins casting Mesmerize for ${i} points.`, i)!,
+  );
+  const rare = splitLine("[Wed Jul 29 21:00:30 2026] a froglok shin lord begins casting Mesmerization.", 99)!;
+  const result = dryRun(watch(), settings(), [...noise, rare], 5);
+  assert.equal(result.total, 21);
+  // Both shapes are visible, where a straight "last 5 lines" would have shown five gnolls.
+  assert.equal(result.hits.length, 2);
+  assert.match(result.hits[0].line, /shin lord/);
+  assert.equal(result.hits[1].times, 20);
 });
 
 test("canDryRun refuses only the rule that could never match anything", () => {

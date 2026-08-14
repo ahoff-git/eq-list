@@ -8,14 +8,18 @@ import AlertStyleFields from "./AlertStyleFields";
 import WatchCheck from "./WatchCheck";
 import WatchConditionRows from "./WatchConditionRows";
 import WatchTimingFields from "./WatchTimingFields";
-import { CheckField, ConfigRow } from "./ui";
+import SuggestField from "./SuggestField";
+import { CheckField, ConfigRow, TextField } from "./ui";
+import { NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import type { AlertStyle, CastAlertSettings, CastWatch } from "@/shared/types";
 
 /** Which drawer of a watch is open. `null` is the ordinary state: a one-line row. */
 export type WatchPane = "match" | "timing" | "style" | "check";
 
 const PANES: { id: WatchPane; icon: string; label: string }[] = [
-  { id: "match", icon: "⚟", label: "What sets it off — which prompts, and any conditions" },
+  // Glyphs a person can name. `⚟` was tried for "what sets it off" and renders as an anonymous
+  // angle bracket at this size — an icon nobody can read is worse than no icon.
+  { id: "match", icon: "🎯", label: "What sets it off — which prompts, and any conditions" },
   { id: "timing", icon: "⏱", label: "When it speaks — delay, repeat, and what calls it off" },
   { id: "style", icon: "🎨", label: "How it looks and sounds" },
   { id: "check", icon: "✓", label: "Check it — what's wrong with it, and what it would have caught" },
@@ -44,6 +48,7 @@ export default function CastWatchRow({
   onStyleEdit,
   onWear,
   onNameStyle,
+  vocabulary,
 }: {
   watch: CastWatch;
   /** The whole group, for the defaults a per-watch style starts from and the list to compare against. */
@@ -64,6 +69,8 @@ export default function CastWatchRow({
   onWear: (choice: string) => void;
   /** Put this rule's own look into the shared list under a name. */
   onNameStyle: () => void;
+  /** The words this log uses, for completing a trigger as it's typed. */
+  vocabulary: Vocabulary;
 }) {
   const summary = summarizeWatch(w, ca.watches);
   const worst = summary.issues[0]?.level;
@@ -77,20 +84,22 @@ export default function CastWatchRow({
         {/* Trigger then message, left to right: match this, say that. They're separate on purpose —
             a fade has to be matched on the words EQ used ("light breeze"), which is rarely the
             wording you want to read mid-fight. */}
-        <input
-          className="field"
-          style={{ flex: 3, minWidth: 0 }}
+        {/* The trigger completes from your own log — EQ prints "Mesmerization", not "Mesmerize",
+            and nobody can quote a log from memory. A raw-text watch is pointed at whole sentences,
+            which the vocabulary doesn't hold, so it suggests nothing rather than the wrong thing. */}
+        <SuggestField
+          slot="trigger"
           value={w.spell}
+          vocabulary={w.onLine ? NO_VOCABULARY : vocabulary}
           placeholder={w.onLine ? "words the log printed" : "spell name (or part of it)"}
-          onChange={(e) => onChange({ spell: e.target.value })}
+          onChange={(spell) => onChange({ spell })}
         />
-        <input
-          className="field"
-          style={{ flex: 2, minWidth: 0 }}
+        <TextField
+          className="field says"
           value={w.message ?? ""}
-          placeholder="alert says… (optional)"
+          placeholder="alert says…"
           title="What the banner should say when this fires. Leave it empty to get the usual sentence — “Root faded”, “a gnoll casting Fear”."
-          onChange={(e) => onChange({ message: e.target.value })}
+          onChange={(message) => onChange({ message })}
         />
         {/* The rule in a few words, so a folded watch can still be read rather than remembered. */}
         <div className="watch-sum" onClick={() => onOpen(open ? null : "match")} title="Open this watch">
@@ -200,6 +209,7 @@ export default function CastWatchRow({
           <WatchConditionRows
             conditions={w.conditions ?? []}
             onChange={(conditions) => onChange({ conditions })}
+            vocabulary={vocabulary}
             addLabel="+ Condition"
             empty="Just the words above. Add a condition to narrow it — “caster isn't your warder”, “zone is Lower Guk” — or to widen it with a second spelling."
           />
@@ -208,7 +218,7 @@ export default function CastWatchRow({
 
       {open === "timing" && (
         <div className="watch-pane">
-          <WatchTimingFields watch={w} onChange={onChange} />
+          <WatchTimingFields watch={w} onChange={onChange} vocabulary={vocabulary} />
         </div>
       )}
 
