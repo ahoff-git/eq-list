@@ -26,6 +26,16 @@
 import type { AlertStyle, CastAlertSettings, CastWatch, NamedAlertStyle } from "./types";
 
 /**
+ * Anything that can wear a look: a saved style by id, its own layer, or neither.
+ *
+ * A `CastWatch` is one, and for most of this module's life it was the only one — but a **personal
+ * best** now wears a style too (`Settings.highScores`), and it is not a rule and never will be. So
+ * the resolver asks for the two fields it actually reads rather than for a whole watch, which is
+ * also what stops the alternative: a second, parallel resolver that would drift from this one.
+ */
+export type StyleWearer = Pick<CastWatch, "styleId" | "style">;
+
+/**
  * The style an alert should use: the **defaults**, then the **saved style** the watch wears, then
  * the watch's **own** look, field by field.
  *
@@ -42,7 +52,7 @@ import type { AlertStyle, CastAlertSettings, CastWatch, NamedAlertStyle } from "
  * for the same reason a deleted custom spot falls back to the top of the screen: an alert that can't
  * be styled must still be *seen*.
  */
-export function alertStyle(settings: CastAlertSettings, watch?: CastWatch | null): AlertStyle {
+export function alertStyle(settings: CastAlertSettings, watch?: StyleWearer | null): AlertStyle {
   const base: AlertStyle = {
     sound: settings.sound,
     flash: settings.flash,

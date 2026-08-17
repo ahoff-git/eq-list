@@ -5,6 +5,7 @@ import { api, resetSession } from "@/lib/api";
 import DamageMeter, { type DamageView } from "./DamageMeter";
 import SpellTable from "./SpellTable";
 import DamageHistory from "./DamageHistory";
+import HighScoreBoard from "./HighScoreBoard";
 import Sparkline from "./Sparkline";
 import AskValue from "./AskValue";
 import { opponentOf } from "@/shared/damage-tree";
@@ -26,7 +27,13 @@ import { ratio } from "@/shared/numbers";
  * A stored fight renders through exactly the same views as a live one, so "dig into
  * last night" and "how's this pull going" are the same screen.
  */
-type Scope = "fight" | "session" | "history";
+/**
+ * `records` sits beside the three windows on damage rather than in a tab of its own: it is the same
+ * question asked over your whole history — *what is the best this has ever been* — and the tab bar
+ * already collapses at this window's default width, so a ninth tab would have pushed a feature into
+ * the » menu to make room for one that lives two clicks from the same data.
+ */
+type Scope = "fight" | "session" | "history" | "records";
 type View = keyof typeof LAYOUTS | "spells";
 
 /**
@@ -84,8 +91,11 @@ export default function DamagePanel() {
   const live = useLiveFight(stats.fight.endedAt);
   const bests = useBests(stats.fight.startedAt);
 
-  // The window on show: a live one, or the stored fight picked out of history.
-  const window: FightStats | null = scope === "history" ? picked?.stats ?? null : stats[scope];
+  // The window on show: a live one, or the stored fight picked out of history. The scoreboard is not
+  // a damage window at all — it spans every fight ever — so it has none, and everything below that
+  // renders a window sits out.
+  const window: FightStats | null =
+    scope === "history" ? picked?.stats ?? null : scope === "records" ? null : stats[scope];
   const petShare = window ? petShareOfYours(window) : 0;
   // A personal best only means something for one fight against a named opponent. `opponentOf` is
   // the same rule history labels a fight by, so the ★ flag and the list agree on who you fought.
@@ -107,8 +117,17 @@ export default function DamagePanel() {
           <button className={segCls(scope === "history")} onClick={() => setScope("history")}>
             History
           </button>
+          <button
+            className={segCls(scope === "records")}
+            title="Your personal bests — the biggest hit, the longest streak, the best fight you've ever had"
+            onClick={() => setScope("records")}
+          >
+            🏆 Records
+          </button>
         </div>
-        <div className="segmented">
+        {/* Which way damage fans out is a question about a *window* of damage; the scoreboard isn't
+            one, so the toggle would be a row of controls that did nothing. */}
+        <div className="segmented" hidden={scope === "records"}>
           {entries(LAYOUTS).map(([key, layout]) => (
             <button key={key} className={segCls(view === key)} title={layout.hint} onClick={() => setView(key)}>
               {layout.label}
@@ -132,12 +151,16 @@ export default function DamagePanel() {
             Copy
           </button>
         )}
-        {scope !== "history" && (
+        {/* The scoreboard has a Reset of its own, for the records — two buttons called Reset meaning
+            different things is worse than one being somewhere else. */}
+        {scope !== "history" && scope !== "records" && (
           <button className="btn ghost sm" onClick={resetSession} title="Clear the live meter and the session counters (recorded fights are kept)">
             Reset
           </button>
         )}
       </div>
+
+      {scope === "records" && <HighScoreBoard />}
 
       {scope === "history" && <DamageHistory picked={picked} onPick={setPicked} />}
 

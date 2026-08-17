@@ -66,6 +66,10 @@ const DEFAULT_SETTINGS: Settings = {
     animation: "pulse",
     locations: [], // custom spots the user places with the mouse (Settings → Alert style)
   },
+  // On by default: the board fills itself in whether or not anything is said, and a record you
+  // weren't told about is one you find by going looking — which is the opposite of the point.
+  // No `styleId`, so a celebration wears the alert defaults until you give it a saved style.
+  highScores: { celebrate: true },
   overlay: {
     opacity: 0.9,
     fontScale: 0.9,

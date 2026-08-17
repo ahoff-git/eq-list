@@ -22,6 +22,7 @@ export const CH = {
   lootRecent: "loot:recent",
   lootPrices: "loot:prices",
   alertsTest: "alerts:test",
+  alertsPreview: "alerts:preview", // show a sample wearing a look being edited, attached to no rule
   alertPlaceStart: "alert:placeStart", // main window → main: begin placing a custom alert spot
   alertPlaceDone: "alert:placeDone", // overlay → main: the placed point (or null on cancel)
   // wiki (invoke)
@@ -43,6 +44,9 @@ export const CH = {
   combatZones: "combat:zones",
   combatBests: "combat:bests",
   combatClearHistory: "combat:clearHistory",
+  recordsBoard: "records:board", // this character's personal bests
+  recordsTest: "records:test", // show a sample celebration, wearing the look records use
+  recordsClear: "records:clear",
   xpGet: "xp:get",
   xpSet: "xp:set",
   hpGet: "hp:get",
@@ -54,6 +58,12 @@ export const CH = {
   mobsReport: "mobs:report",
   mobsForgetPeers: "mobs:forgetPeers",
   killsClear: "kills:clear",
+  spawnsView: "spawns:view",
+  spawnsState: "spawns:state", // the player's own respawn figure, which nothing observed overwrites
+  spawnsMarkNamed: "spawns:markNamed",
+  spawnsPad: "spawns:pad", // how early to be told — the player's allowance for a soft timer
+  spawnsRelearn: "spawns:relearn", // throw away a learned bound and start again from now
+  spawnsStop: "spawns:stop",
   lookupCapture: "lookup:capture",
   lookupOpen: "lookup:open",
   searchShow: "search:show",
@@ -110,8 +120,10 @@ export const CH = {
   lootEvent: "evt:loot",
   lootMatched: "evt:lootMatched",
   castAlert: "evt:castAlert", // main → all: a watched spell began casting
+  recordSet: "evt:record", // main → all: a personal best fell, so an open scoreboard refreshes
   alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
+  spawnsChanged: "evt:spawnsChanged", // main → all: a timer started, came due, or aged out
   dataChanged: "evt:dataChanged", // main → all: stored data changed in bulk (a log was eaten, a store cleared)
   updateAvailable: "evt:updateAvailable", // main → all: a newer build is published
 

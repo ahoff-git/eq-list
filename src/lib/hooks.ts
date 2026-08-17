@@ -16,6 +16,7 @@ import type {
   XpProgress,
   HpEstimate,
   KillRecord,
+  SpawnView,
   AppInfo,
   ItemSource,
   ItemCard,
@@ -306,6 +307,36 @@ export function useKills(zone: string | undefined): KillRecord[] {
     return a.kills.onChanged(load);
   }, [zone]);
   return kills;
+}
+
+/**
+ * Running respawn countdowns and what's known about each named (ADR 0092).
+ *
+ * Two clocks, deliberately. The **list** is refetched only when main says it changed — a timer
+ * started, came due, or aged out — because that's when the *facts* move. The **`tick`** is this
+ * window's own second hand, and exists so a countdown counts down without a round trip per second
+ * for a number the renderer can work out from a due time it already holds.
+ *
+ * `view.now` is main's clock at the moment of the fetch, so a row's remaining time is measured
+ * against the same clock that decides a timer is due, plus however long this window has been
+ * ticking since — rather than against a renderer clock that could disagree by a second and show
+ * `0:00` on a timer main still calls waiting.
+ */
+export function useSpawns(): { view: SpawnView; tick: number } {
+  const [view, setView] = useState<SpawnView>({ now: new Date().toISOString(), running: [], known: [] });
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const load = () => void a.spawns.view().then(setView);
+    load();
+    return a.spawns.onChanged(load);
+  }, []);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return { view, tick };
 }
 
 /** The zone the player is currently in (from the log), or null if unknown. */

@@ -129,6 +129,17 @@ export default function CastWatchRow({
             {p.icon}
           </button>
         ))}
+        {/* Fire *this* rule as a sample: its wording, its shape and its look, on the overlay over the
+            game. Here rather than as one button under the list, because "does my alert work" is
+            always a question about one rule — the old single Test picked the first usable watch and
+            so answered about a rule you weren't looking at. */}
+        <button
+          className="btn ghost sm"
+          title="Ring this alert now — a sample on the overlay, with this rule's own wording and look"
+          onClick={() => void api()?.alerts.test(w.id)}
+        >
+          🔔
+        </button>
         <button className="btn ghost sm" title="Duplicate this rule — the quickest way to a near-identical one" onClick={onDuplicate}>
           ⧉
         </button>
@@ -259,10 +270,10 @@ export default function CastWatchRow({
 
           <AlertStyleFields style={alertStyle(ca, w)} locations={ca.locations} onChange={onStyleEdit} />
 
+          {/* No "test" button here: the style editor above has **▶ Preview alert** for the look, and
+              the row has 🔔 for the whole rule. Three buttons doing near-enough the same thing was
+              the confusion this replaced. */}
           <div className="row" style={{ gap: 8, marginTop: 4 }}>
-            <button className="btn ghost sm" onClick={() => void api()?.alerts.test(w.id)}>
-              Test this alert
-            </button>
             <button
               className="btn ghost sm"
               title="Copy this rule as a share code you can paste to somebody else"

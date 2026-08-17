@@ -196,11 +196,15 @@ features for later in [../ideas.md](../ideas.md).
   after launch, and while the main window is hidden to tray), and that a groupmate casting a watched
   spell stays quiet until that watch's **players** toggle is on. Turning cast alerts off should make
   the overlay window go away. See [ADR 0035](../decisions/0035-cast-alert-overlay-window.md).
-- **Alert style options.** In Alerts → Alert style, confirm each takes effect (Test alert):
-  **colour** tints both banner border and flash; the **sound** picker's Preview plays and the chosen
-  beep is what fires; **position** moves the banner (all six spots); **motion** (pulse/wiggle/float/
-  none) changes it; **duration** changes how long it lingers; and on a multi-monitor rig the
-  **monitor** dropdown moves the overlay to the chosen display (it recreates on change).
+- **Alert style options.** Open a look's editor (🎨) and confirm each takes effect, using its own
+  **▶ Preview alert** — the point being that the banner lands on the overlay *over the game*, which
+  is the only place its position and size mean anything: **colour** tints both banner border and
+  flash; **▶ Sound** plays the chosen beep and that's the one that fires; **position** moves the
+  banner (all six spots); **motion** (pulse/wiggle/float/none) changes it; **duration** changes how
+  long it lingers; and on a multi-monitor rig the **monitor** dropdown moves the overlay to the
+  chosen display (it recreates on change). Then **🔔 on a rule's row**, which is the other half:
+  confirm it shows *that rule's* wording and look, and that a **raw-text** rule previews as the 💬
+  banner rather than a cast one.
 - **Custom alert spots.** In Alerts → Alert style → Custom spots, click **Place a spot**: the
   overlay should dim, show "Click where alerts should appear", and a preview banner should track the
   cursor on the chosen monitor. A click adds a named spot (Esc cancels); it then appears in the
@@ -494,6 +498,50 @@ features for later in [../ideas.md](../ideas.md).
   a long route scrolls under it; and the panel must take about 45% of the window at **any** map font
   scale, including above 100% (that was a `vh` unit being scaled by the root `zoom` — the same trap
   `.app` documents). Worth resizing the window narrow and wide with a long route showing.
+
+- **Your DoT ticks now count — check the meter, not just the parser.**
+  [ADR 0095](../decisions/0095-your-own-dot-tick-is-yours.md) is pinned by tests against verbatim log
+  lines and verified by replaying a real 230,000-line log (1,737 tick lines, 0 left unread), but that
+  proves the *parser*, not the meter. In game, cast a DoT and watch **Damage → Abilities**: the DoT
+  should appear as its own source and **keep growing after the cast lands**, which is the thing that
+  used to be missing — its ticks are most of a DoT's damage. Three specific checks: the ticks land on
+  **your** row and not on a phantom row named after the spell (that's ADR 0071's failure, and a
+  regression here would look identical); a **critical tick** shows up under `Biggest Critical` on the
+  scoreboard as well as `Biggest DoT tick`; and a **group-mate DoTing with the same spell** does not
+  take your ticks off you — the "your" wording states the caster, so `dot-attribution` must leave it
+  alone. Worth comparing a fight's total before and after a build if you have one banked, remembering
+  ADR 0095 is forward-only: **stored fights keep their old, lower figures**, so a difference there is
+  correct and a difference in a *new* fight's is the fix working.
+- **High scores — the four rules, in the order you'll meet them.** The logic is a black box
+  (`high-scores.test.ts`) and every rule in [ADR
+  0093](../decisions/0093-a-high-score-is-a-personal-best-with-a-floor.md) is about *when a banner
+  appears*, which only a real evening exercises. Take them in order:
+
+  **Launch, before playing.** Open **Damage → 🏆 Records**. If you have recorded fights, the board
+  should already be populated — that's the seeding — and its header should say so. Crucially, the
+  replayed log gap at startup must produce **no banners at all**, however many records it sets: this is
+  the failure that would make the feature unusable, and it's the one thing a single launch tells you.
+  Confirm the three live-only categories are named at the bottom rather than silently absent.
+
+  **Then play.** The first live record should raise a banner over the game — the figure leading, the
+  category naming it, and the hint saying what it beat. It has to be readable **mid-fight without
+  looking away**, which is the whole point; if it isn't, that's the position or the duration, both on
+  the same style controls a cast alert uses. Check the row on the board is flagged as the fresh one.
+
+  **The streak.** Kill steadily past the floor (5) and confirm exactly **one** banner at the crossing
+  and silence after it, while the board's kill-streak figure keeps climbing. Then die, and confirm the
+  live streak resets to 0 and the *next* crossing announces again. Worth doing at a **busy camp**
+  specifically: the streak asks the meter's own `countsKill`, so other groups' kills in earshot must
+  not tick it up — that gate is the difference between a record and a number.
+
+  **Eating a log.** Digest one of your own older logs and confirm its fights land on the board with
+  **no banners**, and that a log belonging to a *different character* lands nothing at all.
+
+  Then the surrounding controls: turning celebrations off stops banners while the board keeps filling;
+  the 🔔 shows a sample wearing whatever look is picked; picking a saved style changes it; and with
+  alerts switched off the panel warns rather than going quiet. Finally **Reset** — it should forget
+  this character's records, leave another character's alone, and **not** re-seed itself from history on
+  the next look.
 
 ## Peer networking — two clients
 

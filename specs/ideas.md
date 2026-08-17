@@ -28,6 +28,18 @@ outcome goes in an ADR, a README, or the code — never here).
 - **Spawn points, not just roam areas.** A roam area is the centroid and spread of where a mob died.
   With enough fixes, clusters would separate individual spawn points from a wandering path. The data
   is already stored; this is an analysis question, not a collection one.
+- **A placeholder cycle, named as one.** Spawn timers treat one named in one place as one timer
+  ([ADR 0092](./decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)), so a named that
+  sits on a placeholder is timed by the gap between two kills of the *named* — which is the cycle
+  length multiplied by however many pops it took, and shows up as gaps that disagree with each other
+  ([ADR 0094](./decisions/0094-a-spawn-timer-is-a-window-not-an-instant.md) reports that rather than
+  hiding it). The real answer is to time the **spawn point**: several mob names sharing one cycle, so
+  killing the placeholder starts the clock and the named is a chance on each pop rather than the
+  thing being timed. `timerKey` is the seam — the whole feature keys off that string rather than off
+  the mob, so this changes what goes into it and nothing downstream. What it needs first is a way to
+  *know* which names share a spawn, and that is the hard half: guessing it from co-located kills is
+  exactly the kind of inference both ADRs above refuse to make without evidence, so the honest
+  version is probably the player saying so — which is a small UI and no cleverness at all.
 - **Group-mates' kills.** A group-mate's killing blow is indistinguishable from a stranger's in the
   log, so those kills only count towards a drop rate once you loot the corpse
   ([ADR 0027](./decisions/0027-only-your-kills-count.md)). Telling them apart means knowing who was
@@ -60,6 +72,63 @@ outcome goes in an ADR, a README, or the code — never here).
 - **Split the meter by mode by default.** The per-stance / per-invocation data is already tracked and
   shown on hover ([ADR 0020](./decisions/0020-split-by-stance-and-invocation.md)). Some players will
   want those as real rows all the time — a Settings toggle, no new data needed.
+
+## More high scores
+
+The scoreboard ships with thirteen categories and two families
+([ADR 0093](./decisions/0093-a-high-score-is-a-personal-best-with-a-floor.md)). These are the ones a
+sweep of a **real 228,000-line log** (three weeks, levels 2–21, 1,711 kills) turned up afterwards, each
+with the figure that log actually holds — so "would this ever fire, and is the number interesting" is
+answered before anyone builds it. Every one of them passes ADR 0093's own two tests: it needs a floor,
+and it must not be permanently owned by your first hour.
+
+- **Most targets hit by one cast** — *observed max 6 (Fingers of Fire), 247 casts hit more than one.*
+  The best-motivated of the lot, because the app has already written the insight down twice: the log
+  spells an area spell as **one line per target**, which is exactly why `damage-tree.ts` has an
+  Abilities layout ([ADR 0053](./decisions/0053-damage-is-cells-rolled-up.md)). `biggest-nuke`
+  therefore *cannot* see a big AoE — it only ever sees one target's share. Group landings by
+  (spell, second), floor of 3.
+- **Biggest single cast, all targets together** — *observed max 296 over 4 targets (Project
+  Lightning).* The other half of the above, and it needs one piece of care or it's redundant: count
+  only casts that hit **2+ targets**, or the record is just `biggest-nuke` again (which stands at 755
+  single-target, and would win for ever).
+- **Most kills in one hour** — *observed max 113.* A rolling window, so it wants the kill streak's
+  crossing rule rather than the plain comparison — it beats itself on every kill while it leads. Says
+  something `fight-kills` can't: what a camp's *peak* was, not one pull's.
+- **Longest time alive** — *observed 7.5h of play between deaths.* The kill streak's twin: same reset
+  (your death, and nothing else), different unit, and it must count only time with combat in it or
+  the record is "longest away from the keyboard". Nearly free, since `noteDeath` already exists.
+- **Biggest 10-second burst** — *observed 1,466 damage.* `fight-dps` averages a whole fight and hides
+  a nova; this is the nova. The data is already banked per fight in `yourPerSec`.
+- **Richest single corpse** — *observed 5,074 copper, over 1,585 corpse-coin lines.* Complements
+  `fight-coin` the way `biggest-hit` complements `fight-damage`, and `parseCoin` already reads it.
+
+Two are worth having but are **not scores**, and that's the interesting part — they're moments with no
+number, which the board has no shape for yet. Worth deciding (see decisions/README `## Open Questions`)
+whether a celebration can exist without a figure to beat:
+
+- **Knocked out and lived.** `You have been knocked unconscious!` fired **26** times and **4** of them
+  were *survived* — the fight simply carried on with no `slain` line. Rare, unambiguous, and the best
+  story in the log. It has no magnitude, only a fact.
+- **A named killed.** 27 distinct named-looking kills (Tranixx Darkpaw, Minotaur Lord, Abomination of
+  Ro). Pairs with the spawn timers
+  ([ADR 0092](./decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)), which already
+  has to decide what a named is.
+
+And four the same sweep says to **refuse**, recorded so they aren't proposed again:
+
+- **Fastest level.** EQL levels are **per class** and the log's level line names none. `Welcome to
+  level 11!` appears **four separate times** and the sequence runs `… 19 20 21 13`, because an
+  achievement line beside it reads `Primary Class Unlock - Wizard`. Level is not monotonic here, so
+  neither a "fastest" nor a "highest" can be read from it. *(This may also mislead
+  `xp-progress.levelUp` and `hp.levelUp` — see [todo.md](./todo.md).)*
+- **Biggest single XP gain.** Max 11.000% on the second day, unbeaten in the three weeks since — the
+  fastest-kill failure ADR 0093 already refused. Survives only because the multi-class reset keeps
+  XP-per-level percentages from decaying (mean stayed 1.8–3.9% throughout), which is luck, not design.
+- **Biggest fall damage.** The log says `YOU were injured by falling.` and states **no number**.
+- **Longest run of swings without a miss.** Measured at 562, which is implausible enough to be an
+  artifact of concatenating sittings — and it rewards hitting weak things, which is the opposite of
+  a record.
 
 ## Zones
 

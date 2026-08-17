@@ -1,4 +1,5 @@
 import type { MobKnowledge, MobObservation } from "./mob-stats";
+import type { Respawn, RespawnLearning, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { EqMap } from "./map/eqmap";
 import type { MapSourceReport } from "./map/map-sources";
 import type { TravelAnswer, TravelEnd } from "./travel/route";
@@ -121,6 +122,13 @@ export interface KillEvent extends LogEventBase {
    * Empty only if the line named no killer.
    */
   killer: string;
+  /**
+   * Whether the log wrote the target **without** an article — "Lord Nagafen" rather than "a gnoll
+   * pup". It's the only thing a kill line says about what kind of mob died, and it has to be read
+   * here because `target` above has already had the article stripped off it
+   * ([ADR 0092](../../specs/decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
+   */
+  named: boolean;
 }
 
 /** A parsed "Your Location is Y, X, Z" line (EQ reports y first). Drives the map. */
@@ -912,6 +920,57 @@ export interface SessionSummary {
   yourTaken: number;
 }
 
+// ─── High scores (personal bests) ───────────────────────────────────────────
+
+/**
+ * A number offered to the board — one reading of one moment, before anything has decided whether
+ * it's a record. Made by `src/shared/high-scores.ts` from a combat event or a finished fight.
+ */
+export interface ScoreCandidate {
+  /** Which category it's a candidate in — see `categoryOf`, which also resolves the family ids. */
+  categoryId: string;
+  value: number;
+  /** The log's own timestamp for the moment it happened. */
+  at: string;
+  /** What did it, and to whom — "Ice Comet on a froglok shaman". */
+  detail?: string;
+}
+
+/**
+ * A record standing in one category: the best you have ever done, and enough about it to be worth
+ * looking at a month later.
+ */
+export interface HighScore {
+  categoryId: string;
+  value: number;
+  at: string;
+  detail?: string;
+  /** Where it happened, when the log had told us. */
+  zone?: string;
+  /**
+   * The figure this beat. **Absent means it set the bar** — the first score in a category, which is
+   * why nothing celebrates it: there was nothing to beat (see `electron/high-scores.ts`).
+   */
+  previous?: number;
+  /** How many times this category's record has changed hands. A 1 is a bar nobody has cleared yet. */
+  beaten: number;
+}
+
+/**
+ * One character's scoreboard. **Per character** — the log file names them, and a level 50's biggest
+ * hit is not a bar a new alt should be measured against or made to clear.
+ */
+export interface ScoreBoard {
+  /** Whose board this is, as the log file spells it. Empty before a log has been read. */
+  character: string;
+  /** Every record standing, in the board's own display order (`scoreOrder`). */
+  scores: HighScore[];
+  /** Kills since your last death — the live figure the streak record is taken from. */
+  streak: number;
+  /** Whether past fights on disk have already been read into this board (see `backfill`). */
+  seeded: boolean;
+}
+
 // ─── Wiki data ──────────────────────────────────────────────────────────────
 
 export type SourceKind =
@@ -1095,6 +1154,15 @@ export interface KillRecord {
    * you never had the corpse. Absent on your own records, which is what "mine" means here.
    */
   sharedBy?: string;
+  /**
+   * Whether the log named this mob without an article, which is the only evidence a kill line
+   * offers that it was a *named* rather than one of a camp's identical spawns (ADR 0092).
+   *
+   * **Absent means unknown, not "plain".** Every record stored before this was captured lost the
+   * article to `stripArticle`, and it cannot be recovered from the name that survived — so an old
+   * record starts no timer, and one more kill of the same mob settles it for good.
+   */
+  named?: boolean;
   zone?: string;
   /** The last known position — absent if the log had never reported one. */
   y?: number;
@@ -1142,6 +1210,43 @@ export interface KillRecord {
   coin?: number;
   /** The keys of the coin lines already folded into `coin`, so a replay doesn't double it. */
   coinKeys?: string[];
+}
+
+// ─── Spawn timers (ADR 0092) ────────────────────────────────────────────────
+
+/** A countdown on the board: the stored timer, plus where it has got to. */
+export interface RunningSpawn extends SpawnTimer {
+  state: SpawnState;
+}
+
+/** What's known about one named, whether or not it's counting down right now. */
+export interface KnownSpawn extends RespawnLearning {
+  /** The player's own figure, when they've typed one. Nothing observed overwrites it. */
+  stated?: number;
+  /**
+   * How early to start watching, in seconds — the player's allowance for the things the log can't
+   * measure (a placeholder cycle, a mob that walks, wanting to be in position). Absent means none,
+   * which is every timer until someone decides this one needs it (ADR 0094).
+   */
+  lead?: number;
+  /**
+   * The figure that would actually be used and where it came from — absent until there have been
+   * two comparable kills and nobody has typed one, which is a blank rather than a guess.
+   */
+  respawn?: Respawn;
+  /** Whether a countdown for it is currently on the board. */
+  running: boolean;
+}
+
+/**
+ * Everything the Timers tab draws. `now` travels with it rather than being read in the renderer, so
+ * a countdown is measured against the same clock that decided the timer was due — otherwise a row
+ * can read `0:00` for a second while main still calls it waiting.
+ */
+export interface SpawnView {
+  now: string;
+  running: RunningSpawn[];
+  known: KnownSpawn[];
 }
 
 /**
@@ -1452,10 +1557,11 @@ export interface CastAlertEvent {
   at: string;
   /**
    * Which prompt this is. A cast says "dispel, now"; a fade says "cast it again"; a line just
-   * repeats what the game said. Absent means a cast, so an alert sent by an older build still
-   * reads correctly.
+   * repeats what the game said; a **record** says well done, and a **spawn** says a named you were
+   * timing is back — the last two being the ones that aren't warnings. Absent means a cast, so an
+   * alert sent by an older build still reads correctly.
    */
-  event?: "cast" | "fade" | "line";
+  event?: "cast" | "fade" | "line" | "record" | "spawn";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
   /**
@@ -1469,6 +1575,12 @@ export interface CastAlertEvent {
    * same reason the style is: the overlay never sees the watch that matched.
    */
   message?: string;
+  /**
+   * For a `record` alert, the personal best that was just set. The banner is built from it in the
+   * overlay rather than pre-worded here, because unlike a watch the *catalog* is shared code — so
+   * the overlay can name and format the category itself (`src/shared/high-scores.ts`).
+   */
+  record?: HighScore;
   /**
    * The look and sound this alert should use, already resolved from the defaults and the watch's
    * own overrides (`alertStyle`). Carried with the alert so the overlay renders what *this* watch
@@ -1552,10 +1664,31 @@ export interface Settings {
   bootstrapUrl: string;
   /** Alert when a watched spell begins casting, so you can prep a dispel/cure. */
   castAlerts: CastAlertSettings;
+  /** Personal bests, and whether beating one is worth a banner. */
+  highScores: HighScoreSettings;
   /** Which ways of getting about a route may assume you have. */
   travel: TravelSettings;
   overlay: OverlaySettings;
   debug: boolean;
+}
+
+/**
+ * Whether a new personal best says so, and what it looks like when it does.
+ *
+ * It carries no look of its own, only a **pointer** to one: a `styleId` from `castAlerts.styles`, or
+ * nothing for the defaults. That's deliberate — [ADR 0086](../../specs/decisions/0086-editing-a-shared-style-from-a-rule-forks-it.md)
+ * settled that a look is a shared, named thing edited in one place, and a second style editor living
+ * on the scoreboard would be exactly the third source of truth that ADR exists to prevent. So a
+ * celebration wears a saved style, and is styled where every other alert is.
+ *
+ * The banner rides the cast-alert overlay, which only exists while `castAlerts.enabled` — so this
+ * being on is necessary but not sufficient, and the scoreboard says so rather than going quiet.
+ */
+export interface HighScoreSettings {
+  /** Put a banner up when a record falls. The board itself is kept either way. */
+  celebrate: boolean;
+  /** A saved style (`CastAlertSettings.styles`) for the celebration; absent = the alert defaults. */
+  styleId?: string;
 }
 
 /**
@@ -1776,6 +1909,12 @@ export interface EqlApi {
      */
     test(watchId?: string): Promise<void>;
     /**
+     * The same, wearing a look that belongs to no rule — for trying a style **while editing it**:
+     * the defaults, a saved style, or a rule's own look. The shape is the ordinary cast banner,
+     * since what's being judged here is how it looks rather than what it says.
+     */
+    preview(style: AlertStyle): Promise<void>;
+    /**
      * Place a custom alert spot with the mouse. The overlay is made interactive on its display;
      * the user clicks where alerts should appear. Resolves with the point as fractions of that
      * display (0..1), or null if cancelled (Esc) or there's no overlay (alerts off). Main window.
@@ -1848,6 +1987,23 @@ export interface EqlApi {
     clearHistory(): Promise<SessionSummary[]>;
   };
   /**
+   * The scoreboard: your character's personal bests, and the celebration when one falls.
+   * See `electron/high-scores.ts` for what's kept and `src/shared/high-scores.ts` for the categories.
+   */
+  records: {
+    /** The current character's board — every record standing, in display order. */
+    board(): Promise<ScoreBoard>;
+    /** Fires when a record falls, so an open scoreboard updates itself as you play. */
+    onRecord(cb: (record: HighScore) => void): Unsubscribe;
+    /**
+     * Show a sample celebration on the overlay, wearing the look records are set to use — the 🔔
+     * beside the toggle, so "is this loud enough" is answerable without waiting for a real one.
+     */
+    test(): Promise<void>;
+    /** Wipe this character's board. Other characters' boards are untouched. */
+    clear(): Promise<ScoreBoard>;
+  };
+  /**
    * What's been learned about mobs by killing them: observed drop rates, roam areas, and
    * whose observations went into each. Yours comes from the kill log; peers' arrives over the
    * room and is kept separately (see `electron/mob-knowledge.ts`).
@@ -1877,6 +2033,37 @@ export interface EqlApi {
      * Live kills don't push this (the panels refetch off their own refresh keys); it
      * exists so out-of-band changes land in already-open windows without a reopen.
      */
+    onChanged(cb: () => void): Unsubscribe;
+  };
+  /**
+   * Respawn timers for the nameds you kill, learned from the gaps between your own kills
+   * ([ADR 0092](../../specs/decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
+   * The learned figure is an **upper bound** and every reader has to say so.
+   */
+  spawns: {
+    /** Running countdowns and what's known about each named. `now` comes with it — see `SpawnView`. */
+    view(): Promise<SpawnView>;
+    /** Your own figure for a mob's respawn, in seconds — or `null` to fall back to what was learned. */
+    state(key: string, seconds: number | null): Promise<SpawnView>;
+    /**
+     * How early to be told, in seconds — `null` for not early at all. The knob for everything a
+     * respawn is soft about, which is why it's yours to set rather than inferred: a placeholder
+     * cycle, a mob that walks, or just wanting to be sitting there when it matters.
+     */
+    pad(key: string, seconds: number | null): Promise<SpawnView>;
+    /**
+     * Correct the article test about a mob: `true` rescues a named the log wrote with an article,
+     * `false` silences something that was never a named at all.
+     */
+    markNamed(mob: string, named: boolean): Promise<SpawnView>;
+    /**
+     * Throw away what was learned about one timer and learn again from now. The only way *up* from
+     * a figure that observation can only ever tighten.
+     */
+    relearn(key: string): Promise<SpawnView>;
+    /** Take a countdown off the board without forgetting what it taught. */
+    stop(key: string): Promise<SpawnView>;
+    /** Fires when a timer starts, is due, or ages out, so the tab needn't poll main for the list. */
     onChanged(cb: () => void): Unsubscribe;
   };
   /** Inferred bounds on your maximum hit points, and the overrides for them. */

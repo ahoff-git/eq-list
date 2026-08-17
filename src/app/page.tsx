@@ -6,6 +6,7 @@ import WindowButtons from "./components/WindowButtons";
 import ScaleButtons from "./components/ScaleButtons";
 import ListPanel from "./components/ListPanel";
 import HuntPanel from "./components/HuntPanel";
+import SpawnPanel from "./components/SpawnPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
 import AlertsPanel from "./components/AlertsPanel";
@@ -29,7 +30,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "loot" | "search" | "damage" | "session" | "alerts" | "settings";
+type Tab = "list" | "hunt" | "timers" | "loot" | "search" | "damage" | "session" | "alerts" | "settings";
 
 /**
  * The single app window: a frameless, translucent float (the "overlay" look) that
@@ -93,6 +94,10 @@ export default function Home() {
   const tabItems: TabItem[] = [
     { key: "list", label: list.entries.length ? `List (${list.entries.length})` : "List" },
     { key: "hunt", label: "Hunt" },
+    // Beside Hunt, which is the tool it belongs with. `TabBar` collapses from the *end*, so a
+    // ninth tab put after Settings would be the first one to disappear at the default width —
+    // and a timer you cannot see is worse than no timer (ADR 0092).
+    { key: "timers", label: "Timers" },
     { key: "loot", label: "Loot" },
     // Fourth, not last but one. `TabBar` collapses whatever doesn't fit into its » menu from the
     // **end**, and at the window's default width only six tabs fit — so putting alerts after
@@ -152,6 +157,7 @@ export default function Home() {
         <div className="panel" {...PASS_THROUGH}>
           {tab === "list" && <ListPanel />}
           {tab === "hunt" && <HuntPanel pickedZone={huntZone} onPickedZone={setHuntZone} />}
+          {tab === "timers" && <SpawnPanel />}
           {tab === "loot" && <LootPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
           {tab === "damage" && <DamagePanel />}

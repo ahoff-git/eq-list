@@ -551,6 +551,73 @@ button {
 .hunt-item { color: var(--text); }
 .hunt-nosource { margin-top: 14px; }
 
+/* ── spawn timers (ADR 0092) ─────────────────────────────────── */
+.spawns h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin: 4px 0 6px;
+}
+.spawn-known { margin-top: 16px; }
+.spawn-row,
+.spawn-known-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+/* The clock is the thing read mid-camp at a glance, so it's monospaced and doesn't reflow as the
+   digits change — a countdown that shifts its neighbours about is harder to read than it looks. */
+.spawn-clock {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 62px;
+  color: var(--text-dim);
+}
+.spawn-row.due { border-left: 2px solid var(--good); }
+.spawn-row.due .spawn-clock { color: var(--good); font-weight: 600; }
+/* The window is "start paying attention", not "go" — so it's marked, but quieter than a pop. */
+.spawn-row.window { border-left: 2px solid var(--accent-dim); }
+.spawn-row.window .spawn-clock { color: var(--accent); }
+.spawn-phase { color: var(--accent); font-weight: 600; }
+.spawn-pad { color: var(--accent-dim); }
+/* The caveat spans the row: it's about the figure above it, not about any one column. */
+.spawn-caveat {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 2px 0 0 62px;
+}
+.spawn-name { font-weight: 500; display: flex; flex-direction: column; }
+.spawn-name small { color: var(--text-dim); font-weight: 400; }
+.spawn-note,
+.spawn-figure,
+.spawn-seen { color: var(--text-dim); font-size: 12px; }
+.spawn-figure { flex: 1; }
+.spawn-actions { display: flex; gap: 10px; margin-left: auto; font-size: 12px; }
+.spawn-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  padding: 6px 0 2px;
+  flex-wrap: wrap;
+}
+.spawn-edit input {
+  width: 90px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 4px 6px;
+  font: inherit;
+}
+.spawn-edit small { color: var(--text-dim); }
+.spawn-edit small.bad { color: var(--bad); }
+
 /* ── session stats ───────────────────────────────────────────── */
 .stat-row {
   display: flex;
@@ -920,6 +987,55 @@ button {
   border-bottom: 1px solid var(--border);
 }
 .hist-picked .hp-label { font-weight: 600; }
+
+/* ── the scoreboard (personal bests) ─────────────────────────── */
+/* A trophy cabinet, not a table: the figure leads each row in the accent, the category labels it,
+   and the story (what it was against, when, where) trails off into the dim. Rows rather than a
+   `<table>` because there's no column anyone wants to sort by — the order is the catalog's. */
+.sc-rows { display: flex; flex-direction: column; gap: 2px; }
+.sc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-size: 12px;
+}
+.sc-row:nth-child(odd) { background: rgba(255, 255, 255, 0.025); }
+/* The record that just fell, for as long as this panel stays mounted — so a banner you half-saw
+   over the game can be found again without reading every row. */
+.sc-row.fresh {
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.sc-value {
+  min-width: 8ch;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.sc-label { font-weight: 600; }
+/* What it landed on, and with what. First to give up room: it's the longest and the least load-bearing. */
+.sc-detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+.sc-margin {
+  font-variant-numeric: tabular-nums;
+  color: var(--good);
+  white-space: nowrap;
+}
+/* A bar nobody has cleared yet reads as a note rather than as a gain — there was nothing to gain on. */
+.sc-margin.first { color: var(--text-dim); font-style: italic; }
+.sc-when { color: var(--text-dim); white-space: nowrap; }
+.sc-celebrate { gap: 10px; margin: 14px 0 4px; }
+.sc-warn { color: var(--bad); }
+.sc-pending { margin-top: 12px; }
 
 /* ── settings ────────────────────────────────────────────────── */
 .setting {
@@ -1626,6 +1742,9 @@ kbd {
   font-size: 0.78em;
   opacity: 0.85;
 }
+/* A record banner's "what it landed on" — present on the celebration only, and the part of that
+   sentence you don't need to have read by the time the banner goes. */
+.cast-alert .ca-detail { font-weight: 400; opacity: 0.75; }
 /* A coloured border flash over the whole screen when an alert fires (toggleable). */
 .cast-flash {
   position: fixed;

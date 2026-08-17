@@ -13,7 +13,14 @@ import { createAlertRouter, sampleAlert } from "../alert-router";
 import type { Timers } from "../alert-queue";
 import { splitLine } from "../../src/shared/log-parser";
 import { parseSplitLine } from "../../src/shared/parse-line";
-import type { CastAlertEvent, CastAlertSettings, CastWatch, CombatEvent, LogLine } from "../../src/shared/types";
+import type {
+  CastAlertEvent,
+  CastAlertSettings,
+  CastWatch,
+  CombatEvent,
+  HighScoreSettings,
+  LogLine,
+} from "../../src/shared/types";
 
 /** A hand-cranked clock, so a cue's timing is a fact rather than a wait. */
 function fakeTimers() {
@@ -62,8 +69,11 @@ function harness(watches: CastWatch[], over: Partial<CastAlertSettings> = {}) {
   const raised: CastAlertEvent[] = [];
   let alerts = settings(watches, over);
   let zone: string | null = null;
+  /** Celebrations on, wearing the alert defaults — what a fresh settings file says (`store.ts`). */
+  let scores: HighScoreSettings = { celebrate: true };
   const router = createAlertRouter({
     getSettings: () => alerts,
+    getScoreSettings: () => scores,
     getZone: () => zone,
     raise: (a) => raised.push(a),
     timers: clock.timers,
@@ -83,6 +93,7 @@ function harness(watches: CastWatch[], over: Partial<CastAlertSettings> = {}) {
     router,
     feed,
     setSettings: (next: CastAlertSettings) => (alerts = next),
+    setScoreSettings: (next: HighScoreSettings) => (scores = next),
     setZone: (next: string | null) => (zone = next),
   };
 }
@@ -250,4 +261,16 @@ test("a sample wears the rule's resolved look, or the preview would flatter the 
   const styled = settings([], { styles: [{ id: "loud", name: "Loud", style: { ...settings([]), color: "#a371f7" } }] });
   const sample = sampleAlert(styled, { id: "a", spell: "Fear", enabled: true, styleId: "loud" }, "2026-07-29T21:00:00Z");
   assert.equal(sample.style?.color, "#a371f7");
+});
+
+test("a look can be previewed while it's being edited, belonging to no rule at all", () => {
+  // What "▶ Preview alert" inside a style editor needs: the defaults, a saved style, or a rule's own
+  // look mid-edit — none of which is reachable by naming a watch.
+  const base = settings([]);
+  const trying = { ...base, color: "#46c86b", animation: "wiggle" as const };
+  const sample = sampleAlert(base, undefined, "2026-07-29T21:00:00Z", trying);
+  assert.equal(sample.style?.color, "#46c86b");
+  assert.equal(sample.style?.animation, "wiggle");
+  // …and it's still the ordinary cast banner, since what's being judged is the look.
+  assert.equal(sample.event, "cast");
 });

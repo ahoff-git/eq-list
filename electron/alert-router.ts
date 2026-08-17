@@ -25,11 +25,26 @@
 import { createAlertQueue, type AlertQueue, type Timers } from "./alert-queue";
 import { lineSubject, matchCast, matchFade, matchLine, watchesLines, type MatchContext } from "../src/shared/cast-alerts";
 import { alertStyle } from "../src/shared/alert-styles";
-import type { CastAlertEvent, CastAlertSettings, CastWatch, CombatEvent, LogLine } from "../src/shared/types";
+import type {
+  AlertStyle,
+  CastAlertEvent,
+  CastAlertSettings,
+  CastWatch,
+  CombatEvent,
+  HighScore,
+  HighScoreSettings,
+  LogLine,
+} from "../src/shared/types";
 
 export interface AlertRouterDeps {
   /** The current alert settings. Read per line rather than held, so a change takes effect at once. */
   getSettings: () => CastAlertSettings;
+  /**
+   * Whether a personal best is worth a banner, and which saved style it wears. Read per record for
+   * the same reason the alert settings are: a toggle should take effect on the next one, not the
+   * next launch.
+   */
+  getScoreSettings: () => HighScoreSettings;
   /** Where you are — the one thing a `zone` condition needs that no line says. */
   getZone: () => string | null;
   /** Put a banner on the overlay. */
@@ -41,6 +56,15 @@ export interface AlertRouterDeps {
 export interface AlertRouter {
   /** A combat event the meter has already taken: match it, and note a death. */
   combat(event: CombatEvent): void;
+  /**
+   * A personal best just fell — put a banner up saying so.
+   *
+   * It skips steps 2 and 4 of the pipeline entirely: there is no watch to match (the *scoreboard*
+   * decided this was news — see `electron/high-scores.ts`) and nothing to wait for, since a
+   * congratulation held back until later is not one. Only step 3 applies, which is why it's here
+   * rather than in main: resolving the look through every layer is this module's job.
+   */
+  record(record: HighScore): void;
   /** A log line, before it was parsed: cancel what it cancels, then match raw-text rules. */
   line(line: LogLine): void;
   /** Alerts were switched off — drop every waiting cue, since there's nothing left to say them on. */
@@ -49,7 +73,7 @@ export interface AlertRouter {
   pending(): number;
 }
 
-export function createAlertRouter({ getSettings, getZone, raise, timers }: AlertRouterDeps): AlertRouter {
+export function createAlertRouter({ getSettings, getScoreSettings, getZone, raise, timers }: AlertRouterDeps): AlertRouter {
   const queue: AlertQueue = createAlertQueue(raise, timers);
   const where = (): MatchContext => ({ zone: getZone() });
 
@@ -100,6 +124,15 @@ export function createAlertRouter({ getSettings, getZone, raise, timers }: Alert
       }
     },
 
+    record(record) {
+      const scores = getScoreSettings();
+      if (!scores.celebrate) return;
+      // Straight to the overlay: `queue.schedule` exists to make a cue *wait*, and there is nothing
+      // a congratulation gains by arriving late. A death doesn't cancel it either — the record was
+      // still set, and often it's how you died.
+      raise(recordAlert(getSettings(), scores, record));
+    },
+
     line(line) {
       const settings = getSettings();
       // Every line in the log comes through here, so the two cheap "is anybody listening?" questions
@@ -136,6 +169,52 @@ export function createAlertRouter({ getSettings, getZone, raise, timers }: Alert
 }
 
 /**
+ * The banner for a record that just fell.
+ *
+ * The score travels **raw** rather than pre-worded, which is the one way this differs from every
+ * other payload here. A watch's wording had to be resolved in main because the overlay never sees
+ * the watch — but the score *catalog* is shared code, so the overlay can name and format the
+ * category itself and there is nothing to resolve. What still has to happen here is the look, since
+ * that's settings the overlay only knows the defaults of.
+ *
+ * `spell` carries the category id: nothing reads it for a record banner, but every other payload
+ * fills it, and a field left blank is a field the next reader has to wonder about.
+ */
+export function recordAlert(
+  settings: CastAlertSettings,
+  scores: HighScoreSettings,
+  record: HighScore,
+): CastAlertEvent {
+  return {
+    caster: "",
+    spell: record.categoryId,
+    at: record.at,
+    event: "record",
+    record,
+    // A celebration wears a **saved style** or the defaults, and never a look of its own — see
+    // `HighScoreSettings`. Resolved through the same layering every alert uses.
+    style: alertStyle(settings, { styleId: scores.styleId }),
+  };
+}
+
+/**
+ * A **sample** record, for the 🔔 on the scoreboard. Beside the real one for the same reason
+ * `sampleAlert` is beside the live payloads: a preview is only worth anything if it takes the shape
+ * the real thing will, and `beaten`/`previous` are what make the banner say "beats 1,180" rather
+ * than treating it as a bar being set for the first time.
+ */
+export function sampleRecord(settings: CastAlertSettings, scores: HighScoreSettings, at: string): CastAlertEvent {
+  return recordAlert(settings, scores, {
+    categoryId: "biggest-hit",
+    value: 1_204,
+    at,
+    detail: "Ice Comet on a froglok shaman",
+    previous: 1_180,
+    beaten: 4,
+  });
+}
+
+/**
  * The banner a **sample** alert should show — what the Settings Test button sends down the real
  * broadcast path, for one watch or for the defaults.
  *
@@ -144,7 +223,17 @@ export function createAlertRouter({ getSettings, getZone, raise, timers }: Alert
  * to action and a **fade** says "re-cast", so previewing either as a cast would flatter the styling
  * and show a banner that never appears. `at` is passed in rather than read, so this stays pure.
  */
-export function sampleAlert(settings: CastAlertSettings, watch: CastWatch | undefined, at: string): CastAlertEvent {
+export function sampleAlert(
+  settings: CastAlertSettings,
+  watch: CastWatch | undefined,
+  at: string,
+  /**
+   * A look to show instead of the one the watch would resolve to — for previewing a style while
+   * *editing* it, where the thing being tried isn't attached to any rule (the defaults, a saved
+   * style, a rule's own look mid-edit).
+   */
+  style?: AlertStyle,
+): CastAlertEvent {
   const spell = watch?.spell.trim() || "Fear";
   const shape: Partial<CastAlertEvent> = watch?.onLine
     ? { caster: "", event: "line", text: `A log line containing “${spell}”` }
@@ -157,7 +246,7 @@ export function sampleAlert(settings: CastAlertSettings, watch: CastWatch | unde
     at,
     // Its own wording too, or the preview shows a sentence the real alert never uses.
     message: watch?.message,
-    style: alertStyle(settings, watch),
+    style: style ?? alertStyle(settings, watch),
     ...shape,
   };
 }

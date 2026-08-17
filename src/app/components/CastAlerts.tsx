@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { api } from "@/lib/api";
 import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
-import type { AlertLocation, AlertPositionValue, AlertStyle, CastAlertEvent } from "@/shared/types";
+import { categoryOf, formatScore } from "@/shared/high-scores";
+import type { AlertLocation, AlertPositionValue, AlertStyle, CastAlertEvent, HighScore } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -129,17 +130,35 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
 }
 
 /**
- * What one banner shows. The three prompts are told apart by their icon before a word is read:
- * a cast says stop that, a fade says do it again, and a line is the game talking — so it shows the
- * log's own sentence and offers no call to action, because there isn't one to give.
+ * What one banner shows. The four prompts are told apart by their icon before a word is read: a cast
+ * says stop that, a fade says do it again, a line is the game talking — so it shows the log's own
+ * sentence and offers no call to action, because there isn't one to give — and a **record** is the
+ * only one that isn't a warning at all.
  *
  * A watch that gave its own `message` gets that instead, and no hint: the point of writing your own
  * wording is that it already says what to do, and "re-cast!" under "RE-CAST BREEZE" is noise. The
  * icon stays, since which kind of prompt it is doesn't change with the words.
  */
 function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: string } {
-  const icon = a.event === "line" ? "💬" : a.event === "fade" ? "⏳" : "⚠";
+  const icon =
+    a.event === "record" ? "🏆" : a.event === "spawn" ? "💀" : a.event === "line" ? "💬" : a.event === "fade" ? "⏳" : "⚠";
+  // A record before the `message` check: it has no wording to override, and it words itself from the
+  // shared catalog rather than being handed a sentence (see `recordAlert`).
+  if (a.event === "record" && a.record) return recordBanner(a.record);
   if (a.message?.trim()) return { icon, body: <b>{a.message}</b> };
+  if (a.event === "spawn") {
+    return {
+      icon: "💀",
+      body: (
+        <>
+          <b>{a.spell}</b> is up{a.target ? <> in <b>{a.target}</b></> : ""}
+        </>
+      ),
+      // News, not a warning — so it says where to go rather than what to press. The place is in the
+      // body because the same named in two zones is two timers (ADR 0092).
+      hint: "spawn timer",
+    };
+  }
   if (a.event === "line") return { icon: "💬", body: <b>{a.text || a.spell}</b> };
   if (a.event === "fade") {
     return {
@@ -160,6 +179,31 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
       </>
     ),
     hint: "dispel!",
+  };
+}
+
+/**
+ * A new personal best. The **figure leads** and the category names it, because the number is what
+ * you want to read at a glance mid-fight and "Biggest hit" is only the label on it.
+ *
+ * The hint says what it beat, which is the whole difference between a score and a record — and
+ * `previous` being absent means it beat nothing, so it says *that* instead of pretending to a margin
+ * it doesn't have (see rule 2 in `electron/high-scores.ts`).
+ */
+function recordBanner(record: HighScore): { icon: string; body: ReactNode; hint?: string } {
+  const category = categoryOf(record.categoryId);
+  return {
+    icon: "🏆",
+    body: (
+      <>
+        <b>{formatScore(category.unit, record.value)}</b> — {category.label}
+        {record.detail ? <span className="ca-detail"> · {record.detail}</span> : null}
+      </>
+    ),
+    hint:
+      record.previous === undefined
+        ? "new high score!"
+        : `new high score — beats ${formatScore(category.unit, record.previous)}`,
   };
 }
 

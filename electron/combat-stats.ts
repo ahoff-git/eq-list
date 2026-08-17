@@ -112,6 +112,25 @@ export interface CombatTracker {
   recordParty(event: PartyEvent): void;
   /** Who the tracker currently believes is grouped with you — for tests and diagnostics. */
   party(): string[];
+  /**
+   * You, or anything of yours — your pet included, named ones as well
+   * ([ADR 0077](../specs/decisions/0077-a-pet-is-proven-not-guessed.md)).
+   *
+   * Exposed because the **scoreboard** has to ask it of every hit that lands, and a second answer to
+   * "is `Garn` mine" would need its own copy of the pet registry and would eventually disagree with
+   * this one. Read-only: it reports what the tracker already knows and decides nothing.
+   */
+  mine(name: string): boolean;
+  /**
+   * Would this death count as a kill of yours — the gate `recordKill` applies (not your pet, and
+   * something your side actually fought).
+   *
+   * Exposed for the scoreboard's **kill streak**, which has to count exactly the kills the meter
+   * counts. Asking rather than re-deriving is the point: the answer needs the party roster, the pet
+   * registry and the fight scope, and a streak built on a looser rule would tick up for every death
+   * in earshot at a busy camp.
+   */
+  countsKill(mob: string): boolean;
   snapshot(): CombatStats;
   reset(): void;
   /**
@@ -478,6 +497,25 @@ export function createCombatStats(
    * session window can never disagree about what happened.
    */
   const scope = createFightScope({ ours: isOurs, sidesKnown: () => !!player });
+
+  /**
+   * Is this death a kill of **yours**? Two things it isn't, and both used to be inline in
+   * `recordKill` — named here because the scoreboard's kill streak has to ask the identical
+   * question, and a second copy of the rule would let the meter's kill count and the streak
+   * disagree about the same corpse.
+   *
+   * "Kainos`s warder has been slain by a skeleton!" reads as a kill to the log parser, but a pet
+   * dying is not something you killed — and crediting experience to it would put your own pet at the
+   * top of the "what's worth killing" table. Nor is a death across the camp yours: every metric on
+   * the panel is your side's, and a kill nobody on your side was fighting moves the count, the
+   * time-to-kill and the per-mob rates alike (ADR 0067). Time-to-kill is measured from the fight, so
+   * a mob we never fought has no fight to measure it against in the first place. Until the player's
+   * own name is known, sides can't be told apart at all and every kill counts — the same call the
+   * scope makes about damage.
+   *
+   * Takes a **canonical** name, like everything inside this module.
+   */
+  const countsKill = (mob: string): boolean => !isMine(mob) && (!player || scope.fought(mob));
 
   /**
    * One meter row. The by-skill and by-spell splits are **derived** from this combatant's
@@ -1031,6 +1069,8 @@ export function createCombatStats(
       // on — so there's nothing to re-summarize and no `emit()`.
     },
     party: () => party.members(),
+    mine: (name) => isMine(name),
+    countsKill: (mob) => countsKill(canon(mob)),
 
     /**
      * A kill. Time-to-kill is the gap since the fight started or the previous kill in it,
@@ -1038,17 +1078,7 @@ export function createCombatStats(
      */
     recordKill(rawMob, atIso) {
       const mob = canon(rawMob);
-      // "Kainos`s warder has been slain by a skeleton!" reads as a kill to the log
-      // parser, but a pet dying is not something you killed — and crediting experience
-      // to it would put your own pet at the top of the "what's worth killing" table.
-      if (isMine(mob)) return;
-      // Nor is a death across the camp yours. Every metric on the panel is your side's, and a
-      // kill nobody on your side was fighting moves the count, the time-to-kill and the per-mob
-      // rates alike (ADR 0067). Time-to-kill is measured from the fight, so a mob we never
-      // fought has no fight to measure it against in the first place. Until the player's own
-      // name is known, sides can't be told apart at all and every kill counts — the same call
-      // the scope makes about damage.
-      if (player && !scope.fought(mob)) return;
+      if (!countsKill(mob)) return;
       const at = ms(atIso);
       const from = Math.max(fight.span.firstAt || at, lastKillAt || 0) || at;
       const took = Math.max(0, at - from);

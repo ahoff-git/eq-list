@@ -211,7 +211,7 @@ export default function AlertsPanel() {
           mez with “25” means <i>recast it</i> and a placeholder’s death with “8m” means <i>it’s back</i>;
           <b>🎨</b> how it looks; and <b>✓</b> a <b>check</b> — what’s wrong with the rule, and which of the
           log’s recent lines it <i>would</i> have fired on. The chips on each row say what it currently
-          does, and <b>⧉</b> copies a rule.
+          does; <b>🔔</b> rings that rule now, and <b>⧉</b> copies it.
         </span>
         {ca.enabled && (
           <div style={{ marginTop: 8 }}>
@@ -244,9 +244,9 @@ export default function AlertsPanel() {
               <button className="btn sm" onClick={addWatch}>
                 + Add watch
               </button>
-              <button className="btn sm" onClick={() => api()?.alerts.test()} title="Preview the alert banner (and beep)">
-                Test alert
-              </button>
+              {/* No list-wide "Test alert": it fired the *first usable* rule, so it answered about a
+                  rule you weren't looking at. 🔔 on a row rings that rule; ▶ Preview alert in a style
+                  editor shows that look. */}
               <WatchLibrary watches={ca.watches} onAdd={addLibraryRule} />
               <WatchShare watches={ca.watches} onImport={(added) => setWatches([...ca.watches, ...added])} />
               {/* What the completions are drawn from. Said out loud for the same reason the check

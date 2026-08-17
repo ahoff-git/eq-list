@@ -12,7 +12,7 @@ import { WIKI_BASE } from "./wiki/api";
 import { importLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { createTravelRouter } from "./travel-graph";
-import { sampleAlert } from "./alert-router";
+import { sampleAlert, sampleRecord } from "./alert-router";
 import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, showInSearch } from "./windows";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
 import type { Store } from "./store";
@@ -20,15 +20,17 @@ import type { WikiClient } from "./wiki";
 import type { LogWatcher } from "./log-watcher";
 import type { CombatTracker } from "./combat-stats";
 import type { CombatHistory } from "./combat-history";
+import type { HighScoreKeeper } from "./high-scores";
 import type { XpTracker } from "./xp-progress";
 import type { HpTracker } from "./hp-estimate";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
+import type { SpawnTracker } from "./spawn-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 
 const log = createLogger("ipc");
@@ -38,12 +40,16 @@ export interface IpcContext {
   wiki: WikiClient;
   combat: CombatTracker;
   history: CombatHistory;
+  /** Personal bests — the board, and wiping it. */
+  scores: HighScoreKeeper;
   xp: XpTracker;
   hp: HpTracker;
   killLog: KillLog;
   lootLog: LootLog;
   updates: UpdateChecker;
   mobs: MobKnowledgeStore;
+  /** Respawn countdowns for the nameds you kill (ADR 0092). */
+  spawns: SpawnTracker;
   lookup: Lookup;
   /** The app's own data folder — where the stores and the remembered zone names live. */
   userData: string;
@@ -132,19 +138,26 @@ function registerSettingsIpc(context: IpcContext): void {
     return res.canceled || !res.filePaths.length ? null : res.filePaths[0];
   });
 
-  // Fire a sample cast alert (the Settings "Test" button) down the real broadcast path,
-  // so it shows in every window and beeps just like a live one. Uses a watched spell name
-  // when there is one, so the test looks like what you'd actually see.
+  // Fire a sample cast alert down the real broadcast path, so it shows in every window and beeps
+  // just like a live one — the 🔔 on a rule's row. Named, it's *that* rule: its wording, its shape
+  // (a raw-text rule draws a different banner from a cast) and its look. The payload is built by
+  // `alert-router.ts`, beside the live ones, so a preview can't drift into showing a banner the
+  // real alert never draws.
   ipcMain.handle(CH.alertsTest, (_e, watchId?: string) => {
     const alerts = store.getSettings().castAlerts;
-    // Testing a particular watch shows *its* style; otherwise the first usable one stands in.
     const watch =
       (watchId && alerts.watches.find((w) => w.id === watchId)) ||
       alerts.watches.find((w) => w.enabled && w.spell.trim());
-    getAlertWindow()?.moveTop(); // you're on the Settings tab, so raise the overlay above it
-    // The payload is built by `alert-router.ts`, beside the live ones, so a preview can't drift into
-    // showing a banner the real alert never draws.
+    getAlertWindow()?.moveTop(); // you're looking at the app, so raise the overlay above it
     broadcast(CH.castAlert, sampleAlert(alerts, watch || undefined, new Date().toISOString()));
+  });
+
+  // The same, wearing a look that belongs to no rule yet — the "preview alert" button *inside* the
+  // style editor, where the thing being judged is the look rather than any rule wearing it.
+  ipcMain.handle(CH.alertsPreview, (_e, style: AlertStyle) => {
+    const alerts = store.getSettings().castAlerts;
+    getAlertWindow()?.moveTop();
+    broadcast(CH.castAlert, sampleAlert(alerts, undefined, new Date().toISOString(), style));
   });
 
   // ── placing a custom alert spot ──
@@ -204,6 +217,12 @@ function registerSettingsIpc(context: IpcContext): void {
       killLog.flush();
       history.flush();
       lootLog.flush();
+      // The fights it just filed are new to the history and so new to the **scoreboard**, which was
+      // seeded from whatever was on disk when this character was first seen. Silently, by `absorb`'s
+      // own contract: an evening you're only now digesting is not news, however good it was. Filed
+      // against the character whose log it is, not whoever is logged in — `absorb` insists on that.
+      context.scores.absorb(history.search("", Number.MAX_SAFE_INTEGER).fights);
+      context.scores.flush();
       log.debug("digested log", { file, ...result });
       // The import lands out-of-band (no live loc/zone event to piggyback on), so nudge every
       // open window to refetch — kills and mob knowledge on `killsChanged`, and everything that
@@ -254,7 +273,7 @@ function registerWikiIpc(context: IpcContext): void {
  * loot and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -286,6 +305,30 @@ function registerStatsIpc(context: IpcContext): void {
     broadcast(CH.killsChanged, undefined);
     broadcast(CH.dataChanged, undefined);
   });
+  // Respawn timers. Every mutation answers with the whole view rather than nothing, because each
+  // one changes what's derived from the kill log as well as what was stored — typing a figure can
+  // start nothing, and clearing one restores the learned bound underneath it (ADR 0092).
+  ipcMain.handle(CH.spawnsView, () => spawns.view());
+  ipcMain.handle(CH.spawnsState, (_e, key: string, seconds: number | null) => {
+    spawns.state(key, seconds);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsMarkNamed, (_e, mob: string, named: boolean) => {
+    spawns.markNamed(mob, named);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsPad, (_e, key: string, seconds: number | null) => {
+    spawns.pad(key, seconds);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsRelearn, (_e, key: string) => {
+    spawns.relearn(key);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsStop, (_e, key: string) => {
+    spawns.stop(key);
+    return spawns.view();
+  });
   // The loot feed's history — tracked in the main process, so the tab shows drops from before
   // it was opened, then follows live ones over CH.lootEvent.
   ipcMain.handle(CH.lootRecent, (_e, limit?: number) => lootLog.recent(limit));
@@ -298,6 +341,19 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.combatClearHistory, () => {
     history.clear();
     return history.sessions();
+  });
+
+  // ── the scoreboard ──
+  // Read on demand and pushed on `CH.recordSet` (main.ts), the same shape as every other panel that
+  // shows stored data: the board only changes when a record falls, so polling it would be waste.
+  ipcMain.handle(CH.recordsBoard, () => context.scores.board());
+  ipcMain.handle(CH.recordsClear, () => context.scores.clear());
+  // A sample celebration down the real broadcast path, wearing the look records actually use — so
+  // "is this loud enough, in the right corner" is answerable without waiting to beat something.
+  ipcMain.handle(CH.recordsTest, () => {
+    const settings = context.store.getSettings();
+    getAlertWindow()?.moveTop(); // you're looking at the app, so raise the overlay above it
+    broadcast(CH.castAlert, sampleRecord(settings.castAlerts, settings.highScores, new Date().toISOString()));
   });
 
 }

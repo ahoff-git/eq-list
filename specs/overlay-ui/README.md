@@ -142,6 +142,26 @@ list, hunt, search, damage, session, settings.
     ✕ to remove the whole group. Each entry expands (▸) to a lazy-loaded **"where to get it"** —
     drop mobs grouped by zone (current zone first via `splitDropsByCurrentZone`) plus
     color-coded non-drop sources (`otherSources`); mob/source names are in-app links.
+  - `SpawnPanel` — the **Timers tab**: respawn countdowns for the nameds you kill, learned
+    from the gaps between your own kills ([ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
+    Two lists, answering different questions: **Due** is what's running, soonest-first, read at a
+    glance mid-camp; **What we've learned** is the per-named figure, read while deciding where to
+    sit. The rules are `src/shared/spawn-timers.ts` (pure + tested — the shortest-gap rule, the
+    plausibility bounds, the window, the wording); the countdowns themselves belong to
+    `electron/spawn-tracker.ts`, which persists a **due time** so a timer survives a restart and
+    raises the pop as an ordinary alert (`event: "spawn"`) through the same overlay as everything
+    else. **No figure is ever printed bare**: a learned interval is an *upper bound* from a sample,
+    so `describeRespawn` words it as one ("at most 22m, from 3 gaps"), the same way a drop rate
+    carries its kill count — and when the gaps **disagree** the range leads instead
+    ("15m–45m, from 3 gaps") with a caveat naming the likely causes, since a lone figure gets camped
+    to ([ADR 0094](../decisions/0094-a-spawn-timer-is-a-window-not-an-instant.md)). A timer runs to a
+    **window** rather than an instant: `pad` sets how early to be told, per mob, because a
+    placeholder cycle and a mob that wanders are things the log can't measure and the player can —
+    so the lower bound is theirs to set and is never inferred. With no padding (the default) the
+    window never opens and the row behaves as a plain countdown. The player can also type their own
+    interval (which nothing observed overwrites), **relearn** a mob to throw away what was measured,
+    or say something isn't a named at all. Sits beside Hunt because `TabBar` collapses from the
+    *end* and a timer you can't see is worse than no timer.
   - `HuntPanel` — the **Hunt tab**: inverts "how do I get each needed item" into
     "where do I go to farm what's left". `useEntrySources` fetches each still-needed
     item's sources (`wiki.getPage`, cached) and `src/shared/hunt.ts`
@@ -267,6 +287,25 @@ list, hunt, search, damage, session, settings.
       holds every fight (the tree only ever loads the session you opened). Results are capped at
       the newest 100 and the tally says how many matched, since a fight carries its whole
       breakdown and a truncated list that reads like the whole answer is a wrong conclusion.
+    - `HighScoreBoard` — the **🏆 Records** scope: your **personal bests**, the one question the
+      other three scopes can't answer (they hold a fight, a session and a list; none is a bar to
+      clear). Grouped by *hits* / *survival* / *fights* / *streaks*, each row leading with the figure
+      because that's what you want at a glance, and trailing off into what it was against, when,
+      where, and what it beat by. The **categories are a catalog** (`shared/high-scores.ts`), with two
+      **families** rather than fixed rows — one per melee skill you use and one per hit qualifier the
+      log writes — since no character has six melee skills and a fixed qualifier list would be a
+      guess. Beating one raises a banner on the **cast-alert overlay** (`event: "record"`), wearing a
+      saved style or the alert defaults; toggled here, styled in the Alerts tab, and *needing alerts
+      on*, which the panel says rather than going quiet. Four rules make it a record rather than a
+      maximum: a **floor** per category, a **first score that sets the bar silently**, **replayed and
+      eaten history filed but never announced**, and a **kill streak that announces its crossing then
+      climbs quietly**. The board is **per character** and **seeded from your recorded fights**, so it
+      opens populated instead of as a page of blanks — the three categories only a live line can state
+      (biggest heal, and any qualifier row) are named as such — read from the catalog's own `liveOnly`
+      flag rather than listed in the panel, since that list has already changed once
+      ([ADR 0095](../decisions/0095-your-own-dot-tick-is-yours.md) made biggest DoT tick seedable). Its own **Reset**
+      forgets this character's records and nothing else's, and doesn't re-seed itself afterwards. See
+      [ADR 0093](../decisions/0093-a-high-score-is-a-personal-best-with-a-floor.md).
     - `Sparkline` — your damage per second across the fight, because a steady grind and a
       burst that fell off a cliff can share a DPS number but never a silhouette.
     - **Deaths** — what killed you, and what was landing in the 15s before it. The log
@@ -307,7 +346,10 @@ list, hunt, search, damage, session, settings.
   - `AlertsPanel` — **its own tab**, not a group inside Settings
     ([ADR 0088](../decisions/0088-alerts-are-a-tab-not-a-setting.md)): the rule list + beep /
     **screen-flash** / include-self
-    toggles, a **Test alert** button that fires a sample down the real broadcast path,
+    toggles, **two ways to fire a sample** down the real broadcast path — **🔔 on a rule's row**
+    (that rule's wording, shape and look) and **▶ Preview alert** inside a style editor (that look,
+    on no rule, via `alerts.preview`). There is deliberately no list-wide Test button: it fired the
+    first *usable* rule, so it answered about a rule you weren't looking at,
     **Suggested** click-to-add chips of common crowd control grouped by effect — see
     `src/shared/cast-suggestions.ts`, since EQ names most CC off-theme — and an **Alert style**
     block: color swatches, a **sound** picker (synthesized presets from `src/lib/alertSounds.ts`,

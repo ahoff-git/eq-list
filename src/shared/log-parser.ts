@@ -96,9 +96,29 @@ export function parseLogText(text: string, firstId = 1): LogLine[] {
   return lines;
 }
 
+/**
+ * A leading English article. One pattern because two questions are asked of it — what the name is
+ * without it, and whether it was there at all — and the answers have to agree.
+ */
+const ARTICLE_RE = /^(?:an?|the)\s/i;
+
 /** Strip a leading English article so names match the wiki / shopping list. */
 export function stripArticle(name: string): string {
-  return name.replace(/^(?:an?|the) /i, "").trim();
+  return name.replace(ARTICLE_RE, "").trim();
+}
+
+/**
+ * Does this name carry an article? It's the log's only signal for *what kind of thing* a name
+ * refers to: the game writes a spawn as "a gnoll pup" and a named — or a player, or a pet — with
+ * no article at all. `cast-alerts.ts` reads it to tell a mob from a player, and `parseKill` records
+ * it because the answer is destroyed by `stripArticle` a line later
+ * ([ADR 0092](../../specs/decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
+ *
+ * Ask it of a **raw** name. Once stripped there is nothing left to read, and this returns false for
+ * a named and a spawn alike.
+ */
+export function hasArticle(name: string): boolean {
+  return ARTICLE_RE.test(name.trim());
 }
 
 /**
@@ -239,6 +259,9 @@ export function parseKill(line: LogLine): KillEvent | null {
   return {
     kind: "kill",
     target: stripArticle(m.groups.target.trim()),
+    // Read before the strip, which is the only moment it exists: "a gnoll pup" is a spawn and
+    // "Lord Nagafen" is a named, and that is what decides whether the kill starts a respawn timer.
+    named: !hasArticle(m.groups.target),
     killer: byYou ? SELF : stripArticle((m.groups.killer ?? "").trim()),
     logId: line.logId,
     raw: line.raw,

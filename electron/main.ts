@@ -19,6 +19,8 @@ import { isSameSitting } from "../src/shared/log-catchup";
 import { createCombatStats } from "./combat-stats";
 import { createSpellCatalog } from "./spells";
 import { createCombatHistory } from "./combat-history";
+import { createHighScores } from "./high-scores";
+import { eventCandidates, fightCandidates } from "../src/shared/high-scores";
 import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";
 import { createKillLog } from "./kill-log";
@@ -35,6 +37,7 @@ import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createAlertRouter } from "./alert-router";
+import { createSpawnTracker } from "./spawn-tracker";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -173,6 +176,13 @@ if (!app.requestSingleInstanceLock()) {
   const spells = createSpellCatalog();
   const combat = createCombatStats(undefined, (spell, rank) => spells.find(spell, rank)?.mana);
   const history = createCombatHistory(userData);
+  /**
+   * Personal bests. Silent until the log has been caught up, because everything logged while the app
+   * was shut is replayed through the live path — those records are real and belong on the board, but
+   * a banner for a hit you landed last night is a lie about the present (see `setQuiet`).
+   */
+  const scores = createHighScores(userData);
+  scores.setQuiet(true);
   const xp = createXpProgress(userData);
   const hp = createHpEstimate(userData);
   const killLog = createKillLog(userData);
@@ -188,18 +198,32 @@ if (!app.requestSingleInstanceLock()) {
   let appInfo: AppInfo = { hotkeys: [], logFile };
 
   syncDebugFlag(store.getSettings());
+  // Respawn countdowns. It reads the kill log rather than holding its own copy — the learned
+  // interval is derived, and only the due times are its own state (ADR 0092). Its pop goes down
+  // the same `raiseAlert` as every other alert, so it wears the alert styling without knowing it.
+  // (`raiseAlert` is a declaration below, hoisted — this is built here because the IPC needs it.)
+  const spawns = createSpawnTracker({
+    userDataDir: userData,
+    kills: () => killLog.kills(),
+    getSettings: () => store.getSettings().castAlerts,
+    raise: raiseAlert,
+  });
+  spawns.onChanged(() => broadcast(CH.spawnsChanged, undefined));
+
   registerIpc({
     store,
     wiki,
     watcher,
     combat,
     history,
+    scores,
     xp,
     hp,
     killLog,
     lootLog,
     updates,
     mobs,
+    spawns,
     lookup,
     userData,
     logFile,
@@ -241,8 +265,15 @@ if (!app.requestSingleInstanceLock()) {
   // (`alert-router.ts`). Main's part is telling it where the player is and where a banner goes.
   const alerts = createAlertRouter({
     getSettings: () => store.getSettings().castAlerts,
+    getScoreSettings: () => store.getSettings().highScores,
     getZone: () => currentZone,
     raise: raiseAlert,
+  });
+  // A record that falls gets a banner (if celebrations are on — the router decides) and a nudge to
+  // every window, so a scoreboard that happens to be open updates itself rather than going stale.
+  scores.onRecord((record) => {
+    alerts.record(record);
+    broadcast(CH.recordSet, record);
   });
 
   // The click-through alert overlay exists only while cast alerts are on — no point floating an
@@ -280,6 +311,12 @@ if (!app.requestSingleInstanceLock()) {
     combat.setPlayer(character);
     hp.setPlayer(character); // heals on you are logged by character name, not "you"
     killLog.setPlayer(character); // so your pet's death isn't filed as a mob you farm
+    // A board belongs to a character, so naming them is what decides whose records these are — and
+    // the first time we meet one, their own past fights seed the board rather than leaving it empty
+    // with a dozen bars nobody has ever cleared. Capped high rather than unbounded: `search("")`
+    // matches every fight, and the store holds a thousand at most.
+    scores.setPlayer(character);
+    scores.seed(history.search("", Number.MAX_SAFE_INTEGER).fights);
   });
   watcher.onZone((event) => {
     if (event.zone === currentZone) return;
@@ -321,7 +358,17 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onKill((event) => {
     combat.recordKill(event.target, event.at);
-    if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId)) killsChanged();
+    if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named)) {
+      killsChanged();
+      // After the record, never before: the tracker learns from the kill log, so the kill that
+      // starts a countdown has to already be in it for the second kill of a named to time it.
+      spawns.noteKill(event.target, currentZone, event.at, event.named);
+    }
+    // Your kill streak counts what *you* killed, so it asks the meter's own gate rather than a
+    // looser one of its own: the log reports every death in earshot, and a stranger's kill at a busy
+    // camp is not a link in your chain (ADR 0027). Asked *after* `recordKill`, so the fight scope has
+    // already taken this event.
+    if (combat.countsKill(event.target)) scores.noteKill(event.at, currentZone);
   });
   // Coin off a corpse goes to both ledgers it belongs in: the session's money (for a rate) and
   // the mob that paid it (for the long-run per-kill figure). An auto-sold item's coin is skipped
@@ -354,6 +401,13 @@ if (!app.requestSingleInstanceLock()) {
     // The alert path runs *after* the meter and the HP estimate, always: only an alert may ever wait
     // or be dropped, never the ledger. What it does with the event is `alert-router.ts`.
     alerts.combat(event);
+    // Then the scoreboard, last, for the same reason: a personal best is the only thing here that
+    // puts a banner up off its own bat, and nothing else may be delayed behind it. After the meter
+    // also means `combat.mine` has seen this line — a pet's first swing proves the pet.
+    scores.offer(eventCandidates(event, combat.mine), currentZone);
+    // Your own death ends the streak. Only yours: a group-mate's is not your chain, and a mob's
+    // death arrives as a kill (above) rather than as this.
+    if (event.kind === "death" && combat.mine(event.victim)) scores.noteDeath();
   });
   watcher.onLine((line) => alerts.line(line));
   // Everything logged while the app was closed has just been fed through the live path, which is
@@ -374,8 +428,24 @@ if (!app.requestSingleInstanceLock()) {
     if (seen) log.debug("unparsed lines", { seen, ignored, shapes, dropped, top: lines.top(15) });
     if (!continuing) combat.reset();
   });
-  // Fights are filed as they end, so history survives a crash as well as a clean quit.
-  combat.onFightEnd((fight) => history.add(fight, combat.zone(), watcher.status().file));
+  /**
+   * From here on the log is *news*, so a record is worth saying out loud (see `scores.setQuiet`).
+   *
+   * Its own listener, registered **after** the one above, for two reasons that pull the same way:
+   * that handler returns early when there was no gap — and a launch with nothing to replay still has
+   * to come off mute — and its last act is `combat.reset()`, which banks the fight the replay was in
+   * the middle of. Those records are as old as the rest of the gap, so unmuting has to follow.
+   */
+  watcher.onCaughtUp(() => scores.setQuiet(false));
+  // Fights are filed as they end, so history survives a crash as well as a clean quit — and the same
+  // moment is when a fight's own records are claimed, since "most damage in a fight" isn't knowable
+  // until the fight has one. Its hits are re-offered too, which changes nothing while the app is
+  // running (the live line got there first and a tie doesn't win) and is what makes a fight a
+  // complete record of itself for the day it seeds a board.
+  combat.onFightEnd((fight) => {
+    history.add(fight, combat.zone(), watcher.status().file);
+    scores.offer(fightCandidates(fight), combat.zone());
+  });
   xp.onChange((progress) => broadcast(CH.xpChanged, progress));
   hp.onChange((estimate) => broadcast(CH.hpChanged, estimate));
   combat.onChange(
@@ -499,7 +569,10 @@ if (!app.requestSingleInstanceLock()) {
     hp.flush();
     killLog.flush();
     lootLog.flush();
+    scores.flush();
     mobs.flush();
+    spawns.flush();
+    spawns.dispose();
     watcher.stop(); // records the read position, so the next run resumes exactly here
     cursor.flush();
   });

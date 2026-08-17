@@ -108,7 +108,7 @@ export function importLog(
         if (lootLog?.add(event)) loot++;
         break;
       case "kill":
-        if (killLog.record(event.target, event.killer, zone, event.at, event.logId)) kills++;
+        if (killLog.record(event.target, event.killer, zone, event.at, event.logId, event.named)) kills++;
         combat?.recordKill(event.target, event.at);
         break;
       case "coin":

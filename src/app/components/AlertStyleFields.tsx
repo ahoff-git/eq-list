@@ -1,4 +1,5 @@
 "use client";
+import { api } from "@/lib/api";
 import { ALERT_SOUNDS, playAlertSound } from "@/lib/alertSounds";
 import type { AlertAnimation, AlertLocation, AlertPosition, AlertPositionValue, AlertStyle } from "@/shared/types";
 
@@ -76,7 +77,17 @@ export default function AlertStyleFields({
           ))}
         </select>
         <button className="btn ghost sm" title="Hear this sound" onClick={() => playAlertSound(style.soundName)}>
-          ▶ Preview
+          ▶ Sound
+        </button>
+        {/* The look, on screen, where the look is being chosen. Previewing a colour by reading a hex
+            code is guesswork, and the banner lands on the overlay over the game — which is the only
+            place its position and size mean anything. */}
+        <button
+          className="btn ghost sm"
+          title="Show a sample alert on the overlay, wearing this look"
+          onClick={() => void api()?.alerts.preview(style)}
+        >
+          ▶ Preview alert
         </button>
       </div>
 

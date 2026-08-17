@@ -21,6 +21,43 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **Your own damage shield is unread.** The other half of
+  [ADR 0095](./decisions/0095-your-own-dot-tick-is-yours.md), which fixed the DoT ticks and left this
+  because it is a different line shape. Same first-person asymmetry, one wording along:
+
+  | line | read? |
+  |---|---|
+  | `A pledge familiar is pierced by Kainos`s warder's thorns for 6 points…` | ✅ the pet's |
+  | `A wild tiger is pierced by YOUR thorns for 1 point of non-melee damage.` | ❌ **your own** |
+
+  `SHIELD_RE` binds on the `'s` possessive, and `by YOUR thorns` hasn't got one. **907 lines, 1,576
+  damage** on the log ADR 0095 measured (thorns 1,034, flames 542) — small next to the ticks, and real.
+  It needs its own thought rather than a copied regex: a shield is damage you dealt *by being hit*
+  (`shield: true`, no spell), the amounts are tiny and the line count is not, and `YOUR` is
+  capitalised where the tick form's `your` is not — so the two aren't one pattern with a flag.
+
+- **Re-derive stored fights when a parse rule changes.** Now actually owed, rather than theoretical:
+  [ADR 0095](./decisions/0095-your-own-dot-tick-is-yours.md) raised every damage figure that includes
+  your DoTs and was explicitly **forward only**, so fights already on disk under-report by up to a few
+  percent (much more for a DoT-led character) and the scoreboard's seeding reads exactly those fights.
+  [ADR 0021](./decisions/0021-stored-fights-keep-their-source.md) put `logIds` and the log's own
+  timestamps on every stored fight *for this*, and nothing has ever used them. The shape: find the
+  source lines again, re-run them through today's parser, replace the stored `FightStats`. Two things
+  to settle first — a fight whose log file is gone can't be re-derived and must say so rather than be
+  dropped, and a re-derivation has to be **idempotent** against ADR 0033's keying, which keys a fight
+  by its file and timestamps and would otherwise refuse the replacement as a duplicate. Pairs with the
+  provenance-manifest item below: a figure should be able to say which build read it.
+
+- **A level that goes down may confuse the XP and HP trackers.** The same sweep found that EQL levels
+  are **per class**: `You have gained a level! Welcome to level 11!` appears four separate times in one
+  character's log, the sequence runs `… 19 20 21 13`, and the achievement line beside it reads
+  `Primary Class Unlock - Wizard`. The log's level line names no class. `xp.levelUp(level, at)` and
+  `hp.levelUp(level)` both assume a level only ever rises — `hp` voids its inferred bounds on a
+  level-up ([ADR 0018](./decisions/0018-inferred-max-hit-points.md)), so a 21 → 13 line throws away
+  bounds learned at 21 and starts inferring against a level the character isn't. Worth checking what
+  each actually does with a *lower* level before deciding the rule; "ignore a level below the highest
+  seen" is probably right for `hp` and probably wrong for `xp`, since the percentage really did reset.
+
 - **A replayed gap is read and parsed in one tick.** Startup no longer stalls on the maps
   ([ADR 0072](./decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md)), but the other thing
   that begins at launch still can: `log-watcher.poll()` reads *everything* appended since the cursor in
@@ -88,19 +125,6 @@ Every repo named below, and the file to open in it, is in [neighbours.md](./neig
   the cheap version is to reject patterns with the nested-quantifier shapes that backtrack, the honest
   version is to match somewhere that can be abandoned.
 
-- **A named's respawn is learned from your own kills.** We know when a named died, where
-  ([ADR 0022](./decisions/0022-invocation-effects-and-kill-locations.md)), and how confidently
-  ([ADR 0023](./decisions/0023-kill-heatmap.md)) — and then throw the interval away. The gap between two
-  kills of the same named *is* its respawn timer, measured on this server and this build, which is the
-  same argument [ADR 0025](./decisions/0025-observation-over-the-wiki.md) already makes about drop rates.
-  So: a countdown per named you've killed, seeded by the wiki's figure where it has one, and **tightened
-  whenever you re-kill sooner than the timer claimed possible** (a shorter observation is proof; a longer
-  one is just you arriving late, and must not stretch anything). A hand-typed value is never overwritten.
-  It wants the map's pins for camps and the mob knowledge store for the numbers, both of which exist —
-  which is why this is a todo and not an idea. Needs an ADR for the learning rule before the UI.
-  EQBuddy's three files are worth reading together first: `SpawnTimers.cs`, `SpawnCatalog.cs` (the
-  shipped seed) and `SpawnOverrides.cs` (what a player typed, which nothing may overwrite).
-
 - **An alert can be spoken.** [alertSounds.ts](../src/lib/alertSounds.ts) synthesizes beeps, and a beep
   can only say *something* happened — mid-fight, distinguishing four of them means looking away from the
   game, which is the one thing an overlay exists to prevent. `speechSynthesis` is already in the renderer
@@ -146,8 +170,9 @@ lineage. Most of what follows is about widening the input, not the output.
   `dbstr_us.txt` (9.8 MB, also present) is the third of these and still unexamined; it's where
   AA and item description strings live.
 
-- **A Project Quarm baseline, as a seed layer under our own observations.** The spawn-timer item above
-  says "seeded by the wiki's figure where it has one", and the wiki often hasn't. eql-log-reader ships a
+- **A Project Quarm baseline, as a seed layer under our own observations.** Spawn timers now ship and learn
+  from scratch ([ADR 0092](./decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)) — nothing
+  seeds a named before your first two kills of it, and the wiki usually can't. eql-log-reader ships a
   distillation of the public Project Quarm database — same EQMacEmu lineage as EQL — carrying exactly
   the three things we keep wanting: **named spawn points, respawn timers, and drop tables with
   percentages**, plus zone adjacency and an item id↔name map. A second file distils ~3,300 item turn-ins

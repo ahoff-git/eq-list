@@ -48,6 +48,7 @@ const api: EqlApi = {
   alerts: {
     onCast: (cb) => on(CH.castAlert, cb),
     test: (watchId) => ipcRenderer.invoke(CH.alertsTest, watchId),
+    preview: (style) => ipcRenderer.invoke(CH.alertsPreview, style),
     placeLocation: () => ipcRenderer.invoke(CH.alertPlaceStart),
     onPlaceBegin: (cb) => on(CH.alertPlaceBegin, cb),
     placed: (point) => ipcRenderer.send(CH.alertPlaceDone, point),
@@ -88,6 +89,12 @@ const api: EqlApi = {
     bests: () => ipcRenderer.invoke(CH.combatBests),
     clearHistory: () => ipcRenderer.invoke(CH.combatClearHistory),
   },
+  records: {
+    board: () => ipcRenderer.invoke(CH.recordsBoard),
+    onRecord: (cb) => on(CH.recordSet, cb),
+    test: () => ipcRenderer.invoke(CH.recordsTest),
+    clear: () => ipcRenderer.invoke(CH.recordsClear),
+  },
   mobs: {
     all: (zone) => ipcRenderer.invoke(CH.mobsAll, zone),
     mine: (zone) => ipcRenderer.invoke(CH.mobsMine, zone),
@@ -98,6 +105,15 @@ const api: EqlApi = {
     all: (zone) => ipcRenderer.invoke(CH.killsAll, zone),
     clear: (scope) => ipcRenderer.invoke(CH.killsClear, scope),
     onChanged: (cb) => on(CH.killsChanged, cb),
+  },
+  spawns: {
+    view: () => ipcRenderer.invoke(CH.spawnsView),
+    state: (key, seconds) => ipcRenderer.invoke(CH.spawnsState, key, seconds),
+    markNamed: (mob, named) => ipcRenderer.invoke(CH.spawnsMarkNamed, mob, named),
+    pad: (key, seconds) => ipcRenderer.invoke(CH.spawnsPad, key, seconds),
+    relearn: (key) => ipcRenderer.invoke(CH.spawnsRelearn, key),
+    stop: (key) => ipcRenderer.invoke(CH.spawnsStop, key),
+    onChanged: (cb) => on(CH.spawnsChanged, cb),
   },
   hp: {
     get: () => ipcRenderer.invoke(CH.hpGet),

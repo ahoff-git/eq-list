@@ -19,6 +19,7 @@
  *           A kobold scout tries to hit YOU, but misses! (Riposte)
  *   dot     Kainos`s warder has taken 1 damage by Plague Rat Disease.
  *           You have taken 1 damage from Plague Rat Disease by a large plague rat.
+ *           A minotaur slaver has taken 29 damage from your Heat Blood.
  *   heal    You healed Kainos`s warder for 8 hit points.
  *           You healed Kainos`s warder for 1 (20) hit points by Inner Fire.
  *           Hullshamancer healed himself for 10 hit points by Lifespike.
@@ -173,12 +174,39 @@ function avoidanceKind(word: string): MissEvent["avoidance"] {
   return "riposte";
 }
 
-// Damage-over-time ticks. The "from <dot> by <source>" form names who applied it;
-// the shorter "by <dot>" form doesn't, so the DoT itself becomes the attacker and the event
-// says so (`casterUnknown`) — `dot-attribution.ts` is what puts the caster back, from the
-// cast line the log wrote earlier.
-const DOT_FROM_RE = /^(?<target>.+?) (?:has|have) taken (?<amount>\d+) damage from (?<spell>.+?) by (?<attacker>.+?)\.$/;
-const DOT_BY_RE = /^(?<target>.+?) (?:has|have) taken (?<amount>\d+) damage by (?<spell>.+?)\.$/;
+// Damage-over-time ticks, in the **three** wordings the log uses — and it took a sweep of a real
+// 228,000-line log to find the third, because it is the one that says "your":
+//
+//     A failed experiment has taken 1 damage from Disease Cloud by Kareker.  ← names the caster
+//     A minotaur slaver has taken 29 damage from your Heat Blood.            ← names YOU
+//     Kainos`s warder has taken 1 damage by Plague Rat Disease.              ← names nobody
+//
+// The first names who applied it. The **second is yours**, and it was read by none of these
+// patterns for as long as they existed: `DOT_FROM_RE` needs a trailing " by <caster>" to bind and
+// `DOT_BY_RE` needs "damage by" rather than "damage from", so 1,697 lines and 26,581 points of
+// damage — the whole of a DoT-led character's output — fell on the floor
+// ([ADR 0095](../../specs/decisions/0095-your-own-dot-tick-is-yours.md)).
+//
+// The third names nobody, so the DoT itself becomes the attacker and the event says so
+// (`casterUnknown`) — `dot-attribution.ts` is what puts the caster back, from the cast line the log
+// wrote earlier. Note that `DOT_MINE_RE` needs none of that machinery: "your" *is* the attribution,
+// stated by the game, and a stated caster must never be re-guessed from a cast we happened to see.
+// A tick can **crit**, and the log tags it exactly as it tags a swing — after the full stop. Nine
+// such lines in the sweep, and they carry the biggest ticks in it by a factor of two (84 against a
+// plain 42), so a pattern anchored at `\.$` doesn't merely miss them: it misses precisely the ticks
+// worth recording. Hence `QUALIFIER` on all three, the same suffix melee and spells already take.
+const DOT_FROM_RE = new RegExp(
+  String.raw`^(?<target>.+?) (?:has|have) taken (?<amount>\d+) damage from (?<spell>.+?) by (?<attacker>.+?)\.${QUALIFIER}`,
+);
+// "your" is captured as the attacker rather than special-cased, because `combatant()` already folds
+// "you"/"your" to `SELF` — so this needs no branch of its own below, and a stated caster keeps
+// `casterUnknown` unset by the same rule the "by <caster>" form does.
+const DOT_MINE_RE = new RegExp(
+  String.raw`^(?<target>.+?) (?:has|have) taken (?<amount>\d+) damage from (?<attacker>your) (?<spell>.+?)\.${QUALIFIER}`,
+);
+const DOT_BY_RE = new RegExp(
+  String.raw`^(?<target>.+?) (?:has|have) taken (?<amount>\d+) damage by (?<spell>.+?)\.${QUALIFIER}`,
+);
 
 // "for 8 hit points" or, when it overheals, "for 1 (20) hit points" — the first
 // number is what actually landed, which is the one worth metering.
@@ -314,9 +342,9 @@ export function parseCombat(line: LogLine): CombatEvent | null {
   const shield = message.match(SHIELD_RE);
   if (shield?.groups) return damage(shield.groups, line, false);
 
-  const dot = message.match(DOT_FROM_RE) ?? message.match(DOT_BY_RE);
+  const dot = message.match(DOT_FROM_RE) ?? message.match(DOT_MINE_RE) ?? message.match(DOT_BY_RE);
   if (dot?.groups) {
-    const { target, amount, spell: dotName, attacker } = dot.groups;
+    const { target, amount, spell: dotName, attacker, qualifier } = dot.groups;
     return {
       kind: "damage",
       attacker: combatant(attacker ?? dotName),
@@ -324,6 +352,9 @@ export function parseCombat(line: LogLine): CombatEvent | null {
       amount: Number(amount),
       spell: spellName(dotName),
       melee: false,
+      // A tick carries the log's own tag when it has one — a critical tick is a critical hit, and
+      // leaving it off would keep the hardest ticks out of every per-qualifier tally.
+      qualifier,
       // Flagged so per-spell stats can tell one cast landing from its later ticks.
       tick: true,
       // The short form named nobody, so `attacker` above is the DoT standing in for a caster.

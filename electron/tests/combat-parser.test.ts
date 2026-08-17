@@ -97,6 +97,60 @@ test("a DoT tick on you names the mob that applied it", () => {
   assert.equal(e.casterUnknown, undefined);
 });
 
+test("your own DoT tick is yours — the log says “your”, and that is the attribution", () => {
+  // The third wording, and the one that went unread until a sweep of a real log found 1,697 of them
+  // carrying 26,581 points of damage (ADR 0095). "from your <Spell>" has no trailing " by <caster>"
+  // for the first pattern to bind and says "from" rather than "by", so neither of the other two
+  // could ever match it.
+  const e = parse("A minotaur slaver has taken 29 damage from your Heat Blood.") as DamageEvent;
+  assert.equal(e.kind, "damage");
+  assert.equal(e.attacker, SELF);
+  assert.equal(e.target, "a minotaur slaver");
+  assert.equal(e.spell, "Heat Blood");
+  assert.equal(e.amount, 29);
+  assert.equal(e.melee, false);
+  assert.equal(e.tick, true);
+  // Stated, not inferred: `dot-attribution.ts` must not re-guess a caster the game named, or a
+  // group-mate casting the same DoT after you would take your ticks off you (ADR 0071's own limit).
+  assert.equal(e.casterUnknown, undefined);
+});
+
+test("a spell name with an apostrophe survives the “from your” form", () => {
+  // `Denon's Bereavement` and friends appear 132 times in the sweep; the lazy spell group has to
+  // reach the full stop rather than stopping at the quote.
+  const e = parse("A failed experiment has taken 8 damage from your Denon's Bereavement.") as DamageEvent;
+  assert.equal(e.attacker, SELF);
+  assert.equal(e.spell, "Denon's Bereavement");
+  assert.equal(e.amount, 8);
+});
+
+test("a DoT tick can crit, and the tag is after the full stop like a swing's", () => {
+  // The sweep's last nine holdouts, and they are the *biggest* ticks in the log by a factor of two —
+  // so a pattern anchored at the full stop misses exactly the ticks worth recording.
+  const e = parse("An iksar ghost has taken 84 damage from your Stinging Swarm. (Critical)") as DamageEvent;
+  assert.equal(e.attacker, SELF);
+  assert.equal(e.spell, "Stinging Swarm");
+  assert.equal(e.amount, 84);
+  assert.equal(e.tick, true);
+  assert.equal(e.qualifier, "Critical");
+  // An untagged tick must not acquire one.
+  const plain = parse("An iksar ghost has taken 42 damage from your Stinging Swarm.") as DamageEvent;
+  assert.equal(plain.qualifier, undefined);
+});
+
+test("the three DoT wordings don't poach each other's lines", () => {
+  // The orderings that would break if a pattern were loosened: a caster-named tick must not be read
+  // as a nameless one (its caster would become the DoT), and neither of those may be read as yours.
+  const named = parse("A failed experiment has taken 1 damage from Disease Cloud by Kareker.") as DamageEvent;
+  assert.equal(named.attacker, "Kareker");
+  assert.equal(named.casterUnknown, undefined);
+  const nameless = parse("Kainos`s warder has taken 1 damage by Plague Rat Disease.") as DamageEvent;
+  assert.equal(nameless.attacker, "Plague Rat Disease");
+  assert.equal(nameless.casterUnknown, true);
+  const yours = parse("A minotaur slaver has taken 29 damage from your Heat Blood.") as DamageEvent;
+  assert.equal(yours.attacker, SELF);
+});
+
 test("misses parse for both the pet and you", () => {
   const pet = parse("Kainos`s warder tries to bite a coyote, but misses!") as MissEvent;
   assert.equal(pet.kind, "miss");

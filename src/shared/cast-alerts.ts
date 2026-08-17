@@ -37,6 +37,7 @@
  * only match casts the log *names*; generic "begins to cast a spell" lines carry no name.)
  */
 import { SELF } from "./combat-parser";
+import { hasArticle } from "./log-parser";
 import { conditionsHold, watchSpeaks, type WatchSubject } from "./watch-conditions";
 import type { BuffFadedEvent, CastEvent, CastAlertSettings, CastWatch, LogLine } from "./types";
 
@@ -61,7 +62,7 @@ export const LIVE_WITHIN_MS = 30_000;
  * `includeSelf`). This is the only player-vs-mob signal a single cast line offers.
  */
 function isNamedCaster(caster: string): boolean {
-  return caster !== SELF && !/^(?:an?|the)\s/i.test(caster);
+  return caster !== SELF && !hasArticle(caster);
 }
 
 /** The watch a cast matches (the first enabled one it satisfies), or null. */

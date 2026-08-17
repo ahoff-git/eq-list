@@ -12,6 +12,13 @@ unit-tested.
     grammar: melee/spell/shield/DoT damage, misses, heals, `(Critical)`/`(Riposte)`
     qualifiers, overheals, and the casting lifecycle — casts, fizzles, interrupts,
     resists, blocks). Every input line is **verbatim from a real log**.
+    All **three** DoT wordings are pinned, and pinned *against each other* — a caster-named tick must
+    not be read as a nameless one and neither may be read as yours — because the third
+    (`… has taken 29 damage from your Heat Blood.`) went unread for as long as the other two existed
+    and cost 3.3% of a character's damage ([ADR 0095](../decisions/0095-your-own-dot-tick-is-yours.md)).
+    A **critical tick** is pinned too, with its untagged twin beside it: the qualifier sits after the
+    full stop, so a pattern anchored there silently loses the hardest ticks in the log rather than an
+    arbitrary few. A spell name carrying an apostrophe (`Denon's Bereavement`) guards the lazy group.
   - `src/shared/dot-attribution.ts` → `electron/tests/dot-attribution.test.ts` (a caster-less DoT
     tick credited to whoever was last seen casting that spell — including across the rank the cast
     line states, a group-mate's DoT staying theirs, and the two cases that must be left exactly as
@@ -35,6 +42,30 @@ unit-tested.
     every "same zone?": every difficulty and ruleset of a zone landing on one key, the backtick the
     maps write folding onto the apostrophe the log writes, an aliased name (Kerra Isle → Kerra Ridge)
     folding onto the map's, and two zones that merely share words staying apart.
+  - `src/shared/spawn-timers.ts` → `electron/tests/spawn-timers.test.ts` (the respawn-learning
+    rules, [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)): that
+    the figure is the **shortest** gap and never the mean, that a later longer gap can't stretch it
+    while a shorter one tightens it, and that an implausible gap is **discarded rather than clamped**
+    — since against a bound that only falls, an invented short number is permanent. Also what isn't
+    evidence (a peer's kill, whose clock isn't yours; a kill with no zone) against what is (a
+    bystander's, deliberately unlike a drop rate), the article proof that a mob is a named — with
+    **absent meaning unknown**, and one fresh kill making an old record's history readable
+    retroactively — and that a learned figure is always *worded* as a bound with its sample. Then
+    the window on top of it ([ADR 0094](../decisions/0094-a-spawn-timer-is-a-window-not-an-instant.md)):
+    that **both ends** of the evidence are kept, that clustered gaps are trusted while disagreeing
+    ones are flagged and lead with the range, that padding opens a window **without moving the
+    by-time** and can't reach back past the kill, and that with no padding the whole thing collapses
+    to the point-in-time countdown it replaced.
+  - `electron/spawn-tracker.ts` → `electron/tests/spawn-tracker.test.ts` (the holder: when a
+    countdown starts and restarts, that a due timer speaks **once**, that a stated figure outranks
+    the learned one and clearing it falls back rather than empties, and that a due time survives a
+    restart). The two refusals are the point: a pop that already happened is **shown, never
+    shouted** — asserted both for a restart after the fact and for the kill replayed out of a log
+    gap, which is the same lie arriving by a different road — and, once padding existed, for a
+    window opened *retroactively*, which is the third road to the same lie and why one `arm()` check
+    covers all of them. Padding is asserted to re-shape a countdown **already running**, since it is
+    set while waiting for the very pop it's wanted for. Clock and sweep are injected, so a six-hour
+    timer is exercised in a millisecond.
   - `src/shared/mob-stats.ts` → `electron/tests/mob-stats.test.ts` (rolling kills up into
     observations, observed drop rates and their denominators, roam areas ignoring untrustworthy
     positions, and pooling a peer's counts while keeping provenance — including that a pooled
@@ -74,6 +105,22 @@ unit-tested.
     grouping, newest-first ordering, per-zone aggregation, personal bests, the 1000-fight
     cap, reload after a restart, and a corrupt file being survivable). Touches a temp dir, like the log-watcher test —
     persisting and reloading *is* the feature.
+  - `src/shared/high-scores.ts` + `electron/high-scores.ts` →
+    `electron/tests/high-scores.test.ts`. The pure half: one hit landing in every category it belongs
+    to at once, a spell landing and a DoT tick being different records, ours-on-ours counting as
+    neither dealt nor taken, a fight's rate refused below `MIN_DPS_SEC`, "survived" refusing a death
+    *and* a cut-short fight, a fight read for the hits inside it off its own cells, a floor rejecting a
+    trivial sample, a tie not beating, a family id describing itself, and — since
+    [ADR 0095](../decisions/0095-your-own-dot-tick-is-yours.md) — a cell whose hits are *all* ticks
+    yielding a `biggest-tick` while a cell with a landing among them yields a `biggest-nuke`, which is
+    what took that category from unreachable to seedable. The keeper's half is one test
+    per rule from [ADR 0093](../decisions/0093-a-high-score-is-a-personal-best-with-a-floor.md),
+    because each is a thing that reads as a bug when it's missing: a **board per character** (surviving
+    a reload, and keyed so the log's capitalisation can't split one in two), a **first score that sets
+    the bar silently**, a **replayed gap filed but never announced**, a **streak that speaks once**
+    (including the case that caught a real bug — a streak whose first record was the silent
+    bar-setting must still announce its crossing), **seeding once from this character's fights only**,
+    and a **cleared board staying cleared**. Temp dir, for the same reason as above.
   - `src/shared/fuzzy.ts` → `electron/tests/fuzzy.test.ts` (typo/transposition/
     partial/word-order matching and ranking).
   - `src/shared/grouping.ts` → `electron/tests/grouping.test.ts` (grouping by origin,
