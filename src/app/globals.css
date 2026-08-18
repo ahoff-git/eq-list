@@ -578,6 +578,31 @@ button {
   margin: 4px 0 6px;
 }
 .spawn-known { margin-top: 16px; }
+.spawn-add-bar { display: flex; }
+.spawn-how { color: var(--text-dim); margin: 8px 0 4px; }
+.spawn-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.spawn-add input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 4px 6px;
+  font: inherit;
+}
+.spawn-add .sa-name { flex: 2; min-width: 160px; }
+.spawn-add .sa-place { flex: 1; min-width: 120px; }
+.spawn-add .sa-every { width: 130px; }
+.spawn-add small { flex-basis: 100%; color: var(--text-dim); }
+.spawn-add small.bad { color: var(--bad); }
 .spawn-row,
 .spawn-known-row {
   display: flex;

@@ -130,6 +130,12 @@ export interface KillEvent extends LogEventBase {
    * ([ADR 0092](../../specs/decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
    */
   named: boolean;
+  /**
+   * The same question about the killer: did *it* lack an article (or was it you)? Together with
+   * `named` this is what separates a boss dying from a person dying — both are written without an
+   * article, and only the killer differs: a person kills a named, a mob kills a player or a pet.
+   */
+  killerNamed: boolean;
 }
 
 /** A parsed "Your Location is Y, X, Z" line (EQ reports y first). Drives the map. */
@@ -1175,6 +1181,13 @@ export interface KillRecord {
    * record starts no timer, and one more kill of the same mob settles it for good.
    */
   named?: boolean;
+  /**
+   * Whether the *killer* lacked an article, or was you. The other half of telling a named from a
+   * person: "Lord Nagafen has been slain by Kainos!" and "Bunnyslayer has been slain by a froglok
+   * shaman!" are the same shape, and only this tells them apart. Absent means unknown, and unknown
+   * starts no timer — one more kill settles it, exactly as it does for `named`.
+   */
+  killerNamed?: boolean;
   zone?: string;
   /** The last known position — absent if the log had never reported one. */
   y?: number;
@@ -1253,6 +1266,12 @@ export interface KnownSpawn extends RespawnLearning {
   respawn?: Respawn;
   /** Whether a countdown for it is currently on the board. */
   running: boolean;
+  /**
+   * True when the player typed this row in rather than the kill log producing it — a mob they want
+   * timed before they've killed it twice, or a custom timer for something that isn't a mob at all.
+   * Only such a row can be removed; one the kill log produced would simply come back.
+   */
+  added: boolean;
 }
 
 /**
@@ -2091,6 +2110,14 @@ export interface EqlApi {
      * Seeds a countdown only: one death measures no respawn, so it teaches the estimate nothing.
      */
     markDead(key: string): Promise<SpawnView>;
+    /**
+     * Put a timer on the board by hand — a mob you haven't killed twice yet, or something that
+     * isn't a mob at all. `zone` may be blank and `seconds` may be omitted; a label no kill line
+     * matches simply never restarts itself, which is what makes one mechanism serve both.
+     */
+    add(name: string, zone: string, seconds?: number | null): Promise<SpawnView>;
+    /** Take a hand-added row off the board, with everything set on it. */
+    remove(key: string): Promise<SpawnView>;
     /** Whether this mob's pop raises a banner. Off by default. */
     notify(key: string, on: boolean): Promise<SpawnView>;
     /**

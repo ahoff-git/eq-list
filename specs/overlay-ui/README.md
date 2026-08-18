@@ -171,7 +171,11 @@ list, hunt, search, damage, session, settings.
     the app wasn't running, or the camp changed hands — and doubles as the undo for a mis-clicked
     sighting. Everything here is reversible on purpose: an editor holding a value offers **Clear**,
     and a mob you dismissed is listed under **Not tracked (n)** with a way back, because the button
-    that dismissed it took its own undo off the screen. Those last two **destroy something and therefore ask
+    that dismissed it took its own undo off the screen. **＋ Add a timer** puts a row on by hand —
+    a named you haven't killed twice, or anything else worth a countdown; the zone is optional and
+    defaults to where you are, and a label no kill line matches just never re-arms itself, which is
+    what lets one form serve both. A line above the rows says how mobs arrive, since "why isn't that
+    named here?" is not guessable from an empty list. Those last two **destroy something and therefore ask
     first**, inline and worded as what it costs ("Forget all 6 gaps measured…"), with the two
     answers as outcomes rather than yes/no — the `ForgetData` pattern from Settings, and for its
     reason: no native `confirm()` over an always-on-top window. They're also visually separated from

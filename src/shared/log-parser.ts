@@ -256,13 +256,22 @@ export function parseKill(line: LogLine): KillEvent | null {
   const byYou = line.message.match(KILL_BY_YOU);
   const m = byYou ?? line.message.match(KILL_SLAIN_BY);
   if (!m?.groups?.target) return null;
+  const killer = (m.groups.killer ?? "").trim();
   return {
     kind: "kill",
     target: stripArticle(m.groups.target.trim()),
     // Read before the strip, which is the only moment it exists: "a gnoll pup" is a spawn and
     // "Lord Nagafen" is a named, and that is what decides whether the kill starts a respawn timer.
     named: !hasArticle(m.groups.target),
-    killer: byYou ? SELF : stripArticle((m.groups.killer ?? "").trim()),
+    /**
+     * And the same question about the *killer*, which is what tells a boss dying from a **person**
+     * dying. Both are written without an article, so the victim's name alone can't separate
+     * "Lord Nagafen has been slain by Kainos!" from "Bunnyslayer has been slain by a froglok
+     * shaman!" — but the killers can: a person kills a named, and a mob kills a player or a pet.
+     * You count as a person. An unnamed killer answers nothing and says so.
+     */
+    killerNamed: !!byYou || (!!killer && !hasArticle(killer)),
+    killer: byYou ? SELF : stripArticle(killer),
     logId: line.logId,
     raw: line.raw,
     at: line.at,

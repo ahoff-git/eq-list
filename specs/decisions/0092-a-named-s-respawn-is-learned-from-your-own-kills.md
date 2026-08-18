@@ -55,6 +55,17 @@ file* becomes evidence about its interval retroactively. This is what makes the 
 records a delay rather than a loss: kill a named once after this ships and its whole history is
 readable. A record whose flag is simply absent is **unknown, not plain**, and starts nothing.
 
+**And the victim's article is only half of it.** The log reports every death in earshot, and a
+player, a pet and a boss are all written *without* an article — so `Bunnyslayer has been slain by a
+froglok shaman!` is the same shape as `Lord Nagafen has been slain by Kainos!`. What separates them
+is the **killer**: a person kills a named, a mob kills a player or a pet. So `killerNamed` is read
+at parse time beside `named` (it is destroyed by the same `stripArticle`), and a kill only proves a
+named when both hold. Found by replaying an evening rather than by reasoning — see the flow tests;
+without it a busy dungeon fills the board with every death that happened near you.
+
+The residue is PvP, where both names lack an article and a player death would read as a named. Rare
+on this server, correctable in one click, and not worth a second signal.
+
 Rejected: **guessing the article back from capitalisation.** `Lord Nagafen` keeps its capital and
 `gnoll pup` doesn't, so it looks like free recovery of the whole existing corpus — but EQ writes
 plenty of ordinary spawns as `an Iksar Warrior`, which strips to a capital and would file a trash
@@ -126,6 +137,9 @@ wording rather than growing a second notification system.
 - A named that shares its name across two zones is two timers, which is right, and a named with two
   spawn points in one zone is one timer, which is wrong and is the same limitation
   [ADR 0024](./0024-mob-knowledge.md) already records about two mobs sharing a name in a zone.
+- **A player dying near you is not a camp.** The killer's article is what says so, and it fixes your
+  own pet's death by the same rule — which the kill log otherwise only catches once it knows your
+  character's name.
 - Nothing seeds a timer before your first two kills. The wiki figure the todo hoped for is absent
   far more often than not, and the Project Quarm baseline that would fill the gap is still an open
   question in this file — so the honest first version learns from scratch and says so.

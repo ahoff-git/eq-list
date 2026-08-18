@@ -64,6 +64,8 @@ export const CH = {
   spawnsPad: "spawns:pad", // how early to be told — the player's allowance for a soft timer
   spawnsMarkUp: "spawns:markUp", // you can see it: end the countdown and record the sighting
   spawnsMarkDead: "spawns:markDead", // it's dead now: start or restart the countdown by hand
+  spawnsAdd: "spawns:add", // a timer typed in by hand: an un-killed named, or a custom countdown
+  spawnsRemove: "spawns:remove",
   spawnsNotify: "spawns:notify",
   spawnsRelearn: "spawns:relearn", // throw away a learned bound and start again from now
   spawnsStop: "spawns:stop",

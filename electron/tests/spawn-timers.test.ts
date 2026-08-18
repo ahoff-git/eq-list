@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  clockSkew,
   countdownMs,
   describeRespawn,
   erratic,
@@ -38,6 +39,9 @@ function kill(mob: string, atSec: number, extra: Partial<KillRecord> = {}): Kill
     zone: "Lower Guk",
     confidence: 1,
     named: true,
+    // Killed by you, which is what every one of these means — and now has to say, since a kill
+    // by a *mob* is how the log writes a player or a pet dying.
+    killerNamed: true,
     ...extra,
   };
 }
@@ -318,6 +322,32 @@ test("gaps that agree get the plain bound and no warning", () => {
   const tight = { seconds: 900, source: "killed" as const, samples: 3, spreadSeconds: 1000 };
   assert.equal(describeRespawn(tight), "at most 15m, from 3 gaps");
   assert.equal(respawnCaveat(tight), null);
+});
+
+// ── reading main's clock from a window with its own ────────────────────────────
+// The bug this pins: the panel added a "seconds since I loaded" counter to the timestamp of every
+// *later* fetch, so the displayed clock ran ahead by however long the tab had been open — and a
+// refetch (marking a mob dead) measured a brand-new timer against a clock minutes in the future,
+// which rendered as 0:00. A timer that looked like it never restarted.
+
+test("skew is the difference between the two clocks, and nothing accumulates", () => {
+  const local = T0 + 5_000; // this window's clock, 5s adrift from main's
+  const skew = clockSkew(iso(0), local);
+  assert.equal(skew, -5_000);
+  // The whole point: `Date.now() + skew` tracks main, at any later moment, with no drift.
+  assert.equal(local + skew, T0);
+  assert.equal(local + 60_000 + skew, T0 + 60_000, "a minute later is a minute later, not two");
+});
+
+test("a re-fetch re-anchors rather than adding to what came before", () => {
+  // Fetch at T0, then again 10 minutes on. Each skew is measured against the local clock of its own
+  // moment, so the second answer is the same as the first — which is what stops the drift.
+  assert.equal(clockSkew(iso(0), T0), 0);
+  assert.equal(clockSkew(iso(600), T0 + 600_000), 0);
+});
+
+test("an unreadable clock is no skew, not a NaN that blanks every row", () => {
+  assert.equal(clockSkew("not a date", T0), 0);
 });
 
 // ── saying it without overclaiming ─────────────────────────────────────────────

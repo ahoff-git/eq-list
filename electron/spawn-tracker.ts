@@ -87,6 +87,16 @@ interface Stored {
    * from: "I can see it" is an observation the player makes and only this file records.
    */
   seen: Record<string, Sighting>;
+  /**
+   * Timer key → an entry the player typed in rather than one the kill log produced.
+   *
+   * Two things at once, deliberately, because they are the same thing wearing different names: a
+   * **mob you want timed before you've killed it twice** (or at all — you've walked up to someone
+   * else's camp), and a **custom timer** for something that isn't a mob and never will be. A label
+   * no kill line will ever match simply never restarts itself, which is the correct behaviour for a
+   * boat, a port or a raid lockout without a line of code spent distinguishing them.
+   */
+  added: Record<string, { mob: string; place: string }>;
   /** The countdowns themselves — the only thing here that isn't a preference. */
   timers: SpawnTimer[];
 }
@@ -109,6 +119,7 @@ function load(file: string): Stored {
     lead: { ...stored.lead },
     notify: { ...stored.notify },
     seen: { ...stored.seen },
+    added: { ...stored.added },
     timers: [...(stored.timers ?? [])],
   };
 }
@@ -155,6 +166,16 @@ export interface SpawnTracker {
    * estimate nothing and never touches the kill log, which is the log's own record.
    */
   markDead(key: string): void;
+  /**
+   * Put a timer on the board by hand: a mob you haven't killed twice yet, or something that isn't a
+   * mob at all. Returns the key it was filed under, so a caller can act on it straight away.
+   *
+   * `zone` may be blank — a boat has no camp — and `seconds` may be omitted, leaving a row that
+   * says what it's for and waits for you to time it.
+   */
+  add(name: string, zone: string, seconds?: number | null): string | null;
+  /** Take a hand-added entry off the board, with everything that was set on it. */
+  remove(key: string): void;
   /** Whether a pop should raise a banner. Off by default — see `Stored.notify`. */
   notify(key: string, on: boolean): void;
   /** Correct the article test about a mob. */
@@ -359,8 +380,19 @@ export function createSpawnTracker({
             Date.parse(a.watchFrom) - Date.parse(b.watchFrom),
         );
 
-      const known = [...learned.values()]
-        .filter((l) => isNamed(mobKey(l.mob)))
+      // Hand-added entries first, then what the kill log taught laid over the top: a mob you added
+      // and have since killed is one row, carrying the real measurements rather than the blank we
+      // filed when you typed it.
+      const rows = new Map<string, RespawnLearning>();
+      for (const [key, { mob, place }] of Object.entries(state.added)) {
+        rows.set(key, { key, mob, place, samples: 0 });
+      }
+      for (const [key, l] of learned) {
+        if (isNamed(mobKey(l.mob))) rows.set(key, l);
+      }
+
+      const known = [...rows.values()]
+        .sort((a, b) => a.mob.localeCompare(b.mob) || a.place.localeCompare(b.place))
         .map((l) => ({
           ...l,
           stated: state.stated[l.key],
@@ -368,6 +400,9 @@ export function createSpawnTracker({
           notify: !!state.notify[l.key],
           respawn: respawnFor(l, state.stated[l.key], state.seen[l.key]),
           running: running.some((t) => t.key === l.key),
+          // Only a hand-added row may be removed. One the kill log produced would simply come back
+          // on the next `view()`, so offering "remove" there would be a button that doesn't work.
+          added: !!state.added[l.key],
         }));
 
       // The mobs the player took off the list, kept visible so taking one off is a decision rather
@@ -430,9 +465,15 @@ export function createSpawnTracker({
       const { learned } = read();
       const known = learned.get(key);
       const running = state.timers.find((t) => t.key === key);
-      // The name and place come from whichever we have — a mob we've learned about, or the timer
-      // already on the board. Without either there is no mob to start a clock for.
-      const identity = known ?? (running && { key, mob: running.mob, place: running.place });
+      const added = state.added[key];
+      // The name and place come from whichever we have, in order of how much it knows: what the
+      // kill log taught, then what the player typed in, then a timer already on the board. The
+      // middle one matters most here — a hand-added row has no kills behind it, and starting its
+      // clock is the whole reason for adding it.
+      const identity =
+        known ??
+        (added ? { key, mob: added.mob, place: added.place } : undefined) ??
+        (running ? { key, mob: running.mob, place: running.place } : undefined);
       if (!identity) return;
       const respawn = respawnFor(known, state.stated[key], state.seen[key]);
       // Nothing to count down *to*. Saying "it's dead" can't invent a respawn, and a countdown to
@@ -442,6 +483,40 @@ export function createSpawnTracker({
       if (!timer) return;
       arm(key, timer);
       log.debug("timer started by hand", { mob: timer.mob, due: timer.dueAt, source: respawn.source });
+      changed();
+    },
+
+    add(name, zone, seconds) {
+      const mob = name.trim();
+      if (!mob) return null;
+      const where = zone.trim();
+      const key = timerKey(mob, where);
+      // The place is stored named rather than raw, so a hand-typed "Lower Guk 2" files under the
+      // same camp the kill log would have used (ADR 0083). Blank stays blank: not everything worth
+      // timing is somewhere.
+      state.added[key] = { mob, place: where ? placeName(where) : "" };
+      // Adding a mob by hand *is* the claim that it's worth timing, which is what `named` means
+      // here — so a kill of it starts teaching us straight away rather than waiting on the article
+      // test. For a label that is not a mob at all the flag is inert: nothing will ever match it.
+      state.said[mobKey(mob)] = { named: true, mob };
+      if (seconds !== undefined && seconds !== null && seconds > 0) state.stated[key] = Math.round(seconds);
+      log.debug("timer added by hand", { mob, place: state.added[key].place, seconds });
+      changed();
+      return key;
+    },
+
+    remove(key) {
+      // Everything set on it goes with it, or a re-add would silently inherit the old settings.
+      // What was *learned* is derived from the kill log and is not ours to delete — re-adding a mob
+      // you have killed brings its history back, which is the same promise `markNamed` makes.
+      delete state.added[key];
+      delete state.stated[key];
+      delete state.lead[key];
+      delete state.notify[key];
+      delete state.seen[key];
+      delete state.relearned[key];
+      state.timers = state.timers.filter((t) => t.key !== key);
+      announced.delete(key);
       changed();
     },
 

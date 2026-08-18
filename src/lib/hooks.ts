@@ -27,6 +27,7 @@ import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
 import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
 import { huntTargetsFor, type HuntTarget } from "@/shared/hunt";
+import { clockSkew } from "@/shared/spawn-timers";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -390,19 +391,28 @@ export function useKills(zone: string | undefined): KillRecord[] {
  * ticking since — rather than against a renderer clock that could disagree by a second and show
  * `0:00` on a timer main still calls waiting.
  */
-export function useSpawns(): { view: SpawnView; tick: number } {
+export function useSpawns(): { view: SpawnView; now: number } {
   const view = useFollowedRead<SpawnView>(
     (a) => a.spawns.view(),
     (a, reload) => a.spawns.onChanged(reload),
     NO_SPAWNS,
     [],
   );
-  const [tick, setTick] = useState(0);
+  // Purely a re-render pulse so the countdowns move. The value is never read: it used to be, added
+  // to the view's timestamp, and that was the bug — a counter running since mount got added to the
+  // timestamp of *every later fetch*, so the displayed clock ran ahead by however long the panel had
+  // been open. Anything that refetched (marking a mob dead, say) then measured a brand-new timer
+  // against a clock minutes in the future, and it rendered as 0:00 — a timer that looked like it
+  // had never restarted.
+  const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
   }, []);
-  return { view, tick };
+  // Captured once per **fetch** — `view` is a new object only when main sends one. Recomputing it
+  // every render would pin `now` to the moment of the fetch and the clock would stop dead.
+  const skew = useMemo(() => clockSkew(view.now, Date.now()), [view]);
+  return { view, now: Date.now() + skew };
 }
 
 /** The zone the player is currently in (from the log), or null if unknown. */

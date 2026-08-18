@@ -617,3 +617,26 @@ features for later in [../ideas.md](../ideas.md).
   flagged again while the next one still is. The case worth staging deliberately: install a build,
   then publish (or hand-edit a test release to announce) a *lower* version — nothing should appear.
   See [ADR 0064](../decisions/0064-every-build-has-a-number.md).
+
+## Spawn timers (ADRs 0092, 0094, 0097, 0098)
+
+Built, tested end to end against a replayed log, and **never run in the game**. What a real evening
+would settle that a fixture can't:
+
+- **Does the article test hold against real EQL mob names?** Everything rests on it. The flow tests
+  cover a player dying, a pet dying and a named killed by someone else — but EQL is not classic EQ
+  and a name shaped in a way we haven't imagined would put a wrong row on the board.
+- **Is `ERRATIC_RATIO` (1.5) set anywhere near right?** It's a judgement call, not a measurement.
+  A placeholder camp is what would tell you: if the warning fires on every mob, it's too tight.
+- **Does `MIN_RESPAWN_SECONDS` (90) throw away anything real?** A genuinely fast placeholder would
+  be silently discarded, and the symptom is a blank figure rather than an error.
+
+To exercise it without playing:
+
+```
+npm run sim -- --from fixtures/spawn-camp-eqlog.txt --relative
+```
+
+**`--relative` is not optional here.** The default stamps every line "now", which collapses the gaps
+the timers are learned from and makes the tab look broken — see the flag's note in
+`scripts/replay-log.mjs`.

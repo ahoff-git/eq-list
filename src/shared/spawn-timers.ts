@@ -135,7 +135,19 @@ export interface RespawnLearning {
  */
 export function provenNamed(kills: KillRecord[]): Set<string> {
   const named = new Set<string>();
-  for (const k of kills) if (k.named) named.add(mobKey(k.mob));
+  for (const k of kills) {
+    if (!k.named) continue;
+    // **The victim's name is only half the answer.** The log reports every death in earshot, and a
+    // player, a pet and a boss are all written without an article — so "Bunnyslayer has been slain
+    // by a froglok shaman!" reads exactly like a named dying. What separates them is who did the
+    // killing: a *person* kills a named, a *mob* kills a player or a pet. Without this a busy
+    // dungeon fills the board with every death that happened near you.
+    //
+    // Absent is unknown and starts nothing, for the same reason `named` absent does: one more kill
+    // settles it, and a clean list is worth more than a row we can't justify.
+    if (!k.killerNamed) continue;
+    named.add(mobKey(k.mob));
+  }
   return named;
 }
 
@@ -427,6 +439,27 @@ export function spawnState(timer: Pick<SpawnTimer, "watchFrom" | "dueAt" | "seen
 export function remainingMs(timer: Pick<SpawnTimer, "dueAt">, nowMs: number): number {
   const due = Date.parse(timer.dueAt);
   return Number.isNaN(due) ? 0 : due - nowMs;
+}
+
+/**
+ * How far ahead of this window's own clock the main process is, from a view it just sent.
+ *
+ * The countdowns are measured against **main's** clock, because main is what decides a timer is due
+ * and raises the banner — a row reading `0:00` while main still calls it waiting is the kind of
+ * disagreement nobody can debug from the screen. But a renderer has to re-render every second on
+ * its *own* clock, so the two are reconciled here, once per fetch, as an offset.
+ *
+ * An offset rather than a counter, and that distinction is the whole point: a free-running "seconds
+ * since I loaded this" **adds to** the timestamp of every later fetch, so the displayed clock runs
+ * ahead by however long the panel has been open, and every refetch makes it worse. Anchored to
+ * `Date.now()` there is nothing to accumulate.
+ *
+ * Unreadable input is no skew rather than a guess — the local clock is a fine approximation of a
+ * clock on the same machine, and `NaN` propagating into a countdown would blank every row.
+ */
+export function clockSkew(mainNow: string, localNow: number): number {
+  const parsed = Date.parse(mainNow);
+  return Number.isNaN(parsed) ? 0 : parsed - localNow;
 }
 
 /**

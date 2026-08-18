@@ -15,7 +15,19 @@
  *   npm run sim -- --from "C:\\path\\eqlog_You_server.txt"   # replay a real log
  *   npm run sim -- --to "C:\\path\\to\\Logs"                 # target dir or .txt file
  *   npm run sim -- --keep-timestamps  # don't restamp lines
+ *   npm run sim -- --relative         # restamp, but keep the original gaps between lines
  *   npm run sim -- --append           # append instead of starting fresh
+ *
+ * **Replaying anything the app measures in *time* wants `--relative`.** The default stamps every
+ * line with the moment it is written, so a log whose lines are minutes apart arrives with all of
+ * them inside the same second. That is fine for loot — an item dropped is an item dropped — and
+ * silently wrong for everything that reads a *duration*: a spawn timer learns from the gap between
+ * two kills, so a default replay taught it nothing and the feature simply looked broken. Fight
+ * lengths, the loot-to-corpse window and a position fix's age are all measured the same way.
+ *
+ * `--relative` keeps each line's offset from the one before and anchors the run so it *ends* now.
+ * The app reads the stamp on the line rather than the clock it was written at, so the gaps can be
+ * hours while the file is written in seconds.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -30,6 +42,7 @@ const jitter = Number(opt("jitter", 0));
 const loop = flag("loop");
 const lootOnly = flag("loot-only");
 const keepTs = flag("keep-timestamps");
+const relative = flag("relative");
 const append = flag("append");
 
 // A .txt path is used as-is; anything else is treated as a directory.
@@ -46,6 +59,38 @@ function eqStamp(d = new Date()) {
 }
 const stripStamp = (line) => line.replace(/^\[[^\]]*\]\s?/, "");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const MONTH_NO = Object.fromEntries(MON.map((m, i) => [m, i]));
+const STAMP_RE = /^\[\w{3} (\w{3}) ([ \d]?\d) (\d{2}):(\d{2}):(\d{2}) (\d{4})\]/;
+
+/** The moment a source line claims, or null when it carries no readable stamp. */
+function sourceTime(line) {
+  const m = line.match(STAMP_RE);
+  if (!m) return null;
+  const month = MONTH_NO[m[1]];
+  if (month === undefined) return null;
+  return new Date(Number(m[6]), month, Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])).getTime();
+}
+
+/**
+ * The stamp each line should carry when the source's own spacing is being kept.
+ *
+ * Anchored so the **last** line lands now: replaying an evening should leave the app looking like
+ * you have just finished playing it, not like you are about to start — and it keeps every line in
+ * the past, which is where a log's lines are. A line the source didn't stamp inherits the one
+ * before it, since a continuation belongs to the moment its own line did.
+ */
+function relativeTimes(lines) {
+  const times = lines.map(sourceTime);
+  const known = times.filter((t) => t !== null);
+  if (!known.length) return lines.map(() => Date.now());
+  const offset = Date.now() - known[known.length - 1];
+  let previous = known[0];
+  return times.map((t) => {
+    if (t !== null) previous = t;
+    return previous + offset;
+  });
+}
 
 function loadLines() {
   const all = fs.readFileSync(from, "utf8").split(/\r?\n/).filter((l) => l.trim().length);
@@ -72,12 +117,26 @@ async function main() {
   console.log(`[replay] from : ${from}`);
   console.log(`[replay] to   : ${target}`);
   console.log(`[replay] Point the app's Log folder at:  ${path.dirname(target)}`);
-  console.log(`[replay] ${lines.length} lines · ${interval}ms${jitter ? ` +${jitter}ms jitter` : ""}${loop ? " · looping" : ""}\n`);
+  const stamping = keepTs ? "original stamps" : relative ? "restamped, gaps kept" : "restamped to now";
+  console.log(
+    `[replay] ${lines.length} lines · ${interval}ms${jitter ? ` +${jitter}ms jitter` : ""}${loop ? " · looping" : ""} · ${stamping}`,
+  );
+  // Said out loud rather than left to be discovered: a replay that collapses every gap teaches
+  // anything time-based nothing at all, and the symptom is a feature that looks broken rather than
+  // an error anyone could search for.
+  console.log(
+    !keepTs && !relative
+      ? "[replay] note: every line is stamped 'now' — pass --relative to keep the gaps between them\n"
+      : "",
+  );
 
   do {
-    for (const line of lines) {
+    // Recomputed per pass, so a looping replay keeps landing "just now" rather than drifting one
+    // whole run further into the past each time round.
+    const stamps = relative ? relativeTimes(lines) : null;
+    for (const [i, line] of lines.entries()) {
       if (stopped) return;
-      const out = keepTs ? line : `${eqStamp()} ${stripStamp(line)}`;
+      const out = keepTs ? line : `${eqStamp(stamps ? new Date(stamps[i]) : new Date())} ${stripStamp(line)}`;
       fs.appendFileSync(target, `${out}\n`);
       console.log("→", out);
       await sleep(interval + (jitter ? Math.floor(Math.random() * jitter) : 0));

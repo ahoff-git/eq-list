@@ -363,7 +363,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onKill((event) => {
     combat.recordKill(event.target, event.at);
-    if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named)) {
+    if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named, event.killerNamed)) {
       killsChanged();
       // After the record, never before: the tracker learns from the kill log, so the kill that
       // starts a countdown has to already be in it for the second kill of a named to time it.

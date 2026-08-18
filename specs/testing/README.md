@@ -74,7 +74,26 @@ unit-tested.
     stacking, undoes a mis-clicked sighting, teaches the estimate nothing, and refuses to start a
     blank clock when there's no figure to count to) and the **round trips**: a typed interval can be
     set, changed, cleared and set again, and padding the same — the reversibility rule stated as
-    assertions, since it's the one that had quietly failed in the UI.
+    assertions, since it's the one that had quietly failed in the UI. Timers **added by hand** get
+    their own group: a row with nothing learned yet, a custom one with no zone that no kill can
+    restart, a hand-added mob the log later takes over as *one* row rather than two, and a removal
+    that takes everything set on it so a re-add starts clean. And **`clockSkew`** in the pure tests,
+    which is the panel's clock bug written down: an offset re-anchors on every fetch where a
+    free-running counter accumulated, making a fresh timer render 0:00.
+  - `electron/tests/spawn-flow.test.ts` — the spawn timers **end to end**, from raw log text to the
+    board the panel draws, through the same path `main.ts` uses (`splitLine` → `parseSplitLine` →
+    `killLog.record` → `spawns.noteKill` → `view`). The other two spawn suites talk to the tracker
+    directly, which is right for pinning rules and blind to the **joins** — and the joins are what
+    broke. Three use cases, one per way a player arrives at the feature: the **camper** (kills it
+    twice, gets a timer for nothing), the **arriver** (walks up to a camp with nothing on the board
+    and types one in), the **refiner** (camps a placeholder, sees the gaps disagree, and corrects
+    the figure with a sighting).
+
+    Then the part that earned its keep: **what else dies in earshot.** A player and a pet are
+    written exactly like a boss, and both used to become nameds — a busy dungeon would have filled
+    the board with corpses. It also reads `fixtures/spawn-camp-eqlog.txt` — the *actual replay
+    fixture* — so the log people test with cannot quietly stop exercising the feature, which is how
+    this went unnoticed in the first place: `sample-eqlog.txt` contains no named kill at all.
   - `src/shared/hunt.ts` → `electron/tests/hunt.test.ts` also covers **mob targets**
     ([ADR 0098](../decisions/0098-a-mob-is-a-thing-you-hunt.md)): that a mob entry is never an
     outstanding item, that a target lands in the zones you've killed it in and is still listed when

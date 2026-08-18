@@ -67,6 +67,23 @@ the row carrying the only control that could reverse it. So an editor with a val
 unset is a setting you cannot change your mind about, which for a figure the player is then asked to
 rely on is worse than not offering it.
 
+**A timer can be typed in, and a custom timer is the same thing.** `add(name, zone, seconds)` files a
+row the kill log didn't produce — a named you want timed before you've killed it twice, or picked up
+someone else's camp. The zone is optional and the interval is optional.
+
+That one call also answers "custom timers", and it does so by **not** distinguishing them. A label
+no kill line will ever match simply never restarts itself, so a boat, a port or a raid lockout
+behaves correctly with no branch anywhere about what kind of thing a row is — while a name that
+*is* a mob starts learning from the log the moment you kill it. Adding by hand also marks the name
+as a named, because adding it *is* the claim that it's worth timing, which is what the flag means
+here; for a label that is not a mob the flag is inert.
+
+Only a hand-added row may be **removed**, and it is removed without ceremony: it is exactly what the
+player typed, so taking it back costs nothing and needs no confirmation. A row the kill log produced
+has no remove at all, because it would come straight back on the next read — a button that doesn't
+work is worse than no button. What was *learned* is never deleted either way; it lives in the kill
+log, so re-adding a mob you have killed brings its history with it.
+
 **Notify is per mob and off by default.** The countdown still runs and still shows — silence is the
 difference between a list and an interruption. This *is* a change from what shipped: every tracked
 named used to alert. It is the right way round because tracking is automatic and camping is
@@ -99,6 +116,12 @@ Rejected alternatives:
   it does to kill gaps, so a misclick seconds after a kill teaches nothing.
 - The known row now carries five controls plus a checkbox, which is the most it can hold. The next
   thing added there wants a menu rather than a sixth button.
+- **How a mob gets on the list is now stated on the tab**, in one line above the rows. It reads as
+  hand-holding and earns its place: "why isn't that named here?" has two answers (kill it twice, or
+  add it) and neither is guessable from an empty list.
+- A hand-added row and a learned one are the same row once both exist, keyed the same way — so
+  adding a mob you later kill doesn't leave a duplicate, and the typed figure keeps outranking the
+  measured one exactly as it does anywhere else.
 - Nothing yet notices that a mob marked up has **stopped** being up without being killed (someone
   else took it). It stays `alive` until your next kill or an explicit clear, which is wrong but
   quietly so — and the alternative, expiring a fact the player asserted, is worse.

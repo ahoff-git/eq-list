@@ -31,6 +31,9 @@ function record(mob: string, sec: number, extra: Partial<KillRecord> = {}): Kill
     zone: ZONE,
     confidence: 1,
     named: true,
+    // Killed by you, which is what every one of these means — and now has to say, since a kill
+    // by a *mob* is how the log writes a player or a pet dying.
+    killerNamed: true,
     ...extra,
   };
 }
@@ -382,6 +385,103 @@ test("a sighting survives a restart, because it's evidence and not a mood", () =
 
   const second = harness({ kills, dir, startSec: 1500 });
   assert.equal(second.tracker.view().known.find((k) => k.key === KEY)?.respawn?.seconds, 500);
+});
+
+// ── timers added by hand ───────────────────────────────────────────────────────
+// One mechanism for two asks: a mob you haven't killed twice yet, and a custom countdown for
+// something that isn't a mob. A label no kill line matches simply never restarts itself.
+
+test("a hand-added mob appears with nothing learned, waiting to be timed", () => {
+  const h = harness();
+  h.tracker.add(MOB, ZONE);
+  const known = h.tracker.view().known;
+  assert.equal(known.length, 1);
+  assert.equal(known[0].mob, MOB);
+  assert.equal(known[0].added, true);
+  assert.equal(known[0].respawn, undefined, "added is not the same as timed");
+});
+
+test("a hand-added timer with an interval can be started at once", () => {
+  const h = harness();
+  const key = timerKey(MOB, ZONE);
+  h.tracker.add(MOB, ZONE, 600);
+  h.tick(100);
+  h.tracker.markDead(key);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.dueAt, iso(700));
+  assert.equal(timer.source, "stated");
+});
+
+test("a custom timer needs no zone, and no kill will ever restart it", () => {
+  const h = harness();
+  h.tracker.add("Boat to Butcherblock", "", 420);
+  const known = h.tracker.view().known[0];
+  assert.equal(known.place, "");
+  assert.equal(known.respawn?.seconds, 420);
+  // Nothing in the log is called this, so it simply never re-arms itself — which is the correct
+  // behaviour for a boat, reached without a single branch about what kind of thing it is.
+  h.tracker.noteKill("Boat to Butcherblock", null, iso(10), true);
+  assert.equal(h.tracker.view().running.length, 0);
+});
+
+test("killing a hand-added mob lets the log take over from what you typed", () => {
+  const h = harness();
+  const key = timerKey(MOB, ZONE);
+  h.tracker.add(MOB, ZONE);
+  // Adding it by hand is the claim that it's worth timing, so the kill log learns from it without
+  // waiting on the article test.
+  h.kills.push(record(MOB, 0, { named: false }), record(MOB, 900, { named: false }));
+  h.tracker.noteKill(MOB, ZONE, iso(900), false);
+  const known = h.tracker.view().known.find((k) => k.key === key);
+  assert.equal(known?.respawn?.seconds, 900);
+  assert.equal(known?.respawn?.source, "killed");
+});
+
+test("a hand-added row is one row, not two, once the log knows the mob as well", () => {
+  const h = harness();
+  h.tracker.add(MOB, ZONE);
+  h.kills.push(record(MOB, 0), record(MOB, 900));
+  h.tracker.noteKill(MOB, ZONE, iso(900), true);
+  assert.equal(h.tracker.view().known.length, 1);
+});
+
+test("removing a hand-added timer takes everything set on it", () => {
+  const h = harness();
+  const key = timerKey(MOB, ZONE);
+  h.tracker.add(MOB, ZONE, 600);
+  h.tracker.pad(key, 60);
+  h.tracker.notify(key, true);
+  h.tracker.markDead(key);
+  h.tracker.remove(key);
+  assert.equal(h.tracker.view().known.length, 0);
+  assert.equal(h.tracker.view().running.length, 0);
+  // Re-adding starts clean rather than inheriting what the old row was carrying.
+  h.tracker.add(MOB, ZONE);
+  const known = h.tracker.view().known[0];
+  assert.equal(known.respawn, undefined);
+  assert.equal(known.lead, undefined);
+  assert.equal(known.notify, false);
+});
+
+test("a hand-added timer survives a restart", () => {
+  const dir = tempDir();
+  const first = harness({ dir });
+  first.tracker.add("Boat to Butcherblock", "", 420);
+  first.tracker.flush();
+  const second = harness({ dir });
+  assert.equal(second.tracker.view().known[0].mob, "Boat to Butcherblock");
+  assert.equal(second.tracker.view().known[0].respawn?.seconds, 420);
+});
+
+test("a blank name adds nothing", () => {
+  const h = harness();
+  assert.equal(h.tracker.add("   ", ZONE), null);
+  assert.equal(h.tracker.view().known.length, 0);
+});
+
+test("a row the kill log produced offers no remove, since it would come straight back", () => {
+  const h = timed();
+  assert.equal(h.tracker.view().known[0].added, false);
 });
 
 // ── "it's dead now" ────────────────────────────────────────────────────────────

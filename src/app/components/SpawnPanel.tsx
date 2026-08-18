@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { useSpawns } from "@/lib/hooks";
+import { useCurrentZone, useSpawns } from "@/lib/hooks";
 import {
   countdownMs,
   describeRespawn,
@@ -37,25 +37,32 @@ import type { KnownSpawn, RunningSpawn } from "@/shared/types";
  * deciding where to sit. A mob is normally in both.
  */
 export default function SpawnPanel() {
-  const { view, tick } = useSpawns();
-  // Main's clock at the last fetch, carried forward by this window's own second hand — so a row
-  // agrees with the process that decides a timer is due rather than with this machine's `Date`.
-  // Before the first view lands there is no such clock; ours is the only honest stand-in, and it is
-  // never read, because a view with no clock has no rows either.
-  const fetched = Date.parse(view.now);
-  const now = (Number.isNaN(fetched) ? Date.now() : fetched) + tick * 1000;
+  // `now` is main's clock as this window should read it: a row must agree with the process that
+  // decides a timer is due, or it can read 0:00 while main still calls it waiting.
+  const { view, now } = useSpawns();
 
-  if (!view.running.length && !view.known.length && !view.dismissed.length) {
-    return (
-      <Empty
-        title="No spawn timers yet"
-        hint="Kill a named twice in the same place and its respawn is timed from the gap between them. Nothing to set up — the log does it."
-      />
-    );
-  }
+  const bare = !view.running.length && !view.known.length && !view.dismissed.length;
 
   return (
     <div className="spawns">
+      <AddTimer />
+
+      {/* Said once, at the top, because "why is this list empty / why isn't that mob here" is the
+          question the tab otherwise leaves you to guess at. Two routes in, and the automatic one
+          needs no action at all — which is worth knowing before you go looking for a button. */}
+      <p className="spawn-how small">
+        Nameds are added <b>automatically</b>: kill one twice in the same place and the gap between
+        your kills becomes its timer. Add one by hand for a camp you haven&rsquo;t killed through yet — or
+        for anything else worth a countdown.
+      </p>
+
+      {bare && (
+        <Empty
+          title="No timers yet"
+          hint="Go and kill a named twice, or add one above. Nothing else to set up — the log does the rest."
+        />
+      )}
+
       {view.running.length > 0 && (
         <section className="spawn-running">
           <h2>Coming up</h2>
@@ -75,6 +82,104 @@ export default function SpawnPanel() {
       )}
 
       {view.dismissed.length > 0 && <NotTracked mobs={view.dismissed} />}
+    </div>
+  );
+}
+
+/**
+ * Putting a timer on the board by hand.
+ *
+ * One form for two things the user asked for separately, because they turned out to be the same
+ * thing: a **mob** you want timed before the log has seen you kill it twice, and a **custom timer**
+ * for something that isn't a mob at all. A label no kill line will ever match simply never restarts
+ * itself — so a boat, a port or a raid lockout behaves correctly without a single branch, while a
+ * name that *is* a mob starts learning from the log the moment you kill it.
+ *
+ * The zone is optional for exactly that reason: not everything worth a countdown is somewhere. It
+ * defaults to where you are, since a camp is the common case and re-typing your own zone is the
+ * kind of friction that stops people using a feature.
+ */
+function AddTimer() {
+  const zone = useCurrentZone();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [place, setPlace] = useState("");
+  const [every, setEvery] = useState("");
+
+  // Opening seeds the zone rather than binding to it: you might be adding a timer for somewhere
+  // you're not standing, and a field that rewrites itself as you zone would be unusable.
+  const start = () => {
+    setPlace(zone ?? "");
+    setName("");
+    setEvery("");
+    setOpen(true);
+  };
+
+  const seconds = parseDelay(every);
+  const blankInterval = !every.trim();
+  const badInterval = !blankInterval && (seconds === null || seconds <= 0);
+  const canAdd = !!name.trim() && !badInterval;
+
+  const submit = () => {
+    if (!canAdd) return;
+    void api()?.spawns.add(name.trim(), place.trim(), blankInterval ? null : seconds);
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <div className="spawn-add-bar">
+        <button className="btn sm" onClick={start}>
+          ＋ Add a timer
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="spawn-add">
+      <input
+        autoFocus
+        className="sa-name"
+        value={name}
+        placeholder="Name — a mob, or anything else"
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+          if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      <input
+        className="sa-place"
+        value={place}
+        placeholder="Where (optional)"
+        onChange={(e) => setPlace(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+          if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      <input
+        className="sa-every"
+        value={every}
+        placeholder="Every… e.g. 22m"
+        onChange={(e) => setEvery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+          if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      <button className="btn sm" disabled={!canAdd} onClick={submit}>
+        Add
+      </button>
+      <button className="btn ghost sm" onClick={() => setOpen(false)}>
+        Cancel
+      </button>
+      <small className={badInterval ? "bad" : ""}>
+        {badInterval
+          ? "Can't read that — try 22m, 6m 30s, or a number of seconds."
+          : "Leave the interval blank to add the row now and time it later."}
+      </small>
     </div>
   );
 }
@@ -244,9 +349,22 @@ function KnownRow({ known }: { known: KnownSpawn }) {
             Relearn…
           </button>
         )}
-        <button className="btn sm" title="Stop timing this mob" onClick={() => toggle("dismiss")}>
-          Not a named…
-        </button>
+        {/* A hand-added row is the player's own; removing it takes back exactly what they typed,
+            so it needs no confirmation and no "not a named" framing — that button is about
+            correcting the log, and there is no log entry here to correct. */}
+        {known.added ? (
+          <button
+            className="btn sm"
+            title="Take this timer off the board"
+            onClick={() => void api()?.spawns.remove(known.key)}
+          >
+            Remove
+          </button>
+        ) : (
+          <button className="btn sm" title="Stop timing this mob" onClick={() => toggle("dismiss")}>
+            Not a named…
+          </button>
+        )}
       </span>
 
       {caveat && <p className="spawn-caveat">{caveat}</p>}
