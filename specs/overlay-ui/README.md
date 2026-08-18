@@ -419,6 +419,18 @@ list, hunt, search, damage, session, settings.
     carries the live rule count, or `(off)`, since a silenced overlay looks exactly like a quiet one.
   - `SettingsPanel` — log folder, match mode, window opacity / interface + map scale, keep-completed,
     follow-your-zone,
+    **"Check my setup"** (`SelfCheck` — one button that walks everything the app needs and names the
+    first thing that isn't right. It sits **first in the tab**, because Settings is where you land
+    when nothing is happening and the check's answer is nearly always about the controls immediately
+    below it — diagnosis, then the knobs that fix what it named. A **chain rather than a checklist**
+    ([ADR 0100](../decisions/0100-a-setup-check-is-a-chain.md)): a step whose prerequisite failed
+    reports *not checked* naming what it waits on, so one missing folder shows as one red row and
+    five patient ones rather than six faults. Rows are in dependency order and every one says what it
+    **found**, pass included — `Following eqlog_Kainos_pq.proj.txt` is the green row that solves the
+    "it's watching a character I'm not playing" case on its own. **Copy report** hands the whole
+    thing over as plain text, advice included, for a bug report. On demand only, since it reads the
+    disk and pings the wiki and a cached verdict is worth nothing to somebody who just changed a
+    setting),
     **"Eat a log file"** (a **catch-up**: digest a past log into every bucket it can fill — learned
     mob data, the **Damage tab's history** one play session per login with the fights whole, and the
     **loot feed** with the prices it teaches; see `electron/log-import.ts`,

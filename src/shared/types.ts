@@ -1,4 +1,5 @@
 import type { DataReportRow } from "./data-provenance";
+import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { Respawn, RespawnLearning, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { EqMap } from "./map/eqmap";
@@ -2226,6 +2227,16 @@ export interface EqlApi {
      * live events say nothing about a whole file changing underneath.
      */
     onDataChanged(cb: () => void): Unsubscribe;
+    /**
+     * Run the setup check: every step the app needs in order to do anything, in the order they
+     * depend on each other, with the first broken link named and the rest reported as not-yet-checked
+     * rather than as further faults. The steps and the skip rule are in
+     * [self-check.ts](./self-check.ts); the looking is `electron/self-check.ts`.
+     *
+     * Always on demand — it touches the disk and the network, and a cached answer is worth nothing
+     * to somebody who just changed a setting and pressed the button to see whether it helped.
+     */
+    selfCheck(): Promise<CheckResult[]>;
   };
   search: {
     /** Fires when a screengrab lookup fills the Search box with OCR'd text. */

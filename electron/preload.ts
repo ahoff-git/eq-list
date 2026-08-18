@@ -142,6 +142,7 @@ const api: EqlApi = {
     info: () => ipcRenderer.invoke(CH.appInfo),
     openLog: () => ipcRenderer.invoke(CH.appOpenLog),
     dataHealth: () => ipcRenderer.invoke(CH.dataHealth),
+    selfCheck: () => ipcRenderer.invoke(CH.selfCheck),
     onDataChanged: (cb) => on(CH.dataChanged, cb),
   },
   search: {

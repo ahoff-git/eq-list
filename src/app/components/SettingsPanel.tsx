@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
 import LogSettings from "./LogSettings";
+import SelfCheck from "./SelfCheck";
 import DataHealth from "./DataHealth";
 import { percent } from "@/shared/format";
 import { CheckField } from "./ui";
@@ -28,6 +29,10 @@ export default function SettingsPanel() {
 
   return (
     <div>
+      {/* First, deliberately. Settings is where you land when something isn't working, and the
+          check's answer is nearly always about the controls immediately below it — so it reads
+          diagnosis first, then the knobs that fix what it named. */}
+      <SelfCheck />
       <LogSettings settings={settings} patch={patch} />
       {/* Above Forget, deliberately: "this needs re-reading" and "throw this away" are neighbouring
           thoughts, and the recoverable one should be met first. */}

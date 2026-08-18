@@ -1223,6 +1223,58 @@ button {
   letter-spacing: 0;
 }
 
+/* ── setup check (which step of the chain broke) ── */
+/* Same shape as the data-health rows above, one prefix along, and coloured on the same principle:
+   only a row wanting attention is coloured, so the eye lands on the one that matters rather than
+   on a wall of green ticks. */
+.chk-verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.chk-verdict.fail { border-color: color-mix(in srgb, var(--bad) 55%, transparent); background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.chk-verdict.warn { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.chk-verdict.pass { border-color: color-mix(in srgb, var(--good) 45%, transparent); }
+.chk-tally { margin-left: auto; flex: none; color: var(--text-dim); white-space: nowrap; }
+.chk-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.chk-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.chk-row.fail { border-color: color-mix(in srgb, var(--bad) 55%, transparent); background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.chk-row.warn { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+/* A skipped row is deliberately the quietest thing on screen: it is waiting, not complaining. */
+.chk-row.skip { opacity: 0.6; }
+.chk-head { display: flex; align-items: baseline; gap: 8px; }
+.chk-state {
+  flex: none;
+  min-width: 12ch;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.chk-state.pass { color: var(--good); }
+.chk-state.warn { color: var(--accent); }
+.chk-state.fail { color: var(--bad); }
+.chk-label { font-weight: 600; }
+/* What was found is the row's substance; the stakes and the remedy are supporting notes. */
+.chk-detail { color: var(--text); }
+.chk-matters { color: var(--text-dim); }
+.chk-fix { color: var(--accent); }
+.chk-said { display: block; margin-top: 8px; color: var(--good); }
+
 /* ── settings ────────────────────────────────────────────────── */
 .setting {
   display: flex;

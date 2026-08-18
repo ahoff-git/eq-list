@@ -266,3 +266,33 @@ export async function fetchOutEraCategorySet(): Promise<Set<string>> {
   }
   return set;
 }
+
+/**
+ * Is the wiki answering, and how quickly — the `wiki` step of the setup check.
+ *
+ * Its own request rather than a borrowed `opensearch`, for two reasons that both matter to a
+ * diagnostic: it wants the **smallest** thing the API will answer (`meta=siteinfo` is a few hundred
+ * bytes, so a slow answer means a slow network rather than a big page), and it wants a **short**
+ * deadline — `apiGet`'s twenty seconds is right for a page fetch behind a spinner and far too long
+ * for a button somebody is watching.
+ *
+ * Never throws: "we couldn't reach it, and here's what happened" is the answer, not an error.
+ */
+export async function pingWiki(timeoutMs = 6000): Promise<{ ok: boolean; detail: string }> {
+  const started = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const url = `${API}?${new URLSearchParams({ format: "json", action: "query", meta: "siteinfo" })}`;
+    const res = await fetch(url, { headers: { "User-Agent": UA }, signal: ctrl.signal });
+    const took = Date.now() - started;
+    if (!res.ok) return { ok: false, detail: `${WIKI_BASE} answered HTTP ${res.status} after ${took} ms.` };
+    return { ok: true, detail: `${WIKI_BASE} answered in ${took} ms.` };
+  } catch (err) {
+    const took = Date.now() - started;
+    const why = (err as Error)?.name === "AbortError" ? `no answer within ${timeoutMs} ms` : String(err);
+    return { ok: false, detail: `Couldn't reach ${WIKI_BASE} (${why}, after ${took} ms).` };
+  } finally {
+    clearTimeout(timer);
+  }
+}

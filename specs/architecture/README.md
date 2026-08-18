@@ -49,6 +49,12 @@ in the main process and all UI in the renderer.
   - `store.ts` — the one source of truth: shopping list + settings (persisted to
     `userData`), plus loot→list matching.
   - `log-watcher.ts` — tails the EQ log; see [log-watching](../log-watching/README.md).
+  - `self-check.ts` — "why isn't it doing anything?", answered as a chain of steps with the first
+    broken link named and everything downstream reported as *not checked yet* rather than as further
+    faults. The judging (the step table, the skip rule, the verdict) is pure and shared in
+    `src/shared/self-check.ts`; this is the looking, with the network and the alert window injected
+    by `ipc.ts` so the whole thing tests without Electron. See
+    [ADR 0100](../decisions/0100-a-setup-check-is-a-chain.md).
   - `log-cursor.ts` — how far each log has been read, kept across restarts, so the app's state
     doesn't depend on when it was launched
     ([ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md)).

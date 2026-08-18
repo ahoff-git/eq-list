@@ -8,12 +8,13 @@ import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_OPACITY, p99ZoneUrl } from "../src/shared/constants";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
-import { WIKI_BASE } from "./wiki/api";
+import { WIKI_BASE, pingWiki } from "./wiki/api";
 import { importLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { createTravelRouter } from "./travel-graph";
 import { sampleAlert, sampleRecord } from "./alert-router";
 import { dataReport } from "./data-health";
+import { selfCheck } from "./self-check";
 import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, showInSearch } from "./windows";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
 import type { Store } from "./store";
@@ -406,6 +407,22 @@ function registerAppIpc(context: IpcContext): void {
   // stamp only changes when its store is written, and a stale answer here is the one thing this
   // feature exists to prevent.
   ipcMain.handle(CH.dataHealth, () => dataReport(context.userData));
+  // "Why isn't it doing anything?" — the whole chain, run on demand, with the first broken link
+  // named (ADR 0100). The window question is answered here rather than inside the checker, which
+  // is what keeps that module testable without Electron.
+  ipcMain.handle(CH.selfCheck, () =>
+    selfCheck({
+      getSettings: () => context.store.getSettings(),
+      getList: () => context.store.getList(),
+      watcherStatus: () => context.watcher.status(),
+      userDataDir: context.userData,
+      alertOverlayUp: () => {
+        const overlay = getAlertWindow();
+        return !!overlay && !overlay.isDestroyed();
+      },
+      pingWiki: () => pingWiki(),
+    }),
+  );
   ipcMain.handle(CH.appOpenLog, () => shell.openPath(logFile));
   // Monitors, for choosing where the alert overlay appears (Settings → cast alerts).
   ipcMain.handle(CH.displaysList, () => {

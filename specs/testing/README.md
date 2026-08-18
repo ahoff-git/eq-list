@@ -181,6 +181,22 @@ unit-tested.
     declared itself stale for ever. Includes a **data-integrity pass over the shipped concern table**
     (unique ids, no `unstamped` above its revision, a `changed` sentence wherever a concern is stale by
     default, a command on every `script` remedy) — the category this file notes we otherwise lack.
+  - `src/shared/self-check.ts` + `electron/self-check.ts` → `electron/tests/self-check.test.ts`
+    ([ADR 0100](../decisions/0100-a-setup-check-is-a-chain.md)). The **chain rule** is pinned against
+    a made-up three-step table rather than the shipped catalogue, so checks can be added without
+    rewriting the tests: a failed step skips everything downstream *and the skip propagates*, a
+    **warn does not block**, a probe that throws is a failed row carrying the error rather than an
+    exception out of the run, a step with no probe says so instead of passing quietly, and the
+    verdict names the **first** problem in chain order while a fail anywhere still outranks a warn.
+    The probes run against a real temp folder, because every claim they make is about the disk: no
+    folder set (and the whole log chain skipping while the independent checks still run), a folder
+    with no `eqlog_*` in it, a **pinned file of any name** counting as a log to watch (the watcher
+    follows the path it's given, so asking only about `eqlog_*.txt` would invent a fault over a
+    working setup), a **pinned file that isn't there** told apart from having no logs at all, a live log reading through to its character name, a log **aged a day** warning rather than
+    failing, a file with no timestamps failing on its lines while the event step waits, a log of pure
+    chat warning, the watcher's own error quoted rather than re-derived, an unwritable data folder,
+    an unreachable wiki, the three ways alerts fail to reach the screen, and an empty list. The
+    network and the alert window are injected, so nothing here touches either.
   - `src/shared/fuzzy.ts` → `electron/tests/fuzzy.test.ts` (typo/transposition/
     partial/word-order matching and ranking).
   - `src/shared/grouping.ts` → `electron/tests/grouping.test.ts` (grouping by origin,

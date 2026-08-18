@@ -78,6 +78,7 @@ export const CH = {
   appInfo: "app:info",
   appOpenLog: "app:openLog",
   dataHealth: "data:health", // which stored data the rules have moved on from
+  selfCheck: "app:selfCheck", // run the setup chain and report which step broke
   displaysList: "displays:list",
   // update notification (rolling "latest" build; see ADR 0013)
   updateCurrent: "update:current",

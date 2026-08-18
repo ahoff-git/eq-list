@@ -562,6 +562,20 @@ features for later in [../ideas.md](../ideas.md).
   this character's records, leave another character's alone, and **not** re-seed itself from history on
   the next look.
 
+- **"Check my setup", against a real install.** ([ADR 0100](../decisions/0100-a-setup-check-is-a-chain.md).)
+  The chain and its probes are unit-tested against temp folders, so what's unverified is whether the
+  **wording matches a real Windows install** and whether the checks say the right thing at the moments
+  they exist for. On a working setup, first confirm the boring case: press it while playing and every
+  row is green, with "The log we're following" naming the character you're actually on and "The game's
+  own map files" naming a real path. Then cause each fault in turn and confirm exactly **one** red row
+  with the rest patient: point the log folder at somewhere that doesn't exist; point it at a real
+  folder with no `eqlog_*` in it; pin a "Specific log file" that isn't there — and, the other way, pin a log you copied in
+  under some name of your own and confirm it's **accepted** rather than reported missing; and — the one this
+  feature was built for — **type `/log off` in game**, play for ten minutes, and confirm the check
+  says the log is stale and names `/log on` rather than reporting everything fine. Finally, pull the
+  network and confirm the wiki row goes amber while the log rows stay green, and that **Copy report**
+  produces text worth pasting into an issue.
+
 ## Peer networking — two clients
 
 - **Connected users, two clients.** With peer networking on, confirm the 👥 panel lists the other
