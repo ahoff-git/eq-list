@@ -361,6 +361,9 @@ if (!app.requestSingleInstanceLock()) {
       broadcast(CH.lootMatched, { event, entry });
     }
   });
+  // Considering or hailing a mob you're timing counts as seeing it up — free evidence from what a
+  // camper does anyway, through exactly the path the "It's up" button uses (ADR 0097).
+  watcher.onSighting((event) => spawns.noteSighting(event.target, currentZone));
   watcher.onKill((event) => {
     combat.recordKill(event.target, event.at);
     if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named, event.killerNamed)) {

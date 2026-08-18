@@ -138,6 +138,21 @@ export interface KillEvent extends LogEventBase {
   killerNamed: boolean;
 }
 
+/**
+ * You considered something, or hailed it — either way it is **in front of you and alive**.
+ *
+ * Not a faction reading or a greeting, as far as this app is concerned: it is a free sighting of a
+ * mob, which for one being timed is the tightest evidence available and arrives from what a camper
+ * does anyway ([ADR 0097](../../specs/decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md)).
+ */
+export interface SightingEvent extends LogEventBase {
+  kind: "sighting";
+  /** As the log wrote it, article and all — the reader folds it (`mobKey`). */
+  target: string;
+  /** Which line said so. Kept because a hail is deliberate and a consider is a glance. */
+  how: "consider" | "hail";
+}
+
 /** A parsed "Your Location is Y, X, Z" line (EQ reports y first). Drives the map. */
 export interface LocEvent extends LogEventBase {
   kind: "loc";
@@ -203,6 +218,7 @@ export type LogEvent =
   | LevelEvent
   | CoinEvent
   | LoginEvent
+  | SightingEvent
   | PartyEvent;
 
 // ─── Combat events (see combat-parser.ts) ───────────────────────────────────
@@ -1242,6 +1258,14 @@ export interface KillRecord {
 /** A countdown on the board: the stored timer, plus where it has got to. */
 export interface RunningSpawn extends SpawnTimer {
   state: SpawnState;
+  /** Draw this countdown over the game for as long as it runs — see `SpawnView.running`. */
+  onScreen: boolean;
+  /**
+   * The saved style this timer wears, if any — the **id**, resolved by whoever draws it. A banner's
+   * look is fixed when it fires; a pinned countdown is a live readout, so restyling one moves it
+   * while it runs.
+   */
+  styleId?: string;
 }
 
 /** What's known about one named, whether or not it's counting down right now. */
@@ -1259,6 +1283,16 @@ export interface KnownSpawn extends RespawnLearning {
    * alerting for all of them would interrupt an evening for mobs you aren't camping.
    */
   notify: boolean;
+  /**
+   * A **saved** style (`CastAlertSettings.styles`) for its pop; absent wears the alert defaults.
+   * Never a look of its own — one style editor, in one place (ADRs 0086, 0090, 0093).
+   */
+  styleId?: string;
+  /**
+   * Keep its countdown on screen over the game. Unlike `notify`, which is about a *moment*, this is
+   * a dial to glance at: "how long left" shouldn't cost a window switch away from the fight.
+   */
+  onScreen: boolean;
   /**
    * The figure that would actually be used and where it came from — absent until there have been
    * two comparable kills and nobody has typed one, which is a blank rather than a guess.
@@ -2120,6 +2154,13 @@ export interface EqlApi {
     remove(key: string): Promise<SpawnView>;
     /** Whether this mob's pop raises a banner. Off by default. */
     notify(key: string, on: boolean): Promise<SpawnView>;
+    /**
+     * Which saved style its pop wears — `null` for the alert defaults. A saved style or nothing:
+     * looks are made and edited in the Alerts tab, and there is exactly one place that happens.
+     */
+    style(key: string, styleId: string | null): Promise<SpawnView>;
+    /** Keep this countdown on screen over the game while it runs. */
+    showOnScreen(key: string, on: boolean): Promise<SpawnView>;
     /**
      * Correct the article test about a mob: `true` rescues a named the log wrote with an article,
      * `false` silences something that was never a named at all.

@@ -50,6 +50,23 @@ guessed, `alive` is what you saw, and the screen must never show them the same w
 
 **An alive mob never alerts.** You are looking at it. A banner is pure noise.
 
+**And you don't always have to say it: a consider or a hail counts.** Both lines mean the same
+useful thing — *that mob is in front of you, alive, right now* — and both arrive from what a camper
+does anyway, since you con a named before you pull it. `parseSighting` reads them and the tracker
+routes them through `markUp` itself, so an automatic sighting and a clicked one can never come to
+mean different things.
+
+Two guards make it safe, and both matter because a sighting feeds a ratchet that only tightens:
+
+- **It only ever reaches a timer already counting down.** Considering a trash mob names nothing we
+  track, and a mob with no running timer has no `killedAt` to measure from. That one rule keeps the
+  board free of everything a player looks at on the way to a camp.
+- **The consider vocabulary is a closed set and fails closed.** EQ writes `<name> <regard> --
+  <how it would go>`, and the regard is faction — one of a fixed list, not free text. Matching that
+  list rather than "anything before a `--`" is what stops group chat with a dash in it reading as a
+  sighting. A wording we don't know reads as nothing, which costs a player one click where a false
+  positive would be permanent.
+
 **And you can say the opposite: it's dead now.** `markDead` starts a countdown from this moment, or
 restarts one already running — the hand-operated twin of a kill line, for the cases the log cannot
 help with: the app wasn't watching when you killed it, you're picking up a camp someone else was
@@ -111,6 +128,9 @@ Rejected alternatives:
 - `SpawnState` reaches five states (`waiting | window | up | alive | stale`). That is the most this
   can carry before the row stops being readable at a glance, and any further nuance should go in the
   note rather than the clock.
+- Considering is now load-bearing in a way the game never intended, so the regard list is a thing
+  that can go stale — EQL is not classic EQ. It failing closed means the symptom is "my cons stopped
+  helping", not a wrong timer.
 - A sighting is only as good as the click. Marking the wrong mob up tightens a timer permanently,
   which is what `relearn` is for — and why the implausible-gap floor applies to sightings exactly as
   it does to kill gaps, so a misclick seconds after a kill teaches nothing.

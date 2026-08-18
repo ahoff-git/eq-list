@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api";
 import { percent } from "@/shared/format";
-import { useRead, useSettings } from "@/lib/hooks";
+import { useLogVocabulary, useRead, useSettings } from "@/lib/hooks";
 import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
 import AlertStyleFields from "./AlertStyleFields";
 import StyleRow from "./StyleRow";
@@ -19,8 +19,6 @@ import {
 } from "@/shared/alert-styles";
 import type { LibraryRule } from "@/shared/watch-library";
 import { CheckField } from "./ui";
-import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
-import { parseLogText } from "@/shared/log-parser";
 import type { AlertStyle, CastWatch, DeepPartial, DisplayInfo, NamedAlertStyle, Settings } from "@/shared/types";
 
 /** A stable empty, so a render before the monitor list arrives doesn't look like a change. */
@@ -68,12 +66,7 @@ export default function AlertsPanel() {
    * into a trie here rather than per field, since every box on the tab draws on the same words and
    * rebuilding it per keystroke is exactly what the structure exists to avoid.
    */
-  const [vocabulary, setVocabulary] = useState<Vocabulary>(NO_VOCABULARY);
-  useEffect(() => {
-    void api()
-      ?.log.recent()
-      .then((tail) => setVocabulary(buildVocabulary(parseLogText(tail?.text ?? ""))));
-  }, []);
+  const vocabulary = useLogVocabulary();
 
   // After the hooks, never before them: an early return above would change the hook order.
   if (!settings) return <p className="muted">Loading alerts…</p>;

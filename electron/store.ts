@@ -14,6 +14,7 @@ import { createLogger } from "../src/shared/logging";
 import { stripArticle } from "../src/shared/log-parser";
 import { isMobEntry, normalizeItemName, originKey } from "../src/shared/grouping";
 import { MAP_UI_SCALE, clampScale, clampUiScale } from "../src/shared/constants";
+import { BUILT_IN_STYLES, RECORD_STYLE_ID } from "../src/shared/alert-styles";
 import { readJson, writeJson } from "./json-store";
 import type {
   ShoppingList,
@@ -65,11 +66,17 @@ const DEFAULT_SETTINGS: Settings = {
     durationMs: 6000,
     animation: "pulse",
     locations: [], // custom spots the user places with the mouse (Settings → Alert style)
+    // The looks the app ships with, so a record and a spawn don't arrive dressed as the same
+    // emergency a dispel prompt is (`BUILT_IN_STYLES`). Ordinary saved styles — editable, renamable,
+    // deletable — and `migrations.ts` adds any a settings file predates.
+    styles: [...BUILT_IN_STYLES],
   },
   // On by default: the board fills itself in whether or not anything is said, and a record you
   // weren't told about is one you find by going looking — which is the opposite of the point.
-  // No `styleId`, so a celebration wears the alert defaults until you give it a saved style.
-  highScores: { celebrate: true },
+  // Wearing the shipped **Record** look rather than the alert defaults: a personal best is news, not
+  // a warning, and it should not arrive in the same red as "dispel now". Any saved style, or none,
+  // replaces it in the Records tab.
+  highScores: { celebrate: true, styleId: RECORD_STYLE_ID },
   overlay: {
     opacity: 0.9,
     fontScale: 0.9,

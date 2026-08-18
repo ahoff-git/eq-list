@@ -80,19 +80,24 @@ function app(startMs: number) {
       const line = splitLine(raw, logId);
       if (!line) continue;
       logId += 1;
+      // The clock moves *before* the line is handled: a line's own timestamp is the moment it
+      // happened, and anything reading `now()` while handling it — a sighting measuring how long
+      // since the kill, a timer deciding whether it is already due — must see that moment rather
+      // than the one before it.
+      const at = Date.parse(line.at);
+      if (!Number.isNaN(at)) nowMs = at;
       const event = parseSplitLine(line);
       if (!event) continue;
       if (event.kind === "zone") currentZone = event.zone;
       if (event.kind === "loc") killLog.noteLoc(event, currentZone);
+      // Considering or hailing a mob you're timing is a free sighting (ADR 0097).
+      if (event.kind === "sighting") spawns.noteSighting(event.target, currentZone);
       if (event.kind === "kill") {
         // Main's order, and it is load-bearing: record first, then tell the tracker.
         if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named, event.killerNamed)) {
           spawns.noteKill(event.target, currentZone, event.at, event.named);
         }
       }
-      // The clock follows the log, so a line's own timestamp is "now" for everything after it.
-      const at = Date.parse(line.at);
-      if (!Number.isNaN(at)) nowMs = at;
     }
   }
 
@@ -388,4 +393,57 @@ test("watched log: re-reading it changes nothing, so replaying is safe", () => {
   // The same lines again — a re-import, or a log eaten after it was watched live (ADR 0033).
   a.feed(text);
   assert.equal(JSON.stringify(a.view().known), first, "a replayed log must not double its evidence");
+});
+
+// ── Looking at it counts ───────────────────────────────────────────────────────
+// You consider a named before you pull it, and you hail one to see if it talks. Both say the same
+// useful thing — it is in front of you, alive — so both are free sightings.
+
+test("flow: considering a mob you're timing counts as seeing it up", () => {
+  const a = app(T0);
+  a.feed([entered(T0, "Lower Guk"), slain(T0 + 2 * MIN, "Ghoul Lord"), slain(T0 + 20 * MIN, "Ghoul Lord")].join("\n"));
+  assert.equal(rowFor(a.view(), "Ghoul Lord")?.respawn?.seconds, 18 * 60);
+
+  // Nine minutes later it's back, and the camper cons it before pulling.
+  a.feed(`${stamp(T0 + 29 * MIN)} Ghoul Lord glares at you threateningly -- looks kind of dangerous.`);
+
+  const row = rowFor(a.view(), "Ghoul Lord");
+  assert.equal(row?.respawn?.seconds, 9 * 60, "half what the kill gaps claimed, learned for free");
+  assert.equal(row?.respawn?.source, "seen");
+  assert.equal(a.view().running[0].state, "alive");
+});
+
+test("flow: hailing it counts too", () => {
+  const a = app(T0);
+  a.feed([entered(T0, "Lower Guk"), slain(T0 + 2 * MIN, "Ghoul Lord"), slain(T0 + 20 * MIN, "Ghoul Lord")].join("\n"));
+  a.feed(`${stamp(T0 + 30 * MIN)} You say, 'Hail, Ghoul Lord'`);
+  assert.equal(a.view().running[0].state, "alive");
+  assert.equal(rowFor(a.view(), "Ghoul Lord")?.respawn?.source, "seen");
+});
+
+test("flow: considering things you are not timing changes nothing", () => {
+  const a = app(T0);
+  a.feed([entered(T0, "Lower Guk"), slain(T0 + 2 * MIN, "Ghoul Lord"), slain(T0 + 20 * MIN, "Ghoul Lord")].join("\n"));
+  // Everything except the clock, which moves with the log whatever happens.
+  const board = () => JSON.stringify({ running: a.view().running, known: a.view().known });
+  const before = board();
+  a.feed(
+    [
+      // A camper cons half the room on the way to the camp. None of it is a mob with a timer, and
+      // none of it may put a row on the board or touch one.
+      `${stamp(T0 + 22 * MIN)} a froglok tad regards you indifferently -- this opponent looks like an even fight.`,
+      `${stamp(T0 + 23 * MIN)} Someguy kindly considers you -- what would you like your tombstone to say?`,
+      `${stamp(T0 + 24 * MIN)} You say, 'Hail, a guard'`,
+    ].join("\n"),
+  );
+  assert.equal(board(), before);
+});
+
+test("flow: a sentence that merely contains a dash is not a consider", () => {
+  const a = app(T0);
+  a.feed([entered(T0, "Lower Guk"), slain(T0 + 2 * MIN, "Ghoul Lord"), slain(T0 + 20 * MIN, "Ghoul Lord")].join("\n"));
+  a.feed(`${stamp(T0 + 25 * MIN)} Someguy tells the group, 'Ghoul Lord -- up now?'`);
+  // The regard vocabulary is what makes this safe: matching "anything before a --" would have read
+  // chat as a sighting, and a sighting can only ever tighten a figure.
+  assert.notEqual(a.view().running[0].state, "alive");
 });

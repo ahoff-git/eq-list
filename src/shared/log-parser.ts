@@ -38,6 +38,7 @@ import type {
   LevelEvent,
   LoginEvent,
   PartyEvent,
+  SightingEvent,
 } from "./types";
 
 const MONTHS: Record<string, number> = {
@@ -354,6 +355,62 @@ const PARTY_PATTERNS: { re: RegExp; change: PartyEvent["change"]; whenYou: Party
   // Group chat — see above. Deliberately last: it's the loosest pattern here.
   { re: /^(?<who>.+?) tells the group, /, change: "joined", whenYou: null },
 ];
+
+/**
+ * The **regard** half of a consider line, as a closed set.
+ *
+ * EQ writes a consider as `<name> <regard> -- <how it would go>`, and the regard is faction, so the
+ * wording is one of a fixed list rather than free text. Matching the list — instead of "anything
+ * before a `--`" — is what stops a chat line with a dash in it being read as looking at a mob.
+ *
+ * It **fails closed**: a wording this doesn't know reads as nothing at all. That is the right way
+ * round here because a consider is used as *evidence* a mob is up, and a sighting can only ever
+ * tighten a respawn estimate ([ADR 0097](../../specs/decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md))
+ * — so a false one is permanent, while a missed one costs a player one click.
+ */
+const CONSIDER_REGARDS = [
+  "regards you as an ally",
+  "kindly considers you",
+  "looks upon you warmly",
+  "judges you amiably",
+  "regards you indifferently",
+  "looks your way apprehensively",
+  "glowers at you dubiously",
+  "glares at you threateningly",
+  "scowls at you, ready to attack",
+];
+
+const CONSIDER_RE = new RegExp(
+  `^(?<target>.+?) (?:${CONSIDER_REGARDS.join("|")})[.!]?(?: --.*)?$`,
+  "i",
+);
+
+/** Hailing something: the one line where you name what you are standing in front of. */
+const HAIL_RE = /^You say, 'Hail, (?<target>.+?)'$/i;
+
+/**
+ * You looked at something, or spoke to it — a **consider** or a **hail**.
+ *
+ * Both say the same useful thing and it is not about factions or greetings: *that thing is in front
+ * of you, alive, right now.* For a mob whose respawn is being timed that is the tightest evidence
+ * the app can get, and unlike marking it up by hand it arrives for free from what a camper does
+ * anyway — you consider a named before you pull it.
+ *
+ * The name is left **exactly as the log wrote it**, article and all: what reads it folds the article
+ * itself (`mobKey`), and stripping here would throw away the same signal `parseKill` had to be
+ * taught to keep.
+ */
+export function parseSighting(line: LogLine): SightingEvent | null {
+  const hail = line.message.match(HAIL_RE);
+  if (hail?.groups?.target) {
+    return { kind: "sighting", target: hail.groups.target.trim(), how: "hail", logId: line.logId, raw: line.raw, at: line.at };
+  }
+  const con = line.message.match(CONSIDER_RE);
+  if (con?.groups?.target) {
+    return { kind: "sighting", target: con.groups.target.trim(), how: "consider", logId: line.logId, raw: line.raw, at: line.at };
+  }
+  return null;
+}
 
 /** "you" / "your" / "YOU" — every way the log writes the reader. */
 const YOU_RE = /^(?:you|your)$/i;

@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { createSpawnTracker, type SpawnTracker } from "../spawn-tracker";
 import { timerKey } from "../../src/shared/spawn-timers";
+import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
 import type { CastAlertEvent, CastAlertSettings, KillRecord } from "../../src/shared/types";
 
 const ZONE = "Lower Guk";
@@ -38,8 +39,20 @@ function record(mob: string, sec: number, extra: Partial<KillRecord> = {}): Kill
   };
 }
 
-/** Only the fields the tracker reads; the rest of the alert settings never come up. */
-const settings = (enabled = true) => ({ enabled }) as CastAlertSettings;
+/**
+ * Only the fields the tracker reads. `styles` is real, because a pop resolves its look through
+ * `alertStyle` against exactly this list.
+ */
+const settings = (enabled = true) =>
+  ({
+    enabled,
+    color: "#e5534b",
+    position: "top",
+    styles: [
+      ...BUILT_IN_STYLES,
+      { id: "loud", name: "Loud", style: { color: "#00ff00", position: "center" } },
+    ],
+  }) as unknown as CastAlertSettings;
 
 interface Harness {
   tracker: SpawnTracker;
@@ -482,6 +495,104 @@ test("a blank name adds nothing", () => {
 test("a row the kill log produced offers no remove, since it would come straight back", () => {
   const h = timed();
   assert.equal(h.tracker.view().known[0].added, false);
+});
+
+// ── the look a pop wears, and the countdown you keep on screen ─────────────────
+
+test("a pop wears the shipped Spawn look until a timer is given a style of its own", () => {
+  const h = noisy();
+  h.tick(1800);
+  // Not the alert defaults' red: a pop is news, and arriving dressed as "dispel now" is exactly
+  // what the built-in exists to prevent.
+  assert.equal(h.raised[0].style?.color, "#46c86b");
+  assert.equal(h.raised[0].style?.position, "top-right");
+});
+
+test("a timer whose built-in look has been deleted still gets a banner", () => {
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const bare = { enabled: true, color: "#e5534b", position: "top", styles: [] } as unknown as CastAlertSettings;
+  const h = harness({ kills, settings: bare });
+  h.tracker.noteKill(MOB, ZONE, iso(900), true);
+  h.tracker.notify(KEY, true);
+  h.tick(1800);
+  assert.equal(h.raised.length, 1, "an alert that can't be styled must still be seen");
+  assert.equal(h.raised[0].style?.color, "#e5534b");
+});
+
+test("a timer can wear a saved style, and its pop arrives already wearing it", () => {
+  const h = noisy();
+  h.tracker.style(KEY, "loud");
+  h.tick(1800);
+  // Resolved in main and sent *with* the alert: the overlay only knows the defaults, so a per-timer
+  // look could reach the screen no other way.
+  assert.equal(h.raised[0].style?.color, "#00ff00");
+  assert.equal(h.raised[0].style?.position, "center");
+});
+
+test("a style that no longer exists falls back to the defaults rather than losing the alert", () => {
+  const h = noisy();
+  h.tracker.style(KEY, "deleted-style");
+  h.tick(1800);
+  assert.equal(h.raised.length, 1, "an alert that can't be styled must still be seen");
+  assert.equal(h.raised[0].style?.color, "#e5534b");
+});
+
+test("clearing a style goes back to the defaults", () => {
+  const h = timed();
+  h.tracker.style(KEY, "loud");
+  assert.equal(h.tracker.view().known[0].styleId, "loud");
+  h.tracker.style(KEY, null);
+  assert.equal(h.tracker.view().known[0].styleId, undefined);
+});
+
+test("a pinned countdown carries its style id, so the overlay can place it where its banner goes", () => {
+  const h = timed();
+  h.tracker.showOnScreen(KEY, true);
+  h.tracker.style(KEY, "loud");
+  // The **id**, not a resolved look: a banner is frozen when it fires, but a pinned countdown is a
+  // live readout, so restyling one has to be able to move it while it runs.
+  assert.equal(h.tracker.view().running[0].styleId, "loud");
+  h.tracker.style(KEY, null);
+  assert.equal(h.tracker.view().running[0].styleId, undefined, "and back to the defaults' position");
+});
+
+test("a countdown is kept on screen only when asked, and the running timer carries the answer", () => {
+  const h = timed();
+  assert.equal(h.tracker.view().running[0].onScreen, false, "a wall of every named you passed is not a HUD");
+  h.tracker.showOnScreen(KEY, true);
+  assert.equal(h.tracker.view().running[0].onScreen, true);
+  assert.equal(h.tracker.view().known[0].onScreen, true);
+});
+
+test("on screen and notify are independent — a camper often wants the clock and no banner", () => {
+  const h = timed();
+  h.tracker.showOnScreen(KEY, true);
+  h.tick(1800);
+  assert.equal(h.raised.length, 0, "pinned, and still silent");
+});
+
+test("style and on-screen survive a restart, and go when a hand-added row does", () => {
+  const dir = tempDir();
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const first = harness({ kills, dir });
+  first.tracker.style(KEY, "loud");
+  first.tracker.showOnScreen(KEY, true);
+  first.tracker.flush();
+
+  const second = harness({ kills, dir });
+  const row = second.tracker.view().known.find((k) => k.key === KEY);
+  assert.equal(row?.styleId, "loud");
+  assert.equal(row?.onScreen, true);
+
+  // ...and a hand-added row takes both with it, so a re-add starts clean.
+  const custom = second.tracker.add("Boat", "", 600)!;
+  second.tracker.style(custom, "loud");
+  second.tracker.showOnScreen(custom, true);
+  second.tracker.remove(custom);
+  second.tracker.add("Boat", "", 600);
+  const fresh = second.tracker.view().known.find((k) => k.mob === "Boat");
+  assert.equal(fresh?.styleId, undefined);
+  assert.equal(fresh?.onScreen, false);
 });
 
 // ── "it's dead now" ────────────────────────────────────────────────────────────

@@ -67,6 +67,8 @@ export const CH = {
   spawnsAdd: "spawns:add", // a timer typed in by hand: an un-killed named, or a custom countdown
   spawnsRemove: "spawns:remove",
   spawnsNotify: "spawns:notify",
+  spawnsStyle: "spawns:style", // which saved look its pop wears
+  spawnsOnScreen: "spawns:onScreen", // keep this countdown over the game
   spawnsRelearn: "spawns:relearn", // throw away a learned bound and start again from now
   spawnsStop: "spawns:stop",
   lookupCapture: "lookup:capture",

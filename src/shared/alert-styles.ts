@@ -23,7 +23,7 @@
  * `plan` decides; the caller applies. Pure, so both halves are testable without a browser, and so
  * the panel can *say* which of the three is about to happen before the player commits to it.
  */
-import type { AlertStyle, CastAlertSettings, CastWatch, NamedAlertStyle } from "./types";
+import type { AlertLocation, AlertPositionValue, AlertStyle, CastAlertSettings, CastWatch, NamedAlertStyle } from "./types";
 
 /**
  * Anything that can wear a look: a saved style by id, its own layer, or neither.
@@ -202,3 +202,81 @@ export function newStyleId(styles: NamedAlertStyle[]): string {
     if (!used.has(id)) return id;
   }
 }
+
+/**
+ * Where on the overlay something anchored to `position` should sit: a preset class, or — for a
+ * `loc:<id>` custom spot — the placed fraction as an absolute point, centred on it.
+ *
+ * Here rather than in the banner that first needed it, because a **pinned countdown** is anchored
+ * the same way and by the same setting: a player who put their alerts bottom-right meant the corner
+ * they look at, and a second copy of these six rules would be a second thing to keep in step.
+ *
+ * A `loc:` that no longer resolves — the spot was deleted — falls back to the top rather than
+ * refusing to place: something that can't be positioned must still be *seen*, which is the same call
+ * `alertStyle` makes about a style that has gone.
+ */
+export function alertPlacement(
+  position: AlertPositionValue,
+  locations: AlertLocation[],
+): { className: string; style?: { left: string; top: string } } {
+  if (position.startsWith("loc:")) {
+    const loc = locations.find((l) => `loc:${l.id}` === position);
+    if (loc) return { className: "pos-custom", style: { left: `${loc.fx * 100}%`, top: `${loc.fy * 100}%` } };
+    return { className: "pos-top" };
+  }
+  return { className: `pos-${position}` };
+}
+
+/**
+ * The looks the app ships with, so the three things that can raise a banner don't all arrive
+ * looking like the same emergency.
+ *
+ * A cast alert is a **warning** — dispel now — and keeps the red defaults. A **record** and a
+ * **spawn** are news: nothing is on fire, they belong somewhere other than dead centre of the
+ * warning's spot, and telling them apart at a glance is the whole point of a colour. Getting that
+ * out of the box matters more than it sounds, because the alternative is that the feature looks
+ * broken-by-sameness until someone goes and builds two styles by hand.
+ *
+ * They are **ordinary saved styles**, not a private wardrobe: they appear in the Alerts tab's list
+ * like any other, can be edited, renamed or deleted, and anything else may wear them. That is what
+ * keeps [ADR 0090](../../specs/decisions/0090-one-style-editor-at-a-time.md)'s "one editor, in one
+ * place" true — a built-in look the player couldn't reach would be a second wardrobe by another
+ * name.
+ *
+ * The ids are namespaced so a hand-made style can never collide with one, and so a build that adds
+ * another can tell what it has already seeded.
+ */
+export const RECORD_STYLE_ID = "built-in:record";
+export const SPAWN_STYLE_ID = "built-in:spawn";
+
+export const BUILT_IN_STYLES: NamedAlertStyle[] = [
+  {
+    id: RECORD_STYLE_ID,
+    name: "Record",
+    // Gold, and it does not flash: a personal best is worth a moment of pleasure, not a jolt.
+    style: {
+      sound: true,
+      flash: false,
+      color: "#f0b429",
+      soundName: "chime",
+      position: "top",
+      durationMs: 6000,
+      animation: "float",
+    },
+  },
+  {
+    id: SPAWN_STYLE_ID,
+    name: "Spawn timer",
+    // Green, out of the warning's way, and it lingers: a pop is news you may be a few seconds late
+    // to notice, where a dispel prompt is useless the moment it is missed.
+    style: {
+      sound: true,
+      flash: false,
+      color: "#46c86b",
+      soundName: "chirp",
+      position: "top-right",
+      durationMs: 10000,
+      animation: "pulse",
+    },
+  },
+];

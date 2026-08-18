@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { useCurrentZone, useSpawns } from "@/lib/hooks";
+import { useCurrentZone, useLogVocabulary, useSettings, useSpawns } from "@/lib/hooks";
 import {
   countdownMs,
   describeRespawn,
@@ -11,7 +11,11 @@ import {
 } from "@/shared/spawn-timers";
 import { parseDelay } from "@/shared/alert-schedule";
 import { when } from "@/shared/format";
-import { Empty } from "./ui";
+import { Empty, PickField } from "./ui";
+import SuggestField from "./SuggestField";
+import ZonePicker from "./ZonePicker";
+import { CURATED_ZONES, sortZones } from "@/shared/map/zones";
+import type { Zone } from "@/shared/map/types";
 import type { KnownSpawn, RunningSpawn } from "@/shared/types";
 
 /**
@@ -99,8 +103,17 @@ export default function SpawnPanel() {
  * defaults to where you are, since a camp is the common case and re-typing your own zone is the
  * kind of friction that stops people using a feature.
  */
+/** Every zone the app knows, shaped and sorted the way the map's picker expects. */
+const ZONE_OPTIONS: Zone[] = sortZones(
+  CURATED_ZONES.map((z) => ({ name: z.name, key: z.file, file: z.file, sortingStr: z.sortingStr })),
+);
+
 function AddTimer() {
   const zone = useCurrentZone();
+  // The same words the alert rules complete against, from your own log — and mob names are already
+  // in it, because a kill line's target is filed under `target` alongside a fade's. Nobody can
+  // spell this game's nameds from memory, which is the whole reason `SuggestField` exists.
+  const vocabulary = useLogVocabulary();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [place, setPlace] = useState("");
@@ -138,26 +151,35 @@ function AddTimer() {
 
   return (
     <div className="spawn-add">
-      <input
+      {/* `target` is the mob vocabulary — what kills and fades named — so it completes the nameds
+          you've actually fought rather than every word in the log. A custom timer's label simply
+          matches nothing, which costs the typist nothing: no suggestion is offered and the text
+          stands as typed. */}
+      <SuggestField
         autoFocus
-        className="sa-name"
+        slot="sa-name"
+        className="field"
         value={name}
+        onChange={setName}
+        vocabulary={vocabulary}
+        kind="target"
         placeholder="Name — a mob, or anything else"
-        onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") submit();
           if (e.key === "Escape") setOpen(false);
         }}
       />
-      <input
-        className="sa-place"
+      {/* The app's zone picker, not a second idea of one: same `fuzzyRank` matching, same
+          file-name search (`gukbottom` finds Lower Guk), same list the map and Hunt offer. Blank is
+          a real choice here and means **anywhere** — a boat has no camp — rather than the map's
+          "follow the log", which is why `currentZone` is not passed. */}
+      <ZonePicker
+        zones={ZONE_OPTIONS}
         value={place}
+        onPick={(name) => setPlace(name ?? "")}
+        blankLabel="Anywhere"
         placeholder="Where (optional)"
-        onChange={(e) => setPlace(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submit();
-          if (e.key === "Escape") setOpen(false);
-        }}
+        align="left"
       />
       <input
         className="sa-every"
@@ -274,6 +296,9 @@ type Open = "interval" | "pad" | "relearn" | "dismiss" | null;
  * already make.
  */
 function KnownRow({ known }: { known: KnownSpawn }) {
+  // The looks are the alert tab's own, because there is exactly one place a look is made or edited
+  // (ADRs 0086, 0090) — a timer *picks* one, and never grows an editor of its own.
+  const styles = useSettings()?.castAlerts.styles ?? [];
   const [open, setOpen] = useState<Open>(null);
   const done = () => setOpen(null);
   const toggle = (which: Exclude<Open, null>) => setOpen((o) => (o === which ? null : which));
@@ -302,6 +327,27 @@ function KnownRow({ known }: { known: KnownSpawn }) {
             onChange={(e) => void api()?.spawns.notify(known.key, e.target.checked)}
           />
           Notify
+        </label>
+        {/* Only meaningful once something will actually be raised, so it appears with the thing it
+            describes rather than sitting greyed out beside it. */}
+        {known.notify && (
+          <PickField
+            value={known.styleId ?? ""}
+            blank="Spawn timer (default)"
+            options={styles.map((st) => ({ value: st.id, label: st.name }))}
+            onChange={(styleId) => void api()?.spawns.style(known.key, styleId || null)}
+            title="Which look its banner wears — a saved style from the Alerts tab, where every look is edited"
+          />
+        )}
+        {/* A separate question from Notify, and deliberately not folded into it: one is a moment,
+            the other is a dial you glance at. A camper often wants the countdown and no banner. */}
+        <label className="spawn-notify" title="Keep this countdown on screen, over the game">
+          <input
+            type="checkbox"
+            checked={known.onScreen}
+            onChange={(e) => void api()?.spawns.showOnScreen(known.key, e.target.checked)}
+          />
+          On screen
         </label>
 
         {/* Telling the tracker what's true right now. Here as well as on a running row, because

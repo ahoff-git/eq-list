@@ -590,7 +590,11 @@ button {
   border-radius: var(--radius);
   background: var(--bg-raised);
 }
-.spawn-add input {
+/* Only the input this row owns outright. The name box is a `SuggestField` (its own `.field`) and
+   the place is the app's `ZonePicker`, both of which dress themselves — styling every `input` in
+   here would reach inside them and fight what they already do. */
+.spawn-add .sa-every {
+  width: 130px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -598,9 +602,10 @@ button {
   padding: 4px 6px;
   font: inherit;
 }
-.spawn-add .sa-name { flex: 2; min-width: 160px; }
-.spawn-add .sa-place { flex: 1; min-width: 120px; }
-.spawn-add .sa-every { width: 130px; }
+/* `SuggestField` wraps its input (the ghost sits behind it), so the row's flex has to act on the
+   wrapper — which is what `slot` is for. */
+.spawn-add > .suggest.sa-name { flex: 2 1 160px; min-width: 160px; }
+.spawn-add .zone-picker { flex: 1 1 150px; min-width: 150px; }
 .spawn-add small { flex-basis: 100%; color: var(--text-dim); }
 .spawn-add small.bad { color: var(--bad); }
 .spawn-row,
@@ -696,6 +701,52 @@ button {
   border-radius: var(--radius);
   color: var(--text-dim);
 }
+
+/* ── pinned spawn countdowns, drawn over the game (ADR 0099) ─── */
+/* Anchored by each timer's own alert position, so a countdown appears where its banner would —
+   including a custom placed spot. One stack per position, like the banners. */
+.spawn-hud {
+  position: fixed;
+  /* Under the banners (z-index 100). When a timer's pop lands on the very spot its countdown is
+     pinned to — which is now the common case, since both follow the same setting — the banner is
+     the thing to read, and it goes away by itself. */
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 92%;
+  pointer-events: none; /* the window is click-through; never take a click back for a read-only list */
+}
+.spawn-hud-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  border-left: 2px solid var(--border);
+  /* Its own backdrop rather than the page's: this floats on a transparent body over the game, so
+     the text needs something to sit on at any brightness the game happens to be. */
+  background: rgba(14, 16, 19, 0.72);
+  font-size: 13px;
+  color: var(--text);
+  text-shadow: 0 1px 2px #000;
+}
+.spawn-hud-row .shr-clock {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 58px;
+  color: var(--text-dim);
+}
+/* The **edge** is the timer's own alert colour, set inline — it says which alert this row belongs
+   to, so a pinned countdown is recognisable as the thing whose banner is coming. The **clock** is
+   the state, and keeps its own vocabulary: "up" and "waiting" have to stay tellable apart at a
+   glance whatever colour the player picked, so state never touches the border and colour never
+   touches the clock. */
+.spawn-hud-row.window .shr-clock { color: var(--accent); }
+.spawn-hud-row.due .shr-clock { color: var(--good); font-weight: 700; }
+.spawn-hud-row.alive { background: rgba(70, 200, 107, 0.22); }
+.spawn-hud-row.alive .shr-clock { color: var(--good); font-weight: 700; }
 
 /* ── session stats ───────────────────────────────────────────── */
 .stat-row {
@@ -1794,15 +1845,17 @@ kbd {
   max-width: 92%;
   pointer-events: none;
 }
-/* Where on the overlay the banners stack (Settings → alert position). */
-.cast-alerts.pos-top { top: 8px; left: 50%; transform: translateX(-50%); }
-.cast-alerts.pos-top-left { top: 8px; left: 8px; }
-.cast-alerts.pos-top-right { top: 8px; right: 8px; }
-.cast-alerts.pos-center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
-.cast-alerts.pos-bottom-left { bottom: 8px; left: 8px; }
-.cast-alerts.pos-bottom-right { bottom: 8px; right: 8px; }
-/* A user-placed custom spot: left/top are set inline as % of the display; centre the banner on it. */
-.cast-alerts.pos-custom { transform: translate(-50%, -50%); }
+/* Where on the overlay something anchored by the alert position sits. Shared by the banners and by
+   the pinned countdowns, because they answer to the same setting — a player who put their alerts
+   bottom-right meant the corner they look at (ADR 0099). */
+.overlay-at.pos-top { top: 8px; left: 50%; transform: translateX(-50%); }
+.overlay-at.pos-top-left { top: 8px; left: 8px; }
+.overlay-at.pos-top-right { top: 8px; right: 8px; }
+.overlay-at.pos-center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.overlay-at.pos-bottom-left { bottom: 8px; left: 8px; }
+.overlay-at.pos-bottom-right { bottom: 8px; right: 8px; }
+/* A user-placed custom spot: left/top are set inline as % of the display; centre it on the point. */
+.overlay-at.pos-custom { transform: translate(-50%, -50%); }
 
 /* Placing a custom spot: a full-overlay catcher (dim tint so you know you're placing), a centered
    hint, and a preview banner tracking the cursor. Only shown in the overlay window during placement. */

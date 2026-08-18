@@ -22,6 +22,9 @@ import type { Vocabulary, VocabularyKind } from "@/shared/log-vocabulary";
  * **Tab or → takes the ghost**, ↑/↓ and Enter take from the list, Escape hides it. Nothing is
  * accepted implicitly: a rule that silently became a different rule than you typed is the worst
  * outcome available here.
+ *
+ * Keys the suggestions don't want are **passed on to the caller's own `onKeyDown`**, so a field in a
+ * form keeps its Enter and Escape — the suggestions merely get first refusal at them.
  */
 export default function SuggestField({
   value,
@@ -93,19 +96,33 @@ export default function SuggestField({
             accept(ghost);
             return;
           }
-          if (!list.length) return;
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setHighlight((h) => (h + 1) % list.length);
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setHighlight((h) => (h - 1 + list.length) % list.length);
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            accept(list[highlight]);
-          } else if (e.key === "Escape") {
-            setDismissed(true);
+          if (list.length) {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setHighlight((h) => (h + 1) % list.length);
+              return;
+            }
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setHighlight((h) => (h - 1 + list.length) % list.length);
+              return;
+            }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              accept(list[highlight]);
+              return;
+            }
+            if (e.key === "Escape") {
+              setDismissed(true);
+              return;
+            }
           }
+          // Anything the suggestions didn't want goes on to the caller. `{...rest}` is spread
+          // *above* this handler, so without forwarding, a caller's own `onKeyDown` would be
+          // silently replaced — a form whose Enter and Escape simply stopped working, with nothing
+          // to show why. Suggestions get first refusal, which is the right order: Enter completes
+          // the name, then a second Enter submits it; Escape closes the list, then the form.
+          rest.onKeyDown?.(e);
         }}
         title={ghost ? `Tab to complete: ${ghost}` : rest.title}
       />

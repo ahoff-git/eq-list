@@ -342,6 +342,14 @@ function registerStatsIpc(context: IpcContext): void {
     spawns.notify(key, on);
     return spawns.view();
   });
+  ipcMain.handle(CH.spawnsStyle, (_e, key: string, styleId: string | null) => {
+    spawns.style(key, styleId);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsOnScreen, (_e, key: string, on: boolean) => {
+    spawns.showOnScreen(key, on);
+    return spawns.view();
+  });
   ipcMain.handle(CH.spawnsRelearn, (_e, key: string) => {
     spawns.relearn(key);
     return spawns.view();

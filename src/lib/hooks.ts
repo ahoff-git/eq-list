@@ -28,6 +28,8 @@ import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
 import { huntTargetsFor, type HuntTarget } from "@/shared/hunt";
 import { clockSkew } from "@/shared/spawn-timers";
+import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
+import { parseLogText } from "@/shared/log-parser";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -413,6 +415,28 @@ export function useSpawns(): { view: SpawnView; now: number } {
   // every render would pin `now` to the moment of the fetch and the clock would stop dead.
   const skew = useMemo(() => clockSkew(view.now, Date.now()), [view]);
   return { view, now: Date.now() + skew };
+}
+
+/**
+ * The words your own log has actually used — spells, casters, fade targets, zones and the mobs you
+ * have killed — as a trie ready to complete against.
+ *
+ * A hook because two tabs now want it and the fetch is not trivial: it reads a slice of the log over
+ * IPC and parses it, which is worth doing **once per tab** rather than per field, since every box on
+ * a tab draws on the same words and rebuilding per keystroke is what the trie exists to avoid.
+ *
+ * Read once on mount and not followed. It is a *help with typing*, not a live figure — re-reading
+ * the log under a half-typed name to add words nobody is looking for would cost far more than it
+ * could possibly be worth.
+ */
+export function useLogVocabulary(): Vocabulary {
+  const [vocabulary, setVocabulary] = useState<Vocabulary>(NO_VOCABULARY);
+  useEffect(() => {
+    void api()
+      ?.log.recent()
+      .then((tail) => setVocabulary(buildVocabulary(parseLogText(tail?.text ?? ""))));
+  }, []);
+  return vocabulary;
 }
 
 /** The zone the player is currently in (from the log), or null if unknown. */

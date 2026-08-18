@@ -78,6 +78,12 @@ unit-tested.
     their own group: a row with nothing learned yet, a custom one with no zone that no kill can
     restart, a hand-added mob the log later takes over as *one* row rather than two, and a removal
     that takes everything set on it so a re-add starts clean. And **`clockSkew`** in the pure tests,
+    Also the **wardrobe and the HUD** ([ADR 0099](../decisions/0099-a-countdown-can-stay-on-screen.md)):
+    that a pop wears the defaults until a timer is given a saved style and then arrives already
+    wearing it, that a **deleted** style falls through to the defaults rather than losing the alert,
+    and that `onScreen` is independent of `notify` — pinned and still silent, which is the case a
+    camper actually wants — and that a pop wears the shipped **Spawn timer** look rather than the
+    alert defaults, with a deleted built-in still producing a banner. And **`clockSkew`** in the pure tests,
     which is the panel's clock bug written down: an offset re-anchors on every fetch where a
     free-running counter accumulated, making a fresh timer render 0:00.
   - `electron/tests/spawn-flow.test.ts` — the spawn timers **end to end**, from raw log text to the
@@ -94,6 +100,11 @@ unit-tested.
     the board with corpses. It also reads `fixtures/spawn-camp-eqlog.txt` — the *actual replay
     fixture* — so the log people test with cannot quietly stop exercising the feature, which is how
     this went unnoticed in the first place: `sample-eqlog.txt` contains no named kill at all.
+
+    Since **considering or hailing** a tracked mob counts as seeing it up
+    ([ADR 0097](../decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md)), the flow tests
+    cover that too — including the two ways it must stay quiet: cons of things you aren't timing
+    change nothing at all, and a chat line that merely *contains* a `--` is not a consider.
   - `src/shared/hunt.ts` → `electron/tests/hunt.test.ts` also covers **mob targets**
     ([ADR 0098](../decisions/0098-a-mob-is-a-thing-you-hunt.md)): that a mob entry is never an
     outstanding item, that a target lands in the zones you've killed it in and is still listed when

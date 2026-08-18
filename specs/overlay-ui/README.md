@@ -142,6 +142,15 @@ list, hunt, search, damage, session, settings.
     ✕ to remove the whole group. Each entry expands (▸) to a lazy-loaded **"where to get it"** —
     drop mobs grouped by zone (current zone first via `splitDropsByCurrentZone`) plus
     color-coded non-drop sources (`otherSources`); mob/source names are in-app links.
+  - `SpawnOverlay` — pinned countdowns drawn **over the game**, on the same `/alert` window as the
+    cast banner ([ADR 0099](../decisions/0099-a-countdown-can-stay-on-screen.md)). A banner answers
+    "it's up now" once; this answers "how long left", which is what a camper asks constantly and
+    could previously only read by alt-tabbing to the tab. Opt-in per timer, inert until one is
+    pinned, `pointer-events: none` so a read-only list never takes a click back from the game, and
+    it carries its own dark backdrop because it floats on a transparent body over whatever the game
+    is showing. Each countdown appears **where its own alert would** — the same style and position,
+    custom placed spots included — which is why `alertPlacement` and the `.overlay-at` position
+    rules are shared with `CastAlerts` rather than copied.
   - `SpawnPanel` — the **Timers tab**: respawn countdowns for the nameds you kill, learned
     from the gaps between your own kills ([ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
     Two lists, answering different questions: **Due** is what's running, soonest-first, read at a
@@ -171,11 +180,19 @@ list, hunt, search, damage, session, settings.
     the app wasn't running, or the camp changed hands — and doubles as the undo for a mis-clicked
     sighting. Everything here is reversible on purpose: an editor holding a value offers **Clear**,
     and a mob you dismissed is listed under **Not tracked (n)** with a way back, because the button
-    that dismissed it took its own undo off the screen. **＋ Add a timer** puts a row on by hand —
+    that dismissed it took its own undo off the screen. **＋ Add a timer** puts a row on by hand, with the **same type-ahead the alert rules use**
+    (`SuggestField` over `useLogVocabulary`, on the `target` kind — kill lines already file a mob
+    name there, so it completes the nameds you have actually fought) and the **map's own
+    `ZonePicker`** for where — same `fuzzyRank` matching, same file-name search, same zone table, so
+    there is one idea of what picking a zone is like; blank means *anywhere* here rather than the
+    map's *follow the log*, which is the only thing that differs —
     a named you haven't killed twice, or anything else worth a countdown; the zone is optional and
     defaults to where you are, and a label no kill line matches just never re-arms itself, which is
     what lets one form serve both. A line above the rows says how mobs arrive, since "why isn't that
-    named here?" is not guessable from an empty list. Those last two **destroy something and therefore ask
+    named here?" is not guessable from an empty list. Each row also picks **which saved style** its
+    banner wears (the Alerts tab's looks — a timer never grows an editor of its own) and can be kept
+    **on screen**, which is a separate question from Notify on purpose: one is a moment, the other a
+    dial ([ADR 0099](../decisions/0099-a-countdown-can-stay-on-screen.md)). Those last two **destroy something and therefore ask
     first**, inline and worded as what it costs ("Forget all 6 gaps measured…"), with the two
     answers as outcomes rather than yes/no — the `ForgetData` pattern from Settings, and for its
     reason: no native `confirm()` over an always-on-top window. They're also visually separated from

@@ -19,7 +19,7 @@
  */
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { alertStyle } from "../src/shared/alert-styles";
+import { SPAWN_STYLE_ID, alertStyle } from "../src/shared/alert-styles";
 import { mobKey } from "../src/shared/mob-stats";
 import { placeName } from "../src/shared/zones/place";
 import {
@@ -97,6 +97,26 @@ interface Stored {
    * boat, a port or a raid lockout without a line of code spent distinguishing them.
    */
   added: Record<string, { mob: string; place: string }>;
+  /**
+   * Timer key → a **saved** style (`CastAlertSettings.styles`) for its pop. Absent wears the alert
+   * defaults.
+   *
+   * A saved style or nothing — never a look of its own, which is the same call
+   * [ADR 0093](../specs/decisions/0093-a-high-score-is-a-personal-best-with-a-floor.md) makes about
+   * a celebration and for the same reason: a per-timer style editor would be a third source of
+   * truth next to the defaults and the saved styles, which
+   * [ADR 0086](../specs/decisions/0086-editing-a-shared-style-from-a-rule-forks-it.md) and
+   * [ADR 0090](../specs/decisions/0090-one-style-editor-at-a-time.md) exist to prevent.
+   */
+  styleId: Record<string, string>;
+  /**
+   * Timer key → keep its countdown on screen, over the game, for as long as it runs.
+   *
+   * Different in kind from `notify`, which is a *moment*. This is a **dial you can glance at**: the
+   * question a camper asks is "how long left", and answering it should not cost them a window
+   * switch away from the fight.
+   */
+  onScreen: Record<string, boolean>;
   /** The countdowns themselves — the only thing here that isn't a preference. */
   timers: SpawnTimer[];
 }
@@ -120,6 +140,8 @@ function load(file: string): Stored {
     notify: { ...stored.notify },
     seen: { ...stored.seen },
     added: { ...stored.added },
+    styleId: { ...stored.styleId },
+    onScreen: { ...stored.onScreen },
     timers: [...(stored.timers ?? [])],
   };
 }
@@ -158,6 +180,16 @@ export interface SpawnTracker {
    */
   markUp(key: string): void;
   /**
+   * The log said you looked at it — a consider or a hail — so it is up, and you didn't have to say
+   * so. The same thing `markUp` records, arriving free from what a camper does anyway: you consider
+   * a named before you pull it.
+   *
+   * Only ever reaches a timer that is **already counting down**, which is the guard that keeps this
+   * quiet: considering a trash mob names nothing we are tracking, and a mob with no running timer
+   * has no `killedAt` to measure a sighting from.
+   */
+  noteSighting(mob: string, zone: string | null): void;
+  /**
    * It's dead **now** — start the countdown from this moment, or restart one already running.
    *
    * The hand-operated twin of a kill line, for the times the log can't help: the app wasn't running
@@ -178,6 +210,10 @@ export interface SpawnTracker {
   remove(key: string): void;
   /** Whether a pop should raise a banner. Off by default — see `Stored.notify`. */
   notify(key: string, on: boolean): void;
+  /** Which saved style its pop wears, or `null` for the alert defaults. */
+  style(key: string, styleId: string | null): void;
+  /** Keep this countdown on screen over the game while it runs. */
+  showOnScreen(key: string, on: boolean): void;
   /** Correct the article test about a mob. */
   markNamed(mob: string, named: boolean): void;
   /** Throw away what was learned about one timer and start learning again from now. */
@@ -282,8 +318,13 @@ export function createSpawnTracker({
       // The place, because the same named in two zones is two timers and the banner has to say which.
       target: timer.place,
       message: timer.lead ? `${timer.mob} due soon — ${timer.place}` : undefined,
-      // No rule behind a spawn, so no rule's look to layer: the defaults are the whole answer.
-      style: alertStyle(settings),
+      // A saved style if this timer wears one, the defaults otherwise. Resolved here, at the moment
+      // of the alert, and sent *with* it — the overlay only knows the defaults, so a per-timer look
+      // could reach the screen no other way.
+      // Falling back to the shipped **Spawn timer** look rather than the alert defaults: a pop is
+      // news, and arriving in the same red as "dispel now" is exactly what the built-in exists to
+      // avoid. If the player has deleted that style, `alertStyle` drops through to the defaults.
+      style: alertStyle(settings, { styleId: state.styleId[timer.key] ?? SPAWN_STYLE_ID }),
     });
   }
 
@@ -368,7 +409,15 @@ export function createSpawnTracker({
       const at = now();
       const { isNamed, learned } = read();
       const running = state.timers
-        .map((timer) => ({ ...timer, state: spawnState(timer, at) }))
+        .map((timer) => ({
+          ...timer,
+          state: spawnState(timer, at),
+          onScreen: !!state.onScreen[timer.key],
+          // The **id**, not the resolved look: unlike a banner — which is frozen at the moment it
+          // fired so nothing restyles it afterwards — a pinned countdown is a live readout, and
+          // re-styling it should move it there and then.
+          styleId: state.styleId[timer.key],
+        }))
         .filter((t) => t.state !== "stale")
         // A mob you've said is **up** leads, whatever its clock says: it's the only row on the
         // board that is a fact rather than a guess, and the only one you can act on right now.
@@ -398,6 +447,8 @@ export function createSpawnTracker({
           stated: state.stated[l.key],
           lead: state.lead[l.key],
           notify: !!state.notify[l.key],
+          styleId: state.styleId[l.key],
+          onScreen: !!state.onScreen[l.key],
           respawn: respawnFor(l, state.stated[l.key], state.seen[l.key]),
           running: running.some((t) => t.key === l.key),
           // Only a hand-added row may be removed. One the kill log produced would simply come back
@@ -460,6 +511,15 @@ export function createSpawnTracker({
       changed();
     },
 
+    noteSighting(mob, zone) {
+      if (!zone) return;
+      const key = timerKey(mob, zone);
+      // `markUp` is the whole behaviour — ending the countdown, recording the bound, and silencing
+      // a pop about a mob you are looking at. Reaching for it rather than repeating it is what keeps
+      // an automatic sighting and a hand-clicked one from ever meaning different things.
+      this.markUp(key);
+    },
+
     markDead(key) {
       const at = now();
       const { learned } = read();
@@ -515,6 +575,8 @@ export function createSpawnTracker({
       delete state.notify[key];
       delete state.seen[key];
       delete state.relearned[key];
+      delete state.styleId[key];
+      delete state.onScreen[key];
       state.timers = state.timers.filter((t) => t.key !== key);
       announced.delete(key);
       changed();
@@ -523,6 +585,21 @@ export function createSpawnTracker({
     notify(key, on) {
       if (on) state.notify[key] = true;
       else delete state.notify[key];
+      changed();
+    },
+
+    style(key, styleId) {
+      // Not checked against the saved styles: one may be deleted later anyway, and `alertStyle`
+      // already falls through to the defaults for an id that no longer resolves — an alert that
+      // can't be styled must still be seen.
+      if (styleId) state.styleId[key] = styleId;
+      else delete state.styleId[key];
+      changed();
+    },
+
+    showOnScreen(key, on) {
+      if (on) state.onScreen[key] = true;
+      else delete state.onScreen[key];
       changed();
     },
 

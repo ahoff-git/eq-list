@@ -4,7 +4,8 @@ import { api } from "@/lib/api";
 import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
 import { categoryOf, formatScore } from "@/shared/high-scores";
-import type { AlertLocation, AlertPositionValue, AlertStyle, CastAlertEvent, HighScore } from "@/shared/types";
+import { alertPlacement } from "@/shared/alert-styles";
+import type { AlertPositionValue, AlertStyle, CastAlertEvent, HighScore } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -103,9 +104,9 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
         />
       )}
       {[...stacks].map(([position, stack]) => {
-        const place = placement(position, locations);
+        const place = alertPlacement(position, locations);
         return (
-        <div className={`cast-alerts no-drag ${place.className}`} style={place.style} key={position}>
+        <div className={`overlay-at cast-alerts no-drag ${place.className}`} style={place.style} key={position}>
           {stack.map((a) => {
             const view = banner(a);
             return (
@@ -207,19 +208,3 @@ function recordBanner(record: HighScore): { icon: string; body: ReactNode; hint?
   };
 }
 
-/**
- * How a stack of alerts at one position is placed: a preset CSS class, or — for a `loc:<id>`
- * custom spot — the placed fraction as an absolute point (centred on it). A `loc:` that no longer
- * resolves (the spot was deleted) falls back to the top rather than dropping the alert.
- */
-function placement(
-  position: AlertPositionValue,
-  locations: AlertLocation[],
-): { className: string; style?: CSSProperties } {
-  if (position.startsWith("loc:")) {
-    const loc = locations.find((l) => `loc:${l.id}` === position);
-    if (loc) return { className: "pos-custom", style: { left: `${loc.fx * 100}%`, top: `${loc.fy * 100}%` } };
-    return { className: "pos-top" };
-  }
-  return { className: `pos-${position}` };
-}

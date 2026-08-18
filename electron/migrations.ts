@@ -38,6 +38,7 @@ import { createLogger } from "../src/shared/logging";
 import { splitLine } from "../src/shared/log-parser";
 import { parseSplitLine } from "../src/shared/parse-line";
 import { upgradeWatches } from "../src/shared/watch-upgrade";
+import { BUILT_IN_STYLES } from "../src/shared/alert-styles";
 import type { CastAlertSettings, KillRecord } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 import { writeJson } from "./json-store";
@@ -93,6 +94,53 @@ export function runMigrations(userDataDir: string, logDir: string | undefined): 
   } catch (err) {
     log.error("alert-rule upgrade failed; settings left untouched", err);
   }
+  try {
+    seedBuiltInStyles(userDataDir);
+  } catch (err) {
+    log.error("built-in style seeding failed; settings left untouched", err);
+  }
+}
+
+/**
+ * Add any shipped look a settings file predates — the **Record** and **Spawn timer** styles.
+ *
+ * A defaults merge can't do this and shouldn't try: `deepMerge` replaces an array wholesale, which
+ * is the right answer for a list the player curates (a style they deleted must stay deleted) and
+ * the wrong one for a list the app also contributes to. So the two are reconciled here, by **id**:
+ * a built-in that isn't there is appended, and one that is — edited, renamed, whatever — is left
+ * exactly as the player left it.
+ *
+ * Deliberately **not** schema-gated. It runs every launch and is a no-op every time after the
+ * first, because the question it asks ("is this id present?") is the answer itself; a version stamp
+ * would only add a way for a *later* built-in to be skipped for someone already stamped.
+ *
+ * A style the player has deleted comes back, which is the one cost. It is the right way to be wrong:
+ * a duplicate is one click to remove, where a missing look is a feature that quietly looks broken —
+ * and anything wearing that id falls through to the alert defaults in the meantime rather than
+ * failing.
+ */
+function seedBuiltInStyles(userDataDir: string): void {
+  const file = path.join(userDataDir, "settings.json");
+  let stored: StoredSettings | undefined;
+  try {
+    stored = JSON.parse(fs.readFileSync(file, "utf8")) as StoredSettings;
+  } catch (err) {
+    // No settings yet: the defaults already carry them, so there is nothing to add and nothing to say.
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      log.warn("settings won't parse; leaving them exactly as they are", file, String(err));
+    }
+    return;
+  }
+  const styles = stored.castAlerts?.styles;
+  if (!styles) return; // never saved a style list — the defaults supply the built-ins whole
+  const missing = BUILT_IN_STYLES.filter((b) => !styles.some((s) => s.id === b.id));
+  if (!missing.length) return;
+  const next: StoredSettings = {
+    ...stored,
+    castAlerts: { ...stored.castAlerts, styles: [...styles, ...missing] } as CastAlertSettings,
+  };
+  stamped(file, next, "settings");
+  log.debug("added built-in styles", missing.map((m) => m.name));
 }
 
 /**
