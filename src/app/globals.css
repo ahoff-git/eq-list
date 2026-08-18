@@ -1677,6 +1677,9 @@ kbd {
 .mk-head .link { font-weight: 500; }
 /* The drop rows sit under a zone here rather than under a caret, so they don't need the panel's indent. */
 .mob-kills .mob-drops { padding-left: 4px; }
+/* A roam centre, read as a coordinate: tabular so a column of them lines up, and the ± sits quieter
+   than the numbers you'd actually type into the game. */
+.mk-loc { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* kills panel: the heatmap's filters and the rows behind it */
 .kill-list {
@@ -1892,6 +1895,11 @@ kbd {
   inset: 0;
   cursor: crosshair;
   overflow: hidden;
+  /* A faint wash, not decoration: with no background at all every pixel of a transparent window is
+     fully see-through, which on Windows lets a click sail past the page to the game underneath — and
+     leaves the selector looking identical to a stuck, unclickable one. Light enough that the grab
+     underneath is still readable while you aim. */
+  background: rgba(0, 0, 0, 0.06);
 }
 .select-root.dimmed {
   background: rgba(0, 0, 0, 0.45);

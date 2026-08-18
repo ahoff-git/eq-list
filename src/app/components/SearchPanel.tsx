@@ -1,13 +1,16 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { useSettings } from "@/lib/hooks";
+import { useKnownItems, useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/nav";
 import ItemLink from "./ItemLink";
+import ObservedItemView from "./ObservedItemView";
 import WikiPageView from "./WikiPageView";
 import { CheckField, segCls } from "./ui";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
 import { wikiAddAction, wikiAddKind } from "@/shared/wiki-add";
+import { searchKnownItems, unknownToTheWiki, type KnownItem } from "@/shared/known-items";
+import { count } from "@/shared/format";
 import type { SearchResult, WikiPage } from "@/shared/types";
 
 type Mode = "name" | "zone";
@@ -28,6 +31,13 @@ const MIN_QUERY_CHARS = 2;
  * Search eqlwiki two ways, both typo-tolerant (see shared/fuzzy.ts):
  *  - "Name": fuzzy-find any item / quest / recipe by name.
  *  - "By zone": fuzzy-pick a zone, then list the quests in it.
+ *
+ * **A name search also reads your own log.** The wiki's index is missing a good deal of what this
+ * build drops, and answering "no results" for an item in your bags is the one answer that's
+ * certainly wrong — so anything you've held that the wiki can't match is offered beneath its
+ * results and opens a page made of your own evidence
+ * ([ADR 0103](../../../specs/decisions/0103-search-can-answer-from-your-own-log.md)). Ranked from
+ * data already in hand, so it answers while the wiki lookup is still in flight.
  * Opening a page lets you add an item, or "Add full quest" to queue all of a
  * quest's turn-ins grouped under the quest. The open page and every link within it
  * are driven by the shared in-app nav (`useNav`), so nothing jumps to the browser.
@@ -69,6 +79,26 @@ export default function SearchPanel({
   const keep = (list: SearchResult[]) => (hideEra ? list.filter((r) => !r.outOfEra) : list);
   const shownResults = keep(results);
   const shownQuests = keep(quests);
+
+  // What *you* have held, ranked against the same query and stripped of anything the wiki already
+  // answered. Computed here rather than fetched, so it needs no debounce: the vocabulary is already
+  // in the renderer, and a local hit appears on the keystroke that names it.
+  const known = useKnownItems();
+  const mine = useMemo(
+    () =>
+      mode === "name" && term.trim().length >= MIN_QUERY_CHARS
+        ? unknownToTheWiki(searchKnownItems(term, known), shownResults)
+        : [],
+    // `shownResults` is a fresh array each render; the results it's derived from are what change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mode, term, known, results, hideEra],
+  );
+  /** One keyboard list over both sources — a hit is a hit, whichever record found it. */
+  const navTitles = useMemo(
+    () => [...shownResults.map((r) => r.title), ...mine.map((i) => i.item)],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [results, mine, hideEra],
+  );
 
   // Debounced name search. A `cancelled` flag drops a slower in-flight search when a newer
   // keystroke supersedes it, so stale results can't overwrite current ones (or reappear
@@ -202,16 +232,17 @@ export default function SearchPanel({
   }
 
   function onNameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!shownResults.length) return;
+    if (!navTitles.length) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive((i) => Math.min(shownResults.length - 1, i + 1));
+      setActive((i) => Math.min(navTitles.length - 1, i + 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActive((i) => Math.max(0, i - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (shownResults[active]) void openPage(shownResults[active].title);
+      // Either list's row opens the same way: a title with no wiki page still has a page here.
+      if (navTitles[active]) void openPage(navTitles[active]);
     } else if (e.key === "Escape") {
       setResults([]);
     }
@@ -259,7 +290,7 @@ export default function SearchPanel({
             autoFocus
           />
           <p className="muted small" style={{ marginTop: 6 }}>
-            {busy ? "Searching…" : shownResults.length ? "↑↓ to navigate · Enter to open" : ""}
+            {busy && !navTitles.length ? "Searching…" : navTitles.length ? "↑↓ to navigate · Enter to open" : ""}
           </p>
           <div className="results">
             {shownResults.map((r, i) => (
@@ -272,6 +303,7 @@ export default function SearchPanel({
               </div>
             ))}
           </div>
+          {mine.length > 0 && <MyResults items={mine} active={active - shownResults.length} onOpen={openPage} />}
         </>
       )}
 
@@ -325,19 +357,51 @@ export default function SearchPanel({
 
       {loadingPage && <p className="muted" style={{ marginTop: 12 }}>Loading page…</p>}
 
-      {nav.current && !loadingPage && !page && (
-        <div className="page-detail">
-          <div className="row">
-            <button className="btn ghost sm" onClick={() => nav.back()}>
-              ← Back
-            </button>
-            <span className="muted small">Couldn’t load “{nav.current}”.</span>
-          </div>
-        </div>
-      )}
+      {/* No wiki page is not the end of the answer: the item may be one your log knows and the wiki
+          doesn't, in which case this is its page (ADR 0103). */}
+      {nav.current && !loadingPage && !page && <ObservedItemView title={nav.current} />}
 
       {page && <WikiPageView page={page} />}
     </div>
   );
 }
 
+/**
+ * The half of the answer that came from your own log — kept visually apart from the wiki's, and
+ * headed by what it is, because a result the wiki has never heard of is a different kind of claim
+ * and must not read as one of its pages.
+ */
+function MyResults({
+  items,
+  active,
+  onOpen,
+}: {
+  items: KnownItem[];
+  /** Index into *these* rows, or negative when the keyboard is up in the wiki's list. */
+  active: number;
+  onOpen: (title: string) => void;
+}) {
+  return (
+    <>
+      <h4 className="muted small" style={{ marginTop: 10 }}>
+        From your own log · not on the wiki
+      </h4>
+      <div className="results">
+        {items.map((it, i) => (
+          <div className={`result ${i === active ? "active" : ""}`} key={it.item}>
+            <span className="link name" title="Open what your log knows about it" onClick={() => onOpen(it.item)}>
+              {it.item}
+            </span>
+            <span className="muted small" title={it.mobs.length ? `Dropped by ${it.mobs.join(", ")}` : "From your loot ledger"}>
+              {count(it.count, "sighting")}
+              {it.mobs.length ? ` · ${count(it.mobs.length, "mob")}` : ""}
+            </span>
+            <button className="btn sm primary" onClick={() => api()?.list.add({ name: it.item })}>
+              + Add
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}

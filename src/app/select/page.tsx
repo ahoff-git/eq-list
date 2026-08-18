@@ -19,6 +19,11 @@ const MIN_SELECTION_PX = 6;
  * display, so you can grab from any monitor. The screen was already captured when
  * the hotkey fired (before this window appeared); dragging a box just tells main
  * which region to crop + OCR. The text then fills the control window's Search box.
+ *
+ * The window is **hidden until this component says it is listening**. The hint below is prerendered,
+ * so it paints before React hydrates — shown any earlier, a page that never hydrated would put an
+ * unclickable pane of glass over the whole desktop, promising "Esc to cancel" and honouring nothing
+ * ([ADR 0102](../../../specs/decisions/0102-a-lookup-never-holds-the-screen.md)).
  */
 export default function Select() {
   const [phase, setPhase] = useState<Phase>("select");
@@ -32,6 +37,9 @@ export default function Select() {
       if (e.key === "Escape") close();
     };
     window.addEventListener("keydown", onKey);
+    // Handlers are attached, so this window is now worth showing. Main holds it off screen until
+    // this lands, and closes it if it never does.
+    void api()?.lookup.ready();
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
@@ -66,7 +74,11 @@ export default function Select() {
       <div className="select-root dimmed">
         <div className="lookup-card">
           <p className="muted">
-            Reading text… <span className="small">(the first lookup downloads the OCR model — may take a moment)</span>
+            Reading text…{" "}
+            <span className="small">
+              (the first lookup downloads the OCR model; this closes on its own and the result still
+              opens in Search)
+            </span>
           </p>
         </div>
       </div>

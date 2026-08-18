@@ -31,6 +31,13 @@ shopping list.
   a page added after the last mirror won't appear until the TTL — so `refresh()` (the Search
   tab's **↻ Refresh list** button) force-re-fetches both indexes on demand and drops the
   session's derived caches.
+- **A search the index can't answer falls back on your own log.** eqlwiki has no page for a good
+  deal of what this build drops, and "no results" for an item in your bags is the one answer that's
+  certainly wrong — so the Search tab ranks the same query against what you have actually *held*
+  (`src/shared/known-items.ts`, fed by the loot ledger and the pooled kill tally) and offers what the
+  wiki didn't, under its own heading. Opening one gets a page built from your evidence rather than a
+  "couldn't load". The wiki client itself stays ignorant of the log: the merge is the panel's
+  ([ADR 0103](../decisions/0103-search-can-answer-from-your-own-log.md)).
 - **A name is folded before it's looked up** — an item's grade and a zone's difficulty are numbers
   the wiki has never heard of (it has `Dragoon Dirk`, not `Dragoon Dirk +2`; one Blackburrow page
   serves every difficulty), so `search` / `searchZones` / `questsByZone` fold the query with

@@ -21,6 +21,7 @@ import type {
   ItemSource,
   ItemCard,
   ShoppingListEntry,
+  LootedItem,
   Unsubscribe,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
@@ -28,6 +29,7 @@ import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
 import { huntTargetsFor, type HuntTarget } from "@/shared/hunt";
 import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
+import { knownItems, type KnownItem } from "@/shared/known-items";
 import { clockSkew } from "@/shared/spawn-timers";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
@@ -246,6 +248,7 @@ const NO_FACTS: Record<string, SpellFacts> = {};
 const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
 const NO_ITEM_SOURCES: ItemSource[] = [];
 const NO_ITEM_DROPS: ItemDropSource[] = [];
+const NO_LOOTED: LootedItem[] = [];
 const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };
 const NO_WATCHER: WatcherStatus = { watching: false };
 const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
@@ -366,6 +369,27 @@ export function useMobZones(mob: string | null): MobKnowledge[] {
 export function useItemDrops(item: string | null, wikiSources: ItemSource[] = NO_ITEM_SOURCES): ItemDropSource[] {
   const mobs = useAllMobs();
   return useMemo(() => (item ? itemDropSources(item, mobs, wikiSources) : NO_ITEM_DROPS), [mobs, item, wikiSources]);
+}
+
+/**
+ * The items **you have held**, as one searchable vocabulary — the loot ledger and the pooled kill
+ * tally folded together (`knownItems`).
+ *
+ * Read when the Search tab mounts, and again on the kill notice, which is the coalesced one: every
+ * drop off a corpse lands on a kill record and fires it. A foraged or ground-spawned item, which no
+ * corpse accounts for, therefore reaches this list on the next kill or the next time the tab is
+ * opened — a freshness limit worth taking, because the alternative is re-deriving a 20,000-line
+ * ledger per loot line during a replayed gap.
+ */
+export function useKnownItems(): KnownItem[] {
+  const looted = useFollowedRead<LootedItem[]>(
+    (a) => a.loot.items(),
+    (a, reload) => a.kills.onChanged(reload),
+    NO_LOOTED,
+    [],
+  );
+  const mobs = useAllMobs();
+  return useMemo(() => knownItems(looted, mobs), [looted, mobs]);
 }
 
 /** Sum two zones' drop counts for the same mob, then re-derive the rates from the total. */

@@ -91,7 +91,10 @@ world coordinates, so a map knows where it is. See
   The map **window** (`src/app/map/page.tsx`, route `/map`) follows the current zone by
   default with a dropdown to view any mapped zone (and `map.openAt(zone)` / the
   `mapViewZone` event let a clickable location elsewhere point it at a zone — with a
-  coordinate it also drops a marker pin there); created on
+  coordinate it also drops a marker pin there, and with a `MapFocus` it opens the 📖 panel
+  narrowed to the mob and drop that coordinate came from and rings that mob's kills, so a
+  star arrives with the evidence behind it,
+  [ADR 0104](../decisions/0104-a-position-is-read-and-arrives-with-its-evidence.md)); created on
   demand by `createMapWindow`. A hand-picked zone is an **override** that persists —
   but only until the log says you actually **zoned**, which clears it so the map goes
   back to following you (otherwise one dropdown pick silently stops it forever). The

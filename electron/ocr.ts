@@ -6,14 +6,39 @@
  * English traineddata from its CDN on first run and caches it there, so the first
  * lookup needs a network connection. Recognition failures degrade to "" rather
  * than throwing, so a bad capture just yields no matches.
+ *
+ * Every wait here is bounded, and blowing a budget costs the worker (see `BUDGET` and
+ * `discardWorker`) — a wedged worker would otherwise fail every later lookup too. How long the
+ * *screen* is held is not this module's call: `lookup.ts` decides that, and stops waiting on a read
+ * without stopping the read, so a slow first run still lands in Search when it finishes.
  */
 import type { Worker } from "tesseract.js";
 import { createLogger } from "../src/shared/logging";
+import { withTimeout } from "../src/shared/deadline";
 
 const log = createLogger("ocr");
 
+/**
+ * The two waits a read is made of, bounded separately because they fail on different timescales.
+ *
+ * Recognizing an upscaled item name is fast and always has been — minding that budget tightly is
+ * what catches a worker that has stopped answering. Getting a worker, on the first run of a fresh
+ * install, means downloading the language model over the user's connection, which is slow for
+ * honest reasons; holding it to the read's budget would just fail every first lookup.
+ */
+const BUDGET = {
+  read: 4_000,
+  worker: 60_000,
+} as const;
+
 export interface Ocr {
   recognize(image: Buffer): Promise<string>;
+  /**
+   * Start loading the worker now, off the critical path. Optional to call — `recognize` still
+   * initializes on demand — but calling it before a read means the first-run model download isn't
+   * spent against that read's timeout.
+   */
+  warm(): void;
 }
 
 export function createOcr(cachePath: string): Ocr {
@@ -41,14 +66,32 @@ export function createOcr(cachePath: string): Ocr {
     return workerPromise;
   }
 
+  /**
+   * Forget the current worker and tear it down in the background.
+   *
+   * A read that timed out leaves its worker mid-job, and it does not come back on its own — every
+   * later lookup would inherit the wedge and time out too. Dropping the reference means the next
+   * read builds a fresh one (the model is cached by then, so that costs little).
+   */
+  function discardWorker(): void {
+    const dying = workerPromise;
+    workerPromise = null;
+    void dying?.then((w) => w.terminate()).catch(() => {});
+  }
+
   return {
+    warm() {
+      void getWorker().catch(() => {}); // failures are reported by the read that needs it
+    },
+
     async recognize(image) {
       try {
-        const worker = await getWorker();
-        const { data } = await worker.recognize(image);
+        const worker = await withTimeout(getWorker(), BUDGET.worker, "OCR worker init");
+        const { data } = await withTimeout(worker.recognize(image), BUDGET.read, "OCR read");
         return (data.text ?? "").trim();
       } catch (e) {
         log.warn("OCR failed:", (e as Error).message);
+        discardWorker();
         return "";
       }
     },

@@ -42,6 +42,7 @@ const api: EqlApi = {
   loot: {
     recent: (limit) => ipcRenderer.invoke(CH.lootRecent, limit),
     prices: () => ipcRenderer.invoke(CH.lootPrices),
+    items: () => ipcRenderer.invoke(CH.lootItems),
     onEvent: (cb) => on(CH.lootEvent, cb),
     onMatched: (cb) => on(CH.lootMatched, cb),
   },
@@ -139,6 +140,7 @@ const api: EqlApi = {
   },
   lookup: {
     open: () => ipcRenderer.invoke(CH.lookupOpen),
+    ready: () => ipcRenderer.invoke(CH.lookupReady),
     capture: (rect, view) => ipcRenderer.invoke(CH.lookupCapture, rect, view),
     cancel: () => ipcRenderer.invoke(CH.lookupCancel),
   },
@@ -161,7 +163,7 @@ const api: EqlApi = {
   },
   map: {
     open: () => ipcRenderer.invoke(CH.winOpenMap),
-    openAt: (zone, loc, label) => ipcRenderer.invoke(CH.mapOpenAt, zone, loc, label),
+    openAt: (zone, loc, label, focus) => ipcRenderer.invoke(CH.mapOpenAt, zone, loc, label, focus),
     onViewZone: (cb) => on(CH.mapViewZone, cb),
     emphasize: (emphasis) => ipcRenderer.send(CH.mapEmphasize, emphasis),
     onEmphasis: (cb) => on(CH.mapEmphasis, cb),

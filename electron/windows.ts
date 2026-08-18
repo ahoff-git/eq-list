@@ -390,17 +390,71 @@ export function closeAlertWindow(): void {
 }
 
 /**
+ * Every selector window that exists, so a cancel can reach one that got away.
+ *
+ * `lookup.ts` keeps its own set and acts on that — but a window missing from it (created inside a
+ * racing open, orphaned by a throw partway through a multi-monitor set) is exactly the one that ends
+ * up stuck on screen with nothing able to close it, because every route out goes through that set.
+ * This registry is what makes "close them all" true rather than "close the ones we remembered".
+ */
+const lookupWindows = new Set<BrowserWindow>();
+
+/**
+ * Destroy every selector window, optionally sparing one (the read's progress window).
+ * Returns how many went, so a caller can log a discrepancy against its own bookkeeping.
+ *
+ * `destroy()` rather than `close()`: closing asks the renderer to unload, which a wedged or
+ * never-hydrated page can refuse — and refusing is the failure being guarded against. These windows
+ * hold no state, so there is nothing to be polite about.
+ */
+export function destroyLookupWindows(except?: BrowserWindow): number {
+  let gone = 0;
+  for (const win of [...lookupWindows]) {
+    if (win === except) continue;
+    lookupWindows.delete(win);
+    if (!win.isDestroyed()) {
+      win.destroy();
+      gone += 1;
+    }
+  }
+  return gone;
+}
+
+/** Whether any selector window exists — including one its owner has lost track of. */
+export function hasLookupWindows(): boolean {
+  return [...lookupWindows].some((w) => !w.isDestroyed());
+}
+
+/** A selector window and the one thing its owner may do to it beyond closing: put it on screen. */
+export interface LookupWindow {
+  win: BrowserWindow;
+  /**
+   * Show it, sized to its display. Idempotent, and deliberately the caller's call rather than this
+   * module's: `lookup.ts` waits for the renderer to report that it is listening, because a selector
+   * that cannot take a drag or an Escape must never be on screen
+   * ([ADR 0102](../specs/decisions/0102-a-lookup-never-holds-the-screen.md)).
+   */
+  reveal(): void;
+}
+
+/**
  * A frameless, transparent, fullscreen window over ONE display for the screengrab
  * region selector. One is created per display (lookup.ts manages the set) so you
  * can grab from any monitor, including a non-rectangular layout (monitors at
  * different heights) — each window covers exactly its own display. It takes focus
  * for the drag + Escape.
+ *
+ * Created **hidden**: it is fullscreen and takes input, so it is only worth showing once something
+ * on the other side can act on a click.
  */
-export function createLookupWindow(bounds: { x: number; y: number; width: number; height: number }): BrowserWindow {
+export function createLookupWindow(bounds: { x: number; y: number; width: number; height: number }): LookupWindow {
   const win = new BrowserWindow({
     ...bounds,
     frame: false,
     transparent: true,
+    // Shown from the start, this is a fullscreen pane of glass that eats every click while the page
+    // loads and hydrates — and for ever if either never finishes. `reveal()` is the only way on screen.
+    show: false,
     // Must stay resizable/movable so the setBounds below can take effect —
     // the constructor mis-sizes windows created on a secondary/HiDPI monitor
     // (they inherit the PRIMARY display's work-area size), so we re-assert the
@@ -420,17 +474,23 @@ export function createLookupWindow(bounds: { x: number; y: number; width: number
     },
   });
   win.setAlwaysOnTop(true, "screen-saver");
+  lookupWindows.add(win);
+  win.on("closed", () => lookupWindows.delete(win));
   const cover = () => {
     if (!win.isDestroyed()) win.setBounds(bounds);
   };
   cover();
-  win.once("ready-to-show", () => {
-    cover();
-    win.show();
-    setTimeout(cover, REALIZE_DELAY_MS); // some builds only honour the resize once realized
-  });
   load(win, "select");
-  return win;
+  return {
+    win,
+    reveal() {
+      if (win.isDestroyed() || win.isVisible()) return;
+      cover();
+      win.show();
+      win.focus(); // the drag and Escape both need it; nothing else is competing for focus by now
+      setTimeout(cover, REALIZE_DELAY_MS); // some builds only honour the resize once realized
+    },
+  };
 }
 
 /**

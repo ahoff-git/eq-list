@@ -2,8 +2,9 @@
 import { api } from "@/lib/api";
 import { useItemDrops, useItemPrices } from "@/lib/hooks";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
-import { count } from "@/shared/format";
+import { count, locText } from "@/shared/format";
 import { itemDropTotals, priceOfItem, type ItemDropSource } from "@/shared/item-sources";
+import { roamWhy } from "@/shared/mob-stats";
 import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
 import type { ItemSource } from "@/shared/types";
@@ -102,8 +103,8 @@ export default function ItemDrops({ item, sources }: { item: string; sources: It
                 <div className="mob-drop" key={place.zone}>
                   <span
                     className="link"
-                    title={`View ${place.zone} on the map`}
-                    onClick={() => api()?.map.openAt(place.zone)}
+                    title={`View ${place.zone} on the map, with this drop picked out`}
+                    onClick={() => api()?.map.openAt(place.zone, undefined, undefined, { mob: row.mob, drop: item })}
                   >
                     {place.zone}
                   </span>
@@ -112,20 +113,22 @@ export default function ItemDrops({ item, sources }: { item: string; sources: It
                     {place.seen}/{place.kills}
                   </span>
                   {place.area && (
+                    // The coordinate itself is the button: a rough y,x is worth *reading* — it goes
+                    // straight into the game — and worth clicking, which opens the map there with
+                    // the panel that says what dropped and how often (ADR 0104).
                     <button
-                      className="btn ghost sm"
-                      title={`Killed within about ${place.area.spread} units of ${Math.round(place.area.y)}, ${Math.round(
-                        place.area.x,
-                      )} — click to mark it on the map`}
+                      className="btn ghost sm mk-loc"
+                      title={`${roamWhy(place.area)} — click to open the map there and show this drop`}
                       onClick={() =>
                         api()?.map.openAt(
                           place.zone,
                           { y: place.area!.y, x: place.area!.x },
-                          `${row.mob} ±${place.area!.spread}`,
+                          `${item} · ${row.mob}`,
+                          { mob: row.mob, drop: item },
                         )
                       }
                     >
-                      ±{place.area.spread}
+                      {locText(place.area)} <span className="muted">±{place.area.spread}</span>
                     </button>
                   )}
                 </div>

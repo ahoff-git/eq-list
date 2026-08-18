@@ -18,6 +18,12 @@ in the main process and all UI in the renderer.
     the EQ-font confusion table (`rn` read as `m`, …) and the wiki's mirrored titles pick
     between the readings; see
     [ADR 0081](../decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md).
+    The selectors cover every display and take input, so **nothing may hold them open
+    indefinitely**: a selector is created hidden and shown only once its renderer reports
+    (`lookup:ready`) that it is listening, a per-phase deadline closes them, `destroy()` means a
+    wedged page can't refuse, Escape is held globally while one is open, the hotkey toggles, and
+    every OCR wait is bounded (a blown budget discards the worker) — see
+    [ADR 0102](../decisions/0102-a-lookup-never-holds-the-screen.md).
   - `combat-stats.ts` — the one session tracker: experience/kill counters, per-combatant
     and per-spell tallies, per-mob rates; `combat-history.ts` — finished fights persisted
     for later; `xp-progress.ts` / `hp-estimate.ts` — persistent player state that outlives

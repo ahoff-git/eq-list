@@ -48,6 +48,19 @@ export function when(iso: string): string {
 }
 
 /**
+ * An EQ position as text — `1234, -567`, y first and rounded, the way the game and the wiki both
+ * write it.
+ *
+ * Rounded because every coordinate we show is an *estimate* — a roam centre averaged from kills, a
+ * position inferred between two `/loc`s — and a decimal on a figure that carries a `±30` beside it
+ * claims a precision nothing here has. Y first is not a preference: it's the order EQ prints, so a
+ * player can read it straight into `/waypoint` or compare it with a wiki `Location:` line.
+ */
+export function locText(loc: { y: number; x: number }): string {
+  return `${Math.round(loc.y)}, ${Math.round(loc.x)}`;
+}
+
+/**
  * A span of seconds, as long as it needs to be: `45s`, `5m`, or `5m 30s` with `seconds`.
  *
  * Under a minute it's always seconds — `0m` says nothing. Callers pass whole seconds (`durationSec`

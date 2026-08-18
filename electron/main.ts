@@ -542,7 +542,12 @@ if (!app.requestSingleInstanceLock()) {
     tray.setContextMenu(buildTrayMenu());
     tray.on("click", () => toggleWindow());
   }
-  const lookupReg = globalShortcut.register(LOOKUP_HOTKEY.accelerator, () => lookup.open());
+  // The hotkey toggles: a selector that has stopped responding can always be dismissed from the
+  // keyboard, without depending on the window itself to have focus for Escape.
+  const lookupReg = globalShortcut.register(LOOKUP_HOTKEY.accelerator, () => {
+    if (lookup.isOpen()) lookup.cancel();
+    else void lookup.open();
+  });
   if (!lookupReg) log.warn("could not register lookup hotkey:", LOOKUP_HOTKEY.accelerator);
   appInfo = {
     logFile,

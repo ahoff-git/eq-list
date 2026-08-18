@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
-import { dropKey, dropSources, type MobKnowledge } from "@/shared/mob-stats";
+import { dropKey, dropSources, roamWhy, type MobKnowledge } from "@/shared/mob-stats";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
 import { filterMobKnowledge, matchesDrop, mobChoices, type KillFilters } from "@/shared/kill-filters";
 import { count, countOf } from "@/shared/format";
@@ -171,7 +171,7 @@ export default function MobKnowledgePanel({
               {mob.area && onMarkMob && (
                 <button
                   className="btn ghost sm"
-                  title={`Roams within about ${mob.area.spread} units of ${Math.round(mob.area.y)}, ${Math.round(mob.area.x)} — click to pin it on the map`}
+                  title={`${roamWhy(mob.area)} — click to pin it on the map`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onMarkMob(mob);

@@ -97,3 +97,29 @@ test("clearing empties the ledger, and a corrupt file is not fatal", () => {
   fs.writeFileSync(path.join(broken, "loot-log.json"), "{nope");
   assert.deepEqual(createLootLog(broken).recent(), []);
 });
+
+// The ledger is the only complete record of what you have *held*, which is what search falls back
+// on when the wiki's index has never heard of the item (ADR 0103).
+test("the ledger can name every item it has ever held, most-looted first", () => {
+  const l = createLootLog(tempDir());
+  l.add(drop("Bone Chips", 1));
+  l.add({ ...drop("Bone Chips", 2), qty: 4 });
+  l.add(drop("Desecrated Kejaar Totem", 3));
+
+  assert.deepEqual(
+    l.items().map((i) => [i.item, i.count, i.qty]),
+    [
+      ["Bone Chips", 2, 5],
+      ["Desecrated Kejaar Totem", 1, 1],
+    ],
+  );
+  assert.equal(l.items()[0].lastAt, "2026-07-29T00:00:02", "the latest sighting, not the first");
+});
+
+// Folding a grade here would offer a name the game never printed; the caller that wants grades
+// pooled owns that fold (`known-items.ts`), and this one only has to be complete.
+test("a graded item keeps the spelling the log used", () => {
+  const l = createLootLog(tempDir());
+  l.add(drop("Dragoon Dirk +2", 1));
+  assert.deepEqual(l.items().map((i) => i.item), ["Dragoon Dirk +2"]);
+});

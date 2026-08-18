@@ -21,6 +21,7 @@ export const CH = {
   logRecent: "log:recent", // the last few thousand lines, for testing an alert rule against them
   lootRecent: "loot:recent",
   lootPrices: "loot:prices",
+  lootItems: "loot:items",
   alertsTest: "alerts:test",
   alertsPreview: "alerts:preview", // show a sample wearing a look being edited, attached to no rule
   alertPlaceStart: "alert:placeStart", // main window → main: begin placing a custom alert spot
@@ -77,6 +78,7 @@ export const CH = {
   spawnsStop: "spawns:stop",
   lookupCapture: "lookup:capture",
   lookupOpen: "lookup:open",
+  lookupReady: "lookup:ready", // the selector reporting it has mounted and is listening for a drag
   searchShow: "search:show",
   lookupCancel: "lookup:cancel",
   appInfo: "app:info",

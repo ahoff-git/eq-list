@@ -30,6 +30,7 @@ import { stripArticle } from "./log-parser";
 import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
 import { ratio } from "./numbers";
+import { locText } from "./format";
 
 /** Positions this poor are ignored when working out where a mob lives. */
 const AREA_MIN_CONFIDENCE = 0.2;
@@ -41,6 +42,35 @@ const AREA_MIN_CONFIDENCE = 0.2;
  */
 export function mobKey(name: string): string {
   return stripArticle(name).toLowerCase().trim();
+}
+
+/**
+ * Where a mob turned out to live: the middle of the kills that placed it, and how far they spread.
+ *
+ * Named because three lists now show it and one sentence describes it (`roamWhy`) — it was an
+ * inline shape written out twice and a tooltip written out three times, which is one fact about a
+ * mob with three chances to word it differently.
+ */
+export interface MobArea {
+  y: number;
+  x: number;
+  /** The furthest kill from that centre, in EQ units — how rough "roughly here" is. */
+  spread: number;
+  /** Positioned kills behind it. A centre from two is a guess; from forty it's a camp. */
+  samples: number;
+}
+
+/**
+ * What a roam area actually claims, in words — the hover every list that shows one carries.
+ *
+ * Deliberately hedged and deliberately specific: it is an *average* of your kills, not a spawn
+ * point, so it says "within about" and states the sample it rests on. The action ("click to…")
+ * belongs to the caller, since the same figure pins on one screen and opens a map from another.
+ */
+export function roamWhy(area: MobArea): string {
+  return `Killed within about ${area.spread} units of ${locText(area)}, averaged over ${
+    area.samples === 1 ? "1 positioned kill" : `${area.samples} positioned kills`
+  }`;
 }
 
 /** A mob's tally in one zone — the shareable unit. Counts, never raw kills. */
@@ -58,7 +88,7 @@ export interface MobObservation {
    */
   copper?: number;
   /** The middle of where it was killed, and how far that spreads (EQ units). */
-  area?: { y: number; x: number; spread: number; samples: number };
+  area?: MobArea;
   /** Most recent kill, so stale knowledge can be told from fresh. */
   lastAt: string;
   /** Who observed it. Absent means "you". */
@@ -90,7 +120,7 @@ export interface MobKnowledge {
   /** Kills you saw yourself, of the total — provenance for the rate. */
   myKills: number;
   drops: MobDrop[];
-  area?: { y: number; x: number; spread: number; samples: number };
+  area?: MobArea;
   lastAt: string;
   /** Names of everyone whose observations are in here (you are not listed). */
   contributors: string[];

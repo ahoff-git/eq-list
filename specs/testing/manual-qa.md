@@ -104,6 +104,19 @@ features for later in [../ideas.md](../ideas.md).
   says "Morning Star" rather than "Moming Star" — and, the other way, that grabbing an item the wiki
   has no page for still shows what OCR actually read. The debug log prints the readings offered and
   the one chosen (`lookup` / `wiki` channels).
+- **A lookup gives the screen back.** The bounds from
+  [ADR 0102](../decisions/0102-a-lookup-never-holds-the-screen.md) have only been reasoned about, not
+  watched. The selector no longer appears until its renderer reports in, so first check the **happy
+  path still works on every monitor** (the wash should be visibly there, and a drag should select).
+  Then: press the hotkey and *don't* drag — the selectors should vanish on their own (~10s) and the
+  mouse work again; press Escape **with the selector focused** and again **with the game focused**
+  (three routes answer that key and only the middle one is exercised by a normal press — confirm
+  Escape still works normally in game once the lookup has ended); press the
+  hotkey twice and confirm the second press cancels rather than stacking a second set; and on a
+  **fresh install** (no `tesseract-cache`) confirm the "reading text…" overlay closes after ~6s and
+  the model download still lands the name in Search when it finishes.
+  The stuck-selector case itself is reproducible by breaking hydration (throw from the select page's
+  effect): the window should never appear at all, and the log should say the selector never reported.
 - **Map window, real run.** Confirm the map window opens (🗺 button), draws the zone, and plots the
   player dot on a `/loc` line.
 - **The game's own maps, drawn (source dropdown).** Verified against the real install in the

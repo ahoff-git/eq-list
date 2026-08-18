@@ -105,9 +105,13 @@ list, hunt, search, damage, session, settings.
   source on the page names that mob and **unseen in N** where the page names one our kills keep
   failing to confirm — plus what it has vendored for. It renders nothing when nothing is known, and
   only a page the wiki *says* drops gets a "you haven't seen this yet" note.
-- **Every position on a page opens the map.** A stat card's `Zone:` views that zone
-  (`api().map.openAt`), an embedded `(y, x)` opens it *and* drops a marker there, and a mob's observed
-  roam centre does the same with its spread in the title — a page is text, and where a thing lives is
+- **Every position on a page opens the map, and the observed ones say what they are.** A stat card's
+  `Zone:` views that zone (`api().map.openAt`), an embedded `(y, x)` opens it *and* drops a marker
+  there, and a mob's observed roam centre is **printed as `y, x ±spread`** — a figure to read and type,
+  not just a control — which opens the map there *and* brings up the 📖 panel narrowed to that mob and
+  drop, with its kills ringed
+  ([ADR 0104](../decisions/0104-a-position-is-read-and-arrives-with-its-evidence.md)); the wording under
+  every such figure is one shared sentence (`roamWhy`), and the coordinate one shared `locText` — a page is text, and where a thing lives is
   the one part of it that belongs on a map. Hovering a `MobKills` block rings that mob's kills on a map
   that's **already open** (`map.emphasize`, the Hunt tab's gesture); it never opens one, since a window
   that appears because the cursor crossed a name is a window nobody asked for.
@@ -249,7 +253,13 @@ list, hunt, search, damage, session, settings.
     switching tabs fires no `mouseleave`.
   - `SearchPanel` — fuzzy-search eqlwiki (typo-tolerant, ↑↓/Enter keyboard nav) with
     two modes: **By name** (any item/quest/recipe) and **By zone** (fuzzy-pick a zone,
-    then list its quests). The open page is whatever `nav.current` points at; a result
+    then list its quests). A name search **also reads your own log**: what the wiki's index can't
+    answer is offered beneath its results under *"From your own log · not on the wiki"*, ranked by the
+    same scorer from what you have actually held, and opening one gets `ObservedItemView` — a page
+    made of your own evidence, with the **+ Add** the search was for
+    ([ADR 0103](../decisions/0103-search-can-answer-from-your-own-log.md)). Both lists share one
+    keyboard cursor, and the local half needs no debounce, so it answers while the wiki lookup is
+    still in flight. The open page is whatever `nav.current` points at; a result
     name/row, each **"How to get it"** source, and each component are all in-app links,
     with ← / → history buttons in the page header. **Adding is kind-aware and the same
     from a result row's "+ Add" or the open page** (the result button fetches the page to

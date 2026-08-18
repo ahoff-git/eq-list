@@ -101,6 +101,23 @@ export interface ItemPrice {
   lastAt: string;
 }
 
+/**
+ * One item the loot ledger has ever seen, and how much of it — the vocabulary of things you have
+ * actually held.
+ *
+ * Derived from the feed rather than stored beside it (ADR 0016), and deliberately keyed by the
+ * **log's own spelling**: this is the list search falls back on when the wiki has never heard of an
+ * item, so the only name it can offer is the one the game printed.
+ */
+export interface LootedItem {
+  item: string;
+  /** Loot lines that named it. */
+  count: number;
+  /** How many, stacks counted. */
+  qty: number;
+  lastAt: string;
+}
+
 /** A parsed "You have entered <zone>" line — tracks the player's current zone. */
 export interface ZoneEvent extends LogEventBase {
   kind: "zone";
@@ -1345,6 +1362,21 @@ export interface SpawnView {
  * windows now: the map's own ☠ list, and the main window's Hunt tab (over `map.emphasize`). Both
  * are the same question — "where did those die?" — so they send the same shape.
  */
+/**
+ * What a window opening the map wants **brought up with it** — the evidence behind the position it
+ * just asked for (ADR 0104).
+ *
+ * A marker says "here"; it can't say *why* here. These name the mob and the drop the coordinate was
+ * derived from, so the map can open its 📖 knowledge panel narrowed to exactly that row instead of
+ * leaving a star on a map with nothing to read it against.
+ */
+export interface MapFocus {
+  /** Narrow the map's lists to this mob, and ring its kills. */
+  mob?: string;
+  /** Narrow them to this drop too, so the row that answers "where did it drop" is the one shown. */
+  drop?: string;
+}
+
 export interface KillEmphasis {
   /**
    * The mobs to ring. Usually one — a hovered row — but pointing at a *drop* asks about every mob
@@ -1988,6 +2020,11 @@ export interface EqlApi {
     recent(limit?: number): Promise<LootEvent[]>;
     /** What each item has auto-sold for, biggest earner first. */
     prices(): Promise<ItemPrice[]>;
+    /**
+     * Every distinct item the ledger holds, most-looted first. Search reads it so a name the wiki
+     * has never heard of can still be found by the player who has looted forty of them (ADR 0103).
+     */
+    items(): Promise<LootedItem[]>;
     /** Every parsed loot line, whether or not it's on the list. */
     onEvent(cb: (event: LootEvent) => void): Unsubscribe;
     /** Loot lines that matched a shopping-list entry. */
@@ -2226,6 +2263,12 @@ export interface EqlApi {
     /** Open the region selector (same as the screengrab hotkey). */
     open(): Promise<void>;
     /**
+     * Sent by a selector window once it is mounted and listening. Nothing else may call it: it is
+     * what puts that window on screen, because a selector that can't take a drag must not be shown
+     * ([ADR 0102](../../specs/decisions/0102-a-lookup-never-holds-the-screen.md)).
+     */
+    ready(): Promise<void>;
+    /**
      * OCR the selected region; the read text is routed to the Search box. `rect` is
      * in the selector window's client pixels and `view` is that window's viewport
      * size — the ratio image/view maps the selection to image pixels regardless of
@@ -2301,11 +2344,19 @@ export interface EqlApi {
     open(): Promise<void>;
     /**
      * Open the map window at a zone. With `loc` (EQ y,x — e.g. from a mob's Location
-     * coordinate), drop a marker there labeled with `label`.
+     * coordinate), drop a marker there labeled with `label`; with `focus`, bring up the panel that
+     * says what the marker is (ADR 0104).
      */
-    openAt(zone: string, loc?: { y: number; x: number }, label?: string): Promise<void>;
+    openAt(
+      zone: string,
+      loc?: { y: number; x: number },
+      label?: string,
+      focus?: MapFocus,
+    ): Promise<void>;
     /** Fires in the map window when asked to view a zone / drop a marker (`openAt`). */
-    onViewZone(cb: (msg: { zone: string; loc?: { y: number; x: number }; label?: string }) => void): Unsubscribe;
+    onViewZone(
+      cb: (msg: { zone: string; loc?: { y: number; x: number }; label?: string; focus?: MapFocus }) => void,
+    ): Unsubscribe;
     /**
      * Ask the map to pick a mob's kills out of its heatmap — what the map's own ☠ list does on
      * hover, offered to the other windows so pointing at a mob name anywhere answers "where did

@@ -11,6 +11,7 @@ import {
   mergeObservations,
   mobKey,
   observeMobs,
+  roamWhy,
   sumObservations,
   type MobKnowledge,
   type MobObservation,
@@ -388,4 +389,14 @@ test("the same mob behind two doors is one thing to go looking for", () => {
 test("an item nothing here drops has no sources rather than an empty answer", () => {
   const sources = dropSources([known("a puma", "Kerra Ridge", ["Puma Skin"])]);
   assert.equal(sources.get(dropKey("Rusty Dagger")), undefined);
+});
+
+// The one sentence three lists show under a roam area. It must hedge (it's an average of kills, not
+// a spawn point) and it must carry its sample, since a centre from one kill is not a camp.
+test("a roam area says how rough it is and what it rests on", () => {
+  assert.equal(
+    roamWhy({ y: 120.4, x: -40.6, spread: 30, samples: 12 }),
+    "Killed within about 30 units of 120, -41, averaged over 12 positioned kills",
+  );
+  assert.match(roamWhy({ y: 1, x: 2, spread: 0, samples: 1 }), /over 1 positioned kill$/);
 });

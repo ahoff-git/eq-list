@@ -32,7 +32,7 @@ import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { SpawnTracker } from "./spawn-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 
 const log = createLogger("ipc");
@@ -380,6 +380,9 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.lootRecent, (_e, limit?: number) => lootLog.recent(limit));
   // Vendor prices, derived from those same auto-sell lines — "what is this trash worth".
   ipcMain.handle(CH.lootPrices, () => lootLog.prices());
+  // Every item the ledger has ever held — what search falls back on when the wiki's index has
+  // never heard of the thing you looted (ADR 0103).
+  ipcMain.handle(CH.lootItems, () => lootLog.items());
   ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
   ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
   ipcMain.handle(CH.mobsReport, (_e, by: string, observations: MobObservation[]) => mobs.report(by, observations));
@@ -416,6 +419,7 @@ function registerAppIpc(context: IpcContext): void {
     lookup.capture(rect, view, e.sender),
   );
   ipcMain.handle(CH.lookupOpen, () => lookup.open());
+  ipcMain.handle(CH.lookupReady, (e) => lookup.ready(e.sender));
   ipcMain.handle(CH.searchShow, (_e, text: string) => showInSearch(text));
   ipcMain.handle(CH.lookupCancel, () => lookup.cancel());
   ipcMain.handle(CH.appInfo, () => getAppInfo());
@@ -482,11 +486,13 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
     win.focus();
   });
   // Open the map window and tell it to view a zone (and optionally drop a marker).
-  ipcMain.handle(CH.mapOpenAt, (_e, zone: string, loc?: { y: number; x: number }, label?: string) => {
+  // `focus` rides along untouched: it names the mob and drop the coordinate came from, so the map
+  // can open the panel that explains the marker rather than leaving a bare star (ADR 0104).
+  ipcMain.handle(CH.mapOpenAt, (_e, zone: string, loc?: { y: number; x: number }, label?: string, focus?: MapFocus) => {
     const win = createMapWindow(store.getSettings().overlay);
     win.show();
     win.focus();
-    const send = () => win.webContents.send(CH.mapViewZone, { zone, loc, label });
+    const send = () => win.webContents.send(CH.mapViewZone, { zone, loc, label, focus });
     if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
     else send();
   });

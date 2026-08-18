@@ -2,9 +2,9 @@
 import { api } from "@/lib/api";
 import { useMobZones } from "@/lib/hooks";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
-import { count } from "@/shared/format";
+import { count, locText } from "@/shared/format";
 import { describeCoins, formatCoins } from "@/shared/money";
-import type { MobKnowledge } from "@/shared/mob-stats";
+import { roamWhy, type MobKnowledge } from "@/shared/mob-stats";
 import ItemLink from "./ItemLink";
 
 /**
@@ -49,8 +49,8 @@ export default function MobKills({ mob }: { mob: string }) {
             <div className="mk-head">
               <span
                 className="link"
-                title={`View ${z.zone} on the map`}
-                onClick={() => api()?.map.openAt(z.zone)}
+                title={`View ${z.zone} on the map, with this mob's kills picked out`}
+                onClick={() => api()?.map.openAt(z.zone, undefined, undefined, { mob })}
               >
                 {z.zone}
               </span>
@@ -68,14 +68,16 @@ export default function MobKills({ mob }: { mob: string }) {
               )}
               <span className="spacer" />
               {z.area && (
+                // Readable as well as clickable: the numbers are what you type into the game, and
+                // the click opens the map there with this mob's kills picked out (ADR 0104).
                 <button
-                  className="btn ghost sm"
-                  title={`Roams within about ${z.area.spread} units of ${Math.round(z.area.y)}, ${Math.round(z.area.x)} — click to mark it on the map`}
+                  className="btn ghost sm mk-loc"
+                  title={`${roamWhy(z.area)} — click to open the map there and show these kills`}
                   onClick={() =>
-                    api()?.map.openAt(z.zone, { y: z.area!.y, x: z.area!.x }, `${mob} ±${z.area!.spread}`)
+                    api()?.map.openAt(z.zone, { y: z.area!.y, x: z.area!.x }, mob, { mob })
                   }
                 >
-                  ±{z.area.spread}
+                  {locText(z.area)} <span className="muted">±{z.area.spread}</span>
                 </button>
               )}
             </div>

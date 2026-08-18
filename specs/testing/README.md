@@ -45,6 +45,19 @@ unit-tested.
     a graded drop answering for the base page. The two refusals are the point: a wiki-claimed mob we
     have **never killed** gets no row at all — "0 of 0" beside a claim would dress it up as evidence —
     and a claim only becomes *suspicious* once the kills behind it say something.)
+  - `src/shared/format.ts` → `electron/tests/format.test.ts` (the display formatters the panels share —
+    including `locText`, where the **order and the rounding are load-bearing**: a coordinate is read
+    straight into the game, y first as EQ prints it, and rounded because every position we show is an
+    estimate carrying a `±` beside it).
+  - `src/shared/known-items.ts` → `electron/tests/known-items.test.ts` (the vocabulary of things you
+    have actually **held**, which is what search offers when eqlwiki's index can't answer
+    ([ADR 0103](../decisions/0103-search-can-answer-from-your-own-log.md)). The case that produced it
+    leads: `Desecrated Kejaar Totem`, absent from the wiki and looted a dozen times, found by name and
+    by a misspelling of it. Then that the ledger and the kill tally are **one** vocabulary — either
+    alone is enough to know an item exists — that every grade is one entry rather than three findings
+    of one item, and that anything the wiki *did* answer is dropped from the list, so no search shows
+    one item twice. `electron/loot-log.ts`'s own test pins the other end: the ledger can name every
+    item it has ever held, most-looted first, keeping the log's exact spelling.)
   - `src/shared/names.ts` → `electron/tests/names.test.ts` (an item's `+N` grade and a zone's
     difficulty number and ruleset tag read off a name and taken back off it — and, the half that
     matters, a name carrying none of them surviving untouched). Plus `zoneKey`, the one fold behind
@@ -137,7 +150,9 @@ unit-tested.
     observation keeps the log's zone name verbatim, variant and all, while the **pooled** view is one
     camp per place named from the mapping table — asserted together, since the pair is the point, plus
     the repeatability property (a reversed input aggregates identically) and that two zones which merely
-    look alike are never pooled by either.
+    look alike are never pooled by either. And `roamWhy`, the one sentence three lists now show under a
+    roam area, pinned to **hedge** — it is an average of kills, not a spawn point — and to carry its
+    sample, since a centre from one kill is not a camp.
   - `src/shared/kill-filters.ts` + `kill-confidence.ts` → `electron/tests/kill-filters.test.ts`
     (time windows, mob/drop matching, the confidence floor, and every tier having a distinct
     glyph so the map doesn't depend on colour alone). Plus **a peer's kill as an ordinary kill**

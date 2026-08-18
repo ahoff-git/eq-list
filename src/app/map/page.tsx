@@ -162,12 +162,23 @@ export default function MapWindow() {
 
   // A clickable location elsewhere (e.g. a mob's zone or coordinate) asks us to view
   // a zone — and, when a coordinate came along, drop a marker pin there (deduped).
+  //
+  // A `focus` says what the marker *is*: the mob and the drop the coordinate was derived from. With
+  // one, the 📖 panel comes up narrowed to that row and the mob's kills are ringed, so the answer to
+  // "where did this drop" arrives with its evidence rather than as a star on a map (ADR 0104).
   useEffect(() => {
     const a = api();
     if (!a) return;
-    return a.map.onViewZone(({ zone, loc, label }) => {
+    return a.map.onViewZone(({ zone, loc, label, focus }) => {
       const zname = findZone(zone, zonesRef.current)?.name ?? zone;
       setOverride(zname); // canonical name so the dropdown reflects it
+      if (focus?.mob || focus?.drop) {
+        setKillFilters((f) => ({ ...f, mob: focus.mob ?? "", drop: focus.drop ?? "" }));
+        setMobsOpen(true);
+        // Ringing the kills is the map's own half of the answer — the panel says how often, the
+        // rings say where. Cleared by the next hover, like any other emphasis.
+        if (focus.mob) setEmphasis({ mobs: [focus.mob] });
+      }
       if (!loc) return;
       // Unlayered like a mob's roam centre: the coordinate came from somewhere that has
       // no idea which floor it's on, so the marker shows on every layer.

@@ -11,7 +11,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clock, count, countOf, dayTime, duration, figure, percent, when } from "../../src/shared/format";
+import { clock, count, countOf, dayTime, duration, figure, locText, percent, when } from "../../src/shared/format";
 
 test("a duration says minutes, and seconds only when asked", () => {
   // The distinction the two copies disagreed about.
@@ -96,4 +96,12 @@ test("a percentage of nothing is a gap, not NaN%", () => {
   for (const nothing of [undefined, null, NaN, Infinity]) {
     assert.equal(percent(nothing), "—", String(nothing));
   }
+});
+
+// Every coordinate the app shows is an estimate — a roam centre averaged from kills — and it is read
+// straight into the game, so the order (y first, as EQ prints it) and the rounding are both load-bearing.
+test("a position reads y first and rounded, ready to type into the game", () => {
+  assert.equal(locText({ y: 1234.4, x: -567.6 }), "1234, -568");
+  assert.equal(locText({ y: 0, x: 0 }), "0, 0", "the origin is a place like any other");
+  assert.equal(locText({ y: -0.4, x: 12 }), "0, 12", "no negative zero on screen");
 });
