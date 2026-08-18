@@ -355,6 +355,22 @@ function registerStatsIpc(context: IpcContext): void {
     spawns.relearn(key);
     return spawns.view();
   });
+  ipcMain.handle(CH.spawnsForgetSightings, (_e, key: string) => {
+    spawns.forgetSightings(key);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsForgetFloor, (_e, key: string) => {
+    spawns.forgetFloor(key);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsDropGap, (_e, key: string, id: string, dropped: boolean) => {
+    spawns.setGapDropped(key, id, dropped);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsMarkNotUp, (_e, key: string) => {
+    spawns.markNotUp(key);
+    return spawns.view();
+  });
   ipcMain.handle(CH.spawnsStop, (_e, key: string) => {
     spawns.stop(key);
     return spawns.view();

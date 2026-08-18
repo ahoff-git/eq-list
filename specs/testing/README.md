@@ -36,6 +36,15 @@ unit-tested.
     / unseen verdicts, when a wiki claim becomes suspicious, the sample size at which our
     own observations take over from the wiki's figure, and every grade of an item pooling into
     one row with its counts *added* rather than overwritten).
+  - `src/shared/item-sources.ts` → `electron/tests/item-sources.test.ts` (the same reconciliation read
+    from the *item's* end — who drops the thing you're holding
+    ([ADR 0101](../decisions/0101-an-item-page-says-who-dropped-it.md)): a mob as one row however many
+    camps it was killed in, with the pooled rate rather than the mean of two rates; a camp that never
+    produced it kept as evidence and sorted below the ones that did; the roam centre riding along,
+    since it is the only "where" anything has; the wiki's article meeting the log's stripped name, and
+    a graded drop answering for the base page. The two refusals are the point: a wiki-claimed mob we
+    have **never killed** gets no row at all — "0 of 0" beside a claim would dress it up as evidence —
+    and a claim only becomes *suspicious* once the kills behind it say something.)
   - `src/shared/names.ts` → `electron/tests/names.test.ts` (an item's `+N` grade and a zone's
     difficulty number and ruleset tag read off a name and taken back off it — and, the half that
     matters, a name carrying none of them surviving untouched). Plus `zoneKey`, the one fold behind
@@ -50,7 +59,14 @@ unit-tested.
     evidence (a peer's kill, whose clock isn't yours; a kill with no zone) against what is (a
     bystander's, deliberately unlike a drop rate), the article proof that a mob is a named — with
     **absent meaning unknown**, and one fresh kill making an old record's history readable
-    retroactively — and that a learned figure is always *worded* as a bound with its sample. Then
+    retroactively — and that a learned figure is always *worded* as a bound with its sample. Also
+    the **difficulty change**, which is the one distortion the design can't survive: a gap across one
+    is discarded, kills either side still teach within their own difficulty, and the assertion that
+    `timerKey` folds the variants into one camp is kept beside it — because that folding is *why*
+    the raw zone has to be carried to the gap at all. And the **per-gap corrections**: every counting
+    gap is listed shortest-first, dropping one re-derives the figure from the rest, a dropped one
+    stays listed so it can be put back, a gap's id survives a re-read of the same log, and gaps that
+    were never evidence are absent rather than listed as exclusions. Then
     the window on top of it ([ADR 0094](../decisions/0094-a-spawn-timer-is-a-window-not-an-instant.md)):
     that **both ends** of the evidence are kept, that clustered gaps are trusted while disagreeing
     ones are flagged and lead with the range, that padding opens a window **without moving the
@@ -104,7 +120,10 @@ unit-tested.
     Since **considering or hailing** a tracked mob counts as seeing it up
     ([ADR 0097](../decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md)), the flow tests
     cover that too — including the two ways it must stay quiet: cons of things you aren't timing
-    change nothing at all, and a chat line that merely *contains* a `--` is not a consider.
+    change nothing at all, and a chat line that merely *contains* a `--` is not a consider. And the
+    **difficulty change** end to end, from the zone line: the gap across it teaches nothing, the
+    countdown it invalidated is cleared, and leaving the zone and coming back is *not* mistaken for
+    one.
   - `src/shared/hunt.ts` → `electron/tests/hunt.test.ts` also covers **mob targets**
     ([ADR 0098](../decisions/0098-a-mob-is-a-thing-you-hunt.md)): that a mob entry is never an
     outstanding item, that a target lands in the zones you've killed it in and is still listed when

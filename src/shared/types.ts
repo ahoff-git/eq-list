@@ -1,7 +1,7 @@
 import type { DataReportRow } from "./data-provenance";
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
-import type { Respawn, RespawnLearning, SpawnState, SpawnTimer } from "./spawn-timers";
+import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { EqMap } from "./map/eqmap";
 import type { MapSourceReport } from "./map/map-sources";
 import type { TravelAnswer, TravelEnd } from "./travel/route";
@@ -1299,6 +1299,17 @@ export interface KnownSpawn extends RespawnLearning {
    * two comparable kills and nobody has typed one, which is a blank rather than a guess.
    */
   respawn?: Respawn;
+  /**
+   * What marking it up has taught — the tightest death-to-sighting gap and how many there were.
+   * Shown beside the kill-gap figures so the *evidence* can be judged rather than only the answer:
+   * a wonky number is fixable only if you can see which source it came from.
+   */
+  seen?: Sighting;
+  /**
+   * What saying it was **not** up yet has taught — the only lower bound here, and the one piece of
+   * evidence that can prove the estimate wrong rather than merely soft.
+   */
+  floor?: Floor;
   /** Whether a countdown for it is currently on the board. */
   running: boolean;
   /**
@@ -2140,6 +2151,12 @@ export interface EqlApi {
      */
     markUp(key: string): Promise<SpawnView>;
     /**
+     * You're standing there and it is **not** up — disagreeing with a countdown that says it should
+     * be. Records the only lower bound the app has: the window may not open before it, and where it
+     * passes the estimate the two are reported as contradicting.
+     */
+    markNotUp(key: string): Promise<SpawnView>;
+    /**
      * It's dead now — start the countdown from this moment, or restart one already running. The
      * hand-operated twin of a kill line, for when the app wasn't watching or a pull went unlogged.
      * Seeds a countdown only: one death measures no respawn, so it teaches the estimate nothing.
@@ -2172,6 +2189,15 @@ export interface EqlApi {
      * a figure that observation can only ever tighten.
      */
     relearn(key: string): Promise<SpawnView>;
+    /** Drop just the sightings — the narrow fix for one mis-clicked "It's up". */
+    forgetSightings(key: string): Promise<SpawnView>;
+    /** Drop just the "not up yet" observations. */
+    forgetFloor(key: string): Promise<SpawnView>;
+    /**
+     * Throw out one measured gap, or put it back — the finest correction there is. Everything else
+     * that camp taught survives, which is what `relearn` cannot offer.
+     */
+    setGapDropped(key: string, id: string, dropped: boolean): Promise<SpawnView>;
     /** Take a countdown off the board without forgetting what it taught. */
     stop(key: string): Promise<SpawnView>;
     /** Fires when a timer starts, is due, or ages out, so the tab needn't poll main for the list. */

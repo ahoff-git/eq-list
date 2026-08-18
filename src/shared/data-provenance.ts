@@ -187,10 +187,17 @@ export const DATA_CONCERNS: DataConcern[] = [
     id: "kill-log",
     label: "Recorded kills and drops",
     file: "kill-log.json",
-    revision: 1,
+    // 2: a kill line's **articles** are now read, and they are destroyed a line later by
+    // `stripArticle` — so they exist on a record only if that record was written by this rule.
+    revision: 2,
+    // Stamping shipped at revision 1, so an unstamped file predates even that. Both are stale
+    // against this bump, and both are fixed by the same re-read.
+    unstamped: 1,
     remedy: "re-eat",
     blurb:
       "Where each mob died, what it dropped, and what it carried — the heatmap, the observed drop rates, and the mob knowledge pooled from them.",
+    changed:
+      "A kill now records whether the mob and its killer were written with an article (ADR 0092) — the log's only signal for what kind of thing died. Kills recorded before that can't say, so a named you have camped for months teaches its respawn nothing until you kill it once more. Digesting the log fills it in for every kill you still have.",
   },
   {
     id: "loot-log",
@@ -204,6 +211,13 @@ export const DATA_CONCERNS: DataConcern[] = [
     id: "spawn-timers",
     label: "Respawn timers",
     file: "spawn-timers.json",
+    // Still 1, and deliberately so even though the *rules* changed this release (gaps across a
+    // difficulty change are now discarded, ADR 0092). What this file holds is what the player
+    // typed — figures, padding, notify, the looks — plus due times and sightings. The learned
+    // windows are **derived from the kill log on every read**, so a rule change corrects them the
+    // next time they're looked at, with nothing to reprocess. Bumping this would flag a file that
+    // is perfectly current and send the reader to a remedy that would change none of it; the
+    // concern that really did move is `kill-log`, and that is where it is flagged.
     revision: 1,
     remedy: "re-eat",
     blurb:

@@ -62,14 +62,18 @@ export const CH = {
   spawnsState: "spawns:state", // the player's own respawn figure, which nothing observed overwrites
   spawnsMarkNamed: "spawns:markNamed",
   spawnsPad: "spawns:pad", // how early to be told — the player's allowance for a soft timer
-  spawnsMarkUp: "spawns:markUp", // you can see it: end the countdown and record the sighting
+  spawnsMarkUp: "spawns:markUp",
+  spawnsMarkNotUp: "spawns:markNotUp", // you are there and it is not up: the one lower bound // you can see it: end the countdown and record the sighting
   spawnsMarkDead: "spawns:markDead", // it's dead now: start or restart the countdown by hand
   spawnsAdd: "spawns:add", // a timer typed in by hand: an un-killed named, or a custom countdown
   spawnsRemove: "spawns:remove",
   spawnsNotify: "spawns:notify",
   spawnsStyle: "spawns:style", // which saved look its pop wears
   spawnsOnScreen: "spawns:onScreen", // keep this countdown over the game
-  spawnsRelearn: "spawns:relearn", // throw away a learned bound and start again from now
+  spawnsRelearn: "spawns:relearn",
+  spawnsForgetSightings: "spawns:forgetSightings",
+  spawnsForgetFloor: "spawns:forgetFloor",
+  spawnsDropGap: "spawns:dropGap", // throw out one measured gap, keeping the rest // throw away a learned bound and start again from now
   spawnsStop: "spawns:stop",
   lookupCapture: "lookup:capture",
   lookupOpen: "lookup:open",

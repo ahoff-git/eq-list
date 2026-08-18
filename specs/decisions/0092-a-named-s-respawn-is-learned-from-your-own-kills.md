@@ -95,6 +95,26 @@ there. Both are rejected outright — clamping would invent a number, and agains
 falls an invented *short* number is permanent. Gaps only count between kills **in the same place**
 ([ADR 0083](./0083-a-zone-name-is-stored-raw-and-grouped-on-read.md) decides what "same" means).
 
+**A gap that spans a difficulty change is thrown out.** Changing the instance difficulty **respawns
+everything**, so the mob that came back did so because the world was rebuilt, not because its timer
+elapsed. That is the one error this whole design cannot survive: every other distortion makes a gap
+*longer* — which the shortest-gap rule simply ignores — while this one makes it arbitrarily
+**shorter**, and a bound that only falls can never recover from that.
+
+The log reports a difficulty change as arriving in a different **variant** of the zone you were
+already in, and `timerKey` deliberately folds those variants into one camp
+([ADR 0083](./0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)) — Lower Guk is Lower Guk. So
+the raw zone is carried as far as the gap and compared **verbatim** there: same place, different
+string, no measurement. `kill-log.ts` already makes this exact exception for which `/loc` fix may
+place a kill ([ADR 0059](./0059-a-zone-s-variants-are-one-zone.md)), and for the same reason.
+
+Kills either side still teach *within* each difficulty; only the gap across the change is lost.
+
+A **running countdown** for that place is dropped when it happens, since it is measuring from a
+death the world has undone. It is not turned into "it's up": everything repopping means the *spawn
+point* filled, and whether the named or its placeholder took it is exactly the guess this feature
+refuses to make.
+
 **Every kill in your own log tightens a timer, including a bystander's.**
 [ADR 0027](./0027-only-your-kills-count.md) rules a stranger's kill out of *drop rates* because you
 never had the corpse — but a mob dying is evidence of when it died whoever swung, which is what
@@ -137,6 +157,9 @@ wording rather than growing a second notification system.
 - A named that shares its name across two zones is two timers, which is right, and a named with two
   spawn points in one zone is one timer, which is wrong and is the same limitation
   [ADR 0024](./0024-mob-knowledge.md) already records about two mobs sharing a name in a zone.
+- **The difficulty is a fact about the world that only the zone line reveals**, so anything else
+  learned from timing is exposed to it too. This is the second place a folded zone name had to be
+  un-folded to stay correct, which is worth remembering as a pattern rather than a one-off.
 - **A player dying near you is not a camp.** The killer's article is what says so, and it fixes your
   own pet's death by the same rule — which the kill log otherwise only catches once it knows your
   character's name.

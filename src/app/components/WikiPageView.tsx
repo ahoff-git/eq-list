@@ -1,6 +1,7 @@
 "use client";
 import { api } from "@/lib/api";
 import { useNav } from "@/lib/nav";
+import ItemDrops from "./ItemDrops";
 import ItemLink from "./ItemLink";
 import MobKills from "./MobKills";
 import { wikiAddAction, wikiAddKind } from "@/shared/wiki-add";
@@ -205,6 +206,11 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
       )}
 
       {page.sources.length > 0 && <SourceList sources={page.sources} />}
+      {/* The wiki's claims are above; this is what killing things actually taught us about the item
+          itself — who drops it, where, and what it sells for. Offered to every page that names a
+          *thing you can hold* (a spell page is its scroll, and scrolls drop): a mob's own evidence is
+          `MobKills` above, and a zone isn't loot. It renders nothing when nothing is known. */}
+      {page.kind !== "mob" && page.kind !== "zone" && <ItemDrops item={page.title} sources={page.sources} />}
       {page.rewards.length > 0 && (
         <>
           <h4 className="muted small" style={{ marginTop: 12 }}>Rewards</h4>

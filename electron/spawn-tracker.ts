@@ -21,17 +21,20 @@ import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { SPAWN_STYLE_ID, alertStyle } from "../src/shared/alert-styles";
 import { mobKey } from "../src/shared/mob-stats";
-import { placeName } from "../src/shared/zones/place";
+import { placeKey, placeName, samePlace } from "../src/shared/zones/place";
 import {
   learnRespawns,
   provenNamed,
   respawnFor,
+  floorFrom,
+  raiseFloor,
   sightingFrom,
   spawnState,
   tightenSighting,
   timerFrom,
   timerKey,
   type RespawnLearning,
+  type Floor,
   type Sighting,
   type SpawnTimer,
 } from "../src/shared/spawn-timers";
@@ -117,6 +120,22 @@ interface Stored {
    * switch away from the fight.
    */
   onScreen: Record<string, boolean>;
+  /**
+   * Timer key → the longest confirmed "not up yet", and how many times you've said so.
+   *
+   * The mirror of `seen`, and stored for the same reason: standing at a camp and finding nothing
+   * there is an observation only the player can make, and nothing in the log records it.
+   */
+  floor: Record<string, Floor>;
+  /**
+   * Timer key → the gaps the player has thrown out, by id.
+   *
+   * The finest of the three corrections, and the one that keeps a camp's history: a cutoff
+   * (`relearned`) draws a line under everything measured, where this removes the one pull that was
+   * really the placeholder. Stored as an exclusion rather than by editing the kills, because the
+   * kills happened and the log's record of them is not ours to rewrite.
+   */
+  droppedGaps: Record<string, string[]>;
   /** The countdowns themselves — the only thing here that isn't a preference. */
   timers: SpawnTimer[];
 }
@@ -139,6 +158,8 @@ function load(file: string): Stored {
     lead: { ...stored.lead },
     notify: { ...stored.notify },
     seen: { ...stored.seen },
+    floor: { ...stored.floor },
+    droppedGaps: { ...stored.droppedGaps },
     added: { ...stored.added },
     styleId: { ...stored.styleId },
     onScreen: { ...stored.onScreen },
@@ -163,6 +184,15 @@ export interface SpawnTrackerDeps {
 export interface SpawnTracker {
   /** A kill landed: start or restart its countdown, if it's a named whose respawn we know. */
   noteKill(mob: string, zone: string | null, at: string, named?: boolean): void;
+  /**
+   * You changed zone. Almost always nothing to do — a mob keeps respawning while you're away — but
+   * **changing the instance difficulty respawns everything**, and the log reports that as arriving
+   * in a different *variant* of the zone you were already in.
+   *
+   * Every countdown for that place is then measuring from a death the world has since undone, so
+   * they are dropped rather than left to come due about nothing.
+   */
+  noteZone(zone: string | null): void;
   /** Everything the panel shows — running countdowns, and what we know about each named. */
   view(): SpawnView;
   /** The player's own figure for a mob, or `null` to go back to what was learned. */
@@ -179,6 +209,15 @@ export interface SpawnTracker {
    * getting to it and killing it.
    */
   markUp(key: string): void;
+  /**
+   * You are standing there and it is **not** up — the disagreement with a countdown that says it
+   * should be, and the only lower bound the app has.
+   *
+   * Records `R >` the time since it died, which ratchets *upward*: the window may not open before
+   * that, and where it passes the estimate the two are reported as contradicting rather than one
+   * being quietly picked (`contradicted`).
+   */
+  markNotUp(key: string): void;
   /**
    * The log said you looked at it — a consider or a hail — so it is up, and you didn't have to say
    * so. The same thing `markUp` records, arriving free from what a camper does anyway: you consider
@@ -216,8 +255,27 @@ export interface SpawnTracker {
   showOnScreen(key: string, on: boolean): void;
   /** Correct the article test about a mob. */
   markNamed(mob: string, named: boolean): void;
-  /** Throw away what was learned about one timer and start learning again from now. */
+  /**
+   * Throw away everything *measured* about one timer — the kill gaps and the sightings — and start
+   * again from now. The kill gaps go by cutoff (the kills themselves are the log's record and not
+   * ours to delete); the sightings are stored here, so they go outright.
+   */
   relearn(key: string): void;
+  /**
+   * Drop just the sightings, keeping what the kill gaps taught.
+   *
+   * The narrower of the two, and the one a mis-click actually needs: "It's up" on the wrong row
+   * records a bound that can only tighten, and without this the only way back was to throw away a
+   * camp's whole measured history as well.
+   */
+  forgetSightings(key: string): void;
+  /** Drop just the "not up yet" observations, keeping everything else. */
+  forgetFloor(key: string): void;
+  /**
+   * Throw out **one** measured gap, or put it back. Everything else that camp taught survives —
+   * which is the whole difference between this and `relearn`.
+   */
+  setGapDropped(key: string, id: string, dropped: boolean): void;
   /** Drop a running countdown without forgetting anything. */
   stop(key: string): void;
   /** Fires whenever the list changes, so an open window doesn't have to poll. */
@@ -254,6 +312,12 @@ export function createSpawnTracker({
    */
   const announced = new Set<string>();
 
+  /**
+   * The zone as the log last wrote it, difficulty and all — the only way to notice the difficulty
+   * changing, since every folded view of a zone deliberately calls the variants one place.
+   */
+  let lastZone: string | null = null;
+
   const changed = () => {
     saver.save();
     listener?.();
@@ -277,7 +341,12 @@ export function createSpawnTracker({
     const all = kills();
     const proven = provenNamed(all);
     const isNamed = (key: string) => state.said[key]?.named ?? proven.has(key);
-    const learned = new Map(learnRespawns(all, isNamed, relearnedAt).map((l) => [l.key, l]));
+    const learned = new Map(
+      learnRespawns(all, isNamed, {
+        relearnedAt,
+        isDropped: (key, id) => !!state.droppedGaps[key]?.includes(id),
+      }).map((l) => [l.key, l]),
+    );
     return { isNamed, learned };
   }
 
@@ -392,7 +461,7 @@ export function createSpawnTracker({
       if (!named && !isNamed(mobKey(mob))) return;
 
       const learned = allLearned.get(key);
-      const respawn = respawnFor(learned, state.stated[key], state.seen[key]);
+      const respawn = respawnFor(learned, state.stated[key], state.seen[key], state.floor[key]);
       if (!respawn) return; // a named we can't yet time is not a countdown, it's a blank
 
       // `learned` is absent when the player typed a figure for a mob we've only killed once — so
@@ -434,7 +503,7 @@ export function createSpawnTracker({
       // filed when you typed it.
       const rows = new Map<string, RespawnLearning>();
       for (const [key, { mob, place }] of Object.entries(state.added)) {
-        rows.set(key, { key, mob, place, samples: 0 });
+        rows.set(key, { key, mob, place, samples: 0, gaps: [] });
       }
       for (const [key, l] of learned) {
         if (isNamed(mobKey(l.mob))) rows.set(key, l);
@@ -449,7 +518,12 @@ export function createSpawnTracker({
           notify: !!state.notify[l.key],
           styleId: state.styleId[l.key],
           onScreen: !!state.onScreen[l.key],
-          respawn: respawnFor(l, state.stated[l.key], state.seen[l.key]),
+          respawn: respawnFor(l, state.stated[l.key], state.seen[l.key], state.floor[l.key]),
+          // Every source, not just the one that won — you cannot tell which figure has gone wonky
+          // from the answer alone, and the whole point of showing them is to fix one without
+          // throwing away the others.
+          seen: state.seen[l.key],
+          floor: state.floor[l.key],
           running: running.some((t) => t.key === l.key),
           // Only a hand-added row may be removed. One the kill log produced would simply come back
           // on the next `view()`, so offering "remove" there would be a button that doesn't work.
@@ -511,6 +585,29 @@ export function createSpawnTracker({
       changed();
     },
 
+    noteZone(zone) {
+      const previous = lastZone;
+      lastZone = zone;
+      if (!zone || !previous || previous === zone) return;
+      // A *different* zone is ordinary travel and changes nothing: the camp you left keeps ticking.
+      // The same **place** under a different name is the difficulty changing under you, which is
+      // the one zone line that invalidates a countdown. Compared verbatim first, then folded —
+      // `samePlace` on its own would call ordinary travel a difficulty change every time you came
+      // back to the same camp.
+      if (!samePlace(previous, zone)) return;
+      const place = placeKey(zone);
+      const doomed = state.timers.filter((t) => t.key.endsWith(`|${place}`));
+      if (!doomed.length) return;
+      state.timers = state.timers.filter((t) => !t.key.endsWith(`|${place}`));
+      for (const t of doomed) announced.delete(t.key);
+      log.debug("difficulty changed; dropped timers for the place", {
+        from: previous,
+        to: zone,
+        dropped: doomed.length,
+      });
+      changed();
+    },
+
     noteSighting(mob, zone) {
       if (!zone) return;
       const key = timerKey(mob, zone);
@@ -535,7 +632,7 @@ export function createSpawnTracker({
         (added ? { key, mob: added.mob, place: added.place } : undefined) ??
         (running ? { key, mob: running.mob, place: running.place } : undefined);
       if (!identity) return;
-      const respawn = respawnFor(known, state.stated[key], state.seen[key]);
+      const respawn = respawnFor(known, state.stated[key], state.seen[key], state.floor[key]);
       // Nothing to count down *to*. Saying "it's dead" can't invent a respawn, and a countdown to
       // an unknown moment would be a blank clock pretending to be information.
       if (!respawn) return;
@@ -574,11 +671,42 @@ export function createSpawnTracker({
       delete state.lead[key];
       delete state.notify[key];
       delete state.seen[key];
+      delete state.floor[key];
+      delete state.droppedGaps[key];
       delete state.relearned[key];
       delete state.styleId[key];
       delete state.onScreen[key];
       state.timers = state.timers.filter((t) => t.key !== key);
       announced.delete(key);
+      changed();
+    },
+
+    markNotUp(key) {
+      const timer = state.timers.find((t) => t.key === key);
+      if (!timer) return; // nothing counting down, so there is no death to measure from
+      const seconds = floorFrom(timer.killedAt, now());
+      if (seconds === null) return;
+      state.floor[key] = raiseFloor(state.floor[key], seconds);
+      log.debug("still down", { mob: timer.mob, seconds, floor: state.floor[key].seconds });
+      // A mob that isn't up can't still be marked alive — saying so is the plain undo for a
+      // mis-clicked "It's up", and re-arms the countdown that sighting had ended.
+      if (timer.seenAt) {
+        delete timer.seenAt;
+        announced.delete(key);
+      }
+      changed();
+    },
+
+    forgetFloor(key) {
+      delete state.floor[key];
+      changed();
+    },
+
+    setGapDropped(key, id, dropped) {
+      const current = state.droppedGaps[key] ?? [];
+      const next = dropped ? [...new Set([...current, id])] : current.filter((g) => g !== id);
+      if (next.length) state.droppedGaps[key] = next;
+      else delete state.droppedGaps[key];
       changed();
     },
 
@@ -616,6 +744,20 @@ export function createSpawnTracker({
 
     relearn(key) {
       state.relearned[key] = new Date(now()).toISOString();
+      // **And the sightings.** They are measurements too (ADR 0097), they ratchet the same way, and
+      // they are *stored* rather than derived — so a cutoff over the kill log left them untouched
+      // and a bad one was permanent. "Forget what was measured" has to mean all of it, or the
+      // figure does not go back to unknown the way the panel promises it will.
+      delete state.seen[key];
+      delete state.floor[key];
+      // The cutoff supersedes them: a gap that no longer counts needs no exclusion of its own,
+      // and keeping one would quietly re-exclude a gap measured *after* the reset.
+      delete state.droppedGaps[key];
+      changed();
+    },
+
+    forgetSightings(key) {
+      delete state.seen[key];
       changed();
     },
 

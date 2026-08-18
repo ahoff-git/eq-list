@@ -122,9 +122,12 @@ shopping list.
   table, and it is *supplied*, not generated.
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
-- Drop rates live on the **mob** page (per loot line — a `(X%)` chance or a rarity
-  word), not the item page: item "Drops From" gives the mob + zone but no rate. So a
-  rate shows when you view the dropping mob, not the item itself.
+- The **wiki's** drop rates live on the mob page (per loot line — a `(X%)` chance or a rarity
+  word), not the item page: item "Drops From" gives the mob + zone but no rate. So a *wiki* rate
+  shows when you view the dropping mob, not the item itself — while an **observed** rate now shows
+  on both, since an item page carries what your own kills say about it
+  ([ADR 0101](../decisions/0101-an-item-page-says-who-dropped-it.md)), including mobs this wiki
+  never linked to the item at all.
 
 ## See also
 [architecture](../architecture/README.md) · [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md)

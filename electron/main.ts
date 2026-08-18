@@ -325,6 +325,10 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onZone((event) => {
     if (event.zone === currentZone) return;
+    // Before `currentZone` moves, so the tracker can compare where you were with where you are:
+    // changing the instance difficulty respawns everything, and it arrives as a different *variant*
+    // of the same zone.
+    spawns.noteZone(event.zone);
     currentZone = event.zone;
     combat.setZone(currentZone); // so finished fights are filed against the right camp
     broadcast(CH.zoneChanged, currentZone);

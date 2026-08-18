@@ -646,6 +646,55 @@ button {
 .spawn-notify input { cursor: pointer; }
 .spawn-pad { color: var(--accent-dim); }
 /* The caveat spans the row: it's about the figure above it, not about any one column. */
+/* Every source behind the figure, so a wonky one can be picked out and dropped on its own. */
+.spawn-evidence {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 2px 0 0 62px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.spawn-evidence .se-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+.spawn-evidence .se-item b { color: var(--text); font-weight: 500; }
+.spawn-evidence .se-caret { margin-right: 2px; }
+/* The gaps themselves, opened from the summary. Wraps, because a long-camped mob has plenty. */
+.se-gaps {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 4px 0 2px;
+}
+.se-gap {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.se-gap b { color: var(--text); font-weight: 500; }
+.se-gap small { color: var(--text-dim); }
+/* Struck rather than removed: an exclusion you can't see is one you can't undo. */
+.se-gap.out { opacity: 0.55; }
+.se-gap.out b { text-decoration: line-through; }
+.se-gap .se-inforce {
+  font-style: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--good);
+}
+.spawn-evidence .se-item button { margin-left: 4px; }
+/* A contradiction is not a soft figure, it is a provably wrong one — so it reads as a fault. */
+.spawn-caveat.bad { color: var(--bad); }
 .spawn-caveat {
   flex-basis: 100%;
   font-size: 12px;
@@ -1611,11 +1660,13 @@ kbd {
 .mob-drop .md-count { font-variant-numeric: tabular-nums; }
 /* An item off more than one mob here — the row itself can only speak for the mob above it. */
 .mob-drop .md-from { font-style: italic; }
-/* A rate is only as good as its sample: fade the ones resting on too few kills. */
-.mob-drop .md-rate { font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
-.mob-drop .md-rate.solid { color: var(--accent); font-weight: 600; }
-.mob-drop .md-rate.fair { color: var(--accent); }
-.mob-drop .md-rate.thin { color: var(--text-dim); }
+/* A rate is only as good as its sample: fade the ones resting on too few kills. The head carries
+   one too on an *item's* page, where the rate belongs to the mob named on the line rather than to a
+   drop under it — same number, same reading, so the same colours say so. */
+.mob-drop .md-rate, .mk-head .md-rate { font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
+.mob-drop .md-rate.solid, .mk-head .md-rate.solid { color: var(--accent); font-weight: 600; }
+.mob-drop .md-rate.fair, .mk-head .md-rate.fair { color: var(--accent); }
+.mob-drop .md-rate.thin, .mk-head .md-rate.thin { color: var(--text-dim); }
 
 /* A mob's own page, saying what your kills taught — one block per zone. Borrows `.mob-drop` and its
    rate colours from the panel above: the same number, read the same way, wherever it's shown. */

@@ -88,7 +88,12 @@ function app(startMs: number) {
       if (!Number.isNaN(at)) nowMs = at;
       const event = parseSplitLine(line);
       if (!event) continue;
-      if (event.kind === "zone") currentZone = event.zone;
+      if (event.kind === "zone") {
+        // Before `currentZone` moves, exactly as main does it: the tracker compares where you were
+        // with where you are, and a difficulty change is a different *variant* of the same zone.
+        spawns.noteZone(event.zone);
+        currentZone = event.zone;
+      }
       if (event.kind === "loc") killLog.noteLoc(event, currentZone);
       // Considering or hailing a mob you're timing is a free sighting (ADR 0097).
       if (event.kind === "sighting") spawns.noteSighting(event.target, currentZone);
@@ -446,4 +451,59 @@ test("flow: a sentence that merely contains a dash is not a consider", () => {
   // The regard vocabulary is what makes this safe: matching "anything before a --" would have read
   // chat as a sighting, and a sighting can only ever tighten a figure.
   assert.notEqual(a.view().running[0].state, "alive");
+});
+
+
+// ── Changing the instance difficulty ───────────────────────────────────────────
+// It respawns everything, and the log reports it as arriving in a different *variant* of the zone
+// you were already in — which every folded view of a zone deliberately calls the same place.
+
+test("flow: a difficulty change is not a fast respawn", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      slain(T0 + 2 * MIN, "Ghoul Lord"),
+      slain(T0 + 20 * MIN, "Ghoul Lord"),
+      // Difficulty bumped: everything repops, and it dies again five minutes later.
+      entered(T0 + 22 * MIN, "Lower Guk 2"),
+      slain(T0 + 25 * MIN, "Ghoul Lord"),
+    ].join("\n"),
+  );
+
+  const row = rowFor(a.view(), "Ghoul Lord");
+  assert.equal(row?.shortestSeconds, 18 * MIN / 1000, "the 5m across the change taught nothing");
+  assert.equal(row?.samples, 1);
+  // It is still one camp — Lower Guk is Lower Guk — which is exactly why the gap had to be caught
+  // rather than left to separate itself.
+  assert.equal(a.view().known.length, 1);
+  assert.equal(row?.place, "Lower Guk");
+});
+
+test("flow: a difficulty change clears the countdown it invalidated", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      slain(T0 + 2 * MIN, "Ghoul Lord"),
+      slain(T0 + 20 * MIN, "Ghoul Lord"),
+    ].join("\n"),
+  );
+  assert.equal(a.view().running.length, 1, "counting down from the kill at 20m");
+  a.feed(entered(T0 + 22 * MIN, "Lower Guk 2"));
+  assert.equal(a.view().running.length, 0, "that death has been undone; the clock means nothing");
+});
+
+test("flow: leaving the zone and coming back is not a difficulty change", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      slain(T0 + 2 * MIN, "Ghoul Lord"),
+      slain(T0 + 20 * MIN, "Ghoul Lord"),
+      entered(T0 + 22 * MIN, "Upper Guk"),
+      entered(T0 + 30 * MIN, "Lower Guk"),
+    ].join("\n"),
+  );
+  assert.equal(a.view().running.length, 1, "a mob keeps respawning while you are elsewhere");
 });

@@ -99,6 +99,12 @@ list, hunt, search, damage, session, settings.
   sample size (`rateWhy`, shared with the map's 📖 panel so the same kills can't be described two
   ways), and the roam area. It's the map panel's data asked the other way round — **by mob** rather
   than by zone (`useMobZones`), which is the question a page raises and the panel can't answer.
+  Every other page — an **item**, and a spell page, which is its scroll — ends with `ItemDrops`, the
+  same tally read from the item's end ([ADR 0101](../decisions/0101-an-item-page-says-who-dropped-it.md)):
+  who has dropped it, one row per mob with the camps beneath it, badged **not on the wiki** where no
+  source on the page names that mob and **unseen in N** where the page names one our kills keep
+  failing to confirm — plus what it has vendored for. It renders nothing when nothing is known, and
+  only a page the wiki *says* drops gets a "you haven't seen this yet" note.
 - **Every position on a page opens the map.** A stat card's `Zone:` views that zone
   (`api().map.openAt`), an embedded `(y, x)` opens it *and* drops a marker there, and a mob's observed
   roam centre does the same with its spread in the title — a page is text, and where a thing lives is
@@ -180,7 +186,12 @@ list, hunt, search, damage, session, settings.
     the app wasn't running, or the camp changed hands — and doubles as the undo for a mis-clicked
     sighting. Everything here is reversible on purpose: an editor holding a value offers **Clear**,
     and a mob you dismissed is listed under **Not tracked (n)** with a way back, because the button
-    that dismissed it took its own undo off the screen. **＋ Add a timer** puts a row on by hand, with the **same type-ahead the alert rules use**
+    that dismissed it took its own undo off the screen. An **Evidence** line under each row says what
+    each source claims — gaps, sightings, what you typed — with a ✕ per source, so one wonky figure
+    is fixed where it came from instead of by throwing the camp's history away. The gap summary
+    **opens** into the individual gaps, shortest first with the one *in force* marked, each of which
+    can be thrown out or put back — the finest correction there is, and the only one that keeps
+    everything else a camp taught. **＋ Add a timer** puts a row on by hand, with the **same type-ahead the alert rules use**
     (`SuggestField` over `useLogVocabulary`, on the `target` kind — kill lines already file a mob
     name there, so it completes the nameds you have actually fought) and the **map's own
     `ZonePicker`** for where — same `fuzzyRank` matching, same file-name search, same zone table, so

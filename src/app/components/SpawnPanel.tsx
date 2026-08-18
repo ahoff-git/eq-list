@@ -8,10 +8,11 @@ import {
   formatCountdown,
   formatInterval,
   respawnCaveat,
+  contradicted,
 } from "@/shared/spawn-timers";
 import { parseDelay } from "@/shared/alert-schedule";
 import { when } from "@/shared/format";
-import { Empty, PickField } from "./ui";
+import { Caret, Empty, PickField } from "./ui";
 import SuggestField from "./SuggestField";
 import ZonePicker from "./ZonePicker";
 import { CURATED_ZONES, sortZones } from "@/shared/map/zones";
@@ -261,6 +262,18 @@ function RunningRow({ timer, now }: { timer: RunningSpawn; now: number }) {
           It&rsquo;s up
         </button>
       )}
+      {/* Disagreeing with the clock. Offered whenever the row isn't already showing a sighting —
+          including while it still says *waiting*, since "not up at 12m" is worth recording however
+          little the countdown was claiming. It is the only lower bound the app has. */}
+      {!alive && (
+        <button
+          className="btn ghost sm"
+          title="You're there and it hasn't popped — the window can't open before now"
+          onClick={() => void api()?.spawns.markNotUp(timer.key)}
+        >
+          Not up yet
+        </button>
+      )}
       {/* The way back from any of it: killed again, so the clock restarts from now. Also the undo
           for a mis-clicked "it's up", since a fresh countdown clears the sighting off the row. */}
       <button
@@ -413,13 +426,17 @@ function KnownRow({ known }: { known: KnownSpawn }) {
         )}
       </span>
 
-      {caveat && <p className="spawn-caveat">{caveat}</p>}
+      {caveat && (
+        <p className={`spawn-caveat ${known.respawn && contradicted(known.respawn) ? "bad" : ""}`}>{caveat}</p>
+      )}
+
+      <Evidence known={known} />
 
       {open === "relearn" && (
         <Confirm
           // Says the cost in the units the player earned it in, because "are you sure?" doesn't
           // tell anyone whether they mind.
-          cost={`Forget ${gapCount(known.samples)} measured over ${lastKilled(known)}? The figure goes back to unknown and is learned again from your next kills.`}
+          cost={`Forget everything measured for ${known.mob} — ${gapCount(known.samples)}${known.seen ? " and every sighting" : ""}, over ${lastKilled(known)}? The figure goes back to unknown and is learned again from your next kills. Anything you typed is kept.`}
           go="Forget them"
           keep="Keep them"
           onGo={() => api()?.spawns.relearn(known.key)}
@@ -538,6 +555,129 @@ function SecondsField({
         Cancel
       </button>
       <small className={bad ? "bad" : ""}>{hint}</small>
+    </div>
+  );
+}
+
+/**
+ * What each source of evidence says, and how to drop one without dropping the rest.
+ *
+ * The row above shows the figure that **won**; this shows why. Without it a number that has gone
+ * wonky is unfixable in practice — you cannot tell whether it came from a kill gap, a mis-clicked
+ * sighting or something you typed months ago, so the only move left is to throw the lot away and
+ * re-camp. Each line clears only itself.
+ *
+ * Nothing is shown when there is nothing to judge: a mob with no measurements and no typed figure
+ * has no evidence, and an empty box under every row would be noise on the common case.
+ */
+function Evidence({ known }: { known: KnownSpawn }) {
+  const [open, setOpen] = useState(false);
+  const measured =
+    known.shortestSeconds === undefined
+      ? null
+      : known.shortestSeconds === known.longestSeconds
+        ? formatInterval(known.shortestSeconds)
+        : `${formatInterval(known.shortestSeconds)}–${formatInterval(known.longestSeconds ?? known.shortestSeconds)}`;
+  if (!measured && !known.seen && !known.floor && known.stated === undefined) return null;
+
+  return (
+    <div className="spawn-evidence">
+      <span className="se-label">Evidence</span>
+      {(measured || known.gaps.length > 0) && (
+        <button
+          className="link se-item"
+          title="Show the gaps behind this figure — one bad pull can be thrown out without losing the rest"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <Caret open={open} className="se-caret" />
+          {gapCount(known.samples)}
+          {measured ? (
+            <>
+              : <b>{measured}</b>
+            </>
+          ) : (
+            ": none left"
+          )}
+        </button>
+      )}
+      {known.floor && (
+        <span className="se-item">
+          still down at{" "}
+          <b>{formatInterval(known.floor.seconds)}</b>
+          {known.floor.count > 1 && ` (${known.floor.count}×)`}
+          <button
+            className="link"
+            title="Forget the “not up yet” observations, keeping everything else"
+            onClick={() => void api()?.spawns.forgetFloor(known.key)}
+          >
+            ✕
+          </button>
+        </span>
+      )}
+      {known.seen && (
+        <span className="se-item">
+          seen up {known.seen.count === 1 ? "once" : `${known.seen.count} times`}:{" "}
+          <b>{formatInterval(known.seen.seconds)}</b>
+          {/* The narrow undo. One stray "It's up" — or a consider of the wrong thing — records a
+              bound that can only tighten, and before this the only way back was to throw away the
+              camp's whole measured history with it. */}
+          <button
+            className="link"
+            title="Forget the sightings, keeping what the kill gaps taught"
+            onClick={() => void api()?.spawns.forgetSightings(known.key)}
+          >
+            ✕
+          </button>
+        </span>
+      )}
+      {open && <GapList known={known} />}
+      {known.stated !== undefined && (
+        <span className="se-item">
+          yours: <b>{formatInterval(known.stated)}</b>
+          <button
+            className="link"
+            title="Clear the figure you typed, falling back to what was measured"
+            onClick={() => void api()?.spawns.state(known.key, null)}
+          >
+            ✕
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The individual gaps behind a figure, each of which can be thrown out or put back.
+ *
+ * The finest correction the feature has, and the one that keeps a camp's history. `relearn` draws a
+ * line under *everything* measured — right when a whole evening was nonsense, far too blunt for the
+ * one pull that was really the placeholder, or the night two people were killing it between them.
+ *
+ * A dropped gap stays listed, struck through: an exclusion you can't see is one you can't undo, which
+ * is the same rule the dismissed-mob list is built on. Shortest first, because the shortest gap *is*
+ * the figure and is what anyone opening this came to check.
+ */
+function GapList({ known }: { known: KnownSpawn }) {
+  const inForce = known.gaps.find((g) => !g.dropped);
+  return (
+    <div className="se-gaps">
+      {known.gaps.map((gap) => (
+        <span key={gap.id} className={`se-gap ${gap.dropped ? "out" : ""}`}>
+          <b>{formatInterval(gap.seconds)}</b>
+          <small>{when(gap.endedAt)}</small>
+          {/* Which one is actually setting the figure, since "shortest wins" is invisible until
+              you can see the list it won against. */}
+          {gap === inForce && <em className="se-inforce">in force</em>}
+          <button
+            className="link"
+            title={gap.dropped ? "Count this gap again" : "Throw this gap out, keeping the rest"}
+            onClick={() => void api()?.spawns.setGapDropped(known.key, gap.id, !gap.dropped)}
+          >
+            {gap.dropped ? "↺" : "✕"}
+          </button>
+        </span>
+      ))}
     </div>
   );
 }

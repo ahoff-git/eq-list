@@ -75,6 +75,65 @@ one death measures no respawn; and it never touches the kill log, which is the l
 what happened. It is also the undo for a mis-clicked "it's up", since a fresh countdown clears the
 sighting off the row.
 
+**And you can disagree with the clock: "it's not up yet".** That is the app's only **lower** bound
+— `R >` the time since it died — and the only figure here that ratchets *upward*.
+
+It looks like the thing this ADR already rejected and is not. What was rejected was reading
+**silence** as a negative: not having seen a mob is no evidence it wasn't there, because it may have
+been up and wandering, which is
+[ADR 0094](./0094-a-spawn-timer-is-a-window-not-an-instant.md)'s problem. That still stands. This is
+the player *asserting* a negative about a camp they are sitting in — a thing only they can know, and
+the same judgement the rest of the feature already trusts them for when they say a mob **is** up.
+
+It does two things, and the second is why it was worth having:
+
+- **It sets the earliest the window may open.** 0094 refused to invent that number because "there is
+  no observation that could support one". This is that observation arriving, so a measured floor now
+  overrules the padding — watching earlier than a moment you have proof it was still down is
+  watching for nothing. It can only move the window *later*, and never past the by-time.
+- **It can prove the estimate wrong.** Where the floor reaches the by-time the evidence contradicts
+  itself: the mob provably had not spawned by a moment the estimate says it must have. That is
+  stronger than a wide spread, which only says a figure is *soft*.
+
+**A contradiction is reported, never resolved.** One of the two is wrong — a mis-clicked sighting, a
+placeholder cycle, or a mob that had wandered out of the camp — and which one depends on an evening
+the app did not attend. Picking would mean silently discarding a real observation; saying so puts the
+player one click from dropping whichever they know to be wrong, which the Evidence line already
+offers.
+
+**Every measurement can be seen, and dropped on its own.** The row shows the figure that *won*;
+an **Evidence** line under it shows why — what the kill gaps said, what the sightings said, what you
+typed — because a number that has gone wonky is unfixable in practice unless you can tell which
+source it came from. Each line clears only itself.
+
+**Down to the individual gap.** Opening the Evidence line lists every gap that counts, shortest
+first, with the one *in force* marked — and each can be thrown out or put back. That is the finest
+correction the feature has, and the one that keeps a camp's history: `relearn` draws a line under
+everything measured, which is right when a whole evening was nonsense and far too blunt for the one
+pull that was really the placeholder.
+
+A gap is **derived**, so the exclusion is stored rather than the gap: `droppedGaps` holds ids, and a
+gap's id is the pair of kills it spans. That keeps it stable across a re-read of the log, and an
+exclusion whose pair stops being consecutive — an import put a kill between them — goes inert rather
+than silently excluding some *other* gap. The kills themselves are never touched: they happened, and
+the log's record of them is not ours to rewrite.
+
+A dropped gap **stays listed**, struck through, for the same reason a dismissed mob does: an
+exclusion you cannot see is one you cannot undo. Gaps that were never evidence at all — outside the
+plausible bounds, spanning a difficulty change, before a cutoff — are simply absent, because they are
+not decisions anybody made and nothing can be done about them.
+
+`relearn` clears the per-gap exclusions rather than keeping them: its cutoff already excludes
+everything measured, so a leftover could only re-exclude a gap measured *after* the reset.
+
+That closed a real hole rather than adding a nicety. A sighting is **stored**, not derived, and it
+ratchets: one mis-click, or a consider of the wrong thing, pinned a mob's figure for good.
+`relearn` set a cutoff over the *kill log* and never touched sightings, so the only escape was to
+throw away the camp's whole measured history — and for a mob that wasn't hand-added, there was no
+escape at all. `relearn` now forgets both (which is what "forget what was measured" always claimed),
+`forgetSightings` is the narrow undo for the common case, and anything you *typed* survives either:
+it forgets measurements, not decisions.
+
 **Every state a player can set, they can unset.** This is a rule about the whole panel rather than
 one control, and it was broken in three places at once: a typed interval could only be cleared by
 emptying the box and saving — which works, and which nobody discovers — while "not a named" removed
@@ -113,9 +172,13 @@ Rejected alternatives:
   the whole question, and one answer for all of them is wrong nearly everywhere it applies.
 - **Inferring "it's up" from a `/who` or a target line.** The log has no such line, and guessing a
   sighting would feed the ratchet a number nothing could withdraw.
-- **Treating a sighting as a lower bound too** ("it was *not* up a minute ago, so `R >` that").
-  Tempting and unsound: not having seen it is not evidence it wasn't there, since the mob may have
-  been up and out of sight the whole time — which is precisely the wandering problem 0094 records.
+- **Inferring a lower bound from silence** ("no sighting for a minute, so `R >` that"). Unsound: not
+  having seen it is not evidence it wasn't there, since the mob may have been up and out of sight the
+  whole time — the wandering problem 0094 records. An *asserted* "not up yet" is a different claim
+  entirely and is taken; a missing one is still read as nothing at all.
+- **Letting a floor raise the estimate.** It is a bound on the *other side*: the estimate is a
+  by-time and only ever falls. Where the two cross, that is information about the evidence rather
+  than a new figure, and it is said rather than averaged away.
 
 ## Consequences
 

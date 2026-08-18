@@ -27,6 +27,7 @@ import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
 import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
 import { huntTargetsFor, type HuntTarget } from "@/shared/hunt";
+import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { clockSkew } from "@/shared/spawn-timers";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
@@ -243,6 +244,8 @@ const NO_SPAWNS: SpawnView = { now: "", running: [], known: [], dismissed: [] };
 const NO_SOURCES: Record<string, ItemSource[]> = {};
 const NO_FACTS: Record<string, SpellFacts> = {};
 const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
+const NO_ITEM_SOURCES: ItemSource[] = [];
+const NO_ITEM_DROPS: ItemDropSource[] = [];
 const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };
 const NO_WATCHER: WatcherStatus = { watching: false };
 const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
@@ -349,6 +352,20 @@ export function useMobZones(mob: string | null): MobKnowledge[] {
     const key = mobKey(mob);
     return mobs.filter((m) => mobKey(m.mob) === key);
   }, [mobs, mob]);
+}
+
+/**
+ * What we know about **one item**: who has dropped it, where, and how that squares with the page's
+ * own "Drops From" (`itemDropSources`).
+ *
+ * The mirror of `useMobZones` — same pooled tally, asked from the item's end — and it reads the
+ * *whole* tally rather than one mob's, because "who drops this" is a question about every mob at
+ * once. `wikiSources` is the open page's own list, so a source it never mentions can be named as
+ * the discovery it is.
+ */
+export function useItemDrops(item: string | null, wikiSources: ItemSource[] = NO_ITEM_SOURCES): ItemDropSource[] {
+  const mobs = useAllMobs();
+  return useMemo(() => (item ? itemDropSources(item, mobs, wikiSources) : NO_ITEM_DROPS), [mobs, item, wikiSources]);
 }
 
 /** Sum two zones' drop counts for the same mob, then re-derive the rates from the total. */

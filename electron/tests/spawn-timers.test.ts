@@ -147,13 +147,13 @@ test("relearning ignores everything before the cutoff — the only way down from
   // A bogus 200s gap is learned...
   assert.equal(learnRespawns(kills, always)[0].shortestSeconds, 200);
   // ...and told to start over at t=150, only the gaps beginning after it are re-derived.
-  const after = learnRespawns(kills, always, (k) => (k === key ? T0 + 150_000 : undefined));
+  const after = learnRespawns(kills, always, { relearnedAt: (k) => (k === key ? T0 + 150_000 : undefined) });
   assert.equal(after[0].shortestSeconds, 1200);
 });
 
 test("a relearned mob keeps its row, with nothing in it, rather than vanishing", () => {
   const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", 900)];
-  const learned = learnRespawns(kills, always, () => T0 + 950_000);
+  const learned = learnRespawns(kills, always, { relearnedAt: () => T0 + 950_000 });
   assert.equal(learned.length, 1, "the row carries the figure the player typed — losing it loses that");
   assert.equal(learned[0].shortestSeconds, undefined);
   assert.equal(learned[0].samples, 0);
@@ -167,11 +167,110 @@ test("a cutoff for one timer leaves another alone", () => {
     kill("Frenzied Ghoul", 0),
     kill("Frenzied Ghoul", 900),
   ];
-  const learned = learnRespawns(kills, always, (k) =>
-    k === timerKey("Ghoul Lord", "Lower Guk") ? T0 + 950_000 : undefined,
-  );
+  const learned = learnRespawns(kills, always, {
+    relearnedAt: (k) => (k === timerKey("Ghoul Lord", "Lower Guk") ? T0 + 950_000 : undefined),
+  });
   assert.equal(learningFor(learned, "Ghoul Lord").shortestSeconds, undefined);
   assert.equal(learningFor(learned, "Frenzied Ghoul").shortestSeconds, 900);
+});
+
+// ── one gap at a time ──────────────────────────────────────────────────────────
+// The finest correction there is: the pull that was really the placeholder, thrown out without
+// losing everything else the camp taught.
+
+test("every counting gap is listed, shortest first — the shortest is the figure", () => {
+  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", 1200), kill("Ghoul Lord", 1500)];
+  const [learned] = learnRespawns(kills, always);
+  assert.deepEqual(learned.gaps.map((g) => g.seconds), [300, 1200]);
+  assert.equal(learned.shortestSeconds, 300);
+});
+
+test("dropping one gap re-derives the figure from the rest", () => {
+  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", 1200), kill("Ghoul Lord", 1500)];
+  const [before] = learnRespawns(kills, always);
+  const bad = before.gaps[0].id; // the 300s pull that was really the placeholder
+  const [after] = learnRespawns(kills, always, { isDropped: (_k, id) => id === bad });
+  assert.equal(after.shortestSeconds, 1200, "the rest of the camp's history is untouched");
+  assert.equal(after.samples, 1);
+});
+
+test("a dropped gap stays listed, so it can be put back", () => {
+  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", 1200), kill("Ghoul Lord", 1500)];
+  const [before] = learnRespawns(kills, always);
+  const bad = before.gaps[0].id;
+  const [after] = learnRespawns(kills, always, { isDropped: (_k, id) => id === bad });
+  // An exclusion you cannot see is an exclusion you cannot undo.
+  assert.equal(after.gaps.length, 2);
+  assert.equal(after.gaps.find((g) => g.id === bad)?.dropped, true);
+});
+
+test("dropping every gap leaves a row with no figure rather than no row", () => {
+  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", 1200)];
+  const [learned] = learnRespawns(kills, always, { isDropped: () => true });
+  assert.equal(learned.shortestSeconds, undefined);
+  assert.equal(learned.samples, 0);
+  assert.equal(learned.gaps.length, 1, "still there to be put back");
+});
+
+test("a gap's id is the pair of kills it spans, so it survives a re-read", () => {
+  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", 1200)];
+  const first = learnRespawns(kills, always)[0].gaps[0].id;
+  // The same log read again — ids must match, or an exclusion would silently stop applying.
+  const again = learnRespawns([...kills], always)[0].gaps[0].id;
+  assert.equal(first, again);
+  assert.equal(first, `${iso(0)}|${iso(1200)}`);
+});
+
+test("gaps that were never evidence are not listed as exclusions", () => {
+  const kills = [
+    kill("Ghoul Lord", 0),
+    kill("Ghoul Lord", 30), // under the floor: two mobs sharing a name, not a decision anyone made
+    kill("Ghoul Lord", 1230),
+  ];
+  const [learned] = learnRespawns(kills, always);
+  assert.deepEqual(learned.gaps.map((g) => g.seconds), [1200]);
+});
+
+// ── the difficulty changing ────────────────────────────────────────────────────
+// Changing the instance difficulty respawns everything, and the log reports it as a different
+// *variant* of the zone you were already in. That makes a gap arbitrarily short for a reason
+// nothing to do with the mob — the one error a bound that only falls can never recover from.
+
+test("variants of a zone are one camp, which is what makes the gap rule necessary", () => {
+  // If these were two timers the problem would solve itself. They are deliberately one (ADR 0083),
+  // so the raw zone has to be carried as far as the gap.
+  assert.equal(timerKey("Ghoul Lord", "Lower Guk"), timerKey("Ghoul Lord", "Lower Guk 2"));
+});
+
+test("a gap spanning a difficulty change is thrown out", () => {
+  const kills = [
+    kill("Ghoul Lord", 0),
+    // ...difficulty changed, everything repopped, and it was killed again almost at once.
+    kill("Ghoul Lord", 300, { zone: "Lower Guk 2" }),
+  ];
+  const [learned] = learnRespawns(kills, always);
+  assert.equal(learned.shortestSeconds, undefined, "300s is what the difficulty change did, not the mob");
+  assert.equal(learned.samples, 0);
+});
+
+test("kills either side of a difficulty change still teach within each difficulty", () => {
+  const kills = [
+    kill("Ghoul Lord", 0),
+    kill("Ghoul Lord", 1200),
+    kill("Ghoul Lord", 1500, { zone: "Lower Guk 2" }),
+    kill("Ghoul Lord", 3300, { zone: "Lower Guk 2" }),
+  ];
+  const [learned] = learnRespawns(kills, always);
+  // 1200s and 1800s are real; the 300s across the change is not — and it is the shortest of the
+  // three, so keeping it would have set the figure permanently wrong.
+  assert.equal(learned.shortestSeconds, 1200);
+  assert.equal(learned.longestSeconds, 1800);
+  assert.equal(learned.samples, 2);
+});
+
+test("the last kill is still the last kill, whichever difficulty it happened in", () => {
+  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", 900, { zone: "Lower Guk 2" })];
+  assert.equal(learnRespawns(kills, always)[0].lastKillAt, iso(900));
 });
 
 test("a key is one mob in one place", () => {

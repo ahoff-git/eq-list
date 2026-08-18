@@ -17,6 +17,11 @@
  *   - **A mob walks.** It can be up on time and nowhere near you for minutes afterwards.
  *   - **You are not a stopwatch.** You arrive when you arrive.
  *
+ * And one that does the opposite, which is why it is handled rather than tolerated: **changing the
+ * instance difficulty respawns everything.** That makes a gap arbitrarily *short* for a reason that
+ * has nothing to do with the mob — the one kind of error a bound that only falls can never recover
+ * from — so such a gap is thrown out entirely (see `learnRespawns`).
+ *
  * All three widen the gap you observe and none of them can shorten it, which is what makes the
  * learning rule work at all and also what makes a single number a lie:
  *
@@ -32,6 +37,10 @@
  *     is the honest measure of how much the figure is worth: gaps that cluster mean several
  *     independent arrivals agreed, gaps that disagree mean the shortest is probably still nowhere
  *     near the truth. Reported, never averaged away.
+ *   - **And there is exactly one lower bound, which only the player can give.** Saying a mob is
+ *     *not* up yet proves `R >` that, so it ratchets *upward* — the only figure here that does. It
+ *     sets the earliest the window may open, and where it passes the estimate it proves the estimate
+ *     wrong rather than merely soft (`contradicted`).
  *   - **And the player owns the padding.** We refuse to invent a lower bound for the window —
  *     there is no observation that could support one — so how early to start watching is a number
  *     the person at the camp sets, per mob, because they know whether this one walks.
@@ -101,6 +110,32 @@ export function timerKey(mob: string, zone: string): string {
   return `${mobKey(mob)}|${placeKey(zone)}`;
 }
 
+/**
+ * One measured gap between two consecutive kills — the unit the estimate is actually built from.
+ *
+ * Listed so a single bad one can be thrown out. Before this the finest tool was `relearn`, which
+ * draws a line under *everything* measured so far: right for "this camp's history is nonsense",
+ * far too blunt for "that one gap was me pulling the placeholder by mistake".
+ */
+export interface RespawnGap {
+  /**
+   * The two kill moments it spans. Derived rather than stored, so it stays stable across a re-read
+   * of the log — and an exclusion whose pair stops being consecutive (an import dropped a kill
+   * between them) simply goes inert rather than silently excluding some *other* gap.
+   */
+  id: string;
+  seconds: number;
+  /** The later of the two kills, which is what a reader recognises the gap by. */
+  endedAt: string;
+  /** Thrown out by the player. Still listed — an exclusion you can't see is one you can't undo. */
+  dropped: boolean;
+}
+
+/** The identity of a gap: the pair of kills it lies between. */
+export function gapId(beforeAt: number, afterAt: number): string {
+  return `${new Date(beforeAt).toISOString()}|${new Date(afterAt).toISOString()}`;
+}
+
 /** What repeated kills of one named in one place have taught about its respawn. */
 export interface RespawnLearning {
   key: string;
@@ -123,6 +158,23 @@ export interface RespawnLearning {
   samples: number;
   /** The most recent kill, ISO — where a countdown would be measured from. */
   lastKillAt?: string;
+  /**
+   * Every gap that counts, or would if the player hadn't dropped it — shortest first, since the
+   * shortest *is* the estimate and is the one anybody opening this list came to look at.
+   *
+   * Gaps that were never evidence (outside the plausible bounds, spanning a difficulty change,
+   * before a relearn cutoff) are absent rather than listed as excluded: they are not decisions
+   * anybody made and nothing can be done about them.
+   */
+  gaps: RespawnGap[];
+}
+
+/** How the caller narrows what counts as evidence. Both are the player's own corrections. */
+export interface LearnOptions {
+  /** Ignore every gap *beginning* before this moment, per timer — the relearn cutoff. */
+  relearnedAt?: (key: string) => number | undefined;
+  /** Has the player thrown this particular gap out? */
+  isDropped?: (key: string, id: string) => boolean;
 }
 
 /**
@@ -169,7 +221,11 @@ export function provenNamed(kills: KillRecord[]): Set<string> {
  * ([ADR 0027](../../specs/decisions/0027-only-your-kills-count.md)): a mob dying is evidence of
  * when it died whoever swung the sword, and it is your clock that wrote the line.
  *
- * `relearnedAt` is the way back up from a bound that only ever falls: a timer told to start over
+ * `options.isDropped` throws out **one** gap: the finest correction available, for the pull that was
+ * really the placeholder or the evening two people were killing it. Everything else about that camp
+ * survives, which is what `relearnedAt` below cannot offer.
+ *
+ * `options.relearnedAt` is the way back up from a bound that only ever falls: a timer told to start over
  * ignores every **gap beginning** before the moment it was told, so a figure tightened by a
  * mis-parsed or misremembered evening can be dropped without deleting the kills themselves. A
  * cutoff rather than a stored number, so the learned figure stays **derived** and one correction
@@ -183,9 +239,10 @@ export function provenNamed(kills: KillRecord[]): Set<string> {
 export function learnRespawns(
   kills: KillRecord[],
   isNamed: (key: string) => boolean,
-  relearnedAt?: (key: string) => number | undefined,
+  options: LearnOptions = {},
 ): RespawnLearning[] {
-  const groups = new Map<string, { mob: string; zone: string; times: number[] }>();
+  const { relearnedAt, isDropped } = options;
+  const groups = new Map<string, { mob: string; zone: string; kills: { at: number; zone: string }[] }>();
 
   for (const k of kills) {
     if (!k.zone || k.sharedBy) continue;
@@ -194,30 +251,52 @@ export function learnRespawns(
     if (Number.isNaN(at)) continue;
     const key = timerKey(k.mob, k.zone);
     const group = groups.get(key);
-    if (group) group.times.push(at);
-    else groups.set(key, { mob: k.mob, zone: k.zone, times: [at] });
+    // The zone is carried **as the log wrote it**, difficulty and all, even though the group folds
+    // the variants together — see the gap rule below for why the raw string has to survive.
+    if (group) group.kills.push({ at, zone: k.zone });
+    else groups.set(key, { mob: k.mob, zone: k.zone, kills: [{ at, zone: k.zone }] });
   }
 
   const learned: RespawnLearning[] = [];
-  for (const [key, { mob, zone, times }] of groups) {
+  for (const [key, { mob, zone, kills: group }] of groups) {
     // Records arrive in log order, but an imported log can interleave with live kills — so sort
     // rather than assume, since a negative gap would read as a wildly short respawn.
-    times.sort((a, b) => a - b);
+    group.sort((a, b) => a.at - b.at);
     const since = relearnedAt?.(key);
     let shortest: number | undefined;
     let longest: number | undefined;
     let samples = 0;
-    for (let i = 1; i < times.length; i += 1) {
+    const gaps: RespawnGap[] = [];
+    for (let i = 1; i < group.length; i += 1) {
+      const [before, after] = [group[i - 1], group[i]];
       // A gap that *starts* before the reset is evidence from the period being thrown away, even
       // if it ends after it.
-      if (since !== undefined && times[i - 1] < since) continue;
-      const gap = Math.round((times[i] - times[i - 1]) / MS_PER_SECOND);
+      if (since !== undefined && before.at < since) continue;
+      // **Changing the instance difficulty respawns everything**, so a gap whose two ends were
+      // recorded in different variants of the zone measures the difficulty change, not the mob.
+      // Left in, it is the worst kind of sample: arbitrarily short, and permanent against a bound
+      // that only ever falls.
+      //
+      // Compared **verbatim** rather than folded, which is the one thing the raw zone is kept for.
+      // `timerKey` deliberately groups the variants into one camp (ADR 0083) — Lower Guk is Lower
+      // Guk — so by the time a gap is being measured the difference is invisible unless it was
+      // carried this far. `kill-log.ts` makes the same exception for the same reason, about which
+      // `/loc` fix may place a kill (ADR 0059).
+      if (before.zone !== after.zone) continue;
+      const gap = Math.round((after.at - before.at) / MS_PER_SECOND);
       // Implausible on either side is discarded, never clamped: see the ratchet note up top.
       if (gap < MIN_RESPAWN_SECONDS || gap > MAX_RESPAWN_SECONDS) continue;
+      const id = gapId(before.at, after.at);
+      const dropped = !!isDropped?.(key, id);
+      gaps.push({ id, seconds: gap, endedAt: new Date(after.at).toISOString(), dropped });
+      if (dropped) continue;
       samples += 1;
       if (shortest === undefined || gap < shortest) shortest = gap;
       if (longest === undefined || gap > longest) longest = gap;
     }
+    // Shortest first: the shortest gap *is* the figure, so it is what anyone opening the list came
+    // to check. Ties keep the later one first, which is the one still fresh in mind.
+    gaps.sort((a, b) => a.seconds - b.seconds || b.endedAt.localeCompare(a.endedAt));
     learned.push({
       key,
       mob,
@@ -225,7 +304,8 @@ export function learnRespawns(
       shortestSeconds: shortest,
       longestSeconds: longest,
       samples,
-      lastKillAt: new Date(times[times.length - 1]).toISOString(),
+      lastKillAt: new Date(group[group.length - 1].at).toISOString(),
+      gaps,
     });
   }
 
@@ -252,6 +332,26 @@ export interface Sighting {
   count: number;
 }
 
+/**
+ * What standing at the camp and saying it is **not** up has taught: the longest confirmed "not yet",
+ * and how many times you've said so.
+ *
+ * The mirror of a sighting, and the only **lower** bound this app has. `R > (when you said so) −
+ * (when it died)`, so it ratchets *upward* where everything else ratchets down.
+ *
+ * [ADR 0094](../../specs/decisions/0094-a-spawn-timer-is-window-not-an-instant.md) refused to invent
+ * a lower bound because no observation could support one, and
+ * [ADR 0097](../../specs/decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md) refused to
+ * read *silence* as one — the mob may be up and out of sight, which is the wandering problem. Both
+ * still hold. This is neither: it is the player **asserting** a negative about a camp they are
+ * sitting in, which is a thing only they can know and exactly the kind of judgement the rest of the
+ * feature already trusts them for.
+ */
+export interface Floor {
+  seconds: number;
+  count: number;
+}
+
 /** A respawn we're prepared to act on, and the provenance that makes it sayable. */
 export interface Respawn {
   /** The **by-time**: we expect it to have spawned within this long. Not "it spawns at". */
@@ -264,6 +364,12 @@ export interface Respawn {
    * `erratic`). Only ever about kill gaps, since a sighting has no matching loose end.
    */
   spreadSeconds?: number;
+  /**
+   * The tightest **lower** bound: you stood there and said it wasn't up yet. Not part of the
+   * estimate — which is a by-time and only ever falls — but it says the window cannot open before
+   * this, and if it reaches `seconds` the evidence is contradicting itself (`contradicted`).
+   */
+  floorSeconds?: number;
 }
 
 /**
@@ -278,8 +384,13 @@ export function respawnFor(
   learned: RespawnLearning | undefined,
   stated: number | undefined,
   seen?: Sighting,
+  floor?: Floor,
 ): Respawn | undefined {
-  if (stated !== undefined && stated > 0) return { seconds: stated, source: "stated", samples: 0 };
+  const withFloor = (r: Respawn | undefined): Respawn | undefined =>
+    r && floor && floor.seconds > 0 ? { ...r, floorSeconds: floor.seconds } : r;
+  if (stated !== undefined && stated > 0) {
+    return withFloor({ seconds: stated, source: "stated", samples: 0 });
+  }
 
   const killed =
     learned?.shortestSeconds === undefined
@@ -296,9 +407,40 @@ export function respawnFor(
   // shortest gap, applied one level up. A sighting usually wins because it excludes the time spent
   // reaching and killing the mob, but it isn't privileged: if a kill gap somehow came in tighter,
   // that is a real bound too and pretending otherwise would be discarding evidence.
-  if (!killed) return sighted;
-  if (!sighted) return killed;
-  return sighted.seconds <= killed.seconds ? sighted : killed;
+  if (!killed) return withFloor(sighted);
+  if (!sighted) return withFloor(killed);
+  return withFloor(sighted.seconds <= killed.seconds ? sighted : killed);
+}
+
+/**
+ * Does the evidence disagree with itself? A floor at or above the by-time says the mob provably had
+ * *not* spawned by a moment the estimate claims it must have.
+ *
+ * Reported rather than resolved. One of the two is wrong — a mis-clicked sighting, a placeholder
+ * cycle, or a "not up" from a camp the mob had wandered out of — and which one is a judgement about
+ * an evening the app did not attend. Picking for the player would mean silently discarding a real
+ * observation; saying so puts them one click from dropping whichever they know to be wrong.
+ */
+export function contradicted(respawn: Respawn): boolean {
+  return respawn.floorSeconds !== undefined && respawn.floorSeconds >= respawn.seconds;
+}
+
+/**
+ * What a "not up yet" at `atMs` says about a mob that died at `killedAt`, or `null` when it says
+ * nothing usable. Bounded exactly like a sighting, and for the same reasons.
+ */
+export function floorFrom(killedAt: string, atMs: number): number | null {
+  const died = Date.parse(killedAt);
+  if (Number.isNaN(died)) return null;
+  const seconds = Math.round((atMs - died) / MS_PER_SECOND);
+  if (seconds < MIN_RESPAWN_SECONDS || seconds > MAX_RESPAWN_SECONDS) return null;
+  return seconds;
+}
+
+/** Fold a fresh "not yet" into what earlier ones taught — the **longest** wins, and the count grows. */
+export function raiseFloor(floor: Floor | undefined, seconds: number): Floor {
+  if (!floor) return { seconds, count: 1 };
+  return { seconds: Math.max(floor.seconds, seconds), count: floor.count + 1 };
 }
 
 /**
@@ -389,12 +531,21 @@ export function timerFrom(
   // mob died would be permanently open, which is the one setting that says nothing at all.
   const padding = Math.min(Math.max(Math.round(lead), 0), Math.min(respawn.seconds, MAX_LEAD_SECONDS));
   const due = at + respawn.seconds * MS_PER_SECOND;
+  // **A measured floor overrules the padding.** You stood there and said it had not spawned yet, so
+  // watching earlier than that is watching for something you have proof was not there — which is
+  // the one thing padding was never able to know
+  // ([ADR 0094](../../specs/decisions/0094-a-spawn-timer-is-a-window-not-an-instant.md) refused to
+  // invent this number precisely because no observation supported it; now one does). It can only
+  // ever move the window *later*, never past the by-time.
+  const opens = due - padding * MS_PER_SECOND;
+  const floorAt = respawn.floorSeconds ? at + respawn.floorSeconds * MS_PER_SECOND : opens;
+  const watchFrom = Math.min(Math.max(opens, floorAt), due);
   return {
     key: learning.key,
     mob: learning.mob,
     place: learning.place,
     killedAt,
-    watchFrom: new Date(due - padding * MS_PER_SECOND).toISOString(),
+    watchFrom: new Date(watchFrom).toISOString(),
     dueAt: new Date(due).toISOString(),
     seconds: respawn.seconds,
     source: respawn.source,
@@ -541,6 +692,11 @@ export function describeRespawn(respawn: Respawn): string {
  * itself. This is the one place the app says out loud that a spawn timer is a soft thing.
  */
 export function respawnCaveat(respawn: Respawn): string | null {
+  // The contradiction leads: it is the stronger statement of the two, and unlike a wide spread it
+  // says something is provably *wrong* rather than merely soft.
+  if (contradicted(respawn)) {
+    return `You've seen it still down at ${formatInterval(respawn.floorSeconds ?? 0)}, which is past this figure — so one of them is wrong. A mis-clicked sighting, a placeholder cycle, or it had wandered off. Drop whichever you don't believe under Evidence.`;
+  }
   if (!erratic(respawn)) return null;
   return "Gaps this far apart usually mean a placeholder cycle, a mob that wanders, or arriving late — treat it as a hint, and pad it.";
 }

@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createSpawnTracker, type SpawnTracker } from "../spawn-tracker";
-import { timerKey } from "../../src/shared/spawn-timers";
+import { contradicted, respawnCaveat, timerKey } from "../../src/shared/spawn-timers";
 import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
 import type { CastAlertEvent, CastAlertSettings, KillRecord } from "../../src/shared/types";
 
@@ -595,6 +595,93 @@ test("style and on-screen survive a restart, and go when a hand-added row does",
   assert.equal(fresh?.onScreen, false);
 });
 
+// ── disagreeing with the clock ─────────────────────────────────────────────────
+// "It is not up" is the one lower bound the app has, and the one only a player can give: nothing in
+// the log records standing at a camp and finding nothing there.
+
+test("saying it is not up yet records a floor that ratchets upward", () => {
+  const h = timed(); // killed at 900, 900s learned
+  h.tick(1500);
+  h.tracker.markNotUp(KEY); // 600s and still down
+  assert.equal(h.tracker.view().known[0].floor?.seconds, 600);
+  h.tick(1400);
+  h.tracker.markNotUp(KEY); // 500s — earlier, so it proves less
+  assert.equal(h.tracker.view().known[0].floor?.seconds, 600, "a lower bound only ever rises");
+  assert.equal(h.tracker.view().known[0].floor?.count, 2);
+});
+
+test("a floor holds the window shut until it, whatever padding says", () => {
+  const h = timed();
+  h.tracker.pad(KEY, 600); // watch from 10m before the by-time...
+  assert.equal(h.tracker.view().running[0].watchFrom, iso(1200));
+  h.tick(1500);
+  h.tracker.markNotUp(KEY); // ...but you have proof it was still down at 600s
+  h.tracker.markDead(KEY);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.dueAt, iso(2400), "the by-time is untouched — this is not an upper bound");
+  assert.equal(timer.watchFrom, iso(2100), "and the window can't open before the floor");
+});
+
+test("a floor past the estimate is reported as a contradiction, not quietly resolved", () => {
+  const h = timed();
+  h.tick(1400);
+  h.tracker.markUp(KEY); // a 500s sighting — the estimate is now 500s
+  h.kills.push(record(MOB, 2000));
+  h.tracker.noteKill(MOB, ZONE, iso(2000), true);
+  h.tick(2900);
+  h.tracker.markNotUp(KEY); // but here it is, provably still down at 900s
+
+  const respawn = h.tracker.view().known[0].respawn!;
+  assert.equal(respawn.seconds, 500);
+  assert.equal(respawn.floorSeconds, 900);
+  // One of them is wrong and the app does not get to pick: which it is depends on an evening it
+  // did not attend.
+  assert.ok(contradicted(respawn));
+  assert.match(respawnCaveat(respawn) ?? "", /one of them is wrong/i);
+});
+
+test("saying it is not up undoes a mis-clicked 'it's up'", () => {
+  const h = timed();
+  h.tick(1500);
+  h.tracker.markUp(KEY);
+  assert.equal(h.tracker.view().running[0].state, "alive");
+  h.tick(1560);
+  h.tracker.markNotUp(KEY);
+  assert.notEqual(h.tracker.view().running[0].state, "alive", "it cannot be alive and not up at once");
+});
+
+test("an implausible 'not up' is discarded like any other observation", () => {
+  const h = timed();
+  h.tick(930); // 30s after it died — of course it is not up; that proves nothing
+  h.tracker.markNotUp(KEY);
+  assert.equal(h.tracker.view().known[0].floor, undefined);
+});
+
+test("a floor can be dropped on its own, and relearning takes it with the rest", () => {
+  const h = timed();
+  h.tick(1500);
+  h.tracker.markNotUp(KEY);
+  h.tracker.forgetFloor(KEY);
+  assert.equal(h.tracker.view().known[0].floor, undefined);
+
+  h.tick(1600);
+  h.tracker.markNotUp(KEY);
+  h.tracker.relearn(KEY);
+  assert.equal(h.tracker.view().known[0].floor, undefined, "a floor is a measurement like any other");
+});
+
+test("a floor survives a restart", () => {
+  const dir = tempDir();
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const first = harness({ kills, dir });
+  first.tracker.noteKill(MOB, ZONE, iso(900), true);
+  first.tick(1500);
+  first.tracker.markNotUp(KEY);
+  first.tracker.flush();
+  const second = harness({ kills, dir, startSec: 1500 });
+  assert.equal(second.tracker.view().known[0].floor?.seconds, 600);
+});
+
 // ── "it's dead now" ────────────────────────────────────────────────────────────
 // The hand-operated twin of a kill line: the app wasn't watching, or you've walked up to a camp
 // someone else was holding. It seeds a countdown and teaches the estimate nothing.
@@ -655,6 +742,33 @@ test("a typed figure is enough to start one by hand", () => {
   h.tick(1000);
   h.tracker.markDead(key);
   assert.equal(h.tracker.view().running[0].dueAt, iso(1600));
+});
+
+// ── the difficulty changing ────────────────────────────────────────────────────
+
+test("changing difficulty drops the countdowns for that place — everything repopped", () => {
+  const h = timed();
+  assert.equal(h.tracker.view().running.length, 1);
+  h.tracker.noteZone(ZONE);
+  h.tracker.noteZone("Lower Guk 2");
+  assert.equal(h.tracker.view().running.length, 0, "it was counting from a death the world has undone");
+});
+
+test("ordinary travel leaves a camp's countdown alone", () => {
+  const h = timed();
+  h.tracker.noteZone(ZONE);
+  h.tracker.noteZone("Upper Guk");
+  h.tracker.noteZone(ZONE);
+  // A mob keeps respawning while you are elsewhere, so going away and coming back must not be
+  // mistaken for the difficulty changing under you.
+  assert.equal(h.tracker.view().running.length, 1);
+});
+
+test("a difficulty change elsewhere leaves this camp alone", () => {
+  const h = timed();
+  h.tracker.noteZone("Befallen");
+  h.tracker.noteZone("Befallen 2");
+  assert.equal(h.tracker.view().running.length, 1);
 });
 
 // ── the player's word ──────────────────────────────────────────────────────────
@@ -751,6 +865,97 @@ test("a dismissal survives a restart, and so does the way out of it", () => {
   assert.deepEqual(second.tracker.view().dismissed, [MOB]);
   second.tracker.markNamed(MOB, true);
   assert.equal(second.tracker.view().known.length, 1);
+});
+
+test("relearning forgets the sightings too, or the figure does not go back to unknown", () => {
+  const h = timed();
+  h.tick(1400);
+  h.tracker.markUp(KEY); // a 500s sighting, tighter than the 900s kill gap
+  assert.equal(h.tracker.view().known[0].respawn?.seconds, 500);
+
+  h.tracker.relearn(KEY);
+  const known = h.tracker.view().known.find((k) => k.key === KEY);
+  // A cutoff over the kill log left sightings untouched, so a mis-clicked one was permanent — the
+  // panel promised "back to unknown" and delivered the bad sighting instead.
+  assert.equal(known?.respawn, undefined);
+  assert.equal(known?.seen, undefined);
+});
+
+test("one bad gap can be thrown out, and put back, without touching the rest", () => {
+  const kills = [record(MOB, 0), record(MOB, 1200), record(MOB, 1500)];
+  const h = harness({ kills });
+  h.tracker.noteKill(MOB, ZONE, iso(1500), true);
+  const row = () => h.tracker.view().known.find((k) => k.key === KEY)!;
+  assert.equal(row().respawn?.seconds, 300, "the 300s pull is setting the figure");
+
+  const bad = row().gaps[0].id;
+  h.tracker.setGapDropped(KEY, bad, true);
+  assert.equal(row().respawn?.seconds, 1200, "and the camp's other history survives it");
+  assert.equal(row().gaps.find((g) => g.id === bad)?.dropped, true);
+
+  h.tracker.setGapDropped(KEY, bad, false);
+  assert.equal(row().respawn?.seconds, 300);
+});
+
+test("a dropped gap survives a restart, or the figure would quietly come back wrong", () => {
+  const dir = tempDir();
+  const kills = [record(MOB, 0), record(MOB, 1200), record(MOB, 1500)];
+  const first = harness({ kills, dir });
+  first.tracker.noteKill(MOB, ZONE, iso(1500), true);
+  first.tracker.setGapDropped(KEY, first.tracker.view().known[0].gaps[0].id, true);
+  first.tracker.flush();
+
+  const second = harness({ kills, dir });
+  assert.equal(second.tracker.view().known[0].respawn?.seconds, 1200);
+});
+
+test("relearning supersedes the per-gap exclusions rather than keeping them", () => {
+  const kills = [record(MOB, 0), record(MOB, 1200), record(MOB, 1500)];
+  const h = harness({ kills });
+  h.tracker.noteKill(MOB, ZONE, iso(1500), true);
+  h.tracker.setGapDropped(KEY, h.tracker.view().known[0].gaps[0].id, true);
+  h.tick(2000);
+  h.tracker.relearn(KEY);
+  // The cutoff already excludes everything measured; a leftover exclusion could only re-exclude a
+  // gap measured *after* the reset, which nobody asked for.
+  assert.equal(h.tracker.view().known[0].gaps.length, 0);
+});
+
+test("a stray sighting can be dropped on its own, keeping what the kills taught", () => {
+  const h = timed();
+  h.tick(1000);
+  h.tracker.markUp(KEY); // 100s... below the floor, so try a plausible-but-wrong one
+  h.kills.push(record(MOB, 2000));
+  h.tracker.noteKill(MOB, ZONE, iso(2000), true);
+  h.tick(2200);
+  h.tracker.markUp(KEY); // 200s — plausible, and wrong, and permanent until now
+  assert.equal(h.tracker.view().known[0].respawn?.source, "seen");
+
+  h.tracker.forgetSightings(KEY);
+  const known = h.tracker.view().known.find((k) => k.key === KEY);
+  assert.equal(known?.seen, undefined);
+  assert.equal(known?.respawn?.seconds, 900, "the kill gaps are still there");
+  assert.equal(known?.respawn?.source, "killed");
+});
+
+test("the evidence behind a figure is reported, not just the answer", () => {
+  const h = timed();
+  h.tick(1400);
+  h.tracker.markUp(KEY);
+  h.tracker.state(KEY, 1200);
+  const known = h.tracker.view().known.find((k) => k.key === KEY);
+  // All three, so a reader can tell *which* one has gone wonky rather than only that something has.
+  assert.equal(known?.shortestSeconds, 900);
+  assert.equal(known?.seen?.seconds, 500);
+  assert.equal(known?.stated, 1200);
+  assert.equal(known?.respawn?.source, "stated", "and which of them is actually in force");
+});
+
+test("relearning keeps the figure you typed — it forgets measurements, not decisions", () => {
+  const h = timed();
+  h.tracker.state(KEY, 1200);
+  h.tracker.relearn(KEY);
+  assert.equal(h.tracker.view().known[0].stated, 1200);
 });
 
 test("relearning drops the learned figure but keeps the row", () => {

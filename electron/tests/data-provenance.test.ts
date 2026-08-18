@@ -101,6 +101,28 @@ test("the shipped table is self-consistent", () => {
   }
 });
 
+test("a kill log written before the articles were read is flagged, and says what it costs", () => {
+  const killLog = concernById("kill-log")!;
+  // A kill line's articles are destroyed a line later by `stripArticle`, so they are on a record
+  // only if that record was written by the current rule — nothing can recover them in place.
+  assert.equal(dataState(killLog, { revision: 1 }), "stale");
+  // And a file from before stamping shipped is older still, not "assume it's fine".
+  assert.equal(dataState(killLog, undefined), "stale");
+  assert.equal(dataState(killLog, { revision: killLog.revision }), "current");
+  assert.match(killLog.changed ?? "", /article/i);
+  assert.equal(killLog.remedy, "re-eat", "the log still has every kill; re-reading it fills them in");
+});
+
+test("respawn timers are not flagged, because what they learn is derived rather than stored", () => {
+  const spawns = concernById("spawn-timers")!;
+  // The rules for reading a gap changed this release too, but the file holds what the *player*
+  // typed plus due times — the learned windows come off the kill log on every read, so a rule
+  // change corrects them with nothing to reprocess. Flagging it would send a reader to a remedy
+  // that changes none of it.
+  assert.equal(dataState(spawns, { revision: spawns.revision }), "current");
+  assert.equal(dataState(spawns, undefined), "current");
+});
+
 // ── the stamp, on disk ────────────────────────────────────────────────────────
 
 test("a store stamps itself, and the stamp survives the round trip", () => {
