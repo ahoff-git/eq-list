@@ -45,7 +45,8 @@ import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
 
 const SECONDS_PER_MINUTE = 60;
-const SECONDS_PER_HOUR = 60 * SECONDS_PER_MINUTE;
+const MINUTES_PER_HOUR = 60;
+const SECONDS_PER_HOUR = MINUTES_PER_HOUR * SECONDS_PER_MINUTE;
 const MS_PER_SECOND = 1000;
 
 /**
@@ -220,17 +221,36 @@ export function learnRespawns(
   return learned.sort((a, b) => a.mob.localeCompare(b.mob) || a.place.localeCompare(b.place));
 }
 
-/** Where a respawn figure came from, which decides how it may be worded. */
-export type RespawnSource = "stated" | "learned";
+/**
+ * Where a respawn figure came from, which decides both how it may be worded and how much it is
+ * worth. All three are **upper bounds** on the true respawn; they differ in how loose.
+ *
+ *   - `stated` — you typed it. Outranks everything and is never overwritten.
+ *   - `seen` — you marked it **up**. `R ≤ (the moment you saw it) − (the moment it died)`, which
+ *     is the tightest evidence the app can gather, because unlike a kill gap it excludes the time
+ *     you then spent getting to the mob and killing it.
+ *   - `killed` — the gap between two of your kills. Everything a sighting excludes is still in
+ *     here, plus however many placeholder cycles went by.
+ */
+export type RespawnSource = "stated" | "seen" | "killed";
+
+/** What marking a mob **up** has taught: the tightest death-to-sighting gap, and how many there were. */
+export interface Sighting {
+  seconds: number;
+  count: number;
+}
 
 /** A respawn we're prepared to act on, and the provenance that makes it sayable. */
 export interface Respawn {
   /** The **by-time**: we expect it to have spawned within this long. Not "it spawns at". */
   seconds: number;
   source: RespawnSource;
-  /** Gaps behind a learned figure; `0` for a stated one, which rests on no sample at all. */
+  /** Observations behind the figure — kill gaps, or sightings. `0` for a stated one. */
   samples: number;
-  /** The longest gap seen, when there is one — the other end of the evidence (see `erratic`). */
+  /**
+   * The longest **kill gap** seen, when there is one — the other end of that evidence (see
+   * `erratic`). Only ever about kill gaps, since a sighting has no matching loose end.
+   */
   spreadSeconds?: number;
 }
 
@@ -242,24 +262,66 @@ export interface Respawn {
  * restores the observation rather than leaving nothing
  * ([ADR 0056](../../specs/decisions/0056-a-dropped-record-keeps-what-it-taught.md)).
  */
-export function respawnFor(learned: RespawnLearning | undefined, stated: number | undefined): Respawn | undefined {
+export function respawnFor(
+  learned: RespawnLearning | undefined,
+  stated: number | undefined,
+  seen?: Sighting,
+): Respawn | undefined {
   if (stated !== undefined && stated > 0) return { seconds: stated, source: "stated", samples: 0 };
-  if (learned?.shortestSeconds === undefined) return undefined;
-  return {
-    seconds: learned.shortestSeconds,
-    source: "learned",
-    samples: learned.samples,
-    spreadSeconds: learned.longestSeconds,
-  };
+
+  const killed =
+    learned?.shortestSeconds === undefined
+      ? undefined
+      : {
+          seconds: learned.shortestSeconds,
+          source: "killed" as const,
+          samples: learned.samples,
+          spreadSeconds: learned.longestSeconds,
+        };
+  const sighted = seen && seen.seconds > 0 ? { seconds: seen.seconds, source: "seen" as const, samples: seen.count } : undefined;
+
+  // Both are upper bounds, so the smaller is simply the better one — the same rule that picks the
+  // shortest gap, applied one level up. A sighting usually wins because it excludes the time spent
+  // reaching and killing the mob, but it isn't privileged: if a kill gap somehow came in tighter,
+  // that is a real bound too and pretending otherwise would be discarding evidence.
+  if (!killed) return sighted;
+  if (!sighted) return killed;
+  return sighted.seconds <= killed.seconds ? sighted : killed;
 }
 
 /**
  * Do the observed gaps disagree enough that the figure should be read as a hint rather than a
- * timer? A stated figure is never erratic — the player is not guessing about what they typed.
+ * timer?
+ *
+ * Only ever asked of a **kill-gap** figure. A stated one isn't a guess, and a sighting has no
+ * second end to disagree with — its looseness is one short step (how long before you looked),
+ * where a kill gap's can be several placeholder cycles.
  */
 export function erratic(respawn: Respawn): boolean {
-  if (respawn.source === "stated" || respawn.spreadSeconds === undefined) return false;
+  if (respawn.source !== "killed" || respawn.spreadSeconds === undefined) return false;
   return respawn.spreadSeconds > respawn.seconds * ERRATIC_RATIO;
+}
+
+/**
+ * What a sighting at `seenAt` says about a mob that died at `killedAt`, or `null` when it says
+ * nothing usable.
+ *
+ * Bounded exactly like a kill gap, and for the same reasons: under the floor it's a double-count
+ * or a misclick, over the ceiling you simply weren't looking. Discarded rather than clamped,
+ * because this feeds the ratchet and an invented short number there is permanent.
+ */
+export function sightingFrom(killedAt: string, seenAtMs: number): number | null {
+  const died = Date.parse(killedAt);
+  if (Number.isNaN(died)) return null;
+  const seconds = Math.round((seenAtMs - died) / MS_PER_SECOND);
+  if (seconds < MIN_RESPAWN_SECONDS || seconds > MAX_RESPAWN_SECONDS) return null;
+  return seconds;
+}
+
+/** Fold a fresh sighting into what earlier ones taught — the shortest wins, and the count grows. */
+export function tightenSighting(seen: Sighting | undefined, seconds: number): Sighting {
+  if (!seen) return { seconds, count: 1 };
+  return { seconds: Math.min(seen.seconds, seconds), count: seen.count + 1 };
 }
 
 /** A countdown: one named, in one place, with a window we expect it back in. */
@@ -288,6 +350,11 @@ export interface SpawnTimer {
   spreadSeconds?: number;
   /** The padding this timer was armed with, in seconds. */
   lead: number;
+  /**
+   * When the player said they could see it, ISO. Set means the mob **is** up — an observation,
+   * not the countdown's opinion — and outranks every other state until it dies again.
+   */
+  seenAt?: string;
 }
 
 /**
@@ -340,9 +407,14 @@ export function timerFrom(
  * A stale timer is dropped rather than shown, and is **never** alerted retroactively: an alert
  * about something that happened three hours ago is the opposite of what an overlay is for.
  */
-export type SpawnState = "waiting" | "window" | "up" | "stale";
+export type SpawnState = "waiting" | "window" | "up" | "alive" | "stale";
 
-export function spawnState(timer: Pick<SpawnTimer, "watchFrom" | "dueAt">, nowMs: number): SpawnState {
+export function spawnState(timer: Pick<SpawnTimer, "watchFrom" | "dueAt" | "seenAt">, nowMs: number): SpawnState {
+  // A sighting outranks the clock outright, in both directions: it can say a mob is up before the
+  // window opens, and it keeps saying so long after the countdown would have given up. That is the
+  // claim-versus-observation rule this whole app runs on — the estimate is what we *guessed*, and
+  // the player standing there looking at the mob is what we *know*.
+  if (timer.seenAt && !Number.isNaN(Date.parse(timer.seenAt))) return "alive";
   const due = Date.parse(timer.dueAt);
   if (Number.isNaN(due)) return "stale"; // unreadable is not a countdown we can honour
   const open = Date.parse(timer.watchFrom);
@@ -393,10 +465,14 @@ export function formatCountdown(ms: number): string {
 export function formatInterval(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
   if (total < SECONDS_PER_MINUTE) return `${total}s`;
-  const hours = Math.floor(total / SECONDS_PER_HOUR);
-  const minutes = Math.round((total % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+  // Rounded to whole minutes **first**, then split. Rounding the leftover seconds against the hour
+  // instead let the minutes reach 60 without the hour hearing about it, so 1h 59m 40s printed as
+  // "1h 60m" and 59m 30s as "60m" — clocks that don't exist, on the figure a camper reads first.
+  const minutes = Math.round(total / SECONDS_PER_MINUTE);
+  const hours = Math.floor(minutes / MINUTES_PER_HOUR);
+  const rest = minutes % MINUTES_PER_HOUR;
   if (!hours) return `${minutes}m`;
-  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
 /**
@@ -411,6 +487,10 @@ export function formatInterval(seconds: number): string {
  */
 export function describeRespawn(respawn: Respawn): string {
   if (respawn.source === "stated") return `${formatInterval(respawn.seconds)} (you set this)`;
+  if (respawn.source === "seen") {
+    const times = respawn.samples === 1 ? "seen up once" : `seen up ${respawn.samples} times`;
+    return `at most ${formatInterval(respawn.seconds)}, ${times}`;
+  }
   const gaps = respawn.samples === 1 ? "1 gap" : `${respawn.samples} gaps`;
   if (erratic(respawn) && respawn.spreadSeconds !== undefined) {
     return `${formatInterval(respawn.seconds)}–${formatInterval(respawn.spreadSeconds)}, from ${gaps}`;

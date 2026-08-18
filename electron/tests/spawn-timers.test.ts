@@ -211,7 +211,7 @@ test("a stated interval outranks anything learned", () => {
 test("clearing a stated interval restores what was learned rather than nothing", () => {
   const learned = learningFor(learnRespawns([kill("Ghoul Lord", 0), kill("Ghoul Lord", 900)], always), "Ghoul Lord");
   assert.equal(respawnFor(learned, undefined)?.seconds, 900);
-  assert.equal(respawnFor(learned, undefined)?.source, "learned");
+  assert.equal(respawnFor(learned, undefined)?.source, "killed");
 });
 
 test("nothing learned and nothing stated is no answer, not a default", () => {
@@ -222,7 +222,7 @@ test("nothing learned and nothing stated is no answer, not a default", () => {
 
 test("a timer is due one interval after the kill", () => {
   const learned = learningFor(learnRespawns([kill("Ghoul Lord", 0), kill("Ghoul Lord", 900)], always), "Ghoul Lord");
-  const timer = timerFrom(learned, iso(1800), { seconds: 900, source: "learned", samples: 1 });
+  const timer = timerFrom(learned, iso(1800), { seconds: 900, source: "killed", samples: 1 });
   assert.equal(timer?.dueAt, iso(2700));
 });
 
@@ -251,14 +251,14 @@ test("remaining goes negative once overdue, so a caller can say how long ago", (
 // is theirs to set and we refuse to invent a lower bound of our own (ADR 0094).
 
 test("padding opens a window before the by-time, and the by-time doesn't move", () => {
-  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "learned", samples: 2 }, 120);
+  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "killed", samples: 2 }, 120);
   assert.equal(timer?.dueAt, iso(900), "the evidence said 900s; padding is not a new measurement");
   assert.equal(timer?.watchFrom, iso(780));
   assert.equal(timer?.lead, 120);
 });
 
 test("inside the window a timer says 'might be up', which is what padding is for", () => {
-  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "learned", samples: 2 }, 120);
+  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "killed", samples: 2 }, 120);
   assert.ok(timer);
   assert.equal(spawnState(timer, T0 + 779_000), "waiting");
   assert.equal(spawnState(timer, T0 + 800_000), "window");
@@ -266,19 +266,19 @@ test("inside the window a timer says 'might be up', which is what padding is for
 });
 
 test("padding can't reach back past the kill, which would leave a window permanently open", () => {
-  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "learned", samples: 2 }, 5000);
+  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "killed", samples: 2 }, 5000);
   assert.equal(timer?.lead, 900);
   assert.equal(timer?.watchFrom, iso(0));
 });
 
 test("no padding means no window at all — watchFrom is the by-time", () => {
-  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "learned", samples: 2 });
+  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "killed", samples: 2 });
   assert.equal(timer?.watchFrom, timer?.dueAt);
   assert.equal(timer?.lead, 0);
 });
 
 test("the countdown counts to the window opening, then to the by-time", () => {
-  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "learned", samples: 2 }, 120);
+  const timer = timerFrom(LEARNED, iso(0), { seconds: 900, source: "killed", samples: 2 }, 120);
   assert.ok(timer);
   assert.equal(countdownMs(timer, T0), 780_000, "while waiting, the next moment is the window");
   assert.equal(countdownMs(timer, T0 + 800_000), 100_000, "inside it, how much window is left");
@@ -295,8 +295,8 @@ test("both ends of the evidence are kept, not just the shortest", () => {
 });
 
 test("gaps that cluster are trusted; gaps that disagree are flagged", () => {
-  assert.equal(erratic({ seconds: 900, source: "learned", samples: 3, spreadSeconds: 1000 }), false);
-  assert.equal(erratic({ seconds: 900, source: "learned", samples: 3, spreadSeconds: 2700 }), true);
+  assert.equal(erratic({ seconds: 900, source: "killed", samples: 3, spreadSeconds: 1000 }), false);
+  assert.equal(erratic({ seconds: 900, source: "killed", samples: 3, spreadSeconds: 2700 }), true);
 });
 
 test("a figure the player typed is never called erratic — they aren't guessing", () => {
@@ -309,13 +309,13 @@ test("one gap can't disagree with itself", () => {
 });
 
 test("erratic gaps lead with the range, because a lone figure gets camped to", () => {
-  const wide = { seconds: 900, source: "learned" as const, samples: 3, spreadSeconds: 2700 };
+  const wide = { seconds: 900, source: "killed" as const, samples: 3, spreadSeconds: 2700 };
   assert.equal(describeRespawn(wide), "15m–45m, from 3 gaps");
   assert.ok(respawnCaveat(wide)?.includes("placeholder"));
 });
 
 test("gaps that agree get the plain bound and no warning", () => {
-  const tight = { seconds: 900, source: "learned" as const, samples: 3, spreadSeconds: 1000 };
+  const tight = { seconds: 900, source: "killed" as const, samples: 3, spreadSeconds: 1000 };
   assert.equal(describeRespawn(tight), "at most 15m, from 3 gaps");
   assert.equal(respawnCaveat(tight), null);
 });
@@ -336,8 +336,19 @@ test("an interval reads as a phrase", () => {
   assert.equal(formatInterval(6 * 3600 + 30 * 60), "6h 30m");
 });
 
+test("rounding to the minute carries into the hour instead of printing a 60th one", () => {
+  // The bug: the hours were floored off the seconds and the leftover rounded on its own, so the
+  // minutes could reach 60 without the hour hearing about it.
+  assert.equal(formatInterval(59 * 60 + 30), "1h", "59m30s is an hour, not '60m'");
+  assert.equal(formatInterval(2 * 3600 - 1), "2h", "1h59m59s is two hours, not '1h 60m'");
+  assert.equal(formatInterval(3600 + 59 * 60 + 40), "2h");
+  // ...and the ordinary cases are untouched.
+  assert.equal(formatInterval(3600 + 29 * 60), "1h 29m");
+  assert.equal(formatInterval(59 * 60), "59m");
+});
+
 test("a learned figure is worded as a bound with its sample, a stated one is not hedged", () => {
-  assert.equal(describeRespawn({ seconds: 1320, source: "learned", samples: 3 }), "at most 22m, from 3 gaps");
-  assert.equal(describeRespawn({ seconds: 1320, source: "learned", samples: 1 }), "at most 22m, from 1 gap");
+  assert.equal(describeRespawn({ seconds: 1320, source: "killed", samples: 3 }), "at most 22m, from 3 gaps");
+  assert.equal(describeRespawn({ seconds: 1320, source: "killed", samples: 1 }), "at most 22m, from 1 gap");
   assert.equal(describeRespawn({ seconds: 1320, source: "stated", samples: 0 }), "22m (you set this)");
 });

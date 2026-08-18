@@ -10,6 +10,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
 import { createStore } from "./store";
+import { setAppVersion } from "./json-store";
 import { createWikiClient } from "./wiki";
 import { createLogWatcher } from "./log-watcher";
 import { createLogCursor } from "./log-cursor";
@@ -161,6 +162,10 @@ if (!app.requestSingleInstanceLock()) {
   process.on("uncaughtException", (err) => log.error("uncaught", err));
   process.on("unhandledRejection", (reason) => log.error("unhandled rejection", reason));
 
+  // Before any store is built, so every file written this session records the build that wrote it
+  // (`data-provenance.ts`). Diagnosis only — what's *compared* is the per-concern revision, since a
+  // build number changes on every push and would mark everything stale for ever.
+  setAppVersion(app.getVersion());
   const store = createStore(userData);
   const wiki = createWikiClient(path.join(userData, "wiki-cache"));
   // One-time repairs to data already on disk, before anything reads it. Chief among them: a kill

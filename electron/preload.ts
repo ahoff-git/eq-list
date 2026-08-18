@@ -111,6 +111,8 @@ const api: EqlApi = {
     state: (key, seconds) => ipcRenderer.invoke(CH.spawnsState, key, seconds),
     markNamed: (mob, named) => ipcRenderer.invoke(CH.spawnsMarkNamed, mob, named),
     pad: (key, seconds) => ipcRenderer.invoke(CH.spawnsPad, key, seconds),
+    markUp: (key) => ipcRenderer.invoke(CH.spawnsMarkUp, key),
+    notify: (key, on) => ipcRenderer.invoke(CH.spawnsNotify, key, on),
     relearn: (key) => ipcRenderer.invoke(CH.spawnsRelearn, key),
     stop: (key) => ipcRenderer.invoke(CH.spawnsStop, key),
     onChanged: (cb) => on(CH.spawnsChanged, cb),
@@ -134,6 +136,7 @@ const api: EqlApi = {
   app: {
     info: () => ipcRenderer.invoke(CH.appInfo),
     openLog: () => ipcRenderer.invoke(CH.appOpenLog),
+    dataHealth: () => ipcRenderer.invoke(CH.dataHealth),
     onDataChanged: (cb) => on(CH.dataChanged, cb),
   },
   search: {

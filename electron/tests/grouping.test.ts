@@ -5,7 +5,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { groupByOrigin, effectiveNeeded, originKey, itemDemands, itemTotals, normalizeItemName } from "../../src/shared/grouping";
+import {
+  groupByOrigin,
+  effectiveNeeded,
+  originKey,
+  itemDemands,
+  itemTotals,
+  normalizeItemName,
+} from "../../src/shared/grouping";
 import type { ShoppingListEntry } from "../../src/shared/types";
 
 function entry(p: Partial<ShoppingListEntry> & { name: string }): ShoppingListEntry {
@@ -128,4 +135,33 @@ test("itemDemands lists a single claim for an item only one group wants", () => 
   const demands = itemDemands(groups).get("bone chips")!;
   assert.equal(demands.length, 1);
   assert.equal(demands[0].need, 3);
+});
+
+// ── a mob is not progress ──────────────────────────────────────────────────────
+// A mob on the list is a thing to go and kill: nothing drops it, so its `obtained` can never move.
+// Counting it as an outstanding row left its group permanently unfinished.
+
+test("a mob sits out of a group's progress, so the group can still finish", () => {
+  const [g] = groupByOrigin([
+    entry({ name: "Bone Chips", needed: 2, obtained: 2 }),
+    entry({ name: "Ghoul Lord", kind: "mob" }),
+  ]);
+  assert.equal(g.needed, 2, "a mob asks for nothing");
+  assert.equal(g.obtained, 2);
+  assert.equal(g.complete, true, "the only thing that could be finished is finished");
+});
+
+test("a mob still can't finish a group on its own", () => {
+  const [g] = groupByOrigin([entry({ name: "Ghoul Lord", kind: "mob" })]);
+  assert.equal(g.needed, 0);
+  assert.equal(g.complete, false, "nothing has been completed, so nothing may be struck through");
+});
+
+test("a mob doesn't hold an otherwise unfinished group back either", () => {
+  const [g] = groupByOrigin([
+    entry({ name: "Bone Chips", needed: 2, obtained: 1 }),
+    entry({ name: "Ghoul Lord", kind: "mob" }),
+  ]);
+  assert.equal(g.complete, false);
+  assert.equal(g.needed, 2);
 });

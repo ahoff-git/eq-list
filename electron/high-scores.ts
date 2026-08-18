@@ -94,7 +94,7 @@ export interface HighScoreKeeper {
 export function createHighScores(userDataDir: string): HighScoreKeeper {
   const file = path.join(userDataDir, "high-scores.json");
   const data: StoredScores = read();
-  const saver = createSaver(file, "high scores", () => data, WRITE_DEBOUNCE_MS);
+  const saver = createSaver(file, "high scores", () => data, WRITE_DEBOUNCE_MS, { concern: "high-scores" });
   const listeners: ((record: HighScore) => void)[] = [];
 
   let character = "";

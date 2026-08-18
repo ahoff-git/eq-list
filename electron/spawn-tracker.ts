@@ -26,10 +26,13 @@ import {
   learnRespawns,
   provenNamed,
   respawnFor,
+  sightingFrom,
   spawnState,
+  tightenSighting,
   timerFrom,
   timerKey,
   type RespawnLearning,
+  type Sighting,
   type SpawnTimer,
 } from "../src/shared/spawn-timers";
 import type { CastAlertEvent, CastAlertSettings, KillRecord, SpawnView } from "../src/shared/types";
@@ -56,8 +59,13 @@ interface Stored {
    * Mob key → whether the player says it's a named, overriding the log's article. Both answers are
    * worth storing: "yes" rescues a named the log wrote with an article, "no" silences a pet or a
    * player's corpse that the article test read as one.
+   *
+   * The spelling is kept beside the answer because a "no" **takes the mob off the list**, and a
+   * dismissal you can't see is a dismissal you can't undo — the row carrying the only control that
+   * could reverse it is the row that just disappeared. Storing the name is what lets the panel go
+   * on offering it back.
    */
-  said: Record<string, boolean>;
+  said: Record<string, { named: boolean; mob: string }>;
   /** Timer key → ISO moment to learn afresh from, for a figure the player threw away. */
   relearned: Record<string, string>;
   /**
@@ -66,6 +74,19 @@ interface Stored {
    * position before it matters — which is why it is per mob and never inferred (ADR 0094).
    */
   lead: Record<string, number>;
+  /**
+   * Timer key → whether a pop should raise a banner. **Off by default**: every named you kill is
+   * tracked automatically, so alerting for all of them would mean a dozen banners an evening for
+   * mobs you aren't camping. The countdown still runs and still shows — silence is the difference
+   * between a list and an interruption.
+   */
+  notify: Record<string, boolean>;
+  /**
+   * Timer key → the tightest death-to-sighting gap and how many sightings it rests on. Stored
+   * rather than derived, because unlike a kill gap there is nothing in the log to re-derive it
+   * from: "I can see it" is an observation the player makes and only this file records.
+   */
+  seen: Record<string, Sighting>;
   /** The countdowns themselves — the only thing here that isn't a preference. */
   timers: SpawnTimer[];
 }
@@ -86,6 +107,8 @@ function load(file: string): Stored {
     said: { ...stored.said },
     relearned: { ...stored.relearned },
     lead: { ...stored.lead },
+    notify: { ...stored.notify },
+    seen: { ...stored.seen },
     timers: [...(stored.timers ?? [])],
   };
 }
@@ -116,6 +139,15 @@ export interface SpawnTracker {
    * already running, since padding you set while waiting is padding you meant for *this* pop.
    */
   pad(key: string, seconds: number | null): void;
+  /**
+   * You can see it: the mob is up **now**. Two things at once, and both matter — the countdown is
+   * over (the row reads ALIVE rather than a guess), and the gap since it died is recorded as the
+   * tightest kind of evidence there is, since unlike a kill gap it excludes the time you'd spend
+   * getting to it and killing it.
+   */
+  markUp(key: string): void;
+  /** Whether a pop should raise a banner. Off by default — see `Stored.notify`. */
+  notify(key: string, on: boolean): void;
   /** Correct the article test about a mob. */
   markNamed(mob: string, named: boolean): void;
   /** Throw away what was learned about one timer and start learning again from now. */
@@ -145,7 +177,7 @@ export function createSpawnTracker({
 }: SpawnTrackerDeps): SpawnTracker {
   const file = path.join(userDataDir, "spawn-timers.json");
   const state = load(file);
-  const saver = createSaver(file, "spawn timers", () => state, WRITE_DEBOUNCE_MS);
+  const saver = createSaver(file, "spawn timers", () => state, WRITE_DEBOUNCE_MS, { concern: "spawn-timers" });
   let listener: (() => void) | null = null;
 
   /**
@@ -178,7 +210,7 @@ export function createSpawnTracker({
   function read(): { isNamed: (key: string) => boolean; learned: Map<string, RespawnLearning> } {
     const all = kills();
     const proven = provenNamed(all);
-    const isNamed = (key: string) => state.said[key] ?? proven.has(key);
+    const isNamed = (key: string) => state.said[key]?.named ?? proven.has(key);
     const learned = new Map(learnRespawns(all, isNamed, relearnedAt).map((l) => [l.key, l]));
     return { isNamed, learned };
   }
@@ -205,9 +237,12 @@ export function createSpawnTracker({
    * otherwise be wrong.
    */
   function announce(timer: SpawnTimer, at: number): void {
+    // Two gates, and they mean different things. `notify` is *this mob* — off unless the player
+    // asked, because every named they kill is tracked and most are not being camped. `enabled` is
+    // the overlay itself: an app the player has silenced stays silent, with no second "but not
+    // these" for them to hunt for.
+    if (!state.notify[timer.key]) return;
     const settings = getSettings();
-    // Gated on the same switch as every other alert: an overlay the player has silenced stays
-    // silent, and there is no second "but not these" for them to hunt for.
     if (!settings.enabled) return;
     raise({
       caster: "",
@@ -286,7 +321,7 @@ export function createSpawnTracker({
       if (!named && !isNamed(mobKey(mob))) return;
 
       const learned = allLearned.get(key);
-      const respawn = respawnFor(learned, state.stated[key]);
+      const respawn = respawnFor(learned, state.stated[key], state.seen[key]);
       if (!respawn) return; // a named we can't yet time is not a countdown, it's a blank
 
       // `learned` is absent when the player typed a figure for a mob we've only killed once — so
@@ -305,9 +340,15 @@ export function createSpawnTracker({
       const running = state.timers
         .map((timer) => ({ ...timer, state: spawnState(timer, at) }))
         .filter((t) => t.state !== "stale")
-        // By the moment each one next matters, which with padding in play is the window opening
-        // rather than the by-time — that's what the row is counting down to.
-        .sort((a, b) => Date.parse(a.watchFrom) - Date.parse(b.watchFrom));
+        // A mob you've said is **up** leads, whatever its clock says: it's the only row on the
+        // board that is a fact rather than a guess, and the only one you can act on right now.
+        // The rest sort by the moment each next matters, which with padding in play is the window
+        // opening rather than the by-time — that's what the row is counting down to.
+        .sort(
+          (a, b) =>
+            Number(b.state === "alive") - Number(a.state === "alive") ||
+            Date.parse(a.watchFrom) - Date.parse(b.watchFrom),
+        );
 
       const known = [...learned.values()]
         .filter((l) => isNamed(mobKey(l.mob)))
@@ -315,11 +356,19 @@ export function createSpawnTracker({
           ...l,
           stated: state.stated[l.key],
           lead: state.lead[l.key],
-          respawn: respawnFor(l, state.stated[l.key]),
+          notify: !!state.notify[l.key],
+          respawn: respawnFor(l, state.stated[l.key], state.seen[l.key]),
           running: running.some((t) => t.key === l.key),
         }));
 
-      return { now: new Date(at).toISOString(), running, known };
+      // The mobs the player took off the list, kept visible so taking one off is a decision rather
+      // than a trap: the control that undoes it can't live on the row it removes.
+      const dismissed = Object.values(state.said)
+        .filter((s) => !s.named)
+        .map((s) => s.mob)
+        .sort((a, b) => a.localeCompare(b));
+
+      return { now: new Date(at).toISOString(), running, known, dismissed };
     },
 
     state(key, seconds) {
@@ -339,16 +388,48 @@ export function createSpawnTracker({
       const running = state.timers.find((t) => t.key === key);
       if (running) {
         const fresh = timerFrom(running, running.killedAt, running, state.lead[key]);
-        if (fresh) arm(key, fresh);
+        // `seenAt` is carried over, because re-shaping a window must not **un-see** a mob. A
+        // sighting is an observation and outranks the countdown until the mob dies again; a fresh
+        // timer has none, so arming one wholesale turned a row that read ALIVE back into a guess
+        // about a mob the player is standing in front of, and lost the sighting's moment with it.
+        if (fresh) arm(key, running.seenAt ? { ...fresh, seenAt: running.seenAt } : fresh);
       }
       changed();
     },
 
+    markUp(key) {
+      const timer = state.timers.find((t) => t.key === key);
+      if (!timer || timer.seenAt) return; // nothing counting down, or already known to be up
+      const at = now();
+      // The countdown is over because the question it was asking has been answered. Recorded on
+      // the timer rather than by deleting it, so the row can go on naming the mob and the place.
+      timer.seenAt = new Date(at).toISOString();
+      // ...and the sighting is evidence. `R ≤ now − died` is the tightest bound we can get, so it
+      // goes through the same ratchet as everything else: shortest wins, implausible is discarded.
+      const seconds = sightingFrom(timer.killedAt, at);
+      if (seconds !== null) {
+        state.seen[key] = tightenSighting(state.seen[key], seconds);
+        log.debug("sighting recorded", { mob: timer.mob, seconds, tightest: state.seen[key].seconds });
+      }
+      // It's up, so there is nothing left to announce about it coming up.
+      announced.add(key);
+      changed();
+    },
+
+    notify(key, on) {
+      if (on) state.notify[key] = true;
+      else delete state.notify[key];
+      changed();
+    },
+
     markNamed(mob, named) {
-      state.said[mobKey(mob)] = named;
+      const key = mobKey(mob);
+      // The spelling travels with the answer so a dismissal stays visible, and therefore undoable.
+      state.said[key] = { named, mob: state.said[key]?.mob || mob };
       // Saying "not a named" has to take its countdown with it, or the list keeps a row nothing
-      // will ever restart.
-      if (!named) state.timers = state.timers.filter((t) => !t.key.startsWith(`${mobKey(mob)}|`));
+      // will ever restart. What was *learned* is untouched: it lives in the kill log, so tracking
+      // the mob again brings its whole history back rather than starting from nothing.
+      if (!named) state.timers = state.timers.filter((t) => !t.key.startsWith(`${key}|`));
       changed();
     },
 

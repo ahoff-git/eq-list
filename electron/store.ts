@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import { stripArticle } from "../src/shared/log-parser";
-import { normalizeItemName, originKey } from "../src/shared/grouping";
+import { isMobEntry, normalizeItemName, originKey } from "../src/shared/grouping";
 import { MAP_UI_SCALE, clampScale, clampUiScale } from "../src/shared/constants";
 import { readJson, writeJson } from "./json-store";
 import type {
@@ -109,6 +109,8 @@ export interface Store {
   getSettings(): Settings;
   addEntry(input: {
     name: string;
+    /** What the entry is, when it isn't an item — see `wikiAddKind` and `ShoppingListEntry.kind`. */
+    kind?: ShoppingListEntry["kind"];
     needed?: number;
     wikiPath?: string;
     note?: string;
@@ -191,6 +193,10 @@ export function createStore(userDataDir: string): Store {
 
     addEntry(input) {
       upsert(input.name, {
+        // Carried through rather than defaulted here: an add that dropped it put a **mob** on the
+        // list as a thing to loot, which is what `wiki-add.ts` exists to prevent and what the loot
+        // matcher below then started crediting.
+        kind: input.kind,
         needed: input.needed ?? 1,
         wikiPath: input.wikiPath,
         note: input.note,
@@ -200,8 +206,17 @@ export function createStore(userDataDir: string): Store {
     },
 
     addFromPage(page) {
-      // Quests/recipes contribute their turn-ins/ingredients; a bare item adds itself.
       const origin = { kind: page.kind, name: page.title } as ShoppingListEntry["origin"];
+      // A **mob** is a thing to go kill, and adding one means you want *it* — not its loot table.
+      // Checked before `components`, because a mob page keeps its known drops in that field: the
+      // old order therefore dumped every drop onto the list, or (with no loot listed) put the mob's
+      // own name down as an item that could never be looted. Either way the list filled up with
+      // things that weren't what was asked for.
+      if (page.kind === "mob") {
+        upsert(page.title, { kind: "mob", wikiPath: page.wikiPath });
+        return emitList();
+      }
+      // Quests/recipes contribute their turn-ins/ingredients; a bare item adds itself.
       if (page.components.length) {
         for (const c of page.components) {
           upsert(c.name, { needed: c.qty, wikiPath: c.wikiPath, origin });
@@ -248,6 +263,9 @@ export function createStore(userDataDir: string): Store {
       const item = normalize(event.item);
       const matched: ShoppingListEntry[] = [];
       for (const e of list.entries) {
+        // A mob is never looted — it's what you loot *from* — so it can't be satisfied by a loot
+        // line, and letting it try would credit "Ghoul Lord" with the Ghoul Lord's Cape it dropped.
+        if (isMobEntry(e)) continue;
         const target = normalize(e.name);
         const hit = settings.matchMode === "exact" ? item === target : item.includes(target) || target.includes(item);
         if (hit) {

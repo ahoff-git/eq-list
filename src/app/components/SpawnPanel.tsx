@@ -42,7 +42,7 @@ export default function SpawnPanel() {
   // agrees with the process that decides a timer is due rather than with this machine's `Date`.
   const now = Date.parse(view.now) + tick * 1000;
 
-  if (!view.running.length && !view.known.length) {
+  if (!view.running.length && !view.known.length && !view.dismissed.length) {
     return (
       <Empty
         title="No spawn timers yet"
@@ -62,42 +62,57 @@ export default function SpawnPanel() {
         </section>
       )}
 
-      <section className="spawn-known">
-        <h2>What we&rsquo;ve learned</h2>
-        {view.known.map((known) => (
-          <KnownRow key={known.key} known={known} />
-        ))}
-      </section>
+      {view.known.length > 0 && (
+        <section className="spawn-known">
+          <h2>What we&rsquo;ve learned</h2>
+          {view.known.map((known) => (
+            <KnownRow key={known.key} known={known} />
+          ))}
+        </section>
+      )}
+
+      {view.dismissed.length > 0 && <NotTracked mobs={view.dismissed} />}
     </div>
   );
 }
 
-/** What the clock on a running row is counting to, and what to call it. */
-const PHASE: Record<RunningSpawn["state"], { label: string; cls: string }> = {
-  waiting: { label: "", cls: "" },
+/**
+ * What the clock on a running row reads, and how loudly.
+ *
+ * `alive` and `up` look different on purpose, and the difference is the one this whole tab is
+ * about: **`up` is the countdown's opinion, `alive` is yours.** One says "on the evidence it should
+ * have spawned by now", the other says "I can see it" — so `alive` shows a fact where the others
+ * show a clock, and nothing about elapsed time can talk it out of that.
+ */
+const PHASE: Record<RunningSpawn["state"], { clock: string; label: string; cls: string }> = {
+  waiting: { clock: "", label: "", cls: "" },
   // The honest word: the window is open, so it *could* be up — that's the whole reason it exists.
-  window: { label: "may be up", cls: "window" },
-  up: { label: "", cls: "due" },
-  stale: { label: "", cls: "" },
+  window: { clock: "", label: "may be up", cls: "window" },
+  up: { clock: "UP", label: "", cls: "due" },
+  alive: { clock: "ALIVE", label: "you marked it up", cls: "alive" },
+  stale: { clock: "", label: "", cls: "" },
 };
 
-/** One countdown. The loud state is `up`; `window` is a quieter "start paying attention". */
+/** One countdown, or one mob you've said is standing there. */
 function RunningRow({ timer, now }: { timer: RunningSpawn; now: number }) {
   const phase = PHASE[timer.state];
-  const up = timer.state === "up";
-  // The provenance travels with the countdown: a learned due time is only as good as the bound
-  // behind it, and a bare clock would read as a fact about the mob rather than a guess from you.
-  const note = up
-    ? `due ${when(timer.dueAt)}`
-    : describeRespawn({
-        seconds: timer.seconds,
-        source: timer.source,
-        samples: timer.samples,
-        spreadSeconds: timer.spreadSeconds,
-      });
+  const alive = timer.state === "alive";
+  // The provenance travels with the countdown: a due time is only as good as the bound behind it,
+  // and a bare clock would read as a fact about the mob rather than a guess from you. Once you've
+  // *seen* it, the guess is beside the point and the row says when instead.
+  const note = alive
+    ? `seen ${when(timer.seenAt ?? timer.dueAt)} · killed ${when(timer.killedAt)}`
+    : timer.state === "up"
+      ? `due ${when(timer.dueAt)}`
+      : describeRespawn({
+          seconds: timer.seconds,
+          source: timer.source,
+          samples: timer.samples,
+          spreadSeconds: timer.spreadSeconds,
+        });
   return (
     <div className={`spawn-row ${phase.cls}`}>
-      <span className="spawn-clock">{up ? "UP" : formatCountdown(countdownMs(timer, now))}</span>
+      <span className="spawn-clock">{phase.clock || formatCountdown(countdownMs(timer, now))}</span>
       <span className="spawn-name">
         {timer.mob}
         <small>{timer.place}</small>
@@ -105,6 +120,17 @@ function RunningRow({ timer, now }: { timer: RunningSpawn; now: number }) {
       <span className="spawn-note">
         {phase.label && <b className="spawn-phase">{phase.label}</b>} {note}
       </span>
+      {/* Offered right up until you've said it — including while the row still reads as waiting,
+          because spotting a mob early is exactly the case that teaches us the timer is too long. */}
+      {!alive && (
+        <button
+          className="btn sm"
+          title="You can see it — end the countdown and use this as evidence"
+          onClick={() => void api()?.spawns.markUp(timer.key)}
+        >
+          Mark UP
+        </button>
+      )}
       <button className="link" title="Take this off the board" onClick={() => void api()?.spawns.stop(timer.key)}>
         clear
       </button>
@@ -112,14 +138,28 @@ function RunningRow({ timer, now }: { timer: RunningSpawn; now: number }) {
   );
 }
 
-/** Which editor a row has open, if any. One at a time — two open number fields read as a form. */
-type Editing = "interval" | "pad" | null;
+/**
+ * What a row currently has open. One at a time, and **one list for both kinds** — an editor and a
+ * confirmation are alternatives, so opening a confirmation has to close a half-typed field rather
+ * than stack under it.
+ */
+type Open = "interval" | "pad" | "relearn" | "dismiss" | null;
 
-/** One named we know something about, and the corrections a player can make to it. */
+/**
+ * One named we know something about, and the corrections a player can make to it.
+ *
+ * **The two kinds of action are kept apart, and they don't look alike.** `set` and `pad` open a
+ * text box and change nothing until you save. `relearn` and `not a named` destroy something on the
+ * spot — measurements that took an evening of camping, and the mob's place on the list — so each
+ * asks first, in the panel, with the answer worded as *what it costs* rather than "OK". No native
+ * `confirm()`: this window is frameless and always-on-top, so a modal over the game is worse than
+ * the thing it guards — the same call `ForgetData` in `SettingsPanel` and the scoreboard's reset
+ * already make.
+ */
 function KnownRow({ known }: { known: KnownSpawn }) {
-  const [editing, setEditing] = useState<Editing>(null);
-  const done = () => setEditing(null);
-  const toggle = (which: Exclude<Editing, null>) => setEditing((e) => (e === which ? null : which));
+  const [open, setOpen] = useState<Open>(null);
+  const done = () => setOpen(null);
+  const toggle = (which: Exclude<Open, null>) => setOpen((o) => (o === which ? null : which));
   // Said out loud under the figure rather than hidden in a tooltip: when the gaps disagree this
   // badly, "22m" is the wrong thing to have read, and the reasons are things you can act on.
   const caveat = known.respawn ? respawnCaveat(known.respawn) : null;
@@ -136,35 +176,65 @@ function KnownRow({ known }: { known: KnownSpawn }) {
       </span>
       <span className="spawn-seen">{known.lastKillAt ? `last killed ${when(known.lastKillAt)}` : ""}</span>
       <span className="spawn-actions">
-        <button className="link" onClick={() => toggle("interval")}>
-          {known.stated ? "edit" : "set"}
+        {/* The one control that changes what the app *does* rather than what it knows, so it leads
+            and is a checkbox rather than a button: it's a standing state, not an action. */}
+        <label className="spawn-notify" title="Raise a banner when this one is due">
+          <input
+            type="checkbox"
+            checked={known.notify}
+            onChange={(e) => void api()?.spawns.notify(known.key, e.target.checked)}
+          />
+          Notify
+        </label>
+
+        {/* Editors next, and styled as the mild things they are: they open a box and commit
+            nothing until you say so. */}
+        <button className="btn ghost sm" onClick={() => toggle("interval")}>
+          {known.stated ? "Edit timer" : "Set timer"}
         </button>
-        <button className="link" title="Start warning me this long before it's due" onClick={() => toggle("pad")}>
-          pad
+        <button className="btn ghost sm" title="Start warning me this long before it's due" onClick={() => toggle("pad")}>
+          {known.lead ? "Edit warning" : "Warn early"}
         </button>
-        {/* Only offered once there's something to throw away. It's the only way *up* from a bound
-            that observation can only ever tighten, so it says what it does rather than "reset". */}
+
+        <span className="spacer" />
+
+        {/* Then the two that destroy something, set apart and asking first. `relearn` is only
+            offered once there's something to throw away — it is the only way *up* from a bound
+            observation can only ever tighten, so it says what it does rather than "reset". */}
         {known.shortestSeconds !== undefined && (
-          <button
-            className="link"
-            title="Forget the gaps measured so far and learn again from now"
-            onClick={() => void api()?.spawns.relearn(known.key)}
-          >
-            relearn
+          <button className="btn sm" title="Throw away the gaps measured so far" onClick={() => toggle("relearn")}>
+            Relearn…
           </button>
         )}
-        <button
-          className="link"
-          title="This isn't a named — stop timing it"
-          onClick={() => void api()?.spawns.markNamed(known.mob, false)}
-        >
-          not a named
+        <button className="btn sm" title="Stop timing this mob" onClick={() => toggle("dismiss")}>
+          Not a named…
         </button>
       </span>
 
       {caveat && <p className="spawn-caveat">{caveat}</p>}
 
-      {editing === "interval" && (
+      {open === "relearn" && (
+        <Confirm
+          // Says the cost in the units the player earned it in, because "are you sure?" doesn't
+          // tell anyone whether they mind.
+          cost={`Forget ${gapCount(known.samples)} measured over ${lastKilled(known)}? The figure goes back to unknown and is learned again from your next kills.`}
+          go="Forget them"
+          keep="Keep them"
+          onGo={() => api()?.spawns.relearn(known.key)}
+          onDone={done}
+        />
+      )}
+      {open === "dismiss" && (
+        <Confirm
+          cost={`Stop timing ${known.mob}? Its countdown goes, but nothing measured is lost — it stays listed under “Not tracked”, and tracking it again brings its history back.`}
+          go="Stop timing it"
+          keep="Keep timing it"
+          onGo={() => api()?.spawns.markNamed(known.mob, false)}
+          onDone={done}
+        />
+      )}
+
+      {open === "interval" && (
         <SecondsField
           initial={known.stated}
           placeholder="e.g. 22m"
@@ -174,7 +244,7 @@ function KnownRow({ known }: { known: KnownSpawn }) {
           onDone={done}
         />
       )}
-      {editing === "pad" && (
+      {open === "pad" && (
         <SecondsField
           initial={known.lead}
           placeholder="e.g. 2m"
@@ -250,6 +320,85 @@ function SecondsField({
       <small className={bad ? "bad" : ""}>{hint}</small>
     </div>
   );
+}
+
+/**
+ * A destructive action, asked inline.
+ *
+ * The two answers are **both worded as outcomes** — "Forget them" / "Keep them" — rather than
+ * yes/no, so the one you want is readable without re-reading the question above it. The keeping
+ * answer is the plain button and the destroying one is `danger`, matching `ForgetData`; and there
+ * is no third "cancel", because "keep" already is one.
+ */
+function Confirm({
+  cost,
+  go,
+  keep,
+  onGo,
+  onDone,
+}: {
+  cost: string;
+  go: string;
+  keep: string;
+  onGo: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <div className="spawn-confirm">
+      <span className="spawn-cost">{cost}</span>
+      <button
+        className="btn danger sm"
+        onClick={() => {
+          onGo();
+          onDone();
+        }}
+      >
+        {go}
+      </button>
+      <button className="btn ghost sm" onClick={onDone}>
+        {keep}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The mobs taken off the list, and the way back.
+ *
+ * Kept on screen because dismissing one **removes its row**, and the control that would undo it
+ * lived there — so without this the button is a trap rather than a decision. Folded to the bottom
+ * and worded quietly, since it's a list nobody needs until they need it badly.
+ */
+function NotTracked({ mobs }: { mobs: string[] }) {
+  return (
+    <section className="spawn-dismissed">
+      <h2>Not tracked</h2>
+      <p className="small">
+        You said these aren&rsquo;t nameds, so nothing times them. What was measured is kept — track one again and
+        its history comes back with it.
+      </p>
+      <div className="spawn-dismissed-rows">
+        {mobs.map((mob) => (
+          <span key={mob} className="spawn-dismissed-row">
+            {mob}
+            <button className="btn ghost sm" onClick={() => void api()?.spawns.markNamed(mob, true)}>
+              Track again
+            </button>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Gaps, counted in words — the unit the player earned them in, so the cost of losing them lands. */
+function gapCount(samples: number): string {
+  return samples === 1 ? "the 1 gap measured" : `all ${samples} gaps measured`;
+}
+
+/** How long this mob's evidence has been accumulating, for the same reason. */
+function lastKilled(known: Pick<KnownSpawn, "lastKillAt">): string {
+  return known.lastKillAt ? `up to ${when(known.lastKillAt)}` : "your kills so far";
 }
 
 /** What clearing the interval field would leave behind — never nothing, if we learned something (ADR 0056). */

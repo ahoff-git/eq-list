@@ -1,3 +1,4 @@
+import type { DataReportRow } from "./data-provenance";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { Respawn, RespawnLearning, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { EqMap } from "./map/eqmap";
@@ -1081,6 +1082,17 @@ export interface ShoppingListEntry {
   id: string;
   /** The name matched against loot lines. */
   name: string;
+  /**
+   * What kind of thing this line is. **Absent means `item`**, which is every entry written before
+   * mobs could be listed.
+   *
+   * A `mob` is a thing to go *kill*, not a thing to *obtain* — it never drops, so it is excluded
+   * from loot matching, carries no obtained count, and appears on the Hunt list as a target in its
+   * own right rather than as something that might drop. Adding a named used to put its whole loot
+   * table on the list (a mob page keeps its drops in `components`), or — if the wiki listed no loot
+   * — put the mob's own name down as an item that could never arrive.
+   */
+  kind?: "item" | "mob";
   wikiPath?: string;
   /** How many you want. */
   needed: number;
@@ -1230,6 +1242,11 @@ export interface KnownSpawn extends RespawnLearning {
    */
   lead?: number;
   /**
+   * Whether a pop raises a banner. **Off unless asked**: every named you kill is tracked, so
+   * alerting for all of them would interrupt an evening for mobs you aren't camping.
+   */
+  notify: boolean;
+  /**
    * The figure that would actually be used and where it came from — absent until there have been
    * two comparable kills and nobody has typed one, which is a blank rather than a guess.
    */
@@ -1247,6 +1264,12 @@ export interface SpawnView {
   now: string;
   running: RunningSpawn[];
   known: KnownSpawn[];
+  /**
+   * Mobs the player has said aren't nameds, by display name. Listed rather than simply absent
+   * because dismissing one **removes its row**, and the only control that could reverse that was
+   * on the row — so without this, "not a named" is a one-way door.
+   */
+  dismissed: string[];
 }
 
 /**
@@ -1851,6 +1874,11 @@ export interface EqlApi {
     /** Add a single item to watch. Returns the updated list. */
     add(input: {
       name: string;
+      /**
+       * What the entry *is*, when it isn't an item — `wikiAddKind` answers this from the page. A mob
+       * that arrives without it is filed as something to loot, which is the one thing it can't be.
+       */
+      kind?: ShoppingListEntry["kind"];
       needed?: number;
       wikiPath?: string;
       note?: string;
@@ -2052,6 +2080,14 @@ export interface EqlApi {
      */
     pad(key: string, seconds: number | null): Promise<SpawnView>;
     /**
+     * You can see it — the mob is up now. Ends the countdown (the row reads ALIVE, a fact rather
+     * than a guess) and records the gap since it died as the tightest evidence there is: unlike a
+     * kill gap it excludes the time you'd spend reaching the mob and killing it.
+     */
+    markUp(key: string): Promise<SpawnView>;
+    /** Whether this mob's pop raises a banner. Off by default. */
+    notify(key: string, on: boolean): Promise<SpawnView>;
+    /**
      * Correct the article test about a mob: `true` rescues a named the log wrote with an article,
      * `false` silences something that was never a named at all.
      */
@@ -2103,6 +2139,13 @@ export interface EqlApi {
     info(): Promise<AppInfo>;
     /** Open the debug log file in the OS default app. */
     openLog(): Promise<void>;
+    /**
+     * Where every body of stored data stands against the rules that produce it today — what's current,
+     * what a parser change has left behind, and what to do about each. The concerns and the staleness
+     * rule are in [data-provenance.ts](./data-provenance.ts); the stamps are read by
+     * `electron/data-health.ts`. Read on demand: a stamp only changes when its store is written.
+     */
+    dataHealth(): Promise<DataReportRow[]>;
     /**
      * Stored data changed in bulk — a log was eaten, or a store was cleared. Anything that reads
      * a stored list once when it opens (the fight history, the loot feed) should refetch on this;

@@ -23,8 +23,39 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
+import { concernById, stampFor, type DataStamp } from "../src/shared/data-provenance";
 
 const log = createLogger("json-store");
+
+/**
+ * The build doing the writing, for the stamp every store carries (`data-provenance.ts`). Set once from
+ * `app.getVersion()` — this module can't ask Electron for it, being the one piece of store plumbing
+ * that the tests construct without an app around them.
+ *
+ * Blank is fine and means "a build that didn't say": the stamp's `revision` is what's ever compared,
+ * and the version is only ever read back by a person looking at a bug report.
+ */
+let appVersion = "";
+
+/** Tell the store layer which build it is. Called once, at startup, before any store is built. */
+export function setAppVersion(version: string): void {
+  appVersion = version;
+}
+
+/**
+ * The provenance to write into a store's file — which rules wrote it, which build, and when.
+ *
+ * `undefined` for an unregistered id rather than a throw: a store naming a concern that isn't in the
+ * table is a wiring mistake worth a warning, and it must not stop the data reaching disk.
+ */
+function provenanceFor(concern: string): DataStamp | undefined {
+  const found = concernById(concern);
+  if (!found) {
+    log.warn("no such data concern; writing without a stamp:", concern);
+    return undefined;
+  }
+  return stampFor(found, appVersion, new Date().toISOString());
+}
 
 /**
  * Parse a JSON file, or hand back `fallback` — for a file that's missing, unreadable, or corrupt.
@@ -56,12 +87,37 @@ export function readJson<T>(file: string, fallback: T): T {
  *
  * `pretty` for a file a person might open; compact for the big ones (a thousand fights) where the
  * indentation is most of the bytes.
+ *
+ * `concern` stamps the file with the rules that wrote it (`data-provenance.ts`), which is what lets the
+ * app say later that a store predates a change and needs re-reading. Stamped **here**, in the one
+ * writer every store shares, rather than by each store remembering to: a store that forgot would look
+ * permanently current, and a silently-wrong "up to date" is worse than no flag at all.
  */
-export function writeJson(file: string, data: unknown, opts?: { pretty?: boolean; what?: string }): boolean {
+export function writeJson(
+  file: string,
+  data: unknown,
+  opts?: { pretty?: boolean; what?: string; concern?: string },
+): boolean {
   const tmp = `${file}.tmp`;
+  // Merged into the object, not wrapped around it, so every existing reader goes on seeing the shape
+  // it always did and an older build reading a newer file just ignores a field it doesn't know.
+  // Only for a plain object: an array or a scalar has nowhere to put it, and quietly reshaping a
+  // store's file to make room would be a far bigger change than a stamp.
+  //
+  // **The stamp goes first**, and that is load-bearing rather than tidy. `JSON.stringify` emits keys
+  // in insertion order, and `data-health.ts` finds the stamp by reading a **window from the head of
+  // the file** — because a real fight history is megabytes and a report about it must not cost
+  // megabytes of parsing. Spreading `data` first put the stamp at the end, where that read never
+  // reached it, and every large store then reported itself stale for ever. A test pins it.
+  const stamp = opts?.concern && data && typeof data === "object" && !Array.isArray(data);
+  const rest = stamp ? { ...(data as Record<string, unknown>) } : undefined;
+  // A store carrying its own `provenance` must not outrank ours; nothing does today, and relying on
+  // that quietly is how the invariant above gets broken by an unrelated change.
+  if (rest) delete rest.provenance;
+  const stamped = rest ? { provenance: provenanceFor(opts!.concern!), ...rest } : data;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(tmp, JSON.stringify(data, null, opts?.pretty ? 2 : undefined), "utf8");
+    fs.writeFileSync(tmp, JSON.stringify(stamped, null, opts?.pretty ? 2 : undefined), "utf8");
     fs.renameSync(tmp, file);
     return true;
   } catch (e) {
@@ -102,13 +158,19 @@ export function createSaver(
   what: string,
   snapshot: () => unknown,
   afterMs: number,
-  opts?: { pretty?: boolean; restart?: boolean },
+  opts?: { pretty?: boolean; restart?: boolean; concern?: string },
 ): Saver {
   let timer: NodeJS.Timeout | null = null;
 
   function write(): void {
     timer = null;
-    writeJson(typeof file === "string" ? file : file(), snapshot(), { what, pretty: opts?.pretty });
+    writeJson(typeof file === "string" ? file : file(), snapshot(), {
+      what,
+      pretty: opts?.pretty,
+      // Which body of data this is, so the file records the rules that wrote it. One word per store,
+      // because the stamping itself lives in `writeJson`.
+      concern: opts?.concern,
+    });
   }
 
   return {

@@ -62,6 +62,8 @@ export const CH = {
   spawnsState: "spawns:state", // the player's own respawn figure, which nothing observed overwrites
   spawnsMarkNamed: "spawns:markNamed",
   spawnsPad: "spawns:pad", // how early to be told — the player's allowance for a soft timer
+  spawnsMarkUp: "spawns:markUp", // you can see it: end the countdown and record the sighting
+  spawnsNotify: "spawns:notify",
   spawnsRelearn: "spawns:relearn", // throw away a learned bound and start again from now
   spawnsStop: "spawns:stop",
   lookupCapture: "lookup:capture",
@@ -70,6 +72,7 @@ export const CH = {
   lookupCancel: "lookup:cancel",
   appInfo: "app:info",
   appOpenLog: "app:openLog",
+  dataHealth: "data:health", // which stored data the rules have moved on from
   displaysList: "displays:list",
   // update notification (rolling "latest" build; see ADR 0013)
   updateCurrent: "update:current",

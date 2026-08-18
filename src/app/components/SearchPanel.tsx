@@ -7,6 +7,7 @@ import ItemLink from "./ItemLink";
 import WikiPageView from "./WikiPageView";
 import { CheckField, segCls } from "./ui";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
+import { wikiAddAction, wikiAddKind } from "@/shared/wiki-add";
 import type { SearchResult, WikiPage } from "@/shared/types";
 
 type Mode = "name" | "zone";
@@ -186,17 +187,18 @@ export default function SearchPanel({
     }
   }
 
-  // Add by title the way the page buttons do, so a result-list "+ Add" behaves the same
-  // as opening the page: quests/recipes contribute their turn-ins/ingredients (grouped
-  // under the quest/recipe), everything else adds itself. Fetches the page (cached) to
-  // learn the kind; falls back to a shallow add if it can't load.
+  // Add by title the way the page buttons do, so a result-list "+ Add" behaves the same as opening
+  // the page — which it only claimed to before `wikiAddAction`: a source page (a quest, a recipe, a
+  // mob) contributes what it lists, and only a page that *is* an item adds itself. Fetches the page
+  // (cached) to learn the kind; falls back to a shallow add if it can't load.
   async function addByTitle(title: string, wikiPath?: string) {
     const a = api();
     if (!a) return;
     const p = await a.wiki.getPage(title);
     if (!p) return void a.list.add({ name: title, wikiPath });
-    if (p.kind === "quest" || p.kind === "recipe") a.list.addFromPage(p);
-    else a.list.add({ name: p.title, wikiPath: p.wikiPath });
+    const action = wikiAddAction(p);
+    if (action === "components") a.list.addFromPage(p);
+    else if (action === "self") a.list.add({ name: p.title, kind: wikiAddKind(p), wikiPath: p.wikiPath });
   }
 
   function onNameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

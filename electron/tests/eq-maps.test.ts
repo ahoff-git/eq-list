@@ -9,6 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createZoneNamer, listSources } from "../eq-maps";
+import { dataReport } from "../data-health";
 
 function tempMaps(): { logDir: string; mapsDir: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "eql-maps-"));
@@ -90,4 +91,20 @@ test("naming one pack is not affected by another pack appearing beside it", asyn
   const withPack = await createZoneNamer().names(listSources(beside.logDir).sources[0]);
 
   assert.deepEqual(withPack, solo);
+});
+
+test("the remembered gazetteer stamps which rules wrote it", async () => {
+  // Seven stores under `userData` say which revision of their rules wrote them
+  // ([data-provenance.ts](../../src/shared/data-provenance.ts)); this one is registered as a concern
+  // and was writing itself unstamped, so the health panel reported it up to date for ever — and a
+  // future revision bump would have gone by silently, which is worse than having no flag.
+  const { logDir, mapsDir } = tempMaps();
+  writeMap(mapsDir, "blackburrow", ["Blackburrow", "Qeynos Hills"]);
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-maps-cache-"));
+  await createZoneNamer(cacheDir).names(listSources(logDir).sources[0]);
+
+  const row = dataReport(cacheDir).find((r) => r.concern.id === "zone-names");
+  assert.equal(row?.state, "current");
+  assert.equal(row?.stamp?.revision, row?.concern.revision, "read back from the file, not assumed");
+  assert.ok(row?.stamp?.at, "and says when, which is the one thing this row is here to show");
 });

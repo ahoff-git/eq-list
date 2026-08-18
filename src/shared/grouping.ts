@@ -33,6 +33,29 @@ export function originKey(origin: ShoppingListEntry["origin"]): string {
   return origin ? `${origin.kind}:${origin.name}` : OTHER_KEY;
 }
 
+/**
+ * Is this entry a **mob** — a thing to go and *kill* rather than a thing to obtain?
+ *
+ * A mob has no count that can ever be completed: nothing drops it, so its `obtained` stays 0 for
+ * ever (`ShoppingListEntry.kind`). Every piece of progress arithmetic therefore has to leave it out,
+ * and that is four places — the row, the group, the group's header tally and the hunt list — which
+ * is why the question is a function rather than a `kind === "mob"` written out four times.
+ */
+export const isMobEntry = (entry: Pick<ShoppingListEntry, "kind">): boolean => entry.kind === "mob";
+
+/**
+ * The entries a group's progress is measured over: everything but the mobs.
+ *
+ * Counting a mob made its group permanently unfinished — "2/3" for ever, and never struck through —
+ * because the one row it was waiting on was a row that can't be satisfied by anything.
+ */
+export const countableEntries = (entries: ShoppingListEntry[]): ShoppingListEntry[] =>
+  entries.filter((e) => !isMobEntry(e));
+
+/** Whether one entry's claim has been met. Only ever asked of a countable entry. */
+export const satisfied = (entry: ShoppingListEntry, runs: number): boolean =>
+  entry.obtained >= effectiveNeeded(entry, runs);
+
 /** Per-entry count needed, scaled by how many runs its group is set to. */
 export function effectiveNeeded(entry: ShoppingListEntry, runs: number): number {
   return entry.needed * Math.max(1, runs);
@@ -131,10 +154,14 @@ export function groupByOrigin(
   for (const g of groups) {
     // Only real quest/recipe groups can be multi-run; "Other" is always 1.
     g.runs = g.kind ? Math.max(1, questRuns[g.key] ?? 1) : 1;
-    g.needed = g.entries.reduce((n, e) => n + effectiveNeeded(e, g.runs), 0);
+    // Mobs sit out of all three figures — see `isMobEntry`. `complete` also needs there to *be*
+    // something countable: a group holding nothing but a mob has finished nothing, so calling it
+    // complete would strike through a heading whose only row is still outstanding work.
+    const countable = countableEntries(g.entries);
+    g.needed = countable.reduce((n, e) => n + effectiveNeeded(e, g.runs), 0);
     // Clamp per entry so overflow drops don't inflate group progress.
-    g.obtained = g.entries.reduce((n, e) => n + Math.min(e.obtained, effectiveNeeded(e, g.runs)), 0);
-    g.complete = g.entries.every((e) => e.obtained >= effectiveNeeded(e, g.runs));
+    g.obtained = countable.reduce((n, e) => n + Math.min(e.obtained, effectiveNeeded(e, g.runs)), 0);
+    g.complete = countable.length > 0 && countable.every((e) => satisfied(e, g.runs));
   }
   // Preserve first-seen order (Map is insertion-ordered); "Other" sinks to the end.
   groups.sort((a, b) => (a.key === OTHER_KEY ? 1 : 0) - (b.key === OTHER_KEY ? 1 : 0));

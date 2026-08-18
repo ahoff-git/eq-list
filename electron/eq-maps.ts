@@ -327,7 +327,10 @@ export function createZoneNamer(cacheDir?: string): {
     if (!file) return;
     const all = stored();
     all.folders[dir] = { signature, names };
-    writeJson(file, all, { what: "zone names" });
+    // Stamped like every other store under `userData` (`data-provenance.ts`). Easy to leave off and
+    // expensive to: an unstamped file reads as "written by the current rules", so the health panel
+    // would report this gazetteer up to date for ever and a future revision bump would do nothing.
+    writeJson(file, all, { what: "zone names", concern: "zone-names" });
   };
 
   async function solve(source: { dir: string; files: string[] }, signature: string): Promise<Record<string, string>> {

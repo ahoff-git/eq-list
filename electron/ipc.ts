@@ -13,6 +13,7 @@ import { importLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { createTravelRouter } from "./travel-graph";
 import { sampleAlert, sampleRecord } from "./alert-router";
+import { dataReport } from "./data-health";
 import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, showInSearch } from "./windows";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
 import type { Store } from "./store";
@@ -321,6 +322,14 @@ function registerStatsIpc(context: IpcContext): void {
     spawns.pad(key, seconds);
     return spawns.view();
   });
+  ipcMain.handle(CH.spawnsMarkUp, (_e, key: string) => {
+    spawns.markUp(key);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsNotify, (_e, key: string, on: boolean) => {
+    spawns.notify(key, on);
+    return spawns.view();
+  });
   ipcMain.handle(CH.spawnsRelearn, (_e, key: string) => {
     spawns.relearn(key);
     return spawns.view();
@@ -373,6 +382,10 @@ function registerAppIpc(context: IpcContext): void {
   ipcMain.handle(CH.searchShow, (_e, text: string) => showInSearch(text));
   ipcMain.handle(CH.lookupCancel, () => lookup.cancel());
   ipcMain.handle(CH.appInfo, () => getAppInfo());
+  // Which stored data the rules have moved on from. Read from disk per call rather than cached: a
+  // stamp only changes when its store is written, and a stale answer here is the one thing this
+  // feature exists to prevent.
+  ipcMain.handle(CH.dataHealth, () => dataReport(context.userData));
   ipcMain.handle(CH.appOpenLog, () => shell.openPath(logFile));
   // Monitors, for choosing where the alert overlay appears (Settings → cast alerts).
   ipcMain.handle(CH.displaysList, () => {

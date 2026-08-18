@@ -225,15 +225,18 @@ lineage. Most of what follows is about widening the input, not the output.
   outdoors is a different, smaller claim than the one that was retired, and it's the only version worth
   costing.
 
-- **Generated datasets should carry a provenance manifest, and could come from the client.** The MCP
-  server extracts its reference data straight from the game install (`scripts/extract-eql-reference.mjs`,
-  written up in `docs/local-client-extraction.md`) and ships a manifest beside it —
-  `src/data/eql-client/manifest.json`, listing every source file with **bytes, mtime and sha256**, plus
-  an `extractedAt` and an `extractorVersion`.
-  Ours don't. [wiki/index.ts](../electron/wiki/index.ts)'s `CACHE_VERSION` + `fetchedAt` is the same
-  instinct at *page* granularity, but our generated artefacts — the zone gazetteer, the travel graph,
-  the zone-expansion table — record nothing about what built them or when, which is what makes a stale
-  one mysterious rather than diagnosable. Cheap, and it pairs with the scripts already in `scripts/`.
+- **A generated dataset should be stamped by the script that built it.** *Half done:* the stores under
+  `userData` now stamp themselves and the app flags what the rules have moved on from
+  ([ADR 0096](./decisions/0096-stored-data-says-which-rules-wrote-it.md)). What's left is the other
+  kind — the **committed** artefacts (the travel graph, the zone/expansion table, the zone gazetteer),
+  which are registered as concerns but whose state can only be *asserted* by hand-bumping a revision,
+  never computed. So the panel can give you the command and cannot tell you whether you need it.
+
+  The MCP neighbour's shape is the one to copy: `src/data/eql-client/manifest.json` lists every source
+  file with **bytes, mtime and sha256**, plus an `extractedAt` and an `extractorVersion`. With that
+  beside a generated dataset, "is this stale?" becomes computable — re-hash the sources and compare —
+  rather than a revision somebody remembered to bump. `scripts/` already owns the build side, so this is
+  a manifest writer shared by three scripts and a reader in `data-health.ts`.
 
   The same extraction is also a way out of a bug above: **three expansion pages the zone table can't
   read**. The MCP's client-derived zone inventory (`src/data/eql-client/zones.json`) is 192 map files'

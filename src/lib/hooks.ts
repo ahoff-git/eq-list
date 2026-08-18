@@ -26,6 +26,8 @@ import type {
 import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
 import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
+import { distinct } from "@/shared/sorting";
+import { mobEntries, type HuntTarget } from "@/shared/hunt";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -261,6 +263,27 @@ export function useMobKnowledge(refreshKey: unknown): Record<string, MobKnowledg
 }
 
 /**
+ * The mobs on your list, paired with the zones you've actually killed them in — the Hunt tab's
+ * targets.
+ *
+ * The zones come from **your own kills** and nowhere else: a mob's wiki page carries no sources at
+ * all, so where a named lives is a question only observation answers here. A mob you've never
+ * killed comes back with an empty list and is shown as a target with an unknown home rather than
+ * being quietly dropped.
+ */
+export function useHuntTargets(entries: ShoppingListEntry[]): HuntTarget[] {
+  const mobs = useAllMobs();
+  return useMemo(() => {
+    const targets = mobEntries(entries);
+    if (!targets.length) return [];
+    return targets.map((e) => ({
+      mob: e.name,
+      zones: distinct(mobs.filter((m) => mobKey(m.mob) === mobKey(e.name)).map((m) => m.zone)),
+    }));
+  }, [entries, mobs]);
+}
+
+/**
  * What we know about **one** mob, one row per zone it's been killed in, most kills first.
  *
  * The per-zone shape is the point: a rate is a fact about a camp, and the zone is also the only thing
@@ -323,7 +346,12 @@ export function useKills(zone: string | undefined): KillRecord[] {
  * `0:00` on a timer main still calls waiting.
  */
 export function useSpawns(): { view: SpawnView; tick: number } {
-  const [view, setView] = useState<SpawnView>({ now: new Date().toISOString(), running: [], known: [] });
+  const [view, setView] = useState<SpawnView>({
+    now: new Date().toISOString(),
+    running: [],
+    known: [],
+    dismissed: [],
+  });
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const a = api();

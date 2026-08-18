@@ -88,6 +88,13 @@ function timed(): Harness {
   return h;
 }
 
+/** The same, but asked to speak — notify is off by default, so every alerting test opts in. */
+function noisy(): Harness {
+  const h = timed();
+  h.tracker.notify(KEY, true);
+  return h;
+}
+
 // ── starting a countdown ───────────────────────────────────────────────────────
 
 test("the second kill of a named starts a countdown, due one interval on", () => {
@@ -95,7 +102,7 @@ test("the second kill of a named starts a countdown, due one interval on", () =>
   const view = h.tracker.view();
   assert.equal(view.running.length, 1);
   assert.equal(view.running[0].dueAt, iso(1800));
-  assert.equal(view.running[0].source, "learned");
+  assert.equal(view.running[0].source, "killed");
 });
 
 test("the first kill of a named starts nothing — a named we can't time is a blank, not a guess", () => {
@@ -130,7 +137,7 @@ test("killing it again restarts the countdown rather than queuing a second", () 
 // ── speaking, once, and only about the future ──────────────────────────────────
 
 test("a timer alerts when it comes due, and only once", () => {
-  const h = timed();
+  const h = noisy();
   h.tick(1799);
   assert.equal(h.raised.length, 0);
   h.tick(1800);
@@ -146,6 +153,7 @@ test("a kill replayed from a log gap never pops a banner about last night", () =
   // Catch-up feeds old kills through the same live path, so the timer is born already overdue.
   const kills = [record(MOB, 0), record(MOB, 900)];
   const h = harness({ kills });
+  h.tracker.notify(KEY, true); // so silence here is about the past, not about notify
   h.tick(5000); // the app started long after both kills
   h.tracker.noteKill(MOB, ZONE, iso(900), true);
   h.tick(5001);
@@ -157,6 +165,7 @@ test("silenced alerts silence a pop, and the timer still runs out", () => {
   const kills = [record(MOB, 0), record(MOB, 900)];
   const h = harness({ kills, settings: settings(false) });
   h.tracker.noteKill(MOB, ZONE, iso(900), true);
+  h.tracker.notify(KEY, true); // asked for, and still silenced by the overlay's own switch
   h.tick(1800);
   assert.equal(h.raised.length, 0);
   assert.equal(h.tracker.view().running[0].state, "up");
@@ -175,7 +184,7 @@ test("a timer goes stale and leaves the board once the mob has been up too long"
 // you got up for a drink — so how early to be told is theirs to set (ADR 0094).
 
 test("padding speaks at the window opening, not at the by-time", () => {
-  const h = timed();
+  const h = noisy();
   h.tracker.pad(KEY, 120);
   h.tick(1679);
   assert.equal(h.raised.length, 0);
@@ -186,14 +195,14 @@ test("padding speaks at the window opening, not at the by-time", () => {
 });
 
 test("a padded warning doesn't claim the mob is up, because it isn't yet", () => {
-  const h = timed();
+  const h = noisy();
   h.tracker.pad(KEY, 120);
   h.tick(1680);
   assert.match(h.raised[0].message ?? "", /due soon/);
 });
 
 test("an unpadded pop keeps the plain banner, which words itself", () => {
-  const h = timed();
+  const h = noisy();
   h.tick(1800);
   assert.equal(h.raised[0].message, undefined);
 });
@@ -237,6 +246,144 @@ test("padding into a window that's already open doesn't shout about the past", (
   assert.equal(h.raised.length, 0, "a window you opened retroactively never had a moment to announce");
 });
 
+test("re-padding a mob you can see doesn't un-see it", () => {
+  // Re-arming rebuilt the timer from the learned figures, which carry no sighting — so adjusting the
+  // padding on a row reading ALIVE turned it back into a countdown about a mob in front of you.
+  const h = timed();
+  h.tick(1500);
+  h.tracker.markUp(KEY);
+  const seenAt = h.tracker.view().running[0].seenAt;
+  h.tracker.pad(KEY, 120);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.state, "alive", "an observation outranks the clock until the mob dies again");
+  assert.equal(timer.seenAt, seenAt, "and it keeps its own moment");
+  assert.equal(timer.lead, 120, "while the padding really was applied");
+});
+
+// ── notify, off until asked ────────────────────────────────────────────────────
+
+test("a tracked named is silent until you ask it to speak", () => {
+  const h = timed();
+  h.tick(1800);
+  assert.equal(h.raised.length, 0, "every named you kill is tracked; alerting for all of them is noise");
+  assert.equal(h.tracker.view().running[0].state, "up", "the countdown still ran, it just didn't shout");
+});
+
+test("ticking notify makes the next pop speak", () => {
+  const h = timed();
+  h.tracker.notify(KEY, true);
+  h.tick(1800);
+  assert.equal(h.raised.length, 1);
+});
+
+test("notify is per mob, and survives a restart", () => {
+  const dir = tempDir();
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const first = harness({ kills, dir });
+  first.tracker.notify(KEY, true);
+  first.tracker.flush();
+
+  const second = harness({ kills, dir });
+  assert.equal(second.tracker.view().known.find((k) => k.key === KEY)?.notify, true);
+  second.tracker.noteKill(MOB, ZONE, iso(900), true);
+  second.tick(1800);
+  assert.equal(second.raised.length, 1);
+});
+
+test("un-ticking notify silences a countdown already running", () => {
+  const h = timed();
+  h.tracker.notify(KEY, true);
+  h.tracker.notify(KEY, false);
+  h.tick(1800);
+  assert.equal(h.raised.length, 0);
+});
+
+// ── "I can see it" ─────────────────────────────────────────────────────────────
+// Marking a mob up does two things, and the second is the valuable one: it ends the countdown, and
+// it records the tightest bound the app can get — a kill gap includes the time you spent reaching
+// and killing the mob, a sighting doesn't.
+
+test("marking up ends the countdown and says so as a fact", () => {
+  const h = timed();
+  h.tick(1500);
+  h.tracker.markUp(KEY);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.state, "alive");
+  assert.equal(timer.seenAt, iso(1500));
+});
+
+test("a sighting is evidence, and tightens the estimate below the kill gap", () => {
+  const h = timed(); // killed at 900, learned 900s from the kill gap
+  h.tick(1400); // seen up 500s after it died
+  h.tracker.markUp(KEY);
+  const known = h.tracker.view().known.find((k) => k.key === KEY);
+  assert.equal(known?.respawn?.seconds, 500);
+  assert.equal(known?.respawn?.source, "seen");
+});
+
+test("a sighting only ever tightens — seeing it late says nothing", () => {
+  const h = timed();
+  h.tick(1400);
+  h.tracker.markUp(KEY); // 500s
+  h.kills.push(record(MOB, 2000));
+  h.tracker.noteKill(MOB, ZONE, iso(2000), true);
+  h.tick(2800);
+  h.tracker.markUp(KEY); // 800s — later, so no news
+  assert.equal(h.tracker.view().known.find((k) => k.key === KEY)?.respawn?.seconds, 500);
+});
+
+test("an implausibly quick sighting is discarded, not believed", () => {
+  const h = timed();
+  h.tick(930); // 30s after it died — a misclick or a second mob, not a respawn
+  h.tracker.markUp(KEY);
+  const known = h.tracker.view().known.find((k) => k.key === KEY);
+  assert.equal(known?.respawn?.seconds, 900, "the kill gap still stands");
+  assert.equal(known?.respawn?.source, "killed");
+});
+
+test("alive outranks the clock in both directions", () => {
+  const h = timed();
+  h.tick(1000); // still waiting
+  h.tracker.markUp(KEY);
+  assert.equal(h.tracker.view().running[0].state, "alive", "up before the window: the mob doesn't care");
+  // ...and it stays alive long past when a countdown would have gone stale, because it is up.
+  h.tick(1800 + 60 * 60);
+  assert.equal(h.tracker.view().running[0].state, "alive");
+});
+
+test("an alive mob never pops a banner about being due", () => {
+  const h = timed();
+  h.tracker.notify(KEY, true);
+  h.tick(1500);
+  h.tracker.markUp(KEY);
+  h.tick(1800);
+  assert.equal(h.raised.length, 0, "you're looking at it; a banner is nothing but noise");
+});
+
+test("killing it again clears ALIVE and starts a fresh countdown", () => {
+  const h = timed();
+  h.tick(1500);
+  h.tracker.markUp(KEY);
+  h.kills.push(record(MOB, 2000));
+  h.tracker.noteKill(MOB, ZONE, iso(2000), true);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.seenAt, undefined);
+  assert.notEqual(timer.state, "alive");
+});
+
+test("a sighting survives a restart, because it's evidence and not a mood", () => {
+  const dir = tempDir();
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const first = harness({ kills, dir });
+  first.tracker.noteKill(MOB, ZONE, iso(900), true);
+  first.tick(1400);
+  first.tracker.markUp(KEY);
+  first.tracker.flush();
+
+  const second = harness({ kills, dir, startSec: 1500 });
+  assert.equal(second.tracker.view().known.find((k) => k.key === KEY)?.respawn?.seconds, 500);
+});
+
 // ── the player's word ──────────────────────────────────────────────────────────
 
 test("a stated interval outranks the learned one, and the next kill uses it", () => {
@@ -255,13 +402,13 @@ test("clearing a stated interval falls back to what was learned, not to nothing"
   h.tracker.state(KEY, null);
   const known = h.tracker.view().known.find((k) => k.key === KEY);
   assert.equal(known?.respawn?.seconds, 900);
-  assert.equal(known?.respawn?.source, "learned");
+  assert.equal(known?.respawn?.source, "killed");
 });
 
 test("a nonsense stated interval is refused rather than making a mob permanently due", () => {
   const h = timed();
   h.tracker.state(KEY, 0);
-  assert.equal(h.tracker.view().known.find((k) => k.key === KEY)?.respawn?.source, "learned");
+  assert.equal(h.tracker.view().known.find((k) => k.key === KEY)?.respawn?.source, "killed");
 });
 
 test("the player can call something a named that the log wrote with an article", () => {
@@ -279,6 +426,35 @@ test("calling something not-a-named takes its countdown with it", () => {
   h.tracker.markNamed(MOB, false);
   assert.equal(h.tracker.view().running.length, 0);
   assert.equal(h.tracker.view().known.length, 0);
+});
+
+test("a dismissed mob stays listed, so the button isn't a one-way door", () => {
+  const h = timed();
+  h.tracker.markNamed(MOB, false);
+  // The row is gone, and with it the only control that could undo this — unless it's listed.
+  assert.deepEqual(h.tracker.view().dismissed, [MOB]);
+});
+
+test("tracking a dismissed mob again brings its whole history back", () => {
+  const h = timed();
+  h.tracker.markNamed(MOB, false);
+  h.tracker.markNamed(MOB, true);
+  const known = h.tracker.view().known.find((k) => k.key === KEY);
+  assert.equal(h.tracker.view().dismissed.length, 0);
+  assert.equal(known?.respawn?.seconds, 900, "the gaps were never in the dismissal to lose");
+});
+
+test("a dismissal survives a restart, and so does the way out of it", () => {
+  const dir = tempDir();
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const first = harness({ kills, dir });
+  first.tracker.markNamed(MOB, false);
+  first.tracker.flush();
+
+  const second = harness({ kills, dir });
+  assert.deepEqual(second.tracker.view().dismissed, [MOB]);
+  second.tracker.markNamed(MOB, true);
+  assert.equal(second.tracker.view().known.length, 1);
 });
 
 test("relearning drops the learned figure but keeps the row", () => {

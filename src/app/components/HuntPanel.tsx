@@ -7,6 +7,7 @@ import {
   useSettings,
   useMobLoot,
   useMobKnowledge,
+  useHuntTargets,
 } from "@/lib/hooks";
 import { bestRate, reconcileDrops } from "@/shared/drop-truth";
 import { mobKey } from "@/shared/mob-stats";
@@ -58,12 +59,15 @@ export default function HuntPanel({
 
   const needed = useMemo(() => neededEntries(list.entries, list.questRuns), [list]);
   const { sources, loading } = useEntrySources(needed);
+  // Mobs you put on the list to kill for their own sake, placed by where you've actually killed
+  // them — the wiki gives a mob page no sources, so this is the only honest answer available.
+  const targets = useHuntTargets(list.entries);
 
   // Full hunt (all zones) — drives the zone options and the "no drop source" list,
   // so both stay accurate no matter what the filter is set to.
   const allZones = useMemo(
-    () => buildHunt(huntInputsFor(needed, sources, list.questRuns)),
-    [needed, sources, list.questRuns],
+    () => buildHunt(huntInputsFor(needed, sources, list.questRuns), targets),
+    [needed, sources, list.questRuns, targets],
   );
   const covered = new Set(allZones.flatMap((z) => z.mobs.flatMap((m) => m.items.map((i) => i.item))));
   const noSource = needed.filter((e) => !covered.has(e.name));
@@ -173,6 +177,13 @@ export default function HuntPanel({
                   onMouseLeave={() => emphasize(null)}
                 >
                   <ItemLink title={m.mob} className="hm-name" />
+                  {/* Says why this row is here at all: a target was asked for by name, and may
+                      have no items under it whatsoever. */}
+                  {m.target && (
+                    <span className="hm-target" title="On your list — you want to kill this one">
+                      on your list
+                    </span>
+                  )}
                   <span className="hm-items">
                     {m.items.map((it) => {
                       const [truth] = reconcileDrops(

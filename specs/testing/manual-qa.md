@@ -499,6 +499,25 @@ features for later in [../ideas.md](../ideas.md).
   scale, including above 100% (that was a `vh` unit being scaled by the root `zoom` — the same trap
   `.app` documents). Worth resizing the window narrow and wide with a long route showing.
 
+- **Recorded data — the flag, and the thing it must never do.** Settings → **Recorded data**
+  ([ADR 0096](../decisions/0096-stored-data-says-which-rules-wrote-it.md)). On an install with history,
+  **Recorded fights** and **Personal bests** should read *needs updating* and say why (ADR 0095's DoT
+  fix); everything else should read *up to date* or *nothing recorded*. On a **fresh** install the whole
+  list must be *nothing recorded* with **no** badge — a first run opening with a list of chores is the
+  failure this is most likely to have.
+  **Cross-check the file names against the data folder**, because nothing else can: a concern whose
+  `file` is misspelled reads *nothing recorded* for ever and looks like an honest answer. (That happened
+  once already — `zone-names.json` for what is really `map-zone-names.json` — and it was only caught by
+  running the report against a real folder.) Any row saying *nothing recorded* whose file plainly exists
+  in `%APPDATA%/eq-list` is that bug and not a state.
+  Then the round trip, which is the only part a test can't reach: play for a minute so a store writes,
+  and confirm the row's timestamp updates and its state stays *up to date* — that proves the stamp is
+  being written by the live path and not only by the test's saver. Click **Digest a log…** on the fights
+  row and confirm the row goes current afterwards. Cancel the picker and confirm it says "Nothing
+  digested" rather than reading like a failure.
+  The one to check deliberately, because getting it wrong destroys data: open `combat-history.json`,
+  hand-edit `provenance.revision` to a number **higher** than the app's, and confirm the row reads
+  *from a newer build*, explains itself, and offers **no** button at all.
 - **Your DoT ticks now count — check the meter, not just the parser.**
   [ADR 0095](../decisions/0095-your-own-dot-tick-is-yours.md) is pinned by tests against verbatim log
   lines and verified by replaying a real 230,000-line log (1,737 tick lines, 0 left unread), but that

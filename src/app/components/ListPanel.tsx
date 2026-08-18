@@ -5,7 +5,18 @@ import { api } from "@/lib/api";
 import ItemLink, { NameList } from "./ItemLink";
 import { count } from "@/shared/format";
 import { Caret, caretGlyph, Empty } from "./ui";
-import { effectiveNeeded, groupByOrigin, itemDemands, normalizeItemName, totalNeed, type ItemDemand, type ListGroup } from "@/shared/grouping";
+import {
+  countableEntries,
+  effectiveNeeded,
+  groupByOrigin,
+  isMobEntry,
+  itemDemands,
+  normalizeItemName,
+  satisfied,
+  totalNeed,
+  type ItemDemand,
+  type ListGroup,
+} from "@/shared/grouping";
 import {
   groupDropsByZone,
   splitDropsByCurrentZone,
@@ -57,6 +68,10 @@ export default function ListPanel() {
       <div className="groups">
         {groups.map((g) => {
           const isCollapsed = !!collapsed[g.key];
+          // The tally is over the rows that can actually be completed. A mob can't, so counting it
+          // left a group reading "2/3" for ever — see `isMobEntry`; hidden altogether when a group
+          // holds nothing else, since "0/0" is not progress.
+          const countable = countableEntries(g.entries);
           return (
             <div className={`group ${g.complete ? "done" : ""}`} key={g.key}>
               <div className="group-header" onClick={() => toggle(g.key)}>
@@ -75,9 +90,11 @@ export default function ListPanel() {
                     </button>
                   </span>
                 )}
-                <span className="muted small">
-                  {g.entries.filter((e) => e.obtained >= effectiveNeeded(e, g.runs)).length}/{g.entries.length}
-                </span>
+                {countable.length > 0 && (
+                  <span className="muted small">
+                    {countable.filter((e) => satisfied(e, g.runs)).length}/{countable.length}
+                  </span>
+                )}
                 {g.kind && (
                   <button
                     className="btn ghost sm"
@@ -146,8 +163,13 @@ function EntryRow({
 
   const need = effectiveNeeded(entry, runs);
   const total = totalNeed(demands);
-  const met = entry.obtained >= need;
-  const cls = ["entry", met ? "done" : "", flashing ? "flash" : ""].filter(Boolean).join(" ");
+  const isMob = isMobEntry(entry);
+  // A mob is never "done" — there's no count to complete — so it must not be struck through the way
+  // a finished item is.
+  const met = !isMob && satisfied(entry, runs);
+  const cls = ["entry", met ? "done" : "", isMob ? "is-mob" : "", flashing ? "flash" : ""]
+    .filter(Boolean)
+    .join(" ");
   // +/- adjust how many you've ACQUIRED (obtained); needed comes from the quest/recipe
   // qty × the group's runs. Obtained can exceed need (you can over-loot) but not go below 0.
   const setObtained = (delta: number) => api()?.list.update(entry.id, { obtained: Math.max(0, entry.obtained + delta) });
@@ -179,13 +201,22 @@ function EntryRow({
           {caretGlyph(open)}
         </button>
         <ItemLink title={entry.name} className="entry-name" />
-        {/* "5 of 3 (10)" — you have 5, this group wants 3, everything wants 10 between
-            them. A drop credits every group that wants the item, so the combined figure
-            is the one that says whether you can stop farming. */}
-        <span className="entry-count" title={countTitle(entry.obtained, need, demands)}>
-          <span className={`have ${met ? "met" : ""}`}>{entry.obtained}</span> of {need}
-          {total > need && <span className="muted small"> ({total})</span>}
-        </span>
+        {/* A mob has no count to show and never will: nothing drops it, so "0 of 1" would be a
+            progress bar that can't move. It says what it *is* instead — a thing to go and kill,
+            which is what the Hunt tab lists it as. */}
+        {isMob ? (
+          <span className="entry-kind" title="A mob to hunt — see the Hunt tab for where">
+            hunt
+          </span>
+        ) : (
+          /* "5 of 3 (10)" — you have 5, this group wants 3, everything wants 10 between
+             them. A drop credits every group that wants the item, so the combined figure
+             is the one that says whether you can stop farming. */
+          <span className="entry-count" title={countTitle(entry.obtained, need, demands)}>
+            <span className={`have ${met ? "met" : ""}`}>{entry.obtained}</span> of {need}
+            {total > need && <span className="muted small"> ({total})</span>}
+          </span>
+        )}
         <button
           className="btn ghost sm"
           title="Open on eqlwiki"
@@ -193,12 +224,21 @@ function EntryRow({
         >
           ↗
         </button>
-        <button className="btn ghost sm" title="Got one fewer" onClick={() => setObtained(-1)} disabled={entry.obtained <= 0}>
-          −
-        </button>
-        <button className="btn ghost sm" title="Got one more" onClick={() => setObtained(+1)}>
-          +
-        </button>
+        {!isMob && (
+          <>
+            <button
+              className="btn ghost sm"
+              title="Got one fewer"
+              onClick={() => setObtained(-1)}
+              disabled={entry.obtained <= 0}
+            >
+              −
+            </button>
+            <button className="btn ghost sm" title="Got one more" onClick={() => setObtained(+1)}>
+              +
+            </button>
+          </>
+        )}
         <button className="btn ghost sm" title="Remove" onClick={() => api()?.list.remove(entry.id)}>
           ✕
         </button>

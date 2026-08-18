@@ -618,3 +618,21 @@ test("kills and drops are conserved across the cap, however many records are tri
   );
   assert.ok(k.kills().length <= 5000, "while the records themselves stay bounded");
 });
+
+test("the migration's schema survives a save, so the logs aren't re-read every launch", () => {
+  const dir = tempDir();
+  const file = path.join(dir, "kill-log.json");
+  // What `migrations.ts` leaves behind once it has repaired the file.
+  fs.writeFileSync(file, JSON.stringify({ schema: 2, kills: [], retired: [] }), "utf8");
+
+  const k = createKillLog(dir);
+  k.record("a gnoll", "You", ZONE, new Date().toISOString(), 1);
+  k.flush();
+
+  const stored = JSON.parse(fs.readFileSync(file, "utf8")) as { schema?: number; kills?: unknown[] };
+  // The store doesn't own `schema` — but it owns the file, so a snapshot that left the field out
+  // deleted it. The migration then found an unstamped file and re-read **every log in the folder**
+  // (19 MB on a real install) to repair nothing, at every launch, for ever.
+  assert.equal(stored.schema, 2, "schema must be written back untouched");
+  assert.equal(stored.kills?.length, 1);
+});

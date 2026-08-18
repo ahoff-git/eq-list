@@ -160,10 +160,28 @@ list, hunt, search, damage, session, settings.
     so the lower bound is theirs to set and is never inferred. With no padding (the default) the
     window never opens and the row behaves as a plain countdown. The player can also type their own
     interval (which nothing observed overwrites), **relearn** a mob to throw away what was measured,
-    or say something isn't a named at all. Sits beside Hunt because `TabBar` collapses from the
-    *end* and a timer you can't see is worse than no timer.
+    or say something isn't a named at all. **Mark UP** is the important one
+    ([ADR 0097](../decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md)): it ends the
+    countdown *and* records `R ≤ now − killedAt`, which is the tightest bound the app can get,
+    because unlike a kill gap it excludes the time spent reaching and killing the mob. Such a row
+    reads **ALIVE** rather than a clock and outranks the countdown in both directions — you saw it,
+    the estimate only guessed. **Notify** is a per-mob checkbox, **off by default**: tracking is
+    automatic and camping is deliberate, so a timer runs and shows silently until you ask it to
+    speak. Those last two **destroy something and therefore ask
+    first**, inline and worded as what it costs ("Forget all 6 gaps measured…"), with the two
+    answers as outcomes rather than yes/no — the `ForgetData` pattern from Settings, and for its
+    reason: no native `confirm()` over an always-on-top window. They're also visually separated from
+    the two that merely open a text box, since a row of identical links that ranges from "edit a
+    field" to "discard an evening of measurements" is a trap. **Not tracked** lists the mobs you've
+    dismissed with a way back, because dismissing one removes its row and the only control that
+    could undo it lived there. Sits beside Hunt because `TabBar` collapses from the *end* and a
+    timer you can't see is worse than no timer.
   - `HuntPanel` — the **Hunt tab**: inverts "how do I get each needed item" into
-    "where do I go to farm what's left". `useEntrySources` fetches each still-needed
+    "where do I go to farm what's left" — plus the mobs you put on the list to kill for their own
+    sake ([ADR 0098](../decisions/0098-a-mob-is-a-thing-you-hunt.md)). A **target** is placed by
+    *your own kills*, since a mob's wiki page carries no sources at all, and leads its zone because
+    you named it explicitly; one you've never killed is listed under an unknown zone rather than
+    dropped. `useEntrySources` fetches each still-needed
     item's sources (`wiki.getPage`, cached) and `src/shared/hunt.ts`
     (`neededEntries` → `huntInputsFor` → `buildHunt`, pure + tested) builds
     zones → mobs → the needed items they drop. Zones/mobs sort by how much of your
@@ -382,6 +400,16 @@ list, hunt, search, damage, session, settings.
     [ADR 0055](../decisions/0055-eating-a-log-fills-history.md). Keyed per line so re-eating or
     overlapping logs never double-count, [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md);
     the result line reports what was **new**, so a second helping reads zeros),
+    **"Recorded data"** (`DataHealth` — which bodies of stored data were read by the rules this build
+    uses, and which a change has left behind. The app derives nearly everything from your log and the
+    rules keep improving, so a parser fix leaves every stored copy of a figure quietly low — quiet
+    being the problem, since a wrong number that looks like a measurement is worse than a blank. Each
+    row names the data, its state, **what changed**, and the one thing worth doing; only the two
+    remedies the app can carry out itself get a button (digest a log, refresh the wiki), while a build
+    script prints its command and a peer's observations admit they can't be rebuilt at all. Current
+    rows are shown too — a panel that renders nothing when all is well is indistinguishable from a
+    broken one. Data from a **newer** build is flagged and deliberately offered nothing. See
+    [ADR 0096](../decisions/0096-stored-data-says-which-rules-wrote-it.md)),
     **"Forget recorded data"** (`ForgetData` — clears the kill records and the loot feed, and asks a
     **second question** before touching what they taught: *Keep observations* or *Forget observations
     too*. Records can be rebuilt by eating the logs again; observed drop rates, roam areas and vendor

@@ -65,7 +65,17 @@ unit-tested.
     window opened *retroactively*, which is the third road to the same lie and why one `arm()` check
     covers all of them. Padding is asserted to re-shape a countdown **already running**, since it is
     set while waiting for the very pop it's wanted for. Clock and sweep are injected, so a six-hour
-    timer is exercised in a millisecond.
+    timer is exercised in a millisecond. Then the two the player drives
+    ([ADR 0097](../decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md)): **notify** is
+    off until asked (so every alerting test opts in, which is the spec written down), and **marking
+    up** both ends the countdown and *tightens the estimate below the kill gap* — with a sighting
+    that only ever tightens, an implausibly quick one discarded, and `alive` outranking the clock
+    before the window and long past stale.
+  - `src/shared/hunt.ts` → `electron/tests/hunt.test.ts` also covers **mob targets**
+    ([ADR 0098](../decisions/0098-a-mob-is-a-thing-you-hunt.md)): that a mob entry is never an
+    outstanding item, that a target lands in the zones you've killed it in and is still listed when
+    you haven't, that it leads its zone over mobs that merely drop things, and that a mob which is
+    both target and source stays one row.
   - `src/shared/mob-stats.ts` → `electron/tests/mob-stats.test.ts` (rolling kills up into
     observations, observed drop rates and their denominators, roam areas ignoring untrustworthy
     positions, and pooling a peer's counts while keeping provenance — including that a pooled
@@ -93,7 +103,10 @@ unit-tested.
     can't place a kill — changing difficulty is a teleport like any other zoning. Including the
     hole that let a fix taken *before the zone was known* place kills anywhere
     ([ADR 0060](../decisions/0060-a-position-belongs-to-the-zone-it-was-taken-in.md)): unknown
-    matches only unknown.
+    matches only unknown. Plus one that isn't about kills at all: **the migration's `schema` survives a
+    save.** The store doesn't own that field but does own the file, so a snapshot that left it out
+    deleted it — and the migration then re-read every log in the folder to repair nothing, at every
+    launch, for ever ([ADR 0096](../decisions/0096-stored-data-says-which-rules-wrote-it.md)).
   - `electron/hp-estimate.ts` → `electron/tests/hp-estimate.test.ts` (floors from survived
     damage, ceilings from deaths at full health, and — the important half — every case
     where it must *refuse* to infer: healing, lulls, your own buffs fading, overkill, and a
@@ -121,6 +134,19 @@ unit-tested.
     (including the case that caught a real bug — a streak whose first record was the silent
     bar-setting must still announce its crossing), **seeding once from this character's fights only**,
     and a **cleared board staying cleared**. Temp dir, for the same reason as above.
+  - `src/shared/data-provenance.ts` + `electron/data-health.ts` →
+    `electron/tests/data-provenance.test.ts` ([ADR 0096](../decisions/0096-stored-data-says-which-rules-wrote-it.md)).
+    The rule: current / stale / **`ahead`** (a downgrade, which is offered no remedy on purpose) /
+    `absent`, an unstamped file assumed current unless its concern says otherwise, and a remedy nobody
+    can act on not counting towards the badge. On disk: a store stamping itself and reading back
+    current, an unstamped file reporting against its concern's assumption, a fresh install opening with
+    **no** chores, a corrupt file reported and **never rewritten**, an unregistered concern still
+    getting its data to disk, and an array-shaped store written untouched. The load-bearing one is
+    **a stamp found in a >1 MB file** — the reader takes a window from the head, so this pins the
+    pact that `writeJson` writes the stamp first; it was got backwards first time and every large store
+    declared itself stale for ever. Includes a **data-integrity pass over the shipped concern table**
+    (unique ids, no `unstamped` above its revision, a `changed` sentence wherever a concern is stale by
+    default, a command on every `script` remedy) — the category this file notes we otherwise lack.
   - `src/shared/fuzzy.ts` → `electron/tests/fuzzy.test.ts` (typo/transposition/
     partial/word-order matching and ranking).
   - `src/shared/grouping.ts` → `electron/tests/grouping.test.ts` (grouping by origin,

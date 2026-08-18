@@ -84,3 +84,54 @@ test("huntInputsFor scales needed by runs and attaches sources", () => {
   assert.equal(input.obtained, 1);
   assert.equal(input.sources.length, 1);
 });
+
+// ── mobs on the list are targets, not phantom items ────────────────────────────
+// Adding a named used to put its loot table on the list, or — with no loot listed — the mob's own
+// name as an item that could never be looted. A mob is a thing to *kill*.
+
+test("a mob entry is never an outstanding item, whatever its counts say", () => {
+  const entries = [entry({ name: "Ghoul Lord", needed: 1, obtained: 0, kind: "mob" })];
+  assert.deepEqual(neededEntries(entries, {}), [], "it can never be satisfied, so it can never be pending");
+});
+
+test("a mob target lands in the zones you've killed it in", () => {
+  const zones = buildHunt([], [{ mob: "Ghoul Lord", zones: ["Lower Guk"] }]);
+  assert.deepEqual(zones.map((z) => z.zone), ["Lower Guk"]);
+  assert.equal(zones[0].mobs[0].mob, "Ghoul Lord");
+  assert.equal(zones[0].mobs[0].target, true);
+  assert.deepEqual(zones[0].mobs[0].items, [], "a target needs no items to belong on the list");
+});
+
+test("a mob you've never killed is still listed, with its home unknown", () => {
+  const zones = buildHunt([], [{ mob: "Ghoul Lord", zones: [] }]);
+  assert.deepEqual(zones.map((z) => z.zone), ["Unknown zone"]);
+  assert.equal(zones[0].mobs[0].target, true);
+});
+
+test("a target leads its zone, over mobs that merely drop things", () => {
+  const zones = buildHunt(
+    [{ name: "Talon", needed: 1, obtained: 0, sources: [drop("A Bird", "Lower Guk"), drop("A Bat", "Lower Guk")] }],
+    [{ mob: "Ghoul Lord", zones: ["Lower Guk"] }],
+  );
+  assert.equal(zones[0].mobs[0].mob, "Ghoul Lord", "you asked for this one by name");
+});
+
+test("a mob can be both a target and a source, and is one row either way", () => {
+  const zones = buildHunt(
+    [{ name: "Cape", needed: 1, obtained: 0, sources: [drop("Ghoul Lord", "Lower Guk")] }],
+    [{ mob: "Ghoul Lord", zones: ["Lower Guk"] }],
+  );
+  assert.equal(zones[0].mobs.length, 1);
+  assert.equal(zones[0].mobs[0].target, true);
+  assert.deepEqual(zones[0].mobs[0].items.map((i) => i.item), ["Cape"]);
+});
+
+test("a zone worth visiting only for a target still outranks an empty one", () => {
+  const zones = buildHunt(
+    [{ name: "Talon", needed: 1, obtained: 0, sources: [drop("A Bird", "Aviak Village")] }],
+    [{ mob: "Ghoul Lord", zones: ["Lower Guk"] }],
+  );
+  // One reason each, so they tie on weight and sort by name — the point is that the target zone
+  // scores at all, where counting only items would have sunk it to the bottom.
+  assert.deepEqual(zones.map((z) => z.zone).sort(), ["Aviak Village", "Lower Guk"]);
+});

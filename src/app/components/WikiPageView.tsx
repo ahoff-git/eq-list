@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { useNav } from "@/lib/nav";
 import ItemLink from "./ItemLink";
 import MobKills from "./MobKills";
+import { wikiAddAction, wikiAddKind } from "@/shared/wiki-add";
 import type { ItemSource, WikiPage } from "@/shared/types";
 
 /**
@@ -18,7 +19,12 @@ import type { ItemSource, WikiPage } from "@/shared/types";
  */
 export default function WikiPageView({ page }: { page: WikiPage }) {
   const nav = useNav();
-  const addItem = (p: WikiPage) => api()?.list.add({ name: p.title, wikiPath: p.wikiPath });
+  // Which buttons this page gets. The rule lives in `wiki-add.ts` because the search results list
+  // adds by the same one, and the two had drifted — see that file.
+  const add = wikiAddAction(page);
+  // The kind travels with the add: `self` means "the page is the thing you want", which for a mob
+  // is a thing to *kill* rather than a thing to loot (`wikiAddKind`).
+  const addItem = (p: WikiPage) => api()?.list.add({ name: p.title, kind: wikiAddKind(p), wikiPath: p.wikiPath });
   const addFullPage = (p: WikiPage) => api()?.list.addFromPage(p);
   const addOne = (name: string, qty: number, wikiPath?: string) => api()?.list.add({ name, needed: qty, wikiPath });
 
@@ -104,7 +110,7 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
         {/* Quests & recipes: the whole point is to pull turn-ins/ingredients in
             under their heading, so that's the primary action. A recipe also offers
             adding just the crafted item (e.g. when it's itself a quest turn-in). */}
-        {(page.kind === "quest" || page.kind === "recipe") && (
+        {add === "components" && (page.kind === "quest" || page.kind === "recipe") && (
           <>
             <button className="btn primary sm" onClick={() => addFullPage(page)}>
               {page.kind === "quest"
@@ -118,17 +124,16 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
             )}
           </>
         )}
-        {page.kind === "mob" && page.components.length > 0 && (
-          <button className="btn primary sm" onClick={() => addFullPage(page)}>
-            + Add all {page.components.length} loot
-          </button>
-        )}
-        {(page.kind === "item" || page.kind === "page" || page.kind === "spell") && (
+        {/* A mob is `self` too, and the secondary button is deliberately not offered to it: a mob
+            page keeps its **loot** in `components`, so it read "+ Add all 12 ingredients" — and since
+            `addFromPage` now files a mob as a mob, pressing it added the named again rather than
+            anything it drops. Adding a whole loot table was the behaviour `wiki-add.ts` removed. */}
+        {add === "self" && (
           <>
             <button className="btn primary sm" onClick={() => addItem(page)}>
               + Add “{page.title}”
             </button>
-            {page.components.length > 0 && (
+            {page.kind !== "mob" && page.components.length > 0 && (
               <button className="btn sm" onClick={() => addFullPage(page)}>
                 + Add all {page.components.length} ingredients
               </button>

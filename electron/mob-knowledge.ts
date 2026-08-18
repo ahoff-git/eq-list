@@ -88,7 +88,9 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
   const file = path.join(userDataDir, "mob-knowledge.json");
   /** Peer name → their latest full set of observations. */
   let peers: Record<string, MobObservation[]> = read();
-  const saver = createSaver(file, "mob knowledge", () => ({ peers }), WRITE_DEBOUNCE_MS);
+  const saver = createSaver(file, "mob knowledge", () => ({ peers }), WRITE_DEBOUNCE_MS, {
+    concern: "peer-knowledge",
+  });
 
   function read(): Record<string, MobObservation[]> {
     // Absent or unreadable is nothing pooled — a bonus, never load-bearing.

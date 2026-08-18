@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
 import LogSettings from "./LogSettings";
+import DataHealth from "./DataHealth";
 import { percent } from "@/shared/format";
 import { CheckField } from "./ui";
 import type { DeepPartial, Settings } from "@/shared/types";
@@ -28,6 +29,9 @@ export default function SettingsPanel() {
   return (
     <div>
       <LogSettings settings={settings} patch={patch} />
+      {/* Above Forget, deliberately: "this needs re-reading" and "throw this away" are neighbouring
+          thoughts, and the recoverable one should be met first. */}
+      <DataHealth />
       <ForgetData />
 
       <div className="setting">

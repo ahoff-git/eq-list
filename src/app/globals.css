@@ -549,6 +549,24 @@ button {
   color: var(--text-dim);
 }
 .hunt-item { color: var(--text); }
+/* A target is here because you named it, not because it drops something — say so, quietly. */
+.hm-target {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  padding: 0 5px;
+  white-space: nowrap;
+}
+.entry-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  white-space: nowrap;
+}
 .hunt-nosource { margin-top: 14px; }
 
 /* ── spawn timers (ADR 0092) ─────────────────────────────────── */
@@ -582,7 +600,20 @@ button {
 /* The window is "start paying attention", not "go" — so it's marked, but quieter than a pop. */
 .spawn-row.window { border-left: 2px solid var(--accent-dim); }
 .spawn-row.window .spawn-clock { color: var(--accent); }
+/* ALIVE is a fact, not a countdown — so it's the one row that reads as a state rather than a clock. */
+.spawn-row.alive { border-left: 2px solid var(--good); background: color-mix(in srgb, var(--good) 8%, transparent); }
+.spawn-row.alive .spawn-clock { color: var(--good); font-weight: 700; letter-spacing: 0.04em; }
 .spawn-phase { color: var(--accent); font-weight: 600; }
+.spawn-row.alive .spawn-phase { color: var(--good); }
+.spawn-notify {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.spawn-notify input { cursor: pointer; }
 .spawn-pad { color: var(--accent-dim); }
 /* The caveat spans the row: it's about the figure above it, not about any one column. */
 .spawn-caveat {
@@ -617,6 +648,29 @@ button {
 }
 .spawn-edit small { color: var(--text-dim); }
 .spawn-edit small.bad { color: var(--bad); }
+/* A confirmation spans the row and leads with what the action costs, so the buttons are read
+   after the sentence rather than instead of it. */
+.spawn-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+  padding: 6px 0 2px;
+  flex-wrap: wrap;
+}
+.spawn-cost { flex: 1; min-width: 220px; font-size: 12px; color: var(--text); }
+.spawn-dismissed { margin-top: 18px; }
+.spawn-dismissed .small { color: var(--text-dim); margin-bottom: 6px; }
+.spawn-dismissed-rows { display: flex; flex-wrap: wrap; gap: 8px; }
+.spawn-dismissed-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+}
 
 /* ── session stats ───────────────────────────────────────────── */
 .stat-row {
@@ -1036,6 +1090,62 @@ button {
 .sc-celebrate { gap: 10px; margin: 14px 0 4px; }
 .sc-warn { color: var(--bad); }
 .sc-pending { margin-top: 12px; }
+
+/* ── stored-data health (which data the rules have moved on from) ── */
+.dh-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.dh-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+/* Only a row wanting something done is coloured. A panel where every row shouts is a panel nobody
+   reads, so "up to date" and "nothing recorded" stay deliberately plain. */
+.dh-row.stale { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.dh-row.ahead { border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.dh-head { display: flex; align-items: baseline; gap: 8px; }
+.dh-state {
+  flex: none;
+  min-width: 11ch;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.dh-state.stale { color: var(--accent); }
+.dh-state.ahead { color: var(--bad); }
+.dh-state.current { color: var(--good); }
+.dh-label { font-weight: 600; }
+.dh-file, .dh-cmd {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.dh-cmd { color: var(--accent); user-select: all; }
+.dh-stamp { flex: none; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.dh-blurb, .dh-advice { color: var(--text-dim); }
+/* What changed is the actionable half of a stale row, so it reads as text rather than as a note. */
+.dh-changed { color: var(--text); }
+.dh-act { gap: 8px; margin-top: 4px; align-items: center; }
+.dh-said { display: block; margin-top: 8px; color: var(--good); }
+.dh-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
 
 /* ── settings ────────────────────────────────────────────────── */
 .setting {
