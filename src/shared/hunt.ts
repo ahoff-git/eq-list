@@ -8,7 +8,9 @@
  */
 import type { ItemSource, ShoppingListEntry } from "./types";
 import { effectiveNeeded, isMobEntry, originKey } from "./grouping";
-import { normalizeZone } from "./sources";
+import { mobKey, type MobKnowledge } from "./mob-stats";
+import { distinct } from "./sorting";
+import { normalizeZone, sourceZones } from "./sources";
 
 export interface HuntItemRef {
   item: string;
@@ -154,4 +156,58 @@ export function buildHunt(items: HuntInput[], targets: HuntTarget[] = []): HuntZ
   // Zones with the most useful drops first.
   zones.sort((a, b) => itemCount(b) - itemCount(a) || a.zone.localeCompare(b.zone));
   return zones;
+}
+
+/**
+ * The mobs on your list, paired with the places **you** have killed them.
+ *
+ * `known` is the pooled tally — yours plus peers' — so `myKills` is what enforces the "your own
+ * kills" rule `HuntTarget` states. Pooling is right for a *rate*, where many samples of the same
+ * question are simply a better sample; it is wrong for a *direction*, because "go to Lower Guk" on
+ * somebody else's word reads identically to a camp you have stood in and there is nothing you can
+ * check it against. A blank is the honest answer, and `buildHunt` shows it as one.
+ */
+export function huntTargetsFor(entries: ShoppingListEntry[], known: MobKnowledge[]): HuntTarget[] {
+  const targets = mobEntries(entries);
+  if (!targets.length) return [];
+  const seenMyself = known.filter((m) => m.myKills > 0);
+  return targets.map((e) => ({
+    mob: e.name,
+    zones: distinct(seenMyself.filter((m) => mobKey(m.mob) === mobKey(e.name)).map((m) => m.zone)),
+  }));
+}
+
+/**
+ * Has the hunt got anything to show?
+ *
+ * A **target** is work with no count to complete, so it is deliberately absent from `neededEntries`
+ * — which made "is there anything to do" measured by outstanding items alone tell a list holding
+ * nothing but named mobs that there was nothing left to hunt. Asked here rather than in the panel
+ * because it is the same rule `buildHunt` applies when it decides a zone is worth listing.
+ */
+export function huntHasWork(needed: ShoppingListEntry[], targets: HuntTarget[]): boolean {
+  return needed.length > 0 || targets.length > 0;
+}
+
+/**
+ * The zones the hunt's picker can narrow to: everywhere a needed item comes from, plus everywhere a
+ * target has been seen.
+ *
+ * The second half is not optional. A target's zones come from your kill log rather than from any
+ * item's sources, so a picker built from the sources alone left out the one camp you had asked for
+ * by name. First spelling seen wins, as everywhere a zone is offered rather than keyed.
+ */
+export function huntZoneOptions(
+  needed: ShoppingListEntry[],
+  sources: Record<string, ItemSource[]>,
+  targets: HuntTarget[],
+): string[] {
+  const byKey = new Map<string, string>();
+  const offer = (zone: string) => {
+    const key = normalizeZone(zone) || zone.toLowerCase();
+    if (key && !byKey.has(key)) byKey.set(key, zone);
+  };
+  for (const e of needed) for (const zone of sourceZones(sources[e.name] ?? [])) offer(zone);
+  for (const t of targets) for (const zone of t.zones) offer(zone);
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b));
 }

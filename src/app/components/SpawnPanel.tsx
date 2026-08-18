@@ -40,7 +40,10 @@ export default function SpawnPanel() {
   const { view, tick } = useSpawns();
   // Main's clock at the last fetch, carried forward by this window's own second hand — so a row
   // agrees with the process that decides a timer is due rather than with this machine's `Date`.
-  const now = Date.parse(view.now) + tick * 1000;
+  // Before the first view lands there is no such clock; ours is the only honest stand-in, and it is
+  // never read, because a view with no clock has no rows either.
+  const fetched = Date.parse(view.now);
+  const now = (Number.isNaN(fetched) ? Date.now() : fetched) + tick * 1000;
 
   if (!view.running.length && !view.known.length && !view.dismissed.length) {
     return (
@@ -128,11 +131,20 @@ function RunningRow({ timer, now }: { timer: RunningSpawn; now: number }) {
           title="You can see it — end the countdown and use this as evidence"
           onClick={() => void api()?.spawns.markUp(timer.key)}
         >
-          Mark UP
+          It&rsquo;s up
         </button>
       )}
-      <button className="link" title="Take this off the board" onClick={() => void api()?.spawns.stop(timer.key)}>
-        clear
+      {/* The way back from any of it: killed again, so the clock restarts from now. Also the undo
+          for a mis-clicked "it's up", since a fresh countdown clears the sighting off the row. */}
+      <button
+        className="btn ghost sm"
+        title="Killed it just now — restart the countdown from this moment"
+        onClick={() => void api()?.spawns.markDead(timer.key)}
+      >
+        Killed it
+      </button>
+      <button className="btn ghost sm" title="Take this off the board" onClick={() => void api()?.spawns.stop(timer.key)}>
+        Stop
       </button>
     </div>
   );
@@ -186,6 +198,32 @@ function KnownRow({ known }: { known: KnownSpawn }) {
           />
           Notify
         </label>
+
+        {/* Telling the tracker what's true right now. Here as well as on a running row, because
+            this is where a mob sits when nothing is counting down — which is exactly when you need
+            to seed one: the app wasn't watching when you killed it, or you've walked up to a camp
+            someone else was holding. */}
+        <button
+          className="btn ghost sm"
+          title={
+            known.respawn
+              ? "Killed it just now — start the countdown from this moment"
+              : "Nothing to count down to yet: kill it twice, or set a timer below"
+          }
+          disabled={!known.respawn}
+          onClick={() => void api()?.spawns.markDead(known.key)}
+        >
+          Killed it
+        </button>
+        {known.running && (
+          <button
+            className="btn ghost sm"
+            title="You can see it — end the countdown and use this as evidence"
+            onClick={() => void api()?.spawns.markUp(known.key)}
+          >
+            It&rsquo;s up
+          </button>
+        )}
 
         {/* Editors next, and styled as the mild things they are: they open a box and commit
             nothing until you say so. */}
@@ -314,8 +352,26 @@ function SecondsField({
           if (e.key === "Escape") onDone();
         }}
       />
-      <button className="link" disabled={bad} onClick={submit}>
-        save
+      <button className="btn sm" disabled={bad} onClick={submit}>
+        Save
+      </button>
+      {/* An explicit way out, offered only when there's something to undo. Emptying the box and
+          saving does the same thing, but nobody discovers that — which made a figure you'd typed
+          feel permanent even though clearing it always worked. A setting you can't see how to
+          unset is a setting you can't change your mind about. */}
+      {initial !== undefined && (
+        <button
+          className="btn ghost sm"
+          onClick={() => {
+            onSave(null);
+            onDone();
+          }}
+        >
+          Clear
+        </button>
+      )}
+      <button className="btn ghost sm" onClick={onDone}>
+        Cancel
       </button>
       <small className={bad ? "bad" : ""}>{hint}</small>
     </div>
@@ -372,10 +428,15 @@ function Confirm({
 function NotTracked({ mobs }: { mobs: string[] }) {
   return (
     <section className="spawn-dismissed">
-      <h2>Not tracked</h2>
+      {/* Counted in the heading so the section reads as somewhere things *went*, rather than as a
+          footnote — it is the undo for a button that removes a row, and an undo nobody notices is
+          the same as no undo. */}
+      <h2>
+        Not tracked ({mobs.length})
+      </h2>
       <p className="small">
-        You said these aren&rsquo;t nameds, so nothing times them. What was measured is kept — track one again and
-        its history comes back with it.
+        You said these aren&rsquo;t nameds, so nothing times them. Nothing was lost — track one again and its
+        history comes back with it.
       </p>
       <div className="spawn-dismissed-rows">
         {mobs.map((mob) => (

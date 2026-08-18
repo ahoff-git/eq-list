@@ -384,6 +384,68 @@ test("a sighting survives a restart, because it's evidence and not a mood", () =
   assert.equal(second.tracker.view().known.find((k) => k.key === KEY)?.respawn?.seconds, 500);
 });
 
+// ── "it's dead now" ────────────────────────────────────────────────────────────
+// The hand-operated twin of a kill line: the app wasn't watching, or you've walked up to a camp
+// someone else was holding. It seeds a countdown and teaches the estimate nothing.
+
+test("saying it's dead starts a countdown from now", () => {
+  const h = timed();
+  h.tick(5000);
+  h.tracker.markDead(KEY);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.killedAt, iso(5000));
+  assert.equal(timer.dueAt, iso(5900), "one learned interval on from the moment you said so");
+});
+
+test("saying it's dead again restarts the clock rather than adding a second", () => {
+  const h = timed();
+  h.tick(5000);
+  h.tracker.markDead(KEY);
+  h.tick(6000);
+  h.tracker.markDead(KEY);
+  const running = h.tracker.view().running;
+  assert.equal(running.length, 1);
+  assert.equal(running[0].dueAt, iso(6900));
+});
+
+test("saying it's dead is the undo for a mis-clicked 'it's up'", () => {
+  const h = timed();
+  h.tick(1500);
+  h.tracker.markUp(KEY);
+  assert.equal(h.tracker.view().running[0].state, "alive");
+  h.tick(1600);
+  h.tracker.markDead(KEY);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.seenAt, undefined);
+  assert.notEqual(timer.state, "alive");
+});
+
+test("saying it's dead teaches the estimate nothing — one death measures no respawn", () => {
+  const h = timed();
+  h.tick(5000);
+  h.tracker.markDead(KEY);
+  const known = h.tracker.view().known.find((k) => k.key === KEY);
+  assert.equal(known?.respawn?.seconds, 900, "still the kill gap, untouched");
+  assert.equal(known?.respawn?.samples, 1);
+});
+
+test("with nothing to count down to, saying it's dead starts no blank clock", () => {
+  const kills = [record(MOB, 0)]; // one kill: no interval learned
+  const h = harness({ kills });
+  h.tracker.markDead(timerKey(MOB, ZONE));
+  assert.equal(h.tracker.view().running.length, 0);
+});
+
+test("a typed figure is enough to start one by hand", () => {
+  const kills = [record(MOB, 0)];
+  const h = harness({ kills });
+  const key = timerKey(MOB, ZONE);
+  h.tracker.state(key, 600);
+  h.tick(1000);
+  h.tracker.markDead(key);
+  assert.equal(h.tracker.view().running[0].dueAt, iso(1600));
+});
+
 // ── the player's word ──────────────────────────────────────────────────────────
 
 test("a stated interval outranks the learned one, and the next kill uses it", () => {
@@ -403,6 +465,29 @@ test("clearing a stated interval falls back to what was learned, not to nothing"
   const known = h.tracker.view().known.find((k) => k.key === KEY);
   assert.equal(known?.respawn?.seconds, 900);
   assert.equal(known?.respawn?.source, "killed");
+});
+
+test("a typed figure can be typed again, and again — it is never a one-way door", () => {
+  const h = timed();
+  const stated = () => h.tracker.view().known.find((k) => k.key === KEY)?.stated;
+  h.tracker.state(KEY, 1200);
+  assert.equal(stated(), 1200);
+  h.tracker.state(KEY, 1500); // change your mind
+  assert.equal(stated(), 1500);
+  h.tracker.state(KEY, null); // and take it back entirely
+  assert.equal(stated(), undefined);
+  h.tracker.state(KEY, 900); // and set it once more
+  assert.equal(stated(), 900);
+});
+
+test("padding is the same round trip", () => {
+  const h = timed();
+  const lead = () => h.tracker.view().known.find((k) => k.key === KEY)?.lead;
+  h.tracker.pad(KEY, 120);
+  assert.equal(lead(), 120);
+  h.tracker.pad(KEY, null);
+  assert.equal(lead(), undefined);
+  assert.equal(h.tracker.view().running[0].lead, 0);
 });
 
 test("a nonsense stated interval is refused rather than making a mob permanently due", () => {

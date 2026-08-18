@@ -175,8 +175,13 @@ export const DATA_CONCERNS: DataConcern[] = [
     remedy: "re-eat",
     blurb:
       "The scoreboard. Records set from live play are right; the ones seeded from recorded fights are as low as those fights are, and a record that is too low is one you beat by accident.",
+    // Do **not** tell anyone to Reset here. `electron/high-scores.ts`'s `clear()` marks the board
+    // `seeded: true` on purpose — "forget my records" must not put most of them straight back — so a
+    // reset does not re-seed, it empties the board for good and takes the records set from live play
+    // (which were never wrong) with it. Digesting is the whole remedy: the importer hands the fresh
+    // fights to `absorb`, which raises every record they beat.
     changed:
-      "Seeded from recorded fights, which under-reported DoT damage before ADR 0095. Re-eat the logs first, then Reset the board so it seeds again.",
+      "Seeded from recorded fights, which under-reported DoT damage before ADR 0095. Digesting your logs again folds the corrected fights back into the board — don't Reset it, which empties it for good rather than re-seeding.",
   },
   {
     id: "kill-log",

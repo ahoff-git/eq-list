@@ -112,6 +112,7 @@ const api: EqlApi = {
     markNamed: (mob, named) => ipcRenderer.invoke(CH.spawnsMarkNamed, mob, named),
     pad: (key, seconds) => ipcRenderer.invoke(CH.spawnsPad, key, seconds),
     markUp: (key) => ipcRenderer.invoke(CH.spawnsMarkUp, key),
+    markDead: (key) => ipcRenderer.invoke(CH.spawnsMarkDead, key),
     notify: (key, on) => ipcRenderer.invoke(CH.spawnsNotify, key, on),
     relearn: (key) => ipcRenderer.invoke(CH.spawnsRelearn, key),
     stop: (key) => ipcRenderer.invoke(CH.spawnsStop, key),

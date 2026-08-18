@@ -4,7 +4,16 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildHunt, neededEntries, huntInputsFor, type HuntInput } from "../../src/shared/hunt";
+import {
+  buildHunt,
+  huntHasWork,
+  huntInputsFor,
+  huntTargetsFor,
+  huntZoneOptions,
+  neededEntries,
+  type HuntInput,
+} from "../../src/shared/hunt";
+import type { MobKnowledge } from "../../src/shared/mob-stats";
 import type { ItemSource, ShoppingListEntry } from "../../src/shared/types";
 
 const drop = (where: string, zone: string): ItemSource => ({ kind: "drop", where, detail: zone });
@@ -134,4 +143,79 @@ test("a zone worth visiting only for a target still outranks an empty one", () =
   // One reason each, so they tie on weight and sort by name — the point is that the target zone
   // scores at all, where counting only items would have sunk it to the bottom.
   assert.deepEqual(zones.map((z) => z.zone).sort(), ["Aviak Village", "Lower Guk"]);
+});
+
+// ---- a target is placed by your own kills, and counts as work ------------------
+
+/** A pooled tally for one mob in one zone. `myKills` is the half that says it's yours. */
+function tally(mob: string, zone: string, myKills: number, kills = myKills): MobKnowledge {
+  return {
+    mob,
+    zone,
+    kills,
+    myKills,
+    drops: [],
+    lastAt: "",
+    contributors: myKills < kills ? ["a peer"] : [],
+    copper: 0,
+    copperPerKill: 0,
+  };
+}
+
+test("a target is placed where you have killed it yourself", () => {
+  const targets = huntTargetsFor([entry({ name: "Ghoul Lord", kind: "mob" })], [tally("Ghoul Lord", "Lower Guk", 4)]);
+  assert.deepEqual(targets, [{ mob: "Ghoul Lord", zones: ["Lower Guk"] }]);
+});
+
+test("a peer's word is not a direction — a place only they have seen it is not offered", () => {
+  // Pooling is right for a rate; "go here" is something you must be able to check, so a zone you
+  // have never killed it in comes back blank rather than on somebody else's authority.
+  const targets = huntTargetsFor(
+    [entry({ name: "Ghoul Lord", kind: "mob" })],
+    [tally("Ghoul Lord", "Lower Guk", 0, 30)],
+  );
+  assert.deepEqual(targets, [{ mob: "Ghoul Lord", zones: [] }]);
+  // ...and it is still listed, with its home unknown.
+  assert.equal(buildHunt([], targets)[0].zone, "Unknown zone");
+});
+
+test("a camp you contributed to is yours, however much a peer added to it", () => {
+  const targets = huntTargetsFor(
+    [entry({ name: "Ghoul Lord", kind: "mob" })],
+    [tally("Ghoul Lord", "Lower Guk", 2, 60)],
+  );
+  assert.deepEqual(targets[0].zones, ["Lower Guk"]);
+});
+
+test("the article is folded, so the wiki's spelling finds the kill log's", () => {
+  const targets = huntTargetsFor([entry({ name: "a Ghoul Lord", kind: "mob" })], [tally("Ghoul Lord", "Lower Guk", 3)]);
+  assert.deepEqual(targets[0].zones, ["Lower Guk"]);
+});
+
+test("a list of nothing but targets still has work to do", () => {
+  // A target has no count to complete, so it is absent from `neededEntries` — and measuring the
+  // hunt by outstanding items alone told a list of named mobs there was nothing left to hunt.
+  const entries = [entry({ name: "Ghoul Lord", kind: "mob" })];
+  assert.deepEqual(neededEntries(entries, {}), []);
+  assert.equal(huntHasWork(neededEntries(entries, {}), huntTargetsFor(entries, [tally("Ghoul Lord", "Lower Guk", 1)])), true);
+});
+
+test("an empty list, and a finished one, have nothing to hunt", () => {
+  assert.equal(huntHasWork([], []), false);
+  const done = [entry({ name: "Bone Chips", needed: 2, obtained: 2 })];
+  assert.equal(huntHasWork(neededEntries(done, {}), huntTargetsFor(done, [])), false);
+});
+
+test("the zone picker offers a target's camp as well as an item's sources", () => {
+  const needed = [entry({ name: "Talon" })];
+  const sources = { Talon: [drop("A Bird", "Aviak Village")] };
+  const targets = huntTargetsFor([entry({ name: "Ghoul Lord", kind: "mob" })], [tally("Ghoul Lord", "Lower Guk", 3)]);
+  // Without the second half, the one camp you asked for by name was the one you couldn't narrow to.
+  assert.deepEqual(huntZoneOptions(needed, sources, targets), ["Aviak Village", "Lower Guk"]);
+});
+
+test("the picker names one zone once, however many ways it is spelled", () => {
+  const needed = [entry({ name: "Talon" }), entry({ name: "Feather" })];
+  const sources = { Talon: [drop("A Bird", "The Feerrott")], Feather: [drop("A Bat", "Feerrott")] };
+  assert.deepEqual(huntZoneOptions(needed, sources, []), ["The Feerrott"], "first spelling seen wins");
 });

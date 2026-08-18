@@ -70,7 +70,11 @@ unit-tested.
     off until asked (so every alerting test opts in, which is the spec written down), and **marking
     up** both ends the countdown and *tightens the estimate below the kill gap* — with a sighting
     that only ever tightens, an implausibly quick one discarded, and `alive` outranking the clock
-    before the window and long past stale.
+    before the window and long past stale. Plus **`markDead`** (starts from now, restarts rather than
+    stacking, undoes a mis-clicked sighting, teaches the estimate nothing, and refuses to start a
+    blank clock when there's no figure to count to) and the **round trips**: a typed interval can be
+    set, changed, cleared and set again, and padding the same — the reversibility rule stated as
+    assertions, since it's the one that had quietly failed in the UI.
   - `src/shared/hunt.ts` → `electron/tests/hunt.test.ts` also covers **mob targets**
     ([ADR 0098](../decisions/0098-a-mob-is-a-thing-you-hunt.md)): that a mob entry is never an
     outstanding item, that a target lands in the zones you've killed it in and is still listed when

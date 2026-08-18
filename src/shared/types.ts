@@ -2085,6 +2085,12 @@ export interface EqlApi {
      * kill gap it excludes the time you'd spend reaching the mob and killing it.
      */
     markUp(key: string): Promise<SpawnView>;
+    /**
+     * It's dead now — start the countdown from this moment, or restart one already running. The
+     * hand-operated twin of a kill line, for when the app wasn't watching or a pull went unlogged.
+     * Seeds a countdown only: one death measures no respawn, so it teaches the estimate nothing.
+     */
+    markDead(key: string): Promise<SpawnView>;
     /** Whether this mob's pop raises a banner. Off by default. */
     notify(key: string, on: boolean): Promise<SpawnView>;
     /**

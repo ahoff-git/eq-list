@@ -636,3 +636,36 @@ test("the migration's schema survives a save, so the logs aren't re-read every l
   assert.equal(stored.schema, 2, "schema must be written back untouched");
   assert.equal(stored.kills?.length, 1);
 });
+
+/**
+ * The cap's other half: **which** records leave.
+ *
+ * Eating a past log replays it through `record`, so its old kills are *appended* after everything
+ * already stored. Trimming the front of the array therefore threw away the evening you had just
+ * watched and kept the fortnight-old import — the opposite of what the cap is for, and invisible
+ * because what the trimmed records *taught* survives as observations either way.
+ */
+test("the cap drops the oldest kills by the log's clock, not by the order they arrived", () => {
+  const k = createKillLog(tempDir());
+  const at = (ms: number) => new Date(ms).toISOString();
+  const RECENT = Date.parse("2026-07-29T12:00:00Z");
+  const OLD = Date.parse("2026-07-01T12:00:00Z");
+
+  // Tonight, watched live: a full log's worth.
+  for (let i = 0; i < 5000; i++) k.record(`recent ${i}`, "You", ZONE, at(RECENT + i * 1000), i);
+  // Then a past log is digested, which appends kills older than every one of them.
+  for (let i = 0; i < 300; i++) k.record(`old ${i}`, "You", ZONE, at(OLD + i * 1000), 10_000 + i);
+
+  const kept = k.kills();
+  assert.ok(kept.length <= 5000, "still capped");
+  assert.equal(
+    kept.filter((r) => r.mob.startsWith("old ")).length,
+    0,
+    "the imported evening is the older one, so it is what leaves",
+  );
+  assert.equal(
+    kept.filter((r) => r.mob.startsWith("recent ")).length,
+    kept.length,
+    "tonight's kills are all still there — the heatmap and the respawn gaps read these records",
+  );
+});

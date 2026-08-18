@@ -326,6 +326,10 @@ function registerStatsIpc(context: IpcContext): void {
     spawns.markUp(key);
     return spawns.view();
   });
+  ipcMain.handle(CH.spawnsMarkDead, (_e, key: string) => {
+    spawns.markDead(key);
+    return spawns.view();
+  });
   ipcMain.handle(CH.spawnsNotify, (_e, key: string, on: boolean) => {
     spawns.notify(key, on);
     return spawns.view();

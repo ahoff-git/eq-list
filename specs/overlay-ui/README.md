@@ -167,7 +167,11 @@ list, hunt, search, damage, session, settings.
     reads **ALIVE** rather than a clock and outranks the countdown in both directions — you saw it,
     the estimate only guessed. **Notify** is a per-mob checkbox, **off by default**: tracking is
     automatic and camping is deliberate, so a timer runs and shows silently until you ask it to
-    speak. Those last two **destroy something and therefore ask
+    speak. **Killed it** is the mirror of Mark UP and the way to seed a clock the log couldn't —
+    the app wasn't running, or the camp changed hands — and doubles as the undo for a mis-clicked
+    sighting. Everything here is reversible on purpose: an editor holding a value offers **Clear**,
+    and a mob you dismissed is listed under **Not tracked (n)** with a way back, because the button
+    that dismissed it took its own undo off the screen. Those last two **destroy something and therefore ask
     first**, inline and worded as what it costs ("Forget all 6 gaps measured…"), with the two
     answers as outcomes rather than yes/no — the `ForgetData` pattern from Settings, and for its
     reason: no native `confirm()` over an always-on-top window. They're also visually separated from

@@ -14,8 +14,8 @@ import { mobKey } from "@/shared/mob-stats";
 import ItemLink from "./ItemLink";
 import ZonePicker from "./ZonePicker";
 import { api } from "@/lib/api";
-import { buildHunt, neededEntries, huntInputsFor } from "@/shared/hunt";
-import { zoneMatches, sourceZones } from "@/shared/sources";
+import { buildHunt, huntHasWork, huntInputsFor, huntZoneOptions, neededEntries } from "@/shared/hunt";
+import { zoneMatches } from "@/shared/sources";
 import { distinct } from "@/shared/sorting";
 import { CheckField, Empty } from "./ui";
 import type { Zone } from "@/shared/map/types";
@@ -89,16 +89,12 @@ export default function HuntPanel({
   // Only zones something on your list drops in — the picker is for narrowing this hunt, not for
   // browsing the world. Shaped as `Zone` because that's what `ZonePicker` matches over; there's no
   // map file behind a wiki zone name, so the name is also its key.
-  const zoneOptions = useMemo<Zone[]>(() => {
-    const byLower = new Map<string, string>();
-    for (const e of needed) {
-      for (const z of sourceZones(sources[e.name] ?? [])) {
-        const k = z.toLowerCase();
-        if (!byLower.has(k)) byLower.set(k, z);
-      }
-    }
-    return [...byLower.values()].sort((a, b) => a.localeCompare(b)).map((name) => ({ name, key: name }));
-  }, [needed, sources]);
+  const zoneOptions = useMemo<Zone[]>(
+    // Shaped as `Zone` because that's what `ZonePicker` matches over; there's no map file behind a
+    // wiki zone name, so the name is also its key.
+    () => huntZoneOptions(needed, sources, targets).map((name) => ({ name, key: name })),
+    [needed, sources, targets],
+  );
 
   const zones = useMemo(() => {
     const filtered = narrow ? allZones.filter((z) => zoneMatches(narrow, z.zone)) : allZones;
@@ -107,7 +103,7 @@ export default function HuntPanel({
     return [...filtered].sort((a, b) => Number(zoneMatches(zone, b.zone)) - Number(zoneMatches(zone, a.zone)));
   }, [allZones, zone, narrow]);
 
-  if (needed.length === 0) {
+  if (!huntHasWork(needed, targets)) {
     return (
       <Empty title="Nothing left to hunt." hint="Everything on your list is complete — add more on the Search tab." />
     );

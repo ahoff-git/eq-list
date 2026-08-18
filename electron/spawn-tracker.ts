@@ -146,6 +146,15 @@ export interface SpawnTracker {
    * getting to it and killing it.
    */
   markUp(key: string): void;
+  /**
+   * It's dead **now** — start the countdown from this moment, or restart one already running.
+   *
+   * The hand-operated twin of a kill line, for the times the log can't help: the app wasn't running
+   * when you killed it, you're picking up someone else's camp, or a pull went unlogged. It seeds a
+   * countdown and nothing more — one death is not a measurement of a respawn, so it teaches the
+   * estimate nothing and never touches the kill log, which is the log's own record.
+   */
+  markDead(key: string): void;
   /** Whether a pop should raise a banner. Off by default — see `Stored.notify`. */
   notify(key: string, on: boolean): void;
   /** Correct the article test about a mob. */
@@ -413,6 +422,26 @@ export function createSpawnTracker({
       }
       // It's up, so there is nothing left to announce about it coming up.
       announced.add(key);
+      changed();
+    },
+
+    markDead(key) {
+      const at = now();
+      const { learned } = read();
+      const known = learned.get(key);
+      const running = state.timers.find((t) => t.key === key);
+      // The name and place come from whichever we have — a mob we've learned about, or the timer
+      // already on the board. Without either there is no mob to start a clock for.
+      const identity = known ?? (running && { key, mob: running.mob, place: running.place });
+      if (!identity) return;
+      const respawn = respawnFor(known, state.stated[key], state.seen[key]);
+      // Nothing to count down *to*. Saying "it's dead" can't invent a respawn, and a countdown to
+      // an unknown moment would be a blank clock pretending to be information.
+      if (!respawn) return;
+      const timer = timerFrom(identity, new Date(at).toISOString(), respawn, state.lead[key]);
+      if (!timer) return;
+      arm(key, timer);
+      log.debug("timer started by hand", { mob: timer.mob, due: timer.dueAt, source: respawn.source });
       changed();
     },
 

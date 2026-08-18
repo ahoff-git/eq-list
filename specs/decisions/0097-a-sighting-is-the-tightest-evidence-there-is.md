@@ -50,6 +50,23 @@ guessed, `alive` is what you saw, and the screen must never show them the same w
 
 **An alive mob never alerts.** You are looking at it. A banner is pure noise.
 
+**And you can say the opposite: it's dead now.** `markDead` starts a countdown from this moment, or
+restarts one already running — the hand-operated twin of a kill line, for the cases the log cannot
+help with: the app wasn't watching when you killed it, you're picking up a camp someone else was
+holding, or a pull went unlogged. It seeds a countdown and **teaches the estimate nothing**, because
+one death measures no respawn; and it never touches the kill log, which is the log's own record of
+what happened. It is also the undo for a mis-clicked "it's up", since a fresh countdown clears the
+sighting off the row.
+
+**Every state a player can set, they can unset.** This is a rule about the whole panel rather than
+one control, and it was broken in three places at once: a typed interval could only be cleared by
+emptying the box and saving — which works, and which nobody discovers — while "not a named" removed
+the row carrying the only control that could reverse it. So an editor with a value shows an explicit
+**Clear**, a dismissal is listed under **Not tracked** with the count in the heading, and every
+"tell the tracker what's true" button has an opposite within reach. A setting you cannot see how to
+unset is a setting you cannot change your mind about, which for a figure the player is then asked to
+rely on is worse than not offering it.
+
 **Notify is per mob and off by default.** The countdown still runs and still shows — silence is the
 difference between a list and an interruption. This *is* a change from what shipped: every tracked
 named used to alert. It is the right way round because tracking is automatic and camping is
@@ -80,6 +97,8 @@ Rejected alternatives:
 - A sighting is only as good as the click. Marking the wrong mob up tightens a timer permanently,
   which is what `relearn` is for — and why the implausible-gap floor applies to sightings exactly as
   it does to kill gaps, so a misclick seconds after a kill teaches nothing.
+- The known row now carries five controls plus a checkbox, which is the most it can hold. The next
+  thing added there wants a menu rather than a sixth button.
 - Nothing yet notices that a mob marked up has **stopped** being up without being killed (someone
   else took it). It stays `alive` until your next kill or an explicit clear, which is wrong but
   quietly so — and the alternative, expiring a fact the player asserted, is worse.

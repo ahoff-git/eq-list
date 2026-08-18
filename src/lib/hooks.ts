@@ -26,8 +26,7 @@ import type {
 import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
 import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
-import { distinct } from "@/shared/sorting";
-import { mobEntries, type HuntTarget } from "@/shared/hunt";
+import { huntTargetsFor, type HuntTarget } from "@/shared/hunt";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -110,6 +109,54 @@ export function useRead<T>(read: (a: Eql) => Promise<T>, initial: T, deps: Depen
 }
 
 /**
+ * Read a value, then read it again whenever the main process says it changed — **keeping whichever
+ * read was started last, not whichever replied first.**
+ *
+ * `useReading`'s sibling for a value that is both fetched and followed, and it needs the same
+ * cancellation for a sharper reason. A notice is not one event: eating a log or replaying a gap
+ * broadcasts `killsChanged` dozens of times in a burst, so several reads of a 5000-record list are in
+ * flight at once over a channel with no ordering guarantee. An older reply landing last leaves the
+ * panel showing a *superseded* snapshot — with nothing to correct it until the next notice, which may
+ * be minutes away. The three hooks below wrote this lifecycle out and all three left the guard off.
+ *
+ * Subscribing happens **before** the first read, so a change that lands while that read is in flight
+ * is still noticed — it schedules a reload the guard then lets win, where reading first left a gap in
+ * which a notice was simply missed.
+ *
+ * `follow` returns the unsubscribe, as every `on*` in the bridge does. `deps` is the caller's own
+ * list, so re-keying the question (a different zone) both re-reads and discards the old answer.
+ */
+function useFollowedRead<T>(
+  read: (a: Eql) => Promise<T>,
+  follow: (a: Eql, reload: () => void) => Unsubscribe,
+  initial: T,
+  deps: DependencyList,
+): T {
+  const [value, setValue] = useState<T>(initial);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    // Counted rather than a boolean: within one effect every reload has to be able to supersede the
+    // one before it, which a single "am I still current" flag can't express.
+    let latest = 0;
+    const reload = () => {
+      const mine = ++latest;
+      void read(a).then((next) => {
+        if (mine === latest) setValue(next);
+      });
+    };
+    const stop = follow(a, reload);
+    reload();
+    return () => {
+      latest += 1; // nothing in flight may land after we've gone
+      stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return value;
+}
+
+/**
  * Close a popover when the user clicks outside `inside`, or presses Escape.
  *
  * Both the tab overflow menu and the zone picker had this, and they'd already drifted: one closed on
@@ -183,6 +230,13 @@ const EMPTY_FIGHT: FightStats = {
 };
 
 const EMPTY_PRICES: ItemPrice[] = [];
+const NO_KILLS: KillRecord[] = [];
+const NO_MOBS: MobKnowledge[] = [];
+/**
+ * "Nothing yet", not "nothing running" — the panel's empty state has to be the same object every
+ * render, or `useFollowedRead`'s initial would restart the memos below it on every tick.
+ */
+const NO_SPAWNS: SpawnView = { now: "", running: [], known: [], dismissed: [] };
 const NO_SOURCES: Record<string, ItemSource[]> = {};
 const NO_FACTS: Record<string, SpellFacts> = {};
 const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
@@ -218,17 +272,14 @@ export function useHpEstimate(): HpEstimate {
  * they shape the answer: one folds the zones away, the other is *about* them.
  */
 function useAllMobs(refreshKey?: unknown): MobKnowledge[] {
-  const [mobs, setMobs] = useState<MobKnowledge[]>([]);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    const load = () => void a.mobs.all().then(setMobs);
-    load();
+  return useFollowedRead<MobKnowledge[]>(
+    (a) => a.mobs.all(),
     // Mob knowledge is derived from the kill log, so a bulk kill change (import / clear) means
     // refetch — not just when the caller's refreshKey ticks over.
-    return a.kills.onChanged(load);
-  }, [refreshKey]);
-  return mobs;
+    (a, reload) => a.kills.onChanged(reload),
+    NO_MOBS,
+    [refreshKey],
+  );
 }
 
 /**
@@ -270,17 +321,14 @@ export function useMobKnowledge(refreshKey: unknown): Record<string, MobKnowledg
  * all, so where a named lives is a question only observation answers here. A mob you've never
  * killed comes back with an empty list and is shown as a target with an unknown home rather than
  * being quietly dropped.
+ *
+ * `mobs.all()` pools yours with peers', which is why the rule itself is `huntTargetsFor` and not a
+ * filter written here: without it the tab said "go to Lower Guk" on somebody else's word, in the
+ * same words it uses for a camp you have stood in.
  */
 export function useHuntTargets(entries: ShoppingListEntry[]): HuntTarget[] {
   const mobs = useAllMobs();
-  return useMemo(() => {
-    const targets = mobEntries(entries);
-    if (!targets.length) return [];
-    return targets.map((e) => ({
-      mob: e.name,
-      zones: distinct(mobs.filter((m) => mobKey(m.mob) === mobKey(e.name)).map((m) => m.zone)),
-    }));
-  }, [entries, mobs]);
+  return useMemo(() => huntTargetsFor(entries, mobs), [entries, mobs]);
 }
 
 /**
@@ -321,15 +369,12 @@ function mergeDropLists(a: MobKnowledge, b: MobKnowledge): MobKnowledge["drops"]
  * map window is loading its geometry, which is exactly the lag spike that made this worth fixing.
  */
 export function useKills(zone: string | undefined): KillRecord[] {
-  const [kills, setKills] = useState<KillRecord[]>([]);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    const load = () => void a.kills.all(zone).then(setKills);
-    load();
-    return a.kills.onChanged(load);
-  }, [zone]);
-  return kills;
+  return useFollowedRead<KillRecord[]>(
+    (a) => a.kills.all(zone),
+    (a, reload) => a.kills.onChanged(reload),
+    NO_KILLS,
+    [zone],
+  );
 }
 
 /**
@@ -346,20 +391,13 @@ export function useKills(zone: string | undefined): KillRecord[] {
  * `0:00` on a timer main still calls waiting.
  */
 export function useSpawns(): { view: SpawnView; tick: number } {
-  const [view, setView] = useState<SpawnView>({
-    now: new Date().toISOString(),
-    running: [],
-    known: [],
-    dismissed: [],
-  });
+  const view = useFollowedRead<SpawnView>(
+    (a) => a.spawns.view(),
+    (a, reload) => a.spawns.onChanged(reload),
+    NO_SPAWNS,
+    [],
+  );
   const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    const load = () => void a.spawns.view().then(setView);
-    load();
-    return a.spawns.onChanged(load);
-  }, []);
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
