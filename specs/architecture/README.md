@@ -24,6 +24,12 @@ in the main process and all UI in the renderer.
     wedged page can't refuse, Escape is held globally while one is open, the hotkey toggles, and
     every OCR wait is bounded (a blown budget discards the worker) — see
     [ADR 0102](../decisions/0102-a-lookup-never-holds-the-screen.md).
+  - `windows.ts` — every window's creation, and the rule that **an overlay which can no longer be
+    operated does not keep the screen**: a crashed, hung or unloadable renderer is one fact
+    (`guardRenderer`), the window is stripped of its pin and its clicks (`makeHarmless`) before
+    anything else, and then either destroyed (the alert overlay, rebuilt once) or revived (main,
+    map). A main-process crash neutralizes the lot. See
+    [ADR 0105](../decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md).
   - `combat-stats.ts` — the one session tracker: experience/kill counters, per-combatant
     and per-spell tallies, per-mob rates; `combat-history.ts` — finished fights persisted
     for later; `xp-progress.ts` / `hp-estimate.ts` — persistent player state that outlives

@@ -117,6 +117,22 @@ features for later in [../ideas.md](../ideas.md).
   the model download still lands the name in Search when it finishes.
   The stuck-selector case itself is reproducible by breaking hydration (throw from the select page's
   effect): the window should never appear at all, and the log should say the selector never reported.
+- **Overlays fail closed.** The five failure modes in
+  [ADR 0105](../decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) are
+  reasoned about, not watched. Each can be forced, and in every case the screen must stay clickable:
+  - **Placement.** Start "place a custom spot" and then do nothing — after 30s the overlay must give
+    the screen back and the button must be usable again. Repeat, pressing Escape instead (it is read
+    in main, so it works even if the page is wedged), and repeat with cast alerts switched off
+    mid-placement (the overlay is destroyed under it).
+  - **A crashed overlay.** With alerts on, kill the alert window's renderer (DevTools → `process.crash()`,
+    or Task Manager's renderer process): it must blink out and come back on the same monitor, and a
+    second crash must leave it down rather than respawning for ever.
+  - **A crashed main/map window.** Same, on the main window: it must lose its pin, stop eating clicks,
+    and reload — coming back **pinned again** if that's how it was left.
+  - **A hang.** Block the renderer (`while(true){}` in DevTools): the window must stop being on top
+    and stop taking clicks, and get both back when it recovers — *without* reloading.
+  - **A main-process crash.** Hard to force deliberately; if one ever shows up in the log, check the
+    line after it says the overlays were neutralized.
 - **Map window, real run.** Confirm the map window opens (🗺 button), draws the zone, and plots the
   player dot on a `/loc` line.
 - **The game's own maps, drawn (source dropdown).** Verified against the real install in the

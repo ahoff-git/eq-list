@@ -28,6 +28,8 @@ import { windowOpacity } from "../src/shared/constants";
 import { createLogger } from "../src/shared/logging";
 import type { OverlaySettings, WindowToggles } from "../src/shared/types";
 
+const log = createLogger("windows");
+
 /**
  * Bridge a window's renderer console into the main-process log, so renderer output
  * (e.g. map ping broadcasts) shows up in the same terminal + debug file as everything
@@ -111,6 +113,95 @@ function restoreBounds(win: BrowserWindow, bounds: Bounds | null): void {
   win.once("ready-to-show", apply); // and again once realized, which some builds need
 }
 
+/**
+ * ── An overlay must not outlive its renderer ───────────────────────────────────────────────
+ *
+ * Every window this app puts over the game is frameless and always-on-top, and two of them cover a
+ * whole display. Their titlebar, their close button, their key handling and — for the alert overlay
+ * — the click-through that makes them harmless are all drawn or driven by the renderer. So a
+ * renderer that dies, hangs, or never loads leaves a window that **cannot be operated by anyone**:
+ * no button to press, no key it will answer, and if it happened to be solid at that moment, a
+ * transparent sheet over the whole screen that eats every click.
+ *
+ * The rule these three helpers enforce is one sentence: **a window that can no longer be operated
+ * does not get to keep the screen.** What "not keeping it" means differs — a pure overlay is
+ * destroyed, the app's own windows are stripped of their powers and reloaded — but nothing is left
+ * both broken and in the way.
+ */
+
+/** Everything a window can do to the screen, taken away. Safe on a window mid-teardown. */
+function makeHarmless(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  try {
+    win.setAlwaysOnTop(false); // drop behind the game rather than sit over it
+    win.setIgnoreMouseEvents(true, { forward: true }); // every click goes to whatever is underneath
+  } catch (e) {
+    log.warn("could not neutralize window:", (e as Error).message);
+  }
+}
+
+/**
+ * Call `react` when a window's renderer is no longer answering — crashed, hung, or failed to load.
+ *
+ * All three are the same fact from the screen's point of view (nothing is driving this window any
+ * more), so they get one handler and the caller decides what that is worth. `unresponsive` can fire
+ * for a renderer merely busy and may recover, which is why no reaction here may be worse than the
+ * hang it answers.
+ */
+function guardRenderer(win: BrowserWindow, role: string, react: (why: string, fatal: boolean) => void): void {
+  const lost = (why: string, fatal: boolean) => {
+    if (win.isDestroyed()) return;
+    log.warn(`${role} window: ${why}`);
+    react(why, fatal);
+  };
+  // Hanging is the recoverable one — Chromium says `responsive` when the renderer catches up — so it
+  // is reported as non-fatal and the reaction is expected to be reversible.
+  win.on("unresponsive", () => lost("renderer stopped responding", false));
+  win.webContents.on("render-process-gone", (_e, d) => lost(`renderer gone (${d.reason})`, true));
+  win.webContents.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
+    // -3 is ERR_ABORTED — what a navigation or a destroy mid-load looks like, not a failure.
+    if (!isMainFrame || code === -3) return;
+    lost(`failed to load (${code} ${desc})`, true);
+  });
+}
+
+/**
+ * The reaction for the app's own windows (main, map): make it harmless, then try once to bring it
+ * back. Destroying them is not on the table — they are the app — but a frameless, always-on-top
+ * window whose renderer is gone has no titlebar to grab and no ✕ to press, so leaving it as it is
+ * would be parking a brick over the game. One reload attempt, because a renderer that dies on load
+ * would otherwise reload for ever.
+ */
+function reviveOnce(win: BrowserWindow, role: "main" | "map"): void {
+  let tried = false;
+  // Coming back from a hang: the window was stripped to unblock the screen, so give it back what it
+  // had. Reloading it instead would throw away a perfectly live window for being slow.
+  win.on("responsive", () => {
+    log.warn(`${role} window: renderer responsive again`);
+    if (!win.isDestroyed()) applyToggles(win, windowToggles(role));
+  });
+  guardRenderer(win, role, (_why, fatal) => {
+    makeHarmless(win); // first, always: whatever else is true, it must stop holding the screen
+    if (!fatal) return; // a hang may pass; `responsive` puts it back
+    if (tried) {
+      log.warn(`${role} window: already tried reviving once — leaving it inert but harmless`);
+      return;
+    }
+    tried = true;
+    win.webContents.once("did-finish-load", () => {
+      tried = false; // healthy again, so a crash much later still gets its one attempt
+      // `makeHarmless` took the pin and the click-through away to unblock the screen; a window that
+      // came back has to come back as the user left it, or a crash would quietly demote it.
+      applyToggles(win, windowToggles(role));
+    });
+    try {
+      win.reload();
+    } catch (e) {
+      log.warn(`${role} window: reload failed:`, (e as Error).message);
+    }
+  });
+}
+
 const DEV = !!process.env.EQL_DEV;
 const DEV_URL = "http://localhost:3000";
 const APP_URL = "app://local";
@@ -165,6 +256,8 @@ function load(win: BrowserWindow, route: string): void {
 let mainWindow: BrowserWindow | null = null;
 let mapWindow: BrowserWindow | null = null;
 let alertWindow: BrowserWindow | null = null;
+/** The display the overlay was asked for, so a rebuild after a crash lands on the same monitor. */
+let alertDisplayId: number | undefined;
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
@@ -213,6 +306,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
   rememberBounds("main", mainWindow);
   reportMaximize("main", mainWindow);
   pipeRendererConsole(mainWindow, "main");
+  reviveOnce(mainWindow, "main");
   applyToggles(mainWindow, toggles);
   mainWindow.once("ready-to-show", () => {
     if (mainWindow) restoreMaximized("main", mainWindow);
@@ -277,6 +371,7 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
   rememberBounds("map", mapWindow);
   reportMaximize("map", mapWindow);
   pipeRendererConsole(mapWindow, "map");
+  reviveOnce(mapWindow, "map");
   setMapOpen(true); // so the next launch restores it (see main.ts startup)
   applyToggles(mapWindow, toggles);
   mapWindow.once("ready-to-show", () => {
@@ -340,11 +435,18 @@ export function createAlertWindow(displayId?: number): BrowserWindow {
       additionalArguments: ["--eql-role=alert"],
     },
   });
+  alertDisplayId = displayId;
   alertWindow.setAlwaysOnTop(true, "screen-saver");
-  alertWindow.setIgnoreMouseEvents(true, { forward: true }); // click-through: every click passes to the game
+  setAlertInteractive(false); // click-through + unfocusable: every click passes to the game
   // Best-effort: keep showing over a borderless-fullscreen game and across virtual desktops.
   alertWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   pipeRendererConsole(alertWindow, "alert");
+  // It covers a whole display and can be made solid to place a spot, so a renderer that stops
+  // answering is the worst case in the app: a sheet of glass over the screen that nothing can
+  // dismiss. Unlike the app's own windows a hang is treated as fatal here — a hung overlay cannot
+  // show an alert either, so there is nothing to preserve by waiting — and it holds no state, so it
+  // goes and comes back rather than lingering.
+  guardRenderer(alertWindow, "alert", () => rebuildAlertWindow(alertWindow));
   const created = alertWindow;
   // Only clear the reference if it's still *this* window — see the note above about the race.
   created.on("closed", () => {
@@ -383,10 +485,67 @@ function coverDisplay(win: BrowserWindow, display: Electron.Display): void {
   setTimeout(apply, REALIZE_DELAY_MS);
 }
 
-/** Tear down the alert overlay (when cast alerts are turned off) — nothing to show, no window. */
+/**
+ * Tear down the alert overlay (when cast alerts are turned off) — nothing to show, no window.
+ *
+ * `destroy()`, not `close()`: closing asks the renderer to unload, so the one case that most needs
+ * the window gone — a wedged page — is the one that could refuse. It holds nothing worth saving.
+ */
 export function closeAlertWindow(): void {
-  if (alertWindow && !alertWindow.isDestroyed()) alertWindow.close();
+  if (alertWindow && !alertWindow.isDestroyed()) alertWindow.destroy();
   alertWindow = null;
+}
+
+/**
+ * Whether the overlay may take a click, and therefore focus.
+ *
+ * The two settings are one decision and are kept together here, because apart is how the overlay
+ * ends up solid with nothing to click: interactive is a *borrowed* state ([ipc.ts](./ipc.ts) places
+ * a custom alert spot with it) and click-through is the resting one. Callers say which they want and
+ * never poke `setIgnoreMouseEvents` themselves, so there is one definition of "harmless".
+ */
+export function setAlertInteractive(on: boolean): void {
+  const win = alertWindow;
+  if (!win || win.isDestroyed()) return;
+  win.setIgnoreMouseEvents(!on, on ? undefined : { forward: true });
+  win.setFocusable(on);
+  if (on) win.focus();
+}
+
+/**
+ * Replace a crashed overlay, once.
+ *
+ * Destroying it is what stops it holding the screen; rebuilding is what stops that being a silent
+ * loss of every alert until the next settings change. A rebuild that dies too is left down — a
+ * window that crashes on load would otherwise respawn for ever — and the next thing to enable
+ * alerts creates it again from scratch.
+ */
+let alertRebuilt = false;
+function rebuildAlertWindow(dying: BrowserWindow | null): void {
+  // A window that has already been replaced (a monitor change, alerts toggled) crashing on its way
+  // out must not take its healthy successor with it.
+  if (!dying || dying !== alertWindow) return;
+  const displayId = alertDisplayId;
+  closeAlertWindow();
+  if (alertRebuilt) {
+    log.warn("alert overlay crashed again — leaving it down until alerts are re-enabled");
+    return;
+  }
+  alertRebuilt = true;
+  const rebuilt = createAlertWindow(displayId);
+  // A clean load means this one is healthy, so a much later crash still gets its one rebuild.
+  rebuilt.webContents.once("did-finish-load", () => {
+    alertRebuilt = false;
+  });
+}
+
+/** Strip every overlay of its hold on the screen. The last resort — see `main.ts`'s crash handler. */
+export function neutralizeOverlays(): void {
+  destroyLookupWindows();
+  if (alertWindow && !alertWindow.isDestroyed()) {
+    setAlertInteractive(false); // solid + fullscreen is the state that locks a desktop
+    makeHarmless(alertWindow);
+  }
 }
 
 /**

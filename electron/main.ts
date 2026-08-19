@@ -32,7 +32,7 @@ import { createMobKnowledge } from "./mob-knowledge";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, createMapWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, showInSearch } from "./windows";
+import { createMainWindow, createMapWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, showInSearch } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
@@ -160,7 +160,20 @@ if (!app.requestSingleInstanceLock()) {
   // pops over the game. Handling `uncaughtException` also means we keep running instead of
   // exiting — for an overlay that's the better trade: a broken feature beats the whole app
   // disappearing mid-fight, and the log says what broke.
-  process.on("uncaughtException", (err) => log.error("uncaught", err));
+  //
+  // But "keep running" must not extend to the windows over the game. We have no idea what was
+  // half-done when the throw happened — an overlay made solid to place a spot, a set of selectors
+  // mid-open — and the code that would have put them back is the code that just died. So every
+  // overlay is stripped of its hold on the screen first, and *then* we carry on: a broken feature
+  // beats losing the app, and losing the app beats a desktop that won't take a click.
+  process.on("uncaughtException", (err) => {
+    log.error("uncaught", err);
+    try {
+      neutralizeOverlays();
+    } catch (e) {
+      log.error("could not neutralize overlays after a crash", e);
+    }
+  });
   process.on("unhandledRejection", (reason) => log.error("unhandled rejection", reason));
 
   // Before any store is built, so every file written this session records the build that wrote it

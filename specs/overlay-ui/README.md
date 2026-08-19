@@ -667,6 +667,17 @@ list, hunt, search, damage, session, settings.
 - Styling is one dark theme in `src/app/globals.css`; the body is transparent so the
   frameless window can be see-through.
 
+## Failing safe
+Every window here is frameless, always-on-top, and closes by a button its **renderer** draws — so a
+renderer that dies, hangs or never hydrates leaves a window nobody can operate, and a screen nobody
+can click. The rule is that such a window doesn't get to stay: it is made harmless first (never on
+top, never taking a click), then destroyed if it's a pure overlay or reloaded if it's the app
+itself. The alert overlay's **interactive** state (solid + focusable, borrowed while placing a
+custom spot) is time-boxed and has three ways back to click-through, none of which needs the page to
+be alive. See
+[ADR 0105](../decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) and, for
+the screengrab selector, [ADR 0102](../decisions/0102-a-lookup-never-holds-the-screen.md).
+
 ## Non-responsibilities
 - No business logic or persistence in the renderer — it calls `window.eql` and renders
   store state.

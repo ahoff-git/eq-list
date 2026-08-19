@@ -15,7 +15,7 @@ import { createTravelRouter } from "./travel-graph";
 import { sampleAlert, sampleRecord } from "./alert-router";
 import { dataReport } from "./data-health";
 import { selfCheck } from "./self-check";
-import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, showInSearch } from "./windows";
+import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, setAlertInteractive, showInSearch } from "./windows";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
@@ -166,28 +166,66 @@ function registerSettingsIpc(context: IpcContext): void {
   // The overlay is click-through and never focused, so it can't catch a click. To place a spot we
   // make it interactive + focusable for the moment, tell it to show the placement layer, and
   // resolve this promise when it reports the click (or null on Esc). No overlay (alerts off) → null.
+  //
+  // For that moment the overlay is a **solid, transparent, always-on-top sheet over an entire
+  // display**: the single most dangerous state any window in this app can be in, because there is
+  // nothing to see and every click lands on it. Leaving it is therefore not allowed to depend on the
+  // renderer coming back — the page could crash, hang, or never hydrate, and the user would be left
+  // with a desktop that ignores the mouse and no clue why. Everything below exists so that state has
+  // a guaranteed end: the report, an Escape read in main, a deadline, or the overlay going away.
   let placeResolve: ((p: { fx: number; fy: number } | null) => void) | null = null;
+  let placeTimer: NodeJS.Timeout | null = null;
+  let placeCleanup: (() => void) | null = null;
+
+  /** How long the overlay may stay solid. Placing a spot is one deliberate click; this is generous. */
+  const PLACE_DEADLINE_MS = 30_000;
+
+  /**
+   * End a placement, from wherever it ended: click, Escape, timeout, or a dead overlay.
+   *
+   * Restoring click-through happens **first and unconditionally**, before resolving anything, so no
+   * later failure can leave the screen captured. Safe to call when no placement is running.
+   */
+  function finishPlacement(point: { fx: number; fy: number } | null): void {
+    if (placeTimer) clearTimeout(placeTimer);
+    placeTimer = null;
+    setAlertInteractive(false); // back to harmless, whatever happened
+    placeCleanup?.();
+    placeCleanup = null;
+    placeResolve?.(point);
+    placeResolve = null;
+  }
+
   ipcMain.handle(CH.alertPlaceStart, () => {
     const overlay = getAlertWindow();
     if (!overlay || overlay.isDestroyed()) return null;
-    placeResolve?.(null); // a stray earlier placement never finished — drop it
-    overlay.setIgnoreMouseEvents(false);
-    overlay.setFocusable(true);
-    overlay.focus();
+    finishPlacement(null); // a stray earlier placement never finished — drop it
+    setAlertInteractive(true);
     overlay.webContents.send(CH.alertPlaceBegin);
     return new Promise<{ fx: number; fy: number } | null>((resolve) => {
       placeResolve = resolve;
+      placeTimer = setTimeout(() => {
+        log.warn(`no spot placed within ${PLACE_DEADLINE_MS}ms — giving the screen back`);
+        finishPlacement(null);
+      }, PLACE_DEADLINE_MS);
+      // Escape read in main, before the page sees it: the renderer's own handler needs a hydrated
+      // page, and a page that never hydrated is exactly how this state becomes permanent.
+      const onKey = (_e: unknown, input: { type: string; key: string }) => {
+        if (input.type === "keyDown" && input.key === "Escape") finishPlacement(null);
+      };
+      overlay.webContents.on("before-input-event", onKey);
+      // The overlay being destroyed (a crash takes it down — see `windows.ts`) must not leave the
+      // caller waiting for a click nobody can make any more.
+      const onClosed = () => finishPlacement(null);
+      overlay.once("closed", onClosed);
+      placeCleanup = () => {
+        if (overlay.isDestroyed()) return;
+        overlay.webContents.removeListener("before-input-event", onKey);
+        overlay.removeListener("closed", onClosed);
+      };
     });
   });
-  ipcMain.on(CH.alertPlaceDone, (_e, point: { fx: number; fy: number } | null) => {
-    const overlay = getAlertWindow();
-    if (overlay && !overlay.isDestroyed()) {
-      overlay.setIgnoreMouseEvents(true, { forward: true }); // back to click-through
-      overlay.setFocusable(false);
-    }
-    placeResolve?.(point ?? null);
-    placeResolve = null;
-  });
+  ipcMain.on(CH.alertPlaceDone, (_e, point: { fx: number; fy: number } | null) => finishPlacement(point ?? null));
 
   // The tail of the log being watched, so the Alerts tab can test a rule against what the game
   // really said — including last night, which is the case a session buffer got wrong
