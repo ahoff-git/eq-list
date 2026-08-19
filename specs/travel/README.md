@@ -16,7 +16,8 @@ stating a fact.
   process):
   - `types.ts` — `TravelNode` / `TravelEdge` / `TravelGraph`, the `TravelMode` list
     (`walk` · `druid` · `wizard` · `gnome` · `succor`), `TravelNetwork` and `TRAVEL_DEFAULTS`;
-    `UNKNOWN_CROSSING`, `dist3d`, `positionsIn`, `zoneDistance` and `boundaryId`.
+    `TravelOptions` and `TravelAvoided`; `UNKNOWN_CROSSING`, `dist3d`, `positionsIn`, `zoneDistance`
+    and `boundaryId`.
 
     **A node is a boundary, and the zones are metadata on it.** Greater Faydark's `to Clan Crushbone`
     and Clan Crushbone's `to Greater Faydark` are one place, so they are one node —
@@ -78,10 +79,16 @@ stating a fact.
 
     One field, not two. It was briefly appended to the border's *name* as well (`A ↔ B (boat)`), which
     meant every consumer either showed it twice or had to check whether the words were already in there
-    — so the name is the two zones and `via` is how you get between them. `CROSSING_WORDS` gives the
-    wording, `networkOfCrossing` maps it to the permission side (a ring is a druid's, a portal is
-    nobody's), and `crossingOfMode` goes back the other way so a **port leg** words itself exactly as a
-    border does.
+    — so the name is the two zones and `via` is how you get between them. `networkOfCrossing` maps it to
+    the permission side (a ring is a druid's, a portal is nobody's), and `crossingOfMode` goes back the
+    other way so a **port leg** words itself exactly as a border does.
+
+    `TRAVEL_VERBS` gives the wording, and it is a table of **verbs including walking** — *Run · Boat ·
+    Teleport · Translocate · Portal · Succor*. It replaced a table of nouns that could only label a
+    border (`boat`, `ring`, `spire`), which left the one thing every step has — how you covered the
+    distance — as the only thing with no word for it. A ring and a spire are both **Teleport**: from the
+    reader's side they are the same act, and which network it was is already on the step (a ring is
+    labelled "Druid Rings") and in the route's `modes`.
   - `harvest.ts` — `travelPoint` / `harvestZone`: a map's labelled points → the travel points in one
     zone. Which labels are zone lines and which are conveyances is **`poiKind`'s existing judgement**
     ([ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md)), and a destination is read by
@@ -108,6 +115,19 @@ stating a fact.
     `to East Freeport & The Butcherblock Mountains` — is dropped and *counted*. It says a border is
     here, which a graph can't use without knowing the other side, and inventing one would be a guess.
 
+    **A conveyance the mapmaker marked dead is not a conveyance.** A ring is a ring by its words, and
+    those words sometimes say it doesn't work: Greater Faydark's *only* druid ring is labelled
+    `Abandoned Druid Ring`, and you cannot port to it. Read as live it is worse than a missing one — a
+    hub makes every ring a destination **from every zone in the world**, so one dead marker offers the
+    whole map a free ride to a circle of stones that doesn't work, and the route that takes it is
+    confident and wrong. The whole corpus, measured across both packs and ~1,200 files, holds four words
+    and five labels: `Abandoned Druid Ring` (gfaydark), `Ruined Druid ring` (direwind), `Inactive Druid
+    Ring` (rathemtn), `Broken Wizard Spire` (nektulos), `Broken Portal` (umbral). **Adjacency is what
+    keeps it safe** — the dead word must sit on the conveyance, one word between them at most for
+    `Broken Wizard Spire` — because the loose version reads `to the Broken Skull Rock (boat)` as a dead
+    boat. Checked before the label is read as anything, so it holds for a border naming a dead crossing
+    as much as for a place.
+
     **A `Succor` marker is the exception**, and only because it isn't a border: it names nowhere
     because it *goes* nowhere. `poiKind` files it under zone lines (right for the map's own filter — it's
     drawn where the exits are), so it's read here once nothing has resolved a destination, which leaves
@@ -118,6 +138,27 @@ stating a fact.
   - `build.ts` — `buildTravelGraph`: per-zone harvests → a graph, plus the report of what it couldn't
     do. Every border becomes one node filled in from both sides; then `zoneWalks` joins each zone's
     nodes to each other; then teleport networks collapse to hubs.
+
+    **One zone, one map file.** A pack can draw the same place twice: Brewall ships `mistythicket.txt`
+    beside `misty.txt`, `southro.txt` beside `sro.txt` — five such pairs in 590 files, each the zone's
+    long name with the spaces closed up, which is a file name nothing in the catalogue answers to, so it
+    arrives unnamed and enters the graph as a zone of its own. That doubles the zone from top to bottom:
+    two borders into Rivervale, two druid rings in the network, and a route offering one of each with
+    nothing to tell them apart — which is how a player came to rule out "Druid Ring · Misty Thicket" and
+    then be offered "Druid Ring · mistythicket".
+
+    `duplicateZoneFiles` folds them, by **exact `zoneSpelling` equality** and deliberately *not*
+    `sameZoneOrMisspelling`: over that pack the one-edit tier pairs up `mseru`/`sseru`,
+    `shipmvu`/`shippvu`/`shipuvu` and four `phinterior` rooms, all genuinely different zones a letter
+    apart, while closed-up spelling matched exactly five pairs and every one is real. **The named file
+    wins** — in all five cases the game's own short name, which is what the log says you're in.
+    Coordinates are **never merged**: two drawings are two frames, and averaging them would put the ring
+    where neither of them has it.
+
+    Applied **before a label is read**, like the absent zones and for the same reason, and the graph
+    carries the redirect (`merged`) because the *map window* still offers the file it dropped — the fold
+    is the travel graph's, not the picker's — and the panel's **To** defaults to the map you're looking
+    at, so `travelZone` sends it to the survivor rather than to an empty copy.
 
     It also takes the zones to **leave out because this server hasn't opened them**. A pack surveys
     EverQuest, not EQ Legends, so it labels exits to zones that aren't there, and where it ships the map
@@ -216,6 +257,34 @@ stating a fact.
     which way you went through it — with the arrival's zone standing in for a **conveyance** leg,
     because a zone you only change boats in belongs in the summary and nothing was walked there.
 
+    `routeInstructions(route)` turns the steps into the four things a route is **read** as — *how far ·
+    what you do · where it leaves you*, plus the crossing so a UI can mark what costs no walking. It's
+    here rather than in the panel because two of them need the steps *around* one and none of it is a
+    matter of taste: **a hub is not a place, so it is not an instruction** (`net:druid` sits in the trail
+    between the start and the ring you land at, and left in, one teleport reads as two — it costs
+    nothing, so dropping it loses no distance), and **a border is named by the side you come out on**
+    (the node is `Greater Faydark ↔ Lesser Faydark`, which is the truth and not an instruction — you'd
+    say *run to Lesser Faydark*, and which of the two that is, is written in the **next** leg, since the
+    walk after a border happens in the zone the border let you into). And **an arrival nobody walked is
+    not an instruction**: the last step is the walk from the final node to where you're actually going
+    inside that zone, which is real and worth saying when a position for the destination is known — and
+    when it isn't, it is zero, a guess, and the same zone name the border above it just gave you. A route
+    ending `2.0k? Run to RunnyEye Citadel` / `0? Run to RunnyEye Citadel` read as a duplicate because in
+    every way that shows on screen it was one. A measured zero stays: standing on the line is a fact.
+    Never trimmed to nothing — a trip with nothing else to show still says where you started.
+
+    **A route can be denied a particular place**, not only a whole network
+    ([ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md)). `options.avoid` is a list of
+    node ids the search may not pass through, dropped **as nodes before anything is wired** — so the
+    hubs the search learns, the succor points it finds and both virtual ends are worked out over the
+    graph that's left, rather than over the whole one with a filter every later step has to remember.
+    An id the graph hasn't got is simply unused, because a settings file outlives the pack it was
+    written against. Ruling a node out can never be worse than not routing at all: a walk is priced
+    between **every pair** of a zone's nodes, so a place is somewhere you arrive or turn round, never a
+    corner you have to cut through — what comes back is the **next best route**. `isRouteEnd` marks the
+    two virtual ends, so a UI can decline to offer "route around this" for where you're standing
+    without inferring it from a position in a list.
+
     **Every zone a route mentions carries both names**: the `TravelZone` shape is `{ zone, name }` — the
     map file everything is keyed by, and the name a person reads. Both, together, in `route.zones` and
     on every leg's `across`, because they're wanted for different things (one looks a map up, the other
@@ -224,12 +293,21 @@ stating a fact.
     the file — already the catalogue's, then the pack's solved name, then `prettyZoneName`, per
     `zonesFromFiles` — with `prettyZoneName` again as the backstop for a zone the graph never named, so
     the worst case is "Gukbottom" rather than `gukbottom`.
-- **Which conveyances a route may use.** Druid and wizard default **off** — both need a class you may
-  not have or a favour you may not be able to call in, and a route that quietly assumed one would be
-  advice you can't take. **Succor / pick** defaults off by that same argument: it needs an evacuation
+- **Which conveyances a route may use, and which particular places it may not.** Druid and wizard
+  default **off** — both need a class you may not have or a favour you may not be able to call in, and
+  a route that quietly assumed one would be advice you can't take. **Succor / pick** defaults off by that same argument: it needs an evacuation
   spell, a friend with one, or a second pick to jump into, and a map can't say whether you have any of
   them. Translocator gnomes default **on**, being public transport. **Boats are not a toggle**: by the
   time one is in the graph it's a border.
+
+  **A toggle alone is too blunt for a port.** A druid ring and a wizard spire are reached by *casting a
+  spell*, and each destination is its own spell with its own level — a druid gets Circle of the
+  Combines long before Circle of Toxxulia — so `druid: true` never meant "I can reach every ring". With
+  one bit to read, the graph wired all of them and picked the nearest, which produced routes that were
+  optimal and untakeable, and the only lever was to turn druid ports **off** and lose every ring the
+  player *can* cast. So `avoid` is the finer answer: name the place, keep the network, take the next
+  best route ([ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md)). It works on borders
+  too — a crossing you won't make is a place to route around, and nothing could say so before.
 - **Reading the maps and asking the wiki** (`electron/travel-graph.ts`) — I/O only. Sources, zone naming and the map
   format are the [map](../map/README.md) subsystem's, reused as they are; only the `P` lines are
   sieved out before parsing, because the base file of a big zone is most of a megabyte of `L` geometry
@@ -264,12 +342,27 @@ stating a fact.
   - **To** defaults to **the map you're viewing**, which makes the panel answer the question the
     titlebar's picker just asked: look at a zone, and this says how to get there.
   - The route reads as **the zones you pass through** (each a button that shows that zone's map, so a
-    route doubles as a tour) over **the legs**, with distances in a fixed column so they can be read
-    down. A guessed figure wears a `?` and the accent colour: a stand-in must not look like a
+    route doubles as a tour) over **the legs**.
+  - **A leg is four fixed columns**, not a sentence: *distance · what you do · to where · ✕*. A route is
+    **scanned down**, not read across — the question at any moment is "what do I do next" — so the answer
+    sits in the same place on every row. What you do is its own column and says **Run** as readily as
+    **Boat** or **Teleport**; it used to be a badge tacked onto the label, which could only mark the
+    steps that *aren't* walking and so left the commonest instruction in a route unnamed. Running is
+    quiet and everything else takes the accent, because everything else is free and free is what's worth
+    spotting. A guessed distance wears a `?` and the accent colour too: a stand-in must not look like a
     measurement.
   - Zoning shows as no leg, which is the model made visible — the lines are walks, and each says which
     zone it crossed. A **succor** leg says `within <zone>` rather than `across` it, because it crossed
     nothing: it's the one leg that leaves you where you already were, only nearer the way out.
+  - **Every step has a ✕ that rules it out**, and a *Not using* strip above the answer where each chip
+    is its own undo — include and exclude being one list edited two ways rather than two mechanisms.
+    Two steps get none, because there is nothing there to rule out: the **virtual ends** (`isRouteEnd`
+    — routing around where you're standing is a contradiction, not a route), and a **hub**, which *is*
+    the network and already has a button three lines above it in the checkboxes.
+  - The strip lives in the **asking** half, which never scrolls, for the reason the whole subsystem
+    exists: a route computed around a place you've forgotten you excluded is a wrong answer that reads
+    like a right one. A refusal caused by an exclusion is an ordinary `unreachable` and the panel adds
+    the sentence, since only the panel knows the question had the user's own condition on it.
   - **The asking half never scrolls; only the answer does** (`.travel-ask` / `.travel-answer`). Two
     reasons, both learned the hard way: a zone picker's dropdown is absolutely positioned and an
     `overflow` ancestor **clips** one, so a panel that scrolled as a whole cut the list off at its own
@@ -280,7 +373,11 @@ stating a fact.
     (`ZonePicker`'s `align`), since a menu wider than its box runs off the window otherwise.
 - **The options are settings, not panel state** (`Settings.travel`) — "can I get a druid port" is a
   fact about *you*, not about what you're looking at, so it's one answer wherever a route is asked for
-  and it persists. They're offered in the panel because that's where they're used; there's deliberately
+  and it persists. **`avoid` is one of them**, by the same argument: which ports you can *cast* is a
+  fact about you too, and re-ticking your own spellbook every session would make the feature not worth
+  using. Each entry carries the place's own **words** as well as its id, because the graph never leaves
+  the main process and only a route's *steps* cross to a renderer — so once a place is out of every
+  route nothing else can name it, and the panel would be listing `butcher#druid-rings`. They're offered in the panel because that's where they're used; there's deliberately
   no second copy in the Settings window. **There is no Boats checkbox**, and the panel says so in one
   line, because that's the question its absence raises.
 - **Two scripts, for looking at the graph rather than feeding the app.** The app builds its own (above);
@@ -299,7 +396,8 @@ stating a fact.
   `npm run build:electron` first and say so when it's missing.
 - **Saying where it's thin.** A build reports the borders only one side drew (whose walks are guesses,
   not measurements), the destinations no map file answered to, the zones with no way in or out, the
-  zones whose maps mark a succor point, and the labels that named nowhere. **Only an edge that leaves a
+  zones whose maps mark a succor point, the second drawings it folded away (`merged`), and the labels
+  that named nowhere. **Only an edge that leaves a
   zone counts as a way in or out** — a walk and a succor both name the zone they happen inside, and a
   free ride between two dead ends is not a connection. Those lists name zones by **map file**, deliberately and unlike a route's
   output: they're the keys you go and type in `manual-links.ts`. The manual pass reports
@@ -332,6 +430,16 @@ stating a fact.
 - **The hand-authored table is not verified in EQ Legends.** The boat runs are classic-EverQuest
   knowledge and a starting point, not a finding; the translocator gnomes are deliberately empty,
   because nothing about a Legends-only NPC can be read off a map or reasonably guessed.
+- **Nothing here knows which port spells you actually have.** `avoid` is a switch you throw, not an
+  inference: the spell file is read ([ADR 0080](../decisions/0080-the-game-s-own-spell-file.md)) but
+  nothing joins a *Circle of X* to the ring node X, and even a perfect join couldn't know that the
+  druid porting you is not you. The manual switch is honest about not knowing
+  ([ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md)).
+- **A ruled-out place is not remembered across map packs.** A border's id is `zoneA|zoneB` and stable;
+  a place's is `<zone>#<slug of that pack's own label>` and is not
+  ([ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md)), so switching source can leave an
+  entry matching nothing. It goes **inert rather than wrong**, and the panel lists it whether or not
+  the graph knows it, so it can be cleared.
 - **A succor point can't be hand-authored**, only read. `TravelPlace` names a place by zone and label
   and carries no coordinates, so an entry could say a safe point exists but not where — and an unplaced
   one is priced at `UNKNOWN_CROSSING`, a guess that can *beat* a measured walk. A zone whose pack never
@@ -341,4 +449,5 @@ stating a fact.
 [map](../map/README.md) · [ADR 0062](../decisions/0062-a-travel-graph-of-zone-lines.md) ·
 [ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md) ·
 [ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md) ·
-[ADR 0069](../decisions/0069-a-succor-is-a-port-inside-one-zone.md) · [testing](../testing/README.md)
+[ADR 0069](../decisions/0069-a-succor-is-a-port-inside-one-zone.md) ·
+[ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md) · [testing](../testing/README.md)

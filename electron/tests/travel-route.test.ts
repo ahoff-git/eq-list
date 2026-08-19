@@ -4,6 +4,8 @@
  *  - **a boundary node is the crossing** — zoning costs nothing and shows up as no leg, and the walk
  *    that follows is measured in the *next* zone's coordinates;
  *  - **a conveyance you haven't got isn't used** — druid and wizard ports are off unless asked for;
+ *  - **a place you've ruled out isn't used either, and costs you only itself** — `avoid` takes one ring
+ *    out without taking the druid network with it (ADR 0109);
  *  - **an unplaced border prices its walks as guesses**, and the route says so rather than reporting a
  *    number that looks measured;
  *  - **no route is a real answer**, not an exception.
@@ -11,7 +13,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { zoneSuccors, zoneWalks } from "../../src/shared/travel/build";
-import { answerRoute, findRoute, travelZone, zoneName, type TravelRoute } from "../../src/shared/travel/route";
+import {
+  answerRoute,
+  findRoute,
+  isRouteEnd,
+  routeInstructions,
+  travelZone,
+  zoneName,
+  type TravelRoute,
+} from "../../src/shared/travel/route";
 import { UNKNOWN_CROSSING, type TravelEdge, type TravelGraph, type TravelNode } from "../../src/shared/travel/types";
 
 const at = (x: number) => [{ y: 0, x, z: 0 }];
@@ -357,4 +367,152 @@ test("an answer carries what the graph knows, so \"no route\" is believable", ()
   assert.deepEqual(answer.knows, { zones: 4, borders: 3 });
   assert.ok(answer.route);
   assert.equal(answer.refused, undefined);
+});
+
+/**
+ * The chain again, but with a ring in **c as well as d** — the fixture for "not *that* port".
+ *
+ * One ring can only ever show that ruling it out falls back to walking, which a toggle already does.
+ * Two show the thing that matters: the network keeps working, and the answer is the *next best* route
+ * rather than the worst one.
+ */
+function twoRings(): TravelGraph {
+  const nodes = [
+    boundary("a", 1000, "b", 0),
+    boundary("b", 1000, "c", 0),
+    boundary("c", 1000, "d", 0),
+    place("c", 900, "Ring"),
+    place("d", 900, "Ring"),
+    { id: "net:druid", kind: "hub" as const, label: "druid network", zones: [], at: {} },
+  ];
+  const ports: TravelEdge[] = [
+    { from: "net:druid", to: "c#ring", mode: "druid", cost: 0 },
+    { from: "net:druid", to: "d#ring", mode: "druid", cost: 0 },
+  ];
+  return graph(nodes, ports, { a: "Alpha", b: "Beta", c: "Gamma", d: "Delta" });
+}
+
+test("a port you haven't got is ruled out on its own — the rest of the network still works", () => {
+  const from = { zone: "a", at: { y: 0, x: 0, z: 0 } };
+  const to = { zone: "d", at: { y: 0, x: 1000, z: 0 } };
+  const druid = { druid: true };
+
+  // The best route: cast to d's own ring, walk the last 100.
+  assert.equal(findRoute(twoRings(), from, to, druid)?.cost, 100);
+
+  // You haven't got Circle of Delta. That is *not* a reason to lose Circle of Gamma: the route lands
+  // at c's ring instead and walks on, which is the next best answer rather than the worst one.
+  const next = findRoute(twoRings(), from, to, { ...druid, avoid: ["d#ring"] });
+  assert.ok(next);
+  assert.equal(next.cost, 1100, "100 across Gamma to the border, then 1000 across Delta");
+  assert.deepEqual(next.modes, ["druid"], "the network survived losing one of its destinations");
+  assert.deepEqual(next.steps.map((s) => s.node.id).slice(1, -1), ["net:druid", "c#ring", "c|d"]);
+
+  // Both gone and there's nothing to cast to, so it's the walk — the same answer the toggle gives,
+  // reached the long way round, which is the point: the toggle is the blunt version of this.
+  const walked = findRoute(twoRings(), from, to, { ...druid, avoid: ["c#ring", "d#ring"] });
+  assert.equal(walked?.cost, 4000);
+  assert.deepEqual(walked?.modes, []);
+});
+
+test("a border can be ruled out too, and only that border", () => {
+  const from = { zone: "a", at: { y: 0, x: 0, z: 0 } };
+  const to = { zone: "d", at: { y: 0, x: 1000, z: 0 } };
+
+  // It's the only way through the middle of the chain, so refusing it refuses the trip — and says so
+  // as an ordinary "unreachable", because the graph answered exactly what it was asked.
+  assert.equal(answerRoute(chain(), from, to, { avoid: ["b|c"] }).refused, "unreachable");
+
+  // The same refusal with a port allowed is no refusal at all: what was ruled out is one border, not
+  // every way past it.
+  assert.equal(findRoute(chain(), from, to, { druid: true, avoid: ["b|c"] })?.cost, 100);
+});
+
+test("ruling out somewhere the graph hasn't got changes nothing", () => {
+  // A settings file outlives the pack it was written against, and a place id is a pack's own
+  // (`<zone>#<slug of its label>`). A stale entry has to be inert rather than an error.
+  const from = { zone: "a", at: { y: 0, x: 0, z: 0 } };
+  const to = { zone: "d", at: { y: 0, x: 1000, z: 0 } };
+  const asked = findRoute(chain(), from, to, { druid: true, avoid: ["d#druid-rings", ""] });
+  assert.equal(asked?.cost, findRoute(chain(), from, to, { druid: true })?.cost);
+});
+
+test("the route's two virtual ends are marked as such", () => {
+  // A UI offers "route around this" per step and must not offer it on where you're standing. Asked of
+  // the step rather than of its position in the list, which is the same fact spelled a breakable way.
+  const route = findRoute(chain(), "a", "d", { druid: true })!;
+  assert.deepEqual(route.steps.map(isRouteEnd), [true, false, false, true]);
+});
+
+/** A route as the panel lays it out: `<distance> <verb> to <where>`, one string per row. */
+const reads = (route: TravelRoute | undefined) =>
+  routeInstructions(route!).map((r) => {
+    const cost = r.step.from ? `${Math.round(r.step.from.cost)}` : "start";
+    return r.how ? `${cost} ${r.how} to ${r.where}` : `${cost} ${r.where}`;
+  });
+
+test("a route reads as instructions — how far, what you do, where it leaves you", () => {
+  const route = findRoute(chain(), { zone: "a", at: { y: 0, x: 0, z: 0 } }, { zone: "d", at: { y: 0, x: 1000, z: 0 } });
+
+  // A **border is named by the side you come out on**: the node is "a ↔ b", which is true and is not
+  // an instruction — you'd say "run to Beta". Which of the two it is, is in the *next* leg's zone.
+  // Every row is a real walk here, arrival included: both ends gave a position, so the last leg is
+  // the measured walk from the border to where you're actually going.
+  assert.deepEqual(reads(route), [
+    "start Alpha",
+    "1000 Run to Beta",
+    "1000 Run to Gamma",
+    "1000 Run to Delta",
+    "1000 Run to Delta",
+  ]);
+});
+
+test("an arrival nobody walked is not an instruction", () => {
+  // With no position for the destination the last leg is zero, a guess, and names the zone the border
+  // above it just named — which read on screen as RunnyEye Citadel twice over, the second time as `0?`.
+  const route = findRoute(chain(), { zone: "a", at: { y: 0, x: 0, z: 0 } }, "d");
+  assert.deepEqual(reads(route), ["start Alpha", "1000 Run to Beta", "1000 Run to Gamma", "1000 Run to Delta"]);
+  assert.equal(route!.steps[route!.steps.length - 1].node.id, " goal", "the step is still in the route itself");
+
+  // A zero that was *measured* is not a guess and stays: standing on the line is a fact, not a shrug.
+  const onTheLine = findRoute(chain(), { zone: "a", at: { y: 0, x: 0, z: 0 } }, { zone: "d", at: { y: 0, x: 0, z: 0 } });
+  assert.deepEqual(reads(onTheLine).at(-1), "0 Run to Delta");
+
+  // And a trip with nothing else to show still says where you started rather than emptying out.
+  const nowhere = findRoute(graph([boundary("a", 0, "b", 0)], [], { a: "Alpha", b: "Beta" }), "a", "b");
+  assert.deepEqual(reads(nowhere), ["start Alpha", "0 Run to Beta"]);
+});
+
+test("a hub is not a place, so a teleport is one instruction and not two", () => {
+  // `net:druid` sits in the trail between the start and the ring. Left in, one port reads as
+  // "Teleport to druid network" *then* "Teleport to Ring" — and it costs nothing, so taking it out
+  // loses no distance, which the sum below is the guard for.
+  const route = findRoute(chain(), "a", { zone: "d", at: { y: 0, x: 1000, z: 0 } }, { druid: true });
+  assert.ok(
+    route!.steps.some((s) => s.node.kind === "hub"),
+    "the hub really is in the steps",
+  );
+
+  assert.deepEqual(reads(route), ["start Alpha", "0 Teleport to Ring · Delta", "100 Run to Delta"]);
+  // (the arrival here is a measured 100, so nothing was trimmed)
+  assert.equal(
+    routeInstructions(route!).reduce((n, r) => n + (r.step.from?.cost ?? 0), 0),
+    route!.cost,
+    "and every unit of the route's cost is still on a row",
+  );
+});
+
+test("a boat says Boat, and a succor says Succor at the place it never left the zone for", () => {
+  const boat = graph([{ ...boundary("a", 0, "b", 0), via: "boat" as const }], [], { a: "Alpha", b: "Beta" });
+  assert.deepEqual(reads(findRoute(boat, "a", "b")), ["start Alpha", "0 Boat to Beta"]);
+
+  // The safe point is by the border and you are 5000 away from both, so evacuating is the cheap way
+  // out — which is the only reason the router picks it, and what puts a Succor row on screen.
+  const evac = graph([boundary("a", 0, "b", 0), succor("a", 100)], [], { a: "Alpha", b: "Beta" });
+  const from = { zone: "a", at: { y: 0, x: 5000, z: 0 } };
+  assert.deepEqual(reads(findRoute(evac, from, "b", { succor: true })), [
+    "start Alpha",
+    "0 Succor to Succor · Alpha",
+    "100 Run to Beta",
+  ]);
 });

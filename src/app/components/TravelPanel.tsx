@@ -6,8 +6,14 @@ import { CheckField } from "./ui";
 import { count } from "@/shared/format";
 import type { Zone } from "@/shared/map/types";
 import type { TravelAnswer, TravelSettings } from "@/shared/types";
-import { stepCrossing, type TravelRoute, type TravelStep } from "@/shared/travel/route";
-import { CROSSING_WORDS, type TravelAt } from "@/shared/travel/types";
+import {
+  isRouteEnd,
+  routeInstructions,
+  type TravelInstruction,
+  type TravelRoute,
+  type TravelStep,
+} from "@/shared/travel/route";
+import { isCast, type TravelAt, type TravelAvoided, type TravelToggle } from "@/shared/travel/types";
 
 /**
  * "How do I get there?" — the cross-zone route panel (the 🧭 button).
@@ -20,11 +26,19 @@ import { CROSSING_WORDS, type TravelAt } from "@/shared/travel/types";
  *
  * The toggles are settings rather than panel state, because "can I get a druid port" is a fact about
  * you and not about what you're looking at.
+ *
+ * **A toggle is too blunt for a port**, though, which is what the ✕ on each step is for: a ring or a
+ * spire is a *spell*, and the spell that reaches it has a level, so "I can get a druid port" is not
+ * "I can get every druid port". Ruling out the one place gives back the next best route and keeps the
+ * rest of the network; putting it back is the same button in the *Not using* strip above, which never
+ * scrolls, so nothing you switched off can go quiet
+ * (see specs/travel and ADR 0109).
  */
 
 /** The conveyances, in the order they're offered, with what saying yes to one means. */
 const CONVEYANCES: {
-  key: keyof TravelSettings;
+  /** A toggle, never `avoid` — "can I do this at all" is a checkbox, "not that one" is a chip. */
+  key: TravelToggle;
   label: string;
   hint: string;
 }[] = [
@@ -58,9 +72,17 @@ function units(n: number): string {
   return n >= UNITS_IN_K ? `${(n / UNITS_IN_K).toFixed(1)}k` : `${Math.round(n)}`;
 }
 
-/** What a refusal means, in a sentence. Four situations, four different things to do about them. */
-function refusalText(answer: TravelAnswer, to: string): string {
+/**
+ * What a refusal means, in a sentence. Four situations, four different things to do about them —
+ * plus the fifth thing that can be true of any of them: **you ruled somewhere out yourself.**
+ *
+ * That last one is the only cause of a refusal the user can fix in one click, so it's said last and
+ * said plainly. It rides along rather than being its own refusal because it isn't one: the graph
+ * answered exactly the question asked, and the question had a condition on it.
+ */
+function refusalText(answer: TravelAnswer, to: string, avoided: number): string {
   const seen = `Read ${count(answer.knows.borders, "border")} across ${count(answer.knows.zones, "zone")}.`;
+  const ruledOut = avoided ? ` You've ruled out ${count(avoided, "place")} — “Allow all” puts them back.` : "";
   switch (answer.refused) {
     case "no-graph":
       return "No travel graph — no maps were found, or none of them label their exits. Pick a map source with labelled zone lines (a pack like Brewall's labels far more than the game's own maps do).";
@@ -73,26 +95,41 @@ function refusalText(answer: TravelAnswer, to: string): string {
       // hasn't opened it. Nothing to fix, and nothing to keep looking for.
       return `${answer.absent} isn't in the game at this time — the map packs draw it, but there's no way there.`;
     default:
-      return `No way through with these options — ${to} may be one of the zones whose map labels no exits, or it needs a port you haven't turned on. ${seen}`;
+      return `No way through with these options — ${to} may be one of the zones whose map labels no exits, or it needs a port you haven't turned on. ${seen}${ruledOut}`;
   }
 }
 
 /**
- * Which zone a leg happened in, and what it did there — you walk *across* a zone, but a succor moves
- * you *within* one, which is the whole of what makes it worth a toggle.
+ * The step, as it reads once it's out of every route — because that's the only place it can be read.
+ *
+ * The graph lives in the main process and only a route's steps ever cross to here, so a place ruled
+ * out has to carry its own words with it or become an id nobody can identify and nobody dares clear.
+ * A **border** names both its zones already (`A ↔ B`); a **place** names none of them, so the route's
+ * own zone list supplies the one it's in.
  */
-function legWhere(leg: NonNullable<TravelStep["from"]>): string | undefined {
-  if (!leg.across) return undefined;
-  return `${leg.mode === "succor" ? "within" : "across"} ${leg.across.name} → `;
+function avoidedFrom(step: TravelStep, names: Map<string, string>): TravelAvoided {
+  const { id, kind, label, zones } = step.node;
+  const zone = kind === "boundary" ? undefined : zones.map((z) => names.get(z) ?? z)[0];
+  return { id, label, ...(zone ? { zone } : {}) };
 }
 
-/** One line of the route. A border is where you zone; a walk is the only thing that costs anything. */
-function Leg({ step }: { step: TravelStep }) {
+/** Why you'd rule this step out. A port is the case that asked for the button, so it says so. */
+function avoidTitle(step: TravelStep): string {
+  const port = !!step.from && isCast(step.from.mode);
+  const why = port ? "Haven’t got this port? " : "";
+  return `${why}Leave ${step.node.label} out and take the next best route`;
+}
+
+/**
+ * One line of the route: **distance · what you do · where it puts you · ✕**.
+ *
+ * Four fixed columns rather than a sentence, because a route is scanned down, not read across — the
+ * question at any moment is "what do I do next", and the answer should be in the same place on every
+ * row. Crossing a zone line is still no row of its own: a border is somewhere you arrive.
+ */
+function Leg({ row, onAvoid }: { row: TravelInstruction; onAvoid?: () => void }) {
+  const { step, how, via, where } = row;
   const leg = step.from;
-  // Nothing shown for an ordinary zone line, which is most of them — a badge on every step would say
-  // nothing and hide the ones that matter.
-  const via = stepCrossing(step);
-  const where = leg && legWhere(leg);
   return (
     <li className="travel-leg">
       {leg ? (
@@ -103,16 +140,66 @@ function Leg({ step }: { step: TravelStep }) {
       ) : (
         <span className="travel-cost start">start</span>
       )}
+      <span className={`travel-how ${via ?? "walk"}`}>{how}</span>
       <span className="travel-where">
-        {where && <span className="muted small">{where}</span>}
-        {step.node.label}
-        {via && (
-          <span className={`travel-via ${via}`} title={`Take the ${CROSSING_WORDS[via]} — no walking`}>
-            {CROSSING_WORDS[via]}
-          </span>
-        )}
+        {how && <span className="muted">to </span>}
+        {where}
       </span>
+      {onAvoid && (
+        <button
+          className="btn ghost sm travel-drop"
+          title={avoidTitle(step)}
+          aria-label={`Route around ${step.node.label}`}
+          onClick={onAvoid}
+        >
+          ✕
+        </button>
+      )}
     </li>
+  );
+}
+
+/**
+ * What you've ruled out, and the way back in.
+ *
+ * It lives in the **asking** half, which never scrolls, because a route computed around a place you
+ * forgot you'd excluded is a wrong answer that reads like a right one — the same objection the whole
+ * of this panel is built on. Each chip is its own undo, so "include" and "exclude" are one button in
+ * two places rather than two mechanisms.
+ */
+function Avoided({
+  avoided,
+  onAllow,
+  onAllowAll,
+}: {
+  avoided: TravelAvoided[];
+  onAllow: (id: string) => void;
+  onAllowAll: () => void;
+}) {
+  if (!avoided.length) return null;
+  return (
+    <div className="travel-avoided">
+      <span
+        className="muted small"
+        title="Places this route may not use — a port you haven't got the spell for, a crossing you'd rather not make. Click one to put it back."
+      >
+        Not using
+      </span>
+      {avoided.map((place) => (
+        <button
+          key={place.id}
+          className="btn ghost sm travel-back"
+          title={`Put ${place.label} back — routes may use it again`}
+          onClick={() => onAllow(place.id)}
+        >
+          <span aria-hidden>↺</span> {place.label}
+          {place.zone && <span className="muted"> · {place.zone}</span>}
+        </button>
+      ))}
+      <button className="btn ghost sm" title="Put every one of them back" onClick={onAllowAll}>
+        Allow all
+      </button>
+    </div>
   );
 }
 
@@ -159,14 +246,29 @@ export default function TravelPanel({
   const from = fromPick ?? currentZone ?? "";
   const to = toPick ?? viewedZone;
 
+  const avoided = useMemo(() => travel.avoid ?? [], [travel.avoid]);
   /**
-   * The four answers, on their own. `settings` is replaced wholesale whenever *anything* in it
-   * changes, so depending on `travel` directly would re-ask for the route when an unrelated setting
-   * moved.
+   * The exclusions as one string, which is what the route actually depends on.
+   *
+   * `settings` is replaced wholesale whenever *anything* in it changes, so the array is a fresh
+   * reference every time — depending on it would re-ask for the route each time an unrelated setting
+   * moved. Sorted, so putting a place back and taking it out again isn't a change either.
+   */
+  const avoidKey = useMemo(() => JSON.stringify(avoided.map((a) => a.id).sort()), [avoided]);
+
+  /**
+   * What the route is asked to assume, on its own — the four toggles, and the places ruled out. Same
+   * reason as `avoidKey`: this is the whole of what a route depends on, and nothing else in settings.
    */
   const options = useMemo(
-    () => ({ druid: travel.druid, wizard: travel.wizard, gnome: travel.gnome, succor: travel.succor }),
-    [travel.druid, travel.wizard, travel.gnome, travel.succor],
+    () => ({
+      druid: travel.druid,
+      wizard: travel.wizard,
+      gnome: travel.gnome,
+      succor: travel.succor,
+      avoid: JSON.parse(avoidKey) as string[],
+    }),
+    [travel.druid, travel.wizard, travel.gnome, travel.succor, avoidKey],
   );
 
   useEffect(() => {
@@ -192,6 +294,16 @@ export default function TravelPanel({
   const route: TravelRoute | undefined = answer?.route;
   /** The zones passed through, minus the one you start in — the trip, as a line of chips. */
   const hops = useMemo(() => route?.zones ?? [], [route]);
+  /** `file → the name a person reads`, off the route's own zone list, so a ruled-out place can say
+   *  where it is. The route is the only thing here that has ever seen the graph. */
+  const zoneNames = useMemo(() => new Map(hops.map((z) => [z.zone, z.name])), [hops]);
+
+  // Exclude and include are the same list edited two ways, which is why they're three lines rather
+  // than a mechanism: the route's ✕ adds, a chip removes, "Allow all" empties.
+  const avoid = (step: TravelStep) => onTravel({ avoid: [...avoided, avoidedFrom(step, zoneNames)] });
+  const allow = (id: string) => onTravel({ avoid: avoided.filter((a) => a.id !== id) });
+  /** The route as instructions — computed before the return, so the JSX below only lays them out. */
+  const rows = route ? routeInstructions(route) : [];
 
   return (
     <div className="travel-panel no-drag">
@@ -246,6 +358,8 @@ export default function TravelPanel({
             Boats always count
           </span>
         </div>
+
+        <Avoided avoided={avoided} onAllow={allow} onAllowAll={() => onTravel({ avoid: [] })} />
       </div>
 
       <div className="travel-answer">
@@ -257,7 +371,7 @@ export default function TravelPanel({
           </p>
         )}
 
-        {!working && answer?.refused && <p className="muted small">{refusalText(answer, to)}</p>}
+        {!working && answer?.refused && <p className="muted small">{refusalText(answer, to, avoided.length)}</p>}
 
         {route && (
           <>
@@ -289,10 +403,28 @@ export default function TravelPanel({
             </div>
 
             <ol className="travel-legs">
-              {route.steps.map((step, i) => (
-                <Leg key={`${step.node.id}-${i}`} step={step} />
+              {rows.map((row, i) => (
+                <Leg
+                  key={`${row.step.node.id}-${i}`}
+                  row={row}
+                  // The virtual ends can't be routed around: ruling out where you're standing is a
+                  // contradiction, not a route. A hub is already not a row.
+                  onAvoid={isRouteEnd(row.step) ? undefined : () => avoid(row.step)}
+                />
               ))}
             </ol>
+
+            {/* Said once, and only until it's been used: the ✕ is deliberately quiet, and a quiet
+                control with no caption is a secret. The *Not using* strip explains itself from then on. */}
+            {!avoided.length && (
+              <p className="muted small">
+                <span className="travel-drop" aria-hidden>
+                  ✕
+                </span>{" "}
+                drops a step — a port you haven’t got the spell for, a crossing you’d rather not make — and the route
+                goes the next best way.
+              </p>
+            )}
 
             {route.assumed && (
               <p className="muted small">

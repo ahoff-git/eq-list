@@ -5,7 +5,7 @@
  *   - loot events     → broadcast raw, then matched entries after the store applies them
  *   - settings changes → overlay restyled + watcher re-targeted when the log path moves
  */
-import { app, BrowserWindow, globalShortcut, shell, Tray, Menu, nativeImage } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, shell, Tray, Menu, nativeImage } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
@@ -32,11 +32,12 @@ import { createMobKnowledge } from "./mob-knowledge";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, createMapWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, showInSearch } from "./windows";
+import { createMainWindow, createMapWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, setOverlayProvider, showInSearch } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
+import { once } from "../src/shared/once";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createAlertRouter } from "./alert-router";
 import { createSpawnTracker } from "./spawn-tracker";
@@ -93,14 +94,9 @@ const SIBLING_WINDOW_DEADLINE_MS = 4000;
 
 /** Run `fn` once `win` has loaded — or at `SIBLING_WINDOW_DEADLINE_MS`, whichever comes first. */
 function afterLoad(win: BrowserWindow, fn: () => void): void {
-  let ran = false;
-  const once = () => {
-    if (ran) return;
-    ran = true;
-    fn();
-  };
-  win.webContents.once("did-finish-load", once);
-  setTimeout(once, SIBLING_WINDOW_DEADLINE_MS);
+  const go = once(fn);
+  win.webContents.once("did-finish-load", go);
+  setTimeout(go, SIBLING_WINDOW_DEADLINE_MS);
 }
 
 /** Mirror the debug toggle into the env flag that logging.ts reads. */
@@ -109,10 +105,28 @@ function syncDebugFlag(settings: Settings): void {
   else delete process.env.EQL_DEBUG;
 }
 
+/**
+ * This launch's log file. A function rather than a constant because `app.getPath` may not be called
+ * before `ready` — and it's named twice: by the sink that writes it, and by the one failure that has
+ * to point at it without the app being up (see the startup `catch`).
+ */
+function debugLogPath(): string {
+  return path.join(app.getPath("userData"), "eqlist-debug.log");
+}
+
 const DEEP_LINK_SCHEME = "eqlist";
 
 /** Bring the control window to the front (or make one) — for deep links / relaunch. */
 function focusMainWindow(): void {
+  // Not before `ready`. A second launch while this one is still booting is the ordinary case, not an
+  // exotic one — the app takes a moment to appear, so the shortcut gets double-clicked twice — and
+  // both routes here would be wrong that early: a window cannot be created before `ready` at all, and
+  // one created before startup registers the `app://` handler would load nothing and sit in the
+  // taskbar as an invisible pane of glass. Startup's own window is moments away, so wait for it.
+  if (!app.isReady()) {
+    void app.whenReady().then(focusMainWindow);
+    return;
+  }
   const win = getMainWindow();
   if (win && !win.isDestroyed()) {
     if (win.isMinimized()) win.restore();
@@ -136,13 +150,11 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
-    handleAppProtocol(path.join(app.getAppPath(), "out"));
-
   const userData = app.getPath("userData");
 
   // Mirror logs to a file so debug output is visible without a terminal. Fresh each
   // launch; only what passes the debug gate is written (warn/error always).
-  const logFile = path.join(userData, "eqlist-debug.log");
+  const logFile = debugLogPath();
   try {
     fs.writeFileSync(logFile, `EQ List log — ${new Date().toISOString()}\n`);
   } catch {
@@ -155,6 +167,12 @@ if (!app.requestSingleInstanceLock()) {
       /* best effort */
     }
   });
+
+  // Serves the exported renderer, so it only has to be registered before the first window — which is
+  // hundreds of lines below. Deliberately *after* the log sink: its one complaint is that there is no
+  // renderer to serve, and that is exactly the launch where this file is the only evidence anyone will
+  // have (no terminal, and the window the message would have appeared in is the broken one).
+  handleAppProtocol(path.join(app.getAppPath(), "out"));
 
   // Main-process failures land in that same file rather than Electron's default dialog, which
   // pops over the game. Handling `uncaughtException` also means we keep running instead of
@@ -217,6 +235,9 @@ if (!app.requestSingleInstanceLock()) {
   let appInfo: AppInfo = { hotkeys: [], logFile };
 
   syncDebugFlag(store.getSettings());
+  // So a window created from anywhere — the tray, the hotkey, a deep link, a search hand-off — opens
+  // at the saved translucency without every caller having to remember to pass it.
+  setOverlayProvider(() => store.getSettings().overlay);
   // Respawn countdowns. It reads the kill log rather than holding its own copy — the learned
   // interval is derived, and only the due times are its own state (ADR 0092). Its pop goes down
   // the same `raiseAlert` as every other alert, so it wears the alert styling without knowing it.
@@ -554,7 +575,13 @@ if (!app.requestSingleInstanceLock()) {
   function createTray(): void {
     const iconPath = path.join(app.getAppPath(), "out", "favicon.ico");
     let image = nativeImage.createFromPath(iconPath);
-    if (image.isEmpty()) image = nativeImage.createEmpty();
+    if (image.isEmpty()) {
+      // An empty tray image is a *blank space* in the notification area: still there, still clickable,
+      // but nothing to aim at — and the tray is where Quit and the debug log live, so a launch that
+      // also failed to show a window would leave the app with no reachable interface at all.
+      log.warn("tray icon missing or unreadable:", iconPath);
+      image = nativeImage.createEmpty();
+    }
     tray = new Tray(image);
     tray.setToolTip("EQ List");
     tray.setContextMenu(buildTrayMenu());
@@ -611,7 +638,25 @@ if (!app.requestSingleInstanceLock()) {
     watcher.stop(); // records the read position, so the next run resumes exactly here
     cursor.flush();
   });
-});
+  })
+  .catch((err: unknown) => {
+    // Startup threw before it got a window up, so there is nothing on screen and nothing on the way:
+    // no window, no tray, and `window-all-closed` deliberately keeps the process alive — which
+    // without this leaves the app running as an interface-less process the user can only end from
+    // Task Manager, having been given no reason at all.
+    //
+    // A dialog, which the rest of the app avoids because it pops over the game
+    // ([ADR 0052](../specs/decisions/0052-an-error-goes-to-the-log-not-the-screen.md)) — moot when
+    // the alternative is silence, and it is the only channel left before any window exists. Then
+    // out, rather than sitting there resident: a launch that produced no app has failed.
+    log.error("startup failed", err);
+    try {
+      dialog.showErrorBox("EQ List could not start", `${String(err)}\n\nDetails: ${debugLogPath()}`);
+    } catch {
+      /* no windowing at all — the log line above is what is left */
+    }
+    app.exit(1);
+  });
 
   // Flush window state synchronously and mark quitting before windows tear down.
   app.on("before-quit", () => beginQuit());

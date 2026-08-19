@@ -21,6 +21,7 @@
  * Pure — the file reading is `electron/travel-graph.ts`.
  */
 
+import { zoneSpelling } from "../zones/spelling";
 import type { ZoneHarvest } from "./harvest";
 import {
   boundaryId,
@@ -69,6 +70,8 @@ export interface TravelBuildReport {
   networks: { network: TravelNetwork; zones: string[] }[];
   /** Zones with a map file and no way in or out. The list to work through by hand. */
   isolated: string[];
+  /** Second drawings of a zone the pack already has, and which file each was folded into. */
+  merged: { dropped: string; kept: string }[];
   /**
    * Zones left out for not being in the game (`ABSENT_ZONES`), and how many borders were refused into
    * each — which is the size of the shortcut that would otherwise exist.
@@ -121,6 +124,48 @@ export function zoneSuccors(nodes: TravelNode[], zone: string): TravelEdge[] {
 }
 
 /**
+ * **Two files drawing one zone**, and which of them is the zone.
+ *
+ * A pack ships a map per zone, except where it doesn't: Brewall carries both `misty.txt` and
+ * `mistythicket.txt`, both `sro.txt` and `southro.txt`, five such pairs in 590 files. They are the
+ * same place drawn twice — identical exit labels, different coordinate frames — and the second one is
+ * always the zone's **long name with the spaces closed up**, which is a file name nothing in the
+ * catalogue answers to, so it comes through unnamed and enters the graph as a zone of its own.
+ *
+ * That is a zone doubled from top to bottom: two borders into Rivervale, two druid rings in the
+ * network, and a route that offers you one of each with nothing to tell them apart. Which is how a
+ * player came to rule out "Druid Ring · Misty Thicket" and then be offered "Druid Ring · mistythicket".
+ *
+ * The test is **exact `zoneSpelling` equality** and deliberately not `sameZoneOrMisspelling`: over
+ * this pack the one-edit tier pairs up `mseru`/`sseru`, `shipmvu`/`shippvu`/`shipuvu` and four
+ * `phinterior` rooms, all of them genuinely different zones a letter apart. Closed-up spelling matched
+ * exactly five pairs and every one is real.
+ *
+ * **The named file wins**, which in all five cases is the game's own short name — the one the log says
+ * you're in, so keeping it is what makes a route out of where you're standing work. The other's
+ * coordinates are *not* merged in: two drawings are two frames, and averaging them would put the ring
+ * somewhere neither of them has it.
+ */
+export function duplicateZoneFiles(zoneNames: Record<string, string>, files: readonly string[]): Record<string, string> {
+  const byZone = new Map<string, string[]>();
+  for (const file of files) {
+    const spelling = zoneSpelling(zoneNames[file] ?? file);
+    if (spelling) byZone.set(spelling, [...(byZone.get(spelling) ?? []), file]);
+  }
+  const merged: Record<string, string> = {};
+  for (const group of byZone.values()) {
+    if (group.length < 2) continue;
+    // Named beats unnamed; failing that the shorter file name, so the answer can't depend on the
+    // order a folder happened to list its files in.
+    const [kept] = [...group].sort(
+      (a, b) => Number(zoneNames[b] !== b) - Number(zoneNames[a] !== a) || a.length - b.length || a.localeCompare(b),
+    );
+    for (const file of group) if (file !== kept) merged[file] = kept;
+  }
+  return merged;
+}
+
+/**
  * Build the graph. `zoneNames` is `file → long name` as the pack and the catalogue named them
  * (`zonesFromFiles`); it's what a label's `to The Lesser Faydark` is resolved against, through the one
  * fold every zone comparison in the app shares
@@ -148,7 +193,12 @@ export function buildTravelGraph(
   /** Boundaries by their canonical id — one node per border, filled in from both sides. */
   const boundaries = new Map<string, TravelNode>();
 
-  const known = new Set(harvests.map((h) => h.zone));
+  // **One zone, one file.** Applied before a single label is read, for the same reason the absent
+  // zones are: a second drawing that never enters the graph can't double a border, and there's no
+  // later pass to remember. Its own points are skipped and the graph carries the redirect, so asking
+  // for a route to the file we dropped still lands on the zone.
+  const merged = duplicateZoneFiles(zoneNames, harvests.map((h) => h.zone));
+  const known = new Set(harvests.map((h) => h.zone).filter((zone) => !merged[zone]));
   /** One resolver for every pass — see `zoneFileFor`, which is also what the router and the manual
    *  pass ask. Memoised because a big pack asks it once per exit label. */
   const resolved = new Map<string, string | undefined>();
@@ -174,8 +224,9 @@ export function buildTravelGraph(
 
   for (const harvest of harvests) {
     // A zone that isn't in the game contributes nothing — not its borders, not its docks. Its map file
-    // is real and still draws; it just isn't somewhere you can be.
-    if (absent.has(harvest.zone)) continue;
+    // is real and still draws; it just isn't somewhere you can be. A second drawing of a zone we
+    // already have contributes nothing for a different reason: it isn't somewhere *else*.
+    if (absent.has(harvest.zone) || merged[harvest.zone]) continue;
     for (const label of harvest.dropped) dropped.push({ zone: harvest.zone, label });
 
     for (const point of harvest.points) {
@@ -302,7 +353,7 @@ export function buildTravelGraph(
   for (const edge of edges) if (!edge.zone) linked.add(edge.from).add(edge.to);
   const isolated = harvests
     .map((h) => h.zone)
-    .filter((zone) => !absent.has(zone))
+    .filter((zone) => !absent.has(zone) && !merged[zone])
     .filter((zone) => !(byZone.get(zone) ?? []).some((n) => n.kind === "boundary" || linked.has(n.id)))
     .sort();
 
@@ -316,7 +367,14 @@ export function buildTravelGraph(
   // Carried on the graph so a route can refuse with "not in the game at this time" rather than the
   // useless "no way through" — the reason a person needs, and the one that ends the search.
   return {
-    graph: { source, zoneNames, nodes, edges, ...(absent.size ? { absent: [...absent].sort() } : {}) },
+    graph: {
+      source,
+      zoneNames,
+      nodes,
+      edges,
+      ...(absent.size ? { absent: [...absent].sort() } : {}),
+      ...(Object.keys(merged).length ? { merged } : {}),
+    },
     report: {
       zones: harvests.length,
       nodes: nodes.length,
@@ -329,6 +387,9 @@ export function buildTravelGraph(
       dropped,
       networks: networks.sort((a, b) => a.network.localeCompare(b.network)),
       isolated,
+      merged: Object.entries(merged)
+        .map(([dropped, kept]) => ({ dropped, kept }))
+        .sort((a, b) => a.dropped.localeCompare(b.dropped)),
       absent: [...absent].sort().map((zone) => ({ zone, borders: refusedBorders.get(zone) ?? 0 })),
     },
   };

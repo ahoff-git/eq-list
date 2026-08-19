@@ -95,3 +95,19 @@ export function few(items, max) {
   const shown = items.slice(0, max).join(", ");
   return items.length > max ? `${shown} … +${items.length - max} more` : shown;
 }
+
+/**
+ * The environment to launch Electron with.
+ *
+ * `ELECTRON_RUN_AS_NODE` has to go. Anything that sets it — a VS Code extension host, an editor task,
+ * a debug session, a shell that once exported it — turns the very same binary into a bare Node
+ * process, so the app dies on its first line of Electron API with
+ * `Cannot read properties of undefined (reading 'registerSchemesAsPrivileged')` and no window ever
+ * appears. It arrives silently through `process.env`, which is exactly how a launch that works in one
+ * terminal fails in another; both launchers strip it here so neither can forget.
+ */
+export function electronEnv() {
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
+}

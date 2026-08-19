@@ -89,6 +89,16 @@ everything else, so this list can stay short enough to read:
   unresolved destinations. `zonesFromSources` is the shape to reuse; the wrinkle is that harvesting has
   to read each borrowed zone's labels from *its own* folder.
 
+- **The map's zone picker lists a zone drawn twice, twice.** The travel graph now folds a pack's second
+  drawing of a zone into the first ([ADR 0111](./decisions/0111-one-zone-one-map-file.md)) — five pairs
+  in Brewall, `mistythicket` beside `misty` — but that fold is the graph's alone. `zonesFromFiles` still
+  returns both, so the picker offers "Misty Thicket" and a bare "mistythicket" beneath it, and kills and
+  mob knowledge keyed to whichever you were looking at are two piles. Cosmetic where the graph's version
+  was a wrong answer, which is why it was left: `zonesFromFiles` is the map subsystem's core and its
+  outputs are pinned by tests. The rule is written and tested already (`duplicateZoneFiles`) — the work
+  is deciding whether the picker should hide the duplicate outright or show it as a second *drawing* of
+  one zone, since it is a real map someone may prefer.
+
 - **`poiKind` reads `Druid Rings` as a plain name.** Its transport vocabulary spells the ring singular
   (`\bdruid ring\b` can't reach the plural), so those markers are filed under "Names & places" in the
   map's own label filter instead of "Ports & boats". The travel graph re-reads its fallback kinds to get

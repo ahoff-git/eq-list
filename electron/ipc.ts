@@ -5,7 +5,7 @@
  */
 import { ipcMain, dialog, shell, screen, BrowserWindow } from "electron";
 import { CH } from "../src/shared/ipc-channels";
-import { OVERLAY_OPACITY, p99ZoneUrl } from "../src/shared/constants";
+import { clampOpacity, p99ZoneUrl } from "../src/shared/constants";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE, pingWiki } from "./wiki/api";
@@ -631,11 +631,10 @@ function registerPeerIpc(context: IpcContext): void {
     const role = roleOf(BrowserWindow.fromWebContents(e.sender));
     if (role) setWindowToggles(role, patch);
   });
-  // Transient opacity (the "full opacity" toggle) — doesn't touch the saved setting.
+  // Transient opacity (the "full opacity" toggle) — doesn't touch the saved setting. Clamped by the
+  // same helper the window constructor uses, so "how translucent a window may be" has one definition.
   ipcMain.on(CH.winSetOpacity, (e, value: number) =>
-    BrowserWindow.fromWebContents(e.sender)?.setOpacity(
-      Math.max(OVERLAY_OPACITY.min, Math.min(OVERLAY_OPACITY.max, value)),
-    ),
+    BrowserWindow.fromWebContents(e.sender)?.setOpacity(clampOpacity(value)),
   );
   ipcMain.on(CH.winSetAlwaysOnTop, (e, enabled: boolean) =>
     BrowserWindow.fromWebContents(e.sender)?.setAlwaysOnTop(!!enabled, "screen-saver"),

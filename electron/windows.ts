@@ -26,6 +26,7 @@ import {
 import { hideSnapPreview } from "./window-drag";
 import { CH } from "../src/shared/ipc-channels";
 import { windowOpacity } from "../src/shared/constants";
+import { once } from "../src/shared/once";
 import { createLogger } from "../src/shared/logging";
 import type { OverlaySettings, WindowToggles } from "../src/shared/types";
 
@@ -84,7 +85,15 @@ function applyToggles(win: BrowserWindow, toggles: WindowToggles): void {
   win.setAlwaysOnTop(toggles.pinned ?? true, "screen-saver");
   // The renderer's `useClickThrough` takes it from here; this is so the very first click lands
   // where the user left it pointing, rather than waiting for the window to finish loading.
-  if (toggles.clickThrough) win.setIgnoreMouseEvents(true, { forward: true });
+  //
+  // Stated in **both** directions, because this is also how a window comes back from `makeHarmless`
+  // below, which forces click-through on to get a broken window off the screen. Setting it only when
+  // the toggle is on could never undo that — and nor could the renderer, since `useClickThrough`
+  // starts out believing the window is solid and so sends nothing. A window that had hiccuped once
+  // therefore passed every click to whatever was behind it for the rest of the session: there in the
+  // taskbar, painted, and impossible to click.
+  const through = !!toggles.clickThrough;
+  win.setIgnoreMouseEvents(through, through ? { forward: true } : undefined);
 }
 
 /** Open maximized if that's how it was left — the same courtesy a normal window extends. */
@@ -111,7 +120,47 @@ function restoreBounds(win: BrowserWindow, bounds: Bounds | null): void {
     if (!win.isDestroyed() && !win.isMaximized()) win.setBounds(bounds);
   };
   apply(); // now, so the window is never shown at the wrong size
-  win.once("ready-to-show", apply); // and again once realized, which some builds need
+  // And again once the window is realized, which some builds need. Two signals for the same reason
+  // `revealWhenReady` has three: `ready-to-show` is a paint and doesn't come for a renderer that never
+  // manages one, and a window shown by the deadline instead would otherwise keep the inflated size the
+  // constructor gave it.
+  win.once("ready-to-show", apply);
+  win.webContents.once("did-finish-load", apply);
+}
+
+/**
+ * How long to wait for a window's first paint before showing it anyway.
+ *
+ * Long enough that the ordinary launch is always the polite one (`ready-to-show`), short enough that
+ * a launch which went wrong is *visible* rather than absent. See `revealWhenReady`.
+ */
+const SHOW_DEADLINE_MS = 3000;
+
+/**
+ * Put a window on screen exactly once — on whichever comes first of "it painted", "it finished
+ * loading", or "we have waited long enough".
+ *
+ * Three signals rather than one, because on its own each has a case it misses, and only the union is
+ * something a launch can rely on:
+ *
+ *  - `ready-to-show` is the polite one and the one that fires in the ordinary case, but it fires
+ *    **once per window**: a window whose *first* load failed would never be shown again however well
+ *    the reload went (`reviveOnce`), because the event it was waiting for had already been spent.
+ *  - `did-finish-load` covers exactly that, and covers a transparent window on Windows deciding not
+ *    to report a first paint at all.
+ *  - Neither fires for a renderer that dies, hangs, or 404s before painting anything — and these
+ *    windows are the whole interface, so one that is never shown is an app that launched into
+ *    nothing. The deadline is what makes "never shown" impossible.
+ */
+function revealWhenReady(role: "main" | "map", win: BrowserWindow): void {
+  const reveal = once(() => {
+    if (win.isDestroyed() || win.isVisible()) return;
+    restoreMaximized(role, win);
+    win.show();
+  });
+  win.once("ready-to-show", reveal);
+  win.webContents.once("did-finish-load", reveal);
+  setTimeout(reveal, SHOW_DEADLINE_MS);
 }
 
 /**
@@ -142,19 +191,33 @@ function makeHarmless(win: BrowserWindow): void {
 }
 
 /**
- * Call `react` when a window's renderer is no longer answering — crashed, hung, or failed to load.
+ * Call `react` when a window's renderer is no longer answering — crashed, hung, or failed to load —
+ * and `served` when it has actually delivered a page.
  *
- * All three are the same fact from the screen's point of view (nothing is driving this window any
- * more), so they get one handler and the caller decides what that is worth. `unresponsive` can fire
- * for a renderer merely busy and may recover, which is why no reaction here may be worse than the
- * hang it answers.
+ * The failures are all the same fact from the screen's point of view (nothing is driving this window
+ * any more), so they get one handler and the caller decides what that is worth. `unresponsive` can
+ * fire for a renderer merely busy and may recover, which is why no reaction here may be worse than
+ * the hang it answers.
+ *
+ * `served` is the counterpart, and it is deliberately **not** `did-finish-load`: an HTTP error page
+ * finishes loading exactly like a real one. Both callers use it to decide that a window is healthy
+ * again and may have another rescue attempt later, so trusting a bare `did-finish-load` made every
+ * rescue infinitely repeatable — a 404'd window reloaded, "recovered", 404'd again, for ever.
  */
-function guardRenderer(win: BrowserWindow, role: string, react: (why: string, fatal: boolean) => void): void {
+function guardRenderer(
+  win: BrowserWindow,
+  role: string,
+  react: (why: string, fatal: boolean) => void,
+  served?: () => void,
+): void {
   const lost = (why: string, fatal: boolean) => {
     if (win.isDestroyed()) return;
     log.warn(`${role} window: ${why}`);
     react(why, fatal);
   };
+  // The status of the page currently loading. Schemes that report none (a `data:` URL) come through
+  // as a negative code, which is not an error — only 4xx/5xx is.
+  let status = 200;
   // Hanging is the recoverable one — Chromium says `responsive` when the renderer catches up — so it
   // is reported as non-fatal and the reaction is expected to be reversible.
   win.on("unresponsive", () => lost("renderer stopped responding", false));
@@ -163,6 +226,19 @@ function guardRenderer(win: BrowserWindow, role: string, react: (why: string, fa
     // -3 is ERR_ABORTED — what a navigation or a destroy mid-load looks like, not a failure.
     if (!isMainFrame || code === -3) return;
     lost(`failed to load (${code} ${desc})`, true);
+  });
+  // An HTTP failure is not a load failure as far as Chromium is concerned: a 404 from the `app://`
+  // handler (a missing or half-built `out/`) or a 500 from `next dev` (a compile error) arrives as a
+  // perfectly successful navigation whose body happens to say "Not found". On a frameless transparent
+  // window that is indistinguishable from the app working — an invisible sheet of glass with a
+  // taskbar button that appears to do nothing — and `did-fail-load` never fires, so nothing else here
+  // would ever notice. It is the same fact as the others: this window has no renderer.
+  win.webContents.on("did-navigate", (_e, url, code, statusText) => {
+    status = code;
+    if (code >= 400) lost(`renderer returned ${code} ${statusText} for ${url}`, true);
+  });
+  win.webContents.on("did-finish-load", () => {
+    if (status < 400 && !win.isDestroyed()) served?.();
   });
 }
 
@@ -175,36 +251,116 @@ function guardRenderer(win: BrowserWindow, role: string, react: (why: string, fa
  */
 function reviveOnce(win: BrowserWindow, role: "main" | "map"): void {
   let tried = false;
+  // Given up on: the window shows `failurePage` now, and nothing may reload or restyle it after that
+  // — including the `did-finish-load` the failure page itself fires on the way in.
+  let inert = false;
+  // Whether `makeHarmless` has taken this window's pin and clicks away. Only a window that was
+  // stripped gets them put back, so an ordinary in-app navigation — which also serves a page — leaves
+  // whatever the renderer had negotiated with the cursor alone.
+  let stripped = false;
+  const restore = () => {
+    stripped = false;
+    // `makeHarmless` took the pin and the click-through away to unblock the screen; a window that came
+    // back has to come back as the user left it, or a crash would quietly demote it.
+    applyToggles(win, windowToggles(role));
+  };
   // Coming back from a hang: the window was stripped to unblock the screen, so give it back what it
   // had. Reloading it instead would throw away a perfectly live window for being slow.
   win.on("responsive", () => {
     log.warn(`${role} window: renderer responsive again`);
-    if (!win.isDestroyed()) applyToggles(win, windowToggles(role));
+    if (!inert && !win.isDestroyed()) restore();
   });
-  guardRenderer(win, role, (_why, fatal) => {
+  guardRenderer(win, role, (why, fatal) => {
+    if (inert) return;
     makeHarmless(win); // first, always: whatever else is true, it must stop holding the screen
+    stripped = true;
     if (!fatal) return; // a hang may pass; `responsive` puts it back
     if (tried) {
-      log.warn(`${role} window: already tried reviving once — leaving it inert but harmless`);
+      inert = true;
+      log.warn(`${role} window: already tried reviving once — showing the failure page instead`);
+      showFailurePage(win, role, why);
       return;
     }
     tried = true;
-    win.webContents.once("did-finish-load", () => {
-      tried = false; // healthy again, so a crash much later still gets its one attempt
-      // `makeHarmless` took the pin and the click-through away to unblock the screen; a window that
-      // came back has to come back as the user left it, or a crash would quietly demote it.
-      applyToggles(win, windowToggles(role));
-    });
     try {
       win.reload();
     } catch (e) {
       log.warn(`${role} window: reload failed:`, (e as Error).message);
     }
+  },
+  () => {
+    if (inert) return;
+    tried = false; // healthy again, so a crash much later still gets its one attempt
+    if (stripped) restore();
   });
 }
 
+/** The three characters that could turn a Chromium error description into markup. */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
+}
+
+/**
+ * The page a window shows once its renderer is gone for good.
+ *
+ * Held here as a string and loaded as a `data:` URL, because the reason it is needed is that
+ * **loading a page did not work**: there may be no dev server, no `app://` handler, or no exported
+ * bundle at all. Anything fetched could fail for the very reason we are trying to report. This
+ * cannot, so it is the one thing that still says something when nothing else does.
+ *
+ * It names the tray rather than offering buttons of its own: the tray is the app's other interface,
+ * it is always there, and it already carries both of the things worth doing here (open the log, quit).
+ */
+function failurePage(role: string, why: string): string {
+  const html = `<!doctype html><meta charset="utf-8"><title>EQ List</title><style>
+html,body{margin:0;height:100%;background:#16181c;color:#d7dae0;font:13px/1.55 system-ui,"Segoe UI",sans-serif}
+main{box-sizing:border-box;min-height:100%;padding:18px;display:flex;flex-direction:column;gap:9px;justify-content:center}
+h1{margin:0;font-size:15px;color:#e5534b}p{margin:0}ul{margin:0;padding-left:17px}
+code{color:#96a0ae;word-break:break-word}b{color:#eef1f5}
+</style><main>
+<h1>EQ List couldn&rsquo;t load its interface</h1>
+<p>The <b>${escapeHtml(role)}</b> window has no renderer, so there is nothing for it to show.</p>
+<p><code>${escapeHtml(why)}</code></p>
+<ul><li>Right-click the EQ List tray icon &rarr; <b>Open debug log</b> for what happened.</li>
+<li>Then <b>Quit EQ List</b> from the same menu and start it again.</li></ul>
+<p>A packaged build reaching here is usually missing its exported <code>out/</code> renderer
+(<code>npm run build</code>); a dev run means <code>next dev</code> isn&rsquo;t serving.</p>
+</main>`;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+/**
+ * Show the failure page — the last step of giving up on a window (`reviveOnce`).
+ *
+ * Opaque, at full opacity, and shown even if it never was: an invisible transparent window at the
+ * saved translucency, holding a page nobody can read, *is* the bug this replaces. `showInactive`
+ * because the game may be in the foreground and this is news, not an emergency — the window takes its
+ * place in the taskbar and waits to be clicked. It stays click-through and un-pinned from
+ * `makeHarmless`: there is nothing on it to click, and a notice that eats clicks over the game would
+ * be its own version of the problem.
+ */
+function showFailurePage(win: BrowserWindow, role: string, why: string): void {
+  if (win.isDestroyed()) return;
+  try {
+    win.setBackgroundColor("#16181c");
+    win.setOpacity(1);
+    void win.loadURL(failurePage(role, why));
+    if (!win.isVisible()) win.showInactive();
+  } catch (e) {
+    log.warn(`${role} window: could not show the failure page:`, (e as Error).message);
+  }
+}
+
 const DEV = !!process.env.EQL_DEV;
-const DEV_URL = "http://localhost:3000";
+/**
+ * The renderer's dev server, as told to us by `scripts/dev-electron.mjs`.
+ *
+ * Not assumed, because it cannot be: `next dev` gives up port 3000 to whatever already has it and
+ * moves up, so the launcher is the only end that knows which port won — it probes for the one actually
+ * serving this app and passes the answer through. The literal is the fallback for starting Electron by
+ * hand against a dev server you started yourself.
+ */
+const DEV_URL = process.env.EQL_DEV_URL || "http://localhost:3000";
 const APP_URL = "app://local";
 const PRELOAD = path.join(__dirname, "preload.js");
 
@@ -254,6 +410,22 @@ function load(win: BrowserWindow, route: string): void {
   }
 }
 
+/**
+ * Where the saved overlay look comes from when a caller doesn't hand one over. Set once at startup by
+ * `main.ts`, which owns the store.
+ *
+ * A window gets created from half a dozen places — startup, the tray, the hotkey, a deep link, a
+ * search hand-off — and each one passing the settings through was one more place to forget. Two of
+ * them did (`showInSearch`, and the deep-link focus in main.ts), so a window opened that way ignored
+ * the opacity slider and came up solid until the renderer loaded and corrected it.
+ */
+let savedOverlay: () => OverlaySettings | undefined = () => undefined;
+
+/** Tell the window layer where to read the saved look from (see `savedOverlay`). */
+export function setOverlayProvider(get: () => OverlaySettings | undefined): void {
+  savedOverlay = get;
+}
+
 let mainWindow: BrowserWindow | null = null;
 let mapWindow: BrowserWindow | null = null;
 let alertWindow: BrowserWindow | null = null;
@@ -278,6 +450,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
   }
   const bounds = savedBounds("main");
   const toggles = windowToggles("main");
+  const look = overlay ?? savedOverlay();
   mainWindow = new BrowserWindow({
     width: 460,
     height: 780,
@@ -293,7 +466,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
     alwaysOnTop: toggles.pinned ?? true,
     // Opened at the translucency it was left at — the saved slider, or full if its ◐ was on —
     // so there's no flash; the renderer owns it from then on (`useWindowOpacity`).
-    opacity: windowOpacity(toggles.opaque, overlay?.opacity ?? 1),
+    opacity: windowOpacity(toggles.opaque, look?.opacity ?? 1),
     backgroundColor: "#00000000",
     webPreferences: {
       preload: PRELOAD,
@@ -309,10 +482,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
   pipeRendererConsole(mainWindow, "main");
   reviveOnce(mainWindow, "main");
   applyToggles(mainWindow, toggles);
-  mainWindow.once("ready-to-show", () => {
-    if (mainWindow) restoreMaximized("main", mainWindow);
-    mainWindow?.show();
-  });
+  revealWhenReady("main", mainWindow);
   // Mouse thumb buttons (and some keyboards) fire browser back/forward as an
   // app-command; forward it so the renderer can walk its own page history instead
   // of the OS trying to navigate a non-existent browser.
@@ -343,6 +513,7 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
   }
   const bounds = savedBounds("map");
   const toggles = windowToggles("map");
+  const look = overlay ?? savedOverlay();
   mapWindow = new BrowserWindow({
     width: 680,
     height: 720,
@@ -358,7 +529,7 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
     alwaysOnTop: toggles.pinned ?? true,
     // The same saved slider as the main window (one look for the app), but this window's own ◐ —
     // set up front for the same reason (no flash) and owned by its renderer from then on.
-    opacity: windowOpacity(toggles.opaque, overlay?.opacity ?? 1),
+    opacity: windowOpacity(toggles.opaque, look?.opacity ?? 1),
     backgroundColor: "#00000000",
     webPreferences: {
       preload: PRELOAD,
@@ -375,10 +546,7 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
   reviveOnce(mapWindow, "map");
   setMapOpen(true); // so the next launch restores it (see main.ts startup)
   applyToggles(mapWindow, toggles);
-  mapWindow.once("ready-to-show", () => {
-    if (mapWindow) restoreMaximized("map", mapWindow);
-    mapWindow?.show();
-  });
+  revealWhenReady("map", mapWindow);
   const created = mapWindow;
   created.on("closed", () => {
     // Only if it's still this window: reopening while the old one is closing would otherwise
@@ -447,8 +615,22 @@ export function createAlertWindow(displayId?: number): BrowserWindow {
   // dismiss. Unlike the app's own windows a hang is treated as fatal here — a hung overlay cannot
   // show an alert either, so there is nothing to preserve by waiting — and it holds no state, so it
   // goes and comes back rather than lingering.
-  guardRenderer(alertWindow, "alert", () => rebuildAlertWindow(alertWindow));
   const created = alertWindow;
+  // `created`, not the module-level `alertWindow`: the rebuild's own guard is "the window that died is
+  // still the current one", which read from the live reference could only ever compare a window with
+  // itself — so a stale overlay dying on its way out would have destroyed the healthy replacement
+  // that had already taken its place.
+  guardRenderer(
+    created,
+    "alert",
+    () => rebuildAlertWindow(created),
+    // A page actually served means this overlay is healthy, so a crash much later still gets its one
+    // rebuild. It has to be *served* rather than merely loaded, or a 404 would clear the guard on its
+    // way in and the overlay would rebuild itself for ever (see `guardRenderer`).
+    () => {
+      alertRebuilt = false;
+    },
+  );
   // Only clear the reference if it's still *this* window — see the note above about the race.
   created.on("closed", () => {
     if (alertWindow === created) alertWindow = null;
@@ -533,11 +715,9 @@ function rebuildAlertWindow(dying: BrowserWindow | null): void {
     return;
   }
   alertRebuilt = true;
-  const rebuilt = createAlertWindow(displayId);
-  // A clean load means this one is healthy, so a much later crash still gets its one rebuild.
-  rebuilt.webContents.once("did-finish-load", () => {
-    alertRebuilt = false;
-  });
+  // The replacement clears this again once it has served a page — `createAlertWindow` wires that up,
+  // so "which load counts as healthy" is answered in one place for every window.
+  createAlertWindow(displayId);
 }
 
 /** Strip every overlay of its hold on the screen. The last resort — see `main.ts`'s crash handler. */

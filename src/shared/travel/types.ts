@@ -81,14 +81,25 @@ export type TravelNetwork = TravelToggle | "boat";
  */
 export type TravelCrossing = "boat" | "translocator" | "portal" | "spire" | "ring" | "succor";
 
-/** What to call each one, for a person. */
-export const CROSSING_WORDS: Record<TravelCrossing, string> = {
-  boat: "boat",
-  translocator: "translocate",
-  portal: "portal",
-  spire: "spire",
-  ring: "ring",
-  succor: "succor",
+/**
+ * **What you do**, in one word, for each way of getting somewhere — walking included.
+ *
+ * A verb rather than a noun, and the whole vocabulary in one table, because a route is read as a list
+ * of instructions: *run, run, boat, teleport*. It replaced a table of nouns (`boat` · `ring` · `spire`)
+ * that could only label a border and had nothing to say about the walk between two of them, which left
+ * the one thing every step has — how you covered the distance — as the only thing unnamed.
+ *
+ * A ring and a spire are both **Teleport**: from the reader's side they are the same act, and *which*
+ * network it was is already on the step (a ring is labelled "Druid Rings") and in the route's `modes`.
+ */
+export const TRAVEL_VERBS: Record<TravelCrossing | "walk", string> = {
+  walk: "Run",
+  boat: "Boat",
+  translocator: "Translocate",
+  portal: "Portal",
+  spire: "Teleport",
+  ring: "Teleport",
+  succor: "Succor",
 };
 
 /**
@@ -176,7 +187,39 @@ export const TRAVEL_DEFAULTS: Record<TravelToggle, boolean> = {
   succor: false,
 };
 
-export type TravelOptions = Partial<Record<TravelToggle, boolean>>;
+/**
+ * **One place a route may not use**, remembered by the node it is.
+ *
+ * The case that asks for this is a port you haven't got: a druid ring or a wizard spire is a *spell*,
+ * and the spell that reaches it has a level, so the network toggle — "I can get a druid port" — is too
+ * coarse. Turning druid off to dodge one ring you can't cast loses every ring you can. So a route is
+ * denied a **place**, not a network, and takes the next best way instead
+ * ([ADR 0109](../../../specs/decisions/0109-a-route-can-be-denied-one-place.md)).
+ *
+ * The `label` and `zone` travel with the id because the id alone is unreadable (`butcher#druid-rings`)
+ * and, once a place is out of every route, **nothing else can name it** — the graph is in the main
+ * process and only the steps of a route cross to a UI. Without the words there'd be no way to see what
+ * you'd switched off, which is the difference between a setting and a trap.
+ */
+export interface TravelAvoided {
+  /** The `TravelNode.id` to leave out. */
+  id: string;
+  /** The node's own label, as the route showed it — "Druid Rings", "Greater Faydark ↔ Lesser Faydark". */
+  label: string;
+  /** The zone it's in, as a person reads it. Absent for a border, whose label already names both. */
+  zone?: string;
+}
+
+/**
+ * What a route is allowed to assume: which conveyances, and which particular places to leave out.
+ *
+ * The two are different questions on purpose — a toggle is *can I do this at all*, `avoid` is *not
+ * that one*.
+ */
+export interface TravelOptions extends Partial<Record<TravelToggle, boolean>> {
+  /** `TravelNode` ids the search may not pass through. Anything unknown to the graph is simply unused. */
+  avoid?: readonly string[];
+}
 
 /**
  * What a node is.
@@ -253,6 +296,16 @@ export interface TravelGraph {
    * through". Map file names. Absent on a graph nothing was removed from.
    */
   absent?: string[];
+  /**
+   * **A second drawing of a zone this graph already has** → the file that *is* the zone.
+   *
+   * A pack can ship two maps of one place (`mistythicket.txt` beside `misty.txt`), and only one of
+   * them can be the zone or every border into it is doubled — see `duplicateZoneFiles`. The dropped
+   * file keeps its name in `zoneNames`, because the map window still offers it and a route asked for
+   * from the map you're looking at has to land somewhere: `travelZone` reads this and sends it to the
+   * survivor. Absent on a graph with no such pair.
+   */
+  merged?: Record<string, string>;
 }
 
 /**

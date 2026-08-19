@@ -2,13 +2,16 @@
  * Shortest route across the travel graph — Dijkstra over the stored edges.
  *
  * Every edge is already in the graph (walks within a zone, ports, boats), so this is a textbook
- * shortest path with two additions:
+ * shortest path with three additions:
  *
  *  - **A start and a finish are zones, not nodes.** You are somewhere in a zone and want to be
  *    somewhere in another, so each end attaches through a virtual node — free when we don't know
  *    where you are, and the real walk when a `/loc` does.
  *  - **A conveyance you haven't got isn't an edge.** Druid, wizard, gnome and succor edges are filtered
  *    by the toggles before the search starts, so a route never suggests a port you can't take.
+ *  - **A place you've ruled out isn't a node.** `options.avoid` names nodes the search may not pass
+ *    through, so "not *that* ring" costs you the ring rather than the whole druid network, and what
+ *    comes back is simply the next best route ([ADR 0109](../../../specs/decisions/0109-a-route-can-be-denied-one-place.md)).
  *
  * Crossing a zone line costs nothing and appears as no leg at all: a boundary node is in both its
  * zones, so arriving at one *is* zoning. The walk that follows is in the next zone, and says so.
@@ -22,6 +25,7 @@ import {
   graphZones,
   isCast,
   TRAVEL_DEFAULTS,
+  TRAVEL_VERBS,
   zoneDistance,
   type TravelAt,
   type TravelGraph,
@@ -115,9 +119,15 @@ export function zoneName(graph: Pick<TravelGraph, "zoneNames">, zone: string): s
  * even if it has no nodes**: it used to need one, so an isolated zone could be routed to by its long
  * name but not by its file name, and a zone excluded for not being in the game came back "no such zone"
  * rather than "not in the game at this time".
+ *
+ * Then the graph's own **redirect**: a pack can draw one zone twice and only one of the two files is
+ * the zone (`merged`, see `duplicateZoneFiles`). The other still has a name and is still offered by the
+ * map window, so asking for a route from the map you're looking at must land on the zone rather than on
+ * an empty copy of it. Applied here because this is the one place a name becomes a file.
  */
 export function travelZone(graph: TravelGraph, name: string): string | undefined {
-  return zoneFileFor(graph.zoneNames, graphZones(graph), name);
+  const file = zoneFileFor(graph.zoneNames, graphZones(graph), name);
+  return file ? (graph.merged?.[file] ?? file) : undefined;
 }
 
 /** A minimal binary min-heap. The graph runs to thousands of nodes, where scanning for the
@@ -173,6 +183,88 @@ interface TravelHop extends TravelLeg {
 const START = " start";
 const GOAL = " goal";
 
+/**
+ * **One instruction**: how far, what you do, and where it leaves you.
+ *
+ * A route is *scanned*, not read — the question at any moment is "what do I do next" — so the steps
+ * are turned into four fixed things rather than a sentence, and the turning is done here because two
+ * of them need the steps *around* one and none of it is a matter of taste.
+ */
+export interface TravelInstruction {
+  step: TravelStep;
+  /** `Run` · `Boat` · `Teleport` … Absent on the first, where you haven't done anything yet. */
+  how?: string;
+  /** Which crossing it was, so a UI can mark the ones that cost no walking. Absent for a walk. */
+  via?: TravelCrossing;
+  /** Where this leaves you, in the words a person would use. */
+  where: string;
+}
+
+/**
+ * A route as the list of instructions it reads as.
+ *
+ * Two things happen here that the raw steps don't do for you:
+ *
+ *  - **A hub is not a place, so it isn't an instruction.** `net:druid` is the teleport network itself
+ *    and it sits in the trail between the start and the ring you land at. Left in, one teleport reads
+ *    as two — "Teleport to druid network", then "Teleport to Druid Rings" — and since a hub's edges
+ *    cost nothing, dropping it loses no distance.
+ *  - **A border is named by the side you come out on.** The node is the *border*, "Greater Faydark ↔
+ *    Lesser Faydark", which is the truth and not an instruction: you'd say *run to Lesser Faydark*.
+ *    Which of the two that is, is written in the **next** leg, because the walk after a border happens
+ *    in the zone the border let you into. A border with nothing after it keeps its own name rather
+ *    than guessing.
+ *
+ * A **place** is in one zone and its label never says which ("Druid Rings"), so its zone is added; the
+ * two virtual ends are *named after* their zone already, so saying it again would only stutter.
+ *
+ * And **an arrival nobody walked is not an instruction.** The last step is the walk from the final
+ * node to where you're actually going inside that zone — real and worth saying when a position for the
+ * destination is known, and when it isn't it is zero, a guess, and the same zone name the border above
+ * it just gave you. Which is how a route ended `2.0k? Run to RunnyEye Citadel` / `0? Run to RunnyEye
+ * Citadel` and read as a duplicate, because in every way that shows on screen it was one.
+ */
+export function routeInstructions(route: Pick<TravelRoute, "steps" | "zones">): TravelInstruction[] {
+  const names = new Map(route.zones.map((z) => [z.zone, z.name]));
+  const rows = route.steps.flatMap((step, i) => {
+    const { kind, label, zones } = step.node;
+    if (kind === "hub") return [];
+    const via = stepCrossing(step);
+    const zone = zones.length === 1 ? (names.get(zones[0]) ?? zones[0]) : undefined;
+    const where =
+      kind === "boundary"
+        ? (route.steps[i + 1]?.from?.across?.name ?? label)
+        : zone && zone !== label
+          ? `${label} · ${zone}`
+          : label;
+    return [
+      {
+        step,
+        where,
+        ...(via ? { via } : {}),
+        ...(step.from ? { how: TRAVEL_VERBS[via ?? "walk"] } : {}),
+      },
+    ];
+  });
+
+  // Never down to nothing: a trip whose every row is empty still has to say where you started.
+  const last = rows[rows.length - 1];
+  const walkedNowhere = !!last?.step.from && last.step.from.cost === 0 && last.step.from.assumed;
+  return rows.length > 1 && last && isRouteEnd(last.step) && walkedNowhere ? rows.slice(0, -1) : rows;
+}
+
+/**
+ * Is this step one of the route's two **virtual** ends — where you are, and where you're going?
+ *
+ * They're steps like any other so the legs read right, but they are not places on the graph: there is
+ * nothing to open a map at and, in particular, nothing to *avoid* — ruling out where you're standing
+ * is not a route, it's a contradiction. Exported so a UI doesn't have to infer it from the position in
+ * the list, which is the same fact spelled a second, breakable way.
+ */
+export function isRouteEnd(step: TravelStep): boolean {
+  return step.node.id === START || step.node.id === GOAL;
+}
+
 /** A virtual end as a node, so the same `zoneDistance` prices its walk as prices every other. */
 function endNode(id: string, zone: string, label: string, at?: TravelAt): TravelNode {
   return { id, kind: "place", label, zones: [zone], at: at ? { [zone]: [at] } : {} };
@@ -216,7 +308,16 @@ export function findRoute(
     };
   }
 
-  const allowed = { ...TRAVEL_DEFAULTS, ...options };
+  const { avoid, ...toggles } = options;
+  const allowed = { ...TRAVEL_DEFAULTS, ...toggles };
+  /**
+   * The places this route may not use — dropped **as nodes**, before anything is wired, so every later
+   * step (the hubs it learns, the succors, both ends) is worked out over the graph that's left rather
+   * than over the whole one with a filter to remember. Ruling a node out can never make a route worse
+   * than not routing at all: a walk within a zone is priced between *every* pair of its nodes, so a
+   * place is only ever somewhere you arrive or turn round, never a corner you must cut.
+   */
+  const banned = new Set(avoid ?? []);
   const byId = new Map<string, TravelNode>(graph.nodes.map((n) => [n.id, n]));
   byId.set(START, here);
   byId.set(GOAL, there);
@@ -242,6 +343,7 @@ export function findRoute(
   const succors = new Set<string>();
   for (const edge of graph.edges) {
     if (edge.mode !== "walk" && !allowed[edge.mode]) continue;
+    if (banned.has(edge.from) || banned.has(edge.to)) continue;
     const across = edge.zone ? named(edge.zone) : undefined;
     add(edge.from, { to: edge.to, mode: edge.mode, cost: edge.cost, across, assumed: !!edge.assumed });
     if (byId.get(edge.from)?.kind === "hub" && isCast(edge.mode)) hubs.set(edge.from, edge.mode);
@@ -259,6 +361,7 @@ export function findRoute(
   // The two ends, wired in by the same rule as everything else: with no position given there is
   // nothing to charge, and the route says that figure is a stand-in.
   for (const node of graph.nodes) {
+    if (banned.has(node.id)) continue;
     if (node.zones.includes(fromZone)) {
       const leg = start.at ? zoneDistance(here, node, fromZone) : { cost: 0, assumed: true };
       add(START, { to: node.id, mode: "walk", across: named(fromZone), ...leg });

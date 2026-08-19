@@ -38,13 +38,30 @@ export const MAP_UI_SCALE = { min: 0.6, max: 2, step: 0.05 } as const;
 export const OVERLAY_OPACITY = { min: 0.2, max: 1, step: 0.05 } as const;
 
 /**
+ * Keep an opacity inside the range above — the floor exists so a window can always be *seen*, and a
+ * number that arrived from somewhere other than the slider has no obligation to respect it.
+ *
+ * Anything unusable (missing, NaN, a string that came out of an edited settings file) reads as full
+ * opacity rather than the floor: the failure we are guarding against is an invisible window, so the
+ * safe direction is *more* visible, not less.
+ */
+export function clampOpacity(opacity: number): number {
+  return clampScale(opacity, OVERLAY_OPACITY);
+}
+
+/**
  * A window's live opacity: the ◐ override wins over the saved slider, and nothing else decides it.
  * Both ends need the same rule — main to open the window at the right translucency, the renderer to
  * re-apply it when either half changes — and a window that opened by one rule and settled by
  * another is exactly the flash this avoids.
+ *
+ * The saved half is clamped here, which is the only place both ends pass through. Unlike the two
+ * scales, `overlay.opacity` was never validated on load (`store.ts`), so a settings file holding a 0
+ * — or a shape from an older build — opened every window at zero opacity: present in the taskbar,
+ * clickable, and completely invisible.
  */
 export function windowOpacity(opaque: boolean | undefined, saved: number): number {
-  return opaque ? OVERLAY_OPACITY.max : saved;
+  return opaque ? OVERLAY_OPACITY.max : clampOpacity(saved);
 }
 
 export type ScaleRange = { min: number; max: number; step: number };

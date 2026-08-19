@@ -5,7 +5,7 @@ import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer 
 import type { EqMap } from "./map/eqmap";
 import type { MapSourceReport } from "./map/map-sources";
 import type { TravelAnswer, TravelEnd } from "./travel/route";
-import type { TravelOptions } from "./travel/types";
+import type { TravelAvoided, TravelOptions } from "./travel/types";
 import type { DragEnd } from "./window-snap";
 
 /** A zone's vector map as it crosses IPC: geometry, labels, and who drew it. */
@@ -13,7 +13,7 @@ export type LoadedMap = EqMap & { credits: string[] };
 
 export type { MapSourceReport };
 /** Re-exported so a renderer can type a route without reaching into the travel module. */
-export type { TravelAnswer, TravelEnd, TravelOptions };
+export type { TravelAnswer, TravelAvoided, TravelEnd, TravelOptions };
 /** Re-exported for the same reason: a titlebar ends a drag without importing the geometry. */
 export type { DragEnd };
 
@@ -1889,6 +1889,24 @@ export interface TravelSettings {
    * ([ADR 0069](../../specs/decisions/0069-a-succor-is-a-port-inside-one-zone.md)).
    */
   succor: boolean;
+  /**
+   * Particular places a route may not use, on top of the four toggles.
+   *
+   * **A port is a spell, and a spell has a level.** "I can get a druid port" is not the same claim as
+   * "I can get *every* druid port", so a toggle alone can only be turned off — losing every ring to
+   * dodge the one you can't cast yet. This is the finer answer: name the ring, keep the network, take
+   * the next best route ([ADR 0109](../../specs/decisions/0109-a-route-can-be-denied-one-place.md)).
+   *
+   * A setting for the same reason the toggles are one: which ports you have is a fact about *you*. It
+   * carries each place's words as well as its id, because once a place is out of every route nothing
+   * else can name it — the graph never leaves the main process.
+   *
+   * **Node ids belong to the pack they were built from** (a border is `zoneA|zoneB` and stable; a place
+   * is `<zone>#<slug of that pack's label>` and is not), so switching map source can leave an entry
+   * matching nothing. It then does nothing and can be cleared — the panel lists every one of them, so
+   * a stale entry is visible rather than a silent hole in your routes.
+   */
+  avoid: TravelAvoided[];
 }
 
 // ─── Watcher status ─────────────────────────────────────────────────────────

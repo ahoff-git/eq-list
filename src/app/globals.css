@@ -322,6 +322,50 @@ button {
   padding: 16px;
 }
 
+/* ── A panel you can resize (`ResizablePanel`) ──────────────────────────────────────────────────
+   A panel that opens over another view — the map's five, so far — is bounded, because the view
+   underneath is usually the point. How *tightly* bounded is a judgement only its reader can make, so
+   the box is sized here and the seam under it is a drag handle. Sizes are a **share of the window**
+   rather than a pixel height: a window's interface scale is a CSS `zoom` on the root (see `.app`),
+   which multiplies px and leaves a ratio alone, and `%` resolves against the window's own definite
+   height — so 40% means 40% of the map at any scale. See `src/shared/panel-size.ts`. */
+.panel-resize {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* Never grows past what it was dragged to; shrinks when enough panels are open at once that the
+     view underneath would otherwise be pushed off the bottom. */
+  flex: 0 1 auto;
+  min-height: 0;
+}
+/* The panel inside fills the box and scrolls what doesn't fit — which is the whole point of being
+   able to make one smaller. Stated here, once, so a wrapped panel needs to know nothing about being
+   wrapped; the grip is excluded because it isn't content, it's the edge. */
+.panel-resize > :not(.panel-grip) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The handle sits **on** the panel's bottom border rather than beside it, so what you grab is the
+   line you can already see, and inside the panel's own bottom padding, so it covers no content.
+   Invisible until pointed at: five of these stacked up would otherwise read as chrome. */
+.panel-grip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  z-index: 5;
+  cursor: ns-resize;
+  background: transparent;
+}
+.panel-grip:hover,
+.panel-grip:focus-visible,
+.panel-resize.resizing .panel-grip {
+  background: var(--accent);
+  opacity: 0.5;
+  outline: none;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -1617,9 +1661,8 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* `%`, not `vh` — the map window's scale is a CSS `zoom` and a viewport unit is scaled by it (see
-     `.app`). Its sibling panels were already right; this one was the odd one out. */
-  max-height: 45%;
+  /* How tall it is belongs to `.panel-resize` around it (45% until dragged); scrolling is its own,
+     since the sections are what overflow. */
   overflow-y: auto;
   padding: 8px 12px;
   background: var(--bg-raised);
@@ -1668,8 +1711,6 @@ kbd {
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   font-size: 12px;
-  /* Same share as the kill list: both can be open at once, above the map they describe. */
-  max-height: 40%;
   overflow-y: auto;
 }
 .mob-knowledge p { margin: 0; }
@@ -1716,9 +1757,6 @@ kbd {
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   font-size: 12px;
-  /* The map is the point; this describes it. Two of these panels open at once was already most of the
-     window, so the list gets a smaller share and scrolls. */
-  max-height: 40%;
   overflow-y: auto;
 }
 .kill-filters .seg { padding: 3px 9px; font-size: 11px; }
@@ -1757,11 +1795,6 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* Bounded so the map stays the point, but **`%`, not `vh`**: the map window's scale is a CSS `zoom`
-     on the root and may go above 100% (see `.app`), which scales a viewport unit and leaves this
-     panel taking far more of the window than 45% of it. A percentage resolves against `.map-win`,
-     whose height is definite, so it means what it says at any scale. */
-  max-height: 45%;
   padding: 8px 12px;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
@@ -1810,6 +1843,20 @@ kbd {
   align-items: center;
   gap: 5px;
 }
+/* What you've ruled out, and the way back in. In the asking half, which never scrolls, because a
+   route computed around a place you've forgotten you excluded is a wrong answer that reads like a
+   right one — see specs/travel and ADR 0109. */
+.travel-avoided {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+/* Marked in the accent, like every other "this figure has a condition on it" in the panel. */
+.travel-back {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
 .travel-summary {
   display: flex;
   align-items: baseline;
@@ -1837,6 +1884,25 @@ kbd {
   align-items: baseline;
   gap: 8px;
 }
+/**
+ * The ✕ that rules a step out. **Dim, never absent.**
+ *
+ * It was hover-only at first, which reads well and hides the feature completely: a control nobody can
+ * see until they happen to sweep the pointer over a row is one nobody finds. Dimmed says the same
+ * thing — the route is what you came for — while still being there to be read.
+ */
+.travel-drop {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  opacity: 0.45;
+  color: var(--text-dim);
+}
+.travel-leg:hover .travel-drop,
+.travel-drop:hover,
+.travel-drop:focus-visible {
+  opacity: 1;
+  color: var(--accent);
+}
 /* A fixed column so the distances line up and can be read down rather than hunted for. */
 .travel-cost {
   flex: 0 0 4.5em;
@@ -1848,25 +1914,34 @@ kbd {
    "pay attention to this number" colour, which is exactly what a stand-in wants. */
 .travel-cost.guess { color: var(--accent); }
 .travel-cost.start { font-style: italic; }
-.travel-where { min-width: 0; }
-/* How you cross, when it's anything but walking over a line — a boat, a spire, a translocator. Reads as
-   a tag rather than more of the sentence, so it's findable when scanning a long route. */
-.travel-via {
-  margin-left: 6px;
-  border: 1px solid var(--accent-dim);
-  border-radius: 4px;
-  padding: 0 5px;
-  color: var(--accent);
-  font-size: 10px;
+/**
+ * **What you do** — its own column, so a route is scanned down rather than read across.
+ *
+ * It replaced a badge tacked onto the end of the label, which could only mark the steps that *aren't*
+ * walking and so left the commonest instruction in a route — run — as the one nothing said out loud.
+ * Fixed width for the same reason the distance column is: the answer to "what next" should be in the
+ * same place on every row.
+ */
+.travel-how {
+  flex: 0 0 5.5em;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   white-space: nowrap;
+  color: var(--text-dim);
 }
+/* Anything that isn't running is free, and free is the thing worth spotting in a long route — so it
+   takes the app's "pay attention" colour and running stays quiet. */
+.travel-how:not(.walk) { color: var(--accent); }
+/* Takes the slack, so the ✕ sits at the right of the row rather than against the label. */
+.travel-where { flex: 1 1 auto; min-width: 0; }
 
 .map-users {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  /* A busy room is a long list, and it now sits in a box the reader sizes (`.panel-resize`). */
+  overflow-y: auto;
   padding: 8px 12px;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);

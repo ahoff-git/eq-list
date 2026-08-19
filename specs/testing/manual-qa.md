@@ -130,7 +130,10 @@ features for later in [../ideas.md](../ideas.md).
   - **A crashed main/map window.** Same, on the main window: it must lose its pin, stop eating clicks,
     and reload — coming back **pinned again** if that's how it was left.
   - **A hang.** Block the renderer (`while(true){}` in DevTools): the window must stop being on top
-    and stop taking clicks, and get both back when it recovers — *without* reloading.
+    and stop taking clicks, and get both back when it recovers — *without* reloading. Worth actually
+    doing rather than assuming: the click-through half never came back until
+    [ADR 0110](../decisions/0110-a-launched-window-is-visible-or-it-says-why.md), so a window that had
+    hiccuped once stayed un-clickable for the rest of the session.
   - **A main-process crash.** Hard to force deliberately; if one ever shows up in the log, check the
     line after it says the overlays were neutralized.
 - **Map window, real run.** Confirm the map window opens (🗺 button), draws the zone, and plots the
@@ -433,6 +436,19 @@ features for later in [../ideas.md](../ideas.md).
   **To** to the map you're viewing; a zone in the route shows that zone's map; the four checkboxes
   persist (they're `Settings.travel`) and changing one re-asks for the route.
 
+  **Ruling a place out — the ✕ per step and the *Not using* strip**
+  ([ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md)). The routing side is unit-tested
+  against a two-ring fixture; the panel is not. With **Druid** on, route somewhere the answer reaches by
+  a ring, press the ✕ on that ring's step, and confirm three things: the route **comes back** (a
+  different, longer one) rather than refusing, the ring appears as a chip under *Not using* **with its
+  own name and zone** rather than an id, and the druid checkbox is **still on** — losing one port must
+  not cost the network. Then press the chip and confirm the first route returns, and that both survive
+  closing and reopening the window (they're `Settings.travel`). The two negative cases worth causing:
+  rule out enough borders that the trip becomes impossible, and confirm the refusal *says* you've ruled
+  places out and that **Allow all** puts them back; and switch **map source** with places ruled out —
+  a ring's id belongs to its pack, so the entry may stop matching, and what to confirm is that it goes
+  quietly inert and is still listed and clearable, never that it errors.
+
   **Ports, since the model changed** ([ADR 0066](../decisions/0066-a-port-is-cast-from-where-you-stand.md)):
   with **Druid** on, a route out of a zone that has *no* ring should still port — the answer should read
   "port to <somewhere>, then walk", with no leg for reaching a ring first. Worth checking against how you'd
@@ -731,3 +747,78 @@ whether it *reads* right in a window nobody has looked at yet:
 - **The map window's notices.** It mounts its own host with no caller yet, so all that needs
   confirming is that a notice raised there lands inside *that* window, bottom-right, and doesn't sit
   under the toolbar or a side panel.
+
+## Launching the app (ADR 0110)
+
+The reported symptom — *windows in the taskbar that never open anything* — is a window with no renderer,
+which on a transparent frameless window looks exactly like nothing. Everything here is Electron window
+lifecycle, so none of it is unit-tested; the two pure rules under it are pinned in
+`electron/tests/window-launch.test.ts`. What matters is that each failure now **shows or says** something.
+
+- **A missing renderer build.** Rename `out/index.html` and start the built app. Expected: two 404
+  warnings in the log for `app://local/index.html`, one `already tried reviving once — showing the
+  failure page instead`, an `no exported renderer at …` error at the top, and — the point of it — a
+  **visible dark notice** in the window naming the tray's *Open debug log* and *Quit*. It must **not**
+  reload in a loop (that was the first version of this fix), and the map and alert windows, whose own
+  documents still exist, must come up normally.
+- **A dev server that isn't there.** `npm run dev:electron` alone, with no `next dev`: expected is a
+  two-minute sweep and then a line per port saying what each answered — *not* a silent timeout. For the
+  window half, kill `next dev` *after* the app is up and reload a window: the same
+  one-retry-then-notice path, on a connection error rather than a 404.
+- **A dev server on the wrong port.** The condition that prompted all of this: occupy 3000 (`npx
+  http-server -p 3000`, or leave a stale `next dev` running) and `npm run dev`. Expected: Next moves up,
+  the launcher **says** 3000 is held and by what, finds the renderer on 3001, and the app launches
+  against it. Then check the reverse — that with 3000 free it still takes 3000 and says so.
+- **An orphaned dev tree.** How that condition arises, and worth knowing on sight: if the Electron half
+  of `npm run dev` dies at startup, `concurrently -k` has been seen to leave the Next half running, and
+  it then holds 3000 for every later run. If dev ever misbehaves, look for a `next dev` older than the
+  session (`Get-CimInstance Win32_Process -Filter "Name='node.exe'"`) before looking anywhere else.
+- **A slow first load.** Nothing to force — but on a cold launch watch whether any window appears
+  *empty* for a moment. The reveal deadline is 3s, so a first load slower than that now shows an empty
+  frame that fills in. If that ever reads as a broken window rather than a loading one, the deadline is
+  the number to revisit.
+- **A window shown at the wrong size.** The mixed-DPI case: leave the app on a 125%-scaled secondary
+  monitor, quit, relaunch. It must come back the size it was left, not 1.25× bigger — this used to grow
+  on every launch, and the re-assert it depends on now hangs off the load as well as the paint.
+- **A second launch mid-boot.** Double-click the launcher twice in quick succession, before the first
+  window appears. Expected: one app, one set of windows, and no extra window that never loads.
+- **A launch that can't start at all.** Force it by corrupting `settings.json` into something that makes
+  a store throw (a truncated file is repaired, so this needs real garbage). Expected: an error dialog
+  naming the debug log, and the process **exits** — not an interface-less process left in Task Manager.
+  Restore the file afterwards.
+- **`ELECTRON_RUN_AS_NODE` in the environment.** `set ELECTRON_RUN_AS_NODE=1` then `npm run app`: it must
+  still launch. Unstripped it starts Electron as bare Node and dies on
+  `registerSchemesAsPrivileged`, which is the version of this bug that produces no window at all.
+- **A saved opacity of 0.** Put `"opacity": 0` in `settings.json` under `overlay` and launch: the window
+  must open at the 20% floor and be *visible*, and the Settings slider must read the clamped value.
+
+## Resizing a panel (ADR 0112)
+
+The arithmetic is pinned in `electron/tests/panel-size.test.ts`; the **gesture** can't be — a pointer
+drag over a CSS `zoom`, against percentages that resolve on a real window, is exactly what a unit test
+can't see. In the map window, with the 👁 / 🧭 / 📖 / ☠ / 👥 panels:
+
+- **The seam is grabbable, and grabbing it does nothing else.** Hover the bottom border of an open
+  panel: the cursor becomes ↕ and the line lights up. Drag down and up — the panel follows the pointer
+  1:1 and the map takes the rest. Confirm the drag doesn't select text in the panel, doesn't move the
+  *window* (the panel isn't the drag handle, but check anyway), and that a click on the bottom row of
+  content still reaches the content rather than starting a resize.
+- **Content behaves at both extremes.** Shrink the ☠ list to its smallest: the filter bar stays put and
+  the rows scroll under it. Grow the 🧭 route to its largest: only the answer scrolls, the From/To boxes
+  stay on screen, and — the specific thing to check — a **zone picker's dropdown still opens over the
+  edge of the panel** rather than being clipped or growing a scrollbar (the bug ADR 0109's panel notes).
+- **The bounds hold.** Drag as far down as it goes: the map keeps a visible strip (85% cap). As far up:
+  the panel stops at a readable sliver, never at just the handle (6% floor).
+- **Double-click a seam** and the panel returns to its default share.
+- **The handle is a control.** Tab to it (it's a `separator`, focusable) and confirm ArrowUp/ArrowDown
+  move the boundary 2% a press.
+- **Several panels at once.** Open all five, then drag two of them tall. Nothing may run off the bottom
+  of the window: the panels shrink to fit and the toolbar and titlebar stay reachable.
+- **Interface scale — the reason a height is a share.** Size a panel, then step the map's A− / A+ (60%
+  → 100%). The panel must stay the *same fraction* of the window at every scale, and dragging at 60%
+  must still track the pointer 1:1 rather than at 0.6× or 1.67×.
+- **It's remembered, per panel and per window.** Size the ☠ list, close it with its toolbar button,
+  reopen it: same height. Quit and relaunch: same height. Then confirm the 📖 panel beside it kept its
+  *own* height rather than adopting the other's.
+- **A maximize doesn't distort it.** Maximize the map window: every panel keeps its share, so a panel
+  sized to a third of a small window is a third of a large one.

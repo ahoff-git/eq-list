@@ -282,8 +282,9 @@ world coordinates, so a map knows where it is. See
 - **What's drawn** (the 👁 panel, `src/app/components/MapFilters.tsx`) — one place for four
   questions, in the order you'd ask them: **which heights**, **which of my pins**, **which of the
   map's own labels**, **whose shared pins**. A busy dungeon needs all four, so each is its own
-  section; the panel scrolls rather than growing, because the map is the point. Presentational —
-  every choice is owned by the map window, so it can't drift out of step with the canvas.
+  section; the panel scrolls rather than growing, because the map is the point — up to the height its
+  reader drags it to (below). Presentational — every choice is owned by the map window, so it can't
+  drift out of step with the canvas.
 - **Label filter** (`src/shared/map/poi-kinds.ts`) — a busy zone is mostly labels, and which ones
   matter depends on what you're there for, so each **kind** can be switched off. The choice persists.
 
@@ -504,6 +505,16 @@ world coordinates, so a map knows where it is. See
   whether or not they share anything: presence from awari's roster, names/zones from a
   `hello` payload, plus what each is sharing (location dot, pin count) and a button to
   jump to their zone. See [ADR 0015](../decisions/0015-peer-presence-via-hello.md).
+- **Every one of those five panels is resizable** (`ResizablePanel`, with the arithmetic in
+  `src/shared/panel-size.ts`). Each opens over the map with a default share of the window — 45% for
+  the 👁 floors and the 🧭 route, 40% for ☠ and 📖, 30% for the 👥 roster — and that default is a
+  **ceiling, not a size**: as tall as its content until someone drags the seam under it, then exactly
+  as tall as they said, scrolling whatever doesn't fit. Which of the panel and the map is "the point"
+  depends on what you're doing — a forty-step route or a dungeon's five sections of label kinds want
+  the window; a glance at who's connected doesn't — so the proportion is the reader's to set, and is
+  remembered per panel. Bounded 6%-85%, so the map always keeps a strip of itself, and the panels
+  shrink rather than overflowing when enough of them are open at once. Double-click a seam to put it
+  back. See [ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md).
 
 ## Non-responsibilities
 - No continuous position tracking: EQ only logs a location when one is emitted
@@ -560,4 +571,5 @@ world coordinates, so a map knows where it is. See
 [ADR 0011](../decisions/0011-awari-peer-location-sharing.md) ·
 [ADR 0015](../decisions/0015-peer-presence-via-hello.md) ·
 [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md) ·
-[ADR 0072](../decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md)
+[ADR 0072](../decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md) ·
+[ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md)

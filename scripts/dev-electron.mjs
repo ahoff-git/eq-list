@@ -14,10 +14,37 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
-import waitOn from "wait-on";
 import electronPath from "electron";
+import { electronEnv } from "./lib/cli.mjs";
 
-const URL = "http://localhost:3000";
+/**
+ * Where to start looking for the renderer, and how many ports to try.
+ *
+ * `next dev` does not insist on a port: if 3000 is taken it prints a warning and quietly moves up to
+ * the next free one. This script used to wait on 3000 flat, so that warning became a two-minute
+ * silence followed by nothing — Electron was never launched, and the only clue was a line in Next's
+ * own output. "Something on 3000" would not have been enough either: a **stale `next dev` from an
+ * earlier session** holding the port still answers requests (with 404s), and pointing a transparent
+ * window at a server that isn't ours is another invisible window. So the test is that the port serves
+ * *this* renderer, and the port that passes it is the one Electron is told about.
+ */
+const DEV_PORT = Number(process.env.EQL_DEV_PORT) || 3000;
+const PORT_SWEEP = 10;
+
+/** How long to keep sweeping — `next dev` needs a moment to boot and compile the first page. */
+const RENDERER_DEADLINE_MS = 120_000;
+/** Between sweeps, and per request, so one wedged server can't stall the sweep. */
+const SWEEP_PAUSE_MS = 500;
+const PROBE_TIMEOUT_MS = 2_000;
+
+/**
+ * What proves a port is serving **our** renderer rather than merely serving. The title comes from
+ * `src/app/layout.tsx`'s metadata — a stranger's server, or a stale instance of ours that has stopped
+ * compiling, doesn't produce it. Cosmetic coupling, deliberately: the alternative is a check that
+ * passes for any Next dev server, which is the mistake being fixed.
+ */
+const RENDERER_MARK = "<title>EQ List</title>";
+
 const TSC = ["node_modules/typescript/bin/tsc", "-p", "tsconfig.electron.json"];
 const OUT_DIR = "dist-electron";
 
@@ -37,16 +64,61 @@ if (spawnSync(process.execPath, TSC, { stdio: "inherit" }).status !== 0) process
 // 2. Recompile on change (a broken edit just won't emit, so we won't restart into it).
 const tscWatch = spawn(process.execPath, [...TSC, "--watch", "--preserveWatchOutput"], { stdio: "inherit" });
 
-// 3. Wait for the renderer dev server.
-console.log(`[dev-electron] waiting for ${URL} …`);
-await waitOn({ resources: [URL.replace("http", "http-get")], timeout: 120_000 });
+/** Ask one port what it is: ours, something else's, or nothing at all. */
+async function probe(port) {
+  try {
+    const res = await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+    if (!res.ok) return { port, ok: false, why: `answered ${res.status} ${res.statusText}` };
+    const body = await res.text();
+    if (body.includes(RENDERER_MARK)) return { port, ok: true };
+    return { port, ok: false, why: "answered 200, but it isn't this app's renderer" };
+  } catch (e) {
+    return { port, ok: false, why: e.name === "TimeoutError" ? "did not answer in time" : "nothing listening" };
+  }
+}
+
+/** Sweep the range until one port serves the renderer, or the deadline passes. */
+async function findRenderer() {
+  const ports = Array.from({ length: PORT_SWEEP }, (_, i) => DEV_PORT + i);
+  const deadline = Date.now() + RENDERER_DEADLINE_MS;
+  let tried = [];
+  while (Date.now() < deadline) {
+    tried = [];
+    for (const port of ports) {
+      const result = await probe(port);
+      tried.push(result);
+      if (result.ok) return { port, tried };
+    }
+    await new Promise((resolve) => setTimeout(resolve, SWEEP_PAUSE_MS));
+  }
+  return { port: null, tried };
+}
+
+// 3. Find the renderer dev server — wherever `next dev` actually ended up.
+console.log(`[dev-electron] looking for the renderer on ${DEV_PORT}-${DEV_PORT + PORT_SWEEP - 1} …`);
+const { port: devPort, tried } = await findRenderer();
+if (!devPort) {
+  console.error("[dev-electron] no renderer found — is `next dev` running? What each port said:");
+  for (const r of tried) console.error(`  ${r.port}: ${r.why}`);
+  cleanup();
+  process.exit(1);
+}
+const DEV_URL = `http://localhost:${devPort}`;
+if (devPort !== DEV_PORT) {
+  const held = tried.find((r) => r.port === DEV_PORT)?.why ?? "unavailable";
+  console.warn(`[dev-electron] ${DEV_PORT} is held by something else (${held}), so the renderer moved up.`);
+  console.warn("[dev-electron] a stale `next dev` from an earlier session does this — worth killing it.");
+}
+console.log(`[dev-electron] renderer at ${DEV_URL}`);
 
 let child = null;
 let restarting = false;
 let quitting = false;
 
 function launch() {
-  child = spawn(electronPath, ["."], { stdio: "inherit", env: process.env });
+  // The URL goes to Electron rather than being assumed by it: `windows.ts` cannot know which port
+  // `next dev` won, and the two halves guessing separately is how a dev run ends up loading nothing.
+  child = spawn(electronPath, ["."], { stdio: "inherit", env: { ...electronEnv(), EQL_DEV_URL: DEV_URL } });
   child.on("close", (code) => {
     if (restarting) {
       restarting = false;

@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { MapPoi } from "../../src/shared/map/eqmap";
-import { harvestZone, transportCrossing, travelPoint } from "../../src/shared/travel/harvest";
+import { deadConveyance, harvestZone, transportCrossing, travelPoint } from "../../src/shared/travel/harvest";
 
 const poi = (label: string, y = 0, x = 0, z = 0): MapPoi => ({ label, y, x, z, size: 3 });
 
@@ -130,4 +130,42 @@ test("a zone's harvest keeps the file's own order, and counts what it dropped", 
   // Order is what makes a place's node id stable across rebuilds.
   assert.deepEqual(points.map((p) => p.to), ["Lesser Faydark", "Clan Crushbone"]);
   assert.deepEqual(dropped, ["Zone Line"], "a mob isn't a dropped exit, but a nameless border is");
+});
+
+test("a conveyance the map calls dead is no travel point at all", () => {
+  // The whole corpus, both packs, ~1,200 files — four words, five labels, one meaning. Greater
+  // Faydark's *only* druid ring is the abandoned one, which is exactly why reading it as live is worse
+  // than not reading it: a hub makes every ring a destination from every zone, so one dead marker
+  // offers the whole world a free ride to a circle of stones that doesn't work.
+  for (const label of [
+    "Abandoned Druid Ring",
+    "Ruined Druid ring",
+    "Inactive Druid Ring",
+    "Broken Wizard Spire",
+    "Broken Portal",
+  ]) {
+    assert.ok(deadConveyance(label), label);
+    assert.equal(travelPoint(poi(label)), undefined, label);
+  }
+
+  // The live ones are untouched, including in a zone that has both.
+  assert.equal(travelPoint(poi("Druid Ring"))?.crossing, "ring");
+  assert.equal(travelPoint(poi("Wizard Spires"))?.crossing, "spire");
+  assert.deepEqual(
+    harvestZone("gfaydark", [poi("Abandoned Druid Ring"), poi("Wizard Spires"), poi("to Lesser Faydark")]).points.map(
+      (p) => p.label,
+    ),
+    ["Wizard Spires", "to Lesser Faydark"],
+  );
+});
+
+test("a dead word only counts when it sits on the conveyance", () => {
+  // The loose version — the two words anywhere in the label — reads a boat to a place with "Broken" in
+  // its name as a broken boat. One word between them is the ceiling, which is what `Broken Wizard
+  // Spire` needs and what these must not reach.
+  assert.equal(deadConveyance("to the Broken Skull Rock (boat)"), false);
+  assert.equal(deadConveyance("Ruined Temple of Cazic-Thule"), false);
+  assert.equal(deadConveyance("Abandoned Orc Shovel"), false);
+  // And a border into a dead crossing goes too, since the check runs before the label is read as one.
+  assert.equal(travelPoint(poi("to Paineel (broken portal)")), undefined);
 });

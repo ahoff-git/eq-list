@@ -10,7 +10,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildTravelGraph } from "../../src/shared/travel/build";
+import { buildTravelGraph, duplicateZoneFiles } from "../../src/shared/travel/build";
+import { findRoute, travelZone } from "../../src/shared/travel/route";
 import type { ZoneHarvest, TravelPoint } from "../../src/shared/travel/harvest";
 import type { TravelCrossing } from "../../src/shared/travel/types";
 
@@ -377,4 +378,58 @@ test("a border with a zone's own name is no border", () => {
   const { graph, report } = buildTravelGraph({ id: "stock" }, [zone("gfaydark", [border("Greater Faydark")])], NAMES);
   assert.deepEqual(graph.nodes, []);
   assert.deepEqual(report.isolated, ["gfaydark"]);
+});
+
+test("two files drawing one zone are one zone, and the named one is it", () => {
+  // Brewall's real case: `mistythicket.txt` beside `misty.txt`, same exits, different frames. The
+  // second is the zone's long name with the spaces closed up, so nothing in the catalogue names it —
+  // which is exactly what makes it look like a zone of its own.
+  const names = { misty: "Misty Thicket", mistythicket: "mistythicket", rivervale: "Rivervale" };
+  assert.deepEqual(duplicateZoneFiles(names, ["misty", "mistythicket", "rivervale"]), { mistythicket: "misty" });
+
+  // The named file wins whichever order the folder listed them in — it's the game's own short name,
+  // which is what the log says you're in.
+  assert.deepEqual(duplicateZoneFiles(names, ["mistythicket", "misty"]), { mistythicket: "misty" });
+  // And a pack with only the odd one out has nothing to fold: one drawing is the zone.
+  assert.deepEqual(duplicateZoneFiles(names, ["mistythicket", "rivervale"]), {});
+});
+
+test("a zone drawn twice doesn't double its borders, its rings, or itself", () => {
+  const names = { misty: "Misty Thicket", mistythicket: "mistythicket", rivervale: "Rivervale" };
+  const { graph, report } = buildTravelGraph(
+    { id: "brewall" },
+    [
+      zone("misty", [border("Rivervale", 0, 100), place("ring")]),
+      // The same place, drawn again, in its own coordinate frame — which is why the two are never
+      // merged into one node: averaging two frames puts the ring where neither of them has it.
+      zone("mistythicket", [border("Rivervale", 0, 4000), place("ring")]),
+      zone("rivervale", [border("Misty Thicket", 0, 0)]),
+    ],
+    names,
+  );
+
+  assert.deepEqual(graph.nodes.map((n) => n.id).sort(), ["misty#druid-rings", "misty|rivervale", "net:druid"]);
+  assert.deepEqual(graph.merged, { mistythicket: "misty" });
+  assert.deepEqual(report.merged, [{ dropped: "mistythicket", kept: "misty" }]);
+  // The one that was folded away isn't reported as a zone with no way out — it has a way out, and
+  // it's the one we kept.
+  assert.deepEqual(report.isolated, []);
+});
+
+test("a route asked for from the file that was folded away still lands on the zone", () => {
+  // The map window still offers `mistythicket` — the fold is the travel graph's, not the picker's —
+  // and the panel's "To" defaults to the map you're looking at. So it has to resolve.
+  const names = { misty: "Misty Thicket", mistythicket: "mistythicket", rivervale: "Rivervale" };
+  const { graph } = buildTravelGraph(
+    { id: "brewall" },
+    [
+      zone("misty", [border("Rivervale", 0, 100)]),
+      zone("mistythicket", [border("Rivervale", 0, 4000)]),
+      zone("rivervale", [border("Misty Thicket", 0, 0)]),
+    ],
+    names,
+  );
+  assert.equal(travelZone(graph, "mistythicket"), "misty");
+  assert.equal(travelZone(graph, "Misty Thicket"), "misty");
+  assert.ok(findRoute(graph, "rivervale", "mistythicket"), "and it is a real route, not a refusal");
 });

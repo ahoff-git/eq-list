@@ -34,6 +34,7 @@ import MapTitlebar from "../components/MapTitlebar";
 import MapToolbar from "../components/MapToolbar";
 import MapUsers from "../components/MapUsers";
 import PinEditor from "../components/PinEditor";
+import ResizablePanel from "../components/ResizablePanel";
 import Toasts from "../components/Toasts";
 import TravelPanel from "../components/TravelPanel";
 import { characterFromLogFile } from "@/shared/log-parser";
@@ -487,66 +488,78 @@ export default function MapWindow() {
         shares={{ kills: [shareKillsOn, setShareKillsOn], pins: [sharePinsOn, setSharePinsOn] }}
       />
 
+      {/* Each of these opens over the map, so each is a box the reader can size — the default is what
+          the panel was designed to take, and dragging its bottom edge says otherwise (`ResizablePanel`). */}
       {usersOpen && connected && (
-        <MapUsers users={room.users} onZone={(zone) => setOverride(findZone(zone, zones)?.name ?? zone)} />
+        <ResizablePanel id="map.users" share={30}>
+          <MapUsers users={room.users} onZone={(zone) => setOverride(findZone(zone, zones)?.name ?? zone)} />
+        </ResizablePanel>
       )}
 
       {travelOpen && (
-        <TravelPanel
-          zones={zones}
-          sourceId={sourceId}
-          currentZone={currentZone}
-          viewedZone={zoneName}
-          loc={loc}
-          travel={settings?.travel ?? { druid: false, wizard: false, gnome: true, succor: false }}
-          onTravel={(patch) => void api()?.settings.update({ travel: patch })}
-          // A zone in the route opens its map, which also turns "follow me" off — the same override
-          // the titlebar's picker sets, so the two can't disagree about what you're looking at.
-          onViewZone={setOverride}
-        />
+        <ResizablePanel id="map.travel" share={45}>
+          <TravelPanel
+            zones={zones}
+            sourceId={sourceId}
+            currentZone={currentZone}
+            viewedZone={zoneName}
+            loc={loc}
+            travel={settings?.travel ?? { druid: false, wizard: false, gnome: true, succor: false, avoid: [] }}
+            onTravel={(patch) => void api()?.settings.update({ travel: patch })}
+            // A zone in the route opens its map, which also turns "follow me" off — the same override
+            // the titlebar's picker sets, so the two can't disagree about what you're looking at.
+            onViewZone={setOverride}
+          />
+        </ResizablePanel>
       )}
 
       {mobsOpen && (
-        <MobKnowledgePanel
-          zone={zoneKey}
-          refreshKey={`${myKills.length}:${room.peerKills.length}`}
-          filters={killFilters}
-          onFilters={setKillFilters}
-          onMarkMob={markMobArea}
-          onEmphasize={setEmphasis}
-        />
+        <ResizablePanel id="map.mobs" share={40}>
+          <MobKnowledgePanel
+            zone={zoneKey}
+            refreshKey={`${myKills.length}:${room.peerKills.length}`}
+            filters={killFilters}
+            onFilters={setKillFilters}
+            onMarkMob={markMobArea}
+            onEmphasize={setEmphasis}
+          />
+        </ResizablePanel>
       )}
 
       {killsOpen && (
-        <KillList
-          kills={kills}
-          filters={killFilters}
-          onFilters={setKillFilters}
-          showConfidence={showKillConfidence}
-          onEmphasize={setEmphasis}
-        />
+        <ResizablePanel id="map.kills" share={40}>
+          <KillList
+            kills={kills}
+            filters={killFilters}
+            onFilters={setKillFilters}
+            showConfidence={showKillConfidence}
+            onEmphasize={setEmphasis}
+          />
+        </ResizablePanel>
       )}
 
       {filtersOpen && (
-        <MapFilters
-          floors={floors}
-          shownLayers={shownLayers}
-          onLayers={setLayers}
-          yourFloor={yourFloor}
-          zRange={zRange}
-          height={height}
-          onHeight={setHeight}
-          hiddenPinKinds={pinKinds.hidden}
-          onPinKind={pinKinds.setVisible}
-          poiGroups={poiGroups}
-          hiddenPoiKinds={poiKinds.hidden}
-          onPoiKinds={poiKinds.setVisible}
-          sharers={sharers}
-          hiddenSharers={hiddenSharers.hidden}
-          onSharer={hiddenSharers.setVisible}
-          zone={zoneKey}
-          onClearPins={clearZonePins}
-        />
+        <ResizablePanel id="map.filters" share={45}>
+          <MapFilters
+            floors={floors}
+            shownLayers={shownLayers}
+            onLayers={setLayers}
+            yourFloor={yourFloor}
+            zRange={zRange}
+            height={height}
+            onHeight={setHeight}
+            hiddenPinKinds={pinKinds.hidden}
+            onPinKind={pinKinds.setVisible}
+            poiGroups={poiGroups}
+            hiddenPoiKinds={poiKinds.hidden}
+            onPoiKinds={poiKinds.setVisible}
+            sharers={sharers}
+            hiddenSharers={hiddenSharers.hidden}
+            onSharer={hiddenSharers.setVisible}
+            zone={zoneKey}
+            onClearPins={clearZonePins}
+          />
+        </ResizablePanel>
       )}
 
       {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}

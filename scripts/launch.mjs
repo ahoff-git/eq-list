@@ -9,6 +9,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import electronPath from "electron";
+import { electronEnv } from "./lib/cli.mjs";
 
 function run(args) {
   const r = spawnSync(process.execPath, args, { stdio: "inherit" });
@@ -23,5 +24,5 @@ if (!built) {
 }
 
 console.log("[launch] starting EQ List…");
-const child = spawn(electronPath, ["."], { stdio: "inherit", env: process.env });
+const child = spawn(electronPath, ["."], { stdio: "inherit", env: electronEnv() });
 child.on("close", (code) => process.exit(code ?? 0));

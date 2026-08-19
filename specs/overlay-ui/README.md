@@ -725,6 +725,18 @@ list, hunt, search, damage, session, settings.
   component, while a row of values stays where it is. `WindowButtons` is the smallest case of the same
   rule — minimize/maximize/dismiss, so two title bars can't drift apart — and `Titlebar` is the same
   rule applied to the bar itself, so both windows drag, snap and double-click identically.
+- **A panel that opens over another view is sized by the person reading it.** The map's five
+  toolbar panels (👁 🧭 📖 ☠ 👥) each stack above the map with a default share of the window, and the
+  **seam under one is a drag handle** — a 6px grip on the border you can already see, transparent
+  until hovered, double-clicked to put the default back. The default is a *ceiling*: undragged, a
+  panel is its content's height and no more than it was designed to take; dragged, it is exactly what
+  was asked for and scrolls the rest. One `ResizablePanel` owns the box and knows nothing about what
+  it holds, so anything that opens over something else becomes resizable by being wrapped in one —
+  which is why it lives with the shared UI rather than with the map. A height is a **share of the
+  window** rather than a pixel count (`src/shared/panel-size.ts`, pure and tested), because a window's
+  scale is a CSS `zoom` that multiplies px and leaves a ratio alone, and it's remembered per panel in
+  the same `localStorage` that remembers which panels are open — sizing is a gesture, not a setting.
+  See [ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md).
 - **Errors are logged, never drawn over the game** (`src/lib/error-reporting.ts`): Next's
   dev error overlay is hidden outright — by CSS the *main process* injects into every window
   it loads (`HIDE_DEV_OVERLAY` in `electron/windows.ts`), so it holds even for a compile
@@ -750,6 +762,13 @@ be alive. See
 [ADR 0105](../decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) and, for
 the screengrab selector, [ADR 0102](../decisions/0102-a-lookup-never-holds-the-screen.md).
 
+The same rule at **launch**, where the failure looks different: a window whose renderer never arrives
+isn't unusable, it's *invisible* — a taskbar slot that takes a click and shows nothing. So a window is
+shown by whichever comes first of a paint, a load, or a deadline (never one event a broken renderer would
+never fire); an HTTP error page counts as a dead renderer rather than a successful load; and a window
+given up on shows a built-in notice pointing at the tray instead of staying a blank pane of glass. See
+[ADR 0110](../decisions/0110-a-launched-window-is-visible-or-it-says-why.md).
+
 ## Non-responsibilities
 - No business logic or persistence in the renderer — it calls `window.eql` and renders
   store state.
@@ -765,4 +784,6 @@ the screengrab selector, [ADR 0102](../decisions/0102-a-lookup-never-holds-the-s
 [ADR 0005](../decisions/0005-renderer-static-export-and-app-protocol.md) ·
 [ADR 0008](../decisions/0008-in-app-page-navigation.md) ·
 [ADR 0009](../decisions/0009-single-window-with-tray.md) ·
-[ADR 0052](../decisions/0052-an-error-goes-to-the-log-not-the-screen.md)
+[ADR 0052](../decisions/0052-an-error-goes-to-the-log-not-the-screen.md) ·
+[ADR 0110](../decisions/0110-a-launched-window-is-visible-or-it-says-why.md) ·
+[ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md)

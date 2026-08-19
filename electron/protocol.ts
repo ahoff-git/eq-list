@@ -47,6 +47,12 @@ export function registerAppProtocolScheme(): void {
 
 /** Must be called after app `ready` — maps app:// requests into `outDir`. */
 export function handleAppProtocol(outDir: string): void {
+  // Said once, at the top, because the alternative is silence: a missing export answers every request
+  // with a 404 *body*, which a frameless transparent window renders as nothing at all. The window
+  // layer now treats that 404 as a dead renderer, but this is the line that says why.
+  if (!fs.existsSync(path.join(outDir, "index.html"))) {
+    log.error("no exported renderer at", outDir, "— run `npm run build`; windows have nothing to show");
+  }
   protocol.handle(APP_SCHEME, async (request) => {
     const { pathname } = new URL(request.url);
     const rel = decodeURIComponent(pathname).replace(/^\/+/, "") || "index.html";
@@ -61,6 +67,9 @@ export function handleAppProtocol(outDir: string): void {
       const type = MIME[path.extname(resolved).toLowerCase()] ?? "application/octet-stream";
       return new Response(new Uint8Array(data), { headers: { "content-type": type } });
     } catch {
+      // Debug-gated: source maps and probes miss routinely, and the one miss that matters — the
+      // document itself — is reported by the window that asked for it (`guardRenderer`).
+      log.debug("no such asset", rel);
       return new Response("Not found", { status: 404 });
     }
   });

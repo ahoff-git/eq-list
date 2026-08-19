@@ -87,6 +87,31 @@ const PORTAL = /\bportals?\b/i;
 const SUCCOR = /\bsucco(?:u)?rs?\b|\bevac(?:uate|uation)?\b/i;
 
 /**
+ * **A conveyance the mapmaker marked dead.**
+ *
+ * A ring is a ring by its words ([ADR 0048](../../../specs/decisions/0048-a-map-label-is-read-by-its-words.md)),
+ * and those words sometimes say it doesn't work: Greater Faydark's only druid ring is labelled
+ * `Abandoned Druid Ring`, and you cannot port to it. Read as a live ring it is worse than a missing
+ * one — a hub edge makes it a destination **from every zone in the world**, so one dead marker offers
+ * the whole map a free ride to nowhere, and a route that takes it is confident and wrong.
+ *
+ * **The whole corpus, measured**, across both packs and ~1,200 files: `Abandoned Druid Ring`
+ * (gfaydark), `Ruined Druid ring` (direwind), `Inactive Druid Ring` (rathemtn), `Broken Wizard Spire`
+ * (nektulos), `Broken Portal` (umbral). Four words, five labels, and every one of them means the same
+ * thing.
+ *
+ * **Adjacency is what keeps it safe.** The dead word has to sit on the conveyance — one word between
+ * them at most, for `Broken Wizard Spire` — because the loose version would read `to the Broken Skull
+ * Rock (boat)` as a dead boat. Matched over the corpus it catches those five and nothing else.
+ */
+const DEAD = /\b(?:abandoned|broken|inactive|ruined|derelict|collapsed|defunct)\s+(?:[a-z'`]+\s+)?(?:druid\s*rings?|spires?|portals?|translocators?)\b/i;
+
+/** Does this label say its own conveyance doesn't work? See `DEAD`. */
+export function deadConveyance(label: string): boolean {
+  return DEAD.test(label);
+}
+
+/**
  * How a conveyance label says you cross, or `undefined` when it says nothing we recognise.
  *
  * Order matters only where a label mentions two: `Dock (Translocator Narrik)` is a gnome standing on a
@@ -128,9 +153,16 @@ const RECLASSIFIABLE = new Set(["transport", "named", "note"]);
  * A **`Succor`** marker is the exception among those, and the reason is that it isn't a border at all:
  * it names no destination because it *has* none, being the spot inside this zone an evacuation drops
  * you at. That's a place, and a complete fact on its own.
+ *
+ * A conveyance the label calls **dead** is no travel point either — see `DEAD`.
  */
 export function travelPoint(poi: MapPoi): TravelPoint | undefined {
   const label = poi.label.trim();
+  // **A ring the map calls abandoned is not a way anywhere**, and reading it as one is worse than not
+  // reading it at all: a hub makes every ring a destination from every zone, so a single dead marker
+  // offers the whole world a free ride to a circle of stones that doesn't work. Checked before
+  // anything else, so it holds for a border that names a dead crossing as much as for a place.
+  if (deadConveyance(label)) return undefined;
   const at: TravelAt = { y: poi.y, x: poi.x, z: poi.z };
   const kind = poiKind(label);
 

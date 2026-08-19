@@ -34,4 +34,13 @@ export const STORAGE_KEYS = {
   mapShareKills: "eqlist.map.shareKills",
   /** Map window: the travel panel's visibility. Which conveyances you have is a *setting*, not this. */
   mapTravelOpen: "eqlist.map.travelOpen",
+  /**
+   * Any resizable panel (`ResizablePanel`), by the id it was given: the height its reader dragged it
+   * to, as a % of its window. Absent means "as the panel was designed" — a default is a real answer
+   * rather than a missing one, so it is stored as nothing at all rather than as a number.
+   *
+   * A key per panel, not one record holding every panel: two open panels are two components, and two
+   * writers of one key would each save its own stale copy of the other's height.
+   */
+  panelHeight: (id: string) => `eqlist.panel.${id}.h`,
 } as const;
