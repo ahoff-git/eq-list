@@ -10,7 +10,7 @@
  * that scales each entry's needed count. `effectiveNeeded(entry, runs)` is the
  * single source of truth for "how many you actually need".
  */
-import type { ShoppingListEntry, WikiPageKind } from "./types";
+import type { ShoppingList, ShoppingListEntry, WikiPageKind } from "./types";
 import { itemBaseName } from "./names";
 
 export interface ListGroup {
@@ -55,6 +55,18 @@ export const countableEntries = (entries: ShoppingListEntry[]): ShoppingListEntr
 /** Whether one entry's claim has been met. Only ever asked of a countable entry. */
 export const satisfied = (entry: ShoppingListEntry, runs: number): boolean =>
   entry.obtained >= effectiveNeeded(entry, runs);
+
+/**
+ * How many runs *this* entry's group is set to — the multiplier `effectiveNeeded` wants, read
+ * straight from the list.
+ *
+ * `groupByOrigin` already knows it per group, and everything that draws the list goes through there.
+ * This is for the one caller holding a single entry and no group: the loot alert, which is handed the
+ * entries a line satisfied and has to quote the same figures the row shows (ADR 0105).
+ */
+export function runsFor(list: Pick<ShoppingList, "questRuns">, entry: ShoppingListEntry): number {
+  return Math.max(1, list.questRuns[originKey(entry.origin)] ?? 1);
+}
 
 /** Per-entry count needed, scaled by how many runs its group is set to. */
 export function effectiveNeeded(entry: ShoppingListEntry, runs: number): number {

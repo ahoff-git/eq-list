@@ -135,8 +135,15 @@ function triggerHit(w: CastWatch, text: string): boolean | null {
   return text.toLowerCase().includes(needle);
 }
 
-/** Too old to act on — the same liveness rule casts get, for the same reason. */
-function stale(at: string, now: number): boolean {
+/**
+ * Too old to act on — the same liveness rule casts get, for the same reason.
+ *
+ * Exported because it is not really about casting: **everything logged while the app was shut is fed
+ * through the live path**, so any alert raised from a log line has to ask this question. The loot
+ * alert (`alert-router.ts`) is the second caller, and it reuses this rather than keeping a "is the
+ * log news yet" flag of its own.
+ */
+export function stale(at: string, now: number): boolean {
   const t = Date.parse(at);
   return !Number.isNaN(t) && now - t > LIVE_WITHIN_MS;
 }

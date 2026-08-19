@@ -22,6 +22,7 @@ import { createSpellCatalog } from "./spells";
 import { createCombatHistory } from "./combat-history";
 import { createHighScores } from "./high-scores";
 import { eventCandidates, fightCandidates } from "../src/shared/high-scores";
+import { effectiveNeeded, runsFor } from "../src/shared/grouping";
 import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";
 import { createKillLog } from "./kill-log";
@@ -363,6 +364,10 @@ if (!app.requestSingleInstanceLock()) {
     broadcast(CH.lootEvent, event);
     for (const entry of store.applyLoot(event)) {
       broadcast(CH.lootMatched, { event, entry });
+      // And out loud, for an entry that asked to be told — the router owns every rule about whether
+      // it actually speaks. The count it quotes is the row's own, runs and all, so the banner and the
+      // list can't disagree about how far along you are (ADR 0105).
+      alerts.loot(event, entry, effectiveNeeded(entry, runsFor(store.getList(), entry)));
     }
   });
   // Considering or hailing a mob you're timing counts as seeing it up — free evidence from what a

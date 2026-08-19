@@ -5,7 +5,7 @@ import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
 import { categoryOf, formatScore } from "@/shared/high-scores";
 import { alertPlacement } from "@/shared/alert-styles";
-import type { AlertPositionValue, AlertStyle, CastAlertEvent, HighScore } from "@/shared/types";
+import type { AlertPositionValue, AlertStyle, CastAlertEvent, HighScore, LootAlert } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -142,10 +142,23 @@ export default function CastAlerts({ canBeep = true, showVisual = true }: { canB
  */
 function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: string } {
   const icon =
-    a.event === "record" ? "🏆" : a.event === "spawn" ? "💀" : a.event === "line" ? "💬" : a.event === "fade" ? "⏳" : "⚠";
+    a.event === "record"
+      ? "🏆"
+      : a.event === "spawn"
+        ? "💀"
+        : a.event === "loot"
+          ? "💰"
+          : a.event === "line"
+            ? "💬"
+            : a.event === "fade"
+              ? "⏳"
+              : "⚠";
   // A record before the `message` check: it has no wording to override, and it words itself from the
   // shared catalog rather than being handed a sentence (see `recordAlert`).
   if (a.event === "record" && a.record) return recordBanner(a.record);
+  // A drop is the same case: no watch behind it, so no wording to override, and the counts it words
+  // itself from are already in the payload (see `lootAlert`).
+  if (a.event === "loot" && a.loot) return lootBanner(a.loot);
   if (a.message?.trim()) return { icon, body: <b>{a.message}</b> };
   if (a.event === "spawn") {
     return {
@@ -180,6 +193,37 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
       </>
     ),
     hint: "dispel!",
+  };
+}
+
+/**
+ * Something on your list just dropped.
+ *
+ * The **item leads** and the count follows: the name is what you recognise without reading, and
+ * "3 of 5" is the thing you were waiting to hear. A line that *finishes* the entry says so in a word
+ * instead — the point of the last one is that it was the last one, not that it was the fifth — and it
+ * is the last banner that entry raises (see `AlertRouter.loot`).
+ */
+function lootBanner(loot: LootAlert): { icon: string; body: ReactNode; hint?: string } {
+  const done = loot.obtained >= loot.needed;
+  return {
+    icon: "💰",
+    body: (
+      <>
+        <b>{loot.item}</b>
+        {loot.qty > 1 ? ` ×${loot.qty}` : ""} —{" "}
+        {done ? (
+          <b>done</b>
+        ) : (
+          <>
+            {loot.obtained} of {loot.needed}
+          </>
+        )}
+      </>
+    ),
+    // News rather than a warning, so it says where it came from instead of what to press — which is
+    // also the one thing the loot line knows that the list doesn't.
+    hint: loot.source ? `from ${loot.source}` : "on your list",
   };
 }
 

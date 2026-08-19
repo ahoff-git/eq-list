@@ -124,7 +124,10 @@ export interface Store {
     origin?: ShoppingListEntry["origin"];
   }): ShoppingList;
   addFromPage(page: WikiPage): ShoppingList;
-  updateEntry(id: string, patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note">>): ShoppingList;
+  updateEntry(
+    id: string,
+    patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note" | "notify">>,
+  ): ShoppingList;
   removeEntry(id: string): ShoppingList;
   clearList(): ShoppingList;
   setQuestRuns(originKey: string, runs: number): ShoppingList;

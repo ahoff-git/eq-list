@@ -667,3 +667,28 @@ npm run sim -- --from fixtures/spawn-camp-eqlog.txt --relative
 **`--relative` is not optional here.** The default stamps every line "now", which collapses the gaps
 the timers are learned from and makes the tab look broken — see the flag's note in
 `scripts/replay-log.mjs`.
+
+## A tracked item's banner (ADR 0105)
+
+Built, unit-tested through the router, and **never seen over the game**. The rules are covered by
+`electron/tests/alert-router.test.ts` (an unarmed row is silent, a replayed drop is silent, the
+completing line says `done` and the ones after it say nothing); what a real camp would settle:
+
+- **Is the built-in `Loot` look right over the game?** Gold at top-right for 5s with `levelup` is a
+  judgement, and the thing it competes with is EQ's own loot window — which is on screen at exactly
+  that moment, in roughly that corner. A camp is what says whether it wants a different spot.
+- **Does the completing line reliably say `done`?** It rests on `applyLoot` having already credited
+  the count when the router is called, so the arithmetic is `obtained - qty`. A stack that completes
+  an entry (`You looted 2 Bone Chips` on a row needing 5 with 4 held) is the case to watch.
+- **Is one row's worth of noise the right unit?** Arming a row you then farm for an evening is the
+  test of "off by default, per entry" — if the honest answer is a cooldown, that is the open question
+  in [decisions/README.md](../decisions/README.md) and this is its second caller.
+
+To exercise it without playing: arm a row for an item in the fixture, then
+
+```
+npm run sim -- --from fixtures/sample-eqlog.txt
+```
+
+The default "stamp every line now" is what you want here (unlike the spawn timers): the liveness rule
+means a backdated loot line raises nothing at all.

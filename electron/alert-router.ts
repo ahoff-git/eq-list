@@ -23,8 +23,8 @@
  * means the new cue rather than the old one.
  */
 import { createAlertQueue, type AlertQueue, type Timers } from "./alert-queue";
-import { lineSubject, matchCast, matchFade, matchLine, watchesLines, type MatchContext } from "../src/shared/cast-alerts";
-import { alertStyle } from "../src/shared/alert-styles";
+import { lineSubject, matchCast, matchFade, matchLine, stale, watchesLines, type MatchContext } from "../src/shared/cast-alerts";
+import { alertStyle, LOOT_STYLE_ID } from "../src/shared/alert-styles";
 import type {
   AlertStyle,
   CastAlertEvent,
@@ -34,6 +34,8 @@ import type {
   HighScore,
   HighScoreSettings,
   LogLine,
+  LootEvent,
+  ShoppingListEntry,
 } from "../src/shared/types";
 
 export interface AlertRouterDeps {
@@ -65,6 +67,15 @@ export interface AlertRouter {
    * rather than in main: resolving the look through every layer is this module's job.
    */
   record(record: HighScore): void;
+  /**
+   * A loot line satisfied something on the shopping list — say so, if that entry asked to be told.
+   *
+   * Like `record` it skips steps 2 and 4: the *list* decided this was worth hearing (the entry's own
+   * `notify`), and a "it dropped" held back until later is not one. `needed` comes in already scaled
+   * by the group's runs, so the banner quotes the row's own figures rather than doing arithmetic the
+   * list has already done (`effectiveNeeded`).
+   */
+  loot(event: LootEvent, entry: ShoppingListEntry, needed: number): void;
   /** A log line, before it was parsed: cancel what it cancels, then match raw-text rules. */
   line(line: LogLine): void;
   /** Alerts were switched off — drop every waiting cue, since there's nothing left to say them on. */
@@ -133,6 +144,25 @@ export function createAlertRouter({ getSettings, getScoreSettings, getZone, rais
       raise(recordAlert(getSettings(), scores, record));
     },
 
+    loot(event, entry, needed) {
+      // Two gates, meaning different things — the same pair a spawn timer has. `notify` is *this
+      // entry*: off unless asked, because the list holds a quest's twenty Bone Chips beside the one
+      // robe you are camping. `enabled` is the overlay itself, and an app the player silenced stays
+      // silent with no second exception to hunt for.
+      if (!entry.notify) return;
+      const settings = getSettings();
+      if (!settings.enabled) return;
+      // Everything logged while the app was shut is replayed through this same path, so without this
+      // a launch would banner about last night's drops. The rule casts already have, reused rather
+      // than re-invented as a "is the log news yet" flag (`stale`).
+      if (stale(event.at, Date.now())) return;
+      // A finished entry has nothing left to ask for. The line that *completes* it still speaks —
+      // and says "done" — but the ones after it don't, or a satisfied row left on the list (which is
+      // exactly what `showObtained` is for) would nag for ever about a thing you already have.
+      if (entry.obtained - event.qty >= needed) return;
+      raise(lootAlert(settings, event, entry, needed));
+    },
+
     line(line) {
       const settings = getSettings();
       // Every line in the log comes through here, so the two cheap "is anybody listening?" questions
@@ -194,6 +224,41 @@ export function recordAlert(
     // A celebration wears a **saved style** or the defaults, and never a look of its own — see
     // `HighScoreSettings`. Resolved through the same layering every alert uses.
     style: alertStyle(settings, { styleId: scores.styleId }),
+  };
+}
+
+/**
+ * The banner for a tracked item that just dropped.
+ *
+ * The counts travel **raw**, the way a record's figure does and for the same reason: what the banner
+ * wants to say is "that's the third of five", the arithmetic is already done, and the overlay can word
+ * it. `spell` carries the item name — nothing reads it for a loot banner, but every other payload
+ * fills it, and a blank field is one the next reader has to wonder about.
+ *
+ * It wears the shipped **Loot** look rather than the alert defaults, for the reason the spawn timer
+ * does: a drop landing is good news, and arriving in the same red as "dispel now" is exactly what the
+ * built-ins exist to avoid. There is no per-entry style — `Loot` is an ordinary saved style, editable
+ * in the Alerts tab, so "loot alerts should look like this" is one decision in one place (ADR 0105).
+ */
+export function lootAlert(
+  settings: CastAlertSettings,
+  event: LootEvent,
+  entry: ShoppingListEntry,
+  needed: number,
+): CastAlertEvent {
+  return {
+    caster: "",
+    spell: entry.name,
+    at: event.at,
+    event: "loot",
+    loot: {
+      item: event.item,
+      source: event.source,
+      qty: event.qty,
+      obtained: entry.obtained,
+      needed,
+    },
+    style: alertStyle(settings, { styleId: LOOT_STYLE_ID }),
   };
 }
 

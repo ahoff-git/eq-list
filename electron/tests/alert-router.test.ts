@@ -10,6 +10,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createAlertRouter, sampleAlert } from "../alert-router";
+import { BUILT_IN_STYLES, LOOT_STYLE_ID } from "../../src/shared/alert-styles";
+import { parseLoot } from "../../src/shared/log-parser";
 import type { Timers } from "../alert-queue";
 import { splitLine } from "../../src/shared/log-parser";
 import { parseSplitLine } from "../../src/shared/parse-line";
@@ -20,6 +22,8 @@ import type {
   CombatEvent,
   HighScoreSettings,
   LogLine,
+  LootEvent,
+  ShoppingListEntry,
 } from "../../src/shared/types";
 
 /** A hand-cranked clock, so a cue's timing is a fact rather than a wait. */
@@ -273,4 +277,109 @@ test("a look can be previewed while it's being edited, belonging to no rule at a
   assert.equal(sample.style?.animation, "wiggle");
   // …and it's still the ordinary cast banner, since what's being judged is the look.
   assert.equal(sample.event, "cast");
+});
+
+// ── a tracked item dropping ────────────────────────────────────────────────────
+
+/** A list entry, with only the fields the alert path reads spelled out. */
+const listed = (over: Partial<ShoppingListEntry> = {}): ShoppingListEntry => ({
+  id: "e1",
+  name: "Flowing Black Robe",
+  needed: 1,
+  obtained: 1,
+  addedAt: "2026-08-01T12:00:00Z",
+  notify: true,
+  ...over,
+});
+
+/**
+ * A loot event from the game's own sentence, stamped **now** — parsed rather than hand-built, so a
+ * test of the alert can't quietly disagree with what the parser actually produces. `ago` backdates it,
+ * which is how the replayed-gap rule is tested.
+ */
+function looted(text: string, agoMs = 0): LootEvent {
+  const d = new Date(Date.now() - agoMs);
+  const [dow, mon, day, year] = d.toDateString().split(" ");
+  const raw = `[${dow} ${mon} ${day} ${d.toTimeString().slice(0, 8)} ${year}] ${text}`;
+  const split = splitLine(raw, 1);
+  assert.ok(split, "the fixture line must parse");
+  const loot = parseLoot(split);
+  assert.ok(loot, "the fixture line must be a loot line");
+  return loot;
+}
+
+const ROBE = "--You have looted a Flowing Black Robe from Ghoul Lord's corpse.--";
+
+test("a tracked item that drops raises a banner carrying the counts and the Loot look", () => {
+  // The built-ins spelled out, because that's what a real settings file holds (`store.ts` seeds them
+  // and `migrations.ts` adds any that arrived later). Without them `alertStyle` drops through to the
+  // defaults — correct behaviour for a style the player deleted, and not what's being tested here.
+  const h = harness([], { styles: [...BUILT_IN_STYLES] });
+  h.router.loot(looted(ROBE), listed(), 1);
+  assert.equal(h.raised.length, 1);
+  const alert = h.raised[0];
+  assert.equal(alert.event, "loot");
+  assert.equal(alert.loot?.item, "Flowing Black Robe");
+  assert.equal(alert.loot?.source, "Ghoul Lord");
+  assert.equal(alert.loot?.obtained, 1);
+  assert.equal(alert.loot?.needed, 1);
+  // The built-in Loot style, not the alert defaults — a drop landing must not arrive in dispel red.
+  assert.equal(alert.style?.color, "#d4a03c");
+});
+
+test("an entry that didn't ask stays silent, and so does a silenced overlay", () => {
+  const off = harness([]);
+  off.router.loot(looted(ROBE), listed({ notify: false }), 1);
+  assert.equal(off.raised.length, 0, "no bell on the row, no banner");
+
+  const silenced = harness([], { enabled: false });
+  silenced.router.loot(looted(ROBE), listed(), 1);
+  assert.equal(silenced.raised.length, 0, "the master switch covers this path too");
+});
+
+test("last night's drop doesn't announce itself at launch", () => {
+  // Everything logged while the app was shut is replayed through this same call, so the liveness
+  // rule is the only thing standing between a startup and a screenful of old news.
+  const h = harness([]);
+  h.router.loot(looted(ROBE, 6 * 60 * 60 * 1000), listed(), 1);
+  assert.equal(h.raised.length, 0);
+});
+
+test("the line that finishes an entry speaks; the ones after it don't", () => {
+  const h = harness([]);
+  // Chips 4 of 5 → still outstanding, and the banner says so.
+  h.router.loot(looted("--You have looted a Bone Chips from a decaying skeleton's corpse.--"), listed({ name: "Bone Chips", needed: 5, obtained: 4 }), 5);
+  // The fifth completes it — the last banner this entry raises.
+  h.router.loot(looted("--You have looted a Bone Chips from a decaying skeleton's corpse.--"), listed({ name: "Bone Chips", needed: 5, obtained: 5 }), 5);
+  // A sixth, on a row the player left on the list, is a thing they already have.
+  h.router.loot(looted("--You have looted a Bone Chips from a decaying skeleton's corpse.--"), listed({ name: "Bone Chips", needed: 5, obtained: 6 }), 5);
+  assert.equal(h.raised.length, 2);
+  assert.equal(h.raised[0].loot?.obtained, 4);
+  assert.equal(h.raised[1].loot?.obtained, 5);
+});
+
+test("a stack counts as the stack it was, and the entry's need is the one it was handed", () => {
+  const h = harness([]);
+  // "You looted 2 Spiderling Eye…" — one line, two closer to done. The prior count is therefore
+  // `obtained - qty`, which is what decides whether the entry was already finished.
+  h.router.loot(
+    looted("You looted 2 Spiderling Eye from a coyote's corpse and sold it for 1 silver and 4 copper."),
+    listed({ name: "Spiderling Eye", needed: 4, obtained: 2 }),
+    // Scaled by the group's runs before it ever gets here (`effectiveNeeded`), so the banner and the
+    // row can't disagree: two runs of a quest wanting 4.
+    8,
+  );
+  assert.equal(h.raised.length, 1);
+  assert.equal(h.raised[0].loot?.qty, 2);
+  assert.equal(h.raised[0].loot?.needed, 8);
+});
+
+test("a loot banner never waits, and nothing cancels it", () => {
+  const h = harness([]);
+  h.feed(line("You have been slain by a gnoll pup!"));
+  h.router.loot(looted(ROBE), listed(), 1);
+  // Straight to the overlay: there is no cue to hold and a death doesn't undo a drop.
+  assert.equal(h.raised.length, 1);
+  assert.equal(h.router.pending(), 0);
+  assert.equal(LOOT_STYLE_ID, "built-in:loot");
 });

@@ -1144,6 +1144,13 @@ export interface ShoppingListEntry {
   addedAt: string;
   /** Set when a matching loot line arrives; drives the overlay flash. */
   lastSeenAt?: string;
+  /**
+   * Raise a banner when a loot line satisfies this entry. **Per entry, and off by default** — the
+   * list holds twenty Bone Chips as readily as the one robe you are camping, and a banner per chip
+   * is the noise an overlay exists to spare you. Same choice a spawn timer's `notify` makes, for
+   * the same reason (ADR 0105).
+   */
+  notify?: boolean;
 }
 
 export interface ShoppingList {
@@ -1666,6 +1673,27 @@ export interface CastAlertSettings extends AlertStyle {
 }
 
 /**
+ * A tracked item that just dropped, as the banner needs it.
+ *
+ * Raw rather than pre-worded, the way a `HighScore` is: what the overlay wants to say is "that's
+ * the third of five", and the counts are the sentence. `needed` is the **effective** need — the
+ * entry's own count scaled by its group's runs (`effectiveNeeded`) — because that is the figure the
+ * list row shows, and a banner disagreeing with the row it came from is worse than no banner.
+ */
+export interface LootAlert {
+  /** The item as the loot line named it. */
+  item: string;
+  /** The corpse it came off, for "from a froglok tad". */
+  source: string;
+  /** How many the line reported — a stack of 2 moves the list 2 closer to done. */
+  qty: number;
+  /** How many you hold now, this line included. */
+  obtained: number;
+  /** How many this entry wants, its group's runs applied. */
+  needed: number;
+}
+
+/**
  * Fired when a watched spell begins casting or fades, or a watched **line** appeared — the
  * payload the overlay banner shows.
  */
@@ -1677,11 +1705,12 @@ export interface CastAlertEvent {
   at: string;
   /**
    * Which prompt this is. A cast says "dispel, now"; a fade says "cast it again"; a line just
-   * repeats what the game said; a **record** says well done, and a **spawn** says a named you were
-   * timing is back — the last two being the ones that aren't warnings. Absent means a cast, so an
-   * alert sent by an older build still reads correctly.
+   * repeats what the game said; a **record** says well done, a **spawn** says a named you were
+   * timing is back, and a **loot** says something on your list has just dropped — the last three
+   * being the ones that aren't warnings. Absent means a cast, so an alert sent by an older build
+   * still reads correctly.
    */
-  event?: "cast" | "fade" | "line" | "record" | "spawn";
+  event?: "cast" | "fade" | "line" | "record" | "spawn" | "loot";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
   /**
@@ -1701,6 +1730,11 @@ export interface CastAlertEvent {
    * the overlay can name and format the category itself (`src/shared/high-scores.ts`).
    */
   record?: HighScore;
+  /**
+   * For a `loot` alert, the drop that satisfied a list entry — carried raw for the same reason a
+   * record is: the counts *are* the message, and the overlay can word them itself.
+   */
+  loot?: LootAlert;
   /**
    * The look and sound this alert should use, already resolved from the defaults and the watch's
    * own overrides (`alertStyle`). Carried with the alert so the overlay renders what *this* watch
@@ -1983,7 +2017,10 @@ export interface EqlApi {
     }): Promise<ShoppingList>;
     /** Add every component of a scraped quest/recipe at once. */
     addFromPage(page: WikiPage): Promise<ShoppingList>;
-    update(id: string, patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note">>): Promise<ShoppingList>;
+    update(
+      id: string,
+      patch: Partial<Pick<ShoppingListEntry, "needed" | "obtained" | "note" | "notify">>,
+    ): Promise<ShoppingList>;
     remove(id: string): Promise<ShoppingList>;
     clear(): Promise<ShoppingList>;
     /** Set how many times to run a quest/recipe group (by origin key); scales needs. */

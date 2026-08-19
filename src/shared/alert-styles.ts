@@ -248,6 +248,7 @@ export function alertPlacement(
  */
 export const RECORD_STYLE_ID = "built-in:record";
 export const SPAWN_STYLE_ID = "built-in:spawn";
+export const LOOT_STYLE_ID = "built-in:loot";
 
 export const BUILT_IN_STYLES: NamedAlertStyle[] = [
   {
@@ -277,6 +278,22 @@ export const BUILT_IN_STYLES: NamedAlertStyle[] = [
       position: "top-right",
       durationMs: 10000,
       animation: "pulse",
+    },
+  },
+  {
+    id: LOOT_STYLE_ID,
+    name: "Loot",
+    // Gold-ish and short: a drop is news you are looking at the screen for anyway (you just looted
+    // it), so it wants a moment of pleasure rather than the lingering "get over here" a pop needs.
+    // It does not flash — the one thing you are doing when this fires is reading a loot window.
+    style: {
+      sound: true,
+      flash: false,
+      color: "#d4a03c",
+      soundName: "levelup",
+      position: "top-right",
+      durationMs: 5000,
+      animation: "float",
     },
   },
 ];

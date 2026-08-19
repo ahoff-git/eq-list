@@ -239,6 +239,20 @@ function EntryRow({
             </button>
           </>
         )}
+        {/* Off by default, and per row: the list holds a quest's twenty Bone Chips beside the one
+            robe you're camping, and a banner per chip is the noise an overlay exists to spare you
+            (ADR 0105). The glyph carries the state, so it needs no second control saying which it is.
+            Never on a mob — nothing drops it, so there is no loot line to speak. */}
+        {!isMob && (
+          <button
+            className="btn ghost sm"
+            title={entry.notify ? "Alerting when this drops — click to silence" : "Alert me when this drops"}
+            aria-pressed={!!entry.notify}
+            onClick={() => api()?.list.update(entry.id, { notify: !entry.notify })}
+          >
+            {entry.notify ? "🔔" : "🔕"}
+          </button>
+        )}
         <button className="btn ghost sm" title="Remove" onClick={() => api()?.list.remove(entry.id)}>
           ✕
         </button>

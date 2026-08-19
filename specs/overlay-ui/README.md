@@ -145,7 +145,10 @@ list, hunt, search, damage, session, settings.
     explanation come from one place. The entry's **+/− adjust
     how many you've acquired** (`obtained`); `needed` comes from the turn-in qty × runs.
     Entries flash on match; the name navigates in-app, and an ↗ button opens its eqlwiki
-    page (`wiki.openInBrowser`, host-validated in main). A quest/recipe group has a
+    page (`wiki.openInBrowser`, host-validated in main). A row can also be **armed** — the 🔔/🔕
+    toggle (`notify`) raises a banner on the alert overlay the moment a loot line satisfies it
+    ([ADR 0105](../decisions/0105-a-tracked-item-says-so-when-it-drops.md)), wearing the built-in
+    **Loot** look; off by default, never offered on a mob, and silent once the entry is met. A quest/recipe group has a
     **×N runs** control (`list.setRuns`) — running a quest twice doubles every turn-in's
     needed count. `effectiveNeeded(entry, runs)` is the one source of truth for "how many
     you actually need". A quest/recipe group header also has an **↗ eqlwiki** button and a
