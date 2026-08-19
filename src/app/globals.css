@@ -95,6 +95,24 @@ button {
   background: color-mix(in srgb, var(--bad) 14%, transparent);
   border-color: var(--bad);
 }
+/* An add button that has just been pressed: it goes green and pops for a moment, so a press that
+   changes something on another tab is visibly a press that landed (`AddButton` in ui.tsx). */
+/* `:hover` is listed because the pointer is by definition still on the button that was just clicked,
+   and `.btn.ghost:hover` would otherwise repaint it mid-pop. */
+.btn.added,
+.btn.added:hover {
+  background: var(--good);
+  border-color: var(--good);
+  color: #06200f;
+  /* The label is two characters longer than "+ Add"; a row that let it wrap would change height. */
+  white-space: nowrap;
+  animation: add-pop 0.34s ease-out;
+}
+@keyframes add-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
 
 .field {
   width: 100%;
@@ -194,7 +212,12 @@ button {
   border-color: transparent;
 }
 .titlebar {
-  -webkit-app-region: drag; /* the titlebar is the window drag handle */
+  /* The window's drag handle. The drag itself is ours rather than Chromium's
+     `-webkit-app-region: drag` — that one only ever moved the window, so a frameless window got no
+     snap zones and no double-click to maximize (see `useWindowDrag`, ADR 0108). What's left here is
+     what a caption looks like: text you can't select out from under the gesture. */
+  user-select: none;
+  cursor: default;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -208,8 +231,11 @@ button {
 }
 .titlebar h1 .mark { color: var(--accent); }
 .win-controls { display: flex; gap: 2px; }
-.no-drag,
-.win-controls { -webkit-app-region: no-drag; }
+/* `no-drag` marks a control inside the drag handle: `useWindowDrag` looks for it and leaves the
+   press alone, so the control is pressed rather than the window moved. A class rather than a style,
+   since the gesture is read in JS now — but the typing controls still need their text selectable. */
+.titlebar input,
+.titlebar textarea { user-select: text; }
 .wc {
   background: transparent;
   border: none;
@@ -2386,3 +2412,49 @@ kbd {
 }
 .zone-option.on { background: var(--bg); color: var(--text); }
 .zone-option.current { color: var(--accent); }
+
+/* ── toasts: the brief "that worked" notice, bottom-right ───────
+   Raised by an add (lib/toast.ts) and drawn by `Toasts`, over the panel but under the alert
+   banners (z-index 100) — a confirmation must never sit on top of "your item just dropped". */
+.toasts {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 78%;
+}
+.toast {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  /* The tone lives in the left edge rather than the whole card: at a glance it's the same shape as
+     everything else in the window, which is what keeps it a notice and not an interruption. */
+  border-left: 3px solid var(--text-dim);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  animation: toast-in 0.22s ease-out;
+}
+/* Only the stripe carries the tone — see `ToastTone`. */
+.toast.tone-good { border-left-color: var(--good); }
+.toast.tone-warn { border-left-color: var(--accent); }
+.toast.tone-bad { border-left-color: var(--bad); }
+.toast-title { font-weight: 600; }
+.toast-detail { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+/* Set shortly before the card is dropped, so it leaves rather than vanishes (see `LEAVE_MS`). */
+.toast.leaving {
+  opacity: 0;
+  transform: translateX(8px);
+  transition: opacity 0.26s ease-in, transform 0.26s ease-in;
+}
+@keyframes toast-in {
+  0% { opacity: 0; transform: translateY(10px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}

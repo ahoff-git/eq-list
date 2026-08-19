@@ -1,11 +1,12 @@
 "use client";
-import { api } from "@/lib/api";
 import { useMobZones } from "@/lib/hooks";
+import { ringMob, ringOnHover } from "@/lib/showOnMap";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
-import { count, locText } from "@/shared/format";
+import { count } from "@/shared/format";
 import { describeCoins, formatCoins } from "@/shared/money";
-import { roamWhy, type MobKnowledge } from "@/shared/mob-stats";
+import type { MobKnowledge } from "@/shared/mob-stats";
 import ItemLink from "./ItemLink";
+import { RoamLink, ZoneLink } from "./MapLink";
 
 /**
  * What **your** kills say about the mob whose page you're reading — one block per zone you've killed
@@ -26,8 +27,6 @@ import ItemLink from "./ItemLink";
 export default function MobKills({ mob }: { mob: string }) {
   const zones = useMobZones(mob);
   const kills = zones.reduce((n, z) => n + z.kills, 0);
-  /** Ring this mob's kills on a map that's already open (null takes the ask back). */
-  const emphasize = (on: boolean) => api()?.map.emphasize(on ? { mobs: [mob] } : null);
 
   if (zones.length === 0) {
     return (
@@ -43,17 +42,11 @@ export default function MobKills({ mob }: { mob: string }) {
       <h4 className="muted small" style={{ marginTop: 12 }}>
         Your kills · {count(kills, "kill")} in {count(zones.length, "zone")}
       </h4>
-      <div className="mob-kills" onMouseLeave={() => emphasize(false)}>
+      <div className="mob-kills" onMouseLeave={() => ringMob(null)}>
         {zones.map((z) => (
-          <div className="mk-zone" key={z.zone} onMouseEnter={() => emphasize(true)}>
+          <div className="mk-zone" key={z.zone} {...ringOnHover(mob)}>
             <div className="mk-head">
-              <span
-                className="link"
-                title={`View ${z.zone} on the map, with this mob's kills picked out`}
-                onClick={() => api()?.map.openAt(z.zone, undefined, undefined, { mob })}
-              >
-                {z.zone}
-              </span>
+              <ZoneLink zone={z.zone} focus={{ mob }} />
               <span className="muted small" title={whoseKills(z)}>
                 {count(z.kills, "kill")}
                 {z.kills > z.myKills ? ` (${z.myKills} yours)` : ""}
@@ -67,19 +60,8 @@ export default function MobKills({ mob }: { mob: string }) {
                 </span>
               )}
               <span className="spacer" />
-              {z.area && (
-                // Readable as well as clickable: the numbers are what you type into the game, and
-                // the click opens the map there with this mob's kills picked out (ADR 0104).
-                <button
-                  className="btn ghost sm mk-loc"
-                  title={`${roamWhy(z.area)} — click to open the map there and show these kills`}
-                  onClick={() =>
-                    api()?.map.openAt(z.zone, { y: z.area!.y, x: z.area!.x }, mob, { mob })
-                  }
-                >
-                  {locText(z.area)} <span className="muted">±{z.area.spread}</span>
-                </button>
-              )}
+              {/* Readable as well as clickable: the numbers are what you type into the game. */}
+              {z.area && <RoamLink zone={z.zone} area={z.area} mob={mob} />}
             </div>
             <div className="mob-drops">
               {z.drops.length === 0 ? (

@@ -231,3 +231,57 @@ export function PickField({
     </select>
   );
 }
+
+/** How long an add button holds its "done" look. Long enough to see, short enough to press again. */
+const ADDED_MS = 1100;
+
+/**
+ * A "+ Add" that answers back.
+ *
+ * The list it adds to lives on another tab, so every one of these used to be a button that visibly
+ * did nothing — the only confirmation was to go and look. It swaps to a tick and pops for a moment
+ * (`.btn.added` in globals.css), which says *this press landed* the instant it happens; what was
+ * added, and how many you now need, is the toast the add itself raises (`lib/addToList.ts`).
+ *
+ * The look is set on click rather than when the add resolves, because the two answer different
+ * questions: the button answers "did it hear me", which is true immediately, and the toast answers
+ * "what did it do", which the main process has to be asked.
+ *
+ * A component rather than a class, because it holds a timer and there are six of these buttons.
+ */
+export function AddButton({
+  children,
+  onAdd,
+  className = "btn sm primary",
+  title,
+  done = "✓ Added",
+}: {
+  children: ReactNode;
+  onAdd: () => void;
+  className?: string;
+  title?: string;
+  /** What it says while it's showing that it worked. */
+  done?: ReactNode;
+}) {
+  // A counter, not a boolean: pressing again while the tick is up has to restart the timer, and a
+  // flag that's already true changes nothing for the effect to react to.
+  const [press, setPress] = useState(0);
+  useEffect(() => {
+    if (!press) return;
+    const id = setTimeout(() => setPress(0), ADDED_MS);
+    return () => clearTimeout(id);
+  }, [press]);
+  const added = press > 0;
+  return (
+    <button
+      className={cls(className, added && "added")}
+      title={title}
+      onClick={() => {
+        setPress((n) => n + 1);
+        onAdd();
+      }}
+    >
+      {added ? done : children}
+    </button>
+  );
+}

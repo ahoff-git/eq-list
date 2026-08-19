@@ -6,6 +6,7 @@ import type { EqMap } from "./map/eqmap";
 import type { MapSourceReport } from "./map/map-sources";
 import type { TravelAnswer, TravelEnd } from "./travel/route";
 import type { TravelOptions } from "./travel/types";
+import type { DragEnd } from "./window-snap";
 
 /** A zone's vector map as it crosses IPC: geometry, labels, and who drew it. */
 export type LoadedMap = EqMap & { credits: string[] };
@@ -13,6 +14,8 @@ export type LoadedMap = EqMap & { credits: string[] };
 export type { MapSourceReport };
 /** Re-exported so a renderer can type a route without reaching into the travel module. */
 export type { TravelAnswer, TravelEnd, TravelOptions };
+/** Re-exported for the same reason: a titlebar ends a drag without importing the geometry. */
+export type { DragEnd };
 
 /**
  * types.ts — the shared contract between the Electron main process and the
@@ -1369,6 +1372,16 @@ export interface SpawnView {
  * windows now: the map's own ☠ list, and the main window's Hunt tab (over `map.emphasize`). Both
  * are the same question — "where did those die?" — so they send the same shape.
  */
+export interface KillEmphasis {
+  /**
+   * The mobs to ring. Usually one — a hovered row — but pointing at a *drop* asks about every mob
+   * known to give it up, and "where do snake fangs come from" is one question with several answers,
+   * not several questions. A list rather than a name for exactly that reason.
+   */
+  mobs?: string[];
+  id?: string;
+}
+
 /**
  * What a window opening the map wants **brought up with it** — the evidence behind the position it
  * just asked for (ADR 0104).
@@ -1384,14 +1397,22 @@ export interface MapFocus {
   drop?: string;
 }
 
-export interface KillEmphasis {
-  /**
-   * The mobs to ring. Usually one — a hovered row — but pointing at a *drop* asks about every mob
-   * known to give it up, and "where do snake fangs come from" is one question with several answers,
-   * not several questions. A list rather than a name for exactly that reason.
-   */
-  mobs?: string[];
-  id?: string;
+/**
+ * Somewhere to show on the map, whole — the one shape every "show me on the map" click sends.
+ *
+ * Four kinds of click ask for this (a zone name, a wiki `Location:` coordinate, an observed roam
+ * centre, a drop row) and they differ only in how much they can say about it, which is why this is
+ * one optional-tailed shape rather than four call signatures. `showOnMap` in `src/lib/showOnMap.ts`
+ * is the only thing that sends it, and `MapLink` the only thing that draws a click for it.
+ */
+export interface MapTarget {
+  zone: string;
+  /** EQ y,x. With one, the map drops a marker there; without, it just views the zone. */
+  loc?: { y: number; x: number };
+  /** What to write on that marker. */
+  label?: string;
+  /** What the position *is*, so the map can bring up the evidence behind it (ADR 0104). */
+  focus?: MapFocus;
 }
 
 // ─── Health estimate ────────────────────────────────────────────────────────
@@ -2454,6 +2475,18 @@ export interface EqlApi {
     minimize(): void;
     /** Maximize this window, or restore it if it already is. */
     toggleMaximize(): void;
+    /**
+     * Drag this window by its titlebar, with Windows-style snapping — the gesture the renderer
+     * watches and the main process acts on (`window-drag.ts`). Drive it with `useWindowDrag`
+     * rather than by hand: the three calls are one gesture, and a `dragStart` with no `dragEnd`
+     * leaves the window following the pointer.
+     *
+     * No coordinates cross: main reads the cursor itself, so nothing here has to reason about a
+     * window's CSS zoom or a monitor's scale factor.
+     */
+    dragStart(): void;
+    dragMove(): void;
+    dragEnd(how: DragEnd): void;
     /**
      * This window maximized or restored — by our button or by anything else (a drag-region
      * double-click, Win+Up, the taskbar). Drives the titlebar button's glyph, and fires again

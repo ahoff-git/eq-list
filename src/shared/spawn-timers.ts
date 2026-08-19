@@ -50,6 +50,17 @@
  * due time and raises the alert is [electron/spawn-tracker.ts](../../electron/spawn-tracker.ts).
  */
 import { mobKey } from "./mob-stats";
+import {
+  confidenceOf,
+  contradicts,
+  disagrees,
+  plausible,
+  settle,
+  tighten,
+  tightestOf,
+  type Confidence,
+  type SampleScale,
+} from "./estimates";
 import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
 
@@ -76,6 +87,21 @@ export const MIN_RESPAWN_SECONDS = 90;
  * measure is the cycle rather than the spawn.
  */
 export const MAX_RESPAWN_SECONDS = 12 * SECONDS_PER_HOUR;
+
+/**
+ * What an observation has to fall inside to count — the two constants above, as the shape
+ * `estimates.plausible` takes. Every kind of evidence here is checked against it: a kill gap, a
+ * sighting and a "not up yet" are all claims about the same quantity, and a floor that let one of
+ * them through on different terms would be a hole in the ratchet.
+ */
+export const RESPAWN_RANGE = { min: MIN_RESPAWN_SECONDS, max: MAX_RESPAWN_SECONDS };
+
+/**
+ * When a respawn stops being an anecdote. Lower than a drop rate's, and deliberately: a rate needs
+ * dozens of kills before it means anything, while three independent gaps agreeing about a timer is
+ * genuinely worth acting on.
+ */
+export const RESPAWN_SAMPLES: SampleScale = { fair: 3, solid: 8 };
 
 /**
  * How far apart the shortest and longest gap have to be before the figure is worth distrusting out
@@ -285,14 +311,14 @@ export function learnRespawns(
       if (before.zone !== after.zone) continue;
       const gap = Math.round((after.at - before.at) / MS_PER_SECOND);
       // Implausible on either side is discarded, never clamped: see the ratchet note up top.
-      if (gap < MIN_RESPAWN_SECONDS || gap > MAX_RESPAWN_SECONDS) continue;
+      if (!plausible(gap, RESPAWN_RANGE)) continue;
       const id = gapId(before.at, after.at);
       const dropped = !!isDropped?.(key, id);
       gaps.push({ id, seconds: gap, endedAt: new Date(after.at).toISOString(), dropped });
       if (dropped) continue;
       samples += 1;
-      if (shortest === undefined || gap < shortest) shortest = gap;
-      if (longest === undefined || gap > longest) longest = gap;
+      shortest = tighten(shortest, gap, "upper");
+      longest = tighten(longest, gap, "lower");
     }
     // Shortest first: the shortest gap *is* the figure, so it is what anyone opening the list came
     // to check. Ties keep the later one first, which is the one still fresh in mind.
@@ -388,28 +414,37 @@ export function respawnFor(
 ): Respawn | undefined {
   const withFloor = (r: Respawn | undefined): Respawn | undefined =>
     r && floor && floor.seconds > 0 ? { ...r, floorSeconds: floor.seconds } : r;
-  if (stated !== undefined && stated > 0) {
-    return withFloor({ seconds: stated, source: "stated", samples: 0 });
-  }
 
-  const killed =
+  // Both observed figures are **upper** bounds on the same quantity, so the tighter is simply the
+  // better one — `tightestOf` is the shared rule, and it carries which source won because "seen up
+  // three times" and "from three kill gaps" are worth different amounts to a reader. A sighting is
+  // listed first so it takes a tie: it excludes the time spent reaching and killing the mob. It is
+  // *not* otherwise privileged — a kill gap that came in tighter is a real bound, and preferring
+  // the sighting anyway would be discarding evidence to protect a label.
+  const best = tightestOf<Respawn>([
+    seen && seen.seconds > 0
+      ? { value: seen.seconds, source: { seconds: seen.seconds, source: "seen", samples: seen.count } }
+      : undefined,
     learned?.shortestSeconds === undefined
       ? undefined
       : {
-          seconds: learned.shortestSeconds,
-          source: "killed" as const,
-          samples: learned.samples,
-          spreadSeconds: learned.longestSeconds,
-        };
-  const sighted = seen && seen.seconds > 0 ? { seconds: seen.seconds, source: "seen" as const, samples: seen.count } : undefined;
+          value: learned.shortestSeconds,
+          source: {
+            seconds: learned.shortestSeconds,
+            source: "killed",
+            samples: learned.samples,
+            spreadSeconds: learned.longestSeconds,
+          },
+        },
+  ]);
 
-  // Both are upper bounds, so the smaller is simply the better one — the same rule that picks the
-  // shortest gap, applied one level up. A sighting usually wins because it excludes the time spent
-  // reaching and killing the mob, but it isn't privileged: if a kill gap somehow came in tighter,
-  // that is a real bound too and pretending otherwise would be discarding evidence.
-  if (!killed) return withFloor(sighted);
-  if (!sighted) return withFloor(killed);
-  return withFloor(sighted.seconds <= killed.seconds ? sighted : killed);
+  // What the player typed outranks all of it, and never destroys it: `best` is still computed, so
+  // clearing the override restores the inference rather than leaving a blank.
+  const chosen = settle(stated, best?.source.seconds);
+  if (!chosen) return undefined;
+  return withFloor(
+    chosen.stated ? { seconds: chosen.value, source: "stated", samples: 0 } : best!.source,
+  );
 }
 
 /**
@@ -422,7 +457,12 @@ export function respawnFor(
  * observation; saying so puts them one click from dropping whichever they know to be wrong.
  */
 export function contradicted(respawn: Respawn): boolean {
-  return respawn.floorSeconds !== undefined && respawn.floorSeconds >= respawn.seconds;
+  return contradicts(respawn.seconds, respawn.floorSeconds);
+}
+
+/** How much a learned figure is worth, on this feature's own scale. */
+export function respawnConfidence(respawn: Respawn): Confidence {
+  return respawn.source === "stated" ? "solid" : confidenceOf(respawn.samples, RESPAWN_SAMPLES);
 }
 
 /**
@@ -430,17 +470,12 @@ export function contradicted(respawn: Respawn): boolean {
  * nothing usable. Bounded exactly like a sighting, and for the same reasons.
  */
 export function floorFrom(killedAt: string, atMs: number): number | null {
-  const died = Date.parse(killedAt);
-  if (Number.isNaN(died)) return null;
-  const seconds = Math.round((atMs - died) / MS_PER_SECOND);
-  if (seconds < MIN_RESPAWN_SECONDS || seconds > MAX_RESPAWN_SECONDS) return null;
-  return seconds;
+  return sinceDeath(killedAt, atMs);
 }
 
 /** Fold a fresh "not yet" into what earlier ones taught — the **longest** wins, and the count grows. */
 export function raiseFloor(floor: Floor | undefined, seconds: number): Floor {
-  if (!floor) return { seconds, count: 1 };
-  return { seconds: Math.max(floor.seconds, seconds), count: floor.count + 1 };
+  return { seconds: tighten(floor?.seconds, seconds, "lower"), count: (floor?.count ?? 0) + 1 };
 }
 
 /**
@@ -452,8 +487,8 @@ export function raiseFloor(floor: Floor | undefined, seconds: number): Floor {
  * where a kill gap's can be several placeholder cycles.
  */
 export function erratic(respawn: Respawn): boolean {
-  if (respawn.source !== "killed" || respawn.spreadSeconds === undefined) return false;
-  return respawn.spreadSeconds > respawn.seconds * ERRATIC_RATIO;
+  if (respawn.source !== "killed") return false;
+  return disagrees(respawn.seconds, respawn.spreadSeconds, ERRATIC_RATIO);
 }
 
 /**
@@ -465,17 +500,23 @@ export function erratic(respawn: Respawn): boolean {
  * because this feeds the ratchet and an invented short number there is permanent.
  */
 export function sightingFrom(killedAt: string, seenAtMs: number): number | null {
+  return sinceDeath(killedAt, seenAtMs);
+}
+
+/**
+ * Seconds between a death and a moment, when that is a usable observation — the shared body of
+ * `sightingFrom` and `floorFrom`, which differ only in which direction they then ratchet.
+ */
+function sinceDeath(killedAt: string, atMs: number): number | null {
   const died = Date.parse(killedAt);
   if (Number.isNaN(died)) return null;
-  const seconds = Math.round((seenAtMs - died) / MS_PER_SECOND);
-  if (seconds < MIN_RESPAWN_SECONDS || seconds > MAX_RESPAWN_SECONDS) return null;
-  return seconds;
+  const seconds = Math.round((atMs - died) / MS_PER_SECOND);
+  return plausible(seconds, RESPAWN_RANGE) ? seconds : null;
 }
 
 /** Fold a fresh sighting into what earlier ones taught — the shortest wins, and the count grows. */
 export function tightenSighting(seen: Sighting | undefined, seconds: number): Sighting {
-  if (!seen) return { seconds, count: 1 };
-  return { seconds: Math.min(seen.seconds, seconds), count: seen.count + 1 };
+  return { seconds: tighten(seen?.seconds, seconds, "upper"), count: (seen?.count ?? 0) + 1 };
 }
 
 /** A countdown: one named, in one place, with a window we expect it back in. */

@@ -34,6 +34,7 @@ import MapTitlebar from "../components/MapTitlebar";
 import MapToolbar from "../components/MapToolbar";
 import MapUsers from "../components/MapUsers";
 import PinEditor from "../components/PinEditor";
+import Toasts from "../components/Toasts";
 import TravelPanel from "../components/TravelPanel";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
@@ -619,6 +620,9 @@ export default function MapWindow() {
         />
       )}
 
+      {/* Once per window is all it takes for anything in it to be able to say "that worked"
+          (`lib/toast.ts`). Each window has its own bus, so a notice appears where it was raised. */}
+      <Toasts />
     </div>
   );
 }

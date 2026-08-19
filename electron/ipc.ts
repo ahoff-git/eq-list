@@ -17,6 +17,7 @@ import { dataReport } from "./data-health";
 import { selfCheck } from "./self-check";
 import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, setAlertInteractive, showInSearch } from "./windows";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
+import { endWindowDrag, moveWindowDrag, startWindowDrag } from "./window-drag";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
 import type { LogWatcher } from "./log-watcher";
@@ -34,6 +35,7 @@ import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
+import type { DragEnd } from "../src/shared/window-snap";
 
 const log = createLogger("ipc");
 
@@ -608,6 +610,13 @@ function registerPeerIpc(context: IpcContext): void {
     if (win.isMaximized()) win.unmaximize();
     else win.maximize();
   });
+  // Dragging a frameless window by its titlebar, snapping and all — `window-drag.ts` owns the
+  // behaviour; these three carry the gesture the renderer is watching (see `useWindowDrag`).
+  ipcMain.on(CH.winDragStart, (e) => startWindowDrag(BrowserWindow.fromWebContents(e.sender)));
+  // A pulse, not a position: main reads the cursor itself, in the same coordinates as the bounds
+  // it sets, so a window's CSS zoom or a monitor's scale factor can't skew the drag.
+  ipcMain.on(CH.winDragMove, () => moveWindowDrag());
+  ipcMain.on(CH.winDragEnd, (_e, how: DragEnd) => endWindowDrag(how));
   // Hide to tray (single-window app): keep the process alive so the tray/hotkey can reshow.
   ipcMain.on(CH.winHide, (e) => BrowserWindow.fromWebContents(e.sender)?.hide());
   // How this window was left, and remembering a change to it (see ADR 0074). The renderer doesn't

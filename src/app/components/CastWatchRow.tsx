@@ -4,6 +4,7 @@ import { alertStyle, OWN_STYLE as OWN, plan, styleWearers } from "@/shared/alert
 import { wantsCast } from "@/shared/watch-conditions";
 import { summarizeWatch } from "@/shared/watch-summary";
 import { encodeWatches } from "@/shared/watch-share";
+import { copyText } from "@/lib/clipboard";
 import AlertStyleFields from "./AlertStyleFields";
 import WatchCheck from "./WatchCheck";
 import WatchConditionRows from "./WatchConditionRows";
@@ -277,7 +278,7 @@ export default function CastWatchRow({
             <button
               className="btn ghost sm"
               title="Copy this rule as a share code you can paste to somebody else"
-              onClick={() => void navigator.clipboard?.writeText(encodeWatches([w]))}
+              onClick={() => void copyText(encodeWatches([w]), "the rule’s share code")}
             >
               Copy rule
             </button>

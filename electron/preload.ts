@@ -185,6 +185,9 @@ const api: EqlApi = {
   win: {
     minimize: () => ipcRenderer.send(CH.winMinimize),
     toggleMaximize: () => ipcRenderer.send(CH.winToggleMaximize),
+    dragStart: () => ipcRenderer.send(CH.winDragStart),
+    dragMove: () => ipcRenderer.send(CH.winDragMove),
+    dragEnd: (how) => ipcRenderer.send(CH.winDragEnd, how),
     onMaximizeChanged: (cb) => on(CH.winMaximizeChanged, cb),
     hide: () => ipcRenderer.send(CH.winHide),
     getState: () => ipcRenderer.invoke(CH.winGetState),

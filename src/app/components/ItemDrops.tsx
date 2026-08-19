@@ -1,12 +1,12 @@
 "use client";
-import { api } from "@/lib/api";
 import { useItemDrops, useItemPrices } from "@/lib/hooks";
+import { ringMob, ringOnHover } from "@/lib/showOnMap";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
-import { count, locText } from "@/shared/format";
+import { count } from "@/shared/format";
 import { itemDropTotals, priceOfItem, type ItemDropSource } from "@/shared/item-sources";
-import { roamWhy } from "@/shared/mob-stats";
 import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
+import { RoamLink, ZoneLink } from "./MapLink";
 import type { ItemSource } from "@/shared/types";
 
 /**
@@ -20,10 +20,11 @@ import type { ItemSource } from "@/shared/types";
  * Every row here is evidence: a mob we watched give it up, the camps we killed it in, and — from the
  * positions on those kills — roughly *where* in the camp it was standing.
  *
- * **Every position opens the map**, exactly as a mob page's does: the zone views that zone, and the
- * roam centre drops a marker on it. Pointing at a mob rings its kills on an already-open map; it
- * never opens one, since a window that appears because the cursor crossed a name is one nobody asked
- * for.
+ * **Every position opens the map** (`MapLink`), exactly as a mob page's does: the zone views that
+ * zone, and the roam centre — printed, since a coordinate is a figure you read as well as click —
+ * marks the spot and brings up what dropped there. Pointing at a mob rings its kills on an
+ * already-open map; it never opens one, since a window that appears because the cursor crossed a
+ * name is one nobody asked for.
  */
 export default function ItemDrops({ item, sources }: { item: string; sources: ItemSource[] }) {
   const rows = useItemDrops(item, sources);
@@ -33,8 +34,6 @@ export default function ItemDrops({ item, sources }: { item: string; sources: It
   const price = priceOfItem(item, prices);
   const totals = itemDropTotals(rows);
   const wikiClaimsDrops = sources.some((s) => s.kind === "drop");
-  /** Ring this mob's kills on a map that's already open (null takes the ask back). */
-  const emphasize = (mob: string | null) => api()?.map.emphasize(mob ? { mobs: [mob] } : null);
 
   const priceLine = price && (
     <p className="muted small" style={{ marginTop: 8 }}>
@@ -68,9 +67,11 @@ export default function ItemDrops({ item, sources }: { item: string; sources: It
           ? `Where you've seen it drop · ${count(totals.seen, "drop")} from ${count(totals.mobs, "mob")} in ${count(totals.kills, "kill")}`
           : `What your kills say · ${count(totals.kills, "kill")} and none of them dropped it`}
       </h4>
-      <div className="mob-kills" onMouseLeave={() => emphasize(null)}>
+      {/* Leaving the block clears the ringing outright — the backstop every list that rings kills
+          keeps, since switching tabs fires no `mouseleave` on the row the cursor was on. */}
+      <div className="mob-kills" onMouseLeave={() => ringMob(null)}>
         {rows.map((row) => (
-          <div className="mk-zone" key={row.mob} onMouseEnter={() => emphasize(row.mob)}>
+          <div className="mk-zone" key={row.mob} {...ringOnHover(row.mob)}>
             <div className="mk-head">
               <ItemLink title={row.mob} className="name" />
               {row.verdict === "undocumented" && (
@@ -101,36 +102,14 @@ export default function ItemDrops({ item, sources }: { item: string; sources: It
             <div className="mob-drops">
               {row.places.map((place) => (
                 <div className="mob-drop" key={place.zone}>
-                  <span
-                    className="link"
-                    title={`View ${place.zone} on the map, with this drop picked out`}
-                    onClick={() => api()?.map.openAt(place.zone, undefined, undefined, { mob: row.mob, drop: item })}
-                  >
-                    {place.zone}
-                  </span>
+                  <ZoneLink zone={place.zone} focus={{ mob: row.mob, drop: item }} />
                   <span className="spacer" />
                   <span className="md-count muted small">
                     {place.seen}/{place.kills}
                   </span>
-                  {place.area && (
-                    // The coordinate itself is the button: a rough y,x is worth *reading* — it goes
-                    // straight into the game — and worth clicking, which opens the map there with
-                    // the panel that says what dropped and how often (ADR 0104).
-                    <button
-                      className="btn ghost sm mk-loc"
-                      title={`${roamWhy(place.area)} — click to open the map there and show this drop`}
-                      onClick={() =>
-                        api()?.map.openAt(
-                          place.zone,
-                          { y: place.area!.y, x: place.area!.x },
-                          `${item} · ${row.mob}`,
-                          { mob: row.mob, drop: item },
-                        )
-                      }
-                    >
-                      {locText(place.area)} <span className="muted">±{place.area.spread}</span>
-                    </button>
-                  )}
+                  {/* The coordinate itself is the control: a rough y,x is worth reading — it goes
+                      straight into the game — as well as clicking. */}
+                  {place.area && <RoamLink zone={place.zone} area={place.area} mob={row.mob} drop={item} />}
                 </div>
               ))}
             </div>

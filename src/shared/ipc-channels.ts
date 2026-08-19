@@ -107,6 +107,13 @@ export const CH = {
   winMinimize: "win:minimize",
   /** Maximize/restore this window — frameless windows have to ask for it. */
   winToggleMaximize: "win:toggleMaximize",
+  /**
+   * Dragging a frameless window by its titlebar, with snapping (see `window-drag.ts`). The renderer
+   * owns the gesture and sends only these three — grabbed, moved, released — never a coordinate.
+   */
+  winDragStart: "win:dragStart",
+  winDragMove: "win:dragMove",
+  winDragEnd: "win:dragEnd",
   /** Sent to a window when it maximizes or restores, so its titlebar button can follow. */
   winMaximizeChanged: "evt:winMaximized",
   winHide: "win:hide",

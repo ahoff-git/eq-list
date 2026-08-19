@@ -14,6 +14,7 @@ import { mobKey } from "@/shared/mob-stats";
 import ItemLink from "./ItemLink";
 import ZonePicker from "./ZonePicker";
 import { api } from "@/lib/api";
+import { ringMob } from "@/lib/showOnMap";
 import { buildHunt, huntHasWork, huntInputsFor, huntZoneOptions, neededEntries } from "@/shared/hunt";
 import { zoneMatches } from "@/shared/sources";
 import { distinct } from "@/shared/sorting";
@@ -81,10 +82,11 @@ export default function HuntPanel({
   const known = useMobKnowledge(mobNames.join("|"));
 
   /** Ask the map to ring this mob's kills (null takes the ask back). */
-  const emphasize = (mob: string | null) => api()?.map.emphasize(mob ? { mobs: [mob] } : null);
+  /** Ring a mob's kills on an already-open map — the shared gesture (`showOnMap.ts`). */
+  const emphasize = ringMob;
   // Leaving the tab fires no `mouseleave`, so without this the map stays lit with nothing
   // pointing at it — the same backstop the kill list has, for the one exit a row can't see.
-  useEffect(() => () => void api()?.map.emphasize(null), []);
+  useEffect(() => () => ringMob(null), []);
 
   // Only zones something on your list drops in — the picker is for narrowing this hunt, not for
   // browsing the world. Shaped as `Zone` because that's what `ZonePicker` matches over; there's no

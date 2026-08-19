@@ -6,9 +6,9 @@ import { useNav } from "@/lib/nav";
 import ItemLink from "./ItemLink";
 import ObservedItemView from "./ObservedItemView";
 import WikiPageView from "./WikiPageView";
-import { CheckField, segCls } from "./ui";
+import { AddButton, CheckField, segCls } from "./ui";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
-import { wikiAddAction, wikiAddKind } from "@/shared/wiki-add";
+import { addByTitle, addItem } from "@/lib/addToList";
 import { searchKnownItems, unknownToTheWiki, type KnownItem } from "@/shared/known-items";
 import { count } from "@/shared/format";
 import type { SearchResult, WikiPage } from "@/shared/types";
@@ -217,20 +217,6 @@ export default function SearchPanel({
     }
   }
 
-  // Add by title the way the page buttons do, so a result-list "+ Add" behaves the same as opening
-  // the page — which it only claimed to before `wikiAddAction`: a source page (a quest, a recipe, a
-  // mob) contributes what it lists, and only a page that *is* an item adds itself. Fetches the page
-  // (cached) to learn the kind; falls back to a shallow add if it can't load.
-  async function addByTitle(title: string, wikiPath?: string) {
-    const a = api();
-    if (!a) return;
-    const p = await a.wiki.getPage(title);
-    if (!p) return void a.list.add({ name: title, wikiPath });
-    const action = wikiAddAction(p);
-    if (action === "components") a.list.addFromPage(p);
-    else if (action === "self") a.list.add({ name: p.title, kind: wikiAddKind(p), wikiPath: p.wikiPath });
-  }
-
   function onNameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (!navTitles.length) return;
     if (e.key === "ArrowDown") {
@@ -297,9 +283,7 @@ export default function SearchPanel({
               <div className={`result ${i === active ? "active" : ""}`} key={r.wikiPath}>
                 <ItemLink title={r.title} className="name" />
                 {r.outOfEra && <span className="badge era-out">era</span>}
-                <button className="btn sm primary" onClick={() => void addByTitle(r.title, r.wikiPath)}>
-                  + Add
-                </button>
+                <AddButton onAdd={() => void addByTitle(r.title, r.wikiPath)}>+ Add</AddButton>
               </div>
             ))}
           </div>
@@ -344,9 +328,7 @@ export default function SearchPanel({
                   <div className="result" key={q.wikiPath}>
                     <ItemLink title={q.title} className="name" />
                     {q.outOfEra && <span className="badge era-out">era</span>}
-                    <button className="btn sm primary" onClick={() => void addByTitle(q.title, q.wikiPath)}>
-                      + Add quest
-                    </button>
+                    <AddButton onAdd={() => void addByTitle(q.title, q.wikiPath)}>+ Add quest</AddButton>
                   </div>
                 ))}
               </div>
@@ -396,9 +378,7 @@ function MyResults({
               {count(it.count, "sighting")}
               {it.mobs.length ? ` · ${count(it.mobs.length, "mob")}` : ""}
             </span>
-            <button className="btn sm primary" onClick={() => api()?.list.add({ name: it.item })}>
-              + Add
-            </button>
+            <AddButton onAdd={() => void addItem({ name: it.item })}>+ Add</AddButton>
           </div>
         ))}
       </div>

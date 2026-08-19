@@ -1,8 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { openMapWindow } from "@/lib/showOnMap";
 import SearchPanel from "./components/SearchPanel";
 import WindowButtons from "./components/WindowButtons";
+import Titlebar from "./components/Titlebar";
 import ScaleButtons from "./components/ScaleButtons";
 import ListPanel from "./components/ListPanel";
 import HuntPanel from "./components/HuntPanel";
@@ -20,6 +22,7 @@ import OpacityButton from "./components/OpacityButton";
 import ClickThroughButton from "./components/ClickThroughButton";
 import CastAlerts from "./components/CastAlerts";
 import UpdateBanner from "./components/UpdateBanner";
+import Toasts from "./components/Toasts";
 import TabBar, { type TabItem } from "./components/TabBar";
 import { useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
@@ -35,7 +38,8 @@ type Tab = "list" | "hunt" | "timers" | "loot" | "search" | "damage" | "session"
 /**
  * The single app window: a frameless, translucent float (the "overlay" look) that
  * hosts everything — list, hunt, search, session, settings. The titlebar is the
- * drag handle and carries the window controls (pin / minimize / hide-to-tray).
+ * drag handle (`Titlebar`: snaps at the screen edges, maximizes on a double-click) and
+ * carries the window controls (pin / minimize / hide-to-tray).
  */
 export default function Home() {
   const [tab, setTab] = usePersistentState<Tab>(STORAGE_KEYS.activeTab, "list");
@@ -124,13 +128,13 @@ export default function Home() {
       <CastAlerts showVisual={false} />
 
       <div className={`app glass ${maximized ? "maximized" : ""}`}>
-        <div className="titlebar">
+        <Titlebar>
           <h1>
             <span className="mark">EQ</span> List
           </h1>
           <span className="spacer" />
           <div className="win-controls no-drag">
-            <button className="wc" title="Open map window" onClick={() => api()?.map.open()}>
+            <button className="wc" title="Open map window" onClick={openMapWindow}>
               🗺
             </button>
             <ScaleButtons
@@ -147,7 +151,7 @@ export default function Home() {
             {/* Hide, not close: the app keeps watching the log from the tray. */}
             <WindowButtons dismissTitle="Hide to tray" dismiss={() => api()?.win.hide()} />
           </div>
-        </div>
+        </Titlebar>
 
         <UpdateBanner />
 
@@ -168,6 +172,10 @@ export default function Home() {
 
         <StatusBar />
       </div>
+
+      {/* Outside `.app`, which clips its children (`overflow: hidden`): a notice is drawn over the
+          window, not inside the panel that raised it — so it survives switching tabs. */}
+      <Toasts />
     </NavProvider>
   );
 }

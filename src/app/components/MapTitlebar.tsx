@@ -5,6 +5,7 @@ import ClickThroughButton from "./ClickThroughButton";
 import OpacityButton from "./OpacityButton";
 import PinButton from "./PinButton";
 import ScaleButtons from "./ScaleButtons";
+import Titlebar from "./Titlebar";
 import WindowButtons from "./WindowButtons";
 import ZonePicker from "./ZonePicker";
 import { CheckField } from "./ui";
@@ -14,9 +15,10 @@ import type { Zone } from "@/shared/map/types";
 /**
  * The map window's title bar: what you're looking at on the left, what to look at on the right.
  *
- * It is also the window's **drag handle**, which is why every control in it carries `no-drag` — a
- * missing one makes that control impossible to click, because the press moves the window instead. Kept
- * together in one component so that rule applies in one place.
+ * It sits in a `Titlebar`, which makes it the window's **drag handle** (snapping and double-click to
+ * maximize included) — which is why every control in it carries `no-drag`: a missing one makes that
+ * control impossible to click, because the press moves the window instead. Kept together in one
+ * component so that rule applies in one place.
  *
  * Two things are stated rather than left to be noticed: a zone borrowed from another pack
  * ([ADR 0063](../../../specs/decisions/0063-a-zone-the-pack-lacks-is-borrowed.md)) — otherwise "this
@@ -97,7 +99,7 @@ export default function MapTitlebar({
     : `${sourceLabel} has no map for this zone, so it's drawn from ${drawnBy}`;
 
   return (
-    <div className="titlebar">
+    <Titlebar>
       <h1>
         <span className="mark">🗺</span> {zone?.name ?? zoneName ?? "Map"}
       </h1>
@@ -162,6 +164,6 @@ export default function MapTitlebar({
         {/* Closed for real, not hidden — the map is opened on demand. */}
         <WindowButtons dismissTitle="Close map" dismiss={() => api()?.win.close()} />
       </div>
-    </div>
+    </Titlebar>
   );
 }

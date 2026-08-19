@@ -5,6 +5,8 @@ import { useNav } from "@/lib/nav";
 import { count, dayTime } from "@/shared/format";
 import { normalizeItemName } from "@/shared/grouping";
 import ItemDrops from "./ItemDrops";
+import { AddButton } from "./ui";
+import { addItem } from "@/lib/addToList";
 
 /**
  * The page for an item **the wiki has never heard of** — built from your own log.
@@ -63,9 +65,9 @@ export default function ObservedItemView({ title }: { title: string }) {
       ) : (
         <>
           <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
-            <button className="btn primary sm" onClick={() => api()?.list.add({ name: title })}>
+            <AddButton className="btn primary sm" onAdd={() => void addItem({ name: title })}>
               + Add “{title}”
-            </button>
+            </AddButton>
           </div>
           <p className="muted small" style={{ marginTop: 8 }}>
             No page came back from eqlwiki, so everything below is your own log&apos;s —{" "}

@@ -7,8 +7,9 @@ list, hunt, search, damage, session, settings.
 
 ## Responsibilities
 - **Window shell** (`src/app/page.tsx`, `.app.glass`): frameless, transparent,
-  resizable, translucent. The **title bar** is the drag handle and carries the window
-  controls — an **opacity toggle** (◐, flip between 100% and the settings slider value),
+  resizable, translucent. The **title bar** (`Titlebar`) is the drag handle — it snaps at the
+  screen edges and maximizes on a double-click, see **Dragging and snapping** below — and carries the
+  window controls — an **opacity toggle** (◐, flip between 100% and the settings slider value),
   **pin** (always-on-top — the shared `PinButton`, gray off / red on, same as the map window),
   **click-through** (👻, below), **minimize**,
   **interface scale** (the shared `ScaleButtons`: A− / A+, stepping `overlay.fontScale` over
@@ -47,12 +48,30 @@ list, hunt, search, damage, session, settings.
   Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
   tray. One window, styled once; see [ADR 0009](../decisions/0009-single-window-with-tray.md).
+- **Dragging and snapping** (`Titlebar` + `useWindowDrag`, `electron/window-drag.ts`,
+  `shared/window-snap.ts`): the title bar drags the window **with Windows-style snapping** — drag to
+  the top edge to maximize, to a side for a half, into a side's top/bottom quarter-band for a quarter,
+  with a translucent preview of where it will land; drag a maximized or snapped window and it is
+  **pulled loose under the pointer** at the size it had before; **double-click** the bar to
+  maximize/restore; **Escape** mid-drag puts the window back exactly where the press found it. This is
+  *not* `-webkit-app-region: drag`, which is Chromium's own move loop and can only ever move the
+  window — the whole reason none of the above used to work
+  ([ADR 0108](../decisions/0108-a-frameless-window-snaps-like-a-framed-one.md)). The split: the
+  **renderer owns the gesture** (`dragStart` / `dragMove` / `dragEnd(how)`), **main owns the window**,
+  and **no coordinate crosses** — `dragMove` is a pulse and main reads
+  `screen.getCursorScreenPoint()`, so a window's CSS `zoom` and a mixed-DPI desktop can't skew the
+  drag. The geometry is pure and tested without a screen (`window-snap.ts`); the **cursor** decides
+  the zone, not the window's edges, and a press only becomes a drag once it leaves the spot it landed
+  in. `no-drag` on a control still means what it always did — it's now the class `useWindowDrag` looks
+  for rather than a CSS property — so **every control in a title bar must carry it**.
 - **Maximize / restore** (`MaximizeButton` + `useMaximized`): a frameless window draws its own
   titlebar, so it has to be given what the OS would normally provide. The button asks main to
   `maximize()`/`unmaximize()`, and main reports the window's `maximize`/`unmaximize` events
   back — so the glyph (▢ / ❐) follows the window even when something else maximizes it
-  (a drag-region double-click, `Win+↑`, the taskbar), and is re-announced on every load so a
-  reloaded renderer can't start out wrong. Maximizing **squares the window's corners and hides
+  (a **double-click on the title bar**, a drag to the top edge, `Win+↑`, the taskbar), and is
+  re-announced on every load so a reloaded renderer can't start out wrong. The button is the
+  *display* of that state, never a second copy of it, which is why the double-click and the snap both
+  simply call the same `win.toggleMaximize()`. Maximizing **squares the window's corners and hides
   its border** (`.maximized`): the rounded float look would otherwise leave four notches of
   desktop showing. The state persists per window in `window-state.json` beside — not instead
   of — the bounds, which stay the size to restore *to*; "Reset window position" clears it, since
@@ -105,6 +124,42 @@ list, hunt, search, damage, session, settings.
   source on the page names that mob and **unseen in N** where the page names one our kills keep
   failing to confirm — plus what it has vendored for. It renders nothing when nothing is known, and
   only a page the wiki *says* drops gets a "you haven't seen this yet" note.
+- **An add says what it did** (`src/lib/addToList.ts`, `src/lib/toast.ts`, `components/Toasts.tsx`).
+  Every **+ Add** in the app — a search result, a result from your own log, a page's buttons, a
+  component row — goes through one module that reads the list before and after itself and raises a
+  brief notice naming what landed and **how many you now need in total**: the same parenthetical
+  figure the row on the List tab shows, computed from the same `grouping.ts` functions, so a repeat
+  press reads "+2 · 6 needed in total", a whole quest reads "2 items · 14 to collect in all", and an
+  add that changed nothing says so instead of claiming success. The arithmetic and the wording are
+  pure (`src/shared/list-add.ts`, tested without a window); the toast is bottom-right, ~3s,
+  dismissable, capped at three, mounted by the **window shell** so it outlives the tab that raised it,
+  and drawn **under the alert banners** — a confirmation must never cover *your item just dropped*.
+  **One notice per thing**: each add carries a key (the item, or the page), and a second press
+  replaces the card already up for it, in place and with its life restarted — never two cards
+  disagreeing about how many you need. The notice machinery itself is general; see the next bullet.
+  The button's own tick fires on click rather than on the reply, because "did it hear me" and "what
+  did it do" are different questions. See
+  [ADR 0106](../decisions/0106-an-add-says-what-it-did.md).
+- **Brief notices, for anything that would otherwise be silent** (`src/shared/toasts.ts`,
+  `src/lib/toast.ts`, `components/Toasts.tsx`). A **toast** is the smallest answer to *did that do
+  anything?* — a title, optionally a detail, one of four tones (`info` / `good` / `warn` / `bad`,
+  which colour only the left stripe so a notice keeps the same shape as everything else), gone by
+  itself. **To use it: call `showToast({ title, … })`.** It's a plain function over a module-level bus,
+  not a hook or a context, which is the whole point — it can be called from a component, a handler, or
+  a plain module several layers under one (`addToList.ts`, `clipboard.ts`), none of which has a parent
+  to thread a callback down from, and the panel that raised it may well be unmounted before it fades.
+  The only requirement is that the window mounted **`<Toasts />` once**; both `page.tsx`es do, each
+  with its own bus, so a notice appears in the window that raised it. Optional `key` (a second notice
+  about the same thing replaces the first, in place, with its life restarted) and `ms` (clamped — a
+  card that leaves before it has arrived reads as a flicker). Three invariants make it safe to reach
+  for: a toast is **read, never acted on** (anything with a decision in it is a panel), it **always
+  goes away by itself**, and it is **never the only place** something important is said — a failure
+  that matters belongs in the log and on the panel that owns it
+  ([ADR 0052](../decisions/0052-an-error-goes-to-the-log-not-the-screen.md)), and a toast raised in a
+  window with no host is simply dropped. Callers today: every **+ Add**
+  ([ADR 0106](../decisions/0106-an-add-says-what-it-did.md)) and every **copy to the clipboard**
+  (`lib/clipboard.ts` — the share code and the meter's summary line, both of which used to fire a
+  promise nobody awaited, so a copy that never happened looked exactly like one that did).
 - **Every position on a page opens the map, and the observed ones say what they are.** A stat card's
   `Zone:` views that zone (`api().map.openAt`), an embedded `(y, x)` opens it *and* drops a marker
   there, and a mob's observed roam centre is **printed as `y, x ±spread`** — a figure to read and type,
@@ -115,11 +170,23 @@ list, hunt, search, damage, session, settings.
   the one part of it that belongs on a map. Hovering a `MobKills` block rings that mob's kills on a map
   that's **already open** (`map.emphasize`, the Hunt tab's gesture); it never opens one, since a window
   that appears because the cursor crossed a name is a window nobody asked for.
+- **One way to say "show me on the map."** Every click that opens the map goes through `MapLink`
+  (`components/MapLink.tsx`) and every ask that only *rings* kills goes through `src/lib/showOnMap.ts`
+  — `showOnMap(target)`, `ringMob(mob | null)`, `ringOnHover(mob)`, `openMapWindow()`. Five lists had
+  each grown their own copy and drifted: two spellings of the tooltip, three of the coordinate, and a
+  `focus` only the newest ones passed. The target is one shared shape (`MapTarget`: zone, optional
+  spot, optional label, optional `MapFocus`), so a caller says as much as it knows and no more, and
+  the difference that matters is stated once — **a click opens the map, a hover never does**. Three
+  shapes over it: `ZoneLink` (a zone name), `MapLink` with a `loc` (a spot — a wiki `Location:`
+  coordinate), and `RoamLink` (an observed roam centre: the coordinate *printed* with its `±spread`,
+  worded by `roamWhy`). Any list that knows a place can add a map click in one element —
+  [ADR 0104](../decisions/0104-a-position-is-read-and-arrives-with-its-evidence.md).
 - **Shared presentational bits** (`components/ui.tsx`, no app knowledge in it): `StatTile` (a figure
   with its name under it, and a hover saying where the figure came from), `segCls` (a segmented
   control's button), `CheckField` (a checkbox and its label — including the "some of this group" state
   the map's label filter needs), `PickField` (a filter dropdown with its "any mob" / "any corpse" choice
-  at the top), `Caret` / `caretGlyph` (which way an openable row's ▾ / ▸ points) and `Empty` (a panel
+  at the top), `Caret` / `caretGlyph` (which way an openable row's ▾ / ▸ points), `AddButton` (a "+ Add" that
+  swaps to a tick and pops the instant it's pressed — see *an add says what it did* above) and `Empty` (a panel
   with nothing in it yet: what's missing, and **what would fill it in** — a blank panel that doesn't say
   what feeds it looks broken). Each of these existed anywhere from six to a dozen times over, with
   per-panel spacing baked into inline styles; spacing is now the stylesheet's (`.check-field`, and a more
@@ -630,7 +697,11 @@ list, hunt, search, damage, session, settings.
 - **Client glue** (`src/lib/`): `api.ts` (null-safe access to `window.eql`),
   `hooks.ts` (`useShoppingList`, `useSettings`, `useWatcherStatus`, `useLootFeed`,
   `useMatchFlashes`, `useCurrentZone`, `useEntrySources`, `useItemCard`) — subscribe on
-  mount, unsubscribe on unmount — and `nav.tsx` (the in-app page history above).
+  mount, unsubscribe on unmount — and `nav.tsx` (the in-app page history above). **`toast.ts`** is the bus behind the
+  brief notices above (`showToast` from anywhere, `useToasts` for the host, the model and its rules
+  pure in `src/shared/toasts.ts`), and two modules are built on it: **`addToList.ts`** owns every
+  "+ Add" and the notice it raises, and **`clipboard.ts`** owns every copy — which is a `write` that
+  can fail silently, so it is exactly the shape that needs one.
   Three lifecycles sit under those hooks, each written once because each has a failure that
   nothing visibly reports: **`useLive`** (read, then follow, and *return the unsubscribe* — a
   copy that forgets leaks a listener per mount), **`useRead`** / `useReading` (read again when
@@ -652,7 +723,8 @@ list, hunt, search, damage, session, settings.
   box and a list next to a `WikiPageView`. Each was carved out of a component of several hundred lines,
   and the cut is always the same one: a region with **state or behaviour of its own** becomes a
   component, while a row of values stays where it is. `WindowButtons` is the smallest case of the same
-  rule — minimize/maximize/dismiss, so two title bars can't drift apart.
+  rule — minimize/maximize/dismiss, so two title bars can't drift apart — and `Titlebar` is the same
+  rule applied to the bar itself, so both windows drag, snap and double-click identically.
 - **Errors are logged, never drawn over the game** (`src/lib/error-reporting.ts`): Next's
   dev error overlay is hidden outright — by CSS the *main process* injects into every window
   it loads (`HIDE_DEV_OVERLAY` in `electron/windows.ts`), so it holds even for a compile

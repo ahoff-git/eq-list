@@ -708,3 +708,26 @@ npm run sim -- --from fixtures/sample-eqlog.txt
 
 The default "stamp every line now" is what you want here (unlike the spawn timers): the liveness rule
 means a backdated loot line raises nothing at all.
+
+## The add confirmation (ADR 0106)
+
+The arithmetic and the wording are pinned (`electron/tests/list-add.test.ts`), so what's left is
+whether it *reads* right in a window nobody has looked at yet:
+
+- **Does the toast land where it can be read and nowhere it's in the way?** Bottom-right, over the
+  status bar, at 60% interface scale as well as 100% — and with a loot banner up at the same time,
+  which it must sit under rather than beside.
+- **Is ~3s the right life?** Long enough to read two lines while still typing the next search, short
+  enough that a burst of adds (a quest, then three of its components) doesn't build a wall. Three at
+  once is the cap; adding ten items one after another is the case to watch. A **second press on the
+  same row** replaces its card in place rather than stacking — confirm that reads as an update and not
+  as a flicker, since the card remounts to restart its life.
+- **Does the button's tick fight the row it's in?** It's the same button width plus a glyph, so a
+  narrow window may reflow the result row for a second. Worth a look at a long item name.
+- **The clipboard's notice, both ways.** `Copy rule` (Alerts) and `Copy` (Damage) now go through
+  `lib/clipboard.ts`. Confirm the success card, and — the half that has never run — that a **refused**
+  copy says so: the failure branch is only reachable where `navigator.clipboard` is absent or rejects,
+  which this sandbox can't produce.
+- **The map window's notices.** It mounts its own host with no caller yet, so all that needs
+  confirming is that a notice raised there lands inside *that* window, bottom-right, and doesn't sit
+  under the toolbar or a side panel.

@@ -3,8 +3,11 @@ import { api } from "@/lib/api";
 import { useNav } from "@/lib/nav";
 import ItemDrops from "./ItemDrops";
 import ItemLink from "./ItemLink";
+import MapLink, { ZoneLink } from "./MapLink";
 import MobKills from "./MobKills";
-import { wikiAddAction, wikiAddKind } from "@/shared/wiki-add";
+import { AddButton } from "./ui";
+import { addItem, addPage, addPageItself } from "@/lib/addToList";
+import { wikiAddAction } from "@/shared/wiki-add";
 import type { ItemSource, WikiPage } from "@/shared/types";
 
 /**
@@ -23,11 +26,10 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
   // Which buttons this page gets. The rule lives in `wiki-add.ts` because the search results list
   // adds by the same one, and the two had drifted — see that file.
   const add = wikiAddAction(page);
-  // The kind travels with the add: `self` means "the page is the thing you want", which for a mob
-  // is a thing to *kill* rather than a thing to loot (`wikiAddKind`).
-  const addItem = (p: WikiPage) => api()?.list.add({ name: p.title, kind: wikiAddKind(p), wikiPath: p.wikiPath });
-  const addFullPage = (p: WikiPage) => api()?.list.addFromPage(p);
-  const addOne = (name: string, qty: number, wikiPath?: string) => api()?.list.add({ name, needed: qty, wikiPath });
+  // What each button does — and what it *says* it did — is `lib/addToList.ts`: the kind travels with
+  // a `self` add (a mob is a thing to *kill*), and every add answers back with a toast naming the new
+  // total needed, since the list it changes is on another tab.
+  const addOne = (name: string, qty: number, wikiPath?: string) => void addItem({ name, needed: qty, wikiPath });
 
   const BLANK_ZONE = /^(various|unknown|none|n\/a)$/i;
   // The mob's zone, for coordinate clicks (open the map there + drop a marker).
@@ -39,6 +41,10 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
     return undefined;
   })();
 
+  // On a mob's page, every position on the card is a position *of that mob* — so the map can bring
+  // its kills up alongside the marker, the same as the observed positions below (ADR 0104).
+  const cardFocus = page.kind === "mob" ? { mob: page.title } : undefined;
+
   // Render a stat-card line: a Zone → map link; any embedded EQ coordinate → a map
   // link that opens the mob's zone and marks that spot; otherwise plain text.
   function cardLineNode(line: string): React.ReactNode {
@@ -48,10 +54,7 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
       if (BLANK_ZONE.test(z)) return line;
       return (
         <>
-          {zoneM[1]}:{" "}
-          <span className="link" title="View this zone on the map" onClick={() => api()?.map.openAt(z)}>
-            {z}
-          </span>
+          {zoneM[1]}: <ZoneLink zone={z} focus={cardFocus} />
         </>
       );
     }
@@ -67,9 +70,9 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
         const x = parseFloat(m[2]);
         const coord = m[0];
         parts.push(
-          <span key={`c${i++}`} className="link" title="Show this spot on the map" onClick={() => api()?.map.openAt(cardZone, { y, x }, page?.title)}>
+          <MapLink key={`c${i++}`} target={{ zone: cardZone, loc: { y, x }, label: page?.title, focus: cardFocus }}>
             {coord}
-          </span>,
+          </MapLink>,
         );
         last = m.index + coord.length;
       }
@@ -113,15 +116,15 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
             adding just the crafted item (e.g. when it's itself a quest turn-in). */}
         {add === "components" && (page.kind === "quest" || page.kind === "recipe") && (
           <>
-            <button className="btn primary sm" onClick={() => addFullPage(page)}>
+            <AddButton className="btn primary sm" onAdd={() => void addPage(page)}>
               {page.kind === "quest"
                 ? `+ Add full quest${page.components.length ? ` (${page.components.length} items)` : ""}`
                 : `+ Add full recipe${page.components.length ? ` (${page.components.length} ingredients)` : ""}`}
-            </button>
+            </AddButton>
             {page.kind === "recipe" && (
-              <button className="btn sm" onClick={() => addItem(page)}>
+              <AddButton className="btn sm" onAdd={() => void addPageItself(page)}>
                 + Add just “{page.title}”
-              </button>
+              </AddButton>
             )}
           </>
         )}
@@ -131,13 +134,13 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
             anything it drops. Adding a whole loot table was the behaviour `wiki-add.ts` removed. */}
         {add === "self" && (
           <>
-            <button className="btn primary sm" onClick={() => addItem(page)}>
+            <AddButton className="btn primary sm" onAdd={() => void addPageItself(page)}>
               + Add “{page.title}”
-            </button>
+            </AddButton>
             {page.kind !== "mob" && page.components.length > 0 && (
-              <button className="btn sm" onClick={() => addFullPage(page)}>
+              <AddButton className="btn sm" onAdd={() => void addPage(page)}>
                 + Add all {page.components.length} ingredients
-              </button>
+              </AddButton>
             )}
           </>
         )}
@@ -176,9 +179,9 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
                     </span>
                   )}
                 </span>
-                <button className="btn ghost sm" onClick={() => addOne(c.name, c.qty, c.wikiPath)}>
+                <AddButton className="btn ghost sm" onAdd={() => addOne(c.name, c.qty, c.wikiPath)}>
                   + Add
-                </button>
+                </AddButton>
               </li>
             ))}
           </ul>

@@ -23,6 +23,7 @@ import {
   windowToggles,
   type Bounds,
 } from "./window-state";
+import { hideSnapPreview } from "./window-drag";
 import { CH } from "../src/shared/ipc-channels";
 import { windowOpacity } from "../src/shared/constants";
 import { createLogger } from "../src/shared/logging";
@@ -542,6 +543,7 @@ function rebuildAlertWindow(dying: BrowserWindow | null): void {
 /** Strip every overlay of its hold on the screen. The last resort — see `main.ts`'s crash handler. */
 export function neutralizeOverlays(): void {
   destroyLookupWindows();
+  hideSnapPreview(); // a drag interrupted by the throw would leave its preview sitting on the game
   if (alertWindow && !alertWindow.isDestroyed()) {
     setAlertInteractive(false); // solid + fullscreen is the state that locks a desktop
     makeHarmless(alertWindow);

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useCombatStats, useHpEstimate, useRead } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import DamageMeter, { type DamageView } from "./DamageMeter";
 import SpellTable from "./SpellTable";
 import DamageHistory from "./DamageHistory";
@@ -146,7 +147,7 @@ export default function DamagePanel() {
           <button
             className="btn ghost sm"
             title="Copy a one-line summary (for guild chat)"
-            onClick={() => void navigator.clipboard?.writeText(summaryLine(window, opponent))}
+            onClick={() => void copyText(summaryLine(window, opponent), "the fight summary")}
           >
             Copy
           </button>

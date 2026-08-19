@@ -64,6 +64,15 @@ unit-tested.
     every "same zone?": every difficulty and ruleset of a zone landing on one key, the backtick the
     maps write folding onto the apostrophe the log writes, an aliased name (Kerra Isle → Kerra Ridge)
     folding onto the map's, and two zones that merely share words staying apart.
+  - `src/shared/estimates.ts` → `electron/tests/estimates.test.ts` — the rules behind any number the
+    app *worked out* rather than read
+    ([ADR 0107](../decisions/0107-an-inferred-number-has-rules-and-they-are-shared.md)). These are
+    decisions rather than arithmetic, and the failure mode is never a crash — it is a figure that is
+    quietly, permanently wrong — so each test names the rule it holds in place: a bound moves one way
+    only, an implausible observation is refused rather than trimmed *to fit* (asserted next to what
+    clamping would have handed us), crossing bounds are a contradiction while a wide spread is only
+    softness, a cleared field arrives as zero and zero is not a claim, and the tightest claim carries
+    its source because two sources agreeing is not one guessing.
   - `src/shared/spawn-timers.ts` → `electron/tests/spawn-timers.test.ts` (the respawn-learning
     rules, [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)): that
     the figure is the **shortest** gap and never the mean, that a later longer gap can't stretch it
@@ -236,6 +245,15 @@ unit-tested.
   - `src/shared/grouping.ts` → `electron/tests/grouping.test.ts` (grouping by origin,
     ordering, per-group progress, and the cross-group demand breakdown behind the
     entry-count hover — pinned to sum to `itemTotals`).
+  - `src/shared/list-add.ts` → `electron/tests/list-add.test.ts` (what a **+ Add** says it did: the
+    grand total needed after an item something else already wanted, a multi-run group counted the way
+    the list counts it, a whole quest as one notice named after the quest, a mob worded as a target
+    rather than a count, and an add that changed nothing saying so instead of claiming success).
+  - `src/shared/toasts.ts` → `electron/tests/toasts.test.ts` (the notice stack: an unrelated notice
+    stacks, a second one **about the same thing** replaces the first in the slot it held, a keyless
+    one never replaces anything, and the cap drops the oldest on a genuine arrival but leaves the
+    stack alone for a replacement — plus the clamped life, where leaving always precedes being
+    dropped and a too-short request gets the floor rather than a flicker).
   - `src/shared/sources.ts` → `electron/tests/sources.test.ts` (drops-by-zone,
     loose zone matching including a zone made harder, current-zone split, and `sameZone` — the
     strict fold used for keying — refusing the neighbour that `zoneMatches` happily accepts).
