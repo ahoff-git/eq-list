@@ -121,31 +121,34 @@ function avoidTitle(step: TravelStep): string {
 }
 
 /**
- * One line of the route: **distance · what you do · where it puts you · ✕**.
+ * One line of the route: **✕ · distance · what you do · where it puts you**.
  *
- * Four fixed columns rather than a sentence, because a route is scanned down, not read across — the
- * question at any moment is "what do I do next", and the answer should be in the same place on every
- * row. Crossing a zone line is still no row of its own: a border is somewhere you arrive.
+ * Fixed columns rather than a sentence, because a route is scanned down, not read across — the question
+ * at any moment is "what do I do next", and the answer should be in the same place on every row.
+ * Crossing a zone line is still no row of its own: a border is somewhere you arrive.
+ *
+ * The ✕ leads. It sat at the far right at first, which put the one control on the row as far from the
+ * thing it acts on as the layout allowed, and left it hanging off the ragged end of labels of every
+ * length. Its **slot is always drawn**, empty on the rows that have nothing to rule out, so the
+ * distances underneath each other stay a column.
  */
-function Leg({ row, onAvoid }: { row: TravelInstruction; onAvoid?: () => void }) {
-  const { step, how, via, where } = row;
+function Leg({
+  row,
+  onAvoid,
+  onHover,
+  onViewZone,
+}: {
+  row: TravelInstruction;
+  onAvoid?: () => void;
+  onHover?: (on: boolean) => void;
+  /** Open the map of the zone this row leaves you in — the same thing the breadcrumbs do. */
+  onViewZone?: (zone: string) => void;
+}) {
+  const { step, how, via, where, zone, cost, assumed } = row;
   const leg = step.from;
   return (
-    <li className="travel-leg">
-      {leg ? (
-        <span className={`travel-cost ${leg.assumed ? "guess" : ""}`} title={legTitle(leg)}>
-          {units(leg.cost)}
-          {leg.assumed ? "?" : ""}
-        </span>
-      ) : (
-        <span className="travel-cost start">start</span>
-      )}
-      <span className={`travel-how ${via ?? "walk"}`}>{how}</span>
-      <span className="travel-where">
-        {how && <span className="muted">to </span>}
-        {where}
-      </span>
-      {onAvoid && (
+    <li className="travel-leg" onMouseEnter={() => onHover?.(true)} onMouseLeave={() => onHover?.(false)}>
+      {onAvoid ? (
         <button
           className="btn ghost sm travel-drop"
           title={avoidTitle(step)}
@@ -154,7 +157,32 @@ function Leg({ row, onAvoid }: { row: TravelInstruction; onAvoid?: () => void })
         >
           ✕
         </button>
+      ) : (
+        <span className="travel-drop empty" aria-hidden />
       )}
+      {leg ? (
+        // The row's own figure, not the step's: a border the route only walked past is no instruction,
+        // and its distance was carried onto this one.
+        <span className={`travel-cost ${assumed ? "guess" : ""}`} title={legTitle(leg)}>
+          {units(cost)}
+          {assumed ? "?" : ""}
+        </span>
+      ) : (
+        <span className="travel-cost start">start</span>
+      )}
+      <span className={`travel-how ${via ?? "walk"}`}>{how}</span>
+      <span className="travel-where">
+        {how && <span className="muted">to </span>}
+        {/* The whole cell opens that zone's map, like a breadcrumb — a route reads as a tour, and the
+            place you're being sent to is the thing you want to look at. */}
+        {zone && onViewZone ? (
+          <button className="btn ghost sm travel-to" title={`Show the ${zone.name} map`} onClick={() => onViewZone(zone.name)}>
+            {where}
+          </button>
+        ) : (
+          where
+        )}
+      </span>
     </li>
   );
 }
@@ -223,6 +251,10 @@ export default function TravelPanel({
   travel,
   onTravel,
   onViewZone,
+  onHoverLeg,
+  onRouteLegs,
+  audit,
+  onAudit,
 }: {
   /** The zones this map source offers — the same list the titlebar's picker uses. */
   zones: Zone[];
@@ -237,6 +269,22 @@ export default function TravelPanel({
   onTravel: (patch: Partial<TravelSettings>) => void;
   /** Point the map at a zone the route passes through. */
   onViewZone: (zone: string) => void;
+  /**
+   * The leg under the pointer, for the map to pick out. `null` when the pointer has left the list.
+   */
+  onHoverLeg?: (leg: { from: string; to: string } | null) => void;
+  /**
+   * Every leg of the current route, so the map can draw the whole trip quietly rather than only the
+   * step you happen to be pointing at — the route should be visible without hunting for it.
+   */
+  onRouteLegs?: (legs: { from: string; to: string }[]) => void;
+  /**
+   * Whether the survey strip is up — what the graph holds about the zone on screen, and where it is
+   * thin. Off by default: the markers on the map are the useful half and cost nothing to read, while
+   * the strip answers *should I believe this?*, which is asked now and then rather than every trip.
+   */
+  audit?: boolean;
+  onAudit?: (open: boolean) => void;
 }) {
   const [fromPick, setFromPick] = useState<string | null>(null);
   const [toPick, setToPick] = useState<string | null>(null);
@@ -303,7 +351,20 @@ export default function TravelPanel({
   const avoid = (step: TravelStep) => onTravel({ avoid: [...avoided, avoidedFrom(step, zoneNames)] });
   const allow = (id: string) => onTravel({ avoid: avoided.filter((a) => a.id !== id) });
   /** The route as instructions — computed before the return, so the JSX below only lays them out. */
-  const rows = route ? routeInstructions(route) : [];
+  const rows = useMemo(() => (route ? routeInstructions(route) : []), [route]);
+  /**
+   * The route as the pairs its distances were measured between, for the map to draw.
+   *
+   * A leg whose start isn't a node — the first row, which started nowhere — has nothing to draw
+   * between, so it isn't one.
+   */
+  const legs = useMemo(
+    () => rows.flatMap((r) => (r.from ? [{ from: r.from, to: r.step.node.id }] : [])),
+    [rows],
+  );
+  useEffect(() => {
+    onRouteLegs?.(legs);
+  }, [legs, onRouteLegs]);
 
   return (
     <div className="travel-panel no-drag">
@@ -357,6 +418,16 @@ export default function TravelPanel({
           >
             Boats always count
           </span>
+          {onAudit && (
+            <button
+              className={`btn ghost sm travel-audit ${audit ? "on" : ""}`}
+              aria-pressed={!!audit}
+              title="What the graph holds about the zone on screen — the teleport networks it can reach, and the borders it knows are here and hasn't got a position for. The half that can't be drawn on a map."
+              onClick={() => onAudit(!audit)}
+            >
+              {audit ? "Hide" : "Show"} what the graph knows
+            </button>
+          )}
         </div>
 
         <Avoided avoided={avoided} onAllow={allow} onAllowAll={() => onTravel({ avoid: [] })} />
@@ -407,9 +478,14 @@ export default function TravelPanel({
                 <Leg
                   key={`${row.step.node.id}-${i}`}
                   row={row}
+                  onHover={(on) =>
+                    onHoverLeg?.(on && row.from ? { from: row.from, to: row.step.node.id } : null)
+                  }
+                  onViewZone={onViewZone}
                   // The virtual ends can't be routed around: ruling out where you're standing is a
-                  // contradiction, not a route. A hub is already not a row.
-                  onAvoid={isRouteEnd(row.step) ? undefined : () => avoid(row.step)}
+                  // contradiction, not a route. A hub is already not a row. And a walk-up shares its
+                  // step with the crossing below it, which is the row that carries the ✕.
+                  onAvoid={isRouteEnd(row.step) || row.walkUp ? undefined : () => avoid(row.step)}
                 />
               ))}
             </ol>

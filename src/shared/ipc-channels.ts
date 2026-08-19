@@ -104,6 +104,7 @@ export const CH = {
   mapNames: "map:names",
   /** How to get from one zone to another (see specs/travel), over the chosen source's graph. */
   travelRoute: "travel:route",
+  travelSurvey: "travel:survey",
   winMinimize: "win:minimize",
   /** Maximize/restore this window — frameless windows have to ask for it. */
   winToggleMaximize: "win:toggleMaximize",

@@ -92,6 +92,27 @@ export type TravelCrossing = "boat" | "translocator" | "portal" | "spire" | "rin
  * A ring and a spire are both **Teleport**: from the reader's side they are the same act, and *which*
  * network it was is already on the step (a ring is labelled "Druid Rings") and in the route's `modes`.
  */
+/**
+ * **What you walk up to**, for the crossings you have to be *at* before you can take them.
+ *
+ * A boat, a translocator and a portal are all the same shape: the ride costs nothing and the getting
+ * there costs everything, so a route says them as two things — *run 4.1k to the translocator*, then
+ * *translocate to the Ocean of Tears*. `TRAVEL_VERBS` is what you do; this is the noun you do it at,
+ * and they are two tables because they answer two questions.
+ *
+ * A ring and a spire are here for completeness and are never used: a port is **cast from where you
+ * stand** ([ADR 0066](../../../specs/decisions/0066-a-port-is-cast-from-where-you-stand.md)), so you
+ * never walk to one, and a succor is the same one zone wide.
+ */
+export const CROSSING_PLACES: Record<TravelCrossing, string> = {
+  boat: "the boat",
+  translocator: "the translocator",
+  portal: "the portal",
+  spire: "the spires",
+  ring: "the druid ring",
+  succor: "the safe point",
+};
+
 export const TRAVEL_VERBS: Record<TravelCrossing | "walk", string> = {
   walk: "Run",
   boat: "Boat",
@@ -242,6 +263,27 @@ export interface TravelNode {
   kind: TravelNodeKind;
   /** Readable: "Greater Faydark ↔ Clan Crushbone", or the map's own words for a place. */
   label: string;
+  /**
+   * **The map's own labels this node was read from**, when they aren't the label itself.
+   *
+   * A border's name is rewritten to `A ↔ B` once both sides are in, which is right for reading and
+   * threw away the only thing that could find it again: `to Erud's Crossing (Translocator Sedina)`
+   * becomes `Erud's Crossing ↔ South Qeynos`, and the hand-authored table — which names a place by
+   * **zone plus a piece of its label**, deliberately, so it survives switching packs — could no longer
+   * see the gnome it was talking about. So a second border through the same NPC was stated with no
+   * position at all and every walk to it cost `UNKNOWN_CROSSING`, while the coordinate sat on the
+   * border beside it.
+   *
+   * Absent on a place, whose `label` is already the map's own words.
+   */
+  labels?: string[];
+  /**
+   * **Stated by the wiki, not read off a map.** eqlwiki's zone pages list Adjacent Zones, which says
+   * two zones connect and never *where* — so a border added from it has no position in either and
+   * every walk to it is a stand-in. Marked so a route leaning on one can say the crossing is a claim
+   * rather than something a mapmaker drew ([ADR 0025](../../../specs/decisions/0025-observation-over-the-wiki.md)).
+   */
+  claimed?: boolean;
   /** The zones this node is in — two for a boundary, one for a place, none for a hub. */
   zones: string[];
   /**

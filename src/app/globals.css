@@ -1790,6 +1790,86 @@ kbd {
 .conf-mark { cursor: context-menu; font-size: 13px; line-height: 1; }
 
 /* connected users (peer roster) — same drop-down slab as the pin layers menu */
+/**
+ * The off-map half of the travel graph, beside the map while the 🧭 panel is open.
+ *
+ * A **strip, not a panel**: what it holds is a handful of chips and the borders nobody drew, so it
+ * takes the width it needs and gives the rest back to the map — the map being the thing being audited.
+ * Bounded in `%` like the route panel, and for the same reason: the map window's scale is a CSS `zoom`
+ * and a viewport unit is scaled by it.
+ */
+.map-travel-aside {
+  flex: 0 0 auto;
+  max-height: 30%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.mta-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.mta-head strong { font-size: 13px; }
+.mta-head .btn { margin-left: auto; }
+.mta-group,
+.mta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mta-group { gap: 4px; }
+/* A network you can't currently use is dimmed rather than hidden: it is still what the graph holds,
+   and an audit is about what's there, not about what's switched on. */
+.mta-net.off { opacity: 0.5; }
+.mta-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+}
+/* The count is the whole argument for grouping — eighteen rings would be eighteen lines off the edge
+   of the map, and this says the same thing in two characters. */
+.mta-count {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+.mta-here {
+  border: 1px solid var(--accent-dim);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.mta-list { padding-left: 18px; }
+/* A border the wiki states and no map drew. Marked rather than hidden: it is why a zone is reachable
+   at all, and why that leg's distance is a stand-in. */
+.mta-claim {
+  margin-left: 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+}
+.mta-list .is-here { color: var(--accent); }
+.mta-holes { display: flex; flex-direction: column; gap: 2px; }
+
 /* ── Travel: the cross-zone route panel (the 🧭 button; see specs/travel) ────────────────────── */
 .travel-panel {
   display: flex;
@@ -1857,6 +1937,9 @@ kbd {
   border-color: var(--accent-dim);
   color: var(--accent);
 }
+/* Off by default and quiet when off, since it opens a strip rather than changing an answer. */
+.travel-audit { margin-left: auto; }
+.travel-audit.on { border-color: var(--accent-dim); color: var(--accent); }
 .travel-summary {
   display: flex;
   align-items: baseline;
@@ -1884,19 +1967,26 @@ kbd {
   align-items: baseline;
   gap: 8px;
 }
+/* Hovering a step draws it on the map as the straight line its distance was measured along, so the
+   row says so too — otherwise the line appears with nothing on screen to explain why. */
+.travel-leg:hover { background: var(--bg-raised); }
 /**
- * The ✕ that rules a step out. **Dim, never absent.**
+ * The ✕ that rules a step out. **First on the row, dim, and never absent.**
  *
  * It was hover-only at first, which reads well and hides the feature completely: a control nobody can
  * see until they happen to sweep the pointer over a row is one nobody finds. Dimmed says the same
  * thing — the route is what you came for — while still being there to be read.
+ *
+ * A **fixed slot**, drawn empty where there is nothing to rule out, so that the distances beneath each
+ * other stay a column rather than stepping in and out by the width of a button.
  */
 .travel-drop {
-  flex: 0 0 auto;
-  padding: 0 5px;
+  flex: 0 0 1.7em;
+  padding: 0;
   opacity: 0.45;
   color: var(--text-dim);
 }
+.travel-drop.empty { border-color: transparent; background: none; }
 .travel-leg:hover .travel-drop,
 .travel-drop:hover,
 .travel-drop:focus-visible {
@@ -1935,6 +2025,15 @@ kbd {
 .travel-how:not(.walk) { color: var(--accent); }
 /* Takes the slack, so the ✕ sits at the right of the row rather than against the label. */
 .travel-where { flex: 1 1 auto; min-width: 0; }
+/* The destination opens its map, like a breadcrumb — so it reads as text until you go near it, rather
+   than putting a button on every row of a list that is meant to be scanned. */
+.travel-to {
+  border-color: transparent;
+  padding: 0 4px;
+  text-align: left;
+}
+.travel-to:hover,
+.travel-to:focus-visible { border-color: var(--border); }
 
 .map-users {
   display: flex;

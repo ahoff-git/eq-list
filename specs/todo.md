@@ -89,6 +89,70 @@ everything else, so this list can stay short enough to read:
   unresolved destinations. `zonesFromSources` is the shape to reuse; the wrinkle is that harvesting has
   to read each borrowed zone's labels from *its own* folder.
 
+- **Draw the chosen route across the maps it crosses.** *(Asked for again — still the biggest open
+  piece of the travel UI.)* The graph's nodes are now on the map they were
+  read from ([ADR 0113](./decisions/0113-the-graph-is-drawn-on-the-map-it-was-read-from.md)); the half
+  that was deliberately not built is the *route* — every map a trip passes through, laid out and joined
+  at the borders they share, with the chosen path drawn through the waypoints. Everything it needs
+  exists: `surveyZone` gives a zone's nodes and positions, a border node carries **its position in each
+  of its two zones**, which is exactly the pin that stitches two maps together, and `routeInstructions`
+  already says which nodes the route uses in order.
+
+  **The thing to settle first is not technical.** A line between two points on a map is a claim about
+  the ground between them, and this graph cannot support one — that is the whole of
+  [retired ADR 0049](./decisions/README.md), and the map's non-responsibilities still say so. A
+  cross-map schematic may be a different claim (“these are the places, in order” rather than “this is
+  the way”), but it will *look* like a path however it is drawn, so it needs an answer to **what stops
+  a reader walking it** before any of it is built — probably in how it is drawn (deliberately not
+  following the geometry: straight, or curved, or beaded) rather than in a caption nobody reads.
+
+  Two smaller things fall out of it: two maps have **no shared coordinate frame** (a border's two
+  positions are in two different ones), so laying them out is a placement problem with no correct
+  answer, only a legible one; and a zone the route only passes *through* by conveyance has no walk in
+  it at all, so it may deserve to be drawn as a stop rather than a map.
+
+- **Ocean of Tears, and the maps that are split in confusing ways.** The wiki pass
+  ([ADR 0117](./decisions/0117-the-wiki-says-which-zones-touch.md)) got East Freeport ↔ Ocean of Tears
+  back, but the underlying mess is still there and is the biggest known source of thin data. Four of
+  the five duplicate drawings ([ADR 0111](./decisions/0111-one-zone-one-map-file.md)) carry **more
+  travel labels in the drawing the fold discards**: `oceanoftears` holds Ocean of Tears' druid ring,
+  boat dock and the Narrik translocator while the kept `oot` holds only a succor point; `freeporteast`
+  holds six exits to `freporte`'s two; `southro` holds ten to `sro`'s four. They **cannot** be merged —
+  the frames genuinely differ, the same `to Innothule Swamp` sitting at `-1101, 3200` in `sro` and
+  `342, 596` in `southro` — so the kept drawing has to win and those labels are simply lost.
+
+  Two threads to pull, neither obvious: **which drawing should win?** Today it is the *named* one, which
+  is right for the map overlay (the survey must be drawn in the frame you are looking at) and often
+  wrong for coverage. And **East Freeport is currently two zones in the graph**, since `freeporteast`
+  isn't a spelling of "East Freeport" and the fold's rule can't see it — the same is likely true of
+  other pairs the spelling test misses. Worth an audit of the pack's file list against the gazetteer
+  before deciding anything.
+
+- **More second copies of a zone, in the same shape as the ones already listed.** `NOT_IN_GAME` and
+  `STALE_DRAWINGS` cleared the ones that were producing visible noise; the same query that found them
+  still returns names worth a look, and West Freeport is the clearest — it still shows borders to *The
+  Commonlands* and *Oldcommons*, which are the revamped single Commonlands and an older copy of it,
+  where this server has East and West Commonlands. Each needs somebody who knows which zone is live on
+  Legends rather than a rule: the query (a zone whose whole travel content is one border the neighbour
+  never drew) is in [ADR 0111](./decisions/0111-one-zone-one-map-file.md)'s neighbourhood and returns
+  four real places among its 44, so it can only ever be a worklist.
+
+- **102 borders are still one-sided.** 161 before the far side started naming what this side couldn't
+  ([ADR 0115](./decisions/0115-a-border-one-side-could-not-name.md)), then up as the wiki added borders
+  nobody drew ([ADR 0117](./decisions/0117-the-wiki-says-which-zones-touch.md)) and down again as the
+  instance zones and Timorous Deep's destination board came out
+  ([ADR 0119](./decisions/0119-a-pile-of-destinations-is-a-sign.md)). What is left is the real thing:
+  a zone whose mapmaker labelled no way back. Each puts a `2000?` stand-in
+  ([`UNKNOWN_CROSSING`](../src/shared/travel/types.ts)) on a leg — once, now that a stand-in can no
+  longer be chained ([ADR 0118](./decisions/0118-a-stand-in-is-not-a-shortcut.md)) — and each is one
+  `manual-links.ts` entry from a measured distance: open the map with the 🧭 panel up, read the
+  coordinate off the way out, add the boundary's missing side. Worth doing for the ones that keep
+  turning up in real routes; the survey aside names them per zone under *Here, but nowhere on this map*,
+  and marks the wiki-only ones `wiki` — those never had a coordinate to lose, so they are where a
+  hand-authored entry buys the most. **East Freeport ↔ West Freeport is the one to do first**: it sits
+  on the route between Faydwer and everything east of it, and East Freeport's classic drawing is the one
+  the fold keeps while the gnome and half its exits are in the modern one.
+
 - **The map's zone picker lists a zone drawn twice, twice.** The travel graph now folds a pack's second
   drawing of a zone into the first ([ADR 0111](./decisions/0111-one-zone-one-map-file.md)) — five pairs
   in Brewall, `mistythicket` beside `misty` — but that fold is the graph's alone. `zonesFromFiles` still

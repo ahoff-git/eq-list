@@ -6,6 +6,7 @@ import type { EqMap } from "./map/eqmap";
 import type { MapSourceReport } from "./map/map-sources";
 import type { TravelAnswer, TravelEnd } from "./travel/route";
 import type { TravelAvoided, TravelOptions } from "./travel/types";
+import type { TravelSurvey } from "./travel/survey";
 import type { DragEnd } from "./window-snap";
 
 /** A zone's vector map as it crosses IPC: geometry, labels, and who drew it. */
@@ -13,7 +14,7 @@ export type LoadedMap = EqMap & { credits: string[] };
 
 export type { MapSourceReport };
 /** Re-exported so a renderer can type a route without reaching into the travel module. */
-export type { TravelAnswer, TravelAvoided, TravelEnd, TravelOptions };
+export type { TravelAnswer, TravelAvoided, TravelEnd, TravelOptions, TravelSurvey };
 /** Re-exported for the same reason: a titlebar ends a drag without importing the geometry. */
 export type { DragEnd };
 
@@ -2414,6 +2415,15 @@ export interface EqlApi {
       to: TravelEnd | string,
       options?: TravelOptions,
     ): Promise<TravelAnswer>;
+    /**
+     * What the graph knows about **one zone**: its nodes with their positions on that map, and the
+     * teleport networks reachable from it — counted rather than listed, because a druid reaches
+     * eighteen rings from anywhere and eighteen lines off the edge of the map say nothing.
+     *
+     * The map draws this while the 🧭 panel is open, and it's what an audit of a pack's labels is
+     * done against. `undefined` when no map source answers to `sourceId`, or no zone to `zone`.
+     */
+    survey(sourceId: string, zone: string, options?: TravelOptions): Promise<TravelSurvey | undefined>;
   };
   map: {
     /** Open (or focus) the sibling map window. */

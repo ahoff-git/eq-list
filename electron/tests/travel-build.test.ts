@@ -10,14 +10,15 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildTravelGraph, duplicateZoneFiles } from "../../src/shared/travel/build";
+import { buildTravelGraph, duplicateZoneFiles, pairByReciprocal } from "../../src/shared/travel/build";
 import { findRoute, travelZone } from "../../src/shared/travel/route";
 import type { ZoneHarvest, TravelPoint } from "../../src/shared/travel/harvest";
+import type { TravelNode } from "../../src/shared/travel/types";
 import type { TravelCrossing } from "../../src/shared/travel/types";
 
 const border = (to: string, y = 0, x = 0): TravelPoint => ({ label: `to ${to}`, at: { y, x, z: 0 }, kind: "border", to });
 const place = (crossing: TravelCrossing, label = "Druid Rings"): TravelPoint => ({ label, at: { y: 0, x: 0, z: 0 }, kind: "place", crossing });
-const zone = (name: string, points: TravelPoint[]): ZoneHarvest => ({ zone: name, points, dropped: [] });
+const zone = (name: string, points: TravelPoint[]): ZoneHarvest => ({ zone: name, points, dropped: [], board: [] });
 
 const NAMES = {
   gfaydark: "Greater Faydark",
@@ -432,4 +433,109 @@ test("a route asked for from the file that was folded away still lands on the zo
   assert.equal(travelZone(graph, "mistythicket"), "misty");
   assert.equal(travelZone(graph, "Misty Thicket"), "misty");
   assert.ok(findRoute(graph, "rivervale", "mistythicket"), "and it is a real route, not a refusal");
+});
+
+test("a border only one side could name is named by the other side", () => {
+  // The reported case. Misty Thicket labels `to The Liberated Citadel of Runnyeye`, which nothing in
+  // the catalogue answers to — the app calls the zone RunnyEye Citadel — so the label resolved to
+  // nothing and its coordinate was thrown away. RunnyEye's own map says `to Misty Thicket`, which
+  // resolves, so the border existed with one side placed and the other priced by a stand-in.
+  const names = { misty: "Misty Thicket", runnyeye: "RunnyEye Citadel" };
+  const { graph, report } = buildTravelGraph(
+    { id: "brewall" },
+    [
+      zone("misty", [{ ...border("The Liberated Citadel of Runnyeye", 0, 1390) }]),
+      zone("runnyeye", [border("Misty Thicket", 0, 40)]),
+    ],
+    names,
+  );
+
+  const [node] = graph.nodes;
+  assert.equal(node.id, "misty|runnyeye");
+  assert.deepEqual(node.at.misty?.map((a) => a.x), [1390], "the coordinate it used to throw away");
+  assert.deepEqual(node.at.runnyeye?.map((a) => a.x), [40]);
+  // Every walk to it is now measured rather than assumed, which is the whole point.
+  assert.ok(!graph.edges.some((e) => e.assumed));
+
+  // Reported, because it is an inference — and no longer counted as a destination nothing could place,
+  // which would be the graph disagreeing with itself about what it knows.
+  assert.deepEqual(report.paired, [
+    { zone: "misty", name: "The Liberated Citadel of Runnyeye", to: "runnyeye", how: "narrower" },
+  ]);
+  assert.deepEqual(report.unresolved, []);
+});
+
+test("the far side's claim is what makes the loose tiers safe — with no claim, nothing is paired", () => {
+  // The pass never invents a border. Its whole licence is that the other zone has already asserted
+  // the connection, so all this contributes is the coordinate; with nobody claiming Misty Thicket,
+  // the label stays exactly as unplaceable as it was.
+  const names = { misty: "Misty Thicket", runnyeye: "RunnyEye Citadel" };
+  const { graph, report } = buildTravelGraph(
+    { id: "brewall" },
+    [zone("misty", [border("The Liberated Citadel of Runnyeye", 0, 1390)]), zone("runnyeye", [])],
+    names,
+  );
+  assert.deepEqual(graph.nodes, []);
+  assert.deepEqual(report.paired, []);
+  assert.deepEqual(report.unresolved, [{ name: "The Liberated Citadel of Runnyeye", from: ["misty"] }]);
+});
+
+test("a name is paired by every tier, and two claimants that both fit pair with neither", () => {
+  const at = { y: 0, x: 0, z: 0 };
+  const pending = [
+    { zone: "innothule", name: "The Feerott", at },
+    { zone: "commonlands", name: "Nekulos Forest", at },
+    { zone: "commonlands", name: "North Desert of Ro", at },
+    { zone: "eastwastes", name: "Crystal Caverns (exit from lower level)", at },
+  ];
+  const claimed = (zone: string, far: string): [string, TravelNode] => [
+    `${zone}|${far}`,
+    { id: `${zone}|${far}`, kind: "boundary", label: "", zones: [zone, far].sort(), at: { [far]: [at] } },
+  ];
+  const names = {
+    innothule: "Innothule Swamp",
+    feerrott: "The Feerrott",
+    commonlands: "The Commonlands",
+    nektulos: "Nektulos Forest",
+    northro: "Northern Desert of Ro",
+    eastwastes: "Eastern Wastes",
+    crystal: "Crystal",
+  };
+  const paired = pairByReciprocal(
+    pending,
+    new Map([
+      claimed("innothule", "feerrott"),
+      claimed("commonlands", "nektulos"),
+      claimed("commonlands", "northro"),
+      claimed("eastwastes", "crystal"),
+    ]),
+    names,
+  );
+  // Real cases from the pack, one per tier — a typo, a rephrasing loose enough to need `fuzzy`, and a
+  // name that says everything the candidate says plus a parenthetical nobody stripped.
+  assert.deepEqual(
+    paired.map((p) => `${p.name} -> ${p.to} [${p.how}]`),
+    [
+      "The Feerott -> feerrott [typo]",
+      "Nekulos Forest -> nektulos [typo]",
+      "North Desert of Ro -> northro [fuzzy]",
+      "Crystal Caverns (exit from lower level) -> crystal [narrower]",
+    ],
+  );
+
+  // And it fails closed. Constructed rather than found — a real tie between two of one zone's
+  // claimants is rare — but the refusal is the property the loose tiers are affordable *because* of:
+  // an unplaced border is a stand-in a route flags, a wrongly placed one is a confident lie. Both
+  // candidates are contained in the name, so `narrower` has two winners and answers with neither.
+  const tie = pairByReciprocal([{ zone: "a", name: "Kaladim Docks", at }], new Map([claimed("a", "kaladima"), claimed("a", "docks")]), {
+    kaladima: "Kaladim",
+    docks: "Docks",
+  });
+  assert.deepEqual(tie, []);
+
+  // A name no claimant fits is left alone rather than forced onto the nearest one.
+  const miss = pairByReciprocal([{ zone: "a", name: "Plane of Sky", at }], new Map([claimed("a", "kaladima")]), {
+    kaladima: "Kaladim",
+  });
+  assert.deepEqual(miss, []);
 });

@@ -4,11 +4,13 @@ import { usePlayerLoc } from "@/lib/hooks";
 import { canvasToEqCoords, clampPan, eqToCanvasCoords, fitRect } from "@/shared/map/coords";
 import { inBands, mapBounds, segmentInBands, vectorProjection, type EqMap, type ZBand } from "@/shared/map/eqmap";
 import { POI_KINDS, poiKind, type PoiKind } from "@/shared/map/poi-kinds";
+import { zoneLinkName } from "@/shared/map/zone-names";
+import { zoneKey } from "@/shared/names";
 import { pickHit } from "@/shared/map/hit-test";
 import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
 import { mobKey } from "@/shared/mob-stats";
 import type { CanvasSize, Loc, MapView, Point, Zone } from "@/shared/map/types";
-import type { KillEmphasis } from "@/shared/types";
+import type { KillEmphasis, TravelSurvey } from "@/shared/types";
 
 /**
  * A kill to plot. `confidence` fades and shrinks it, and `glyph`/`color` come from the
@@ -97,7 +99,7 @@ const VECTOR_MAX_ZOOM = 30;
  * How close the cursor must be, per marker kind. A pin is a thing you aim at, so it's forgiving; a
  * kill dot is one of hundreds, so it isn't — otherwise a busy camp becomes one big hover target.
  */
-const HIT_RADIUS = { pin: 9, self: 8, peer: 7, ping: 8, kill: 6, poi: 7 } as const;
+const HIT_RADIUS = { pin: 9, self: 8, peer: 7, ping: 8, kill: 6, poi: 7, graph: 9 } as const;
 /** How far the pointer must travel before a press counts as a drag rather than a click. */
 const DRAG_SLOP = 4;
 
@@ -152,7 +154,18 @@ const MAP_COLORS = {
   pinHalo: "rgba(10, 15, 24, 0.6)",
   pinTitle: "#fff",
   pinTitleOutline: "rgba(10, 15, 24, 0.9)",
+  /** The travel graph, drawn while the 🧭 panel is open: a border you cross, and a place you arrive at. */
+  graphBorder: "#a78bfa",
+  graphPlace: "#4dd4c4",
+  graphText: "#efeaff",
+  /** The leg under the pointer. Dashed, deliberately: a solid line reads as a way through. */
+  graphLeg: "#ffd166",
+  /** The rest of the route, present but quiet — there to be seen, not to be followed. */
+  graphPath: "rgba(203, 213, 225, 0.4)",
 } as const;
+
+/** How big a travel node is drawn. Bigger than a POI dot: while navigating, this is the subject. */
+const GRAPH_NODE = { border: 6, place: 5 } as const;
 
 export default function MapPanel({
   zone,
@@ -175,6 +188,9 @@ export default function MapPanel({
   bands,
   hiddenPoiKinds,
   emphasis,
+  survey,
+  routeLegs,
+  highlight,
 }: {
   zone: Zone | undefined;
   redrawKey?: number;
@@ -212,6 +228,32 @@ export default function MapPanel({
   bands?: ZBand[];
   /** Label kinds to leave off the map (see `poiKind`) — a busy zone is mostly labels. */
   hiddenPoiKinds?: ReadonlySet<PoiKind>;
+  /**
+   * The **travel graph, from this zone's point of view** — drawn while the 🧭 panel is open, and only
+   * then, because it answers a question you are only asking while navigating: not "how do I get
+   * there" but "does the graph deserve to be believed about this map".
+   *
+   * Only the nodes with a position here are drawn. Everything else about it — the teleport networks,
+   * the borders nobody drew the far side of — is the aside's, since neither can be put on a map (see
+   * `MapTravelAside`, and specs/travel).
+   */
+  survey?: TravelSurvey | null;
+  /**
+   * **The leg of a route under the pointer**, drawn as the straight line its distance was measured
+   * along — see `drawGraph`. Node ids from the same survey; either end being absent from this map (or
+   * unplaced on it) simply draws nothing, which is the honest answer for a leg that isn't here.
+   */
+  /**
+   * **The whole route, as the pairs its distances were measured between.** Drawn quietly so the trip is
+   * visible without hunting for it; the one under the pointer is picked out by `highlight`.
+   *
+   * Node ids from the same survey. A leg with an end that isn't on this map — a hub, your own
+   * position, a border nobody placed here — draws nothing, which is the honest answer for a leg that
+   * isn't here.
+   */
+  routeLegs?: readonly { from: string; to: string }[];
+  /** The leg under the pointer, out of `routeLegs`. */
+  highlight?: { from: string; to: string } | null;
   /**
    * Kills to pick out — one mob's, or a single kill by id. Set while a name is hovered, in the
    * kill list or the main window's Hunt tab, so pointing at it answers "where did those die?".
@@ -328,8 +370,43 @@ export default function MapPanel({
    */
   const visiblePois = useMemo(() => {
     if (!vector) return [];
-    return vector.pois.filter((poi) => inBands(poi.z, bands) && !hiddenPoiKinds?.has(poiKind(poi.label)));
-  }, [vector, bands, hiddenPoiKinds]);
+    /**
+     * **A way out to somewhere the server hasn't got is not a way out.** Every pack marks
+     * `to The Plane of Knowledge (Click Book)` in half the world, and the Plane of Knowledge is six
+     * expansions past this server: the graph already refuses to build a border into it, but the map
+     * kept drawing the label — noise sitting exactly where the exits are, which is where you look when
+     * you're finding your way out.
+     *
+     * Only while the 🧭 panel is open, because that is when the survey is here to say which zones those
+     * are, and when a map is being read as a way through rather than as a picture of a place.
+     */
+    const gone = new Set((survey?.absent ?? []).map((name) => zoneKey(name)));
+    const goesNowhere = (label: string): boolean => {
+      if (!gone.size) return false;
+      const to = zoneLinkName(label);
+      return !!to && gone.has(zoneKey(to));
+    };
+    /**
+     * **A point the graph already marks is drawn once.** A travel node's position is the label's own,
+     * copied verbatim by the harvest — so while the graph is on screen, `to The Lesser Faydark` sits
+     * underneath a diamond reading `→ Lesser Faydark`, and the zone is written twice in the same spot.
+     * The marker is the better of the two: it says where it takes you rather than what the label said,
+     * and it answers to the pointer with the node's own figures.
+     *
+     * Matched on the rounded position rather than on the words, because that is what makes it exact:
+     * these are the same point, not two labels that happen to agree.
+     */
+    const marked = new Set(
+      (survey?.nodes ?? []).flatMap((n) => n.at.map((p) => `${Math.round(p.y)},${Math.round(p.x)}`)),
+    );
+    return vector.pois.filter(
+      (poi) =>
+        inBands(poi.z, bands) &&
+        !hiddenPoiKinds?.has(poiKind(poi.label)) &&
+        !goesNowhere(poi.label) &&
+        !marked.has(`${Math.round(poi.y)},${Math.round(poi.x)}`),
+    );
+  }, [vector, bands, hiddenPoiKinds, survey]);
 
   /**
    * Everything on the map that answers to the cursor. Built in one place so hovering doesn't need
@@ -379,6 +456,31 @@ export default function MapPanel({
     if (loc) {
       list.push({ y: loc.y, x: loc.x, radius: HIT_RADIUS.self, priority: 3, title: "You", detail: `${loc.y}, ${loc.x}` });
     }
+    // The travel graph, when it's on screen. Hovering one is the **audit**: a marker says a node is
+    // here, and only its figures say whether that's right — so the tip carries the exact `/loc` to
+    // compare against the game, the node's own id, and, for a border, where it comes out.
+    for (const node of survey?.nodes ?? []) {
+      const many = node.at.length > 1;
+      node.at.forEach((at, i) => {
+        list.push({
+          y: at.y,
+          x: at.x,
+          radius: HIT_RADIUS.graph,
+          priority: 5,
+          title: node.beyond ? `to ${node.beyond.name}` : node.label,
+          detail: [
+            `${Math.round(at.y)}, ${Math.round(at.x)}`,
+            // A zone can offer several crossings of one border, and they are one node — worth saying
+            // out loud, since two markers with one name otherwise read as a duplicate.
+            many ? `crossing ${i + 1} of ${node.at.length}` : "",
+            node.via ?? node.kind,
+            node.id,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        });
+      });
+    }
     // The map's own labels last: they're already written on the map, so hovering is for the ones
     // that overlap into illegibility — and for saying which kind they are.
     for (const poi of visiblePois) {
@@ -386,7 +488,7 @@ export default function MapPanel({
       list.push({ y: poi.y, x: poi.x, radius: HIT_RADIUS.poi, priority: 1, title: poi.label, detail: kind?.label });
     }
     return list;
-  }, [pins, kills, pings, peers, loc, visiblePois]);
+  }, [pins, kills, pings, peers, loc, visiblePois, survey]);
 
   /** The zoom/pan view, applied to a base canvas point. */
   const applyView = useCallback((p: Point): Point => ({ x: p.x * zoom + pan.x, y: p.y * zoom + pan.y }), [zoom, pan]);
@@ -481,6 +583,7 @@ export default function MapPanel({
     if (showGrid) drawGrid(ctx, projection, view);
     drawPois(ctx);
     drawKills(ctx);
+    drawGraph(ctx);
     drawTrail(ctx);
     drawPeers(ctx);
     drawPings(ctx);
@@ -515,6 +618,95 @@ export default function MapPanel({
           ctx.stroke();
         }
     }
+    }
+
+    /**
+     * **The travel graph on the map it was read from** — a diamond where you cross into another zone,
+     * a circle where you arrive without walking.
+     *
+     * This is not a route and draws no path: it is the graph's *claims about this map*, at the
+     * coordinates it holds them at, so they can be checked against the map under them. A border marked
+     * where no line is drawn, or three of them where the map shows one way out, is a fault you can see
+     * in a second here and can't see at all in a list of steps.
+     *
+     * Above the kills so the heatmap can't bury it, below anything live: while the 🧭 panel is open
+     * this is the subject, but your own position still wins.
+     */
+    function drawGraph(ctx: CanvasRenderingContext2D): void {
+      if (!survey?.nodes.length) return;
+      ctx.save();
+      /**
+       * **The route's legs, under the markers.** Straight and dashed in both states, deliberately: the
+       * line is the *measurement* — `dist3d` between two points — and drawing it any other way would
+       * claim a way through that the geometry cannot support (see specs/map's non-responsibilities).
+       *
+       * The nearest pair of positions, because that is the pair `zoneDistance` priced when a zone
+       * offers several crossings of one border.
+       */
+      const leg = (from: string, to: string, color: string, width: number): void => {
+        const [a, b] = [from, to].map((id) => survey.nodes.find((n) => n.id === id));
+        if (!a?.at.length || !b?.at.length) return;
+        let best: [Point, Point] | undefined;
+        let shortest = Infinity;
+        for (const here of a.at) {
+          for (const there of b.at) {
+            const gap = Math.hypot(here.y - there.y, here.x - there.x, here.z - there.z);
+            const [p, q] = [toScreen(here), toScreen(there)];
+            if (p && q && gap < shortest) {
+              shortest = gap;
+              best = [p, q];
+            }
+          }
+        }
+        if (!best) return;
+        ctx.setLineDash([6, 4]);
+        drawLine(best[0].x, best[0].y, best[1].x, best[1].y, color, width, ctx);
+        ctx.setLineDash([]);
+      };
+
+      // Quiet first, then the hovered one over it — so a leg the route uses twice still lights up.
+      for (const step of routeLegs ?? []) leg(step.from, step.to, MAP_COLORS.graphPath, 2);
+      const lit = new Set([highlight?.from, highlight?.to].filter(Boolean) as string[]);
+      if (highlight && lit.size === 2) leg(highlight.from, highlight.to, MAP_COLORS.graphLeg, 2.5);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = "10px sans-serif";
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
+      for (const node of survey.nodes) {
+        const border = node.kind === "boundary";
+        const color = border ? MAP_COLORS.graphBorder : MAP_COLORS.graphPlace;
+        const r = border ? GRAPH_NODE.border : GRAPH_NODE.place;
+        // A border is named by where it takes you, not by the pair of zones it joins — the same
+        // reading a route's own rows use, and the only one that's an instruction.
+        const text = node.beyond ? `→ ${node.beyond.name}` : node.label;
+        for (const at of node.at) {
+          const p = toScreen(at);
+          if (!p) continue;
+          ctx.beginPath();
+          if (border) {
+            ctx.moveTo(p.x, p.y - r);
+            ctx.lineTo(p.x + r, p.y);
+            ctx.lineTo(p.x, p.y + r);
+            ctx.lineTo(p.x - r, p.y);
+            ctx.closePath();
+          } else {
+            ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
+          }
+          ctx.fillStyle = lit.has(node.id) ? MAP_COLORS.graphLeg : color;
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
+          ctx.stroke();
+
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
+          ctx.strokeText(text, p.x + r + 4, p.y);
+          ctx.fillStyle = MAP_COLORS.graphText;
+          ctx.fillText(text, p.x + r + 4, p.y);
+        }
+      }
+      ctx.restore();
     }
 
     // The map's own labelled points (zone exits, camps, NPCs) go under everything of ours.
@@ -672,7 +864,8 @@ export default function MapPanel({
     }
   }, [
     loc, trail, peers, pings, pins, kills, showKillConfidence, canvasSize, redrawKey,
-    showGrid, toScreen, frame, view, applyView, vector, visiblePois, picking, emphasized, projection,
+    showGrid, toScreen, frame, view, applyView, vector, visiblePois, picking, emphasized, projection, survey,
+    routeLegs, highlight,
   ]);
 
   /** Screen point (within the canvas) → base canvas point, inverting the zoom/pan view. */

@@ -169,3 +169,39 @@ test("a dead word only counts when it sits on the conveyance", () => {
   // And a border into a dead crossing goes too, since the check runs before the label is read as one.
   assert.equal(travelPoint(poi("to Paineel (broken portal)")), undefined);
 });
+
+test("a pile of destinations at one spot is a sign, not a set of zone lines", () => {
+  // Timorous Deep's map carries twelve `to X` labels inside a 120-unit box — a translocator's board
+  // listing where it can send you, drawn where the gnome stands. Read as zone lines it made Timorous
+  // Deep adjacent to half the world, and since no far side ever labelled the way back, every one of
+  // those borders was priced by a stand-in.
+  const board = ["Halas", "Oggok", "Rivervale", "Ak`Anon", "Erudin"].map((to, i) =>
+    poi(`to ${to}`, -4300 - i * 20, 12200 + i * 20),
+  );
+  const real = [poi("to Butcherblock Mountains", 7296, -3310), poi("from Firiona Vie", 2499, 3147)];
+  const { points, board: refused } = harvestZone("timorous", [...board, ...real]);
+
+  assert.deepEqual(points.map((p) => p.to), ["Butcherblock Mountains", "Firiona Vie"], "the real crossings stay");
+  assert.equal(refused.length, 5);
+});
+
+test("a cramped junction is not a board — the same zone twice is one destination", () => {
+  // Sol A's several ways into Nagafen's Lair sit beside its exit to Lavastorm, which is five labels in
+  // a small space and four of them the same place. A bracketed number is which way in, not a zone.
+  const junction = [
+    poi("to Nagafen`s Lair (1)", 0, 0),
+    poi("to Nagafen`s Lair (2)", 20, 20),
+    poi("to Nagafen`s Lair (3)", 40, 10),
+    poi("to Nagafen`s Lair (6)", 10, 40),
+    poi("to The Lavastorm Mountains", 30, 30),
+  ];
+  assert.deepEqual(harvestZone("soldunga", junction).board, [], "nothing refused");
+  assert.equal(harvestZone("soldunga", junction).points.length, 5);
+});
+
+test("destinations far apart are zone lines however many there are", () => {
+  const spread = ["Rivervale", "Misty Thicket", "Kithicor Forest", "Highpass Hold", "West Karana"].map((to, i) =>
+    poi(`to ${to}`, i * 2000, i * 1500),
+  );
+  assert.deepEqual(harvestZone("eastkarana", spread).board, []);
+});

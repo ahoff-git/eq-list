@@ -575,6 +575,19 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
     },
   );
 
+  /**
+   * What the graph knows about **one zone** — its nodes, where each sits on this map, and the
+   * teleport networks it can reach, counted rather than listed.
+   *
+   * A route says how to get somewhere and nothing about whether the graph deserves to be believed.
+   * This is the other half: it's what the map draws while the 🧭 panel is open, and what an audit of a
+   * pack's labels is done against (see specs/travel).
+   */
+  ipcMain.handle(CH.travelSurvey, (_e, sourceId: string, zone: string, options?: TravelOptions) => {
+    const source = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId);
+    return source ? travel.survey(source, zone, options) : undefined;
+  });
+
   ipcMain.handle(CH.mapLoad, (_e, sourceId: string, zoneFile: string) => {
     const dir = listSources(store.getSettings().logDir).sources.find((s) => s.id === sourceId)?.dir;
     if (!dir) return null;

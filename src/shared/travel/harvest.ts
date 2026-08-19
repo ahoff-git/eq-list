@@ -201,6 +201,58 @@ export interface ZoneHarvest {
   points: TravelPoint[];
   /** Labels that read as travel but named nowhere — a bare `Zone Line`, `Zone Out`. */
   dropped: string[];
+  /** Labels refused as a conveyance's **destination board** rather than zone lines — see `boards`. */
+  board: string[];
+}
+
+/**
+ * **A pile of destinations at one spot is a sign, not a set of zone lines.**
+ *
+ * Timorous Deep's map carries twelve `to X` labels inside a 120-unit box — Ak'Anon, Halas, Oggok,
+ * Rivervale, Greater Faydark, Cabilis West — which is a translocator's board listing where it can send
+ * you, drawn where the gnome stands. Read as zone lines it made Timorous Deep **adjacent to half the
+ * world**, and since no far side ever labelled the way back, every one of those borders was priced by
+ * `UNKNOWN_CROSSING`: a route out of Greater Faydark ran 2,000 invented units to a gnome that isn't
+ * there instead of walking to Butcherblock and taking the one that is. A border is symmetric, and this
+ * turned a one-way menu into a two-way road.
+ *
+ * **The measurement, over both packs.** A real crossing is at the edge of the map and its neighbours
+ * are thousands of units away; a board is a caption block. Counting *distinct* destinations within 150
+ * units — with a trailing `(1)`, `(2)` folded away, since that is which of several ways in it is and
+ * not a different zone — the whole corpus has **three** places with five or more, and all three are
+ * boards: Timorous Deep's twelve, and the portal lists in the Plane of Tranquility and Laurion Inn.
+ * At four it starts reaching dungeon junctions (Sol A's several ways into Nagafen's Lair, beside its
+ * exit to Lavastorm), which are real. So five is the floor, and it is a floor with daylight under it.
+ *
+ * What a board *means* is left to the hand-authored table, which is what it is for: the six verified
+ * translocator gnomes are written there, and this one contradicts them — it lists Kunark and a revamped
+ * Guk, so it is a map drawn for a different server. A label that can't be believed is refused, which is
+ * `zoneLinkName`'s own rule for `A & B`.
+ */
+const BOARD_RADIUS = 150;
+const BOARD_DESTINATIONS = 5;
+
+/** `Nagafen's Lair (3)` is which way in, not a different zone. */
+function boardKey(name: string): string {
+  return name.replace(/\s*\(\s*\d+\s*\)\s*$/, "").trim().toLowerCase();
+}
+
+/**
+ * The border points that are really one conveyance's destination board — refused wholesale. Greedy
+ * over the points in file order, so the answer doesn't depend on anything but the map.
+ */
+export function destinationBoard(points: readonly TravelPoint[]): Set<TravelPoint> {
+  const borders = points.filter((p) => p.kind === "border" && p.to);
+  const refused = new Set<TravelPoint>();
+  for (const point of borders) {
+    if (refused.has(point)) continue;
+    const near = borders.filter(
+      (other) => !refused.has(other) && Math.hypot(point.at.y - other.at.y, point.at.x - other.at.x) <= BOARD_RADIUS,
+    );
+    if (new Set(near.map((p) => boardKey(p.to!))).size < BOARD_DESTINATIONS) continue;
+    for (const p of near) refused.add(p);
+  }
+  return refused;
 }
 
 /**
@@ -208,12 +260,20 @@ export interface ZoneHarvest {
  * stable across rebuilds (see `build.ts`) — so this never sorts.
  */
 export function harvestZone(zone: string, pois: MapPoi[]): ZoneHarvest {
-  const points: TravelPoint[] = [];
+  const found: TravelPoint[] = [];
   const dropped: string[] = [];
   for (const poi of pois) {
     const point = travelPoint(poi);
-    if (point) points.push(point);
+    if (point) found.push(point);
     else if (poiKind(poi.label) === "zoneline") dropped.push(poi.label.trim());
   }
-  return { zone, points, dropped };
+  // Refused last, because it is a judgement about the points **together** — one label says nothing
+  // about whether it is a zone line, and a dozen of them in one spot says everything.
+  const board = destinationBoard(found);
+  return {
+    zone,
+    points: found.filter((p) => !board.has(p)),
+    dropped,
+    board: [...board].map((p) => p.label),
+  };
 }

@@ -447,7 +447,9 @@ test("the route's two virtual ends are marked as such", () => {
 /** A route as the panel lays it out: `<distance> <verb> to <where>`, one string per row. */
 const reads = (route: TravelRoute | undefined) =>
   routeInstructions(route!).map((r) => {
-    const cost = r.step.from ? `${Math.round(r.step.from.cost)}` : "start";
+    // The **row's** figure, not the step's: a border the route only walked past is no instruction, and
+    // its distance is carried onto the row that follows it.
+    const cost = r.step.from ? `${Math.round(r.cost)}` : "start";
     return r.how ? `${cost} ${r.how} to ${r.where}` : `${cost} ${r.where}`;
   });
 
@@ -515,4 +517,119 @@ test("a boat says Boat, and a succor says Succor at the place it never left the 
     "0 Succor to Succor · Alpha",
     "100 Run to Beta",
   ]);
+});
+
+test("a border with two crossings is not a hop between them", () => {
+  // One border, two crossing points — near the start by one and near the gnome by the other — which
+  // used to make the path through it cheaper than the walk, since each edge took its own nearest pair.
+  // The router refuses to walk *through* a node inside one zone, so the honest direct walk wins and the
+  // dock never becomes a step at all.
+  const dock: TravelNode = {
+    id: "a|sea",
+    kind: "boundary",
+    label: "Alpha ↔ The Sea",
+    zones: ["a", "sea"],
+    via: "boat",
+    at: { a: [{ y: 3280, x: 0, z: 0 }, { y: 0, x: 3400, z: 0 }], sea: [{ y: 0, x: 0, z: 0 }] },
+  };
+  const gnome: TravelNode = {
+    id: "a|b",
+    kind: "boundary",
+    label: "Alpha ↔ Beta",
+    zones: ["a", "b"],
+    via: "translocator",
+    at: { a: [{ y: 0, x: 3406, z: 0 }], b: [{ y: 0, x: 0, z: 0 }] },
+  };
+  const g = graph([dock, gnome], [], { a: "Alpha", b: "Beta", sea: "The Sea" });
+  const route = findRoute(g, { zone: "a", at: { y: 0, x: 0, z: 0 } }, "b")!;
+
+  assert.deepEqual(route.steps.map((s) => s.node.id), [" start", "a|b", " goal"], "straight to the gnome");
+  assert.equal(Math.round(route.cost), 3406, "the walk, not 3280 + 6 through the dock");
+  assert.deepEqual(reads(route), ["start Alpha", "3406 Run to the translocator · Alpha", "0 Translocate to Beta"]);
+});
+
+test("a succor is never mistaken for a place you walked past", () => {
+  // It also arrives and leaves inside one zone, and it is the whole instruction — the walk it saves is
+  // the reason the toggle exists. The difference is how you got there: walked in, or cast.
+  const g = graph([boundary("a", 0, "b", 0), succor("a", 100)], [], { a: "Alpha", b: "Beta" });
+  const from = { zone: "a", at: { y: 0, x: 5000, z: 0 } };
+  assert.deepEqual(reads(findRoute(g, from, "b", { succor: true })), [
+    "start Alpha",
+    "0 Succor to Succor · Alpha",
+    "100 Run to Beta",
+  ]);
+});
+
+test("a border nobody placed is not a shortcut across the zone it sits in", () => {
+  // The reported case. `UNKNOWN_CROSSING` is what it costs to reach a border with no coordinates —
+  // and it cost the same to *leave*, which made an unplaced border a 4,000-unit teleport between any
+  // two points in its zone. The real walk from Greater Faydark's line to Butcherblock's translocator
+  // is 6,858; the graph quoted 4,000 and hopped through a border nobody drew.
+  const g = graph(
+    [
+      boundary("butcher", -3061, "gfaydark", 0),
+      { ...boundary("butcher", 3256, "oot", 0), via: "translocator" as const },
+      // In Butcherblock and nowhere in it — the far side named the border, this side never did.
+      { id: "butcher|kaladima", kind: "boundary" as const, label: "x", zones: ["butcher", "kaladima"], at: { kaladima: at(0) } },
+    ],
+    [],
+    { butcher: "Butcherblock Mountains", gfaydark: "Greater Faydark", oot: "Ocean of Tears", kaladima: "South Kaladim" },
+  );
+
+  const route = findRoute(g, "gfaydark", "oot")!;
+  // The honest walk, straight across, rather than two guesses that happen to add up to less.
+  assert.equal(Math.round(route.cost), 6317);
+  assert.deepEqual(route.steps.map((s) => s.node.id), [" start", "butcher|gfaydark", "butcher|oot", " goal"]);
+  // The unplaced border is still reachable as a destination — it just isn't a way through.
+  assert.ok(findRoute(g, "gfaydark", "kaladima"));
+});
+
+test("a block still leaves the detour it was written for", () => {
+  // Walking through a node is refused **only where the direct walk exists**, which is everywhere
+  // except the one thing that removes it: a block saying two places in a zone aren't joined.
+  const nodes = [boundary("a", 0, "b", 0), boundary("a", 500, "c", 0), boundary("a", 900, "d", 0)];
+  const full = graph(nodes, [], { a: "Alpha", b: "Beta", c: "Gamma", d: "Delta" });
+  assert.equal(Math.round(findRoute(full, "b", "d")!.cost), 900, "straight across Alpha");
+
+  // Now say you can't walk between those two directly. The way round is through the third.
+  const blocked = { ...full, edges: full.edges.filter((e) => ![e.from, e.to].every((id) => id === "a|b" || id === "a|d")) };
+  assert.equal(Math.round(findRoute(blocked, "b", "d")!.cost), 900, "500 to Gamma's line, then 400 on");
+});
+
+test("a crossing you have to be at is two instructions: the walk, then the free ride", () => {
+  // A boundary node *is* the crossing, so arriving at Butcherblock's translocator meant both walking
+  // to it and taking it — and the row read `4.1k Translocate to The Ocean of Tears`, pricing the ride
+  // at the length of the walk. The ride is free; what costs is getting there.
+  const g = graph(
+    [boundary("a", 0, "b", 0), { ...boundary("a", 4133, "sea", 0), via: "translocator" as const }],
+    [],
+    { a: "Alpha", b: "Beta", sea: "The Sea" },
+  );
+  assert.deepEqual(reads(findRoute(g, { zone: "a", at: { y: 0, x: 0, z: 0 } }, "sea")), [
+    "start Alpha",
+    "4133 Run to the translocator · Alpha",
+    "0 Translocate to The Sea",
+  ]);
+
+  // The distance is said once, so the rows still sum to what the route costs.
+  const route = findRoute(g, { zone: "a", at: { y: 0, x: 0, z: 0 } }, "sea")!;
+  assert.equal(routeInstructions(route).reduce((n, r) => n + r.cost, 0), route.cost);
+});
+
+test("standing on the dock already is one instruction, and a zone line always is", () => {
+  // Nothing to split off: a walk of nothing is not a walk, and stepping over a zone line really is one
+  // act — walking to it and crossing it are the same moment.
+  const boat = graph([{ ...boundary("a", 0, "b", 0), via: "boat" as const }], [], { a: "Alpha", b: "Beta" });
+  assert.deepEqual(reads(findRoute(boat, "a", "b")), ["start Alpha", "0 Boat to Beta"]);
+
+  const line = graph([boundary("a", 900, "b", 0)], [], { a: "Alpha", b: "Beta" });
+  assert.deepEqual(reads(findRoute(line, { zone: "a", at: { y: 0, x: 0, z: 0 } }, "b")), [
+    "start Alpha",
+    "900 Run to Beta",
+  ]);
+});
+
+test("a port is cast where you stand, so it has no walk to split off", () => {
+  const route = findRoute(chain(), "a", { zone: "d", at: { y: 0, x: 1000, z: 0 } }, { druid: true });
+  assert.deepEqual(reads(route), ["start Alpha", "0 Teleport to Ring · Delta", "100 Run to Delta"]);
 });

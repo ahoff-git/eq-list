@@ -160,6 +160,7 @@ const api: EqlApi = {
   },
   travel: {
     route: (sourceId, from, to, options) => ipcRenderer.invoke(CH.travelRoute, sourceId, from, to, options),
+    survey: (sourceId, zone, options) => ipcRenderer.invoke(CH.travelSurvey, sourceId, zone, options),
   },
   map: {
     open: () => ipcRenderer.invoke(CH.winOpenMap),

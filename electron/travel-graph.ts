@@ -18,9 +18,11 @@ import type { MapSource } from "../src/shared/map/map-sources";
 import { buildTravelGraph, type TravelBuildReport } from "../src/shared/travel/build";
 import { harvestZone, type ZoneHarvest } from "../src/shared/travel/harvest";
 import { applyManual } from "../src/shared/travel/manual";
-import { MANUAL_TRAVEL } from "../src/shared/travel/manual-links";
+import { MANUAL_TRAVEL, NOT_IN_GAME, STALE_DRAWINGS } from "../src/shared/travel/manual-links";
+import { statedAdjacencies } from "../src/shared/zones/adjacency";
 import { outOfEraSet, zoneAvailable } from "../src/shared/zones/expansions";
-import { answerRoute, type TravelAnswer, type TravelEnd } from "../src/shared/travel/route";
+import { answerRoute, travelZone, type TravelAnswer, type TravelEnd } from "../src/shared/travel/route";
+import { surveyZone, type TravelSurvey } from "../src/shared/travel/survey";
 import type { TravelGraph, TravelOptions } from "../src/shared/travel/types";
 import { createZoneNamer, readFolderPois } from "./eq-maps";
 import { readJson, writeJson } from "./json-store";
@@ -81,13 +83,32 @@ export async function buildFromSource(
 ): Promise<{ graph: TravelGraph; report: TravelBuildReport }> {
   const zoneNames = await zoneNamesFor(source, namer);
   const harvests = await harvestSource(source);
-  const absent = absentZonesFor(zoneNames, outOfEra);
-  const built = buildTravelGraph({ id: source.id, dir: source.dir }, harvests, zoneNames, absent);
+  /**
+   * Everywhere you can't go, from **both** sources and composed here rather than inside either.
+   *
+   * `zoneAvailable` answers it for a zone with a name — the expansion table plus the wiki's era flags —
+   * and fails open on a name it has never heard of, which is right for a Legends custom zone and wrong
+   * for `mmca`: an instance of Mistmoore's Catacombs that nothing in any catalogue answers to. So the
+   * hand-authored list stands beside the computed one instead of hiding inside it, and both curated
+   * inputs reach the builder the same way — as arguments.
+   */
+  const absent = [...absentZonesFor(zoneNames, outOfEra), ...NOT_IN_GAME];
+  // The wiki's Adjacent Zones, shipped rather than fetched — reachability the mapmakers didn't write
+  // down, added only where a label established nothing (see `zones/adjacency.ts` for the precedence).
+  const built = buildTravelGraph(
+    { id: source.id, dir: source.dir },
+    harvests,
+    zoneNames,
+    absent,
+    statedAdjacencies(),
+    STALE_DRAWINGS,
+  );
   log.debug("built travel graph", {
     source: source.id,
     zones: built.report.zones,
     nodes: built.report.nodes,
     edges: built.report.edges,
+    claimed: built.report.claimed.added.length,
   });
   return built;
 }
@@ -148,6 +169,7 @@ export function createTravelRouter(deps: {
     to: TravelEnd | string,
     options?: TravelOptions,
   ) => Promise<TravelAnswer>;
+  survey: (source: MapSource, zone: string, options?: TravelOptions) => Promise<TravelSurvey | undefined>;
   clear: () => void;
 } {
   /** One graph per folder, keyed by it — like the gazetteer, and for the same reason. */
@@ -197,6 +219,14 @@ export function createTravelRouter(deps: {
   return {
     graph,
     answer: async (source, from, to, options) => answerRoute(await graph(source), from, to, options),
+    // Through `travelZone` like a route's endpoints, so the map you're looking at and the zone the
+    // survey describes can't be two different answers to one name — including a zone the pack drew
+    // twice, where the file on screen may not be the file the graph kept (ADR 0111).
+    survey: async (source, zone, options) => {
+      const built = await graph(source);
+      const file = travelZone(built, zone);
+      return file ? surveyZone(built, file, options) : undefined;
+    },
     clear: () => {
       cache.clear();
       building.clear();

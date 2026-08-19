@@ -37,6 +37,8 @@ import PinEditor from "../components/PinEditor";
 import ResizablePanel from "../components/ResizablePanel";
 import Toasts from "../components/Toasts";
 import TravelPanel from "../components/TravelPanel";
+import MapTravelAside from "../components/MapTravelAside";
+import { useTravelSurvey } from "@/lib/map/useTravelSurvey";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
 import { MAP_UI_SCALE } from "@/shared/constants";
@@ -228,6 +230,17 @@ export default function MapWindow() {
   const [killsOpen, setKillsOpen] = usePersistentState(STORAGE_KEYS.mapKillsOpen, false);
   const [mobsOpen, setMobsOpen] = usePersistentState(STORAGE_KEYS.mapMobsOpen, false);
   const [travelOpen, setTravelOpen] = usePersistentState(STORAGE_KEYS.mapTravelOpen, false);
+  /** The travel graph over the zone on screen, while — and only while — the 🧭 panel is open. */
+  const survey = useTravelSurvey(travelOpen, sourceId, zoneName, settings?.travel);
+  /**
+   * Whether the survey strip is up. **Off by default**: the markers on the map are the useful half and
+   * cost nothing to read, while the strip answers “should I believe this?” — a question worth asking
+   * now and then, and not one to keep a panel open for on every trip.
+   */
+  const [auditOpen, setAuditOpen] = usePersistentState(STORAGE_KEYS.mapTravelAudit, false);
+  /** The route on the map: every leg, drawn quietly, with the one under the pointer picked out. */
+  const [routeLegs, setRouteLegs] = useState<{ from: string; to: string }[]>([]);
+  const [hoverLeg, setHoverLeg] = useState<{ from: string; to: string } | null>(null);
   const [killFilters, setKillFilters] = useState<KillFilters>(DEFAULT_KILL_FILTERS);
   const [shareKillsOn, setShareKillsOn] = usePersistentState(STORAGE_KEYS.mapShareKills, false);
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -496,6 +509,10 @@ export default function MapWindow() {
         </ResizablePanel>
       )}
 
+      {/* The off-map half of the graph — the networks, and the borders nobody drew the far side of.
+          Beside the panel it belongs to, only while that panel is open, and only when asked for. */}
+      {survey && auditOpen && <MapTravelAside survey={survey} />}
+
       {travelOpen && (
         <ResizablePanel id="map.travel" share={45}>
           <TravelPanel
@@ -509,6 +526,10 @@ export default function MapWindow() {
             // A zone in the route opens its map, which also turns "follow me" off — the same override
             // the titlebar's picker sets, so the two can't disagree about what you're looking at.
             onViewZone={setOverride}
+            onHoverLeg={setHoverLeg}
+            onRouteLegs={setRouteLegs}
+            audit={auditOpen}
+            onAudit={setAuditOpen}
           />
         </ResizablePanel>
       )}
@@ -592,6 +613,9 @@ export default function MapWindow() {
             }}
             moveMode={moveMode}
             onPinMove={(id, eq) => updatePin(id, { y: eq.y, x: eq.x })}
+            survey={survey}
+            routeLegs={routeLegs}
+            highlight={hoverLeg}
           />
         ) : (
           <div className="map-empty">

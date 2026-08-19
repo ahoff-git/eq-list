@@ -21,6 +21,7 @@ import {
   positionsIn,
   slug,
   zoneFileFor,
+  type TravelAt,
   type TravelCrossing,
   type TravelGraph,
   type TravelNode,
@@ -119,15 +120,40 @@ export interface ManualReport {
   badBoundaries: string[];
   /** Walks removed because a block said they aren't walks. */
   blocked: number;
+  /**
+   * Walk edges set to zero because two borders are the same place — one translocator gnome serving
+   * two destinations. Absent when there were none.
+   */
+  sameSpot?: number;
   /** Blocks whose two ends didn't both resolve, so nothing was removed. */
   unresolvedBlocks: string[];
   networksDropped: { network: TravelJoin; zone: string }[];
 }
 
-/** Nodes in a zone whose label contains `label` — how every hand-authored entry finds its place. */
+/** The same spot listed twice is one spot — see `stateBoundary`, which can now match its own border. */
+function distinctAt(at: TravelAt[]): TravelAt[] {
+  const seen = new Set<string>();
+  return at.filter((p) => {
+    const key = `${p.y},${p.x},${p.z}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Nodes in a zone whose label contains `label` — how every hand-authored entry finds its place.
+ *
+ * **Including the labels a border was read from**, not only the name it ended up with. A border is
+ * renamed `A ↔ B` once both sides are in, so `to Erud's Crossing (Translocator Sedina)` stops
+ * mentioning Sedina — and an entry naming that gnome then matched nothing, stated a second border
+ * through him with no position, and left every walk to it priced at `UNKNOWN_CROSSING` while his
+ * coordinate sat on the border next to it (`TravelNode.labels`).
+ */
 function matching(nodes: TravelNode[], zone: string, label: string): TravelNode[] {
   const wanted = label.toLowerCase();
-  return nodes.filter((n) => n.zones.includes(zone) && n.label.toLowerCase().includes(wanted));
+  const says = (n: TravelNode) => [n.label, ...(n.labels ?? [])].some((l) => l.toLowerCase().includes(wanted));
+  return nodes.filter((n) => n.zones.includes(zone) && says(n));
 }
 
 /**
@@ -174,6 +200,19 @@ export function applyManual(graph: TravelGraph, manual: TravelManual): { graph: 
   const named = (zone: string) => graph.zoneNames[zone] ?? zone;
   /** Zones whose walks need recomputing, because a node or a position was added to them. */
   const touched = new Set<string>();
+  /**
+   * **Which borders are the same place.** Keyed `<zone>::<the place's label>`, so the two borders
+   * a single translocator gnome serves are recognised as one NPC.
+   *
+   * A gnome takes you two ways — Setikan runs South Qeynos ↔ East Freeport *and* East Freeport ↔
+   * Ocean of Tears — which is two borders standing on one pair of feet. Arriving by one puts you
+   * exactly where you board the other, so **the walk between them is zero**, and that is true whether
+   * or not this pack drew him: it follows from their being the same place, not from knowing where the
+   * place is. Priced as an ordinary walk it came out at `UNKNOWN_CROSSING` apiece, which is how a
+   * three-gnome chain across Antonica was quoted at 6,000 units of walking for a trip that is three
+   * free rides and a few steps.
+   */
+  const oneSpot = new Map<string, Set<string>>();
 
   const knowZone = (zone: string): boolean => {
     if (knownZones.has(zone)) return true;
@@ -244,10 +283,21 @@ export function applyManual(graph: TravelGraph, manual: TravelManual): { graph: 
     // knows *what it is*, and a person reading the route wants the second.
     if (link.via && !node.via) node.via = link.via;
     for (const zone of [a, b]) {
-      if (positions[zone].length) node.at[zone] = [...positionsIn(node, zone), ...positions[zone]];
+      // **Deduped**, because an entry can now match the border it is describing. A place is found by a
+      // piece of its label and a border remembers the labels it was read from (`TravelNode.labels`),
+      // so `Sedina` finds the very node whose coordinates it is about to contribute — and adding a
+      // position to itself makes a zone look like it has two crossings in one spot.
+      if (positions[zone].length) node.at[zone] = distinctAt([...positionsIn(node, zone), ...positions[zone]]);
       touched.add(zone);
     }
     report.boundaries.push(id);
+    // Remembered per named place, so two borders through one gnome can be told they're one gnome.
+    for (const place of link.places) {
+      const zone = fileFor(graph, place.zone) ?? place.zone;
+      if (!place.label) continue;
+      const key = `${zone}::${place.label.toLowerCase()}`;
+      oneSpot.set(key, (oneSpot.get(key) ?? new Set()).add(id));
+    }
     return true;
   };
 
@@ -316,6 +366,46 @@ export function applyManual(graph: TravelGraph, manual: TravelManual): { graph: 
       edges.push(...zoneWalks(inZone, zone), ...zoneSuccors(inZone, zone));
     }
   }
+
+  /**
+   * **Two borders through one gnome are one gnome.**
+   *
+   * Applied after the recompute, because the recompute is what put the wrong number there: a walk is
+   * priced between every pair of a zone's nodes, and two borders that are the same NPC came out at
+   * `UNKNOWN_CROSSING` apiece when neither had a position. That is how three free rides across
+   * Antonica were quoted at 6,000 units of walking.
+   *
+   * The zero is a **fact, not a stand-in** (`assumed` stays off), because it doesn't rest on knowing
+   * where the place is — it rests on the two borders *being* it. Where the position is known the
+   * recompute already produced this same zero; where it isn't, this is the only thing that can.
+   */
+  let sameSpot = 0;
+  for (const ids of oneSpot.values()) {
+    if (ids.size < 2) continue;
+    const borders = [...ids];
+    for (let i = 0; i < borders.length; i++) {
+      for (let j = i + 1; j < borders.length; j++) {
+        const zone = borders[i]
+          .split("|")
+          .find((z) => borders[j].split("|").includes(z));
+        if (!zone) continue;
+        // The recompute's guess for this pair goes; nothing else in the zone is touched.
+        edges = edges.filter(
+          (e) =>
+            !(
+              e.zone === zone &&
+              e.mode === "walk" &&
+              [e.from, e.to].every((id) => id === borders[i] || id === borders[j])
+            ),
+        );
+        const why = "Two borders through one place — you arrive where you board.";
+        edges.push({ from: borders[i], to: borders[j], mode: "walk", cost: 0, zone, why });
+        edges.push({ from: borders[j], to: borders[i], mode: "walk", cost: 0, zone, why });
+        sameSpot += 2;
+      }
+    }
+  }
+  if (sameSpot) report.sameSpot = sameSpot;
 
   // Dropping a network member: the node stays (it's a real place on the map), only its free ride to
   // the rest of the network goes.

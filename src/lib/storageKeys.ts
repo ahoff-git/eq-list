@@ -34,6 +34,9 @@ export const STORAGE_KEYS = {
   mapShareKills: "eqlist.map.shareKills",
   /** Map window: the travel panel's visibility. Which conveyances you have is a *setting*, not this. */
   mapTravelOpen: "eqlist.map.travelOpen",
+  /** The 🧭 panel's survey strip — what the graph holds about this zone. Off by default: it answers
+   *  “should I believe this?”, which is a question you ask now and then rather than on every trip. */
+  mapTravelAudit: "eqlist.map.travelAudit",
   /**
    * Any resizable panel (`ResizablePanel`), by the id it was given: the height its reader dragged it
    * to, as a % of its window. Absent means "as the panel was designed" — a default is a real answer

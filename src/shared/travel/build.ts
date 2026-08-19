@@ -21,6 +21,8 @@
  * Pure — the file reading is `electron/travel-graph.ts`.
  */
 
+import type { WikiAdjacency } from "../zones/adjacency";
+import { resolveZone, type ZoneMatchHow } from "../zones/resolve";
 import { zoneSpelling } from "../zones/spelling";
 import type { ZoneHarvest } from "./harvest";
 import {
@@ -30,6 +32,7 @@ import {
   slug,
   zoneFileFor,
   zoneDistance,
+  type TravelAt,
   type TravelCrossing,
   type TravelEdge,
   type TravelGraph,
@@ -63,6 +66,11 @@ export interface TravelBuildReport {
   /** Labels that read as travel but named nowhere — a bare `Zone Line`, `Zone Out`. */
   dropped: { zone: string; label: string }[];
   /**
+   * Labels refused as a conveyance's **destination board** rather than zone lines (`destinationBoard`)
+   * — the biggest single correction the harvest makes, and the one most worth checking by eye.
+   */
+  board: { zone: string; labels: string[] }[];
+  /**
    * The conveyances found, and which zones are in them. `succor` reads a little differently from the
    * rest — it wires no network, so its row is simply the zones whose maps say where an evacuation
    * drops you.
@@ -72,6 +80,17 @@ export interface TravelBuildReport {
   isolated: string[];
   /** Second drawings of a zone the pack already has, and which file each was folded into. */
   merged: { dropped: string; kept: string }[];
+  /**
+   * Destinations that named nothing on their own and were placed by **the zone on the other side**
+   * saying so — see `pairByReciprocal`. Reported in full because each is an inference, and an
+   * inference nobody can see is one nobody can correct.
+   */
+  paired: { zone: string; name: string; to: string; how: ZoneMatchHow }[];
+  /**
+   * Borders the **wiki** stated that no map label established — added without a position, since the
+   * wiki says two zones connect and never where. Plus the stated pairs it couldn't use, and why.
+   */
+  claimed: { added: string[]; already: number; unknown: WikiAdjacency[]; absent: WikiAdjacency[] };
   /**
    * Zones left out for not being in the game (`ABSENT_ZONES`), and how many borders were refused into
    * each — which is the size of the shortcut that would otherwise exist.
@@ -146,7 +165,16 @@ export function zoneSuccors(nodes: TravelNode[], zone: string): TravelEdge[] {
  * coordinates are *not* merged in: two drawings are two frames, and averaging them would put the ring
  * somewhere neither of them has it.
  */
-export function duplicateZoneFiles(zoneNames: Record<string, string>, files: readonly string[]): Record<string, string> {
+export function duplicateZoneFiles(
+  zoneNames: Record<string, string>,
+  files: readonly string[],
+  /**
+   * Pairs no rule can see, stated by hand (`STALE_DRAWINGS`) — an old drawing kept beside a current
+   * one under a name that looks like a different place. Applied on top, and only where both files are
+   * actually here.
+   */
+  stated: Readonly<Record<string, string>> = {},
+): Record<string, string> {
   const byZone = new Map<string, string[]>();
   for (const file of files) {
     const spelling = zoneSpelling(zoneNames[file] ?? file);
@@ -162,7 +190,68 @@ export function duplicateZoneFiles(zoneNames: Record<string, string>, files: rea
     );
     for (const file of group) if (file !== kept) merged[file] = kept;
   }
+  // Stated last, so a hand-written correction outranks what the rule worked out.
+  const here = new Set(files);
+  for (const [dropped, kept] of Object.entries(stated)) {
+    if (here.has(dropped) && here.has(kept) && dropped !== kept) merged[dropped] = kept;
+  }
   return merged;
+}
+
+/**
+ * **A border only one side could name is named by the other side.**
+ *
+ * Misty Thicket's map labels a way out to `The Liberated Citadel of Runnyeye`. Nothing in the
+ * catalogue answers to that — the app calls the zone *RunnyEye Citadel* — so the label resolved to
+ * nothing and its coordinate was thrown away. Meanwhile RunnyEye's own map labels `to Misty Thicket`,
+ * which resolves fine, so the border **exists** with a position on one side and none on the other, and
+ * every walk to it from Misty Thicket is priced at `UNKNOWN_CROSSING`. A player saw the result as a
+ * `2000?` in the middle of a real route, and both halves of the answer were sitting in the same folder.
+ *
+ * So: for a destination nothing could place, the candidates are **the zones that claim a border with
+ * this one and got no coordinates from it** — precisely the borders someone else named and we didn't.
+ * That is a very short list, and every name on it is already asserting the connection, which is what
+ * makes the looser tiers affordable here when [ADR 0068](../../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md)
+ * rules them out against the whole world: **this pass never invents a border.** It decides which of a
+ * zone's own labels is the one the neighbour was talking about, and all it contributes is the
+ * coordinate — so the worst a wrong answer can do is measure a walk to the wrong exit, not claim a way
+ * through that isn't there. `resolveZone` still fails closed when two candidates tie.
+ *
+ * **Measured on the corpus**: across 590 files it pairs 16 of the 216 destinations nothing could place,
+ * and all 16 are right — `The Feerott` → The Feerrott, `Nekulos Forest` → Nektulos Forest,
+ * `North Desert of Ro` → Northern Desert of Ro, `Crystal Caverns (exit from lower level)` → Crystal.
+ * Every one is reported, because an inference nobody can see is one nobody can correct.
+ */
+export function pairByReciprocal(
+  /** Border labels whose destination no map file answered to, with the position they were drawn at. */
+  pending: readonly { zone: string; name: string; at: TravelAt }[],
+  /** The borders found so far, by their canonical id. */
+  boundaries: ReadonlyMap<string, TravelNode>,
+  zoneNames: Record<string, string>,
+): { zone: string; name: string; to: string; how: ZoneMatchHow; at: TravelAt }[] {
+  /** Per zone, the neighbours that named a border with it and got nothing back. */
+  const claimants = new Map<string, [string, string][]>();
+  for (const node of boundaries.values()) {
+    for (const zone of node.zones) {
+      if (node.at[zone]?.length) continue;
+      const far = node.zones.find((z) => z !== zone);
+      if (far) claimants.set(zone, [...(claimants.get(zone) ?? []), [far, zoneNames[far] ?? far]]);
+    }
+  }
+
+  const paired: { zone: string; name: string; to: string; how: ZoneMatchHow; at: TravelAt }[] = [];
+  for (const { zone, name, at } of pending) {
+    const candidates = claimants.get(zone);
+    if (!candidates?.length) continue;
+    // Every tier, because the candidates have already asserted the connection — see above.
+    const match = resolveZone(name, candidates, ([, zoneName]) => zoneName, {
+      typo: true,
+      narrow: true,
+      fuzzy: true,
+    });
+    if (match) paired.push({ zone, name, to: match.item[0], how: match.how, at });
+  }
+  return paired;
 }
 
 /**
@@ -184,9 +273,24 @@ export function buildTravelGraph(
    * removed by a second pass someone might forget to run.
    */
   absentZones: readonly string[] = [],
+  /**
+   * **What eqlwiki says is next to what** (`WIKI_ADJACENT`), as pairs — reachability the mapmakers
+   * didn't write down.
+   *
+   * Applied **after** every label is read and **before** the near-miss pairing, which is the whole of
+   * the precedence rule: an exact map label beats the wiki beats everything else. It can only *add* a
+   * border, never move or replace one, and it contributes no coordinates — so a route through one is
+   * priced by `UNKNOWN_CROSSING` and wears its `?`, which is the honest shape for a crossing nobody
+   * drew. And because a wiki border makes its two zones claim each other, it hands the pairing pass
+   * more corroborated candidates than the maps alone could.
+   */
+  wikiAdjacent: readonly WikiAdjacency[] = [],
+  /** Old drawings a pack keeps beside its current ones (`STALE_DRAWINGS`) — see `duplicateZoneFiles`. */
+  staleDrawings: Readonly<Record<string, string>> = {},
 ): { graph: TravelGraph; report: TravelBuildReport } {
   const nodes: TravelNode[] = [];
   const dropped: { zone: string; label: string }[] = [];
+  const board: { zone: string; labels: string[] }[] = [];
   const usedIds = new Set<string>();
   /** Conveyances by network, so the hubs can be wired once every zone has been read. */
   const members = new Map<TravelNetwork, TravelNode[]>();
@@ -197,7 +301,7 @@ export function buildTravelGraph(
   // zones are: a second drawing that never enters the graph can't double a border, and there's no
   // later pass to remember. Its own points are skipped and the graph carries the redirect, so asking
   // for a route to the file we dropped still lands on the zone.
-  const merged = duplicateZoneFiles(zoneNames, harvests.map((h) => h.zone));
+  const merged = duplicateZoneFiles(zoneNames, harvests.map((h) => h.zone), staleDrawings);
   const known = new Set(harvests.map((h) => h.zone).filter((zone) => !merged[zone]));
   /** One resolver for every pass — see `zoneFileFor`, which is also what the router and the manual
    *  pass ask. Memoised because a big pack asks it once per exit label. */
@@ -209,6 +313,13 @@ export function buildTravelGraph(
 
   const zoneLabel = (file: string): string => zoneNames[file] ?? file;
   const unresolved = new Map<string, Set<string>>();
+  /**
+   * Border labels whose destination nothing could place, kept **with their coordinates** rather than
+   * only counted — because the far side may name the same border, and then this is the position it's
+   * missing (`pairByReciprocal`). They used to be tallied and dropped, which threw away the half of
+   * the answer that was in the folder all along.
+   */
+  const pending: { zone: string; name: string; at: TravelAt }[] = [];
 
   // Which files the exception list means, through the same fold as everything else — so an entry can
   // name the zone or the file, since a file name differs between packs while a zone's name doesn't.
@@ -228,6 +339,7 @@ export function buildTravelGraph(
     // already have contributes nothing for a different reason: it isn't somewhere *else*.
     if (absent.has(harvest.zone) || merged[harvest.zone]) continue;
     for (const label of harvest.dropped) dropped.push({ zone: harvest.zone, label });
+    if (harvest.board.length) board.push({ zone: harvest.zone, labels: harvest.board });
 
     for (const point of harvest.points) {
       // Where it says it goes, if a map file answers to that. **A conveyance that names its
@@ -252,6 +364,7 @@ export function buildTravelGraph(
           const bag = unresolved.get(point.to) ?? new Set();
           bag.add(harvest.zone);
           unresolved.set(point.to, bag);
+          if (point.kind !== "place") pending.push({ zone: harvest.zone, name: point.to, at: point.at });
         }
         if (point.kind !== "place") continue;
 
@@ -294,9 +407,74 @@ export function buildTravelGraph(
         nodes.push(node);
       }
       node.at[harvest.zone] = [...(node.at[harvest.zone] ?? []), point.at];
+      // Kept because the name is about to be rewritten to `A ↔ B`, and this is the only thing that can
+      // find this border again by what the mapmaker actually wrote on it — which is how
+      // `manual-links.ts` names a place (`TravelNode.labels`).
+      if (!node.labels?.includes(point.label)) node.labels = [...(node.labels ?? []), point.label];
       // A ride names itself on the border, so a route can say "take the boat" rather than leaving you
       // to wonder why two zones an ocean apart are next to each other.
       if (point.crossing && !crossings.has(id)) crossings.set(id, point.crossing);
+    }
+  }
+
+  /**
+   * **What the wiki says, for the borders the maps never established.**
+   *
+   * Second of the three sources and never the first: a border a label already made keeps everything
+   * about it, because the person who drew the map is the only one who can say *where* the crossing is
+   * and the wiki cannot say that at all. What it adds is a node with no position in either zone, which
+   * the graph already knows how to price honestly.
+   */
+  const claimed: TravelBuildReport["claimed"] = { added: [], already: 0, unknown: [], absent: [] };
+  for (const pair of wikiAdjacent) {
+    const ends = [pair.zone, pair.to].map(fileOf);
+    if (ends.some((file) => !file)) {
+      claimed.unknown.push(pair);
+      continue;
+    }
+    const [a, b] = ends as string[];
+    // A zone the server hasn't opened is refused here exactly as a read border into one is: the wiki
+    // describes EverQuest, and this graph describes what is reachable today.
+    if (absent.has(a) || absent.has(b) || merged[a] || merged[b]) {
+      claimed.absent.push(pair);
+      continue;
+    }
+    if (a === b) continue;
+    const id = boundaryId(a, b);
+    if (boundaries.has(id)) {
+      claimed.already++;
+      continue;
+    }
+    const node: TravelNode = {
+      id,
+      kind: "boundary",
+      label: id,
+      zones: id.split("|"),
+      at: {},
+      // Marked, because a route that leans on one should be able to say the crossing is a claim rather
+      // than something a mapmaker drew.
+      claimed: true,
+    };
+    boundaries.set(id, node);
+    usedIds.add(id);
+    nodes.push(node);
+    claimed.added.push(id);
+  }
+
+  // **The far side names what this side couldn't.** After the whole corpus, because a border may be
+  // claimed by a zone read later — and before the walks, since what this adds is a coordinate and the
+  // walks are what a coordinate changes.
+  const paired = pairByReciprocal(pending, boundaries, zoneNames);
+  for (const { zone, name, to, at } of paired) {
+    const node = boundaries.get(boundaryId(zone, to));
+    if (!node) continue;
+    node.at[zone] = [...(node.at[zone] ?? []), at];
+    // No longer unresolved: it resolved, by a route the first pass couldn't take. Reporting it under
+    // both headings would be a graph disagreeing with itself about what it knows.
+    const bag = unresolved.get(name);
+    if (bag) {
+      bag.delete(zone);
+      if (!bag.size) unresolved.delete(name);
     }
   }
 
@@ -385,8 +563,16 @@ export function buildTravelGraph(
         .map(([name, from]) => ({ name, from: [...from].sort() }))
         .sort((a, b) => b.from.length - a.from.length || a.name.localeCompare(b.name)),
       dropped,
+      board: board.sort((a, b) => a.zone.localeCompare(b.zone)),
       networks: networks.sort((a, b) => a.network.localeCompare(b.network)),
       isolated,
+      paired: paired
+        .map(({ zone, name, to, how }) => ({ zone, name, to, how }))
+        .sort((a, b) => a.zone.localeCompare(b.zone) || a.name.localeCompare(b.name)),
+      claimed: {
+        ...claimed,
+        added: [...claimed.added].sort(),
+      },
       merged: Object.entries(merged)
         .map(([dropped, kept]) => ({ dropped, kept }))
         .sort((a, b) => a.dropped.localeCompare(b.dropped)),

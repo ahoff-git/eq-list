@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { buildTravelGraph } from "../../src/shared/travel/build";
 import type { TravelPoint, ZoneHarvest } from "../../src/shared/travel/harvest";
 import { applyManual, type TravelManual } from "../../src/shared/travel/manual";
+import { NOT_IN_GAME, STALE_DRAWINGS } from "../../src/shared/travel/manual-links";
 import { findRoute } from "../../src/shared/travel/route";
 
 const NAMES = {
@@ -24,7 +25,7 @@ const border = (to: string, x = 0): TravelPoint => ({ label: `to ${to}`, at: { y
 
 /** A graph from harvests, so the manual pass is always applied to a real build's output. */
 function built(zones: Record<string, TravelPoint[]>) {
-  const harvests: ZoneHarvest[] = Object.entries(zones).map(([zone, points]) => ({ zone, points, dropped: [] }));
+  const harvests: ZoneHarvest[] = Object.entries(zones).map(([zone, points]) => ({ zone, points, dropped: [], board: [] }));
   return buildTravelGraph({ id: "stock" }, harvests, NAMES).graph;
 }
 
@@ -272,4 +273,113 @@ test("the shipped table is applied without complaint about its own shape", () =>
   assert.deepEqual(report.badBoundaries, [], "every border entry names exactly two zones");
   assert.equal(report.applied.length, MANUAL_TRAVEL.links.length, "every entry contributed something");
   assert.deepEqual(report.unresolvedBlocks, []);
+});
+
+/** A border whose label carries a translocator's name, the way the packs write them. */
+const gnome = (to: string, who: string, x: number): TravelPoint => ({
+  label: `to ${to} (Translocator ${who})`,
+  at: { y: 0, x, z: 0 },
+  kind: "border",
+  to,
+});
+
+test("a hand-authored place finds the border its own label was consumed into", () => {
+  // Greater Faydark labels `to Ocean of Tears (Translocator Sedina)`, so the builder makes that border
+  // and **renames it** `Greater Faydark ↔ Ocean of Tears` — after which nothing mentions Sedina, and a
+  // second border the same gnome serves was stated with no position at all, while his coordinate sat
+  // on the border beside it. `TravelNode.labels` keeps what the mapmaker actually wrote.
+  const before = built({
+    gfaydark: [gnome("Ocean of Tears", "Sedina", 215)],
+    oot: [border("Greater Faydark", 900)],
+    freporte: [],
+  });
+  assert.ok(
+    before.nodes.find((n) => n.id === "gfaydark|oot")?.labels?.some((l) => l.includes("Sedina")),
+    "the label the border was read from is kept",
+  );
+
+  const { graph } = applyManual(before, {
+    links: [
+      {
+        shape: "boundary",
+        via: "translocator",
+        places: [{ zone: "Greater Faydark", label: "Sedina" }, { zone: "East Freeport", label: "Setikan" }],
+        why: "Sedina ↔ Setikan.",
+      },
+    ],
+  });
+
+  // Sedina's real position, taken from the border his own label made — not a stand-in.
+  assert.deepEqual(graph.nodes.find((n) => n.id === "freporte|gfaydark")?.at.gfaydark?.map((a) => a.x), [215]);
+  // And listed once. The entry matched the very node it was contributing to, which used to make one
+  // spot look like two crossings of the same border.
+  assert.deepEqual(graph.nodes.find((n) => n.id === "gfaydark|oot")?.at.gfaydark?.map((a) => a.x), [215]);
+});
+
+test("two borders through one gnome are one gnome, so the walk between them is nothing", () => {
+  // Setikan runs Greater Faydark ↔ East Freeport *and* East Freeport ↔ Butcherblock: two borders on
+  // one pair of feet. Arriving by one is standing where you board the other. Priced as an ordinary
+  // walk between two unplaced nodes it came out at UNKNOWN_CROSSING each way, which is how a chain of
+  // free rides across Antonica was quoted at thousands of units of walking.
+  const before = built({
+    gfaydark: [gnome("Ocean of Tears", "Sedina", 215)],
+    oot: [border("Greater Faydark", 900)],
+    freporte: [],
+    butcher: [],
+  });
+  const { graph, report } = applyManual(before, {
+    links: [
+      {
+        shape: "boundary",
+        via: "translocator",
+        places: [{ zone: "Greater Faydark", label: "Sedina" }, { zone: "East Freeport", label: "Setikan" }],
+        why: "Sedina ↔ Setikan.",
+      },
+      {
+        shape: "boundary",
+        via: "translocator",
+        places: [{ zone: "East Freeport", label: "Setikan" }, { zone: "Butcherblock Mountains", label: "Fithop" }],
+        why: "Setikan ↔ Fithop.",
+      },
+    ],
+  });
+
+  const between = graph.edges.filter(
+    (e) =>
+      e.zone === "freporte" &&
+      e.mode === "walk" &&
+      [e.from, e.to].every((id) => id === "freporte|gfaydark" || id === "butcher|freporte"),
+  );
+  assert.equal(between.length, 2, "both ways");
+  assert.deepEqual(between.map((e) => e.cost), [0, 0]);
+  // A fact, not a stand-in: it rests on the two borders *being* one place, not on knowing where that
+  // place is — so it must not wear the `?` a guessed figure does.
+  assert.ok(!between.some((e) => e.assumed));
+  assert.equal(report.sameSpot, 2);
+
+  // And the trip is what it really is: a short walk to Sedina, then ride for nothing.
+  const route = findRoute(graph, { zone: "gfaydark", at: { y: 0, x: 0, z: 0 } }, "Butcherblock Mountains")!;
+  assert.equal(Math.round(route.cost), 215);
+});
+
+test("the curated exclusions are real files, stated once, and never a place you can go", () => {
+  // A worklist turned into a judgement, so the guard is that it stays a judgement: an entry that names
+  // nothing is a typo nobody would notice, and a duplicate is a list somebody edited twice.
+  assert.deepEqual([...new Set(NOT_IN_GAME)], [...NOT_IN_GAME], "an entry is listed twice");
+  for (const zone of NOT_IN_GAME) assert.match(zone, /^[a-z0-9]+$/, `${zone} isn't a map file name`);
+  // The four the query returns that are **real places** must never end up here — losing a real zone is
+  // far worse than offering an unreachable one, which is the whole reason this is curated.
+  for (const real of ["hateplane", "veeshan", "charasis", "endlesscaverns"]) {
+    assert.ok(!NOT_IN_GAME.includes(real), `${real} is a real zone`);
+  }
+  // And the case that prompted it: ten instances of Mistmoore's Catacombs, each of which drew a border
+  // into Lesser Faydark.
+  assert.equal(NOT_IN_GAME.filter((z) => z.startsWith("mmc")).length, 10);
+});
+
+test("a stale drawing names two files that could both be here, and never itself", () => {
+  for (const [dropped, kept] of Object.entries(STALE_DRAWINGS)) {
+    assert.notEqual(dropped, kept, `${dropped} supersedes itself`);
+    assert.ok(!(kept in STALE_DRAWINGS), `${kept} is both kept and dropped`);
+  }
 });

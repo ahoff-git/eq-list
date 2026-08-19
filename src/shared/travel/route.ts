@@ -9,6 +9,14 @@
  *    where you are, and the real walk when a `/loc` does.
  *  - **A conveyance you haven't got isn't an edge.** Druid, wizard, gnome and succor edges are filtered
  *    by the toggles before the search starts, so a route never suggests a port you can't take.
+ *  - **You never walk *through* a node inside one zone.** Every pair of a zone's nodes is joined, so
+ *    the direct walk always exists and a two-hop through a third is either redundant or a cheat — and
+ *    the cheats are severe. A border nobody placed costs `UNKNOWN_CROSSING` to reach *and* to leave,
+ *    which makes it a 4,000-unit teleport between any two points in the zone: Greater Faydark to
+ *    Butcherblock's translocator is really 6,858 and the graph quoted 4,000, hopping through a border
+ *    with no coordinates. A border with several crossing points is the same trick more cheaply, since
+ *    each edge takes its own nearest pair. Skipped **only when the direct walk exists**, so a
+ *    `ManualBlock` — the one thing that removes it — still leaves the detour it was written for.
  *  - **A place you've ruled out isn't a node.** `options.avoid` names nodes the search may not pass
  *    through, so "not *that* ring" costs you the ring rather than the whole druid network, and what
  *    comes back is simply the next best route ([ADR 0109](../../../specs/decisions/0109-a-route-can-be-denied-one-place.md)).
@@ -24,6 +32,7 @@ import {
   crossingOfMode,
   graphZones,
   isCast,
+  CROSSING_PLACES,
   TRAVEL_DEFAULTS,
   TRAVEL_VERBS,
   zoneDistance,
@@ -179,6 +188,14 @@ interface TravelHop extends TravelLeg {
   to: string;
 }
 
+/**
+ * One walk within one zone, as a key. Its own function so the side that records a walk and the side
+ * that asks whether one exists cannot drift apart — the whole rule rests on them agreeing.
+ */
+function walkKey(from: string, to: string, zone: string): string {
+  return [from, to, zone].join("\u0000");
+}
+
 /** The virtual ends. Prefixed so they can't collide with a node id, which never starts with a space. */
 const START = " start";
 const GOAL = " goal";
@@ -192,12 +209,35 @@ const GOAL = " goal";
  */
 export interface TravelInstruction {
   step: TravelStep;
+  /**
+   * How far this instruction is, which is **not always the step's own leg**: a border you walk *past*
+   * rather than through is no instruction at all, and its distance belongs to the one that follows it.
+   */
+  cost: number;
+  /** True when any part of that distance was a stand-in rather than a measurement. */
+  assumed: boolean;
+  /**
+   * The node this leg **started** at, so a UI can draw the pair the distance was measured between.
+   * Absent on the first row, which started nowhere. It may name the virtual start or a hub, neither of
+   * which is on any map — a caller that finds nothing simply draws nothing.
+   */
+  from?: string;
   /** `Run` · `Boat` · `Teleport` … Absent on the first, where you haven't done anything yet. */
   how?: string;
   /** Which crossing it was, so a UI can mark the ones that cost no walking. Absent for a walk. */
   via?: TravelCrossing;
   /** Where this leaves you, in the words a person would use. */
   where: string;
+  /**
+   * This row is the **walk up to** a crossing, not the crossing itself — the two share a step. It
+   * carries the distance and the line on the map; the row after it carries the ride and the ✕.
+   */
+  walkUp?: boolean;
+  /**
+   * **The zone this row leaves you in** — so the *to* column can open that map, the way the breadcrumbs
+   * above it do. For a border that's the side you come out on; for a place, the one zone it's in.
+   */
+  zone?: TravelZone;
 }
 
 /**
@@ -218,6 +258,15 @@ export interface TravelInstruction {
  * A **place** is in one zone and its label never says which ("Druid Rings"), so its zone is added; the
  * two virtual ends are *named after* their zone already, so saying it again would only stutter.
  *
+ * **A crossing you have to be *at* is two instructions, not one.** A boundary node *is* the crossing,
+ * so arriving at Butcherblock's translocator means both walking to it and taking it — and the row read
+ * `4.1k Translocate to The Ocean of Tears`, which prices the ride at the length of the walk. The ride
+ * is free; what costs is getting there. So a walk into a border that names a conveyance splits: *run
+ * 4.1k to the translocator*, then *translocate to the Ocean of Tears*. An ordinary zone line doesn't,
+ * because walking to it and stepping over it really are one act — and neither does a **port**, which is
+ * cast from where you stand and has no walk to split off.
+
+ *
  * And **an arrival nobody walked is not an instruction.** The last step is the walk from the final
  * node to where you're actually going inside that zone — real and worth saying when a position for the
  * destination is known, and when it isn't it is zero, a guess, and the same zone name the border above
@@ -230,26 +279,62 @@ export function routeInstructions(route: Pick<TravelRoute, "steps" | "zones">): 
     const { kind, label, zones } = step.node;
     if (kind === "hub") return [];
     const via = stepCrossing(step);
-    const zone = zones.length === 1 ? (names.get(zones[0]) ?? zones[0]) : undefined;
+    const own = zones.length === 1 ? { zone: zones[0], name: names.get(zones[0]) ?? zones[0] } : undefined;
+    // A border is named by the side you come out on, which the next leg's walk states outright; a
+    // place has the one zone it's in. Either way it is a zone whose map can be opened.
+    const beyond = kind === "boundary" ? route.steps[i + 1]?.from?.across : own;
     const where =
       kind === "boundary"
-        ? (route.steps[i + 1]?.from?.across?.name ?? label)
-        : zone && zone !== label
-          ? `${label} · ${zone}`
+        ? (beyond?.name ?? label)
+        : own && own.name !== label
+          ? `${label} · ${own.name}`
           : label;
+    const cost = step.from?.cost ?? 0;
+    const assumed = step.from?.assumed ?? false;
+    const from = step.from ? route.steps[i - 1]?.node.id : undefined;
+
+    const row: TravelInstruction = {
+      step,
+      cost,
+      assumed,
+      where,
+      ...(beyond ? { zone: beyond } : {}),
+      ...(via ? { via } : {}),
+      ...(step.from ? { how: TRAVEL_VERBS[via ?? "walk"], ...(from ? { from } : {}) } : {}),
+    };
+
+    /**
+     * **A crossing you have to be at is two instructions.** The walk is the whole cost and the ride is
+     * free, so they are said apart — see the note above. Only for a crossing the *node* names (a boat,
+     * a translocator, a portal): a port comes from the leg's own mode, is cast from where you stand,
+     * and has no walk to split off. And only when there is a walk worth splitting; standing on the dock
+     * already is one instruction, not two.
+     */
+    const walkUp = step.node.via && step.from?.mode === "walk" && cost > 0;
+    if (!walkUp) return [row];
+    const at = step.from!.across;
     return [
       {
         step,
-        where,
-        ...(via ? { via } : {}),
-        ...(step.from ? { how: TRAVEL_VERBS[via ?? "walk"] } : {}),
+        cost,
+        assumed,
+        // Named for what you are walking up to, and *where* — the zone you're crossing to reach it, so
+        // the cell opens the map you are actually walking on.
+        where: at ? `${CROSSING_PLACES[step.node.via!]} · ${at.name}` : CROSSING_PLACES[step.node.via!],
+        ...(at ? { zone: at } : {}),
+        how: TRAVEL_VERBS.walk,
+        walkUp: true,
+        ...(from ? { from } : {}),
       },
+      // The ride itself, which costs nothing — the thing the old single row was quietly denying. No
+      // `from`: a conveyance crosses no zone, so there is no line on any map to draw for it.
+      { ...row, cost: 0, assumed: false, from: undefined },
     ];
   });
 
   // Never down to nothing: a trip whose every row is empty still has to say where you started.
   const last = rows[rows.length - 1];
-  const walkedNowhere = !!last?.step.from && last.step.from.cost === 0 && last.step.from.assumed;
+  const walkedNowhere = !!last?.step.from && last.cost === 0 && last.assumed;
   return rows.length > 1 && last && isRouteEnd(last.step) && walkedNowhere ? rows.slice(0, -1) : rows;
 }
 
@@ -372,6 +457,24 @@ export function findRoute(
     }
   }
 
+  /**
+   * The within-zone walks **this search has**, so "is there a direct one?" is a lookup rather than a
+   * scan. Only a walk: a conveyance is never an alternative to a walk.
+   *
+   * Read off `outgoing` rather than off the stored edges, which is the difference between the rule
+   * holding and the rule *nearly* holding. The two virtual ends' walks are synthesised above and are in
+   * no graph — so a lookup against `graph.edges` answered "no direct walk" for every step out of where
+   * you are standing, and the one place every search leaves from was the one place it could still hop
+   * through an unplaced border for less than the walk. Whatever the search can walk is what the search
+   * is checked against.
+   */
+  const walks = new Set<string>();
+  for (const [from, hops] of outgoing) {
+    for (const hop of hops) {
+      if (hop.mode === "walk" && hop.across) walks.add(walkKey(from, hop.to, hop.across.zone));
+    }
+  }
+
   const best = new Map<string, number>([[START, 0]]);
   const cameFrom = new Map<string, { id: string; leg: TravelLeg }>();
   const settled = new Set<string>();
@@ -387,6 +490,16 @@ export function findRoute(
 
     for (const hop of outgoing.get(cheapest.id) ?? []) {
       if (settled.has(hop.to)) continue;
+      // **No walking through a node inside one zone** — see the module note. The direct walk from where
+      // this one started is the honest price, and it is always here unless a block took it away.
+      if (hop.mode === "walk" && hop.across) {
+        const came = cameFrom.get(cheapest.id);
+        const straightOn =
+          came?.leg.mode === "walk" &&
+          came.leg.across?.zone === hop.across.zone &&
+          walks.has(walkKey(came.id, hop.to, hop.across.zone));
+        if (straightOn) continue;
+      }
       const total = cheapest.cost + hop.cost;
       if (total >= (best.get(hop.to) ?? Infinity)) continue;
       best.set(hop.to, total);

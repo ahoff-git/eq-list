@@ -123,3 +123,79 @@ export const MANUAL_TRAVEL: TravelManual = {
   // nodes is a walk" rule can't express. Nothing known to need this yet.
   blocks: [],
 };
+
+/**
+ * **A map file that draws a zone the pack already draws better** — file → the file that supersedes it.
+ *
+ * `duplicateZoneFiles` folds the pairs a *rule* can see: one file named after the zone, another named
+ * after the zone with the spaces closed up. These are the ones no rule can — a pack keeping an old
+ * drawing beside a current one under a name that looks like a different place.
+ *
+ * The evidence that the survivor is the right one is the same in every case and worth stating, because
+ * it is what makes discarding the other safe: **the surviving file agrees with the game's own map and
+ * the discarded one does not.** Brewall's `misty` puts `to Rivervale` at `2551, -408` where the game's
+ * own file has `2562, -411`; `mistythicket` puts it at `1490, -181`. The discarded drawings are
+ * rescaled redraws in their own coordinate space, so their labels' positions cannot be borrowed even
+ * where the labels themselves are richer — the reason the wiki, not a merge, is how those connections
+ * come back ([ADR 0117](../../../specs/decisions/0117-the-wiki-says-which-zones-touch.md)).
+ */
+/**
+ * **Map files that draw somewhere you cannot go**, by name or by map file.
+ *
+ * The expansion table rules out everything past this server and the wiki's era flags close the
+ * expansions it hasn't opened ([ADR 0065](../../../specs/decisions/0065-a-zone-belongs-to-an-expansion.md)),
+ * and both work on a zone's **name**. These are the ones neither can reach: a pack ships
+ * `mmca.txt`…`mmcj.txt`, nothing in any catalogue answers to "Mmca", and the table quite correctly
+ * fails open on a name it has never heard of — so ten instances of Mistmoore's Catacombs each drew a
+ * border into Lesser Faydark and a player looking at that zone was offered *→ Mmca, → Mmcb, → Mmcc*.
+ *
+ * **Found, not guessed.** Every entry here came off one query: a zone whose entire travel content is a
+ * single border, where the neighbour's own mapmaker never drew a way in — so it exists only because
+ * this file claims it. That query returns 44 zones and is *not* the rule, because four of the 44 are
+ * real places (the Plane of Hate, Veeshan's Peak, Howling Stones, the Endless Caverns) and losing a
+ * real zone is far worse than offering an unreachable one. So the query is the worklist and this list
+ * is the judgement, which is the same division of labour as everywhere else here.
+ */
+export const NOT_IN_GAME: readonly string[] = [
+  // Lettered instance sets. Ten interiors apiece, each labelling its way back to the parent zone, and
+  // no catalogue names any of them.
+  ...["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"].map((n) => `mmc${n}`), // Mistmoore's Catacombs
+  ...["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"].map((n) => `mir${n}`), // Miragul's Menagerie
+  "dranikhollowsa",
+  "dranikhollowsb",
+  "dranikhollowsc",
+  "oldbloodfield",
+
+  // The modern Freeport interiors, which arrived with a revamp this server doesn't have. Their being
+  // rooms rather than zones is why nothing names them.
+  "freeportacademy",
+  "freeportcityhall",
+  "freeporthall",
+  "freeportmilitia",
+  "freeporttheater",
+
+  // Revamped or instanced second copies of a zone the graph already has under its real name. Each is a
+  // lone border into its original, which is the shape of a copy rather than a place.
+  "akhevatwo",
+  "crystaltwoa",
+  "crystaltwob",
+  "greatdividetwo",
+  "necropolistwo",
+  "skyshrinetwo",
+  "sleepertwo",
+  "templeveeshantwo",
+  "umbraltwo",
+  "drogab",
+  "oldblackburrow",
+];
+
+export const STALE_DRAWINGS: Readonly<Record<string, string>> = {
+  // **Toxxulia was split.** `toxxulia.txt` is the old single map of a zone that is now Tox *and* Kerra
+  // Ridge, so its exits are a mixture of two zones' and belong to neither. Reported in game.
+  toxxulia: "tox",
+  // **`freeporteast` is the modern East Freeport**, and it says so: it labels `to The Devastation`, a
+  // zone six expansions past this server. `freporte` is the classic drawing and the one that matches
+  // the game's own file. Its being a second East Freeport rather than a spelling of one is why the
+  // rule can't see it.
+  freeporteast: "freporte",
+};

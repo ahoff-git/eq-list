@@ -11,6 +11,61 @@ Settled in [ADR 0062](../decisions/0062-a-travel-graph-of-zone-lines.md), which 
 a wall in a dungeon and a contour line outdoors. This routes over **labels**, which are a mapmaker
 stating a fact.
 
+## The rules
+
+Everything below is an instance of one of these. They are written out because the subsystem grew fast:
+new evidence kept arriving — a pack that draws a zone twice, a sign read as twelve zone lines, a
+stand-in that turned out to be a shortcut — and the risk with that is a pile of exceptions that each
+made one route look right. **A change that isn't an instance of a rule here is either wrong or a new
+rule, and a new rule has to say what it replaces.**
+
+1. **A label is read by its words, and one that can't be believed is refused.**
+   ([0048](../decisions/0048-a-map-label-is-read-by-its-words.md)) Never rewritten, never guessed at.
+   `to X & Y` names two places so it names neither; `Abandoned Druid Ring` says it doesn't work
+   ([0114](../decisions/0114-a-conveyance-the-map-calls-dead-is-not-one.md)); twelve destinations in one
+   spot is a sign rather than twelve zone lines
+   ([0119](../decisions/0119-a-pile-of-destinations-is-a-sign.md)). Refusal is always the answer,
+   because the alternative is inventing the half we can't read.
+
+2. **One place is one node.** ([0062](../decisions/0062-a-travel-graph-of-zone-lines.md)) A border is
+   one node in two zones, which is what makes zoning free and dissolves *which exit pairs with which
+   arrival*. A zone drawn twice is one zone
+   ([0111](../decisions/0111-one-zone-one-map-file.md)); a gnome serving two borders is one gnome, so
+   the walk between them is nothing.
+
+3. **Evidence has a precedence, and it never runs backwards.**
+   ([0117](../decisions/0117-the-wiki-says-which-zones-touch.md)) A person's judgement (the hand-authored
+   tables) outranks an exact map label, which outranks the wiki, which outranks inference
+   ([0115](../decisions/0115-a-border-one-side-could-not-name.md)). A weaker source may only **add**
+   what a stronger one is silent about — the wiki says two zones connect and can never say where, so it
+   contributes no coordinate to anything.
+
+4. **A stand-in is never a measurement, and never a shortcut.**
+   ([0118](../decisions/0118-a-stand-in-is-not-a-shortcut.md)) `UNKNOWN_CROSSING` prices reaching a
+   border nobody drew. It wears a `?` wherever it is shown, and it cannot be chained into an answer
+   cheaper than the truth — which is why you never walk *through* a node inside one zone.
+
+5. **A row is one instruction.** ([0116](../decisions/0116-a-route-is-drawn-as-the-measurement-it-is.md))
+   Not a node, not a step — a thing you do. A hub is no row, an arrival nobody walked is no row, and a
+   crossing you have to be *at* is two: the walk that costs, then the ride that doesn't.
+
+6. **The map draws what the graph holds, never what it infers about the ground.**
+   ([0113](../decisions/0113-the-graph-is-drawn-on-the-map-it-was-read-from.md)) Markers sit at stated
+   coordinates; a leg is the straight dashed line its distance was measured along. Nothing is derived
+   from the geometry — [retired 0049](../decisions/README.md) — and nothing is said twice: where a node
+   marks a point, the map's own label for it goes.
+
+7. **Anything the app decides for you is visible and reversible.**
+   ([0109](../decisions/0109-a-route-can-be-denied-one-place.md)) Every refusal is in the build report,
+   every ruled-out place is a chip with an undo, every guessed figure wears its `?`, and the survey says
+   where the graph is thin. A correction nobody can see is one nobody can argue with.
+
+**What follows from them, and is worth stating because it keeps being tempting:** a rule that
+duplicates another belongs to whichever layer is nearer the cause. The reader used to drop a border the
+route had walked past; once the router refused to walk through a node at all, that reader rule could
+only ever have fired where a `ManualBlock` made the detour *real*, so it was deleted rather than kept
+as insurance.
+
 ## Responsibilities
 - **The graph** (`src/shared/travel/`, pure and DOM-free, so it's unit tested and usable from either
   process):
@@ -83,6 +138,16 @@ stating a fact.
     the permission side (a ring is a druid's, a portal is nobody's), and `crossingOfMode` goes back the
     other way so a **port leg** words itself exactly as a border does.
 
+    **A crossing you have to be *at* is two instructions.** A boundary node *is* the crossing, so
+    arriving at Butcherblock's translocator means both walking to it and taking it — and the row read
+    `4.1k Translocate to The Ocean of Tears`, pricing the ride at the length of the walk. The ride is
+    free; what costs is getting there. So a walk into a border that names a conveyance splits into
+    *run 4.1k to the translocator*, then *translocate to the Ocean of Tears* (`CROSSING_PLACES` is the
+    noun you walk up to, as `TRAVEL_VERBS` is what you do). An ordinary zone line doesn't split, because
+    walking to it and stepping over it are one act; nor does a **port**, which is cast from where you
+    stand and has no walk to split off; nor does a crossing you are already standing on. The walk row
+    carries the distance and the line on the map, the crossing row carries the ride and the ✕.
+
     `TRAVEL_VERBS` gives the wording, and it is a table of **verbs including walking** — *Run · Boat ·
     Teleport · Translocate · Portal · Succor*. It replaced a table of nouns that could only label a
     border (`boat`, `ring`, `spire`), which left the one thing every step has — how you covered the
@@ -115,6 +180,49 @@ stating a fact.
     `to East Freeport & The Butcherblock Mountains` — is dropped and *counted*. It says a border is
     here, which a graph can't use without knowing the other side, and inventing one would be a guess.
 
+    **A border only one side could name is named by the other side** (`pairByReciprocal`,
+    [ADR 0115](../decisions/0115-a-border-one-side-could-not-name.md)). Misty Thicket labels a way out
+    to `The Liberated Citadel of Runnyeye`; nothing in the catalogue answers to that, so the label
+    resolved to nothing and its coordinate was thrown away — while RunnyEye's own map says
+    `to Misty Thicket`, which resolves, leaving a border placed on one side and priced at
+    `UNKNOWN_CROSSING` from the other. So for a destination nothing could place, the candidates are
+    **the zones that claim a border with this one and got no coordinates from it**, and against that
+    list every tier of `resolveZone` is allowed — including the `narrower` and `fuzzy` that
+    [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md) rules out globally.
+    What buys them is that every candidate has **already asserted the connection**: this pass never
+    invents a border, it only decides which of a zone's labels the neighbour meant and contributes the
+    coordinate, so a wrong answer measures a walk to the wrong exit rather than claiming a way through
+    that isn't there — and `resolveZone` still fails closed on a tie. Run after the whole corpus (a
+    border may be claimed by a zone read later) and before the walks (a coordinate is what a walk costs
+    from). **17 pairings on the pack that prompted it, all correct**, one-sided borders 161→146; each
+    is in the report with the tier that made it, and a paired destination stops being counted as
+    unresolved.
+
+    **A map file that draws somewhere you cannot go** is listed by hand where no name can reach it
+    (`NOT_IN_GAME` in `manual-links.ts`). The expansion table and the wiki's era flags both work on a
+    zone's *name* and both fail open on a name they've never heard of — which is right for a Legends
+    custom zone and wrong for `mmca`: a pack ships `mmca.txt`…`mmcj.txt`, nothing answers to "Mmca", and
+    so ten instances of Mistmoore's Catacombs each drew a border into Lesser Faydark and a player
+    looking at that zone was offered *→ Mmca, → Mmcb, → Mmcc*.
+
+    **Found, not guessed**, and the finding is not the rule. One query gives the worklist — a zone whose
+    entire travel content is a single border, where the neighbour's own mapmaker never drew a way in, so
+    it exists only because that file claims it — and it returns 44 zones, of which **four are real
+    places**: the Plane of Hate, Veeshan's Peak, Howling Stones and the Endless Caverns. Losing a real
+    zone is far worse than offering an unreachable one, so the query is the worklist and the list is the
+    judgement. It takes one-sided borders from 154 to 107.
+
+    **An old drawing a pack keeps beside its current one** is folded away by hand where no rule can see
+    it (`STALE_DRAWINGS` in `manual-links.ts`): `toxxulia` is the pre-split map of a zone that is now
+    Tox *and* Kerra Ridge, so its exits mix two zones' and belong to neither; `freeporteast` is the
+    modern East Freeport and says so, labelling `to The Devastation`, six expansions past this server.
+    The evidence that the survivor is the right one is the same every time, and it is what makes
+    discarding the other safe: **the surviving file agrees with the game's own map and the discarded one
+    does not.** Brewall's `misty` puts `to Rivervale` at `2551, -408` where the game's own file has
+    `2562, -411`; `mistythicket` puts it at `1490, -181`. The discarded drawings are rescaled redraws in
+    their own coordinate space, so their positions cannot be borrowed even where their labels are richer
+    — which is why the wiki, not a merge, is how those connections come back.
+
     **A conveyance the mapmaker marked dead is not a conveyance.** A ring is a ring by its words, and
     those words sometimes say it doesn't work: Greater Faydark's *only* druid ring is labelled
     `Abandoned Druid Ring`, and you cannot port to it. Read as live it is worse than a missing one — a
@@ -127,6 +235,19 @@ stating a fact.
     `Broken Wizard Spire` — because the loose version reads `to the Broken Skull Rock (boat)` as a dead
     boat. Checked before the label is read as anything, so it holds for a border naming a dead crossing
     as much as for a place.
+
+    **A pile of destinations at one spot is a sign, not a set of zone lines**
+    ([ADR 0119](../decisions/0119-a-pile-of-destinations-is-a-sign.md)). Timorous Deep's map carries
+    twelve `to X` labels inside a 120-unit box — a translocator's board drawn where the gnome stands —
+    and reading them as zone lines made that zone **adjacent to half the world**, every border one-sided
+    and priced by a stand-in, so a route out of Greater Faydark ran 2,000 invented units to a gnome that
+    isn't there. `destinationBoard` refuses a crowd of border labels naming **five or more distinct
+    destinations within 150 units**, folding a trailing `(1)`/`(2)` away first since that is which way
+    in rather than a different zone. **Measured**: over both packs the whole corpus has three such
+    places and all three are boards; at four it starts reaching real dungeon junctions (Sol A's ways
+    into Nagafen's Lair beside its exit to Lavastorm). What a board *means* is left to `manual-links.ts`,
+    which can state a mode, a direction and a pairing where a caption block can't — and every refusal is
+    reported.
 
     **A `Succor` marker is the exception**, and only because it isn't a border: it names nowhere
     because it *goes* nowhere. `poiKind` files it under zone lines (right for the map's own filter — it's
@@ -159,6 +280,19 @@ stating a fact.
     carries the redirect (`merged`) because the *map window* still offers the file it dropped — the fold
     is the travel graph's, not the picker's — and the panel's **To** defaults to the map you're looking
     at, so `travelZone` sends it to the survivor rather than to an empty copy.
+
+    **The wiki says which zones touch, and never where**
+    ([ADR 0117](../decisions/0117-the-wiki-says-which-zones-touch.md)). eqlwiki's zone pages carry an
+    **Adjacent Zones** row, and it is a second source for *reachability* only. Precedence, stated once:
+    **an exact map label beats the wiki beats everything else.** A label that resolves exactly is a
+    border with coordinates and nothing else touches it — a person standing in the zone drew that, and
+    no other source can say where a crossing is. The wiki only **adds** a border the maps never
+    established, contributing no position, so a route through one is priced by `UNKNOWN_CROSSING`,
+    wears its `?`, and is marked `claimed` so the aside can say `wiki`. `pairByReciprocal` runs after
+    it, and is strengthened by it: a wiki border makes its two zones claim each other, which is exactly
+    the corroboration that pass needs. A zone the server hasn't opened is refused here as everywhere.
+    The table is **shipped, not fetched** (`zones/adjacency.generated.ts`, `npm run zones:adjacency`) —
+    a launch costs the wiki nothing, and a full refresh is three requests for all 117 zones.
 
     It also takes the zones to **leave out because this server hasn't opened them**. A pack surveys
     EverQuest, not EQ Legends, so it labels exits to zones that aren't there, and where it ships the map
@@ -237,6 +371,24 @@ stating a fact.
     are five hand-authored borders, matched on the **NPC's name** (`Narrik`), which is the part reliably
     present in every spelling of the label. Anything that names a single destination anywhere in its
     label needs no entry at all.
+
+    **A place is found by the labels a border was read from, not only the name it ended up with.** A
+    border is renamed `A ↔ B` once both sides are in, so `to Erud's Crossing (Translocator Sedina)`
+    stops mentioning Sedina — and an entry naming that gnome then matched nothing, stated a second
+    border through him with no position, and left every walk to it priced at `UNKNOWN_CROSSING` while
+    his coordinate sat on the border next to it. `TravelNode.labels` keeps what the mapmaker wrote, and
+    `matching` reads it. Positions are **deduped**, since an entry can now match the very border it is
+    contributing to.
+
+    **Two borders through one place are one place, so the walk between them is nothing.** A translocator
+    gnome takes you two ways — Setikan runs South Qeynos ↔ East Freeport *and* East Freeport ↔ Ocean of
+    Tears — which is two borders standing on one pair of feet: arriving by one is standing where you
+    board the other. Priced as an ordinary walk between two nodes neither of which this pack placed, it
+    came out at `UNKNOWN_CROSSING` apiece, and a three-gnome chain across Antonica was quoted at **6,000
+    units of walking for a trip that is three free rides and a few steps** (it is now 215). The zero is
+    a **fact rather than a stand-in** — `assumed` stays off — because it doesn't rest on knowing where
+    the place is, only on the two borders being it; applied after the recompute, which is what put the
+    wrong number there, and counted in the report as `sameSpot`.
 
     Anything that adds a node or a coordinate to a zone makes that zone's walks **recomputed from
     scratch** by the builder's own rule, rather than patched — a new coordinate changes what the walks
@@ -371,6 +523,55 @@ stating a fact.
     — the map window's scale is a CSS `zoom` and a viewport unit is scaled by it, the trap `.app`
     already documents. Each picker is anchored to the edge that lets its menu grow *inwards*
     (`ZonePicker`'s `align`), since a menu wider than its box runs off the window otherwise.
+- **Seeing the graph, and auditing it** (`survey.ts` → `CH.travelSurvey` → the map's overlay and
+  `MapTravelAside`). A route answers *how do I get there* and says nothing about whether the graph
+  deserves to be believed — which is the question that decides what the first answer is worth
+  ([ADR 0113](../decisions/0113-the-graph-is-drawn-on-the-map-it-was-read-from.md)). `surveyZone` is
+  the graph from one zone's point of view, and it goes on **the map the coordinates were read from**,
+  while the 🧭 panel is open and only then.
+  - **On the map**: a **diamond** where you cross into another zone, a **circle** where you arrive
+    without walking. A border is named by **where it takes you**, not by the pair of zones it joins —
+    a route's own reading, and the only one that is an instruction. A node with several crossing
+    points draws a marker each, because three ways into a neighbour are one border drawn three times.
+  - **A point the graph already marks is drawn once.** A travel node's position *is* the label's own,
+    copied verbatim by the harvest — so with the graph on screen, `to The Lesser Faydark` sits under a
+    diamond reading `→ Lesser Faydark` and the zone is written twice in one spot. The map drops its own
+    label, because the marker is the better of the two: it says where it takes you rather than what the
+    mapmaker wrote, and it answers to the pointer with the node's own figures. Matched on the rounded
+    position rather than on the words — these are the same point, not two labels that happen to agree.
+  - **Off the map**, in the aside, the two things that are true of a zone and have nowhere to be on
+    it. The **teleport networks, grouped and counted**: a druid reaches every ring in the world from
+    wherever they stand, so a faithful drawing runs eighteen lines off the edge of Misty Thicket and
+    says nothing but that the network exists — `Druid Rings · 18` says as much, opens for the names,
+    and marks which of them is on this map. And the **nodes with nowhere to be**: a border only one
+    side's mapmaker labelled is *in* this zone with no position in it, which no marker can show and
+    whose absence reads as *no such border*.
+  - **The route is drawn on the map** — every leg that falls on the zone on screen, quietly in grey,
+    with the one under the pointer picked out in the accent colour and both its ends lit
+    ([ADR 0116](../decisions/0116-a-route-is-drawn-as-the-measurement-it-is.md)). Straight and dashed
+    in both states, on purpose: it is the *measurement*, not a way through — `dist3d` is a straight line
+    and nothing in EverQuest walks straight, so drawing it any other way would claim more than the graph
+    knows. A leg whose ends aren't on this map (a hub, your own position, an unplaced border) draws
+    nothing, which is the honest answer.
+  - **The destination cell opens that zone's map**, like a breadcrumb: a route reads as a tour, and the
+    place a row sends you to is the thing you want to look at.
+  - **A way out to somewhere the server hasn't got isn't drawn.** Every pack marks
+    `to The Plane of Knowledge (Click Book)` in half the world, and the Plane of Knowledge is six
+    expansions past this server — the graph already refuses to build a border into it, but the map kept
+    drawing the label, which is noise sitting exactly where the exits are. The survey carries the zones
+    the graph excluded (`absent`) and the map drops labels naming one **while the 🧭 panel is open**:
+    that is when a map is being read as a way through rather than as a picture of a place.
+  - A network you have **switched off is dimmed, never dropped** — an audit is about what the graph
+    holds, not what you can use.
+  - **Readable, not merely visible**: hovering a node gives its exact `/loc`, which of the border's
+    crossings it is, its kind and its node id, and the whole survey copies as text — because auditing
+    means comparing our figures against the game, and a marker can't be compared with anything.
+  - Asked of the **same graph the router uses**, through the same `travelZone`, including a zone the
+    pack drew twice ([ADR 0111](../decisions/0111-one-zone-one-map-file.md)).
+  - **The aside is off by default**, behind *Show what the graph knows* in the panel's own controls
+    (`STORAGE_KEYS.mapTravelAudit`, remembered). The markers are the useful half and cost nothing to
+    read; the strip answers *should I believe this?*, which is a question worth asking now and then
+    rather than one to keep a panel open for on every trip.
 - **The options are settings, not panel state** (`Settings.travel`) — "can I get a druid port" is a
   fact about *you*, not about what you're looking at, so it's one answer wherever a route is asked for
   and it persists. **`avoid` is one of them**, by the same argument: which ports you can *cast* is a
@@ -396,8 +597,9 @@ stating a fact.
   `npm run build:electron` first and say so when it's missing.
 - **Saying where it's thin.** A build reports the borders only one side drew (whose walks are guesses,
   not measurements), the destinations no map file answered to, the zones with no way in or out, the
-  zones whose maps mark a succor point, the second drawings it folded away (`merged`), and the labels
-  that named nowhere. **Only an edge that leaves a
+  zones whose maps mark a succor point, the second drawings it folded away (`merged`), the destinations
+  the far side placed for us (`paired`, each with the tier that made it), what the wiki added and what
+  it couldn't (`claimed`), and the labels that named nowhere. **Only an edge that leaves a
   zone counts as a way in or out** — a walk and a succor both name the zone they happen inside, and a
   free ride between two dead ends is not a connection. Those lists name zones by **map file**, deliberately and unlike a route's
   output: they're the keys you go and type in `manual-links.ts`. The manual pass reports
@@ -415,6 +617,18 @@ stating a fact.
   corridor can.
 - **The distances are approximations and are never presented as more.** Straight-line, no terrain, no
   walls, no aggro. Any leg priced by a stand-in is flagged and the whole route carries `assumed`.
+- **A stand-in is never a shortcut.** `UNKNOWN_CROSSING` is what it costs to *reach* a border nobody
+  drew, and it used to cost the same to leave one — which made an unplaced border a 4,000-unit teleport
+  between any two points in its zone, so Greater Faydark to Butcherblock's translocator came out at
+  4,000 when the walk is 6,858. A border with several crossing points was the same trick more cheaply,
+  each edge taking its own nearest pair. Both are one thing, and the rule is one thing: **within a zone
+  you never walk *through* a node** — every pair is joined by construction, so the direct walk always
+  exists and a two-hop through a third is redundant or a cheat
+  ([ADR 0118](../decisions/0118-a-stand-in-is-not-a-shortcut.md)). Refused in the search, checked against
+  the walks **the search has** rather than the ones the graph stores — the virtual ends' walks are
+  synthesised per query and are in no graph, so checking the store left the one place every route starts
+  from as the one place the hop survived. And only where that direct walk exists, so a `ManualBlock`
+  still leaves the detour it was written for.
 - **No time estimate, and no attempt to price a ferry.** Time is truer to what a player wants and
   unmeasurable from a map file: it needs run speed, terrain, boat timetables and what's chasing you. A
   distance is a stated approximation; a figure in minutes would read as a promise. So a boat's ride
@@ -423,8 +637,14 @@ stating a fact.
   to be. There's no shared coordinate frame across two map files, so when Greater Faydark has three
   exits to Lesser Faydark, they're three crossing points of **one** border rather than three borders to
   match up. The node keeps all three and a walk takes the nearest.
-- **No line on a map, and no route drawn.** The panel lists places. The map window hosts it and draws
-  nothing of it — see the map's own non-responsibilities for why geometry can't support a drawn route.
+- **No route is drawn — only the graph's own nodes.** The panel lists places, and the map marks where
+  the graph says those places *are*
+  ([ADR 0113](../decisions/0113-the-graph-is-drawn-on-the-map-it-was-read-from.md)). Nothing joins two
+  markers with a line, because a line between two points on a map is a claim about the ground between
+  them and the geometry cannot support one — the whole of [retired ADR 0049](../decisions/README.md).
+  Whether a *chosen* route may be drawn as a schematic across several maps is an open question, not a
+  settled no; it needs its own answer to “what stops this reading as a walkable path?”
+  ([todo.md](../todo.md)).
 - **The graph isn't shipped, and the stored one isn't loaded.** The app builds from your own pack at
   runtime; `data/travel-graph.*.json` exists for you to read, not for the app to consume.
 - **The hand-authored table is not verified in EQ Legends.** The boat runs are classic-EverQuest
