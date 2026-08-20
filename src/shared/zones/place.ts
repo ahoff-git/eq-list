@@ -65,6 +65,22 @@ export function placeKey(zone: string): string {
 }
 
 /**
+ * **Is this a zone the gazetteer names** — i.e. one this server actually runs?
+ *
+ * `placeName` can't answer this, because it falls back to the name as recorded and so returns a
+ * string either way. The distinction matters to [Lucy](../../../electron/lucy/), which describes a
+ * game with several hundred more zones than this one: a drop in a zone the gazetteer has never heard
+ * of is the only era evidence that source gives us
+ * ([ADR 0124](../../../specs/decisions/0124-lucy-is-a-second-opinion.md)).
+ *
+ * Answers on the *table*, with the same one-edit tolerance as everything else here — so it is
+ * "a name we can place", not "a name spelled exactly as we spell it".
+ */
+export function isKnownPlace(zone: string): boolean {
+  return !!places.resolve(zone);
+}
+
+/**
  * Are these two names the same place? The table first, then the one-edit rule for a pair the table
  * can't reach at all — a filter is allowed that second chance, because being too generous here shows
  * a row that doesn't belong, while a key that's too generous would merge two camps' samples.

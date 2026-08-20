@@ -440,6 +440,22 @@ unit-tested.
   - `electron/wiki/parse.ts` → `electron/tests/wiki-parse.test.ts`, pinned against
     real page HTML in `fixtures/wiki/` (item drops, quest turn-ins/rewards, recipe
     components). Re-capture a fixture only when the wiki's markup actually changes.
+  - `electron/lucy/parse.ts` → `electron/tests/lucy-parse.test.ts`, pinned against real
+    lucy.allakhazam.com pages in `fixtures/lucy/` — the tooltip read off its `<br>`-separated block,
+    an item's **drops and its merchants** told apart (Lucy puts both in identically-classed tables,
+    so the parser reads the header row), a 416-row list capped as a *selection* with the true total
+    kept, a zone-suffixed mob name (`a gnoll pup - Blackburrow`) reduced to what the log prints, and
+    the cookie-refusal page recognised as **not an answer** rather than cached as a nameless item
+    ([ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md)).
+  - `src/shared/lucy-era.ts` → `electron/tests/lucy-era.test.ts` (whether a Lucy item could exist on
+    this server at all, derived from its zones since that site has no era field). **Every zone string
+    in it is copied off a real Lucy page** — the module exists because of how that site happens to
+    spell a zone, so an invented spelling would test nothing. Pins the three-way verdict, and that
+    "no zones at all" is `unknown` rather than out-of-era.
+  - `src/shared/polite-queue.ts` → `electron/tests/polite-queue.test.ts` (one request at a time, a
+    minimum gap between starts, the same key asked once while in flight, a failure not stopping the
+    queue). The clock is injected, so it asserts on **the gaps the queue asked for** rather than
+    elapsed time: a timing test that sleeps is slow, and one that sleeps on CI is flaky.
 
   Once green, don't re-run or change these unless the module itself changes.
 - **Checking a parser against a whole log** — unit tests pin the shapes we *know*; they

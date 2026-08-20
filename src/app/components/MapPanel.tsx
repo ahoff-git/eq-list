@@ -8,6 +8,7 @@ import { zoneLinkName } from "@/shared/map/zone-names";
 import { zoneKey } from "@/shared/names";
 import { pickHit } from "@/shared/map/hit-test";
 import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
+import { localPoint } from "@/lib/screen";
 import { mobKey } from "@/shared/mob-stats";
 import type { CanvasSize, Loc, MapView, Point, Zone } from "@/shared/map/types";
 import type { KillEmphasis, TravelSurvey } from "@/shared/types";
@@ -915,7 +916,11 @@ export default function MapPanel({
     }
     setHoverEq(eqAt(e) ?? null);
     const target = targetAt(e);
-    setHovered(target ? { target, x: e.clientX, y: e.clientY } : null);
+    // The cursor in the units the tip's own `left`/`top` are written in, which under this window's
+    // interface scale (a CSS `zoom`, ADR 0041) are not the pixels the event reports: a length
+    // written into a zoomed document is multiplied by the zoom, so the tip landed at `scale` of the
+    // cursor — on the map's far side at 2×.
+    setHovered(target ? { target, ...localPoint({ x: e.clientX, y: e.clientY }) } : null);
   }
 
   /** The marker under the cursor — any kind, nearest first (see `pickHit`). */

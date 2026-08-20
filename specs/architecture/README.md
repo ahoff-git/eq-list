@@ -71,6 +71,10 @@ in the main process and all UI in the renderer.
     doesn't depend on when it was launched
     ([ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md)).
   - `wiki/` — the eqlwiki data source; see [wiki-data](../wiki-data/README.md).
+  - `lucy/` — the supplementary item source, asked only where the wiki is silent; see
+    [lucy-data](../lucy-data/README.md). Same three-file shape as `wiki/` on purpose (`api` /
+    pure `parse` / caching `index`), and it shares the HTML-to-lines reader (`html-text.ts`) and
+    the request throttle (`src/shared/polite-queue.ts`) rather than copying either.
   - `ipc.ts` — request/response handlers behind `window.eql`. One registrar per subject
     (`registerListIpc`, `registerSettingsIpc`, `registerWikiIpc`, `registerStatsIpc`, `registerAppIpc`,
     `registerWindowIpc`, `registerPeerIpc`), each taking the same `IpcContext` and destructuring what
@@ -105,11 +109,16 @@ in the main process and all UI in the renderer.
 - The store is authoritative, so the control window and overlay always agree.
 
 ## Non-responsibilities
-- No reading or hooking of game memory — logs and the public wiki only (like EQBuddy).
+- No reading or hooking of game memory — logs and public websites only (like EQBuddy).
+- No unasked traffic on a **borrowed** source. eqlwiki is the community's own and expects us;
+  lucy.allakhazam.com has never heard of us, so it is asked once per user action, cached for a
+  month, throttled, and switchable off at the IPC boundary
+  ([ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md)).
 - No SSR / web server — the renderer is fully static (see [ADR 0005](../decisions/0005-renderer-static-export-and-app-protocol.md)).
 - The renderer holds no durable state; it renders what the store sends.
 
 ## See also
 [log-watching](../log-watching/README.md) · [wiki-data](../wiki-data/README.md) ·
+[lucy-data](../lucy-data/README.md) ·
 [overlay-ui](../overlay-ui/README.md) · [ADR 0002](../decisions/0002-electron-shell-over-nextjs.md) ·
 [ADR 0005](../decisions/0005-renderer-static-export-and-app-protocol.md)

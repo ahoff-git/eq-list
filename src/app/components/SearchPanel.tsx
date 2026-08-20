@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { useKnownItems, useSettings } from "@/lib/hooks";
+import { useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/nav";
 import ItemLink from "./ItemLink";
+import { EraBadge } from "./LucySays";
 import ObservedItemView from "./ObservedItemView";
 import WikiPageView from "./WikiPageView";
 import { AddButton, CheckField, segCls } from "./ui";
@@ -11,7 +12,7 @@ import { LOOKUP_HOTKEY } from "@/shared/constants";
 import { addByTitle, addItem } from "@/lib/addToList";
 import { searchKnownItems, unknownToTheWiki, type KnownItem } from "@/shared/known-items";
 import { count } from "@/shared/format";
-import type { SearchResult, WikiPage } from "@/shared/types";
+import type { LucyEra, LucySearchResult, SearchResult, WikiPage } from "@/shared/types";
 
 type Mode = "name" | "zone";
 
@@ -80,6 +81,20 @@ export default function SearchPanel({
   const shownResults = keep(results);
   const shownQuests = keep(quests);
 
+  // The query once typing has settled. Its own state because two things key on it and they must key
+  // on the *same* thing: the wiki lookup below, and Lucy's — a source that ran a request per
+  // keystroke would be exactly the traffic ADR 0124 exists to avoid.
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => {
+    const settled = term.trim().length >= MIN_QUERY_CHARS ? term : "";
+    if (!settled) {
+      setDebounced("");
+      return;
+    }
+    const id = setTimeout(() => setDebounced(settled), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [term]);
+
   // What *you* have held, ranked against the same query and stripped of anything the wiki already
   // answered. Computed here rather than fetched, so it needs no debounce: the vocabulary is already
   // in the renderer, and a local hit appears on the keystroke that names it.
@@ -93,11 +108,23 @@ export default function SearchPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mode, term, known, results, hideEra],
   );
-  /** One keyboard list over both sources — a hit is a hit, whichever record found it. */
+  /**
+   * Lucy, the third rung: asked **only** when neither the wiki nor your own log had anything, so an
+   * item either of them knows never costs a request to someone else's site
+   * ([ADR 0124](../../../specs/decisions/0124-lucy-is-a-second-opinion.md)). It answers after them,
+   * since it needs the network and they don't.
+   */
+  const askLucy = (settings?.askLucy ?? true) && mode === "name" && !busy && !shownResults.length && !mine.length;
+  const { hits: lucyHits, loading: lucyBusy } = useLucySearch(debounced, askLucy);
+  // An out-of-era Lucy hit obeys the same toggle as the wiki's. `unknown` is *not* hidden: it means
+  // "we couldn't tell", and hiding what you couldn't judge is how a filter starts lying.
+  const shownLucy = hideEra ? lucyHits.filter((h) => h.era !== "out-of-era") : lucyHits;
+
+  /** One keyboard list over every source — a hit is a hit, whichever record found it. */
   const navTitles = useMemo(
-    () => [...shownResults.map((r) => r.title), ...mine.map((i) => i.item)],
+    () => [...shownResults.map((r) => r.title), ...mine.map((i) => i.item), ...shownLucy.map((h) => h.name)],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [results, mine, hideEra],
+    [results, mine, shownLucy, hideEra],
   );
 
   // Debounced name search. A `cancelled` flag drops a slower in-flight search when a newer
@@ -203,6 +230,26 @@ export default function SearchPanel({
   // Every "open this" in the panel goes through the shared in-app nav.
   const openPage = nav.openPage;
 
+  /**
+   * Open a Lucy hit: **fetch it, then navigate.**
+   *
+   * The fetch has to come first and has to be awaited, because the page it opens
+   * (`ObservedItemView`) reads Lucy from the cache and never from the network — that is what keeps
+   * every other page free of Lucy traffic (ADR 0124). This click is the one moment the user has asked
+   * for a request, so this is where it is paid for.
+   */
+  async function openLucyItem(id: number, name: string) {
+    const a = api();
+    if (!a) return;
+    setLoadingPage(true);
+    try {
+      await a.lucy.getItem(id);
+    } finally {
+      setLoadingPage(false);
+    }
+    openPage(name);
+  }
+
   async function selectZone(title: string) {
     const a = api();
     if (!a) return;
@@ -227,8 +274,11 @@ export default function SearchPanel({
       setActive((i) => Math.max(0, i - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      // Either list's row opens the same way: a title with no wiki page still has a page here.
-      if (navTitles[active]) void openPage(navTitles[active]);
+      // The wiki's rows and your log's open the same way — a title with no wiki page still has a page
+      // here. A Lucy row is the exception: it has to be *fetched* before its page has anything on it.
+      const lucyRow = shownLucy[active - shownResults.length - mine.length];
+      if (lucyRow) void openLucyItem(lucyRow.id, lucyRow.name);
+      else if (navTitles[active]) void openPage(navTitles[active]);
     } else if (e.key === "Escape") {
       setResults([]);
     }
@@ -263,6 +313,13 @@ export default function SearchPanel({
           checked={hideEra}
           onChange={(hide) => void api()?.settings.update({ hideOutOfEra: hide })}
         />
+        <CheckField
+          className="muted small"
+          label="Ask Lucy"
+          title="When neither eqlwiki nor your own log knows a name, look it up on lucy.allakhazam.com — Live EverQuest's item database. Far more items, a different game: cached, rate-limited, and flagged by era where it can be worked out."
+          checked={settings?.askLucy ?? true}
+          onChange={(ask) => void api()?.settings.update({ askLucy: ask })}
+        />
       </div>
 
       {mode === "name" && !nav.current && (
@@ -276,7 +333,13 @@ export default function SearchPanel({
             autoFocus
           />
           <p className="muted small" style={{ marginTop: 6 }}>
-            {busy && !navTitles.length ? "Searching…" : navTitles.length ? "↑↓ to navigate · Enter to open" : ""}
+            {navTitles.length
+              ? "↑↓ to navigate · Enter to open"
+              : busy
+                ? "Searching…"
+                : lucyBusy
+                  ? "Nothing on eqlwiki or in your log — asking Lucy…"
+                  : ""}
           </p>
           <div className="results">
             {shownResults.map((r, i) => (
@@ -288,6 +351,14 @@ export default function SearchPanel({
             ))}
           </div>
           {mine.length > 0 && <MyResults items={mine} active={active - shownResults.length} onOpen={openPage} />}
+          {(shownLucy.length > 0 || lucyBusy) && (
+            <LucyResults
+              items={shownLucy}
+              busy={lucyBusy}
+              active={active - shownResults.length - mine.length}
+              onOpen={openLucyItem}
+            />
+          )}
         </>
       )}
 
@@ -384,4 +455,73 @@ function MyResults({
       </div>
     </>
   );
+}
+
+/**
+ * The last resort: names Live EverQuest's database has and neither eqlwiki nor your log does.
+ *
+ * Its own heading, and a blunt one, for the same reason `MyResults` has one — a row from a *different
+ * game* is a different kind of claim and must not read as one of the wiki's pages
+ * ([ADR 0124](../../../specs/decisions/0124-lucy-is-a-second-opinion.md)). The era badge is the other
+ * half of that: Lucy knows twenty-five years of expansions, and most of what it can offer for an
+ * arbitrary name cannot be obtained here at all.
+ *
+ * No `+ Add` button, deliberately. Everything else in this panel can add on sight, because everything
+ * else is either the wiki's or your own. Adding straight off a Lucy row would put an item on a
+ * shopping list on the strength of a source that hasn't yet been asked whether the thing exists in
+ * this era — so the row opens instead, and the page it opens has the button.
+ */
+function LucyResults({
+  items,
+  busy,
+  active,
+  onOpen,
+}: {
+  items: LucySearchResult[];
+  busy: boolean;
+  /** Index into *these* rows, or negative when the keyboard is up in an earlier list. */
+  active: number;
+  onOpen: (id: number, name: string) => void;
+}) {
+  return (
+    <>
+      <h4 className="muted small" style={{ marginTop: 10 }}>
+        From Lucy · Live EverQuest, not this build
+      </h4>
+      {busy && !items.length && <p className="muted small">Asking lucy.allakhazam.com…</p>}
+      <div className="results">
+        {items.map((it, i) => (
+          <div className={`result ${i === active ? "active" : ""}`} key={it.id}>
+            <span
+              className="link name"
+              title="Fetch it from Lucy and open what it says — Live EverQuest's data, not this build's"
+              onClick={() => onOpen(it.id, it.name)}
+            >
+              {it.name}
+            </span>
+            {it.type && <span className="muted small">{it.type}</span>}
+            <EraBadge era={it.era} why={eraHint(it.era)} />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Why a search row's era badge says what it does.
+ *
+ * A row's own `eraWhy` needs the item's zones, which the results list hasn't got — so these explain
+ * the *state* instead, including why "unknown" is the usual one. Better than a bare badge nobody can
+ * interpret, and honest about what hasn't been checked yet.
+ */
+function eraHint(era: LucyEra): string {
+  switch (era) {
+    case "in-era":
+      return "Lucy places this in a zone this server runs — from a page already fetched.";
+    case "out-of-era":
+      return "Every zone Lucy places this in is one this server doesn't run — from a page already fetched.";
+    default:
+      return "Not judged yet: Lucy's results list carries no zones, so opening it is what settles the era.";
+  }
 }

@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { placeTooltip, type AnchorBox } from "../../src/shared/tooltip";
+import { besideWidth, placeTooltip, type AnchorBox } from "../../src/shared/tooltip";
 
 const view = { width: 800, height: 600 };
 const card = { width: 300, height: 120 };
@@ -66,4 +66,43 @@ test("with room nowhere the card is clipped on the roomier side, not moved over 
   const nearBottom = placeTooltip({ left: 10, right: 90, top: 560, bottom: 574 }, tall, narrow);
   assert.equal(nearBottom.top, undefined, "more room above → sits above");
   assert.equal(nearBottom.bottom, narrow.height - 560 + 6);
+});
+
+// ── how wide it may be, to stay beside the name ────────────────────────────────────────────────
+//
+// The overlay's real shape: a 460px window is 444px of page, and a name in a list row ends a third
+// of the way across it. At full width the card fitted beside nothing and every hover dropped it
+// onto the rows above and below, which is the one thing the placement above exists to prevent.
+const overlay = { width: 444, height: 715 };
+
+test("a name with room on both sides is not capped at all", () => {
+  const room = besideWidth(name, view);
+  assert.ok(room !== null && room >= card.width, "nothing to give up, so the card keeps its width");
+});
+
+test("a card narrows to the room beside a list row's name rather than dropping below it", () => {
+  const inRow: AnchorBox = { left: 12, right: 260, top: 100, bottom: 117 };
+  const room = besideWidth(inRow, overlay);
+  assert.equal(room, overlay.width - inRow.right - 6 - 6, "everything right of the name, less the gaps");
+  // Capped to that, the rule above places it beside the name — the rows around it stay readable.
+  const p = placeTooltip(inRow, { width: room!, height: 120 }, overlay);
+  assert.equal(p.left, inRow.right + 6);
+  assert.equal(p.top, inRow.top);
+});
+
+test("the roomier side wins, and the placement agrees with it", () => {
+  const rightish: AnchorBox = { left: 300, right: 400, top: 100, bottom: 117 };
+  const room = besideWidth(rightish, overlay);
+  assert.equal(room, 300 - 12, "the left has far more room than the 32px on the right");
+  const p = placeTooltip(rightish, { width: room!, height: 120 }, overlay);
+  assert.equal(p.left, rightish.left - 6 - room!, "so it goes left, at the width that fits there");
+});
+
+test("with no legible room on either side there is no cap, and the fallbacks stand", () => {
+  // A long name in a window dragged narrow: 74px to the right of it, none to the left.
+  const cramped: AnchorBox = { left: 10, right: 240, top: 100, bottom: 117 };
+  assert.equal(besideWidth(cramped, { width: 320, height: 600 }), null);
+  // Uncapped means unchanged, not "beside at any cost" — a small card still fits beside.
+  const small = placeTooltip(cramped, { width: 60, height: 40 }, { width: 320, height: 600 });
+  assert.equal(small.left, cramped.right + 6);
 });

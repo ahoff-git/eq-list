@@ -7,7 +7,7 @@ import WindowButtons from "./components/WindowButtons";
 import Titlebar from "./components/Titlebar";
 import ScaleButtons from "./components/ScaleButtons";
 import ListPanel from "./components/ListPanel";
-import HuntPanel from "./components/HuntPanel";
+import HuntPanel, { type HuntGrouping } from "./components/HuntPanel";
 import SpawnPanel from "./components/SpawnPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
@@ -74,6 +74,10 @@ export default function Home() {
   // Owned here so the Hunt tab's zone filter survives switching tabs (and, persisted,
   // reopening the window).
   const [huntZone, setHuntZone] = usePersistentState<string | null>(STORAGE_KEYS.huntZone, null);
+  // And which question it's answering — by zone ("what does a trip there get me?") or by item
+  // ("where is this likeliest to drop?"). Owned here for the same reason, and defaulting to zone
+  // because that is the view the tab has always opened on.
+  const [huntGrouping, setHuntGrouping] = usePersistentState<HuntGrouping>(STORAGE_KEYS.huntGrouping, "zone");
 
   // Stable so NavProvider's callbacks (and thus `nav`'s identity) don't churn each render
   // (`setTab` is a stable state setter).
@@ -160,7 +164,14 @@ export default function Home() {
         {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}
         <div className="panel" {...PASS_THROUGH}>
           {tab === "list" && <ListPanel />}
-          {tab === "hunt" && <HuntPanel pickedZone={huntZone} onPickedZone={setHuntZone} />}
+          {tab === "hunt" && (
+            <HuntPanel
+              pickedZone={huntZone}
+              onPickedZone={setHuntZone}
+              grouping={huntGrouping}
+              onGrouping={setHuntGrouping}
+            />
+          )}
           {tab === "timers" && <SpawnPanel />}
           {tab === "loot" && <LootPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}

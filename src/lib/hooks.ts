@@ -20,6 +20,8 @@ import type {
   AppInfo,
   ItemSource,
   ItemCard,
+  LucyItem,
+  LucySearchResult,
   ShoppingListEntry,
   LootedItem,
   Unsubscribe,
@@ -826,6 +828,37 @@ export function useItemCard(title: string | null): ItemCard | null {
   }, [title]);
   return card;
 }
+
+/**
+ * What Lucy already knows about an item **by name, from its cache alone** — never a request.
+ *
+ * Deliberately free, because this runs on any item page and Lucy is a guest source: a page opening
+ * must not put traffic on someone else's server
+ * ([ADR 0124](../../specs/decisions/0124-lucy-is-a-second-opinion.md)). Something has to have
+ * fetched the item first, which is what `useLucySearch` and `fetchLucyItem` are for.
+ */
+export function useLucyCard(name: string | null): LucyItem | null {
+  return useRead((a) => (name ? a.lucy.cachedByName(name) : Promise.resolve(null)), null, [name]);
+}
+
+/**
+ * Lucy's hits for a search term — **only when `ask` is true.**
+ *
+ * The gate is a parameter rather than a check inside, because the caller is the only thing that knows
+ * whether the wiki already answered, and asking Lucy about a query the wiki answered would be a
+ * request for nothing. One request per settled query, cached for a week by the main process.
+ */
+export function useLucySearch(term: string, ask: boolean): { hits: LucySearchResult[]; loading: boolean } {
+  const { value, loading } = useReading<LucySearchResult[]>(
+    (a) => (ask && term.trim() ? a.lucy.search(term) : Promise.resolve(NO_LUCY_HITS)),
+    NO_LUCY_HITS,
+    [term, ask],
+  );
+  return { hits: value, loading: ask && loading };
+}
+
+/** A stable empty list, since it's the initial value of a hook whose deps include it downstream. */
+const NO_LUCY_HITS: LucySearchResult[] = [];
 
 /** Ids of entries that were satisfied by a loot line in the last `durationMs`. */
 export function useMatchFlashes(durationMs = 1500): Set<string> {

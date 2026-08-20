@@ -21,6 +21,32 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **An item's era is derived where a neighbour simply states it.** [Lucy](./lucy-data/README.md) is
+  in ([ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)) and its one real weakness is the era:
+  Lucy has no era or expansion field anywhere, so the verdict is inferred from the zones on its drop
+  and merchant rows, and for a quest reward or a crafted good it can only answer `unknown` — which is
+  most search rows, until you open one. **[EQLGS](./neighbours.md) has the field.** Its item search
+  shows an expansion badge *and* a hand-curated availability flag whose hover reads verbatim `Item is
+  verified as available in EverQuest Legends`, and — the part that makes this cheap — **it is keyed on
+  the same item ids Lucy is**: `eqlgs.net/item/detail/1649` and `lucy.allakhazam.com/item.html?id=1649`
+  are the same bracelet, and its own page links out to Lucy. So `LucyItem.id` is already the join key;
+  nothing has to be matched by name. Two further prizes on the same page: its **zone names need no
+  decoder** (it says `The Hole` where Lucy says `Ruins of Old Paineel 2.0 (The Hole)`), and its drop
+  lists are **this server's** — ten elemental NPCs in The Hole for that bracelet, where Lucy has two.
+  What to settle first: it has **no public repo and no licence to read**, so this is a scrape of
+  someone's website and worth asking them about; the availability flag is one person's curation, not a
+  measurement, so it belongs at Lucy's trust level rather than the wiki's; and it says
+  `WARNING: Out of era items may be listed!` over its own results, which is a caveat to carry through
+  rather than launder.
+
+- **Lucy isn't in the setup check.** The `wiki` step pings eqlwiki and reports how long it took
+  (`pingWiki`, `electron/self-check.ts`), and there is no equivalent for
+  [Lucy](./lucy-data/README.md) — so "search found nothing" and "lucy.allakhazam.com is unreachable"
+  read identically in the one place built to tell those apart. The shape is already there: a
+  `pingLucy` beside `pingWiki` (smallest thing the site will serve, short deadline, never throws), one
+  more entry in `SETUP_CHECKS`, one more injected dep. The wording should say what the `wiki` step's
+  does — that nothing else in the app needs it.
+
 - **A consider's level is unread — and one real line unblocks it.** The model is built and tested
   ([ADR 0121](./decisions/0121-a-mob-is-a-range-of-levels.md), `src/shared/levels.ts`): a mob's level
   is a *range*, its bounds widen with evidence, the wiki's `Level: 33-37` already parses, and pooling
@@ -196,6 +222,14 @@ everything else, so this list can stay short enough to read:
   pinned black box with a corpus tally behind it
   ([ADR 0048](./decisions/0048-a-map-label-is-read-by-its-words.md)) — worth re-tallying rather than
   patching blind.
+
+- **The pin editor is placed in the wrong pixel space.** `onPinClick` / `onPlace` hand `PinEditor` a
+  click's raw `clientX/clientY`, and it writes them as a `fixed` position — so under any map scale
+  other than 100% the editor opens away from the pin it belongs to (at 200%, twice as far from the
+  corner). Exactly the defect [ADR 0123](./decisions/0123-a-popover-is-placed-in-the-units-it-is-written-in.md)
+  fixed for hover popovers, and the same one-line conversion (`localPoint`, in `src/lib/screen.ts`)
+  fixes it — left out of that change because a click-positioned editor is not a hover popover and
+  deserves its own look at where an editor *should* open.
 
 ## From the neighbours
 

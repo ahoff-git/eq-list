@@ -211,3 +211,87 @@ export function huntZoneOptions(
   for (const t of targets) for (const zone of t.zones) offer(zone);
   return [...byKey.values()].sort((a, b) => a.localeCompare(b));
 }
+
+/** Somewhere an item comes from: one mob, in one zone. */
+export interface HuntPlace {
+  mob: string;
+  zone: string;
+  /** True when the mob is on your list in its own right (`HuntMob.target`). */
+  target?: boolean;
+}
+
+export interface HuntItemGroup {
+  item: string;
+  needed: number;
+  obtained: number;
+  /** Everywhere it drops. Ordering is the caller's, because it turns on rates the panel holds. */
+  places: HuntPlace[];
+}
+
+/**
+ * **The same hunt read the other way round: item → every mob-in-a-zone that drops it.**
+ *
+ * The zone grouping answers *I am going to Lower Guk — what does that get me?* This answers the
+ * question a shopping list asks first — *I need this thing; where is it likeliest to drop?* — which
+ * the zone view can only answer by being read four times and compared by eye, one item's mobs being
+ * scattered across four separate zone blocks.
+ *
+ * It inverts the **built** hunt rather than making a second pass over the sources, so whatever
+ * narrowed the zones narrows this too: the zone filter, the era rules, every decision `buildHunt`
+ * makes. Two views of one structure can't disagree about what is on your list.
+ *
+ * Items come out **in name order**, deliberately not in "best rate" order: a rate moves every time
+ * you kill something, and a list that reshuffles itself while you farm is one you have to re-read
+ * from the top each time. The ordering that answers *where do I farm this* belongs **inside** an
+ * item, among its places — which is exactly where the panel puts it.
+ */
+export function huntByItem(zones: HuntZone[]): HuntItemGroup[] {
+  const byItem = new Map<string, HuntItemGroup>();
+  for (const zone of zones) {
+    for (const mob of zone.mobs) {
+      for (const it of mob.items) {
+        let group = byItem.get(it.item);
+        if (!group) byItem.set(it.item, (group = { item: it.item, needed: it.needed, obtained: it.obtained, places: [] }));
+        // One mob can't drop the same item twice, but two zones can hold the same mob name — and
+        // those are two camps, so both are worth listing.
+        group.places.push({ mob: mob.mob, zone: zone.zone, ...(mob.target ? { target: true } : {}) });
+      }
+    }
+  }
+  return [...byItem.values()].sort((a, b) => a.item.localeCompare(b.item));
+}
+
+/**
+ * The mobs on your list in their own right, with where you've seen them.
+ *
+ * Read off the same zones for the same reason as `huntByItem`: a target has no item to be grouped
+ * under, and dropping it from the item view would lose the one row you asked for by name
+ * ([ADR 0098](../../specs/decisions/0098-a-mob-is-a-thing-you-hunt.md)). So it keeps a section of
+ * its own instead of being quietly filtered out.
+ */
+export function huntTargetPlaces(zones: HuntZone[]): HuntPlace[] {
+  const places: HuntPlace[] = [];
+  for (const zone of zones) {
+    for (const mob of zone.mobs) {
+      if (mob.target) places.push({ mob: mob.mob, zone: zone.zone, target: true });
+    }
+  }
+  return places.sort((a, b) => a.mob.localeCompare(b.mob) || a.zone.localeCompare(b.zone));
+}
+
+/**
+ * Where to farm it: **best rate first, then zone**.
+ *
+ * A place with no rate at all goes last rather than being treated as a zero — "nobody has measured
+ * this" and "this never drops" are different claims, and sorting them together would bury a mob
+ * whose rate is merely unknown beneath one the wiki says is 1%.
+ *
+ * Zone breaks the tie rather than mob name, because two mobs in one zone is one trip: reading down
+ * the list, everything you can farm without moving stays together.
+ */
+export function bestPlacesFirst<T extends HuntPlace & { rate?: number }>(places: T[]): T[] {
+  return [...places].sort(
+    (a, b) =>
+      (b.rate ?? -1) - (a.rate ?? -1) || a.zone.localeCompare(b.zone) || a.mob.localeCompare(b.mob),
+  );
+}

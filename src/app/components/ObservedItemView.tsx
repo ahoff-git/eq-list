@@ -1,10 +1,11 @@
 "use client";
 import { api } from "@/lib/api";
-import { useKnownItems } from "@/lib/hooks";
+import { useKnownItems, useLucyCard, useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/nav";
 import { count, dayTime } from "@/shared/format";
 import { normalizeItemName } from "@/shared/grouping";
 import ItemDrops from "./ItemDrops";
+import LucySays, { LucyLink } from "./LucySays";
 import { AddButton } from "./ui";
 import { addItem } from "@/lib/addToList";
 
@@ -26,6 +27,8 @@ export default function ObservedItemView({ title }: { title: string }) {
   const nav = useNav();
   const key = normalizeItemName(title);
   const mine = useKnownItems().find((i) => normalizeItemName(i.item) === key);
+  const lucy = useLucyCard(title);
+  const askLucy = useSettings()?.askLucy ?? true;
 
   return (
     <div className="page-detail">
@@ -55,13 +58,32 @@ export default function ObservedItemView({ title }: { title: string }) {
         >
           ↗ eqlwiki
         </button>
+        {/* Beside it, and on this page especially: eqlwiki returned nothing, so its link leads to a page
+            that isn't there. Lucy's may well be. */}
+        <LucyLink target={lucy?.id ?? title} show={askLucy} />
       </div>
 
       {!mine ? (
-        <p className="muted small">
-          Couldn&apos;t load “{title}” — eqlwiki returned no page for it, and nothing in your log
-          has named it either.
-        </p>
+        // With Lucy holding a card for it, "nothing knows this" is no longer true — and saying it
+        // anyway, directly above that card, would be the app contradicting itself on one screen.
+        lucy ? (
+          <>
+            <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+              <AddButton className="btn primary sm" onAdd={() => void addItem({ name: title })}>
+                + Add “{title}”
+              </AddButton>
+            </div>
+            <p className="muted small" style={{ marginTop: 8 }}>
+              eqlwiki has no page for it and your log has never named it — so everything below is
+              Lucy&apos;s, describing Live EverQuest rather than this build.
+            </p>
+          </>
+        ) : (
+          <p className="muted small">
+            Couldn&apos;t load “{title}” — eqlwiki returned no page for it, and nothing in your log
+            has named it either.
+          </p>
+        )
       ) : (
         <>
           <div className="row" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
@@ -79,6 +101,12 @@ export default function ObservedItemView({ title }: { title: string }) {
       {/* The evidence itself, and it renders nothing when there is none — a name the ledger holds
           but no kill was ever credited with has a sighting count above and nothing to show below. */}
       <ItemDrops item={title} sources={NO_WIKI_SOURCES} />
+
+      {/* And below your own evidence, the third source: what Live EverQuest's database says the thing
+          *is*. Cache-only, so opening this page costs Lucy nothing — it's populated by having found
+          the item through search (ADR 0124). Last on the page on purpose: it is the least trusted
+          thing on it. */}
+      {lucy && <LucySays item={lucy} />}
     </div>
   );
 }

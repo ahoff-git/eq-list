@@ -141,5 +141,14 @@ shopping list.
   ([ADR 0101](../decisions/0101-an-item-page-says-who-dropped-it.md)), including mobs this wiki
   never linked to the item at all.
 
+- **A name this wiki hasn't got at all** is not this area's problem. Two other sources answer that,
+  and both sit below it: your own log ([ADR 0103](../decisions/0103-search-can-answer-from-your-own-log.md))
+  and [Lucy](../lucy-data/README.md), Live EverQuest's item database
+  ([ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md)). The wiki client stays ignorant of both —
+  its job is to be a good client of a MediaWiki, and a search that quietly returned rows from elsewhere
+  would make its cache, its era flags and its title index answer for things none of them had seen.
+
 ## See also
-[architecture](../architecture/README.md) · [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md)
+[architecture](../architecture/README.md) · [lucy-data](../lucy-data/README.md) ·
+[ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md) ·
+[ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md)

@@ -5,7 +5,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  bestPlacesFirst,
   buildHunt,
+  huntByItem,
+  huntTargetPlaces,
   huntHasWork,
   huntInputsFor,
   huntTargetsFor,
@@ -218,4 +221,93 @@ test("the picker names one zone once, however many ways it is spelled", () => {
   const needed = [entry({ name: "Talon" }), entry({ name: "Feather" })];
   const sources = { Talon: [drop("A Bird", "The Feerrott")], Feather: [drop("A Bat", "Feerrott")] };
   assert.deepEqual(huntZoneOptions(needed, sources, []), ["The Feerrott"], "first spelling seen wins");
+});
+
+// ── the same hunt, read by item ─────────────────────────────────────────────
+
+test("by item: one item's places gather from every zone it drops in", () => {
+  const zones = buildHunt([
+    item("Fire Emerald", [drop("a goblin", "Runnyeye"), drop("a sand giant", "South Ro")]),
+    item("Bone Chips", [drop("a skeleton", "Runnyeye")]),
+  ]);
+  const groups = huntByItem(zones);
+  // Name order, not zone order and not rate order — see `huntByItem`.
+  assert.deepEqual(groups.map((g) => g.item), ["Bone Chips", "Fire Emerald"]);
+  const emerald = groups[1];
+  assert.deepEqual(
+    emerald.places.map((p) => `${p.mob} in ${p.zone}`).sort(),
+    ["a goblin in Runnyeye", "a sand giant in South Ro"],
+  );
+  assert.equal(emerald.needed, 1);
+});
+
+test("by item: one mob name in two zones is two camps, both worth listing", () => {
+  const zones = buildHunt([item("Fire Emerald", [drop("a goblin", "Runnyeye"), drop("a goblin", "Crushbone")])]);
+  const [group] = huntByItem(zones);
+  assert.equal(group.places.length, 2);
+  assert.deepEqual(group.places.map((p) => p.zone).sort(), ["Crushbone", "Runnyeye"]);
+});
+
+test("by item: a mob you named carries its flag, and keeps a section of its own", () => {
+  const zones = buildHunt(
+    [item("Fire Emerald", [drop("a goblin", "Runnyeye")])],
+    [{ mob: "Lord Nagafen", zones: ["Nagafen's Lair"] }],
+  );
+  // A target has no item to be grouped under, so the item view would drop it entirely (ADR 0098).
+  assert.deepEqual(huntByItem(zones).flatMap((g) => g.places.map((p) => p.mob)), ["a goblin"]);
+  assert.deepEqual(huntTargetPlaces(zones), [{ mob: "Lord Nagafen", zone: "Nagafen's Lair", target: true }]);
+});
+
+test("by item: a target that also drops something you need is both", () => {
+  const zones = buildHunt(
+    [item("Cloak of Flames", [drop("Lord Nagafen", "Nagafen's Lair")])],
+    [{ mob: "Lord Nagafen", zones: ["Nagafen's Lair"] }],
+  );
+  const [group] = huntByItem(zones);
+  assert.deepEqual(group.places, [{ mob: "Lord Nagafen", zone: "Nagafen's Lair", target: true }]);
+  assert.equal(huntTargetPlaces(zones).length, 1);
+});
+
+test("places sort by rate, then zone — and an unmeasured place is not a zero", () => {
+  const places = [
+    { mob: "a goblin", zone: "Runnyeye", rate: 0.02 },
+    { mob: "a sand giant", zone: "South Ro" },
+    { mob: "a skeleton", zone: "Befallen", rate: 0.2 },
+    { mob: "a bat", zone: "Befallen", rate: 0.02 },
+  ];
+  assert.deepEqual(
+    bestPlacesFirst(places).map((p) => p.zone),
+    // 20% first; the two 2%s break their tie on zone; "nobody has measured this" goes last rather
+    // than sorting as 0%, which would claim it never drops.
+    ["Befallen", "Befallen", "Runnyeye", "South Ro"],
+  );
+});
+
+test("two mobs in one zone stay together, so one trip reads as one block", () => {
+  const places = [
+    { mob: "a goblin", zone: "Runnyeye", rate: 0.1 },
+    { mob: "a bat", zone: "Befallen", rate: 0.1 },
+    { mob: "a skeleton", zone: "Befallen", rate: 0.1 },
+  ];
+  assert.deepEqual(bestPlacesFirst(places).map((p) => `${p.zone}/${p.mob}`), [
+    "Befallen/a bat",
+    "Befallen/a skeleton",
+    "Runnyeye/a goblin",
+  ]);
+});
+
+test("sorting places leaves the caller's array alone", () => {
+  const places = [
+    { mob: "a bat", zone: "Befallen", rate: 0.1 },
+    { mob: "a goblin", zone: "Runnyeye", rate: 0.9 },
+  ];
+  bestPlacesFirst(places);
+  assert.equal(places[0].mob, "a bat");
+});
+
+test("a narrowed hunt narrows both views — they are one structure", () => {
+  const zones = buildHunt([
+    item("Fire Emerald", [drop("a goblin", "Runnyeye"), drop("a sand giant", "South Ro")]),
+  ]).filter((z) => z.zone === "Runnyeye");
+  assert.deepEqual(huntByItem(zones)[0].places.map((p) => p.zone), ["Runnyeye"]);
 });

@@ -1099,6 +1099,58 @@ export interface SearchResult {
   outOfEra?: boolean;
 }
 
+// ─── Lucy (lucy.allakhazam.com) — the supplementary item source ──────────────
+// Live EverQuest's item database, used only where eqlwiki is silent. It knows far more items than
+// eqlwiki does and describes a **different game**, so everything below is explicitly second-hand:
+// see [ADR 0124](../../specs/decisions/0124-lucy-is-a-second-opinion.md).
+
+/**
+ * Whether this server's eras could contain a Lucy item at all.
+ *
+ * Lucy has no era or expansion field, so this is **derived** from the zones it says the item can be
+ * got in, matched against the gazetteer of zones this server runs. `unknown` is a real answer and a
+ * common one: an item Lucy lists no mob or merchant for gives nothing to judge by.
+ */
+export type LucyEra = "in-era" | "out-of-era" | "unknown";
+
+/** One item as Lucy describes it. */
+export interface LucyItem {
+  /** Lucy's own item id — what its page URL and our cache are keyed by. */
+  id: number;
+  name: string;
+  /** The stat card, in Lucy's words. Same shape as the wiki's so one component renders both. */
+  card?: ItemCard;
+  /**
+   * How to get it: Lucy's "Drops from" and "Sold by" rows, both as NPC + zone. Capped — see
+   * `sourceRows`. `ItemSource` so `sources.ts` groups and colours these exactly as it does the
+   * wiki's, and the shopping list can tell "kill this" from "buy this" without new code.
+   */
+  sources: ItemSource[];
+  /** How many rows Lucy listed in total — bigger than `sources.length` when the cap bit. */
+  sourceRows: number;
+  era: LucyEra;
+  /** The one-sentence reason for `era`. A derived verdict has to be able to show its working. */
+  eraWhy: string;
+  fetchedAt: string;
+}
+
+/** One row of Lucy's item-name search. */
+export interface LucySearchResult {
+  id: number;
+  name: string;
+  /** Lucy's own "Type" column — "Armor", "1H Slashing", "Food". */
+  type?: string;
+  /**
+   * The era verdict **if we already hold this item's page**, and `unknown` until then.
+   *
+   * Lucy's results list carries no zones, and the verdict is derived from zones — so judging twelve
+   * hits would mean twelve page fetches per query, on the one query shape that is by definition a
+   * miss. Opening a hit fetches and caches its page, so the answer fills in as you look at things
+   * and a repeated search is already judged.
+   */
+  era: LucyEra;
+}
+
 /** A screen-region rectangle (display-local CSS pixels) for the screengrab lookup. */
 export interface Rect {
   x: number;
@@ -1832,6 +1884,12 @@ export interface Settings {
   matchMode: MatchMode;
   /** Hide out-of-era pages in search results. */
   hideOutOfEra: boolean;
+  /**
+   * Ask Lucy (lucy.allakhazam.com) about names eqlwiki couldn't answer. Default **on**: it is a data
+   * source like the wiki rather than an exposure like `connectPeers`, and a supplementary source
+   * nobody switches on is a feature nobody has. Off makes the app talk to eqlwiki and nothing else.
+   */
+  askLucy: boolean;
   /** Opt-in: join the awari peer-to-peer network (see peers + send pings). Default off. */
   connectPeers: boolean;
   /** Broadcast your live location to peers (requires `connectPeers`). Default off. */
@@ -2090,6 +2148,31 @@ export interface EqlApi {
      * refresh weekly), so a newly-added wiki page becomes searchable immediately.
      */
     refresh(): Promise<void>;
+  };
+  /**
+   * Lucy — Live EverQuest's item database, the app's **third and least trusted** source. Asked only
+   * where eqlwiki is silent, cached for a month, and never fetched unasked
+   * ([ADR 0124](../../specs/decisions/0124-lucy-is-a-second-opinion.md)).
+   *
+   * Every method answers `[]` / `null` when the source is switched off (`settings.askLucy`), so a
+   * caller never has to check first.
+   */
+  lucy: {
+    /** Items whose name contains the term. Literal substring match — Lucy has no fuzzy search. */
+    search(term: string): Promise<LucySearchResult[]>;
+    /** One item, by Lucy's id. Costs one request unless it's cached. */
+    getItem(id: number): Promise<LucyItem | null>;
+    /** What the cache already holds for a name — no request, so it's safe on any render. */
+    cachedByName(name: string): Promise<LucyItem | null>;
+    /**
+     * Open an item on Lucy in the external browser — **by id when one is known, by name otherwise.**
+     *
+     * The name form goes to Lucy's own search, which redirects to the item when the name matches one
+     * and lists them when it matches several. That is what lets every item in the app offer the link
+     * beside its eqlwiki one, whether or not we have ever fetched it: the browser does the looking up,
+     * so the link costs this app nothing.
+     */
+    openInBrowser(target: number | string): Promise<void>;
   };
   loot: {
     /**

@@ -8,6 +8,8 @@ export const STORAGE_KEYS = {
   activeTab: "eqlist.main.tab",
   /** Main window: the Hunt tab's zone filter. */
   huntZone: "eqlist.main.huntZone",
+  /** Main window: whether the Hunt tab groups by zone or by item. */
+  huntGrouping: "eqlist.main.huntGrouping",
   /** Map window: dropped pins. */
   mapPins: "eqlist.map.pins",
   /** Map window: which set of maps to draw — bundled images, or a game maps folder. */

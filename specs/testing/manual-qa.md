@@ -836,3 +836,65 @@ can't see. In the map window, with the 👁 / 🧭 / 📖 / ☠ / 👥 panels:
   *own* height rather than adopting the other's.
 - **A maximize doesn't distort it.** Maximize the map window: every panel keeps its share, so a panel
   sized to a third of a small window is a third of a large one.
+
+## The hover card's placement (ADR 0123)
+
+Verified in Electron over a real results list, at 100% / 80% / 60% — but by measurement, not by
+looking at it. What a measurement can't judge is whether the result *reads* right.
+
+- **Beside the name, at every scale.** In Search, type something with several hits and run the cursor
+  down the results. The stat card must appear **beside** each name — never on it — and it must stay
+  beside it as you step the interface scale from 100% down to 60% (Settings, A− / A+). Sliding onto
+  the word as the interface shrinks is the bug this fixed, so that's the one to watch for.
+- **A narrowed card is still a card.** Hover a long item name in a narrow window (drag the overlay in
+  towards its 340px minimum). The card gets slimmer rather than jumping below the name — confirm it's
+  still readable at that width, and that a name long enough to leave no room either side drops below
+  as a last resort rather than squeezing to a column of single words.
+- **What it's allowed to cover.** It will overlap the era badge and + Add button of the rows either
+  side, and the tail of a long neighbouring name. Confirm that reads as acceptable — if it doesn't,
+  the fix is to spend the slack pushing the card to the window's right edge (see the ADR).
+- **Everywhere, not just Search.** The same card is behind every item name: a kill group's drops, a
+  mob's knowledge, a wiki page's prose, and over the map window. Hover one in each and confirm the
+  placement holds — prose in particular, where a name can wrap across two lines.
+- **The map's cursor tip.** In the map window, step its scale up to 200% and hover a pin, a kill and a
+  peer. The tip must appear at the cursor, not out at twice its distance from the corner.
+
+## Asking Lucy (ADR 0124)
+
+The client, the parser and the era verdict are unit-tested against real captured pages, and the whole
+chain has been driven end to end against the live site from a script — search, single-hit redirect,
+item fetch, era verdict, cache, negative cache. What that can't judge is how it **reads** in the app,
+and one thing it can't test at all is the polite behaviour over a long session.
+
+- **The third heading appears only when it should.** Search a name eqlwiki knows (`Bone Chips`): no
+  Lucy heading at all, and no request. Search something in your bags the wiki hasn't got: your own
+  log's heading, and still no Lucy. Search a name neither has — an item off someone else's corpse, or
+  a tooltip you screenshotted — and the Lucy heading appears *after* the other two have given up.
+- **A Lucy row opens rather than adds.** Confirm there is no `+ Add` on those rows, that clicking the
+  name shows a brief load and then the item's page with the Lucy block on it, and that the page's own
+  `+ Add` works from there.
+- **The era badge is legible without the ADR.** Most rows will read `era ?`. Confirm that reads as
+  "not checked yet" rather than as a fault, that the hover explains it, and that opening a row settles
+  it to `in era?` or `out of era` — visibly, on a repeat of the same search.
+- **`Hide out of era` behaves.** With it on, a known-out Lucy row disappears and an `era ?` row
+  **stays**. That's deliberate (hiding what you couldn't judge is how a filter starts lying) — confirm
+  it reads that way rather than as the toggle not working.
+- **`Ask Lucy` off means silent.** Untick it, search a name nothing knows: no heading, no request, and
+  the previously-fetched Lucy blocks stop appearing on item pages too.
+- **A card-less wiki page gains one.** Find an eqlwiki item page that is a stub (no stat card) for an
+  item you have already opened through Lucy, and confirm Lucy's card appears beneath it — and that a
+  wiki page *with* a card never mentions Lucy at all.
+- **The zone links go somewhere.** In the Lucy block, a placeable zone should open the map at our name
+  for it (`The Hole`, not `Ruins of Old Paineel 2.0`); an unplaceable one should be plain text.
+- **↗ Lucy is on every item, and lands.** Beside ↗ eqlwiki on both item page headers, and as `↗L` on
+  every shopping-list row — but **not** on a mob row or a quest group's header. Click one for an item
+  the app has never fetched: the browser should land on the *item's page*, not a results list, for any
+  exactly-named item. Confirm too that the row's own click-to-expand doesn't fire when you hit the
+  button. Then untick **Ask Lucy** and confirm every one of those buttons disappears.
+- **A name Lucy hasn't got.** Click ↗L on something this build invented (a `+2` item, or anything the
+  app only knows from your log). Landing on Lucy's "0 found" is the correct outcome — confirm the
+  hover text prepared you for it rather than it reading as a broken link.
+- **It stays polite over an evening.** The thing no test covers: play with the app open, search a good
+  number of unknown names, and confirm the app never feels like it is queueing behind Lucy — and that
+  `userData/lucy-cache` is filling up rather than the same pages being re-fetched. A second run of the
+  same searches should hit the network **not at all**.

@@ -1,10 +1,11 @@
 # Neighbours — the other EQ Legends tools
 
-Ten projects solve overlapping problems for the same game and the same players. Several items in
+Eleven projects solve overlapping problems for the same game and the same players. Several items in
 [todo.md](./todo.md) and [ideas.md](./ideas.md) start "a neighbour does this", so this page is the
 address book: what each one is, and **which file to open** when a note here says a thing exists.
 
-Nothing is vendored and nothing is a dependency. Everything below is read by cloning it:
+Nothing is vendored and nothing is a dependency. Ten of the eleven are read by cloning them
+(**EQLGS** is the exception — a website with no public repo, so it is read by browsing it):
 
 ```bash
 git clone --depth 50 https://github.com/<owner>/<repo>.git
@@ -164,6 +165,35 @@ Same author and shape as eql-alerts, pointed at combat: live fights, ability bre
 | same file, `looks_like_npc` guard | The bystander rule: *only you or your pet can open a fight*, so "Orc hits Bob" in an open-world camp never creates a fight named after a stranger. Our [ADR 0067](./decisions/0067-the-meter-counts-your-party-s-fights.md) from the other end |
 | `src-tauri/src/parse/` | Damage-shield and proc attribution, both recent bug-fix areas for them |
 
+## EQLGS — the gear search, and the era field we haven't got
+
+`Convection` · Python/Flask, server-rendered · [eqlgs.net](https://eqlgs.net) · no public repo
+
+The only neighbour on this list that is **a website rather than a program**, and the only one that is
+a *data* neighbour rather than a feature one. It does one thing: find gear that fits a loadout —
+filter by slot, up to three classes, item type and focus/worn effect, weight the stats you care
+about, and rank what comes back. It is explicit that it is narrow, and points you at eqlwiki and
+Allakhazam for everything else.
+
+Read it for what it knows, not how it works. Four things, and the first two matter a great deal to
+[lucy-data](./lucy-data/README.md):
+
+| What | Why it matters here |
+|---|---|
+| **It is keyed on the same item ids as Lucy.** `/item/detail/1649` is the Loam Encrusted Bracelet, which is `lucy.allakhazam.com/item.html?id=1649`; its own Links tab offers "Lucy Item Information" | Our `LucyItem.id` is therefore already a **join key** to this site. Nothing has to be matched by name |
+| **It has the era field Lucy hasn't.** An expansion badge per item (`/static/exp0.png` = Classic) *and* a hand-curated availability flag — hover text reads verbatim "Item is verified as available in EverQuest Legends" or "Item has not been verified as available…", with the item page carrying a `Verified` mark and a line saying "This item is dropped by an NPC" | This is [ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)'s weakest point answered outright by somebody who plays here. We *derive* era from drop zones and are often reduced to "unknown"; this states it. See [todo.md](./todo.md) |
+| **Its zone names are already in our vocabulary, and its drop lists are EQL's.** For that bracelet it names **ten** elemental NPCs in `The Hole`, where Lucy names two in `Ruins of Old Paineel 2.0 (The Hole)` | Lucy's zone strings need a decoder (`lucy-era.ts`); these need none. And the drop list is this server's, not Live's |
+| **`/zones` is an independent gazetteer** — ~60 in-era zones with their EverQuest short names in brackets, and it calls `qey2hh1` **The Western Plains of Karana** | A third independent confirmation of ADR 0076's most expensive fact. `qey2hh1` is West Karana, not the Qeynos Hills its own exit label claims |
+
+Its changelog is also worth a read as a record of a fellow scraper's bruises — `Befallen is a good
+example of this, as several items that were "added" on EQL were actually resident in the item database
+just not attached to any NPC` is our ADR 0025 discovered from the other end.
+
+Caveats before treating it as a source: **no public repo**, so there is nothing to clone and no
+licence to read; the data is behind form POSTs and HTML, so it would be a scrape like Lucy's; the
+availability flag is one person's curation rather than a measurement; and it says so itself —
+`WARNING: Out of era items may be listed!` sits above its own results.
+
 ## eqdps — the Go one
 
 `uija/eqdps` · Go · [github](https://github.com/uija/eqdps)
@@ -197,6 +227,7 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | In-zone A\* (and why not) | `_nav_graph()` / `_nav_path()` in `eql_atlas_map.py` — **eql-log-reader** |
 | Provenance manifests / client-derived datasets | `src/data/eql-client/manifest.json`, `scripts/extract-eql-reference.mjs` — **everquest-legends-mcp** |
 | Data-integrity tests | `src/lib/maps.test.ts` — **everquest-legends-companion** |
+| An item's era, stated rather than derived *(the open half of [ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md))* | the expansion badge and "verified as available in EverQuest Legends" flag on `/item/search` — **EQLGS**, keyed on the same item ids we already hold |
 | `/out inventory` | `main.js` (`pollInv`) + `renderer/app.js` (`INV_SECTIONS`, `WORN_RX`) — **eqltools-companion** · `internal/inventorysync/observer.go` — **eqdps** |
 | Gate a shared emote on your own cast | `README.md` → *Self-only combat clocks* — **eql-alerts** |
 | Permanent buffs on Legends | `samples/eql_permanent_buffs.json` — **eql-alerts** |
@@ -212,6 +243,7 @@ maintains the mapping instead, so we'd be first.
 ## See also
 
 [todo.md](./todo.md) `## From the neighbours` and `## From the neighbours, second pass` ·
-[ideas.md](./ideas.md) · [wiki-data](./wiki-data/README.md) ·
+[ideas.md](./ideas.md) · [wiki-data](./wiki-data/README.md) · [lucy-data](./lucy-data/README.md) ·
 [ADR 0003](./decisions/0003-eqlwiki-runtime-data-source.md) ·
-[ADR 0025](./decisions/0025-observation-over-the-wiki.md)
+[ADR 0025](./decisions/0025-observation-over-the-wiki.md) ·
+[ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)

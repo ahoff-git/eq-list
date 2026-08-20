@@ -295,7 +295,23 @@ list, hunt, search, damage, session, settings.
     item's sources (`wiki.getPage`, cached) and `src/shared/hunt.ts`
     (`neededEntries` → `huntInputsFor` → `buildHunt`, pure + tested) builds
     zones → mobs → the needed items they drop. Zones/mobs sort by how much of your
-    list they cover; the current zone (`useCurrentZone`) floats to the top. Each zone
+    list they cover; the current zone (`useCurrentZone`) floats to the top.
+
+    **A `By zone` / `By item` toggle turns the page round**
+    ([ADR 0125](../decisions/0125-a-hunt-is-two-questions.md)), because a hunt is two questions:
+    *what does a trip to Lower Guk get me* and *where is this thing likeliest to drop*. By item is
+    the **same built hunt inverted** (`huntByItem`), so every rule `buildHunt` applies holds in
+    both. **The filter follows the grouping, in one control**: the zone picker (plus *follow*) by
+    zone, and the same picker turned into a **search over the items on your list** by item — where
+    the view deliberately looks everywhere, a zone narrowing being meaningless in a view whose whole
+    answer is *which zone*. The item pick is transient rather than persisted: an item you finish
+    leaves the list, and a filter that outlived it would open on an empty page.
+    Each item lists everywhere it drops, **best rate first, then zone** —
+    zone breaking the tie because two mobs in one zone is one trip — with an unmeasured place
+    **last** and shown as a dimmed `—`, never as 0%. Items themselves are in name order, since a
+    rate moves as you kill and a self-reshuffling list has to be re-read from the top. A mob you
+    named keeps a section of its own, having no item to sit under. The choice persists per window
+    (`STORAGE_KEYS.huntGrouping`) and defaults to by-zone. Each zone
     header carries **what level the wiki says its monsters are** (`zones/levels.ts`,
     [ADR 0122](../decisions/0122-a-zone-wears-its-levels.md)) — the question "go here"
     raises and the list itself can't answer. It's eqlwiki's own wording, bands and all

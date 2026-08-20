@@ -19,6 +19,11 @@ const MAX_MATCHES = 12;
  * Blank is a real choice, not an empty box, so it's the first option rather than something you
  * clear the field to get. What it *means* is the caller's: the map follows the log's zone, the
  * Hunt tab shows every zone.
+ *
+ * **It picks a name, and a zone is only its usual one.** The Hunt tab already passes wiki zone names
+ * that have no map file behind them, and passes the items on your list when it's grouped by item —
+ * the interaction is the same (a short list, type to narrow, blank means "all"), so `noun` moves the
+ * wording rather than a second picker being written for the second kind of name.
  */
 export default function ZonePicker({
   zones,
@@ -27,6 +32,7 @@ export default function ZonePicker({
   currentZone,
   placeholder,
   blankLabel,
+  noun = "zone",
   limit = MAX_MATCHES,
   align = "right",
 }: {
@@ -39,6 +45,8 @@ export default function ZonePicker({
   placeholder?: string;
   /** What choosing blank does. Defaults to following the log's zone, which is the map's meaning. */
   blankLabel?: string;
+  /** What the names in this list *are*, for the hint and the no-matches line. */
+  noun?: string;
   /** How many matches to offer — raise it when the zone list is a short, curated one. */
   limit?: number;
   /**
@@ -94,7 +102,7 @@ export default function ZonePicker({
         className="field zone-input"
         value={open ? query : value}
         placeholder={placeholder ?? (currentZone ? `Follow current · ${currentZone}` : "Follow current zone")}
-        title={`Type to find a zone — blank is “${blankLabel ?? "Follow current"}”`}
+        title={`Type to find a ${noun} — blank is “${blankLabel ?? "Follow current"}”`}
         onFocus={() => {
           setOpen(true);
           setActive(0);
@@ -128,7 +136,11 @@ export default function ZonePicker({
               {z.file && z.file !== z.name.toLowerCase() && <span className="muted small"> · {z.file}</span>}
             </button>
           ))}
-          {!matches.length && <div className="zone-option muted">No zone matches “{query}”</div>}
+          {!matches.length && (
+            <div className="zone-option muted">
+              No {noun} matches “{query}”
+            </div>
+          )}
         </div>
       )}
     </div>

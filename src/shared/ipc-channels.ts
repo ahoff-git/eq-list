@@ -33,6 +33,11 @@ export const CH = {
   wikiQuestsByZone: "wiki:questsByZone",
   wikiOpen: "wiki:open",
   wikiRefresh: "wiki:refresh",
+  // lucy — the supplementary item source, asked only where the wiki is silent (invoke)
+  lucySearch: "lucy:search",
+  lucyGetItem: "lucy:getItem",
+  lucyCachedByName: "lucy:cachedByName",
+  lucyOpen: "lucy:open",
   // watcher / zone / stats (invoke)
   watcherStatus: "watcher:status",
   zoneGet: "zone:get",

@@ -12,6 +12,7 @@ import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
 import { createStore } from "./store";
 import { setAppVersion } from "./json-store";
 import { createWikiClient } from "./wiki";
+import { createLucyClient } from "./lucy";
 import { createLogWatcher } from "./log-watcher";
 import { createLogCursor } from "./log-cursor";
 import { runMigrations } from "./migrations";
@@ -202,6 +203,10 @@ if (!app.requestSingleInstanceLock()) {
   setAppVersion(app.getVersion());
   const store = createStore(userData);
   const wiki = createWikiClient(path.join(userData, "wiki-cache"));
+  // The supplementary item source, in its own cache directory so its month-long TTL and the wiki's
+  // week never share a file (ADR 0124). Created eagerly and cheaply: it reads nothing and fetches
+  // nothing until something asks it a question.
+  const lucy = createLucyClient(path.join(userData, "lucy-cache"));
   // One-time repairs to data already on disk, before anything reads it. Chief among them: a kill
   // recorded before the log had named the zone is stored unplaced, and so counts towards no drop
   // rate and no heatmap — the log itself knows where you were, so it fills them in (ADR 0083).
@@ -261,6 +266,7 @@ if (!app.requestSingleInstanceLock()) {
   registerIpc({
     store,
     wiki,
+    lucy,
     watcher,
     combat,
     history,

@@ -160,19 +160,43 @@ export function reconcileDrops(
     .sort((a, b) => b.seen - a.seen || a.item.localeCompare(b.item));
 }
 
+/** The rate that's being shown: how it reads, where it came from, and what it is as a number. */
+export interface ShownRate {
+  text: string;
+  source: "observed" | "wiki" | "none";
+  /**
+   * The same figure as a fraction, for **ordering** — absent when there is no figure at all.
+   *
+   * It's returned from here rather than worked out beside the caller because the precedence above is
+   * the whole point of this function: a comparison that re-derived "which figure am I looking at"
+   * could sort by the wiki's number while the badge beside it shows yours.
+   */
+  value?: number;
+}
+
 /**
  * The rate to *show*, and where it came from. Observation wins once there's enough of it;
  * before that the wiki's figure is the better guess, and the label says which you're reading.
  */
-export function bestRate(truth: DropTruth): { text: string; source: "observed" | "wiki" | "none" } {
+export function bestRate(truth: DropTruth): ShownRate {
   if (truth.trustObserved && truth.observedRate !== undefined) {
-    return { text: dropRate(truth.observedRate), source: "observed" };
+    return { text: dropRate(truth.observedRate), source: "observed", value: truth.observedRate };
   }
-  if (truth.wikiRate) return { text: truth.wikiRate, source: "wiki" };
+  if (truth.wikiRate) return { text: truth.wikiRate, source: "wiki", value: percentValue(truth.wikiRate) };
   if (truth.observedRate !== undefined && truth.seen > 0) {
-    return { text: dropRate(truth.observedRate), source: "observed" };
+    return { text: dropRate(truth.observedRate), source: "observed", value: truth.observedRate };
   }
   return { text: "—", source: "none" };
+}
+
+/**
+ * The wiki's rate as a fraction. It arrives as a string (`"17.3%"`) because that is how the page
+ * writes it and `parse.ts` keeps figures verbatim — so the one place that needs to *compare* rates
+ * reads it back, rather than every page storing a second, derived copy.
+ */
+function percentValue(rate: string): number | undefined {
+  const m = /(\d+(?:\.\d+)?)\s*%/.exec(rate);
+  return m ? Number(m[1]) / 100 : undefined;
 }
 
 /**

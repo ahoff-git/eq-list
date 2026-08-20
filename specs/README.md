@@ -10,6 +10,7 @@ Start here, then branch out by area:
 - [architecture](./architecture/README.md) — how the pieces fit (Electron main ↔ renderer).
 - [log-watching](./log-watching/README.md) — tailing the EQ log and parsing loot lines.
 - [wiki-data](./wiki-data/README.md) — sourcing items/quests/recipes from eqlwiki.
+- [lucy-data](./lucy-data/README.md) — the borrowed second opinion, for names eqlwiki hasn't got.
 - [overlay-ui](./overlay-ui/README.md) — the control window and the floating overlay.
 - [map](./map/README.md) — the sibling map window that plots your live location.
 - [travel](./travel/README.md) — the zone-line graph behind "how do I get from here to there?".

@@ -20,6 +20,7 @@ import { resetPositions, setWindowToggles, windowToggles } from "./window-state"
 import { endWindowDrag, moveWindowDrag, startWindowDrag } from "./window-drag";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
+import type { LucyClient } from "./lucy";
 import type { LogWatcher } from "./log-watcher";
 import type { CombatTracker } from "./combat-stats";
 import type { CombatHistory } from "./combat-history";
@@ -44,6 +45,8 @@ const log = createLogger("ipc");
 export interface IpcContext {
   store: Store;
   wiki: WikiClient;
+  /** The supplementary item source, gated on `settings.askLucy` at this boundary. */
+  lucy: LucyClient;
   combat: CombatTracker;
   history: CombatHistory;
   /** Personal bests — the board, and wiping it. */
@@ -95,6 +98,7 @@ export function registerIpc(context: IpcContext): void {
   registerListIpc(context);
   registerSettingsIpc(context);
   registerWikiIpc(context);
+  registerLucyIpc(context);
   registerStatsIpc(context);
   registerAppIpc(context);
   registerWindowIpc(context, shared);
@@ -313,7 +317,41 @@ function registerWikiIpc(context: IpcContext): void {
     }
     return Promise.resolve();
   });
+}
 
+/**
+ * Lucy — the supplementary item source ([ADR 0124](../specs/decisions/0124-lucy-is-a-second-opinion.md)).
+ *
+ * Its own registrar rather than a tail on the wiki's, because it is its own subject: a different site,
+ * a different trust level, and — the part that needs a boundary — **a switch**.
+ *
+ * `settings.askLucy` is checked *here* and not inside the client, because "off" has to mean *this app
+ * makes no request to lucy.allakhazam.com*, and that is a promise the edge of the app can keep while a
+ * data module can only try to. Every handler answers empty rather than throwing when it's off, so no
+ * caller has to check first.
+ */
+function registerLucyIpc(context: IpcContext): void {
+  const { lucy, store } = context;
+  const asking = () => store.getSettings().askLucy;
+
+  ipcMain.handle(CH.lucySearch, (_e, term: string) => (asking() ? lucy.search(term) : []));
+  ipcMain.handle(CH.lucyGetItem, (_e, id: number) => (asking() ? lucy.getItem(id) : null));
+  // Cache-only, and still gated: with the switch off nothing new is fetched either way, but a user who
+  // turned Lucy off shouldn't keep meeting its cards on every item page.
+  ipcMain.handle(CH.lucyCachedByName, (_e, name: string) => (asking() ? lucy.cachedByName(name) : null));
+  // Host-validated like the wiki's, for the same reason: a URL handed to the OS gets checked first.
+  // `target` is Lucy's id when a page has been fetched and the item's **name** when it hasn't, which
+  // is what lets every item in the app carry a link without one request being made to find an id.
+  ipcMain.handle(CH.lucyOpen, (_e, target: number | string) => {
+    const url = lucy.itemUrl(target);
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:" && parsed.hostname === "lucy.allakhazam.com") return shell.openExternal(url);
+    } catch {
+      /* unreachable for a URL we generated, but the guard is the pattern rather than the check */
+    }
+    return Promise.resolve();
+  });
 }
 
 /**

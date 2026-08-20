@@ -10,8 +10,14 @@
  * that flip is measured from the anchor's **top** edge, which is what an earlier version got wrong
  * (it flipped relative to the bottom, landing the card on the name).
  *
- * Pure: rectangles in, a position out. No DOM, so the rule is a tested black box rather than
- * something to re-reason about in a layout effect.
+ * **In a narrow window it gets narrow rather than moving.** Below/above is the one fallback that,
+ * inside a *list*, still covers what you were reading — the rows either side of the one you pointed
+ * at. `besideWidth` says how much room there is beside the name, and a card capped to that says the
+ * same thing in a slimmer shape while covering nothing.
+ *
+ * Pure: rectangles in, a position out. No DOM — every length here is in the units a style is
+ * written in (`lib/screen.ts` converts the measurements), so the rule is a tested black box rather
+ * than something to re-reason about in a layout effect.
  */
 
 /** The on-screen box of the thing being explained — the hovered text. */
@@ -51,6 +57,31 @@ const EDGE = 6;
  */
 function besideTop(anchor: AnchorBox, card: Size, view: Size): number {
   return Math.max(EDGE, Math.min(anchor.top, view.height - card.height - EDGE));
+}
+
+/**
+ * The narrowest a card may be squeezed and still read as a stat card. Below this its lines wrap to a
+ * word each, and it stops being wider than the gap and starts being taller than the window.
+ */
+const MIN_BESIDE = 170;
+
+/**
+ * How wide a card may be if it's to sit **beside** the name, or `null` for "don't cap it".
+ *
+ * The overlay is a narrow window — 460px by default, and it can be dragged narrower — so a card at
+ * its full width fits beside almost nothing, and the rule above fell through to below/above for
+ * nearly every name in a list. That is the one placement a list can't afford: it covers the rows
+ * around the one you pointed at. Room beside the name is therefore worth taking at *less* than full
+ * width, and a card capped to the roomier side is then placed there by the rules above unchanged.
+ *
+ * Apply the result as the card's `max-width` **before** measuring it, so the size `placeTooltip` is
+ * given is the size the card will keep.
+ */
+export function besideWidth(anchor: AnchorBox, view: Size): number | null {
+  const room = Math.max(view.width - anchor.right - GAP - EDGE, anchor.left - GAP - EDGE);
+  // Under the floor neither side has a legible card in it, so leave the width alone and let the
+  // fallbacks have it: a two-word column beside the name is worse than a card below it.
+  return room >= MIN_BESIDE ? room : null;
 }
 
 /** Place `card` beside `anchor` without ever covering it, keeping it inside `view`. */

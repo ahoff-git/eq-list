@@ -17,6 +17,7 @@
  */
 import { parse, HTMLElement, type Node } from "node-html-parser";
 import { WIKI_BASE } from "./api";
+import { htmlToLines } from "../html-text";
 import type { WikiPage, ItemSource, WikiComponent, SourceKind, ItemCard, WikiReward } from "../../src/shared/types";
 
 const ELEMENT_NODE = 1;
@@ -390,17 +391,6 @@ function isInsideHb(el: HTMLElement): boolean {
   return false;
 }
 
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&#160;|&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#0*39;|&apos;/gi, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
-}
-
 /**
  * The item's own stat card — the `.itemtopbg`(title) + `.itemdata`(stats) block the
  * wiki shows on hover. Only the page's OWN card counts, so we skip any block nested
@@ -418,16 +408,7 @@ function parseItemCard(content: HTMLElement): ItemCard | undefined {
   const iconSrc = dataEl.querySelector(".itemicon img")?.getAttribute("src");
   const icon = iconSrc ? (iconSrc.startsWith("http") ? iconSrc : `${WIKI_BASE}${iconSrc}`) : undefined;
 
-  const text = decodeEntities(
-    dataEl.innerHTML
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/?p[^>]*>/gi, "\n")
-      .replace(/<[^>]+>/g, ""),
-  );
-  const lines = text
-    .split("\n")
-    .map((l) => l.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
+  const lines = htmlToLines(dataEl.innerHTML);
   if (!lines.length) return undefined;
 
   return { title, icon, lines };

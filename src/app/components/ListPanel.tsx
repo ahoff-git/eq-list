@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
-import { useShoppingList, useMatchFlashes, useCurrentZone } from "@/lib/hooks";
+import { useShoppingList, useMatchFlashes, useCurrentZone, useSettings } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import ItemLink, { NameList } from "./ItemLink";
+import { LucyLink } from "./LucySays";
 import { count } from "@/shared/format";
 import { Caret, caretGlyph, Empty } from "./ui";
 import {
@@ -36,6 +37,9 @@ export default function ListPanel() {
   const list = useShoppingList();
   const flashed = useMatchFlashes();
   const zone = useCurrentZone();
+  // Read once here and passed down, not read per row: `useSettings` costs an IPC read and a listener
+  // per instance, and a long list would pay one of each per item to learn a single flag.
+  const askLucy = useSettings()?.askLucy ?? true;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const groups = groupByOrigin(list.entries, list.questRuns);
@@ -130,6 +134,7 @@ export default function ListPanel() {
                       demands={demands.get(normalizeItemName(e.name)) ?? []}
                       flashing={flashed.has(e.id)}
                       currentZone={zone}
+                      askLucy={askLucy}
                     />
                   ))}
                 </div>
@@ -148,6 +153,7 @@ function EntryRow({
   demands,
   flashing,
   currentZone,
+  askLucy,
 }: {
   entry: ShoppingListEntry;
   runs: number;
@@ -155,6 +161,8 @@ function EntryRow({
   demands: ItemDemand[];
   flashing: boolean;
   currentZone: string | null;
+  /** Whether to offer the ↗ Lucy link. Passed rather than read here — see `ListPanel`. */
+  askLucy: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [sources, setSources] = useState<ItemSource[] | null>(null);
@@ -224,6 +232,10 @@ function EntryRow({
         >
           ↗
         </button>
+        {/* And the second opinion, beside it. By name rather than id — a list row has no Lucy id and
+            getting one would mean a request per row, which is exactly what a link doesn't need to do.
+            Not for a mob: Lucy is an item database, and a mob's name reliably finds nothing there. */}
+        {!isMob && <LucyLink target={entry.name} label="↗L" show={askLucy} />}
         {!isMob && (
           <>
             <button

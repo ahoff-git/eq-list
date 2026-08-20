@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS: Settings = {
   activeLogFile: "",
   matchMode: "exact",
   hideOutOfEra: false,
+  askLucy: true,
   connectPeers: false,
   shareLocation: false,
   playerName: "",

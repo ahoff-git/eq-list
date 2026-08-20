@@ -39,6 +39,12 @@ const api: EqlApi = {
     openInBrowser: (target) => ipcRenderer.invoke(CH.wikiOpen, target),
     refresh: () => ipcRenderer.invoke(CH.wikiRefresh),
   },
+  lucy: {
+    search: (term) => ipcRenderer.invoke(CH.lucySearch, term),
+    getItem: (id) => ipcRenderer.invoke(CH.lucyGetItem, id),
+    cachedByName: (name) => ipcRenderer.invoke(CH.lucyCachedByName, name),
+    openInBrowser: (target) => ipcRenderer.invoke(CH.lucyOpen, target),
+  },
   loot: {
     recent: (limit) => ipcRenderer.invoke(CH.lootRecent, limit),
     prices: () => ipcRenderer.invoke(CH.lootPrices),

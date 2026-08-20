@@ -152,6 +152,10 @@ button {
 .badge.kind-spell { color: #f29be0; }
 .badge.rarity { color: var(--accent); border-color: var(--accent-dim); margin-left: 6px; }
 .badge.era-out { color: var(--bad); border-color: var(--bad); }
+/* Lucy's era verdict is *derived*, so its "in era" is a question rather than the wiki's statement —
+   hence the quieter good colour, and a third state for "couldn't tell" (ADR 0124). */
+.badge.era-ok { color: var(--good); border-color: var(--border); }
+.badge.era-unknown { color: var(--text-dim); border-style: dashed; }
 .era-warning { color: var(--bad); margin-top: 8px; }
 
 .muted { color: var(--text-dim); }
@@ -166,7 +170,11 @@ button {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-width: 300px;
+  /* How wide it would like to be, against how much room there is beside the name. `besideWidth`
+     sets --tip-avail only when the two differ: in a narrow overlay a slimmer card still reads, and
+     it keeps the card off the rows above and below. */
+  --tip-want: 300px;
+  max-width: min(var(--tip-want), var(--tip-avail, var(--tip-want)));
   padding: 8px 10px;
   background: var(--bg-raised);
   border: 1px solid var(--accent-dim);
@@ -451,6 +459,18 @@ button {
 .page-card .pc-line { color: var(--text-dim); line-height: 1.4; }
 .page-card .pc-line:first-child { color: var(--text); font-weight: 500; }
 
+/* ── Lucy: a borrowed second opinion ─────────────────────────────
+   Set apart by a rule down the left rather than a box, because it belongs to the page it hangs off
+   and must still be unmistakably *not* the page — a claim from a different game (ADR 0124). */
+.lucy-says {
+  margin-top: 16px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.lucy-says .lucy-head { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
+.lucy-says .lucy-note { margin: 8px 0 2px; }
+.lucy-says .lucy-list { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
+
 /* ── shopping list ───────────────────────────────────────────── */
 .list {
   display: flex;
@@ -644,6 +664,41 @@ button {
   color: var(--accent);
   white-space: nowrap;
 }
+/* ── hunt, grouped by item (item → where to farm it, best rate first) ── */
+.hunt-item-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.hunt-item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+}
+.hunt-item-head .hi-name { font-weight: 600; }
+.hunt-place {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 6px 10px 6px 16px;
+  border-top: 1px solid var(--border);
+}
+/* The zone you're standing in, marked the same way its header is in the by-zone view. */
+.hunt-place.here { color: var(--good); }
+/* The rate leads the row because it's what the rows are ordered by — a fixed column so the
+   figures line up and the ordering can be read down rather than taken on trust. */
+.hunt-place .badge.rarity {
+  margin-left: 0;
+  min-width: 52px;
+  text-align: center;
+}
+.badge.rate-none { color: var(--text-dim); border-color: var(--border); }
+.hunt-place .hp-in { font-size: 11px; }
+
 .hunt-nosource { margin-top: 14px; }
 
 /* ── spawn timers (ADR 0092) ─────────────────────────────────── */

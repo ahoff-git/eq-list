@@ -114,3 +114,21 @@ test("nothing known from either side reads as nothing, not as zero", () => {
   assert.equal(bestRate(truth).text, "—");
   assert.equal(truth.observedRate, undefined);
 });
+
+test("the shown rate carries its own number, so ordering can't disagree with the badge", () => {
+  // The wiki's figure is a string on the page; the number beside it is the same claim, parsed.
+  const [thin] = reconcileDrops({ "Bone Chips": "20%" }, { "Bone Chips": 1 }, 2);
+  assert.equal(bestRate(thin).value, 0.2);
+  // Once observation leads, the number is the observation's — not the wiki's, which is what a
+  // sort that re-derived the rate for itself would get wrong.
+  const [solid] = reconcileDrops({ "Bone Chips": "20%" }, { "Bone Chips": 15 }, TRUST_OBSERVED_AFTER_KILLS * 2);
+  assert.equal(bestRate(solid).value, 0.5);
+  // A decimal in the wiki's wording survives; a rarity word carries no number at all.
+  const [decimal] = reconcileDrops({ Rare: "4.7%" }, {}, 0);
+  assert.equal(bestRate(decimal).value, 0.047);
+  const [worded] = reconcileDrops({ Mystery: "Always" }, {}, 0);
+  assert.equal(bestRate(worded).value, undefined);
+  // Nothing known from either side has no number to sort on — which is not the same as zero.
+  const [nothing] = reconcileDrops({ Mystery: undefined }, {}, 0);
+  assert.equal(bestRate(nothing).value, undefined);
+});

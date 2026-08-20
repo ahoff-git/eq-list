@@ -1,8 +1,10 @@
 "use client";
 import { api } from "@/lib/api";
+import { useLucyCard, useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/nav";
 import ItemDrops from "./ItemDrops";
 import ItemLink from "./ItemLink";
+import LucySays, { LucyLink } from "./LucySays";
 import MapLink, { ZoneLink } from "./MapLink";
 import MobKills from "./MobKills";
 import { AddButton } from "./ui";
@@ -30,6 +32,12 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
   // a `self` add (a mob is a thing to *kill*), and every add answers back with a toast naming the new
   // total needed, since the list it changes is on another tab.
   const addOne = (name: string, qty: number, wikiPath?: string) => void addItem({ name, needed: qty, wikiPath });
+  // Read for any page naming a thing you can hold, and **cache-only** — opening a wiki page must not
+  // put traffic on someone else's site. Read even when the block below won't show it, because the
+  // ↗ Lucy link is a better link when it has an id than when it has only a name.
+  const isThing = page.kind !== "mob" && page.kind !== "zone" && page.kind !== "spell";
+  const lucy = useLucyCard(isThing ? page.title : null);
+  const askLucy = useSettings()?.askLucy ?? true;
 
   const BLANK_ZONE = /^(various|unknown|none|n\/a)$/i;
   // The mob's zone, for coordinate clicks (open the map there + drop a marker).
@@ -102,6 +110,10 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
         <button className="btn ghost sm" title="Open on eqlwiki" onClick={() => api()?.wiki.openInBrowser(page.wikiPath)}>
           ↗ eqlwiki
         </button>
+        {/* Beside it, the second opinion — by Lucy's id when this page's item has been fetched, and by
+            name when it hasn't, so the offer doesn't depend on having asked first. Not for a mob, zone
+            or spell: Lucy is an item database. */}
+        {isThing && <LucyLink target={lucy?.id ?? page.title} show={askLucy} />}
       </div>
 
       {page.outOfEra && (
@@ -224,6 +236,14 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
           </ul>
         </>
       )}
+
+      {/* The Lucy *block*, but only for a **stub**: an item page eqlwiki has without a stat card, which
+          is a page that can't tell you what slot the thing goes in or who can wear it. Where the wiki
+          does have a card, its card is the answer and a second one from a later game would be noise —
+          the whole point of a third-rung source is that it fills gaps rather than competing
+          (ADR 0124). The ↗ Lucy link in the header is offered either way: a link is an offer, where a
+          block is an answer. */}
+      {lucy && !page.card && <LucySays item={lucy} />}
     </div>
   );
 }
