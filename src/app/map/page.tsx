@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import {
   useCurrentZone,
   useKills,
+  usePeerKills,
   useMaximized,
   usePlayerLoc,
   usePlayerTrail,
@@ -261,6 +262,9 @@ export default function MapWindow() {
 
   // Kills are re-read when the main process says the log changed — see `useKills`.
   const myKills = useKills(zoneKey);
+  // Peers' are read from the store, not from the room: they're filed as they arrive and kept, so the
+  // pooled half of the heatmap is here on a night nobody else is online (see `usePeerKills`).
+  const peerKills = usePeerKills(zoneKey);
   /**
    * **Everything recorded here, mine and peers' together.** A shared kill becomes an ordinary
    * `KillRecord` (`sharedAsKill`) so one filter and one list describe the whole map — they used to go
@@ -268,8 +272,8 @@ export default function MapWindow() {
    * half the markers. `shared: false` in the filters is what takes them out again.
    */
   const allKills = useMemo(
-    () => [...myKills, ...room.peerKills.filter((k) => zoneMatch(k.zone)).map(sharedAsKill)],
-    [myKills, room.peerKills, zoneMatch],
+    () => [...myKills, ...peerKills.filter((k) => zoneMatch(k.zone)).map(sharedAsKill)],
+    [myKills, peerKills, zoneMatch],
   );
   /**
    * The clock the kill window is measured against. A bounded window is a moving target and
@@ -538,7 +542,7 @@ export default function MapWindow() {
         <ResizablePanel id="map.mobs" share={40}>
           <MobKnowledgePanel
             zone={zoneKey}
-            refreshKey={`${myKills.length}:${room.peerKills.length}`}
+            refreshKey={`${myKills.length}:${peerKills.length}`}
             filters={killFilters}
             onFilters={setKillFilters}
             onMarkMob={markMobArea}

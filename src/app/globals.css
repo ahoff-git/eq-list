@@ -604,6 +604,13 @@ button {
 }
 .hunt-zone.here .hunt-zone-head { color: var(--good); }
 .hunt-zone-head .hz-name { font-weight: 600; }
+/* The wiki's level range: a fact about the zone, so it sits with the name rather than reading as a
+   badge the app worked out. Quiet, and never wraps the header. */
+.hunt-zone-head .hz-levels {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
 .hunt-mob {
   display: flex;
   gap: 10px;
@@ -2473,6 +2480,26 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Why a look has no ✕. Sits where the ✕ would, so the row's right edge stays a straight line whether
+   a style is sticky or not. */
+.style-row .style-lock {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  opacity: 0.55;
+  cursor: help;
+}
+
+/* One of the app's own alert sources — a loot drop, a spawn pop, a personal best. A `.style-row` with
+   a different middle: the same dot, name and 🎨, because it *is* a look plus a sentence, and reading
+   the two lists as one shape is the point. */
+.asources .asource { gap: 8px; }
+.asource .asource-name { flex: 0 0 auto; }
+/* How many things are armed. Right-aligned with the "worn by" column above it, so the two lists line
+   up down the same edge. */
+.asource .asource-armed { flex: 1 1 auto; text-align: right; white-space: nowrap; }
+/* Nothing armed: the row is a description of what *could* happen, so it says so quietly. */
+.asource .asource-armed.off { opacity: 0.6; font-style: italic; }
+
 /* The one editor, indented under whichever row opened it — the same shape a rule's drawer has, so
    "this belongs to the line above" reads the same way in both places. */
 .style-editor {
@@ -2577,6 +2604,10 @@ kbd {
   background: transparent;
   border: none;
   color: var(--text-dim);
+  /* The menu is a scrolling flex column, so an option has to keep its own height rather than be
+     shrunk to fit it: with the Hunt tab's 40 zones a shrinkable row collapses to a few pixels and
+     the labels crush together instead of the list scrolling. */
+  flex: 0 0 auto;
   padding: 4px 8px;
   border-radius: 5px;
   font-size: 12px;

@@ -73,6 +73,29 @@ unit-tested.
     clamping would have handed us), crossing bounds are a contradiction while a wide spread is only
     softness, a cleared field arrives as zero and zero is not a claim, and the tightest claim carries
     its source because two sources agreeing is not one guessing.
+  - `src/shared/levels.ts` → `electron/tests/levels.test.ts` — the same rules run **backwards**
+    ([ADR 0121](../decisions/0121-a-mob-is-a-range-of-levels.md)). A mob is a range rather than a
+    value, so `widen` is asserted directly against `tighten` in one test: the direction is the whole
+    difference, and getting it the wrong way round yields a figure that looks reasonable and excludes
+    a level you have personally seen. Plus the parts that *don't* change — an impossible reading
+    discarded without even crediting the sample count, one sighting worded as a sighting rather than
+    a range, and the wiki reconciled by **overlap**, since our range is only as wide as the considers
+    somebody happened to type.
+  - `src/shared/pooling.ts` → `electron/tests/pooling.test.ts` — what a figure built partly from
+    strangers is worth. Provenance is decided by **kills, not heads** (five people who killed it
+    twice don't outweigh one who killed it three hundred times), a pooled drop splits back into your
+    evidence and theirs, and a disagreement is **reported** with both figures intact. The tests that
+    matter most are the ones asserting it stays *quiet*: a difference between two small samples isn't
+    a disagreement, and a drop nobody else has seen isn't one either — a check that fires on noise is
+    one people learn to scroll past.
+  - `src/shared/contributors.ts` + `electron/contributions.ts` →
+    `electron/tests/contributions.test.ts` — who told us something and how it's kept
+    ([ADR 0120](../decisions/0120-a-contribution-is-keyed-by-who-made-it.md)). Touches a real temp
+    userData dir like the other stores', because surviving a restart *is* the feature. One test per
+    rule, each pinning something that reads as a bug when it's missing: two contributors sharing a
+    display name stay two, a report replaces rather than adds, **un-sharing keeps what it taught**
+    while `forget` is the retraction, a malformed row takes nothing else with it, and a rename
+    follows the contributor instead of splitting them.
   - `src/shared/spawn-timers.ts` → `electron/tests/spawn-timers.test.ts` (the respawn-learning
     rules, [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)): that
     the figure is the **shortest** gap and never the mean, that a later longer gap can't stretch it

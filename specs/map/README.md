@@ -388,8 +388,12 @@ world coordinates, so a map knows where it is. See
   trusting — only kills that were yours count, see
   [ADR 0027](../decisions/0027-only-your-kills-count.md)) and **roam areas** (the middle of where a mob died and how far that spreads, with a
   ±button that pins it on the map). Yours is derived from the kill log on demand;
-  peers' arrives over the room and is stored separately, so every figure can still say how much
-  of it you saw yourself. `src/shared/mob-stats.ts` does the rolling-up and the pooling; see
+  peers' arrives over the room and is stored separately, **keyed by contributor id rather than by
+  the name they announce**, so every figure can still say how much of it you saw yourself and whose
+  the rest is ([ADR 0120](../decisions/0120-a-contribution-is-keyed-by-who-made-it.md)).
+  `src/shared/mob-stats.ts` does the rolling-up and the pooling, `src/shared/pooling.ts` says what
+  a pooled figure is worth — whose it mostly is, and which drops your sample and the pool's plainly
+  disagree about, reported rather than resolved; see
   [ADR 0024](../decisions/0024-mob-knowledge.md).
 
   **Both directions of the panel point at the map.** Hovering a mob rings its kills, and hovering one
@@ -498,7 +502,10 @@ world coordinates, so a map knows where it is. See
   expand a row to see the individual kills (each still its own dot on the map).
   The **☣ toggle** shares your placed kills with the room (conclusion only: zone, position,
   mob, confidence) **and** your mob observations (counts, so pooled rates are just addition) —
-  one intent, one switch. Peers' kills draw outlined rather than filled. See
+  one intent, one switch. Peers' kills draw outlined rather than filled, and are **kept**: they're
+  filed by the main process as they arrive and read back with `usePeerKills`, so the pooled half of
+  the heatmap is here on a night nobody else is online, and no window has to be open to receive it
+  ([ADR 0120](../decisions/0120-a-contribution-is-keyed-by-who-made-it.md)). See
   [ADR 0023](../decisions/0023-kill-heatmap.md) and
   [ADR 0024](../decisions/0024-mob-knowledge.md).
 - **Connected users** (the 👥 toolbar panel, when connected) — everyone in the room,

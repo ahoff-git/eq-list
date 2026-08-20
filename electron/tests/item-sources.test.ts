@@ -27,7 +27,7 @@ function known(
     zone,
     kills,
     myKills: kills,
-    drops: Object.entries(drops).map(([item, count]) => ({ item, count, rate: count / kills })),
+    drops: Object.entries(drops).map(([item, count]) => ({ item, count, rate: count / kills, myCount: count })),
     lastAt: "2026-07-17T18:41:14",
     contributors: [],
     copper: 0,

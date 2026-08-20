@@ -18,6 +18,10 @@
  *   - [drop-truth.ts](./drop-truth.ts) — a rate that only leads once the sample is big enough, and
  *     says which source is speaking either way
  *     ([ADR 0025](../../specs/decisions/0025-observation-over-the-wiki.md)).
+ *   - [levels.ts](./levels.ts) — the levels a mob spawns at, read off considers. The one that runs
+ *     the rules **backwards**: a mob is a range rather than a value, so its bounds are widened by
+ *     evidence instead of tightened (see `widen`). Everything else is unchanged, which is the
+ *     argument for these being rules rather than arithmetic.
  *
  * The same five rules run through all three, and each is a *decision* rather than arithmetic —
  * which is why they are named functions with the reasoning attached rather than inline expressions:
@@ -77,6 +81,31 @@ export function plausible(value: number, range: Plausible): boolean {
 export function tighten(current: number | undefined, next: number, side: BoundSide): number {
   if (current === undefined) return next;
   return side === "upper" ? Math.min(current, next) : Math.max(current, next);
+}
+
+/**
+ * Fold an observation into a bound that has to **cover** every observation rather than constrain
+ * one — keeping whichever is looser.
+ *
+ * `tighten`'s mirror image, and the distinction is worth naming because getting it the wrong way
+ * round silently produces a figure that looks right and excludes the truth. Two different questions
+ * hide behind the word "bound":
+ *
+ *   - **A constraint.** "Your maximum hit points are at least 640." There is one true value; every
+ *     observation narrows where it can be, so evidence *tightens* and a bound only ever moves
+ *     inward.
+ *   - **A containment.** "This mob is level 12 to 17." There is no single true value — the mob is a
+ *     *range*, and each consider is one member of it. Evidence *widens*, and a bound only ever moves
+ *     outward, because a level you have actually seen is inside the range by definition.
+ *
+ * Same monotonicity, opposite direction, and the same consequence: a containment can never recover
+ * from a bad value either, so `plausible` still runs first and an implausible observation is still
+ * discarded rather than clamped. `undefined` means "nothing known yet", so the first observation is
+ * simply taken.
+ */
+export function widen(current: number | undefined, next: number, side: BoundSide): number {
+  if (current === undefined) return next;
+  return side === "upper" ? Math.max(current, next) : Math.min(current, next);
 }
 
 /**

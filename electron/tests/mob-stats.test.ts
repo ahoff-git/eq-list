@@ -134,7 +134,7 @@ test("the pooled view is one camp per place, named by the mapping table", () => 
   assert.equal(pooled.length, 1);
   assert.equal(pooled[0].kills, 13);
   assert.equal(pooled[0].myKills, 3);
-  assert.deepEqual(pooled[0].drops, [{ item: "Rat Ear", count: 6, rate: 0.462 }]);
+  assert.deepEqual(pooled[0].drops, [{ item: "Rat Ear", count: 6, rate: 0.462, myCount: 2 }]);
   // The table's name for the place, so it can't depend on which row happened to arrive first.
   assert.equal(pooled[0].zone, "Steamfont Mountains");
 });
@@ -222,7 +222,7 @@ test("a drop rate is drops over kills, and says how much of it you saw", () => {
   const [known] = mergeObservations(mine, []);
   assert.equal(known.kills, 4);
   assert.equal(known.myKills, 4);
-  assert.deepEqual(known.drops, [{ item: "Chunk of Meat", count: 1, rate: 0.25 }]);
+  assert.deepEqual(known.drops, [{ item: "Chunk of Meat", count: 1, rate: 0.25, myCount: 1 }]);
   assert.deepEqual(known.contributors, []);
 });
 
@@ -242,7 +242,7 @@ test("pooling a peer's observations sharpens the rate and records who helped", (
   const [known] = mergeObservations(mine, theirs);
   assert.equal(known.kills, 10);
   assert.equal(known.myKills, 1); // one of the ten was yours
-  assert.deepEqual(known.drops, [{ item: "Chunk of Meat", count: 3, rate: 0.3 }]);
+  assert.deepEqual(known.drops, [{ item: "Chunk of Meat", count: 3, rate: 0.3, myCount: 1 }]);
   assert.deepEqual(known.contributors, ["Bunnyslayer"]);
   assert.equal(known.lastAt, "2026-07-29T02:00:00.000Z"); // the freshest of the two
 });
@@ -346,7 +346,7 @@ function known(mob: string, zone: string, items: string[]): MobKnowledge {
     zone,
     kills: 10,
     myKills: 10,
-    drops: items.map((item) => ({ item, count: 1, rate: 0.1 })),
+    drops: items.map((item) => ({ item, count: 1, rate: 0.1, myCount: 1 })),
     lastAt: "2026-07-29T01:00:00.000Z",
     contributors: [],
     copper: 0,

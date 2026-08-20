@@ -42,6 +42,7 @@ import { BUILT_IN_STYLES } from "../src/shared/alert-styles";
 import type { CastAlertSettings, KillRecord } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
 import { writeJson } from "./json-store";
+import { contributorName, legacyContributorId } from "../src/shared/contributors";
 
 const log = createLogger("migrations");
 
@@ -99,6 +100,48 @@ export function runMigrations(userDataDir: string, logDir: string | undefined): 
   } catch (err) {
     log.error("built-in style seeding failed; settings left untouched", err);
   }
+  try {
+    keyKnowledgeByContributor(userDataDir);
+  } catch (err) {
+    log.error("contributor re-keying failed; pooled knowledge left untouched", err);
+  }
+}
+
+/**
+ * Re-key pooled observations from the display name they were filed under to a contributor id.
+ *
+ * The old file was `{ peers: { "Bob": [...] } }` — a name as a primary key, which is the thing
+ * `contributors.ts` exists to stop. The obvious alternative was to drop the file and let the pool
+ * refill, and it's the wrong one: those tallies are other people's kills, we were never the source,
+ * and nothing can rebuild them (`DATA_CONCERNS.peer-knowledge` calls that out as unrecoverable).
+ *
+ * So they are kept, under `name:bob` — an id that is honest about what it is. It says "whoever was
+ * calling themselves Bob", which is exactly as much as the old file ever knew, and it stops being
+ * used the moment that peer reports again under a real id: their new report files under the new key
+ * and the legacy row simply stops growing. That is a duplicate for as long as it lasts, and it's
+ * the right way to be wrong here — the alternative is throwing away months of somebody's kills to
+ * avoid double-counting a sample the reader can see the provenance of either way.
+ *
+ * `seenAt` is left **empty** rather than stamped with now: we have no idea when those reports
+ * arrived, and "just now" is a lie that would make a year-old tally look live.
+ */
+function keyKnowledgeByContributor(userDataDir: string): void {
+  const file = path.join(userDataDir, "mob-knowledge.json");
+  if (!fs.existsSync(file)) return;
+  const stored = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    peers?: Record<string, MobObservation[]>;
+    contributors?: Record<string, unknown>;
+  };
+  // Already re-keyed (or written by this build in the first place): nothing to do, every launch.
+  if (!stored.peers || stored.contributors) return;
+
+  const contributors: Record<string, { name: string; seenAt: string; data: MobObservation[] }> = {};
+  for (const [name, data] of Object.entries(stored.peers)) {
+    if (!Array.isArray(data) || !name.trim()) continue;
+    contributors[legacyContributorId(name)] = { name: contributorName(name), seenAt: "", data };
+  }
+  writeJson(file, { contributors }, { what: "mob knowledge", concern: "peer-knowledge" });
+  log.info("pooled knowledge re-keyed by contributor", { contributors: Object.keys(contributors).length });
 }
 
 /**

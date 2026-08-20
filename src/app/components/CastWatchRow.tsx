@@ -1,6 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
-import { alertStyle, OWN_STYLE as OWN, plan, styleWearers } from "@/shared/alert-styles";
+import { alertStyle, OWN_STYLE as OWN, plan, styleWearers, type AlertUsage } from "@/shared/alert-styles";
 import { wantsCast } from "@/shared/watch-conditions";
 import { summarizeWatch } from "@/shared/watch-summary";
 import { encodeWatches } from "@/shared/watch-share";
@@ -50,6 +50,7 @@ export default function CastWatchRow({
   onWear,
   onNameStyle,
   vocabulary,
+  usage,
 }: {
   watch: CastWatch;
   /** The whole group, for the defaults a per-watch style starts from and the list to compare against. */
@@ -72,11 +73,17 @@ export default function CastWatchRow({
   onNameStyle: () => void;
   /** The words this log uses, for completing a trigger as it's typed. */
   vocabulary: Vocabulary;
+  /**
+   * Who wears what outside the rules — so the note under the picker can tell the truth about a style
+   * shared with a spawn timer or a feature, which is exactly the case where an in-place edit would
+   * change something the player wasn't looking at.
+   */
+  usage?: AlertUsage;
 }) {
   const summary = summarizeWatch(w, ca.watches);
   const worst = summary.issues[0]?.level;
   const saved = ca.styles ?? [];
-  const editing = plan(ca, w);
+  const editing = plan(ca, w, usage);
 
   return (
     <div className={`watch ${open ? "open" : ""}`}>

@@ -373,6 +373,20 @@ features for later in [../ideas.md](../ideas.md).
   and confirm **no second copy** appears. Then the sole-wearer case: a style only one rule wears
   should edit in place with no copy at all. Finally a rule on the defaults — editing it should fork
   rather than quietly restyling every other rule that follows the defaults.
+- **The app's own alert sources, and their sticky looks.**
+  ([ADR 0120](../decisions/0120-a-feature-s-look-is-sticky.md).) The Alerts tab should list **Personal
+  bests**, **Spawn timers** and **Loot drops** above the looks, each naming the style it wears and how
+  many things are armed. Arm two list rows with 🔔 and confirm the Loot drops row says **2 list rows
+  armed** and the **Loot** style's own line says *worn by Loot drops* — the count is the whole point,
+  since it used to read `worn by 0`. Check all three sticky looks offer a 🔒 instead of a ✕, and that
+  their names are plain text rather than an editable field. Open the 🎨 on **Loot drops**, change the
+  colour, and confirm the Loot style in the list below changed too (it is the same style, and there is
+  still only ever one editor open). Then the fork: point a **rule** at the Loot style, open its 🎨,
+  read the note (it should say the look is what Loot drops wear and that changing it here makes a
+  copy), change the colour, and confirm a copy appeared and the loot banner is **still gold** — this
+  is the case that used to repaint every drop on the machine. Last, the honest edge: `notify` a list
+  row, delete nothing, and confirm the Records board can still point its celebration at another style
+  or at the alert defaults, with the Personal bests row following what it picked.
 - **Separate map scale.** Confirm the map window's A− / A+ move **only** the map and the main
   window's move only the main window (this was broken: Chromium's zoom is per-origin, so one number
   won for both — [ADR 0041](../decisions/0041-interface-scale-is-a-css-zoom-per-window.md)). At

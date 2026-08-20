@@ -123,10 +123,15 @@ shopping list.
   `electron/tests/zone-gazetteer.test.ts` is the review a re-supplied file has to pass.
 
 ## Non-responsibilities
-- No build-time data generation — data is fetched at runtime and cached
+- No build-time generation of **item, quest or recipe** data — that is fetched at runtime and cached
   (see [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md)); contrast the
-  `eql-buff-calc` sample which bakes JSON at build. The zone gazetteer above is the one shipped
-  table, and it is *supplied*, not generated.
+  `eql-buff-calc` sample which bakes JSON at build. The exceptions are all *facts about zones*, which
+  change about never and are wanted before anything is on screen: the supplied gazetteer above, plus
+  the generated tables under `src/shared/zones/` — which expansion a zone came with
+  ([ADR 0065](../decisions/0065-a-zone-belongs-to-an-expansion.md)), which zones it touches
+  ([ADR 0117](../decisions/0117-the-wiki-says-which-zones-touch.md)) and what level its monsters are
+  ([ADR 0122](../decisions/0122-a-zone-wears-its-levels.md)). The last two are read off the same zone
+  infobox by the same crawl (`scripts/lib/eqlwiki.mjs`), so a fourth row is a parser and a banner.
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
 - The **wiki's** drop rates live on the mob page (per loot line — a `(X%)` chance or a rarity

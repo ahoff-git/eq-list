@@ -2,20 +2,30 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { percent } from "@/shared/format";
-import { useLogVocabulary, useRead, useSettings } from "@/lib/hooks";
+import { useLogVocabulary, useRead, useSettings, useStyleUsage } from "@/lib/hooks";
 import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
 import AlertStyleFields from "./AlertStyleFields";
 import StyleRow from "./StyleRow";
+import AlertSourceRow from "./AlertSourceRow";
 import CastWatchRow, { type WatchPane } from "./CastWatchRow";
 import WatchLibrary from "./WatchLibrary";
 import WatchShare from "./WatchShare";
 import {
+  ALERT_SOURCES,
   alertStyle,
   applyStyleEdit,
+  defaultsUse,
+  describeUse,
   nameOwnStyle,
   newStyleId,
   nextStyleName,
   OWN_STYLE,
+  stickySource,
+  styleUse,
+  withoutStyle,
+  withStyleName,
+  type AlertSource,
+  type AlertUsage,
 } from "@/shared/alert-styles";
 import type { LibraryRule } from "@/shared/watch-library";
 import { CheckField } from "./ui";
@@ -24,11 +34,20 @@ import type { AlertStyle, CastWatch, DeepPartial, DisplayInfo, NamedAlertStyle, 
 /** A stable empty, so a render before the monitor list arrives doesn't look like a change. */
 const NO_DISPLAYS: DisplayInfo[] = [];
 
-/** The one thing open in the tab: a rule's drawer, the defaults' look, or a saved style's. */
+/**
+ * The one thing open in the tab: a rule's drawer, the defaults' look, a saved style's, or the look a
+ * feature that alerts without a rule wears.
+ *
+ * A `source` is its own kind rather than reusing `style`, even though both end up editing a saved
+ * style, because the editor opens **under the row that was clicked** — and a feature's row is in a
+ * different part of the tab from the style it wears. One editor still, in whichever of the two places
+ * you went looking for it (ADR 0090).
+ */
 type OpenTarget =
   | { kind: "rule"; id: string; pane: WatchPane }
   | { kind: "defaults" }
-  | { kind: "style"; id: string };
+  | { kind: "style"; id: string }
+  | { kind: "source"; id: string };
 
 /**
  * The **Alerts** tab: the rules, what they look like, and where on screen they land.
@@ -67,6 +86,14 @@ export default function AlertsPanel() {
    * rebuilding it per keystroke is exactly what the structure exists to avoid.
    */
   const vocabulary = useLogVocabulary();
+  /**
+   * Who wears which look **outside the alert settings** — the spawn timers and the armed list rows.
+   *
+   * Read here because this is the tab that has to be able to say "worn by 2 rules · Loot drops" and
+   * mean it. The high-score half of the answer is already in `Settings`, so it's folded in below
+   * rather than fetched twice.
+   */
+  const wearers = useStyleUsage();
 
   // After the hooks, never before them: an early return above would change the hook order.
   if (!settings) return <p className="muted">Loading alerts…</p>;
@@ -74,6 +101,12 @@ export default function AlertsPanel() {
   const patch = (p: DeepPartial<Settings>) => api()?.settings.update(p);
   // Cast alerts: watches are a whole-array replace (deepMerge swaps arrays wholesale).
   const ca = settings.castAlerts;
+  /**
+   * Everything wearing a look, in one object. The rules live in `ca`, so `styleUse` is handed that
+   * separately; this carries the three answers that don't — the celebration, the spawn board and the
+   * armed list rows.
+   */
+  const usage: AlertUsage = { ...wearers, highScores: settings.highScores };
   const setWatches = (watches: CastWatch[]) => patch({ castAlerts: { watches } });
   const updateWatch = (id: string, p: Partial<CastWatch>) =>
     setWatches(ca.watches.map((w) => (w.id === id ? { ...w, ...p } : w)));
@@ -106,6 +139,15 @@ export default function AlertsPanel() {
   // (`alert-styles.ts`), which is why the two live in different places and read differently.
   const setStyles = (styles: NamedAlertStyle[]) => patch({ castAlerts: { styles } });
   const saved = ca.styles ?? [];
+  /**
+   * The saved style one of the app's own alerts wears **today** — a question, not a constant. The
+   * celebration can be pointed at any style, or at the alert defaults, on the Records board; the other
+   * two are built on theirs. Absent means the defaults, and there is nothing here to edit.
+   */
+  const sourceLook = (source: AlertSource): NamedAlertStyle | undefined => {
+    const id = source.worn(usage);
+    return id ? saved.find((st) => st.id === id) : undefined;
+  };
   /** New style, copied from the defaults, **open** — making one and editing it are the same gesture. */
   const saveStyle = () => {
     const fresh = { id: newStyleId(saved), name: nextStyleName(saved), style: alertStyle(ca) };
@@ -122,7 +164,7 @@ export default function AlertsPanel() {
   const editWatchStyle = (id: string, over: Partial<AlertStyle>) => {
     const watch = ca.watches.find((w) => w.id === id);
     if (!watch) return;
-    const edit = applyStyleEdit(ca, watch, over);
+    const edit = applyStyleEdit(ca, watch, over, usage);
     patch({
       castAlerts: {
         styles: edit.styles,
@@ -154,12 +196,15 @@ export default function AlertsPanel() {
       },
     });
   };
-  const renameStyle = (id: string, name: string) => setStyles(saved.map((s) => (s.id === id ? { ...s, name } : s)));
+  // Renaming and deleting go through the shared guards, which refuse a **sticky** style: a feature is
+  // built on that look and its row in this tab names it, so a name that could drift is a row that
+  // could start lying (ADR 0120). The rows withhold the controls too — this is the floor under that.
+  const renameStyle = (id: string, name: string) => setStyles(withStyleName(saved, id, name));
   const updateStyle = (id: string, over: Partial<AlertStyle>) =>
     setStyles(saved.map((s) => (s.id === id ? { ...s, style: { ...s.style, ...over } } : s)));
   // A watch wearing a deleted style falls back to the defaults on its own (`alertStyle`), so the
   // rules that referenced it are left alone rather than rewritten behind the player's back.
-  const removeStyle = (id: string) => setStyles(saved.filter((s) => s.id !== id));
+  const removeStyle = (id: string) => setStyles(withoutStyle(saved, id));
   // Add a suggested watch, unless an identical substring is already on the list. A raw-text
   // suggestion ("invites you") is about what the game said, so it isn't also matched as a spell,
   // and it brings its own wording where EQ's sentence isn't one worth reading mid-fight.
@@ -231,6 +276,7 @@ export default function AlertsPanel() {
                 onWear={(choice) => wearStyle(w.id, choice)}
                 onNameStyle={() => nameWatchStyle(w.id)}
                 vocabulary={vocabulary}
+                usage={usage}
               />
             ))}
             <div className="row wrap" style={{ gap: 8, marginTop: 6 }}>
@@ -280,6 +326,52 @@ export default function AlertsPanel() {
               ))}
             </div>
 
+            {/* The three things that alert **without a rule**. They were missing from the tab named
+                after them, so the only way to learn a loot banner existed — let alone which look it
+                wore — was to read the source. No ✕ on any of them: they are part of the app, and
+                there is nothing for deleting the row to mean. */}
+            <div className="asources">
+              <span className="hint" style={{ display: "block", margin: "12px 0 6px" }}>
+                Alerts the app raises <b>by itself</b>, off what it saw rather than off a rule. Each is
+                armed where the thing being armed lives — 🔔 on a list row, 🔔 on a timer, a switch on
+                the Records board — and each wears a look you can change here. Those looks can be
+                restyled but not deleted or renamed: the feature is built on them.
+              </span>
+              {ALERT_SOURCES.map((source) => {
+                const worn = sourceLook(source);
+                return (
+                  <div key={source.id}>
+                    <AlertSourceRow
+                      source={source}
+                      usage={usage}
+                      style={worn?.style}
+                      styleName={worn?.name}
+                      open={open?.kind === "source" && open.id === source.id}
+                      onOpen={() =>
+                        setOpen(open?.kind === "source" && open.id === source.id ? null : { kind: "source", id: source.id })
+                      }
+                    />
+                    {open?.kind === "source" && open.id === source.id && worn && (
+                      <div className="style-editor">
+                        {/* Editing the style itself, not a copy — which is the point: "loot alerts
+                            should look like this" is one decision, and this is one of the two places
+                            it can be made (the other being the same style in the list below). */}
+                        <span className="hint" style={{ display: "block", marginBottom: 6 }}>
+                          “{worn.name}” is {describeUse(styleUse(ca, worn.id, usage))} — changing it here
+                          changes it for all of them.
+                        </span>
+                        <AlertStyleFields
+                          style={worn.style}
+                          locations={ca.locations}
+                          onChange={(over) => updateStyle(worn.id, over)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
             {/* Looks. **One editor is open in this whole tab at a time** — including the ones inside
                 a rule's 🎨 drawer — because the controls are identical wherever they appear, and
                 three of them on screen is three sets of colour swatches with nothing to say which
@@ -296,7 +388,7 @@ export default function AlertsPanel() {
               <StyleRow
                 name="Defaults"
                 style={alertStyle(ca)}
-                note={`worn by ${ca.watches.filter((w) => !w.styleId && !w.style).length}`}
+                note={describeUse(defaultsUse(ca, usage))}
                 open={open?.kind === "defaults"}
                 onOpen={() => setOpen(open?.kind === "defaults" ? null : { kind: "defaults" })}
               />
@@ -309,18 +401,23 @@ export default function AlertsPanel() {
               {/* A saved style is changed for **everyone wearing it** here; doing the same from
                   inside a rule forks instead ([ADR 0086]), which is why the two are different
                   places rather than one place with a mode. */}
-              {saved.map((s) => (
+              {saved.map((s) => {
+                // A look a feature is built on: restyle it freely, but there is no renaming it and
+                // nothing for deleting it to mean, so the row offers neither and says why (ADR 0120).
+                const sticky = stickySource(s.id);
+                return (
                 <div key={s.id}>
                   <StyleRow
                     name={s.name}
                     style={s.style}
-                    note={`worn by ${ca.watches.filter((w) => w.styleId === s.id).length}`}
+                    note={describeUse(styleUse(ca, s.id, usage))}
                     open={open?.kind === "style" && open.id === s.id}
                     onOpen={() =>
                       setOpen(open?.kind === "style" && open.id === s.id ? null : { kind: "style", id: s.id })
                     }
-                    onRename={(name) => renameStyle(s.id, name)}
-                    onRemove={() => removeStyle(s.id)}
+                    onRename={sticky ? undefined : (name) => renameStyle(s.id, name)}
+                    onRemove={sticky ? undefined : () => removeStyle(s.id)}
+                    locked={sticky ? `${sticky.label} are built on this look — it can be restyled, but not renamed or deleted.` : undefined}
                   />
                   {open?.kind === "style" && open.id === s.id && (
                     <div className="style-editor">
@@ -332,7 +429,8 @@ export default function AlertsPanel() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
               <button
                 className="btn sm"
                 style={{ marginTop: 4 }}

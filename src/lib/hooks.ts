@@ -25,12 +25,14 @@ import type {
   Unsubscribe,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
+import type { SharedKill } from "@/shared/kill-filters";
 import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
 import { huntTargetsFor, type HuntTarget } from "@/shared/hunt";
 import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { knownItems, type KnownItem } from "@/shared/known-items";
 import { clockSkew } from "@/shared/spawn-timers";
+import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
 
@@ -392,13 +394,22 @@ export function useKnownItems(): KnownItem[] {
   return useMemo(() => knownItems(looted, mobs), [looted, mobs]);
 }
 
-/** Sum two zones' drop counts for the same mob, then re-derive the rates from the total. */
+/**
+ * Sum two zones' drop counts for the same mob, then re-derive the rates from the total.
+ *
+ * Your own share is summed alongside the total rather than dropped, for the same reason the merge
+ * carries it in the first place: a rate that has lost track of how much of it you witnessed can't be
+ * checked against anybody, and folding two zones together is not a reason to stop being able to.
+ */
 function mergeDropLists(a: MobKnowledge, b: MobKnowledge): MobKnowledge["drops"] {
   const kills = a.kills + b.kills;
-  const counts = new Map<string, number>();
-  for (const d of [...a.drops, ...b.drops]) counts.set(d.item, (counts.get(d.item) ?? 0) + d.count);
+  const counts = new Map<string, { count: number; myCount: number }>();
+  for (const d of [...a.drops, ...b.drops]) {
+    const sum = counts.get(d.item) ?? { count: 0, myCount: 0 };
+    counts.set(d.item, { count: sum.count + d.count, myCount: sum.myCount + d.myCount });
+  }
   return [...counts.entries()]
-    .map(([item, count]) => ({ item, count, rate: ratio(count, kills, 3) }))
+    .map(([item, { count, myCount }]) => ({ item, count, myCount, rate: ratio(count, kills, 3) }))
     .sort((x, y) => y.rate - x.rate || x.item.localeCompare(y.item));
 }
 
@@ -419,6 +430,55 @@ export function useKills(zone: string | undefined): KillRecord[] {
     NO_KILLS,
     [zone],
   );
+}
+
+/**
+ * Kill positions peers have shared for a place — the other half of the heatmap.
+ *
+ * Read from the store rather than from the room, and that is the whole change: these used to be
+ * React state in the map window, so they existed only while it was open and only for as long as the
+ * connection held. They are now filed as they arrive by the main process
+ * ([contributions.ts](../../electron/contributions.ts)), which means the map draws everything anyone
+ * has ever shared with this install — including on an evening when nobody else is online.
+ */
+export function usePeerKills(zone: string | undefined): SharedKill[] {
+  return useFollowedRead<SharedKill[]>(
+    (a) => a.peers.kills(zone),
+    (a, reload) => a.peers.onChanged(reload),
+    NO_PEER_KILLS,
+    [zone],
+  );
+}
+
+/** Stable empty, so a window with nothing pooled doesn't rerender on every read. */
+const NO_PEER_KILLS: SharedKill[] = [];
+
+/**
+ * Who wears a saved style **outside the alert settings** — the spawn timers and the armed list rows.
+ *
+ * The Saved styles list has to be able to say "worn by 2 rules · Loot drops" and mean it, and half of
+ * that answer lives in stores the Alerts tab otherwise has no reason to read (`AlertUsage`). The
+ * high-score half is already in `Settings`, so the panel adds it — this hook fetches only what needs
+ * fetching.
+ *
+ * A read of its own rather than `useSpawns`, which pulses once a second to move its countdowns: what
+ * this wants is the *choice* each timer has made, and re-rendering the Alerts tab at 1Hz to learn
+ * nothing new would be a bad trade for one line of text.
+ */
+export function useStyleUsage(): AlertUsage {
+  const spawns = useFollowedRead<SpawnView>(
+    (a) => a.spawns.view(),
+    (a, reload) => a.spawns.onChanged(reload),
+    NO_SPAWNS,
+    [],
+  );
+  const list = useShoppingList();
+  // A mob entry never offers the 🔔 — nothing drops it — so it can't be armed and mustn't be counted.
+  const lootArmed = useMemo(
+    () => list.entries.filter((e) => e.notify && e.kind !== "mob").length,
+    [list],
+  );
+  return useMemo(() => ({ spawns: spawns.known, lootArmed }), [spawns, lootArmed]);
 }
 
 /**

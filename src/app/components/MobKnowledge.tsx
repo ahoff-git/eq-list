@@ -82,8 +82,15 @@ export default function MobKnowledgePanel({
     const load = () => void a.mobs.all(zone).then(setAll);
     load();
     // Refetch when the kill log changes in bulk (an imported "eaten" log / a clear), not only
-    // when the caller's zone/refreshKey ticks — otherwise digested data waits for a reopen.
-    return a.kills.onChanged(load);
+    // when the caller's zone/refreshKey ticks — otherwise digested data waits for a reopen. And
+    // again when a contribution is filed or forgotten: pooled rates are half somebody else's, so a
+    // peer's report moves this panel's numbers without anything of ours having changed.
+    const stopKills = a.kills.onChanged(load);
+    const stopPeers = a.peers.onChanged(load);
+    return () => {
+      stopKills();
+      stopPeers();
+    };
   }, [zone, refreshKey]);
 
   if (all.length === 0) {

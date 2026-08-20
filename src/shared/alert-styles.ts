@@ -20,10 +20,26 @@
  * that doesn't fork is a style **nobody else wears**, where there is no one to protect and forking
  * would only litter the list with near-identical copies.
  *
+ * A **feature's** look is the same question in different clothes. Three things alert with no rule at
+ * all — a personal best, a spawn window opening, a tracked item dropping — and each is built on a
+ * style the app ships (`ALERT_SOURCES`). They *wear* it, so they count as wearers, which is what the
+ * old rules-only count was missing; and a feature cannot be without a look, so its style is
+ * **sticky** — restyle it freely, but there is no deleting or renaming it (ADR 0120).
+ *
  * `plan` decides; the caller applies. Pure, so both halves are testable without a browser, and so
  * the panel can *say* which of the three is about to happen before the player commits to it.
  */
-import type { AlertLocation, AlertPositionValue, AlertStyle, CastAlertSettings, CastWatch, NamedAlertStyle } from "./types";
+import type {
+  AlertLocation,
+  AlertPositionValue,
+  AlertStyle,
+  CastAlertSettings,
+  CastWatch,
+  HighScoreSettings,
+  KnownSpawn,
+  NamedAlertStyle,
+} from "./types";
+import { count } from "./format";
 
 /**
  * Anything that can wear a look: a saved style by id, its own layer, or neither.
@@ -88,7 +104,13 @@ export type StyleEditMode =
   /** It wears something shared — a saved style with other wearers, or the defaults: fork. */
   | "fork";
 
-/** How many rules wear this saved style. Shown beside it, so "shared" is never a surprise. */
+/**
+ * How many **rules** wear this saved style. Shown in a rule's own picker, where rules are all that
+ * is being chosen between.
+ *
+ * Rules are not the whole answer to "who wears this" — a feature wears one too — so anything asking
+ * in order to decide something (whether an edit forks, whether a ✕ is safe) wants `styleUse`.
+ */
 export function styleWearers(settings: CastAlertSettings, styleId: string): number {
   return settings.watches.filter((w) => w.styleId === styleId).length;
 }
@@ -102,22 +124,40 @@ export function wornStyle(settings: CastAlertSettings, watch: CastWatch): NamedA
  * What changing this rule's look will do, and the sentence to say so with.
  *
  * A rule on **the defaults** forks too: the defaults are every rule's fallback, so editing them from
- * one rule is the same overreach as editing a shared style from one rule.
+ * one rule is the same overreach as editing a shared style from one rule. A rule on a **sticky**
+ * style forks for exactly that reason as well — a feature is built on that look, and "make this rule
+ * green" must not repaint every loot banner on the machine.
+ *
+ * `usage` sharpens the middle case, where a style is shared with something that isn't a rule: a
+ * spawn timer wearing a hand-made style is a wearer, and without it the edit would change how that
+ * timer looks with nothing said. Optional because a caller may not have it, and the answer without
+ * it errs towards forking, which is the direction that protects somebody.
  */
-export function plan(settings: CastAlertSettings, watch: CastWatch): { mode: StyleEditMode; note: string } {
+export function plan(
+  settings: CastAlertSettings,
+  watch: CastWatch,
+  usage: AlertUsage = {},
+): { mode: StyleEditMode; note: string } {
   const worn = wornStyle(settings, watch);
   if (!worn) {
     if (watch.style) return { mode: "own", note: "This rule has a look of its own. Changes stay here." };
     return { mode: "fork", note: "Changing this makes a new saved style for this rule — the defaults are shared." };
   }
-  const wearers = styleWearers(settings, worn.id);
-  if (wearers > 1) {
+  const sticky = stickySource(worn.id);
+  if (sticky) {
     return {
       mode: "fork",
-      note: `${wearers} rules wear “${worn.name}”, so changing it here makes a copy for this one. To change it for all of them, edit it under Saved styles.`,
+      note: `“${worn.name}” is the look ${sticky.label} wear, so changing it here makes a copy for this rule. To change how they look, edit it under Saved styles.`,
     };
   }
-  return { mode: "in-place", note: `Editing “${worn.name}”. No other rule wears it.` };
+  const use = styleUse(settings, worn.id, usage);
+  if (use.total > 1) {
+    return {
+      mode: "fork",
+      note: `“${worn.name}” is ${describeUse(use)}, so changing it here makes a copy for this one. To change it for all of them, edit it under Saved styles.`,
+    };
+  }
+  return { mode: "in-place", note: `Editing “${worn.name}”. Nothing else wears it.` };
 }
 
 /** Both halves of an edit: the style list as it should now be, and the patch for the rule. */
@@ -139,9 +179,10 @@ export function applyStyleEdit(
   settings: CastAlertSettings,
   watch: CastWatch,
   over: Partial<AlertStyle>,
+  usage: AlertUsage = {},
 ): StyleEdit {
   const styles = settings.styles ?? [];
-  const { mode } = plan(settings, watch);
+  const { mode } = plan(settings, watch, usage);
 
   if (mode === "own") {
     return { styles, watch: { style: { ...watch.style, ...over } } };
@@ -204,6 +245,295 @@ export function newStyleId(styles: NamedAlertStyle[]): string {
 }
 
 /**
+ * A feature that raises an alert **by itself** — off what the app observed, with no rule involved.
+ *
+ * There are three (a personal best, a spawn window opening, a tracked item dropping) and they were
+ * three unrelated call sites into `alertStyle`, each naming a built-in style id inline. Nothing said
+ * they were the same kind of thing, and two consequences followed from that:
+ *
+ *   - The Saved styles list counted **rules only**, so the look every loot alert wears read *worn by
+ *     0* and offered a ✕ promising that "rules wearing it fall back to the defaults" — which is to
+ *     say, nothing will happen. It was not true, and the count is what made it not true.
+ *   - The Alerts tab listed the rules and nothing else, so the three features that alert *without* a
+ *     rule were invisible in the tab named after them.
+ *
+ * Naming them answers both in one place: `wears` is what the count was missing, `armed` is what the
+ * row says, and being on this list is what makes a style **sticky** — see `stickySource`.
+ *
+ * `wears` and `armed` are separate questions on purpose. Wearing is a *setting* ("its pop looks like
+ * this"); arming is a switch that flips whenever the player likes. A style is worn by a timer that is
+ * currently silent, and deleting it would still change how that timer looks the moment it speaks.
+ */
+export interface AlertSource {
+  /** Stable key — the row's React key, and what a test names. */
+  id: "record" | "spawn" | "loot";
+  /** What the Alerts tab calls it. */
+  label: string;
+  /** What sets it off, and **where its on/off lives** — the one thing its row can't show inline. */
+  hint: string;
+  /** The look it ships with: an ordinary saved style, and the one it may never be stripped of. */
+  style: NamedAlertStyle;
+  /** What one of its armed things is ("list row"), for `count`. Absent when it is a single switch. */
+  unit?: string;
+  /**
+   * The saved style its alerts wear today, by id — absent means the alert defaults, which only the
+   * celebration can be pointed at.
+   *
+   * Reads `usage` where the choice is the player's, and falls back to **the shipped arrangement**
+   * where `usage` wasn't supplied: a caller holding only `castAlerts` (a rule's own style picker)
+   * still gets the right answer for the ordinary case, and errs towards "shared", which is the safe
+   * direction for a fork decision.
+   */
+  worn: (usage: AlertUsage) => string | undefined;
+  /**
+   * How many of its things wear this style. Absent when the source is **one look for the whole
+   * feature** and `worn` already answers it — only the spawn board needs its own count, its timers
+   * choosing one each. Call it through `sourceWears`, never directly.
+   */
+  wears?: (styleId: string, usage: AlertUsage) => number;
+  /** How many of its things would actually speak right now. */
+  armed: (usage: AlertUsage) => number;
+}
+
+/** How many of this source's things wear a style: its own count where it keeps one, `worn` otherwise. */
+export function sourceWears(source: AlertSource, styleId: string, usage: AlertUsage): number {
+  if (source.wears) return source.wears(styleId, usage);
+  return source.worn(usage) === styleId ? 1 : 0;
+}
+
+/** A spawn timer, as the style questions see it: what it wears, and whether it is armed. */
+export type SpawnWearer = Pick<KnownSpawn, "notify" | "styleId">;
+
+/**
+ * Who is wearing what **outside `castAlerts`** — the scoreboard's celebration, the spawn board and
+ * the shopping list, each of which lives in a store of its own.
+ *
+ * Every field is optional and every reader has a fallback, because the callers know different
+ * amounts: the Alerts tab gathers all of it, a rule's style picker has only the settings it was
+ * handed. An absent field means *unknown*, never *none*.
+ */
+export interface AlertUsage {
+  /** The scoreboard's celebration: whether it speaks, and which saved style it points at. */
+  highScores?: HighScoreSettings;
+  /** Every spawn timer the board knows about. */
+  spawns?: readonly SpawnWearer[];
+  /** How many list rows asked to be told when they drop (`ShoppingListEntry.notify`). */
+  lootArmed?: number;
+}
+
+/**
+ * The looks the app ships with, so the three things that can raise a banner don't all arrive
+ * looking like the same emergency.
+ *
+ * A cast alert is a **warning** — dispel now — and keeps the red defaults. A **record** and a
+ * **spawn** are news: nothing is on fire, they belong somewhere other than dead centre of the
+ * warning's spot, and telling them apart at a glance is the whole point of a colour. Getting that
+ * out of the box matters more than it sounds, because the alternative is that the feature looks
+ * broken-by-sameness until someone goes and builds two styles by hand.
+ *
+ * They are **ordinary saved styles**: they sit in the Alerts tab's list like any other, are edited
+ * with the same six controls, and anything else may wear them. That is what keeps
+ * [ADR 0090](../../specs/decisions/0090-one-style-editor-at-a-time.md)'s "one editor, in one place"
+ * true — a built-in look the player couldn't reach would be a second wardrobe by another name.
+ *
+ * What they are *not* is deletable or renameable
+ * ([ADR 0120](../../specs/decisions/0120-a-feature-s-look-is-sticky.md)): a feature is built on the
+ * look, its row in the Alerts tab names it, and a name that can drift is a row that can start lying.
+ * Restyling one is the whole point and stays wide open.
+ *
+ * The ids are namespaced so a hand-made style can never collide with one, and so a build that adds
+ * another can tell what it has already seeded.
+ */
+export const RECORD_STYLE_ID = "built-in:record";
+export const SPAWN_STYLE_ID = "built-in:spawn";
+export const LOOT_STYLE_ID = "built-in:loot";
+
+export const ALERT_SOURCES: AlertSource[] = [
+  {
+    id: "record",
+    label: "Personal bests",
+    hint: "A record falling. Switched on in the Records tab, which is also where it can be pointed at a different saved style.",
+    // One switch for a whole board, so no unit: its row says on or off.
+    armed: (u) => ((u.highScores?.celebrate ?? true) ? 1 : 0),
+    // The only source whose look is a *choice*, so the only one that can be wearing something else —
+    // including the alert defaults, which are no saved style at all.
+    worn: (u) => (u.highScores ? u.highScores.styleId : RECORD_STYLE_ID),
+    style: {
+      id: RECORD_STYLE_ID,
+      name: "Record",
+      // Gold, and it does not flash: a personal best is worth a moment of pleasure, not a jolt.
+      style: {
+        sound: true,
+        flash: false,
+        color: "#f0b429",
+        soundName: "chime",
+        position: "top",
+        durationMs: 6000,
+        animation: "float",
+      },
+    },
+  },
+  {
+    id: "spawn",
+    label: "Spawn timers",
+    hint: "A named you were timing coming back. 🔔 on a timer arms it, and a timer may wear a saved style of its own instead of this one.",
+    unit: "timer",
+    armed: (u) => u.spawns?.filter((s) => s.notify).length ?? 0,
+    // A timer that picked nothing wears this, which is the fallback `spawn-tracker` applies — so it is
+    // what the row names, and what a timer's own picker starts from.
+    worn: () => SPAWN_STYLE_ID,
+    // The one source with a look *per thing*, so the only one that counts its own wearers.
+    wears: (styleId, u) =>
+      u.spawns
+        ? u.spawns.filter((s) => (s.styleId ?? SPAWN_STYLE_ID) === styleId).length
+        : styleId === SPAWN_STYLE_ID
+          ? 1
+          : 0,
+    style: {
+      id: SPAWN_STYLE_ID,
+      name: "Spawn timer",
+      // Green, out of the warning's way, and it lingers: a pop is news you may be a few seconds late
+      // to notice, where a dispel prompt is useless the moment it is missed.
+      style: {
+        sound: true,
+        flash: false,
+        color: "#46c86b",
+        soundName: "chirp",
+        position: "top-right",
+        durationMs: 10000,
+        animation: "pulse",
+      },
+    },
+  },
+  {
+    id: "loot",
+    label: "Loot drops",
+    hint: "Something on your list dropping. 🔔 on a list row arms it, and every armed row wears this look — there is no style per row (ADR 0105).",
+    unit: "list row",
+    armed: (u) => u.lootArmed ?? 0,
+    // Not a choice at all: `lootAlert` names this style outright, so the answer needs no data and
+    // cannot be stale. One wearer — the feature — however many rows are armed behind it.
+    worn: () => LOOT_STYLE_ID,
+    style: {
+      id: LOOT_STYLE_ID,
+      name: "Loot",
+      // Gold-ish and short: a drop is news you are looking at the screen for anyway (you just looted
+      // it), so it wants a moment of pleasure rather than the lingering "get over here" a pop needs.
+      // It does not flash — the one thing you are doing when this fires is reading a loot window.
+      style: {
+        sound: true,
+        flash: false,
+        color: "#d4a03c",
+        soundName: "levelup",
+        position: "top-right",
+        durationMs: 5000,
+        animation: "float",
+      },
+    },
+  },
+];
+
+/** The shipped looks, for seeding a settings file that hasn't got them (`electron/migrations.ts`). */
+export const BUILT_IN_STYLES: NamedAlertStyle[] = ALERT_SOURCES.map((s) => s.style);
+
+/**
+ * The feature built on this style, if any — which is what makes it **sticky**: un-deletable and
+ * un-renameable, however freely it may be restyled.
+ *
+ * Derived from `ALERT_SOURCES` rather than kept as a second list of ids, so a fourth source makes its
+ * look sticky just by arriving. Asked by the Alerts tab (to withhold the ✕ and the name field) and by
+ * `plan`, where a rule editing a feature's look has to fork — "make *this* rule green" must not
+ * repaint every loot banner on the machine.
+ */
+export function stickySource(styleId: string): AlertSource | undefined {
+  return ALERT_SOURCES.find((s) => s.style.id === styleId);
+}
+
+/**
+ * A source's live state in a few words: `2 list rows armed`, `nothing armed`, or a plain `on`/`off`
+ * for a source that is one switch.
+ *
+ * Words rather than a bare number, because a `0` beside a row is ambiguous in exactly the way this
+ * whole change is about: it reads as *broken* as readily as *nothing asked for it*.
+ */
+export function describeArmed(source: AlertSource, usage: AlertUsage): string {
+  const armed = source.armed(usage);
+  if (!source.unit) return armed ? "on" : "off";
+  return armed ? `${count(armed, source.unit)} armed` : "nothing armed";
+}
+
+/**
+ * Everything wearing a saved style — the rules, **and** the features that alert without one.
+ *
+ * The count is not a nicety. It is what the ✕ beside a style means ("who am I about to change?") and
+ * what `plan` reads to decide whether an edit from one rule must fork. Counting rules alone got both
+ * wrong in the same direction — towards *nobody is watching* — which is the worse way to be wrong
+ * about a shared thing.
+ */
+export interface StyleUse {
+  /** Cast-alert rules wearing it. */
+  rules: number;
+  /** The features wearing it, by label — "Loot drops", "Spawn timers". */
+  features: string[];
+  /** Everything, counted. More than one means an edit from a single rule has to fork. */
+  total: number;
+}
+
+export function styleUse(settings: CastAlertSettings, styleId: string, usage: AlertUsage = {}): StyleUse {
+  const rules = styleWearers(settings, styleId);
+  const worn = ALERT_SOURCES.map((s) => ({ source: s, count: sourceWears(s, styleId, usage) })).filter(
+    (w) => w.count > 0,
+  );
+  return {
+    rules,
+    features: worn.map((w) => w.source.label),
+    total: rules + worn.reduce((n, w) => n + w.count, 0),
+  };
+}
+
+/**
+ * Who wears **the defaults** — the rules that picked nothing, and any source pointed at no saved style.
+ *
+ * Its own function because the defaults have no id to search on: a rule wears them by having neither
+ * field set, and a source by `worn` answering nothing at all. Worth stating rather than leaving the
+ * row to count rules, since the celebration *can* be pointed here from the Records board, and the
+ * defaults are the one look where "who else wears this" has always mattered most.
+ */
+export function defaultsUse(settings: CastAlertSettings, usage: AlertUsage = {}): StyleUse {
+  const rules = settings.watches.filter((w) => !w.styleId && !w.style).length;
+  const features = ALERT_SOURCES.filter((s) => s.worn(usage) === undefined);
+  return { rules, features: features.map((s) => s.label), total: rules + features.length };
+}
+
+/** The line beside a style in the list: `worn by 2 rules · Loot drops`, or `worn by nobody`. */
+export function describeUse(use: StyleUse): string {
+  const parts = [...(use.rules ? [count(use.rules, "rule")] : []), ...use.features];
+  return parts.length ? `worn by ${parts.join(" · ")}` : "worn by nobody";
+}
+
+/**
+ * Drop a saved style. A **sticky** one survives: a feature is built on it, and there is nothing for
+ * the deletion to mean except "make that feature look like a dispel warning again".
+ *
+ * Here rather than in the panel so the rule has one home, and so the list the panel writes and the
+ * list a test asserts on are produced by the same code. The panel also withholds the ✕ — this is the
+ * floor under that, not a substitute for it.
+ */
+export function withoutStyle(styles: NamedAlertStyle[], id: string): NamedAlertStyle[] {
+  if (stickySource(id)) return styles;
+  return styles.filter((s) => s.id !== id);
+}
+
+/**
+ * Rename a saved style. A **sticky** one keeps the name it shipped with: its feature's row in the
+ * Alerts tab says "wears Loot", and a name that can drift is a row that can start lying.
+ */
+export function withStyleName(styles: NamedAlertStyle[], id: string, name: string): NamedAlertStyle[] {
+  if (stickySource(id)) return styles;
+  return styles.map((s) => (s.id === id ? { ...s, name } : s));
+}
+
+/**
  * Where on the overlay something anchored to `position` should sit: a preset class, or — for a
  * `loc:<id>` custom spot — the placed fraction as an absolute point, centred on it.
  *
@@ -226,74 +556,3 @@ export function alertPlacement(
   }
   return { className: `pos-${position}` };
 }
-
-/**
- * The looks the app ships with, so the three things that can raise a banner don't all arrive
- * looking like the same emergency.
- *
- * A cast alert is a **warning** — dispel now — and keeps the red defaults. A **record** and a
- * **spawn** are news: nothing is on fire, they belong somewhere other than dead centre of the
- * warning's spot, and telling them apart at a glance is the whole point of a colour. Getting that
- * out of the box matters more than it sounds, because the alternative is that the feature looks
- * broken-by-sameness until someone goes and builds two styles by hand.
- *
- * They are **ordinary saved styles**, not a private wardrobe: they appear in the Alerts tab's list
- * like any other, can be edited, renamed or deleted, and anything else may wear them. That is what
- * keeps [ADR 0090](../../specs/decisions/0090-one-style-editor-at-a-time.md)'s "one editor, in one
- * place" true — a built-in look the player couldn't reach would be a second wardrobe by another
- * name.
- *
- * The ids are namespaced so a hand-made style can never collide with one, and so a build that adds
- * another can tell what it has already seeded.
- */
-export const RECORD_STYLE_ID = "built-in:record";
-export const SPAWN_STYLE_ID = "built-in:spawn";
-export const LOOT_STYLE_ID = "built-in:loot";
-
-export const BUILT_IN_STYLES: NamedAlertStyle[] = [
-  {
-    id: RECORD_STYLE_ID,
-    name: "Record",
-    // Gold, and it does not flash: a personal best is worth a moment of pleasure, not a jolt.
-    style: {
-      sound: true,
-      flash: false,
-      color: "#f0b429",
-      soundName: "chime",
-      position: "top",
-      durationMs: 6000,
-      animation: "float",
-    },
-  },
-  {
-    id: SPAWN_STYLE_ID,
-    name: "Spawn timer",
-    // Green, out of the warning's way, and it lingers: a pop is news you may be a few seconds late
-    // to notice, where a dispel prompt is useless the moment it is missed.
-    style: {
-      sound: true,
-      flash: false,
-      color: "#46c86b",
-      soundName: "chirp",
-      position: "top-right",
-      durationMs: 10000,
-      animation: "pulse",
-    },
-  },
-  {
-    id: LOOT_STYLE_ID,
-    name: "Loot",
-    // Gold-ish and short: a drop is news you are looking at the screen for anyway (you just looted
-    // it), so it wants a moment of pleasure rather than the lingering "get over here" a pop needs.
-    // It does not flash — the one thing you are doing when this fires is reading a loot window.
-    style: {
-      sound: true,
-      flash: false,
-      color: "#d4a03c",
-      soundName: "levelup",
-      position: "top-right",
-      durationMs: 5000,
-      animation: "float",
-    },
-  },
-];

@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { ringMob } from "@/lib/showOnMap";
 import { buildHunt, huntHasWork, huntInputsFor, huntZoneOptions, neededEntries } from "@/shared/hunt";
 import { zoneMatches } from "@/shared/sources";
+import { zoneLevelText, zoneLevelWhy, zoneLevels } from "@/shared/zones/levels";
 import { distinct } from "@/shared/sorting";
 import { CheckField, Empty } from "./ui";
 import type { Zone } from "@/shared/map/types";
@@ -153,12 +154,20 @@ export default function HuntPanel({
 
       {zones.map((z) => {
         const here = zone ? zoneMatches(zone, z.zone) : false;
+        // What you're walking into, from the zone's own wiki page — the question "go here" raises
+        // and the list itself can't answer. Absent for the cities, which state no monster levels.
+        const levels = zoneLevels(z.zone);
         return (
           <div className={`hunt-zone ${here ? "here" : ""}`} key={z.zone}>
             <div className="hunt-zone-head">
               {/* A zone has a wiki page too, and "what else is in here" is the question a hunt
                   raises next — so its name opens like every other name in the app. */}
               <ItemLink title={z.zone} className="hz-name" />
+              {levels && (
+                <span className="hz-levels" title={zoneLevelWhy(levels, z.zone)}>
+                  lv {zoneLevelText(levels)}
+                </span>
+              )}
               {here && <span className="badge kind-drop">you are here</span>}
             </div>
             {z.mobs.map((m) => {

@@ -18,64 +18,18 @@
  *   node scripts/fetch-zone-adjacency.mjs --dry-run  # report what would change, write nothing
  *
  * **Kind to the wiki by construction**: titles come from one category listing, and the wikitext is
- * pulled `action=query&prop=revisions` **fifty pages per request** rather than one page at a time — so
- * a full refresh is a handful of calls rather than one per zone.
+ * pulled fifty pages per request rather than one page at a time — see `lib/eqlwiki.mjs`, which is
+ * also where the levels generator beside this one gets its pages.
  */
-import fs from "node:fs";
 import path from "node:path";
-import { ROOT, few, flag } from "./lib/cli.mjs";
+import { ROOT, few, flag, writeGenerated } from "./lib/cli.mjs";
+import { infoboxRow, zonePages } from "./lib/eqlwiki.mjs";
 
 const OUT = path.join(ROOT, "src/shared/zones/adjacency.generated.ts");
-const EQLWIKI = "https://eqlwiki.com/api.php";
-/** The wiki's own cap on a multi-page `titles=` query for anonymous callers. */
-const BATCH = 50;
-/** A backstop against a continuation loop, not a real limit on the category. */
-const MAX_PAGES = 40;
 const dryRun = flag("dry-run");
-
-async function api(params) {
-  const url = `${EQLWIKI}?${new URLSearchParams({ ...params, format: "json", formatversion: "2" })}`;
-  const res = await fetch(url, { headers: { "User-Agent": "eq-list zone adjacency (+github.com/ahoff-git/eq-list)" } });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
-  return res.json();
-}
-
-/** Every article in a category, following continuation. `cmnamespace: 0` keeps sub-categories out. */
-async function categoryMembers(category) {
-  const titles = [];
-  let cmcontinue;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const params = { action: "query", list: "categorymembers", cmtitle: `Category:${category}`, cmnamespace: "0", cmlimit: "max" };
-    if (cmcontinue) params.cmcontinue = cmcontinue;
-    const data = await api(params);
-    for (const m of data.query?.categorymembers ?? []) titles.push(m.title);
-    cmcontinue = data.continue?.cmcontinue;
-    if (!cmcontinue) break;
-  }
-  return titles;
-}
-
-/** `title` → wikitext, fifty pages a request. */
-async function wikitextFor(titles) {
-  const out = new Map();
-  for (let i = 0; i < titles.length; i += BATCH) {
-    const batch = titles.slice(i, i + BATCH);
-    const data = await api({ action: "query", prop: "revisions", rvprop: "content", rvslots: "main", titles: batch.join("|") });
-    for (const page of data.query?.pages ?? []) {
-      const text = page.revisions?.[0]?.slots?.main?.content;
-      if (text) out.set(page.title, text);
-    }
-  }
-  return out;
-}
 
 /**
  * The zones a page says it is next to.
- *
- * The row is an infobox header and its value:
- *
- *     ! ''' Adjacent Zones: '''
- *     |[[Rivervale]], [[Runnyeye]] (depricated [[Runnyeye Citadel]])
  *
  * **Parenthesised notes are cut before the links are read.** They are asides about the entry beside
  * them — `(within the zone)`, `(depricated [[Runnyeye Citadel]])` — and the second shape is why it
@@ -87,9 +41,9 @@ async function wikitextFor(titles) {
  * choice the expansion table makes.
  */
 export function adjacentIn(wikitext) {
-  const row = /^!\s*'{0,3}\s*Adjacent Zones:?\s*'{0,3}\s*$\r?\n\|(.*)$/im.exec(wikitext);
+  const row = infoboxRow(wikitext, "Adjacent Zones");
   if (!row) return [];
-  const value = row[1].replace(/\([^()]*\)/g, " ");
+  const value = row.replace(/\([^()]*\)/g, " ");
   const names = [];
   for (const link of value.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g)) {
     const name = (link[2] ?? link[1]).trim();
@@ -114,7 +68,7 @@ const banner = (rows, pairs) => `/**
  * zone comparison in the app shares. Nothing should import this file directly — the lookup is
  * \`adjacency.ts\` beside it.
  *
- * \${rows} zones, \${pairs} stated pairs.
+ * ${rows} zones, ${pairs} stated pairs.
  */
 
 /** A zone name → the zones its page lists as adjacent, as the wiki spells them. */
@@ -122,14 +76,11 @@ export const WIKI_ADJACENT: Readonly<Record<string, readonly string[]>> = {
 `;
 
 const main = async () => {
-  const titles = await categoryMembers("Zones");
-  console.log(`eqlwiki lists ${titles.length} zones.`);
-  const pages = await wikitextFor(titles);
-  console.log(`read ${pages.size} of them.`);
+  const { titles, pages } = await zonePages();
 
   const table = {};
   const silent = [];
-  for (const title of [...titles].sort((a, b) => a.localeCompare(b))) {
+  for (const title of titles) {
     const found = adjacentIn(pages.get(title) ?? "");
     if (found.length) table[title] = found;
     else silent.push(title);
@@ -141,18 +92,7 @@ const main = async () => {
   const body = Object.entries(table)
     .map(([zone, list]) => `  ${JSON.stringify(zone)}: [${list.map((z) => JSON.stringify(z)).join(", ")}],`)
     .join("\n");
-  const head = banner(Object.keys(table).length, pairs)
-    .replace("${rows}", String(Object.keys(table).length))
-    .replace("${pairs}", String(pairs));
-  const text = `${head}${body}\n};\n`;
-
-  if (dryRun) {
-    const old = fs.existsSync(OUT) ? fs.readFileSync(OUT, "utf8") : "";
-    console.log(old === text ? "no change." : `would rewrite ${path.relative(ROOT, OUT)}.`);
-    return;
-  }
-  fs.writeFileSync(OUT, text);
-  console.log(`wrote ${path.relative(ROOT, OUT)}.`);
+  writeGenerated(OUT, `${banner(Object.keys(table).length, pairs)}${body}\n};\n`, { dryRun });
 };
 
 await main();

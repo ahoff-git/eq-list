@@ -263,10 +263,26 @@ export const DATA_CONCERNS: DataConcern[] = [
     id: "peer-knowledge",
     label: "What peers told us",
     file: "mob-knowledge.json",
-    revision: 1,
+    // 2: contributions are keyed by contributor id rather than by display name, and an id is
+    // something only the contributor can supply — so a tally from before this can never be matched
+    // back up with the person who shared it.
+    revision: 2,
+    // Deliberately *not* set below the revision: `migrations.ts` re-keys the old file in place, so a
+    // store written by an older build is repaired rather than stale. What it can't repair — who
+    // those tallies really belonged to — is recorded in the key itself (`name:…`), not flagged here,
+    // because there is nothing anybody can do about it and this row is for things there are.
     remedy: "unrecoverable",
     blurb:
       "Observations other players shared. We were never the source, so there is no log of ours to re-read — the only remedy is to forget it and let it be shared again.",
+  },
+  {
+    id: "peer-kills",
+    label: "Kill positions peers shared",
+    file: "peer-kills.json",
+    revision: 1,
+    remedy: "unrecoverable",
+    blurb:
+      "Where other players killed things — the pooled half of the heatmap. Somebody else's measurements, so nothing here can rebuild them; forgetting them and being shared them again is the whole remedy.",
   },
 ];
 

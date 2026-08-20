@@ -56,8 +56,12 @@ export const CH = {
   killsAll: "kills:all",
   mobsAll: "mobs:all",
   mobsMine: "mobs:mine",
-  mobsReport: "mobs:report",
+  /** Who has pooled with us, and how much each of them has told us. */
+  mobsContributors: "mobs:contributors",
+  /** Forget one contributor (by id) or all of them. Takes their shared kills with it. */
   mobsForgetPeers: "mobs:forgetPeers",
+  /** Kill positions peers have shared, kept between sessions (`electron/peer-kills.ts`). */
+  peerKillsAll: "peerKills:all",
   killsClear: "kills:clear",
   spawnsView: "spawns:view",
   spawnsState: "spawns:state", // the player's own respawn figure, which nothing observed overwrites
@@ -138,6 +142,13 @@ export const CH = {
   awariMessage: "evt:awariMessage", // main → all: a peer message (self excluded)
   awariStatusChanged: "evt:awariStatus", // main → all: connection status
   awariPeersChanged: "evt:awariPeers", // main → all: who else is in the room
+  /**
+   * main → all: what peers have contributed changed — a report was filed, or somebody was
+   * forgotten. One event for both stores because they hold two halves of the same contribution, and
+   * a panel that showed pooled rates refreshed while the heatmap beside it didn't would be showing
+   * two different moments of the same pool.
+   */
+  peerDataChanged: "evt:peerData",
   listChanged: "evt:list",
   settingsChanged: "evt:settings",
   lootEvent: "evt:loot",

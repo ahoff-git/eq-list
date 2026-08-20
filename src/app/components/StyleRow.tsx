@@ -13,7 +13,11 @@ import type { AlertStyle } from "@/shared/types";
  * decision moved into the row: a colour dot, the sound, the position and the motion, which is the
  * whole of a look in a dozen characters and is what you actually scan for.
  *
- * `onRename`/`onRemove` are absent for the defaults, which are neither.
+ * `onRename`/`onRemove` are absent for the defaults, which are neither — and for a **sticky** look, a
+ * feature is built on it and it may be restyled but not renamed or deleted (ADR 0120). Those two
+ * cases look different on purpose: the defaults are nobody's, so nothing is said, while a sticky look
+ * shows a 🔒 saying whose it is. A missing ✕ with no explanation is the kind of gap a player fills
+ * in with "it's broken".
  */
 export default function StyleRow({
   name,
@@ -23,6 +27,7 @@ export default function StyleRow({
   onOpen,
   onRename,
   onRemove,
+  locked,
 }: {
   name: string;
   style: AlertStyle;
@@ -32,6 +37,8 @@ export default function StyleRow({
   onOpen: () => void;
   onRename?: (name: string) => void;
   onRemove?: () => void;
+  /** Why this look can't be renamed or deleted, when it can't — shown on a 🔒 in the ✕'s place. */
+  locked?: string;
 }) {
   const position = ALERT_POSITIONS.find((p) => p.value === style.position)?.label ?? "Custom spot";
   const motion = ALERT_ANIMATIONS.find((a) => a.value === style.animation)?.label ?? style.animation;
@@ -63,11 +70,18 @@ export default function StyleRow({
       {onRemove && (
         <button
           className="btn ghost sm"
-          title="Delete this style — rules wearing it fall back to the defaults"
+          title="Delete this style — anything wearing it falls back to the defaults"
           onClick={onRemove}
         >
           ✕
         </button>
+      )}
+      {/* Not a disabled ✕: a greyed delete button invites clicking it to find out why. A 🔒 says the
+          answer before the click. */}
+      {locked && (
+        <span className="style-lock" title={locked} aria-label={locked}>
+          🔒
+        </span>
       )}
     </div>
   );

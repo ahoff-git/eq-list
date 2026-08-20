@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { createLogger } from "@/shared/logging";
 import type { MapPin } from "@/shared/map/pins";
 import type { MobObservation } from "@/shared/mob-stats";
+import type { SharedKill } from "@/shared/kill-filters";
 import { AWARI_MSG, type AwariPayload, type AwariPeer } from "@/shared/types";
 
 const log = createLogger("awari");
@@ -15,19 +16,12 @@ const DEFAULT_PEER_NAME = "Someone";
 const SELF_KEY = "self";
 
 /**
- * A kill as it travels between players — deliberately the bare minimum: where, what, and
- * how much to believe it. The evidence behind the confidence stays local; a peer only needs
- * the conclusion.
+ * The wire shape of a shared kill now lives in `shared/kill-filters.ts`, beside the function that
+ * turns one into an ordinary kill record — main files them, the store keeps them and the map draws
+ * them, so it can't belong to a window any more. Re-exported because this is where the map has
+ * always imported it from.
  */
-export interface SharedKill {
-  zone: string;
-  y: number;
-  x: number;
-  mob: string;
-  confidence: number;
-  /** Who shared it, filled in on receipt. */
-  by?: string;
-}
+export type { SharedKill };
 
 /** A peer's last known live location (keyed by their awari peer id). */
 export interface PeerLoc {
@@ -90,7 +84,6 @@ export function useAwariRoom(opts: { name: string }): {
   pings: PeerPing[];
   peerPins: MapPin[];
   users: ConnectedUser[];
-  peerKills: SharedKill[];
   sendPing: (eq: { y: number; x: number }, zone: string, layer?: number) => void;
   sharePins: (pins: MapPin[]) => void;
   shareKills: (kills: SharedKill[]) => void;
@@ -100,7 +93,6 @@ export function useAwariRoom(opts: { name: string }): {
   const [peers, setPeers] = useState<Record<string, PeerLoc>>({});
   const [pings, setPings] = useState<Record<string, PeerPing>>({});
   const [peerPins, setPeerPins] = useState<Record<string, MapPin[]>>({});
-  const [peerKills, setPeerKills] = useState<Record<string, SharedKill[]>>({});
   const [roster, setRoster] = useState<AwariPeer[]>([]);
   // Latest name for outbound ping/pins (kept in a ref so the senders stay stable).
   const nameRef = useRef(name);
@@ -110,21 +102,11 @@ export function useAwariRoom(opts: { name: string }): {
     const a = api();
     if (!a) return;
     const offMessage = a.awari.onMessage(({ sender, payload: p }) => {
-      if (p.kind === AWARI_MSG.mobs && Array.isArray(p.mobs)) {
-        // Observations are filed in the main process rather than held here: they're worth
-        // keeping across restarts, and every window should see the same pooled picture.
-        const by = str(p, "name", DEFAULT_PEER_NAME);
-        void a.mobs.report(by, p.mobs as MobObservation[]);
-        return;
-      }
-      if (p.kind === AWARI_MSG.kills && Array.isArray(p.kills)) {
-        const by = str(p, "name", DEFAULT_PEER_NAME);
-        setPeerKills((prev) => ({
-          ...prev,
-          [sender]: (p.kills as SharedKill[]).map((k) => ({ ...k, by })),
-        }));
-        return;
-      }
+      // Contributions — `mobs` and `kills` — are **not** handled here. They are filed by the main
+      // process as they arrive (`electron/ipc.ts`), which is what makes them survive this window
+      // being closed and this session ending; the map reads them back through `usePeerKills` and
+      // `mobs.all` like any other stored data. Everything below is the opposite kind of message:
+      // about *now*, drawn while it's true, and forgotten with the connection.
       if (p.kind === AWARI_MSG.pins && Array.isArray(p.pins)) {
         const by = str(p, "name", DEFAULT_PEER_NAME);
         setPeerPins((prev) => ({ ...prev, [sender]: (p.pins as MapPin[]).map((pin) => ({ ...pin, by })) }));
@@ -154,7 +136,6 @@ export function useAwariRoom(opts: { name: string }): {
         setPeers({});
         setPings({});
         setPeerPins({});
-        setPeerKills({});
         setRoster([]);
       }
     });
@@ -239,14 +220,12 @@ export function useAwariRoom(opts: { name: string }): {
   const peerLocs = useMemo(() => Object.values(peers), [peers]);
   const peerPings = useMemo(() => Object.values(pings), [pings]);
   const allPeerPins = useMemo(() => Object.values(peerPins).flat(), [peerPins]);
-  const allPeerKills = useMemo(() => Object.values(peerKills).flat(), [peerKills]);
 
   return {
     peers: peerLocs,
     pings: peerPings,
     peerPins: allPeerPins,
     users,
-    peerKills: allPeerKills,
     sendPing,
     sharePins,
     shareKills,

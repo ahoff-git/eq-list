@@ -237,7 +237,7 @@ function known(p: { mob: string; myKills?: number; kills?: number; drops?: strin
     zone: "kerraridge",
     kills: p.kills ?? 10,
     myKills: p.myKills ?? 10,
-    drops: (p.drops ?? []).map((item) => ({ item, count: 1, rate: 0.1 })),
+    drops: (p.drops ?? []).map((item) => ({ item, count: 1, rate: 0.1, myCount: 1 })),
     lastAt: new Date(NOW).toISOString(),
     contributors: [],
     copper: 0,

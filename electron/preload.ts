@@ -99,8 +99,12 @@ const api: EqlApi = {
   mobs: {
     all: (zone) => ipcRenderer.invoke(CH.mobsAll, zone),
     mine: (zone) => ipcRenderer.invoke(CH.mobsMine, zone),
-    report: (by, observations) => ipcRenderer.invoke(CH.mobsReport, by, observations),
-    forgetPeers: () => ipcRenderer.invoke(CH.mobsForgetPeers),
+    contributors: () => ipcRenderer.invoke(CH.mobsContributors),
+    forgetPeers: (id) => ipcRenderer.invoke(CH.mobsForgetPeers, id),
+  },
+  peers: {
+    kills: (zone) => ipcRenderer.invoke(CH.peerKillsAll, zone),
+    onChanged: (cb) => on(CH.peerDataChanged, cb),
   },
   kills: {
     all: (zone) => ipcRenderer.invoke(CH.killsAll, zone),

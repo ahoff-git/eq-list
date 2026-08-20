@@ -30,11 +30,13 @@ import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
+import type { PeerKillStore } from "./peer-kills";
 import type { SpawnTracker } from "./spawn-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
-import type { MobObservation } from "../src/shared/mob-stats";
+import { AWARI_MSG } from "../src/shared/types";
+import { readContributor } from "../src/shared/contributors";
 import type { DragEnd } from "../src/shared/window-snap";
 
 const log = createLogger("ipc");
@@ -52,6 +54,10 @@ export interface IpcContext {
   lootLog: LootLog;
   updates: UpdateChecker;
   mobs: MobKnowledgeStore;
+  /** Kill positions other players have shared, kept across sessions (`peer-kills.ts`). */
+  peerKills: PeerKillStore;
+  /** This install's contributor id, stamped onto everything we contribute (`identity.ts`). */
+  contributorId: string;
   /** Respawn countdowns for the nameds you kill (ADR 0092). */
   spawns: SpawnTracker;
   lookup: Lookup;
@@ -425,8 +431,17 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.lootItems, () => lootLog.items());
   ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
   ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
-  ipcMain.handle(CH.mobsReport, (_e, by: string, observations: MobObservation[]) => mobs.report(by, observations));
-  ipcMain.handle(CH.mobsForgetPeers, () => mobs.forgetPeers());
+  // Who has told us what. Reporting is **not** here: contributions are filed by `registerPeerIpc`
+  // as they arrive, so nothing depends on a particular window being open to receive them.
+  ipcMain.handle(CH.mobsContributors, () => mobs.contributors());
+  ipcMain.handle(CH.mobsForgetPeers, (_e, id?: string) => {
+    mobs.forgetPeers(id);
+    // Kills and observations are the same person's contribution split across two stores, so
+    // forgetting one of them and leaving the other would credit a contributor you had just dropped.
+    context.peerKills.forget(id);
+    broadcast(CH.peerDataChanged, undefined);
+  });
+  ipcMain.handle(CH.peerKillsAll, (_e, zone?: string) => context.peerKills.all(zone));
   ipcMain.handle(CH.combatClearHistory, () => {
     history.clear();
     return history.sessions();
@@ -599,18 +614,59 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
 }
 
 /**
- * The peer-networking relay. Main holds no connection of its own — the always-alive main window
- * owns it, and this only fans messages out.
+ * Which message kinds carry data we keep, rather than something a window draws and forgets.
+ *
+ * The distinction is the whole of the peer-data pipeline: a `loc` or a `ping` is about *now* and
+ * belongs to whichever window is drawing it, while `mobs` and `kills` are contributions — they
+ * outlive the session, so they are stamped on the way out and filed on the way in, here, by the
+ * process that is always running.
+ */
+const CONTRIBUTED_KINDS = new Set<string>([AWARI_MSG.mobs, AWARI_MSG.kills]);
+
+/**
+ * The peer-networking relay, and the one place contributed data crosses the wire in either
+ * direction.
+ *
+ * Main holds no connection of its own — the always-alive main window owns it (ADR 0012) — but it is
+ * the only participant that is always running, which is why the *data* half lives here rather than
+ * in a window:
+ *
+ *   - **Inbound.** Peers' observations used to be filed by the map window, so nothing anyone shared
+ *     was kept unless you happened to have the map open. Filing here means a room you are connected
+ *     to teaches this install whether or not anybody is looking.
+ *   - **Outbound.** Our contributor id is stamped on here rather than sent up to the renderer,
+ *     so the id lives in exactly one process, every contribution carries it without a window
+ *     having to remember, and a payload that isn't a contribution never gets one — connect without
+ *     sharing and nothing stable about you goes out at all (`electron/identity.ts`).
  */
 function registerPeerIpc(context: IpcContext): void {
-  const { broadcast } = context;
+  const { broadcast, mobs, peerKills, contributorId } = context;
+
+  /** File what a peer just told us, and let every open window know the pool moved. */
+  const fileContribution = (payload: AwariPayload): void => {
+    // Fails closed (`readContributor`): a peer who announces no id is not filed under their display
+    // name as they used to be — see `contributors.ts` for why a name cannot be a key.
+    const by = readContributor(payload as { id?: unknown; name?: unknown });
+    if (!by) return void log.debug("contribution ignored - no contributor id", { kind: payload.kind });
+    if (payload.kind === AWARI_MSG.mobs && Array.isArray(payload.mobs)) mobs.report(by, payload.mobs);
+    else if (payload.kind === AWARI_MSG.kills && Array.isArray(payload.kills)) peerKills.report(by, payload.kills);
+    else return;
+    broadcast(CH.peerDataChanged, undefined);
+  };
 
   // ── awari peer networking broker (see ADR 0012) ──
   // The always-alive main window owns the single WebRTC connection; the main process
-  // is a pure relay. Any window's send → the owner publishes it; the owner's inbound
-  // peer messages + status → fanned out to every window (the map, and anything else).
-  ipcMain.on(CH.awariOutbound, (_e, payload: AwariPayload) => getMainWindow()?.webContents.send(CH.awariPublish, payload));
-  ipcMain.on(CH.awariInbound, (_e, msg: AwariInbound) => broadcast(CH.awariMessage, msg));
+  // relays messages, stamps the contributions going out and files the ones coming in.
+  ipcMain.on(CH.awariOutbound, (_e, payload: AwariPayload) =>
+    getMainWindow()?.webContents.send(
+      CH.awariPublish,
+      CONTRIBUTED_KINDS.has(payload.kind) ? { ...payload, id: contributorId } : payload,
+    ),
+  );
+  ipcMain.on(CH.awariInbound, (_e, msg: AwariInbound) => {
+    if (CONTRIBUTED_KINDS.has(msg.payload?.kind)) fileContribution(msg.payload);
+    broadcast(CH.awariMessage, msg);
+  });
   ipcMain.on(CH.awariStatus, (_e, status: AwariStatus) => broadcast(CH.awariStatusChanged, status));
   ipcMain.on(CH.awariPeers, (_e, peers: AwariPeer[]) => broadcast(CH.awariPeersChanged, peers));
 

@@ -295,7 +295,13 @@ list, hunt, search, damage, session, settings.
     item's sources (`wiki.getPage`, cached) and `src/shared/hunt.ts`
     (`neededEntries` → `huntInputsFor` → `buildHunt`, pure + tested) builds
     zones → mobs → the needed items they drop. Zones/mobs sort by how much of your
-    list they cover; the current zone (`useCurrentZone`) floats to the top. The **zone
+    list they cover; the current zone (`useCurrentZone`) floats to the top. Each zone
+    header carries **what level the wiki says its monsters are** (`zones/levels.ts`,
+    [ADR 0122](../decisions/0122-a-zone-wears-its-levels.md)) — the question "go here"
+    raises and the list itself can't answer. It's eqlwiki's own wording, bands and all
+    (`1-20, 35`), never squeezed into a span; the hover says it's the zone's page rather
+    than your kills, and a zone the wiki states nothing for (the cities) shows nothing.
+    The **zone
     control is the map's** — a type-to-find [`ZonePicker`](../map/README.md) plus a
     **follow** checkbox — so picking a zone and tracking the one you're in are both one
     gesture away instead of one of them being a trip to Settings. Its options are only the
@@ -494,9 +500,15 @@ list, hunt, search, damage, session, settings.
     controls are `AlertStyleFields`, and **only one of them is on screen at a time**
     ([ADR 0090](../decisions/0090-one-style-editor-at-a-time.md)): every look — the defaults, each
     saved style, a rule's own — is a one-line `StyleRow` (colour dot, name, `chirp · Top center ·
-    Pulse`, **worn by N**) with a 🎨 that opens the single editor beneath it. Creating a style opens
-    it too, so making and editing are one gesture, and the tab's `OpenTarget` state is what stops a
-    rule's drawer and a saved style being open together. A watch is a **row plus four drawers**
+    Pulse`, and **who wears it** — `worn by 2 rules · Loot drops`, features included) with a 🎨 that
+    opens the single editor beneath it. Creating a style opens it too, so making and editing are one
+    gesture, and the tab's `OpenTarget` state is what stops a rule's drawer and a saved style being
+    open together. Above the looks sit the **app's own alert sources** — Personal bests, Spawn timers,
+    Loot drops, one `AlertSourceRow` each (`ALERT_SOURCES`): what sets it off, which look it wears, how
+    many things are armed, and the same 🎨. They carry no ✕, and the looks they are built on are
+    **sticky** — restyleable, but not renameable or deletable, with a 🔒 saying whose look it is
+    ([ADR 0120](../decisions/0120-a-feature-s-look-is-sticky.md)). Arming stays on the thing being
+    armed: 🔔 on a list row, 🔔 on a timer, the switch on the Records board. A watch is a **row plus four drawers**
     (`CastWatchRow`, [ADR 0084](../decisions/0084-a-watch-is-a-rule-not-a-substring.md)): the row
     holds the two fields edited constantly — trigger and message — and **chips** summarising the rest
     (`cast · fades`, `2 conditions`, `25s ×3`, and ⚠ when something won't do what it looks like),
@@ -660,9 +672,12 @@ list, hunt, search, damage, session, settings.
     ([ADR 0086](../decisions/0086-editing-a-shared-style-from-a-rule-forks-it.md)): `alert-styles.ts`
     edits its own look in place, edits a saved style **nobody else wears** in place, and otherwise
     **forks** — a new style named after its parent, starting from what the rule looked like a moment
-    ago. The drawer says which of the three will happen *before* the edit. Changing a shared style
-    for everyone is the **Saved styles** list under Alert style, which edits in place and shows each
-    style's wearer count — two intents, two places, no mode switch.
+    ago. *Nobody else* counts more than rules: a spawn timer and a feature wear styles too, so a rule
+    on a **sticky** look always forks ([ADR 0120](../decisions/0120-a-feature-s-look-is-sticky.md)),
+    and `styleUse` is the one count both the drawer's note and the ✕ are read from. The drawer says
+    which of the three will happen *before* the edit. Changing a shared style for everyone is the
+    **Saved styles** list under Alert style, or the source's own row, which edit in place — two
+    intents, two places, no mode switch.
 
     Appearance is **per alert**, not per window: `alertStyle` resolves the matching watch's
     overrides over the defaults in the main process, and the resolved `AlertStyle` travels *with*

@@ -91,8 +91,15 @@ export interface MobObservation {
   area?: MobArea;
   /** Most recent kill, so stale knowledge can be told from fresh. */
   lastAt: string;
-  /** Who observed it. Absent means "you". */
+  /** Who observed it, as a name to show. Absent means "you". */
   by?: string;
+  /**
+   * Who observed it, as the id everything is keyed by (`contributors.ts`). Absent means "you", or a
+   * tally inherited from before contributors had ids. Kept **beside** the name rather than instead
+   * of it, because the merge dedupes on this — two players who both call themselves "Bob" are two
+   * samples, not one — while the reader is still shown a name.
+   */
+  byId?: string;
 }
 
 /**
@@ -110,6 +117,16 @@ export interface MobDrop {
   count: number;
   /** `count / kills`, 0–1. A rate from three kills is not a rate; check `kills`. */
   rate: number;
+  /**
+   * How many of `count` you saw yourself — the numerator to go with `MobKnowledge.myKills`.
+   *
+   * Carried so a pooled rate can be checked against your own without re-deriving either: `pooling.ts`
+   * uses the pair to spot a contributor whose rate is nothing like yours, which is a thing to
+   * **report** rather than resolve (`estimates.ts` rule 5). Without it the two rates cannot be
+   * compared at all, and the pooled figure has to be taken on trust — the exact thing pooling data
+   * from strangers must not require.
+   */
+  myCount: number;
 }
 
 /** Everything known about a mob in a zone, yours and peers' pooled. */
@@ -238,7 +255,7 @@ export function sumObservations(...groups: MobObservation[][]): MobObservation[]
       const key = keyOf(obs.mob, obs.zone);
       let sum = byKey.get(key);
       if (!sum) {
-        sum = { mob: obs.mob, zone: obs.zone.trim(), kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, areas: [] };
+        sum = { mob: obs.mob, zone: obs.zone.trim(), kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, byId: obs.byId, areas: [] };
         byKey.set(key, sum);
       }
       sum.kills += obs.kills;
@@ -264,6 +281,8 @@ export function sumObservations(...groups: MobObservation[][]): MobObservation[]
  */
 export function mergeObservations(mine: MobObservation[], theirs: MobObservation[]): MobKnowledge[] {
   const byKey = new Map<string, MobKnowledge & { areas: NonNullable<MobObservation["area"]>[] }>();
+  /** Contributor ids already counted, per mob — the merge dedupes on the id, never on the name. */
+  const seenBy = new Map<string, Set<string>>();
 
   const fold = (obs: MobObservation, isMine: boolean) => {
     const key = groupOf(obs.mob, obs.zone);
@@ -288,14 +307,27 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
     known.kills += obs.kills;
     known.copper += obs.copper ?? 0;
     if (isMine) known.myKills += obs.kills;
-    else if (obs.by && !known.contributors.includes(obs.by)) known.contributors.push(obs.by);
+    else if (obs.by) {
+      // Deduped by **id**, so two contributors sharing a display name are two rows of evidence and
+      // one person who renamed themselves mid-evening is still one. A tally from before ids (or from
+      // a build too old to send one) falls back to the name, which is the best it can be credited by.
+      const ids = seenBy.get(key) ?? new Set<string>();
+      const id = obs.byId ?? `name:${obs.by}`;
+      if (!ids.has(id)) {
+        ids.add(id);
+        known.contributors.push(obs.by);
+      }
+      seenBy.set(key, ids);
+    }
     if (obs.lastAt > known.lastAt) known.lastAt = obs.lastAt;
     if (obs.area) known.areas.push(obs.area);
 
     for (const [item, count] of Object.entries(obs.drops)) {
       const drop = known.drops.find((d) => d.item === item);
-      if (drop) drop.count += count;
-      else known.drops.push({ item, count, rate: 0 });
+      if (drop) {
+        drop.count += count;
+        if (isMine) drop.myCount += count;
+      } else known.drops.push({ item, count, rate: 0, myCount: isMine ? count : 0 });
     }
   };
 

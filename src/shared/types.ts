@@ -1,6 +1,8 @@
 import type { DataReportRow } from "./data-provenance";
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
+import type { KnowledgeContributor } from "./contributors";
+import type { SharedKill } from "./kill-filters";
 import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { EqMap } from "./map/eqmap";
 import type { MapSourceReport } from "./map/map-sources";
@@ -2220,10 +2222,24 @@ export interface EqlApi {
     all(zone?: string): Promise<MobKnowledge[]>;
     /** Your own observations, in the form peers receive them. */
     mine(zone?: string): Promise<MobObservation[]>;
-    /** File observations received from a peer. */
-    report(by: string, observations: MobObservation[]): Promise<void>;
-    /** Forget everything peers have told us (your own observations are untouched). */
-    forgetPeers(): Promise<void>;
+    /** Who has pooled with us, newest report first. */
+    contributors(): Promise<KnowledgeContributor[]>;
+    /**
+     * Forget one contributor's contributions (by id), or everybody's when given nothing. Takes
+     * their shared kills with it — they are one contribution in two stores. Your own observations
+     * are derived from the kill log and untouched either way.
+     */
+    forgetPeers(id?: string): Promise<void>;
+  };
+  /**
+   * What other players have contributed. Filed by the main process as it arrives — no window has to
+   * be open for a room to teach this install anything (see `electron/ipc.ts`).
+   */
+  peers: {
+    /** Kill positions peers have shared, optionally for one place. */
+    kills(zone?: string): Promise<SharedKill[]>;
+    /** Fires when a contribution is filed or a contributor is forgotten. */
+    onChanged(cb: () => void): () => void;
   };
   /** Recorded kill locations, for the heatmap. */
   kills: {

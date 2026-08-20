@@ -23,7 +23,7 @@ const known = (mob: string, drops: Record<string, number>, lastAt = "2026-07-17T
   zone: "Kejaar Sanctum",
   kills: 40,
   myKills: 40,
-  drops: Object.entries(drops).map(([item, count]) => ({ item, count, rate: count / 40 })),
+  drops: Object.entries(drops).map(([item, count]) => ({ item, count, rate: count / 40, myCount: count })),
   lastAt,
   contributors: [],
   copper: 0,

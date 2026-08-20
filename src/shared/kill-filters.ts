@@ -64,17 +64,26 @@ export function windowMoves(window: KillWindow): boolean {
 }
 
 /**
- * What a kill looks like coming off the wire. Structural on purpose — the room hook owns the real
- * `SharedKill`, and this module has no business importing renderer code to describe four numbers.
+ * A kill as it travels between players — deliberately the bare minimum: where, what, and how much to
+ * believe it. The evidence behind the confidence stays on the machine that saw it; a peer only needs
+ * the conclusion.
+ *
+ * **The one definition.** It lived in the map window's room hook, with a structural copy here so
+ * this module wouldn't have to import renderer code — which was right while a shared kill was
+ * something a window held for as long as it was open. Now that they're filed and kept
+ * (`electron/peer-kills.ts`), main, the store and the map all describe the same four numbers, and
+ * two descriptions of a wire shape is exactly the sort of thing that drifts a field at a time.
  */
-export interface SharedKillLike {
+export interface SharedKill {
   zone: string;
   y: number;
   x: number;
   mob: string;
   confidence: number;
-  /** Who shared it. */
+  /** Who shared it, as a name to show. Filled in on receipt — never sent inside the kill. */
   by?: string;
+  /** Who shared it, as the id it is filed under (`contributors.ts`). Also filled in on receipt. */
+  byId?: string;
 }
 
 /**
@@ -90,11 +99,12 @@ export interface SharedKillLike {
  * conclusion, not the loot, so a drop filter excludes them, which is correct — they are no evidence
  * about drops at all.
  */
-export function sharedAsKill(shared: SharedKillLike, index: number): KillRecord {
+export function sharedAsKill(shared: SharedKill, index: number): KillRecord {
   return {
     // Stable within a render: the sender plus their index in what they sent. A shared kill has no id
-    // of its own, and React needs one that doesn't move under it as more arrive.
-    id: `shared:${shared.by ?? "peer"}:${index}`,
+    // of its own, and React needs one that doesn't move under it as more arrive. Keyed by the
+    // contributor id where there is one, so two peers who chose the same display name don't collide.
+    id: `shared:${shared.byId ?? shared.by ?? "peer"}:${index}`,
     logId: -1, // never came from a log line of ours
     at: "",
     mob: shared.mob,

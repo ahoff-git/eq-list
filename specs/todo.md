@@ -21,6 +21,32 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **A consider's level is unread — and one real line unblocks it.** The model is built and tested
+  ([ADR 0121](./decisions/0121-a-mob-is-a-range-of-levels.md), `src/shared/levels.ts`): a mob's level
+  is a *range*, its bounds widen with evidence, the wiki's `Level: 33-37` already parses, and pooling
+  a range across contributors is arithmetic that already exists. What's missing is the live source.
+  `parseSighting` reads a consider today for a different purpose — it recognises the closed set of
+  faction wordings (`regards you indifferently`, `scowls at you, ready to attack`, …) as proof the mob
+  is up ([ADR 0097](./decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md)) and **throws
+  the rest of the line away**, including the `-- this opponent looks like an even fight` tail.
+
+  It needs **one consider line, copied out of a real log**, showing where the level appears — in the
+  tail, on a line of its own, or somewhere else. That regard list fails closed on purpose (a false
+  sighting is permanent, a missed one costs a click), so guessing the wording is exactly the mistake
+  it exists to prevent. With the line in hand this is: extend the consider parse to carry an optional
+  `level`, fold it through `observeLevel` per mob, store it beside the observations, and put it in the
+  contribution payload — the machinery from
+  [ADR 0120](./decisions/0120-a-contribution-is-keyed-by-who-made-it.md) carries it unchanged.
+
+- **Nothing yet shows the pooled provenance it now carries.** `src/shared/pooling.ts` can say whose a
+  figure mostly is, split a pooled drop rate back into your evidence and each contributor's, and name
+  the drops where the two plainly disagree — and no panel reads it yet. The mob knowledge panel shows
+  `myKills` of `kills` and a contributor list, which is the old, coarser version of the same idea.
+  Wiring `poolStanding`/`poolWhy` into that panel's hover, and surfacing `disagreements()` somewhere,
+  is what makes ADR 0120's "reported, not resolved" visible rather than merely true. `mobs.contributors()`
+  is likewise wired end to end with nothing calling it — it's what a "who have I pooled with, and
+  forget this one" list would be built on (`forgetPeers(id)` already takes an id).
+
 - **Your own damage shield is unread.** The other half of
   [ADR 0095](./decisions/0095-your-own-dot-tick-is-yours.md), which fixed the DoT ticks and left this
   because it is a different line shape. Same first-person asymmetry, one wording along:

@@ -29,6 +29,8 @@ import { createKillLog } from "./kill-log";
 import { createLootLog } from "./loot-log";
 import { createUpdateChecker } from "./update-check";
 import { createMobKnowledge } from "./mob-knowledge";
+import { createPeerKills } from "./peer-kills";
+import { readIdentity } from "./identity";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
@@ -226,6 +228,12 @@ if (!app.requestSingleInstanceLock()) {
   const lootLog = createLootLog(userData);
   const updates = createUpdateChecker(userData, app.getVersion());
   const mobs = createMobKnowledge(userData, killLog);
+  // Kept across sessions rather than held by whichever window happens to be open, so a room teaches
+  // this install whether or not the map is up (see `peer-kills.ts`).
+  const peerKills = createPeerKills(userData);
+  // Minted once and then ours for good: what everything we contribute is filed under on other
+  // people's machines, and what theirs is filed under here (`identity.ts`).
+  const contributorId = readIdentity(userData);
   const ocr = createOcr(path.join(userData, "tesseract-cache"));
   // The wiki's mirrored titles are what tell an OCR misreading from a name we simply don't have.
   const lookup = createLookup(ocr, showInSearch, (readings) => wiki.bestKnownReading(readings));
@@ -263,6 +271,8 @@ if (!app.requestSingleInstanceLock()) {
     lootLog,
     updates,
     mobs,
+    peerKills,
+    contributorId,
     spawns,
     lookup,
     userData,
@@ -633,6 +643,7 @@ if (!app.requestSingleInstanceLock()) {
     lootLog.flush();
     scores.flush();
     mobs.flush();
+    peerKills.flush();
     spawns.flush();
     spawns.dispose();
     watcher.stop(); // records the read position, so the next run resumes exactly here

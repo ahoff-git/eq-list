@@ -9,55 +9,80 @@
  * killed rather than everything still on file
  * ([ADR 0056](../specs/decisions/0056-a-dropped-record-keeps-what-it-taught.md)).
  *
- * Peers' observations *are* stored, and deliberately **kept apart from yours**. Pooling makes
- * a drop rate far more useful — six players' kills of the same mob are one much better sample
- * — and simultaneously less verifiable, so provenance is preserved rather than blended away:
- * every merged figure still knows how much of it you saw yourself. Nothing a peer says can
- * change what your own log recorded.
+ * Peers' observations *are* stored, **keyed by contributor id** and deliberately **kept apart from
+ * yours**. Pooling makes a drop rate far more useful — six players' kills of the same mob are one
+ * much better sample — and simultaneously less verifiable, so provenance is preserved rather than
+ * blended away: every merged figure still knows how much of it you saw yourself, and which
+ * contributors the rest came from. Nothing a peer says can change what your own log recorded.
+ *
+ * The storage rules — keyed by id, replace on report, keep what an un-share taught, vet on arrival,
+ * bounded per contributor — are not this module's to invent: they are the same five rules the shared
+ * kill positions want, and they live in [contributions.ts](./contributions.ts). What's left here is
+ * the only part that is really about mobs: **what makes an observation possible**, which is the
+ * vetting below.
  */
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { mergeObservations, observeMobs, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
+import { mergeObservations, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
 import { samePlace } from "../src/shared/zones/place";
+import { plausible } from "../src/shared/estimates";
+import type { Contributor, KnowledgeContributor } from "../src/shared/contributors";
+import { createContributions, type Contributed } from "./contributions";
 import type { KillLog } from "./kill-log";
 
-import { createSaver, readJson } from "./json-store";
 const log = createLogger("mob-knowledge");
 
-/** Reports arrive whenever a peer's tally changes; coalesce the writes. */
-const WRITE_DEBOUNCE_MS = 4000;
-
-/** Per peer, so one chatty client can't crowd out everyone else. */
+/** Per contributor, so one chatty client can't crowd out everyone else. */
 const MAX_OBSERVATIONS_PER_PEER = 2000;
+
+/**
+ * What a kill count may be before it stops being a claim about an evening's play.
+ *
+ * A bound rather than a guess at a real ceiling: the point is to reject a number that could only be
+ * a bug or a lie — one that would swamp every honest sample it is pooled with — not to police how
+ * much anybody plays. Discarded, never clamped: against a figure that is only ever added to, a
+ * clamped value is a wrong answer nobody can take back (`estimates.ts` rule 2).
+ */
+const KILLS_PLAUSIBLE = { min: 0, max: 1_000_000 };
 
 const isFinNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 /**
- * Keep only well-formed observations from a peer. Peer payloads are untrusted (see the IPC
- * trust boundary): a bad shape reaching the pool would poison rates — a non-numeric `kills`
- * makes every derived rate NaN — and would be written to disk. So each is checked and
- * coerced here, at the one point everything a peer sends passes through, and bad ones dropped.
+ * Keep only well-formed, *possible* observations from a peer.
+ *
+ * Peer payloads are untrusted (see the IPC trust boundary), and there are two different ways one can
+ * be wrong. A bad **shape** would poison rates outright — a non-numeric `kills` makes every derived
+ * rate NaN — and would be written to disk. An impossible **value** is subtler and worse: it is
+ * well-formed, so it survives every later check, and it silently distorts the pool. The one that
+ * matters is a drop counted more often than the mob was killed, because `observeMobs` counts a drop
+ * per kill rather than per loot line precisely so a rate stays a probability; a peer reporting
+ * otherwise is describing something that cannot have happened, and pooling it would push a rate over
+ * 100%.
+ *
+ * Both are checked at the one point everything a peer sends passes through, and bad ones dropped.
  */
-function sanitizeObservations(input: unknown[]): MobObservation[] {
+export function sanitizeObservations(input: unknown[]): MobObservation[] {
   const out: MobObservation[] = [];
   for (const o of input) {
     if (!o || typeof o !== "object") continue;
     const r = o as Record<string, unknown>;
     if (typeof r.mob !== "string" || !r.mob.trim()) continue;
     if (typeof r.zone !== "string" || !r.zone.trim()) continue;
-    if (!isFinNum(r.kills) || r.kills < 0) continue;
+    if (!isFinNum(r.kills) || !plausible(r.kills, KILLS_PLAUSIBLE)) continue;
+    const kills = r.kills;
 
     const drops: Record<string, number> = {};
     if (r.drops && typeof r.drops === "object" && !Array.isArray(r.drops)) {
       for (const [item, count] of Object.entries(r.drops as Record<string, unknown>)) {
-        if (isFinNum(count) && count >= 0) drops[item] = count;
+        // A drop is counted once per kill, so it can never outnumber the kills it came from.
+        if (isFinNum(count) && count >= 0 && count <= kills) drops[item] = count;
       }
     }
 
     const clean: MobObservation = {
       mob: r.mob,
       zone: r.zone,
-      kills: r.kills,
+      kills,
       drops,
       copper: isFinNum(r.copper) && r.copper >= 0 ? r.copper : 0,
       lastAt: typeof r.lastAt === "string" ? r.lastAt : "",
@@ -66,7 +91,6 @@ function sanitizeObservations(input: unknown[]): MobObservation[] {
     if (a && typeof a === "object" && isFinNum(a.y) && isFinNum(a.x) && isFinNum(a.spread) && isFinNum(a.samples)) {
       clean.area = { y: a.y, x: a.x, spread: a.spread, samples: a.samples };
     }
-    if (typeof r.by === "string") clean.by = r.by;
     out.push(clean);
   }
   return out;
@@ -77,26 +101,26 @@ export interface MobKnowledgeStore {
   mine(zone?: string): MobObservation[];
   /** Yours pooled with everything peers have told us. */
   all(zone?: string): MobKnowledge[];
-  /** File a peer's observations, replacing whatever they told us before. */
-  report(by: string, observations: MobObservation[]): void;
-  /** Forget peers' contributions. Your own are derived from the kill log and unaffected. */
-  forgetPeers(): void;
+  /** File a contributor's observations, replacing whatever they told us before. */
+  report(by: Contributor, observations: unknown[]): void;
+  /** Who has told us what, newest report first. */
+  contributors(): KnowledgeContributor[];
+  /** Forget one contributor's contributions, or everybody's. Your own are derived and unaffected. */
+  forgetPeers(id?: string): void;
   flush(): void;
 }
 
 export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKnowledgeStore {
-  const file = path.join(userDataDir, "mob-knowledge.json");
-  /** Peer name → their latest full set of observations. */
-  let peers: Record<string, MobObservation[]> = read();
-  const saver = createSaver(file, "mob knowledge", () => ({ peers }), WRITE_DEBOUNCE_MS, {
+  const store = createContributions<MobObservation>({
+    file: path.join(userDataDir, "mob-knowledge.json"),
+    what: "mob knowledge",
     concern: "peer-knowledge",
+    cap: MAX_OBSERVATIONS_PER_PEER,
+    sanitize: sanitizeObservations,
+    // Stamped on the way out rather than on the way in: the id is the key the row is filed under, so
+    // storing it inside the row as well would be a second copy of the same fact, free to drift.
+    credit: (obs, by) => ({ ...obs, by: by.name, byId: by.id }),
   });
-
-  function read(): Record<string, MobObservation[]> {
-    // Absent or unreadable is nothing pooled — a bonus, never load-bearing.
-    const parsed = readJson<{ peers?: Record<string, MobObservation[]> }>(file, {});
-    return parsed.peers && typeof parsed.peers === "object" ? parsed.peers : {};
-  }
 
   // Asked by place, not by string (`samePlace`, ADR 0083): rows are stored with whatever the log — or
   // a peer's log — called the zone, so the question has to reach every difficulty variant (ADR 0059)
@@ -108,32 +132,25 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
   return {
     mine: (zone) => forZone(killLog.observations(), zone),
 
-    all(zone) {
-      const theirs = Object.entries(peers).flatMap(([by, obs]) =>
-        // Stamp the contributor on the way out, so the merge can credit them even if the
-        // sender left it off.
-        forZone(obs, zone).map((o) => ({ ...o, by: o.by ?? by })),
-      );
-      return mergeObservations(forZone(killLog.observations(), zone), theirs);
-    },
+    all: (zone) => mergeObservations(forZone(killLog.observations(), zone), forZone(store.pooled(), zone)),
 
     report(by, observations) {
-      const name = by.trim();
-      if (!name || !Array.isArray(observations)) return;
-      // A peer's latest report *replaces* their previous one: they send their whole tally, so
-      // adding would double-count everything they'd already told us. Untrusted, so validated.
-      peers[name] = sanitizeObservations(observations as unknown[]).slice(0, MAX_OBSERVATIONS_PER_PEER);
-      log.debug("peer observations filed", { by: name, mobs: peers[name].length });
-      saver.save();
+      store.report(by, observations);
+      log.debug("peer observations filed", { by: by.id, name: by.name });
     },
 
-    forgetPeers() {
-      peers = {};
-      saver.flush();
-    },
+    contributors: () =>
+      store.all().map(
+        ({ by, seenAt, data }: Contributed<MobObservation>): KnowledgeContributor => ({
+          by,
+          seenAt,
+          observations: data.length,
+          kills: data.reduce((n, o) => n + o.kills, 0),
+        }),
+      ),
 
-    flush() {
-      saver.flush();
-    },
+    forgetPeers: (id) => store.forget(id),
+
+    flush: () => store.flush(),
   };
 }

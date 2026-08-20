@@ -111,3 +111,22 @@ export function electronEnv() {
   delete env.ELECTRON_RUN_AS_NODE;
   return env;
 }
+
+/**
+ * Write a generated file, or say what would change under `--dry-run`.
+ *
+ * Every generator in here ends the same way — compare, report, write — and a `--dry-run` that
+ * silently wrote anyway would be the one bug none of them could afford. Returns whether the file
+ * actually differs, so a caller can exit non-zero on a drift check.
+ */
+export function writeGenerated(file, text, { dryRun = false } = {}) {
+  const old = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  const changed = old !== text;
+  if (dryRun) {
+    console.log(changed ? `would rewrite ${path.relative(ROOT, file)}.` : "no change.");
+    return changed;
+  }
+  fs.writeFileSync(file, text);
+  console.log(`wrote ${path.relative(ROOT, file)}.`);
+  return changed;
+}
