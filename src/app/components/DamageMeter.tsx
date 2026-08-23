@@ -302,8 +302,11 @@ function detail(row: CombatantStat, view: DamageView, canExpand: boolean): strin
 
 /** Your melee by stance — shown only when more than one stance contributed. */
 function stanceSplit(row: CombatantStat): string {
-  if (row.byStance.length < 2) return "";
-  const parts = row.byStance.map((s) => {
+  // Same reason the splits above are read with `?? []`: a fight banked by an older build has rows
+  // without them, and a tooltip is not worth a blank window.
+  const byStance = row.byStance ?? [];
+  if (byStance.length < 2) return "";
+  const parts = byStance.map((s) => {
     const swings = s.hits + s.misses;
     const acc = swings ? ` ${percent(ratio(s.hits, swings))}` : "";
     return `${s.stance}: ${s.damage.toLocaleString()}${acc}`;

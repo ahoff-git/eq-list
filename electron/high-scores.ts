@@ -177,12 +177,22 @@ export function createHighScores(userDataDir: string): HighScoreKeeper {
       (f) => (characterFromLogFile(f.logFile ?? "") ?? "").toLowerCase() === character.toLowerCase(),
     );
     const ordered = [...ours].sort((a, b) => a.stats.startedAt.localeCompare(b.stats.startedAt));
+    let skipped = 0;
     for (const fight of ordered) {
-      // Silent throughout: this is history, and rule 3 holds for it whether or not we're muted.
-      for (const candidate of fightCandidates(fight.stats)) claim(candidate, fight.zone, true);
+      try {
+        // Silent throughout: this is history, and rule 3 holds for it whether or not we're muted.
+        for (const candidate of fightCandidates(fight.stats)) claim(candidate, fight.zone, true);
+      } catch (e) {
+        // Best-effort by design. This reads a file written by every version of the app that ever
+        // ran here, and seeding happens on the watcher's *first status* — so a fight the current
+        // code can't make sense of would otherwise take the whole launch down with it (it did:
+        // rows stored before `bySpell` existed). One fight left out of a board is the right price.
+        skipped++;
+        log.warn("skipped an unreadable stored fight", { at: fight.stats?.startedAt, error: (e as Error).message });
+      }
     }
     saver.save();
-    log.debug(why, { character, fights: ordered.length, of: fights.length });
+    log.debug(why, { character, fights: ordered.length, of: fights.length, skipped });
   }
 
   /** The board as a caller sees it: records in display order, plus the live streak. */

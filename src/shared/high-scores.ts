@@ -374,12 +374,17 @@ export function fightCandidates(fight: FightStats): ScoreCandidate[] {
       else add("biggest-nuke", cell.maxHit, detail);
     }
   }
-  // A fight from before the cells existed still splits its own melee and spells per combatant.
+  // A fight from before the cells existed still splits its own melee and spells per combatant —
+  // where it has those splits. They are younger than the oldest fights on disk too, so a stored row
+  // can be missing them outright; the meter has always read them that way (`DamageMeter`'s `?? []`)
+  // and this path, which exists *only* to read old fights, has no business assuming otherwise.
   if (!fight.damageCells) {
     for (const row of fight.byCombatant.filter((c) => c.mine)) {
       add("biggest-hit", row.maxHit, against);
-      for (const t of row.byType) add(meleeCategory(t.type), t.maxHit, against);
-      for (const s of row.bySpell) add("biggest-hit", s.maxHit, `${s.spell}${against ? ` on ${against}` : ""}`);
+      for (const t of row.byType ?? []) add(meleeCategory(t.type), t.maxHit, against);
+      for (const s of row.bySpell ?? []) {
+        add("biggest-hit", s.maxHit, `${s.spell}${against ? ` on ${against}` : ""}`);
+      }
     }
   }
   return out;

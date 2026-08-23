@@ -147,6 +147,21 @@ test("a cell that is nothing but ticks is a DoT, and its biggest hit is a tick",
   assert.equal(categoryOf("biggest-tick").liveOnly, undefined);
 });
 
+test("a fight stored before the per-source splits existed is read, not choked on", () => {
+  // Real crash, real user: a fight banked before `byType`/`bySpell` were written has rows with
+  // neither, and the pre-cells path iterated them blind — which killed the app at launch, because
+  // the board is seeded from history the moment the watcher reports a file.
+  const ancient = {
+    ...row("Kainos", true),
+    maxHit: 312,
+    byType: undefined,
+    bySpell: undefined,
+  } as unknown as CombatantStat;
+  const banked = fight({ byCombatant: [ancient, row("a froglok shaman", false)] });
+  const found = new Map(fightCandidates(banked).map((c) => [c.categoryId, c.value]));
+  assert.equal(found.get("biggest-hit"), 312);
+});
+
 test("a floor is what stops a trivial sample owning a category", () => {
   const at = AT;
   // One kill is not a streak, and the catalog says where a streak starts.
@@ -287,6 +302,16 @@ test("a board is seeded from this character's past fights, once, in silence", ()
   scores.absorb([stored("eqlog_Kainos_legends.txt", fight({ yourDealt: 8000, durationSec: 60 }))]);
   assert.equal(scores.board().scores.find((s) => s.categoryId === "fight-damage")?.value, 8000);
   assert.equal(announced.length, 0);
+});
+
+test("one unreadable stored fight costs its own records, not the launch", () => {
+  const scores = createHighScores(tempDir());
+  scores.setPlayer("Kainos");
+  // Whatever a future (or ancient) shape turns out to be missing, seeding runs on the watcher's
+  // first status — so it has to survive a fight it can't read, rather than take the app down.
+  const unreadable = stored("eqlog_Kainos_legends.txt", fight({ byCombatant: undefined as unknown as CombatantStat[] }));
+  scores.seed([unreadable, stored("eqlog_Kainos_legends.txt", fight({ yourDealt: 4000, durationSec: 60 }))]);
+  assert.equal(scores.board().scores.find((s) => s.categoryId === "fight-damage")?.value, 4000);
 });
 
 test("clearing a board leaves it cleared, rather than re-seeding itself", () => {
