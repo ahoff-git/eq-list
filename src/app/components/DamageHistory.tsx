@@ -188,6 +188,14 @@ function Session({
           {count(summary.fights, "fight")} · {duration(summary.combatSec, { seconds: true })} fighting
         </span>
         <span className="spacer" />
+        {summary.unsettled && (
+          <span
+            className="muted small"
+            title="A fight in this sitting had somebody the log never placed, so this total is provisional — see the ? on the fight itself."
+          >
+            ?
+          </span>
+        )}
         <span className="hist-dmg">{summary.yourDealt.toLocaleString()} dealt</span>
       </div>
       {open && (
@@ -232,6 +240,24 @@ function Fight({
       {ending && (
         <span className="muted small" title={ending.why}>
           {ending.mark}
+        </span>
+      )}
+      {fight.unsourced && (
+        <span
+          className="muted small"
+          title="Its log file no longer covers this fight, so digesting the log again can't redo its figures. They stay as whatever the rules said when it was recorded."
+        >
+          ⚑
+        </span>
+      )}
+      {!!fight.stats.unsettled?.length && (
+        <span
+          className="muted small"
+          title={`Provisional: the log never said what ${fight.stats.unsettled.join(", ")} ${
+            fight.stats.unsettled.length > 1 ? "were" : "was"
+          } — your pet, a group-mate, or a stranger — so whose this damage is isn't settled. It resolves itself once the log says, and digesting the log again applies it.`}
+        >
+          ?
         </span>
       )}
       <span className="muted small">{fight.stats.durationSec}s</span>

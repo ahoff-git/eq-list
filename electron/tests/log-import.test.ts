@@ -132,10 +132,50 @@ test("eating a log fills the history tab: a session per login, and the fights in
       ],
     );
 
-    // Eating it again files nothing: every fight is keyed by the log line behind it (ADR 0033).
+    // Eating it again files nothing *new* — every fight is keyed by the log line behind it — but it
+    // does **re-derive** the two it already holds, which is the point of eating a log twice
+    // (ADR 0128). Kills and drops still dedupe and report zero; a fight is a summary, not a count.
     const again = importLog(file, stubKillLog(), history);
     assert.equal(again.fights, 0);
+    assert.equal(again.refreshed, 2);
+    assert.equal(again.superseded, 0);
+    assert.equal(again.unsourced, 0);
     assert.equal(history.sessions().length, 2);
+    // Re-derived in place: same sittings, same fights, same figures.
+    assert.equal(history.fights("login:2026-07-17T18:00:00")[0].stats.yourDealt, 30);
+    assert.equal(history.search("").total, 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("digesting a log again puts a stale stored fight right — the remedy the app advertises", () => {
+  // `data-provenance.ts` marks `combat-history` stale when a parse rule changes and tells you to
+  // digest your log again. This is that loop closing: a fight banked by yesterday's rules, and the
+  // same fight read by today's. ADR 0095 is the real case — a figure that was simply too low.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-stale-"));
+  const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(file, TWO_SITTINGS);
+
+  try {
+    // What today's parser makes of the first pull, so the stale copy can be keyed identically.
+    const reference = createCombatHistory(dir, "run:a");
+    importLog(file, stubKillLog(), reference);
+    const real = reference.search("a gnoll").fights[0].stats;
+    assert.equal(real.yourDealt, 30);
+
+    // A history holding that fight as an older build read it: same fight, low figures.
+    const stale = createCombatHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-stale2-")), "run:b");
+    stale.add({ ...real, yourDealt: 12, totalDealt: 16 }, "Blackburrow", file, "login:2026-07-17T18:00:00");
+    assert.equal(stale.search("a gnoll").fights[0].stats.yourDealt, 12);
+
+    const res = importLog(file, stubKillLog(), stale);
+    assert.equal(res.refreshed, 1); // the stale one…
+    assert.equal(res.fights, 1); // …and the second sitting's, which it never held
+    const fixed = stale.search("a gnoll").fights[0];
+    assert.equal(fixed.stats.yourDealt, 30); // put right
+    assert.equal(fixed.sessionId, "login:2026-07-17T18:00:00"); // and still where it was
+    assert.equal(fixed.zone, "Blackburrow");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

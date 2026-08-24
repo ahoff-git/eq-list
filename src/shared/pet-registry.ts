@@ -13,6 +13,15 @@
  * somebody else's business and **drops it**, so a named pet's damage went missing rather than
  * landing on the wrong row.
  *
+ * That drop is what [ADR 0127](../../specs/decisions/0127-an-unknown-name-is-held-not-dropped.md)
+ * has since decided against — not by guessing sooner, but by **holding** an unplaceable name's data
+ * until something in the log decides and then processing it as whatever it turned out to be. Its gate
+ * is open: a pet proven three minutes late is proven after the fight it fought in was filed (measured:
+ * all 26 such fights), and a stored fight can now be re-derived
+ * ([ADR 0128](../../specs/decisions/0128-a-fight-is-re-derived-not-refused.md)) — so re-reading the log
+ * already recovers what a settled identity is worth. What is left is the live path: see
+ * [todo.md](../../specs/todo.md).
+ *
  * **The tell is proof, not a heuristic.** When a pet confirms an attack order —
  *
  *     Garn told you, 'Attacking a coyote Master.'

@@ -858,6 +858,21 @@ export interface FightStats {
    */
   logIds?: { from: number; to: number };
   /**
+   * Combatants in this window that nothing had placed — not you, not yours, not a group-mate, and
+   * neither a creature with an article nor one your side traded blows with. A bare name like that
+   * could be your pet, a group-mate or a stranger, and
+   * [ADR 0077](../../specs/decisions/0077-a-pet-is-proven-not-guessed.md) refuses to guess.
+   *
+   * Present means **this window's own figures are provisional**: whose the damage is has not been
+   * settled, so `yourDealt` and everything derived from it may move once it is
+   * ([ADR 0130](../../specs/decisions/0130-data-in-doubt-says-so.md)). Computed on read, so it
+   * clears itself the moment the log says who somebody was — and re-derives away entirely once the
+   * fight is read again ([ADR 0128](../../specs/decisions/0128-a-fight-is-re-derived-not-refused.md)).
+   *
+   * Absent is the ordinary case and means "nothing here was in question".
+   */
+  unsettled?: string[];
+  /**
    * Why this fight ended — see `FightEndReason`. Only meaningful on a **finished** fight, so
    * the live window carries it once it's been banked and never before.
    *
@@ -911,7 +926,51 @@ export interface StoredFight {
    * so this plus the fight's timestamps is the durable way back to the source lines.
    */
   logFile?: string;
+  /**
+   * Set when its log file can no longer account for it — the file was rotated or truncated under
+   * it, so a re-derivation covered a range this fight sits outside of. It is kept and says so
+   * rather than being dropped ([ADR 0128](../../specs/decisions/0128-a-fight-is-re-derived-not-refused.md)):
+   * the fight happened, and its figures are simply frozen at whatever the rules said when it was
+   * filed. Absent means "we have no reason to think otherwise", not "checked and fine".
+   */
+  unsourced?: boolean;
   stats: FightStats;
+}
+
+/**
+ * One fight a replay of a log derived, offered to `CombatHistory.rederive`. The replay states what
+ * it read and nothing about where it should be filed — that is the history's to keep (ADR 0128).
+ */
+export interface DerivedFight {
+  stats: FightStats;
+  zone?: string | null;
+  /**
+   * The sitting the log's own login lines put it in, or **absent** when the replay hadn't seen a
+   * login yet. Absent is a real answer: the live path was in a `run:` session it invented for
+   * itself, which a replay can't reproduce and mustn't invent a rival for.
+   */
+  sessionId?: string;
+}
+
+/** What re-deriving one log file's fights came to. */
+export interface RederiveOutcome {
+  /** Stored fights whose figures were re-derived in place — the same fight, new numbers. */
+  refreshed: number;
+  /** Fights today's rules find that the stored history didn't hold. */
+  added: number;
+  /**
+   * Stored fights the new pass replaced without a counterpart, because a rule change moved a
+   * boundary — their damage now sits inside one of the fights it did produce.
+   */
+  superseded: number;
+  /** Stored fights from this log that the file can no longer account for — see `StoredFight.unsourced`. */
+  unsourced: number;
+  /**
+   * Fights the replay derived that the history's own cap dropped again as too old to keep. Counted
+   * apart from `added` because they are not on record: a log holding more fights than the cap would
+   * otherwise report adding hundreds every time it was read, none of which survived the sentence.
+   */
+  trimmed: number;
 }
 
 /** A zone's whole recorded history — the "which camp is actually better" answer. */
@@ -931,6 +990,8 @@ export interface ZoneReport {
   yourDealt: number;
   /** Your DPS across the zone's fights. */
   dps: number;
+  /** A fight here had somebody nothing could place, so the camp's figures inherit that doubt (ADR 0130). */
+  unsettled?: boolean;
   /** When you last fought here. */
   lastAt: string;
 }
@@ -965,6 +1026,13 @@ export interface SessionSummary {
   totalDealt: number;
   yourDealt: number;
   yourTaken: number;
+  /**
+   * A fight in it had a combatant nothing could place, so these totals are provisional in the same
+   * way that fight's are — see `FightStats.unsettled` and
+   * [ADR 0130](../../specs/decisions/0130-data-in-doubt-says-so.md). A sum of a doubtful figure is a
+   * doubtful figure, and a total that hid that would be the quiet kind of wrong.
+   */
+  unsettled?: boolean;
 }
 
 // ─── High scores (personal bests) ───────────────────────────────────────────
@@ -981,6 +1049,8 @@ export interface ScoreCandidate {
   at: string;
   /** What did it, and to whom — "Ice Comet on a froglok shaman". */
   detail?: string;
+  /** Offered off a fight whose combatants weren't all placed — see `HighScore.unsettled`. */
+  unsettled?: boolean;
 }
 
 /**
@@ -1001,6 +1071,13 @@ export interface HighScore {
   previous?: number;
   /** How many times this category's record has changed hands. A 1 is a bar nobody has cleared yet. */
   beaten: number;
+  /**
+   * Taken from a fight that had a combatant nothing could place, so the figure is **provisional** —
+   * the record may be too low (a pet's damage not yet counted as yours) or too high (a stranger's
+   * counted when it shouldn't be). Shown as such rather than presented as a settled personal best
+   * ([ADR 0130](../../specs/decisions/0130-data-in-doubt-says-so.md)).
+   */
+  unsettled?: boolean;
 }
 
 /**
@@ -2078,12 +2155,23 @@ export interface LogImportResult {
   drops: number;
   /** Coin attributed to a corpse, in copper. */
   coin: number;
-  /** Fights filed into history. */
+  /** Fights filed into history that it didn't already hold. */
   fights: number;
   /** Play sittings found, one per login line. */
   sessions: number;
   /** Drops added to the loot feed (and so to the prices derived from it). */
   loot: number;
+  /**
+   * Fights already on disk whose figures this reading **replaced** — the point of eating a log you
+   * have eaten before (ADR 0128). Kills and drops still dedupe and are still reported as zero.
+   */
+  refreshed: number;
+  /** Stored fights this reading replaced without a counterpart, a boundary having moved. */
+  superseded: number;
+  /** Stored fights from this log the file can no longer account for (rotated or truncated). */
+  unsourced: number;
+  /** Fights the log holds that the history's cap wouldn't keep — why a long log doesn't grow the list. */
+  trimmed: number;
 }
 
 /** What the renderer needs to show "a newer build is available" (see `electron/update-check.ts`). */

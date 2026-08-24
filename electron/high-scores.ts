@@ -148,6 +148,9 @@ export function createHighScores(userDataDir: string): HighScoreKeeper {
       zone: zone ?? undefined,
       previous: current?.value,
       beaten: (current?.beaten ?? 0) + 1,
+      // Carried, not re-derived: only the fight that produced this figure knows whether whose it was
+      // had been settled (ADR 0130). It clears when the fight is read again and the doubt has gone.
+      unsettled: candidate.unsettled,
     };
     board.scores[candidate.categoryId] = record;
     saver.save();

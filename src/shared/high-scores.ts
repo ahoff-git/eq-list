@@ -336,8 +336,14 @@ export function fightCandidates(fight: FightStats): ScoreCandidate[] {
   if (!at) return [];
   const out: ScoreCandidate[] = [];
   const against = opponentOf(fight);
+  // Whose the damage in this fight was is not settled, so every figure taken off it is provisional —
+  // stamped on the candidate so the board can say so rather than presenting a guess as a best
+  // ([ADR 0130](../../specs/decisions/0130-data-in-doubt-says-so.md)). It rides on *all* of them,
+  // including the per-hit ones read off the cells: an unplaced name is exactly the one whose hits
+  // might be yours.
+  const unsettled = fight.unsettled?.length ? true : undefined;
   const add = (categoryId: string, value: number, detail?: string) => {
-    if (value > 0) out.push({ categoryId, value, at, detail });
+    if (value > 0) out.push({ categoryId, value, at, detail, unsettled });
   };
 
   add("fight-damage", fight.yourDealt, against);

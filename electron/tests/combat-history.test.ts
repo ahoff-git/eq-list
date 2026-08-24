@@ -75,6 +75,143 @@ function fight(min: number, yours: number, theirs: number, mob = "a coyote", ext
   };
 }
 
+// ── re-deriving a log file's fights (ADR 0128) ──
+/** The epoch-ms span a `fight(min, …)` sits in, widened, so `rederive` counts it as covered. */
+const covering = (fromMin: number, toMin: number) => ({
+  from: Date.parse(fight(fromMin, 0, 0).startedAt) - 1000,
+  to: Date.parse(fight(toMin, 0, 0).endedAt) + 1000,
+});
+
+const LOG = "C:/EQ/Logs/eqlog_Kainos_qeynos.txt";
+
+test("re-reading a log replaces a stored fight's figures and leaves its filing alone", () => {
+  const h = createCombatHistory(tempDir(), "run:live");
+  h.add(fight(1, 100, 20), "Qeynos Hills", LOG);
+  const before = h.search("").fights[0];
+
+  // The same fight, read by a parser that can now see another 40 damage of your DoT ticks.
+  const out = h.rederive(LOG, [{ stats: fight(1, 140, 20), zone: "Qeynos Hills" }], covering(1, 1));
+  assert.deepEqual(out, { refreshed: 1, added: 0, superseded: 0, unsourced: 0, trimmed: 0 });
+
+  const after = h.search("").fights[0];
+  assert.equal(after.stats.yourDealt, 140); // the figure is re-derived…
+  assert.equal(after.id, before.id); // …and everything about where it sits survives
+  assert.equal(after.sessionId, "run:live");
+  assert.equal(after.zone, "Qeynos Hills");
+  assert.equal(h.search("").total, 1); // one fight, not two
+});
+
+test("re-deriving twice lands the same thing — idempotent in the sense that matters", () => {
+  const h = createCombatHistory(tempDir(), "run:live");
+  h.add(fight(1, 100, 20), null, LOG);
+  const derived = [{ stats: fight(1, 140, 20) }];
+  h.rederive(LOG, derived, covering(1, 1));
+  const out = h.rederive(LOG, derived, covering(1, 1));
+  assert.deepEqual(out, { refreshed: 1, added: 0, superseded: 0, unsourced: 0, trimmed: 0 });
+  assert.equal(h.search("").total, 1);
+  assert.equal(h.search("").fights[0].stats.yourDealt, 140);
+});
+
+test("a rule that moves a boundary supersedes the fight it replaces rather than doubling it", () => {
+  // Two stored pulls; today's parser reads a line that used to fall on the floor and sees one fight.
+  const h = createCombatHistory(tempDir(), "run:live");
+  h.add(fight(1, 100, 20), null, LOG);
+  h.add(fight(2, 60, 10), null, LOG);
+  const merged = fight(1, 160, 30, "a coyote", { endedAt: fight(2, 0, 0).endedAt });
+
+  const out = h.rederive(LOG, [{ stats: merged }], covering(1, 2));
+  assert.deepEqual(out, { refreshed: 0, added: 1, superseded: 2, unsourced: 0, trimmed: 0 });
+  const kept = h.search("").fights;
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].stats.yourDealt, 160);
+  assert.equal(kept[0].sessionId, "run:live"); // inherited, not invented
+});
+
+test("a fight the file can no longer account for is kept and says so", () => {
+  // The log rotated: the file now starts at minute 10, and the fight at minute 1 has no source.
+  const h = createCombatHistory(tempDir(), "run:live");
+  h.add(fight(1, 100, 20), null, LOG);
+  h.add(fight(11, 70, 5), null, LOG);
+
+  const out = h.rederive(LOG, [{ stats: fight(11, 70, 5) }], covering(10, 12));
+  assert.deepEqual(out, { refreshed: 1, added: 0, superseded: 0, unsourced: 1, trimmed: 0 });
+  const byStart = h.search("").fights.sort((a, b) => a.stats.startedAt.localeCompare(b.stats.startedAt));
+  assert.equal(byStart.length, 2); // kept, not dropped
+  assert.equal(byStart[0].unsourced, true);
+  assert.equal(byStart[1].unsourced, undefined); // this one was just read from the file
+});
+
+test("a fight newer than what we read is left alone, not marked", () => {
+  // The file goes on growing, and the live watcher files fights while a re-reading is in progress.
+  // Newer than what we read is not the same as older than what survives.
+  const h = createCombatHistory(tempDir(), "run:live");
+  h.add(fight(5, 100, 20), null, LOG);
+  h.add(fight(30, 70, 5), null, LOG); // filed live, after the read below had finished
+
+  const out = h.rederive(LOG, [{ stats: fight(5, 140, 20) }], covering(1, 10));
+  assert.deepEqual(out, { refreshed: 1, added: 0, superseded: 0, unsourced: 0, trimmed: 0 });
+  const later = h.search("").fights.find((f) => f.stats.yourDealt === 70)!;
+  assert.equal(later.unsourced, undefined); // no ⚑ on the pull you just finished
+  assert.equal(h.search("").total, 2); // and it wasn't superseded either
+});
+
+test("reading the source again clears an unsourced mark", () => {
+  const h = createCombatHistory(tempDir(), "run:live");
+  h.add(fight(1, 100, 20), null, LOG);
+  h.rederive(LOG, [], covering(10, 12)); // out of reach: flagged
+  assert.equal(h.search("").fights[0].unsourced, true);
+  h.rederive(LOG, [{ stats: fight(1, 100, 20) }], covering(1, 1)); // and back in reach
+  assert.equal(h.search("").fights[0].unsourced, undefined);
+});
+
+test("another character's log is not re-derived by reading yours", () => {
+  const other = "C:/EQ/Logs/eqlog_Someone_qeynos.txt";
+  const h = createCombatHistory(tempDir(), "run:live");
+  h.add(fight(1, 100, 20), null, LOG);
+  h.add(fight(1, 55, 5), null, other); // same minute, different log — a different fight
+
+  const out = h.rederive(LOG, [{ stats: fight(1, 140, 20) }], covering(1, 1));
+  assert.deepEqual(out, { refreshed: 1, added: 0, superseded: 0, unsourced: 0, trimmed: 0 });
+  const theirs = h.search("").fights.find((f) => f.logFile === other)!;
+  assert.equal(theirs.stats.yourDealt, 55); // untouched, and not marked unsourced either
+  assert.equal(theirs.unsourced, undefined);
+});
+
+test("the same log under a different path or capitalisation is the same log", () => {
+  const h = createCombatHistory(tempDir(), "run:live");
+  h.add(fight(1, 100, 20), null, LOG);
+  const out = h.rederive("D:/backup/EQLOG_Kainos_qeynos.TXT", [], covering(10, 12));
+  assert.equal(out.unsourced, 1); // recognised as ours, so it got the mark
+});
+
+test("a re-derived fight survives a restart with its new figures", () => {
+  const dir = tempDir();
+  const h = createCombatHistory(dir, "run:live");
+  h.add(fight(1, 100, 20), null, LOG);
+  h.rederive(LOG, [{ stats: fight(1, 140, 20) }], covering(1, 1));
+  h.flush();
+
+  const reopened = createCombatHistory(dir, "run:later");
+  assert.equal(reopened.search("").total, 1);
+  assert.equal(reopened.search("").fights[0].stats.yourDealt, 140);
+  // And it still dedupes: the key was re-indexed, so a live path filing it again is refused.
+  assert.equal(reopened.add(fight(1, 140, 20), null, LOG), false);
+});
+
+test("re-reading a log longer than the history's cap doesn't claim to file what the cap drops", () => {
+  // The cap is what makes this worth stating: a log with more fights than the history keeps derives
+  // all of them, is trimmed back, and must not report the trimmed ones as filed on every reading.
+  const h = createCombatHistory(tempDir(), "run:live");
+  const many = Array.from({ length: 1005 }, (_, i) => ({ stats: fight(i, 10 + i, 1) }));
+  const first = h.rederive(LOG, many, covering(0, 1004));
+  assert.equal(first.added, 1000); // the cap's worth…
+  assert.equal(first.trimmed, 5); // …and the five it wouldn't hold, said out loud
+
+  const again = h.rederive(LOG, many, covering(0, 1004));
+  assert.deepEqual(again, { refreshed: 1000, added: 0, superseded: 0, unsourced: 0, trimmed: 5 });
+  assert.equal(h.search("").total, 1000); // and the list didn't grow
+});
+
 test("fights are grouped into the session that recorded them", () => {
   const h = createCombatHistory(tempDir(), "session-a");
   h.add(fight(1, 100, 20));

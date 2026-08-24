@@ -9,7 +9,7 @@ import { drillDown, sumDamage } from "../../src/shared/damage-tree";
 import type { DamageAxis } from "../../src/shared/types";
 import { parseCombat } from "../../src/shared/combat-parser";
 import { parseParty, splitLine } from "../../src/shared/log-parser";
-import type { CoinEvent, CombatEvent, LootEvent, XpEvent } from "../../src/shared/types";
+import type { CoinEvent, CombatEvent, FightStats, LootEvent, XpEvent } from "../../src/shared/types";
 
 /** `sec` seconds past midnight as mm:ss — seconds roll into minutes, as a clock does. */
 function clock(sec: number): string {
@@ -198,6 +198,92 @@ test("your rows are flagged — you and your pet, not the mobs", () => {
   assert.equal(s.fight.yourTaken, 5);
 });
 
+// ── data in doubt says so (ADR 0130) ──
+test("a bare name nothing has placed makes the fight say its figures are provisional", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    // Garn fights our coyote. Could be our pet, could be a group-mate, could be a passer-by — the
+    // log hasn't said, so the damage is counted and whose it is stays open.
+    [2, "Garn hits a coyote for 12 points of damage."],
+  ]);
+
+  const f = t.snapshot().fight;
+  assert.deepEqual(f.unsettled, ["Garn"]);
+  assert.equal(f.totalDealt, 22); // the damage is real and is counted…
+  assert.equal(f.yourDealt, 10); // …and only *yours* is claimed
+});
+
+test("a creature is placed by its article, and a named one by having been fought", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "A coyote bites YOU for 3 points of damage."],
+    [3, "You pierce Tranixx Darkpaw for 8 points of damage."], // no article, but we swung at it
+  ]);
+  assert.equal(t.snapshot().fight.unsettled, undefined);
+});
+
+test("proving the pet settles the doubt without the fight being re-read", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Garn hits a coyote for 12 points of damage."],
+  ]);
+  assert.deepEqual(t.snapshot().fight.unsettled, ["Garn"]);
+
+  // The game says whose Garn is. The doubt was held apart from the tallies, so it simply lifts.
+  feed(t, [[3, "Garn told you, 'Attacking a coyote Master.'"]]);
+  const f = t.snapshot().fight;
+  assert.equal(f.unsettled, undefined);
+  assert.equal(f.yourDealt, 22); // and the damage was his all along
+});
+
+test("a group-mate learned late settles the same way", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Galactic hits a coyote for 9 points of damage."],
+  ]);
+  assert.deepEqual(t.snapshot().fight.unsettled, ["Galactic"]);
+
+  t.recordParty(parseParty(splitLine("[Wed Jul 29 00:00:03 2026] Galactic has joined the group.", 1)!)!);
+  assert.equal(t.snapshot().fight.unsettled, undefined);
+});
+
+test("the doubt reaches the session, not just the fight", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Garn hits a coyote for 12 points of damage."],
+  ]);
+  t.recordKill("a coyote", stamp(2));
+  feed(t, [[40, "You pierce a rat for 5 points of damage."]]); // a clean second fight
+
+  const s = t.snapshot();
+  assert.equal(s.fight.unsettled, undefined); // this pull had nobody in question…
+  assert.deepEqual(s.session.unsettled, ["Garn"]); // …and the evening still does
+});
+
+test("a filed fight carries its doubt to whoever stores it", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const filed: (string[] | undefined)[] = [];
+  t.onFightEnd((f) => filed.push(f.unsettled));
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Garn hits a coyote for 12 points of damage."],
+  ]);
+  t.recordKill("a coyote", stamp(2));
+  t.settle(at(20));
+  assert.deepEqual(filed, [["Garn"]]);
+});
+
 test("a named pet's damage is dropped until the game says the pet is yours", () => {
   // The bug this pins: a pet with its own name is written exactly like a stranger, so with
   // neither side of the exchange recognised as ours, `fight-scope` reads the whole fight as
@@ -330,6 +416,110 @@ test("the later of a kill and a death is what ended the fight", () => {
     [40, "You pierce a bat for 10 points of damage."],
   ]);
   assert.deepEqual(reasons, ["death"]);
+});
+
+/** `sec` seconds past midnight as epoch ms — what `settle` wants, off the same clock as `stamp`. */
+const at = (sec: number) => Date.parse(stamp(sec));
+
+/** Feed lines carrying their own log-line numbers, so a window's `logIds` range can be checked. */
+function feedNumbered(
+  t: ReturnType<typeof createCombatStats>,
+  lines: [sec: number, logId: number, message: string][],
+): void {
+  for (const [sec, logId, message] of lines) {
+    const event = parseCombat(splitLine(`[Wed Jul 29 ${clock(sec)} 2026] ${message}`, logId)!) as CombatEvent;
+    assert.ok(event, `expected to parse: ${message}`);
+    t.record(event);
+  }
+}
+
+// ── a fight is filed when it ends, not when the next one starts (ADR 0126) ──
+test("a resolved fight is filed once the quiet has run, without waiting for the next pull", () => {
+  const t = tracker();
+  const reasons = endReasons(t);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(1));
+  t.settle(at(8)); // still inside the settled window — the pull might not be over
+  assert.deepEqual(reasons, []);
+  t.settle(at(20)); // 19s of quiet after a kill: it is
+  assert.deepEqual(reasons, ["kill"]);
+});
+
+test("an unresolved fight is not filed by a lull — the mob is still up and chasing", () => {
+  const t = tracker();
+  const reasons = endReasons(t);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.settle(at(40)); // 39s: long past a settled fight's quiet, nowhere near an engaged one's
+  assert.deepEqual(reasons, []);
+  t.settle(at(90));
+  assert.deepEqual(reasons, ["timeout"]);
+});
+
+test("a settled fight is filed once, not again when the next pull splits the window", () => {
+  const t = tracker();
+  const ended: number[] = [];
+  t.onFightEnd((f) => ended.push(f.totalDealt));
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(1));
+  t.settle(at(20));
+  t.settle(at(30)); // idempotent: the clock going on ticking says nothing new
+  feed(t, [[40, "You pierce a rat for 7 points of damage."]]); // the next pull
+  t.flush();
+  assert.deepEqual(ended, [10, 7]); // the coyote once, then the rat on the way out
+});
+
+test("a filed fight stays on the panel — filed and gone are different facts", () => {
+  const t = tracker();
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(1));
+  t.settle(at(20));
+  // A damage meter's job between pulls is to show you the last one.
+  assert.equal(t.snapshot().fight.totalDealt, 10);
+});
+
+test("settling before anything has been fought does nothing", () => {
+  const t = tracker();
+  const reasons = endReasons(t);
+  t.settle(at(500));
+  t.settle(0); // no line seen yet, so no clock — see log-clock.ts
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.settle(0);
+  assert.deepEqual(reasons, []);
+});
+
+test("a filed fight takes nothing more — coin looted after it goes to the session alone", () => {
+  const t = tracker();
+  const filed: number[] = [];
+  t.onFightEnd((f) => filed.push(f.copper));
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(1));
+  t.recordCoin(coin(12, 2)); // looted straight off the corpse: the fight's money
+  t.settle(at(20)); // quiet: the fight is over and filed
+  t.recordCoin(coin(99, 30)); // a corpse from earlier, looted in the downtime
+  feed(t, [[60, "You pierce a rat for 7 points of damage."]]);
+  t.flush();
+  assert.deepEqual(filed, [12, 0]); // the late coin reached neither fight…
+  assert.equal(t.snapshot().session.copper, 111); // …and the evening's money still has all of it
+});
+
+test("a fight's line range covers its own lines, not the downtime after it", () => {
+  const t = tracker();
+  const filed: FightStats["logIds"][] = [];
+  t.onFightEnd((f) => filed.push(f.logIds));
+  feedNumbered(t, [
+    [1, 100, "You pierce a coyote for 10 points of damage."],
+    [2, 101, "You pierce a coyote for 10 points of damage."],
+  ]);
+  t.recordKill("a coyote", stamp(2));
+  // Buffing and re-memming through the downtime, and a group-mate casting across the camp: all of
+  // it is admitted (it is your side) and none of it belongs to the fight that just finished.
+  feedNumbered(t, [
+    [30, 200, "You begin casting Spirit of Wolf."],
+    [90, 300, "You begin casting Inner Fire."],
+    [150, 400, "You healed Kainos`s warder for 8 hit points."],
+  ]);
+  feedNumbered(t, [[200, 500, "You pierce a rat for 7 points of damage."]]);
+  assert.deepEqual(filed, [{ from: 100, to: 101 }]);
 });
 
 test("fight duration and window timestamps come from the log", () => {

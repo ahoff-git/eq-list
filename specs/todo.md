@@ -21,6 +21,46 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **Hold an unplaceable name loosely, then process it** — [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md),
+  in the order the measurements set rather than the order the idea suggests. Today an unproven named
+  pet is *dropped*: `pet-registry.ts` learns one only from `<Pet> told you, 'Attacking <mob> Master.'`
+  ([ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md)) and starts every launch empty, which
+  is why this reads as a fresh-install fault. Measured on a magician's 315,601-line log — 34 pets in
+  three weeks, a fresh name per summon, each blind 15s to 5½ minutes: **646** damage short on
+  `totalDealt`, **5,608** on `yourDealt`, **2,127** on `yourTaken`, concentrated in **26 fights**,
+  with four pets doing more damage before their proof than after it (`Xebeker` 671 vs 201).
+
+  Three steps, and **the first is the gate**:
+
+  1. ~~**Re-derive a stored fight.**~~ **Done** —
+     [ADR 0128](./decisions/0128-a-fight-is-re-derived-not-refused.md). Eating a log now redoes the
+     fights it already holds, so an identity settled after a fight was filed can reach that fight.
+     Proven on the measured log: re-reading it with every pet known refreshes 1,000 stored fights and
+     puts 3,906 damage into them. **The remaining two steps are what turn that into the full 5,608.**
+  2. **Make attribution read-time everywhere.** The *saying* half is done —
+     [ADR 0130](./decisions/0130-data-in-doubt-says-so.md): a window holds the names nothing placed,
+     re-asks on read, and the doubt propagates to the sitting, the camp and any record taken off the
+     fight (measured: 20% of fights, 73 names, no false positives among the top ones). The *fixing*
+     half is not. `mine` is already read-time for rows and cells (`combat-stats.ts`'s `row()`), which
+     is why `totalDealt` is only 0.03% short, but it is baked at record time in seven places —
+     `w.bucket` (sparkline), the per-spell table, the per-invocation proc tallies, the `incoming`
+     death-recap buffer, `castRepertoire`, `pending`, `lastLanding` — so a fight filed *after* its pet
+     is proven still contradicts itself: the damage is on the row and in the drill-down and missing
+     from the Spells tab and the sparkline. Shape: tally an undecided name into a **held** side-tally
+     keyed by that name, merge it in when the name is decided. Bounded, since only ambiguous names get
+     one.
+  3. **`FightScope.admits` gains a third value, `hold`.** Its doc explains the boolean: it "runs live,
+     once per line, with no way back". After (1) and (2) there is a way back. Expiry of a held event
+     means drop, so it degrades to today's behaviour.
+
+  Deciders, all checked against the log (full workings in ADR 0127): the attack confirmation (242
+  lines); `<Pet> says, 'Sorry, Master... calming down.'` (138, no false positives, worth adding once
+  there is somewhere to put it); party joins and group chat, which `party.ts` already reads but only
+  forwards; an article meaning mob; and the **negative** deciders a pen needs as badly — a name that
+  talks in a chat channel is a player, and a pet cannot, which is what lets the pen discard instead of
+  holding to expiry. Not proof: `was partially successful in capturing` (442 of its 1,242 lines name a
+  player in the group). Proof but nameless: `Captured <mob>'s attention, Master!` (1,635 lines).
+
 - **An item's era is derived where a neighbour simply states it.** [Lucy](./lucy-data/README.md) is
   in ([ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)) and its one real weakness is the era:
   Lucy has no era or expansion field anywhere, so the verdict is inferred from the zones on its drop
@@ -62,14 +102,14 @@ everything else, so this list can stay short enough to read:
   it exists to prevent. With the line in hand this is: extend the consider parse to carry an optional
   `level`, fold it through `observeLevel` per mob, store it beside the observations, and put it in the
   contribution payload — the machinery from
-  [ADR 0120](./decisions/0120-a-contribution-is-keyed-by-who-made-it.md) carries it unchanged.
+  [ADR 0132](./decisions/0132-a-contribution-is-keyed-by-who-made-it.md) carries it unchanged.
 
 - **Nothing yet shows the pooled provenance it now carries.** `src/shared/pooling.ts` can say whose a
   figure mostly is, split a pooled drop rate back into your evidence and each contributor's, and name
   the drops where the two plainly disagree — and no panel reads it yet. The mob knowledge panel shows
   `myKills` of `kills` and a contributor list, which is the old, coarser version of the same idea.
   Wiring `poolStanding`/`poolWhy` into that panel's hover, and surfacing `disagreements()` somewhere,
-  is what makes ADR 0120's "reported, not resolved" visible rather than merely true. `mobs.contributors()`
+  is what makes ADR 0132's "reported, not resolved" visible rather than merely true. `mobs.contributors()`
   is likewise wired end to end with nothing calling it — it's what a "who have I pooled with, and
   forget this one" list would be built on (`forgetPeers(id)` already takes an id).
 
@@ -87,18 +127,6 @@ everything else, so this list can stay short enough to read:
   It needs its own thought rather than a copied regex: a shield is damage you dealt *by being hit*
   (`shield: true`, no spell), the amounts are tiny and the line count is not, and `YOUR` is
   capitalised where the tick form's `your` is not — so the two aren't one pattern with a flag.
-
-- **Re-derive stored fights when a parse rule changes.** Now actually owed, rather than theoretical:
-  [ADR 0095](./decisions/0095-your-own-dot-tick-is-yours.md) raised every damage figure that includes
-  your DoTs and was explicitly **forward only**, so fights already on disk under-report by up to a few
-  percent (much more for a DoT-led character) and the scoreboard's seeding reads exactly those fights.
-  [ADR 0021](./decisions/0021-stored-fights-keep-their-source.md) put `logIds` and the log's own
-  timestamps on every stored fight *for this*, and nothing has ever used them. The shape: find the
-  source lines again, re-run them through today's parser, replace the stored `FightStats`. Two things
-  to settle first — a fight whose log file is gone can't be re-derived and must say so rather than be
-  dropped, and a re-derivation has to be **idempotent** against ADR 0033's keying, which keys a fight
-  by its file and timestamps and would otherwise refuse the replacement as a duplicate. Pairs with the
-  provenance-manifest item below: a figure should be able to say which build read it.
 
 - **A level that goes down may confuse the XP and HP trackers.** The same sweep found that EQL levels
   are **per class**: `You have gained a level! Welcome to level 11!` appears four separate times in one
@@ -342,7 +370,7 @@ lineage. Most of what follows is about widening the input, not the output.
 
 - **In-zone A\*, revisited with new evidence — and the evidence says no.** Recorded because it will come
   up again. eql-log-reader draws a guide line by A* over the map's own geometry, which is precisely what
-  [ADR 0049 was retired](./decisions/0062-a-travel-graph-of-zone-lines.md) for and what
+  [ADR 0049 was retired](./decisions/README.md#retired-and-reused-numbers) for and what
   [map](./map/README.md)'s non-responsibilities rule out: *"an `L` record is a wall in a dungeon and a
   contour line outdoors — so a route through the geometry could only ever be a guess dressed as
   advice."* Reading their implementation settles whether they solved it: they did not. `_nav_graph()` /

@@ -365,7 +365,7 @@ export interface Sighting {
  * The mirror of a sighting, and the only **lower** bound this app has. `R > (when you said so) −
  * (when it died)`, so it ratchets *upward* where everything else ratchets down.
  *
- * [ADR 0094](../../specs/decisions/0094-a-spawn-timer-is-window-not-an-instant.md) refused to invent
+ * [ADR 0094](../../specs/decisions/0094-a-spawn-timer-is-a-window-not-an-instant.md) refused to invent
  * a lower bound because no observation could support one, and
  * [ADR 0097](../../specs/decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md) refused to
  * read *silence* as one — the mob may be up and out of sight, which is the wandering problem. Both

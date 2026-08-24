@@ -13,36 +13,31 @@
  * same way the live path does — `onFightEnd` → history — under the sitting the log says they
  * happened in ([ADR 0054](../specs/decisions/0054-a-sitting-is-a-login.md)), so an eaten log
  * fills the History tab with the same evenings you'd have seen had the app been running.
+ *
+ * Fights are also the one thing here that a **second** helping changes. Kills and drops are keyed by
+ * their line and skipped on sight ([ADR 0033](../specs/decisions/0033-eating-a-log-is-idempotent.md)),
+ * because each is a count and counting one twice corrupts a rate. A fight is not a count — it is a
+ * derived summary — so eating a log again **re-derives** the fights it already holds rather than
+ * refusing them ([ADR 0128](../specs/decisions/0128-a-fight-is-re-derived-not-refused.md)). That is
+ * what makes "digest the log again" the remedy `data-provenance.ts` has always advertised for a
+ * stale `combat-history`, instead of a no-op.
  */
 import fs from "node:fs";
 import { isCombatEvent, parseLine } from "../src/shared/parse-line";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createCombatStats } from "./combat-stats";
 import { loginSession } from "./combat-history";
+import type { DerivedFight, LogImportResult as SharedImportResult } from "../src/shared/types";
 import type { CombatHistory } from "./combat-history";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
 
-export interface LogImportResult {
-  /** Lines read from the file. */
-  lines: number;
-  /**
-   * Kills **newly** recorded (your own and, as spawn evidence, others' in earshot). Lines already
-   * known — because the log was eaten before, or watched live — are deduped and not counted, so
-   * re-eating a log reports 0.
-   */
-  kills: number;
-  /** Drops **newly** attributed to a corpse (already-folded loot lines are deduped, not counted). */
-  drops: number;
-  /** Coin **newly** attributed to a corpse, in copper (deduped the same way). */
-  coin: number;
-  /** Fights **newly** filed into history (a fight already stored — watched live, or eaten before — doesn't count). */
-  fights: number;
-  /** Play sittings the log's login lines marked out. */
-  sessions: number;
-  /** Drops **newly** added to the loot feed (and so to the prices derived from it). */
-  loot: number;
-}
+/**
+ * What one helping came to. The **same shape the renderer reads**, minus the file name the IPC adds
+ * on the way out — declared there rather than a second time here, because two copies of a result
+ * shape drift and then one of them silently stops reporting a field.
+ */
+export type LogImportResult = Omit<SharedImportResult, "file">;
 
 /**
  * Digest `file` into every store that can take it — the kill log, and whichever of `history` and
@@ -59,6 +54,32 @@ export interface LogImportResult {
  * The caller sets the kill log's player to this log's character first (so your own kills, and your
  * pet's death, are told apart correctly); the fight tracker takes the same name from the filename.
  */
+/**
+ * Digest one log with the kill log named for **that** log's character, and the live one put back
+ * afterwards. The naming matters: the kill log tells your own kills from a stranger's by character
+ * name, and a pet's death from a mob you farm, so digesting somebody else's evening under the live
+ * character's name would file their kills as yours.
+ *
+ * Here rather than at each call site because there are now two — the button in Settings and the
+ * unattended re-reading a stale store triggers
+ * ([ADR 0129](../specs/decisions/0129-a-release-can-ask-for-a-re-read.md)) — and a dance one of them
+ * forgot is the kind of bug nothing would report.
+ */
+export function digestLog(
+  file: string,
+  live: string,
+  killLog: KillLog,
+  history?: CombatHistory,
+  lootLog?: LootLog,
+): LogImportResult {
+  try {
+    killLog.setPlayer(characterFromLogFile(file) ?? "");
+    return importLog(file, killLog, history, lootLog);
+  } finally {
+    killLog.setPlayer(live);
+  }
+}
+
 export function importLog(
   file: string,
   killLog: KillLog,
@@ -79,19 +100,34 @@ export function importLog(
   // `main.ts` feeds the live one, which is what makes an eaten fight indistinguishable from a
   // watched one — including its spells, its deaths and its per-mob rates.
   const combat = history ? createCombatStats() : null;
-  // Fights before the log's first login line belong to whatever sitting was already in progress;
-  // they're filed under the file itself rather than borrowing the *live* session's id.
-  let session = `file:${file}`;
+  /**
+   * The sitting each fight falls in, from the log's own login lines. Left **undefined** until one
+   * turns up: a fight before the file's first login belongs to whatever sitting was already in
+   * progress, and only the history knows what that was called (see `CombatHistory.rederive`).
+   */
+  let session: string | undefined;
   combat?.setPlayer(characterFromLogFile(file) ?? "");
-  combat?.onFightEnd((fight) => {
-    if (history?.add(fight, combat.zone(), file, session)) fights++;
-  });
+  /**
+   * Collected rather than filed one at a time, because the history replaces a log file's fights as a
+   * **set**: a rule that makes a new line readable can move a boundary, so which stored fight a
+   * derived one answers to is only knowable once they're all in hand (ADR 0128).
+   */
+  const derived: DerivedFight[] = [];
+  combat?.onFightEnd((fight) => void derived.push({ stats: fight, zone: combat.zone(), sessionId: session }));
+  /** The span the file actually accounts for, first parsed event to last — `rederive`'s `covers`. */
+  let firstAt = 0;
+  let lastAt = 0;
 
   for (const raw of lines) {
     // Negative ids mark these as imported, so a KillRecord.logId can't collide with a line
     // number from this run's live tailing.
     const event = parseLine(raw, --logId);
     if (!event) continue;
+    const at = Date.parse(event.at);
+    if (at) {
+      if (!firstAt) firstAt = at;
+      lastAt = at;
+    }
     switch (event.kind) {
       case "zone":
         zone = event.zone;
@@ -137,5 +173,23 @@ export function importLog(
     }
   }
   combat?.flush(); // the log ended mid-sitting; its last fight is still a fight
-  return { lines: lines.length, kills, drops, coin, fights, sessions, loot };
+  // One handover, at the end: the whole file's fights, against the span the file covers.
+  const outcome =
+    history && firstAt
+      ? history.rederive(file, derived, { from: firstAt, to: lastAt })
+      : { refreshed: 0, added: 0, superseded: 0, unsourced: 0, trimmed: 0 };
+  fights = outcome.added;
+  return {
+    lines: lines.length,
+    kills,
+    drops,
+    coin,
+    fights,
+    sessions,
+    loot,
+    refreshed: outcome.refreshed,
+    superseded: outcome.superseded,
+    unsourced: outcome.unsourced,
+    trimmed: outcome.trimmed,
+  };
 }

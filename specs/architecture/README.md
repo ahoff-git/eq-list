@@ -29,7 +29,7 @@ in the main process and all UI in the renderer.
     (`guardRenderer`), the window is stripped of its pin and its clicks (`makeHarmless`) before
     anything else, and then either destroyed (the alert overlay, rebuilt once) or revived (main,
     map). A main-process crash neutralizes the lot. See
-    [ADR 0105](../decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md).
+    [ADR 0131](../decisions/0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md).
   - `combat-stats.ts` — the one session tracker: experience/kill counters, per-combatant
     and per-spell tallies, per-mob rates; `combat-history.ts` — finished fights persisted
     for later; `xp-progress.ts` / `hp-estimate.ts` — persistent player state that outlives

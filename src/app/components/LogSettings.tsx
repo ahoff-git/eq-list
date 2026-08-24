@@ -74,10 +74,12 @@ export default function LogSettings({
           Pick an old EverQuest log and fold its kills, drops and locations into your learned mob
           data (observed drop rates + roam areas), and its <b>fights into the Damage tab’s history</b>,
           one play session per login — without watching it live. Your live combat/session stats
-          aren’t touched. Eating the same log twice is safe: every kill, drop and fight is keyed by
-          the log line behind it, so nothing lands twice. Results appear right away: the Hunt tab
-          pools every zone, while the map shows the zone you’re viewing (only kills the log placed
-          with a nearby <kbd>/loc</kbd> get a marker).
+          aren’t touched. Eating the same log twice is safe, and <b>worth doing</b> after an update
+          that changes how a log is read: kills and drops are keyed by the line behind them so
+          nothing lands twice, while recorded <b>fights are re-derived</b> — their figures redone
+          from the log rather than left at whatever the old rules made of them. Results appear right
+          away: the Hunt tab pools every zone, while the map shows the zone you’re viewing (only
+          kills the log placed with a nearby <kbd>/loc</kbd> get a marker).
           {digested && (
             <>
               {" "}
@@ -87,6 +89,13 @@ export default function LogSettings({
               </b>{" "}
               from {fileName(digested.file)}
               {digested.sessions > 0 && ` across ${count(digested.sessions, "play session")}`}.
+              {digested.refreshed > 0 && ` Re-derived ${count(digested.refreshed, "fight")} already on record.`}
+              {digested.superseded > 0 &&
+                ` ${count(digested.superseded, "stored fight")} folded into others as the boundaries moved.`}
+              {digested.unsourced > 0 &&
+                ` ${count(digested.unsourced, "older fight")} can no longer be found in this file — kept, and marked.`}
+              {digested.trimmed > 0 &&
+                ` ${count(digested.trimmed, "fight")} in the log are older than the history keeps.`}
             </>
           )}
         </span>

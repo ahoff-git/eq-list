@@ -19,6 +19,8 @@ import { runMigrations } from "./migrations";
 import { createAlertQueue } from "./alert-queue";
 import { isSameSitting } from "../src/shared/log-catchup";
 import { createCombatStats } from "./combat-stats";
+import { createLogClock } from "../src/shared/log-clock";
+import { reReadLogs } from "./log-reread";
 import { createSpellCatalog } from "./spells";
 import { createCombatHistory } from "./combat-history";
 import { createHighScores } from "./high-scores";
@@ -84,6 +86,14 @@ function coalesce(ms: number, fn: () => void): () => void {
  * makes "one notice per batch of lines" the natural ceiling.
  */
 const KILLS_NOTICE_MS = 500;
+
+/**
+ * How often to tell the damage meter what time it is, so a fight that ended in quiet is filed then
+ * rather than when the next one starts ([ADR 0126](../specs/decisions/0126-a-fight-is-filed-when-it-ends.md)).
+ * A second is well inside the ten of quiet a resolved fight needs, and the check is a couple of
+ * comparisons when nothing has changed.
+ */
+const SETTLE_MS = 1000;
 
 /**
  * A deadline on waiting for the control window before starting its siblings anyway.
@@ -476,7 +486,24 @@ if (!app.requestSingleInstanceLock()) {
     // death arrives as a kill (above) rather than as this.
     if (event.kind === "death" && combat.mine(event.victim)) scores.noteDeath();
   });
-  watcher.onLine((line) => alerts.line(line));
+  /**
+   * The log's own clock, read off the lines as they arrive — *not* the wall clock, because a
+   * replayed gap and the simulator both write old timestamps on purpose (`log-clock.ts`).
+   */
+  const logClock = createLogClock();
+  watcher.onLine((line) => {
+    logClock.note(line.at);
+    alerts.line(line);
+  });
+  /**
+   * A fight ends in quiet, and quiet logs nothing — so without this the last pull of a camp was
+   * handed to history, and its records to the scoreboard, only when the *next* pull started. On a
+   * real log that was a median 32 seconds late, a minute or worse for three fights in ten, and
+   * once an hour. It reads as broken chiefly on a fresh install, where there is no history and no
+   * board behind it to hide the lag.
+   */
+  const settleTimer = setInterval(() => combat.settle(logClock.now()), SETTLE_MS);
+  settleTimer.unref?.(); // a timer must never be the reason the process stays up
   // Everything logged while the app was closed has just been fed through the live path, which is
   // what makes the app's state independent of when it was launched. The one thing that *isn't*
   // simply "state" is the live meter: its totals mean "this sitting". Restart mid-camp and carrying
@@ -493,6 +520,9 @@ if (!app.requestSingleInstanceLock()) {
     const lines = watcher.unmatched();
     const { seen, ignored, shapes, dropped } = lines.stats();
     if (seen) log.debug("unparsed lines", { seen, ignored, shapes, dropped, top: lines.top(15) });
+    // Before the reset, so a fight the gap itself finished is filed as the kill (or death) that
+    // finished it rather than as something the app cut short — `taken-survived` reads that field.
+    combat.settle(logClock.now());
     if (!continuing) combat.reset();
   });
   /**
@@ -631,6 +661,28 @@ if (!app.requestSingleInstanceLock()) {
     // Restore the map window if it was open last session.
     if (wasMapOpen()) createMapWindow(store.getSettings().overlay);
     log.debug("sibling windows started");
+    // A release that changed how a log is read asked for the logs to be read again, and this is the
+    // start that does it (ADR 0129). Here rather than earlier because it is seconds of synchronous
+    // parsing per log: on the launch path it would be a launch that hangs, and after the window has
+    // painted it is a background repair nobody has to know about. Fire-and-forget by design — it
+    // never throws, and a repair that didn't happen leaves the data exactly as stale as it was.
+    void reReadLogs({
+      userDataDir: userData,
+      history,
+      killLog,
+      lootLog,
+      logDir: store.getSettings().logDir,
+      live: characterFromLogFile(watcher.status().file) ?? "",
+    }).then((report) => {
+      if (!report) return;
+      // The figures behind the scoreboard just moved, so re-offer them — silently, by `absorb`'s own
+      // contract, since a record from an evening long past is not news however good it was.
+      scores.absorb(history.search("", Number.MAX_SAFE_INTEGER).fights);
+      scores.flush();
+      // Everything that reads a stored list once when it opens should read it again.
+      broadcast(CH.killsChanged, undefined);
+      broadcast(CH.dataChanged, undefined);
+    });
   });
   log.debug("app ready");
 
@@ -641,6 +693,7 @@ if (!app.requestSingleInstanceLock()) {
   // Don't lose the last pull on the way out: close the fight in progress, then get it
   // (and any debounced writes) to disk.
   app.on("before-quit", () => {
+    clearInterval(settleTimer);
     combat.flush();
     history.flush();
     xp.flush();

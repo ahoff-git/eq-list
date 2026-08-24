@@ -197,6 +197,16 @@ function ScoreRow({ score, fresh }: { score: HighScore; fresh: boolean }) {
       <span className="sc-value">{formatScore(category.unit, score.value)}</span>
       <span className="sc-label">{category.label}</span>
       <span className="sc-detail">{score.detail ?? ""}</span>
+      {/* Taken off a fight whose combatants weren't all placed, so the figure could move either way
+          once the log says who somebody was (ADR 0130). Said rather than presented as settled. */}
+      {score.unsettled && (
+        <span
+          className="muted small"
+          title="Provisional: the fight this came from had somebody the log never placed — your pet, a group-mate, or a stranger — so this figure may move. Digesting the log again applies whatever the log has since settled."
+        >
+          ?
+        </span>
+      )}
       <span className="spacer" />
       {/* A bar nobody has cleared is different from one beaten four times, and the difference is the
           only thing on this row that says whether the number is actually hard to beat. */}

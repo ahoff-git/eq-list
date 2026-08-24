@@ -790,7 +790,7 @@ top, never taking a click), then destroyed if it's a pure overlay or reloaded if
 itself. The alert overlay's **interactive** state (solid + focusable, borrowed while placing a
 custom spot) is time-boxed and has three ways back to click-through, none of which needs the page to
 be alive. See
-[ADR 0105](../decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) and, for
+[ADR 0131](../decisions/0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) and, for
 the screengrab selector, [ADR 0102](../decisions/0102-a-lookup-never-holds-the-screen.md).
 
 The same rule at **launch**, where the failure looks different: a window whose renderer never arrives

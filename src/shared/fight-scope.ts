@@ -26,6 +26,15 @@
  * near-certain direction is used — an ally swung at it, therefore it's an enemy — and the
  * weak one is left out. The two are the same idea at different confidences, on purpose.
  *
+ * "No way back" is the load-bearing half of that, and
+ * [ADR 0127](../../specs/decisions/0127-an-unknown-name-is-held-not-dropped.md) has decided to build
+ * one: `admits` grows a third answer, `hold`, for an event turning on a name nothing has yet placed —
+ * kept until the log says who that name is, then admitted or discarded as it turns out. A held event
+ * that expires is dropped, so the floor stays exactly where it is today. Not yet built — but no longer
+ * gated: a stored fight can now be re-derived
+ * ([ADR 0128](../../specs/decisions/0128-a-fight-is-re-derived-not-refused.md)), which is what a held
+ * event admitted late needs somewhere to land. The ordering is in ADR 0127.
+ *
  * The enemy set is per **fight**, not per session: who we were fighting last pull says
  * nothing about this one, and left to accumulate, a night's mob names would admit half the
  * zone. Names being what they are, "a coyote" inside a fight is any coyote — the same

@@ -63,6 +63,25 @@ export interface DataConcern {
    */
   revision: number;
   /**
+   * May the app run this concern's remedy **itself, unprompted, on the next start**?
+   *
+   * The rest of this file's reasoning is that a revision is precisely what the app *cannot* fix on
+   * its own, so the honest thing is to say so and let a person decide. That holds for a remedy that
+   * needs a network, a checkout, or a judgement call. It does not hold for `re-eat`: the logs are
+   * sitting on this machine, the app already knows which ones its fights came from, and re-reading
+   * one takes about a second and a half per 26 MB. Asking a person to press a button to get data
+   * they never chose to have wrong is a chore dressed as consent.
+   *
+   * So a release that changes how a log is read bumps the revision and sets this, and the next start
+   * puts it right without mentioning it beforehand. Two things keep that safe rather than merely
+   * convenient: the work happens **after the window has painted**, never on the launch path; and it
+   * is **self-limiting**, because putting the data right re-stamps it at the current revision, so
+   * the second start finds nothing to do.
+   *
+   * Only ever set this where the app can genuinely finish the job with no outside help.
+   */
+  unattended?: boolean;
+  /**
    * What to assume a file carrying **no stamp** was written at.
    *
    * Defaults to `revision`, i.e. "assume it's fine". That default is the important half: the day
@@ -155,15 +174,21 @@ export const DATA_CONCERNS: DataConcern[] = [
     label: "Recorded fights",
     file: "combat-history.json",
     // 2: your own DoT ticks became readable, so every damage figure in a stored fight is low.
-    revision: 2,
-    // Stamping shipped *with* that bump, so an unstamped file is revision 1 — genuinely out of date,
-    // and the only concern here for which that's true.
+    // 3: a fight is filed when it ends rather than when the next one starts (ADR 0126), so what
+    //    falls inside one moved — and, for the first time, the remedy below actually does something
+    //    (ADR 0128: eating a log re-derives the fights it already holds instead of refusing them).
+    revision: 3,
+    // Stamping shipped *with* the bump to 2, so an unstamped file is revision 1 — genuinely out of
+    // date, and the only concern here for which that's true.
     unstamped: 1,
     remedy: "re-eat",
+    // The logs are on this machine and the history names which ones its fights came from, so nothing
+    // about this needs a person (ADR 0129). Roughly 1.4s per 26 MB log, after the window has painted.
+    unattended: true,
     blurb:
       "Every fight the meter has banked — damage, DPS, spells, and the cells every drill-down is rolled up from. A stale one under-reports rather than looking wrong, so nothing about it draws the eye.",
     changed:
-      "Your own damage-over-time ticks are now read (ADR 0095). Fights recorded before that miss them — about 3% of a character's damage, and most of a DoT-led one's.",
+      "Your own damage-over-time ticks are now read (ADR 0095), and a fight now closes when it ends rather than when the next pull starts (ADR 0126) — so an older fight both misses your DoT damage and sweeps up experience and coin from the pull after it.",
   },
   {
     id: "high-scores",
@@ -304,6 +329,13 @@ export const REMEDY_ADVICE: Record<DataRemedy, string> = {
 /** Does this row want somebody to do something? `ahead` never does — see `dataState`. */
 export const needsAction = (row: DataReportRow): boolean =>
   row.state === "stale" && row.concern.remedy !== "rescan" && row.concern.remedy !== "unrecoverable";
+
+/**
+ * Will the app put this row right by itself at the next start? Then the Settings panel should say so
+ * rather than ask — a prompt for something already in hand reads as a chore that never goes away.
+ */
+export const remediesItself = (row: DataReportRow): boolean =>
+  row.state === "stale" && !!row.concern.unattended;
 
 /** How many rows want something done — the badge on the Settings tab. */
 export const actionsNeeded = (rows: DataReportRow[]): number => rows.filter(needsAction).length;

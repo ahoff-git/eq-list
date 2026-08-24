@@ -118,7 +118,7 @@ features for later in [../ideas.md](../ideas.md).
   The stuck-selector case itself is reproducible by breaking hydration (throw from the select page's
   effect): the window should never appear at all, and the log should say the selector never reported.
 - **Overlays fail closed.** The five failure modes in
-  [ADR 0105](../decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) are
+  [ADR 0131](../decisions/0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) are
   reasoned about, not watched. Each can be forced, and in every case the screen must stay clickable:
   - **Placement.** Start "place a custom spot" and then do nothing — after 30s the overlay must give
     the screen back and the button must be usable again. Repeat, pressing Escape instead (it is read

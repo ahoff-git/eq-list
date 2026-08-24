@@ -390,7 +390,7 @@ world coordinates, so a map knows where it is. See
   ±button that pins it on the map). Yours is derived from the kill log on demand;
   peers' arrives over the room and is stored separately, **keyed by contributor id rather than by
   the name they announce**, so every figure can still say how much of it you saw yourself and whose
-  the rest is ([ADR 0120](../decisions/0120-a-contribution-is-keyed-by-who-made-it.md)).
+  the rest is ([ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md)).
   `src/shared/mob-stats.ts` does the rolling-up and the pooling, `src/shared/pooling.ts` says what
   a pooled figure is worth — whose it mostly is, and which drops your sample and the pool's plainly
   disagree about, reported rather than resolved; see
@@ -505,7 +505,7 @@ world coordinates, so a map knows where it is. See
   one intent, one switch. Peers' kills draw outlined rather than filled, and are **kept**: they're
   filed by the main process as they arrive and read back with `usePeerKills`, so the pooled half of
   the heatmap is here on a night nobody else is online, and no window has to be open to receive it
-  ([ADR 0120](../decisions/0120-a-contribution-is-keyed-by-who-made-it.md)). See
+  ([ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md)). See
   [ADR 0023](../decisions/0023-kill-heatmap.md) and
   [ADR 0024](../decisions/0024-mob-knowledge.md).
 - **Connected users** (the 👥 toolbar panel, when connected) — everyone in the room,

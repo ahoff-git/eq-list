@@ -41,7 +41,7 @@ const log = createLogger("window-drag");
  * How long a drag may go without a word from the renderer before main drops it.
  *
  * A drag is only ended by the renderer that started it, so a renderer that dies mid-drag (the case
- * [ADR 0105](../specs/decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md)
+ * [ADR 0131](../specs/decisions/0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md)
  * is about) would otherwise leave the snap preview on screen for good. Generous, because the timer
  * is re-armed by every pointer move and the cost of firing early is a drag that stops following:
  * ten seconds of a held button with a perfectly still mouse is not a gesture anyone is making.
@@ -253,7 +253,7 @@ let preview: BrowserWindow | null = null;
  *
  * Deliberately a window with **nothing loaded**: it is one flat colour, so a renderer would only
  * add a page that could fail to paint or stop answering while sitting on top of the game — the
- * failure [ADR 0105](../specs/decisions/0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md)
+ * failure [ADR 0131](../specs/decisions/0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md)
  * is about. It is also unfocusable and click-through, so at its worst it is a coloured rectangle
  * that cannot take a click, and it is destroyed the moment the drag ends.
  */

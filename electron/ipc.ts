@@ -9,7 +9,7 @@ import { clampOpacity, p99ZoneUrl } from "../src/shared/constants";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE, pingWiki } from "./wiki/api";
-import { importLog } from "./log-import";
+import { digestLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { createTravelRouter } from "./travel-graph";
 import { sampleAlert, sampleRecord } from "./alert-router";
@@ -248,9 +248,8 @@ function registerSettingsIpc(context: IpcContext): void {
   );
 
   // "Eat" a log file: a catch-up that digests it into every store that can take it — the kill log
-  // (→ mob knowledge), combat history, and the loot feed (→ prices). The kill log flags your own
-  // kills by character name, so name it for THIS log's character during the import, then restore
-  // the live watcher's character afterwards.
+  // (→ mob knowledge), combat history, and the loot feed (→ prices). `digestLog` owns the kill log's
+  // change of identity for the duration, since the unattended re-reading needs the identical dance.
   ipcMain.handle(CH.logImport, async () => {
     const res = await dialog.showOpenDialog({
       title: "Choose an EverQuest log to digest",
@@ -264,8 +263,7 @@ function registerSettingsIpc(context: IpcContext): void {
     const file = res.filePaths[0];
     const live = characterFromLogFile(watcher.status().file) ?? "";
     try {
-      killLog.setPlayer(characterFromLogFile(file) ?? "");
-      const result = importLog(file, killLog, history, lootLog);
+      const result = digestLog(file, live, killLog, history, lootLog);
       killLog.flush();
       history.flush();
       lootLog.flush();
@@ -285,8 +283,6 @@ function registerSettingsIpc(context: IpcContext): void {
     } catch (e) {
       log.warn("log import failed:", (e as Error).message);
       return null;
-    } finally {
-      killLog.setPlayer(live); // restore the live character's identity for ongoing watching
     }
   });
 

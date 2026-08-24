@@ -90,7 +90,7 @@ unit-tested.
     one people learn to scroll past.
   - `src/shared/contributors.ts` + `electron/contributions.ts` →
     `electron/tests/contributions.test.ts` — who told us something and how it's kept
-    ([ADR 0120](../decisions/0120-a-contribution-is-keyed-by-who-made-it.md)). Touches a real temp
+    ([ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md)). Touches a real temp
     userData dir like the other stores', because surviving a restart *is* the feature. One test per
     rule, each pinning something that reads as a bug when it's missing: two contributors sharing a
     display name stay two, a report replaces rather than adds, **un-sharing keeps what it taught**

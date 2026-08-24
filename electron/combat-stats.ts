@@ -19,10 +19,11 @@
  * Emits `change` with a fresh snapshot so main can broadcast it to every window.
  */
 import { EventEmitter } from "node:events";
-import { isYours } from "../src/shared/combat-parser";
+import { isYours, SELF } from "../src/shared/combat-parser";
 import { createDamageCells, rollUpDamage } from "../src/shared/damage-tree";
 import { createDotAttribution } from "../src/shared/dot-attribution";
 import { createFightScope } from "../src/shared/fight-scope";
+import { hasArticle } from "../src/shared/log-parser";
 import { createNameRegistry } from "../src/shared/name-registry";
 import { ratio, round } from "../src/shared/numbers";
 import { createParty } from "../src/shared/party";
@@ -144,6 +145,16 @@ export interface CombatTracker {
    * it can be filed into history. The tracker itself keeps no past fights.
    */
   onFightEnd(cb: (fight: FightStats) => void): void;
+  /**
+   * Nothing has been logged for a while — the caller saying what time it is, so a fight that ended
+   * in quiet can be filed at the moment it ended rather than when the next one starts.
+   *
+   * The tracker decides *whether* it's over (the same rule `record` applies); this only supplies a
+   * clock, because a log that has gone quiet produces no events to carry one. Cheap and idempotent:
+   * call it as often as you like. `nowMs` is the **log's** clock, not the wall clock — see
+   * `src/shared/log-clock.ts`, which is what a caller should be reading it from.
+   */
+  settle(nowMs: number): void;
   /** Close out the fight in progress — for app quit, so the last pull isn't lost. */
   flush(): void;
   /**
@@ -339,6 +350,15 @@ function createWindow(canon: (name: string) => string) {
   const mobs = new Map<string, MobTally>();
   const invocations = new Map<string, InvocationTally>();
   const span = { firstAt: 0, lastAt: 0, activeMs: 0 };
+  /**
+   * Names this window tallied that nothing had yet placed — not you, not yours, not a group-mate,
+   * and not something with an article or that your side had traded blows with. Held **apart from the
+   * tallies** rather than mixed into them ([ADR 0130](../specs/decisions/0130-data-in-doubt-says-so.md)):
+   * the figures are real and belong where they are, and what is uncertain is only *whose* they are.
+   *
+   * Re-checked on read, so a name proven between the tally and the summary simply isn't in the answer.
+   */
+  const doubted = new Set<string>();
   /** Your damage per second of the window, indexed from its first damage. */
   const buckets: number[] = [];
   const deaths: DeathRecap[] = [];
@@ -377,6 +397,7 @@ function createWindow(canon: (name: string) => string) {
     deaths,
     lines,
     damage,
+    doubted,
     /** Widen the window's line range — cheap, and it's the way back to the source. */
     note(logId: number) {
       if (!logId) return;
@@ -436,6 +457,13 @@ export function createCombatStats(
    */
   const party = createParty();
   let fight = createWindow(canon);
+  /**
+   * Whether the fight in progress has already been handed to history. The window outlives its
+   * filing on purpose — the panel goes on showing the last pull until the next one starts, which
+   * is what a damage meter is for — so "over" and "gone" are two different facts and this is the
+   * first of them (see `endFight`).
+   */
+  let fightFiled = false;
   let session = createWindow(canon);
   let startedAt = nowIso();
   let player = "";
@@ -497,6 +525,28 @@ export function createCombatStats(
    * session window can never disagree about what happened.
    */
   const scope = createFightScope({ ours: isOurs, sidesKnown: () => !!player });
+
+  /**
+   * Has the log said what this name *is* — you, yours, a group-mate, or a creature?
+   *
+   * An article says creature, because that is how the game writes one ("a coyote"); a name your side
+   * has traded blows with is a creature too, whatever it is called, which is what covers a named. What
+   * is left is a **bare name nobody has placed**: it could be your pet, a group-mate, or a stranger,
+   * and [ADR 0077](../specs/decisions/0077-a-pet-is-proven-not-guessed.md) is right that guessing
+   * between them from the shape of the name is not on. So it is recorded as doubtful and *said*
+   * (ADR 0130) rather than quietly counted as one thing or the other.
+   */
+  const placed = (name: string): boolean =>
+    name === SELF || isOurs(name) || hasArticle(name) || scope.fought(name);
+
+  /**
+   * Note a name a window has just tallied, if nothing has placed it. Called with the **canonical**
+   * name, like everything else inside a window, so the doubt and the row it is about agree.
+   */
+  const doubt = (w: Window, name: string): void => {
+    if (!name || placed(name)) return;
+    w.doubted.add(name);
+  };
 
   /**
    * Is this death a kill of **yours**? Two things it isn't, and both used to be inline in
@@ -686,9 +736,13 @@ export function createCombatStats(
     const spells = [...w.spells.entries()]
       .map(([name, t]) => spellRow(name, t))
       .sort((a, b) => b.damage - a.damage || b.healed - a.healed || a.spell.localeCompare(b.spell));
+    // Asked now, not when the damage landed: a pet proven since, or a group-mate who has spoken, is
+    // placed — so the doubt disappears on its own the moment the log settles it (ADR 0130).
+    const unsettled = [...w.doubted].filter((name) => !placed(name)).sort();
     return {
       startedAt: w.span.firstAt ? new Date(w.span.firstAt).toISOString() : "",
       endedAt: w.span.lastAt ? new Date(w.span.lastAt).toISOString() : "",
+      unsettled: unsettled.length ? unsettled : undefined,
       durationSec: w.span.firstAt ? Math.max(1, Math.round(w.span.activeMs / 1000)) : 0,
       totalDealt: byCombatant.reduce((n, c) => n + c.dealt, 0),
       yourDealt: byCombatant.filter((c) => c.mine).reduce((n, c) => n + c.dealt, 0),
@@ -762,6 +816,10 @@ export function createCombatStats(
         addActive(a, at);
         a.lastAt = at;
         w.tally(canon(event.target)).taken += event.amount;
+        // Both ends of the exchange, because either can be the unplaceable one: a bare-named pet
+        // hitting a mob, or a mob hitting a group-mate we haven't been told about yet.
+        doubt(w, canon(event.attacker));
+        doubt(w, canon(event.target));
         w.mark(at); // only damage defines when a fight ran
         if (isMine(event.attacker)) w.bucket(at, event.amount);
         if (event.spell && isMine(canon(event.attacker))) {
@@ -883,13 +941,69 @@ export function createCombatStats(
   }
 
   /**
+   * Is the fight in progress over as of `at`, and if so what ended it?
+   *
+   * A lull is not the end of a fight. Only end it promptly once the engagement has been
+   * *resolved* — the last thing to happen was a death (a kill, or yours), so this quiet is the
+   * pause before the next pull. While it's unresolved (the enemy's still up and, in this game,
+   * still chasing), tolerate a much longer silence before splitting into a new fight.
+   *
+   * Asked from two places and so it lives in one: the next event arriving (`record`) and the
+   * clock simply passing (`settle`). Two copies of this rule would let a fight be filed under one
+   * reason and split under another.
+   */
+  function quietBy(at: number): { stale: boolean; endReason: FightEndReason } {
+    const killResolved = lastKillAt >= lastCombatAt;
+    const deathResolved = lastDeathAt >= lastCombatAt;
+    const resolved = killResolved || deathResolved;
+    const endGap = resolved ? SETTLED_END_MS : ENGAGED_END_MS;
+    return {
+      stale: !!lastCombatAt && at - lastCombatAt > endGap,
+      // The same branch, named — see `FightEndReason`. When both resolved it, the later one
+      // is what actually finished the fight (you killed it, then died to its friend).
+      endReason: !resolved
+        ? "timeout"
+        : killResolved && (!deathResolved || lastKillAt >= lastDeathAt)
+          ? "kill"
+          : "death",
+    };
+  }
+
+  /**
    * Hand the finished fight to whoever files history, if it had any damage in it, stamped with
    * why it ended. `cut` is the caller saying "the log didn't end this, I did" — a reset or a
    * flush — which is a different fact from a fight the log itself closed.
+   *
+   * **At most once per fight.** A fight is filed the moment the log's own rule says it is over
+   * ([ADR 0126](../specs/decisions/0126-a-fight-is-filed-when-it-ends.md)), which is usually
+   * `settle` rather than the next pull — so by the time the next pull splits the window, or a quit
+   * flushes it, this fight has already been filed and there is nothing left to say about it.
    */
   function endFight(reason: FightEndReason): void {
-    if (fight.span.firstAt) bus.emit("fightEnd", { ...summarize(fight), endReason: reason });
+    if (fightFiled || !fight.span.firstAt) return;
+    fightFiled = true;
+    bus.emit("fightEnd", { ...summarize(fight), endReason: reason });
   }
+
+  /** Start the next fight's row set. The flag rides with the window — see `endFight`. */
+  function newFight(): void {
+    fight = createWindow(canon);
+    fightFiled = false;
+  }
+
+  /**
+   * The windows a tally that arrives **out of band** still belongs to — a kill, experience, coin, a
+   * sale, a death recap. None of those comes through `record`, so none of them is subject to its
+   * staleness check, and each has its own reason to arrive late: coin is credited to a corpse for
+   * two minutes, experience for fifteen seconds, and looting is something the player gets round to.
+   *
+   * The session, always. The fight **only while it is still open**: once it has been filed, the
+   * snapshot history holds is the fight, and a figure added to the window afterwards would show on
+   * the panel while never reaching the record it claims to describe. Better to say plainly that a
+   * filed fight is finished — which, in log terms, it is: the camp went quiet long enough for the
+   * log's own rule to close it.
+   */
+  const openWindows = (): Window[] => (fightFiled ? [session] : [fight, session]);
 
   /**
    * Snapshot what was hitting you in the run-up to a death. The log doesn't say what
@@ -947,22 +1061,7 @@ export function createCombatStats(
       // module is built on the assumption that `at` is meaningful, so it's checked once,
       // here, rather than defended against everywhere downstream.)
       if (!at) return;
-      // A lull is not the end of a fight. Only end it promptly once the engagement has been
-      // *resolved* — the last thing to happen was a death (a kill, or yours), so this quiet is the
-      // pause before the next pull. While it's unresolved (the enemy's still up and, in this game,
-      // still chasing), tolerate a much longer silence before splitting into a new fight.
-      const killResolved = lastKillAt >= lastCombatAt;
-      const deathResolved = lastDeathAt >= lastCombatAt;
-      const resolved = killResolved || deathResolved;
-      const endGap = resolved ? SETTLED_END_MS : ENGAGED_END_MS;
-      const stale = !!lastCombatAt && at - lastCombatAt > endGap;
-      // The same branch, named — see `FightEndReason`. When both resolved it, the later one
-      // is what actually finished the fight (you killed it, then died to its friend).
-      const endReason: FightEndReason = !resolved
-        ? "timeout"
-        : killResolved && (!deathResolved || lastKillAt >= lastDeathAt)
-          ? "kill"
-          : "death";
+      const { stale, endReason } = quietBy(at);
 
       // A new pull is a new engagement, so the enemy set goes first — *before* this event is
       // judged. It's what makes the first swing of a fight have to stand on its own: without
@@ -1025,7 +1124,7 @@ export function createCombatStats(
       if (event.kind === "death") {
         lastDeathAt = at; // resolves the fight: a short quiet now ends it (you're down, combat's over)
         const recap = recordDeath(at, event.killer);
-        for (const w of [fight, session]) {
+        for (const w of openWindows()) {
           w.deaths.unshift(recap);
           if (w.deaths.length > MAX_DEATHS) w.deaths.pop();
         }
@@ -1039,15 +1138,21 @@ export function createCombatStats(
       if (swing) {
         if (stale) {
           endFight(endReason);
-          fight = createWindow(canon);
+          newFight();
         }
         lastCombatAt = at;
         apply(fight, event, at, castMs);
+        fight.note(event.logId);
       } else if (lastCombatAt && !stale) {
         apply(fight, event, at, castMs);
+        // Noted only when the fight actually **took** the event. Noting unconditionally ran a
+        // fight's line range on to whatever last happened before the next pull — a night's buffing
+        // and chat, a median 122 lines against a 25-second fight — and `logIds` exists so those
+        // lines can be found again and re-read (ADR 0021), which a range full of somebody else's
+        // downtime can't do.
+        fight.note(event.logId);
       }
       apply(session, event, at, castMs);
-      fight.note(event.logId);
       session.note(event.logId);
       emit();
     },
@@ -1082,7 +1187,7 @@ export function createCombatStats(
       const at = ms(atIso);
       const from = Math.max(fight.span.firstAt || at, lastKillAt || 0) || at;
       const took = Math.max(0, at - from);
-      for (const w of [fight, session]) {
+      for (const w of openWindows()) {
         const m = w.mob(mob);
         m.kills += 1;
         m.killMs += took;
@@ -1101,14 +1206,14 @@ export function createCombatStats(
     recordXp(event) {
       const at = ms(event.at);
       const pct = event.pct ?? 0;
-      for (const w of [fight, session]) {
+      for (const w of openWindows()) {
         w.totals.xpGains += 1;
         if (event.party) w.totals.partyXp += 1;
         else w.totals.soloXp += 1;
         w.totals.xpPct += pct;
       }
       if (pct && lastKill && at - lastKill.at >= -2000 && at - lastKill.at < XP_ATTRIBUTION_MS) {
-        for (const w of [fight, session]) w.mob(lastKill.mob).xpPct += pct;
+        for (const w of openWindows()) w.mob(lastKill.mob).xpPct += pct;
       }
       emit();
     },
@@ -1125,9 +1230,9 @@ export function createCombatStats(
     recordCoin(event) {
       if (event.from !== "corpse" || event.copper <= 0) return;
       const at = ms(event.at);
-      for (const w of [fight, session]) w.totals.copper += event.copper;
+      for (const w of openWindows()) w.totals.copper += event.copper;
       if (lastKill && at - lastKill.at >= -2000 && at - lastKill.at < COIN_ATTRIBUTION_MS) {
-        for (const w of [fight, session]) w.mob(lastKill.mob).copper += event.copper;
+        for (const w of openWindows()) w.mob(lastKill.mob).copper += event.copper;
       }
       emit();
     },
@@ -1138,7 +1243,7 @@ export function createCombatStats(
      */
     recordSale(event) {
       if (!event.soldFor) return;
-      for (const w of [fight, session]) {
+      for (const w of openWindows()) {
         w.totals.soldCopper += event.soldFor;
         if (event.source) w.mob(canon(event.source)).soldCopper += event.soldFor;
       }
@@ -1150,11 +1255,19 @@ export function createCombatStats(
     },
     zone: () => currentZone,
     snapshot,
+    settle(nowMs) {
+      if (!nowMs || fightFiled || !fight.span.firstAt) return;
+      const { stale, endReason } = quietBy(nowMs);
+      if (!stale) return;
+      // Filed, but *not* replaced: the window stays as the panel's "this fight" until the next
+      // pull splits it, and `endFight`'s guard is what keeps that from filing it twice.
+      endFight(endReason);
+    },
     // A flush is the app's doing, not the log's — the tracker closing, or a character switch.
     flush: () => endFight("cut"),
     reset() {
       endFight("cut"); // don't lose the fight in progress just because the meter was cleared
-      fight = createWindow(canon);
+      newFight();
       session = createWindow(canon);
       startedAt = nowIso();
       lastCombatAt = 0;
