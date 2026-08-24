@@ -1,8 +1,11 @@
 # 0075: A zone's misspelling is the same zone
 
 ## Status
-
 Accepted
+
+`sameZoneOrMisspelling` as a **filter** stands. `createZoneCanon`'s frequency keying is superseded by
+[0083](./0083-a-zone-name-is-stored-raw-and-grouped-on-read.md) — a key comes from the gazetteer, not
+from what a batch happened to contain.
 
 ## Context
 

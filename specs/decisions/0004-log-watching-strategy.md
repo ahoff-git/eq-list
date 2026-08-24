@@ -26,6 +26,4 @@ dumb event source.
 - 500ms polling means up to ~half a second of latency — imperceptible for loot.
 - Only loot lines are parsed today; other event types can be added to the parser
   without touching the watcher.
-
-## See also
-[log-watching](../log-watching/README.md)
+- Area spec: [log-watching](../log-watching/README.md).

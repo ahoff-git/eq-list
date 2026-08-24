@@ -1,8 +1,12 @@
 # 0085: A rule can be tested, shared and borrowed
 
 ## Status
-
 Accepted
+
+Its **recent-lines** buffer is superseded by
+[0089](./0089-a-rule-is-checked-against-the-log-file.md) — read the log file, not this session — and
+its saved styles are refined by [0086](./0086-editing-a-shared-style-from-a-rule-forks-it.md) and
+[0090](./0090-one-style-editor-at-a-time.md). Everything else stands.
 
 ## Context
 

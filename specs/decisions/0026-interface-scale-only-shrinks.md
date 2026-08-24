@@ -1,8 +1,11 @@
 # 0026: The interface scale only shrinks, and it scales the window, not the font
 
 ## Status
-
 Accepted
+
+The ceiling stands. The *mechanism* is re-implemented by
+[0041](./0041-interface-scale-is-a-css-zoom-per-window.md) as a CSS zoom per window, because
+Chromium's zoom is per-origin.
 
 ## Context
 

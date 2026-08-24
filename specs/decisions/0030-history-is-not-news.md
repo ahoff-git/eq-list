@@ -1,8 +1,12 @@
 # 0030: A log line that already happened is history, not news
 
 ## Status
-
 Accepted
+
+The liveness guard on alerts stands. Qualified by
+[0043](./0043-state-is-not-news-either.md) — the zone and the last `/loc` describe the present, so a
+mid-session start recovers them — and its in-memory offsets and its "skipped, not queued" caveat are
+reversed by [0044](./0044-the-log-position-outlives-the-app.md).
 
 ## Context
 

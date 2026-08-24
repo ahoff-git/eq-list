@@ -1,4 +1,4 @@
-# 0052: Damage is stored as cells and rolled up, not as a breakdown per combatant
+# 0053: Damage is stored as cells and rolled up, not as a breakdown per combatant
 
 ## Status
 Accepted

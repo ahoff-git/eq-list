@@ -65,4 +65,4 @@ unchanged.
   [todo.md](../todo.md).
 - Once it is wired, a level range is a natural thing to pool: it is a count and two bounds, merges
   by coverage, and rides the contribution machinery from
-  [ADR 0120](./0120-a-contribution-is-keyed-by-who-made-it.md) unchanged.
+  [ADR 0132](./0132-a-contribution-is-keyed-by-who-made-it.md) unchanged.

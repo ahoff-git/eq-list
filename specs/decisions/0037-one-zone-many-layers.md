@@ -1,8 +1,10 @@
 # 0037: A zone is one place; its layers are a user choice, not a log fact
 
 ## Status
+Superseded by 0042
 
-Accepted
+Its per-image layers went with the bundled scans. The `layer` field itself survives, narrowed to the
+mapmakers' own floors ([0040](./0040-floors-come-from-the-mapmaker.md)).
 
 ## Context
 

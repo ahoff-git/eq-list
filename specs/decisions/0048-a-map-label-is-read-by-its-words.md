@@ -1,4 +1,4 @@
-# 48. A map label is read by its words, and a bracket it can't read defers
+# 0048: A map label is read by its words, and a bracket it can't read defers
 
 ## Status
 

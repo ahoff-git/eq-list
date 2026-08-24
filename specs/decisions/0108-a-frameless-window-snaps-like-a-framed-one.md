@@ -93,7 +93,7 @@ be touched.
 **The snap preview is a window with nothing loaded in it.** It is one flat translucent rectangle, so a
 renderer would only add a page that could fail to paint or stop answering while sitting on top of the
 game — the exact failure
-[ADR 0105](./0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) is about. It is
+[ADR 0131](./0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) is about. It is
 unfocusable and click-through, `destroy()`ed the moment the drag ends, dropped by
 `neutralizeOverlays()` if main crashes mid-gesture, and abandoned by a ten-second idle timer if the
 renderer holding the drag dies — at its very worst it is a coloured rectangle that cannot take a
@@ -108,7 +108,7 @@ which the CSS could ever have done.
 
 The gesture depends on the renderer, so a window whose page is wedged cannot be dragged by its bar.
 That is not a new exposure — a frameless window's ✕, pin and keys were already the renderer's, which
-is what [ADR 0105](./0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) answers —
+is what [ADR 0131](./0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) answers —
 and the drag adds nothing that outlives it: main drops the gesture and the preview when the pulses
 stop.
 

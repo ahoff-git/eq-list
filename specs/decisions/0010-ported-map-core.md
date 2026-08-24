@@ -1,7 +1,11 @@
 # 0010: Port eq-map's map core; show the map in a sibling window
 
 ## Status
-Accepted
+Superseded by 0042
+
+The `/loc` feed and the sibling map window stand. The ported *image* core does not:
+[0038](./0038-a-map-has-a-scale-and-a-centre.md) replaced its `size`/`centerOffset` calibration and
+[0042](./0042-only-the-game-s-own-maps.md) removed the bundled scans altogether.
 
 ## Context
 Users want to see where they are while playing. A sibling project, **eq-map**, has

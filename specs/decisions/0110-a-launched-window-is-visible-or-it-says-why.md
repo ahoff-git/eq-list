@@ -12,7 +12,7 @@ taskbar, still accepts a click, and shows nothing at all when clicked, because t
 show. The user's report was exactly that: *"sometimes the windows spawn in the task bar, but clicking
 them never actually opens anything."*
 
-[ADR 0105](./0105-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) settled what happens
+[ADR 0131](./0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) settled what happens
 when a renderer **dies** while the app is running. This is the same idea at **launch**, and an audit
 found seven ways a launch could end with nothing on screen and nothing said:
 
@@ -28,7 +28,7 @@ found seven ways a launch could end with nothing on screen and nothing said:
    broken window off the screen, but the restore only ever set it, never cleared it — and the renderer
    couldn't undo it either, since `useClickThrough` starts out believing the window is solid and so
    sends nothing. One `unresponsive` during a busy launch left the window passing every click to the
-   desktop for the rest of the session: painted, in the taskbar, unclickable. ADR 0105 already claimed
+   desktop for the rest of the session: painted, in the taskbar, unclickable. ADR 0131 already claimed
    this was reversible.
 4. **A throw during startup left a process with no interface.** Anything failing before startup got a
    window up landed in `unhandledRejection`, was logged, and left the app resident with no window, no

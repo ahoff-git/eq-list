@@ -1,8 +1,10 @@
-# 0081: An alert can be scheduled, not just raised
+# 0082: An alert can be scheduled, not just raised
 
 ## Status
-
 Accepted
+
+The cue gains cancelling lines, a retrigger rule and repeats in
+[0084](./0084-a-watch-is-a-rule-not-a-substring.md).
 
 ## Context
 

@@ -1,8 +1,10 @@
 # 0050: A watch can read a whole log line, not just a spell
 
 ## Status
-
 Accepted
+
+Pointing a watch at raw log lines stands. The case-insensitive *substring* is superseded by
+[0084](./0084-a-watch-is-a-rule-not-a-substring.md): a watch is a rule.
 
 ## Context
 

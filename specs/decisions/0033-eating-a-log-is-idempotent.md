@@ -1,8 +1,12 @@
 # 0033: Eating a log is idempotent — every kill and drop is keyed by its line
 
 ## Status
-
 Accepted
+
+Extended from kills and drops to fights by
+[0055](./0055-eating-a-log-fills-history.md), and narrowed by
+[0128](./0128-a-fight-is-re-derived-not-refused.md): a kill and a drop are **counts** and a second
+reading is still dropped on sight, while a fight is a **derived summary** and is re-derived.
 
 ## Context
 

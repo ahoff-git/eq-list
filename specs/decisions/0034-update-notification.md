@@ -1,8 +1,10 @@
 # 0034: Tell the user a newer build exists; don't install it for them
 
 ## Status
-
 Superseded by 0064
+
+Notify-with-a-link stands. Identity-by-commit, and the silent first baseline that went with it, do
+not — [0064](./0064-every-build-has-a-number.md) makes the identity a version and the test `>`.
 
 ## Context
 

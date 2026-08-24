@@ -3,6 +3,10 @@
 ## Status
 Accepted
 
+The principle stands — stamp a stored fight with enough to find its source lines again. The
+*handle* is corrected by [0128](./0128-a-fight-is-re-derived-not-refused.md): `logIds` restarts
+every run, so the durable locator is `logFile` plus the log's own timestamps.
+
 ## Context
 A stored fight keeps *conclusions* — 597 damage, 74.8 damage per second of casting, these
 rows. It does not keep the lines those came from.

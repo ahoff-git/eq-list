@@ -4,7 +4,7 @@
 
 Accepted
 
-## Decision context
+## Context
 
 [ADR 0039](./0039-render-the-game-s-own-maps.md) made a map source a folder you pick between, and
 [ADR 0061](./0061-a-map-pack-names-its-own-zones.md) stopped the packs lending each other *names* —

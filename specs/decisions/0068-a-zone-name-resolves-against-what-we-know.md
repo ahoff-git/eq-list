@@ -1,4 +1,4 @@
-# 0068 — A zone name resolves against what we know
+# 0068: A zone name resolves against what we know
 
 ## Status
 

@@ -170,9 +170,7 @@ Rejected alternatives:
 - The **setup check doesn't test Lucy yet.** eqlwiki has a reachability step and this doesn't, so
   "search found nothing" and "Lucy is down" read the same in the one place built to tell them apart.
   Recorded in [todo.md](../todo.md).
-
-## See also
-[lucy-data](../lucy-data/README.md) · [wiki-data](../wiki-data/README.md) ·
-[ADR 0003](./0003-eqlwiki-runtime-data-source.md) · [ADR 0025](./0025-observation-over-the-wiki.md) ·
-[ADR 0103](./0103-search-can-answer-from-your-own-log.md) ·
-[ADR 0076](./0076-a-supplied-gazetteer-outranks-our-guesses.md)
+- Area specs: [lucy-data](../lucy-data/README.md) · [wiki-data](../wiki-data/README.md). Sits under
+  [ADR 0003](./0003-eqlwiki-runtime-data-source.md), [ADR 0025](./0025-observation-over-the-wiki.md),
+  [ADR 0076](./0076-a-supplied-gazetteer-outranks-our-guesses.md) and
+  [ADR 0103](./0103-search-can-answer-from-your-own-log.md).

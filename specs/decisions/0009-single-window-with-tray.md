@@ -3,6 +3,10 @@
 ## Status
 Accepted
 
+One window plus a tray stands. The `clickThrough` *retention* noted below is reversed by
+[0032](./0032-remove-dead-overlay-surface.md); click-through came back as a working per-window
+feature in [0073](./0073-a-click-through-window-keeps-its-chrome.md).
+
 ## Context
 The app shipped two windows: an opaque, framed **control window** (list / hunt /
 search / session / settings) and a small, frameless, translucent, always-on-top

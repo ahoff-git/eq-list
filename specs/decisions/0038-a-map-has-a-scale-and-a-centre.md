@@ -1,8 +1,11 @@
 # 0038: A map has a scale and a centre, and you calibrate it by clicking
 
 ## Status
+Superseded by 0042
 
-Accepted
+[0042](./0042-only-the-game-s-own-maps.md) removes the images and the calibration tool with them. The
+`scale`/`center` model this introduced survives as `MapProjection` — read off a vector map's own
+bounds rather than authored by clicking.
 
 ## Context
 

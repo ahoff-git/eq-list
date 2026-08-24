@@ -1,4 +1,4 @@
-# 0071. A DoT tick belongs to whoever cast it
+# 0071: A DoT tick belongs to whoever cast it
 
 ## Status
 

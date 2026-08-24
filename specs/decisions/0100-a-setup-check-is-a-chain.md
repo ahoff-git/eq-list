@@ -1,4 +1,4 @@
-# 0100. A setup check is a chain, and it names the first broken link
+# 0100: A setup check is a chain, and it names the first broken link
 
 ## Status
 
