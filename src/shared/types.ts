@@ -4,6 +4,7 @@ import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { KnowledgeContributor } from "./contributors";
 import type { SharedKill } from "./kill-filters";
 import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
+import type { BuffInstance, BuffView, KnownBuff } from "./buff-tracking";
 import type { EqMap } from "./map/eqmap";
 import type { MapSourceReport } from "./map/map-sources";
 import type { TravelAnswer, TravelEnd } from "./travel/route";
@@ -15,6 +16,12 @@ import type { DragEnd } from "./window-snap";
 export type LoadedMap = EqMap & { credits: string[] };
 
 export type { MapSourceReport };
+/**
+ * Re-exported so a panel can type a buff row without reaching into the tracking rules — the same
+ * courtesy `SpawnView`'s neighbours get, and for the same reason: the renderer consumes these over
+ * IPC and has no business knowing which module decided them.
+ */
+export type { BuffInstance, BuffView, KnownBuff };
 /** Re-exported so a renderer can type a route without reaching into the travel module. */
 export type { TravelAnswer, TravelAvoided, TravelEnd, TravelOptions, TravelSurvey };
 /** Re-exported for the same reason: a titlebar ends a drag without importing the geometry. */
@@ -1915,8 +1922,13 @@ export interface CastAlertEvent {
    * — and a **loot** says something on your list has just dropped — the last three
    * being the ones that aren't warnings. Absent means a cast, so an alert sent by an older build
    * still reads correctly.
+   *
+   * A **buff** is a lapse of something you were keeping up. It is *not* a `fade`, though both come
+   * from a buff ending: a fade is a watch the player wrote firing on a line, and says whatever that
+   * watch says, while this is the buff board reporting that a thing it was tracking is now missing —
+   * and it carries the buff itself, so the banner can name a target the log's own sentence didn't.
    */
-  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot";
+  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
   /**
@@ -1941,6 +1953,12 @@ export interface CastAlertEvent {
    * record is: the counts *are* the message, and the overlay can word them itself.
    */
   loot?: LootAlert;
+  /**
+   * For a `buff` alert, the buff that lapsed — carried raw for the same reason a record and a drop
+   * are: the overlay can word it itself from shared code (`lapseMessage`), and the *target* is the
+   * part the game's own sentence usually leaves out.
+   */
+  buff?: BuffInstance;
   /**
    * The look and sound this alert should use, already resolved from the defaults and the watch's
    * own overrides (`alertStyle`). Carried with the alert so the overlay renders what *this* watch
@@ -2575,6 +2593,42 @@ export interface EqlApi {
     /** Whether a custom timer starts itself again when it comes due. */
     repeat(key: string, on: boolean): Promise<SpawnView>;
     /** Fires when a timer starts, is due, or ages out, so the tab needn't poll main for the list. */
+    onChanged(cb: () => void): Unsubscribe;
+  };
+  /**
+   * Which of your buffs are up, which have lapsed, and what the player decided about each one.
+   *
+   * Everything returns the whole view for the same reason the spawn board does: these are all small
+   * edits to one small list, and handing back the list afterwards means a panel never has to guess
+   * what its own click did.
+   */
+  buffs: {
+    view(): Promise<BuffView>;
+    /**
+     * Watch this spell, or stop. Unchecking is the durable "never tell me about this one" and
+     * **keeps the row** — the control that reverses it has to stay somewhere you can find it.
+     */
+    track(key: string, on: boolean): Promise<BuffView>;
+    /** Whether a lapse of this one raises a banner. */
+    notify(key: string, on: boolean): Promise<BuffView>;
+    /** Whether a lapse of this one stays on screen over the game until it's back up. */
+    showOnScreen(key: string, on: boolean): Promise<BuffView>;
+    /** Which saved style its banner wears — `null` for the buff default. One style editor, one place. */
+    style(key: string, styleId: string | null): Promise<BuffView>;
+    /**
+     * Forget this spell entirely: the row and everything set on it. It comes back, fresh, if the
+     * spell is ever cast again — which is the difference from `track(key, false)`, and why both
+     * exist. To silence something for good, uncheck it.
+     */
+    forget(key: string): Promise<BuffView>;
+    /**
+     * Dismiss one standing "this is down" without recasting the spell — you know, and you are not
+     * going to re-buff it right now. The spell stays tracked, so the next lapse says so again.
+     */
+    dismiss(key: string, target: string): Promise<BuffView>;
+    /** Clear every standing lapse at once — the "I have re-buffed, be quiet" button. */
+    dismissAll(): Promise<BuffView>;
+    /** Fires when a buff goes up, lapses, or a choice about one changes. */
     onChanged(cb: () => void): Unsubscribe;
   };
   /** Inferred bounds on your maximum hit points, and the overrides for them. */

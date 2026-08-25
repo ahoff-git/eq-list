@@ -17,6 +17,7 @@ import type {
   HpEstimate,
   KillRecord,
   SpawnView,
+  BuffView,
   AppInfo,
   ItemSource,
   ItemCard,
@@ -247,6 +248,7 @@ const NO_MOBS: MobKnowledge[] = [];
  * render, or `useFollowedRead`'s initial would restart the memos below it on every tick.
  */
 const NO_SPAWNS: SpawnView = { now: "", running: [], known: [], dismissed: [] };
+const NO_BUFFS: BuffView = { now: "", active: [], lapsed: [], known: [], lexicon: false };
 const NO_SOURCES: Record<string, ItemSource[]> = {};
 const NO_FACTS: Record<string, SpellFacts> = {};
 const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
@@ -474,13 +476,40 @@ export function useStyleUsage(): AlertUsage {
     NO_SPAWNS,
     [],
   );
+  const buffs = useFollowedRead<BuffView>(
+    (a) => a.buffs.view(),
+    (a, reload) => a.buffs.onChanged(reload),
+    NO_BUFFS,
+    [],
+  );
   const list = useShoppingList();
   // A mob entry never offers the 🔔 — nothing drops it — so it can't be armed and mustn't be counted.
   const lootArmed = useMemo(
     () => list.entries.filter((e) => e.notify && e.kind !== "mob").length,
     [list],
   );
-  return useMemo(() => ({ spawns: spawns.known, lootArmed }), [spawns, lootArmed]);
+  return useMemo(
+    () => ({ spawns: spawns.known, buffs: buffs.known, lootArmed }),
+    [spawns, buffs, lootArmed],
+  );
+}
+
+/**
+ * The buff board: what's up, what has lapsed, and what the player decided about each spell.
+ *
+ * One clock rather than the spawn board's two. A countdown needs a second hand because the *number*
+ * moves on its own; a buff row says "up" or "down", which only changes when main says so. The one
+ * thing that does tick is how long a buff has been held, and that is a supporting figure on a row
+ * rather than the row's point — so it is allowed to be a fetch behind rather than costing every
+ * open panel a re-render a second.
+ */
+export function useBuffs(): BuffView {
+  return useFollowedRead<BuffView>(
+    (a) => a.buffs.view(),
+    (a, reload) => a.buffs.onChanged(reload),
+    NO_BUFFS,
+    [],
+  );
 }
 
 /**

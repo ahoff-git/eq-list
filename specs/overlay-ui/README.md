@@ -231,6 +231,33 @@ list, hunt, search, damage, session, settings.
     is showing. Each countdown appears **where its own alert would** — the same style and position,
     custom placed spots included — which is why `alertPlacement` and the `.overlay-at` position
     rules are shared with `CastAlerts` rather than copied.
+  - `BuffOverlay` — the buffs you are **missing**, drawn over the game and left there, on the same
+    `/alert` window ([ADR 0140](../decisions/0140-a-buff-is-watched-until-it-lapses.md)). The other
+    half of the alert, and the half that does the work: a banner answers "what just happened" and
+    goes away, while the useful fact about a buff is that *right now* you are standing there without
+    it — so a lapse stays until the spell is recast or stood down. It is also the only place a
+    **death strip** shows up, since a dozen banners at once is not a dozen pieces of news and the
+    tracker deliberately doesn't raise them. Anchored and styled exactly like `SpawnOverlay`, with
+    one difference: it takes clicks (`pointer-events: auto`) because it carries a ✕, which only
+    reaches the pointer while the player has taken the window's clicks back with 👻.
+  - `BuffPanel` — the **Buffs tab**: what you are keeping up, what has dropped, and which spells the
+    app should mention. Three lists, answering different questions — **Not active** is why the tab
+    exists, **Up now** is the reassuring half, **Spells** holds the checkboxes and nothing urgent.
+    Nothing is configured before it works: a spell enrols itself the first time the log shows you
+    casting it, receiving it or losing it, and arrives switched **on** — the opposite of a spawn
+    timer's `notify`, because everything you *kill* becomes a timer while only what you actually buff
+    lands here. The two controls are different promises and the tab says so: **unchecking** is the
+    durable "never mention this again" and keeps the row, while **✕** forgets it and lets it return if
+    the spell is cast again (deleting-to-silence is the trap
+    [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md) had to fix for
+    dismissed mobs). Rows **admit what they don't know**: where the game words several spells' fades
+    identically the alternatives are named rather than picked, and a buff whose target was never
+    stated reads *someone* rather than guessing at you. There is deliberately **no countdown** — the
+    game's file states a duration *formula*, and applying one needs a caster level EQL's log will not
+    give us. The rules are `src/shared/buff-tracking.ts` and `src/shared/spell-strings.ts` (both pure
+    + tested); the board itself is `electron/buff-tracker.ts`, which — unlike the spawn tracker —
+    persists only the *choices*, because which buffs are up is a fact about a login rather than about
+    the world.
   - `SpawnPanel` — the **Timers tab**: respawn countdowns for the nameds you kill, learned
     from the gaps between your own kills ([ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
     Three lists, answering different questions: **Coming up** is what's running, soonest-first, read

@@ -215,7 +215,15 @@ Your speed returns to normal.                               4 lines
 Both articles turn up and nothing about the spell predicts which, so both are accepted. `spell`
 holds the words the log used (`light breeze`, `spirit of travel`) because there is no name to hold
 — which is what a fade **alert** has to match on, and why a watch carries a separate message for
-the wording you actually want on screen ([overlay UI](../overlay-ui/README.md)). Together the three
+the wording you actually want on screen ([overlay UI](../overlay-ui/README.md)).
+
+**A nameless fade is nameless to the parser, not to the app.** Every one of those sentences is
+authored per spell in the game's own `spells_us_str.txt`, keyed by the id `spell-file.ts` already
+parses — so `src/shared/spell-strings.ts` reads the whole line back to the spell (or spells) that
+write it, and the buff board uses that to say *which* buff just dropped
+([ADR 0140](../decisions/0140-a-buff-is-watched-until-it-lapses.md)). The parser is unchanged and
+still hands over the words: a watch is the player saying "tell me when the game says this", which is
+a different question from "what was that". Together the three
 shapes take self-fades from 69 to **248** on that log, with the pet and targeted counts unmoved.
 
 `<Name> fades away.` is somebody gating out, not a spell (50 in the same log). Requiring `fades.`
@@ -264,7 +272,12 @@ Two invocations do more than scale numbers, and both are now accounted for
 - Does not decide what counts as "wanted" — that's matching in the store.
 - Parses loot, coin, zone, xp, kill, level, loc and combat lines today (combat including casts,
   spell outcomes, deaths, buff fades and mode changes). Still out of scope: faction hits,
-  skill-ups, and buff/debuff *landings*.
+  skill-ups, and buff/debuff *landings* — which stay out deliberately, even though the grammar for
+  them now exists. A landing is per-spell prose (`Bloop is surrounded by a brief lupine aura.`), so
+  it cannot be matched by a pattern; it is matched by *lookup*, against the game's own string file
+  (`src/shared/spell-strings.ts`). The buff board reads those lines straight off `onLine` for that
+  reason ([ADR 0140](../decisions/0140-a-buff-is-watched-until-it-lapses.md)). A `landing` event kind
+  is the obvious next step if a second consumer ever wants one.
 - Does not decide **which corpse** a coin line's money came from — the line names none, so that
   guess lives in `electron/kill-log.ts` where the kills are
   ([ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)).

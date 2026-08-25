@@ -30,6 +30,15 @@ in the main process and all UI in the renderer.
     anything else, and then either destroyed (the alert overlay, rebuilt once) or revived (main,
     map). A main-process crash neutralizes the lot. See
     [ADR 0131](../decisions/0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md).
+  - `buff-tracker.ts` — the buff board: which of your buffs are up, which have lapsed, and the
+    banner and standing message that say so
+    ([ADR 0140](../decisions/0140-a-buff-is-watched-until-it-lapses.md)). Deliberately the mirror
+    image of `spawn-tracker.ts`, and the contrast is the point of both: a respawn is a fact about the
+    **world**, so it is persisted; a buff is a fact about a **login**, so only the player's choices
+    are. Both raise their alerts down the same `raiseAlert` path rather than growing a notification
+    system apiece. Its rules are pure and shared (`src/shared/buff-tracking.ts`), and so is the
+    sentence lookup that makes a nameless fade attributable (`src/shared/spell-strings.ts`, reading
+    the game's own `spells_us_str.txt` via `spells.ts`).
   - `combat-stats.ts` — the one session tracker: experience/kill counters, per-combatant
     and per-spell tallies, per-mob rates; `combat-history.ts` — finished fights persisted
     for later; `xp-progress.ts` / `hp-estimate.ts` — persistent player state that outlives

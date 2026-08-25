@@ -171,13 +171,19 @@ And four the same sweep says to **refuse**, recorded so they aren't proposed aga
 ## Wiki data
 
 - **The spell file's other columns.** Damage per mana is done
-  ([ADR 0080](./decisions/0080-the-game-s-own-spell-file.md)) and reading `spells_us.txt` brought
-  three more fields with it that nothing consumes yet: **cast time**, **recast time**, and
-  **per-class levels**. The first is the interesting one — we *measure* cast time from the log
-  already, so having the file's stated figure beside it turns a number into a comparison ("your 2.5s
-  nuke is taking 3.1s") which is the shape of a real finding about haste or interruption. The last
-  would let anything that asks "can this character even cast that" answer honestly. All three are
-  already parsed; the open part is what a UI does with them.
+  ([ADR 0080](./decisions/0080-the-game-s-own-spell-file.md)) and permanence is now read off the
+  duration formula ([ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md)), which leaves
+  three parsed fields nothing consumes: **cast time**, **recast time**, and **per-class levels**. The
+  first is the interesting one — we *measure* cast time from the log already, so having the file's
+  stated figure beside it turns a number into a comparison ("your 2.5s nuke is taking 3.1s") which is
+  the shape of a real finding about haste or interruption. The last would let anything that asks "can
+  this character even cast that" answer honestly — though note the level it would need comparing
+  against is the one EQL's log refuses to state (see *Fastest level* below), so the honest version of
+  that question needs the player to say what they are.
+
+  The **duration figure** (index 12) stays deliberately unread beside its formula. Turning the two into
+  a number is server-side logic and needs a caster level, which is the whole argument ADR 0140 makes for
+  showing no countdown; nothing changes that until the level does.
 - **Ask-the-user, applied elsewhere.** `AskValue` +
   [ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md) established the pattern (hover
   for why, click to fill in) and it now backs two figures: experience into the level, and maximum

@@ -36,6 +36,7 @@ import type {
   CastAlertSettings,
   CastWatch,
   HighScoreSettings,
+  KnownBuff,
   KnownSpawn,
   NamedAlertStyle,
 } from "./types";
@@ -266,7 +267,7 @@ export function newStyleId(styles: NamedAlertStyle[]): string {
  */
 export interface AlertSource {
   /** Stable key — the row's React key, and what a test names. */
-  id: "record" | "spawn" | "loot";
+  id: "record" | "spawn" | "loot" | "buff";
   /** What the Alerts tab calls it. */
   label: string;
   /** What sets it off, and **where its on/off lives** — the one thing its row can't show inline. */
@@ -305,6 +306,13 @@ export function sourceWears(source: AlertSource, styleId: string, usage: AlertUs
 export type SpawnWearer = Pick<KnownSpawn, "notify" | "styleId">;
 
 /**
+ * A tracked buff, the same way. It needs `tracked` as well as `notify` because the two are different
+ * switches here: unchecking a buff stops the app watching it at all, so a row that is armed but
+ * untracked is not going to speak and must not be counted as if it would.
+ */
+export type BuffWearer = Pick<KnownBuff, "tracked" | "notify" | "styleId">;
+
+/**
  * Who is wearing what **outside `castAlerts`** — the scoreboard's celebration, the spawn board and
  * the shopping list, each of which lives in a store of its own.
  *
@@ -319,6 +327,8 @@ export interface AlertUsage {
   spawns?: readonly SpawnWearer[];
   /** How many list rows asked to be told when they drop (`ShoppingListEntry.notify`). */
   lootArmed?: number;
+  /** Every buff the board knows about — the same per-thing style question a spawn timer asks. */
+  buffs?: readonly BuffWearer[];
 }
 
 /**
@@ -347,6 +357,7 @@ export interface AlertUsage {
 export const RECORD_STYLE_ID = "built-in:record";
 export const SPAWN_STYLE_ID = "built-in:spawn";
 export const LOOT_STYLE_ID = "built-in:loot";
+export const BUFF_STYLE_ID = "built-in:buff";
 
 export const ALERT_SOURCES: AlertSource[] = [
   {
@@ -428,6 +439,41 @@ export const ALERT_SOURCES: AlertSource[] = [
         position: "top-right",
         durationMs: 5000,
         animation: "float",
+      },
+    },
+  },
+  {
+    id: "buff",
+    label: "Buffs lapsing",
+    hint: "One of the buffs you keep up wearing off. Every tracked buff is armed unless you uncheck it in the Buffs tab, and a buff may wear a saved style of its own instead of this one.",
+    unit: "buff",
+    armed: (u) => u.buffs?.filter((b) => b.tracked && b.notify).length ?? 0,
+    worn: () => BUFF_STYLE_ID,
+    // A look per thing, like a spawn timer's — so it counts its own wearers rather than answering
+    // yes or no for the whole feature.
+    wears: (styleId, u) =>
+      u.buffs
+        ? u.buffs.filter((b) => (b.styleId ?? BUFF_STYLE_ID) === styleId).length
+        : styleId === BUFF_STYLE_ID
+          ? 1
+          : 0,
+    style: {
+      id: BUFF_STYLE_ID,
+      name: "Buff lapsed",
+      // Blue, and it flashes. Unlike a pop — news you can be a few seconds late to — this one is a
+      // thing you should act on now, and the moment it matters most is mid-fight when you are looking
+      // at the mob rather than at a corner. It stays up a good while for the same reason: a buff you
+      // notice ten seconds late is still worth recasting, so lingering costs nothing and being missed
+      // costs the whole alert. Not red: the warning colour belongs to "dispel this", and a buff
+      // dropping is a chore rather than an emergency.
+      style: {
+        sound: true,
+        flash: true,
+        color: "#4a9fe0",
+        soundName: "chirp",
+        position: "top-left",
+        durationMs: 8000,
+        animation: "pulse",
       },
     },
   },

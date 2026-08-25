@@ -47,6 +47,7 @@ import { once } from "../src/shared/once";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createAlertRouter } from "./alert-router";
 import { createSpawnTracker } from "./spawn-tracker";
+import { createBuffTracker } from "./buff-tracker";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -273,6 +274,19 @@ if (!app.requestSingleInstanceLock()) {
     raise: raiseAlert,
   });
   spawns.onChanged(() => broadcast(CH.spawnsChanged, undefined));
+  // The buff board. The mirror image of the spawn tracker: it holds a fact about *this session*
+  // rather than about the world, so nothing about which buffs are up is persisted — only the
+  // player's choices about which ones to watch. Both files' headers say why.
+  const buffs = createBuffTracker({
+    userDataDir: userData,
+    getSettings: () => store.getSettings().castAlerts,
+    raise: raiseAlert,
+    // Injected, so the tracker owns no I/O and tests without a game install. The catalogue reads its
+    // two files lazily, so handing these over costs nothing until a buff line actually turns up.
+    lexicon: () => spells.lexicon(),
+    facts: (spell, rank) => spells.find(spell, rank),
+  });
+  buffs.onChanged(() => broadcast(CH.buffsChanged, undefined));
 
   registerIpc({
     store,
@@ -291,6 +305,7 @@ if (!app.requestSingleInstanceLock()) {
     peerKills,
     contributorId,
     spawns,
+    buffs,
     lookup,
     userData,
     logFile,
@@ -391,6 +406,9 @@ if (!app.requestSingleInstanceLock()) {
     // changing the instance difficulty respawns everything, and it arrives as a different *variant*
     // of the same zone.
     spawns.noteZone(event.zone);
+    // Buffs cross a zone line, so this is not a reason to drop the board — but a half-finished cast
+    // does not, and that is what `noteZone` clears. See the tracker.
+    buffs.noteZone(event.zone);
     currentZone = event.zone;
     combat.setZone(currentZone); // so finished fights are filed against the right camp
     broadcast(CH.zoneChanged, currentZone);
@@ -487,6 +505,10 @@ if (!app.requestSingleInstanceLock()) {
     // The alert path runs *after* the meter and the HP estimate, always: only an alert may ever wait
     // or be dropped, never the ledger. What it does with the event is `alert-router.ts`.
     alerts.combat(event);
+    // After the alert router, and for the same reason it comes after the meter: the buff board is
+    // the second thing that can put a banner up off its own bat, and nothing that keeps a ledger
+    // may be delayed behind either of them.
+    buffs.combat(event);
     // Then the scoreboard, last, for the same reason: a personal best is the only thing here that
     // puts a banner up off its own bat, and nothing else may be delayed behind it. After the meter
     // also means `combat.mine` has seen this line — a pet's first swing proves the pet.
@@ -503,6 +525,11 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onLine((line) => {
     logClock.note(line.at);
     alerts.line(line);
+    // Landing sentences ("Bloop is surrounded by a brief lupine aura.") are the one thing that says
+    // a buff went *up* on somebody, and no parser models them — they are per-spell prose out of the
+    // game's own string file. Cheap to offer every line: the lexicon's first move is a map lookup on
+    // the line's last word.
+    buffs.line(line);
   });
   /**
    * A fight ends in quiet, and quiet logs nothing — so without this the last pull of a camp was
@@ -714,6 +741,7 @@ if (!app.requestSingleInstanceLock()) {
     peerKills.flush();
     spawns.flush();
     spawns.dispose();
+    buffs.flush();
     watcher.stop(); // records the read position, so the next run resumes exactly here
     cursor.flush();
   });

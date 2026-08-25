@@ -147,6 +147,38 @@ unit-tested.
     alert defaults, with a deleted built-in still producing a banner. And **`clockSkew`** in the pure tests,
     which is the panel's clock bug written down: an offset re-anchors on every fetch where a
     free-running counter accumulated, making a fresh timer render 0:00.
+  - `src/shared/spell-strings.ts` → `electron/tests/spell-strings.test.ts` (reading a sentence back to
+    the spell that prints it, [ADR 0140](../decisions/0140-a-buff-is-watched-until-it-lapses.md)). The
+    fixture rows are **synthetic** — the file is Daybreak's, like `spells_us_sample.txt` — but every
+    sentence in them was read off a live install, so the *shapes* are the game's own. What's pinned is
+    mostly what must **not** happen: the leading space and the possessive of a landing suffix are kept,
+    because they are how a name is read back off the line; a sentence two spells share returns **both**,
+    since picking one is a coin toss dressed as an answer; the same sentence with nobody in front of it
+    is not a landing on somebody else; a line that merely *ends* the same way is not a landing at all;
+    and an out-of-era or detrimental spell never claims a sentence, which is the gate that stops a
+    player being told to recast something they cannot cast. Plus the invariant the whole suffix match
+    rests on — `normalizeSentence` is **length-preserving**, or the name comes back cut.
+  - `src/shared/buff-tracking.ts` → `electron/tests/buff-tracking.test.ts` (the pure rules). Narrowing a
+    shared sentence is the interesting part: *already up* outranks *just cast* (one was watched, the
+    other inferred), a signal that picks out more than one narrows nothing, and an undecided answer
+    names every candidate in a **stable** order — a reminder that renamed itself between sessions would
+    be unusable. Then what gets said versus what only gets recorded: a fade is both, a **death** is held
+    and never announced, a recast is neither, and the two switches are asserted apart (unchecked
+    silences both halves; `notify` off silences only the banner). And that only rows nobody has touched
+    are evictable, because dropping an unchecked one would silently switch tracking back on.
+  - `electron/buff-tracker.ts` → `electron/tests/buff-tracker.test.ts` (the holder). A scratch userData
+    dir; the clock, the lexicon, the spell facts and the alert path all injected, so nothing touches a
+    game install. The gates are the point: a landing on somebody else counts **only** when you were
+    seen casting it (the sentence is zone-visible, so at a busy camp every nearby caster would
+    otherwise fill your board), a pending cast is **withdrawn by a fizzle** rather than left to expire,
+    and one that simply went stale credits nothing. Then the honesty cases — a spell that lands in
+    silence is put up by its cast with **no target claimed**, one that announces itself waits for the
+    line that names a target, a fade that names one **retires** the placeholder rather than sitting
+    beside it, and with no install a nameless fade is left alone rather than guessed at. Death is
+    asserted from both sides: your own buffs and your pet's lapse, buffs you put on other people do
+    not, and none of it raises a banner. Plus the regression that made all of this worth writing: a
+    real lapse used to announce **twice** and replace its own start time, because "which instances does
+    this fade affect" was asked again after the answer had already been changed.
   - `electron/tests/spawn-flow.test.ts` — the spawn timers **end to end**, from raw log text to the
     board the panel draws, through the same path `main.ts` uses (`splitLine` → `parseSplitLine` →
     `killLog.record` → `spawns.noteKill` → `view`). The other two spawn suites talk to the tracker
@@ -504,6 +536,13 @@ and can never prove the format. When that gap was closed by hand once, the live 
 turned out to have **173 columns where the reference documented 171**
 ([ADR 0080](../decisions/0080-the-game-s-own-spell-file.md)) — harmless, because nothing validates a
 width, but invisible to any fixture we write ourselves.
+
+`spell-strings.live.test.ts` is the second of these, over `spells_us_str.txt`, and it asserts the two
+claims [ADR 0140](../decisions/0140-a-buff-is-watched-until-it-lapses.md) rests on: that a shared fade
+sentence really is shared (or the candidate-list design is over-engineering), and that a sentence
+belonging **only** to an out-of-era spell is not claimed (or the gate is inert). It also checks the
+permanence column against the list eql-alerts hand-built — including the Yaulp I–III / IV split — which
+is what makes carrying their JSON unnecessary.
 
 So `electron/tests/game-data.ts` gives an **opt-in** handle on a real install, and `*.live.test.ts`
 files use it. Point it at one and they run; don't and they *skip*, so CI and anyone without the game

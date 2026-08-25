@@ -329,31 +329,13 @@ The theme running through them is that **we read the log, the wiki and the map f
 there** — while the game ships several more files, and two public databases describe this game's
 lineage. Most of what follows is about widening the input, not the output.
 
-- **`spells_us_str.txt` names the spell behind a nameless fade — verified.**
-  `spells_us.txt` is now read ([ADR 0080](./decisions/0080-the-game-s-own-spell-file.md)); its sibling
-  is the remaining prize, and a real install has since confirmed it does exactly what we hoped.
-  [cast-alerts.ts](../src/shared/cast-alerts.ts) records as an honest limit that *"a fade **on you** is
-  always worded per spell ('The light breeze fades.', 'The spirit of travel leaves you.') and names no
-  spell"* — and the file's own header row says `#SPELLINDEX^CASTERMETXT^CASTEROTHERTXT^CASTEDMETXT^CASTEDOTHERTXT^SPELLGONE`,
-  where **column 5 is that sentence** and column 0 joins straight to the spell id we already parse.
-  Checked against the real file: spell 278 (Spirit of Wolf) carries
-  `"The spirit of wolf leaves you."` — the very shape cast-alerts calls unmappable. The limit is a
-  missing input, not a property of the log.
-
-  Measured on a live install, so the design can be settled before any code: **73,963 rows, 28,333 with
-  a fade sentence, 5,010 of those on a spell obtainable at level 50 or under, across 4,357 distinct
-  sentences.** Two facts decide the shape, and both confirm what EQBuddy learned the hard way in
-  `src/EQBuddy.Core/FadeMessageCatalog.cs` (worth reading whole before starting):
-  **358 sentences are shared by more than one obtainable spell** — every haste in the game reuses one
-  line — so a lookup must return a *candidate list plus a display label*, never a single answer; and
-  plenty of spells fade **silently** (Burnout's `SPELLGONE` is empty), for which EQBuddy's note is that
-  a delay-cue rule is the honest tool — which now ships
-  ([ADR 0082](./decisions/0082-an-alert-can-be-scheduled.md)). The parse is trivial
-  next to `spell-file.ts` — six columns, a header naming them — so nearly all the work is deciding how
-  an ambiguous fade presents itself in a watch.
-
-  `dbstr_us.txt` (9.8 MB, also present) is the third of these and still unexamined; it's where
-  AA and item description strings live.
+- **`dbstr_us.txt` is the third of the game's own text files, and still unexamined.** 9.8 MB, sitting
+  beside the two we now read (`spells_us.txt` for the facets a spell has,
+  [ADR 0080](./decisions/0080-the-game-s-own-spell-file.md); `spells_us_str.txt` for the sentences it
+  prints, [ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md)). It is where AA and item
+  **description** strings live. No consumer in mind yet, which is why this is a note and not a plan —
+  recorded because the other two each turned out to answer a question we had already written down as
+  a limit.
 
 - **A Project Quarm baseline, as a seed layer under our own observations.** Spawn timers now ship and learn
   from scratch ([ADR 0092](./decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)) — nothing
@@ -526,18 +508,13 @@ Four of the six are **done** and have left this list: rank-aware spell costs
   gate is strictly better than the article heuristic and still wrong at exactly the busy camp it was
   built for — two casters on `a gnoll pup`, one of whom fizzled.
 
-- **Many classic buffs are permanent on Legends, and there's a list.** Recorded now so it is found
-  before, not after, anything ships a duration. Classic-EQ durations are simply wrong for a large set
-  of self-buffs that EQL made `Duration: Permanent` — Yaulp I–III (but **not** IV, which stays four
-  ticks), Divine Might, Divine Purpose, Lich, Elemental Armor, Greater Wolf Form, Grim Aura, Deadeye,
-  Firefist, every Shielding tier. eql-alerts ships the list as `samples/eql_permanent_buffs.json` and
-  both strips their countdowns **and** silences their cast alerts, because a toast for a buff that
-  never ends is pure noise.
-
-  This bites us in two places: any buff timer we build, and the alerts that now prompt a recast — the
-  **spoken alert** item above, and the **delay cue** that shipped as
-  [ADR 0082](./decisions/0082-an-alert-can-be-scheduled.md), where a "recast it" 25 s after a
-  permanent buff is worse than useless. It costs nothing to carry the list; it costs a bug report to discover it. Files under the
-  same heading as the wider trap — *EQL is not classic EQ* — which the whole of
-  [neighbours.md](./neighbours.md) is a standing reminder of.
-
+- **A delay cue can still prompt a recast of a buff that never ends.** The permanence trap itself is
+  answered — `buffdurationformula` states it, so the buff board reads it off the player's own install
+  rather than carrying eql-alerts' hand-built list
+  ([ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md)) — but only the *board* knows.
+  A hand-written watch with a `delay` ([ADR 0082](./decisions/0082-an-alert-can-be-scheduled.md)) will
+  still say "recast Yaulp" 25 s after a cast, because a rule matches a line and knows nothing about the
+  spell behind it. `SpellFacts.permanent` is now the fact that could gate it; what needs deciding is
+  whether a rule should be *silently* suppressed (surprising — the player wrote it) or **told**, as a
+  note on the rule's row saying this spell has no duration on this server. The second is more in
+  keeping with how every other soft figure here behaves.

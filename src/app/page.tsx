@@ -9,10 +9,11 @@ import ScaleButtons from "./components/ScaleButtons";
 import ListPanel from "./components/ListPanel";
 import HuntPanel, { type HuntGrouping } from "./components/HuntPanel";
 import SpawnPanel from "./components/SpawnPanel";
+import BuffPanel from "./components/BuffPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
 import AlertsPanel from "./components/AlertsPanel";
-import type { Settings } from "@/shared/types";
+import type { BuffView, Settings } from "@/shared/types";
 import DamagePanel from "./components/DamagePanel";
 import LootPanel from "./components/LootPanel";
 import StatusBar from "./components/StatusBar";
@@ -24,7 +25,7 @@ import CastAlerts from "./components/CastAlerts";
 import UpdateBanner from "./components/UpdateBanner";
 import Toasts from "./components/Toasts";
 import TabBar, { type TabItem } from "./components/TabBar";
-import { useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
+import { useBuffs, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
@@ -33,7 +34,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "loot" | "search" | "damage" | "session" | "alerts" | "settings";
+type Tab = "list" | "hunt" | "timers" | "buffs" | "loot" | "search" | "damage" | "session" | "alerts" | "settings";
 
 /**
  * The single app window: a frameless, translucent float (the "overlay" look) that
@@ -50,6 +51,9 @@ export default function Home() {
   // Undetermined until mounted (keeps SSR/first-client render consistent).
   const [inElectron, setInElectron] = useState<boolean | null>(null);
   const list = useShoppingList();
+  // Read here rather than only in the panel, so the tab itself can say how many buffs are down —
+  // the one number in this feature that is worth seeing without opening it.
+  const buffs = useBuffs();
   // Squares the window's corners while maximized (see globals.css).
   const maximized = useMaximized();
   const settings = useSettings();
@@ -106,6 +110,12 @@ export default function Home() {
     // ninth tab put after Settings would be the first one to disappear at the default width —
     // and a timer you cannot see is worse than no timer (ADR 0092).
     { key: "timers", label: "Timers" },
+    // Beside Timers, because it is the same kind of thing: a board of what is running out. It goes
+    // *before* Loot for the same reason Timers goes before Alerts — `TabBar` collapses from the end,
+    // and a buff that dropped is something you need to see mid-fight, which is exactly when you
+    // cannot go hunting through a » menu for it. The count is what is currently **missing**, since
+    // that is the only number here anyone acts on.
+    { key: "buffs", label: buffsLabel(buffs) },
     { key: "loot", label: "Loot" },
     // Fourth, not last but one. `TabBar` collapses whatever doesn't fit into its » menu from the
     // **end**, and at the window's default width only six tabs fit — so putting alerts after
@@ -173,6 +183,7 @@ export default function Home() {
             />
           )}
           {tab === "timers" && <SpawnPanel />}
+          {tab === "buffs" && <BuffPanel />}
           {tab === "loot" && <LootPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
           {tab === "damage" && <DamagePanel />}
@@ -203,6 +214,19 @@ function alertsLabel(alerts: Settings["castAlerts"] | undefined): string {
   if (!alerts.enabled) return "Alerts (off)";
   const live = alerts.watches.filter((w) => w.enabled).length;
   return live ? `Alerts (${live})` : "Alerts";
+}
+
+/**
+ * What the Buffs tab says about itself: how many of the buffs you keep up are **currently missing**.
+ *
+ * Deliberately the lapsed count and not the tracked one. "Buffs (14)" would be a boast about how many
+ * spells the app knows, which nobody needs on a tab; "Buffs (2)" means two things are down and is the
+ * whole reason to look. Silent when everything is up, because a number that is always there stops
+ * being read.
+ */
+function buffsLabel(view: BuffView): string {
+  const down = view.lapsed.length;
+  return down ? `Buffs (${down})` : "Buffs";
 }
 
 /**

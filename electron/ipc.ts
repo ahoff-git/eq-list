@@ -34,6 +34,7 @@ import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { PeerKillStore } from "./peer-kills";
 import type { SpawnTracker } from "./spawn-tracker";
+import type { BuffTracker } from "./buff-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
@@ -64,6 +65,8 @@ export interface IpcContext {
   contributorId: string;
   /** Respawn countdowns for the nameds you kill (ADR 0092). */
   spawns: SpawnTracker;
+  /** Which of your buffs are up, and which have lapsed (`buff-tracker.ts`). */
+  buffs: BuffTracker;
   lookup: Lookup;
   /** The app's own data folder — where the stores and the remembered zone names live. */
   userData: string;
@@ -356,7 +359,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, buffs, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -463,6 +466,37 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.spawnsRepeat, (_e, key: string, on: boolean) => {
     spawns.repeat(key, on);
     return spawns.view();
+  });
+  // The buff board. Every edit hands the whole view back, like the spawn board's — these are small
+  // changes to a small list, and returning it means a panel never has to guess what its click did.
+  ipcMain.handle(CH.buffsView, () => buffs.view());
+  ipcMain.handle(CH.buffsTrack, (_e, key: string, on: boolean) => {
+    buffs.track(key, on);
+    return buffs.view();
+  });
+  ipcMain.handle(CH.buffsNotify, (_e, key: string, on: boolean) => {
+    buffs.notify(key, on);
+    return buffs.view();
+  });
+  ipcMain.handle(CH.buffsOnScreen, (_e, key: string, on: boolean) => {
+    buffs.showOnScreen(key, on);
+    return buffs.view();
+  });
+  ipcMain.handle(CH.buffsStyle, (_e, key: string, styleId: string | null) => {
+    buffs.style(key, styleId);
+    return buffs.view();
+  });
+  ipcMain.handle(CH.buffsForget, (_e, key: string) => {
+    buffs.forget(key);
+    return buffs.view();
+  });
+  ipcMain.handle(CH.buffsDismiss, (_e, key: string, target: string) => {
+    buffs.dismiss(key, target);
+    return buffs.view();
+  });
+  ipcMain.handle(CH.buffsDismissAll, () => {
+    buffs.dismissAll();
+    return buffs.view();
   });
   // The loot feed's history — tracked in the main process, so the tab shows drops from before
   // it was opened, then follows live ones over CH.lootEvent.

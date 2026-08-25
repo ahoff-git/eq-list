@@ -28,6 +28,7 @@ Superseded records are not cited. A rule that a later decision reversed is not a
 [Reference sources](#reference-sources) ·
 [Alerts](#alerts) ·
 [Spawn timers](#spawn-timers) ·
+[Buffs](#buffs) ·
 [Windows and the interface](#windows-and-the-interface) ·
 [Peers](#peers) ·
 [Stored data](#stored-data) ·
@@ -472,6 +473,45 @@ reading like a measurement, and they are shared code
 - **A duration has one syntax and a contract per feature** — the units that make sense and the ceiling
   that applies. A cue takes seconds and minutes to half an hour; a timer takes hours and days. What a
   field prints can be typed back into it. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
+
+## Buffs
+
+- **A buff is tracked from the log, not configured.** A spell enrols itself the first time you are seen
+  casting it, receiving it, or losing it, and arrives switched **on** — the opposite of a spawn timer's
+  `notify`, because everything you kill becomes a timer while only what you actually buff lands here.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+- **A sentence resolves to candidates, never to a spell.** The game words 272 of its obtainable fade
+  sentences for more than one spell. Two things outside the string file narrow them, in order of what
+  they prove — one candidate is **already up**, then one was **just cast** — and where neither decides,
+  every candidate is named. Picking the first would be a coin toss that reads like knowledge.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+- **A pending cast is withdrawn, not left to expire.** A fizzle, interrupt or resist means the cast
+  never landed, so the next landing line is somebody else's.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+- **A landing on somebody else counts only when you cast it.** That sentence is zone-visible, so at a
+  busy camp every nearby caster would otherwise fill your board.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+- **Only obtainable, beneficial spells may claim a sentence.** Ungated, the file's NPC and out-of-era
+  tiers hand a player's own sentence to a spell nobody here can cast; a detrimental spell's landing is a
+  debuff, which is a different feature. ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+- **A lapse is a state, not an event.** A banner answers "what just happened" and goes; the useful fact
+  is that you are *now* without it, so a lapse is held until the spell is recast or stood down.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+- **Your death lapses your buffs quietly.** Recorded — "what do I need re-buffed" is the question a
+  corpse has — and not announced, because a dozen banners at once is not a dozen pieces of news. Buffs
+  you put on other people survive it, and the log reports those itself.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+- **The duration formula's id is read; a duration is not computed.** Applying the formula is
+  server-side logic, and the caster level it needs is one this log will not state — EQL levels are per
+  class and the level line names none. So permanence is known, and **no countdown is shown**.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md), [0080](./0080-the-game-s-own-spell-file.md))
+- **Unchecking silences and keeps the row; clearing forgets it.** A cleared spell returns if it is cast
+  again; an unchecked one never speaks until it is checked. Silencing by deleting is a decision you
+  cannot see or undo. ([0140](./0140-a-buff-is-watched-until-it-lapses.md),
+  [0092](./0092-a-named-s-respawn-is-learned-from-your-own-kills.md))
+- **The board is not persisted; the choices are.** Which buffs are up is a fact about a login, and
+  nothing in the log restates it. Claiming otherwise would invent state the first fade line contradicts.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md), [0043](./0043-state-is-not-news-either.md))
 
 ## Windows and the interface
 

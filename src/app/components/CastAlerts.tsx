@@ -5,7 +5,8 @@ import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
 import { categoryOf, formatScore } from "@/shared/high-scores";
 import { alertPlacement } from "@/shared/alert-styles";
-import type { AlertPositionValue, AlertStyle, CastAlertEvent, HighScore, LootAlert } from "@/shared/types";
+import { ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
+import type { AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, HighScore, LootAlert } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -156,13 +157,22 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
             ? "💬"
             : a.event === "fade"
               ? "⏳"
-              : "⚠";
+              // A buff you keep up having gone. Not the fade hourglass: a fade watch is a rule you
+              // wrote firing on a line, while this is the board reporting that something you were
+              // relying on is missing — and the two arrive together often enough that they have to be
+              // tellable apart without reading either.
+              : a.event === "buff"
+                ? "🛡"
+                : "⚠";
   // A record before the `message` check: it has no wording to override, and it words itself from the
   // shared catalog rather than being handed a sentence (see `recordAlert`).
   if (a.event === "record" && a.record) return recordBanner(a.record);
   // A drop is the same case: no watch behind it, so no wording to override, and the counts it words
   // itself from are already in the payload (see `lootAlert`).
   if (a.event === "loot" && a.loot) return lootBanner(a.loot);
+  // And a lapsed buff, for the same reason again: nothing wrote it a sentence, and the facts it words
+  // itself from — which spell, on whom, and whether we could narrow it — are all in the payload.
+  if (a.event === "buff" && a.buff) return buffBanner(a.buff);
   if (a.message?.trim()) return { icon, body: <b>{a.message}</b> };
   if (a.event === "spawn") {
     return {
@@ -197,6 +207,46 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
       </>
     ),
     hint: "dispel!",
+  };
+}
+
+/**
+ * A buff you keep up has gone.
+ *
+ * The **spell leads** and the target follows, because the spell is what you recognise without reading
+ * and it is what you have to press. "On you" is left off entirely: most of the list is your own set,
+ * and repeating it would push the one banner that *is* about somebody else out of a glance — which is
+ * the one you were least likely to notice yourself.
+ *
+ * The hint carries the two things that change what you do about it. A **permanent** buff cannot have
+ * run out, so a lapse of one means it was dispelled or you died, and telling you which of those it was
+ * is more use than telling you to recast. And where the game words several spells' fades identically,
+ * the alternatives are named rather than hidden: a reminder to recast the wrong rank is worse than one
+ * that says what to check.
+ */
+function buffBanner(buff: BuffInstance): { icon: string; body: ReactNode; hint?: string } {
+  // Blank for you, and blank for a target we never learned — a cast line names none, and "on someone"
+  // on a banner reads as a fault rather than as the honest limit the panel has room to explain.
+  const who =
+    buff.target === ON_YOU || buff.target === ON_UNKNOWN
+      ? ""
+      : buff.target === ON_PET
+        ? "your pet"
+        : buff.target;
+  const also = buff.alsoCouldBe?.length ? ` — or ${buff.alsoCouldBe.join(" / ")}` : "";
+  return {
+    icon: "🛡",
+    body: (
+      <>
+        <b>{buff.spell}</b> down{who ? <> on <b>{who}</b></> : ""}
+      </>
+    ),
+    hint:
+      (buff.reason === "died"
+        ? "lost on death"
+        : buff.permanent
+          ? "dispelled — it has no timer"
+          : "re-cast!") + also,
   };
 }
 

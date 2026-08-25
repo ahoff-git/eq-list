@@ -29,7 +29,9 @@
  * Both source projects label anything derived from it an estimate. We don't need it: the log
  * already tells us what a spell actually did, measured, on this server. Reading the blob would be
  * trading a fact for a guess, so this stops at the scalar columns — the things the log *can't*
- * see. Buff duration is left out on the same grounds (it's a formula, not a number).
+ * see. Buff duration is left out on the same grounds (it's a formula, not a number) — but the
+ * formula's **id** is read, because one yes/no question of it needs no arithmetic and answers
+ * something EQL players are bitten by daily: see `PERMANENT_FORMULAS`.
  *
  * Pure: text in, facts out. No I/O, no clock.
  */
@@ -64,12 +66,47 @@ const IDX = {
   castMs: 8,
   recoveryMs: 9,
   recastMs: 10,
+  /**
+   * Which formula turns a level into a duration. A *number naming a rule*, not a number of
+   * anything — see `PERMANENT_FORMULAS` for the one thing we read it for.
+   */
+  durationFormula: 11,
+  /** The formula's cap or fixed figure, in ticks (6 seconds each). Meaningless without the formula. */
+  durationTicks: 12,
   mana: 14,
   /** 0 = detrimental, 1 = beneficial, 2 = beneficial (group only). */
   goodEffect: 28,
   /** First of 16 per-class minimum levels. */
   classes: 36,
 } as const;
+
+/**
+ * The duration formulas that mean **this buff does not expire**.
+ *
+ * ADR 0080 left duration alone on the grounds that it is "a formula, not a number", and that is still
+ * the right call for *computing* one: applying the formula table is server-side logic, the only
+ * reference implementations are EQEmu's classic-era ones, and the level a formula needs is a level
+ * this log will not state (EQL levels are per class and the level line names none — see
+ * [ideas.md](../../specs/ideas.md)). None of that applies to reading the formula *id* and asking one
+ * yes/no question of it, which needs no arithmetic and no level at all.
+ *
+ * **And that question is worth asking, because EQL is not classic EQ.** A large set of classic short
+ * self-buffs are `Duration: Permanent` here, so anything that treats them as timed is simply wrong —
+ * the trap [todo.md](../../specs/todo.md) recorded from **eql-alerts**, which ships a hand-built list
+ * of them (`samples/eql_permanent_buffs.json`) to strip their countdowns and silence their alerts.
+ *
+ * Checked against a live install, and the borrowed list is reproduced exactly: Yaulp, Yaulp II and
+ * Yaulp III are formula 50 while **Yaulp IV is formula 8 with 4 ticks** — the precise split that list
+ * calls out — and so are Divine Might, Divine Purpose, Lich, Elemental Armor, Greater Wolf Form, Grim
+ * Aura, Deadeye, Firefist and Shielding. Every name on it, from the game's own file. So we don't
+ * borrow the list; the player's install states it, which is
+ * [ADR 0025](../../specs/decisions/0025-observation-over-the-wiki.md)'s argument on a source that is
+ * this game rather than an older one.
+ *
+ * `51` joins it as the aura form of the same claim — up until you take it down or leave — for the one
+ * reason that matters to a reader: neither will ever expire on a clock.
+ */
+export const PERMANENT_FORMULAS = new Set([50, 51]);
 
 /** The highest index we read; a row shorter than this can't be a spell we understand. */
 const MIN_FIELDS = IDX.classes + SPELL_CLASSES.length;
@@ -101,6 +138,15 @@ export interface SpellFacts {
   levels: Partial<Record<(typeof SPELL_CLASSES)[number], number>>;
   /** A buff/heal rather than something you throw at a mob. */
   beneficial: boolean;
+  /**
+   * **This effect does not run out.** Read from the duration formula rather than computed from it —
+   * see `PERMANENT_FORMULAS` for why that one question is answerable when the duration itself isn't,
+   * and why on this server it is the difference between a useful reminder and a lie.
+   *
+   * It does not mean the effect can't *end*: a permanent buff is still dispelled, still lost on
+   * death, and still gone when you log out. It means nothing will ever end it on a clock.
+   */
+  permanent: boolean;
 }
 
 /** A number the file states, or 0 — a blank or junk field must never become NaN downstream. */
@@ -137,6 +183,7 @@ export function parseSpellLine(line: string): SpellFacts | null {
     recastMs: num(fields, IDX.recastMs),
     levels,
     beneficial: num(fields, IDX.goodEffect) > 0,
+    permanent: PERMANENT_FORMULAS.has(num(fields, IDX.durationFormula)),
   };
 }
 
@@ -156,11 +203,33 @@ export function isObtainable(spell: SpellFacts): boolean {
  * the file we can label than no figure — but it loses to an obtainable one the moment one appears.
  */
 export function parseSpellFile(text: string): Map<string, SpellFacts> {
+  return parseSpellCatalog(text).byName;
+}
+
+/**
+ * The same parse, indexed **both** ways.
+ *
+ * `byName` is what a log line needs: it says "Shock of Lightning VI" and never an id, and the
+ * collision rule above is what makes that answerable. `byId` is what the *sibling* file needs —
+ * `spells_us_str.txt` keys its sentences by spell index — and it is deliberately unfiltered: the
+ * collision rule exists to pick one row per *name*, and applying it to ids would throw away rows
+ * that have a sentence of their own to contribute. An id is unique; there is nothing to resolve.
+ *
+ * One pass for both, because the file is 38 MB and reading it twice to answer two questions about
+ * the same rows would be the single most expensive thing this app does
+ * ([ADR 0080](../../specs/decisions/0080-the-game-s-own-spell-file.md) measured 400 ms).
+ */
+export function parseSpellCatalog(text: string): {
+  byName: Map<string, SpellFacts>;
+  byId: Map<number, SpellFacts>;
+} {
   const byName = new Map<string, SpellFacts>();
+  const byId = new Map<number, SpellFacts>();
   const obtainable = new Set<string>();
   for (const line of text.split(/\r?\n/)) {
     const spell = parseSpellLine(line);
     if (!spell) continue;
+    byId.set(spell.id, spell);
     const key = spell.name.toLowerCase();
     const canHold = isObtainable(spell);
     const have = byName.get(key);
@@ -168,5 +237,5 @@ export function parseSpellFile(text: string): Map<string, SpellFacts> {
     byName.set(key, spell);
     if (canHold) obtainable.add(key);
   }
-  return byName;
+  return { byName, byId };
 }

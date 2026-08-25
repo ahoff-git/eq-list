@@ -139,6 +139,17 @@ const api: EqlApi = {
     repeat: (key, on) => ipcRenderer.invoke(CH.spawnsRepeat, key, on),
     onChanged: (cb) => on(CH.spawnsChanged, cb),
   },
+  buffs: {
+    view: () => ipcRenderer.invoke(CH.buffsView),
+    track: (key, on) => ipcRenderer.invoke(CH.buffsTrack, key, on),
+    notify: (key, on) => ipcRenderer.invoke(CH.buffsNotify, key, on),
+    showOnScreen: (key, on) => ipcRenderer.invoke(CH.buffsOnScreen, key, on),
+    style: (key, styleId) => ipcRenderer.invoke(CH.buffsStyle, key, styleId),
+    forget: (key) => ipcRenderer.invoke(CH.buffsForget, key),
+    dismiss: (key, target) => ipcRenderer.invoke(CH.buffsDismiss, key, target),
+    dismissAll: () => ipcRenderer.invoke(CH.buffsDismissAll),
+    onChanged: (cb) => on(CH.buffsChanged, cb),
+  },
   hp: {
     get: () => ipcRenderer.invoke(CH.hpGet),
     set: (max) => ipcRenderer.invoke(CH.hpSet, max),

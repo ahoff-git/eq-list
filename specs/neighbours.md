@@ -232,15 +232,20 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | An item's era, stated rather than derived *(the open half of [ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md))* | the expansion badge and "verified as available in EverQuest Legends" flag on `/item/search` — **EQLGS**, keyed on the same item ids we already hold |
 | `/out inventory` | `main.js` (`pollInv`) + `renderer/app.js` (`INV_SECTIONS`, `WORN_RX`) — **eqltools-companion** · `internal/inventorysync/observer.go` — **eqdps** |
 | Gate a shared emote on your own cast | `README.md` → *Self-only combat clocks*, then `CHANGELOG.md` v0.1.29 for the withdraw-on-fizzle half — **eql-alerts** |
-| Permanent buffs on Legends | `samples/eql_permanent_buffs.json` — **eql-alerts** |
+| Permanent buffs on Legends *(shipped — [ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md), and the list turned out to be derivable: every name on it is `buffdurationformula == 50` in the game's own file)* | `samples/eql_permanent_buffs.json` — **eql-alerts** |
+| A fade line read back to its spell *(shipped — [ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md))* | `src/EQBuddy.Core/FadeMessageCatalog.cs` — **EQBuddy**, for why one sentence can mean several spells |
 | Rank-aware costs *(shipped — [ADR 0080](./decisions/0080-the-game-s-own-spell-file.md))* | `src-tauri/src/engine.rs` — **eql-alerts** · `SPELL_FORMAT.md` — **eql-info** |
 | A fight records why it ended *(shipped — [ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md))* | `internal/combat/combat.go` (`EndReason`, `ForgetEnemies`) — **eqdps** |
 | Pet proof and the bystander rule *(shipped — [ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md); three further proofs are open in [todo.md](./todo.md))* | `src-tauri/src/fight/mod.rs` (~735, ~975, `looks_like_npc`) · `src-tauri/src/parse/misc.rs` — **eql-meter** |
 
-Two items on this page have **no** prior art to read, and that's worth knowing before starting them:
-the *command channel* in [ideas.md](./ideas.md) exists only in eql-log-reader's `eql_atlas.py`, and
-nothing anyone has built reads a fade line back to its spell from `spells_us_str.txt` — EQBuddy hand-
-maintains the mapping instead, so we'd be first.
+One item on this page has **no** prior art to read, and that's worth knowing before starting it: the
+*command channel* in [ideas.md](./ideas.md) exists only in eql-log-reader's `eql_atlas.py`.
+
+The other one that had none is now **ours**: nothing anyone had built read a fade line back to its
+spell from `spells_us_str.txt` — EQBuddy hand-maintains the mapping in `FadeMessageCatalog.cs` instead
+— and [ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md) does. Their doc comment was
+right about the hard part, though, and reading it whole is still the fastest way to understand why the
+lookup returns candidates rather than an answer.
 
 ## See also
 

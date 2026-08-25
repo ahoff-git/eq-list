@@ -87,6 +87,15 @@ export const CH = {
   spawnsStop: "spawns:stop",
   spawnsQueue: "spawns:queue", // a fresh kill adds a countdown instead of restarting: a placeholder camp
   spawnsRepeat: "spawns:repeat", // a custom timer starts itself again when it comes due
+  // buffs — what you're keeping up, and what has lapsed
+  buffsView: "buffs:view",
+  buffsTrack: "buffs:track", // watch this spell, or stop: the durable silence, which keeps the row
+  buffsNotify: "buffs:notify",
+  buffsOnScreen: "buffs:onScreen", // keep "this is down" over the game until it's back
+  buffsStyle: "buffs:style",
+  buffsForget: "buffs:forget", // drop the row entirely; it returns if the spell is cast again
+  buffsDismiss: "buffs:dismiss", // stand down one lapse without recasting it
+  buffsDismissAll: "buffs:dismissAll",
   lookupCapture: "lookup:capture",
   lookupOpen: "lookup:open",
   lookupReady: "lookup:ready", // the selector reporting it has mounted and is listening for a drag
@@ -165,6 +174,7 @@ export const CH = {
   alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
   spawnsChanged: "evt:spawnsChanged", // main → all: a timer started, came due, or aged out
+  buffsChanged: "evt:buffsChanged", // main → all: a buff went up, lapsed, or a choice about one changed
   dataChanged: "evt:dataChanged", // main → all: stored data changed in bulk (a log was eaten, a store cleared)
   updateAvailable: "evt:updateAvailable", // main → all: a newer build is published
 
