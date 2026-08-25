@@ -148,6 +148,7 @@ The most direct overlap with our watches — read this one before building the a
 | `README.md` — *"Self-only combat clocks"* | The best idea in it: zone-visible land emotes are gated on **having recently seen your own `You begin casting`** of that spell. Two correlated lines instead of a heuristic on one |
 | `README.md` — *"EQL vs classic GINA timers"* + `samples/eql_permanent_buffs.json` | The EQL-specific trap: many classic short self-buffs are **permanent** on Legends, so their countdowns are simply wrong. A ready-made list |
 | `src-tauri/src/engine.rs` | Matching, timers and early-enders; also where rank-aware duration scaling lands (unranked wiki base × roman rank) |
+| `CHANGELOG.md` — v0.1.29 (2026-08-13) | The emote gate's **second half**: one shared `mesmerized` sentence resolved to Mesmerize / Mesmerization / Dazzle / Fascination and scaled by rank, and a pending cast **withdrawn** on a fizzle or a same-name kill rather than left to expire |
 | `src-tauri/src/gina_import.rs` · `scripts/import_gina_gtp.py` | Reading the existing GINA trigger-pack corpus |
 | `src-tauri/src/starter.rs` · `scripts/rebuild_eql_starter.py` | Shipping a curated starter library with everything but essentials disabled |
 | `src-tauri/src/tts.rs` · `src/speech.ts` | Native OS TTS (macOS `say`, Windows SAPI) — they found Web Speech unreliable inside Tauri, which is a Tauri problem, not ours |
@@ -164,6 +165,7 @@ Same author and shape as eql-alerts, pointed at combat: live fights, ability bre
 | `src-tauri/src/fight/mod.rs` (~735, ~975) | Pet→owner learning from three signals, the cleanest being a **pet engage tell** — `"Garn told you, 'Attacking … Master.'"` — which only ever reaches the pet's own owner, so receiving it is proof |
 | same file, `looks_like_npc` guard | The bystander rule: *only you or your pet can open a fight*, so "Orc hits Bob" in an open-world camp never creates a fight named after a stranger. Our [ADR 0067](./decisions/0067-the-meter-counts-your-party-s-fights.md) from the other end |
 | `src-tauri/src/parse/` | Damage-shield and proc attribution, both recent bug-fix areas for them |
+| `src-tauri/src/parse/misc.rs` (`PET_LEADER`, `PET_CLAIM`, `PET_BERSERK`) | v0.1.28's **three further pet proofs**, added 2026-08-13: the `/pet who leader` answer (`"Jaber says, 'My leader is Kenkyo.'"` — names the *leader*, so it places a group-mate's pet, not only yours), the failed-wake tell (`"… 'I am unable to wake a skeleton, Master.'"`), and a pet-only buff landing (`You begin casting Burnout.` → `"Jabektik goes berserk."`, `is_pet_buff_spell`) |
 
 ## EQLGS — the gear search, and the era field we haven't got
 
@@ -229,11 +231,11 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | Data-integrity tests | `src/lib/maps.test.ts` — **everquest-legends-companion** |
 | An item's era, stated rather than derived *(the open half of [ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md))* | the expansion badge and "verified as available in EverQuest Legends" flag on `/item/search` — **EQLGS**, keyed on the same item ids we already hold |
 | `/out inventory` | `main.js` (`pollInv`) + `renderer/app.js` (`INV_SECTIONS`, `WORN_RX`) — **eqltools-companion** · `internal/inventorysync/observer.go` — **eqdps** |
-| Gate a shared emote on your own cast | `README.md` → *Self-only combat clocks* — **eql-alerts** |
+| Gate a shared emote on your own cast | `README.md` → *Self-only combat clocks*, then `CHANGELOG.md` v0.1.29 for the withdraw-on-fizzle half — **eql-alerts** |
 | Permanent buffs on Legends | `samples/eql_permanent_buffs.json` — **eql-alerts** |
 | Rank-aware costs *(shipped — [ADR 0080](./decisions/0080-the-game-s-own-spell-file.md))* | `src-tauri/src/engine.rs` — **eql-alerts** · `SPELL_FORMAT.md` — **eql-info** |
 | A fight records why it ended *(shipped — [ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md))* | `internal/combat/combat.go` (`EndReason`, `ForgetEnemies`) — **eqdps** |
-| Pet proof and the bystander rule *(shipped — [ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md))* | `src-tauri/src/fight/mod.rs` (~735, ~975, `looks_like_npc`) — **eql-meter** |
+| Pet proof and the bystander rule *(shipped — [ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md); three further proofs are open in [todo.md](./todo.md))* | `src-tauri/src/fight/mod.rs` (~735, ~975, `looks_like_npc`) · `src-tauri/src/parse/misc.rs` — **eql-meter** |
 
 Two items on this page have **no** prior art to read, and that's worth knowing before starting them:
 the *command channel* in [ideas.md](./ideas.md) exists only in eql-log-reader's `eql_atlas.py`, and

@@ -61,6 +61,29 @@ everything else, so this list can stay short enough to read:
   holding to expiry. Not proof: `was partially successful in capturing` (442 of its 1,242 lines name a
   player in the group). Proof but nameless: `Captured <mob>'s attention, Master!` (1,635 lines).
 
+  Three more deciders from **eql-meter** v0.1.28 (see [neighbours.md](./neighbours.md)), and the
+  honest state of all three is that **none is counted on a log of ours** — `fixtures/` holds no
+  instance of any of them, so the line count and false-positive rate every decider above carries is
+  missing, and getting it is the gate on adopting these rather than a follow-up to it:
+
+  - `<Pet> says, 'My leader is <Player>.'` — the `/pet who leader` answer, and the odd one out twice
+    over. It is **asked for** rather than waited on, which makes it the `AskValue` nag
+    ([ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md)) pointed at a pet instead
+    of a `/loc`, and the one decider a blind window can be ended *deliberately* with. It also names
+    the **leader**, so it is the only signal here that can place a **group-mate's** pet: every proof
+    ADR 0077 admits is addressed to you and therefore only ever answers "is this mine", where this one
+    answers "whose is it". That is a wider claim than ADR 0077 makes, and should be read as an
+    extension of it rather than an application of it.
+  - `<Pet> told you, 'I am unable to wake <mob>, Master.'` — the same private-tell proof as the attack
+    confirmation and structurally as safe (a tell addressed to you cannot be about someone else's
+    pet), but it fires on an order that **failed**, so it can land inside the blind window before
+    anything has been attacked — which is where the damage measured above is lost.
+  - `You begin casting Burnout.` followed by `<Pet> goes berserk.` — a pet-only buff, so its landing
+    names a pet; eql-meter reads Augment Death and Focus Death the same way. Worth noting for the
+    order of work rather than for the evidence: this is the **same two-correlated-lines trick** as
+    *Gate a shared emote on your own cast* below, and wants the same pending-cast map. Build that one
+    first and this rides on it instead of growing a second copy.
+
 - **An item's era is derived where a neighbour simply states it.** [Lucy](./lucy-data/README.md) is
   in ([ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)) and its one real weakness is the era:
   Lucy has no era or expansion field anywhere, so the verdict is inferred from the zones on its drop
@@ -491,6 +514,17 @@ Four of the six are **done** and have left this list: rank-aware spell costs
   Note the honest edge eql-alerts also documents: some upgrade ranks still share one emote line
   (their example is Dazzle upgrading the generic mesmerize sentence), so the gate identifies *whose*
   spell it was, not always *which*.
+
+  Two refinements shipped since (**eql-alerts** v0.1.29, 2026-08-13), and the second is a mechanism we
+  would otherwise have had to find the hard way. First, the shared line **can** be narrowed after all:
+  they resolve one `mesmerized` sentence to Mesmerize, Mesmerization, Dazzle or Fascination and scale
+  the duration by rank — so *which* is answerable from the cast that armed the gate, which turns the
+  edge above from a limit into a lookup. Second, and the part that is not just more coverage: a
+  pending cast has to be **withdrawn**, not merely left to expire. A **fizzle** means the cast never
+  landed, so an emote that follows it is somebody else's; and a **kill of a same-named mob** ends the
+  attribution, so a later emote naming that name is a fresh mob and a fresh caster. Without both, the
+  gate is strictly better than the article heuristic and still wrong at exactly the busy camp it was
+  built for — two casters on `a gnoll pup`, one of whom fizzled.
 
 - **Many classic buffs are permanent on Legends, and there's a list.** Recorded now so it is found
   before, not after, anything ships a duration. Classic-EQ durations are simply wrong for a large set
