@@ -32,7 +32,8 @@ world coordinates, so a map knows where it is. See
     ([ADR 0075](../decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)). It takes only the tiers
     that cannot pick a *different* zone: a wrong file draws one under the right name, so no map beats
     the wrong map, see
-    [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)), `sortZones`,
+    [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)), `mapZoneName`
+    (see **One name per map reference**), `sortZones`,
     and `onLayer` for floor-scoped markers (against the *set* of floors in view).
 - **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawLine`, `drawCircle`,
   `clearCanvas`. Geometry itself is drawn by `MapPanel` onto the static lower canvas, batched into
@@ -96,8 +97,10 @@ world coordinates, so a map knows where it is. See
   star arrives with the evidence behind it,
   [ADR 0104](../decisions/0104-a-position-is-read-and-arrives-with-its-evidence.md)); created on
   demand by `createMapWindow`. A hand-picked zone is an **override** that persists —
-  but only until the log says you actually **zoned**, which clears it so the map goes
-  back to following you (otherwise one dropdown pick silently stops it forever). The
+  but only until the log says you actually **changed place**, which clears it so the map goes
+  back to following you (otherwise one dropdown pick silently stops it forever). Re-entering the same
+  zone at another difficulty is not that: it is the same map, so it leaves your override alone
+  ([ADR 0134](../decisions/0134-a-map-reference-resolves-to-a-place.md)). The
   **follow** checkbox beside the dropdown governs that, on by default; turn it off to
   keep studying one map while you travel. The
   title bar carries its own **A− / A+** (`overlay.mapFontScale`, a *separate* value from the main
@@ -249,6 +252,30 @@ world coordinates, so a map knows where it is. See
   answered under **Sources** above: a zone the chosen pack hasn't got is borrowed from the game's own
   maps ([ADR 0063](../decisions/0063-a-zone-the-pack-lacks-is-borrowed.md)), which leaves nothing
   unmapped that any folder on the machine can draw.
+- **One name per map reference** (`mapZoneName`, `src/shared/map/zones.ts`) — `findZone` answers
+  with a **file**, and a map reference needs a **name**: what scopes this window's pins and kills,
+  what goes in the title, what the picker remembers, what the wiki link is built from. For a zone with
+  no map file there is no file to name it, and every reference used to write its own fallback —
+  `findZone(n, zones)?.name ?? n` — which is **the log's wording, difficulty and all**. So an unmapped
+  `Blackburrow 3` was a second Blackburrow: its own pins, its own kill scope, its own broken
+  `wiki.project1999.com/Blackburrow_3`, and a height window thrown away every time the difficulty
+  changed under you.
+
+  One translation now, and its floor is a **place**: the map's own name where we have a file,
+  `placeName` otherwise (ADR 0083's fold, which strips the difficulty and the ruleset per
+  [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)), and never the raw name. A blank name
+  stays blank, because "no zone yet" is not a place. Every reference in the window goes through it, so
+  there is no per-call-site fallback left to disagree; `findZone` keeps the one question it actually
+  answers, *which file do we draw*. A **difficulty change is not travel** either, so follow-me
+  compares by `samePlace` rather than snapping you off the map you were studying
+  ([ADR 0134](../decisions/0134-a-map-reference-resolves-to-a-place.md)).
+
+  **The difficulty is shown, not swallowed.** It survives in the data regardless — records keep the
+  log's wording (ADR 0083) — but folding the *title* would have hidden it in the one window that used
+  to show it, so `zoneDifficultyLabel` (`src/shared/names.ts`) names the tier from the number (D0, and
+  D1 *Awakened* through D4 *Refined*, with the log's own ruleset tag winning wherever it wrote one) and
+  the titlebar carries it as its own token: **`🗺 Blackburrow · D3 Fused`**. The name says which map;
+  the token says which copy of the zone.
 - **Only zones this server has** — a pack draws all 26 expansions of EverQuest, so `zonesFromSources`
   drops the ones that don't exist here (`zoneAvailable`, see
   [ADR 0065](../decisions/0065-a-zone-belongs-to-an-expansion.md)): a fetched zone → expansion table rules
@@ -521,7 +548,8 @@ world coordinates, so a map knows where it is. See
   the window; a glance at who's connected doesn't — so the proportion is the reader's to set, and is
   remembered per panel. Bounded 6%-85%, so the map always keeps a strip of itself, and the panels
   shrink rather than overflowing when enough of them are open at once. Double-click a seam to put it
-  back. See [ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md).
+  back. See [ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md) ·
+[ADR 0134](../decisions/0134-a-map-reference-resolves-to-a-place.md).
 
 ## Non-responsibilities
 - No continuous position tracking: EQ only logs a location when one is emitted

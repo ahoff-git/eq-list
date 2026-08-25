@@ -30,6 +30,7 @@ import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";
 import { createKillLog } from "./kill-log";
 import { createLootLog } from "./loot-log";
+import { lootRecord } from "../src/shared/loot-feed";
 import { createUpdateChecker } from "./update-check";
 import { createMobKnowledge } from "./mob-knowledge";
 import { createPeerKills } from "./peer-kills";
@@ -420,8 +421,16 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onLoot((event) => {
     if (killLog.noteLoot(event)) killsChanged(); // ties the drop to the corpse it came from
     combat.recordSale(event); // an auto-sell is the only line that prices an item
-    lootLog.add(event); // the always-on loot feed, so the tab is complete whenever it's opened
-    broadcast(CH.lootEvent, event);
+    // Where you were standing, stamped the way a kill's is: no loot line names a zone, and a ledger
+    // that can't say which camp a drop came from can't answer the question a ledger is for (ADR 0136).
+    //
+    // Built once and used for both, so the row the tab appends live is the row the ledger keeps — the
+    // column fills in without waiting for a refetch. Not a mutation of `event`: that same object is
+    // priced, matched against the shopping list and passed to the alert router, and none of those
+    // asked for a new field.
+    const drop = lootRecord(event, currentZone);
+    lootLog.add(drop); // the always-on loot feed, so the tab is complete whenever it's opened
+    broadcast(CH.lootEvent, drop);
     for (const entry of store.applyLoot(event)) {
       broadcast(CH.lootMatched, { event, entry });
       // And out loud, for an entry that asked to be told — the router owns every rule about whether

@@ -50,7 +50,7 @@ export default function SpawnOverlay() {
         return (
           <div className={`overlay-at spawn-hud no-drag ${place.className}`} style={place.style} key={position}>
             {stack.map(({ timer, style }) => (
-              <HudRow key={timer.key} timer={timer} now={now} color={style.color} />
+              <HudRow key={timer.id} timer={timer} now={now} color={style.color} />
             ))}
           </div>
         );
@@ -75,9 +75,13 @@ const HUD: Record<RunningSpawn["state"], { clock: string; cls: string }> = {
  */
 function HudRow({ timer, now, color }: { timer: RunningSpawn; now: number; color: string }) {
   const phase = HUD[timer.state];
+  // The one word that can't be shared: nothing spawned, so a timer the player made says DONE where
+  // a mob says UP (ADR 0135). An override rather than a second table, because every other state
+  // reads the same in both and two tables would be two places to keep in step.
+  const clock = timer.kind === "custom" && phase.clock === "UP" ? "DONE" : phase.clock;
   return (
     <div className={`spawn-hud-row ${phase.cls}`} style={{ borderLeftColor: color }}>
-      <span className="shr-clock">{phase.clock || formatCountdown(countdownMs(timer, now))}</span>
+      <span className="shr-clock">{clock || formatCountdown(countdownMs(timer, now))}</span>
       <span className="shr-name">{timer.mob}</span>
     </div>
   );

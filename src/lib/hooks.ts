@@ -8,7 +8,7 @@ import type {
   ShoppingList,
   Settings,
   WatcherStatus,
-  LootEvent,
+  LootRecord,
   ItemPrice,
   LocEvent,
   CombatStats,
@@ -666,8 +666,8 @@ export function useWatcherStatus(): WatcherStatus {
 }
 
 /** Rolling feed of the most recent parsed loot lines (newest first). */
-export function useLootFeed(limit = 40): LootEvent[] {
-  const [events, setEvents] = useState<LootEvent[]>([]);
+export function useLootFeed(limit = 40): LootRecord[] {
+  const [events, setEvents] = useState<LootRecord[]>([]);
   /** Bumped when the ledger changes wholesale (a log eaten, a clear) — see `onDataChanged`. */
   const [refresh, setRefresh] = useState(0);
   useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);

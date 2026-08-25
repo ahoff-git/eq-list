@@ -20,14 +20,22 @@ import type { Zone } from "@/shared/map/types";
  * control impossible to click, because the press moves the window instead. Kept together in one
  * component so that rule applies in one place.
  *
- * Two things are stated rather than left to be noticed: a zone borrowed from another pack
+ * Three things are stated rather than left to be noticed: a zone borrowed from another pack
  * ([ADR 0063](../../../specs/decisions/0063-a-zone-the-pack-lacks-is-borrowed.md)) — otherwise "this
- * map looks different" is a mystery — and how many floors of a multi-storey map are showing, which is
- * the one filter that changes what the map *is* rather than what's drawn on it.
+ * map looks different" is a mystery — how many floors of a multi-storey map are showing, which is
+ * the one filter that changes what the map *is* rather than what's drawn on it, and the zone's
+ * **difficulty**.
+ *
+ * The difficulty is its own token beside the name because the name no longer carries it: one map draws
+ * the zone at every difficulty, so the name a map is looked up by is the folded one
+ * ([ADR 0134](../../../specs/decisions/0134-a-map-reference-resolves-to-a-place.md)). Showing it here
+ * is what keeps that fold from being a loss — the map is the same, and which Blackburrow you walked
+ * into is still worth reading.
  */
 export default function MapTitlebar({
   zone,
   zoneName,
+  difficulty,
   sources,
   sourceId,
   sourceLabel,
@@ -56,7 +64,10 @@ export default function MapTitlebar({
   onClickThrough,
 }: {
   zone: Zone | undefined;
+  /** What to call the zone in view — already resolved to a map or a place (`mapZoneName`). */
   zoneName: string;
+  /** How hard this copy of it is (`zoneDifficultyLabel`), or undefined for the ordinary zone. */
+  difficulty?: string;
   sources: MapSource[];
   sourceId: string;
   sourceLabel: string;
@@ -101,8 +112,13 @@ export default function MapTitlebar({
   return (
     <Titlebar>
       <h1>
-        <span className="mark">🗺</span> {zone?.name ?? zoneName ?? "Map"}
+        <span className="mark">🗺</span> {zoneName || "Map"}
       </h1>
+      {difficulty && (
+        <span className="muted small" title="How hard this copy of the zone is. The map is the same at every difficulty.">
+          · {difficulty}
+        </span>
+      )}
       {zone?.source && zone.source !== sourceId && (
         <span className="muted small" title={why}>
           · from {drawnBy}

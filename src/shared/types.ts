@@ -91,6 +91,24 @@ export interface LootEvent extends LogEventBase {
 }
 
 /**
+ * **A drop as the ledger keeps it** — the parsed line, plus where you were standing when it landed.
+ *
+ * The zone is not in `LootEvent` because a `LootEvent` is a *line*, and no loot line names a zone;
+ * it is stamped by the recorder from the log's last zone line, exactly the way a kill record gets
+ * its own ([ADR 0136](../../specs/decisions/0136-logged-data-says-where-it-happened.md)). Stored
+ * **verbatim**, difficulty and ruleset included, because that is the rule for recorded data
+ * ([ADR 0083](../../specs/decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)) — the
+ * reader folds it (`placeName`) and reads the difficulty back off it (`zoneDifficultyLabel`).
+ *
+ * Optional, and it stays optional: every drop recorded before this existed has no zone, and so does
+ * one looted before the log had said where you were.
+ */
+export interface LootRecord extends LootEvent {
+  /** The zone the log had last reported when it dropped, as the log wrote it. */
+  zone?: string;
+}
+
+/**
  * What one item vendors for, learned from your own auto-sells. Deliberately separate from a
  * mob's coin (ADR 0047): this is a property of the *item* and holds wherever it dropped, which
  * is what makes it worth remembering at all — the mob figure only describes that mob.
@@ -1416,8 +1434,27 @@ export interface KillRecord {
 // ─── Spawn timers (ADR 0092) ────────────────────────────────────────────────
 
 /** A countdown on the board: the stored timer, plus where it has got to. */
+/**
+ * What a row on the Timers tab is about
+ * ([ADR 0136](../../specs/decisions/0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)).
+ *
+ * A `mob` has a respawn we're estimating, so it carries evidence, can be corrected, and its clock is
+ * started by a death. A `custom` one is a clock the player made — a boat, a lockout, an egg timer —
+ * with nothing to be evidence *about*: it starts when they say, repeats if they ask, and none of the
+ * sighting controls mean anything on it.
+ */
+export type SpawnKind = "mob" | "custom";
+
 export interface RunningSpawn extends SpawnTimer {
   state: SpawnState;
+  /** What this row is — a mob's respawn, or a clock the player made. See `SpawnKind`. */
+  kind: SpawnKind;
+  /**
+   * Which of its camp's clocks this is, `1`-based. Only worth showing when the camp is running more
+   * than one (a placeholder cycle), and it names nothing in the world: the clocks are interchangeable
+   * (ADR 0136).
+   */
+  slot: number;
   /** Draw this countdown over the game for as long as it runs — see `SpawnView.running`. */
   onScreen: boolean;
   /**
@@ -1430,6 +1467,19 @@ export interface RunningSpawn extends SpawnTimer {
 
 /** What's known about one named, whether or not it's counting down right now. */
 export interface KnownSpawn extends RespawnLearning {
+  /** What this row is — a mob's camp, or a clock the player made. See `SpawnKind`. */
+  kind: SpawnKind;
+  /**
+   * A second kill **adds** a countdown instead of restarting the last one — the placeholder answer
+   * (ADR 0136). Off by default, because restarting is right for a named and only the player knows
+   * whether this camp cycles.
+   */
+  queue: boolean;
+  /**
+   * When it comes due, start it again. Custom timers only: re-arming a mob's clock would be
+   * inventing a death nobody saw.
+   */
+  repeat: boolean;
   /** The player's own figure, when they've typed one. Nothing observed overwrites it. */
   stated?: number;
   /**
@@ -2162,6 +2212,14 @@ export interface LogImportResult {
   /** Drops added to the loot feed (and so to the prices derived from it). */
   loot: number;
   /**
+   * Drops the ledger **already held** and can now say the zone of. Counted apart from `loot` because
+   * nothing was added: the same line is merely better described than it was
+   * ([ADR 0137](../../specs/decisions/0137-a-filed-drop-can-still-learn-where-it-was.md)). This is
+   * what a re-read is worth to the Loot tab, and on a log whose drops were all recorded live it is
+   * the only non-zero figure in this result.
+   */
+  placed: number;
+  /**
    * Fights already on disk whose figures this reading **replaced** — the point of eating a log you
    * have eaten before (ADR 0128). Kills and drops still dedupe and are still reported as zero.
    */
@@ -2267,7 +2325,7 @@ export interface EqlApi {
      * The most recent drops (newest first), tracked in the main process so the feed is complete
      * even when the Loot tab wasn't open. Pair with `onEvent` for live appends.
      */
-    recent(limit?: number): Promise<LootEvent[]>;
+    recent(limit?: number): Promise<LootRecord[]>;
     /** What each item has auto-sold for, biggest earner first. */
     prices(): Promise<ItemPrice[]>;
     /**
@@ -2275,8 +2333,8 @@ export interface EqlApi {
      * has never heard of can still be found by the player who has looted forty of them (ADR 0103).
      */
     items(): Promise<LootedItem[]>;
-    /** Every parsed loot line, whether or not it's on the list. */
-    onEvent(cb: (event: LootEvent) => void): Unsubscribe;
+    /** Every parsed loot line, whether or not it's on the list — as recorded, so it names its zone. */
+    onEvent(cb: (event: LootRecord) => void): Unsubscribe;
     /** Loot lines that matched a shopping-list entry. */
     onMatched(cb: (payload: { event: LootEvent; entry: ShoppingListEntry }) => void): Unsubscribe;
   };
@@ -2450,25 +2508,27 @@ export interface EqlApi {
      * than a guess) and records the gap since it died as the tightest evidence there is: unlike a
      * kill gap it excludes the time you'd spend reaching the mob and killing it.
      */
-    markUp(key: string): Promise<SpawnView>;
+    markUp(key: string, id?: string): Promise<SpawnView>;
     /**
      * You're standing there and it is **not** up — disagreeing with a countdown that says it should
      * be. Records the only lower bound the app has: the window may not open before it, and where it
      * passes the estimate the two are reported as contradicting.
      */
-    markNotUp(key: string): Promise<SpawnView>;
+    markNotUp(key: string, id?: string): Promise<SpawnView>;
     /**
-     * It's dead now — start the countdown from this moment, or restart one already running. The
+     * Start the clock from this moment — "it's dead now" for a mob, "go" for a timer you made. The
      * hand-operated twin of a kill line, for when the app wasn't watching or a pull went unlogged.
      * Seeds a countdown only: one death measures no respawn, so it teaches the estimate nothing.
+     * On a `queue` camp it adds a clock rather than restarting the last (ADR 0136).
      */
     markDead(key: string): Promise<SpawnView>;
     /**
      * Put a timer on the board by hand — a mob you haven't killed twice yet, or something that
-     * isn't a mob at all. `zone` may be blank and `seconds` may be omitted; a label no kill line
-     * matches simply never restarts itself, which is what makes one mechanism serve both.
+     * isn't a mob at all. `zone` may be blank and `seconds` may be omitted. `kind` says which of the
+     * two it is rather than leaving it to be inferred from whether a kill line ever matches: a
+     * `custom` timer claims nothing about a named and wears none of a mob's controls (ADR 0136).
      */
-    add(name: string, zone: string, seconds?: number | null): Promise<SpawnView>;
+    add(name: string, zone: string, seconds?: number | null, kind?: SpawnKind): Promise<SpawnView>;
     /** Take a hand-added row off the board, with everything set on it. */
     remove(key: string): Promise<SpawnView>;
     /** Whether this mob's pop raises a banner. Off by default. */
@@ -2499,8 +2559,18 @@ export interface EqlApi {
      * that camp taught survives, which is what `relearn` cannot offer.
      */
     setGapDropped(key: string, id: string, dropped: boolean): Promise<SpawnView>;
-    /** Take a countdown off the board without forgetting what it taught. */
-    stop(key: string): Promise<SpawnView>;
+    /**
+     * Take a countdown off the board without forgetting what it taught. With several running for one
+     * camp, `id` says which — omitted, they all go.
+     */
+    stop(key: string, id?: string): Promise<SpawnView>;
+    /**
+     * Whether a fresh kill **adds** a countdown or restarts the running one — the placeholder camp's
+     * answer (ADR 0136), and the same question `CastWatch.retrigger` asks of a cue.
+     */
+    queue(key: string, on: boolean): Promise<SpawnView>;
+    /** Whether a custom timer starts itself again when it comes due. */
+    repeat(key: string, on: boolean): Promise<SpawnView>;
     /** Fires when a timer starts, is due, or ages out, so the tab needn't poll main for the list. */
     onChanged(cb: () => void): Unsubscribe;
   };

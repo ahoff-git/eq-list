@@ -15,6 +15,7 @@
 import type { Zone } from "./types";
 import { resolveZone } from "../zones/resolve";
 import { CURATED_ZONES } from "../zones/gazetteer";
+import { placeName } from "../zones/place";
 
 export { CURATED_ZONES };
 export type { CuratedZone } from "../zones/gazetteer";
@@ -40,6 +41,28 @@ export function findZone(name: string, zones: Zone[]): Zone | undefined {
   const exact = zones.find((z) => z.key === name);
   if (exact) return exact;
   return resolveZone(name, zones, (z) => z.name, { typo: true })?.item;
+}
+
+/**
+ * **The name a map reference means** — the one translation every "which map is this?" goes through.
+ *
+ * `findZone` answers with a *file*, and a map reference needs a **name**: the thing to scope pins and
+ * kills to, put in the title, remember as the picker's choice, hand to the wiki. Every caller used to
+ * write that itself as `findZone(n, zones)?.name ?? n`, and it is the `?? n` that was the bug —
+ * unmapped zones fell back to **the log's wording, difficulty and all**, so "Blackburrow 3" became a
+ * second Blackburrow with its own pins, its own scope and its own (broken) wiki link
+ * ([ADR 0134](../../../specs/decisions/0134-a-map-reference-resolves-to-a-place.md)).
+ *
+ * So the floor is the **place**, never the raw name: a zone with no map file still resolves to one
+ * name for one place, folded by the app's one fold (`placeName`, ADR 0083 — which itself strips the
+ * difficulty and the ruleset per [ADR 0057](../../../specs/decisions/0057-a-grade-is-not-an-identity.md)).
+ * An empty name stays empty, because "no zone yet" is not a place.
+ *
+ * The difficulty this discards is not lost: it is read back off the log's wording with
+ * `zoneDifficultyLabel` (`shared/names.ts`), which is what the map's title shows beside the name.
+ */
+export function mapZoneName(name: string, zones: Zone[]): string {
+  return findZone(name, zones)?.name ?? placeName(name);
 }
 
 /**

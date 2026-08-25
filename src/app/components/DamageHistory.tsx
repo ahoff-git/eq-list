@@ -6,6 +6,7 @@ import type { FightSearch, SessionSummary, StoredFight } from "@/shared/types";
 
 import { clock, count, dayTime, duration } from "@/shared/format";
 import { Caret, Empty } from "./ui";
+import ZoneTag from "./ZoneTag";
 /** A stable empty, so a render before the answer lands doesn't look like a change. */
 const NO_FIGHTS: StoredFight[] = [];
 
@@ -236,7 +237,9 @@ function Fight({
     <button className={`hist-fight ${on ? "on" : ""}`} onClick={() => onPick(on ? null : fight)}>
       <span className="hf-when">{when}</span>
       <span className="hf-label">{fight.label}</span>
-      {withZone && <span className="hf-zone muted">{fight.zone ?? "—"}</span>}
+      {/* The camp and how hard it was, split — one map draws the zone at every difficulty, and a row
+          comparing two fights should not have to spot which half of a name is which (ADR 0136). */}
+      {withZone && <ZoneTag zone={fight.zone} className="hf-zone" />}
       {ending && (
         <span className="muted small" title={ending.why}>
           {ending.mark}

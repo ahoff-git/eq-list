@@ -26,8 +26,9 @@ import { useMapSource, useVectorMap } from "@/lib/map/useMapSource";
 import { useFloors } from "@/lib/map/useFloors";
 import { useHidden } from "@/lib/map/useHidden";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
-import { findZone, onLayer, sortZones } from "@/shared/map/zones";
+import { findZone, mapZoneName, onLayer, sortZones } from "@/shared/map/zones";
 import { samePlace } from "@/shared/zones/place";
+import { zoneDifficultyLabel } from "@/shared/names";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import MapFilters from "../components/MapFilters";
@@ -78,8 +79,21 @@ export default function MapWindow() {
   // The viewed-zone override persists so reopening the map returns to the zone you were
   // looking at (blank = follow your current zone).
   const [override, setOverride] = usePersistentState<string | null>(STORAGE_KEYS.mapZone, null);
+  // What the log (or the picker) said, verbatim — kept only so the difficulty can be read off it.
   const zoneName = override ?? currentZone ?? "";
   const zone = useMemo(() => (zoneName ? findZone(zoneName, zones) : undefined), [zoneName, zones]);
+  /**
+   * **The zone this window is about**, as the one name every map reference here uses: the map's own
+   * where we have a file, the place otherwise, and never the log's wording
+   * ([`mapZoneName`](../../shared/map/zones.ts), ADR 0134). Blank until the log says where you are.
+   */
+  const mapZone = useMemo(() => mapZoneName(zoneName, zones), [zoneName, zones]);
+  /**
+   * How hard this copy of the zone is — the half of the log's wording `mapZone` folds away. Shown
+   * beside the title rather than smuggled into the name, because one map draws the zone at every
+   * difficulty and the player still wants to know which one they walked into (ADR 0134).
+   */
+  const difficulty = zoneName ? zoneDifficultyLabel(zoneName) : undefined;
   // The zone's geometry, loaded through the main process (null until it arrives).
   const vector = useVectorMap(sourceId, zone);
   /**
@@ -97,7 +111,7 @@ export default function MapWindow() {
     bands,
     viewLayer,
     viewLayers,
-  } = useFloors(vector, loc, zoneName);
+  } = useFloors(vector, loc, mapZone);
   /**
    * Is there a map to draw? The zone is in the list because its file is on disk, so it counts
    * before the geometry arrives — otherwise switching zones flashes "no map for this zone".
@@ -107,15 +121,18 @@ export default function MapWindow() {
   const zoneOptions = useMemo(() => sortZones(zones), [zones]);
   // The dropdown's options are places, so its value is a zone *name*; a saved pick may be
   // a key (or a zone we have no map for), so resolve it back to a name where we can.
-  const selectValue = override ? (findZone(override, zones)?.name ?? override) : "";
+  const selectValue = override ? mapZoneName(override, zones) : "";
   /**
-   * The zone we're scoped to, canonical where we can be. **Not** `zone?.name`: `zone` is the map
-   * we have for the place, and a zone with no map file still has kills and mobs. Keying data off
-   * the map object made every "here" panel fall back to `undefined` — which the main process reads
-   * as "every zone" — so standing anywhere unmapped quietly showed you the whole kill log and every
-   * mob you'd ever seen, under headings that said "here".
+   * The zone we're scoped to. **Not** `zone?.name`: `zone` is the map we have for the place, and a
+   * zone with no map file still has kills and mobs. Keying data off the map object made every "here"
+   * panel fall back to `undefined` — which the main process reads as "every zone" — so standing
+   * anywhere unmapped quietly showed you the whole kill log and every mob you'd ever seen, under
+   * headings that said "here".
+   *
+   * `mapZone` is exactly that name with the fold underneath it, so an unmapped zone no longer scopes
+   * pins and kills to the log's wording — "Blackburrow 3" and "Blackburrow" are one camp (ADR 0134).
    */
-  const zoneKey = zone?.name ?? zoneName ?? undefined;
+  const zoneKey = mapZone || undefined;
   /**
    * Is `z` the zone currently on screen? Declared here, above every user: it was previously
    * defined further down and called from `renderKills`'s memo, which only *reached* the call
@@ -127,7 +144,7 @@ export default function MapWindow() {
     // Canonicalised through the zone list where we can, then compared the way every other "is this
     // here?" is — by **place**, so a difficulty variant, a peer's pack's spelling and the map's own
     // name for the zone all answer alike (`samePlace`, ADR 0083).
-    (z: string) => !!zoneKey && samePlace(findZone(z, zones)?.name ?? z, zoneKey),
+    (z: string) => !!zoneKey && samePlace(mapZoneName(z, zones), zoneKey),
     [zoneKey, zones],
   );
   // The zone list, reachable from the subscribe-once effects below without making them
@@ -157,8 +174,10 @@ export default function MapWindow() {
     if (!currentZone) return;
     const previous = seenZoneRef.current;
     seenZoneRef.current = currentZone;
-    // Only a *change* clears it, so the toggle can't fight the persisted override on load.
-    if (followZone && previous !== null && previous !== currentZone) setOverride(null);
+    // Only a *change* clears it, so the toggle can't fight the persisted override on load — and only
+    // a change of **place**: re-entering the zone at another difficulty is the same map, so snapping
+    // you off the map you were studying would be the difficulty behaving like a zone (ADR 0134).
+    if (followZone && previous !== null && !samePlace(previous, currentZone)) setOverride(null);
   }, [currentZone, followZone, setOverride]);
 
   // The `/loc` trail (the line drawn between your logged positions), owned here so the
@@ -175,7 +194,7 @@ export default function MapWindow() {
     const a = api();
     if (!a) return;
     return a.map.onViewZone(({ zone, loc, label, focus }) => {
-      const zname = findZone(zone, zonesRef.current)?.name ?? zone;
+      const zname = mapZoneName(zone, zonesRef.current);
       setOverride(zname); // canonical name so the dropdown reflects it
       if (focus?.mob || focus?.drop) {
         setKillFilters((f) => ({ ...f, mob: focus.mob ?? "", drop: focus.drop ?? "" }));
@@ -232,7 +251,7 @@ export default function MapWindow() {
   const [mobsOpen, setMobsOpen] = usePersistentState(STORAGE_KEYS.mapMobsOpen, false);
   const [travelOpen, setTravelOpen] = usePersistentState(STORAGE_KEYS.mapTravelOpen, false);
   /** The travel graph over the zone on screen, while — and only while — the 🧭 panel is open. */
-  const survey = useTravelSurvey(travelOpen, sourceId, zoneName, settings?.travel);
+  const survey = useTravelSurvey(travelOpen, sourceId, mapZone, settings?.travel);
   /**
    * Whether the survey strip is up. **Off by default**: the markers on the map are the useful half and
    * cost nothing to read, while the strip answers “should I believe this?” — a question worth asking
@@ -458,7 +477,8 @@ export default function MapWindow() {
     <div className={`map-win ${maximized ? "maximized" : ""}`}>
       <MapTitlebar
         zone={zone}
-        zoneName={zoneName}
+        zoneName={mapZone}
+        difficulty={difficulty}
         sources={sources}
         sourceId={sourceId}
         sourceLabel={sourceLabel}
@@ -509,7 +529,7 @@ export default function MapWindow() {
           the panel was designed to take, and dragging its bottom edge says otherwise (`ResizablePanel`). */}
       {usersOpen && connected && (
         <ResizablePanel id="map.users" share={30}>
-          <MapUsers users={room.users} onZone={(zone) => setOverride(findZone(zone, zones)?.name ?? zone)} />
+          <MapUsers users={room.users} onZone={(zone) => setOverride(mapZoneName(zone, zones))} />
         </ResizablePanel>
       )}
 
@@ -523,7 +543,7 @@ export default function MapWindow() {
             zones={zones}
             sourceId={sourceId}
             currentZone={currentZone}
-            viewedZone={zoneName}
+            viewedZone={mapZone}
             loc={loc}
             travel={settings?.travel ?? { druid: false, wizard: false, gnome: true, succor: false, avoid: [] }}
             onTravel={(patch) => void api()?.settings.update({ travel: patch })}
@@ -623,11 +643,9 @@ export default function MapWindow() {
           />
         ) : (
           <div className="map-empty">
-            <p className="map-empty-title">
-              {zoneName ? `No map file for ${zone?.name ?? zoneName}` : "No zone selected"}
-            </p>
+            <p className="map-empty-title">{mapZone ? `No map file for ${mapZone}` : "No zone selected"}</p>
             <p className="muted small">
-              {!zoneName
+              {!mapZone
                 ? "Your zone will appear once the log reports it — or pick one above."
                 : sources.length === 0
                   ? "No maps folder found. The app looks beside the EverQuest log folder in Settings, so point that at your install and its maps will appear."
@@ -636,9 +654,9 @@ export default function MapWindow() {
             <p className="muted small">
               Markers you jump to here are saved and will appear once this zone has a map.
             </p>
-            {(zone?.name || zoneName) && (
-              <button className="btn sm" onClick={() => api()?.map.openP99(zone?.name ?? zoneName)}>
-                View {zone?.name ?? zoneName} on Project 1999 ↗
+            {!!mapZone && (
+              <button className="btn sm" onClick={() => api()?.map.openP99(mapZone)}>
+                View {mapZone} on Project 1999 ↗
               </button>
             )}
           </div>

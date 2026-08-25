@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { itemBaseName, itemGrade, zoneBaseName, zoneDifficulty, zoneKey, zoneMode } from "../../src/shared/names";
+import { itemBaseName, itemGrade, zoneBaseName, zoneDifficulty, zoneDifficultyLabel, zoneKey, zoneMode } from "../../src/shared/names";
 
 test("an item's grade is read off the name and can be taken back off it", () => {
   assert.equal(itemGrade("Dragoon Dirk +2"), 2);
@@ -30,6 +30,26 @@ test("a zone's difficulty is read off its name, however the server writes it", (
   // Not betting on one spelling of it: the parenthesised and `+N` forms fold the same way.
   assert.equal(zoneBaseName("Blackburrow (3)"), "Blackburrow");
   assert.equal(zoneDifficulty("Blackburrow +3"), 3);
+});
+
+/**
+ * The other half of the fold: the map keys on the base name, so the difficulty has to be readable
+ * *back off* the log's wording or it would simply be lost (ADR 0134). These are the five tiers.
+ */
+test("a difficulty can be said out loud, from the number alone", () => {
+  assert.equal(zoneDifficultyLabel("Blackburrow"), undefined, "an ordinary zone has nothing to say");
+  assert.equal(zoneDifficultyLabel("Blackburrow 0"), "D0");
+  assert.equal(zoneDifficultyLabel("Blackburrow 1"), "D1 Awakened");
+  assert.equal(zoneDifficultyLabel("Blackburrow 2"), "D2 Adaptive");
+  assert.equal(zoneDifficultyLabel("Blackburrow 3"), "D3 Fused");
+  assert.equal(zoneDifficultyLabel("Blackburrow 4"), "D4 Refined");
+  // The log's own tag wins where it wrote one, so a renamed or added tier reads as the game says.
+  assert.equal(zoneDifficultyLabel("The Steamfont Mountains 2 (Adaptive)"), "D2 Adaptive");
+  assert.equal(zoneDifficultyLabel("Blackburrow 5 (Ascendant)"), "D5 Ascendant");
+  // A tier past the table, with nothing naming it, is still worth stating as a number.
+  assert.equal(zoneDifficultyLabel("Blackburrow 7"), "D7");
+  // A ruleset with no number is the game's other wording, and it is all there is to say.
+  assert.equal(zoneDifficultyLabel("Nagafen's Lair - Solo"), "Solo");
 });
 
 test("the ruleset a harder zone scales by folds away with the number", () => {

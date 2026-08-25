@@ -7,6 +7,7 @@ import { mobChoices, type KillFilters } from "@/shared/kill-filters";
 import ItemLink, { NameList } from "./ItemLink";
 import { Caret } from "./ui";
 import KillFilterBar from "./KillFilterBar";
+import { ZoneDifficultyTag } from "./ZoneTag";
 import type { KillEmphasis, KillRecord } from "@/shared/types";
 
 /** How many mob groups to show before the "show more" fold. Distinct mobs per zone are few. */
@@ -36,6 +37,12 @@ const MAX_HEAD_DROPS = 6;
  * The filter bar is **one row whose shape doesn't change**: every control is always there, including the
  * shared toggle, so nothing reflows when a peer connects and starts sharing. It used to wrap onto a
  * second line and eat the map.
+ *
+ * **The zone is the window's, the difficulty is the row's.** This list is already one camp — the map's
+ * title names it — so a zone per row would repeat it forty times. What a row can add is which *copy*
+ * of the camp it was recorded in, which the list otherwise flattens: a kill at difficulty 3 and one at
+ * difficulty 0 are the same place and not the same evidence
+ * ([ADR 0136](../../../specs/decisions/0136-logged-data-says-where-it-happened.md)).
  */
 export default function KillList({
   kills,
@@ -261,6 +268,9 @@ function KillRow({
         </span>
       )}
       <span className="spacer" />
+      {/* Nothing at all for an ordinary zone: a blank here would read as a value we failed to record,
+          where in fact there is nothing to say. */}
+      <ZoneDifficultyTag zone={kill.zone} />
       <span className="muted small" title={tier.why}>
         {kill.y !== undefined ? `${Math.round(kill.y)}, ${Math.round(kill.x ?? 0)}` : "no position"}
       </span>

@@ -15,7 +15,20 @@
  * Pure and DOM-free so the ordering and the de-duplication can be pinned by tests rather than
  * reasoned about in a hook.
  */
-import type { LootEvent } from "./types";
+import type { LootEvent, LootRecord } from "./types";
+
+/**
+ * **A drop as the ledger keeps it**: the line, plus where the log last said you were.
+ *
+ * The one statement of that rule, because there are three callers — the live watcher, the importer
+ * replaying a file, and the ledger filling a zone in on a re-read — and a drop filed by one of them
+ * has to be indistinguishable from a drop filed by another
+ * ([ADR 0137](../../specs/decisions/0137-a-filed-drop-can-still-learn-where-it-was.md)). No zone is a
+ * real answer: the log may not have said where you were yet.
+ */
+export function lootRecord(event: LootEvent, zone: string | null | undefined): LootRecord {
+  return zone ? { ...event, zone } : event;
+}
 
 /**
  * A loot line's identity, for telling "the same drop, from both sources" from "two drops that look
@@ -38,8 +51,11 @@ export function lootKey(e: LootEvent): string {
  * `held` comes first unconditionally rather than being merged by timestamp. It is newer by
  * construction — it is what arrived while the history was in flight — and a log's own clock has
  * one-second resolution, so sorting by it would shuffle drops that came off one corpse in order.
+ *
+ * Generic over the row, because identity is the *line* (`lootKey`) while the feed carries a stored
+ * `LootRecord` — the zone it was looted in rides along untouched (ADR 0136).
  */
-export function mergeLootFeed(held: LootEvent[], history: LootEvent[], limit: number): LootEvent[] {
+export function mergeLootFeed<T extends LootEvent>(held: T[], history: T[], limit: number): T[] {
   if (!held.length) return history.slice(0, limit);
   const seen = new Set(held.map(lootKey));
   return [...held, ...history.filter((e) => !seen.has(lootKey(e)))].slice(0, limit);

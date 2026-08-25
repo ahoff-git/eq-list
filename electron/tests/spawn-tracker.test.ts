@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createSpawnTracker, type SpawnTracker } from "../spawn-tracker";
-import { contradicted, respawnCaveat, timerKey } from "../../src/shared/spawn-timers";
+import { contradicted, MAX_CAMP_TIMERS, respawnCaveat, timerKey } from "../../src/shared/spawn-timers";
 import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
 import type { CastAlertEvent, CastAlertSettings, KillRecord } from "../../src/shared/types";
 
@@ -1012,4 +1012,227 @@ test("a stated figure survives a restart", () => {
 
   const second = harness({ kills, dir });
   assert.equal(second.tracker.view().known.find((k) => k.key === KEY)?.respawn?.seconds, 1200);
+});
+
+// ── several clocks on one camp: the placeholder cycle (ADR 0135) ──────────────
+
+test("a camp told it cycles starts a clock per kill instead of restarting the last", () => {
+  const h = timed();
+  assert.equal(h.tracker.view().running.length, 1);
+  h.tracker.queue(KEY, true);
+  h.tracker.markDead(KEY);
+  h.tracker.markDead(KEY);
+  const running = h.tracker.view().running;
+  assert.equal(running.length, 3, "three deaths at one camp are three clocks");
+  assert.deepEqual(
+    running.map((t) => t.slot).sort(),
+    [1, 2, 3],
+    "each takes a slot of its own, so two identical rows are tellable apart",
+  );
+});
+
+test("the same camp with it switched off still restarts, which is right for a named", () => {
+  const h = timed();
+  h.tracker.queue(KEY, true);
+  h.tracker.markDead(KEY);
+  assert.equal(h.tracker.view().running.length, 2);
+  h.tracker.queue(KEY, false);
+  h.tracker.markDead(KEY);
+  assert.equal(h.tracker.view().running.length, 1, "a fresh kill is about the corpse, not the camp");
+});
+
+test("a slot comes back round once its clock has gone", () => {
+  const h = timed();
+  h.tracker.queue(KEY, true);
+  h.tracker.markDead(KEY);
+  const second = h.tracker.view().running.find((t) => t.slot === 2)!;
+  h.tracker.stop(KEY, second.id);
+  h.tracker.markDead(KEY);
+  assert.deepEqual(h.tracker.view().running.map((t) => t.slot).sort(), [1, 2]);
+});
+
+test("stopping one clock leaves its siblings, and stopping the camp takes them all", () => {
+  const h = timed();
+  h.tracker.queue(KEY, true);
+  h.tracker.markDead(KEY);
+  h.tracker.markDead(KEY);
+  const [first] = h.tracker.view().running;
+  h.tracker.stop(KEY, first.id);
+  assert.equal(h.tracker.view().running.length, 2);
+  h.tracker.stop(KEY);
+  assert.equal(h.tracker.view().running.length, 0);
+});
+
+test("'it's up' answers for the clock you clicked", () => {
+  const h = timed();
+  h.tracker.queue(KEY, true);
+  h.tracker.markDead(KEY);
+  const running = h.tracker.view().running;
+  const second = running.find((t) => t.slot === 2)!;
+  h.tracker.markUp(KEY, second.id);
+  const after = h.tracker.view().running;
+  assert.equal(after.find((t) => t.slot === 2)?.state, "alive");
+  assert.notEqual(after.find((t) => t.slot === 1)?.state, "alive", "a sibling is a different placeholder");
+});
+
+test("without an id, the next one due is the one anybody means", () => {
+  const h = timed(); // armed at 900, due at 1800
+  h.tracker.queue(KEY, true);
+  h.tick(1000);
+  h.tracker.markDead(KEY); // due at 1900, so it is *not* the next one
+  h.tracker.markUp(KEY);
+  const running = h.tracker.view().running;
+  assert.equal(running.find((t) => t.slot === 1)?.state, "alive");
+  assert.equal(running.find((t) => t.slot === 2)?.state, "waiting");
+});
+
+test("a camp's clocks are bounded, and the oldest is the one that goes", () => {
+  const h = timed();
+  h.tracker.queue(KEY, true);
+  for (let i = 0; i < MAX_CAMP_TIMERS + 2; i += 1) {
+    h.tick(1000 + i);
+    h.tracker.markDead(KEY);
+  }
+  const running = h.tracker.view().running;
+  assert.equal(running.length, MAX_CAMP_TIMERS, "a camp left cycling in a busy zone can't fill the board");
+  const started = running.map((t) => Date.parse(t.killedAt));
+  assert.ok(Math.min(...started) > T0 + 900 * 1000, "the ones dropped are the ones nearest stale");
+});
+
+test("each clock pops on its own", () => {
+  const h = noisy();
+  h.tracker.queue(KEY, true);
+  h.tick(60);
+  h.tracker.markDead(KEY); // started now, so due at 960 — before the one armed from the kill log
+  h.tick(961);
+  assert.equal(h.raised.length, 1, "one pop, for the clock that came due");
+  h.tick(1801);
+  assert.equal(h.raised.length, 2, "and the sibling's own, when it arrives");
+});
+
+// ── a timer the player made, rather than a mob with no kills (ADR 0135) ───────
+
+/** The hand-made kind: a clock, with no claim about anything in the log. */
+const CUSTOM = "Boat to Butcherblock";
+
+test("a plain timer is its own kind, and says so to whoever draws it", () => {
+  const h = harness();
+  const key = h.tracker.add(CUSTOM, "", 600, "custom")!;
+  const row = h.tracker.view().known.find((k) => k.key === key)!;
+  assert.equal(row.kind, "custom");
+  assert.equal(row.repeat, false, "off until asked, like everything else here");
+});
+
+test("a hand-added mob is still a mob, and its kills still teach", () => {
+  const h = harness();
+  const key = h.tracker.add("Fippy Darkpaw", ZONE, 600, "mob")!;
+  assert.equal(h.tracker.view().known.find((k) => k.key === key)?.kind, "mob");
+});
+
+test("adding a plain timer claims nothing about what is a named", () => {
+  const h = harness();
+  // A name written *with* an article: only a claim on file could make the log time it, and a timer
+  // is not a claim. The interval is there, so the countdown would certainly have started.
+  h.tracker.add("a froglok tad", ZONE, 600, "custom");
+  h.tracker.noteKill("a froglok tad", ZONE, iso(10), false);
+  assert.equal(h.tracker.view().running.length, 0, "a clock is not an opinion about what is a named");
+});
+
+test("adding it as a mob is exactly that claim, which is what makes the log take over", () => {
+  const h = harness();
+  h.tracker.add("a froglok tad", ZONE, 600, "mob");
+  h.tracker.noteKill("a froglok tad", ZONE, iso(10), false);
+  assert.equal(h.tracker.view().running.length, 1);
+});
+
+test("removing a hand-added mob withdraws the claim it made", () => {
+  const h = harness();
+  const here = h.tracker.add("a froglok tad", ZONE, 600, "mob")!;
+  const elsewhere = timerKey("a froglok tad", "Befallen");
+  h.tracker.state(elsewhere, 600); // a figure for a second camp, so only the claim is in question
+  h.tracker.remove(here);
+  h.tracker.noteKill("a froglok tad", "Befallen", iso(10), false);
+  assert.equal(h.tracker.view().running.length, 0, "a timer you deleted leaves nothing behind");
+});
+
+test("...but not while another row still stands behind it", () => {
+  const h = harness();
+  const here = h.tracker.add("a froglok tad", ZONE, 600, "mob")!;
+  h.tracker.add("a froglok tad", "Befallen", 600, "mob");
+  h.tracker.remove(here);
+  h.tracker.noteKill("a froglok tad", "Befallen", iso(10), false);
+  assert.equal(h.tracker.view().running.length, 1);
+});
+
+test("...nor when the log proved it on its own", () => {
+  // Two kills of a real named are the log's own evidence; a hand-added row is not what makes it one.
+  const h = timed();
+  const added = h.tracker.add(MOB, "Befallen", 600, "mob")!;
+  h.tracker.remove(added);
+  h.tracker.markDead(KEY);
+  assert.equal(h.tracker.view().running.length, 1, "removing one row can't untrack a mob you've camped");
+});
+
+test("a repop drops the mob's clocks and leaves the timer you made alone", () => {
+  const h = timed();
+  const key = h.tracker.add(CUSTOM, ZONE, 600, "custom")!;
+  h.tracker.markDead(key);
+  assert.equal(h.tracker.view().running.length, 2);
+  h.tracker.noteZone(ZONE);
+  h.tracker.noteZone("Lower Guk 2");
+  const running = h.tracker.view().running;
+  assert.equal(running.length, 1, "the world rebuilding undoes deaths, not egg timers");
+  assert.equal(running[0].key, key);
+});
+
+// ── repeating, which only a hand-made timer may do ───────────────────────────
+
+/** A ten-minute clock the player made, started at T0 and asked to keep going. */
+function repeating(options: { dir?: string; startSec?: number } = {}): { h: Harness; key: string } {
+  const h = harness(options);
+  const key = h.tracker.add(CUSTOM, "", 600, "custom")!;
+  h.tracker.repeat(key, true);
+  h.tracker.notify(key, true);
+  h.tracker.markDead(key);
+  return { h, key };
+}
+
+test("a repeating timer starts itself again when it finishes, on its own beat", () => {
+  const { h } = repeating();
+  h.tick(605);
+  assert.equal(h.raised.length, 1, "it still says so when it finishes");
+  const running = h.tracker.view().running;
+  assert.equal(running.length, 1);
+  assert.equal(running[0].dueAt, iso(1200), "chained from its end, not from when the sweep noticed");
+  assert.equal(running[0].state, "waiting");
+});
+
+test("it keeps going, and never goes stale the way a respawn does", () => {
+  const { h } = repeating();
+  h.tick(605);
+  h.tick(1205);
+  h.tick(1810);
+  assert.equal(h.raised.length, 3, "one for each cycle");
+  assert.equal(h.tracker.view().running.length, 1);
+});
+
+test("switching repeating off leaves the cycle it is in", () => {
+  const { h, key } = repeating();
+  h.tick(605);
+  h.tracker.repeat(key, false);
+  h.tick(1205);
+  assert.equal(h.tracker.view().running.length, 1, "stopping a repeat is not stopping the clock");
+  assert.equal(h.tracker.view().running[0].dueAt, iso(1200), "and it does not go round again");
+});
+
+test("an app shut for hours comes back on the next cycle, saying nothing about the ones it missed", () => {
+  const dir = tempDir();
+  const { h } = repeating({ dir });
+  h.tracker.flush();
+
+  const second = harness({ dir, startSec: 5000 });
+  const running = second.tracker.view().running;
+  assert.equal(running.length, 1);
+  assert.ok(Date.parse(running[0].dueAt) > T0 + 5000 * 1000, "ahead of us, not eight cycles overdue");
+  assert.equal(second.raised.length, 0, "a banner about the past is the opposite of the point");
 });

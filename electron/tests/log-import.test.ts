@@ -209,6 +209,68 @@ test("eating a log fills the loot feed and the prices it teaches, once", () => {
   }
 });
 
+/**
+ * The re-eat that gives an old ledger its zones (ADR 0137). The first pass here stands in for a build
+ * that recorded no zone at all; the second is the re-read, and it must place the drops it already
+ * holds without adding a thing.
+ */
+test("a second helping places the drops it already holds", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-place-"));
+  const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(
+    file,
+    [
+      // A drop *before* any zone line: the log hasn't said where you are, so this one can't be placed
+      // by any number of re-reads. That is the honest half of "at least some of them".
+      "[Fri Jul 17 17:59:00 2026] --You have looted a Rusty Dagger from a rat's corpse.--",
+      "[Fri Jul 17 18:00:00 2026] You have entered Blackburrow 3 (Fused).",
+      "[Fri Jul 17 18:00:11 2026] --You have looted a Gnoll Fang from a gnoll's corpse.--",
+      "[Fri Jul 17 18:30:00 2026] You have entered The Feerrott.",
+      "[Fri Jul 17 18:30:11 2026] --You have looted a Spider Silk from a spiderling's corpse.--",
+    ].join("\n"),
+  );
+
+  try {
+    // Pass one, into a ledger that keeps the drops and throws the zones away — the state on disk for
+    // anybody who played before the column existed.
+    const old = createLootLog(dir);
+    const seeded = importLog(file, stubKillLog(), undefined, {
+      ...old,
+      add: (event) => old.add({ ...event, zone: undefined }),
+    });
+    assert.equal(seeded.loot, 3);
+    assert.equal(seeded.placed, 0, "nothing to place on a first reading");
+    assert.equal(
+      old.recent().filter((e) => e.zone).length,
+      0,
+      "the ledger this stands in for held no zones",
+    );
+    old.flush();
+
+    // Pass two: the re-read. Two of the three can be placed, and the ledger does not grow.
+    const reread = createLootLog(dir);
+    const res = importLog(file, stubKillLog(), undefined, reread);
+    assert.equal(res.loot, 0, "a placed drop is not an added one");
+    assert.equal(res.placed, 2);
+    // Flushed the way `reReadLogs` flushes it: the write is debounced, and a repair that is still
+    // sitting in memory when the next start reads the file didn't happen.
+    reread.flush();
+
+    const ledger = createLootLog(dir);
+    assert.equal(ledger.recent().length, 3);
+    const zones = new Map(ledger.recent().map((e) => [e.item, e.zone]));
+    // Verbatim, difficulty and ruleset included — the reader folds it (ADR 0083).
+    assert.equal(zones.get("Gnoll Fang"), "Blackburrow 3 (Fused)");
+    assert.equal(zones.get("Spider Silk"), "The Feerrott");
+    assert.equal(zones.get("Rusty Dagger"), undefined, "looted before the log said where you were");
+
+    // A third helping has nothing left to do, which is what makes the remedy self-limiting.
+    assert.equal(importLog(file, stubKillLog(), undefined, createLootLog(dir)).placed, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("without a history to fill, eating a log still digests kills — and files no fights", () => {
   const file = path.join(os.tmpdir(), `eql-import-nohist-${process.pid}.txt`);
   fs.writeFileSync(file, TWO_SITTINGS);

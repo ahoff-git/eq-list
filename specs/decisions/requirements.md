@@ -428,8 +428,23 @@ reading like a measurement, and they are shared code
   derived, so the exclusion is stored; a dropped gap stays listed, struck through. ([0097](./0097-a-sighting-is-the-tightest-evidence-there-is.md))
 - **Notify and on-screen are per mob, opt-in, and separate questions.** One is a moment, the other a
   dial. ([0097](./0097-a-sighting-is-the-tightest-evidence-there-is.md), [0099](./0099-a-countdown-can-stay-on-screen.md))
-- **A hand-added timer is the same thing as a learned one**, with no branch about what kind of row it
-  is; only a hand-added row may be removed, and what was learned is never deleted. ([0097](./0097-a-sighting-is-the-tightest-evidence-there-is.md))
+- **Only a hand-added row may be removed**, and what was learned is never deleted — a row the kill log
+  produced would simply come back. ([0097](./0097-a-sighting-is-the-tightest-evidence-there-is.md))
+- **A countdown is an instance of a camp, addressed by its own id; the camp is what is known.** Gaps,
+  sightings, the floor, the stated figure, padding, notify, style and on-screen all stay keyed by the
+  mob and the place. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
+- **A camp says whether a fresh kill restarts its countdown or adds another**, defaulting to restart —
+  the same question `CastWatch.retrigger` asks of a cue, and the placeholder camp's answer. The number
+  of clocks one camp may run is bounded. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
+- **A hand-made timer is its own kind, not a mob with no kills.** It claims nothing about what is a
+  named, may repeat, rolls forward rather than coming back overdue, and wears none of a mob's evidence
+  controls. Which kind it is, is **asked** — defaulted from your own log's vocabulary, never inferred
+  silently. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
+- **A repop drops the countdowns measuring from a death in that place, and nothing else.** A timer the
+  player made is not about a mob. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
+- **A duration has one syntax and a contract per feature** — the units that make sense and the ceiling
+  that applies. A cue takes seconds and minutes to half an hour; a timer takes hours and days. What a
+  field prints can be typed back into it. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
 
 ## Windows and the interface
 

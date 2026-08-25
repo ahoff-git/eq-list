@@ -10,6 +10,7 @@ import {
   filterLoot,
   isFiltered,
   lootSources,
+  lootZones,
   sortLoot,
   sortPrices,
   tallyFates,
@@ -22,7 +23,8 @@ import { describeCoins, formatCoins } from "@/shared/money";
 import type { Sort } from "@/shared/sorting";
 import ItemLink from "./ItemLink";
 import SortHeader from "./SortHeader";
-import type { ItemPrice, LootEvent, LootFate } from "@/shared/types";
+import ZoneTag from "./ZoneTag";
+import type { ItemPrice, LootFate, LootRecord } from "@/shared/types";
 
 import { clock, count, countOf, when } from "@/shared/format";
 import { CheckField, Empty, PickField, segCls } from "./ui";
@@ -88,6 +90,9 @@ export default function LootPanel() {
   // Tallied over what's on screen, so the numbers describe what you're actually looking at.
   const totals = useMemo(() => tallyFates(shown), [shown]);
   const sources = useMemo(() => lootSources(drops), [drops]);
+  // The camps the ledger covers, folded — see `lootZones`. From the whole ledger rather than the
+  // filtered rows, so choosing a zone can't remove the option you'd need to choose a different one.
+  const zones = useMemo(() => lootZones(drops), [drops]);
   const sortedPrices = useMemo(() => sortPrices(prices, priceSort), [prices, priceSort]);
 
   if (drops.length === 0) {
@@ -135,7 +140,7 @@ export default function LootPanel() {
 
       {view === "drops" ? (
         <>
-          <LootFilterBar filters={filters} onFilters={setFilters} sources={sources} />
+          <LootFilterBar filters={filters} onFilters={setFilters} sources={sources} zones={zones} />
           <DropTable drops={shown} wanted={wanted} sort={lootSort} onSort={setLootSort} />
         </>
       ) : (
@@ -150,10 +155,13 @@ function LootFilterBar({
   filters,
   onFilters,
   sources,
+  zones,
 }: {
   filters: LootFilters;
   onFilters: (next: LootFilters) => void;
   sources: string[];
+  /** The camps present, already folded to one option each (`lootZones`). */
+  zones: string[];
 }) {
   const set = <K extends keyof LootFilters>(key: K, value: LootFilters[K]) =>
     onFilters({ ...filters, [key]: value });
@@ -192,6 +200,18 @@ function LootFilterBar({
         title="Only drops off this corpse"
       />
 
+      {/* Offered only once the ledger has a camp to offer — a picker with one blank option is a
+          control that does nothing, and every drop recorded before drops carried a zone has none. */}
+      {zones.length > 0 && (
+        <PickField
+          value={filters.zone}
+          onChange={(zone) => set("zone", zone)}
+          blank="any zone"
+          options={zones.map((z) => ({ value: z, label: z }))}
+          title="Only drops looted in this zone — every difficulty of it, since the camp is the same place"
+        />
+      )}
+
       <CheckField
         label="on my list"
         checked={filters.wantedOnly}
@@ -222,7 +242,7 @@ function DropTable({
   sort,
   onSort,
 }: {
-  drops: LootEvent[];
+  drops: LootRecord[];
   wanted: ReadonlySet<string>;
   sort: Sort<LootSortKey>;
   onSort: (next: Sort<LootSortKey>) => void;
@@ -241,6 +261,14 @@ function DropTable({
             <SortHeader label="Qty" column="qty" sort={sort} onSort={onSort} title="How many the line reported" />
             <SortHeader label="Item" column="item" sort={sort} onSort={onSort} startDesc={false} />
             <SortHeader label="From" column="source" sort={sort} onSort={onSort} startDesc={false} title="Whose corpse" />
+            <SortHeader
+              label="Zone"
+              column="zone"
+              sort={sort}
+              onSort={onSort}
+              startDesc={false}
+              title="Where you were standing when it dropped, with how hard the zone was beside it. Sorts by camp, so every difficulty of one zone groups together."
+            />
             <th>Where it went</th>
           </tr>
         </thead>
@@ -266,6 +294,11 @@ function DropTable({
                 {/* Whose corpse it came off is a mob name like any other — worth a look-up, since
                     "what else does this thing drop" is the next question a ledger raises. */}
                 <td className="muted">{drop.source ? <ItemLink title={drop.source} /> : ""}</td>
+                {/* Where it came from, the one way every logged row says it (`ZoneTag`, ADR 0136) —
+                    clicking the camp opens its map, like any other place name in the app. */}
+                <td className="lt-zone">
+                  <ZoneTag zone={drop.zone} />
+                </td>
                 <td className="muted">{drop.detail ? detailLabel(drop) : ""}</td>
               </tr>
             );
@@ -341,7 +374,7 @@ function PriceTable({
 }
 
 /** Phrase the fate's particulars the way the log means them. */
-function detailLabel(drop: LootEvent): string {
+function detailLabel(drop: LootRecord): string {
   switch (drop.fate) {
     case "sold":
       return `for ${drop.detail}`;

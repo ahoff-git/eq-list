@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { STOCK_ONLY_ZONES, prettyZoneName, stockOnly, zonesFromFiles, zonesFromSources } from "../../src/shared/map/map-sources";
-import { CURATED_ZONES, findZone, sortZones } from "../../src/shared/map/zones";
+import { CURATED_ZONES, findZone, mapZoneName, sortZones } from "../../src/shared/map/zones";
 
 /** A slice of a real maps folder, including the near-misses that make naming dangerous. */
 const FILES = [
@@ -132,6 +132,37 @@ test("a zone made harder is still drawn by the same map", () => {
   const zones = zonesFromFiles("stock", FILES);
   assert.equal(findZone("The Feerrott 2", zones)?.file, "feerrott");
   assert.equal(findZone("Greater Faydark 4", zones)?.file, "gfaydark");
+});
+
+/**
+ * `mapZoneName` is the one translation every map reference goes through, and its whole job is the
+ * **fallback**: what a zone with no map file is called. That used to be the log's wording, which is
+ * how a difficulty became a second zone with its own pins and its own scope (ADR 0134).
+ */
+test("mapZoneName never answers with the log's wording", () => {
+  const zones = zonesFromFiles("stock", FILES);
+
+  // Mapped: the map's own name, whatever the log called it.
+  assert.equal(mapZoneName("The Feerrott", zones), "The Feerrott");
+  assert.equal(mapZoneName("feerrott", zones), "The Feerrott");
+  assert.equal(mapZoneName("The Feerrott 2 (Adaptive)", zones), "The Feerrott");
+  assert.equal(mapZoneName("Greater Faydark 4", zones), "Greater Faydark");
+
+  // **Unmapped, and this is the point.** Nothing here has a file for Blackburrow, so every one of
+  // these fell through to the raw name before — three "zones" where the game has one.
+  const none = zonesFromFiles("stock", []);
+  const black = mapZoneName("Blackburrow", none);
+  assert.equal(black, "Blackburrow");
+  assert.equal(mapZoneName("Blackburrow 3", none), black);
+  assert.equal(mapZoneName("Blackburrow 3 (Fused)", none), black);
+  assert.equal(mapZoneName("the blackburrow 1 (Awakened)", none), black);
+
+  // A zone no table knows keeps its own name — minus the difficulty, which is the no-assumption
+  // answer: it groups its own variants and nothing else.
+  assert.equal(mapZoneName("Somewhere Invented 2 (Adaptive)", none), "Somewhere Invented");
+
+  // "No zone yet" is not a place, so it stays blank rather than resolving to something.
+  assert.equal(mapZoneName("", zones), "");
 });
 
 test("sortZones groups a family together", () => {

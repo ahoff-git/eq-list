@@ -6,6 +6,7 @@
 import { ipcMain, dialog, shell, screen, BrowserWindow } from "electron";
 import { CH } from "../src/shared/ipc-channels";
 import { clampOpacity, p99ZoneUrl } from "../src/shared/constants";
+import { placeName } from "../src/shared/zones/place";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE, pingWiki } from "./wiki/api";
@@ -35,7 +36,7 @@ import type { PeerKillStore } from "./peer-kills";
 import type { SpawnTracker } from "./spawn-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import { AWARI_MSG } from "../src/shared/types";
 import { readContributor } from "../src/shared/contributors";
 import type { DragEnd } from "../src/shared/window-snap";
@@ -403,16 +404,16 @@ function registerStatsIpc(context: IpcContext): void {
     spawns.pad(key, seconds);
     return spawns.view();
   });
-  ipcMain.handle(CH.spawnsMarkUp, (_e, key: string) => {
-    spawns.markUp(key);
+  ipcMain.handle(CH.spawnsMarkUp, (_e, key: string, id?: string) => {
+    spawns.markUp(key, id);
     return spawns.view();
   });
   ipcMain.handle(CH.spawnsMarkDead, (_e, key: string) => {
     spawns.markDead(key);
     return spawns.view();
   });
-  ipcMain.handle(CH.spawnsAdd, (_e, name: string, zone: string, seconds?: number | null) => {
-    spawns.add(name, zone, seconds);
+  ipcMain.handle(CH.spawnsAdd, (_e, name: string, zone: string, seconds?: number | null, kind?: SpawnKind) => {
+    spawns.add(name, zone, seconds, kind);
     return spawns.view();
   });
   ipcMain.handle(CH.spawnsRemove, (_e, key: string) => {
@@ -447,12 +448,20 @@ function registerStatsIpc(context: IpcContext): void {
     spawns.setGapDropped(key, id, dropped);
     return spawns.view();
   });
-  ipcMain.handle(CH.spawnsMarkNotUp, (_e, key: string) => {
-    spawns.markNotUp(key);
+  ipcMain.handle(CH.spawnsMarkNotUp, (_e, key: string, id?: string) => {
+    spawns.markNotUp(key, id);
     return spawns.view();
   });
-  ipcMain.handle(CH.spawnsStop, (_e, key: string) => {
-    spawns.stop(key);
+  ipcMain.handle(CH.spawnsStop, (_e, key: string, id?: string) => {
+    spawns.stop(key, id);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsQueue, (_e, key: string, on: boolean) => {
+    spawns.queue(key, on);
+    return spawns.view();
+  });
+  ipcMain.handle(CH.spawnsRepeat, (_e, key: string, on: boolean) => {
+    spawns.repeat(key, on);
     return spawns.view();
   });
   // The loot feed's history — tracked in the main process, so the tab shows drops from before
@@ -591,8 +600,10 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
   ipcMain.on(CH.mapEmphasize, (_e, emphasis: KillEmphasis | null) => {
     getMapWindow()?.webContents.send(CH.mapEmphasis, emphasis);
   });
-  // Open a zone's map page on the Project 1999 wiki (host fixed, so it's safe).
-  ipcMain.handle(CH.mapOpenP99, (_e, zone: string) => shell.openExternal(p99ZoneUrl(zone)));
+  // Open a zone's map page on the Project 1999 wiki (host fixed, so it's safe). Through `placeName`
+  // like every other map reference: the wiki has a page for Blackburrow and none for "Blackburrow 3",
+  // and this is the boundary, so nothing downstream can hand it the log's wording (ADR 0134).
+  ipcMain.handle(CH.mapOpenP99, (_e, zone: string) => shell.openExternal(p99ZoneUrl(placeName(zone))));
 
   // ── the game's own map files (see ADR 0039) ──
   // Listed fresh each call: the user can install a pack, or repoint their log directory,

@@ -710,6 +710,10 @@ button {
   margin: 4px 0 6px;
 }
 .spawn-known { margin-top: 16px; }
+/* The clocks you made, between what's running and what's been learned — the same row shape, so the
+   tab reads as one thing, with a rule above it because it answers a different question (ADR 0135). */
+.spawn-custom { margin-top: 16px; }
+.spawn-made .spawn-figure { color: var(--text); }
 .spawn-add-bar { display: flex; }
 .spawn-how { color: var(--text-dim); margin: 8px 0 4px; }
 .spawn-add {
@@ -738,6 +742,8 @@ button {
    wrapper — which is what `slot` is for. */
 .spawn-add > .suggest.sa-name { flex: 2 1 160px; min-width: 160px; }
 .spawn-add .zone-picker { flex: 1 1 150px; min-width: 150px; }
+/* Mob or plain timer, as two words rather than a checkbox: neither answer is the "off" one. */
+.spawn-add .sa-kind { display: flex; gap: 4px; }
 .spawn-add small { flex-basis: 100%; color: var(--text-dim); }
 .spawn-add small.bad { color: var(--bad); }
 .spawn-row,
@@ -765,6 +771,9 @@ button {
 /* ALIVE is a fact, not a countdown — so it's the one row that reads as a state rather than a clock. */
 .spawn-row.alive { border-left: 2px solid var(--good); background: color-mix(in srgb, var(--good) 8%, transparent); }
 .spawn-row.alive .spawn-clock { color: var(--good); font-weight: 700; letter-spacing: 0.04em; }
+/* Which clock of a placeholder camp this is. A handle, not a rank — so it's quiet, and it only
+   appears at all where the camp is running more than one. */
+.spawn-slot { color: var(--text-dim); font-size: 11px; font-style: normal; font-weight: 400; }
 .spawn-phase { color: var(--accent); font-weight: 600; }
 .spawn-row.alive .spawn-phase { color: var(--good); }
 .spawn-notify {
@@ -992,6 +1001,28 @@ button {
 .loot-table .lt-item { font-weight: 500; }
 /* On the shopping list — the one highlight rule that can't cry wolf. */
 .loot-table tr.wanted { background: var(--flash); box-shadow: inset 2px 0 0 var(--accent); }
+/* The camp is the readable half; the column clips rather than pushing the item name out of the row. */
+.loot-table .lt-zone { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── where a logged thing happened (`ZoneTag`) ────────────────── */
+/* One appearance everywhere: the place in the running text colour, the difficulty trailing it as a
+   quieter token. Inline-flex so the pair never breaks across a line mid-tag (ADR 0136). */
+.zone-tag { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; }
+.zone-tag .zt-place,
+.zone-tag .link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Distinctly not the name: a dim, bordered chip, so "D3 Fused" can never be misread as part of the
+   camp's name — which is exactly the confusion the split exists to end. */
+.zt-diff {
+  flex: none;
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: help;
+}
 .loot-filters { margin-bottom: 8px; }
 /* Narrower than the map's zone picker: it shares a row with four other controls. */
 .loot-filters .select-sm { max-width: 30%; }
@@ -1298,6 +1329,10 @@ button {
   border-bottom: 1px solid var(--border);
 }
 .hist-picked .hp-label { font-weight: 600; }
+/* The camp trails the fight's own facts rather than leading them: what you fought and when is what
+   identifies the row; where is context you glance at. */
+.hist-picked .zone-tag { color: var(--text-dim); }
+.dmg-where { display: inline-flex; align-items: baseline; gap: 4px; }
 
 /* ── the scoreboard (personal bests) ─────────────────────────── */
 /* A trophy cabinet, not a table: the figure leads each row in the accent, the category labels it,
@@ -1344,6 +1379,9 @@ button {
 /* A bar nobody has cleared yet reads as a note rather than as a gain — there was nothing to gain on. */
 .sc-margin.first { color: var(--text-dim); font-style: italic; }
 .sc-when { color: var(--text-dim); white-space: nowrap; }
+/* After the date, and allowed to clip: the figure and the category are the row, the camp is the
+   footnote — a long zone name must not push the margin off the end. */
+.sc-zone { flex: 0 1 auto; min-width: 0; color: var(--text-dim); font-size: 12px; }
 .sc-celebrate { gap: 10px; margin: 14px 0 4px; }
 .sc-warn { color: var(--bad); }
 .sc-pending { margin-top: 12px; }

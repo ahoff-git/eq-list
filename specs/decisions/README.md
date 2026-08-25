@@ -163,8 +163,21 @@ finished, so a number is claimed before a second author can reach for it.
 - [0131: An overlay that cannot be operated does not keep the screen](./0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) — *issued as 0105 and renumbered — see Retired and reused numbers*
 - [0132: A contribution is keyed by who made it, and kept](./0132-a-contribution-is-keyed-by-who-made-it.md) — *issued as 0120 and renumbered — see Retired and reused numbers*
 - [0133: The log is an index, and the rules live in one consolidated file](./0133-the-log-is-an-index-and-the-rules-are-consolidated.md)
+- [0134: A map reference resolves to a place, never to a name we couldn't read](./0134-a-map-reference-resolves-to-a-place.md)
+- [0135: A countdown is an instance, and a hand-made timer is its own kind](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)
+- [0136: Logged data says where it happened, and how hard it was there](./0136-logged-data-says-where-it-happened.md)
+- [0137: A filed drop can still learn where it was](./0137-a-filed-drop-can-still-learn-where-it-was.md)
 
 ## Open Questions
+
+- **Should a repop say what it took?** Changing the instance difficulty rebuilds the world, so every
+  countdown measuring from a death in that place is dropped
+  ([0092](./0092-a-named-s-respawn-is-learned-from-your-own-kills.md)) — now only the mob ones
+  ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)). It happens **silently**,
+  which was defensible when a camp had one clock and is less so now a placeholder camp can lose eight
+  at once: the player sees an empty board and no reason for it. A toast would be the obvious answer
+  and the app is careful about spending them; the alternative is a line on the tab itself, which is
+  the one place nobody is looking at the moment it happens.
 
 - A zone states what level its monsters are, and we never check it
   ([ADR 0122](./0122-a-zone-wears-its-levels.md)). `mob-knowledge` is accumulating observed level

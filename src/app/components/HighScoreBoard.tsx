@@ -6,6 +6,7 @@ import { SCORE_CATEGORIES, SCORE_GROUPS, categoryOf, formatScore, marginOf } fro
 import { figure, when } from "@/shared/format";
 import { CheckField, Empty, PickField, StatTile } from "./ui";
 import type { HighScore, ScoreBoard } from "@/shared/types";
+import ZoneTag from "./ZoneTag";
 
 /** A stable empty board, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_BOARD: ScoreBoard = { character: "", scores: [], streak: 0, seeded: false };
@@ -219,10 +220,10 @@ function ScoreRow({ score, fresh }: { score: HighScore; fresh: boolean }) {
           set the bar
         </span>
       )}
-      <span className="sc-when" title={score.zone ? `In ${score.zone}` : undefined}>
-        {when(score.at)}
-        {score.zone ? ` · ${score.zone}` : ""}
-      </span>
+      <span className="sc-when">{when(score.at)}</span>
+      {/* Where the record was set, and how hard the zone was — a personal best at difficulty 3 is a
+          different achievement from the same number at difficulty 0 (ADR 0136). */}
+      {score.zone && <ZoneTag zone={score.zone} className="sc-zone" />}
     </div>
   );
 }

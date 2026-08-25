@@ -228,9 +228,22 @@ export const DATA_CONCERNS: DataConcern[] = [
     id: "loot-log",
     label: "Loot ledger",
     file: "loot-log.json",
-    revision: 1,
+    // 2: a drop records the zone it was looted in (ADR 0136). Every drop already on disk has none,
+    //    and a re-read is the only thing that can place them — which it now genuinely does, because
+    //    the ledger fills the gap in on a line it already holds instead of skipping it (ADR 0137).
+    revision: 2,
+    // Stamping shipped long before this bump, so an unstamped ledger predates it too — and has no
+    // zones for exactly the same reason. Both are stale, and one re-read fixes both.
+    unstamped: 1,
     remedy: "re-eat",
+    // Same argument as `combat-history`: the logs are on this machine, the app knows which ones its
+    // fights came from, and placing a drop needs no judgement from anybody (ADR 0129). Asking someone
+    // to press a button for a column we only just started recording would be a chore dressed as
+    // consent — they never chose to have it blank.
+    unattended: true,
     blurb: "Every drop the log has shown, and what the auto-sold ones fetched — the Loot tab and its vendor prices.",
+    changed:
+      "A drop now records the zone it was looted in, so the Loot tab can say which camp gave you what (ADR 0136). Drops recorded before that have no zone; re-reading a log fills it in for every one still covered by a log file on disk — which is why the column starts partly blank and fills in from the back.",
   },
   {
     id: "spawn-timers",

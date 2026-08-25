@@ -61,6 +61,7 @@ import {
   type Confidence,
   type SampleScale,
 } from "./estimates";
+import { formatDuration, parseDuration, UNIT_SECONDS } from "./duration";
 import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
 
@@ -124,6 +125,36 @@ export const OVERDUE_GRACE_SECONDS = 30 * SECONDS_PER_MINUTE;
 export const MAX_LEAD_SECONDS = 2 * SECONDS_PER_HOUR;
 
 /**
+ * The longest a **hand-made** timer may be. A week, because the things a player times by hand that
+ * aren't respawns are lockouts and reset windows, and those are measured in days
+ * ([ADR 0135](../../specs/decisions/0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)).
+ *
+ * Deliberately looser than `MAX_RESPAWN_SECONDS`, which bounds what we'll believe about a *mob* —
+ * two ceilings because they answer different questions. "Is this a plausible respawn?" is a claim
+ * about the world we could be wrong about; "how long is this egg timer?" is whatever the player says.
+ */
+export const MAX_TIMER_SECONDS = 7 * 24 * SECONDS_PER_HOUR;
+
+/**
+ * How many countdowns one camp may run at once (ADR 0135). A camp with placeholders wants several —
+ * that's the whole point — but a `queue` camp left on in a busy zone would otherwise fill the board,
+ * so the number is bounded rather than trusted, exactly as `MAX_REPEAT` is for an alert.
+ */
+export const MAX_CAMP_TIMERS = 8;
+
+/**
+ * A typed interval, in whole seconds — `0` for blank, `null` for text we can't read.
+ *
+ * The inverse of `formatDuration`, and **not** `parseDelay`: a cue tops out at thirty minutes and
+ * knows no unit longer than a minute, so borrowing it here refused a typed `4h` outright and turned
+ * a typed `240m` into 30m without saying so (ADR 0135). Hours and days are the units this feature is
+ * actually about.
+ */
+export function parseInterval(text: string | null | undefined): number | null {
+  return parseDuration(text, { units: ["s", "m", "h", "d"], max: MAX_TIMER_SECONDS });
+}
+
+/**
  * The identity of a timer: one named, in one place. Two zones' copies are two timers.
  *
  * A placeholder cycle wants a *different* identity — several mob names sharing one spawn point —
@@ -134,6 +165,37 @@ export const MAX_LEAD_SECONDS = 2 * SECONDS_PER_HOUR;
  */
 export function timerKey(mob: string, zone: string): string {
   return `${mobKey(mob)}|${placeKey(zone)}`;
+}
+
+/**
+ * Is this timer's camp in this place? `place` is a `placeKey`, not a zone name.
+ *
+ * Here rather than an `endsWith("|" + place)` at the call site, because the `|` convention is this
+ * module's and a caller that knows it is a second copy of the key format waiting to disagree.
+ */
+export function timerInPlace(key: string, place: string): boolean {
+  return key.slice(key.indexOf("|") + 1) === place;
+}
+
+/** Is this timer's camp about this mob? `mob` is a `mobKey`. For the same reason as above. */
+export function timerForMob(key: string, mob: string): boolean {
+  return key.slice(0, key.indexOf("|")) === mob;
+}
+
+/**
+ * The identity of one **countdown**: its camp and which of that camp's clocks it is (ADR 0135).
+ *
+ * Slots are reused as clocks come and go, so `#2` is only ever "the second one currently running" —
+ * a label to click and to tell two identical rows apart, never a claim about a spawn point.
+ */
+export function timerId(key: string, slot: number): string {
+  return `${key}#${slot}`;
+}
+
+/** Which clock of its camp this is, from its id. `1` for anything we can't read a slot out of. */
+export function timerSlot(id: string): number {
+  const slot = Number(id.slice(id.lastIndexOf("#") + 1));
+  return Number.isInteger(slot) && slot > 0 ? slot : 1;
 }
 
 /**
@@ -519,8 +581,19 @@ export function tightenSighting(seen: Sighting | undefined, seconds: number): Si
   return { seconds: tighten(seen?.seconds, seconds, "upper"), count: (seen?.count ?? 0) + 1 };
 }
 
-/** A countdown: one named, in one place, with a window we expect it back in. */
+/** A countdown: one death, in one place, with a window we expect the mob back in. */
 export interface SpawnTimer {
+  /**
+   * This countdown's own identity, `key#slot` — because a camp may be running several at once
+   * ([ADR 0135](../../specs/decisions/0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)).
+   *
+   * The **slot** is a small number reused as clocks come and go, which is what lets two rows for one
+   * name be told apart on screen and in a click. It says nothing about *which* spawn point this is:
+   * the clocks are anonymous and interchangeable, and that is exactly what makes killing any
+   * placeholder able to start any of them.
+   */
+  id: string;
+  /** The camp: one mob, one place. What is *learned and configured* is keyed by this, not by `id`. */
   key: string;
   mob: string;
   place: string;
@@ -565,6 +638,7 @@ export function timerFrom(
   killedAt: string,
   respawn: Respawn,
   lead = 0,
+  slot = 1,
 ): SpawnTimer | null {
   const at = Date.parse(killedAt);
   if (Number.isNaN(at)) return null;
@@ -582,6 +656,7 @@ export function timerFrom(
   const floorAt = respawn.floorSeconds ? at + respawn.floorSeconds * MS_PER_SECOND : opens;
   const watchFrom = Math.min(Math.max(opens, floorAt), due);
   return {
+    id: timerId(learning.key, slot),
     key: learning.key,
     mob: learning.mob,
     place: learning.place,
@@ -593,6 +668,38 @@ export function timerFrom(
     samples: respawn.samples,
     spreadSeconds: respawn.spreadSeconds,
     lead: padding,
+  };
+}
+
+/**
+ * The same timer, advanced to its next **future** moment — for a repeating one that came due while
+ * nobody was looking.
+ *
+ * Chained from the by-time rather than restarted from now, so a timer that has run all afternoon is
+ * still on its original beat instead of drifting by however long it took anyone to notice. Whole
+ * intervals only, and it never announces the cycles it skipped: an alert about something that
+ * happened three hours ago is the opposite of what an overlay is for (ADR 0092), and rolling forward
+ * silently is that rule applied to a clock that repeats.
+ *
+ * Returns the timer unchanged when it isn't overdue, so a caller can apply it unconditionally.
+ */
+export function rollForward(timer: SpawnTimer, nowMs: number): SpawnTimer {
+  const period = Math.round(timer.seconds) * MS_PER_SECOND;
+  const due = Date.parse(timer.dueAt);
+  if (!period || Number.isNaN(due) || due > nowMs) return timer;
+  // One arithmetic step rather than a loop: an app closed for a week must not walk a 30-second
+  // timer forward twenty thousand times to work out where it would be.
+  const cycles = Math.floor((nowMs - due) / period) + 1;
+  const shift = cycles * period;
+  const started = Date.parse(timer.killedAt);
+  const opens = Date.parse(timer.watchFrom);
+  return {
+    ...timer,
+    killedAt: Number.isNaN(started) ? timer.killedAt : new Date(started + shift).toISOString(),
+    watchFrom: Number.isNaN(opens) ? timer.watchFrom : new Date(opens + shift).toISOString(),
+    dueAt: new Date(due + shift).toISOString(),
+    // A repeat is a fresh clock, so a sighting of the last one says nothing about this one.
+    seenAt: undefined,
   };
 }
 
@@ -693,6 +800,10 @@ export function formatInterval(seconds: number): string {
   // Rounded to whole minutes **first**, then split. Rounding the leftover seconds against the hour
   // instead let the minutes reach 60 without the hour hearing about it, so 1h 59m 40s printed as
   // "1h 60m" and 59m 30s as "60m" — clocks that don't exist, on the figure a camper reads first.
+  // Past a day the figure is a hand-typed one — a lockout, a reset window — and `formatDuration`
+  // already says those the way they're typed. Below it the rounding above is the point, so the two
+  // are not interchangeable and this is a threshold rather than a delegation everywhere.
+  if (total >= UNIT_SECONDS.d) return formatDuration(Math.round(total / SECONDS_PER_MINUTE) * SECONDS_PER_MINUTE);
   const minutes = Math.round(total / SECONDS_PER_MINUTE);
   const hours = Math.floor(minutes / MINUTES_PER_HOUR);
   const rest = minutes % MINUTES_PER_HOUR;

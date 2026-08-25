@@ -150,11 +150,16 @@ test("an unstamped file on disk reports against the concern's own assumption", (
   // What an older build left behind: real data, no stamp.
   writeJson(path.join(dir, "combat-history.json"), { fights: [] });
   writeJson(path.join(dir, "loot-log.json"), { loot: [] });
+  writeJson(path.join(dir, "mob-knowledge.json"), { mobs: [] });
   const rows = dataReport(dir);
-  // `combat-history` declares `unstamped: 1` because ADR 0095's bump predates stamping.
+  // Both declare `unstamped` below their revision, because both bumps invalidate what is on disk:
+  // ADR 0095's predates stamping, and a ledger written before ADR 0136 has no zone on any drop.
   assert.equal(rows.find((r) => r.concern.id === "combat-history")?.state, "stale");
-  // `loot-log` hasn't changed, so an unstamped file is simply current.
-  assert.equal(rows.find((r) => r.concern.id === "loot-log")?.state, "current");
+  assert.equal(rows.find((r) => r.concern.id === "loot-log")?.state, "stale");
+  // `peer-knowledge` is the other choice, and the interesting one: it is at revision 2 and
+  // deliberately declares **no** `unstamped`, because `migrations.ts` re-keys an older file in place
+  // rather than leaving it stale. So an unstamped file there is current, and the default holds.
+  assert.equal(rows.find((r) => r.concern.id === "peer-knowledge")?.state, "current");
 });
 
 test("a store with no file yet is absent rather than stale", () => {

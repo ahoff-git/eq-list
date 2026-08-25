@@ -233,9 +233,10 @@ list, hunt, search, damage, session, settings.
     rules are shared with `CastAlerts` rather than copied.
   - `SpawnPanel` — the **Timers tab**: respawn countdowns for the nameds you kill, learned
     from the gaps between your own kills ([ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
-    Two lists, answering different questions: **Due** is what's running, soonest-first, read at a
-    glance mid-camp; **What we've learned** is the per-named figure, read while deciding where to
-    sit. The rules are `src/shared/spawn-timers.ts` (pure + tested — the shortest-gap rule, the
+    Three lists, answering different questions: **Coming up** is what's running, soonest-first, read
+    at a glance mid-camp; **Your timers** are the clocks the player made; **What we've learned** is
+    the per-named figure, read while deciding where to sit
+    ([ADR 0135](../decisions/0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)). The rules are `src/shared/spawn-timers.ts` (pure + tested — the shortest-gap rule, the
     plausibility bounds, the window, the wording); the countdowns themselves belong to
     `electron/spawn-tracker.ts`, which persists a **due time** so a timer survives a restart and
     raises the pop as an ordinary alert (`event: "spawn"`) through the same overlay as everything
@@ -272,8 +273,15 @@ list, hunt, search, damage, session, settings.
     there is one idea of what picking a zone is like; blank means *anywhere* here rather than the
     map's *follow the log*, which is the only thing that differs —
     a named you haven't killed twice, or anything else worth a countdown; the zone is optional and
-    defaults to where you are, and a label no kill line matches just never re-arms itself, which is
-    what lets one form serve both. A line above the rows says how mobs arrive, since "why isn't that
+    defaults to where you are. The form **asks which of the two it is** (ADR 0135), defaulting from
+    whether your own log has seen you kill that name: a **mob** learns and can be corrected, a plain
+    **timer** is a clock you start, which may **repeat**, wears none of a mob's evidence controls,
+    reads DONE rather than UP, and claims nothing about what is a named. Intervals are read by
+    `parseInterval` — the alert rules' syntax with this feature's limits, so `4h` and `3d` are typable
+    and nothing is silently clamped to the cue's half-hour. A camp can also be told it runs **several
+    at once**: each kill then starts a clock of its own instead of restarting the last, which is how
+    a placeholder cycle is camped, with each row carrying a slot (`#2`) purely so two identical rows
+    are tellable apart. A line above the rows says how mobs arrive, since "why isn't that
     named here?" is not guessable from an empty list. Each row also picks **which saved style** its
     banner wears (the Alerts tab's looks — a timer never grows an editor of its own) and can be kept
     **on screen**, which is a separate question from Notify on purpose: one is a moment, the other a
@@ -490,15 +498,38 @@ list, hunt, search, damage, session, settings.
   - `LootPanel` — the **Loot tab**: the persisted drop ledger (`electron/loot-log.ts`), which
     reaches back through previous runs rather than describing this session. **Two segmented views**
     like the damage tab's scopes, because stacking them meant a few hundred rows of ledger pushed
-    the prices off the bottom of the screen: **Drops** (time · fate · qty · item · corpse · where it
-    went) and **Sells for** (each · sold · earned · last sold — the item half of the money question,
+    the prices off the bottom of the screen: **Drops** (time · fate · qty · item · corpse · **zone** ·
+    where it went) and **Sells for** (each · sold · earned · last sold — the item half of the money question,
     [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)). Both are tables with
     **sortable columns** (`SortHeader` + `src/shared/sorting.ts`; click to sort, click again to
-    flip), and the drops view has **filters** — fate, item name, which corpse, and "on my list"
-    (`src/shared/loot-filters.ts`, pure + tested). Rows on your shopping list are highlighted, which
+    flip), and the drops view has **filters** — fate, item name, which corpse, which **zone**, and
+    "on my list" (`src/shared/loot-filters.ts`, pure + tested). The zone filter holds a **place**
+    (`lootZones` folds the ledger through `placeName`), so one option covers every difficulty and
+    every spelling of a camp; built from the raw wordings it would offer three Blackburrows. Rows on your shopping list are highlighted, which
     is still the only highlight rule: it's free and it can't cry wolf. Names are `ItemLink`s. The
     header's tallies count the rows **on screen**, so they describe what you filtered to. See
     [ADR 0058](../decisions/0058-a-ledger-needs-filters-and-a-column-to-sort-by.md).
+  - `ZoneTag` (`src/app/components/ZoneTag.tsx`) — **where a logged thing happened**, said one way
+    everywhere: the **place** as a `ZoneLink` (so a row that says where also takes you there) and the
+    **difficulty** beside it as its own chip, with the recorded wording in the hover when the fold
+    changed it. Used by the Loot ledger, the fight history and the picked fight, the Damage tab's live
+    header, the records board and the status bar; `ZoneDifficultyTag` is the difficulty alone, for the
+    map's kill rows, which are already one camp. It exists because the panels that *had* a zone printed
+    the log's string — `The Steamfont Mountains 2 (Adaptive)` in an 11-character column — and the one
+    that mattered most, the drop ledger, **recorded no zone at all**. A drop now carries the zone it was
+    looted in (`LootRecord`, stamped from `currentZone` like a kill's, verbatim per
+    [ADR 0083](../decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)).
+
+    **Older drops are placed by a re-read rather than left blank.** Re-reading a log replays its zone
+    lines and its loot lines in order, so the zone is *measured*; `add` fills in the gap on a line it
+    already holds — which is not counting a drop twice, and so is allowed where a second count would
+    not be ([ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md)). Reported as `placed`, apart
+    from `loot`, and the `loot-log` concern is `unattended`, so the next start does it without asking
+    ([ADR 0129](../decisions/0129-a-release-can-ask-for-a-re-read.md)). What stays blank is honest: a
+    drop looted before the log's first zone line, and one whose log file is gone. See
+    [ADR 0136](../decisions/0136-logged-data-says-where-it-happened.md),
+    [ADR 0137](../decisions/0137-a-filed-drop-can-still-learn-where-it-was.md), and
+    [ADR 0134](../decisions/0134-a-map-reference-resolves-to-a-place.md) for the split it follows.
   - `AlertsPanel` — **its own tab**, not a group inside Settings
     ([ADR 0088](../decisions/0088-alerts-are-a-tab-not-a-setting.md)): the rule list + beep /
     **screen-flash** / include-self
@@ -767,7 +798,8 @@ list, hunt, search, damage, session, settings.
   window** rather than a pixel count (`src/shared/panel-size.ts`, pure and tested), because a window's
   scale is a CSS `zoom` that multiplies px and leaves a ratio alone, and it's remembered per panel in
   the same `localStorage` that remembers which panels are open — sizing is a gesture, not a setting.
-  See [ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md).
+  See [ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md) ·
+[ADR 0136](../decisions/0136-logged-data-says-where-it-happened.md).
 - **Errors are logged, never drawn over the game** (`src/lib/error-reporting.ts`): Next's
   dev error overlay is hidden outright — by CSS the *main process* injects into every window
   it loads (`HIDE_DEV_OVERLAY` in `electron/windows.ts`), so it holds even for a compile

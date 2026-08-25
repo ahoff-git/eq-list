@@ -85,6 +85,8 @@ export const CH = {
   spawnsForgetFloor: "spawns:forgetFloor",
   spawnsDropGap: "spawns:dropGap", // throw out one measured gap, keeping the rest // throw away a learned bound and start again from now
   spawnsStop: "spawns:stop",
+  spawnsQueue: "spawns:queue", // a fresh kill adds a countdown instead of restarting: a placeholder camp
+  spawnsRepeat: "spawns:repeat", // a custom timer starts itself again when it comes due
   lookupCapture: "lookup:capture",
   lookupOpen: "lookup:open",
   lookupReady: "lookup:ready", // the selector reporting it has mounted and is listening for a drag

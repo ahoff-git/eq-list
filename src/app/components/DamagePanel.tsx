@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useCombatStats, useHpEstimate, useRead } from "@/lib/hooks";
+import { useCombatStats, useCurrentZone, useHpEstimate, useRead } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import DamageMeter, { type DamageView } from "./DamageMeter";
@@ -9,6 +9,7 @@ import DamageHistory from "./DamageHistory";
 import HighScoreBoard from "./HighScoreBoard";
 import Sparkline from "./Sparkline";
 import AskValue from "./AskValue";
+import ZoneTag from "./ZoneTag";
 import { opponentOf } from "@/shared/damage-tree";
 import type { DamageAxis, DeathRecap, FightBest, FightStats, HpEstimate, StoredFight } from "@/shared/types";
 
@@ -86,6 +87,14 @@ const NO_BESTS: FightBest[] = [];
 
 export default function DamagePanel() {
   const stats = useCombatStats();
+  /**
+   * Where the log says you are. This is the zone for a **live** window: a stored fight carries the
+   * camp it was fought in, and the two live scopes have none of their own — a fight is happening
+   * where you are standing, and a session is wherever you have been (ADR 0136). Said out loud rather
+   * than left to the status bar, because a damage figure without a camp beside it is the number this
+   * tab is least able to compare.
+   */
+  const currentZone = useCurrentZone();
   const [scope, setScope] = useState<Scope>("fight");
   const [view, setView] = useState<View>("taken");
   const [picked, setPicked] = useState<StoredFight | null>(null);
@@ -101,6 +110,23 @@ export default function DamagePanel() {
   // A personal best only means something for one fight against a named opponent. `opponentOf` is
   // the same rule history labels a fight by, so the ★ flag and the list agree on who you fought.
   const opponent = scope === "history" ? picked?.label : opponentOf(stats.fight);
+  /**
+   * The camp this window belongs to, and whether it is a claim about the window or merely about
+   * where you are now. A **session** spans camps, so it says so rather than naming one as if the
+   * whole evening had happened there.
+   */
+  const where: { zone: string | null | undefined; why: string } | null =
+    scope === "history"
+      ? picked && { zone: picked.zone, why: "Where this fight was fought" }
+      : scope === "records"
+        ? null
+        : {
+            zone: currentZone,
+            why:
+              scope === "fight"
+                ? "Where you are now, which is where this fight is happening"
+                : "Where you are now — a session can span several camps, so this names the current one, not the whole evening",
+          };
   const best = scope === "fight" && opponent ? bests.find((b) => b.label === opponent) : undefined;
   const fightDps = ratio(window?.yourDealt ?? 0, window?.durationSec ?? 0, 1);
   const isBest = !!best && fightDps >= best.dps && fightDps > 0;
@@ -142,6 +168,12 @@ export default function DamagePanel() {
             Spells
           </button>
         </div>
+        {/* Beside the scopes, not in the table: it is a fact about the whole window on show. */}
+        {where?.zone && (
+          <span className="dmg-where muted small" title={where.why}>
+            📍 <ZoneTag zone={where.zone} />
+          </span>
+        )}
         <span className="spacer" />
         {window && window.totalDealt > 0 && (
           <button
@@ -171,6 +203,7 @@ export default function DamagePanel() {
           <span className="muted small">
             {when(picked.stats.startedAt)} · {picked.stats.durationSec}s
           </span>
+          <ZoneTag zone={picked.zone} />
         </div>
       )}
 

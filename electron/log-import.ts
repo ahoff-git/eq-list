@@ -21,10 +21,17 @@
  * refusing them ([ADR 0128](../specs/decisions/0128-a-fight-is-re-derived-not-refused.md)). That is
  * what makes "digest the log again" the remedy `data-provenance.ts` has always advertised for a
  * stale `combat-history`, instead of a no-op.
+ *
+ * A second helping now changes one more thing, and it is a **field rather than a count**: a drop the
+ * ledger already holds but could not place gets the zone this pass read off the log's own zone lines
+ * ([ADR 0137](../specs/decisions/0137-a-filed-drop-can-still-learn-where-it-was.md)). It is counted
+ * as `placed`, apart from `loot`, because nothing was added — the same line is now merely better
+ * described.
  */
 import fs from "node:fs";
 import { isCombatEvent, parseLine } from "../src/shared/parse-line";
 import { characterFromLogFile } from "../src/shared/log-parser";
+import { lootRecord } from "../src/shared/loot-feed";
 import { createCombatStats } from "./combat-stats";
 import { loginSession } from "./combat-history";
 import type { DerivedFight, LogImportResult as SharedImportResult } from "../src/shared/types";
@@ -95,6 +102,8 @@ export function importLog(
   let fights = 0;
   let sessions = 0;
   let loot = 0;
+  /** Drops the ledger already held and can now say the zone of — see the header. */
+  let placed = 0;
 
   // A tracker of its own, so nothing here touches the live meter. It's fed the same events
   // `main.ts` feeds the live one, which is what makes an eaten fight indistinguishable from a
@@ -139,9 +148,18 @@ export function importLog(
       case "loot":
         if (killLog.noteLoot(event)) drops++;
         combat?.recordSale(event); // an auto-sell is the only line that prices an item
-        // The feed is keyed by its log line, so a drop already in it (watched live, or a previous
-        // helping) is skipped rather than doubled — `add` says whether it landed.
-        if (lootLog?.add(event)) loot++;
+        // Stamped with the zone this pass is tracking — the same `zone` a kill is filed under, two
+        // lines below — which is what lets a re-read place drops recorded before the ledger held one
+        // (ADR 0137). The feed is keyed by its log line, so a drop already in it (watched live, or a
+        // previous helping) is never doubled; `add` says which of the three things happened.
+        switch (lootLog?.add(lootRecord(event, zone))) {
+          case "added":
+            loot++;
+            break;
+          case "placed":
+            placed++;
+            break;
+        }
         break;
       case "kill":
         if (killLog.record(event.target, event.killer, zone, event.at, event.logId, event.named, event.killerNamed)) kills++;
@@ -187,6 +205,7 @@ export function importLog(
     fights,
     sessions,
     loot,
+    placed,
     refreshed: outcome.refreshed,
     superseded: outcome.superseded,
     unsourced: outcome.unsourced,

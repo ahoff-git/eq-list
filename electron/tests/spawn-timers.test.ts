@@ -18,10 +18,17 @@ import {
   OVERDUE_GRACE_SECONDS,
   provenNamed,
   remainingMs,
+  parseInterval,
   respawnFor,
+  rollForward,
   spawnState,
   timerFrom,
+  timerForMob,
+  timerId,
+  timerInPlace,
   timerKey,
+  timerSlot,
+  MAX_TIMER_SECONDS,
   type RespawnLearning,
 } from "../../src/shared/spawn-timers";
 import type { KillRecord } from "../../src/shared/types";
@@ -480,4 +487,76 @@ test("a learned figure is worded as a bound with its sample, a stated one is not
   assert.equal(describeRespawn({ seconds: 1320, source: "killed", samples: 3 }), "at most 22m, from 3 gaps");
   assert.equal(describeRespawn({ seconds: 1320, source: "killed", samples: 1 }), "at most 22m, from 1 gap");
   assert.equal(describeRespawn({ seconds: 1320, source: "stated", samples: 0 }), "22m (you set this)");
+});
+
+// ── a timer's own identity, and a camp's several clocks (ADR 0135) ─────────────
+
+test("a countdown's id is its camp and its slot, and reads back as one", () => {
+  const key = timerKey("Ghoul Lord", "Lower Guk");
+  assert.equal(timerSlot(timerId(key, 3)), 3);
+  assert.equal(timerSlot(key), 1, "a file written before slots existed held one clock, which is #1");
+  assert.equal(timerSlot("nonsense#x"), 1, "unreadable is the first slot, never NaN");
+});
+
+test("a key answers what it is about without anyone else parsing it", () => {
+  const key = timerKey("Ghoul Lord", "Lower Guk");
+  assert.ok(timerInPlace(key, "lower guk"));
+  assert.ok(!timerInPlace(key, "guk"), "part of the place is a different place");
+  assert.ok(timerForMob(key, "ghoul lord"));
+  assert.ok(!timerForMob(key, "ghoul"));
+});
+
+test("a timer takes the slot it was armed in", () => {
+  const learning = { key: timerKey("Ghoul Lord", "Lower Guk"), mob: "Ghoul Lord", place: "Lower Guk" };
+  const respawn = { seconds: 900, source: "stated" as const, samples: 0 };
+  assert.equal(timerFrom(learning, iso(0), respawn)!.id, `${learning.key}#1`, "one clock by default");
+  assert.equal(timerFrom(learning, iso(0), respawn, 0, 4)!.id, `${learning.key}#4`);
+});
+
+// ── a repeating timer, rolled forward rather than left overdue ────────────────
+
+/** A plain 10-minute clock, started at T0. */
+function tenMinutes() {
+  const learning = { key: timerKey("Tea", ""), mob: "Tea", place: "" };
+  return timerFrom(learning, iso(0), { seconds: 600, source: "stated", samples: 0 })!;
+}
+
+test("a timer that hasn't finished is left exactly as it is", () => {
+  const timer = tenMinutes();
+  assert.equal(rollForward(timer, T0 + 599_000), timer, "the same object, so a caller can apply it blindly");
+});
+
+test("a finished one starts again from its own end, not from when we noticed", () => {
+  const next = rollForward(tenMinutes(), T0 + 605_000);
+  assert.equal(next.dueAt, iso(1200), "on the beat it started on — 20 minutes, not 20:05");
+  assert.equal(next.killedAt, iso(600));
+});
+
+test("an app shut for a fortnight comes back on the next real cycle, not a thousand overdue ones", () => {
+  const fortnight = 14 * 24 * 3600;
+  const next = rollForward(tenMinutes(), T0 + fortnight * 1000 + 1);
+  assert.ok(Date.parse(next.dueAt) > T0 + fortnight * 1000, "ahead of us");
+  assert.ok(Date.parse(next.dueAt) <= T0 + (fortnight + 600) * 1000, "by less than one cycle");
+});
+
+test("a fresh cycle is not still being looked at", () => {
+  const seen = { ...tenMinutes(), seenAt: iso(300) };
+  assert.equal(rollForward(seen, T0 + 605_000).seenAt, undefined);
+});
+
+// ── the figure a player types (ADR 0135) ──────────────────────────────────────
+
+test("hours and days are typable, which is the whole complaint", () => {
+  assert.equal(parseInterval("4h"), 4 * 3600);
+  assert.equal(parseInterval("240m"), 240 * 60, "and are not quietly clamped to the alert cue's half hour");
+  assert.equal(parseInterval("3d"), 3 * 86400);
+  assert.equal(parseInterval("22m"), 1320);
+  assert.equal(parseInterval("soon"), null);
+  assert.equal(parseInterval("99999d"), MAX_TIMER_SECONDS);
+});
+
+test("a day-scale figure reads in days", () => {
+  assert.equal(formatInterval(86400), "1d");
+  assert.equal(formatInterval(3 * 86400 + 4 * 3600), "3d 4h");
+  assert.equal(formatInterval(86400 - 60), "23h 59m", "and below a day nothing changed");
 });

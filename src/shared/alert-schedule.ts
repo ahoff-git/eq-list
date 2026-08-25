@@ -31,6 +31,7 @@
  *
  * No I/O, no state, no timers — the scheduling itself is `electron/alert-queue.ts`.
  */
+import { formatDuration, parseDuration } from "./duration";
 import type { CastWatch, WatchCondition } from "./types";
 
 /** Unit conversions, named so a bare `1000` never has to be recognised for what it is. */
@@ -56,46 +57,27 @@ export const COMBAT_CUE_WITHIN_SECONDS = SECONDS_PER_MINUTE;
  * make the overlay unusable, so the number is bounded rather than trusted. */
 export const MAX_REPEAT = 20;
 
-/** One part of a delay: `25`, `25s`, `8m`, `1.5m`. A bare number is seconds, which is what a recast cue wants. */
-const PART_RE = /^(\d+(?:\.\d+)?)(s|m)?$/;
-
 /**
  * A watch's delay in whole seconds — `0` for "fire now", `null` for text we can't read.
  *
- * Compound forms add up (`1m30s`, `1m 30s`), so whatever `formatDelay` prints can be typed straight
- * back in — a round-trip that matters because the field is the only place a delay is ever shown.
+ * The syntax itself is `parseDuration`'s, shared with the spawn timers' own field
+ * ([ADR 0135](../../specs/decisions/0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md));
+ * what belongs to a *cue* is the contract around it. **Seconds and minutes only**, so `5h` is
+ * unreadable here rather than clamped down to something the player didn't ask for, and clamped to
+ * `MAX_DELAY_SECONDS` — a cue is a thing the app means to say soon, and a timer measured in hours is
+ * a fact about the world that belongs in `spawn-tracker.ts` instead.
  *
  * The watch stores what the player typed rather than a number, so the field can be corrected
  * mid-typing and "8m" still reads as "8m" when they come back to it. That makes this the one place
- * that knows the syntax, and the reason it's exported: Settings marks an unreadable delay by asking
- * the same question the scheduler will.
+ * that knows a cue's *limits*, and the reason it's exported: Settings marks an unreadable delay by
+ * asking the same question the scheduler will.
  */
 export function parseDelay(text: string | null | undefined): number | null {
-  const t = (text ?? "").trim().toLowerCase();
-  if (!t) return 0;
-  // Split `1m30s` into its parts as well as `1m 30s`, so spacing is never the thing that fails.
-  const parts = t.replace(/\s+/g, "").match(/\d+(?:\.\d+)?[sm]?/g);
-  // Anything left over once the parts are removed is text we didn't understand, and guessing at a
-  // delay is worse than saying so.
-  if (!parts || parts.join("") !== t.replace(/\s+/g, "")) return null;
-  let seconds = 0;
-  for (const part of parts) {
-    const m = PART_RE.exec(part);
-    if (!m) return null;
-    seconds += Number(m[1]) * (m[2] === "m" ? SECONDS_PER_MINUTE : 1);
-  }
-  if (!Number.isFinite(seconds)) return null;
-  return Math.min(Math.round(seconds), MAX_DELAY_SECONDS);
+  return parseDuration(text, { units: ["s", "m"], max: MAX_DELAY_SECONDS });
 }
 
 /** Seconds as the shortest thing that reads back the same way — `""`, `45s`, `8m`, `1m 30s`. */
-export function formatDelay(seconds: number): string {
-  if (seconds <= 0) return "";
-  if (seconds < SECONDS_PER_MINUTE) return `${seconds}s`;
-  const m = Math.floor(seconds / SECONDS_PER_MINUTE);
-  const s = seconds % SECONDS_PER_MINUTE;
-  return s ? `${m}m ${s}s` : `${m}m`;
-}
+export const formatDelay = formatDuration;
 
 /**
  * The same, from milliseconds — for the queue, which thinks in the units a timer takes. Here rather

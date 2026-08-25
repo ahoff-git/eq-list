@@ -82,6 +82,41 @@ export function zoneBaseName(name: string): string {
   return nameWithout(withoutMode(name), ZONE_DIFFICULTY_RE);
 }
 
+/**
+ * **What the game calls each difficulty.** The number is an index into this: 0 is the ordinary zone,
+ * and 1–4 are the rulesets a harder copy of it is opened under.
+ *
+ * Supplied by the player rather than harvested, which is why it is a table and not a parse: the log
+ * writes the tag beside the number only sometimes ("The Steamfont Mountains 2 (Adaptive)") and often
+ * writes the bare number ("Blackburrow 3"), and the two have to read the same. A tier the table
+ * hasn't got is not an error — a build may add one — so it simply goes unnamed.
+ */
+const DIFFICULTY_TIERS: readonly string[] = ["", "Awakened", "Adaptive", "Fused", "Refined"];
+
+/** The name of a difficulty, or undefined for the ordinary zone and for a tier we can't name. */
+const tierName = (level: number): string | undefined => DIFFICULTY_TIERS[level] || undefined;
+
+/**
+ * **How hard this copy of the zone was, said out loud** — `D3 Fused`, `Solo`, or undefined for an
+ * ordinary zone. No punctuation of its own: it is read inside a `·`-separated title.
+ *
+ * This is the half of a zone name that the map fold throws away
+ * ([ADR 0057](../../specs/decisions/0057-a-grade-is-not-an-identity.md),
+ * [ADR 0134](../../specs/decisions/0134-a-map-reference-resolves-to-a-place.md)): one map draws
+ * Blackburrow however hard its gnolls hit, so the name a map is looked up by cannot carry it — and
+ * folding it away silently would leave a window unable to say which Blackburrow you are standing in.
+ * So the fold and this reader are two halves of one rule, and they live next to each other.
+ *
+ * **The log's own tag wins** where it wrote one. It is the game speaking, so it survives a build that
+ * renames a tier or adds a fifth; the table only fills in for the bare number.
+ */
+export function zoneDifficultyLabel(name: string): string | undefined {
+  const level = zoneDifficulty(name);
+  const tier = zoneMode(name) ?? (level === undefined ? undefined : tierName(level));
+  if (level === undefined) return tier; // a ruleset with no number: "Nagafen's Lair - Solo"
+  return tier ? `D${level} ${tier}` : `D${level}`;
+}
+
 /** Either spelling of the ruleset tag off — the game writes both, and they mean the same thing. */
 function withoutMode(name: string): string {
   return nameWithout(nameWithout(name, ZONE_MODE_RE), ZONE_DASH_MODE_RE);

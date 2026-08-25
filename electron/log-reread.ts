@@ -21,6 +21,13 @@
  *
  * A source that has gone (a log deleted, a folder moved) is skipped rather than treated as a failure,
  * and the fights that came from it keep their figures and say so — `StoredFight.unsourced`.
+ *
+ * **The sources are the *history's*, which bounds what this can do for the loot ledger.** A drop is not
+ * stamped with the file it was read from — a `LootEvent` has no room for one and never needed it — so
+ * placing drops rides along on the files the fights name
+ * ([ADR 0137](../specs/decisions/0137-a-filed-drop-can-still-learn-where-it-was.md)). In practice those
+ * are the same logs, because you looted where you fought; a log that recorded drops and no fights at all
+ * is the gap, and its drops stay unplaced until somebody eats that file by hand.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -45,6 +52,12 @@ export interface ReReadReport {
   added: number;
   /** Stored fights their log can no longer account for. */
   unsourced: number;
+  /**
+   * Drops already in the ledger that can now say which zone they came from — what a re-read is worth
+   * to the Loot tab ([ADR 0137](../specs/decisions/0137-a-filed-drop-can-still-learn-where-it-was.md)).
+   * On a log whose every drop was watched live this is the only figure here that moves.
+   */
+  placed: number;
   /** Wall time spent, milliseconds — the number that decides whether this stays unattended. */
   ms: number;
 }
@@ -113,7 +126,7 @@ export async function reReadLogs(deps: ReReadDeps): Promise<ReReadReport | null>
 
   log.info(`re-reading ${sources.length} log(s) to bring ${concerns.join(", ")} up to date`);
   const started = Date.now();
-  const report: ReReadReport = { concerns, files: [], refreshed: 0, added: 0, unsourced: 0, ms: 0 };
+  const report: ReReadReport = { concerns, files: [], refreshed: 0, added: 0, unsourced: 0, placed: 0, ms: 0 };
   for (const file of sources) {
     await breathe(); // before the work, so the first file is off the caller's tick too
     try {
@@ -122,7 +135,13 @@ export async function reReadLogs(deps: ReReadDeps): Promise<ReReadReport | null>
       report.refreshed += res.refreshed;
       report.added += res.fights;
       report.unsourced += res.unsourced;
-      log.debug("re-read", { file: path.basename(file), refreshed: res.refreshed, added: res.fights });
+      report.placed += res.placed;
+      log.debug("re-read", {
+        file: path.basename(file),
+        refreshed: res.refreshed,
+        added: res.fights,
+        placed: res.placed,
+      });
     } catch (e) {
       log.warn("could not re-read", path.basename(file), (e as Error).message);
     }
@@ -133,6 +152,9 @@ export async function reReadLogs(deps: ReReadDeps): Promise<ReReadReport | null>
   deps.history.flush();
   deps.killLog.flush();
   deps.lootLog?.flush();
-  log.info(`re-read ${report.files.length} log(s) in ${report.ms}ms: ${report.refreshed} fights redone, ${report.added} added`);
+  log.info(
+    `re-read ${report.files.length} log(s) in ${report.ms}ms: ${report.refreshed} fights redone, ` +
+      `${report.added} added, ${report.placed} drops placed`,
+  );
   return report;
 }

@@ -28,18 +28,18 @@ outcome goes in an ADR, a README, or the code — never here).
 - **Spawn points, not just roam areas.** A roam area is the centroid and spread of where a mob died.
   With enough fixes, clusters would separate individual spawn points from a wandering path. The data
   is already stored; this is an analysis question, not a collection one.
-- **A placeholder cycle, named as one.** Spawn timers treat one named in one place as one timer
-  ([ADR 0092](./decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)), so a named that
-  sits on a placeholder is timed by the gap between two kills of the *named* — which is the cycle
-  length multiplied by however many pops it took, and shows up as gaps that disagree with each other
-  ([ADR 0094](./decisions/0094-a-spawn-timer-is-a-window-not-an-instant.md) reports that rather than
-  hiding it). The real answer is to time the **spawn point**: several mob names sharing one cycle, so
-  killing the placeholder starts the clock and the named is a chance on each pop rather than the
-  thing being timed. `timerKey` is the seam — the whole feature keys off that string rather than off
-  the mob, so this changes what goes into it and nothing downstream. What it needs first is a way to
-  *know* which names share a spawn, and that is the hard half: guessing it from co-located kills is
-  exactly the kind of inference both ADRs above refuse to make without evidence, so the honest
-  version is probably the player saying so — which is a small UI and no cleverness at all.
+- **A placeholder cycle, named as one.** *Camping* one is no longer blocked on this: a camp can be
+  told it cycles, and each kill starts a clock of its own
+  ([ADR 0135](./decisions/0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)). What is
+  still unbuilt is the app **knowing** that several names share one point — so that killing the
+  placeholder starts the named's clock, and the named is a chance on each pop rather than the thing
+  being timed. Without it, a named on a cycle is still timed by the gap between two kills of the
+  *named* — the cycle length times however many pops it took, which shows up as gaps that disagree
+  with each other ([ADR 0094](./decisions/0094-a-spawn-timer-is-a-window-not-an-instant.md) reports
+  that rather than hiding it). `timerKey` is still the seam. What it needs first is a way to *know*
+  which names share a spawn, and that is the hard half: guessing it from co-located kills is exactly
+  the kind of inference those ADRs refuse to make without evidence, so the honest version is the
+  player saying so — a small UI and no cleverness at all.
 - **Group-mates' kills.** A group-mate's killing blow is indistinguishable from a stranger's in the
   log, so those kills only count towards a drop rate once you loot the corpse
   ([ADR 0027](./decisions/0027-only-your-kills-count.md)). Telling them apart means knowing who was

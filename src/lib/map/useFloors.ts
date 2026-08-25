@@ -43,6 +43,11 @@ export interface Floors {
  * owns pins, peers, kills and a canvas, and because these values only mean anything together. The
  * hand-set window is deliberately **not** persisted and is dropped when you leave the zone: a z of 40
  * is a treetop in one zone and a sewer in the next.
+ *
+ * `zoneName` is the **resolved** name of the zone in view (`mapZoneName`), not the log's wording. A
+ * height window belongs to the *map*, and one map draws the zone at every difficulty — keyed on the
+ * raw name, walking back into the same camp at difficulty 3 threw the window away and re-fitted the
+ * view ([ADR 0134](../../../specs/decisions/0134-a-map-reference-resolves-to-a-place.md)).
  */
 export function useFloors(vector: EqMap | null, loc: LocEvent | null, zoneName: string): Floors {
   // Persisted like the zone override, and validated below rather than reset by an effect.
