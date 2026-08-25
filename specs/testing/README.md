@@ -536,6 +536,12 @@ first: no chat or tells, character names replaced.
 - Anything read from the player's install gets a synthetic fixture for the everyday suite **and** a
   `*.live.test.ts` that checks the same reading against a real one — see above. The two answer
   different questions and neither replaces the other.
+- **Never write a log stamp down as UTC.** EverQuest timestamps its lines in the player's *local*
+  time, so `[Fri Jul 17 18:00:10 2026]` names a different instant on every machine — and a
+  fight's key is made of exactly those instants. A hand-typed `...Z` beside a log fixture is a
+  fixture that only holds in the zone it was typed in: three re-read tests passed at UTC-7 and
+  failed in CI's UTC, where nothing matched and the re-read reported no fights put right. Derive
+  the stamp from the fixture's own line instead. `TZ=UTC npm test` is the cheap check.
 - Treat passing black boxes as frozen: don't edit them without cause, and don't
   re-verify them when unrelated code changes.
 

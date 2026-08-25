@@ -35,13 +35,27 @@ function stubKillLog(): KillLog & { player: string } {
   return stub as unknown as KillLog & { player: string };
 }
 
-const LOG_LINES = [
+const LOG = [
   "[Fri Jul 17 18:00:00 2026] Welcome to EverQuest Legends!",
   "[Fri Jul 17 18:00:01 2026] You have entered Blackburrow.",
   "[Fri Jul 17 18:00:10 2026] You slash a gnoll for 30 points of damage.",
   "[Fri Jul 17 18:00:11 2026] A gnoll bites YOU for 4 points of damage.",
   "[Fri Jul 17 18:00:12 2026] You have slain a gnoll!",
-].join("\n");
+];
+
+const LOG_LINES = LOG.join("\n");
+
+/**
+ * The instant a log line's own bracketed stamp names. EverQuest writes its logs in the player's
+ * **local** time, so which UTC instant `[Fri Jul 17 18:00:10 2026]` is depends on the machine's
+ * zone — and a fight's key is built from exactly these stamps. A hardcoded `...Z` literal here is
+ * a fixture that only holds in the zone it was typed in: it matched on a UTC-7 machine and missed
+ * in CI's UTC, where the re-read then found no stored fight to put right. Derived, it agrees
+ * with the parser wherever the tests run.
+ */
+function logIso(line: string): string {
+  return new Date(line.slice(line.indexOf("[") + 1, line.indexOf("]"))).toISOString();
+}
 
 /** A userData dir whose `combat-history.json` carries `revision`, plus the log its fights name. */
 function stored(revision: number | undefined, logPath: string) {
@@ -49,8 +63,8 @@ function stored(revision: number | undefined, logPath: string) {
   // Written by hand rather than through the store, so the stamp is exactly what the test says.
   const history = createCombatHistory(dir, "run:old");
   const stats = {
-    startedAt: "2026-07-18T01:00:10.000Z",
-    endedAt: "2026-07-18T01:00:11.000Z",
+    startedAt: logIso(LOG[2]), // the fight's own boundaries: its first damage line...
+    endedAt: logIso(LOG[3]), // ...and its last, which is what its key is made of
     durationSec: 1,
     spanSec: 1,
     totalDealt: 34,
@@ -180,7 +194,7 @@ test("an unreadable log is skipped rather than taking the repair down with it", 
   const dir = stored(concernById("combat-history")!.revision - 1, good);
   const history = createCombatHistory(dir, "run:new");
   history.add(
-    { ...history.search("").fights[0].stats, startedAt: "2026-07-18T02:00:00.000Z", endedAt: "2026-07-18T02:00:01.000Z" },
+    { ...history.search("").fights[0].stats, startedAt: logIso("[Fri Jul 17 19:00:00 2026]"), endedAt: logIso("[Fri Jul 17 19:00:01 2026]") },
     null,
     bad,
     "login:2026-07-17T18:00:00",
