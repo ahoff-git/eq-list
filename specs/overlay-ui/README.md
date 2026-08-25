@@ -239,8 +239,9 @@ list, hunt, search, damage, session, settings.
     ([ADR 0135](../decisions/0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)). The rules are `src/shared/spawn-timers.ts` (pure + tested — the shortest-gap rule, the
     plausibility bounds, the window, the wording); the countdowns themselves belong to
     `electron/spawn-tracker.ts`, which persists a **due time** so a timer survives a restart and
-    raises the pop as an ordinary alert (`event: "spawn"`) through the same overlay as everything
-    else. **No figure is ever printed bare**: a learned interval is an *upper bound* from a sample,
+    raises the pop as an ordinary alert (`event: "spawn"`, or `event: "timer"` for a clock the
+    player made — same look, minus the claim that a mob spawned) through the same overlay as
+    everything else. **No figure is ever printed bare**: a learned interval is an *upper bound* from a sample,
     so `describeRespawn` words it as one ("at most 22m, from 3 gaps"), the same way a drop rate
     carries its kill count — and when the gaps **disagree** the range leads instead
     ("15m–45m, from 3 gaps") with a caveat naming the likely causes, since a lone figure gets camped

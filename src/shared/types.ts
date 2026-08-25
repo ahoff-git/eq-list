@@ -1909,11 +1909,14 @@ export interface CastAlertEvent {
   /**
    * Which prompt this is. A cast says "dispel, now"; a fade says "cast it again"; a line just
    * repeats what the game said; a **record** says well done, a **spawn** says a named you were
-   * timing is back, and a **loot** says something on your list has just dropped — the last three
+   * timing is back, a **timer** is a clock the player made reaching its end — which is *not* a spawn
+   * and must not claim to be one
+   * ([ADR 0135](../../specs/decisions/0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
+   * — and a **loot** says something on your list has just dropped — the last three
    * being the ones that aren't warnings. Absent means a cast, so an alert sent by an older build
    * still reads correctly.
    */
-  event?: "cast" | "fade" | "line" | "record" | "spawn" | "loot";
+  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
   /**

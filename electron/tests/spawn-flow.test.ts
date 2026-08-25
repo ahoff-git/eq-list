@@ -13,10 +13,12 @@
  * exercises none of this. A feature whose only evidence is its own unit tests is a feature nobody
  * has watched work.
  *
- * The three cases are the three ways players actually arrive at it:
+ * The cases are the ways players actually arrive at it:
  *   1. **the camper** — sits down, kills it twice, gets a timer for free;
  *   2. **the arriver** — walks up to a camp already in progress, with nothing on the board;
- *   3. **the refiner** — camps a placeholder, sees the figure disagree with itself, and corrects it.
+ *   3. **the refiner** — camps a placeholder, sees the figure disagree with itself, and corrects it;
+ *   4. **the camp that fights back** — the named kills the pet and the group-mate, whose deaths are
+ *      written exactly like a named's own ([ADR 0138](../../specs/decisions/0138-a-replayed-log-narrows-what-a-kill-proves.md)).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -363,9 +365,11 @@ test("watched log: an evening at a camp produces exactly the board it should", (
   const view = a.view();
   const names = view.known.map((k) => k.mob).sort();
 
-  // Two nameds and nothing else. The evening also contains 5 froglok tads, 5 undead knights, two
-  // deaths of another player and one of your own pet — every one of which is written in a shape
-  // this feature has to *not* mistake for a camp.
+  // Two nameds and nothing else. The evening also contains froglok tads, undead knights, a
+  // group-mate's kill, and **four deaths on your own side at the hands of the named itself** — two
+  // of your pet and two of a group-mate, eighteen minutes apart, which is the exact shape that used
+  // to be read as their own respawn (ADR 0138). Every one of them is written in a shape this feature
+  // has to *not* mistake for a camp.
   assert.deepEqual(names, ["Frenzied Ghoul", "Ghoul Lord"]);
 
   // Ghoul Lord: killed at 19:07:44, 19:25:44 and 19:43:44 — two clean 18-minute gaps.
@@ -506,4 +510,79 @@ test("flow: leaving the zone and coming back is not a difficulty change", () => 
     ].join("\n"),
   );
   assert.equal(a.view().running.length, 1, "a mob keeps respawning while you are elsewhere");
+});
+
+// ── Use case 4: the camp where the named fights back ──────────────────────────
+// Found by replaying a log rather than by reasoning. `named` + `killerNamed` was meant to read "a
+// person killed a named" — but **a named killing your pet or your group-mate fits it exactly**,
+// because a named has no article either. A replayed evening put `Kainos`s warder` and a group-mate
+// on the board, each with a learned twenty-minute respawn.
+
+/** A death where the *mob* did the killing, which is how the log writes your side losing. */
+const slainBy = (atMs: number, victim: string, killer: string) =>
+  `${stamp(atMs)} ${victim} has been slain by ${killer}!`;
+
+test("flow: a pet killed twice by the named is not a named", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      slainBy(T0 + 2 * MIN, "Kainos`s warder", "Ghoul Lord"),
+      slainBy(T0 + 22 * MIN, "Kainos`s warder", "Ghoul Lord"),
+    ].join("\n"),
+  );
+  assert.equal(rowFor(a.view(), "Kainos`s warder"), undefined, "the log's possessive says whose it is");
+  assert.equal(a.view().running.length, 0);
+});
+
+test("flow: a group-mate the log has seen killing something is not a named either", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      // One trash kill of theirs is all it takes: a thing that kills mobs is a person.
+      `${stamp(T0 + 1 * MIN)} a froglok tad has been slain by Bunnyslayer!`,
+      slainBy(T0 + 5 * MIN, "Bunnyslayer", "Ghoul Lord"),
+      slainBy(T0 + 25 * MIN, "Bunnyslayer", "Ghoul Lord"),
+    ].join("\n"),
+  );
+  assert.equal(rowFor(a.view(), "Bunnyslayer"), undefined);
+  assert.equal(a.view().running.length, 0, "a group-mate dying twice at a camp is not a respawn");
+});
+
+test("flow: and the named they were both killed by is still learned normally", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      `${stamp(T0 + 1 * MIN)} a froglok tad has been slain by Bunnyslayer!`,
+      slainBy(T0 + 5 * MIN, "Kainos`s warder", "Ghoul Lord"),
+      slainBy(T0 + 6 * MIN, "Bunnyslayer", "Ghoul Lord"),
+      // ...and then it dies, twice, to the group it beat up.
+      slain(T0 + 8 * MIN, "Ghoul Lord"),
+      slain(T0 + 28 * MIN, "Ghoul Lord"),
+    ].join("\n"),
+  );
+  const view = a.view();
+  assert.deepEqual(
+    view.known.map((k) => k.mob),
+    ["Ghoul Lord"],
+    "one row, and it is the mob that was actually camped",
+  );
+  assert.equal(rowFor(view, "Ghoul Lord")?.respawn?.seconds, 20 * 60);
+});
+
+test("flow: a bystander killing a named still teaches, since only the victim is in question", () => {
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      // Someguy kills trash as well, so the people rule knows them — and it must not stop the
+      // *named they killed* from being learned. Only a victim is ever excluded by it.
+      `${stamp(T0 + 1 * MIN)} an undead knight has been slain by Someguy!`,
+      `${stamp(T0 + 4 * MIN)} Frenzied Ghoul has been slain by Someguy!`,
+      `${stamp(T0 + 24 * MIN)} Frenzied Ghoul has been slain by Someguy!`,
+    ].join("\n"),
+  );
+  assert.equal(rowFor(a.view(), "Frenzied Ghoul")?.respawn?.seconds, 20 * 60);
 });

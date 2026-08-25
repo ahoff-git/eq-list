@@ -146,6 +146,10 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
       ? "🏆"
       : a.event === "spawn"
         ? "💀"
+        // A clock the player made, reaching its end. A skull on an egg timer is the same false
+        // claim its old wording made (ADR 0135) — the look is the spawn one, the icon is not.
+        : a.event === "timer"
+          ? "⏰"
         : a.event === "loot"
           ? "💰"
           : a.event === "line"

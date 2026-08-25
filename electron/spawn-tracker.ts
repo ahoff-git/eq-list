@@ -25,6 +25,7 @@ import { placeKey, placeName, samePlace } from "../src/shared/zones/place";
 import {
   learnRespawns,
   provenNamed,
+  remainingMs,
   respawnFor,
   floorFrom,
   MAX_CAMP_TIMERS,
@@ -357,6 +358,19 @@ export function createSpawnTracker({
   const announced = new Set<string>();
 
   /**
+   * Countdowns whose **window** moment was not ours to announce, but whose **by-time** still is.
+   *
+   * Padding as long as the interval opens the window at the very kill (`timerFrom` clamps it there),
+   * and treating that as "already spoken" left the timer silent for ever — no warning and no pop,
+   * which is the exact opposite of asking to be told early. So a timer armed into an open window
+   * keeps its by-time, and speaks then.
+   *
+   * In memory beside `announced`, and for the same reason: whether we have got round to saying a
+   * thing is about this session, where the due time is a fact about the world.
+   */
+  const deferred = new Set<string>();
+
+  /**
    * The zone as the log last wrote it, difficulty and all — the only way to notice the difficulty
    * changing, since every folded view of a zone deliberately calls the variants one place.
    */
@@ -381,7 +395,7 @@ export function createSpawnTracker({
    * — and asked apart, both callers walked all 5000 records twice to build the same `provenNamed`
    * set. The player's corrections sit on top of what the log proved.
    */
-  function read(): { isNamed: (key: string) => boolean; learned: Map<string, RespawnLearning> } {
+  function read(only?: string): { isNamed: (key: string) => boolean; learned: Map<string, RespawnLearning> } {
     const all = kills();
     const proven = provenNamed(all);
     const isNamed = (key: string) => state.said[key]?.named ?? proven.has(key);
@@ -389,6 +403,10 @@ export function createSpawnTracker({
       learnRespawns(all, isNamed, {
         relearnedAt,
         isDropped: (key, id) => !!state.droppedGaps[key]?.includes(id),
+        // Everything but the board itself wants **one** camp, and asking for all of them per kill is
+        // what made catching up on a gap in the log crawl — 32 seconds to replay an evening of 3000
+        // named kills, nearly all of it building gap lists for camps that hadn't changed.
+        only,
       }).map((l) => [l.key, l]),
     );
     return { isNamed, learned };
@@ -402,6 +420,7 @@ export function createSpawnTracker({
     const before = state.timers.length;
     state.timers = state.timers.filter((t) => spawnState(t, at) !== "stale");
     for (const id of announced) if (!state.timers.some((t) => t.id === id)) announced.delete(id);
+    for (const id of deferred) if (!state.timers.some((t) => t.id === id)) deferred.delete(id);
     return state.timers.length !== before;
   }
 
@@ -423,14 +442,30 @@ export function createSpawnTracker({
     if (!state.notify[timer.key]) return;
     const settings = getSettings();
     if (!settings.enabled) return;
+    // A clock the player made is **not** a spawn and must not word itself as one: "💀 Boat to
+    // Butcherblock is up" is a claim about a mob that does not exist (ADR 0135). It keeps the spawn
+    // *look* — the same green, corner and lingering banner suit news either way — and only the
+    // sentence and the icon change.
+    const custom = kindOf(timer.key) === "custom";
+    // "— somewhere", only when there is a somewhere. A timer needn't be anywhere and a hand-added
+    // mob needn't either, and both used to end the sentence on a dash with nothing after it.
+    const where = timer.place ? ` — ${timer.place}` : "";
+    // Worded from **this moment**, not from the fact that padding exists: a padded timer whose first
+    // word comes at or after its by-time is not "due soon", it is up. That is the ordinary case for a
+    // window that opened before we were watching, and now also for the by-time a lead deferred.
+    const early = remainingMs(timer, at) > 0;
     raise({
       caster: "",
       spell: timer.mob,
       at: new Date(at).toISOString(),
-      event: "spawn",
+      event: custom ? "timer" : "spawn",
       // The place, because the same named in two zones is two timers and the banner has to say which.
       target: timer.place,
-      message: timer.lead ? `${timer.mob} due soon — ${timer.place}` : undefined,
+      message: custom
+        ? `${timer.mob} — ${early ? "nearly up" : "time's up"}${where}`
+        : early
+          ? `${timer.mob} due soon${where}`
+          : undefined,
       // A saved style if this timer wears one, the defaults otherwise. Resolved here, at the moment
       // of the alert, and sent *with* it — the overlay only knows the defaults, so a per-timer look
       // could reach the screen no other way.
@@ -445,8 +480,18 @@ export function createSpawnTracker({
    * Has this timer reached the moment it should speak? That's the **window opening**, not the
    * by-time: with padding set, the whole point is to hear about it early, and with none the two are
    * the same instant.
+   *
+   * Named states rather than "anything but waiting", because two of the other three are not moments
+   * to speak at all. **Stale** is the one that bit: a timer whose grace ran out while the process was
+   * frozen — a closed laptop, a suspended machine, a sweep that simply didn't get to run — reached
+   * the next sweep past its by-time and popped a banner about a mob that came and went an hour ago.
+   * The arm-time check never saw it, because when it was armed it was still waiting. And **alive** is
+   * a mob you are looking at, which the panel already says out loud.
    */
-  const speaking = (timer: SpawnTimer, at: number) => spawnState(timer, at) !== "waiting";
+  const speaking = (timer: SpawnTimer, at: number) => {
+    const phase = spawnState(timer, at);
+    return phase === "window" || phase === "up";
+  };
 
   /**
    * What a row is about: a mob's camp, unless the player added it as a plain timer (ADR 0135).
@@ -469,7 +514,10 @@ export function createSpawnTracker({
     if (!doomed.length) return;
     const gone = new Set(doomed.map((t) => t.id));
     state.timers = state.timers.filter((t) => !gone.has(t.id));
-    for (const id of gone) announced.delete(id);
+    for (const id of gone) {
+      announced.delete(id);
+      deferred.delete(id);
+    }
   }
 
   /** The lowest slot this camp isn't using. Reused as clocks come and go — see `timerId`. */
@@ -505,8 +553,17 @@ export function createSpawnTracker({
       const byAge = [...mine].sort((a, b) => Date.parse(a.killedAt) - Date.parse(b.killedAt));
       drop(byAge.slice(0, mine.length - MAX_CAMP_TIMERS));
     }
-    if (speaking(timer, now())) announced.add(timer.id);
-    else announced.delete(timer.id);
+    const at = now();
+    if (speaking(timer, at)) {
+      announced.add(timer.id);
+      // A by-time still ahead of us is a moment nobody has had yet, so it is kept rather than
+      // swallowed with the window — see `deferred`.
+      if (remainingMs(timer, at) > 0) deferred.add(timer.id);
+      else deferred.delete(timer.id);
+    } else {
+      announced.delete(timer.id);
+      deferred.delete(timer.id);
+    }
   }
 
   /**
@@ -531,6 +588,40 @@ export function createSpawnTracker({
     if (!timer) return null;
     arm(timer, mode);
     return timer;
+  }
+
+  /**
+   * Bring this camp's running clocks back into line with what is now known about it.
+   *
+   * Every clock is **derived** from a death and the camp's current figure, so anything that moves the
+   * figure has to move the clock with it — otherwise the board is counting down to a number the panel
+   * beside it no longer shows. That was three separate bugs: a typed figure that changed the row and
+   * not the countdown; a forgotten sighting that put the figure back and left the clock on the
+   * tightened one; and re-padding, which re-armed from the *timer* rather than from the evidence and
+   * so silently dropped a measured floor — opening a window before a moment the player had proved the
+   * mob was still down.
+   *
+   * It re-derives from each clock's own death, so a placeholder camp's several clocks each keep their
+   * own start, and `seenAt` is carried over: re-shaping a window must not **un-see** a mob (the
+   * sighting is an observation and outranks the countdown until it dies again).
+   *
+   * With **no figure left** — everything measured thrown away, and nothing typed — the clocks go.
+   * A countdown to a figure nobody has any more is the blank clock `start` already refuses to create.
+   */
+  function reshape(key: string): void {
+    const mine = clocks(key);
+    if (!mine.length) return;
+    const { learned } = read(key);
+    const respawn = respawnFor(learned.get(key), state.stated[key], state.seen[key], state.floor[key]);
+    if (!respawn) {
+      drop(mine);
+      return;
+    }
+    for (const timer of mine) {
+      const fresh = timerFrom(timer, timer.killedAt, respawn, state.lead[key], timerSlot(timer.id));
+      // Armed as a queue: this is one clock being re-shaped, not the camp being restarted.
+      if (fresh) arm(timer.seenAt ? { ...fresh, seenAt: timer.seenAt } : fresh, "queue");
+    }
   }
 
   /**
@@ -567,8 +658,12 @@ export function createSpawnTracker({
   function sweep(): void {
     const at = now();
     for (const timer of state.timers) {
-      if (announced.has(timer.id) || !speaking(timer, at)) continue;
+      // A deferred timer has already been marked announced (its window opened before we were told),
+      // and is owed its by-time — so that moment is asked about first, before the usual gate.
+      const owed = deferred.has(timer.id) && remainingMs(timer, at) <= 0;
+      if (!owed && (announced.has(timer.id) || !speaking(timer, at))) continue;
       announced.add(timer.id);
+      deferred.delete(timer.id);
       announce(timer, at);
       log.debug("spawn window open", {
         mob: timer.mob,
@@ -592,7 +687,12 @@ export function createSpawnTracker({
   {
     const at = now();
     refreshRepeats(at);
-    for (const timer of state.timers) if (speaking(timer, at)) announced.add(timer.id);
+    for (const timer of state.timers) {
+      if (!speaking(timer, at)) continue;
+      announced.add(timer.id);
+      // Restored mid-window with the pop still to come: that moment hasn't happened yet either.
+      if (remainingMs(timer, at) > 0) deferred.add(timer.id);
+    }
     if (prune(at)) saver.save();
     log.debug("restored", state.timers.length, "spawn timers");
   }
@@ -605,7 +705,7 @@ export function createSpawnTracker({
       const key = timerKey(mob, zone);
       // The kill that started this is already in the log by the time we're called, so what we learn
       // here includes it — which is what makes the second kill of a named produce a timer at once.
-      const { isNamed, learned: allLearned } = read();
+      const { isNamed, learned: allLearned } = read(key);
       // `named` is this line's own evidence; the log's history and the player's word are the rest.
       if (!named && !isNamed(mobKey(mob))) return;
 
@@ -696,6 +796,10 @@ export function createSpawnTracker({
       // allowed to be nonsense, since a zero would make a mob permanently due.
       if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) delete state.stated[key];
       else state.stated[key] = Math.round(seconds);
+      // The figure a clock is counting to has just changed, so the clock has to. Same argument as
+      // `pad`: you type this *while waiting for the pop you want it for*, and a row reading "20m
+      // (you set this)" beside a countdown still running to 15m is the app disagreeing with itself.
+      reshape(key);
       changed();
     },
 
@@ -705,16 +809,7 @@ export function createSpawnTracker({
       // Re-arm what's already counting down. Padding is nearly always set *while waiting for the
       // pop you want it for* — "this one keeps beating me to it" is the thought that produces it —
       // so leaving the running timer on the old window would ignore the request until next time.
-      // Every clock of the camp, since padding is the camp's and a placeholder cycle has several.
-      for (const running of clocks(key)) {
-        const fresh = timerFrom(running, running.killedAt, running, state.lead[key], timerSlot(running.id));
-        // `seenAt` is carried over, because re-shaping a window must not **un-see** a mob. A
-        // sighting is an observation and outranks the countdown until the mob dies again; a fresh
-        // timer has none, so arming one wholesale turned a row that read ALIVE back into a guess
-        // about a mob the player is standing in front of, and lost the sighting's moment with it.
-        // Armed as a queue: this is one clock being reshaped, not the camp being restarted.
-        if (fresh) arm(running.seenAt ? { ...fresh, seenAt: running.seenAt } : fresh, "queue");
-      }
+      reshape(key);
       changed();
     },
 
@@ -774,7 +869,7 @@ export function createSpawnTracker({
 
     markDead(key) {
       const at = now();
-      const { learned } = read();
+      const { learned } = read(key);
       const known = learned.get(key);
       const running = clockOf(key);
       const added = state.added[key];
@@ -857,11 +952,16 @@ export function createSpawnTracker({
         delete timer.seenAt;
         announced.delete(timer.id);
       }
+      // A floor can only ever hold the window shut *later*, and you are saying this at the moment it
+      // applies — so this rarely moves anything today. It is here because the rule is "the clocks
+      // follow the evidence", and an exception nobody can see is how the next one gets missed.
+      reshape(key);
       changed();
     },
 
     forgetFloor(key) {
       delete state.floor[key];
+      reshape(key);
       changed();
     },
 
@@ -870,6 +970,7 @@ export function createSpawnTracker({
       const next = dropped ? [...new Set([...current, id])] : current.filter((g) => g !== id);
       if (next.length) state.droppedGaps[key] = next;
       else delete state.droppedGaps[key];
+      reshape(key);
       changed();
     },
 
@@ -916,11 +1017,15 @@ export function createSpawnTracker({
       // The cutoff supersedes them: a gap that no longer counts needs no exclusion of its own,
       // and keeping one would quietly re-exclude a gap measured *after* the reset.
       delete state.droppedGaps[key];
+      // What the clocks were counting to has just gone. Whatever is left — a figure you typed, or
+      // nothing at all — is what they answer to now.
+      reshape(key);
       changed();
     },
 
     forgetSightings(key) {
       delete state.seen[key];
+      reshape(key);
       changed();
     },
 

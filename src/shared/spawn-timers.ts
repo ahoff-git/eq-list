@@ -61,6 +61,7 @@ import {
   type Confidence,
   type SampleScale,
 } from "./estimates";
+import { isOwnedName } from "./combat-parser";
 import { formatDuration, parseDuration, UNIT_SECONDS } from "./duration";
 import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
@@ -120,6 +121,18 @@ export const ERRATIC_RATIO = 1.5;
  * longer than its own respawn.
  */
 export const OVERDUE_GRACE_SECONDS = 30 * SECONDS_PER_MINUTE;
+
+/**
+ * How many measured gaps a camp lists. The figures themselves are computed over **all** of them —
+ * this bounds only what is carried to the screen, and it has to be bounded: a camp kept for a month
+ * reaches hundreds, every one of which crosses the IPC boundary on every read and renders as a row
+ * nobody scrolls to. Measured on a replayed evening: twelve cycles of one camp produced 124.
+ *
+ * The **shortest** are kept, because the shortest gap *is* the figure and is what anyone opening the
+ * list came to check — plus the longest (the other end of the range the caveat is about) and every
+ * gap the player has thrown out, since an exclusion you can't see is one you can't undo.
+ */
+export const MAX_LISTED_GAPS = 24;
 
 /** The longest lead we'll accept — past this the "warning" covers the whole respawn. */
 export const MAX_LEAD_SECONDS = 2 * SECONDS_PER_HOUR;
@@ -219,6 +232,24 @@ export interface RespawnGap {
   dropped: boolean;
 }
 
+/**
+ * The gaps a camp carries to the screen: the shortest `MAX_LISTED_GAPS`, plus the longest, plus
+ * every one the player has thrown out.
+ *
+ * Order is the caller's (shortest first) and is preserved, so the list still reads as it did. The
+ * *figures* are unaffected — `shortestSeconds`, `longestSeconds` and `samples` are computed over
+ * every gap, and only the listing is bounded.
+ */
+function listedGaps(gaps: RespawnGap[]): RespawnGap[] {
+  if (gaps.length <= MAX_LISTED_GAPS) return gaps;
+  const keep = new Set(gaps.slice(0, MAX_LISTED_GAPS));
+  // The other end of the range, so a wide spread can be judged — and dropped — from what is shown.
+  const longest = gaps.reduce((a, b) => (b.seconds > a.seconds ? b : a));
+  keep.add(longest);
+  for (const gap of gaps) if (gap.dropped) keep.add(gap);
+  return gaps.filter((gap) => keep.has(gap));
+}
+
 /** The identity of a gap: the pair of kills it lies between. */
 export function gapId(beforeAt: number, afterAt: number): string {
   return `${new Date(beforeAt).toISOString()}|${new Date(afterAt).toISOString()}`;
@@ -263,6 +294,15 @@ export interface LearnOptions {
   relearnedAt?: (key: string) => number | undefined;
   /** Has the player thrown this particular gap out? */
   isDropped?: (key: string, id: string) => boolean;
+  /**
+   * Learn **one camp** rather than every one, by timer key.
+   *
+   * A kill only ever changes its own camp, and re-deriving all of them per kill is what made
+   * catching up on a gap in the log crawl: replaying an evening of 3000 named kills spent 32 seconds
+   * building gap lists for camps that had not changed. The answer for one key is identical either
+   * way — this only skips the work nobody asked for.
+   */
+  only?: string;
 }
 
 /**
@@ -274,9 +314,25 @@ export interface LearnOptions {
  * `named: false` is a real answer and is simply not proof of the thing we're collecting.
  */
 export function provenNamed(kills: KillRecord[]): Set<string> {
+  // **Who in this log is a person.** Anyone the log shows killing something *with an article* has
+  // killed a mob, and a thing that kills mobs is a player or a pet — never the named we are trying
+  // to recognise. Read from the same records, because it is the log that says so and nothing else
+  // has to be injected for it to.
+  //
+  // This is the hole the killer test left, and it is not a rare one: `named` + `killerNamed` was
+  // meant to read "a person killed a named", but a **named killing your pet or your group-mate**
+  // fits it exactly — a named has no article either. Replaying a real camp put `Kainos`s warder`
+  // and a group-mate on the board with a learned twenty-minute respawn.
+  const people = new Set<string>();
+  for (const k of kills) if (k.killer && k.named === false) people.add(mobKey(k.killer));
+
   const named = new Set<string>();
   for (const k of kills) {
     if (!k.named) continue;
+    // A pet says so in its own name, whoever killed it: the log's possessive is the one ownership
+    // it ever states, so this needs no registry and works for a stranger's pet too.
+    if (isOwnedName(k.mob)) continue;
+    if (people.has(mobKey(k.mob))) continue;
     // **The victim's name is only half the answer.** The log reports every death in earshot, and a
     // player, a pet and a boss are all written without an article — so "Bunnyslayer has been slain
     // by a froglok shaman!" reads exactly like a named dying. What separates them is who did the
@@ -329,15 +385,22 @@ export function learnRespawns(
   isNamed: (key: string) => boolean,
   options: LearnOptions = {},
 ): RespawnLearning[] {
-  const { relearnedAt, isDropped } = options;
+  const { relearnedAt, isDropped, only } = options;
   const groups = new Map<string, { mob: string; zone: string; kills: { at: number; zone: string }[] }>();
 
   for (const k of kills) {
     if (!k.zone || k.sharedBy) continue;
-    if (!isNamed(mobKey(k.mob))) continue;
+    const mob = mobKey(k.mob);
+    // Asked for one camp, the **cheap half** of its key decides first: naming a place resolves it
+    // against the gazetteer, and a record about another mob has no business paying for that. At a
+    // camp with twenty nameds this is nineteen records in twenty skipped before the expensive part —
+    // measured at 2.9ms a call before, 0.4ms after, on a 3000-kill log.
+    if (only !== undefined && !timerForMob(only, mob)) continue;
+    if (!isNamed(mob)) continue;
     const at = Date.parse(k.at);
     if (Number.isNaN(at)) continue;
     const key = timerKey(k.mob, k.zone);
+    if (only !== undefined && key !== only) continue;
     const group = groups.get(key);
     // The zone is carried **as the log wrote it**, difficulty and all, even though the group folds
     // the variants together — see the gap rule below for why the raw string has to survive.
@@ -393,7 +456,7 @@ export function learnRespawns(
       longestSeconds: longest,
       samples,
       lastKillAt: new Date(group[group.length - 1].at).toISOString(),
-      gaps,
+      gaps: listedGaps(gaps),
     });
   }
 
@@ -725,7 +788,24 @@ export function spawnState(timer: Pick<SpawnTimer, "watchFrom" | "dueAt" | "seen
   // window opens, and it keeps saying so long after the countdown would have given up. That is the
   // claim-versus-observation rule this whole app runs on — the estimate is what we *guessed*, and
   // the player standing there looking at the mob is what we *know*.
-  if (timer.seenAt && !Number.isNaN(Date.parse(timer.seenAt))) return "alive";
+  //
+  // **But not forever.** Measured from the sighting rather than the by-time, and with the same grace
+  // an overdue timer gets, because the argument is the same one: half an hour after you said "it's
+  // up", either you killed it (which restarts the clock) or you left, and a row that can never age
+  // out sat on the *Coming up* board a month later. What the sighting **taught** is untouched — that
+  // lives in the camp's evidence, not on this clock.
+  if (timer.seenAt) {
+    const seen = Date.parse(timer.seenAt);
+    if (!Number.isNaN(seen)) {
+      const by = Date.parse(timer.dueAt);
+      // The **later** of the two, which is what keeps both halves of the rule true: seeing a mob can
+      // never make its row leave sooner than the countdown alone would have (that would be perverse
+      // — the row disappearing *because* you looked at it), and a sighting after the by-time carries
+      // the row on past where the clock gave up, which is 0097's point.
+      const from = Number.isNaN(by) ? seen : Math.max(seen, by);
+      return nowMs - from <= OVERDUE_GRACE_SECONDS * MS_PER_SECOND ? "alive" : "stale";
+    }
+  }
   const due = Date.parse(timer.dueAt);
   if (Number.isNaN(due)) return "stale"; // unreadable is not a countdown we can honour
   const open = Date.parse(timer.watchFrom);

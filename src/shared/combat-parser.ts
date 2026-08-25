@@ -70,6 +70,23 @@ export function isYours(name: string, player: string): boolean {
 }
 
 /**
+ * Is this name the log's own **possessive** form — `<Owner>`s warder` — i.e. somebody's pet rather
+ * than a mob?
+ *
+ * The same fact `isTheirs` reads, asked without caring *whose*: EQ never writes a mob with an owner,
+ * so this shape is proof the thing named is a pet. That matters where a name is being classified
+ * rather than attributed — a pet slain by a named reads exactly like a named slain by a person, and
+ * the article test cannot tell them apart
+ * ([ADR 0092](../../specs/decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
+ *
+ * The backtick is what makes it safe: EQ's own proper nouns use it as a letter (`Cazic`Thule`), but
+ * never followed by `s ` — the possessive is always `` `s `` plus the thing owned.
+ */
+export function isOwnedName(name: string): boolean {
+  return /`s\s\S/.test(name);
+}
+
+/**
  * True if `name` is `owner` or something of theirs — "<Owner>`s warder" (a backtick, not an
  * apostrophe), which is the only ownership the log ever states.
  *

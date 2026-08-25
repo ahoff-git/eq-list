@@ -38,6 +38,12 @@ export default function SpawnOverlay() {
   // Resolved once per timer — the position groups it and the colour marks it, and asking twice
   // would be two chances for the two to disagree.
   const looks = pinned.map((timer) => ({ timer, style: alertStyle(ca, { styleId: timer.styleId }) }));
+  // `onScreen` is a *camp's* setting, so a placeholder camp pins every clock it is running — and
+  // three rows reading the same name is a wall of one word. The slot is what tells them apart on the
+  // panel (ADR 0135), and it has to here too, for the same reason and only where it disambiguates.
+  const many = new Set(
+    pinned.filter((t, i) => pinned.some((other, j) => j !== i && other.key === t.key)).map((t) => t.key),
+  );
   // One stack per position, so timers wearing different looks land in different corners.
   const stacks = new Map<AlertPositionValue, typeof looks>();
   for (const look of looks) stacks.set(look.style.position, [...(stacks.get(look.style.position) ?? []), look]);
@@ -50,7 +56,13 @@ export default function SpawnOverlay() {
         return (
           <div className={`overlay-at spawn-hud no-drag ${place.className}`} style={place.style} key={position}>
             {stack.map(({ timer, style }) => (
-              <HudRow key={timer.id} timer={timer} now={now} color={style.color} />
+              <HudRow
+                key={timer.id}
+                timer={timer}
+                now={now}
+                color={style.color}
+                several={many.has(timer.key)}
+              />
             ))}
           </div>
         );
@@ -73,7 +85,17 @@ const HUD: Record<RunningSpawn["state"], { clock: string; cls: string }> = {
  * same thing its banner will be — but the state still owns the clock, because "up" and "waiting"
  * have to stay tellable apart at a glance whatever colour the player chose.
  */
-function HudRow({ timer, now, color }: { timer: RunningSpawn; now: number; color: string }) {
+function HudRow({
+  timer,
+  now,
+  color,
+  several,
+}: {
+  timer: RunningSpawn;
+  now: number;
+  color: string;
+  several: boolean;
+}) {
   const phase = HUD[timer.state];
   // The one word that can't be shared: nothing spawned, so a timer the player made says DONE where
   // a mob says UP (ADR 0135). An override rather than a second table, because every other state
@@ -82,7 +104,10 @@ function HudRow({ timer, now, color }: { timer: RunningSpawn; now: number; color
   return (
     <div className={`spawn-hud-row ${phase.cls}`} style={{ borderLeftColor: color }}>
       <span className="shr-clock">{clock || formatCountdown(countdownMs(timer, now))}</span>
-      <span className="shr-name">{timer.mob}</span>
+      <span className="shr-name">
+        {timer.mob}
+        {several && <em className="spawn-slot"> #{timer.slot}</em>}
+      </span>
     </div>
   );
 }

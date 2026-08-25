@@ -362,9 +362,23 @@ test("alive outranks the clock in both directions", () => {
   h.tick(1000); // still waiting
   h.tracker.markUp(KEY);
   assert.equal(h.tracker.view().running[0].state, "alive", "up before the window: the mob doesn't care");
-  // ...and it stays alive long past when a countdown would have gone stale, because it is up.
-  h.tick(1800 + 60 * 60);
+  // ...and seeing it early never makes the row leave *sooner* than the clock alone would have.
+  h.tick(1800 + 29 * 60);
   assert.equal(h.tracker.view().running[0].state, "alive");
+});
+
+test("a sighting carries the row past where the countdown gave up, and then lets it go", () => {
+  const h = timed(); // due at 1800
+  h.tick(3000); // already overdue, and you have just spotted it
+  h.tracker.markUp(KEY);
+  h.tick(3600 + 60);
+  assert.equal(
+    h.tracker.view().running[0].state,
+    "alive",
+    "the countdown's own grace has run out; the sighting is what is holding the row",
+  );
+  h.tick(3000 + 31 * 60);
+  assert.equal(h.tracker.view().running.length, 0, "but a sighting is not a lease on the board");
 });
 
 test("an alive mob never pops a banner about being due", () => {
@@ -1235,4 +1249,175 @@ test("an app shut for hours comes back on the next cycle, saying nothing about t
   assert.equal(running.length, 1);
   assert.ok(Date.parse(running[0].dueAt) > T0 + 5000 * 1000, "ahead of us, not eight cycles overdue");
   assert.equal(second.raised.length, 0, "a banner about the past is the opposite of the point");
+});
+
+// ── the board has to agree with the evidence beside it ────────────────────────
+
+test("re-padding keeps the floor you proved, rather than opening the window before it", () => {
+  const h = timed(); // killed at 900, 900s learned, due at 1800
+  h.tick(1500);
+  h.tracker.markNotUp(KEY); // proof: still down 600s after it died
+  h.tracker.pad(KEY, 600); // and this alone would open the window at 1200
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.dueAt, iso(1800), "the by-time is untouched — a floor is not an upper bound");
+  assert.equal(timer.watchFrom, iso(1500), "the floor overrules the padding here, as it does at the arm");
+});
+
+test("typing your own figure re-shapes the countdown it is about", () => {
+  const h = timed();
+  h.tracker.state(KEY, 1200);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.seconds, 1200);
+  assert.equal(timer.source, "stated");
+  assert.equal(timer.dueAt, iso(2100), "counted from the death it was armed with — 900 + 1200");
+});
+
+test("clearing it puts the clock back on what was learned", () => {
+  const h = timed();
+  h.tracker.state(KEY, 1200);
+  h.tracker.state(KEY, null);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.seconds, 900);
+  assert.equal(timer.dueAt, iso(1800));
+});
+
+test("forgetting a mis-clicked sighting puts the countdown back as well as the figure", () => {
+  const h = timed();
+  h.tick(1200);
+  h.tracker.markUp(KEY); // a 300s sighting, which tightens the estimate to 300s
+  // ...and the next kill arms a clock on that tightened figure, which is where a mis-click hurts.
+  h.kills.push(record(MOB, 1800));
+  h.tracker.noteKill(MOB, ZONE, iso(1800), true);
+  assert.equal(h.tracker.view().running[0].seconds, 300);
+  assert.equal(h.tracker.view().running[0].dueAt, iso(2100));
+
+  h.tracker.forgetSightings(KEY);
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.seconds, 900, "the figure went back, and so must the clock resting on it");
+  assert.equal(timer.dueAt, iso(2700));
+});
+
+test("re-shaping a window doesn't un-see a mob you are looking at", () => {
+  const h = timed();
+  h.tick(1200);
+  h.tracker.markUp(KEY);
+  h.tracker.state(KEY, 1200); // the figure moves under a row that reads ALIVE
+  assert.equal(h.tracker.view().running[0].state, "alive", "a sighting outranks the clock until it dies again");
+});
+
+test("a repeating timer picks up a length you changed", () => {
+  const h = harness();
+  const key = h.tracker.add(CUSTOM, "", 600, "custom")!;
+  h.tracker.repeat(key, true);
+  h.tracker.markDead(key);
+  h.tracker.state(key, 300);
+  assert.equal(h.tracker.view().running[0].dueAt, iso(300), "the clock in front of you, not the next one");
+  h.tick(305);
+  assert.equal(h.tracker.view().running[0].dueAt, iso(600), "and it goes round on the new length");
+});
+
+test("a countdown resting on a figure nobody has any more is not left running", () => {
+  const h = harness(); // no kills at all: the typed figure is the only thing behind it
+  const key = h.tracker.add("Fippy Darkpaw", ZONE, 600, "mob")!;
+  h.tracker.markDead(key);
+  assert.equal(h.tracker.view().running.length, 1);
+  h.tracker.state(key, null);
+  assert.equal(h.tracker.view().running.length, 0, "a clock counting to nothing is a clock pretending");
+});
+
+test("relearning takes the countdown it can no longer justify, and keeps the one it can", () => {
+  const h = timed();
+  h.tick(2000);
+  h.tracker.relearn(KEY);
+  assert.equal(h.tracker.view().running.length, 0);
+
+  const kept = timed();
+  kept.tick(2000);
+  kept.tracker.state(KEY, 1200); // yours survives a relearn, so the clock does too
+  kept.tracker.relearn(KEY);
+  assert.equal(kept.tracker.view().running.length, 1);
+  assert.equal(kept.tracker.view().running[0].seconds, 1200);
+});
+
+// ── what a pop says (ADR 0135) ───────────────────────────────────────────────
+
+test("a timer that finishes says its time is up, and claims nothing about a mob", () => {
+  const h = harness();
+  const key = h.tracker.add(CUSTOM, "", 600, "custom")!;
+  h.tracker.notify(key, true);
+  h.tracker.markDead(key);
+  h.tick(601);
+  assert.equal(h.raised.length, 1);
+  const alert = h.raised[0];
+  assert.equal(alert.event, "timer", "not a spawn: nothing spawned");
+  assert.match(alert.message ?? "", /time.s up/i);
+  assert.doesNotMatch(alert.message ?? "", /[-—]\s*$/, "and no separator with nothing after it");
+});
+
+test("a place-less early warning doesn't trail off into a dash", () => {
+  const h = harness();
+  const key = h.tracker.add("Fippy Darkpaw", "", 600, "mob")!;
+  h.tracker.notify(key, true);
+  h.tracker.pad(key, 60);
+  h.tracker.markDead(key);
+  h.tick(541);
+  assert.equal(h.raised.length, 1);
+  assert.equal(h.raised[0].message, "Fippy Darkpaw due soon");
+});
+
+test("...and still says where, when there is a where", () => {
+  const h = noisy();
+  h.tracker.pad(KEY, 60);
+  h.tick(1741);
+  assert.equal(h.raised.length, 1);
+  assert.equal(h.raised[0].message, `${MOB} due soon — ${ZONE}`);
+});
+
+// ── padding must not swallow the one thing it was asked for ──────────────────
+
+test("asking to be warned as early as the timer is long still gets told", () => {
+  // The lead is clamped to the interval (a window opening before the kill says nothing), so the
+  // window opens at the very kill — and treating that as "already announced" left the timer silent
+  // for ever: no warning, and no pop either.
+  const h = noisy();
+  h.tracker.pad(KEY, 900);
+  h.tracker.markDead(KEY); // armed now, window open now, due in 900s
+  assert.equal(h.tracker.view().running[0].state, "window");
+  h.tick(600);
+  assert.equal(h.raised.length, 0, "nothing to say yet — the by-time is still ahead");
+  h.tick(901);
+  assert.equal(h.raised.length, 1, "and it speaks when the mob is actually due");
+  assert.equal(h.raised[0].message, undefined, "worded as the pop it is, not as a warning");
+});
+
+test("a padded timer speaking at its by-time doesn't claim to be early", () => {
+  const h = noisy();
+  h.tracker.pad(KEY, 300);
+  h.tracker.markDead(KEY);
+  // Nothing swept while the window was open — the app was busy, or asleep — so the first word
+  // about this timer comes when it is already up.
+  h.tick(901);
+  assert.equal(h.raised.length, 1);
+  assert.equal(h.raised[0].message, undefined, "'due soon' about something already due is a lie");
+});
+
+test("a kill replayed from last night is still never announced", () => {
+  // The rule the deferred by-time must not break: a pop is not owed for a moment long past.
+  const h = noisy();
+  h.tracker.pad(KEY, 900);
+  h.tick(100_000);
+  h.tracker.noteKill(MOB, ZONE, iso(90_000), true); // died hours ago, by-time long gone
+  h.tick(100_001);
+  assert.equal(h.raised.length, 0);
+});
+
+test("a mob you marked up leaves the running board instead of sitting there for ever", () => {
+  const h = timed();
+  h.tick(1500);
+  h.tracker.markUp(KEY);
+  assert.equal(h.tracker.view().running.length, 1);
+  h.tick(1500 + 24 * 3600);
+  assert.equal(h.tracker.view().running.length, 0, "a day-old sighting is not a countdown");
+  // What it *taught* is not lost with it — that is the camp's evidence, not the clock's.
+  assert.equal(h.tracker.view().known[0].seen?.seconds, 600);
 });

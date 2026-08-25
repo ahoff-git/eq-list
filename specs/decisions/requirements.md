@@ -440,6 +440,33 @@ reading like a measurement, and they are shared code
   named, may repeat, rolls forward rather than coming back overdue, and wears none of a mob's evidence
   controls. Which kind it is, is **asked** — defaulted from your own log's vocabulary, never inferred
   silently. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
+- **A running countdown is derived, so it follows the evidence.** Anything that moves a camp's figure
+  — a typed value, a cleared one, a forgotten sighting or floor, a dropped gap, a relearn, fresh
+  padding — re-shapes the clocks already running, from each clock's own death, carrying any sighting
+  over. With no figure left the clocks go: a countdown to a figure nobody has is the blank clock the
+  feature already refuses to create. ([0094](./0094-a-spawn-timer-is-a-window-not-an-instant.md),
+  [0097](./0097-a-sighting-is-the-tightest-evidence-there-is.md), [0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
+- **A pet and a person are never nameds.** A pet says so in the log's own possessive
+  (`<Owner>`s warder`); a person is anyone the log shows killing something *with an article*. Both are
+  subtracted when the question is asked, so proof arriving late still applies to a death that came
+  early — without which a named that kills your pet or your group-mate puts them on the board with a
+  learned respawn. ([0138](./0138-a-replayed-log-narrows-what-a-kill-proves.md))
+- **A sighting holds its row for a grace after the later of the by-time and the sighting.** Seeing a
+  mob never makes its row leave sooner than the clock alone would; a sighting after the by-time
+  carries it past where the countdown gave up; and neither keeps it there for ever. What the sighting
+  taught is kept regardless. ([0097](./0097-a-sighting-is-the-tightest-evidence-there-is.md),
+  [0138](./0138-a-replayed-log-narrows-what-a-kill-proves.md))
+- **A pop is owed for a moment, and a missed moment is not owed.** A timer already stale when it is
+  first looked at says nothing — the process was frozen, not the mob — while a **by-time still ahead**
+  is a moment nobody has had yet, so padding as long as the interval defers the pop rather than
+  swallowing it. ([0092](./0092-a-named-s-respawn-is-learned-from-your-own-kills.md),
+  [0138](./0138-a-replayed-log-narrows-what-a-kill-proves.md))
+- **A kill re-derives its own camp, not every camp**, and a camp lists a bounded number of gaps while
+  counting all of them. Both are what makes catching up on a log gap and camping for a month cost what
+  one camp costs. ([0138](./0138-a-replayed-log-narrows-what-a-kill-proves.md))
+- **A hand-made timer's pop is a `timer`, not a `spawn`.** It keeps the spawn *look* — colour, corner,
+  lingering — and drops the claim: no skull, and no "is up" about something that never spawned. A
+  place-less timer's wording carries no dangling separator. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
 - **A repop drops the countdowns measuring from a death in that place, and nothing else.** A timer the
   player made is not about a mob. ([0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md))
 - **A duration has one syntax and a contract per feature** — the units that make sense and the ceiling

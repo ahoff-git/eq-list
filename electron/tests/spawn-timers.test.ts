@@ -11,8 +11,10 @@ import {
   erratic,
   formatCountdown,
   formatInterval,
+  gapId,
   learnRespawns,
   respawnCaveat,
+  MAX_LISTED_GAPS,
   MAX_RESPAWN_SECONDS,
   MIN_RESPAWN_SECONDS,
   OVERDUE_GRACE_SECONDS,
@@ -559,4 +561,101 @@ test("a day-scale figure reads in days", () => {
   assert.equal(formatInterval(86400), "1d");
   assert.equal(formatInterval(3 * 86400 + 4 * 3600), "3d 4h");
   assert.equal(formatInterval(86400 - 60), "23h 59m", "and below a day nothing changed");
+});
+
+// ── who is a named, when the named fights back ───────────────────────────────
+
+test("a pet is never a named, whoever killed it", () => {
+  // The log's possessive is the only ownership it states, and it states it about a pet — so this
+  // needs no registry and works for a stranger's pet as well as yours.
+  const proven = provenNamed([
+    kill("Kainos`s warder", 0, { named: true, killerNamed: true, killer: "Ghoul Lord" }),
+    kill("Ghoul Lord", 100, { named: true, killerNamed: true, killer: "Kainos" }),
+  ]);
+  assert.ok(!proven.has("kainos`s warder"));
+  assert.ok(proven.has("ghoul lord"), "and the mob that killed it still is one");
+});
+
+test("a person is never a named, and the log says who is one by what they kill", () => {
+  const proven = provenNamed([
+    // One kill of something with an article is the proof: mobs are what people kill.
+    kill("a froglok tad", 0, { named: false, killerNamed: true, killer: "Bunnyslayer" }),
+    kill("Bunnyslayer", 100, { named: true, killerNamed: true, killer: "Ghoul Lord" }),
+  ]);
+  assert.ok(!proven.has("bunnyslayer"));
+});
+
+test("the order it happened in doesn't matter — proof arriving later still applies", () => {
+  const late = provenNamed([
+    kill("Bunnyslayer", 0, { named: true, killerNamed: true, killer: "Ghoul Lord" }),
+    // ...and only afterwards does the log show them killing something.
+    kill("a froglok tad", 100, { named: false, killerNamed: true, killer: "Bunnyslayer" }),
+  ]);
+  assert.ok(!late.has("bunnyslayer"), "a name cannot be a named for the first half of an evening");
+});
+
+test("a named killed by a person is still exactly what the rule is for", () => {
+  const proven = provenNamed([kill("Ghoul Lord", 0, { named: true, killerNamed: true, killer: "Kainos" })]);
+  assert.ok(proven.has("ghoul lord"));
+});
+
+// ── learning one camp is learning that camp ──────────────────────────────────
+
+test("asking for one camp gives the same answer as asking for all of them", () => {
+  const kills = [
+    kill("Ghoul Lord", 0),
+    kill("Ghoul Lord", 900),
+    kill("Ghoul Lord", 2100),
+    kill("Frenzied Ghoul", 300),
+    kill("Frenzied Ghoul", 1500),
+  ];
+  const key = timerKey("Ghoul Lord", "Lower Guk");
+  const all = learnRespawns(kills, () => true).find((l) => l.key === key);
+  const one = learnRespawns(kills, () => true, { only: key });
+  assert.equal(one.length, 1, "and nothing about the camps that were not asked for");
+  assert.deepEqual(one[0], all);
+});
+
+// ── a camp's gap list is bounded ─────────────────────────────────────────────
+
+test("a long-camped mob lists a bounded number of gaps, and still counts them all", () => {
+  // 60 clean cycles, which a real camp reaches in an evening or two — measured at 124 on a replay.
+  const kills = Array.from({ length: 60 }, (_, i) => kill("Ghoul Lord", i * 900));
+  const [learned] = learnRespawns(kills, () => true);
+  assert.equal(learned.samples, 59, "every gap counts towards the sample");
+  assert.equal(learned.shortestSeconds, 900);
+  assert.ok(learned.gaps.length <= MAX_LISTED_GAPS + 1, `listed ${learned.gaps.length}`);
+});
+
+test("the shortest are what it keeps, with the other end of the range and anything thrown out", () => {
+  // Cycles at 900s, one long gap in the middle, and one dropped gap near the end.
+  const times = [0];
+  for (let i = 1; i <= 40; i += 1) times.push(times[i - 1] + (i === 20 ? 6000 : 900));
+  const kills = times.map((t) => kill("Ghoul Lord", t));
+  const key = timerKey("Ghoul Lord", "Lower Guk");
+  const droppedId = gapId(T0 + times[38] * 1000, T0 + times[39] * 1000);
+  const [learned] = learnRespawns(kills, () => true, { isDropped: (_k, id) => id === droppedId });
+  assert.equal(learned.shortestSeconds, 900);
+  assert.equal(learned.longestSeconds, 6000, "the figures are over every gap, not over the list");
+  assert.ok(
+    learned.gaps.some((g) => g.seconds === 6000),
+    "the long one is listed, so a wide spread can be judged and dropped from what is shown",
+  );
+  assert.ok(
+    learned.gaps.some((g) => g.id === droppedId && g.dropped),
+    "an exclusion you can't see is one you can't undo",
+  );
+});
+
+// ── a sighting does not keep a row for ever ──────────────────────────────────
+
+test("a mob you marked up leaves the board once the sighting has nothing left to say", () => {
+  const seen = { watchFrom: iso(0), dueAt: iso(0), seenAt: iso(600) };
+  assert.equal(spawnState(seen, T0 + 600_000), "alive");
+  assert.equal(spawnState(seen, T0 + (600 + OVERDUE_GRACE_SECONDS) * 1000), "alive", "the grace is inclusive");
+  assert.equal(
+    spawnState(seen, T0 + (600 + OVERDUE_GRACE_SECONDS + 1) * 1000),
+    "stale",
+    "an hour later you either killed it or left; a month later it is absurd",
+  );
 });
