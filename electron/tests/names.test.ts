@@ -5,7 +5,16 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { itemBaseName, itemGrade, zoneBaseName, zoneDifficulty, zoneDifficultyLabel, zoneKey, zoneMode } from "../../src/shared/names";
+import {
+  itemBaseName,
+  itemGrade,
+  zoneBaseName,
+  zoneDifficulty,
+  zoneDifficultyLabel,
+  zoneKey,
+  zoneMode,
+  zoneTierBaseName,
+} from "../../src/shared/names";
 
 test("an item's grade is read off the name and can be taken back off it", () => {
   assert.equal(itemGrade("Dragoon Dirk +2"), 2);
@@ -50,6 +59,97 @@ test("a difficulty can be said out loud, from the number alone", () => {
   assert.equal(zoneDifficultyLabel("Blackburrow 7"), "D7");
   // A ruleset with no number is the game's other wording, and it is all there is to say.
   assert.equal(zoneDifficultyLabel("Nagafen's Lair - Solo"), "Solo");
+});
+
+/**
+ * The tier list this server actually publishes — D0 through D4 with a name each — and the shapes a
+ * player quoting it writes. Every one of these left the map window blank before
+ * [ADR 0139](../../specs/decisions/0139-a-difficulty-can-never-cost-a-map.md); all of them are safe to
+ * fold by rule, because nothing in the 472 zone names the app ships ends in any of them.
+ */
+test("the tier list's own wordings fold: D3, Difficulty 3, and a bracketed tag", () => {
+  const key = zoneKey("Blackburrow");
+  for (const written of [
+    "Blackburrow D3",
+    "Blackburrow d3",
+    "Blackburrow (D3)",
+    "Blackburrow [D3]",
+    "Blackburrow [3]",
+    "Blackburrow Difficulty 3",
+    "Blackburrow difficulty 3",
+    "Blackburrow [Fused]",
+    "Blackburrow Difficulty 3 (Fused)",
+  ]) {
+    assert.equal(zoneKey(written), key, written);
+  }
+  // The number is still readable out of each of them — the fold must not cost the analytics half.
+  assert.equal(zoneDifficulty("Blackburrow D3"), 3);
+  assert.equal(zoneDifficulty("Blackburrow Difficulty 3"), 3);
+  assert.equal(zoneDifficulty("Blackburrow [3]"), 3);
+  assert.equal(zoneMode("Blackburrow [Fused]"), "Fused");
+  assert.equal(zoneDifficultyLabel("Blackburrow Difficulty 3 (Fused)"), "D3 Fused");
+});
+
+/**
+ * The number and the tier name are two spellings of one fact, so each has to be readable from the
+ * other. Getting this wrong is quiet: the map folds correctly either way, and only the analytics half
+ * reports nonsense (ADR 0139).
+ */
+test("an enclosed number is a difficulty, not a ruleset called 'D3'", () => {
+  // `(D3)` starts with a letter, so the tag rule would happily claim it — and then the zone has a
+  // ruleset named "D3" and no difficulty at all.
+  for (const written of ["Blackburrow (D3)", "Blackburrow [D3]", "Blackburrow (Difficulty 3)"]) {
+    assert.equal(zoneDifficulty(written), 3, written);
+    assert.equal(zoneMode(written), undefined, written);
+    assert.equal(zoneDifficultyLabel(written), "D3 Fused", written);
+  }
+});
+
+test("a named tier states its own number", () => {
+  // The table says Fused is 3, so a zone that gives only the name has still given the number.
+  assert.equal(zoneDifficulty("Blackburrow (Fused)"), 3);
+  assert.equal(zoneDifficulty("Blackburrow - Awakened"), 1);
+  assert.equal(zoneDifficulty("Blackburrow [Refined]"), 4);
+  assert.equal(zoneDifficultyLabel("Blackburrow (Fused)"), "D3 Fused");
+
+  // A ruleset that isn't one of ours keeps its name and gains no number — we don't know one.
+  assert.equal(zoneMode("Greater Faydark (Hardcore)"), "Hardcore");
+  assert.equal(zoneDifficulty("Greater Faydark (Hardcore)"), undefined);
+  assert.equal(zoneDifficulty("Nagafen's Lair - Solo"), undefined);
+});
+
+/**
+ * A **named tier standing alone**, with no number and no enclosure. The one shape a rule must not
+ * fold: `Crystallos, Lair of the Awakened` is a real zone, and folding by rule would rename it.
+ */
+test("a bare tier word folds only when a number is beside it", () => {
+  // With a number, the shape is unambiguous — no shipped zone name ends "<digits> <word>".
+  assert.equal(zoneKey("Blackburrow 3 Fused"), zoneKey("Blackburrow"));
+  assert.equal(zoneMode("Blackburrow 3 Fused"), "Fused");
+  assert.equal(zoneDifficulty("Blackburrow 3 Fused"), 3);
+
+  // Alone, a rule leaves it: `zoneBaseName` is what a *key* is built from, and a key may not guess.
+  assert.equal(zoneBaseName("Blackburrow Fused"), "Blackburrow Fused");
+  assert.equal(zoneBaseName("Crystallos, Lair of the Awakened"), "Crystallos, Lair of the Awakened");
+  // The resolver's reading is the one allowed to take it, because it checks against candidates first.
+  assert.equal(zoneTierBaseName("Blackburrow Fused"), "Blackburrow");
+  assert.equal(zoneTierBaseName("Crystallos, Lair of the Awakened"), "Crystallos, Lair of the");
+});
+
+test("ornaments compose in any order, because the game does not commit to one", () => {
+  const key = zoneKey("Cazic-Thule");
+  for (const written of [
+    "Cazic-Thule 3 - Solo",
+    "Cazic-Thule 3 (Fused)",
+    "Cazic-Thule Difficulty 3 [Fused]",
+    "Cazic-Thule (Fused) 3",
+    "Cazic-Thule 3 Fused",
+  ]) {
+    assert.equal(zoneKey(written), key, written);
+  }
+  // And the hyphen inside a real name still survives every pass of the peeler.
+  assert.equal(zoneBaseName("Cazic-Thule"), "Cazic-Thule");
+  assert.equal(zoneBaseName("Takish-Hiz"), "Takish-Hiz");
 });
 
 test("the ruleset a harder zone scales by folds away with the number", () => {

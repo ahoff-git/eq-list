@@ -23,30 +23,117 @@ import { ZONE_NAME_PAIRS } from "./zones/gazetteer";
 const ITEM_GRADE_RE = /\s*\+\s*(\d+)\s*$/;
 
 /**
- * A harder zone's number follows its name. The plain form is what the game writes; the `+N` and
- * parenthesised forms are accepted too rather than betting on one spelling of it. A separator is
- * required, so a name that merely *ends* in a digit keeps it.
+ * **The tiers this server runs**, indexed by difficulty: 0 is the ordinary zone, and 1-4 are the
+ * rulesets a harder copy of it is opened under.
+ *
+ * Supplied rather than harvested, and it is doing two jobs. It **names** a difficulty read off a bare
+ * number (`zoneDifficultyLabel`), and it is the **vocabulary** that recognises one written out in
+ * words — which is what lets `Blackburrow Fused` reach Blackburrow's map at all. A supplied table
+ * outranking our guesses is the same rule the gazetteer runs on
+ * ([ADR 0076](../../specs/decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)).
  */
-const ZONE_DIFFICULTY_RE = /\s+\+?\(?(\d+)\)?\s*$/;
+const DIFFICULTY_TIERS: readonly string[] = ["", "Awakened", "Adaptive", "Fused", "Refined"];
+
+/** The name of a difficulty, or undefined for the ordinary zone and for a tier we can't name. */
+const tierName = (level: number): string | undefined => DIFFICULTY_TIERS[level] || undefined;
+
+/**
+ * The table read the other way: which difficulty a ruleset **name** is.
+ *
+ * The number and the name are two spellings of one fact, so a zone that states only the name states
+ * the number too — `Blackburrow (Fused)` is difficulty 3, and reading it as "some ruleset, level
+ * unknown" would throw away something the table plainly says. Undefined for a tag that isn't one of
+ * ours (`Hardcore`, `Solo`), which stays a ruleset with no number.
+ */
+function tierLevel(tag: string | undefined): number | undefined {
+  if (!tag) return undefined;
+  const found = DIFFICULTY_TIERS.findIndex((tier) => tier && tier.toLowerCase() === tag.trim().toLowerCase());
+  return found > 0 ? found : undefined;
+}
+
+/** One `(a|b|c)` of the named tiers, built from the table so the table stays the only place they live. */
+const TIER_WORDS = DIFFICULTY_TIERS.filter(Boolean).join("|");
+
+/**
+ * A difficulty **number**, in every shape the game and its players write one. All measured against the
+ * 472 zone names the app ships: none of them ends in any of these, so all of it folds unguarded.
+ *
+ *   `Blackburrow 3`  `Blackburrow (3)`  `Blackburrow +3`  `Blackburrow D3`  `Blackburrow [D3]`
+ *   `Blackburrow Difficulty 3`
+ *
+ * A separator is required, so a name that merely *ends* in a digit keeps it. The `D` is optional and
+ * the word `Difficulty` is optional, because the tier list the players quote is written both ways
+ * ("Difficulty 3", "D3").
+ */
+const ZONE_DIFFICULTY_RE = new RegExp(String.raw`\s+(?:difficulty\s+)?[+([]?\s*d?(\d+)\s*[)\]]?\s*$`, "i");
 
 /**
  * The ruleset the zone was opened under, tagged on after the difficulty: the log's own
  * "The Steamfont Mountains 2 (Adaptive)". It says how the zone scales, not which zone it is, so it
- * folds away with the number. The tag has to start with a letter, because "Blackburrow (3)" is a
- * difficulty written the other way round and belongs to the rule above.
+ * folds away with the number.
+ *
+ * **Brackets count as parentheses.** Nothing in the shipped corpus ends in `[...]` either, and betting
+ * on which of two enclosures a build chose is exactly the bet this file exists not to make.
+ *
+ * The tag has to start with a letter, because `Blackburrow (3)` is a difficulty written the other way
+ * round and belongs to the rule above — and `(D3)` is caught by that rule *first* for the same reason.
  */
-const ZONE_MODE_RE = /\s*\(\s*([A-Za-z][^()]*?)\s*\)\s*$/;
+const ZONE_MODE_RE = /\s*[([]\s*([A-Za-z][^()[\]]*?)\s*[)\]]\s*$/;
 
 /**
  * The same fact, written the game's *other* way: `Nagafen's Lair - Solo`, `Kedge Keep - Solo`. Found in
  * a real peer's observations — so this is the game's wording, not a guess — and it means a zone opened
  * under a ruleset exactly as the parenthesised form does.
  *
- * Safe to fold because **no zone name contains " - "**: measured across all 361 the app ships (the
+ * Safe to fold because **no zone name contains " - "**: measured across all the app ships (the
  * hyphens it does have are inside a word — `Cazic-Thule`, `Takish-Hiz`), and a test pins it. Requires
  * spaces around the dash for that reason.
  */
 const ZONE_DASH_MODE_RE = /\s+-\s+([A-Za-z][A-Za-z ]*?)\s*$/;
+
+/**
+ * A **named tier standing on its own**, with no enclosure and no separator: `Blackburrow Fused`,
+ * `Blackburrow 3 Fused`.
+ *
+ * This is the one shape that **cannot** be folded unguarded, and it is worth saying why precisely. Of
+ * the 472 zone names the app ships, exactly one ends in a tier word: `Crystallos, Lair of the
+ * Awakened`. Folding this by rule would rename a real zone to `Crystallos, Lair of the` — the same
+ * failure the gazetteer's own notes warn about, where `Qeynos (North)` renamed a whole city to one of
+ * its halves.
+ *
+ * So it splits in two. With a **number beside it** the shape is unambiguous and folds here, because a
+ * real name has no "<digits> <word>" ending either. **Alone**, it is only ever read by the resolver,
+ * which has the candidate list in hand and tries the name as written first — so Crystallos matches
+ * itself before anything is stripped
+ * ([ADR 0139](../../specs/decisions/0139-a-difficulty-can-never-cost-a-map.md)).
+ */
+const ZONE_TIER_WORD_RE = new RegExp(String.raw`\s+(${TIER_WORDS})\s*$`, "i");
+
+/**
+ * A tag inside an enclosure that is really the **number**, not a ruleset name: `(D3)`, `[D3]`,
+ * `(Difficulty 3)`.
+ *
+ * `ZONE_MODE_RE` claims any enclosed tag starting with a letter, and `D3` starts with one — so without
+ * this, `Blackburrow (D3)` folds to the right map (the tag comes off either way) while reporting a
+ * ruleset *named* "D3" and no difficulty at all. The map was right and the analytics half was wrong,
+ * which is the worst of the two to get wrong silently.
+ */
+const TAG_IS_DIFFICULTY_RE = /^(?:difficulty\s+)?d?(\d+)$/i;
+
+/**
+ * Sentence punctuation a name picked up on its way here.
+ *
+ * The zone line's own parser strips the full stop, so the live path never sees one — but a name lifted
+ * out of **prose** does: a wiki page's `Zone: Blackburrow 3.`, a pasted sentence, a peer's note. Every
+ * ornament rule anchors at the end of the string, so one stray full stop blocked all of them and
+ * `Blackburrow 3.` reached no map at all, while the undecorated `Blackburrow.` was fine (the resolver's
+ * word tiers split punctuation out). Fixing the peel rather than the resolver keeps the two agreeing.
+ *
+ * Measured: of the 472 zone names the app ships, **none** ends in `. , ; : ! ?`. Deliberately not `)`
+ * or `"` — nine names end in a parenthesis and eight in a quote (`The Void "A"`), so those are part of
+ * a name rather than punctuation around one.
+ */
+const ZONE_TRAILING_PUNCTUATION_RE = /[.,;:!?]+\s*$/;
 
 const numberIn = (name: string, re: RegExp): number | undefined => {
   const m = re.exec(name.trim());
@@ -54,6 +141,76 @@ const numberIn = (name: string, re: RegExp): number | undefined => {
 };
 
 const nameWithout = (name: string, re: RegExp): string => name.trim().replace(re, "").trim();
+
+/**
+ * Peel every ruleset ornament off the end of a zone name, whatever order they were written in.
+ *
+ * A loop rather than a fixed sequence of replacements, because the ornaments **compose** and the game
+ * does not commit to an order: `Cazic-Thule 3 - Solo` is a number then a dash tag, `Blackburrow 3
+ * (Fused)` is a number then a parenthesised one, `Blackburrow Difficulty 2 [Adaptive]` is both the
+ * other way about. Peeling until nothing more comes off is the only version that doesn't need a list
+ * of the combinations somebody thought of.
+ *
+ * Bounded by `MAX_ORNAMENTS`: each pass must shorten the name to continue, so this terminates on its
+ * own, and the cap is a second belt for a regex that could ever match the empty string.
+ *
+ * `bareTier` allows the one guarded shape — a tier word with no number beside it. Off for the identity
+ * fold, on for the resolver. See `ZONE_TIER_WORD_RE`.
+ */
+const MAX_ORNAMENTS = 6;
+
+function peelOrnaments(name: string, bareTier: boolean): { base: string; difficulty?: number; mode?: string } {
+  let base = name.trim();
+  let difficulty: number | undefined;
+  let mode: string | undefined;
+
+  for (let pass = 0; pass < MAX_ORNAMENTS; pass++) {
+    const before = base;
+
+    // Punctuation first: every rule below anchors at the end, so a stray full stop hides all of them.
+    const punctuation = ZONE_TRAILING_PUNCTUATION_RE.exec(base);
+    if (punctuation) {
+      base = base.slice(0, punctuation.index).trim();
+      continue;
+    }
+
+    // A tag in brackets or after a dash. Read before the number, so `(Adaptive)` is a mode and the
+    // `2` in front of it is still there to be read as a difficulty on the next pass.
+    const tag = ZONE_MODE_RE.exec(base) ?? ZONE_DASH_MODE_RE.exec(base);
+    if (tag) {
+      // …unless the tag *is* the number, enclosed: `(D3)`, `(Difficulty 3)`. See `TAG_IS_DIFFICULTY_RE`.
+      const enclosedNumber = TAG_IS_DIFFICULTY_RE.exec(tag[1]);
+      if (enclosedNumber) difficulty ??= Number(enclosedNumber[1]);
+      else mode ??= tag[1];
+      base = base.slice(0, tag.index).trim();
+      continue;
+    }
+
+    // A bare tier word. Allowed unguarded only when a number is left behind it, which is the shape no
+    // real zone name has; otherwise it needs the resolver's permission.
+    const word = ZONE_TIER_WORD_RE.exec(base);
+    if (word) {
+      const remainder = base.slice(0, word.index).trim();
+      if (bareTier || ZONE_DIFFICULTY_RE.test(remainder)) {
+        mode ??= word[1];
+        base = remainder;
+        continue;
+      }
+    }
+
+    const level = numberIn(base, ZONE_DIFFICULTY_RE);
+    if (level !== undefined) {
+      difficulty ??= level;
+      base = nameWithout(base, ZONE_DIFFICULTY_RE);
+      continue;
+    }
+
+    if (base === before) break; // nothing came off — done
+  }
+
+  // A named tier states its own number, so `(Fused)` alone is still difficulty 3 (see `tierLevel`).
+  return { base, difficulty: difficulty ?? tierLevel(mode), mode };
+}
 
 /** The `+N` an item name carries ("Dragoon Dirk +2" → 2), or undefined when it carries none. */
 export function itemGrade(name: string): number | undefined {
@@ -67,34 +224,35 @@ export function itemBaseName(name: string): string {
 
 /** The ruleset tag a zone carries ("Blackburrow 2 (Adaptive)" → "Adaptive", "Kedge Keep - Solo" → "Solo"). */
 export function zoneMode(name: string): string | undefined {
-  const trimmed = name.trim();
-  const m = ZONE_MODE_RE.exec(trimmed) ?? ZONE_DASH_MODE_RE.exec(trimmed);
-  return m ? m[1] : undefined;
+  return peelOrnaments(name, false).mode;
 }
 
 /** How much harder a zone was made ("Blackburrow 3" → 3), or undefined for the ordinary zone. */
 export function zoneDifficulty(name: string): number | undefined {
-  return numberIn(withoutMode(name), ZONE_DIFFICULTY_RE);
-}
-
-/** A zone name without its difficulty or ruleset — the zone one map and one wiki page describe. */
-export function zoneBaseName(name: string): string {
-  return nameWithout(withoutMode(name), ZONE_DIFFICULTY_RE);
+  return peelOrnaments(name, false).difficulty;
 }
 
 /**
- * **What the game calls each difficulty.** The number is an index into this: 0 is the ordinary zone,
- * and 1–4 are the rulesets a harder copy of it is opened under.
+ * A zone name without its difficulty or ruleset — the zone one map and one wiki page describe.
  *
- * Supplied by the player rather than harvested, which is why it is a table and not a parse: the log
- * writes the tag beside the number only sometimes ("The Steamfont Mountains 2 (Adaptive)") and often
- * writes the bare number ("Blackburrow 3"), and the two have to read the same. A tier the table
- * hasn't got is not an error — a build may add one — so it simply goes unnamed.
+ * Every shape a *rule* can be sure of. The one it deliberately leaves is a bare tier word, which
+ * `zoneTierBaseName` handles for a caller that has candidates to check against.
  */
-const DIFFICULTY_TIERS: readonly string[] = ["", "Awakened", "Adaptive", "Fused", "Refined"];
+export function zoneBaseName(name: string): string {
+  return peelOrnaments(name, false).base;
+}
 
-/** The name of a difficulty, or undefined for the ordinary zone and for a tier we can't name. */
-const tierName = (level: number): string | undefined => DIFFICULTY_TIERS[level] || undefined;
+/**
+ * The same, **plus a bare tier word** — `Blackburrow Fused` → `Blackburrow`.
+ *
+ * Only for the resolver (`zones/resolve.ts`), which tries the name as written first and so can afford
+ * a reading that a rule alone must not take: `Crystallos, Lair of the Awakened` matches itself before
+ * this is ever consulted. Nothing should key on it
+ * ([ADR 0139](../../specs/decisions/0139-a-difficulty-can-never-cost-a-map.md)).
+ */
+export function zoneTierBaseName(name: string): string {
+  return peelOrnaments(name, true).base;
+}
 
 /**
  * **How hard this copy of the zone was, said out loud** — `D3 Fused`, `Solo`, or undefined for an
@@ -115,11 +273,6 @@ export function zoneDifficultyLabel(name: string): string | undefined {
   const tier = zoneMode(name) ?? (level === undefined ? undefined : tierName(level));
   if (level === undefined) return tier; // a ruleset with no number: "Nagafen's Lair - Solo"
   return tier ? `D${level} ${tier}` : `D${level}`;
-}
-
-/** Either spelling of the ruleset tag off — the game writes both, and they mean the same thing. */
-function withoutMode(name: string): string {
-  return nameWithout(nameWithout(name, ZONE_MODE_RE), ZONE_DASH_MODE_RE);
 }
 
 /**

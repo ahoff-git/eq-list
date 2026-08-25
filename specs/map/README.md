@@ -32,7 +32,10 @@ world coordinates, so a map knows where it is. See
     ([ADR 0075](../decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)). It takes only the tiers
     that cannot pick a *different* zone: a wrong file draws one under the right name, so no map beats
     the wrong map, see
-    [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)), `mapZoneName`
+    [ADR 0068](../decisions/0068-a-zone-name-resolves-against-what-we-know.md)), and — when the pack's
+    own labels match nothing — **the gazetteer's own name → file mapping**, so a file this pack
+    labelled something else is still reachable by the name the log uses
+    ([ADR 0139](../decisions/0139-a-difficulty-can-never-cost-a-map.md)); `mapZoneName`
     (see **One name per map reference**), `sortZones`,
     and `onLayer` for floor-scoped markers (against the *set* of floors in view).
 - **Drawing** (`src/lib/map/draw.ts`, renderer-only — uses canvas): `drawLine`, `drawCircle`,
@@ -276,6 +279,35 @@ world coordinates, so a map knows where it is. See
   D1 *Awakened* through D4 *Refined*, with the log's own ruleset tag winning wherever it wrote one) and
   the titlebar carries it as its own token: **`🗺 Blackburrow · D3 Fused`**. The name says which map;
   the token says which copy of the zone.
+- **A difficulty can never cost you a map** ([ADR 0139](../decisions/0139-a-difficulty-can-never-cost-a-map.md)) —
+  the server publishes five tiers (D0, and D1 *Awakened* through D4 *Refined*), one geometry between
+  them, and the fold has to reach **every** way one is written or the window silently draws nothing.
+  [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md) covered the shapes it had guessed at; the
+  tier list turned out to invite twenty more that reached no map — `Blackburrow D3`,
+  `Blackburrow Fused`, `Blackburrow [Fused]`, and `Blackburrow Difficulty 3`, which folded to
+  `blackburrow difficulty` and so *invented* a name.
+
+  Two rules, and the split between them is a **measurement** over the 472 zone names the app ships:
+
+  - **Folded by rule** (inside `zoneKey`, so kill records and drop rates fold with it): a bracketed
+    tag, `D<n>`, `Difficulty <n>`, and a tier word with a number beside it. Nothing shipped ends in any
+    of those, so none of them can be confused with a real name. The ornaments are peeled in a **loop**
+    rather than in a fixed order, because they compose and the game commits to no order
+    (`Cazic-Thule 3 - Solo`, `Blackburrow Difficulty 2 [Adaptive]`).
+  - **Folded only by the resolver**: a **bare** tier word. Exactly one shipped name ends in one —
+    `Crystallos, Lair of the Awakened` — so a rule doing this would rename a real zone. The resolver
+    has candidates in hand and tries the name as written first, which is what makes Crystallos match
+    itself; that ordering *is* the guard, and it is why the `difficulty` tier sits between `order` and
+    `typo` rather than in the fold.
+
+  The number and the name are two spellings of one fact, so each is readable from the other: `(Fused)`
+  is difficulty 3, and `(D3)` is a *number* rather than a ruleset named "D3" — which the fold got right
+  and the analytics half got wrong until this was measured.
+
+  Pinned as a **property**, not as examples: `electron/tests/zone-difficulty.test.ts` crosses every
+  shipped zone with every shape (~10,000 lookups), asserts the map never changes, asserts the lookup
+  count so a refactor can't pass by checking nothing, and asserts that reaching all those shapes has
+  not merged two zones that nobody said were one.
 - **Only zones this server has** — a pack draws all 26 expansions of EverQuest, so `zonesFromSources`
   drops the ones that don't exist here (`zoneAvailable`, see
   [ADR 0065](../decisions/0065-a-zone-belongs-to-an-expansion.md)): a fetched zone → expansion table rules
@@ -549,7 +581,8 @@ world coordinates, so a map knows where it is. See
   remembered per panel. Bounded 6%-85%, so the map always keeps a strip of itself, and the panels
   shrink rather than overflowing when enough of them are open at once. Double-click a seam to put it
   back. See [ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md) ·
-[ADR 0134](../decisions/0134-a-map-reference-resolves-to-a-place.md).
+[ADR 0134](../decisions/0134-a-map-reference-resolves-to-a-place.md) ·
+[ADR 0139](../decisions/0139-a-difficulty-can-never-cost-a-map.md).
 
 ## Non-responsibilities
 - No continuous position tracking: EQ only logs a location when one is emitted

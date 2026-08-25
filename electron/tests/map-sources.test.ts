@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { STOCK_ONLY_ZONES, prettyZoneName, stockOnly, zonesFromFiles, zonesFromSources } from "../../src/shared/map/map-sources";
 import { CURATED_ZONES, findZone, mapZoneName, sortZones } from "../../src/shared/map/zones";
+import type { Zone } from "../../src/shared/map/types";
 
 /** A slice of a real maps folder, including the near-misses that make naming dangerous. */
 const FILES = [
@@ -163,6 +164,48 @@ test("mapZoneName never answers with the log's wording", () => {
 
   // "No zone yet" is not a place, so it stays blank rather than resolving to something.
   assert.equal(mapZoneName("", zones), "");
+});
+
+/**
+ * **A pack's labelling can hide a map we are holding**, and the gazetteer is the way back to it.
+ *
+ * Every tier above matches a name against the pack's *own* labels. That is right and usually enough,
+ * because `zonesFromFiles` hands a file its curated name whenever the gazetteer has one — but a file
+ * can end up labelled something else: two files claiming one zone name means the loser keeps its short
+ * name (ADR 0075), and a file the solver could not name wears its own. Measured on a folder whose
+ * labels name nothing, that hid 36 of the 83 gazetteer zones
+ * ([ADR 0139](../../specs/decisions/0139-a-difficulty-can-never-cost-a-map.md)).
+ */
+test("a zone reaches its map even when the pack labelled the file something else", () => {
+  // The worst realistic pack: the files are all there, and every one wears its bare short name.
+  const unlabelled: Zone[] = ["gfaydark", "qeytoqrg", "qey2hh1", "neriaka", "freporte"].map((file) => ({
+    name: file.charAt(0).toUpperCase() + file.slice(1),
+    key: `stock:${file}`,
+    file,
+    source: "stock",
+  }));
+
+  assert.equal(findZone("Greater Faydark", unlabelled)?.file, "gfaydark");
+  assert.equal(findZone("Qeynos Hills", unlabelled)?.file, "qeytoqrg");
+  assert.equal(findZone("West Karana", unlabelled)?.file, "qey2hh1");
+  assert.equal(findZone("Neriak Foreign Quarter", unlabelled)?.file, "neriaka");
+  assert.equal(findZone("East Freeport", unlabelled)?.file, "freporte");
+
+  // Still findable by the file's own name, and still a difficulty away.
+  assert.equal(findZone("Gfaydark", unlabelled)?.file, "gfaydark");
+  assert.equal(findZone("Greater Faydark 3 (Fused)", unlabelled)?.file, "gfaydark");
+
+  // And it can only ever *add* a match: a zone the pack has no file for is still no map, because the
+  // fallback asks which file the name is and then looks for that file among the ones present.
+  assert.equal(findZone("Blackburrow", unlabelled), undefined);
+  assert.equal(findZone("Nowhere At All", unlabelled), undefined);
+});
+
+test("the pack's own label still wins where it matches", () => {
+  // The fallback is a last resort, not an override — a pack names its own zones (ADR 0061).
+  const zones = zonesFromFiles("brewall", ["gfaydark", "lfaydark"]);
+  assert.equal(findZone("Greater Faydark", zones)?.file, "gfaydark");
+  assert.equal(findZone("Lesser Faydark", zones)?.file, "lfaydark");
 });
 
 test("sortZones groups a family together", () => {

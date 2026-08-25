@@ -13,7 +13,7 @@
  */
 
 import type { Zone } from "./types";
-import { resolveZone } from "../zones/resolve";
+import { createZoneResolver, resolveZone } from "../zones/resolve";
 import { CURATED_ZONES } from "../zones/gazetteer";
 import { placeName } from "../zones/place";
 
@@ -40,7 +40,44 @@ export type { CuratedZone } from "../zones/gazetteer";
 export function findZone(name: string, zones: Zone[]): Zone | undefined {
   const exact = zones.find((z) => z.key === name);
   if (exact) return exact;
-  return resolveZone(name, zones, (z) => z.name, { typo: true })?.item;
+  const byName = resolveZone(name, zones, (z) => z.name, { typo: true })?.item;
+  if (byName) return byName;
+  return byGazetteerFile(name, zones);
+}
+
+/**
+ * The gazetteer as **name → map file**, built once over ~83 entries because it memoises.
+ *
+ * `typo` for the same reason every other reader has it (ADR 0075); `narrow` and `fuzzy` stay off,
+ * because this answers with a *file* and a wrong file is the one naming mistake that doesn't fail
+ * closed.
+ */
+const gazetteerFiles = createZoneResolver(CURATED_ZONES, (z) => z.name, { typo: true });
+
+/**
+ * **The last resort: the gazetteer knows which *file* this name is, whatever the pack called it.**
+ *
+ * Every tier above matches the name against the pack's own labels, which is right and is usually
+ * enough — `zonesFromFiles` gives a file its curated name whenever the gazetteer has one. But a file
+ * can end up labelled something else entirely: two files claiming one zone name means the loser keeps
+ * its short name (`tox` becomes "Tox", ADR 0075), and a file the solver couldn't name wears its own.
+ * A pack whose labelling we can't match then hides a map we are holding — measured, that is 36 of the
+ * 83 gazetteer zones for a folder whose labels name nothing.
+ *
+ * So after asking what this pack calls its zones, ask the **supplied table** what file the name is and
+ * take that file if the pack has it
+ * ([ADR 0139](../../../specs/decisions/0139-a-difficulty-can-never-cost-a-map.md)). It cannot guess:
+ * the mapping is stated in `eql-classic-zone-maps.json`
+ * ([ADR 0076](../../../specs/decisions/0076-a-supplied-gazetteer-outranks-our-guesses.md)) and is
+ * checked by `zone-gazetteer.test.ts` rather than trusted. And it can only ever *add* a match, because
+ * it runs only once the pack's own labels have found nothing.
+ *
+ * **The pack still wins where it answered.** This is a fallback, not an override — a zone whose label
+ * this pack does match is drawn from the file that pack meant, which is ADR 0061 untouched.
+ */
+function byGazetteerFile(name: string, zones: Zone[]): Zone | undefined {
+  const file = gazetteerFiles.resolve(name)?.item.file;
+  return file ? zones.find((z) => z.file === file) : undefined;
 }
 
 /**

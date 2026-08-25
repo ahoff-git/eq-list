@@ -168,6 +168,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0136: Logged data says where it happened, and how hard it was there](./0136-logged-data-says-where-it-happened.md)
 - [0137: A filed drop can still learn where it was](./0137-a-filed-drop-can-still-learn-where-it-was.md)
 - [0138: A replayed log narrows what a kill proves, and how long a sighting holds a row](./0138-a-replayed-log-narrows-what-a-kill-proves.md)
+- [0139: A difficulty can never cost you a map](./0139-a-difficulty-can-never-cost-a-map.md)
 
 ## Open Questions
 

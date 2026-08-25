@@ -15,13 +15,14 @@
  * which stays the strict identity fold that kill records and drop rates key on
  * ([ADR 0059](../../../specs/decisions/0059-a-zone-s-variants-are-one-zone.md)).
  *
- * Five tiers, tried in order, each only reached when the one above found nothing:
+ * Six tiers, tried in order, each only reached when the one above found nothing:
  *
- *   `exact`     — `zoneKey` equality, curated aliases included. What every call site did before.
- *   `order`     — the same words in any order, ignoring "the"/"of". "The Castle of Mistmoore".
- *   `typo`      — one letter out: a pack's "Toxulia Forest" is the log's "Toxxulia Forest".
- *   `narrower`  — the name says everything a candidate says and more: "North Qeynos" → "Qeynos".
- *   `fuzzy`     — spelling alone, and only when it wins by a clear margin.
+ *   `exact`      — `zoneKey` equality, curated aliases included. What every call site did before.
+ *   `order`      — the same words in any order, ignoring "the"/"of". "The Castle of Mistmoore".
+ *   `difficulty` — a named tier standing on its own: "Blackburrow Fused" is Blackburrow.
+ *   `typo`       — one letter out: a pack's "Toxulia Forest" is the log's "Toxxulia Forest".
+ *   `narrower`   — the name says everything a candidate says and more: "North Qeynos" → "Qeynos".
+ *   `fuzzy`      — spelling alone, and only when it wins by a clear margin.
  *
  * `typo`, `narrower` and `fuzzy` are opt-in, because how wrong a wrong answer is depends on who's
  * asking — see [ADR 0068](../../../specs/decisions/0068-a-zone-name-resolves-against-what-we-know.md).
@@ -29,15 +30,22 @@
  * runs on is measured against the whole shipped table
  * ([ADR 0075](../../../specs/decisions/0075-a-zone-s-misspelling-is-the-same-zone.md)).
  *
+ * **`difficulty` is not opt-in, and sits above `typo`**, because it removes a *stated ornament* rather
+ * than guessing at a spelling: the tiers come from a supplied table, and `zoneKey` already folds every
+ * shape of them a rule can be sure of. Only the bare word is left here, and only because exactly one
+ * shipped zone name ends in one — `Crystallos, Lair of the Awakened` — which the `exact` tier above
+ * matches before this is reached. That ordering *is* the guard
+ * ([ADR 0139](../../../specs/decisions/0139-a-difficulty-can-never-cost-a-map.md)).
+ *
  * Pure and dependency-free apart from the fold and the scorer it reuses → a tested black box.
  */
 
 import { fuzzyScore } from "../fuzzy";
-import { zoneFold, zoneKey } from "../names";
+import { zoneFold, zoneKey, zoneTierBaseName } from "../names";
 import { sameZoneOrMisspelling } from "./spelling";
 
 /** Which tier answered — how much of a stretch the match was, for a caller that cares. */
-export type ZoneMatchHow = "exact" | "order" | "typo" | "narrower" | "fuzzy";
+export type ZoneMatchHow = "exact" | "order" | "difficulty" | "typo" | "narrower" | "fuzzy";
 
 export interface ZoneMatch<T> {
   /** The candidate that won. */
@@ -253,6 +261,23 @@ export function createZoneResolver<T>(
       // falling through to a looser tier would only guess between the same two.
       if (one) return found(one, "order");
       return undefined;
+    }
+
+    /*
+     * A named tier with nothing marking it as one — `Blackburrow Fused`, `Blackburrow Refined`. Every
+     * other shape has already folded inside `zoneKey`, so reaching here means the name still carries a
+     * bare tier word *and* nothing above could place it as written.
+     *
+     * Recursive rather than a second lookup written out: a stripped name deserves every tier the full
+     * one gets, including the `typo` below it. It terminates because stripping is idempotent — the
+     * second call finds nothing left to strip and takes the guard below.
+     */
+    const stripped = zoneTierBaseName(name);
+    if (zoneKey(stripped) !== key) {
+      const without = lookUp(stripped);
+      // Reported as `difficulty` whatever tier actually answered: what the caller wants to know is
+      // that an ornament had to come off, not which spelling rule found the zone underneath it.
+      if (without) return { ...without, how: "difficulty" };
     }
 
     if (opts.typo) {
