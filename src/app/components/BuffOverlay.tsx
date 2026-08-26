@@ -1,5 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
+import { SOLID } from "@/lib/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { alertPlacement, alertStyle, BUFF_STYLE_ID } from "@/shared/alert-styles";
 import { ON_PET, ON_YOU } from "@/shared/buff-tracking";
@@ -69,9 +70,10 @@ export default function BuffOverlay() {
  * and repeating "on you" down eight rows is noise that pushes the one row about somebody else out of
  * a glance — which is the row you were least likely to notice on your own.
  *
- * The dismiss control is deliberately here as well as in the panel. This window is click-through over
- * the game, so the ✕ only takes a click while the player has taken the clicks back (👻) — and having
- * it means standing a stale reminder down doesn't cost a trip to another window.
+ * The dismiss control is deliberately here as well as in the panel: standing a stale reminder down
+ * shouldn't cost a trip to another window. It is the one part of a reminder that takes a click —
+ * `SOLID` makes the overlay hand itself back for as long as the cursor is on the ✕ and glass again
+ * the moment it leaves, so the row you are reading never comes between you and the mob behind it.
  */
 function HudRow({ buff, color }: { buff: BuffInstance; color: string }) {
   const who = buff.target === ON_YOU ? "" : buff.target === ON_PET ? "pet" : buff.target;
@@ -83,6 +85,7 @@ function HudRow({ buff, color }: { buff: BuffInstance; color: string }) {
       <span className="bhr-name">{buff.spell}</span>
       {who && <span className="bhr-who">{who}</span>}
       <button
+        {...SOLID}
         className="bhr-x"
         title="Stand this one down"
         onClick={() => void api()?.buffs.dismiss(buff.key, buff.target)}

@@ -1,10 +1,13 @@
 "use client";
+import { useState } from "react";
 import { api } from "@/lib/api";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { heldMs, targetLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
-import { Empty, PickField } from "./ui";
+import { Empty } from "./ui";
+import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
+import { BUFF_STYLE_ID } from "@/shared/alert-styles";
 import type { BuffInstance, KnownBuff } from "@/shared/types";
 
 /**
@@ -49,7 +52,6 @@ import type { BuffInstance, KnownBuff } from "@/shared/types";
 export default function BuffPanel() {
   const view = useBuffs();
   const alerts = useSettings()?.castAlerts;
-  const styles = alerts?.styles ?? [];
   const now = Date.parse(view.now) || Date.now();
 
   const bare = !view.known.length && !view.active.length && !view.lapsed.length;
@@ -132,7 +134,7 @@ export default function BuffPanel() {
         <section className="buff-known">
           <h2>Spells</h2>
           {view.known.map((known) => (
-            <KnownRow key={known.key} known={known} styles={styles} />
+            <KnownRow key={known.key} known={known} />
           ))}
         </section>
       )}
@@ -218,7 +220,10 @@ function ActiveRow({ buff, now }: { buff: BuffInstance; now: number }) {
 }
 
 /** One spell's standing choices — the settings half, read once rather than watched. */
-function KnownRow({ known, styles }: { known: KnownBuff; styles: { id: string; name: string }[] }) {
+function KnownRow({ known }: { known: KnownBuff }) {
+  // Which look its banner wears is a *standing* choice like the two checkboxes beside it, so the
+  // editor opens under the row rather than sending the player to another tab to make it.
+  const [styling, setStyling] = useState(false);
   return (
     <div className={`buff-known-row ${known.tracked ? "" : "untracked"}`}>
       <label className="buff-check" title="Watch this spell at all. Off means it is never mentioned again — and the row stays, so you can change your mind">
@@ -274,12 +279,14 @@ function KnownRow({ known, styles }: { known: KnownBuff; styles: { id: string; n
             On screen
           </label>
           {known.notify && (
-            <PickField
-              value={known.styleId ?? ""}
+            <AlertStyleField
+              styleId={known.styleId}
+              fallback={BUFF_STYLE_ID}
               blank="Buff lapsed (default)"
-              options={styles.map((st) => ({ value: st.id, label: st.name }))}
-              onChange={(styleId) => void api()?.buffs.style(known.key, styleId || null)}
-              title="Which look its banner wears — a saved style from the Alerts tab, where every look is edited"
+              onPick={(styleId) => void api()?.buffs.style(known.key, styleId)}
+              title="Which look its banner wears — 🎨 edits that look here"
+              open={styling}
+              onOpen={() => setStyling((v) => !v)}
             />
           )}
         </span>
@@ -291,6 +298,7 @@ function KnownRow({ known, styles }: { known: KnownBuff; styles: { id: string; n
       >
         ✕
       </button>
+      {styling && <AlertStyleDrawer styleId={known.styleId} fallback={BUFF_STYLE_ID} forkable />}
     </div>
   );
 }

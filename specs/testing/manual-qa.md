@@ -980,3 +980,40 @@ and one thing it can't test at all is the polite behaviour over a long session.
   number of unknown names, and confirm the app never feels like it is queueing behind Lucy — and that
   `userData/lucy-cache` is filling up rather than the same pages being re-fetched. A second run of the
   same searches should hit the network **not at all**.
+
+## A control on the alert overlay (ADR 0147)
+
+The tracker is renderer logic and typechecks, but the thing it is really claiming — that a
+`focusable: false`, always-on-top, click-through window will deliver a click to a button without
+taking focus off EverQuest — is an OS-level promise nothing here can exercise. All of this wants a
+full-screen (windowed or borderless) game running behind it.
+
+- **The ✕ dismisses.** Let a tracked buff lapse so a reminder is drawn, then click its ✕. The row
+  should go, and **the game must not take the click** — nothing swung at, no target changed.
+- **Focus stays in the game.** After that click, type a movement key without clicking anything else.
+  If the character moves, the overlay took no focus, which is the whole point.
+- **The row itself is still glass.** Click the buff's *name*, an inch from the ✕. That click belongs
+  to the game — confirm it lands there.
+- **Everything off an island is glass.** With a reminder up, click across the rest of the display:
+  the banner area, a pinned countdown, empty overlay. Every one of those should reach the game.
+- **Leaving ends it.** Park the cursor on a ✕, then move it away and click. The click goes to the
+  game, immediately — not after a wiggle.
+- **Placing a spot still works.** Settings → Alert style → *Place a spot*, with a buff reminder on
+  screen. The whole overlay should be solid for that moment, the click should place, and Esc should
+  cancel — the tracker must not turn the catcher back into glass under the pointer.
+- **And afterwards the overlay is glass again.** Place a spot, then click somewhere the reminder is
+  not: it must reach the game.
+
+## A look edited where it is worn (ADR 0148)
+
+- **Every wearer has a 🎨.** A spawn timer with 🔔 on, a tracked buff with Notify on, the Records
+  board's celebration, and the shopping list once a row is armed. In each: the picker names a look,
+  🎨 opens the drawer under the row, and the line above the controls says who else wears it.
+- **The shared edit is shared.** Open a buff's 🎨, change the colour, and confirm the *Alerts* tab's
+  list shows the same look changed — and that a second buff wearing it changed too.
+- **The fork is not.** Pick *＋ New style from this one…* on one timer. It should get a new named
+  style, open it, and leave every other timer alone.
+- **The blank is the built-in.** A spawn timer's picker should show "Spawn timer (default)" and
+  **not** also list "Spawn timer" by name; 🎨 with the blank chosen must edit that same look.
+- **The preview lands.** ▶ Preview alert inside one of these drawers should put a sample banner on
+  the overlay wearing the look being edited.

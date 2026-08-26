@@ -390,8 +390,13 @@ reading like a measurement, and they are shared code
 - **A repeat must be stoppable**, enforced in the model rather than in the UI; a cancel is never
   inverted. ([0084](./0084-a-watch-is-a-rule-not-a-substring.md))
 - **One look is defined in one place.** A rule wears the defaults, a saved style, or one of its own;
-  editing from inside a rule can never restyle another rule, so a shared or sticky style forks. There
-  is one style editor, and a look a feature is built on may be restyled but not renamed or deleted. ([0086](./0086-editing-a-shared-style-from-a-rule-forks-it.md), [0090](./0090-one-style-editor-at-a-time.md), [0120](./0120-a-feature-s-look-is-sticky.md))
+  editing from inside a rule can never restyle another rule, so a shared or sticky style forks. A
+  look a feature is built on may be restyled but not renamed or deleted. ([0086](./0086-editing-a-shared-style-from-a-rule-forks-it.md), [0090](./0090-one-style-editor-at-a-time.md), [0120](./0120-a-feature-s-look-is-sticky.md))
+- **One editor, wherever a look is worn.** The same drawer opens from a spawn timer, a buff, the
+  celebration and the shopping list as from the Alerts tab; an edit from a wearer is the *shared*
+  edit and says who it reaches before it happens, and forking is an explicit choice. ([0090](./0090-one-style-editor-at-a-time.md), [0148](./0148-a-look-is-edited-where-it-is-worn.md))
+- **A control drawn on the overlay takes its own clicks, and nothing else does.** The window is glass;
+  a marked control is solid only while the cursor is on it, and never takes focus from the game. ([0131](./0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md), [0147](./0147-an-overlay-control-takes-its-own-clicks.md))
 - **Something that can't be styled must still be seen.** An unresolvable `styleId` falls through to
   the defaults; it never drops the alert. ([0085](./0085-a-rule-can-be-tested-shared-and-borrowed.md), [0099](./0099-a-countdown-can-stay-on-screen.md))
 - **Wearing and arming are separate questions**, and arming stays on the thing being armed. ([0120](./0120-a-feature-s-look-is-sticky.md))

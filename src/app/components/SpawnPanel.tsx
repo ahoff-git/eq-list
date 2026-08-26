@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { useCurrentZone, useLogVocabulary, useSettings, useSpawns } from "@/lib/hooks";
+import { useCurrentZone, useLogVocabulary, useSpawns } from "@/lib/hooks";
 import {
   countdownMs,
   describeRespawn,
@@ -13,7 +13,9 @@ import {
 } from "@/shared/spawn-timers";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
-import { Caret, Empty, PickField } from "./ui";
+import { Caret, Empty } from "./ui";
+import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
+import { SPAWN_STYLE_ID } from "@/shared/alert-styles";
 import SuggestField from "./SuggestField";
 import ZonePicker from "./ZonePicker";
 import { CURATED_ZONES, sortZones } from "@/shared/map/zones";
@@ -402,7 +404,7 @@ function RunningRow({ timer, now, several }: { timer: RunningSpawn; now: number;
  * confirmation are alternatives, so opening a confirmation has to close a half-typed field rather
  * than stack under it.
  */
-type Open = "interval" | "pad" | "relearn" | "dismiss" | null;
+type Open = "interval" | "pad" | "relearn" | "dismiss" | "style" | null;
 
 /**
  * One named we know something about, and the corrections a player can make to it.
@@ -416,9 +418,6 @@ type Open = "interval" | "pad" | "relearn" | "dismiss" | null;
  * already make.
  */
 function KnownRow({ known }: { known: KnownSpawn }) {
-  // The looks are the alert tab's own, because there is exactly one place a look is made or edited
-  // (ADRs 0086, 0090) — a timer *picks* one, and never grows an editor of its own.
-  const styles = useSettings()?.castAlerts.styles ?? [];
   const [open, setOpen] = useState<Open>(null);
   const done = () => setOpen(null);
   const toggle = (which: Exclude<Open, null>) => setOpen((o) => (o === which ? null : which));
@@ -451,12 +450,14 @@ function KnownRow({ known }: { known: KnownSpawn }) {
         {/* Only meaningful once something will actually be raised, so it appears with the thing it
             describes rather than sitting greyed out beside it. */}
         {known.notify && (
-          <PickField
-            value={known.styleId ?? ""}
+          <AlertStyleField
+            styleId={known.styleId}
+            fallback={SPAWN_STYLE_ID}
             blank="Spawn timer (default)"
-            options={styles.map((st) => ({ value: st.id, label: st.name }))}
-            onChange={(styleId) => void api()?.spawns.style(known.key, styleId || null)}
-            title="Which look its banner wears — a saved style from the Alerts tab, where every look is edited"
+            onPick={(styleId) => void api()?.spawns.style(known.key, styleId)}
+            title="Which look its banner wears — 🎨 edits that look here"
+            open={open === "style"}
+            onOpen={() => toggle("style")}
           />
         )}
         {/* A separate question from Notify, and deliberately not folded into it: one is a moment,
@@ -574,6 +575,8 @@ function KnownRow({ known }: { known: KnownSpawn }) {
         />
       )}
 
+      {open === "style" && <AlertStyleDrawer styleId={known.styleId} fallback={SPAWN_STYLE_ID} forkable />}
+
       {open === "interval" && (
         <SecondsField
           initial={known.stated}
@@ -612,10 +615,10 @@ function KnownRow({ known }: { known: KnownSpawn }) {
  * takes nothing with it but itself.
  */
 function CustomRow({ timer }: { timer: KnownSpawn }) {
-  // Same wardrobe as everything else that can raise a banner: the Alerts tab's saved looks, picked
-  // rather than edited (ADRs 0086, 0090).
-  const styles = useSettings()?.castAlerts.styles ?? [];
   const [editing, setEditing] = useState(false);
+  // Its own flag rather than a slot in `editing`: the look and the length are different questions and
+  // a camper changing one shouldn't lose the box they had open for the other.
+  const [styling, setStyling] = useState(false);
   const length = timer.stated;
   const timed = length !== undefined;
 
@@ -642,12 +645,14 @@ function CustomRow({ timer }: { timer: KnownSpawn }) {
           Notify
         </label>
         {timer.notify && (
-          <PickField
-            value={timer.styleId ?? ""}
+          <AlertStyleField
+            styleId={timer.styleId}
+            fallback={SPAWN_STYLE_ID}
             blank="Spawn timer (default)"
-            options={styles.map((st) => ({ value: st.id, label: st.name }))}
-            onChange={(styleId) => void api()?.spawns.style(timer.key, styleId || null)}
-            title="Which look its banner wears — a saved style from the Alerts tab, where every look is edited"
+            onPick={(styleId) => void api()?.spawns.style(timer.key, styleId)}
+            title="Which look its banner wears — 🎨 edits that look here"
+            open={styling}
+            onOpen={() => setStyling((v) => !v)}
           />
         )}
         <label className="spawn-notify" title="Keep this countdown on screen, over the game">
@@ -701,6 +706,8 @@ function CustomRow({ timer }: { timer: KnownSpawn }) {
           Remove
         </button>
       </span>
+
+      {styling && <AlertStyleDrawer styleId={timer.styleId} fallback={SPAWN_STYLE_ID} forkable />}
 
       {editing && (
         <SecondsField

@@ -5,6 +5,7 @@ import { percent } from "@/shared/format";
 import { useLogVocabulary, useRead, useSettings, useStyleUsage } from "@/lib/hooks";
 import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
 import AlertStyleFields from "./AlertStyleFields";
+import { AlertStyleDrawer } from "./AlertStyleField";
 import StyleRow from "./StyleRow";
 import AlertSourceRow from "./AlertSourceRow";
 import CastWatchRow, { type WatchPane } from "./CastWatchRow";
@@ -351,21 +352,11 @@ export default function AlertsPanel() {
                         setOpen(open?.kind === "source" && open.id === source.id ? null : { kind: "source", id: source.id })
                       }
                     />
+                    {/* Editing the style itself, not a copy — which is the point: "loot alerts should
+                        look like this" is one decision. The same drawer the boards themselves now
+                        open, so the sentence about who else it changes is written once. */}
                     {open?.kind === "source" && open.id === source.id && worn && (
-                      <div className="style-editor">
-                        {/* Editing the style itself, not a copy — which is the point: "loot alerts
-                            should look like this" is one decision, and this is one of the two places
-                            it can be made (the other being the same style in the list below). */}
-                        <span className="hint" style={{ display: "block", marginBottom: 6 }}>
-                          “{worn.name}” is {describeUse(styleUse(ca, worn.id, usage))} — changing it here
-                          changes it for all of them.
-                        </span>
-                        <AlertStyleFields
-                          style={worn.style}
-                          locations={ca.locations}
-                          onChange={(over) => updateStyle(worn.id, over)}
-                        />
-                      </div>
+                      <AlertStyleDrawer styleId={worn.id} />
                     )}
                   </div>
                 );

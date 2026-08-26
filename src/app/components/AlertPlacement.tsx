@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { SOLID } from "@/lib/clickThrough";
 
 /**
  * The custom-spot placement layer, shown only in the alert overlay window while the user is
@@ -8,6 +9,10 @@ import { api } from "@/lib/api";
  * overlay interactive + focusable and sends `onPlaceBegin`; a preview banner tracks the cursor,
  * a click reports the point back as fractions of the display, and Esc cancels. Renders nothing
  * otherwise, so the overlay stays invisible.
+ *
+ * Main has already made the whole window solid for this, but the layer is marked `SOLID` all the
+ * same: the overlay's own cursor tracking is running, and an unmarked full-screen catcher is exactly
+ * the thing it would turn back into glass under the pointer.
  */
 export default function AlertPlacement() {
   const [placing, setPlacing] = useState(false);
@@ -42,7 +47,7 @@ export default function AlertPlacement() {
   };
 
   return (
-    <div className="alert-place" onMouseMove={(e) => setCursor({ x: e.clientX, y: e.clientY })} onClick={place}>
+    <div {...SOLID} className="alert-place" onMouseMove={(e) => setCursor({ x: e.clientX, y: e.clientY })} onClick={place}>
       <div className="alert-place-hint">Click where alerts should appear · Esc to cancel</div>
       {cursor && (
         <div className="alert-place-preview" style={{ left: cursor.x, top: cursor.y }}>

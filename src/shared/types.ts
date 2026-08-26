@@ -1506,8 +1506,9 @@ export interface KnownSpawn extends RespawnLearning {
    */
   notify: boolean;
   /**
-   * A **saved** style (`CastAlertSettings.styles`) for its pop; absent wears the alert defaults.
-   * Never a look of its own — one style editor, in one place (ADRs 0086, 0090, 0093).
+   * A **saved** style (`CastAlertSettings.styles`) for its pop; absent wears `built-in:spawn`.
+   * Never a look of its own: a timer picks a shared look, and edits it as the shared thing it is
+   * (ADRs 0086, 0090, 0148).
    */
   styleId?: string;
   /**
@@ -2611,8 +2612,9 @@ export interface EqlApi {
     /** Whether this mob's pop raises a banner. Off by default. */
     notify(key: string, on: boolean): Promise<SpawnView>;
     /**
-     * Which saved style its pop wears — `null` for the alert defaults. A saved style or nothing:
-     * looks are made and edited in the Alerts tab, and there is exactly one place that happens.
+     * Which saved style its pop wears — `null` to fall back to `built-in:spawn`. A saved style or
+     * nothing: a timer never grows a look of its own, though it can now edit the one it wears from
+     * its own row ([ADR 0148](../../specs/decisions/0148-a-look-is-edited-where-it-is-worn.md)).
      */
     style(key: string, styleId: string | null): Promise<SpawnView>;
     /** Keep this countdown on screen over the game while it runs. */
@@ -2669,7 +2671,8 @@ export interface EqlApi {
     notify(key: string, on: boolean): Promise<BuffView>;
     /** Whether a lapse of this one stays on screen over the game until it's back up. */
     showOnScreen(key: string, on: boolean): Promise<BuffView>;
-    /** Which saved style its banner wears — `null` for the buff default. One style editor, one place. */
+    /** Which saved style its banner wears — `null` falls back to `built-in:buff`. One editor, opened
+     * from wherever the look is worn ([ADR 0148](../../specs/decisions/0148-a-look-is-edited-where-it-is-worn.md)). */
     style(key: string, styleId: string | null): Promise<BuffView>;
     /**
      * Forget this spell entirely: the row and everything set on it. It comes back, fresh, if the

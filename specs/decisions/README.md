@@ -177,6 +177,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0144: Shared state is asked for as well as pushed, and says whether it is real](./0144-state-is-asked-for-as-well-as-pushed.md)
 - [0145: A room checks itself, and needs no game running](./0145-a-room-checks-itself-and-needs-no-game.md)
 - [0146: One home for the peer network](./0146-one-home-for-the-peer-network.md)
+- [0147: An overlay control takes its own clicks](./0147-an-overlay-control-takes-its-own-clicks.md)
+- [0148: A look is edited where it is worn](./0148-a-look-is-edited-where-it-is-worn.md)
 
 ## Open Questions
 

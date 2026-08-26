@@ -1035,10 +1035,11 @@ button {
   gap: 2px;
   width: max-content;
   max-width: 92%;
-  /* Unlike the countdown HUD this has a control on it, so it *does* take clicks — but only when the
-     player has taken the window's clicks back with 👻. While the overlay is click-through the whole
-     window ignores the pointer anyway, so this costs nothing in the ordinary case. */
-  pointer-events: auto;
+  /* Unlike the countdown HUD this has a control on it — but only the ✕ is that control. The row is
+     a thing you read while a mob stands behind it, so it stays glass at both levels: the DOM's
+     (here) and the window's (`SOLID` in BuffOverlay, which turns the overlay solid only while the
+     cursor is actually on a ✕). */
+  pointer-events: none;
 }
 .buff-hud-row {
   display: flex;
@@ -1056,16 +1057,20 @@ button {
 .buff-hud-row .bhr-name { font-weight: 600; }
 .buff-hud-row .bhr-who { color: var(--text-dim); font-size: 12px; }
 .buff-hud-row .bhr-x {
-  margin-left: 4px;
+  pointer-events: auto; /* the one part of a reminder you can click — see .buff-hud */
   background: none;
   border: 0;
-  padding: 0 2px;
   color: var(--text-dim);
   cursor: pointer;
   font-size: 11px;
   line-height: 1;
+  border-radius: var(--radius);
+  /* A real target, not a hairline ✕ you have to hunt for: the moment you reach for this is mid-fight.
+     Negative margins keep it from growing the row it sits on. */
+  padding: 3px 6px;
+  margin: -3px -4px -3px 0;
 }
-.buff-hud-row .bhr-x:hover { color: var(--text); }
+.buff-hud-row .bhr-x:hover { color: var(--text); background: rgba(255, 255, 255, 0.12); }
 
 /* ── session stats ───────────────────────────────────────────── */
 .stat-row {
@@ -2725,6 +2730,10 @@ kbd {
 /* The one editor, indented under whichever row opened it — the same shape a rule's drawer has, so
    "this belongs to the line above" reads the same way in both places. */
 .style-editor {
+  /* A whole line of its own wherever it lands. The Alerts tab opens it inside a block, where this is
+     ignored; a spawn or buff row is a wrapping flex line, where it is what puts the drawer *under*
+     the row instead of squeezed into the end of it. */
+  flex-basis: 100%;
   margin: 4px 0 8px 22px;
   padding: 6px 8px;
   border-left: 2px solid var(--border);

@@ -4,7 +4,8 @@ import { api } from "@/lib/api";
 import { useRead, useSettings, useWatcherStatus } from "@/lib/hooks";
 import { SCORE_CATEGORIES, SCORE_GROUPS, categoryOf, formatScore, marginOf } from "@/shared/high-scores";
 import { figure, when } from "@/shared/format";
-import { CheckField, Empty, PickField, StatTile } from "./ui";
+import { CheckField, Empty, StatTile } from "./ui";
+import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
 import type { HighScore, ScoreBoard } from "@/shared/types";
 import ZoneTag from "./ZoneTag";
 
@@ -34,6 +35,8 @@ export default function HighScoreBoard() {
   const [beaten, setBeaten] = useState(0);
   const [latest, setLatest] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  // The celebration's look, opened under the row that names it.
+  const [styling, setStyling] = useState(false);
   // The watcher's file is in the deps because it names the character, and the board is per character:
   // switching logs switches boards, with no record event to say so.
   const board = useRead((a) => a.records.board(), NO_BOARD, [beaten, status.file]);
@@ -65,7 +68,6 @@ export default function HighScoreBoard() {
 
   const hs = settings?.highScores;
   const alertsOff = !settings?.castAlerts.enabled;
-  const styles = settings?.castAlerts.styles ?? [];
   const patch = (over: Partial<NonNullable<typeof hs>>) => api()?.settings.update({ highScores: over });
 
   // Grouped up front, so the JSX below is a list of sections rather than a filter per section.
@@ -132,23 +134,25 @@ export default function HighScoreBoard() {
         />
       </div>
 
-      {/* The celebration, configured where you look at the thing it celebrates. It wears a **saved
-          style** or the alert defaults, and is edited in the Alerts tab — one style editor, in one
-          place (ADR 0086 / 0090). */}
+      {/* The celebration, configured where you look at the thing it celebrates — the look included.
+          It wears a **saved style** or the alert defaults, and 🎨 opens the same editor the Alerts
+          tab does, on the same shared thing (ADR 0086 / 0090). */}
       <div className="row wrap sc-celebrate">
         <CheckField
           label="Celebrate a new high score with an alert"
           checked={!!hs?.celebrate}
           onChange={(celebrate) => patch({ celebrate })}
         />
-        <PickField
-          value={hs?.styleId ?? ""}
+        <AlertStyleField
+          styleId={hs?.styleId}
           blank="Alert defaults"
-          options={styles.map((s) => ({ value: s.id, label: s.name }))}
-          onChange={(styleId) => patch({ styleId: styleId || undefined })}
-          title="Which look a celebration wears — a saved style from the Alerts tab, where every look is edited"
+          onPick={(styleId) => patch({ styleId: styleId ?? undefined })}
+          title="Which look a celebration wears — 🎨 edits that look here"
+          open={styling}
+          onOpen={() => setStyling((v) => !v)}
         />
       </div>
+      {styling && <AlertStyleDrawer styleId={hs?.styleId} forkable />}
       {hs?.celebrate && alertsOff && (
         <p className="sc-warn small">
           Alerts are switched off, so nothing will show — the banner rides the same overlay a cast alert

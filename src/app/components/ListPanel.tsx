@@ -6,6 +6,8 @@ import ItemLink, { NameList } from "./ItemLink";
 import { LucyLink } from "./LucySays";
 import { count } from "@/shared/format";
 import { Caret, caretGlyph, Empty } from "./ui";
+import { AlertStyleDrawer } from "./AlertStyleField";
+import { LOOT_STYLE_ID } from "@/shared/alert-styles";
 import {
   countableEntries,
   effectiveNeeded,
@@ -41,6 +43,11 @@ export default function ListPanel() {
   // per instance, and a long list would pay one of each per item to learn a single flag.
   const askLucy = useSettings()?.askLucy ?? true;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [styling, setStyling] = useState(false);
+  // Every armed row wears the one Loot look — there is no style per row (ADR 0105) — so the control
+  // for it belongs to the list rather than to any entry, and only once something is armed: before
+  // that it describes a banner nothing will raise.
+  const armed = list.entries.some((e) => e.notify);
 
   const groups = groupByOrigin(list.entries, list.questRuns);
   // Who wants each item and how many: the parenthetical grand total, and the hover that
@@ -63,11 +70,21 @@ export default function ListPanel() {
             {count(list.entries.length, "item")} watched · {count(groups.length, "group")}
           </span>
           <span className="spacer" />
+          {armed && (
+            <button
+              className={`btn ghost sm ${styling ? "on" : ""}`}
+              title={styling ? "Close" : "Edit the look a drop alert wears"}
+              onClick={() => setStyling((v) => !v)}
+            >
+              🎨 Drop alerts
+            </button>
+          )}
           <button className="btn ghost sm" onClick={() => api()?.list.clear()}>
             Clear all
           </button>
         </div>
       )}
+      {armed && styling && <AlertStyleDrawer fallback={LOOT_STYLE_ID} />}
 
       <div className="groups">
         {groups.map((g) => {
