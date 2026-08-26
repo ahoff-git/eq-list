@@ -48,3 +48,14 @@ export const PIN_TYPES: PinType[] = [
 export function pinType(kind: string): PinType {
   return PIN_TYPES.find((p) => p.key === kind) ?? PIN_TYPES[0];
 }
+
+/**
+ * How a **hunt pin** is drawn — the one marker the map places for you, for a mob your list wants and
+ * your kills can place (`hunt-pins.ts`).
+ *
+ * Not a `PinKind`, deliberately: those are a palette you pick a pin up from and drop, and this is
+ * nothing you can hold, drop, drag or share. It only needs to look like itself, which is what a
+ * type without a `key` says — a hollow ring rather than any of the solid glyphs above, so a mark the
+ * app made reads at a glance as different from the five you made yourself.
+ */
+export const HUNT_PIN: Omit<PinType, "key"> = { label: "Hunt", color: "#ff8c42", glyph: "◎" };

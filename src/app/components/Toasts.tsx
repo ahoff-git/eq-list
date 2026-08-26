@@ -31,6 +31,11 @@ export default function Toasts() {
 /**
  * One card, which owns its own lifetime: it fades out shortly before it's dropped, so the exit is
  * animated rather than a disappearance. Clicking it dismisses it early.
+ *
+ * A card with an `action` grows one button, and clicking *that* navigates and then dismisses
+ * ([ADR 0143](../../../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md)). The rest
+ * of the card still dismisses, so the gesture everybody already has keeps working — which is why the
+ * button stops the click from reaching the card underneath rather than relying on ordering.
  */
 function ToastCard({ toast, onDone }: { toast: Toast; onDone: () => void }) {
   const [leaving, setLeaving] = useState(false);
@@ -49,11 +54,23 @@ function ToastCard({ toast, onDone }: { toast: Toast; onDone: () => void }) {
   return (
     <div
       className={`toast tone-${toast.tone ?? "info"} ${leaving ? "leaving" : ""}`}
-      title="Dismiss"
+      title={toast.action ? "Dismiss (or use the button)" : "Dismiss"}
       onClick={onDone}
     >
       <div className="toast-title">{toast.title}</div>
       {toast.detail && <div className="toast-detail">{toast.detail}</div>}
+      {toast.action && (
+        <button
+          className="toast-action"
+          onClick={(e) => {
+            e.stopPropagation();
+            toast.action?.run();
+            onDone();
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   );
 }

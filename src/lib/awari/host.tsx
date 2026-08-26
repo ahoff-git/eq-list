@@ -7,7 +7,8 @@ import { createLogger } from "@/shared/logging";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { AWARI_MSG } from "@/shared/types";
 import type { AwariPayload, AwariPeer } from "@/shared/types";
-import type { RoomSession } from "@awari/protocol";
+import { readOffer } from "@/shared/peer-share";
+import type { MessageRoute, RoomSession } from "@awari/protocol";
 
 const log = createLogger("awari");
 
@@ -105,14 +106,32 @@ export default function AwariHost() {
    */
   const pendingRef = useRef(new Map<string, AwariPayload>());
 
-  /** Publish to the room, or hold the payload until there's a room to publish to. */
-  const publish = useCallback((payload: AwariPayload) => {
+  /**
+   * Publish a payload, to the room or to one peer, or hold it until there's a room to publish to.
+   *
+   * **A direct send is never held.** The held map is last-write-wins per *kind*, which is exactly
+   * right for "here is my current state" broadcasts and exactly wrong for a conversation: two asks
+   * to two different peers would collapse into one, and an answer replayed minutes later to a peer
+   * that has moved on is noise. So a direct send with nowhere to go is simply dropped and logged —
+   * an unanswered `ask` costs a retry, where a mis-delivered `give` costs correctness (ADR 0141).
+   */
+  const publish = useCallback((payload: AwariPayload, to?: string) => {
     const s = sessionRef.current;
     if (!s) {
+      if (to) return void log.debug("direct send dropped - no room:", payload.kind, "->", to);
       pendingRef.current.set(payload.kind, payload);
       return void log.debug("publish held until the room is up:", payload.kind);
     }
-    void s.publish({ type: "room" }, payload).catch((e) => log.debug("publish failed:", (e as Error).message));
+    // A direct route needs the session id too, and the roster is where a peer id becomes a peer.
+    // Somebody who has left has no row, and their message simply isn't sent.
+    const peer = to ? rosterRef.current.get(to) : undefined;
+    if (to && !peer?.sessionId) {
+      return void log.debug("direct send dropped - peer not addressable:", to, payload.kind);
+    }
+    const route: MessageRoute = peer?.sessionId
+      ? { type: "peer", peer: { peerId: peer.peerId, sessionId: peer.sessionId } }
+      : { type: "room" };
+    void s.publish(route, payload).catch((e) => log.debug("publish failed:", (e as Error).message));
   }, []);
 
   const reportRoster = useCallback(() => {
@@ -131,6 +150,7 @@ export default function AwariHost() {
   // `sayHello`; a ref keeps it current without re-joining the room.
   const sayHelloRef = useRef(sayHello);
   sayHelloRef.current = sayHello;
+
 
   /**
    * Bumped to re-run the join effect. *Why* we're re-joining lives in the two counters below
@@ -191,6 +211,14 @@ export default function AwariHost() {
         const sender = m.sender?.peerId;
         // Never echo ourselves — consumers get a clean peer-only stream.
         if (!sender || sender === peerIdRef.current) return;
+        // A peer we have heard from is addressable, whether or not `onPeerJoined` reached us first
+        // — the envelope carries the whole `PeerRef`, so this is the same fact from a second source
+        // and costs nothing to keep current.
+        const known = roster.get(sender);
+        if (m.sender.sessionId && known?.sessionId !== m.sender.sessionId) {
+          roster.set(sender, { ...known, peerId: sender, sessionId: m.sender.sessionId });
+          reportRoster();
+        }
         const payload = (m.payload ?? {}) as { kind: string; name?: unknown; zone?: unknown };
         // A `hello` is how a peer id gets a name — fold it into the roster (a peer we
         // haven't been told about yet still gets a row, keyed by id).
@@ -212,6 +240,13 @@ export default function AwariHost() {
             sayHelloRef.current();
           }
         }
+        // A catalogue is roster data, not a message anybody draws — fold it in and let the panel
+        // read it off the peer row, the same way a name is.
+        if (payload.kind === AWARI_MSG.offer) {
+          const prev = roster.get(sender) ?? { peerId: sender };
+          roster.set(sender, { ...prev, offer: readOffer(payload) });
+          reportRoster();
+        }
         a.awari.reportMessage({ sender, payload: payload as { kind: string } });
       },
     })
@@ -227,7 +262,10 @@ export default function AwariHost() {
           // A room that reached somebody is a working room: the next outage starts its backoff
           // from the top instead of inheriting the cooldown of an old one.
           failuresRef.current = 0;
-          if (!roster.has(peer.peerId)) roster.set(peer.peerId, { peerId: peer.peerId });
+          // The session id arrives here and nowhere else in the roster's life, and it is what
+          // makes a peer *addressable* rather than merely listed (ADR 0141) — so a rejoin under a
+          // fresh session must overwrite it rather than be skipped as "already known".
+          roster.set(peer.peerId, { ...roster.get(peer.peerId), peerId: peer.peerId, sessionId: peer.sessionId });
           reportRoster();
           sayHello(); // a new arrival doesn't know us yet
         });
@@ -321,11 +359,12 @@ export default function AwariHost() {
     setJoinGeneration(0);
   }, [connected]);
 
-  // Publish payloads other windows ask us to send (they have no socket of their own).
+  // Publish payloads main asks us to send (nothing else has a socket). Main decides the route —
+  // the room, or one peer — and we only know how to address it (ADR 0141).
   useEffect(() => {
     const a = api();
     if (!a) return;
-    return a.awari.onPublish(publish);
+    return a.awari.onPublish((out) => publish(out.payload, out.to));
   }, [publish]);
 
   // Keep the room's picture of us current: a rename or a zone change re-announces.

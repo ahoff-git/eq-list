@@ -37,10 +37,13 @@ import type { SpawnTracker } from "./spawn-tracker";
 import type { BuffTracker } from "./buff-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import { AWARI_MSG } from "../src/shared/types";
 import { readContributor } from "../src/shared/contributors";
 import type { DragEnd } from "../src/shared/window-snap";
+import { createPeerShareHub, shareSources } from "./peer-share";
+import type { ShareKind } from "../src/shared/peer-share";
+import type { MapPin } from "../src/shared/map/pins";
 
 const log = createLogger("ipc");
 
@@ -628,6 +631,16 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
     if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
     else send();
   });
+  // Pins a peer shared, handed to the window that owns pins. Opens the map the same way `mapOpenAt`
+  // does — you asked to put them somewhere, and the somewhere is a map you can see.
+  ipcMain.on(CH.mapAddPins, (_e, pins: MapPin[]) => {
+    const win = createMapWindow(store.getSettings().overlay);
+    win.show();
+    win.focus();
+    const send = () => win.webContents.send(CH.mapPinsAdded, pins);
+    if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
+    else send();
+  });
   // Point the map at a mob's kills. Only ever forwarded to a map window that's already open —
   // this rides on a hover, and a window that appears because the cursor crossed a name is one
   // nobody asked for.
@@ -719,7 +732,7 @@ const CONTRIBUTED_KINDS = new Set<string>([AWARI_MSG.mobs, AWARI_MSG.kills]);
  *     sharing and nothing stable about you goes out at all (`electron/identity.ts`).
  */
 function registerPeerIpc(context: IpcContext): void {
-  const { broadcast, mobs, peerKills, contributorId } = context;
+  const { broadcast, mobs, peerKills, contributorId, store, killLog, spawns, buffs, scores, watcher } = context;
 
   /** File what a peer just told us, and let every open window know the pool moved. */
   const fileContribution = (payload: AwariPayload): void => {
@@ -733,21 +746,77 @@ function registerPeerIpc(context: IpcContext): void {
     broadcast(CH.peerDataChanged, undefined);
   };
 
+  /** Send a payload out through the owner window — to the room, or to one peer (ADR 0141). */
+  const send = (payload: AwariPayload, to?: string): void => {
+    getMainWindow()?.webContents.send(CH.awariPublish, {
+      payload: CONTRIBUTED_KINDS.has(payload.kind) ? { ...payload, id: contributorId } : payload,
+      to,
+    } satisfies AwariOutbound);
+  };
+
+  /**
+   * The share hub: our catalogue, who may have what, and where a peer's answer lands.
+   *
+   * Its name comes from the same rule `hello` uses — an explicit `playerName`, else the character
+   * the log file is named for — because a buff board resolves `ON_YOU` against it and two answers
+   * to "who am I" would put one player's buffs on two rows.
+   */
+  const shares = createPeerShareHub({
+    getSettings: () => store.getSettings(),
+    getName: () =>
+      (store.getSettings().playerName || "").trim() || characterFromLogFile(watcher.status().file) || "",
+    send,
+    fileContribution,
+    changed: () => broadcast(CH.peerShareChanged, undefined),
+    offered: (notice) => broadcast(CH.peerOffered, notice),
+    sources: shareSources({
+      getList: () => store.getList(),
+      getSettings: () => store.getSettings(),
+      killLog,
+      spawns,
+      buffs,
+      scores,
+    }),
+  });
+
   // ── awari peer networking broker (see ADR 0012) ──
   // The always-alive main window owns the single WebRTC connection; the main process
   // relays messages, stamps the contributions going out and files the ones coming in.
-  ipcMain.on(CH.awariOutbound, (_e, payload: AwariPayload) =>
-    getMainWindow()?.webContents.send(
-      CH.awariPublish,
-      CONTRIBUTED_KINDS.has(payload.kind) ? { ...payload, id: contributorId } : payload,
-    ),
-  );
+  ipcMain.on(CH.awariOutbound, (_e, out: AwariOutbound) => send(out.payload, out.to));
   ipcMain.on(CH.awariInbound, (_e, msg: AwariInbound) => {
+    // The hub takes `offer`/`ask`/`give` and nothing else; a kind it doesn't own falls through to
+    // the windows exactly as before. Contributions still arrive **both ways** on purpose: over a
+    // `give` from a client that has the Peers tab, and as a bare broadcast from one that predates
+    // it (ADR 0141 changed how a contribution arrives, not what one is).
+    if (shares.handle(msg.sender, msg.payload)) return;
     if (CONTRIBUTED_KINDS.has(msg.payload?.kind)) fileContribution(msg.payload);
     broadcast(CH.awariMessage, msg);
   });
-  ipcMain.on(CH.awariStatus, (_e, status: AwariStatus) => broadcast(CH.awariStatusChanged, status));
-  ipcMain.on(CH.awariPeers, (_e, peers: AwariPeer[]) => broadcast(CH.awariPeersChanged, peers));
+  ipcMain.on(CH.awariStatus, (_e, status: AwariStatus) => {
+    // A fresh room has heard no catalogue from us, so joining announces one. (Leaving doesn't need
+    // a retraction — `publishOffer` is a no-op while disconnected, and a room we are not in has
+    // nobody left to tell.)
+    if (status.connected) shares.touch();
+    broadcast(CH.awariStatusChanged, status);
+  });
+  ipcMain.on(CH.awariPeers, (_e, peers: AwariPeer[]) => {
+    shares.roster(peers);
+    broadcast(CH.awariPeersChanged, peers);
+  });
+
+  // ── The share hub, as the Peers tab uses it ──
+  ipcMain.handle(CH.peerOffer, () => shares.offer());
+  ipcMain.handle(CH.peerMine, (_e, kind: ShareKind) => shares.mine(kind));
+  ipcMain.handle(CH.peerReceived, (_e, peerId?: string, kind?: ShareKind) => shares.received(peerId, kind));
+  ipcMain.on(CH.peerAsk, (_e, peerId: string, kind: ShareKind) => shares.ask(peerId, kind));
+  ipcMain.on(CH.peerClearShares, (_e, peerId?: string, kind?: ShareKind) => shares.clear(peerId, kind));
+  // Pins are the one shared kind main can't read for itself — they live in the map window's own
+  // storage. It reports them here so an ask is answerable whether or not the map is open, which is
+  // the same reason contributions stopped being filed by a window (ADR 0132).
+  ipcMain.on(CH.peerSetPins, (_e, pins: MapPin[]) => shares.setPins(pins));
+  // A toggle is a decision and shows up in the room at once; the catalogue is otherwise measured on
+  // its own slow tick (see `OFFER_TICK_MS`).
+  store.onSettings(() => shares.touch());
 
   ipcMain.on(CH.winMinimize, (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
   // Maximize/restore. The click-through alert overlay is `maximizable: false`, so asking is

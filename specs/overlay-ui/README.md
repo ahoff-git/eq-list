@@ -152,14 +152,27 @@ list, hunt, search, damage, session, settings.
   with its own bus, so a notice appears in the window that raised it. Optional `key` (a second notice
   about the same thing replaces the first, in place, with its life restarted) and `ms` (clamped — a
   card that leaves before it has arrived reads as a flicker). Three invariants make it safe to reach
-  for: a toast is **read, never acted on** (anything with a decision in it is a panel), it **always
+  for: a decision is **never taken on a toast** (anything with one in it is a panel), it **always
   goes away by itself**, and it is **never the only place** something important is said — a failure
   that matters belongs in the log and on the panel that owns it
   ([ADR 0052](../decisions/0052-an-error-goes-to-the-log-not-the-screen.md)), and a toast raised in a
-  window with no host is simply dropped. Callers today: every **+ Add**
-  ([ADR 0106](../decisions/0106-an-add-says-what-it-did.md)) and every **copy to the clipboard**
-  (`lib/clipboard.ts` — the share code and the meter's summary line, both of which used to fire a
-  promise nobody awaited, so a copy that never happened looked exactly like one that did).
+  window with no host is simply dropped.
+
+  Optional **`action: { label, run }`** renders a quiet link on the card, and
+  [ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md) is strict about what it
+  may be: **"go and look", never a change.** Open a tab, a panel, a page — put the reader in front of
+  the thing. Never accept, apply, copy, delete or send: a card is gone in three seconds, so anything
+  it could *do* would be a decision taken under time pressure with no record it was offered, whereas
+  the worst a mis-clicked navigation does is show you a tab. It follows that the destination must be
+  reachable without the toast, which is the third invariant unchanged. Clicking the action navigates
+  and dismisses; clicking anywhere else still just dismisses.
+
+  Callers today: every **+ Add** ([ADR 0106](../decisions/0106-an-add-says-what-it-did.md)), every
+  **copy to the clipboard** (`lib/clipboard.ts` — the share code and the meter's summary line, both
+  of which used to fire a promise nobody awaited, so a copy that never happened looked exactly like
+  one that did), and — the only one with an action — **a peer newly offering something to share**
+  (`components/PeerOfferToasts.tsx`, whose `View` opens the [peers](../peers/README.md) tab with that
+  peer's row picked out).
 - **Every position on a page opens the map, and the observed ones say what they are.** A stat card's
   `Zone:` views that zone (`api().map.openAt`), an embedded `(y, x)` opens it *and* drops a marker
   there, and a mob's observed roam centre is **printed as `y, x ±spread`** — a figure to read and type,
@@ -330,7 +343,10 @@ list, hunt, search, damage, session, settings.
     dropped. `useEntrySources` fetches each still-needed
     item's sources (`wiki.getPage`, cached) and `src/shared/hunt.ts`
     (`neededEntries` → `huntInputsFor` → `buildHunt`, pure + tested) builds
-    zones → mobs → the needed items they drop. Zones/mobs sort by how much of your
+    zones → mobs → the needed items they drop. That whole derivation is **`useHunt`**, not this
+    panel's own: the [map](../map/README.md) marks a hunted mob it can place
+    ([ADR 0142](../decisions/0142-a-hunted-mob-marks-itself.md)), and two copies of it would be two
+    hunts that agreed until one of them counted quest runs. Zones/mobs sort by how much of your
     list they cover; the current zone (`useCurrentZone`) floats to the top.
 
     **A `By zone` / `By item` toggle turns the page round**

@@ -302,6 +302,10 @@ reading like a measurement, and they are shared code
   filed zone-wide and shows on every floor — the honest reading of "we don't know which". ([0037](./0037-one-zone-many-layers.md), [0040](./0040-floors-come-from-the-mapmaker.md))
 - **The graph is audited on the map it was read from**, while navigating only, with what has nowhere
   to be on the map said in an aside rather than omitted. ([0113](./0113-the-graph-is-drawn-on-the-map-it-was-read-from.md))
+- **The map marks the mobs your hunt wants, where your kills place them** — derived, never stored, and
+  never a pin you can hold, drag, share or edit. No believable position means no mark, a spot you
+  pinned by hand isn't marked twice, and every mark says whose kills it rests on and how rough that
+  is. ([0142](./0142-a-hunted-mob-marks-itself.md))
 
 ## Travel
 

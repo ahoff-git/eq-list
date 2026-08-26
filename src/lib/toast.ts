@@ -11,7 +11,7 @@ import { queueToast, type Toast, type ToastInput } from "@/shared/toasts";
  * parent to thread a callback down from. A toast is a one-way announcement; the panel that raised it
  * may well be unmounted (a tab switch) before it fades.
  *
- * To use it: call `showToast({ title, detail?, tone?, key?, ms? })`. The only requirement is that the
+ * To use it: call `showToast({ title, detail?, tone?, key?, ms?, action? })`. The only requirement is that the
  * window has mounted `<Toasts />` once — both `page.tsx`es do. What a toast *is*, and what the stack
  * does with a second notice about the same thing, is `shared/toasts.ts`.
  */
@@ -22,6 +22,7 @@ export {
   TOAST_MS,
   toastTiming,
   type Toast,
+  type ToastAction,
   type ToastInput,
   type ToastTone,
 } from "@/shared/toasts";

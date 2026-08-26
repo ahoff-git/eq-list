@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
@@ -37,14 +37,19 @@ import { Caret } from "./ui";
  */
 export default function MobKnowledgePanel({
   zone,
-  refreshKey,
+  known: all,
   filters,
   onFilters,
   onMarkMob,
   onEmphasize,
 }: {
   zone: string | undefined;
-  refreshKey: unknown;
+  /**
+   * What's been learned here, read and followed by the map window (`useZoneMobs`) rather than by
+   * this panel — the hunt pins on the canvas are drawn from the same rows, and a panel with its own
+   * copy would be a second answer to one question, arriving at its own moment.
+   */
+  known: MobKnowledge[];
   /** The map window's one set of kill filters — see `filterMobKnowledge` for which apply here. */
   filters: KillFilters;
   onFilters: (next: KillFilters) => void;
@@ -53,7 +58,6 @@ export default function MobKnowledgePanel({
   /** Ring some kills on the map while a row is pointed at — `null` takes the ask back. */
   onEmphasize?: (emphasis: KillEmphasis | null) => void;
 }) {
-  const [all, setAll] = useState<MobKnowledge[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const mobs = useMemo(() => filterMobKnowledge(all, filters), [all, filters]);
   // The picker offers what's here *before* filtering, or choosing a mob would empty its own list.
@@ -75,23 +79,6 @@ export default function MobKnowledgePanel({
   const emphasizeMob = (mob: string) => onEmphasize?.({ mobs: [mob] });
   /** Ring the kills of everything that drops this — the map's answer to "where is it from". */
   const emphasizeDrop = (item: string) => onEmphasize?.({ mobs: sources.get(dropKey(item)) ?? [] });
-
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    const load = () => void a.mobs.all(zone).then(setAll);
-    load();
-    // Refetch when the kill log changes in bulk (an imported "eaten" log / a clear), not only
-    // when the caller's zone/refreshKey ticks — otherwise digested data waits for a reopen. And
-    // again when a contribution is filed or forgotten: pooled rates are half somebody else's, so a
-    // peer's report moves this panel's numbers without anything of ours having changed.
-    const stopKills = a.kills.onChanged(load);
-    const stopPeers = a.peers.onChanged(load);
-    return () => {
-      stopKills();
-      stopPeers();
-    };
-  }, [zone, refreshKey]);
 
   if (all.length === 0) {
     return (
@@ -129,7 +116,7 @@ export default function MobKnowledgePanel({
         <button
           className="btn ghost sm"
           title="Forget what peers have told us. Your own observations are kept."
-          onClick={() => void api()?.mobs.forgetPeers().then(() => api()?.mobs.all(zone).then(setAll))}
+          onClick={() => void api()?.mobs.forgetPeers()}
         >
           Forget peers&apos;
         </button>

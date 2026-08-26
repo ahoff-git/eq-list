@@ -96,6 +96,20 @@ unit-tested.
     display name stay two, a report replaces rather than adds, **un-sharing keeps what it taught**
     while `forget` is the retraction, a malformed row takes nothing else with it, and a rename
     follows the contributor instead of splitting them.
+  - `src/shared/peer-share.ts` → `electron/tests/peer-share.test.ts` — what crosses the wire between
+    two installs and what happens to it on arrival
+    ([ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md)). Three subjects, and each is a way
+    this can be quietly wrong rather than loudly broken: **the readers**, since a bad field that gets
+    through doesn't crash but files an impossible tally that looks like data; **the two de-dupes**,
+    since showing a shared camp two rows for one spawn is worse than not sharing at all when both
+    rows look authoritative; and **the buff target**, since `ON_YOU` means *the sender* and a verbatim
+    replay silently collapses everybody's self-buffs onto yours while every row still looks plausible.
+    Ids are injected the way `decodeWatches` takes one, so a test can assert on what a reader made.
+    A fourth subject arrived with [ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md):
+    **what is worth interrupting somebody about**, where every test is a way the notice would become
+    noise — a count moving is not an offer, an observation is not news, a kind switched on over an
+    empty list is an offer of nothing (and is news the moment it isn't, which is the case that was
+    wrong when the tests were written).
   - `src/shared/spawn-timers.ts` → `electron/tests/spawn-timers.test.ts` (the respawn-learning
     rules, [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)): that
     the figure is the **shortest** gap and never the mean, that a later longer gap can't stretch it
@@ -206,6 +220,13 @@ unit-tested.
     outstanding item, that a target lands in the zones you've killed it in and is still listed when
     you haven't, that it leads its zone over mobs that merely drop things, and that a mob which is
     both target and source stays one row.
+  - `src/shared/map/hunt-pins.ts` → `electron/tests/hunt-pins.test.ts` — the join between the built
+    hunt and a zone's kills ([ADR 0142](../decisions/0142-a-hunted-mob-marks-itself.md)): that a mob
+    nothing wants is never marked, that one with no believable position is left off rather than
+    guessed at, that the wiki's article and case meet the kill log's stripped name, that a mob wanted
+    in *another* zone is still marked where you have actually killed it (the position is the zone
+    authority, not the wiki's wording), that everything one mob is wanted for lands on its one pin,
+    that a spot pinned by hand isn't marked twice, and that a position which is a peer's alone says so.
   - `src/shared/mob-stats.ts` → `electron/tests/mob-stats.test.ts` (rolling kills up into
     observations, observed drop rates and their denominators, roam areas ignoring untrustworthy
     positions, and pooling a peer's counts while keeping provenance — including that a pooled

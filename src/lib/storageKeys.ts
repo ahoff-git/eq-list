@@ -26,14 +26,18 @@ export const STORAGE_KEYS = {
   mapLayers: "eqlist.map.layers",
   /** Map window: whether zoning in-game snaps the map back to your zone. */
   mapFollowZone: "eqlist.map.followZone",
-  /** Map window: share-my-pins toggle. */
-  mapSharePins: "eqlist.map.sharePins",
+  /**
+   * Map window: whether the map marks your hunt's mobs where your kills place them (ADR 0142).
+   *
+   * Persisted, unlike the pin-kind filter beside it: that one narrows what you drew to look at one
+   * thing, and shouldn't still be narrowed tomorrow — this one is a standing answer to "should the
+   * app put things on my map at all", and asking again every session is not what "no" means.
+   */
+  mapHuntPins: "eqlist.map.huntPins",
   /** Map window: the kills panel's visibility. */
   mapKillsOpen: "eqlist.map.killsOpen",
   /** Map window: the mob-knowledge panel's visibility. */
   mapMobsOpen: "eqlist.map.mobsOpen",
-  /** Map window: share-my-kills toggle. */
-  mapShareKills: "eqlist.map.shareKills",
   /** Map window: the travel panel's visibility. Which conveyances you have is a *setting*, not this. */
   mapTravelOpen: "eqlist.map.travelOpen",
   /** The 🧭 panel's survey strip — what the graph holds about this zone. Off by default: it answers

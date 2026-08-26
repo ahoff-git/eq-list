@@ -1,0 +1,101 @@
+# Peers
+
+## Purpose
+Sharing between two installs of EQ List: what one player will hand another, how it gets there, and
+what happens to it on arrival.
+
+The connection has existed since [ADR 0011](../decisions/0011-awari-peer-location-sharing.md) and has
+been an app-level service owned by the main window since
+[ADR 0012](../decisions/0012-awari-connection-owned-by-main-window.md). What changed in
+[ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md) is what the *room* is for: it is a
+**meeting place**, not a channel. A peer broadcasts a small catalogue of what it has; the data itself
+travels peer-to-peer, on request, over that peer's own connection.
+
+## Responsibilities
+
+- **The catalogue and its three messages** (`src/shared/peer-share.ts`, pure and tested in
+  `electron/tests/peer-share.test.ts`):
+  - `offer` — broadcast, and the only thing that still is. Per kind: how many rows, and a `rev` that
+    moves when they change. A kind not being shared is **absent**, not zero — the catalogue *is* the
+    toggle state.
+  - `ask` / `give` — peer-routed (`publish({type:"peer", peer})`). `ask` names a kind and the
+    revision the asker already has; `give` answers with the rows. A `give` with no `rows` means
+    "unchanged", which is kept distinct from a `give` of none (that means "now empty", which
+    [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md) reads as an un-share).
+  - `SHARE_KINDS` — the table every rule is driven off: label, blurb, family, and a `read` per kind.
+    **A kind with no reader cannot be received**, which is how a new kind fails closed rather than
+    arriving unchecked.
+- **Three families**, because the rules differ and the table says which a kind is in:
+  - **authored** (`watches`, `styles`, `lists`, `pins`) — somebody made it. Asked for by a person,
+    landed in a tray, **never applied on arrival**. `pins` are the one kind that *also* still
+    broadcasts, because the [map](../map/README.md)'s read-only overlay of somebody's live markers is
+    a different request from taking a copy home; the same toggle gates both.
+  - **observation** (`mobs`, `kills`, `respawns`) — pooled, filed by
+    [`contributions.ts`](../../electron/contributions.ts)'s five rules, **tagged by contributor id**
+    ([ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md)) so any of it can be
+    filtered out later. Fetched automatically when a peer's `rev` moves.
+  - **live** (`timers`, `buffs`, `scores`) — true on somebody else's machine right now. Held in
+    memory, dropped when they go, never written to disk.
+- **The hub** (`electron/peer-share.ts`) — in main, because main is the only participant always
+  running: a hub that answered only while a window was open would drop every ask the moment you
+  changed tab. It measures the catalogue on a slow tick (a digest moving *is* the change, so no
+  store has to be taught to call it), answers asks after re-checking the toggle against the
+  settings rather than the published offer, files observations, and holds everything else in a
+  received tray with a TTL.
+- **The two de-dupes**, and they are not the same de-dupe:
+  - **Countdowns** merge by `key` (one mob, one place — a `SpawnTimer`'s `id` is `key#slot` and the
+    slot is local bookkeeping). Within a key, two clocks are the same spawn when their `dueAt` are
+    within `SAME_SPAWN_MS`. Which survives follows the evidence order
+    [`spawn-timers.ts`](../../src/shared/spawn-timers.ts) already argues for: a `seenAt` (an
+    observation outranks any countdown), then more `samples`, then the earlier `dueAt` (the bound
+    only falls, so the tightest honest one wins). Ties stay ours, so a row can't flicker with packet
+    order.
+  - **Buffs** merge by spell **and whose**, and "whose" does not survive the wire: `ON_YOU` means
+    *the sender*. It is resolved to a name **before it leaves** (`shareableBuffs`), because only the
+    sender knows whose board it is; one still relative on arrival is dropped rather than guessed at.
+- **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray` and `PeerScores`) — in the
+  **main** window: what travels is lists, rules, styles and scoreboards, all of which are copied onto
+  something in that window. Three sections in the order the questions get asked — what you share
+  (a toggle per kind, all off by default), who's here and what they offer, and what's arrived.
+- **Saying so.** A peer newly offering something raises a toast whose one action opens the Peers tab
+  with their row picked out ([ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md)).
+  The rules are all about not becoming noise: only a kind **newly** on offer (not a count moving —
+  a catalogue moves on every kill), only kinds a person has to act on (an observation fetches
+  itself), one notice per peer rather than per kind, once per **name** per session (a peer id is
+  per-session, so keying by id would re-announce everyone after a hiccup), and nothing for a peer no
+  route reaches. The action is navigation and nothing else: asking, reading and copying all stay on
+  the panel.
+- **Scores compared, never merged.** A peer's figure cannot beat, seed or touch your board. It is
+  laid beside it, category by category, `unsettled` flags and all
+  ([ADR 0130](../decisions/0130-data-in-doubt-says-so.md)), and a provisional figure cannot lead.
+
+## Non-responsibilities
+
+- **No trust score, and no weighting.** Nothing here scores a contributor. ADR 0132's argument
+  stands: a per-peer number would look authoritative and be made up, since nothing can tell an
+  unlucky streak from a liar. Provenance is *shown*, and disagreement *reported*.
+- **No automatic application of anything authored.** A watch that fires or a style that repaints
+  every banner wearing it are changes to what the app does. They wait for a click.
+- **No accepting from a notice.** The offer toast navigates and stops — it does not ask for the data
+  and does not copy anything ([ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md)).
+  Nor is there a *delivery* notice: you are already looking at the tray when you ask, and a second
+  toast per ask would double the noise the first one exists to reduce.
+- **No merging of somebody else's board into yours.** See above.
+- **No identity system.** Names are self-declared and unverified, as they have been since ADR 0011.
+  The transport ids (peer and session) stay per-session; the only stable id is the **contributor id**
+  ([`identity.ts`](../../electron/identity.ts)), which rides on contributed payloads only.
+- **No room scoping.** There is one room, `eq-list`, and everything in the catalogue is offered to
+  everyone in it. Group- or camp-scoped rooms are not built — see the open question in
+  [decisions/README.md](../decisions/README.md).
+- **No bulk transfer.** A `give` is one message. Anything genuinely large — a wiki cache, the game's
+  spell file — would need chunking, and does not have it.
+
+## See also
+[architecture](../architecture/README.md) · [map](../map/README.md) ·
+[testing](../testing/README.md) ·
+[ADR 0011](../decisions/0011-awari-peer-location-sharing.md) ·
+[ADR 0012](../decisions/0012-awari-connection-owned-by-main-window.md) ·
+[ADR 0015](../decisions/0015-peer-presence-via-hello.md) ·
+[ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md) ·
+[ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md) ·
+[ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md)

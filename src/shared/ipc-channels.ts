@@ -115,6 +115,12 @@ export const CH = {
   mapOpenAt: "map:openAt",
   /** Ask the map window (if it's open) to pick a mob's kills out — a hover hint, so `send`. */
   mapEmphasize: "map:emphasize",
+  /**
+   * Hand pins to the map window's own set — the one shared kind that can't be copied where it was
+   * received, since pins live in that window's storage and nowhere else (ADR 0141). Opens the map
+   * if it's shut, unlike `mapEmphasize`: this one is a click, not a hover.
+   */
+  mapAddPins: "map:addPins",
   mapOpenP99: "map:openP99",
   /** Which map sets are available (bundled images + the game's maps folder and its packs). */
   mapSources: "map:sources",
@@ -154,8 +160,24 @@ export const CH = {
   awariStatus: "awari:status", // owner → main: connection status changed
   awariPeers: "awari:peers", // owner → main: the room roster changed
   // events (main → renderer)
-  awariPublish: "evt:awariPublish", // main → owner: publish this payload to the room
+  awariPublish: "evt:awariPublish", // main → owner: publish this payload (room, or one peer)
   awariMessage: "evt:awariMessage", // main → all: a peer message (self excluded)
+  // Peer sharing — the offer/ask/give hub (ADR 0141). Main owns it, because a hub that only
+  // answered while a window was open would drop every ask the moment you changed tab.
+  peerOffer: "peer:offer", // any window → main: our own catalogue, for the toggles to show counts
+  peerMine: "peer:mine", // any window → main: the rows we'd hand over for one kind
+  peerAsk: "peer:ask", // any window → main: ask one peer for one kind, on a person's behalf
+  peerReceived: "peer:received", // any window → main: what peers have given us
+  peerClearShares: "peer:clearShares", // any window → main: throw a peer's answers away
+  peerSetPins: "peer:setPins", // map window → main: its pins, which live in its own storage
+  peerShareChanged: "evt:peerShare", // main → all: the received tray moved
+  /**
+   * main → all: somebody is newly offering something worth going to look at
+   * ([ADR 0143](../../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md)). Narrow on
+   * purpose — a kind that has just appeared in their catalogue, not a count that moved — because a
+   * notice per catalogue change would be a notice per kill.
+   */
+  peerOffered: "evt:peerOffered",
   awariStatusChanged: "evt:awariStatus", // main → all: connection status
   awariPeersChanged: "evt:awariPeers", // main → all: who else is in the room
   /**
@@ -188,6 +210,7 @@ export const CH = {
   navCommand: "evt:navCommand",
   mapViewZone: "evt:mapViewZone",
   mapEmphasis: "evt:mapEmphasis",
+  mapPinsAdded: "evt:mapPinsAdded", // main → map: fold these pins into yours
 } as const;
 
 export type Channel = (typeof CH)[keyof typeof CH];

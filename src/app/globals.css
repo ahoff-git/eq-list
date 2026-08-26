@@ -2875,6 +2875,23 @@ kbd {
 .toast.tone-bad { border-left-color: var(--bad); }
 .toast-title { font-weight: 600; }
 .toast-detail { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+/* Where to go about this notice (ADR 0143). Deliberately a quiet link rather than a filled button:
+   a card that is going away by itself in three seconds should not look like it is demanding an
+   answer, and the whole action is "go and look". Aligned left under the text it belongs to. */
+.toast-action {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.toast-action:hover { color: var(--text); }
 /* Set shortly before the card is dropped, so it leaves rather than vanishes (see `LEAVE_MS`). */
 .toast.leaving {
   opacity: 0;
@@ -2885,3 +2902,73 @@ kbd {
   0% { opacity: 0; transform: translateY(10px) scale(0.97); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* ── Peers tab ────────────────────────────────────────────────────────────────
+   Who's in the room, what you hand out, and what they've handed you (ADR 0141).
+
+   Built out of the same pieces as Settings — `.setting-check` for a toggle, `.hint` for the line
+   under it — because the top third of this tab *is* a settings screen and reading as a different
+   app would be a lie about what those switches are. What is new is the section rhythm: three
+   `.peers-block`s, each a heading and a list, since the questions ("what do I share", "who's here",
+   "what arrived") are asked in that order and answered in three different shapes. */
+.peers { display: flex; flex-direction: column; gap: 18px; padding: 4px 2px 16px; }
+.peers-block > h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.peers-family { margin-bottom: 12px; }
+.peers-family-head { display: flex; flex-direction: column; gap: 1px; margin-bottom: 6px; }
+.peers-family-head b { font-size: 13px; }
+.peers-toggle { padding: 4px 0 4px 10px; border-left: 2px solid var(--border); margin-bottom: 4px; }
+/* The blurb sits under its own toggle rather than beside it: each is a full sentence about what
+   the other person actually receives, and a column of those is far easier to scan than a grid. */
+.peers-toggle .hint { display: block; margin-left: 22px; font-size: 12px; color: var(--text-dim); }
+
+.peer-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.peer-row:first-of-type { border-top: none; }
+/* Arrived here from a notice: mark the row it was about (ADR 0143). A left stripe rather than a
+   background, so it reads as "this one" without redrawing the row as a different kind of thing. */
+.peer-row.focused {
+  box-shadow: inset 2px 0 0 var(--accent);
+  padding-left: 8px;
+}
+.peer-head { display: flex; align-items: center; gap: 6px; }
+.peer-head .u-name { font-weight: 500; }
+/* Wraps, because a peer sharing everything has ten buttons and a room has several such peers. */
+.peer-kinds { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.peers-tray-kind { border-top: 1px solid var(--border); padding: 4px 0; }
+.peers-tray-kind:first-of-type { border-top: none; }
+.tray-head { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: flex-start; }
+.peers-tray-body { display: flex; flex-direction: column; gap: 3px; padding: 6px 0 6px 14px; }
+.tray-actions { display: flex; gap: 6px; margin-bottom: 4px; }
+.tray-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+/* The name takes the slack so every action button lines up down the right-hand edge. */
+.tray-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-sub { padding-left: 14px; }
+.tray-group { margin-bottom: 8px; }
+.tray-swatch { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+
+/* A comparison is the one thing here that really is a table: same categories down the side, one
+   column per person. It scrolls sideways in its own box rather than widening the window — six
+   players is six columns, and the tab is not the place to discover that. */
+.peers-scores-wrap { overflow-x: auto; }
+.peers-scores { border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+.peers-scores th,
+.peers-scores td { padding: 3px 10px 3px 0; text-align: left; font-weight: 400; }
+.peers-scores thead th { color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.peers-scores tbody th { color: var(--text-dim); padding-right: 16px; }
+.peers-scores td { font-variant-numeric: tabular-nums; }
+.peers-scores .mine { color: var(--text); }
+/* Gold, like every other "this is the figure" in the app — and never on a provisional one. */
+.peers-scores .leader { color: var(--accent); font-weight: 600; }

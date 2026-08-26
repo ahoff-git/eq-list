@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { createLogger } from "@/shared/logging";
 import type { MapPin } from "@/shared/map/pins";
-import type { MobObservation } from "@/shared/mob-stats";
 import type { SharedKill } from "@/shared/kill-filters";
 import { AWARI_MSG, type AwariPayload, type AwariPeer } from "@/shared/types";
 
@@ -86,8 +85,6 @@ export function useAwariRoom(opts: { name: string }): {
   users: ConnectedUser[];
   sendPing: (eq: { y: number; x: number }, zone: string, layer?: number) => void;
   sharePins: (pins: MapPin[]) => void;
-  shareKills: (kills: SharedKill[]) => void;
-  shareMobs: (observations: MobObservation[]) => void;
 } {
   const { name } = opts;
   const [peers, setPeers] = useState<Record<string, PeerLoc>>({});
@@ -167,30 +164,24 @@ export function useAwariRoom(opts: { name: string }): {
     }));
   }, []);
 
-  // Broadcast our current pins (empty array un-shares). Peers replace our set on receipt.
+  /**
+   * Broadcast our current pins (an empty array un-shares). Peers replace our set on receipt and draw
+   * them read-only on the map beside their own.
+   *
+   * **Pins are the one kind that travels both ways**, and the two are different features rather than
+   * a duplication ([ADR 0141](../../../specs/decisions/0141-the-room-is-a-meeting-place.md)): this
+   * is the *live overlay* — somebody else's markers appearing on your map while you are both looking
+   * at the camp, which is the "about now" job this hook exists for — while the Peers tab's ask/give
+   * hands over a **copy to keep**, with fresh ids, onto your own pin set. Seeing where somebody is
+   * pointing and taking their map home are not the same request, and neither one substitutes for the
+   * other.
+   *
+   * Kills and observations, which used to be broadcast from here too, really are gone: main reads
+   * them out of the kill log and hands them over on request, which is what makes them shareable
+   * while this window is shut.
+   */
   const sharePins = useCallback((pins: MapPin[]) => {
     api()?.awari.send({ kind: AWARI_MSG.pins, name: nameRef.current || DEFAULT_PEER_NAME, pins });
-  }, []);
-
-  /**
-   * Broadcast our kill locations (empty array un-shares) so a camp's heatmap can be pooled.
-   * Only placeable kills are worth sending — a peer can't do anything with a position we
-   * don't have — and the caller decides which those are.
-   */
-  const shareKills = useCallback((kills: SharedKill[]) => {
-    api()?.awari.send({ kind: AWARI_MSG.kills, name: nameRef.current || DEFAULT_PEER_NAME, kills });
-  }, []);
-
-  /**
-   * Broadcast what we've learned about mobs — counts, not raw kills, so a pooled drop rate is
-   * just addition and none of our movements travel with it.
-   */
-  const shareMobs = useCallback((observations: MobObservation[]) => {
-    api()?.awari.send({
-      kind: AWARI_MSG.mobs,
-      name: nameRef.current || DEFAULT_PEER_NAME,
-      mobs: observations,
-    });
   }, []);
 
   // One row per connected peer, merging the roster with what they've shared. A peer
@@ -228,7 +219,5 @@ export function useAwariRoom(opts: { name: string }): {
     users,
     sendPing,
     sharePins,
-    shareKills,
-    shareMobs,
   };
 }

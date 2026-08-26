@@ -39,6 +39,9 @@ const DEFAULT_SETTINGS: Settings = {
   askLucy: true,
   connectPeers: false,
   shareLocation: false,
+  // Every share kind off, and listed as an empty object rather than left absent so a settings file
+  // has somewhere for the Peers tab to write without a migration (ADR 0141).
+  share: {},
   playerName: "",
   bootstrapUrl: "",
   // Off for the ports you may not be able to get, on for the gnome anyone can walk up to. Nothing

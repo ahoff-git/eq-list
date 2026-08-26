@@ -13,7 +13,7 @@ import BuffPanel from "./components/BuffPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
 import AlertsPanel from "./components/AlertsPanel";
-import type { BuffView, Settings } from "@/shared/types";
+import type { AwariPeer, BuffView, Settings } from "@/shared/types";
 import DamagePanel from "./components/DamagePanel";
 import LootPanel from "./components/LootPanel";
 import StatusBar from "./components/StatusBar";
@@ -25,6 +25,8 @@ import CastAlerts from "./components/CastAlerts";
 import UpdateBanner from "./components/UpdateBanner";
 import Toasts from "./components/Toasts";
 import TabBar, { type TabItem } from "./components/TabBar";
+import PeersPanel from "./components/PeersPanel";
+import PeerOfferToasts from "./components/PeerOfferToasts";
 import { useBuffs, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -34,7 +36,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "buffs" | "loot" | "search" | "damage" | "session" | "alerts" | "settings";
+type Tab = "list" | "hunt" | "timers" | "buffs" | "loot" | "search" | "damage" | "session" | "alerts" | "peers" | "settings";
 
 /**
  * The single app window: a frameless, translucent float (the "overlay" look) that
@@ -54,6 +56,40 @@ export default function Home() {
   // Read here rather than only in the panel, so the tab itself can say how many buffs are down —
   // the one number in this feature that is worth seeing without opening it.
   const buffs = useBuffs();
+  // Only the roster, for the tab's own count — the panel does its own reading. Cheap: it's a
+  // brokered event this window is already receiving as the connection's owner.
+  const [peers, setPeers] = useState<AwariPeer[]>([]);
+  /**
+   * The peer an offer notice sent us to look at, so the Peers tab can pick their row out
+   * ([ADR 0143](../../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md)).
+   *
+   * Cleared on **leaving** the tab rather than after a timeout: the highlight answers "which of
+   * these was it?", and that question stays open for as long as the reader is still on the screen
+   * that asked it.
+   */
+  const [focusPeer, setFocusPeer] = useState<string | null>(null);
+  const viewPeer = useCallback(
+    (peerId: string) => {
+      setFocusPeer(peerId);
+      setTab("peers");
+    },
+    [setTab],
+  );
+  useEffect(() => {
+    if (tab !== "peers") setFocusPeer(null);
+  }, [tab]);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const offPeers = a.awari.onPeers(setPeers);
+    const offStatus = a.awari.onStatus((s) => {
+      if (!s.connected) setPeers([]);
+    });
+    return () => {
+      offPeers();
+      offStatus();
+    };
+  }, []);
   // Squares the window's corners while maximized (see globals.css).
   const maximized = useMaximized();
   const settings = useSettings();
@@ -126,6 +162,13 @@ export default function Home() {
     { key: "search", label: "Search" },
     { key: "damage", label: "Damage" },
     { key: "session", label: "Session" },
+    // Before Settings, and after everything you look at while playing. It is the same kind of thing
+    // as Settings — a place you go to decide something and then leave — but it also has a live half
+    // (who is here, what has arrived), which is why it isn't a group inside it
+    // ([ADR 0141](../../specs/decisions/0141-the-room-is-a-meeting-place.md)). `TabBar` collapses
+    // from the end, so this and Settings are the two that go into the » menu first, which is right:
+    // neither is needed mid-fight.
+    { key: "peers", label: peersLabel(peers.length, settings?.connectPeers) },
     { key: "settings", label: "Settings" },
   ];
 
@@ -136,6 +179,9 @@ export default function Home() {
     <NavProvider onOpen={showSearch}>
       <NavKeys />
       <AwariHost />
+      {/* Mounted by the shell, not by the Peers tab: a notice about a tab you aren't on has to come
+          from something that is always mounted. */}
+      <PeerOfferToasts onView={viewPeer} />
       {/* Beep only — the banner + flash live in the dedicated click-through overlay window
           (/alert), which floats over the game. This window is the always-alive one that can
           reliably play the sound. */}
@@ -189,6 +235,7 @@ export default function Home() {
           {tab === "damage" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "alerts" && <AlertsPanel />}
+          {tab === "peers" && <PeersPanel focusPeer={focusPeer} />}
           {tab === "settings" && <SettingsPanel />}
         </div>
 
@@ -214,6 +261,19 @@ function alertsLabel(alerts: Settings["castAlerts"] | undefined): string {
   if (!alerts.enabled) return "Alerts (off)";
   const live = alerts.watches.filter((w) => w.enabled).length;
   return live ? `Alerts (${live})` : "Alerts";
+}
+
+/**
+ * What the Peers tab says about itself: how many other people are in the room.
+ *
+ * `(off)` for the same reason Alerts has one — a room with nobody in it and a connection that was
+ * never switched on look identical from the tab strip, and only one of them is worth opening. The
+ * count is silent at zero, because "nobody yet" is the resting state of a small room and a permanent
+ * `(0)` would stop being read.
+ */
+function peersLabel(peers: number, connected: boolean | undefined): string {
+  if (!connected) return "Peers (off)";
+  return peers ? `Peers (${peers})` : "Peers";
 }
 
 /**

@@ -49,8 +49,14 @@ export interface RenderPin {
   title?: string;
   /** Free-text note shown on hover. */
   note?: string;
-  /** True for the user's own pins (removable); false for peers' shared pins. */
+  /** True for the user's own pins (removable); false for peers' and the map's own. */
   mine: boolean;
+  /**
+   * The mob this pin is *about*, when it is about one — a hunt pin the map placed itself
+   * (`hunt-pins.ts`). Not yours to edit, but it does answer a click: the window it belongs to knows
+   * what's recorded about that mob, and the pin is the shortest way to ask.
+   */
+  mob?: string;
 }
 
 /**
@@ -423,7 +429,11 @@ export default function MapPanel({
         radius: HIT_RADIUS.pin,
         priority: 4,
         title: pin.title || pin.label,
-        detail: [pin.title ? pin.label : "", pin.note ?? "", pin.mine ? "click to edit" : ""]
+        detail: [
+          pin.title ? pin.label : "",
+          pin.note ?? "",
+          pin.mine ? "click to edit" : pin.mob ? "click for what's known about it" : "",
+        ]
           .filter(Boolean)
           .join(" · "),
         pin,

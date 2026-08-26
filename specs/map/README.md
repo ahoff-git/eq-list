@@ -338,10 +338,10 @@ world coordinates, so a map knows where it is. See
   from the geometry's own world box. Layer `_1` is the points of interest and is read; layer
   `_2` is a compass and the mapmaker's credits drawn as vector text far outside the zone, so
   it isn't drawn — only its labels, shown as attribution under the map.
-- **What's drawn** (the 👁 panel, `src/app/components/MapFilters.tsx`) — one place for four
-  questions, in the order you'd ask them: **which heights**, **which of my pins**, **which of the
-  map's own labels**, **whose shared pins**. A busy dungeon needs all four, so each is its own
-  section; the panel scrolls rather than growing, because the map is the point — up to the height its
+- **What's drawn** (the 👁 panel, `src/app/components/MapFilters.tsx`) — one place for five
+  questions, in the order you'd ask them: **which heights**, **which of my pins**, **the hunt's own**,
+  **which of the map's own labels**, **whose shared pins**. A busy dungeon needs them all, so each is
+  its own section; the panel scrolls rather than growing, because the map is the point — up to the height its
   reader drags it to (below). Presentational — every choice is owned by the map window, so it can't
   drift out of step with the canvas.
 - **Label filter** (`src/shared/map/poi-kinds.ts`) — a busy zone is mostly labels, and which ones
@@ -415,15 +415,40 @@ world coordinates, so a map knows where it is. See
   Remove). Pins persist in `localStorage` (per zone — and per layer where the zone has
   them, stamped with the layer you dropped it on). The **👁 panel** toggles visibility
   by pin kind (**My pins**) **and per sharer** (**Shared by** — one toggle per peer sending
-  pins). When connected, the
-  **🔗 toggle** shares your pins to peers (broadcast via awari, incl. title/note; peers'
-  pins render read-only). All rendered on the overlay canvas, filtered to the viewed zone.
+  pins). The **🔗 toggle** shares your pins — a view of `settings.share.pins`, the same switch the
+  [peers](../peers/README.md) tab shows, so the decision has one home. Pins travel **two ways**, and
+  they are the only kind that does ([ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md)):
+  broadcast for the **live overlay** (peers' pins stream in over the room and render read-only, which
+  is this window's "about now" job), *and* reported to main (`peer.setPins`) so main can hand over a
+  **copy to keep** when somebody asks — which is what makes them shareable while the map is shut.
+  Seeing where somebody is pointing and taking their map home are different requests. A copy arriving
+  from the Peers tab is folded into your own set with fresh ids. All rendered on the overlay canvas,
+  filtered to the viewed zone.
+- **Hunt pins** (`src/shared/map/hunt-pins.ts`, pure) — **the one marker the map places by itself**:
+  every mob your hunt wants that this zone's kills can place, drawn as a hollow ring at its roam
+  centre ([ADR 0142](../decisions/0142-a-hunted-mob-marks-itself.md)). The two inputs are the built
+  hunt (`useHunt`, shared with the Hunt tab so the two can't drift) and this zone's mob knowledge
+  (`useZoneMobs`, shared with the 📖 panel for the same reason). A mob with no believable position is
+  left off rather than guessed at, and a roam centre you already starred by hand isn't marked twice.
+
+  **Derived, never stored**: not in the pin store, never shared, not draggable, not editable — they
+  exist while the hunt wants the mob and the kills can place it, so finishing an item takes its mobs
+  off the map by itself. The hover says what it's wanted for, whose kills placed it (pooled, or a
+  peer's alone), and `roamWhy`'s hedge, because a roam centre is an average of where a mob *died*
+  rather than a spawn point. Clicking one opens the 📖 panel narrowed to that mob with its kills
+  ringed, the same answer arriving from another window gives (ADR 0104). The 👁 panel switches them
+  off, and that choice persists.
 - **Peer networking** (opt-in) — the awari **connection lives in the main window**
   (`src/lib/awari/host.tsx`), not here; the main process brokers messages to every
   window (see [ADR 0012](../decisions/0012-awari-connection-owned-by-main-window.md)).
   The map is just a consumer: `src/lib/map/useAwariRoom.ts` reads the brokered stream
-  (`window.eql.awari.onMessage`) into peers/pings/pins and sends its own via
-  `awari.send`. Two Settings gates (both default off): **`connectPeers`** joins the
+  (`window.eql.awari.onMessage`) into peers/pings/pins and sends its own pings via
+  `awari.send`. **Kills and observations are no longer broadcast from here** — main reads them out of
+  the kill log and hands them over peer-to-peer on request, so they travel whether or not this window
+  is open ([ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md)); pins still broadcast, for
+  the live overlay above, *as well as* being offered for copying. See
+  [peers](../peers/README.md). What is left here is what this hook was always for: the things that
+  are about *now*. Two Settings gates (both default off): **`connectPeers`** joins the
   room — you then see peers' live locations (green dots) and can **ping** the map (click
   a spot → your `playerName` + the **viewed** zone are broadcast and drawn as a gold
   named marker for everyone viewing that zone). A fresh ping **animates** — expanding
@@ -446,7 +471,10 @@ world coordinates, so a map knows where it is. See
   **observed drop rates** (kills-that-dropped-it over kills, dimmed until the sample is worth
   trusting — only kills that were yours count, see
   [ADR 0027](../decisions/0027-only-your-kills-count.md)) and **roam areas** (the middle of where a mob died and how far that spreads, with a
-  ±button that pins it on the map). Yours is derived from the kill log on demand;
+  ±button that pins it on the map — and, for a mob your list is after, a pin the map places without
+  being asked: **Hunt pins** above). The rows are **read by the window, not by the panel**
+  (`useZoneMobs`), because the hunt pins on the canvas are drawn from the same rows and a panel with
+  its own copy would be a second answer to one question. Yours is derived from the kill log on demand;
   peers' arrives over the room and is stored separately, **keyed by contributor id rather than by
   the name they announce**, so every figure can still say how much of it you saw yourself and whose
   the rest is ([ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md)).
@@ -559,9 +587,13 @@ world coordinates, so a map knows where it is. See
   The list **groups by mob** — one openable row per mob with a kill count and drop summary, so
   300 kills of the same thing read as `grikbar kobold ×300` instead of 300 identical lines;
   expand a row to see the individual kills (each still its own dot on the map).
-  The **☣ toggle** shares your placed kills with the room (conclusion only: zone, position,
-  mob, confidence) **and** your mob observations (counts, so pooled rates are just addition) —
-  one intent, one switch. Peers' kills draw outlined rather than filled, and are **kept**: they're
+  The **☣ toggle** offers your placed kills (conclusion only: zone, position, mob, confidence)
+  **and** your mob observations (counts, so pooled rates are just addition) — one intent, one
+  switch, and a view of `settings.share.kills`/`.mobs` rather than window state, so the
+  [peers](../peers/README.md) tab shows the same decision. Both are read out of the kill log by main
+  and handed over on request ([ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md)), which
+  fixes what this window could not: it only ever shared *the zone on screen*, and shared nothing at
+  all while closed. Peers' kills draw outlined rather than filled, and are **kept**: they're
   filed by the main process as they arrive and read back with `usePeerKills`, so the pooled half of
   the heatmap is here on a night nobody else is online, and no window has to be open to receive it
   ([ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md)). See
@@ -570,7 +602,11 @@ world coordinates, so a map knows where it is. See
 - **Connected users** (the 👥 toolbar panel, when connected) — everyone in the room,
   whether or not they share anything: presence from awari's roster, names/zones from a
   `hello` payload, plus what each is sharing (location dot, pin count) and a button to
-  jump to their zone. See [ADR 0015](../decisions/0015-peer-presence-via-hello.md).
+  jump to their zone. See [ADR 0015](../decisions/0015-peer-presence-via-hello.md). Deliberately
+  still **the map's own panel** and not the [peers](../peers/README.md) tab: this one answers "who
+  is where", which is a map question, while lists, rules, styles and scoreboards are copied onto
+  things in the main window and belong beside them
+  ([ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md)).
 - **Every one of those five panels is resizable** (`ResizablePanel`, with the arithmetic in
   `src/shared/panel-size.ts`). Each opens over the map with a default share of the window — 45% for
   the 👁 floors and the 🧭 route, 40% for ☠ and 📖, 30% for the 👥 roster — and that default is a

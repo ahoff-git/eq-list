@@ -2,10 +2,15 @@ import type { DataReportRow } from "./data-provenance";
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { KnowledgeContributor } from "./contributors";
+import type { PeerOfferNotice, ReceivedShare, ShareKind, ShareSettings } from "./peer-share";
+// Re-exported because every consumer of the `peer` bridge reads it off the api surface, and
+// `types.ts` is where that surface is described.
+export type { PeerOfferNotice, ReceivedShare, ShareKind } from "./peer-share";
 import type { SharedKill } from "./kill-filters";
 import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { BuffInstance, BuffView, KnownBuff } from "./buff-tracking";
 import type { EqMap } from "./map/eqmap";
+import type { MapPin } from "./map/pins";
 import type { MapSourceReport } from "./map/map-sources";
 import type { TravelAnswer, TravelEnd } from "./travel/route";
 import type { TravelAvoided, TravelOptions } from "./travel/types";
@@ -2042,6 +2047,16 @@ export interface Settings {
   connectPeers: boolean;
   /** Broadcast your live location to peers (requires `connectPeers`). Default off. */
   shareLocation: boolean;
+  /**
+   * Which kinds of data peers may **ask** you for, by `ShareKind` (`src/shared/peer-share.ts`).
+   * All off until switched on, per kind, in the Peers tab; `connectPeers` gates the lot.
+   *
+   * A separate field from `shareLocation` rather than a member of it, because a location is
+   * published at everybody continuously while these are only ever handed over on request — the
+   * thing being consented to is not the same shape (ADR 0141). Absent on a settings file written
+   * before the Peers tab existed, which reads as "nothing shared", the correct default.
+   */
+  share?: ShareSettings;
   /** Display name shown to peers; blank = derived from the log file's character name. */
   playerName: string;
   /** Override for the awari bootstrap-service URL; blank = the live default. */
@@ -2165,6 +2180,17 @@ export const AWARI_MSG = {
    * again whenever someone new joins (so late arrivals learn about us).
    */
   hello: "hello",
+  /**
+   * A peer's **catalogue**: which share kinds they're offering, how many rows each holds, and a
+   * revision that moves when they change (`ShareOffer`). The only kind besides `hello`, `loc` and
+   * `ping` that is still broadcast to the room — everything below it is peer-routed
+   * ([ADR 0141](../../specs/decisions/0141-the-room-is-a-meeting-place.md)).
+   */
+  offer: "offer",
+  /** Direct: "send me this kind" (`ShareAsk`). Goes to one peer, over their own connection. */
+  ask: "ask",
+  /** Direct: the answer to an `ask` (`ShareGive`). Only ever sent for a kind whose toggle is on. */
+  give: "give",
 } as const;
 export type AwariMsgKind = (typeof AWARI_MSG)[keyof typeof AWARI_MSG];
 
@@ -2182,6 +2208,20 @@ export interface AwariInbound {
   payload: AwariPayload;
 }
 
+/**
+ * Where an outbound payload is going: the room, or one peer.
+ *
+ * `to` is a **peer id**, not a `PeerRef` — the session id the direct route actually needs is looked
+ * up in the owner window's roster on the way out (ADR 0141). Windows and the main process have no
+ * business knowing about awari's routing shapes, and the roster is where a peer id becomes a peer
+ * anyway; a `to` naming somebody who has since left simply doesn't send, which is the right answer.
+ */
+export interface AwariOutbound {
+  payload: AwariPayload;
+  /** Absent = the room. Present = that peer alone. */
+  to?: string;
+}
+
 /** The owner window's connection status, broadcast to every window. */
 export interface AwariStatus {
   connected: boolean;
@@ -2195,8 +2235,24 @@ export interface AwariStatus {
  */
 export interface AwariPeer {
   peerId: string;
+  /**
+   * The other half of awari's `PeerRef`, needed to address this peer **directly** rather than
+   * through the room (ADR 0141). Absent for a peer we've only heard *from* over a route that
+   * didn't carry one; such a peer can be listed but not asked.
+   *
+   * Per-session and transport-only, exactly as the peer id is
+   * ([ADR 0015](../../specs/decisions/0015-peer-presence-via-hello.md)) — a session id is the same
+   * kind of fact and no more of an identity.
+   */
+  sessionId?: string;
   name?: string;
   zone?: string;
+  /**
+   * What they've said they're sharing (`ShareOffer` from `peer-share.ts`), from their last `offer`.
+   * Absent means they haven't said — which is different from sharing nothing, and the panel words
+   * it that way. Typed loosely here so `types.ts` doesn't have to depend on the share catalogue.
+   */
+  offer?: Record<string, { n: number; rev: number }>;
 }
 
 /**
@@ -2767,6 +2823,10 @@ export interface EqlApi {
      * showing another zone, or holding no kills of that mob, it does nothing.
      */
     emphasize(emphasis: KillEmphasis | null): void;
+    /** Hand pins a peer shared to the map's own set, opening the map if it's shut (ADR 0141). */
+    addPins(pins: MapPin[]): void;
+    /** Map window only: pins somebody asked to add to yours. */
+    onPinsAdded(cb: (pins: MapPin[]) => void): Unsubscribe;
     /** Fires in the map window when someone asks for kills to be picked out (`emphasize`). */
     onEmphasis(cb: (emphasis: KillEmphasis | null) => void): Unsubscribe;
     /** Open a zone's map page on the Project 1999 wiki (for zones with no bundled map). */
@@ -2792,22 +2852,55 @@ export interface EqlApi {
    * through here. See `AwariHost` (owner engine) and ADR 0012.
    */
   awari: {
-    /** Publish an app payload to the room (relayed to the owner window, which holds the socket). */
-    send(payload: AwariPayload): void;
+    /**
+     * Publish an app payload (relayed to the owner window, which holds the socket).
+     *
+     * With no `to` it goes to the room, which after [ADR 0141](../../specs/decisions/0141-the-room-is-a-meeting-place.md)
+     * is only right for the handful of things everybody wants: a location, a ping, a `hello`, an
+     * `offer`. Naming a peer id sends it to that peer alone.
+     */
+    send(payload: AwariPayload, to?: string): void;
     /** A peer message arrived (owner-relayed to every window; never your own). */
     onMessage(cb: (msg: AwariInbound) => void): Unsubscribe;
     /** Connection status changed (joined? + our peer id). */
     onStatus(cb: (status: AwariStatus) => void): Unsubscribe;
     /** Who else is in the room (roster + the names/zones they've announced). */
     onPeers(cb: (peers: AwariPeer[]) => void): Unsubscribe;
-    /** Owner-window plumbing: the broker asks this (owner) window to publish a payload. */
-    onPublish(cb: (payload: AwariPayload) => void): Unsubscribe;
+    /** Owner-window plumbing: the broker asks this (owner) window to publish a payload, and where. */
+    onPublish(cb: (out: AwariOutbound) => void): Unsubscribe;
     /** Owner-window plumbing: report an inbound peer message up to the broker. */
     reportMessage(msg: AwariInbound): void;
     /** Owner-window plumbing: report connection status up to the broker. */
     reportStatus(status: AwariStatus): void;
     /** Owner-window plumbing: report the room roster up to the broker. */
     reportPeers(peers: AwariPeer[]): void;
+  };
+  /**
+   * Peer sharing: the offer/ask/give hub, which lives in main
+   * ([ADR 0141](../../specs/decisions/0141-the-room-is-a-meeting-place.md)) so an ask is answered
+   * whether or not a window happens to be open.
+   */
+  peer: {
+    /** Our own catalogue — what our toggles amount to, with the counts a peer would see. */
+    offer(): Promise<Record<string, { n: number; rev: number }>>;
+    /** The rows we'd hand over for one kind, so the Peers tab can show what it is offering. */
+    mine(kind: ShareKind): Promise<unknown[]>;
+    /** Ask one peer for one kind. A person clicked, so this ignores the automatic cooldown. */
+    ask(peerId: string, kind: ShareKind): void;
+    /** What peers have given us, newest revision per peer per kind. */
+    received(peerId?: string, kind?: ShareKind): Promise<ReceivedShare[]>;
+    /** Throw a peer's answers away — one kind, one peer, or the lot. */
+    clear(peerId?: string, kind?: ShareKind): void;
+    /** Map window only: its pins, which live in its own storage and nowhere main can read. */
+    setPins(pins: MapPin[]): void;
+    /** The received tray moved. */
+    onChanged(cb: () => void): Unsubscribe;
+    /**
+     * Somebody is newly offering something worth going to look at
+     * ([ADR 0143](../../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md)) — a kind
+     * that has just appeared in their catalogue, coalesced to one per peer.
+     */
+    onOffered(cb: (notice: PeerOfferNotice) => void): Unsubscribe;
   };
   /** Connected monitors, for choosing where the alert overlay shows (Settings → cast alerts). */
   display: {

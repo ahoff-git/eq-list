@@ -13,6 +13,7 @@ Start here, then branch out by area:
 - [lucy-data](./lucy-data/README.md) — the borrowed second opinion, for names eqlwiki hasn't got.
 - [overlay-ui](./overlay-ui/README.md) — the control window and the floating overlay.
 - [map](./map/README.md) — the sibling map window that plots your live location.
+- [peers](./peers/README.md) — what one install hands another, and what it takes on the way in.
 - [travel](./travel/README.md) — the zone-line graph behind "how do I get from here to there?".
 - [testing](./testing/README.md) — what's a tested black box and how to run it.
 

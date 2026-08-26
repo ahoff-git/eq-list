@@ -31,7 +31,14 @@ import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
 import type { SharedKill } from "@/shared/kill-filters";
 import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
-import { huntTargetsFor, type HuntTarget } from "@/shared/hunt";
+import {
+  buildHunt,
+  huntInputsFor,
+  huntTargetsFor,
+  neededEntries,
+  type HuntTarget,
+  type HuntZone,
+} from "@/shared/hunt";
 import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { knownItems, type KnownItem } from "@/shared/known-items";
 import { clockSkew } from "@/shared/spawn-timers";
@@ -298,6 +305,34 @@ function useAllMobs(refreshKey?: unknown): MobKnowledge[] {
 }
 
 /**
+ * What killing things **in one zone** has taught us, pooled with any peers sharing theirs.
+ *
+ * `useAllMobs` above asks the same question of the whole world, which is right for "does this drop
+ * that" and wrong for anything about a place. Two windows want the narrow answer — the map's 📖 panel
+ * and the hunt pins it draws — and both want it to survive the same things: a bulk kill change (an
+ * imported log, a clear) *and* a contribution arriving, since a pooled figure is half somebody else's
+ * and moves without anything of ours having changed.
+ *
+ * `refreshKey` is for a caller whose own reason to re-ask isn't either of those — the map ticks it as
+ * live kills land.
+ */
+export function useZoneMobs(zone: string | undefined, refreshKey?: unknown): MobKnowledge[] {
+  return useFollowedRead<MobKnowledge[]>(
+    (a) => a.mobs.all(zone),
+    (a, reload) => {
+      const stopKills = a.kills.onChanged(reload);
+      const stopPeers = a.peers.onChanged(reload);
+      return () => {
+        stopKills();
+        stopPeers();
+      };
+    },
+    NO_MOBS,
+    [zone, refreshKey],
+  );
+}
+
+/**
  * Pooled mob knowledge (yours plus peers'), keyed by mob name for quick lookup. Used wherever
  * the wiki's claims need checking against what we've actually killed.
  */
@@ -344,6 +379,39 @@ export function useMobKnowledge(refreshKey: unknown): Record<string, MobKnowledg
 export function useHuntTargets(entries: ShoppingListEntry[]): HuntTarget[] {
   const mobs = useAllMobs();
   return useMemo(() => huntTargetsFor(entries, mobs), [entries, mobs]);
+}
+
+/**
+ * **The hunt itself** — what's still needed, who drops it, and where you've seen the mobs you asked
+ * for by name — built once, for whoever is asking.
+ *
+ * The Hunt tab is no longer the only reader: the map draws a pin for a hunted mob it can place
+ * ([ADR 0142](../../specs/decisions/0142-a-hunted-mob-marks-itself.md)), and a second copy of these
+ * five lines in the map window is exactly where the two would drift — one of them counting quest runs
+ * and the other not, and neither looking wrong. `wiki.getPage` is cached in main, so the second reader
+ * costs a lookup rather than a fetch.
+ *
+ * The parts come back beside the built zones because the tab needs them in their own right: `needed`
+ * to say which items have no source at all, `sources` and `targets` to offer the zone picker only
+ * zones this hunt actually touches.
+ */
+export function useHunt(): {
+  needed: ShoppingListEntry[];
+  sources: Record<string, ItemSource[]>;
+  targets: HuntTarget[];
+  /** Zone → mob → the needed items it drops, most-covering zone first (`buildHunt`). */
+  zones: HuntZone[];
+  loading: boolean;
+} {
+  const list = useShoppingList();
+  const needed = useMemo(() => neededEntries(list.entries, list.questRuns), [list]);
+  const { sources, loading } = useEntrySources(needed);
+  const targets = useHuntTargets(list.entries);
+  const zones = useMemo(
+    () => buildHunt(huntInputsFor(needed, sources, list.questRuns), targets),
+    [needed, sources, list.questRuns, targets],
+  );
+  return { needed, sources, targets, zones, loading };
 }
 
 /**

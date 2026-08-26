@@ -1,14 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  useShoppingList,
-  useCurrentZone,
-  useEntrySources,
-  useSettings,
-  useMobLoot,
-  useMobKnowledge,
-  useHuntTargets,
-} from "@/lib/hooks";
+import { useCurrentZone, useHunt, useSettings, useMobLoot, useMobKnowledge } from "@/lib/hooks";
 import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/drop-truth";
 import { mobKey } from "@/shared/mob-stats";
 import ItemLink from "./ItemLink";
@@ -17,13 +9,10 @@ import { api } from "@/lib/api";
 import { ringMob } from "@/lib/showOnMap";
 import {
   bestPlacesFirst,
-  buildHunt,
   huntByItem,
   huntHasWork,
-  huntInputsFor,
   huntTargetPlaces,
   huntZoneOptions,
-  neededEntries,
   type HuntPlace,
   type HuntZone,
 } from "@/shared/hunt";
@@ -98,7 +87,6 @@ export default function HuntPanel({
   grouping: HuntGrouping;
   onGrouping: (grouping: HuntGrouping) => void;
 }) {
-  const list = useShoppingList();
   const zone = useCurrentZone();
   const settings = useSettings();
   const followZone = settings?.overlay.followZone ?? false;
@@ -115,18 +103,15 @@ export default function HuntPanel({
    */
   const [pickedItem, setPickedItem] = useState<string | null>(null);
 
-  const needed = useMemo(() => neededEntries(list.entries, list.questRuns), [list]);
-  const { sources, loading } = useEntrySources(needed);
-  // Mobs you put on the list to kill for their own sake, placed by where you've actually killed
-  // them — the wiki gives a mob page no sources, so this is the only honest answer available.
-  const targets = useHuntTargets(list.entries);
-
-  // Full hunt (all zones) — drives the zone options and the "no drop source" list,
-  // so both stay accurate no matter what the filter is set to.
-  const allZones = useMemo(
-    () => buildHunt(huntInputsFor(needed, sources, list.questRuns), targets),
-    [needed, sources, list.questRuns, targets],
-  );
+  /**
+   * The hunt itself — what's still needed, who drops it, and where the mobs you asked for by name
+   * have been seen (`useHunt`). Built once for every window that wants it, since the map now draws a
+   * pin for a hunted mob it can place ([ADR 0142](../../../specs/decisions/0142-a-hunted-mob-marks-itself.md)).
+   *
+   * `zones` is the **full** hunt, every zone of it: the zone options and the "no drop source" list
+   * are both about the whole list, so they stay accurate whatever the filter is set to.
+   */
+  const { needed, sources, targets, zones: allZones, loading } = useHunt();
   const covered = new Set(allZones.flatMap((z) => z.mobs.flatMap((m) => m.items.map((i) => i.item))));
   const noSource = needed.filter((e) => !covered.has(e.name));
 

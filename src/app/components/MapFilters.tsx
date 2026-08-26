@@ -1,6 +1,6 @@
 "use client";
 import type { PoiGroupSummary, PoiKind } from "@/shared/map/poi-kinds";
-import { PIN_TYPES, type PinKind } from "@/shared/map/pins";
+import { HUNT_PIN, PIN_TYPES, type PinKind } from "@/shared/map/pins";
 import { CheckField } from "./ui";
 import type { MapFloor, ZBand } from "@/shared/map/eqmap";
 
@@ -13,9 +13,9 @@ export interface HeightPick {
 /**
  * The map's 👁 panel: what's drawn and what isn't.
  *
- * Four questions, in the order you'd ask them — **which heights**, **which of my pins**, **which of
- * the map's own labels**, **whose shared pins** — each its own section, because a busy dungeon needs
- * all four and a flat list of twenty-odd checkboxes is unreadable.
+ * Five questions, in the order you'd ask them — **which heights**, **which of my pins**, **the
+ * hunt's own**, **which of the map's own labels**, **whose shared pins** — each its own section,
+ * because a busy dungeon needs them all and a flat list of twenty-odd checkboxes is unreadable.
  *
  * The label section is **grouped** (`POI_GROUPS`): the thing you usually want is a whole group off
  * ("hide the dungeon furniture", "just show me who's here"), so each heading is itself a toggle,
@@ -34,6 +34,9 @@ export default function MapFilters({
   onHeight,
   hiddenPinKinds,
   onPinKind,
+  huntPins,
+  showHuntPins,
+  onHuntPins,
   poiGroups,
   hiddenPoiKinds,
   onPoiKinds,
@@ -57,6 +60,10 @@ export default function MapFilters({
   onHeight: (pick: HeightPick | null) => void;
   hiddenPinKinds: ReadonlySet<PinKind>;
   onPinKind: (kind: PinKind, visible: boolean) => void;
+  /** How many of the hunt's mobs this zone can place — the row says so, since zero explains itself. */
+  huntPins: number;
+  showHuntPins: boolean;
+  onHuntPins: (show: boolean) => void;
   /** The label kinds this map actually has, in sections (see `poiGroupSummary`). */
   poiGroups: PoiGroupSummary[];
   hiddenPoiKinds: ReadonlySet<PoiKind>;
@@ -169,6 +176,25 @@ export default function MapFilters({
             }
           />
         ))}
+      </section>
+
+      {/* The one set of markers the map places by itself, so it gets a switch of its own rather than
+          a sixth row under "My pins" — nothing here was dropped by you, and none of it can be. */}
+      <section>
+        <header>
+          <span className="muted small">Hunt</span>
+          <span className="muted small">{huntPins}</span>
+        </header>
+        <CheckField
+          checked={showHuntPins}
+          onChange={onHuntPins}
+          title="Mark the mobs on your hunt where your own kills place them — an average of where each one died, not a spawn point. Only mobs you've actually killed here can be marked."
+          label={
+            <>
+              <span style={{ color: HUNT_PIN.color }}>{HUNT_PIN.glyph}</span> Where your hunt&apos;s mobs live
+            </>
+          }
+        />
       </section>
 
       {poiGroups.map((group) => {

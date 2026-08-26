@@ -7,12 +7,20 @@
  * fires an IPC call and returns void looks identical whether it worked or not
  * ([ADR 0106](../../specs/decisions/0106-an-add-says-what-it-did.md)).
  *
- * **The invariants, which are what make it safe to use anywhere:** a toast is *read*, never *acted
- * on* (anything with a decision in it is a panel, or a dialog); it always goes away on its own; and
- * it is never the only place something important is said, because a notice that has faded is a notice
+ * **The invariants, which are what make it safe to use anywhere:** a decision is never *taken* on a
+ * toast (anything with one in it is a panel, or a dialog); it always goes away on its own; and it is
+ * never the only place something important is said, because a notice that has faded is a notice
  * nobody can go back to. A failure that matters belongs in the log and on the panel that owns it
  * ([ADR 0052](../../specs/decisions/0052-an-error-goes-to-the-log-not-the-screen.md)); a toast may
  * *mention* it.
+ *
+ * The first of those used to read "a toast is read, never acted on", and
+ * [ADR 0143](../../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md) narrowed it to
+ * what it was actually protecting. A notice may now carry **one action, and that action may only
+ * ever be "go and look"** — open the tab, the panel, the page. It may not accept, apply, copy,
+ * delete or send anything: a card is on screen for three seconds and then gone, so anything it could
+ * *do* would be a decision taken under time pressure with no record that it was offered. Navigation
+ * has neither problem, and the worst a mis-click can do is show you a tab.
  *
  * Pure and dependency-free: the model and its arithmetic live here so both can be tested without a
  * window. The bus and the hook are `src/lib/toast.ts`; the cards are `components/Toasts.tsx`.
@@ -40,6 +48,22 @@ export interface ToastInput {
   key?: string;
   /** How long this one sits, when the default is wrong for it. Clamped by `toastTiming`. */
   ms?: number;
+  /**
+   * Where to go about this, when there is somewhere — a labelled button on the card.
+   *
+   * **Navigation only** (ADR 0143): `run` puts the reader in front of something and changes nothing.
+   * The destination must be reachable without the toast, which is what keeps a notice a shortcut
+   * rather than the only way to answer it.
+   */
+  action?: ToastAction;
+}
+
+/** The one thing a notice may offer to do, which is always to show you where the answer lives. */
+export interface ToastAction {
+  /** A few words in the imperative — "View", "Show me", "Open the Peers tab". */
+  label: string;
+  /** Navigate. Never a change: see `ToastInput.action`. */
+  run: () => void;
 }
 
 /** A notice on the stack. `id` is the bus's, so a repeat is a new card rather than the same one. */

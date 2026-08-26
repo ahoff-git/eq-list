@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import {
   useCurrentZone,
+  useHunt,
   useKills,
   usePeerKills,
   useMaximized,
@@ -13,6 +14,7 @@ import {
   useUiScale,
   useWatcherStatus,
   useWindowOpacity,
+  useZoneMobs,
 } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -26,11 +28,13 @@ import { useMapSource, useVectorMap } from "@/lib/map/useMapSource";
 import { useFloors } from "@/lib/map/useFloors";
 import { useHidden } from "@/lib/map/useHidden";
 import { useAwariRoom } from "@/lib/map/useAwariRoom";
+import { sharing } from "@/shared/peer-share";
 import { findZone, mapZoneName, onLayer, sortZones } from "@/shared/map/zones";
 import { samePlace } from "@/shared/zones/place";
 import { zoneDifficultyLabel } from "@/shared/names";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
-import { pinType, type MapPin, type PinKind } from "@/shared/map/pins";
+import { HUNT_PIN, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
+import { huntPins } from "@/shared/map/hunt-pins";
 import MapFilters from "../components/MapFilters";
 import MapTitlebar from "../components/MapTitlebar";
 import MapToolbar from "../components/MapToolbar";
@@ -244,7 +248,27 @@ export default function MapWindow() {
   const poiGroups = useMemo(() => (vector ? poiGroupSummary(vector.pois) : []), [vector]);
   // Whose shared pins to leave off. Transient, like the pin-kind filter.
   const hiddenSharers = useHidden(useState<string[]>([]));
-  const [sharePinsOn, setSharePinsOn] = usePersistentState(STORAGE_KEYS.mapSharePins, false);
+  /**
+   * The two share toggles on the toolbar are now **views of `settings.share`**, not their own
+   * localStorage flags ([ADR 0141](../../../specs/decisions/0141-the-room-is-a-meeting-place.md)).
+   * The Peers tab lists the same switches, and one decision with two stores is one decision that
+   * disagrees with itself the first time you flip it in the other window.
+   */
+  const sharePinsOn = sharing(settings?.share, "pins");
+  // `MapToolbar` drives a `Flag` the React way — it hands the setter an updater, not a value — so
+  // this resolves it against what the settings currently say before writing.
+  const setSharePinsOn = useCallback(
+    (next: (cur: boolean) => boolean) => {
+      void api()?.settings.update({ share: { pins: next(sharePinsOn) } });
+    },
+    [sharePinsOn],
+  );
+  /**
+   * Whether the map marks the hunt's mobs itself (ADR 0142). On by default — the whole point is that
+   * it happens without being asked for — and persisted, because "don't put things on my map" is a
+   * standing answer rather than a filter you set to look at one thing.
+   */
+  const [showHuntPins, setShowHuntPins] = usePersistentState(STORAGE_KEYS.mapHuntPins, true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   const [killsOpen, setKillsOpen] = usePersistentState(STORAGE_KEYS.mapKillsOpen, false);
@@ -262,7 +286,15 @@ export default function MapWindow() {
   const [routeLegs, setRouteLegs] = useState<{ from: string; to: string }[]>([]);
   const [hoverLeg, setHoverLeg] = useState<{ from: string; to: string } | null>(null);
   const [killFilters, setKillFilters] = useState<KillFilters>(DEFAULT_KILL_FILTERS);
-  const [shareKillsOn, setShareKillsOn] = usePersistentState(STORAGE_KEYS.mapShareKills, false);
+  /** Sharing kills and sharing what they taught are one intent, so one toggle still drives both. */
+  const shareKillsOn = sharing(settings?.share, "kills");
+  const setShareKillsOn = useCallback(
+    (next: (cur: boolean) => boolean) => {
+      const on = next(shareKillsOn);
+      void api()?.settings.update({ share: { kills: on, mobs: on } });
+    },
+    [shareKillsOn],
+  );
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
   // Which kills the map should pick out: set while a name is hovered — a row in the ☠ list, or a
   // mob in the main window's Hunt tab — so pointing at one answers "where did those die?".
@@ -273,11 +305,37 @@ export default function MapWindow() {
   // cursor moved last is the one being answered — which is what a person would expect.
   useEffect(() => api()?.map.onEmphasis(setEmphasis), []);
 
-  // Broadcast (or un-share) pins to peers when connected + sharing.
+  /**
+   * Keep main's copy of our pins current, so an ask can be answered while this window is shut.
+   *
+   * Reported **whatever the toggle says**, because handing main a copy is not sharing: the toggle is
+   * checked when an ask is answered, which is the only moment it can be checked against the truth
+   * ([ADR 0141](../../../specs/decisions/0141-the-room-is-a-meeting-place.md)).
+   */
+  useEffect(() => {
+    api()?.peer.setPins(pins);
+  }, [pins]);
+
+  /**
+   * …and keep broadcasting them for the *live* overlay, which is a different feature from the copy
+   * the Peers tab hands over (see `sharePins`). Gated on the same one switch, since "let people see
+   * my markers" is one decision however it reaches them.
+   */
   useEffect(() => {
     if (!connected) return;
     broadcastPins(sharePinsOn ? pins : []);
   }, [connected, sharePinsOn, pins, broadcastPins]);
+
+  /** Pins somebody handed us from the Peers tab, folded into our own set. */
+  useEffect(
+    () =>
+      api()?.map.onPinsAdded((added) =>
+        // Their ids were regenerated on arrival (`readPin`), so nothing here can collide with a pin
+        // already placed — appending is safe and keeps both.
+        setPins((prev) => [...prev, ...added]),
+      ),
+    [setPins],
+  );
 
   // Kills are re-read when the main process says the log changed — see `useKills`.
   const myKills = useKills(zoneKey);
@@ -344,39 +402,11 @@ export default function MapWindow() {
     [kills],
   );
 
-  // Share the placed kills for the zone in view (empty un-shares), so a camp's heatmap can
-  // be pooled. Only the conclusion travels — the evidence behind it stays local.
-  //
-  // **Only ever your own.** Now that peers' kills are in the same list, re-sharing what's on screen
-  // would relay theirs back out under your name — and with three clients in a room that echoes round
-  // and round, each pass adding what the last one heard.
-  const broadcastKills = room.shareKills;
-  useEffect(() => {
-    if (!connected) return;
-    broadcastKills(
-      shareKillsOn && zoneKey
-        ? kills
-            .filter((k) => !k.sharedBy && k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
-            // Tagged with the zone **the kill was recorded in**, not the one you're looking at: the
-            // receiver groups by place like every other reader (ADR 0083), and sending them our label
-            // for the camp would put our naming assumptions into their data. `zoneKey` only stands in
-            // for a kill filed before the log had told us a zone.
-            .map((k) => ({ zone: k.zone ?? zoneKey, y: k.y!, x: k.x!, mob: k.mob, confidence: k.confidence }))
-        : [],
-    );
-  }, [connected, shareKillsOn, kills, zoneKey, broadcastKills]);
-
-  // Sharing kills and sharing what they taught us are one intent, so one toggle drives both.
-  // Observations are counts, so they pool by addition — see `mob-stats.ts`.
-  const broadcastMobs = room.shareMobs;
-  useEffect(() => {
-    if (!connected) return;
-    if (!shareKillsOn) return void broadcastMobs([]);
-    void api()
-      ?.mobs.mine()
-      .then((mine) => broadcastMobs(mine));
-    // Re-shared as the kill count moves, which is when there's anything new to say.
-  }, [connected, shareKillsOn, myKills.length, broadcastMobs]);
+  // Kills and what they taught are **no longer broadcast from here**. Both are read straight out of
+  // the kill log by main and handed over when a peer asks (`electron/peer-share.ts`), which fixes
+  // two things this window could never fix: it only ever shared the zone on screen, and it shared
+  // nothing at all while it was closed. The toggle above is the same decision, in the same place
+  // the Peers tab makes it (ADR 0141).
 
   /**
    * Pin where a mob lives. The roam centre is a real coordinate, so this reuses the pin
@@ -393,6 +423,25 @@ export default function MapWindow() {
         : [...prev, { id: crypto.randomUUID(), kind: "star", zone: zoneKey, y: mob.area!.y, x: mob.area!.x, title }],
     );
   }
+
+  /**
+   * **The two halves of a hunt pin** (ADR 0142): what your list is after, and what this zone's kills
+   * can say about where those mobs are.
+   *
+   * Read here rather than in the 📖 panel because both want the same rows and the panel is often
+   * shut — the marks on the canvas are the useful half, and a reader who never opens the panel is
+   * exactly who they're for. The panel is handed them (`known`), so the two can't disagree.
+   */
+  const { zones: huntZones } = useHunt();
+  const zoneMobs = useZoneMobs(zoneKey, `${myKills.length}:${peerKills.length}`);
+  /**
+   * A roam centre you marked by hand is the same spot with the same meaning, so the automatic mark
+   * stands aside rather than drawing over it (`huntPins`).
+   */
+  const huntMarks = useMemo(
+    () => (showHuntPins ? huntPins(huntZones, zoneMobs, pins.filter((p) => zoneMatch(p.zone))) : []),
+    [showHuntPins, huntZones, zoneMobs, pins, zoneMatch],
+  );
 
   // Peers/pings/pins filtered to the viewed zone (and pins to the visible kinds).
   // Peers are zone-wide on purpose: a `/loc` doesn't say which floor they're on, so
@@ -441,9 +490,31 @@ export default function MapWindow() {
           zoneMatch(p.zone) && onLayer(p, viewLayers) && !pinKinds.hidden.has(p.kind) && !hiddenSharers.hidden.has(p.by ?? ""),
       )
       .map((p) => mk(p, false));
-    return [...local, ...peer];
+    /**
+     * The hunt's own, drawn like a pin and behaving like one everywhere it matters — hovered, and
+     * clicked for what's known about the mob — but never yours: `mine: false` is what keeps it out
+     * of the editor and the move tool, which is right for a mark you didn't place and can't keep.
+     *
+     * Unlayered, like every position read out of the log: a roam centre is averaged from kills, and
+     * a kill has no idea which floor it happened on, so it belongs to the zone.
+     */
+    const hunt = huntMarks.map(
+      (h): RenderPin => ({
+        id: h.id,
+        y: h.y,
+        x: h.x,
+        color: HUNT_PIN.color,
+        glyph: HUNT_PIN.glyph,
+        label: HUNT_PIN.label,
+        title: h.title,
+        note: h.note,
+        mine: false,
+        mob: h.mob,
+      }),
+    );
+    return [...local, ...peer, ...hunt];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden]);
+  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden, huntMarks]);
 
   function placePin(eq: { y: number; x: number }, clientX: number, clientY: number) {
     if (!heldPin || !zoneKey) return;
@@ -562,7 +633,7 @@ export default function MapWindow() {
         <ResizablePanel id="map.mobs" share={40}>
           <MobKnowledgePanel
             zone={zoneKey}
-            refreshKey={`${myKills.length}:${peerKills.length}`}
+            known={zoneMobs}
             filters={killFilters}
             onFilters={setKillFilters}
             onMarkMob={markMobArea}
@@ -595,6 +666,9 @@ export default function MapWindow() {
             onHeight={setHeight}
             hiddenPinKinds={pinKinds.hidden}
             onPinKind={pinKinds.setVisible}
+            huntPins={huntMarks.length}
+            showHuntPins={showHuntPins}
+            onHuntPins={setShowHuntPins}
             poiGroups={poiGroups}
             hiddenPoiKinds={poiKinds.hidden}
             onPoiKinds={poiKinds.setVisible}
@@ -626,7 +700,14 @@ export default function MapWindow() {
             onPlace={placePin}
             onPing={connected && zoneKey ? (eq) => room.sendPing(eq, zoneKey, viewLayer) : undefined}
             onPinClick={(pin, x, y) => {
-              if (pin.mine) setSelected({ id: pin.id, x, y });
+              if (pin.mine) return setSelected({ id: pin.id, x, y });
+              // A hunt pin isn't editable, but it is *about* something: it answers with the evidence
+              // behind it, exactly as arriving from another window does (ADR 0104) — the 📖 panel
+              // narrowed to that mob, and its kills ringed on the map.
+              if (!pin.mob) return;
+              setKillFilters((f) => ({ ...f, mob: pin.mob! }));
+              setMobsOpen(true);
+              setEmphasis({ mobs: [pin.mob] });
             }}
             onKillClick={(kill) => {
               // Open the kill list scoped to that mob: the marker says where, the list says what

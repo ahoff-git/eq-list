@@ -170,8 +170,22 @@ finished, so a number is claimed before a second author can reach for it.
 - [0138: A replayed log narrows what a kill proves, and how long a sighting holds a row](./0138-a-replayed-log-narrows-what-a-kill-proves.md)
 - [0139: A difficulty can never cost you a map](./0139-a-difficulty-can-never-cost-a-map.md)
 - [0140: A buff is watched until it lapses, and the game's own words name it](./0140-a-buff-is-watched-until-it-lapses.md)
+- [0141: The room is a meeting place, and sharing is peer to peer](./0141-the-room-is-a-meeting-place.md)
+- [0142: A hunted mob marks itself on the map](./0142-a-hunted-mob-marks-itself.md)
+- [0143: A notice may point at where to answer it](./0143-a-notice-may-point-at-where-to-answer-it.md)
 
 ## Open Questions
+
+- **Should there be more than one room?** There is exactly one — `eq-list` — and after
+  [ADR 0141](./0141-the-room-is-a-meeting-place.md) everything in a catalogue is offered to everyone
+  in it. That was fine while the room carried a location and a map click. It is the thing standing in
+  the way of half of what sharing is now capable of: a buff board, a camp's countdowns, a group's
+  loot and a shopping list for the quest you are all running are all things you want to hand to
+  *these five people*, and the only unit available is "everybody running the app". Direct routing
+  makes the *delivery* private; it does nothing about the catalogue, which is still shouted. A group
+  room, a camp room and a server room are three different answers with three different join stories
+  (who invites, what the id is, whether it outlives a session), and picking one is what unblocks the
+  privacy defaults for every kind that is currently too loud to switch on.
 
 - **Should a repop say what it took?** Changing the instance difficulty rebuilds the world, so every
   countdown measuring from a death in that place is dropped
@@ -189,7 +203,7 @@ finished, so a number is claimed before a second author can reach for it.
   report-don't-resolve shape as a drop rate. Worth surfacing, or is a zone's range too coarse a claim
   to be contradicted by whatever happened to be conned in one camp?
 
-- Should a **group-mate's** drop reach your overlay? [ADR 0105](./0105-a-tracked-item-says-so-when-it-drops.md) can only speak about **your** loot, because that is all the log ever names — and the request it came from was "tell me when one of *us* loots it". The room already carries pooled observations ([ADR 0024](./0024-mob-knowledge.md)) and per-peer kill locations, so a `loot` message kind is small; what needs deciding is everything around it. Whose list does an arriving drop credit — nobody's, or the asker's, given [ADR 0027](./0027-only-your-kills-count.md) says only your own kills count for you? It is a **privacy default** in the same family as `shareLocation`, and a louder one: a location is where you are, a drop is what you have. And it can only ever be partial, since a peer not running the app is invisible while sitting in the same group — which makes silence indistinguishable from "they didn't loot it".
+- Should a **group-mate's** drop reach your overlay? [ADR 0105](./0105-a-tracked-item-says-so-when-it-drops.md) can only speak about **your** loot, because that is all the log ever names — and the request it came from was "tell me when one of *us* loots it". **The cost half is now settled and it is nothing**: [ADR 0141](./0141-the-room-is-a-meeting-place.md) made a share kind a row in `SHARE_KINDS`, and a direct peer route already exists to carry it. What needs deciding is everything around it, and none of that got easier. Whose list does an arriving drop credit — nobody's, or the asker's, given [ADR 0027](./0027-only-your-kills-count.md) says only your own kills count for you? It is a **privacy default** in the same family as `shareLocation`, and a louder one: a location is where you are, a drop is what you have. And it can only ever be partial, since a peer not running the app is invisible while sitting in the same group — which makes silence indistinguishable from "they didn't loot it".
 
 - **Can a celebration exist without a number to beat?** The scoreboard
   ([0093](./0093-a-high-score-is-a-personal-best-with-a-floor.md)) is built entirely on *magnitude*: a
@@ -281,6 +295,11 @@ and degrading to blank facts when the file isn't there.*
 - Open Relay's community TURN is best-effort and not production-grade
   ([ADR 0046](./0046-our-own-ice-servers-not-peerjs-defaults.md)). Is peer sharing worth
   running our own TURN for, or is "works for most, fails for symmetric NAT" acceptable?
+  **Sharper now**: [ADR 0141](./0141-the-room-is-a-meeting-place.md) moved the data onto *direct*
+  peer routes, so a peer the relay can't reach is no longer merely a dot missing from the map —
+  they are listed in the room, offering a catalogue, and unable to answer a single ask. The panel
+  says "not reachable" rather than pretending, which makes the failure visible for the first time
+  and correspondingly harder to leave alone.
 - Pooled mob knowledge is attributed and forgettable, but unweighted: every peer counts the
   same. Should contributions be weighted, or individual peers mutable/vetoable?
   See [ADR 0024](./0024-mob-knowledge.md). **Now answerable**: contributions have a stable key to

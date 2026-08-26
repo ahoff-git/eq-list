@@ -1,0 +1,373 @@
+/**
+ * What crosses the wire between two installs, and what happens to it on the way in.
+ *
+ * Three subjects, and they are the three ways this feature can be quietly wrong rather than loudly
+ * broken ([ADR 0141](../../specs/decisions/0141-the-room-is-a-meeting-place.md)):
+ *
+ *   - **The readers**, because everything inbound is a stranger's. A reader that lets one bad field
+ *     through doesn't crash — it files an impossible tally, or draws a marker at the wrong end of
+ *     the world, and looks like data.
+ *   - **The de-dupes**, because "two people at one camp see one countdown" is the whole point of
+ *     sharing a timer, and getting it wrong shows the camp two rows for one mob — which is worse
+ *     than not sharing at all, since both rows look authoritative.
+ *   - **The buff target**, because `ON_YOU` means *the sender*. Replayed verbatim it silently
+ *     collapses everybody's self-buffs onto yours, and every row still looks plausible.
+ *
+ * Ids are injected (`newId`) for the same reason `decodeWatches` takes one: a test should be able to
+ * assert on what it produced.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  SAME_SPAWN_MS,
+  compareScores,
+  mergeBuffs,
+  mergeTimers,
+  newlyOffered,
+  offerSummary,
+  readAsk,
+  readGive,
+  readOffer,
+  shareKind,
+  shareableBuffs,
+  sharing,
+  type PeerTimer,
+} from "../../src/shared/peer-share";
+import { ON_PET, ON_YOU, type BuffInstance } from "../../src/shared/buff-tracking";
+import type { SpawnTimer } from "../../src/shared/spawn-timers";
+import type { HighScore } from "../../src/shared/types";
+
+/** Predictable ids, so an assertion can name what a reader produced. */
+function ids(): () => string {
+  let n = 0;
+  return () => `id-${(n += 1)}`;
+}
+
+const T0 = Date.parse("2026-01-01T12:00:00.000Z");
+const iso = (offsetMs: number): string => new Date(T0 + offsetMs).toISOString();
+
+function timer(over: Partial<SpawnTimer> = {}): SpawnTimer {
+  return {
+    id: "gnoll@Blackburrow#0",
+    key: "gnoll@Blackburrow",
+    mob: "a gnoll",
+    place: "Blackburrow",
+    killedAt: iso(0),
+    watchFrom: iso(600_000),
+    dueAt: iso(600_000),
+    seconds: 600,
+    source: "killed",
+    samples: 3,
+    lead: 0,
+    ...over,
+  };
+}
+
+function buff(over: Partial<BuffInstance> = {}): BuffInstance {
+  return {
+    key: "spirit of wolf",
+    spell: "Spirit of Wolf",
+    target: ON_YOU,
+    up: true,
+    at: iso(0),
+    since: iso(0),
+    source: "landed",
+    byYou: false,
+    permanent: false,
+    ...over,
+  };
+}
+
+// ─── The catalogue and its three messages ───────────────────────────────────
+
+test("a kind we don't know cannot be asked for or received", () => {
+  assert.equal(shareKind("watches")?.family, "authored");
+  assert.equal(shareKind("passwords"), undefined);
+  assert.equal(readAsk({ what: "passwords" }), null);
+  assert.equal(readGive({ what: "passwords", rows: [{}] }, ids()), null);
+});
+
+test("an offer keeps only known kinds with numeric counts", () => {
+  const offer = readOffer({
+    watches: { n: 3, rev: 2 },
+    passwords: { n: 9, rev: 1 },
+    mobs: { n: "lots", rev: 1 },
+    kills: { n: -1, rev: 1 },
+    scores: { n: 0, rev: 7 },
+  });
+  assert.deepEqual(offer, { watches: { n: 3, rev: 2 }, scores: { n: 0, rev: 7 } });
+});
+
+test("a kind that isn't switched on is off — absent and false both mean no", () => {
+  assert.equal(sharing(undefined, "watches"), false);
+  assert.equal(sharing({}, "watches"), false);
+  assert.equal(sharing({ watches: false }, "watches"), false);
+  assert.equal(sharing({ watches: true }, "watches"), true);
+});
+
+test("a give with no rows is unchanged, which is not the same as a give of none", () => {
+  const unchanged = readGive({ what: "mobs", rev: 4 }, ids());
+  assert.equal(unchanged?.stale, true);
+  // An empty list means "I now hold none", which `contributions.ts` treats as an un-share that
+  // keeps what it taught (ADR 0056). Collapsing the two would silently freeze a peer's tally.
+  const emptied = readGive({ what: "mobs", rev: 5, rows: [] }, ids());
+  assert.equal(emptied?.stale, false);
+  assert.deepEqual(emptied?.rows, []);
+});
+
+// ─── Readers ────────────────────────────────────────────────────────────────
+
+test("a shared kill without a position is dropped, not defaulted to nowhere", () => {
+  const give = readGive(
+    {
+      what: "kills",
+      rev: 1,
+      rows: [
+        { zone: "Blackburrow", mob: "a gnoll", y: 100, x: -50, confidence: 0.9 },
+        { zone: "Blackburrow", mob: "a gnoll", confidence: 0.9 },
+        { zone: "Blackburrow", mob: "a gnoll", y: 1e9, x: 0, confidence: 0.9 },
+      ],
+    },
+    ids(),
+  );
+  assert.deepEqual(give?.rows, [{ zone: "Blackburrow", mob: "a gnoll", y: 100, x: -50, confidence: 0.9 }]);
+});
+
+test("a confidence outside 0–1 is clamped rather than believed", () => {
+  const give = readGive(
+    { what: "kills", rev: 1, rows: [{ zone: "z", mob: "m", y: 1, x: 1, confidence: 99 }] },
+    ids(),
+  );
+  assert.equal((give?.rows[0] as { confidence: number }).confidence, 1);
+});
+
+test("a respawn whose shortest exceeds its longest is impossible, so it is refused", () => {
+  const give = readGive(
+    {
+      what: "respawns",
+      rev: 1,
+      rows: [
+        { key: "k", mob: "a named", shortestSeconds: 900, longestSeconds: 300, samples: 2 },
+        { key: "k2", mob: "a named", shortestSeconds: 300, longestSeconds: 900, samples: 2 },
+      ],
+    },
+    ids(),
+  );
+  assert.equal(give?.rows.length, 1);
+  assert.equal((give?.rows[0] as { key: string }).key, "k2");
+});
+
+test("a copied list entry arrives empty of the sender's progress", () => {
+  const give = readGive(
+    {
+      what: "lists",
+      rev: 1,
+      rows: [{ id: "theirs", name: "Bone Chips", needed: 20, obtained: 17, notify: true, lastSeenAt: iso(0) }],
+    },
+    ids(),
+  );
+  const entry = give?.rows[0] as Record<string, unknown>;
+  // Their id would collide with ours; their counts are a record of their log, not evidence we have.
+  assert.equal(entry.id, "id-1");
+  assert.equal(entry.obtained, 0);
+  assert.equal(entry.notify, undefined);
+  assert.equal(entry.lastSeenAt, undefined);
+  assert.equal(entry.needed, 20);
+});
+
+test("a style pointing at a placement we haven't got lands somewhere visible", () => {
+  const give = readGive(
+    {
+      what: "styles",
+      rev: 1,
+      rows: [{ name: "Loud", style: { position: "loc:theirs", durationMs: 9_000_000, animation: "explode" } }],
+    },
+    ids(),
+  );
+  const style = (give?.rows[0] as { style: Record<string, unknown> }).style;
+  // A `loc:` id names a spot in *their* settings, so it would resolve to nothing and the banner
+  // would never appear. Clamped duration and a known animation, for the same reason.
+  assert.equal(style.position, "top");
+  assert.equal(style.durationMs, 60_000);
+  assert.equal(style.animation, "none");
+});
+
+// ─── Buff targets, which are relative until they aren't ─────────────────────
+
+test("a buff on 'you' is resolved to the sender before it leaves", () => {
+  const out = shareableBuffs([buff(), buff({ target: ON_PET }), buff({ target: "Someone else" })], "Kainos");
+  assert.deepEqual(
+    out.map((b) => b.target),
+    ["Kainos", "Kainos's pet"],
+  );
+});
+
+test("a buff still wearing a relative target is refused on arrival", () => {
+  // Belt and braces: `shareableBuffs` resolves on the way out, and this is what stops an older or a
+  // hand-rolled sender collapsing its self-buffs onto ours.
+  const give = readGive({ what: "buffs", rev: 1, rows: [buff(), buff({ target: "Kainos" })] }, ids());
+  assert.equal(give?.rows.length, 1);
+  assert.equal((give?.rows[0] as BuffInstance).target, "Kainos");
+});
+
+test("nothing is shareable without a name to resolve a target against", () => {
+  assert.deepEqual(shareableBuffs([buff()], "  "), []);
+});
+
+// ─── De-dupe: countdowns ────────────────────────────────────────────────────
+
+test("two clocks for one camp, close together, are one spawn", () => {
+  const mine = [timer({ samples: 2 })];
+  const theirs: PeerTimer[] = [{ timer: timer({ dueAt: iso(600_000 + 60_000), samples: 9 }), by: "Bob", agreeing: [] }];
+  const merged = mergeTimers(mine, theirs);
+  assert.equal(merged.length, 1);
+  // More gaps behind the interval wins, so Bob's is the clock shown…
+  assert.equal(merged[0].by, "Bob");
+  // …and both are credited, which is the reason to want this at a shared camp.
+  assert.deepEqual(merged[0].agreeing.sort(), ["Bob", "You"]);
+});
+
+test("two clocks a full respawn apart are two spawns, not one", () => {
+  const merged = mergeTimers(
+    [timer()],
+    [{ timer: timer({ dueAt: iso(600_000 + SAME_SPAWN_MS + 1000) }), by: "Bob", agreeing: [] }],
+  );
+  assert.equal(merged.length, 2);
+});
+
+test("somebody who can see it outranks any countdown, however well evidenced", () => {
+  const merged = mergeTimers(
+    [timer({ samples: 500 })],
+    [{ timer: timer({ dueAt: iso(600_000 + 1000), samples: 1, seenAt: iso(0) }), by: "Bob", agreeing: [] }],
+  );
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].by, "Bob");
+  assert.ok(merged[0].timer.seenAt);
+});
+
+test("with equal evidence the tighter bound wins, and a tie stays ours", () => {
+  const earlier = mergeTimers(
+    [timer()],
+    [{ timer: timer({ dueAt: iso(600_000 - 30_000) }), by: "Bob", agreeing: [] }],
+  );
+  assert.equal(earlier[0].by, "Bob");
+
+  // An exact tie resolves to ours, so the row doesn't flicker with packet order.
+  const tied = mergeTimers([timer()], [{ timer: timer(), by: "Bob", agreeing: [] }]);
+  assert.equal(tied.length, 1);
+  assert.equal(tied[0].by, undefined);
+});
+
+test("different camps never merge, however close their due times", () => {
+  const merged = mergeTimers(
+    [timer()],
+    [{ timer: timer({ key: "gnoll@Befallen", place: "Befallen" }), by: "Bob", agreeing: [] }],
+  );
+  assert.equal(merged.length, 2);
+});
+
+// ─── De-dupe: buffs ─────────────────────────────────────────────────────────
+
+test("one spell on one person is one row, and the freshest report wins", () => {
+  const merged = mergeBuffs(
+    [buff({ target: "Kainos", at: iso(0) })],
+    [{ buff: buff({ target: "Kainos", at: iso(60_000), up: false }), by: "Bob" }],
+  );
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].buff.up, false);
+  assert.equal(merged[0].by, "Bob");
+});
+
+test("the same spell on two people is two rows", () => {
+  const merged = mergeBuffs(
+    [buff({ target: "Kainos" })],
+    [{ buff: buff({ target: "Bob" }), by: "Bob" }],
+  );
+  assert.equal(merged.length, 2);
+});
+
+// ─── Scores: compared, never merged ─────────────────────────────────────────
+
+const score = (categoryId: string, value: number, over: Partial<HighScore> = {}): HighScore => ({
+  categoryId,
+  value,
+  at: iso(0),
+  beaten: 1,
+  ...over,
+});
+
+test("a category nobody has is not a row, and a column with no figure is not a zero", () => {
+  const rows = compareScores(
+    { character: "Kainos", scores: [score("biggest-hit", 400)] },
+    [{ character: "Bob", scores: [score("longest-fight", 90)] }],
+    () => 0,
+  );
+  assert.deepEqual(rows.map((r) => r.categoryId).sort(), ["biggest-hit", "longest-fight"]);
+  const hit = rows.find((r) => r.categoryId === "biggest-hit")!;
+  assert.equal(hit.columns.find((c) => c.character === "Bob")?.score, undefined);
+});
+
+test("the biggest settled figure leads, and a provisional one cannot", () => {
+  const rows = compareScores(
+    { character: "Kainos", scores: [score("biggest-hit", 400)] },
+    [{ character: "Bob", scores: [score("biggest-hit", 9000, { unsettled: true })] }],
+    () => 0,
+  );
+  // Bob's is larger and says it might be wrong, so it is shown and does not take the crown
+  // (ADR 0130's provisional flag, surviving the wire).
+  assert.equal(rows[0].leader, "Kainos");
+  assert.equal(rows[0].columns.find((c) => c.character === "Bob")?.score?.value, 9000);
+});
+
+test("a board with no character is left out — a column has to be somebody's", () => {
+  const rows = compareScores(
+    { character: "", scores: [score("biggest-hit", 400)] },
+    [{ character: "Bob", scores: [score("biggest-hit", 100)] }],
+    () => 0,
+  );
+  assert.deepEqual(rows[0].columns.map((c) => c.character), ["Bob"]);
+});
+
+// ─── What is worth interrupting somebody about ──────────────────────────────
+
+test("a first catalogue is news, and an unchanged one is not", () => {
+  const offer = { watches: { n: 3, rev: 1 }, styles: { n: 1, rev: 1 } };
+  // Never heard from them: somebody who was already sharing when you connected is exactly who you
+  // want to know about (ADR 0143).
+  assert.deepEqual(newlyOffered(offer, undefined), ["watches", "styles"]);
+  assert.deepEqual(newlyOffered(offer, offer), []);
+});
+
+test("a count moving is not an offer — it is somebody's evening", () => {
+  // The whole noise problem: a catalogue's counts move on every kill, and a notice per catalogue
+  // change would be a notice per kill.
+  const before = { watches: { n: 3, rev: 1 }, mobs: { n: 10, rev: 1 } };
+  const after = { watches: { n: 9, rev: 4 }, mobs: { n: 412, rev: 91 } };
+  assert.deepEqual(newlyOffered(after, before), []);
+});
+
+test("only what a reader has to act on — an observation fetches itself", () => {
+  const offered = newlyOffered({ mobs: { n: 400, rev: 1 }, kills: { n: 80, rev: 1 }, pins: { n: 4, rev: 1 } }, {});
+  assert.deepEqual(offered, ["pins"]);
+});
+
+test("a kind switched on over an empty list is an offer of nothing", () => {
+  assert.deepEqual(newlyOffered({ watches: { n: 0, rev: 3 } }, {}), []);
+  // …and becomes news the moment they actually have one.
+  assert.deepEqual(newlyOffered({ watches: { n: 1, rev: 4 } }, { watches: { n: 0, rev: 3 } }), ["watches"]);
+});
+
+test("newly offered kinds come back in catalogue order, whatever order they arrived in", () => {
+  // So two peers offering the same things read the same way.
+  assert.deepEqual(newlyOffered({ scores: { n: 8, rev: 1 }, watches: { n: 2, rev: 1 } }, {}), [
+    "watches",
+    "scores",
+  ]);
+});
+
+test("a notice names two things and counts the rest", () => {
+  assert.equal(offerSummary(["watches"]), "Watch rules");
+  assert.equal(offerSummary(["watches", "styles"]), "Watch rules and Alert styles");
+  // A card has one line for this, and a peer who switched everything on must not fill it.
+  assert.equal(offerSummary(["watches", "styles", "lists", "pins"]), "Watch rules, Alert styles and 2 more");
+});

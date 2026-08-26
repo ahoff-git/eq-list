@@ -96,6 +96,15 @@ features for later in [../ideas.md](../ideas.md).
   price. Coin/hour on the Session tab is only as good as those two totals.
 - **Ping animation + zone follow.** Confirm your own map click shows an animated gold ping locally,
   and that actually zoning in-game clears a hand-picked zone override so the map follows you again.
+- **Hunt pins, in a zone you've actually farmed**
+  ([ADR 0142](../decisions/0142-a-hunted-mob-marks-itself.md)). The join is unit-tested; what isn't is
+  whether the result is *readable*. Put something on your list that drops in a camp you have kills in,
+  open the map there, and check the ◎ rings land where you'd expect, that their captions don't turn a
+  busy camp into a wall of text, and that they read as different from the pins you dropped yourself.
+  Then the lifecycle, which nothing else can show: **loot the last one you needed** and confirm the
+  mark goes on its own, and **mark a roam centre by hand** with the 📖 panel's ± button and confirm the
+  automatic one stands aside instead of doubling it. Finally the 👁 panel's switch — off should mean
+  off, and still off after reopening the window.
 - **Screengrab lookup, end-to-end.** Verify the `Ctrl/Cmd+Shift+L` flow: region select → capture →
   Tesseract OCR accuracy → fuzzy match. First OCR downloads the English model (needs network); tune
   the crop / text cleanup if accuracy is poor. Since
@@ -647,6 +656,40 @@ features for later in [../ideas.md](../ideas.md).
   by hand: that the connection survives **closing the map window** (reopening still shows peers), and
   that toggling "Connect" off leaves the room. Untested with more than two clients — the cold-start
   recovery is bounded and won't reconcile a room that splits two-and-two.
+- **Sharing, peer to peer — never run at all.** Everything in
+  [ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md) is unit-tested as pure rules and has
+  never had two real clients pointed at it, and the interesting half is the half no unit test can
+  reach: the **direct route**. Confirm, with two clients and Debug logging on:
+  - a catalogue arrives — the Peers tab lists the other client with its offered kinds and counts,
+    and a kind switched *off* on the far side is absent rather than shown as zero;
+  - a toggle shows up within a few seconds (`OFFER_DEBOUNCE_MS`), and an untouched catalogue
+    re-publishes on the slow tick without churning;
+  - **an ask reaches one peer and nobody else.** With three clients this is the whole point of the
+    change: ask A for its watches and confirm B's log shows no `give`. `peer` routing is the thing
+    that has never been exercised — every message this app has ever sent went to the room.
+  - a `give` of each authored kind lands in the tray and **applies nothing** until clicked, that
+    copied watches and styles arrive with fresh ids (add one twice, confirm two rows), that a copied
+    list entry arrives at `obtained: 0`, and that "Add to map" opens the map and folds the pins in;
+  - **a peer with no route** — one behind a NAT the relay can't traverse — is listed as *not
+    reachable* rather than offering buttons that silently do nothing;
+  - observations still pool: with `mobs`/`kills` on, confirm the far side's rates move without
+    anybody clicking, and that a client running a build from *before* this ADR still contributes
+    (the bare-broadcast path is kept for exactly that);
+  - **the two de-dupes, which need a real shared camp.** Two clients at one spawn should show *one*
+    countdown row crediting both; one player marking it up should take the row over from the
+    better-evidenced clock. And a buff board should name *people* — if you see your own name on
+    somebody else's Spirit of Wolf, the target resolution has failed and that is the bug the unit
+    tests exist to catch early.
+- **The offer notice, and its one action.** Never run. With two clients, switch a share kind on
+  from a peer and confirm the other side raises **one** toast naming them (not "Someone (3f9a)" —
+  if you see that, the `hello`/offer race beat `NOTICE_DEBOUNCE_MS`), that switching six on is still
+  one toast, and that **View** lands on the Peers tab with that peer's row striped. Then the noise
+  rules, which are the half that decides whether this feature is liveable
+  ([ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md)): kill things on the far
+  side and confirm their growing tally raises **nothing**; toggle a kind off and on and confirm the
+  second announcement never comes; pull the far side's network until the room re-joins under a fresh
+  peer id and confirm you are *not* told about them again. Finally confirm no notice ever appears
+  with `connectPeers` off.
 - **Surviving a drop, and leaving cleanly.** The room now re-joins itself when awari reports it
   unreachable ([ADR 0070](../decisions/0070-a-dropped-room-rejoins-itself.md)), and no unit test can
   reach this — it needs two clients and a *real* drop, which is the hard part to stage. The cheapest
