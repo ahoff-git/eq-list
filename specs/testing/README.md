@@ -109,7 +109,11 @@ unit-tested.
     **what is worth interrupting somebody about**, where every test is a way the notice would become
     noise — a count moving is not an offer, an observation is not news, a kind switched on over an
     empty list is an offer of nothing (and is news the moment it isn't, which is the case that was
-    wrong when the tests were written).
+    wrong when the tests were written). And a fifth with
+    [ADR 0145](../decisions/0145-a-room-checks-itself-and-needs-no-game.md): **`outOfDate`**, the
+    reconciliation that stops two installs drifting apart for ever — stated as a comparison of
+    revisions rather than a reaction to an offer, which is the shape that cannot drift, and pinned to
+    observations only so nothing authored is re-fetched behind a reader's back.
   - `src/shared/spawn-timers.ts` → `electron/tests/spawn-timers.test.ts` (the respawn-learning
     rules, [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)): that
     the figure is the **shortest** gap and never the mean, that a later longer gap can't stretch it
@@ -193,6 +197,18 @@ unit-tested.
     not, and none of it raises a banner. Plus the regression that made all of this worth writing: a
     real lapse used to announce **twice** and replace its own start time, because "which instances does
     this fade affect" was asked again after the answer had already been changed.
+
+    Then the **fight**, which is where the feature's two halves separate
+    ([ADR 0141](../decisions/0141-a-debuff-is-the-mirror-image-of-a-buff.md)). A debuff's banner fires
+    mid-fight and one of your own **waits**, with the standing list asserted to appear either way — that
+    pair is the whole decision as two lines. A buff rebuffed before the fight ends has nothing left to
+    say; a fight that ended by killing *you* says nothing at all and still lists everything; a lapse
+    dismissed mid-fight does not come back as a banner later. And the sweep: enemy rows go when the fight
+    ends (including one still *up*, a buff on a charmed pet, which would otherwise sit in "Up now"
+    claiming something about a corpse), your own and a group-mate's do not, and a lapse on **you** is
+    never swept even when the spell claims to be detrimental. The honest limit is asserted too: with no
+    spell file a debuff on a *named* is indistinguishable from a buff on a player and survives, while an
+    ordinary mob still goes — because the article answers that one without the file.
   - `electron/tests/spawn-flow.test.ts` — the spawn timers **end to end**, from raw log text to the
     board the panel draws, through the same path `main.ts` uses (`splitLine` → `parseSplitLine` →
     `killLog.record` → `spawns.noteKill` → `view`). The other two spawn suites talk to the tracker
@@ -221,12 +237,22 @@ unit-tested.
     you haven't, that it leads its zone over mobs that merely drop things, and that a mob which is
     both target and source stays one row.
   - `src/shared/map/hunt-pins.ts` → `electron/tests/hunt-pins.test.ts` — the join between the built
-    hunt and a zone's kills ([ADR 0142](../decisions/0142-a-hunted-mob-marks-itself.md)): that a mob
-    nothing wants is never marked, that one with no believable position is left off rather than
+    hunt and everything that can place its mobs ([ADR 0142](../decisions/0142-a-hunted-mob-marks-itself.md)):
+    that a mob nothing wants is never marked, that one nothing can place is left off rather than
     guessed at, that the wiki's article and case meet the kill log's stripped name, that a mob wanted
-    in *another* zone is still marked where you have actually killed it (the position is the zone
-    authority, not the wiki's wording), that everything one mob is wanted for lands on its one pin,
-    that a spot pinned by hand isn't marked twice, and that a position which is a peer's alone says so.
+    in *another* zone is still marked where you have actually killed it (a measured position is the
+    zone authority, not the wiki's wording), that everything one mob is wanted for lands on its one
+    pin, and that a spot pinned by hand isn't marked twice. Then the wiki's own half: that a stated
+    coordinate places a mob nobody has killed here, that it is refused when the page means a different
+    zone (or when no zone is on screen), that the hunt's own zone can vouch for a card that names
+    none, and that `unplacedHuntMobs` asks for exactly the pages an answer could change.
+  - `src/shared/map/mob-place.ts` → `electron/tests/mob-place.test.ts` — the ranking itself: yours,
+    then pooled with peers', then peers' alone, then the wiki, with the wording each carries; that a
+    kill of any kind stops the wiki being consulted at all; that a stated position has no spread and
+    no samples, and that this stays tellable from a measured `spread: 0` (every kill on one point —
+    the tightest figure there is, not the softest). Plus the stat-card reader the map and the wiki
+    page view share, against the shapes the real pages use: both spellings of the zone row, a decimal
+    coordinate, half a card, and the hill giant's real "Various" — a word, not a place.
   - `src/shared/mob-stats.ts` → `electron/tests/mob-stats.test.ts` (rolling kills up into
     observations, observed drop rates and their denominators, roam areas ignoring untrustworthy
     positions, and pooling a peer's counts while keeping provenance — including that a pooled

@@ -51,17 +51,28 @@
  * a permanent buff is still dispelled and still lost on death — but a *lapse* of one means something
  * different, so the row says so instead of implying a timer ran out.
  *
- * **Only buffs, and only yours.** A detrimental spell landing on something is a debuff, which the
- * existing fade watches already cover ([cast-alerts.ts](./cast-alerts.ts)) and which this is not
- * about. And a buff enters the list only on evidence that it *is* a lasting beneficial effect — the
- * spell file saying so, or a landing or fade line existing for it — because a cast alone would
- * enrol every nuke you throw.
+ * **A buff enters the list only on evidence that it lasts** — the spell file calling it beneficial, or
+ * a landing or fade line existing for it — because a cast alone would enrol every nuke you throw.
+ *
+ * **A debuff is tracked too, and behaves oppositely in both directions.** A fade line names a root or
+ * a snare wearing off a mob, and "re-root it" is a real reminder — so it is kept rather than filtered
+ * out. But it is the mirror image of one of your own buffs on both axes that matter, which is what
+ * `isEnemyTarget` exists to decide:
+ *
+ *   - **When it speaks.** A debuff is urgent — a root that dropped has to go back on *now* — while
+ *     nobody stops mid-fight to recast a stat buff. So a debuff's banner fires immediately and your
+ *     own buffs' banners wait for the fight to end (`announceWhen`).
+ *   - **How long it stays true.** A debuff's reminder dies with its target: once the mob is dead there
+ *     is nothing to re-root, so a fight ending clears every enemy-targeted row. Left alone, those are
+ *     exactly the rows that pile up forever — the standing list fills with reminders about corpses,
+ *     and a list you have learned to ignore is worse than no list.
  *
  * Pure: no clock of its own, no I/O, no timers. `now` arrives as an argument.
  * [electron/buff-tracker.ts](../../electron/buff-tracker.ts) is the holder that watches the log,
  * persists the choices and raises the alerts.
  */
 import { SELF, spellName } from "./combat-parser";
+import { hasArticle } from "./log-parser";
 
 /** The target of a buff on you. Folded to one spelling, since the log writes "you" three ways. */
 export const ON_YOU = "you";
@@ -142,6 +153,15 @@ export interface BuffInstance {
    * doesn't know rather than picking.
    */
   alsoCouldBe?: string[];
+  /**
+   * This was on **something you were fighting** — a root, a snare, a DoT, or a buff on a charmed
+   * mob. See `isEnemyTarget`; it is what makes the two halves of this feature behave oppositely.
+   *
+   * Such a lapse is urgent and short-lived: *urgent* because a root that dropped has to be recast
+   * this second, and *short-lived* because once the fight is over there is nothing left to recast it
+   * on. Your own buffs are the reverse on both counts.
+   */
+  onEnemy: boolean;
 }
 
 /** What the player has decided about one spell, and what we've seen of it. */
@@ -169,6 +189,15 @@ export interface KnownBuff {
   styleId?: string;
   /** It never expires on a clock — read from the game's own file, not guessed. */
   permanent: boolean;
+  /**
+   * It is something you throw *at* things — the game's own file says so (`beneficial: false`).
+   *
+   * Worth a field of its own because the panel is called Buffs and a Root row in it needs
+   * explaining, and because the behaviour genuinely differs: a debuff's reminder is instant and dies
+   * with the fight. False also means "we could not tell", which happens with no game install — the
+   * target then has to answer it instead (`isEnemyTarget`).
+   */
+  detrimental: boolean;
   /** We have seen *you* cast it, as opposed to only ever receiving it. */
   mine: boolean;
   /** How many times we've watched it go up. A rough "is this one you actually maintain". */
@@ -270,17 +299,71 @@ export function narrowCandidates(
 }
 
 /**
- * Should this lapse put a banner up?
+ * Was this on **something you were fighting**?
  *
- * Three gates, and each is a different question: is the app watching this spell at all, did the
- * player ask to be *interrupted* about it, and is this lapse the kind worth announcing. The third is
- * where the rules live — a death strips everything at once, and a recast is not a lapse at all.
+ * The one question that splits this feature in two, and it has to be answerable without a duration,
+ * a level, or a guess. Two independent signals, either of which settles it:
+ *
+ *  - **The spell is detrimental.** The game's own file says so, and you do not root your friends. This
+ *    is the reliable answer and the one that works on a *named*, whose article-less log name looks
+ *    exactly like a player's.
+ *  - **The target carries an article.** `a wild tiger` is a mob whatever the spell was — which covers
+ *    a charmed pet you buffed, and covers everything when there is no game install to ask.
+ *
+ * You and your pet are never enemy targets, whatever else is true; that check comes first so a
+ * mis-flagged spell can never sweep away the reminders this feature exists for.
  */
-export function shouldAnnounce(known: KnownBuff | undefined, reason: BuffLapseReason): boolean {
-  if (!known?.tracked || !known.notify) return false;
+export function isEnemyTarget(target: string, detrimental: boolean): boolean {
+  if (target === ON_YOU || target === ON_PET) return false;
+  if (detrimental) return true;
+  return hasArticle(target);
+}
+
+/** When a lapse should interrupt the player, if ever. */
+export type AnnounceWhen =
+  /** Now. Something has to be recast this second or the moment is gone. */
+  | "now"
+  /** When the fight ends. You are not going to stop swinging to rebuff, so the banner waits. */
+  | "after-fight"
+  /** Not at all. */
+  | "never";
+
+/**
+ * Should this lapse put a banner up, and *when*?
+ *
+ * One decision rather than two, because "whether" and "when" answer to the same facts and splitting
+ * them is how they end up disagreeing.
+ *
+ * The gates in order: is the app watching this spell, did the player ask to be interrupted about it,
+ * is this lapse the kind worth announcing at all — and then the one that matters most in practice,
+ * **is it actionable right now**.
+ *
+ * That last split is the whole of it. A **debuff** that dropped is urgent: a root you don't recast
+ * this second is a mob in your casters. Your **own buffs** are the exact opposite — nobody stops
+ * mid-fight to recast Thistlecoat, they rebuff between pulls — so a banner then is an interruption
+ * you can only ignore, and a banner you ignore trains you to ignore the next one. It waits for the
+ * fight to end, which is when you would have acted anyway.
+ *
+ * Note what does **not** wait: the standing on-screen list. That is information rather than an
+ * interruption, so it appears the moment the buff drops and stays until it is back. Holding the
+ * banner costs nothing precisely because the quiet half is already telling you.
+ *
+ * No duration threshold is involved, deliberately. "Long-duration" would need a figure this app
+ * refuses to compute (see `PERMANENT_FORMULAS` — the formula needs a caster level the log won't
+ * state), and inventing one to decide whether to speak would put a guess in charge of the alert. The
+ * honest question is not *how long the buff lasts* but *whether you can act on it now*, and that one
+ * the log answers outright.
+ */
+export function announceWhen(
+  known: KnownBuff | undefined,
+  reason: BuffLapseReason,
+  buff: Pick<BuffInstance, "onEnemy">,
+): AnnounceWhen {
+  if (!known?.tracked || !known.notify) return "never";
   // A recast *replaced* the buff, so nothing is missing. A death removed everything at once, and a
   // dozen banners is not a dozen pieces of news — the panel and the on-screen list carry it instead.
-  return reason === "faded";
+  if (reason !== "faded") return "never";
+  return buff.onEnemy ? "now" : "after-fight";
 }
 
 /** Should this lapse be held as a standing "you are missing this"? */
@@ -300,7 +383,11 @@ export function shouldHold(known: KnownBuff | undefined, reason: BuffLapseReason
  * already the set you care about. Enrolling silently would mean the feature did nothing until the
  * player found and ticked twenty boxes.
  */
-export function newKnownBuff(spell: string, at: string, opts: { mine: boolean; permanent: boolean }): KnownBuff {
+export function newKnownBuff(
+  spell: string,
+  at: string,
+  opts: { mine: boolean; permanent: boolean; detrimental: boolean },
+): KnownBuff {
   return {
     key: buffKey(spell),
     spell: spellName(spell).trim() || spell,
@@ -308,6 +395,7 @@ export function newKnownBuff(spell: string, at: string, opts: { mine: boolean; p
     notify: true,
     onScreen: true,
     permanent: opts.permanent,
+    detrimental: opts.detrimental,
     mine: opts.mine,
     rises: 0,
     lastUp: at,

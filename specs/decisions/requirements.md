@@ -302,10 +302,14 @@ reading like a measurement, and they are shared code
   filed zone-wide and shows on every floor — the honest reading of "we don't know which". ([0037](./0037-one-zone-many-layers.md), [0040](./0040-floors-come-from-the-mapmaker.md))
 - **The graph is audited on the map it was read from**, while navigating only, with what has nowhere
   to be on the map said in an aside rather than omitted. ([0113](./0113-the-graph-is-drawn-on-the-map-it-was-read-from.md))
-- **The map marks the mobs your hunt wants, where your kills place them** — derived, never stored, and
-  never a pin you can hold, drag, share or edit. No believable position means no mark, a spot you
-  pinned by hand isn't marked twice, and every mark says whose kills it rests on and how rough that
-  is. ([0142](./0142-a-hunted-mob-marks-itself.md))
+- **The map marks the mobs your hunt wants, wherever anything can place them** — derived, never stored,
+  and never a pin you can hold, drag, share or edit. Drawn loud, because it is what the map was opened
+  for, with the uncertainty drawn around it. A spot you pinned by hand isn't marked twice, and nothing
+  able to place a mob means no mark at all. ([0142](./0142-a-hunted-mob-marks-itself.md))
+- **A position comes from your kills, peers' kills, or the wiki — ranked, never merged, and the mark
+  says which.** Observation leads; a stated coordinate answers only where no kill can, has to be about
+  the zone on screen, and carries neither a spread nor a sample count, so it can never read as the
+  tightest figure on the map. ([0142](./0142-a-hunted-mob-marks-itself.md), [0025](./0025-observation-over-the-wiki.md))
 
 ## Travel
 
@@ -501,10 +505,30 @@ reading like a measurement, and they are shared code
 - **A lapse is a state, not an event.** A banner answers "what just happened" and goes; the useful fact
   is that you are *now* without it, so a lapse is held until the spell is recast or stood down.
   ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+- **A debuff and a buff are opposite on both axes that matter.** A debuff on something you were fighting
+  is announced **at once** (a root you don't recast this second is a mob in your casters) and **clears
+  when the fight ends** (there is nothing left to re-root). Your own buffs are the reverse: the banner
+  **waits for the fight to end**, because nobody stops swinging to rebuff, and the row stays until the
+  buff is back. ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md))
+- **Either the spell or the target may settle which kind it is** — detrimental by the game's file, or a
+  mob by its article — and **you and your pet are never enemy targets**, checked first, so a mislabelled
+  spell can never sweep away the reminders the feature exists for.
+  ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md))
+- **The standing on-screen list never waits.** Holding a banner is only free because the quiet half is
+  already saying it. Interruption and information are separated, not delayed together.
+  ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md), [0099](./0099-a-countdown-can-stay-on-screen.md))
+- **What counts as a fight is the meter's answer, asked not re-derived.** A second opinion built from
+  damage events would be the same rule written twice.
+  ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md), [0036](./0036-a-fight-ends-on-death-not-a-lull.md))
+- **No duration threshold decides whether to speak.** "Don't interrupt me about long buffs" is
+  implemented as "don't interrupt me about anything I can't act on now", because the first needs a figure
+  this app refuses to compute and the second the log answers outright.
+  ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md))
 - **Your death lapses your buffs quietly.** Recorded — "what do I need re-buffed" is the question a
   corpse has — and not announced, because a dozen banners at once is not a dozen pieces of news. Buffs
-  you put on other people survive it, and the log reports those itself.
-  ([0140](./0140-a-buff-is-watched-until-it-lapses.md))
+  you put on other people survive it, and the log reports those itself. A fight that ended by killing
+  you says nothing either, including the banners it was holding.
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md), [0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md))
 - **The duration formula's id is read; a duration is not computed.** Applying the formula is
   server-side logic, and the caster level it needs is one this log will not state — EQL levels are per
   class and the level line names none. So permanence is known, and **no countdown is shown**.

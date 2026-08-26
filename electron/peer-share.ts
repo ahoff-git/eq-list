@@ -29,10 +29,11 @@
  * function rather than a main-process opinion the windows have to agree with.
  */
 import { createLogger } from "../src/shared/logging";
-import { AWARI_MSG, type AwariPayload, type AwariPeer, type Settings } from "../src/shared/types";
+import { AWARI_MSG, type AwariPayload, type AwariPeer, type AwariStatus, type Settings } from "../src/shared/types";
 import {
   SHARE_KINDS,
   newlyOffered,
+  outOfDate,
   readAsk,
   readGive,
   shareKind,
@@ -86,6 +87,27 @@ const TRAY_TTL_MS = 30 * 60_000;
  */
 const NOTICE_DEBOUNCE_MS = 4_000;
 
+/**
+ * How long the room may stay empty before we quietly try joining again.
+ *
+ * **This is not a keepalive.** awari heartbeats every connection every two seconds
+ * (`DEFAULT_HEARTBEAT_INTERVAL_MS`), so a live session does not idle out and nothing here needs to
+ * poke it — a second keepalive on top would be inventing work and would hide real drops behind our
+ * own traffic.
+ *
+ * What it *is* is the cure for the one failure the startup retries deliberately give up on: two
+ * clients that begin together can each create their own room, and `REJOIN_DELAYS_MS` stops after
+ * three attempts because being genuinely alone is a normal resting state
+ * ([ADR 0070](../specs/decisions/0070-a-dropped-room-rejoins-itself.md)). A pair that settles split
+ * therefore stays split all evening. Five minutes is slow enough that a solitary player is not
+ * reconnecting in a loop — one attempt per five minutes is nothing — and fast enough that two people
+ * who sit down together find each other without either of them having to know the button exists.
+ *
+ * Only ever while the room is **empty**: a room with somebody in it is a room that works, and
+ * re-joining it would drop a working session to look for a better one.
+ */
+const ALONE_REJOIN_MS = 5 * 60_000;
+
 export interface PeerShareHub {
   /** Our own catalogue, as peers see it — what the toggles amount to. */
   offer(): ShareOffer;
@@ -97,6 +119,17 @@ export interface PeerShareHub {
   ask(peerId: string, kind: ShareKind): void;
   /** The roster changed: greet newcomers with our catalogue and drop the departed from the tray. */
   roster(peers: AwariPeer[]): void;
+  /** The connection came up or went down. Held, so a window can ask rather than having to have heard. */
+  noteStatus(status: AwariStatus): void;
+  /**
+   * The room as it stands right now — the answer to a window that has just opened.
+   *
+   * This exists because the roster and the status were **push-only**, and a panel that mounts when
+   * you click its tab has by then missed every push: the join, and the peers who were already there.
+   * "Who's here · 0 peers" with a room full of people was exactly that, and no amount of listening
+   * fixes it — the reader has to be able to *ask*.
+   */
+  room(): { status: AwariStatus; peers: AwariPeer[] };
   /** What a peer has given us, optionally narrowed to one kind. */
   received(peerId?: string, kind?: ShareKind): ReceivedShare[];
   /** Throw away a peer's answers — one kind, one peer, or the lot. */
@@ -120,6 +153,8 @@ export interface PeerShareDeps {
   changed: () => void;
   /** Somebody is newly offering something worth going to look at (ADR 0143). */
   offered: (notice: PeerOfferNotice) => void;
+  /** Leave the room and join again — the owner window's job, relayed by `ipc.ts`. */
+  rejoin: () => void;
   /** What we'd share, per kind — the app's own data, read only when asked for. */
   sources: Record<ShareKind, () => unknown[]>;
   now?: () => number;
@@ -142,6 +177,8 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   const offers = new Map<string, ShareOffer>();
   /** Peers as the roster last described them — where a name and a session id come from. */
   const known = new Map<string, AwariPeer>();
+  /** The connection, as the owner window last reported it. Held so a late window can ask for it. */
+  let status: AwariStatus = { connected: false, peerId: null };
   /**
    * What we've already told the player about, **keyed by who rather than by connection**.
    *
@@ -203,10 +240,18 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     return catalogue;
   }
 
-  /** Publish the catalogue to the room — the one broadcast this whole feature makes. */
+  /**
+   * Publish the catalogue to the room — the one broadcast this whole feature makes.
+   *
+   * It carries our **name** as well, which is redundant with `hello` on purpose. A `hello` is sent
+   * on join and on a rename, so a peer who missed both stays "Someone (3f9a)" for the whole session
+   * — and a nameless row is the one thing that makes this panel unusable. The catalogue goes out
+   * every minute regardless, so letting it name us costs nothing and gives the roster a second,
+   * self-healing way to learn who everybody is.
+   */
   function publishOffer(): void {
     if (!deps.getSettings().connectPeers) return;
-    deps.send({ kind: AWARI_MSG.offer, ...offer() });
+    deps.send({ kind: AWARI_MSG.offer, name: deps.getName(), ...offer() });
   }
 
   function touch(): void {
@@ -376,10 +421,57 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     pendingNotices.clear();
   }
 
+  /** When the room last had somebody in it — the clock behind `ALONE_REJOIN_MS`. */
+  let lastCompany = now();
+
   const tick = setTimer(() => {
     sweep();
     publishOffer();
+    reconcile();
+    watchLoneliness();
   }, OFFER_TICK_MS);
+
+  /**
+   * Ask again for anything a peer holds that has moved past what we have.
+   *
+   * The point is that this is a **comparison, not a reaction**: an ask used to happen only when an
+   * offer arrived with a moved revision, which quietly assumed every offer is seen and every answer
+   * lands. A lost `give`, a restart mid-conversation, an offer that turned up while `connectPeers`
+   * was off — any of those and the two installs disagree for ever, both believing otherwise. This is
+   * what stops the pool sitting still.
+   *
+   * The per-peer-per-kind cooldown (`askFor`) is what keeps it from being chatty: a kind already
+   * asked for recently is skipped, so a peer whose revision flaps costs one ask a cooldown rather
+   * than one a tick.
+   */
+  function reconcile(): void {
+    if (!deps.getSettings().connectPeers) return;
+    for (const [peerId, catalogue] of offers) {
+      if (!known.get(peerId)?.sessionId) continue;
+      for (const kind of outOfDate(catalogue, (k) => tray.get(trayKey(peerId, k))?.rev)) {
+        askFor(peerId, kind, false);
+      }
+    }
+  }
+
+  /**
+   * A room that has been empty too long is probably not the room everybody else is in.
+   *
+   * See `ALONE_REJOIN_MS` for why this exists and why it is slow. The clock resets the moment
+   * anybody is seen, so a real solitary session costs one join attempt every five minutes and a
+   * populated one costs none.
+   */
+  function watchLoneliness(): void {
+    if (!deps.getSettings().connectPeers || !status.connected) return;
+    if (known.size > 0) {
+      lastCompany = now();
+      return;
+    }
+    if (now() - lastCompany < ALONE_REJOIN_MS) return;
+    lastCompany = now();
+    log.debug("room empty for", Math.round(ALONE_REJOIN_MS / 1000), "s - re-joining to look again");
+    deps.rejoin();
+  }
 
   /** Drop answers nobody has refreshed in a while, so a long session doesn't accumulate the room. */
   function sweep(): void {
@@ -413,12 +505,28 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       }
     },
     ask: (peerId, kind) => askFor(peerId, kind, true),
+    noteStatus(next) {
+      status = next;
+      // A join that has only just landed has had no chance to meet anybody, so the loneliness clock
+      // starts here rather than at whatever it was before the outage.
+      if (next.connected) lastCompany = now();
+      // A room we are no longer in has no roster and no catalogues: keeping them would let a window
+      // that opens during an outage read a list of people who cannot hear it. The **tray** survives,
+      // because what somebody already handed over is ours whether or not they are still here.
+      if (!next.connected) {
+        known.clear();
+        offers.clear();
+        pendingNotices.clear();
+      }
+    },
+    room: () => ({ status, peers: [...known.values()] }),
     roster(peers) {
       // Somebody who has left can't answer and their catalogue is a promise about a session that is
       // over. Their *tray* stays until it ages out: what they already handed over is ours to look
       // at, and losing a list you were halfway through copying because they logged off is worse
       // than a slightly stale row.
       const here = new Set(peers.map((p) => p.peerId));
+      if (peers.length) lastCompany = now();
       known.clear();
       for (const peer of peers) known.set(peer.peerId, peer);
       for (const peerId of [...offers.keys()]) if (!here.has(peerId)) offers.delete(peerId);

@@ -14,7 +14,8 @@ import {
   instanceKey,
   narrowCandidates,
   newKnownBuff,
-  shouldAnnounce,
+  announceWhen,
+  isEnemyTarget,
   shouldHold,
   targetLabel,
   ON_PET,
@@ -27,8 +28,12 @@ import {
 const AT = "2026-08-20T20:00:00.000Z";
 
 function known(over: Partial<KnownBuff> = {}): KnownBuff {
-  return { ...newKnownBuff("Thorns", AT, { mine: true, permanent: false }), ...over };
+  return { ...newKnownBuff("Thorns", AT, { mine: true, permanent: false, detrimental: false }), ...over };
 }
+
+/** A lapsed instance, as `announceWhen` reads one. Only `onEnemy` matters to it. */
+const mine = { onEnemy: false };
+const onMob = { onEnemy: true };
 
 test("a key folds rank and case away, because that is not what the question is about", () => {
   assert.equal(buffKey("Shock of Lightning VI"), "shock of lightning");
@@ -114,43 +119,75 @@ test("undecided names every candidate, in a stable order", () => {
 
 // ── what gets said, and what only gets recorded ───────────────────────────────
 
+test("something you were fighting is told apart by the spell, or failing that by the target", () => {
+  // The reliable signal: you do not root your friends. It works on a *named*, whose article-less log
+  // name is indistinguishable from a player's.
+  assert.equal(isEnemyTarget("Lord Nagafen", true), true);
+  assert.equal(isEnemyTarget("a wild tiger", true), true);
+  // The fallback, for when there is no game install to ask: an article means a mob, whatever the
+  // spell was — which also catches a buff you put on a charmed pet.
+  assert.equal(isEnemyTarget("a wild tiger", false), true);
+  assert.equal(isEnemyTarget("an Iksar Warrior", false), true);
+  // A player keeps their buffs: no article, and nothing detrimental about it.
+  assert.equal(isEnemyTarget("Bloop", false), false);
+  // And you and your pet are never enemies, whatever a mis-flagged spell claims — checked first, so a
+  // bad `detrimental` can never sweep away the reminders this feature exists for.
+  assert.equal(isEnemyTarget(ON_YOU, true), false);
+  assert.equal(isEnemyTarget(ON_PET, true), false);
+  // An unknown target is not a mob by the article test, so a buff we could not place is kept.
+  assert.equal(isEnemyTarget(ON_UNKNOWN, false), false);
+});
+
+test("your own buff waits for the fight; a debuff cannot", () => {
+  // The whole of the second complaint, as one assertion pair. Nobody stops swinging to recast a stat
+  // buff — but a root that dropped has to go back on this second.
+  assert.equal(announceWhen(known(), "faded", mine), "after-fight");
+  assert.equal(announceWhen(known(), "faded", onMob), "now");
+});
+
 test("an ordinary fade is announced and held", () => {
-  assert.equal(shouldAnnounce(known(), "faded"), true);
+  assert.notEqual(announceWhen(known(), "faded", mine), "never");
   assert.equal(shouldHold(known(), "faded"), true);
 });
 
 test("a death is held and never announced", () => {
   // A dozen banners at once is not a dozen pieces of news; the standing list is the answer a corpse
   // wants. Same reasoning as ADR 0082's `cancelOnDeath`.
-  assert.equal(shouldAnnounce(known(), "died"), false);
+  assert.equal(announceWhen(known(), "died", mine), "never");
   assert.equal(shouldHold(known(), "died"), true);
 });
 
 test("a recast is neither: nothing is missing", () => {
-  assert.equal(shouldAnnounce(known(), "recast"), false);
+  assert.equal(announceWhen(known(), "recast", mine), "never");
   assert.equal(shouldHold(known(), "recast"), false);
 });
 
 test("unchecked silences both halves; notify off silences only the banner", () => {
   const untracked = known({ tracked: false });
-  assert.equal(shouldAnnounce(untracked, "faded"), false);
+  assert.equal(announceWhen(untracked, "faded", mine), "never");
   assert.equal(shouldHold(untracked, "faded"), false);
 
   const quiet = known({ notify: false });
-  assert.equal(shouldAnnounce(quiet, "faded"), false);
+  assert.equal(announceWhen(quiet, "faded", mine), "never");
   // Still held: one switch is about a moment, the other about a state, and they are asked separately.
   assert.equal(shouldHold(quiet, "faded"), true);
 });
 
+test("silencing beats urgency — an unticked debuff is still silent", () => {
+  // Order matters here: `onEnemy` says "now", and the player's own switch has to outrank it.
+  assert.equal(announceWhen(known({ tracked: false }), "faded", onMob), "never");
+  assert.equal(announceWhen(known({ notify: false }), "faded", onMob), "never");
+});
+
 test("a spell with no row says nothing", () => {
-  assert.equal(shouldAnnounce(undefined, "faded"), false);
+  assert.equal(announceWhen(undefined, "faded", mine), "never");
   assert.equal(shouldHold(undefined, "faded"), false);
 });
 
 // ── the rest ──────────────────────────────────────────────────────────────────
 
 test("a fresh row arrives switched on", () => {
-  const fresh = newKnownBuff("Spirit of Wolf II", AT, { mine: true, permanent: true });
+  const fresh = newKnownBuff("Spirit of Wolf II", AT, { mine: true, permanent: true, detrimental: false });
   assert.equal(fresh.key, "spirit of wolf");
   assert.equal(fresh.spell, "Spirit of Wolf");
   assert.equal(fresh.tracked, true);
@@ -171,6 +208,7 @@ test("how long it was held is measured to now while up, and to the lapse once do
     source: "landed",
     byYou: true,
     permanent: false,
+    onEnemy: false,
   };
   const now = Date.parse(AT) + 60_000;
   assert.equal(heldMs(base, now), 60_000);

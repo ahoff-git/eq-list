@@ -285,6 +285,9 @@ if (!app.requestSingleInstanceLock()) {
     // two files lazily, so handing these over costs nothing until a buff line actually turns up.
     lexicon: () => spells.lexicon(),
     facts: (spell, rank) => spells.find(spell, rank),
+    // Asked rather than re-derived: what counts as a fight is the meter's rule and nobody else's
+    // (ADR 0036). It decides whether a "rebuff" banner interrupts you or waits for the pull to end.
+    inFight: () => combat.inFight(),
   });
   buffs.onChanged(() => broadcast(CH.buffsChanged, undefined));
 
@@ -578,6 +581,10 @@ if (!app.requestSingleInstanceLock()) {
   combat.onFightEnd((fight) => {
     history.add(fight, combat.zone(), watcher.status().file);
     scores.offer(fightCandidates(fight), combat.zone());
+    // The moment a rebuff reminder becomes actionable, and the moment a root reminder stops being:
+    // held banners are said and enemy-targeted rows are dropped. `endReason` is what tells the two
+    // apart from a fight that ended by killing *you*, where neither applies.
+    buffs.noteFightEnd(fight.endReason ?? "timeout");
   });
   xp.onChange((progress) => broadcast(CH.xpChanged, progress));
   hp.onChange((estimate) => broadcast(CH.hpChanged, estimate));

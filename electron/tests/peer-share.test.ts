@@ -25,6 +25,7 @@ import {
   mergeTimers,
   newlyOffered,
   offerSummary,
+  outOfDate,
   readAsk,
   readGive,
   readOffer,
@@ -74,6 +75,7 @@ function buff(over: Partial<BuffInstance> = {}): BuffInstance {
     source: "landed",
     byYou: false,
     permanent: false,
+    onEnemy: false,
     ...over,
   };
 }
@@ -370,4 +372,36 @@ test("a notice names two things and counts the rest", () => {
   assert.equal(offerSummary(["watches", "styles"]), "Watch rules and Alert styles");
   // A card has one line for this, and a peer who switched everything on must not fill it.
   assert.equal(offerSummary(["watches", "styles", "lists", "pins"]), "Watch rules, Alert styles and 2 more");
+});
+
+// ─── Keeping up to date without waiting to be told ──────────────────────────
+
+test("a kind we have never had is out of date, however new we are", () => {
+  assert.deepEqual(outOfDate({ mobs: { n: 400, rev: 7 } }, () => undefined), ["mobs"]);
+});
+
+test("an equal revision is up to date, and a lower one is not worth re-fetching", () => {
+  const offer = { mobs: { n: 400, rev: 7 } };
+  assert.deepEqual(outOfDate(offer, () => 7), []);
+  // Their store was reset behind a revision we already hold. Asking would fetch what we have, and
+  // their answer would say "unchanged" anyway.
+  assert.deepEqual(outOfDate(offer, () => 9), []);
+  assert.deepEqual(outOfDate(offer, () => 6), ["mobs"]);
+});
+
+test("reconciliation is observations only — nothing authored is re-fetched behind a reader's back", () => {
+  const offer = {
+    mobs: { n: 400, rev: 7 },
+    kills: { n: 80, rev: 3 },
+    respawns: { n: 12, rev: 2 },
+    watches: { n: 5, rev: 9 },
+    styles: { n: 2, rev: 4 },
+    timers: { n: 3, rev: 1 },
+    scores: { n: 8, rev: 5 },
+  };
+  assert.deepEqual(outOfDate(offer, () => undefined), ["mobs", "kills", "respawns"]);
+});
+
+test("a kind offered over an empty store is nothing to fetch", () => {
+  assert.deepEqual(outOfDate({ mobs: { n: 0, rev: 4 } }, () => undefined), []);
 });

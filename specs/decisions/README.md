@@ -169,10 +169,14 @@ finished, so a number is claimed before a second author can reach for it.
 - [0137: A filed drop can still learn where it was](./0137-a-filed-drop-can-still-learn-where-it-was.md)
 - [0138: A replayed log narrows what a kill proves, and how long a sighting holds a row](./0138-a-replayed-log-narrows-what-a-kill-proves.md)
 - [0139: A difficulty can never cost you a map](./0139-a-difficulty-can-never-cost-a-map.md)
-- [0140: A buff is watched until it lapses, and the game's own words name it](./0140-a-buff-is-watched-until-it-lapses.md)
+- [0140: A buff is watched until it lapses, and the game's own words name it](./0140-a-buff-is-watched-until-it-lapses.md) — *when a lapse speaks, and how long it stays true, refined by 0141*
+- [0141: A debuff is the mirror image of a buff, and a rebuff reminder waits for the fight](./0141-a-debuff-is-the-mirror-image-of-a-buff.md)
 - [0141: The room is a meeting place, and sharing is peer to peer](./0141-the-room-is-a-meeting-place.md)
-- [0142: A hunted mob marks itself on the map](./0142-a-hunted-mob-marks-itself.md)
+- [0142: A hunted mob marks itself on the map, and says who placed it](./0142-a-hunted-mob-marks-itself.md)
 - [0143: A notice may point at where to answer it](./0143-a-notice-may-point-at-where-to-answer-it.md)
+- [0144: Shared state is asked for as well as pushed, and says whether it is real](./0144-state-is-asked-for-as-well-as-pushed.md)
+- [0145: A room checks itself, and needs no game running](./0145-a-room-checks-itself-and-needs-no-game.md)
+- [0146: One home for the peer network](./0146-one-home-for-the-peer-network.md)
 
 ## Open Questions
 
@@ -259,12 +263,6 @@ and degrading to blank facts when the file isn't there.*
   Eye" counts once ([ADR 0024](./0024-mob-knowledge.md)). For a stackable trash drop the useful
   figure is items-per-kill. It's a second number rather than a correction, and it changes the shared
   observation shape, so it wants deciding rather than sneaking in.
-- The app now reports its peer connection truthfully, but **nothing displays it**
-  ([ADR 0070](./0070-a-dropped-room-rejoins-itself.md)): the map's `connected` is the
-  `connectPeers` *setting*, and the only consumer of the real status is the room clearing itself.
-  During an outage a player sees the user list empty and their pings stop landing, with nothing
-  saying why. Is that worth a real connection light, or is a silent self-heal the right amount of
-  noise for a game overlay?
 - A recovering peer re-joins under a **fresh peer id**, so the room sees a stranger arriving rather
   than a return ([ADR 0070](./0070-a-dropped-room-rejoins-itself.md), on ADR 0011's "the id is
   transport-only"). Cheap today; if reconnects prove frequent it reads as churn in the 👥 panel.

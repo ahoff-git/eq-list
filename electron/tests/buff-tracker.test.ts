@@ -15,7 +15,13 @@ import { createBuffTracker, type BuffTracker } from "../buff-tracker";
 import { buildBuffLexicon, parseSpellStringFile } from "../../src/shared/spell-strings";
 import { ON_PET, ON_UNKNOWN, ON_YOU } from "../../src/shared/buff-tracking";
 import type { SpellFacts } from "../../src/shared/spell-file";
-import type { CastAlertEvent, CastAlertSettings, CombatEvent, LogLine } from "../../src/shared/types";
+import type {
+  CastAlertEvent,
+  CastAlertSettings,
+  CombatEvent,
+  FightEndReason,
+  LogLine,
+} from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-20T20:00:00.000Z");
 const iso = (offsetSec = 0) => new Date(T0 + offsetSec * 1000).toISOString();
@@ -36,17 +42,20 @@ function facts(id: number, name: string, over: Partial<SpellFacts> = {}): SpellF
 }
 
 /**
- * Four spells, chosen to cover the cases that differ:
+ * Six spells, chosen to cover the cases that differ:
  *  - Spirit of Wolf — announces on you and on others, and fades with words. The ordinary buff.
  *  - Thistlecoat    — **permanent** on EQL, and shares its fade sentence with Thorncoat.
  *  - Thorncoat      — the other half of that shared sentence.
  *  - Complete Heal  — beneficial but says nothing at all: no landing, no fade.
+ *  - Root / Snare   — **detrimental**, which is what makes them behave oppositely in both directions.
  */
 const SPELLS = new Map<number, SpellFacts>([
   [278, facts(278, "Spirit of Wolf")],
   [515, facts(515, "Thistlecoat", { permanent: true })],
   [519, facts(519, "Thorncoat", { permanent: true, levels: { Druid: 47 } })],
   [13, facts(13, "Complete Heal")],
+  [10, facts(10, "Root", { beneficial: false })],
+  [11, facts(11, "Snare", { beneficial: false })],
 ]);
 
 const STRINGS = [
@@ -77,6 +86,10 @@ interface Harness {
   raised: CastAlertEvent[];
   /** Move the clock, in seconds from T0. Only matters where a window is being tested. */
   at(offsetSec: number): void;
+  /** Are we mid-fight? What the damage meter would be answering. */
+  fighting(on: boolean): void;
+  /** End the fight, and say how — the two that matter are a kill and your own death. */
+  endFight(reason?: FightEndReason): void;
   cast(spell: string, offsetSec?: number, caster?: string): void;
   line(message: string, offsetSec?: number): void;
   fade(opts: { spell: string; target?: string; pet?: boolean; raw?: string; offsetSec?: number }): void;
@@ -87,6 +100,10 @@ function harness(opts: { lexicon?: boolean; enabled?: boolean; armed?: boolean }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-buffs-"));
   const raised: CastAlertEvent[] = [];
   let clock = T0;
+  // Driven by the test rather than derived, because what a fight *is* belongs to the damage meter and
+  // this suite is about what the buff board does with the answer. Out of combat by default: that is
+  // the simple case, and a test about the hold says so explicitly.
+  let fighting = false;
   const lex =
     opts.lexicon === false
       ? undefined
@@ -104,6 +121,7 @@ function harness(opts: { lexicon?: boolean; enabled?: boolean; armed?: boolean }
         size: 0,
       },
     facts: (spell) => [...SPELLS.values()].find((s) => s.name.toLowerCase() === spell.trim().toLowerCase()),
+    inFight: () => fighting,
     now: () => clock,
   });
   const send = (event: CombatEvent) => buffs.combat(event);
@@ -119,6 +137,13 @@ function harness(opts: { lexicon?: boolean; enabled?: boolean; armed?: boolean }
     raised,
     at: (offsetSec) => {
       clock = T0 + offsetSec * 1000;
+    },
+    fighting: (on) => {
+      fighting = on;
+    },
+    endFight: (reason = "kill") => {
+      fighting = false;
+      buffs.noteFightEnd(reason);
     },
     cast: (spell, offsetSec = 0, caster = "You") =>
       send({ kind: "cast", caster, spell, at: iso(offsetSec), raw: `${caster} begin casting ${spell}.`, logId: 1 }),
@@ -407,6 +432,172 @@ test("alerts switched off silences the banner and still keeps the board", () => 
   assert.equal(h.buffs.view().lapsed.length, 1);
 });
 
+// ── the fight, and the two things ending it means ─────────────────────────────
+
+test("a debuff that dropped is announced at once, mid-fight or not", () => {
+  const h = harness({ lexicon: false });
+  h.fighting(true);
+  h.fade({ spell: "Root", target: "a wild tiger" });
+  // No waiting: a root you don't recast this second is a mob in your casters.
+  assert.equal(h.raised.length, 1);
+  assert.equal(h.raised[0].buff?.onEnemy, true);
+});
+
+test("your own buff lapsing mid-fight waits for the fight to end", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  h.fighting(true);
+  h.raised.length = 0;
+
+  h.fade({ spell: "spirit of wolf", raw: "The spirit of wolf leaves you.", offsetSec: 60 });
+  // Nobody stops swinging to rebuff, so the banner holds — but the standing list says it *now*,
+  // which is what makes holding the interruption free.
+  assert.equal(h.raised.length, 0);
+  assert.equal(h.buffs.view().lapsed.length, 1);
+
+  h.endFight();
+  assert.equal(h.raised.length, 1);
+  assert.equal(h.raised[0].buff?.spell, "Spirit of Wolf");
+});
+
+test("out of combat there is nothing to wait for", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  h.raised.length = 0;
+  h.fade({ spell: "spirit of wolf", raw: "The spirit of wolf leaves you.", offsetSec: 60 });
+  assert.equal(h.raised.length, 1);
+});
+
+test("a buff rebuffed during the fight has nothing left to say at the end of it", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  h.fighting(true);
+  h.fade({ spell: "spirit of wolf", raw: "The spirit of wolf leaves you.", offsetSec: 30 });
+  h.line("You feel the spirit of wolf enter you.", 40);
+  h.raised.length = 0;
+
+  h.endFight();
+  // The hold exists to tell you what is *still* wrong when you get a moment. It isn't.
+  assert.equal(h.raised.length, 0);
+  assert.equal(h.buffs.view().lapsed.length, 0);
+  assert.equal(h.buffs.view().active.length, 1);
+});
+
+test("a fight that ended by killing you says nothing", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  h.fighting(true);
+  h.fade({ spell: "spirit of wolf", raw: "The spirit of wolf leaves you.", offsetSec: 30 });
+  h.raised.length = 0;
+
+  h.endFight("death");
+  // You lost everything on you anyway, and the standing list already says so. A stack of "recast it"
+  // over a corpse is what ADR 0082 refuses.
+  assert.equal(h.raised.length, 0);
+  // Still listed, because that is the question a corpse has.
+  assert.equal(h.buffs.view().lapsed.length, 1);
+});
+
+test("a lapse dismissed mid-fight does not come back as a banner", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  h.fighting(true);
+  h.fade({ spell: "spirit of wolf", raw: "The spirit of wolf leaves you.", offsetSec: 30 });
+  h.buffs.dismiss("spirit of wolf", ON_YOU);
+  h.raised.length = 0;
+
+  h.endFight();
+  assert.equal(h.raised.length, 0);
+});
+
+test("the fight ending clears every row about something you were fighting", () => {
+  const h = harness({ lexicon: false });
+  h.fighting(true);
+  h.fade({ spell: "Root", target: "a wild tiger" });
+  // A *named*: no article, so only the spell being detrimental places this one — which is the case the
+  // article test alone gets wrong, and why both signals exist.
+  h.fade({ spell: "Snare", target: "Lord Nagafen", offsetSec: 5 });
+  assert.equal(h.buffs.view().lapsed.length, 2);
+
+  h.endFight();
+  // The whole of the first complaint: a reminder to re-root a corpse is what filled the list forever.
+  assert.equal(h.buffs.view().lapsed.length, 0);
+});
+
+test("with no spell file, a debuff on a named cannot be told from a buff on a player", () => {
+  // The honest limit, asserted so it is a known cost rather than a surprise. `Lord Nagafen` and
+  // `Bloop` are written identically by the log, so without the file to say "Snare is detrimental"
+  // there is nothing to separate them — and keeping a row we cannot place beats sweeping away a
+  // reminder about a group-mate.
+  const h = harness({ lexicon: false });
+  const noFacts = createBuffTracker({
+    userDataDir: fs.mkdtempSync(path.join(os.tmpdir(), "eql-buffs-")),
+    getSettings: () => SETTINGS,
+    raise: () => {},
+    lexicon: () => ({
+      fadedBy: () => [],
+      landedOnYou: () => [],
+      landedOnOther: () => null,
+      landsQuietly: () => true,
+      size: 0,
+    }),
+    facts: () => undefined,
+    inFight: () => true,
+    now: () => T0,
+  });
+  noFacts.combat({
+    kind: "buff-faded",
+    spell: "Snare",
+    pet: false,
+    target: "Lord Nagafen",
+    at: iso(0),
+    raw: "Your Snare spell has worn off of Lord Nagafen.",
+    logId: 2,
+  });
+  noFacts.noteFightEnd("kill");
+  assert.equal(noFacts.view().lapsed.length, 1);
+  // An ordinary mob still goes, because the article answers it without the file.
+  h.fighting(true);
+  h.fade({ spell: "Snare", target: "a wild tiger" });
+  h.endFight();
+  assert.equal(h.buffs.view().lapsed.length, 0);
+});
+
+test("clearing enemy rows leaves your own alone", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  h.fighting(true);
+  h.fade({ spell: "Root", target: "a wild tiger", offsetSec: 10 });
+  h.fade({ spell: "Thorns", target: "Bloop", offsetSec: 11 });
+
+  h.endFight();
+  const lapsed = h.buffs.view().lapsed;
+  // The mob's row goes; the buff on you stays up, and the one on a group-mate stays listed.
+  assert.deepEqual(lapsed.map((b) => b.target).sort(), ["Bloop"]);
+  assert.equal(h.buffs.view().active.length, 1);
+});
+
+test("a buff still up on something you were fighting goes too", () => {
+  const h = harness();
+  // A buff on a charmed pet: no game install could call this detrimental, so the article does it.
+  h.cast("Spirit of Wolf", 0);
+  h.line("a wild tiger is surrounded by a brief lupine aura.", 1);
+  assert.equal(h.buffs.view().active.length, 1);
+
+  h.endFight();
+  // Otherwise "Up now" keeps claiming something about a mob that is gone for the rest of the session.
+  assert.equal(h.buffs.view().active.length, 0);
+});
+
+test("a detrimental spell never files itself under you", () => {
+  const h = harness({ lexicon: false });
+  // Belt and braces on the check that runs first: even if the file mislabels something, a lapse on
+  // *you* is never swept away by a fight ending.
+  h.fade({ spell: "Root", target: "you" });
+  h.endFight();
+  assert.equal(h.buffs.view().lapsed.length, 1);
+});
+
 // ── the player's two controls ─────────────────────────────────────────────────
 
 test("unchecking a spell silences it, keeps its row, and clears what it was saying", () => {
@@ -494,6 +685,7 @@ test("the choices survive a restart and the board does not", () => {
     lexicon: () => buildBuffLexicon(parseSpellStringFile(STRINGS), SPELLS),
     facts: (spell: string) =>
       [...SPELLS.values()].find((s) => s.name.toLowerCase() === spell.trim().toLowerCase()),
+    inFight: () => false,
     now: () => T0,
   };
   const first = createBuffTracker(deps);

@@ -105,6 +105,12 @@ features for later in [../ideas.md](../ideas.md).
   mark goes on its own, and **mark a roam centre by hand** with the 📖 panel's ± button and confirm the
   automatic one stands aside instead of doubling it. Finally the 👁 panel's switch — off should mean
   off, and still off after reopening the window.
+
+  The part that can only be judged in the game is the **wiki-placed** mark: put a named you have
+  never killed on your list, go to the zone its page states, and see whether the dashed ring is
+  actually near it. The coordinate is someone else's game and the app says so, but *how wrong* it
+  tends to be is the thing no test can tell us — and it decides whether the wiki deserves to stay a
+  source or should only ever be a hint in the hover.
 - **Screengrab lookup, end-to-end.** Verify the `Ctrl/Cmd+Shift+L` flow: region select → capture →
   Tesseract OCR accuracy → fuzzy match. First OCR downloads the English model (needs network); tune
   the crop / text cleanup if accuracy is poor. Since
@@ -690,6 +696,39 @@ features for later in [../ideas.md](../ideas.md).
   second announcement never comes; pull the far side's network until the room re-joins under a fresh
   peer id and confirm you are *not* told about them again. Finally confirm no notice ever appears
   with `connectPeers` off.
+- **Nothing peer-shaped left in Settings or on the map toolbar.** The consolidation
+  ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md)) is the kind of change a compiler
+  cannot check: confirm Settings has no connect switch, no player name and no bootstrap field, that
+  the map toolbar has no ☣ and no 🔗, and that everything they used to do is reachable in the Peers
+  tab and takes effect — flip *Kill positions* there and confirm a peer still receives them with the
+  map window shut. Then the one thing kept on the map: the 👥 panel still lists the room, still has
+  no toggles, and its empty state names the Peers tab.
+- **Presence in a panel that opens late.** The bug two real clients found first
+  ([ADR 0144](../decisions/0144-state-is-asked-for-as-well-as-pushed.md)): connect both, wait for
+  them to see each other, and *then* open the Peers tab and the map's 👥 panel. Both must list the
+  other person immediately — a zero here means the seeding read is not happening and only the events
+  are. Then the states either side of it: with `connectPeers` on but the network down, the light
+  beside "Who's here" stays grey and the text says *not in the room yet*; once joined and alone it
+  goes gold and the text says *connected, and nobody else is in the room yet*.
+- **A room with the game closed.** The requirement ADR 0145 wrote down, never run: quit EverQuest
+  entirely (or never start it), launch EQ List, and confirm both clients still join, see each other,
+  and can ask and answer. Confirm the name is still right — it comes off the *filename* of the newest
+  log in the folder, not off anything the game is doing. Then the fresh-install case: point `logDir`
+  at an empty folder and confirm the Peers tab says peers will see a short id until you name yourself,
+  that typing a name in *Your connection* fixes it, and that the other side picks the new name up
+  within a minute (the catalogue carries it, not just `hello`).
+- **The tick, which is the half nobody watches.** Leave two clients connected and idle for ten
+  minutes with Debug logging on. Nothing should reconnect while they can see each other, and the pool
+  should stay current: kill something on one side, wait a minute without touching anything, and
+  confirm the other side's rates move (the reconcile pass, not an offer). Then force the drift the
+  reconcile exists for — stop one client mid-conversation and restart it — and confirm it catches up
+  on the next tick rather than waiting for the far side to kill something.
+- **The split room, and Retry connection.** The failure the retries give up on: launch both clients at the
+  same instant, repeatedly, until they settle in separate rooms (both connected, both alone — the
+  light gold, the roster empty). Confirm **Retry connection** on either side finds the other at once,
+  with `re-joining on request` then `peer joined:` in the log — and then, on a fresh split, confirm it
+  heals **on its own** within five minutes (`room empty for 300 s - re-joining to look again`), since
+  that is the case a person is not supposed to have to notice.
 - **Surviving a drop, and leaving cleanly.** The room now re-joins itself when awari reports it
   unreachable ([ADR 0070](../decisions/0070-a-dropped-room-rejoins-itself.md)), and no unit test can
   reach this — it needs two clients and a *real* drop, which is the hard part to stage. The cheapest

@@ -168,6 +168,23 @@ export const CH = {
   peerMine: "peer:mine", // any window → main: the rows we'd hand over for one kind
   peerAsk: "peer:ask", // any window → main: ask one peer for one kind, on a person's behalf
   peerReceived: "peer:received", // any window → main: what peers have given us
+  /**
+   * any window → main: the room as it stands — the connection, and who is in it.
+   *
+   * Because a panel that mounts when you click its tab has already missed every roster and status
+   * *event*: a reader has to be able to ask, not only to listen. "0 peers" in a full room was this.
+   */
+  peerRoom: "peer:room",
+  /**
+   * any window → main → the owner window: leave the room and join it again, now.
+   *
+   * The one thing a person could previously only do by toggling `connectPeers` off and on, which
+   * nobody would guess. It exists because the cold-start split — two clients each creating their own
+   * room and never finding each other — is **bounded**: after three retries the app settles, and if
+   * it settled split it stays split for the session (see `REJOIN_DELAYS_MS`).
+   */
+  peerRejoin: "peer:rejoin",
+  awariRejoin: "evt:awariRejoin", // main → owner: re-run the join
   peerClearShares: "peer:clearShares", // any window → main: throw a peer's answers away
   peerSetPins: "peer:setPins", // map window → main: its pins, which live in its own storage
   peerShareChanged: "evt:peerShare", // main → all: the received tray moved

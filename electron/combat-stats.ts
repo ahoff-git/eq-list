@@ -132,6 +132,16 @@ export interface CombatTracker {
    * in earshot at a busy camp.
    */
   countsKill(mob: string): boolean;
+  /**
+   * Is a fight open right now?
+   *
+   * A read of the state this tracker already owns, exposed because two features need to know and
+   * neither can be trusted to work it out: what a fight *is* — swings in log time, ended by a death
+   * rather than a lull ([ADR 0036](../specs/decisions/0036-a-fight-ends-on-death-not-a-lull.md)) — is
+   * decided here and nowhere else. A second opinion assembled from damage events would be the same
+   * rule written twice, which is how two panels end up disagreeing about whether you are in combat.
+   */
+  inFight(): boolean;
   snapshot(): CombatStats;
   reset(): void;
   /**
@@ -1254,6 +1264,9 @@ export function createCombatStats(
       currentZone = next;
     },
     zone: () => currentZone,
+    // Open means it has had damage in it and has not been filed — the same two facts `settle` and
+    // `endFight` gate on, so "in a fight" cannot drift from "a fight is still fileable".
+    inFight: () => !!fight.span.firstAt && !fightFiled,
     snapshot,
     settle(nowMs) {
       if (!nowMs || fightFiled || !fight.span.firstAt) return;

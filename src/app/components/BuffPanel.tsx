@@ -34,6 +34,13 @@ import type { BuffInstance, KnownBuff } from "@/shared/types";
  * buff whose target we never learned reads *someone* rather than guessing at you — a cast line names
  * no target, and inventing one would put the wrong name on the next alert.
  *
+ * **Two kinds of row, behaving oppositely.** A debuff on something you were fighting is urgent and
+ * short-lived: it is announced the instant it drops, and it clears itself when the fight ends because
+ * a reminder to re-root a corpse is what filled this list forever. Your own buffs are the reverse —
+ * their banner waits for the fight to end, since nobody stops swinging to rebuff, and their row stays
+ * until the buff is back. Both are labelled, because a row that vanishes on its own and a row that
+ * waits are two different promises and the tab has to make which is which legible.
+ *
  * What the tab deliberately does **not** show is a countdown. The game's own file states a duration
  * *formula*, not a duration, and applying one needs a caster level EQL's log will not give us (its
  * levels are per class and the level line names none). A clock we can't stand behind would make every
@@ -59,7 +66,9 @@ export default function BuffPanel() {
       <p className="buff-how small">
         Buffs are tracked <b>automatically</b>: cast one, or have one cast on you, and it appears here
         until it wears off or you die. Uncheck one to stop being told about it — the row stays, so you
-        can turn it back on.
+        can turn it back on. Your own buffs are announced <b>between fights</b>, since nobody stops
+        swinging to rebuff; a <b>debuff</b> on something you&rsquo;re fighting is announced at once and
+        clears when the fight ends.
       </p>
 
       {silenced && (
@@ -161,6 +170,9 @@ function LapsedRow({ buff, now }: { buff: BuffInstance; now: number }) {
         {buff.reason === "died" ? "you died" : `held ${formatDuration(Math.round(heldMs(buff, now) / 1000))}`}
         {" · "}
         {when(buff.at)}
+        {/* Said on the row because it changes how long the row will be there: an enemy row goes by
+            itself when the fight ends, so it is not something to go and dismiss. */}
+        {buff.onEnemy && <em title="On something you were fighting — this clears itself when the fight ends"> · until the fight ends</em>}
       </span>
       {buff.alsoCouldBe?.length ? (
         // The shared-sentence case, named rather than hidden. 358 obtainable fade sentences belong to
@@ -218,6 +230,13 @@ function KnownRow({ known, styles }: { known: KnownBuff; styles: { id: string; n
         <b className="buff-name">{known.spell}</b>
       </label>
       <span className="buff-known-facts muted small">
+        {known.detrimental && (
+          // A Root row in a tab called Buffs needs explaining, and the label is also the explanation
+          // for why it behaves differently from everything around it.
+          <em className="buff-tag" title="Something you cast at things. Its reminder is immediate, and it clears when the fight ends">
+            debuff
+          </em>
+        )}
         {known.permanent && (
           <em className="buff-tag" title="The game's own spell file says this one has no duration — it only ends if it's dispelled or you die">
             permanent
@@ -231,7 +250,14 @@ function KnownRow({ known, styles }: { known: KnownBuff; styles: { id: string; n
           out beside an unchecked row — the same rule the spawn board's style picker follows. */}
       {known.tracked && (
         <span className="buff-actions">
-          <label className="buff-check" title="Raise a banner the moment it drops">
+          <label
+            className="buff-check"
+            title={
+              known.detrimental
+                ? "Raise a banner the moment it drops — immediately, since a debuff has to go back on now"
+                : "Raise a banner when it drops. Held until the fight ends, because nobody stops fighting to rebuff"
+            }
+          >
             <input
               type="checkbox"
               checked={known.notify}

@@ -244,7 +244,15 @@ export default function AwariHost() {
         // read it off the peer row, the same way a name is.
         if (payload.kind === AWARI_MSG.offer) {
           const prev = roster.get(sender) ?? { peerId: sender };
-          roster.set(sender, { ...prev, offer: readOffer(payload) });
+          roster.set(sender, {
+            ...prev,
+            // A catalogue names its sender as well, redundantly with `hello` and on purpose: a peer
+            // who missed the one `hello` we sent on joining would otherwise stay nameless for the
+            // whole session, and a nameless row is what makes the Peers tab unreadable. The
+            // catalogue comes round every minute, so this heals by itself.
+            name: typeof payload.name === "string" && payload.name ? payload.name : prev.name,
+            offer: readOffer(payload),
+          });
           reportRoster();
         }
         a.awari.reportMessage({ sender, payload: payload as { kind: string } });
@@ -266,11 +274,13 @@ export default function AwariHost() {
           // makes a peer *addressable* rather than merely listed (ADR 0141) — so a rejoin under a
           // fresh session must overwrite it rather than be skipped as "already known".
           roster.set(peer.peerId, { ...roster.get(peer.peerId), peerId: peer.peerId, sessionId: peer.sessionId });
+          log.debug("peer joined:", peer.peerId, "- room now", roster.size);
           reportRoster();
           sayHello(); // a new arrival doesn't know us yet
         });
         s.onPeerLeft((peer) => {
           roster.delete(peer.peerId);
+          log.debug("peer left:", peer.peerId, "- room now", roster.size);
           greeted.delete(peer.peerId); // a returning peer gets greeted again
           reportRoster();
         });
@@ -366,6 +376,25 @@ export default function AwariHost() {
     if (!a) return;
     return a.awari.onPublish((out) => publish(out.payload, out.to));
   }, [publish]);
+
+  /**
+   * Somebody asked for a fresh join (the Peers tab's "Look again").
+   *
+   * Bumping the generation is exactly what the lonely timer does — tear the session down and come
+   * back under a new peer id — so this reuses it rather than adding a second way to re-join. It is
+   * the manual answer to the one failure the automatic retries deliberately give up on: a pair of
+   * clients that started together, split into two rooms, and ran out of attempts.
+   */
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    return a.awari.onRejoin(() => {
+      log.debug("re-joining on request");
+      lonelyTriesRef.current = 0;
+      failuresRef.current = 0;
+      setJoinGeneration((n) => n + 1);
+    });
+  }, []);
 
   // Keep the room's picture of us current: a rename or a zone change re-announces.
   useEffect(() => {

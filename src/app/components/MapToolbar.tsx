@@ -23,7 +23,6 @@ export default function MapToolbar({
   userCount,
   connected,
   panels,
-  shares,
 }: {
   /** The pin kind being held, `"move"` while dragging pins, or null. */
   tool: PinKind | "move" | null;
@@ -34,14 +33,19 @@ export default function MapToolbar({
   userCount: number;
   connected: boolean;
   panels: { filters: Flag; travel: Flag; mobs: Flag; kills: Flag; users: Flag };
-  shares: { kills: Flag; pins: Flag };
 }) {
   const heldPin = tool && tool !== "move" ? tool : null;
   const moveMode = tool === "move";
 
   /**
    * The right-hand buttons, in the order they're read. `peer` marks the ones that only mean anything
-   * with the room connected — sharing needs someone to share with, and so does a user list.
+   * with the room connected — a user list needs somebody to list.
+   *
+   * **The two share toggles that used to live here are gone.** ☣ (kill locations) and 🔗 (pins) were
+   * views of `settings.share`, which the Peers tab also lists — one decision with two switches, in
+   * two windows, and the map is the wrong place to reason about what leaves your machine
+   * ([ADR 0146](../../../specs/decisions/0146-one-home-for-the-peer-network.md)). What the map keeps
+   * is what the map *draws*.
    */
   const BUTTONS: { flag: Flag; title: string; glyph: string; peer?: boolean; className?: string }[] = [
     {
@@ -65,19 +69,11 @@ export default function MapToolbar({
       glyph: `☠${killCount ? ` ${killCount}` : ""}`,
     },
     {
-      flag: shares.kills,
-      title: "Share your kill locations, so the camp's heatmap is everyone's",
-      glyph: "☣",
-      peer: true,
-      className: "pin",
-    },
-    {
       flag: panels.users,
       title: "Who else is connected",
       glyph: `👥${userCount ? ` ${userCount}` : ""}`,
       peer: true,
     },
-    { flag: shares.pins, title: "Share my pins with peers", glyph: "🔗", peer: true, className: "pin" },
   ];
 
   return (

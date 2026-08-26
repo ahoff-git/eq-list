@@ -3,7 +3,7 @@
 ## Purpose
 Give the player **one** window: a frameless, translucent, always-on-top float (the
 "overlay" look) that sits over the game, lights up on drops, and holds everything —
-list, hunt, search, damage, session, settings.
+list, hunt, search, damage, session, peers, settings.
 
 ## Responsibilities
 - **Window shell** (`src/app/page.tsx`, `.app.glass`): frameless, transparent,
@@ -250,7 +250,9 @@ list, hunt, search, damage, session, settings.
     goes away, while the useful fact about a buff is that *right now* you are standing there without
     it — so a lapse stays until the spell is recast or stood down. It is also the only place a
     **death strip** shows up, since a dozen banners at once is not a dozen pieces of news and the
-    tracker deliberately doesn't raise them. Anchored and styled exactly like `SpawnOverlay`, with
+    tracker deliberately doesn't raise them. Nothing here ever waits, which is what makes holding a
+    *banner* until the fight ends free: the quiet half is already saying it
+    ([ADR 0141](../decisions/0141-a-debuff-is-the-mirror-image-of-a-buff.md)). Anchored and styled exactly like `SpawnOverlay`, with
     one difference: it takes clicks (`pointer-events: auto`) because it carries a ✕, which only
     reaches the pointer while the player has taken the window's clicks back with 👻.
   - `BuffPanel` — the **Buffs tab**: what you are keeping up, what has dropped, and which spells the
@@ -263,9 +265,13 @@ list, hunt, search, damage, session, settings.
     durable "never mention this again" and keeps the row, while **✕** forgets it and lets it return if
     the spell is cast again (deleting-to-silence is the trap
     [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md) had to fix for
-    dismissed mobs). Rows **admit what they don't know**: where the game words several spells' fades
-    identically the alternatives are named rather than picked, and a buff whose target was never
-    stated reads *someone* rather than guessing at you. There is deliberately **no countdown** — the
+    dismissed mobs). **Two kinds of row behave oppositely**, and both are labelled so which is which is
+    legible ([ADR 0141](../decisions/0141-a-debuff-is-the-mirror-image-of-a-buff.md)): a **debuff** on
+    something you were fighting is announced the instant it drops and clears itself when the fight ends,
+    while **your own buffs** wait for the fight to end before interrupting you — nobody stops swinging to
+    rebuff — and stay listed until the buff is back. Rows **admit what they don't know**: where the game
+    words several spells' fades identically the alternatives are named rather than picked, and a buff
+    whose target was never stated reads *someone* rather than guessing at you. There is deliberately **no countdown** — the
     game's file states a duration *formula*, and applying one needs a caster level EQL's log will not
     give us. The rules are `src/shared/buff-tracking.ts` and `src/shared/spell-strings.ts` (both pure
     + tested); the board itself is `electron/buff-tracker.ts`, which — unlike the spawn tracker —
@@ -611,6 +617,25 @@ list, hunt, search, damage, session, settings.
     **fourth**, because `TabBar` collapses overflow from the end and only six fit at the default
     width — last would have made it *less* reachable than it was inside Settings — and its label
     carries the live rule count, or `(off)`, since a silenced overlay looks exactly like a quiet one.
+  - `PeersPanel` — **the whole peer network, in one tab** (`PeerTray`, `PeerScores`,
+    `PeerOfferToasts`; owned by [peers](../peers/README.md)). Before Settings and after everything you
+    read while playing: it is the same *kind* of thing as Settings — somewhere you go to decide
+    something and then leave — but it has a live half too, which is why it isn't a group inside it.
+    `TabBar` collapses from the end, so this and Settings are the first two into the » menu, which is
+    right: neither is needed mid-fight.
+
+    It was scattered across three screens until
+    [ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) — the connection and the player
+    name in Settings, two share toggles on the map toolbar, the rest here — so **a control now lives
+    exactly once, and it lives here**. Five sections: **Your connection** (the connect switch, a
+    light showing whether the room is *real* rather than merely asked for, who you appear as, **Retry
+    connection**, and the bootstrap URL behind a `<details>`); **What you share** (live location
+    first — the one thing broadcast rather than handed over on request, and the only share that needs
+    the game running — then a toggle per kind, all off by default, each with the count a peer would
+    actually receive); **Who's here** (what each peer offers, ask-by-click, and their zone as a button
+    that opens the map there); **What's arrived** (the tray, which applies nothing on its own); and
+    the **scoreboard comparison**, which merges nothing. The tab label says `Peers (off)` when the
+    connection is switched off, for the same reason `Alerts (off)` does.
   - `SettingsPanel` — log folder, match mode, window opacity / interface + map scale, keep-completed,
     follow-your-zone,
     **"Check my setup"** (`SelfCheck` — one button that walks everything the app needs and names the

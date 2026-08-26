@@ -136,6 +136,10 @@ export function useAwariRoom(opts: { name: string }): {
         setRoster([]);
       }
     });
+    // Asked for as well as listened to. The roster is broadcast when it *changes*, and this window
+    // opens on demand — so by the time it mounts, the join and everyone already in the room have
+    // been announced to nobody, and the 👥 panel sat at zero until somebody next came or went.
+    void a.peer.room().then((room) => setRoster(room.peers));
     const offPeers = a.awari.onPeers(setRoster);
     return () => {
       offMessage();

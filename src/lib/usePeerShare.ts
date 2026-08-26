@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import type { AwariPeer, ReceivedShare } from "@/shared/types";
+import type { AwariPeer, AwariStatus, ReceivedShare } from "@/shared/types";
 import { SHARE_KINDS, type ShareKind, type ShareOffer } from "@/shared/peer-share";
 
 /**
@@ -13,11 +13,23 @@ import { SHARE_KINDS, type ShareKind, type ShareOffer } from "@/shared/peer-shar
  * `compareScores` in `shared/peer-share.ts` do that, and the panels that draw a merged view call
  * them, so a de-dupe rule lives in one tested place rather than in a hook nothing can test.
  *
- * Two things are followed rather than polled: the roster (which changes when somebody joins or
- * leaves) and the tray (which changes when an answer lands). Our own catalogue is re-read alongside
- * them plus on demand, because it moves for a third reason — a toggle — that neither event covers.
+ * **Everything is read once and then followed**, and the "read once" is not decoration. The roster
+ * and the connection are broadcast as *events*, and this hook mounts when somebody clicks the Peers
+ * tab — by which time the join and every peer already in the room have long since been announced to
+ * nobody. Listening alone showed "0 peers" in a full room until the next person happened to join or
+ * leave. `peer.room()` is what a late reader asks; the events keep it current afterwards.
  */
 export interface PeerShareView {
+  /**
+   * The connection **as it actually is**, not as the setting wishes it were.
+   *
+   * `connectPeers` says we mean to be in a room; this says whether we are. Keeping them apart is
+   * what lets the panel tell "connected, nobody else here" from "still trying" — which, when they
+   * looked identical, was indistinguishable from the app being broken
+   * ([ADR 0070](../../specs/decisions/0070-a-dropped-room-rejoins-itself.md) left this unanswered
+   * and nothing displayed it).
+   */
+  status: AwariStatus;
   /** Everyone in the room, named where they've said, with what they're offering. */
   peers: AwariPeer[];
   /** What we're offering, as peers see it. */
@@ -36,9 +48,11 @@ export interface PeerShareView {
 const NO_PEERS: AwariPeer[] = [];
 const NO_RECEIVED: ReceivedShare[] = [];
 const NO_OFFER: ShareOffer = {};
+const NO_STATUS: AwariStatus = { connected: false, peerId: null };
 
 export function usePeerShare(): PeerShareView {
   const [peers, setPeers] = useState<AwariPeer[]>(NO_PEERS);
+  const [status, setStatus] = useState<AwariStatus>(NO_STATUS);
   const [received, setReceived] = useState<ReceivedShare[]>(NO_RECEIVED);
   const [offer, setOffer] = useState<ShareOffer>(NO_OFFER);
   /** Bumped to re-read our catalogue on demand — a toggle moves it, and no event announces that. */
@@ -54,12 +68,20 @@ export function usePeerShare(): PeerShareView {
     const a = api();
     if (!a) return;
     const reload = () => void a.peer.received().then(setReceived);
+    // Catch up on what we missed by not existing yet — the join, and everyone already in the room.
+    const seed = () =>
+      void a.peer.room().then((room) => {
+        setStatus(room.status);
+        setPeers(room.peers.length ? room.peers : NO_PEERS);
+      });
     reload();
-    const offPeers = a.awari.onPeers(setPeers);
+    seed();
+    const offPeers = a.awari.onPeers((next) => setPeers(next.length ? next : NO_PEERS));
     const offShare = a.peer.onChanged(reload);
     // A dropped connection empties the room; the tray is left alone, because what somebody already
     // handed over is ours to read whether or not they're still here (see the hub's `roster`).
     const offStatus = a.awari.onStatus((s) => {
+      setStatus(s);
       if (!s.connected) setPeers(NO_PEERS);
     });
     return () => {
@@ -83,8 +105,8 @@ export function usePeerShare(): PeerShareView {
   );
 
   return useMemo(
-    () => ({ peers, offer, received, ask, clear, refresh }),
-    [peers, offer, received, ask, clear, refresh],
+    () => ({ status, peers, offer, received, ask, clear, refresh }),
+    [status, peers, offer, received, ask, clear, refresh],
   );
 }
 

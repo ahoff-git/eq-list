@@ -188,7 +188,7 @@ export default function MapFilters({
         <CheckField
           checked={showHuntPins}
           onChange={onHuntPins}
-          title="Mark the mobs on your hunt where your own kills place them — an average of where each one died, not a spawn point. Only mobs you've actually killed here can be marked."
+          title="Mark the mobs on your hunt wherever anything can place them: your own kills, kills pooled with peers', or the coordinate the wiki states. A measured position is an average of where the mob died rather than a spawn point, and its ring shows how rough that is; a stated one is dashed, because nobody measured it. Each mark says which in its hover."
           label={
             <>
               <span style={{ color: HUNT_PIN.color }}>{HUNT_PIN.glyph}</span> Where your hunt&apos;s mobs live

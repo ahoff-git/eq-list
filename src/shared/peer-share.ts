@@ -253,6 +253,36 @@ export interface ReceivedShare {
 }
 
 /**
+ * What we should ask a peer for again, because what they hold has moved past what we have.
+ *
+ * **The gap this closes is "nothing ever re-checks".** An `ask` was only ever triggered by an
+ * `offer` arriving with a moved revision, which assumes every offer is seen and every answer
+ * arrives. Neither is guaranteed: a `give` can be lost, we can restart mid-conversation, the offer
+ * can land during a moment when `connectPeers` was off. Any of those and the two installs simply
+ * disagree for ever, quietly, with both sides believing they are up to date.
+ *
+ * So the reconciliation is stated as a **comparison of what is, not a reaction to an event** — the
+ * shape that cannot drift. `heldRev` answers "what revision of this kind do I already have from
+ * them", with `undefined` for none.
+ *
+ * Observations only, and for the same reason the automatic fetch is: they are the family that is
+ * wanted by default and filed without anybody looking. Re-fetching somebody's watch rules behind
+ * their reader's back would fill a tray nobody asked to fill (ADR 0141).
+ */
+export function outOfDate(offer: ShareOffer, heldRev: (kind: ShareKind) => number | undefined): ShareKind[] {
+  return SHARE_KINDS.filter((spec) => {
+    if (spec.family !== "observation") return false;
+    const entry = offer[spec.key];
+    if (!has(entry)) return false;
+    const held = heldRev(spec.key);
+    // Strictly greater: an equal revision is what "up to date" looks like, and a *lower* one is a
+    // peer whose store was reset — asking again would fetch what we already have, and their `give`
+    // would say "unchanged" anyway.
+    return held === undefined || entry!.rev > held;
+  }).map((spec) => spec.key);
+}
+
+/**
  * Somebody is newly offering something, as a notice says it
  * ([ADR 0143](../../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md)).
  *
@@ -612,6 +642,10 @@ function readBuff(raw: unknown): BuffInstance | null {
     source: (BUFF_SOURCES.has(str(raw.source)) ? raw.source : "cast") as BuffRiseSource,
     byYou: false, // never *your* cast, whoever cast it
     permanent: raw.permanent === true,
+    // Never on an enemy, and not because we distrust the sender: `shareableBuffs` only ever sends
+    // what was on **them or their pet**, so a shared buff cannot be on something they were fighting.
+    // Taking it off the wire would let a bad sender mark a buff urgent on somebody else's screen.
+    onEnemy: false,
   };
 }
 

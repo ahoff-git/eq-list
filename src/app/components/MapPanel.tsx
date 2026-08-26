@@ -57,6 +57,25 @@ export interface RenderPin {
    * what's recorded about that mob, and the pin is the shortest way to ask.
    */
   mob?: string;
+  /**
+   * Draw it **loud**: a bigger marker inside a ring of its own colour, with its caption in that
+   * colour rather than white.
+   *
+   * For a mark the reader came to the map to find. Your own pins are deliberately quiet — you know
+   * where you put them — but a hunt pin is the answer to the question the map was opened for, and it
+   * has to win against a heatmap of kill dots and a zone's worth of labels
+   * ([ADR 0142](../../../specs/decisions/0142-a-hunted-mob-marks-itself.md)).
+   */
+  loud?: boolean;
+  /**
+   * How rough the position is, in EQ units, drawn as a ring around a loud pin so the uncertainty is
+   * on the map rather than only in the hover.
+   *
+   * **Undefined means the position was *stated* rather than measured** — a wiki coordinate — and is
+   * drawn as a dashed ring instead. It has to stay tellable from `0`, which means the opposite: every
+   * kill landed on one point. Ignored on a pin that isn't `loud`.
+   */
+  spread?: number;
 }
 
 /**
@@ -170,6 +189,16 @@ const MAP_COLORS = {
   /** The rest of the route, present but quiet — there to be seen, not to be followed. */
   graphPath: "rgba(203, 213, 225, 0.4)",
 } as const;
+
+/**
+ * How a **loud** pin is drawn bigger than a quiet one, and how its uncertainty ring behaves.
+ *
+ * The ring is the honest half of being loud: a hunt pin sits at an *average* of where a mob died, so
+ * drawing the spread puts "roughly here" on the map instead of leaving it in a tooltip nobody
+ * hovers. Below `minRing` px there is nothing worth drawing — the ring would be inside the marker,
+ * which is what a very tight measurement should look like.
+ */
+const LOUD_PIN = { halo: 11, ring: 11, ringWidth: 2, glyph: "17px sans-serif", title: "bold 12px sans-serif", minRing: 5, statedRing: 15 } as const;
 
 /** How big a travel node is drawn. Bigger than a POI dot: while navigating, this is the subject. */
 const GRAPH_NODE = { border: 6, place: 5 } as const;
@@ -847,27 +876,74 @@ export default function MapPanel({
     }
     }
 
+    /**
+     * How far `spread` EQ units reach on screen, measured rather than assumed: the same distance is
+     * a different number of pixels at every zoom, and projecting a second point is the only way to
+     * ask that doesn't re-derive the projection here.
+     */
+    function ringRadius(pin: RenderPin, at: Point): number {
+      if (pin.spread === undefined) return 0;
+      const edge = toScreen({ y: pin.y + pin.spread, x: pin.x });
+      return edge ? Math.hypot(edge.x - at.x, edge.y - at.y) : 0;
+    }
+
+    /**
+     * The uncertainty rings, **all of them before any marker**, so one pin's ring can't be drawn
+     * over the neighbouring pin's glyph. Solid for a measured spread, dashed for a position that was
+     * merely stated — two different claims, drawn as two different things.
+     */
+    function drawPinRings(ctx: CanvasRenderingContext2D): void {
+      for (const pin of pins) {
+        if (!pin.loud) continue;
+        const p = toScreen(pin);
+        if (!p) continue;
+        const measured = pin.spread !== undefined;
+        const r = measured ? ringRadius(pin, p) : LOUD_PIN.statedRing;
+        if (measured && r < LOUD_PIN.minRing) continue; // tighter than the marker: nothing to say
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = pin.color;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash(measured ? [] : [4, 4]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     /** Pins last, because they're the thing you put there deliberately. */
     function drawPins(ctx: CanvasRenderingContext2D): void {
+      drawPinRings(ctx);
       for (const pin of pins) {
         const p = toScreen(pin);
         if (!p) continue;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
+        ctx.arc(p.x, p.y, pin.loud ? LOUD_PIN.halo : 8, 0, 2 * Math.PI);
         ctx.fillStyle = MAP_COLORS.pinHalo;
         ctx.fill();
+        if (pin.loud) {
+          ctx.strokeStyle = pin.color;
+          ctx.lineWidth = LOUD_PIN.ringWidth;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, LOUD_PIN.ring, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
         ctx.textBaseline = "middle";
-        ctx.font = "14px sans-serif";
+        ctx.font = pin.loud ? LOUD_PIN.glyph : "14px sans-serif";
         ctx.fillStyle = pin.color;
         ctx.fillText(pin.glyph, p.x, p.y);
         if (pin.title) {
+          const below = p.y + (pin.loud ? LOUD_PIN.ring + 3 : 9);
           ctx.textBaseline = "top";
-          ctx.font = "11px sans-serif";
+          ctx.font = pin.loud ? LOUD_PIN.title : "11px sans-serif";
           ctx.lineWidth = 3;
           ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
-          ctx.strokeText(pin.title, p.x, p.y + 9);
-          ctx.fillStyle = MAP_COLORS.pinTitle;
-          ctx.fillText(pin.title, p.x, p.y + 9);
+          ctx.strokeText(pin.title, p.x, below);
+          // A loud caption is its marker's colour, not white: it names the ring above it rather than
+          // being one more piece of white text on a map already full of them.
+          ctx.fillStyle = pin.loud ? pin.color : MAP_COLORS.pinTitle;
+          ctx.fillText(pin.title, p.x, below);
         }
     }
 

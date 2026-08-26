@@ -49,13 +49,14 @@ import { createLogger } from "../src/shared/logging";
 import { BUFF_STYLE_ID, alertStyle } from "../src/shared/alert-styles";
 import { SELF, spellName, spellRank } from "../src/shared/combat-parser";
 import {
+  announceWhen,
   buffKey,
   buffTarget,
   evictable,
   instanceKey,
+  isEnemyTarget,
   narrowCandidates,
   newKnownBuff,
-  shouldAnnounce,
   shouldHold,
   CAST_WINDOW_MS,
   MAX_KNOWN_BUFFS,
@@ -73,6 +74,7 @@ import type {
   CastAlertEvent,
   CastAlertSettings,
   CombatEvent,
+  FightEndReason,
   LogLine,
 } from "../src/shared/types";
 import { createSaver, readJson } from "./json-store";
@@ -103,6 +105,8 @@ interface StoredBuff {
   styleId?: string;
   /** From the game's own file when we had it. Re-read whenever the spell is seen again. */
   permanent?: boolean;
+  /** Likewise: something you throw *at* things. Absent means we never had the file to ask. */
+  detrimental?: boolean;
   /** We've seen you cast it, rather than only ever receiving it. */
   mine?: boolean;
   rises?: number;
@@ -123,6 +127,12 @@ export interface BuffTrackerDeps {
   lexicon: () => BuffLexicon;
   /** Facts for a spell the log named, for `beneficial` and `permanent`. */
   facts: (spell: string, rank?: string) => SpellFacts | undefined;
+  /**
+   * Is a fight open right now? Asked of the damage meter, which is the only thing that decides what a
+   * fight is ([ADR 0036](../specs/decisions/0036-a-fight-ends-on-death-not-a-lull.md)) — assembling a
+   * second answer here from the same events would be that rule written twice.
+   */
+  inFight: () => boolean;
   /** Injectable, so a test of a lapse takes no time at all. */
   now?: () => number;
 }
@@ -143,6 +153,19 @@ export interface BuffTracker {
    * is a decision, and it should be visible as one.
    */
   noteZone(zone: string | null): void;
+  /**
+   * The fight is over, and why. Two things happen, and they are opposite halves of the same idea:
+   *
+   *  - **Waiting banners are said.** Your own buffs' lapses were held back because nobody stops
+   *    fighting to rebuff; this is the moment you would have acted anyway. A fight that ended in your
+   *    **death** says nothing instead — you lost everything on you regardless, and "recast it" from a
+   *    corpse is the noise [ADR 0082](../specs/decisions/0082-an-alert-can-be-scheduled.md) already
+   *    ruled against.
+   *  - **Enemy-targeted rows are dropped**, up or lapsed. A root wearing off a mob is a reminder only
+   *    while the mob is there; afterwards it is a reminder about a corpse, and left alone those are
+   *    what fill the standing list until nobody reads it.
+   */
+  noteFightEnd(reason: FightEndReason): void;
   /** Everything the panel draws. */
   view(): BuffView;
   /** Watch this spell, or stop. */
@@ -171,6 +194,7 @@ export function createBuffTracker({
   raise,
   lexicon,
   facts,
+  inFight,
   now = Date.now,
 }: BuffTrackerDeps): BuffTracker {
   const file = path.join(userDataDir, "buffs.json");
@@ -208,6 +232,17 @@ export function createBuffTracker({
    * already warmed the index. A session spent standing in the bank reads neither file.
    */
   let wanted = false;
+  /**
+   * Lapses whose banner is waiting for the fight to end, by instance key.
+   *
+   * A *map* rather than a list, so a buff that drops, is rebuffed, and drops again inside one fight
+   * leaves one thing to say rather than three. It holds the instance as it was at the moment it
+   * lapsed, because that is what the banner is about — and it is deliberately not persisted: a
+   * banner is a thing the app means to say, and those do not survive the process
+   * ([ADR 0092](../specs/decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md) draws
+   * the same line between a fact and an intention).
+   */
+  const held = new Map<string, BuffInstance>();
 
   function changed(): void {
     for (const cb of listeners) cb();
@@ -218,20 +253,25 @@ export function createBuffTracker({
   }
 
   /** The row for a spell, creating it the first time the spell is seen. */
-  function knownFor(spell: string, opts: { mine?: boolean; permanent?: boolean } = {}): KnownBuff {
+  function knownFor(
+    spell: string,
+    opts: { mine?: boolean; permanent?: boolean; detrimental?: boolean } = {},
+  ): KnownBuff {
     const key = buffKey(spell);
     const row = stored.known[key];
     if (row) {
-      // The display spelling and the permanence are re-asserted from what we just saw: a row written
-      // before the game file was findable has no `permanent`, and a row is not worth a migration when
-      // the next sighting can simply put it right.
+      // The display spelling and the facts from the game file are re-asserted from what we just saw:
+      // a row written before the file was findable has neither, and a row is not worth a migration
+      // when the next sighting can simply put it right.
       if (opts.permanent !== undefined) row.permanent = opts.permanent;
+      if (opts.detrimental !== undefined) row.detrimental = opts.detrimental;
       if (opts.mine) row.mine = true;
       return hydrate(key, row);
     }
     const fresh = newKnownBuff(spell, isoNow(), {
       mine: !!opts.mine,
       permanent: !!opts.permanent,
+      detrimental: !!opts.detrimental,
     });
     // Bounded, and only rows nobody has touched may go — see `evictable`.
     const rows = Object.values(stored.known);
@@ -248,6 +288,7 @@ export function createBuffTracker({
       notify: fresh.notify,
       onScreen: fresh.onScreen,
       permanent: fresh.permanent,
+      detrimental: fresh.detrimental,
       mine: fresh.mine,
       rises: 0,
       lastUp: fresh.lastUp,
@@ -266,6 +307,7 @@ export function createBuffTracker({
       onScreen: row.onScreen !== false,
       styleId: row.styleId,
       permanent: !!row.permanent,
+      detrimental: !!row.detrimental,
       mine: !!row.mine,
       rises: row.rises ?? 0,
       lastUp: row.lastUp,
@@ -302,7 +344,11 @@ export function createBuffTracker({
     opts: { byYou: boolean; alsoCouldBe?: string[] },
   ): void {
     const spellFacts = facts(spellName(spell), spellRank(spell));
-    const known = knownFor(spell, { mine: opts.byYou, permanent: spellFacts?.permanent });
+    const known = knownFor(spell, {
+      mine: opts.byYou,
+      permanent: spellFacts?.permanent,
+      detrimental: spellFacts ? !spellFacts.beneficial : undefined,
+    });
     if (!known.tracked) return; // unchecked means the app is not watching this one at all
     const key = known.key;
     const id = instanceKey(key, target);
@@ -318,9 +364,14 @@ export function createBuffTracker({
       source,
       byYou: opts.byYou || !!existing?.byYou,
       permanent: known.permanent,
+      onEnemy: isEnemyTarget(target, known.detrimental),
       alsoCouldBe: opts.alsoCouldBe,
     };
     board.set(id, instance);
+    // It is back, so a banner still waiting to say it was missing has nothing left to say. Dropped
+    // rather than left to fire at the end of the fight, which is the whole point of holding it: the
+    // hold exists so the app can tell you what is *still* wrong when you get a moment.
+    held.delete(id);
     edit(key, (row) => {
       row.rises = (row.rises ?? 0) + 1;
       row.lastUp = at;
@@ -348,7 +399,13 @@ export function createBuffTracker({
     const known = stored.known[key] ? hydrate(key, stored.known[key]) : undefined;
     // A spell we have never seen go up can still lapse — a fade is proof it *was* up, and that is
     // exactly the reminder the player asked for. Enrol it so the row exists to be unchecked.
-    const row = known ?? knownFor(spell, { permanent: facts(spellName(spell))?.permanent });
+    const spellFacts = facts(spellName(spell));
+    const row =
+      known ??
+      knownFor(spell, {
+        permanent: spellFacts?.permanent,
+        detrimental: spellFacts ? !spellFacts.beneficial : undefined,
+      });
     if (!row.tracked) return;
 
     // Resolved **once**, before anything is touched. Asking again afterwards would find nothing: a
@@ -359,18 +416,22 @@ export function createBuffTracker({
     for (const id of affected) {
       const was = board.get(id);
       if (!was?.up) continue;
+      const settled = target ?? was.target;
       const lapsed: BuffInstance = {
         ...was,
         // A fade that named a target is better evidence than the placeholder it is retiring.
-        target: target ?? was.target,
+        target: settled,
         up: false,
         at,
         reason,
+        // Re-decided rather than carried over: the target may only now have been named, and it is
+        // half of what makes something an enemy row.
+        onEnemy: isEnemyTarget(settled, row.detrimental),
         alsoCouldBe: alsoCouldBe ?? was.alsoCouldBe,
       };
       board.delete(id);
       if (shouldHold(row, reason)) board.set(instanceKey(row.key, lapsed.target), lapsed);
-      if (shouldAnnounce(row, reason)) announce(lapsed);
+      speak(row, reason, lapsed);
       log.debug("buff lapsed", { spell: lapsed.spell, target: lapsed.target, reason });
     }
 
@@ -390,10 +451,11 @@ export function createBuffTracker({
         source: "landed",
         byYou: row.mine,
         permanent: row.permanent,
+        onEnemy: isEnemyTarget(target ?? ON_YOU, row.detrimental),
         alsoCouldBe,
       };
       if (shouldHold(row, reason)) board.set(instanceKey(row.key, orphan.target), orphan);
-      if (shouldAnnounce(row, reason)) announce(orphan);
+      speak(row, reason, orphan);
     }
 
     edit(row.key, (r) => {
@@ -413,6 +475,32 @@ export function createBuffTracker({
     const ids = [instanceKey(key, wanted)];
     if (wanted !== ON_UNKNOWN) ids.push(instanceKey(key, ON_UNKNOWN));
     return ids.filter((id) => board.get(id)?.up);
+  }
+
+  /**
+   * Say it now, hold it for the end of the fight, or say nothing — `announceWhen`'s answer, carried out.
+   *
+   * The "hold" arm is what makes the difference in practice: nobody stops mid-fight to recast a stat
+   * buff, so a banner then is an interruption you can only ignore — and an alert you have learned to
+   * ignore costs you the next one that mattered. Out of combat there is nothing to wait for, so the
+   * same answer means "now".
+   *
+   * Note the standing on-screen list is not gated by any of this. It is set by `shouldHold` and
+   * appears the moment the buff drops, which is what makes holding the *banner* free: the quiet half
+   * is already saying it, for anyone who looks.
+   */
+  function speak(known: KnownBuff, reason: BuffLapseReason, buff: BuffInstance): void {
+    switch (announceWhen(known, reason, buff)) {
+      case "now":
+        announce(buff);
+        return;
+      case "after-fight":
+        if (inFight()) held.set(instanceKey(buff.key, buff.target), buff);
+        else announce(buff);
+        return;
+      default:
+        return;
+    }
   }
 
   /**
@@ -596,6 +684,34 @@ export function createBuffTracker({
       pending.clear();
     },
 
+    noteFightEnd(reason) {
+      // Said now, unless the fight ended by killing *you*. Then everything on you went with you, the
+      // standing list already says so under "you died", and a stack of "recast it" over a corpse is
+      // the exact noise ADR 0082 refuses. `cut` is a reset or a quit — the player's own doing, and
+      // not a moment to start talking.
+      const worthSaying = reason === "kill" || reason === "timeout";
+      for (const [id, buff] of held) {
+        // Only if it is *still* missing. A rise removes its held banner, so this is belt and braces
+        // for anything that cleared the row another way (a dismissal, an untick) — a banner about a
+        // row that no longer exists would be the app contradicting its own list.
+        if (worthSaying && board.get(id) && !board.get(id)!.up) announce(buff);
+      }
+      held.clear();
+
+      // And the other half: an enemy row is a reminder about something you were fighting, so when the
+      // fight is over it is a reminder about a corpse. Both lists, because a *lapsed* one is the
+      // reminder that nags and an *up* one (a buff on a charmed pet) is a row that would sit in "Up
+      // now" claiming something about a mob that is gone.
+      let swept = 0;
+      for (const [id, buff] of [...board]) {
+        if (!buff.onEnemy) continue;
+        board.delete(id);
+        swept += 1;
+      }
+      if (swept) log.debug("fight ended; dropped enemy rows", { reason, swept });
+      if (swept || held.size) changed();
+    },
+
     view() {
       const known = Object.entries(stored.known)
         .map(([key, row]) => hydrate(key, row))
@@ -619,7 +735,12 @@ export function createBuffTracker({
       //
       // Untracking has to clear what it was already saying, or an unchecked buff keeps a standing
       // "you are missing this" on screen with no row left to explain it.
-      if (!on) for (const [id, buff] of [...board]) if (buff.key === key) board.delete(id);
+      if (!on) {
+        for (const [id, buff] of [...board]) if (buff.key === key) board.delete(id);
+        // And anything it was still waiting to say. Unticking a spell has to silence it completely,
+        // or the banner it was holding arrives after the row that would explain it has gone.
+        for (const [id, buff] of [...held]) if (buff.key === key) held.delete(id);
+      }
       edit(key, (row) => {
         row.tracked = on;
       });
@@ -644,6 +765,7 @@ export function createBuffTracker({
       if (!stored.known[key]) return;
       delete stored.known[key];
       for (const [id, buff] of [...board]) if (buff.key === key) board.delete(id);
+      for (const [id, buff] of [...held]) if (buff.key === key) held.delete(id);
       save();
       changed();
     },
@@ -652,6 +774,9 @@ export function createBuffTracker({
       const buff = board.get(id);
       if (!buff || buff.up) return;
       board.delete(id);
+      // Dismissing means "I know" — so a banner still queued for the end of the fight has been
+      // answered already and must not arrive later saying it again.
+      held.delete(id);
       changed();
     },
     dismissAll() {
@@ -659,6 +784,7 @@ export function createBuffTracker({
       for (const [id, buff] of [...board]) {
         if (buff.up) continue;
         board.delete(id);
+        held.delete(id);
         any = true;
       }
       if (any) changed();

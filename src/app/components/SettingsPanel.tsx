@@ -1,8 +1,7 @@
 "use client";
 import { useState } from "react";
-import { useAppInfo, useSettings, useWatcherStatus } from "@/lib/hooks";
+import { useAppInfo, useSettings } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import { characterFromLogFile } from "@/shared/log-parser";
 import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
 import LogSettings from "./LogSettings";
 import SelfCheck from "./SelfCheck";
@@ -15,17 +14,18 @@ import type { DeepPartial, Settings } from "@/shared/types";
  * Log location, match strictness, overlay look, and the debug toggle.
  *
  * Alerts used to be here and are their own tab now (`AlertsPanel`): a rule is something you build and
- * come back to, not a preference you set once, and it had grown to several screens of its own.
+ * come back to, not a preference you set once, and it had grown to several screens of its own. **Peer
+ * networking went the same way** and for a sharper reason — it wasn't only large, it was *scattered*:
+ * the connection and the name here, two share toggles on the map toolbar, the rest in the Peers tab.
+ * One subject with three homes ([ADR 0146](../../../specs/decisions/0146-one-home-for-the-peer-network.md)).
  */
 export default function SettingsPanel() {
   const settings = useSettings();
-  const status = useWatcherStatus();
   const info = useAppInfo();
 
   if (!settings) return <p className="muted">Loading settings…</p>;
 
   const patch = (p: DeepPartial<Settings>) => api()?.settings.update(p);
-  const derivedName = characterFromLogFile(status.file) ?? "";
 
   return (
     <div>
@@ -124,47 +124,6 @@ export default function SettingsPanel() {
         checked={settings.overlay.showKillConfidence}
         onChange={(v) => patch({ overlay: { showKillConfidence: v } })}
       />
-
-      <Toggle
-        label="Connect to the peer-to-peer network"
-        checked={settings.connectPeers}
-        onChange={(v) => patch({ connectPeers: v })}
-      />
-      <Toggle
-        label="Share my location with other players"
-        checked={settings.shareLocation}
-        disabled={!settings.connectPeers}
-        onChange={(v) => patch({ shareLocation: v })}
-      />
-      <div className="setting" style={{ paddingTop: 0, borderTop: "none" }}>
-        <label>Player name</label>
-        <input
-          className="field"
-          placeholder={derivedName || "Your character name"}
-          value={settings.playerName}
-          onChange={(e) => patch({ playerName: e.target.value })}
-        />
-        <span className="hint">
-          Shown to peers when you click (ping) the map. Blank uses your log’s character name
-          {derivedName ? ` (${derivedName})` : ""}.
-        </span>
-      </div>
-      <div className="setting" style={{ paddingTop: 0, borderTop: "none" }}>
-        <span className="hint">
-          Off by default. <b>Connect</b> to see other players and ping the map — click a spot and your
-          name shows there for everyone in that zone. <b>Share</b> also broadcasts your live position as
-          you type <kbd>/loc</kbd>.
-        </span>
-        {settings.connectPeers && (
-          <input
-            className="field"
-            placeholder="awari bootstrap URL — blank uses the default"
-            value={settings.bootstrapUrl}
-            onChange={(e) => patch({ bootstrapUrl: e.target.value })}
-            style={{ marginTop: 6 }}
-          />
-        )}
-      </div>
 
       <div className="setting">
         <span className="hint">

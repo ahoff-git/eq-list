@@ -2868,6 +2868,8 @@ export interface EqlApi {
     onPeers(cb: (peers: AwariPeer[]) => void): Unsubscribe;
     /** Owner-window plumbing: the broker asks this (owner) window to publish a payload, and where. */
     onPublish(cb: (out: AwariOutbound) => void): Unsubscribe;
+    /** Owner-window plumbing: somebody asked for a fresh join (see `peer.rejoin`). */
+    onRejoin(cb: () => void): Unsubscribe;
     /** Owner-window plumbing: report an inbound peer message up to the broker. */
     reportMessage(msg: AwariInbound): void;
     /** Owner-window plumbing: report connection status up to the broker. */
@@ -2883,6 +2885,23 @@ export interface EqlApi {
   peer: {
     /** Our own catalogue — what our toggles amount to, with the counts a peer would see. */
     offer(): Promise<Record<string, { n: number; rev: number }>>;
+    /**
+     * The room as it stands: the connection, and who is in it.
+     *
+     * The roster and the status are otherwise **events**, which a panel that mounts on a tab click
+     * has already missed — so this is how a late reader catches up rather than sitting at zero until
+     * somebody happens to join.
+     */
+    room(): Promise<{ status: AwariStatus; peers: AwariPeer[] }>;
+    /**
+     * Leave the room and join it again, now.
+     *
+     * For the failure the app cannot heal by itself: two clients that started together can each
+     * create their own room, and the automatic retries are deliberately **bounded** — so a pair that
+     * settles split stays split. This was previously only reachable by toggling `connectPeers` off
+     * and on, which nobody would guess.
+     */
+    rejoin(): void;
     /** The rows we'd hand over for one kind, so the Peers tab can show what it is offering. */
     mine(kind: ShareKind): Promise<unknown[]>;
     /** Ask one peer for one kind. A person clicked, so this ignores the automatic cooldown. */

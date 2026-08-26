@@ -11,6 +11,7 @@ import { AddButton } from "./ui";
 import { addItem, addPage, addPageItself } from "@/lib/addToList";
 import { wikiAddAction } from "@/shared/wiki-add";
 import type { ItemSource, WikiPage } from "@/shared/types";
+import { cardZone, statesNothing } from "@/shared/map/mob-place";
 
 /**
  * A wiki page, read in the app: what it is, how to get it, and what it puts on your list.
@@ -39,15 +40,10 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
   const lucy = useLucyCard(isThing ? page.title : null);
   const askLucy = useSettings()?.askLucy ?? true;
 
-  const BLANK_ZONE = /^(various|unknown|none|n\/a)$/i;
-  // The mob's zone, for coordinate clicks (open the map there + drop a marker).
-  const cardZone = (() => {
-    for (const l of page?.card?.lines ?? []) {
-      const m = l.match(/^(?:Zone|Spawn Zone):\s*(.+)$/i);
-      if (m && !BLANK_ZONE.test(m[1].trim())) return m[1].trim();
-    }
-    return undefined;
-  })();
+  // The mob's zone, for coordinate clicks (open the map there + drop a marker). Read by the rule the
+  // map reads it with (`cardZone`), since the map now places a hunted mob from this same card and
+  // two readings of one line is how they would start disagreeing about whether "Various" is a place.
+  const zoneOfCard = cardZone(page?.card?.lines);
 
   // On a mob's page, every position on the card is a position *of that mob* — so the map can bring
   // its kills up alongside the marker, the same as the observed positions below (ADR 0104).
@@ -59,14 +55,14 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
     const zoneM = line.match(/^(Zone|Spawn Zone):\s*(.+)$/i);
     if (zoneM) {
       const z = zoneM[2].trim();
-      if (BLANK_ZONE.test(z)) return line;
+      if (statesNothing(z)) return line;
       return (
         <>
           {zoneM[1]}: <ZoneLink zone={z} focus={cardFocus} />
         </>
       );
     }
-    if (cardZone) {
+    if (zoneOfCard) {
       const re = /\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
       const parts: React.ReactNode[] = [];
       let last = 0;
@@ -78,7 +74,7 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
         const x = parseFloat(m[2]);
         const coord = m[0];
         parts.push(
-          <MapLink key={`c${i++}`} target={{ zone: cardZone, loc: { y, x }, label: page?.title, focus: cardFocus }}>
+          <MapLink key={`c${i++}`} target={{ zone: zoneOfCard, loc: { y, x }, label: page?.title, focus: cardFocus }}>
             {coord}
           </MapLink>,
         );

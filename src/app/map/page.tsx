@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import {
   useCurrentZone,
   useHunt,
+  useMobWikiPlaces,
   useKills,
   usePeerKills,
   useMaximized,
@@ -34,7 +35,7 @@ import { samePlace } from "@/shared/zones/place";
 import { zoneDifficultyLabel } from "@/shared/names";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { HUNT_PIN, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
-import { huntPins } from "@/shared/map/hunt-pins";
+import { huntPins, unplacedHuntMobs } from "@/shared/map/hunt-pins";
 import MapFilters from "../components/MapFilters";
 import MapTitlebar from "../components/MapTitlebar";
 import MapToolbar from "../components/MapToolbar";
@@ -249,20 +250,12 @@ export default function MapWindow() {
   // Whose shared pins to leave off. Transient, like the pin-kind filter.
   const hiddenSharers = useHidden(useState<string[]>([]));
   /**
-   * The two share toggles on the toolbar are now **views of `settings.share`**, not their own
-   * localStorage flags ([ADR 0141](../../../specs/decisions/0141-the-room-is-a-meeting-place.md)).
-   * The Peers tab lists the same switches, and one decision with two stores is one decision that
-   * disagrees with itself the first time you flip it in the other window.
+   * Whether we're offering pins — **read only, here.** The switch lives in the Peers tab, which is
+   * where every decision about what leaves this machine now lives
+   * ([ADR 0146](../../../specs/decisions/0146-one-home-for-the-peer-network.md)); this window only
+   * needs to know whether to put them on the wire for the live overlay.
    */
   const sharePinsOn = sharing(settings?.share, "pins");
-  // `MapToolbar` drives a `Flag` the React way — it hands the setter an updater, not a value — so
-  // this resolves it against what the settings currently say before writing.
-  const setSharePinsOn = useCallback(
-    (next: (cur: boolean) => boolean) => {
-      void api()?.settings.update({ share: { pins: next(sharePinsOn) } });
-    },
-    [sharePinsOn],
-  );
   /**
    * Whether the map marks the hunt's mobs itself (ADR 0142). On by default — the whole point is that
    * it happens without being asked for — and persisted, because "don't put things on my map" is a
@@ -286,15 +279,6 @@ export default function MapWindow() {
   const [routeLegs, setRouteLegs] = useState<{ from: string; to: string }[]>([]);
   const [hoverLeg, setHoverLeg] = useState<{ from: string; to: string } | null>(null);
   const [killFilters, setKillFilters] = useState<KillFilters>(DEFAULT_KILL_FILTERS);
-  /** Sharing kills and sharing what they taught are one intent, so one toggle still drives both. */
-  const shareKillsOn = sharing(settings?.share, "kills");
-  const setShareKillsOn = useCallback(
-    (next: (cur: boolean) => boolean) => {
-      const on = next(shareKillsOn);
-      void api()?.settings.update({ share: { kills: on, mobs: on } });
-    },
-    [shareKillsOn],
-  );
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
   // Which kills the map should pick out: set while a name is hovered — a row in the ☠ list, or a
   // mob in the main window's Hunt tab — so pointing at one answers "where did those die?".
@@ -435,12 +419,34 @@ export default function MapWindow() {
   const { zones: huntZones } = useHunt();
   const zoneMobs = useZoneMobs(zoneKey, `${myKills.length}:${peerKills.length}`);
   /**
+   * **The wiki, asked only where our own kills are silent.**
+   *
+   * A page lookup per hunted mob would be a lot of lookups for a long list; `unplacedHuntMobs` cuts
+   * it to the mobs an answer could change, which is the same ranking `mobPlace` applies read
+   * forwards. Gated on the switch too, so turning the marks off stops the asking rather than just
+   * the drawing.
+   */
+  const unplaced = useMemo(
+    () => (showHuntPins ? unplacedHuntMobs({ hunt: huntZones, ...zoneMobs }) : []),
+    [showHuntPins, huntZones, zoneMobs],
+  );
+  const wikiPlaces = useMobWikiPlaces(unplaced);
+  /**
    * A roam centre you marked by hand is the same spot with the same meaning, so the automatic mark
    * stands aside rather than drawing over it (`huntPins`).
    */
   const huntMarks = useMemo(
-    () => (showHuntPins ? huntPins(huntZones, zoneMobs, pins.filter((p) => zoneMatch(p.zone))) : []),
-    [showHuntPins, huntZones, zoneMobs, pins, zoneMatch],
+    () =>
+      showHuntPins
+        ? huntPins({
+            hunt: huntZones,
+            zone: zoneKey,
+            ...zoneMobs,
+            wiki: wikiPlaces,
+            placed: pins.filter((p) => zoneMatch(p.zone)),
+          })
+        : [],
+    [showHuntPins, huntZones, zoneKey, zoneMobs, wikiPlaces, pins, zoneMatch],
   );
 
   // Peers/pings/pins filtered to the viewed zone (and pins to the visible kinds).
@@ -510,6 +516,10 @@ export default function MapWindow() {
         note: h.note,
         mine: false,
         mob: h.mob,
+        // The one thing on this map the reader came looking for, so it is drawn to be found — with
+        // how rough the position is drawn around it (ADR 0142).
+        loud: true,
+        spread: h.spread,
       }),
     );
     return [...local, ...peer, ...hunt];
@@ -593,7 +603,6 @@ export default function MapWindow() {
           kills: [killsOpen, setKillsOpen],
           users: [usersOpen, setUsersOpen],
         }}
-        shares={{ kills: [shareKillsOn, setShareKillsOn], pins: [sharePinsOn, setSharePinsOn] }}
       />
 
       {/* Each of these opens over the map, so each is a box the reader can size — the default is what
@@ -633,7 +642,7 @@ export default function MapWindow() {
         <ResizablePanel id="map.mobs" share={40}>
           <MobKnowledgePanel
             zone={zoneKey}
-            known={zoneMobs}
+            known={zoneMobs.known}
             filters={killFilters}
             onFilters={setKillFilters}
             onMarkMob={markMobArea}

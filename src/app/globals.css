@@ -2928,6 +2928,34 @@ kbd {
    the other person actually receives, and a column of those is far easier to scan than a grid. */
 .peers-toggle .hint { display: block; margin-left: 22px; font-size: 12px; color: var(--text-dim); }
 
+/* The connection light: are we actually in a room, or merely trying? Grey and gold rather than red
+   and green — "not joined yet" is the ordinary opening state of every session, not a fault. */
+.peer-light {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  vertical-align: middle;
+}
+.peer-light.on { background: var(--accent); }
+
+/* One line of the connection block: a fact, then the control that acts on it, pushed right. */
+.peer-conn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.peer-conn .btn { margin-left: auto; }
+.peer-conn .field { flex: 1; min-width: 0; }
+
+/* The bootstrap URL: present, findable, and out of the way of the things people actually touch. */
+.peers-advanced { margin-top: 8px; }
+.peers-advanced > summary { cursor: pointer; }
+.peers-advanced .field { width: 100%; margin: 6px 0 4px; }
+
 .peer-row {
   display: flex;
   flex-direction: column;

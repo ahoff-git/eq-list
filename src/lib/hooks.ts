@@ -27,7 +27,8 @@ import type {
   LootedItem,
   Unsubscribe,
 } from "@/shared/types";
-import { mobKey, type MobKnowledge } from "@/shared/mob-stats";
+import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob-stats";
+import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
 import type { SharedKill } from "@/shared/kill-filters";
 import { mergeLootFeed } from "@/shared/loot-feed";
 import { ratio } from "@/shared/numbers";
@@ -304,21 +305,40 @@ function useAllMobs(refreshKey?: unknown): MobKnowledge[] {
   );
 }
 
+/** Nothing known here yet — a stable pair, so a window that has read nothing doesn't re-render. */
+const NO_ZONE_MOBS: ZoneMobs = { known: [], mine: [] };
+
+/** What one zone has taught us, in both the forms a reader needs it. */
+export interface ZoneMobs {
+  /** Yours pooled with peers' — the figure to show, and the bigger sample. */
+  known: MobKnowledge[];
+  /** Yours alone, in the form peers receive it — the half you can check. */
+  mine: MobObservation[];
+}
+
 /**
- * What killing things **in one zone** has taught us, pooled with any peers sharing theirs.
+ * What killing things **in one zone** has taught us: pooled, and your own share of it.
  *
  * `useAllMobs` above asks the same question of the whole world, which is right for "does this drop
- * that" and wrong for anything about a place. Two windows want the narrow answer — the map's 📖 panel
+ * that" and wrong for anything about a place. Two readers want the narrow answer — the map's 📖 panel
  * and the hunt pins it draws — and both want it to survive the same things: a bulk kill change (an
  * imported log, a clear) *and* a contribution arriving, since a pooled figure is half somebody else's
  * and moves without anything of ours having changed.
  *
+ * **Both halves, read together**, because telling *your* kills from a peer's is the whole of a
+ * position's provenance ([ADR 0142](../../specs/decisions/0142-a-hunted-mob-marks-itself.md)) — and
+ * two reads with two cancellation guards could show a pooled figure against a stale idea of how much
+ * of it was yours.
+ *
  * `refreshKey` is for a caller whose own reason to re-ask isn't either of those — the map ticks it as
  * live kills land.
  */
-export function useZoneMobs(zone: string | undefined, refreshKey?: unknown): MobKnowledge[] {
-  return useFollowedRead<MobKnowledge[]>(
-    (a) => a.mobs.all(zone),
+export function useZoneMobs(zone: string | undefined, refreshKey?: unknown): ZoneMobs {
+  return useFollowedRead<ZoneMobs>(
+    async (a) => {
+      const [known, mine] = await Promise.all([a.mobs.all(zone), a.mobs.mine(zone)]);
+      return { known, mine };
+    },
     (a, reload) => {
       const stopKills = a.kills.onChanged(reload);
       const stopPeers = a.peers.onChanged(reload);
@@ -327,7 +347,7 @@ export function useZoneMobs(zone: string | undefined, refreshKey?: unknown): Mob
         stopPeers();
       };
     },
-    NO_MOBS,
+    NO_ZONE_MOBS,
     [zone, refreshKey],
   );
 }
@@ -888,6 +908,31 @@ export function useMobLoot(mobNames: string[]): Record<string, Record<string, st
         ),
       ),
     NO_MOB_LOOT,
+    [key],
+  );
+}
+
+const NO_MOB_PLACES: Record<string, WikiPlace | undefined> = {};
+
+/**
+ * Where each mob's **wiki page** says it stands — its stated spawn zone and coordinate
+ * (`wikiPlace`), keyed by the name asked for.
+ *
+ * The third source a position can come from, and the only one that can place a mob you have never
+ * killed ([ADR 0142](../../specs/decisions/0142-a-hunted-mob-marks-itself.md)) — which is exactly
+ * the mob a shopping list sends you after. Read the same way `useMobLoot` reads a mob's drop rates:
+ * one cached `wiki.getPage` per mob, refetched only when the *set* of mobs changes.
+ */
+export function useMobWikiPlaces(mobNames: string[]): Record<string, WikiPlace | undefined> {
+  const key = mobNames.slice().sort().join("|");
+  return useRead(
+    async (a) =>
+      Object.fromEntries(
+        await Promise.all(
+          mobNames.map(async (mob) => [mob, wikiPlace((await a.wiki.getPage(mob))?.card)] as const),
+        ),
+      ),
+    NO_MOB_PLACES,
     [key],
   );
 }

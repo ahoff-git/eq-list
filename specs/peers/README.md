@@ -53,10 +53,36 @@ travels peer-to-peer, on request, over that peer's own connection.
   - **Buffs** merge by spell **and whose**, and "whose" does not survive the wire: `ON_YOU` means
     *the sender*. It is resolved to a name **before it leaves** (`shareableBuffs`), because only the
     sender knows whose board it is; one still relative on arrival is dropped rather than guessed at.
-- **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray` and `PeerScores`) — in the
-  **main** window: what travels is lists, rules, styles and scoreboards, all of which are copied onto
-  something in that window. Three sections in the order the questions get asked — what you share
-  (a toggle per kind, all off by default), who's here and what they offer, and what's arrived.
+- **Asking, not only listening.** The roster and the connection are broadcast as *events*, and a
+  panel that opens on a tab click has missed every one of them — which showed as "Who's here · 0
+  peers" in a full room. `peer.room()` returns the room as it stands, and every reader seeds from it
+  before following the events ([ADR 0144](../decisions/0144-state-is-asked-for-as-well-as-pushed.md)).
+  The tab's *Your connection* block shows the **real** connection (a light, not the `connectPeers`
+  setting), who you are in the room, and **Retry connection** (`peer.rejoin()`) — always present, as
+  the fallback for anything the app cannot diagnose.
+- **Keeping itself honest** ([ADR 0145](../decisions/0145-a-room-checks-itself-and-needs-no-game.md)).
+  The minute tick that publishes the catalogue also **reconciles** — `outOfDate` names the
+  observation kinds a peer holds past the revision we have, and those are asked for again, so a lost
+  `give` or a restart heals instead of leaving two installs disagreeing for ever — and **watches for
+  loneliness**: connected with an empty room for five minutes means re-join, which is what heals a
+  split room without anybody noticing it happened. The catalogue carries our **name** as well as
+  `hello` does, so a peer who missed the one greeting stops being "Someone (3f9a)" within the minute.
+  **No keepalive of our own**: awari heartbeats every connection every two seconds, and a second one
+  would mask the drops the first exists to detect.
+- **The game does not need to be running.** The room is joined off a setting, and the character name
+  is read off the *filename* of the newest log in the folder — announced before a line is parsed — so
+  you can sit in a room with EverQuest closed. The only gap is a fresh install that has never played,
+  which has no name to announce; the Peers tab carries the name field for exactly that.
+- **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray` and `PeerScores`) — **the
+  one home for the whole feature** ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md)).
+  It was scattered across three screens for a while: the connection and the name in Settings (where
+  ADR 0011 left them), two share toggles on the map toolbar, the rest here. A control now lives
+  exactly once, and it lives here. Five sections, in the order the questions get asked:
+  **Your connection** (connect, the real status light, who you appear as, Retry connection, and the
+  bootstrap URL behind a `<details>`), **What you share** (live location first — the one thing that
+  is broadcast rather than handed over, and the only share that needs the game running — then a
+  toggle per kind, all off by default), **Who's here** (what each peer offers, and their zone as a
+  button that opens the map there), **What's arrived**, and the **scoreboard comparison**.
 - **Saying so.** A peer newly offering something raises a toast whose one action opens the Peers tab
   with their row picked out ([ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md)).
   The rules are all about not becoming noise: only a kind **newly** on offer (not a count moving —
@@ -70,6 +96,12 @@ travels peer-to-peer, on request, over that peer's own connection.
   ([ADR 0130](../decisions/0130-data-in-doubt-says-so.md)), and a provisional figure cannot lead.
 
 ## Non-responsibilities
+
+- **No second copy of any control.** The map keeps its 👥 list because it is an always-on-top overlay
+  you read while the game is full-screen and the main window is hidden — a *view* may live where the
+  reader is, and a control may not follow them there
+  ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md)). Nothing on the map toggles a
+  share, and nothing in Settings does either.
 
 - **No trust score, and no weighting.** Nothing here scores a contributor. ADR 0132's argument
   stands: a per-peer number would look authoritative and be made up, since nothing can tell an
@@ -98,4 +130,7 @@ travels peer-to-peer, on request, over that peer's own connection.
 [ADR 0015](../decisions/0015-peer-presence-via-hello.md) ·
 [ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md) ·
 [ADR 0141](../decisions/0141-the-room-is-a-meeting-place.md) ·
-[ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md)
+[ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md) ·
+[ADR 0144](../decisions/0144-state-is-asked-for-as-well-as-pushed.md) ·
+[ADR 0145](../decisions/0145-a-room-checks-itself-and-needs-no-game.md) ·
+[ADR 0146](../decisions/0146-one-home-for-the-peer-network.md)

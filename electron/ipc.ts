@@ -769,6 +769,7 @@ function registerPeerIpc(context: IpcContext): void {
     fileContribution,
     changed: () => broadcast(CH.peerShareChanged, undefined),
     offered: (notice) => broadcast(CH.peerOffered, notice),
+    rejoin: () => getMainWindow()?.webContents.send(CH.awariRejoin),
     sources: shareSources({
       getList: () => store.getList(),
       getSettings: () => store.getSettings(),
@@ -793,6 +794,8 @@ function registerPeerIpc(context: IpcContext): void {
     broadcast(CH.awariMessage, msg);
   });
   ipcMain.on(CH.awariStatus, (_e, status: AwariStatus) => {
+    // Held before it's broadcast, so a window opening a moment later can ask what it missed.
+    shares.noteStatus(status);
     // A fresh room has heard no catalogue from us, so joining announces one. (Leaving doesn't need
     // a retraction — `publishOffer` is a no-op while disconnected, and a room we are not in has
     // nobody left to tell.)
@@ -806,6 +809,9 @@ function registerPeerIpc(context: IpcContext): void {
 
   // ── The share hub, as the Peers tab uses it ──
   ipcMain.handle(CH.peerOffer, () => shares.offer());
+  ipcMain.handle(CH.peerRoom, () => shares.room());
+  // Relayed to the owner window, which is the only one with a session to re-open (ADR 0012).
+  ipcMain.on(CH.peerRejoin, () => getMainWindow()?.webContents.send(CH.awariRejoin));
   ipcMain.handle(CH.peerMine, (_e, kind: ShareKind) => shares.mine(kind));
   ipcMain.handle(CH.peerReceived, (_e, peerId?: string, kind?: ShareKind) => shares.received(peerId, kind));
   ipcMain.on(CH.peerAsk, (_e, peerId: string, kind: ShareKind) => shares.ask(peerId, kind));

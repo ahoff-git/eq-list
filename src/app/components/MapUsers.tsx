@@ -9,6 +9,11 @@ import type { ConnectedUser } from "@/lib/map/useAwariRoom";
  * things, and someone who has joined but kept their position to themselves should look like a person
  * who is there rather than a person who is missing. Their zone is a button because "where is everyone"
  * is nearly always followed by "let me look".
+ *
+ * **Deliberately a view and nothing else** — there is no toggle here and no way to ask anybody for
+ * anything ([ADR 0146](../../../specs/decisions/0146-one-home-for-the-peer-network.md)). Every
+ * control moved to the Peers tab; this stayed because it is the one peer thing you want while the
+ * game is full-screen and the main window is hidden, which is exactly when a tab is no use.
  */
 export default function MapUsers({ users, onZone }: { users: ConnectedUser[]; onZone: (zone: string) => void }) {
   return (
@@ -17,7 +22,7 @@ export default function MapUsers({ users, onZone }: { users: ConnectedUser[]; on
       {users.length === 0 ? (
         <p className="muted small">
           Nobody else is in the room yet. Anyone else running EQ List with peer networking on shows up
-          here.
+          here — the <b>Peers</b> tab in the main window is where you connect, share and troubleshoot.
         </p>
       ) : (
         users.map((u) => (
