@@ -133,7 +133,7 @@ const rowFor = (view: SpawnView, mob: string) => view.known.find((k) => k.mob ==
 // ── Use case 1: the camper ─────────────────────────────────────────────────────
 // Sits down at a named, kills it, kills it again. Wants a timer without configuring anything.
 
-test("flow: the camper gets a timer for free, and a banner once they ask for one", () => {
+test("flow: the camper gets a timer for free, and a banner without asking for one", () => {
   const a = app(T0);
   a.feed(
     [
@@ -153,16 +153,33 @@ test("flow: the camper gets a timer for free, and a banner once they ask for one
   assert.equal(view.running.length, 1, "and it's already counting down");
   assert.equal(view.running[0].dueAt, new Date(T0 + 42 * MIN).toISOString());
 
-  // Silent until asked — the camper has to opt in, which is the whole point of notify.
+  // Two kills of one camp in one sitting *is* the camper asking (ADR 0152): they are visibly sitting
+  // there, and making them tick a box for it is the app being obtuse. It says who armed it, because
+  // an alert that turns itself on without accounting for itself is a banner out of nowhere.
+  assert.equal(row?.notify, true);
+  assert.equal(row?.armed, true);
   a.tick(T0 + 42 * MIN);
-  assert.equal(a.raised.length, 0);
+  assert.equal(a.raised.length, 1, "so the pop speaks");
+  assert.equal(a.raised[0].event, "spawn");
 
+  // And the player still has the last word. Off is an answer, not an absence: however long they go
+  // on camping it, nothing arms it again.
   const key = timerKey("Ghoul Lord", "Lower Guk");
-  a.spawns.notify(key, true);
+  a.spawns.notify(key, false);
   a.spawns.markDead(key); // killed it again, now
   a.tick(a.at() + 20 * MIN + 1000);
-  assert.equal(a.raised.length, 1, "next time round it speaks");
-  assert.equal(a.raised[0].event, "spawn");
+  assert.equal(a.raised.length, 1, "still just the one — they turned it off");
+  assert.equal(rowFor(a.view(), "Ghoul Lord")?.armed, false, "and it stops explaining itself");
+});
+
+test("flow: one kill is passing through, and stays silent", () => {
+  // The other half of the rule, and the reason it is two rather than one: a named you killed on the
+  // way past is exactly what `notify` being off by default exists for.
+  const a = app(T0);
+  a.feed([entered(T0, "Lower Guk"), slain(T0 + 2 * MIN, "Ghoul Lord")].join("\n"));
+  assert.equal(rowFor(a.view(), "Ghoul Lord")?.notify, false);
+  a.tick(T0 + 60 * MIN);
+  assert.equal(a.raised.length, 0);
 });
 
 test("flow: the camper's trash kills never reach the board", () => {
@@ -180,6 +197,49 @@ test("flow: the camper's trash kills never reach the board", () => {
   // board fills with a camp's worth of identical spawns and the feature is unusable.
   assert.deepEqual(a.view().known, []);
   assert.deepEqual(a.view().running, []);
+});
+
+// ── The game's own decorations on a considered name (ADR 0153) ────────────────
+
+/** A consider line, as EQ writes one. */
+const considered = (atMs: number, name: string) =>
+  `${stamp(atMs)} ${name} glares at you threateningly -- what would you like your tombstone to say? (Lvl: 12)`;
+
+test("flow: considering a rare creature counts as seeing it", () => {
+  // EQ hangs `- a rare creature -` between the name and the regard. Left on, the sighting named a mob
+  // nothing had ever killed, found no camp, and was dropped — 34 times in one real log, every one of
+  // them a mob worth timing.
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      slain(T0 + 2 * MIN, "Ghoul Lord"),
+      slain(T0 + 22 * MIN, "Ghoul Lord"),
+      // ...it comes back, and the camper does what a camper does: looks at it before pulling.
+      considered(T0 + 38 * MIN, "Ghoul Lord - a rare creature -"),
+    ].join("\n"),
+  );
+  const timer = a.view().running.find((t) => t.mob === "Ghoul Lord");
+  assert.ok(timer?.seenAt, "the sighting never reached the camp");
+  assert.equal(timer?.state, "alive");
+  // And it is evidence, not just an end to the countdown: seen 16 minutes after it died.
+  const row = rowFor(a.view(), "Ghoul Lord");
+  assert.equal(row?.respawn?.source, "seen");
+  assert.equal(row?.respawn?.seconds, 16 * 60);
+});
+
+test("flow: the plain consider still works, and a bare decoration names nothing", () => {
+  const a = app(T0);
+  a.feed(
+    [entered(T0, "Lower Guk"), slain(T0 + 2 * MIN, "Ghoul Lord"), slain(T0 + 22 * MIN, "Ghoul Lord"),
+     considered(T0 + 38 * MIN, "Ghoul Lord")].join("\n"),
+  );
+  assert.ok(a.view().running.find((t) => t.mob === "Ghoul Lord")?.seenAt);
+
+  // A line that is nothing *but* the decoration is not a mob, and must not be read as one.
+  const b = app(T0);
+  b.feed([entered(T0, "Lower Guk"), considered(T0 + 1 * MIN, "- a rare creature -")].join("\n"));
+  assert.deepEqual(b.view().running, []);
 });
 
 // ── Use case 2: the arriver ────────────────────────────────────────────────────

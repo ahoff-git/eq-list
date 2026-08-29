@@ -3,7 +3,7 @@
  * "drop" sources by zone so the overlay can answer "who drops this, and where?".
  * Pure + testable.
  */
-import type { ItemSource } from "./types";
+import type { ItemSource, SourceKind } from "./types";
 import { zoneKey } from "./names";
 
 export interface ZoneDrops {
@@ -31,6 +31,27 @@ export function groupDropsByZone(sources: ItemSource[]): ZoneDrops[] {
     if (s.where && !group.mobs.includes(s.where)) group.mobs.push(s.where);
   }
   return [...byZone.values()];
+}
+
+/**
+ * What a source kind is called where a player reads it: a verb, not a noun.
+ *
+ * "vendor" is a category and "buy" is an instruction, and these labels sit beside a shopping list —
+ * the reader's question is always "so what do I do about it". Shared rather than each panel's own,
+ * because the shopping list and the item search colour these with the same `.src-kind k-*` rules and
+ * two spellings of one kind would read as two kinds.
+ */
+export function sourceKindLabel(kind: SourceKind): string {
+  switch (kind) {
+    case "drop":
+      return "kill";
+    case "vendor":
+      return "buy";
+    case "recipe":
+      return "craft";
+    default:
+      return kind;
+  }
 }
 
 /** Distinct non-drop source kinds present (e.g. ["vendor","quest"]), for a hint. */

@@ -21,13 +21,14 @@ import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { SPAWN_STYLE_ID, alertStyle } from "../src/shared/alert-styles";
 import { mobKey } from "../src/shared/mob-stats";
-import { placeKey, placeName, samePlace } from "../src/shared/zones/place";
+import { placeKey, placeName } from "../src/shared/zones/place";
 import {
   learnRespawns,
   provenNamed,
   remainingMs,
   respawnFor,
   floorFrom,
+  CAMPING_KILLS,
   MAX_CAMP_TIMERS,
   raiseFloor,
   rollForward,
@@ -97,6 +98,29 @@ interface Stored {
    * between a list and an interruption.
    */
   notify: Record<string, boolean>;
+  /**
+   * Timer key → this camp's alert was armed **by the app**, because you were visibly camping it
+   * (`CAMPING_KILLS` kills in one sitting), rather than by you ticking the box.
+   *
+   * Stored only so the row can say so. An alert that turns itself on and doesn't mention it is a
+   * banner out of nowhere, which is worse than the silence it was meant to fix. Cleared the moment
+   * the player touches `notify` either way: from then on the answer is theirs and this has nothing
+   * left to explain.
+   */
+  armed: Record<string, boolean>;
+  /**
+   * Place key → the zone string **as the log last wrote it** for that place, difficulty and all.
+   *
+   * The only way to notice a difficulty change, since every folded view of a zone deliberately calls
+   * the variants one place. Kept **per place** and **persisted**, which the single "last zone I saw"
+   * it replaces was neither, and both cost real repops (ADR 0153):
+   *
+   *   - a variable starts empty, so the first zone line after a restart had nothing to compare with
+   *     and the change went unseen — clocks measuring from a death the world had undone stayed up;
+   *   - and comparing only the *immediately previous* zone meant any errand in between hid the
+   *     change entirely. Measured on a real log: 52 changes caught, **11 missed** that way.
+   */
+  lastZone: Record<string, string>;
   /**
    * Timer key → the tightest death-to-sighting gap and how many sightings it rests on. Stored
    * rather than derived, because unlike a kill gap there is nothing in the log to re-derive it
@@ -192,6 +216,13 @@ function load(file: string): Stored {
     repeat: { ...stored.repeat },
     styleId: { ...stored.styleId },
     onScreen: { ...stored.onScreen },
+    // Absent in a file written before an alert could arm itself, which reads correctly as "nothing
+    // here was armed by the app" — every one of those was ticked by hand.
+    armed: { ...stored.armed },
+    // Absent in a file written before this was remembered, which reads as "we have not been anywhere
+    // yet" — the same state a fresh install is in, and correctly: with nothing to compare against,
+    // the next zone line teaches rather than triggers.
+    lastZone: { ...stored.lastZone },
     // An id is backfilled rather than assumed: a file written before countdowns had one holds a
     // single clock per camp, which is exactly slot 1 (ADR 0135).
     timers: (stored.timers ?? []).map((t) => (t.id ? t : { ...t, id: timerId(t.key, 1) })),
@@ -224,6 +255,15 @@ export interface SpawnTracker {
    * they are dropped rather than left to come due about nothing.
    */
   noteZone(zone: string | null): void;
+  /**
+   * You logged in — a new sitting starts here
+   * ([ADR 0054](../specs/decisions/0054-a-sitting-is-a-login.md)).
+   *
+   * The only thing this resets is how many times you have killed each camp *this evening*, which is
+   * what decides whether a camp arms its own alert. Nothing about the world is forgotten: the due
+   * times, the figures and the sightings all outlive a sitting, and are meant to.
+   */
+  noteSitting(): void;
   /** Everything the panel shows — running countdowns, and what we know about each named. */
   view(): SpawnView;
   /** The player's own figure for a mob, or `null` to go back to what was learned. */
@@ -260,14 +300,21 @@ export interface SpawnTracker {
    */
   noteSighting(mob: string, zone: string | null): void;
   /**
-   * It's dead **now** — start the countdown from this moment, or restart one already running.
+   * It's dead — start the countdown from this moment, or restart one already running.
    *
    * The hand-operated twin of a kill line, for the times the log can't help: the app wasn't running
    * when you killed it, you're picking up someone else's camp, or a pull went unlogged. It seeds a
    * countdown and nothing more — one death is not a measurement of a respawn, so it teaches the
    * estimate nothing and never touches the kill log, which is the log's own record.
+   *
+   * `at` names a **past** moment instead of now: the kill log holds when things actually died, so a
+   * timer built from a kill you already made should count from that kill rather than from the click
+   * that set it up. Without this, timing a named you killed six minutes ago put six minutes of lie
+   * on the board — and in the direction that matters, since the whole figure is an upper bound and
+   * the camper is waiting on the near end of it. Only ever backwards: a countdown started from the
+   * future would be a due time nothing had happened to justify.
    */
-  markDead(key: string): void;
+  markDead(key: string, at?: string): void;
   /**
    * Whether a fresh kill **adds** a countdown or restarts the running one. Off is right for a named;
    * on is the placeholder camp, where three deaths are three clocks
@@ -371,10 +418,32 @@ export function createSpawnTracker({
   const deferred = new Set<string>();
 
   /**
-   * The zone as the log last wrote it, difficulty and all — the only way to notice the difficulty
-   * changing, since every folded view of a zone deliberately calls the variants one place.
+   * Kills per camp **this sitting** — how the app notices you are camping something.
+   *
+   * In memory and never written, which is the whole distinction this file is built on: the due times
+   * are facts about the world and are persisted, while "how many times you have killed this since
+   * you logged in" is a fact about *this evening* and dies with it. A restart therefore starts the
+   * count again, and the camp needs another pair of kills to arm itself — the right way round, since
+   * the alternative is an app that arms things off yesterday.
    */
-  let lastZone: string | null = null;
+  const sittingKills = new Map<string, number>();
+
+  /**
+   * You have killed this camp again. Arm its alert once that stops looking like passing through.
+   *
+   * Only ever for a camp the player has **not decided about**: `undefined` is "never asked", and a
+   * stored `false` is somebody having turned this off, which nothing here may undo. That is the one
+   * property that makes an alert arming itself acceptable at all.
+   */
+  function noteCamping(key: string): boolean {
+    const kills = (sittingKills.get(key) ?? 0) + 1;
+    sittingKills.set(key, kills);
+    if (kills < CAMPING_KILLS || state.notify[key] !== undefined) return false;
+    state.notify[key] = true;
+    state.armed[key] = true;
+    log.debug("armed a camp's alert", { key, kills });
+    return true;
+  }
 
   const changed = () => {
     saver.save();
@@ -713,9 +782,17 @@ export function createSpawnTracker({
       // the fallback has to name the place the same way a learned row does, or the same camp reads
       // two different ways depending on which figure happened to be in play. A named we can't yet
       // time is not a countdown but a blank, which is `start` returning nothing.
+      // Counted before anything else can bail out. A camp with no figure yet still starts no
+      // countdown — but it is still a camp you are sitting at, and the second kill is exactly the
+      // moment it becomes worth telling you about, whether or not there was a clock to restart.
+      const armedNow = noteCamping(key);
+
       const learned = allLearned.get(key);
       const timer = start(learned ?? { key, mob, place: placeName(zone) }, at, learned);
-      if (!timer) return;
+      if (!timer) {
+        if (armedNow) changed();
+        return;
+      }
       log.debug("timer started", { mob, place: timer.place, due: timer.dueAt, source: timer.source });
       changed();
     },
@@ -751,7 +828,7 @@ export function createSpawnTracker({
       // filed when you typed it.
       const rows = new Map<string, RespawnLearning>();
       for (const [key, { mob, place }] of Object.entries(state.added)) {
-        rows.set(key, { key, mob, place, samples: 0, gaps: [] });
+        rows.set(key, { key, mob, place, samples: 0, gaps: [], crossedDifficulty: 0 });
       }
       for (const [key, l] of learned) {
         if (isNamed(mobKey(l.mob))) rows.set(key, l);
@@ -767,6 +844,7 @@ export function createSpawnTracker({
           stated: state.stated[l.key],
           lead: state.lead[l.key],
           notify: !!state.notify[l.key],
+          armed: !!state.armed[l.key],
           styleId: state.styleId[l.key],
           onScreen: !!state.onScreen[l.key],
           respawn: respawnFor(l, state.stated[l.key], state.seen[l.key], state.floor[l.key]),
@@ -834,28 +912,39 @@ export function createSpawnTracker({
     },
 
     noteZone(zone) {
-      const previous = lastZone;
-      lastZone = zone;
-      if (!zone || !previous || previous === zone) return;
-      // A *different* zone is ordinary travel and changes nothing: the camp you left keeps ticking.
-      // The same **place** under a different name is the difficulty changing under you, which is
-      // the one zone line that invalidates a countdown. Compared verbatim first, then folded —
-      // `samePlace` on its own would call ordinary travel a difficulty change every time you came
-      // back to the same camp.
-      if (!samePlace(previous, zone)) return;
+      if (!zone) return;
       const place = placeKey(zone);
+      // What this place was called the **last time you stood in it**, which is not the same question
+      // as what zone you were in a moment ago. Asked per place so an errand in between cannot hide
+      // the change, and read off disk so a restart cannot either (ADR 0153).
+      const before = state.lastZone[place];
+      state.lastZone[place] = zone;
+      // Never been here, or here at the same difficulty: nothing has repopped. The first zone line
+      // for a place therefore only ever *teaches* — it can't trigger, because there is no earlier
+      // reading for it to disagree with.
+      if (!before || before === zone) return;
       // Mobs only. A repop undoes the *deaths* these clocks measure from; a timer the player made —
       // a lockout, a boat, an egg timer — is not about a mob and the world rebuilding says nothing
       // about it (ADR 0135).
       const doomed = state.timers.filter((t) => timerInPlace(t.key, place) && kindOf(t.key) === "mob");
-      if (!doomed.length) return;
+      // Still `changed()` with nothing to drop: the reading above is now part of what is stored, and
+      // a repop we noticed but never wrote down is one we would notice all over again next launch.
+      if (!doomed.length) {
+        changed();
+        return;
+      }
       drop(doomed);
       log.debug("difficulty changed; dropped timers for the place", {
-        from: previous,
+        from: before,
         to: zone,
         dropped: doomed.length,
       });
       changed();
+    },
+
+    noteSitting() {
+      sittingKills.clear();
+      log.debug("new sitting; camp kill counts reset");
     },
 
     noteSighting(mob, zone) {
@@ -867,8 +956,11 @@ export function createSpawnTracker({
       this.markUp(key);
     },
 
-    markDead(key) {
-      const at = now();
+    markDead(key, killedAt) {
+      // A named moment, if it is one we can read and it has already happened. Anything else falls
+      // back to now, which is what every caller before this one meant.
+      const named = killedAt ? Date.parse(killedAt) : NaN;
+      const at = !Number.isNaN(named) && named <= now() ? named : now();
       const { learned } = read(key);
       const known = learned.get(key);
       const running = clockOf(key);
@@ -975,8 +1067,13 @@ export function createSpawnTracker({
     },
 
     notify(key, on) {
-      if (on) state.notify[key] = true;
-      else delete state.notify[key];
+      // **Stored either way**, which the delete used to prevent. Absent now means "never asked" and
+      // is the only state a camp may arm itself out of; a stored `false` is you having turned this
+      // off, and nothing — however obviously you are camping it — may turn it back on.
+      state.notify[key] = on;
+      // Whatever the app had to say about arming this, the answer is now yours and there is nothing
+      // left to explain.
+      delete state.armed[key];
       changed();
     },
 

@@ -37,6 +37,10 @@ import type { BuffInstance, KnownBuff } from "@/shared/types";
  * buff whose target we never learned reads *someone* rather than guessing at you — a cast line names
  * no target, and inventing one would put the wrong name on the next alert.
  *
+ * **A debuff row is always one of yours.** Something rooting *you* is not a thing you can put back
+ * on, so it earns no row at all — a detrimental spell is enrolled only on evidence you cast it
+ * ([ADR 0149](../../../specs/decisions/0149-a-debuff-is-only-tracked-if-it-is-yours.md)).
+ *
  * **Two kinds of row, behaving oppositely.** A debuff on something you were fighting is urgent and
  * short-lived: it is announced the instant it drops, and it clears itself when the fight ends because
  * a reminder to re-root a corpse is what filled this list forever. Your own buffs are the reverse —
@@ -238,7 +242,7 @@ function KnownRow({ known }: { known: KnownBuff }) {
         {known.detrimental && (
           // A Root row in a tab called Buffs needs explaining, and the label is also the explanation
           // for why it behaves differently from everything around it.
-          <em className="buff-tag" title="Something you cast at things. Its reminder is immediate, and it clears when the fight ends">
+          <em className="buff-tag" title="Something you cast at things — only ever one of yours, never one cast at you. Its reminder is immediate, and it clears when the fight ends">
             debuff
           </em>
         )}

@@ -179,6 +179,20 @@ finished, so a number is claimed before a second author can reach for it.
 - [0146: One home for the peer network](./0146-one-home-for-the-peer-network.md)
 - [0147: An overlay control takes its own clicks](./0147-an-overlay-control-takes-its-own-clicks.md)
 - [0148: A look is edited where it is worn](./0148-a-look-is-edited-where-it-is-worn.md)
+- [0149: A debuff is only tracked if it is yours](./0149-a-debuff-is-only-tracked-if-it-is-yours.md)
+- [0150: A zone line ends a debuff](./0150-a-zone-line-ends-a-debuff.md)
+- [0151: A timer can be built from a kill, and a blank row says why it is blank](./0151-a-timer-can-be-built-from-a-kill.md)
+- [0152: A camp arms its own alert, and a gap stops teaching after three hours](./0152-a-camp-arms-its-own-alert.md)
+- [0153: A pet is not a named, a decoration is not a name, and a place remembers its own difficulty](./0153-a-pet-is-not-a-named-and-a-rare-creature-says-so.md)
+- [0152: An item search is a filter with your own yardstick](./0152-an-item-search-is-a-filter-with-your-own-yardstick.md)
+- [0153: The catalogue is filled by a gentle trickle](./0153-the-catalogue-is-filled-by-a-gentle-trickle.md)
+- [0154: Lucy's own name list is worth holding](./0154-lucy-s-own-name-list-is-worth-holding.md)
+- [0155: A fade carries the sentence, not the line](./0155-a-fade-carries-the-sentence-not-the-line.md)
+- [0156: A pet is one target, not two](./0156-a-pet-is-one-target-not-two.md)
+- [0157: An instant spell is not a buff](./0157-an-instant-spell-is-not-a-buff.md)
+- [0158: A debuff on your own side is not a reminder](./0158-a-debuff-on-your-own-side-is-not-a-reminder.md)
+- [0159: A refresh is not a rise](./0159-a-refresh-is-not-a-rise.md)
+- [0160: A room fills the catalogue once](./0160-a-room-fills-the-catalogue-once.md)
 
 ## Open Questions
 
@@ -321,7 +335,11 @@ and degrading to blank facts when the file isn't there.*
   a shared list of "things this build drops that no wiki knows"? The room already pools
   observations ([ADR 0024](./0024-mob-knowledge.md)); this would be the useful summary of them.
 - Should out-of-era pages be *hidden* (not just badged)? Filtering search results by
-  era would need a category lookup per result — flagging-on-open is done today.
+  era would need a category lookup per result — flagging-on-open is done today. **Half-answered**:
+  the Items tab hides them outright as one criterion among its others
+  ([ADR 0152](./0152-an-item-search-is-a-filter-with-your-own-yardstick.md)), which it can afford
+  because every item in that catalogue was flagged when its page was fetched. The open question is
+  unchanged for *search results*, where the flag would still cost a lookup per hit.
 - Should the overlay support multiple named lists / profiles per character?
 - Should the damage meter break a fight down by *phase* (adds arriving, mob enraging)?
   Today a fight is one flat window from first swing to last.

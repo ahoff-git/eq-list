@@ -174,6 +174,34 @@ export function parseLucyItem(id: number, html: string): LucyItem | null {
  * would be twelve more page fetches. The client fills it in from whatever it has already cached
  * ([ADR 0124](../../specs/decisions/0124-lucy-is-a-second-opinion.md)).
  */
+/**
+ * Lucy's published `itemlist.txt.gz`, uncompressed: `id,name,lucylink`, one item per line.
+ *
+ * The file is the site's own bulk offering ("Complete list of which item id matches which item
+ * name", regenerated daily) and it is the **only** item data Lucy hands out in bulk — there is no
+ * stat dump, and no advanced search to ask one of. So this is a name index and nothing more, which
+ * is exactly enough to stop a misspelling finding nothing
+ * ([ADR 0154](../../specs/decisions/0154-lucy-s-own-name-list-is-worth-holding.md)).
+ *
+ * Written by `Text::CSV_XS`, so a name carrying a comma is quoted and an internal quote is doubled.
+ * That is the whole grammar, and it is worth handling properly rather than splitting on commas:
+ * `Bag of the Tinkerers, Improved` is a real item and a naive split loses half of it.
+ */
+export function parseItemNameList(text: string): { id: number; name: string }[] {
+  const out: { id: number; name: string }[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line) continue;
+    const m = /^(\d+),(?:"((?:[^"]|"")*)"|([^,]*)),/.exec(line);
+    // The header row (`id,name,lucylink`) fails the leading-digits test and drops out here, along
+    // with anything else malformed — a bad line is skipped rather than becoming a nameless item.
+    if (!m) continue;
+    const name = (m[2] !== undefined ? m[2].replace(/""/g, '"') : (m[3] ?? "")).trim();
+    const id = Number(m[1]);
+    if (name && Number.isFinite(id)) out.push({ id, name });
+  }
+  return out;
+}
+
 export function parseLucyItemList(html: string): LucySearchResult[] {
   const root = parse(html);
   const results: LucySearchResult[] = [];

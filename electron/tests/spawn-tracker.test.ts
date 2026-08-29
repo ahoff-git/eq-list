@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createSpawnTracker, type SpawnTracker } from "../spawn-tracker";
-import { contradicted, MAX_CAMP_TIMERS, respawnCaveat, timerKey } from "../../src/shared/spawn-timers";
+import { CAMPING_KILLS, contradicted, MAX_CAMP_TIMERS, respawnCaveat, timerKey } from "../../src/shared/spawn-timers";
 import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
 import type { CastAlertEvent, CastAlertSettings, KillRecord } from "../../src/shared/types";
 
@@ -437,6 +437,43 @@ test("a hand-added timer with an interval can be started at once", () => {
   const timer = h.tracker.view().running[0];
   assert.equal(timer.dueAt, iso(700));
   assert.equal(timer.source, "stated");
+});
+
+test("a timer built from an earlier kill counts from that kill, not from the click", () => {
+  // The whole reason `markDead` takes a moment (ADR 0151). Timing a named you killed six minutes ago
+  // used to put six minutes of lie on the board, in the direction that matters: the figure is an
+  // upper bound and the camper is waiting on the near end of it.
+  const h = harness();
+  const key = timerKey(MOB, ZONE);
+  h.tracker.add(MOB, ZONE, 600);
+  h.tick(400);
+  h.tracker.markDead(key, iso(100));
+  const timer = h.tracker.view().running[0];
+  assert.equal(timer.killedAt, iso(100));
+  assert.equal(timer.dueAt, iso(700));
+});
+
+test("a moment that hasn't happened, or can't be read, falls back to now", () => {
+  // A countdown started from the future would be a due time nothing had happened to justify.
+  const h = harness();
+  const key = timerKey(MOB, ZONE);
+  h.tracker.add(MOB, ZONE, 600);
+  h.tick(400);
+  h.tracker.markDead(key, iso(900));
+  assert.equal(h.tracker.view().running[0].dueAt, iso(1000));
+  h.tracker.stop(key);
+  h.tracker.markDead(key, "not a time");
+  assert.equal(h.tracker.view().running[0].dueAt, iso(1000));
+});
+
+test("a camp with no figure is not given one by naming the moment it died", () => {
+  // Saying when it died cannot invent a respawn, and a countdown to an unknown moment would be a
+  // blank clock pretending to be information.
+  const h = harness();
+  const key = timerKey(MOB, ZONE);
+  h.tracker.add(MOB, ZONE);
+  h.tracker.markDead(key, iso(100));
+  assert.equal(h.tracker.view().running.length, 0);
 });
 
 test("a custom timer needs no zone, and no kill will ever restart it", () => {
@@ -1420,4 +1457,166 @@ test("a mob you marked up leaves the running board instead of sitting there for 
   assert.equal(h.tracker.view().running.length, 0, "a day-old sighting is not a countdown");
   // What it *taught* is not lost with it — that is the camp's evidence, not the clock's.
   assert.equal(h.tracker.view().known[0].seen?.seconds, 600);
+});
+
+// ── a camp you are visibly camping arms its own alert (ADR 0152) ──────────────
+// Every named you kill is tracked, so notify stays off by default — but making somebody tick a box
+// for the thing they are plainly already doing is the app being obtuse.
+
+const camped = (h: Harness) => h.tracker.view().known.find((k) => k.key === KEY);
+
+test("one kill is passing through; the second in a sitting arms the alert", () => {
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const h = harness({ kills });
+  h.tracker.noteKill(MOB, ZONE, iso(900), true);
+  assert.equal(camped(h)?.notify, false, "one kill is not camping");
+
+  kills.push(record(MOB, 1800));
+  h.tracker.noteKill(MOB, ZONE, iso(1800), true);
+  assert.equal(camped(h)?.notify, true);
+  // And it says so, because an alert that turns itself on without accounting for itself is a
+  // banner out of nowhere.
+  assert.equal(camped(h)?.armed, true);
+});
+
+test("the tally is the sitting's, and logging in starts it again", () => {
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const h = harness({ kills });
+  h.tracker.noteKill(MOB, ZONE, iso(900), true);
+  h.tracker.noteSitting();
+  kills.push(record(MOB, 1800));
+  h.tracker.noteKill(MOB, ZONE, iso(1800), true);
+  assert.equal(camped(h)?.notify, false, "one kill either side of a login is not one sitting");
+});
+
+test("a camp you switched off is never armed again, however obviously you are camping it", () => {
+  // The one property that makes an alert arming itself acceptable at all: `false` is an answer, not
+  // an absence, and nothing here may overrule it.
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const h = harness({ kills });
+  h.tracker.notify(KEY, false);
+  for (let n = 0; n < CAMPING_KILLS + 3; n += 1) {
+    kills.push(record(MOB, 1800 + n * 900));
+    h.tracker.noteKill(MOB, ZONE, iso(1800 + n * 900), true);
+  }
+  assert.equal(camped(h)?.notify, false);
+  assert.equal(camped(h)?.armed, false);
+});
+
+test("touching the checkbox takes the explanation with it", () => {
+  const kills = [record(MOB, 0), record(MOB, 900), record(MOB, 1800)];
+  const h = harness({ kills });
+  h.tracker.noteKill(MOB, ZONE, iso(900), true);
+  h.tracker.noteKill(MOB, ZONE, iso(1800), true);
+  assert.equal(camped(h)?.armed, true);
+  // Left on, but now on the player's own say-so — so the row stops explaining itself.
+  h.tracker.notify(KEY, true);
+  assert.equal(camped(h)?.notify, true);
+  assert.equal(camped(h)?.armed, false);
+});
+
+test("a camp with no figure still arms itself — there is nothing to count down to, and you are still there", () => {
+  // A named killed twice across a difficulty change learns nothing (ADR 0092) and starts no
+  // countdown, but it is exactly as camped as one that did.
+  const kills = [record(MOB, 0, { zone: "Lower Guk 2 (Adaptive)" }), record(MOB, 900)];
+  const h = harness({ kills });
+  h.tracker.noteKill(MOB, "Lower Guk 2 (Adaptive)", iso(0), true);
+  h.tracker.noteKill(MOB, ZONE, iso(900), true);
+  assert.equal(h.tracker.view().running.length, 0, "nothing was learned, so nothing counts down");
+  assert.equal(camped(h)?.notify, true);
+});
+
+test("what the app armed survives a restart, and so does the reason", () => {
+  const dir = tempDir();
+  const kills = [record(MOB, 0), record(MOB, 900), record(MOB, 1800)];
+  const first = harness({ kills, dir });
+  first.tracker.noteKill(MOB, ZONE, iso(900), true);
+  first.tracker.noteKill(MOB, ZONE, iso(1800), true);
+  first.tracker.flush();
+  const second = harness({ kills, dir });
+  const row = second.tracker.view().known.find((k) => k.key === KEY);
+  assert.equal(row?.notify, true);
+  assert.equal(row?.armed, true);
+});
+
+// ── noticing a difficulty change you were not watching for (ADR 0153) ─────────
+// Each difficulty is its own instance, so arriving in a different one means every clock for that
+// place is measuring from a death that instance never had.
+
+test("a difficulty change is noticed across a restart", () => {
+  // `lastZone` used to be a variable that started empty, so the first zone line after a restart had
+  // nothing to compare with and the repop went unseen — the clock stayed up.
+  const dir = tempDir();
+  const first = harness({ dir });
+  first.tracker.noteZone(ZONE);
+  first.tracker.add(MOB, ZONE, 1200);
+  first.tracker.markDead(KEY);
+  assert.equal(first.tracker.view().running.length, 1);
+  first.tracker.flush();
+
+  const second = harness({ dir });
+  assert.equal(second.tracker.view().running.length, 1, "the clock should survive the restart itself");
+  second.tracker.noteZone("Lower Guk 2 (Adaptive)");
+  assert.equal(second.tracker.view().running.length, 0, "but not the repop that followed it");
+});
+
+test("a difficulty change is noticed even if you went somewhere else in between", () => {
+  // Comparing only the *immediately previous* zone let any errand hide the change: 52 caught and 11
+  // missed that way, on one real log. The question is what this place was called last time you were
+  // in it, not what zone you were in a moment ago.
+  const h = harness();
+  h.tracker.noteZone(ZONE);
+  h.tracker.add(MOB, ZONE, 1200);
+  h.tracker.markDead(KEY);
+  h.tracker.noteZone("Qeynos Hills"); // nipped out to sell
+  assert.equal(h.tracker.view().running.length, 1, "ordinary travel changes nothing");
+  h.tracker.noteZone("Lower Guk 2 (Adaptive)"); // came back on another difficulty
+  assert.equal(h.tracker.view().running.length, 0);
+});
+
+test("coming back to the difficulty you left is not a repop", () => {
+  const h = harness();
+  h.tracker.noteZone(ZONE);
+  h.tracker.add(MOB, ZONE, 1200);
+  h.tracker.markDead(KEY);
+  h.tracker.noteZone("Qeynos Hills");
+  h.tracker.noteZone(ZONE);
+  assert.equal(h.tracker.view().running.length, 1, "the camp you left keeps ticking");
+});
+
+test("the first zone line for a place teaches rather than triggers", () => {
+  // Nothing to disagree with yet, so a fresh install must not drop the clock it just started.
+  const h = harness();
+  h.tracker.add(MOB, ZONE, 1200);
+  h.tracker.markDead(KEY);
+  h.tracker.noteZone(ZONE);
+  assert.equal(h.tracker.view().running.length, 1);
+});
+
+test("what the world last looked like is remembered even with nothing running", () => {
+  // The reading has to be written down whether or not it dropped anything, or the repop is noticed
+  // all over again on the next launch.
+  const dir = tempDir();
+  const first = harness({ dir });
+  first.tracker.noteZone(ZONE);
+  first.tracker.flush();
+  const second = harness({ dir });
+  second.tracker.add(MOB, ZONE, 1200);
+  second.tracker.markDead(KEY);
+  second.tracker.noteZone("Lower Guk 3 (Fused)");
+  assert.equal(second.tracker.view().running.length, 0);
+});
+
+test("a timer the player made survives a repop; a mob's does not", () => {
+  const h = harness();
+  h.tracker.noteZone(ZONE);
+  const boat = h.tracker.add("Boat to Butcherblock", ZONE, 420, "custom");
+  h.tracker.add(MOB, ZONE, 1200);
+  h.tracker.markDead(boat!);
+  h.tracker.markDead(KEY);
+  assert.equal(h.tracker.view().running.length, 2);
+  h.tracker.noteZone("Lower Guk 2 (Adaptive)");
+  const left = h.tracker.view().running;
+  assert.equal(left.length, 1);
+  assert.equal(left[0].mob, "Boat to Butcherblock");
 });

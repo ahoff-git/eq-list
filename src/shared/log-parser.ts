@@ -389,6 +389,26 @@ const CONSIDER_RE = new RegExp(
 const HAIL_RE = /^You say, 'Hail, (?<target>.+?)'$/i;
 
 /**
+ * What EQ hangs off a **rare** creature's name when you consider it:
+ * `Kerran tiger spahi - a rare creature - glares at you threateningly -- ...`
+ *
+ * It sits between the name and the regard, so the target capture swallows it and the sighting then
+ * names a mob nothing has ever killed — `timerKey` finds no camp and the observation is dropped on
+ * the floor. Measured on a real log: **34** of these, every one of them naming a mob worth timing
+ * (ADR 0153).
+ *
+ * Stripped rather than matched as an alternative regard, because it is a property of the *creature*
+ * and can only ever appear in this one position — and because the same decoration turns up on a mob
+ * whose regard we already know how to read.
+ */
+const RARE_SUFFIX_RE = /\s-\s*a rare creature\s*-\s*$/i;
+
+/** The name a consider names, with anything the game hung off it taken back off. */
+function consideredName(target: string): string {
+  return target.replace(RARE_SUFFIX_RE, "").trim();
+}
+
+/**
  * You looked at something, or spoke to it — a **consider** or a **hail**.
  *
  * Both say the same useful thing and it is not about factions or greetings: *that thing is in front
@@ -399,6 +419,10 @@ const HAIL_RE = /^You say, 'Hail, (?<target>.+?)'$/i;
  * The name is left **exactly as the log wrote it**, article and all: what reads it folds the article
  * itself (`mobKey`), and stripping here would throw away the same signal `parseKill` had to be
  * taught to keep.
+ *
+ * The one thing taken back off is `- a rare creature -`, which is not part of the name and is not
+ * the log's wording of the mob but the game's annotation *about* it — left on, it named a mob that
+ * has never been killed and the sighting reached no camp at all (`RARE_SUFFIX_RE`).
  */
 export function parseSighting(line: LogLine): SightingEvent | null {
   const hail = line.message.match(HAIL_RE);
@@ -407,7 +431,11 @@ export function parseSighting(line: LogLine): SightingEvent | null {
   }
   const con = line.message.match(CONSIDER_RE);
   if (con?.groups?.target) {
-    return { kind: "sighting", target: con.groups.target.trim(), how: "consider", logId: line.logId, raw: line.raw, at: line.at };
+    const target = consideredName(con.groups.target);
+    // A decoration and nothing else would leave an empty name, which is not a mob.
+    if (target) {
+      return { kind: "sighting", target, how: "consider", logId: line.logId, raw: line.raw, at: line.at };
+    }
   }
   return null;
 }

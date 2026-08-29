@@ -24,6 +24,8 @@ import type {
 } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-20T20:00:00.000Z");
+/** Whose log this is — the only thing that makes `Kainos`s warder` *your* pet rather than a name. */
+const PLAYER = "Kainos";
 const iso = (offsetSec = 0) => new Date(T0 + offsetSec * 1000).toISOString();
 
 function facts(id: number, name: string, over: Partial<SpellFacts> = {}): SpellFacts {
@@ -37,6 +39,7 @@ function facts(id: number, name: string, over: Partial<SpellFacts> = {}): SpellF
     levels: { Druid: 7 },
     beneficial: true,
     permanent: false,
+    instant: false,
     ...over,
   };
 }
@@ -121,6 +124,7 @@ function harness(opts: { lexicon?: boolean; enabled?: boolean; armed?: boolean }
         size: 0,
       },
     facts: (spell) => [...SPELLS.values()].find((s) => s.name.toLowerCase() === spell.trim().toLowerCase()),
+    player: () => PLAYER,
     inFight: () => fighting,
     now: () => clock,
   });
@@ -149,16 +153,22 @@ function harness(opts: { lexicon?: boolean; enabled?: boolean; armed?: boolean }
       send({ kind: "cast", caster, spell, at: iso(offsetSec), raw: `${caster} begin casting ${spell}.`, logId: 1 }),
     line: (message, offsetSec = 0) =>
       buffs.line({ logId: 1, at: iso(offsetSec), message, raw: message } satisfies LogLine),
-    fade: ({ spell, target, pet = false, raw, offsetSec = 0 }) =>
-      send({
+    fade: ({ spell, target, pet = false, raw, offsetSec = 0 }) => {
+      const message = raw ?? `Your ${spell} spell has worn off${target ? ` of ${target}` : ""}.`;
+      return send({
         kind: "buff-faded",
         spell,
         pet,
         target,
         at: iso(offsetSec),
-        raw: raw ?? `Your ${spell} spell has worn off${target ? ` of ${target}` : ""}.`,
+        message,
+        // Stamped, the way the parser really hands it over. The harness used to put the bare
+        // sentence here, which is precisely why the string-file lookup could be broken in
+        // production and green in this file (ADR 0155).
+        raw: `[Thu Aug 20 20:00:00 2026] ${message}`,
         logId: 2,
-      }),
+      });
+    },
     die: (offsetSec = 0) =>
       send({ kind: "death", victim: "You", at: iso(offsetSec), raw: "You have been slain by a gnoll!", logId: 3 }),
   };
@@ -437,6 +447,7 @@ test("alerts switched off silences the banner and still keeps the board", () => 
 test("a debuff that dropped is announced at once, mid-fight or not", () => {
   const h = harness({ lexicon: false });
   h.fighting(true);
+  h.cast("Root");
   h.fade({ spell: "Root", target: "a wild tiger" });
   // No waiting: a root you don't recast this second is a mob in your casters.
   assert.equal(h.raised.length, 1);
@@ -513,6 +524,9 @@ test("a lapse dismissed mid-fight does not come back as a banner", () => {
 test("the fight ending clears every row about something you were fighting", () => {
   const h = harness({ lexicon: false });
   h.fighting(true);
+  // Cast first: a debuff earns a row only by being one of yours (`worthWatching`).
+  h.cast("Root");
+  h.cast("Snare");
   h.fade({ spell: "Root", target: "a wild tiger" });
   // A *named*: no article, so only the spell being detrimental places this one — which is the case the
   // article test alone gets wrong, and why both signals exist.
@@ -542,6 +556,7 @@ test("with no spell file, a debuff on a named cannot be told from a buff on a pl
       size: 0,
     }),
     facts: () => undefined,
+    player: () => PLAYER,
     inFight: () => true,
     now: () => T0,
   });
@@ -551,13 +566,15 @@ test("with no spell file, a debuff on a named cannot be told from a buff on a pl
     pet: false,
     target: "Lord Nagafen",
     at: iso(0),
-    raw: "Your Snare spell has worn off of Lord Nagafen.",
+    message: "Your Snare spell has worn off of Lord Nagafen.",
+    raw: "[Thu Aug 20 20:00:00 2026] Your Snare spell has worn off of Lord Nagafen.",
     logId: 2,
   });
   noFacts.noteFightEnd("kill");
   assert.equal(noFacts.view().lapsed.length, 1);
   // An ordinary mob still goes, because the article answers it without the file.
   h.fighting(true);
+  h.cast("Snare");
   h.fade({ spell: "Snare", target: "a wild tiger" });
   h.endFight();
   assert.equal(h.buffs.view().lapsed.length, 0);
@@ -567,6 +584,7 @@ test("clearing enemy rows leaves your own alone", () => {
   const h = harness();
   h.line("You feel the spirit of wolf enter you.", 0);
   h.fighting(true);
+  h.cast("Root", 9);
   h.fade({ spell: "Root", target: "a wild tiger", offsetSec: 10 });
   h.fade({ spell: "Thorns", target: "Bloop", offsetSec: 11 });
 
@@ -589,13 +607,156 @@ test("a buff still up on something you were fighting goes too", () => {
   assert.equal(h.buffs.view().active.length, 0);
 });
 
-test("a detrimental spell never files itself under you", () => {
+test("a debuff on you or your pet is not a reminder, even when the spell is yours", () => {
   const h = harness({ lexicon: false });
-  // Belt and braces on the check that runs first: even if the file mislabels something, a lapse on
-  // *you* is never swept away by a fight ending.
+  // You root mobs, so Root is yours (ADR 0149) — and these two are still somebody rooting *your*
+  // side. Forty-five of the pet form in one month of a real log.
+  h.cast("Root");
   h.fade({ spell: "Root", target: "you" });
-  h.endFight();
+  h.fade({ spell: "Root", pet: true, offsetSec: 1 });
+  assert.deepEqual(h.buffs.view().lapsed, []);
+  assert.equal(h.raised.length, 0);
+});
+
+test("…but the same debuff on a mob still is", () => {
+  const h = harness({ lexicon: false });
+  h.cast("Root");
+  h.fade({ spell: "Root", target: "a wild tiger" });
   assert.equal(h.buffs.view().lapsed.length, 1);
+});
+
+// ── a debuff is only yours ────────────────────────────────────────────────────
+
+test("a debuff you never cast gets no row at all", () => {
+  const h = harness({ lexicon: false });
+  // Something rooted your group-mate. Nothing here is a thing you can put back on, and a standing
+  // "you are missing Root" over somebody else's head is the app reading the fight backwards.
+  h.fade({ spell: "Root", target: "Bloop" });
+  h.fade({ spell: "Snare", target: "you", offsetSec: 1 });
+  assert.deepEqual(h.buffs.view().lapsed, []);
+  // Not enrolled-then-silenced: refused outright, so there is no row to explain in the panel.
+  assert.deepEqual(h.buffs.view().known, []);
+});
+
+test("a debuff of your own is watched, and knows it is yours", () => {
+  const h = harness({ lexicon: false });
+  h.cast("Snare");
+  h.fade({ spell: "Snare", target: "a wild tiger", offsetSec: 30 });
+  const known = h.buffs.view().known;
+  assert.deepEqual(
+    known.map((k) => [k.key, k.detrimental, k.mine]),
+    [["snare", true, true]],
+  );
+});
+
+test("a cast is what proves a debuff is yours, long after the cast window", () => {
+  const h = harness({ lexicon: false });
+  h.cast("Snare");
+  // A snare lasts minutes and survives a zone line; `pending` is neither, so it cannot be what
+  // answers this. Both are moved past deliberately.
+  h.buffs.noteZone("Everfrost");
+  h.at(600);
+  h.fade({ spell: "Snare", target: "a wild tiger", offsetSec: 600 });
+  assert.equal(h.buffs.view().lapsed.length, 1);
+});
+
+test("a buff is never gated on having cast it — somebody else's is the case it exists for", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.");
+  h.fade({ spell: "spirit of wolf", raw: "The spirit of wolf leaves you.", offsetSec: 30 });
+  assert.equal(h.buffs.view().lapsed.length, 1);
+});
+
+test("debuff rows from an earlier build that were never yours are dropped on load", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-buffs-"));
+  fs.writeFileSync(
+    path.join(dir, "buffs.json"),
+    JSON.stringify({
+      known: {
+        cripple: { spell: "Cripple", tracked: true, notify: true, onScreen: true, detrimental: true },
+        snare: { spell: "Snare", tracked: true, notify: true, onScreen: true, detrimental: true, mine: true },
+        thorns: { spell: "Thorns", tracked: true, notify: true, onScreen: true },
+      },
+    }),
+  );
+  const tracker = createBuffTracker({
+    userDataDir: dir,
+    getSettings: () => SETTINGS,
+    raise: () => {},
+    lexicon: () => ({ fadedBy: () => [], landedOnYou: () => [], landedOnOther: () => null, landsQuietly: () => true, size: 0 }),
+    facts: () => undefined,
+    player: () => PLAYER,
+    inFight: () => false,
+    now: () => T0,
+  });
+  // The one cast at you goes; your own snare stays, and a row from before we recorded which was
+  // which is left alone — absent is unknown, and sweeping on a guess is what this rule is against.
+  assert.deepEqual(tracker.view().known.map((k) => k.key).sort(), ["snare", "thorns"]);
+});
+
+test("a refresh is not a rise — a song that re-lands every few seconds is up once", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  for (let i = 1; i <= 20; i += 1) h.line("You feel the spirit of wolf enter you.", i * 6);
+  const [row] = h.buffs.view().known;
+  assert.equal(row.rises, 1);
+  // And it is still one thing, held since the first of them.
+  assert.equal(h.buffs.view().active[0].since, iso(0));
+});
+
+test("going down and up again is a second rise", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  h.fade({ spell: "spirit of wolf", raw: "The spirit of wolf leaves you.", offsetSec: 30 });
+  h.line("You feel the spirit of wolf enter you.", 60);
+  assert.equal(h.buffs.view().known[0].rises, 2);
+});
+
+// ── zoning ────────────────────────────────────────────────────────────────────
+
+test("zoning ends every debuff, up or lapsed", () => {
+  const h = harness({ lexicon: false });
+  h.cast("Root");
+  h.cast("Snare");
+  h.fighting(true);
+  h.fade({ spell: "Root", target: "a wild tiger", offsetSec: 10 });
+  h.fade({ spell: "Snare", target: "Lord Nagafen", offsetSec: 11 });
+  assert.equal(h.buffs.view().lapsed.length, 2);
+
+  h.buffs.noteZone("Everfrost");
+  // The mobs are standing where you left them, and anything on *you* was stripped at the line.
+  assert.equal(h.buffs.view().lapsed.length, 0);
+});
+
+test("zoning keeps your own buffs — it is not a reset", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.");
+  h.cast("Root", 1);
+  h.fade({ spell: "Root", target: "a wild tiger", offsetSec: 2 });
+
+  h.buffs.noteZone("Everfrost");
+  assert.equal(h.buffs.view().active.length, 1); // spirit of wolf crossed with you
+  assert.equal(h.buffs.view().lapsed.length, 0); // the root did not
+});
+
+test("zoning drops a buff you put on something you were fighting", () => {
+  const h = harness();
+  // A charmed pet does not follow you through a zone line, so neither should the row about it.
+  h.cast("Spirit of Wolf");
+  h.line("a wild tiger is surrounded by a brief lupine aura.", 1);
+  assert.equal(h.buffs.view().active.length, 1);
+
+  h.buffs.noteZone("Everfrost");
+  assert.equal(h.buffs.view().active.length, 0);
+});
+
+test("zoning leaves the spell's row alone — only the instances go", () => {
+  const h = harness({ lexicon: false });
+  h.cast("Snare");
+  h.fade({ spell: "Snare", target: "a wild tiger", offsetSec: 5 });
+  h.buffs.noteZone("Everfrost");
+  // The catalogue is the player's decisions; a zone line is not one of them.
+  assert.deepEqual(h.buffs.view().known.map((k) => k.key), ["snare"]);
 });
 
 // ── the player's two controls ─────────────────────────────────────────────────
@@ -685,6 +846,7 @@ test("the choices survive a restart and the board does not", () => {
     lexicon: () => buildBuffLexicon(parseSpellStringFile(STRINGS), SPELLS),
     facts: (spell: string) =>
       [...SPELLS.values()].find((s) => s.name.toLowerCase() === spell.trim().toLowerCase()),
+    player: () => PLAYER,
     inFight: () => false,
     now: () => T0,
   };

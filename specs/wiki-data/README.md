@@ -86,6 +86,36 @@ shopping list.
     - **quests**: the `questTopTable` info rows (Minimum Level / Classes / Related
       NPCs & Zones) — the giver/start-zone rows stay as sources, not card lines.
   - Tables use `eoTable2/eoTable3`, never `.wikitable`.
+- **The cache, read as a corpus** — `cachedItems()` walks the page cache and returns every `item` /
+  `recipe` page as a `CachedItem` (name, card, sources, era flag). It makes **no request**: no index
+  warm, no crawl, no TTL refresh. It exists because the Items tab searches items *by stat*, and this
+  wiki has no structured item data and no way to be asked for "every item with its stats" — so the
+  honest corpus is what has already been fetched, and it grows as you browse
+  ([ADR 0152](../decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md)). Entries
+  parsed under an older `CACHE_VERSION` are skipped rather than included card-less, since a
+  catalogue quietly missing stats is worse than one missing rows.
+- **Filling that corpus — `harvest`** (`electron/wiki/harvest.ts`). `cachedItems` reads what we hold;
+  this is how we come to hold it. A resumable, rate-limited trickle over `Category:Items` (**11,136
+  pages**), one `action=parse` at a time with a gap — one second by default, which measured against
+  the live wiki (~90 ms and ~3 KB a page) is about a 10% duty cycle for roughly three hours
+  ([ADR 0153](../decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)). It **never starts
+  on its own**: the Items tab's button is the only way in. It checkpoints after every fetched page so
+  stopping costs the page in flight and nothing else; it skips a page already cached at the current
+  version with no request *and no gap*, so a second run over a filled catalogue takes seconds; and a
+  page that 404s is recorded by name rather than ending the run. Fetching is `getPage`, so a
+  harvested page gets the same caching, version check and era flag as one you opened by hand. The
+  schedule is a tested black box — roster, cache test, fetch, clock and sleep are all injected.
+- **…and filled *once per room*, not once per person** — `harvest` plans against what the
+  [room](../peers/README.md) holds, not only against this cache
+  ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). The roster is cut into 1024
+  **shards** by a hash of the title (`src/shared/item-shards.ts`), so two installs agree about which
+  shard anything is in with nothing synchronised. Each pass takes the most useful next step: **ask** a
+  peer for a shard they already hold (one message, no wiki request), else **fetch** a shard nobody has
+  — in an order derived from our own peer id, so peers spread out unprompted — else **wait**, when
+  every gap left is somebody's live claim. Coverage is a 256-character hex bitmap riding in the
+  catalogue that was already being broadcast; `items.status()` / `items.shard()` / `items.accept()`
+  are the cache's side of it, and `joinRoom` late-binds the two halves (the hub needs the cache to
+  answer an ask, and the cache needs the hub to send one).
 - **Cache versioning** — `getPage` caches the *parsed* `WikiPage` to disk, so a
   `parse.ts` change (new page kinds, new fields) would otherwise be masked by
   week-old entries. Cached pages are stored as `{ version, page }`; `getPage` treats

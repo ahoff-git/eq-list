@@ -742,10 +742,18 @@ button {
    wrapper — which is what `slot` is for. */
 .spawn-add > .suggest.sa-name { flex: 2 1 160px; min-width: 160px; }
 .spawn-add .zone-picker { flex: 1 1 150px; min-width: 150px; }
+/* The recent-kill picker takes its own line above the fields it fills, rather than becoming a
+   fourth box beside them: it is the *other route in* — pick a kill instead of remembering one — and
+   sitting in the row would read as one more thing to fill in. Its menu rows carry a place and a
+   time as well as a name, which `.zone-menu`'s `max-content` already grows for. */
+.spawn-add > .zone-picker.spawn-from-kill { flex: 1 1 100%; }
 /* Mob or plain timer, as two words rather than a checkbox: neither answer is the "off" one. */
 .spawn-add .sa-kind { display: flex; gap: 4px; }
 .spawn-add small { flex-basis: 100%; color: var(--text-dim); }
 .spawn-add small.bad { color: var(--bad); }
+/* Why this alert is on when you never turned it on. Dim rather than loud: it is an explanation, not
+   a state worth drawing the eye to, and it goes as soon as the player answers for themselves. */
+.spawn-armed { color: var(--text-dim); font-size: 11px; }
 .spawn-row,
 .spawn-known-row {
   display: flex;
@@ -3009,3 +3017,104 @@ kbd {
 .peers-scores .mine { color: var(--text); }
 /* Gold, like every other "this is the figure" in the app — and never on a provisional one. */
 .peers-scores .leader { color: var(--accent); font-weight: 600; }
+
+/* ── Items tab: the item search ─────────────────────────────────────────────
+   A workbench, not a feed: criteria along the top, the yardstick behind a fold, and a table under
+   both. Everything up top wraps, because the criteria row is seven controls wide and this window is
+   routinely dragged narrow enough for two of them. */
+.item-search { display: flex; flex-direction: column; gap: 8px; }
+.item-criteria { gap: 6px; align-items: center; }
+/* Wide enough for a real EQ name, and the one control here that gives up width first. */
+.item-name-box { flex: 1 1 180px; min-width: 120px; max-width: 320px; }
+
+/* A facet picker: a `.seg`-styled button with a checkbox menu hanging off it. Positioned relative
+   so the menu is placed against the button rather than against the panel. */
+.facet { position: relative; }
+.facet > .seg { border: 1px solid var(--border); border-radius: 4px; }
+.facet-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 160px;
+  max-width: 260px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.facet-filter { width: 100%; margin-bottom: 6px; }
+/* Scrolls rather than growing: a zone list is a hundred long and the panel below it still has to
+   be reachable. */
+.facet-options { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
+.facet-options .check-field { font-size: 12px; white-space: nowrap; }
+.facet-clear { margin-top: 6px; width: 100%; }
+
+/* One "at least this much X" row. The pieces sit tight together so a floor reads as one thing. */
+.stat-floors { gap: 6px; }
+.floor { display: inline-flex; align-items: center; gap: 4px; }
+
+.item-weights-head { gap: 8px; align-items: center; }
+.item-weights { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.iw-head { gap: 8px; align-items: center; }
+.iw-group { gap: 8px; align-items: center; }
+/* A fixed label column, so the four groups line up down the left edge and can be skipped past. */
+.iw-group-label { flex: 0 0 68px; }
+.iw-stat { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; }
+.iw-name { color: var(--text-dim); }
+/* A weighted stat is the sheet's content; an unweighted one is just an offer. */
+.iw-name.on { color: var(--accent); }
+.iw-box { width: 46px; }
+
+/* `.stat-table` right-aligns and narrows its 2nd and 3rd columns, which is right for the tables
+   built around a figure and wrong here — this one's are Slot and From. Undone, and the numbers get
+   the treatment by name instead, since which column holds one changes with the weights. */
+.item-table td:nth-child(2),
+.item-table td:nth-child(3),
+.item-table th:nth-child(2),
+.item-table th:nth-child(3) { text-align: left; width: auto; }
+.item-table td.num,
+.item-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.item-table td { vertical-align: top; }
+.item-table .src-kind + .src-kind { margin-left: 6px; }
+.item-table .item-add { text-align: right; }
+/* Out of era is dimmed rather than hidden — the toggle hides it; this only says which they are. */
+.item-table tr.out-of-era { opacity: 0.55; }
+.lucy-chip { margin-left: 6px; }
+.item-more { padding-top: 4px; }
+
+/* The catalogue strip above the item search: how much of the wiki's item list we hold, and the
+   control that goes and gets the rest. A strip rather than a panel — it is one sentence and one
+   button, and it must not compete with the criteria under it. */
+.cat-harvest {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.cat-head { gap: 8px; align-items: center; }
+.cat-count { font-size: 13px; }
+/* Takes the slack so the bar grows with the window rather than the note beside it. */
+.cat-bar {
+  flex: 1 1 80px;
+  min-width: 60px;
+  max-width: 260px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.cat-bar-fill { display: block; height: 100%; background: var(--accent); }
+/* Wraps, because the running line names the page in flight and EQ item names are long. */
+.cat-note { gap: 6px; align-items: baseline; }
+.cat-note .bad { color: var(--bad); }
+/* The room's coverage, behind our own: a newcomer to a room that has done the work sees a nearly
+   full pale bar behind an empty solid one, which is the moment the feature explains itself. */
+.cat-bar { position: relative; }
+.cat-bar-room { position: absolute; inset: 0 auto 0 0; background: var(--accent-dim); }
+.cat-bar-fill { position: relative; }
+.cat-note .good { color: var(--good); }

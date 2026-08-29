@@ -38,6 +38,11 @@
  *  - **A fade line** proves, retroactively, that the thing was up. A buff first met by its fade
  *    still belongs on the list: that is precisely the reminder the player wanted.
  *
+ * And one thing is deliberately **not** seen going up at all: a debuff. A detrimental spell earns a
+ * row only when we have watched *you* cast it, because a root on you is somebody else's doing and
+ * there is nothing for you to put back on
+ * ([ADR 0149](../specs/decisions/0149-a-debuff-is-only-tracked-if-it-is-yours.md)).
+ *
  * A cast is held briefly as *pending* so a landing line can be attributed to it, which is what
  * narrows a shared landing sentence to the rank you actually cast. **eql-alerts** found the same gate
  * for zone-visible emotes, and their hard-won second half is honoured here: a pending cast is
@@ -58,6 +63,8 @@ import {
   narrowCandidates,
   newKnownBuff,
   shouldHold,
+  doneToYou,
+  worthWatching,
   CAST_WINDOW_MS,
   MAX_KNOWN_BUFFS,
   ON_PET,
@@ -128,6 +135,15 @@ export interface BuffTrackerDeps {
   /** Facts for a spell the log named, for `beneficial` and `permanent`. */
   facts: (spell: string, rank?: string) => SpellFacts | undefined;
   /**
+   * Your character's name, or blank while it is unknown.
+   *
+   * Only ever used to recognise **your own pet**: `<Owner>`s warder` is the only ownership the log
+   * writes, and telling yours from a group-mate's needs a name to compare. Asked as a function
+   * because it changes when the watched log does — switching character must not leave the board
+   * folding somebody else's pet into yours.
+   */
+  player: () => string;
+  /**
    * Is a fight open right now? Asked of the damage meter, which is the only thing that decides what a
    * fight is ([ADR 0036](../specs/decisions/0036-a-fight-ends-on-death-not-a-lull.md)) — assembling a
    * second answer here from the same events would be that rule written twice.
@@ -147,10 +163,16 @@ export interface BuffTracker {
    */
   line(line: LogLine): void;
   /**
-   * You changed zone. Buffs survive a zone line in EQ, so this is **not** a reason to drop the
-   * board — but the pending-cast memory is per moment and a zone is a hard break in it, so that
-   * goes. Kept as its own call rather than folded into `line` because "what a zone change means"
-   * is a decision, and it should be visible as one.
+   * You changed zone — which keeps some of the board and ends the rest, and the split is the point.
+   *
+   * **Your buffs survive it**, so this is not a reset. **Debuffs do not**: EQ strips the ones on you
+   * at the zone line, and the ones you cast are on mobs left standing in a zone you are no longer in.
+   * Anything else aimed at what you were fighting goes with them, a buff on a charmed pet included.
+   * The pending-cast memory goes too — it is per moment, and a zone is a hard break in one.
+   *
+   * Kept as its own call rather than folded into `line` because "what a zone change means" is a
+   * decision, and it should be visible as one
+   * ([ADR 0150](../specs/decisions/0150-a-zone-line-ends-a-debuff.md)).
    */
   noteZone(zone: string | null): void;
   /**
@@ -188,18 +210,40 @@ export interface BuffTracker {
   flush(): void;
 }
 
+/**
+ * Throw away rows for debuffs that were never shown to be yours.
+ *
+ * Enrolling a debuff took no evidence at all until `worthWatching`, so a file written by an earlier
+ * build holds rows for things that were cast **at** the player — and those are exactly the rows the
+ * rule exists to prevent. Leaving them would mean the fix only applied to spells nobody had met yet.
+ *
+ * It costs a little: a root of your own, enrolled before rows recorded who cast them, also goes. That
+ * is the honest trade — the old file cannot tell the two apart — and it is self-healing, since the
+ * next time you cast the thing and it wears off the row comes straight back, this time saying whose
+ * it is. Rows from before `detrimental` was recorded at all are left alone: absent is *unknown*, and
+ * sweeping on a guess is what this whole change is against.
+ */
+function dropDebuffsNotYours(stored: Stored): number {
+  const doomed = Object.entries(stored.known).filter(([, row]) => row.detrimental && !row.mine);
+  for (const [key] of doomed) delete stored.known[key];
+  if (doomed.length) log.debug("dropped debuff rows that were never yours", doomed.map(([key]) => key));
+  return doomed.length;
+}
+
 export function createBuffTracker({
   userDataDir,
   getSettings,
   raise,
   lexicon,
   facts,
+  player,
   inFight,
   now = Date.now,
 }: BuffTrackerDeps): BuffTracker {
   const file = path.join(userDataDir, "buffs.json");
   const stored = readJson<Stored>(file, { known: {} });
   if (!stored.known) stored.known = {};
+  const sweptOnLoad = dropDebuffsNotYours(stored);
   // `restart: true` — the choices arrive as clicks, and only where the row *lands* is worth keeping.
   //
   // No `concern`: this file is not a body of *derived* data, so there is nothing for a revision to
@@ -209,11 +253,27 @@ export function createBuffTracker({
     pretty: true,
     restart: true,
   });
+  // Written back rather than re-swept every launch: the rows are gone, and a file that still holds
+  // them would go on being a file that disagrees with the panel.
+  if (sweptOnLoad) saver.save();
 
   /** Up right now, and lapses standing — both keyed by `instanceKey`, so one spell per target. */
   const board = new Map<string, BuffInstance>();
   /** `buffKey` → the moment you were last seen starting to cast it, for narrowing a shared landing. */
   const pending = new Map<string, number>();
+  /**
+   * Every spell **you** have been seen starting to cast this session.
+   *
+   * Not `pending`, which is a *moment* — it expires in seconds and is cleared at a zone line, because
+   * its job is to attribute a landing sentence arriving right now. This is knowledge about the
+   * character: a snare cast twenty minutes and three zones ago is still one of yours when it finally
+   * wears off. `combat-stats.ts` keeps the same distinction for the same reason, and its repertoire
+   * survives a reset on exactly this argument.
+   *
+   * Session-scoped and unpersisted, because the durable version already exists: a row that got here
+   * once is stored with `mine`, and that is what carries the answer across a restart.
+   */
+  const castByYou = new Set<string>();
   const listeners: (() => void)[] = [];
   /**
    * Whether anything has yet given us a reason to read the game's files.
@@ -250,6 +310,33 @@ export function createBuffTracker({
 
   function save(): void {
     saver.save();
+  }
+
+  /**
+   * Is this spell one of **yours** — cast by you, rather than done to you?
+   *
+   * Two pieces of evidence, and the second is what makes the first survive a restart: a cast seen
+   * this session, or a row already stored as `mine` because one was seen in an earlier one.
+   */
+  function yours(key: string): boolean {
+    return castByYou.has(key) || !!stored.known[key]?.mine;
+  }
+
+  /** Is this spell one you throw at things? Absent facts read as no, as everywhere else. */
+  function isDebuff(key: string): boolean {
+    return !!stored.known[key]?.detrimental;
+  }
+
+  /**
+   * Should this spell get a row, given what the game file says about it and who cast it?
+   *
+   * The gate `worthWatching` states, with the evidence gathered: a debuff is only ours to be
+   * reminded about if we saw you cast it. Asked *before* `knownFor`, so a refused spell leaves no
+   * trace at all — an enrolled-then-ignored row would still be a line in the panel to explain.
+   */
+  function watchable(spell: string, about: SpellFacts | undefined, byYou = false): boolean {
+    const detrimental = about ? !about.beneficial : undefined;
+    return worthWatching({ detrimental, instant: about?.instant }, byYou || yours(buffKey(spell)));
   }
 
   /** The row for a spell, creating it the first time the spell is seen. */
@@ -344,10 +431,13 @@ export function createBuffTracker({
     opts: { byYou: boolean; alsoCouldBe?: string[] },
   ): void {
     const spellFacts = facts(spellName(spell), spellRank(spell));
+    const detrimental = spellFacts ? !spellFacts.beneficial : undefined;
+    if (!watchable(spell, spellFacts, opts.byYou)) return;
+    if (doneToYou({ detrimental }, target)) return; // a debuff on your own side is not a buff of yours
     const known = knownFor(spell, {
       mine: opts.byYou,
       permanent: spellFacts?.permanent,
-      detrimental: spellFacts ? !spellFacts.beneficial : undefined,
+      detrimental,
     });
     if (!known.tracked) return; // unchecked means the app is not watching this one at all
     const key = known.key;
@@ -372,8 +462,14 @@ export function createBuffTracker({
     // rather than left to fire at the end of the fight, which is the whole point of holding it: the
     // hold exists so the app can tell you what is *still* wrong when you get a moment.
     held.delete(id);
+    // A **refresh is not a rise**. The instance above already treats it as one thing continuing —
+    // it keeps its `since` — and the count has to agree, or it stops meaning what the row says it
+    // means. A bard song re-lands every few seconds, so counting pulses made `Anthem de Arms` read
+    // *seen up 7,232×* beside a buff you actually maintain reading 8, which is the figure inverted
+    // rather than merely inflated (ADR 0159).
+    const refresh = !!existing?.up;
     edit(key, (row) => {
-      row.rises = (row.rises ?? 0) + 1;
+      if (!refresh) row.rises = (row.rises ?? 0) + 1;
       row.lastUp = at;
       if (opts.byYou) row.mine = true;
     });
@@ -400,11 +496,21 @@ export function createBuffTracker({
     // A spell we have never seen go up can still lapse — a fade is proof it *was* up, and that is
     // exactly the reminder the player asked for. Enrol it so the row exists to be unchecked.
     const spellFacts = facts(spellName(spell));
+    const detrimental = spellFacts ? !spellFacts.beneficial : undefined;
+    // Asked of the fade as well as of the rise, and it is the arm that does the work: a debuff is
+    // nearly always met *by* its fade, since a detrimental cast enrols nothing on its own.
+    if (!watchable(spell, spellFacts)) return;
+    // And the same question of *this landing*: you can own Root and still not own the one a mob put
+    // on your pet. `?? ON_YOU` because an unnamed fade is a fade on you (ADR 0158).
+    if (doneToYou({ detrimental }, target ?? ON_YOU)) return;
     const row =
       known ??
       knownFor(spell, {
         permanent: spellFacts?.permanent,
-        detrimental: spellFacts ? !spellFacts.beneficial : undefined,
+        detrimental,
+        // We only reached here because the spell is ours — a debuff by the gate above, a buff by
+        // having been on you. Saying so is what stops a row you cast reading "cast on you".
+        mine: detrimental || undefined,
       });
     if (!row.tracked) return;
 
@@ -547,10 +653,20 @@ export function createBuffTracker({
           const spellFacts = facts(event.spell, event.rank);
           const key = buffKey(event.spell);
           pending.set(key, Date.parse(event.at) || now());
+          // Recorded for **every** cast of yours, beneficial or not, and this is the only place a
+          // debuff can ever be shown to be yours: your detrimental casts are deliberately not
+          // enrolled below (a spell book of nukes is not a buff list), so by the time one wears off
+          // the cast that proves it is long past. See `worthWatching`.
+          castByYou.add(key);
           // Only enrol on evidence this is a lasting beneficial effect. Without the game file we
           // can't tell a buff from a nuke, so we wait for a landing or a fade line to say so —
           // enrolling every cast would fill the panel with your entire spell book.
           if (!spellFacts?.beneficial) return;
+          // …and a lasting one. A heal, a gate, a bind announces itself landing and then never ends,
+          // so enrolling it here is how the panel filled with a month of everything you ever cast at
+          // anybody (ADR 0157). Same rule as everywhere else, asked in the one place a row can be
+          // created without a fade to gate it.
+          if (!watchable(event.spell, spellFacts, true)) return;
           // A cast with no landing sentence of its own will never produce a better line, so the cast
           // *is* the rise. One that has one waits: the landing names the target, and a target is
           // worth the second or two.
@@ -581,14 +697,17 @@ export function createBuffTracker({
             return;
           }
           if (event.target) {
-            lapse(event.spell, buffTarget(event.target), at, "faded");
+            lapse(event.spell, buffTarget(event.target, player()), at, "faded");
             changed();
             return;
           }
           // A fade on **you**. The parser gave us the words the log used, not a spell — so this is
-          // the case `spells_us_str.txt` exists for, and it is matched on the whole raw sentence
-          // rather than the parser's capture, because the file holds whole sentences.
-          const candidates = lexicon().fadedBy(event.raw);
+          // the case `spells_us_str.txt` exists for, and it is matched on the whole sentence rather
+          // than the parser's capture, because the file holds whole sentences.
+          //
+          // `message`, not `raw`: the file holds sentences and `raw` still carries the log's
+          // `[timestamp]`, so every one of these lookups matched nothing at all (ADR 0155).
+          const candidates = lexicon().fadedBy(event.message);
           if (!candidates.length) {
             // Either there's no game install, or no obtainable buff writes that sentence. Nothing to
             // attribute, and nothing to say: guessing which of your buffs it was is exactly what
@@ -671,7 +790,7 @@ export function createBuffTracker({
         (key) => castRecently(key, at),
       );
       if (!narrowed || !castRecently(buffKey(narrowed.spell), at)) return;
-      rise(narrowed.spell, buffTarget(onOther.target), line.at, "landed", {
+      rise(narrowed.spell, buffTarget(onOther.target, player()), line.at, "landed", {
         byYou: true,
         alsoCouldBe: narrowed.alsoCouldBe,
       });
@@ -682,6 +801,25 @@ export function createBuffTracker({
       // Buffs cross a zone line; a half-finished cast does not. Clearing the pending map is what
       // stops a cast begun in one zone being credited with a landing sentence read in the next.
       pending.clear();
+      // And neither does anything that belonged to the zone you left. **Every debuff goes**: zoning
+      // strips the ones on you outright, and the ones you cast are on mobs standing where you left
+      // them. So does anything else aimed at something you were fighting — a buff on a charmed pet
+      // is a row about a pet you no longer have.
+      //
+      // A stronger sweep than a fight ending's, and for a stronger reason: that one drops rows about
+      // a corpse, this one drops rows about a whole zone. Your own buffs are untouched, which is the
+      // difference the tracker's header states and the reason this isn't simply a reset.
+      let swept = 0;
+      for (const [id, buff] of [...board]) {
+        if (!buff.onEnemy && !isDebuff(buff.key)) continue;
+        board.delete(id);
+        held.delete(id);
+        swept += 1;
+      }
+      if (swept) {
+        log.debug("zoned; dropped rows that stayed behind", { swept });
+        changed();
+      }
     },
 
     noteFightEnd(reason) {

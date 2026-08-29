@@ -10,10 +10,15 @@ import {
   describeRespawn,
   erratic,
   formatCountdown,
+  floorFrom,
   formatInterval,
   gapId,
+  killStillCounts,
   learnRespawns,
+  MAX_LEARNED_GAP_SECONDS,
+  recentCamps,
   respawnCaveat,
+  untimedReason,
   MAX_LISTED_GAPS,
   MAX_RESPAWN_SECONDS,
   MIN_RESPAWN_SECONDS,
@@ -23,6 +28,7 @@ import {
   parseInterval,
   respawnFor,
   rollForward,
+  sightingFrom,
   spawnState,
   timerFrom,
   timerForMob,
@@ -103,8 +109,29 @@ test("a gap under the floor is two mobs sharing a name, and is discarded not cla
 });
 
 test("a gap over the ceiling is you not being there", () => {
-  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", MAX_RESPAWN_SECONDS + 60)];
+  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", MAX_LEARNED_GAP_SECONDS + 60)];
   assert.equal(learnRespawns(kills, always)[0].shortestSeconds, undefined);
+});
+
+test("a gap teaches nothing past three hours, however plausible a respawn that long would be", () => {
+  // Past a few hours a gap describes the player, not the mob: you went to bed, you logged off, you
+  // went to another camp, and none of that is in the log. A genuinely long timer is reachable by
+  // typing it or taking it off the wiki — never by sleeping through one.
+  const inside = [kill("Ghoul Lord", 0), kill("Ghoul Lord", MAX_LEARNED_GAP_SECONDS - 60)];
+  assert.equal(learnRespawns(inside, always)[0].shortestSeconds, MAX_LEARNED_GAP_SECONDS - 60);
+  const outside = [kill("Ghoul Lord", 0), kill("Ghoul Lord", MAX_LEARNED_GAP_SECONDS + 60)];
+  assert.equal(learnRespawns(outside, always)[0].samples, 0);
+});
+
+test("but a sighting you made on purpose is held to the outer ceiling, not the gap rule", () => {
+  // The long-timer case: a named you typed six hours for, seen up five hours after it died. That is
+  // a deliberate observation about a mob already known to be slow, and the tightest evidence the app
+  // can hold — capping it at the gap rule would throw away the only thing a long camp can gather.
+  const long = 5 * 60 * 60;
+  assert.equal(sightingFrom(iso(0), T0 + long * 1000), long);
+  assert.equal(floorFrom(iso(0), T0 + long * 1000), long);
+  // And still refused past the ceiling, where it stops being a claim about a respawn at all.
+  assert.equal(sightingFrom(iso(0), T0 + (MAX_RESPAWN_SECONDS + 60) * 1000), null);
 });
 
 test("a peer's kill is skipped: their clock can't be allowed to tighten a ratchet", () => {
@@ -658,4 +685,162 @@ test("a mob you marked up leaves the board once the sighting has nothing left to
     "stale",
     "an hour later you either killed it or left; a month later it is absurd",
   );
+});
+
+// ── building a timer from a kill you already made (ADR 0151) ───────────────────
+// The kill log knows what you have killed, where, and when. Everything here is about handing that
+// to a player who is deciding what to time, rather than making them remember and retype it.
+
+test("a camp is offered per mob and place, newest kill first", () => {
+  const camps = recentCamps([
+    kill("Ghoul Lord", 0),
+    kill("Ghoul Lord", 900),
+    kill("Frenzied Ghoul", 600, { zone: "Upper Guk" }),
+  ]);
+  assert.deepEqual(
+    camps.map((c) => [c.mob, c.place, c.kills]),
+    [
+      ["Ghoul Lord", "Lower Guk", 2],
+      ["Frenzied Ghoul", "Upper Guk", 1],
+    ],
+  );
+  assert.equal(camps[0].killedAt, iso(900));
+  assert.equal(camps[0].key, timerKey("Ghoul Lord", "Lower Guk"));
+});
+
+test("the zone travels raw, so a countdown is filed against the difficulty it died in", () => {
+  // The camp folds the variants into one key — that is the whole point of `timerKey` — but the
+  // *countdown* has to be started with the string the log wrote, or it lands in another instance.
+  const [camp] = recentCamps([
+    kill("Ghoul Lord", 0, { zone: "Lower Guk" }),
+    kill("Ghoul Lord", 900, { zone: "Lower Guk 2 (Adaptive)" }),
+  ]);
+  assert.equal(camp.key, timerKey("Ghoul Lord", "Lower Guk"));
+  assert.equal(camp.zone, "Lower Guk 2 (Adaptive)");
+  assert.equal(camp.place, "Lower Guk");
+});
+
+test("a mob the article test hasn't settled is still offered — the player is the one choosing", () => {
+  // `provenNamed` is the right gate for tracking something automatically and the wrong one for a
+  // list somebody is reading: refusing to show a mob they killed an hour ago is the app being
+  // certain in place of the person who was there.
+  const camps = recentCamps([kill("gnoll pup", 0, { named: false })]);
+  assert.deepEqual(
+    camps.map((c) => [c.mob, c.named]),
+    [["gnoll pup", false]],
+  );
+});
+
+test("one kill without an article settles the camp, whichever kill it was", () => {
+  const [camp] = recentCamps([kill("Ghoul Lord", 0, { named: false }), kill("Ghoul Lord", 900, { named: true })]);
+  assert.equal(camp.named, true);
+});
+
+test("a kill nothing can place, and a peer's kill, are not somewhere to start a clock", () => {
+  assert.deepEqual(recentCamps([kill("Ghoul Lord", 0, { zone: undefined })]), []);
+  assert.deepEqual(recentCamps([kill("Ghoul Lord", 0, { sharedBy: "someone" })]), []);
+});
+
+test("the list is capped, keeping the newest", () => {
+  const kills = Array.from({ length: 8 }, (_, n) => kill(`Mob ${n}`, n * 900));
+  const camps = recentCamps(kills, 3);
+  assert.deepEqual(
+    camps.map((c) => c.mob),
+    ["Mob 7", "Mob 6", "Mob 5"],
+  );
+});
+
+/** The blank row's explanation, insisting there is one — a `null` here is the bug being tested for. */
+const reason = (l: RespawnLearning) => untimedReason(l) ?? assert.fail(`no reason for ${l.mob}`);
+
+// ── saying why a camp is blank ─────────────────────────────────────────────────
+// "Not timed yet" was three situations wearing one face, and all three read as the app being broken.
+
+test("a gap thrown out for spanning a difficulty change is counted, not silently dropped", () => {
+  const kills = [
+    kill("Ghoul Lord", 0, { zone: "Lower Guk" }),
+    kill("Ghoul Lord", 900, { zone: "Lower Guk 2 (Adaptive)" }),
+  ];
+  const [learned] = learnRespawns(kills, always);
+  assert.equal(learned.samples, 0);
+  assert.equal(learned.crossedDifficulty, 1);
+  assert.match(reason(learned), /difficulty change/);
+});
+
+test("an implausible gap is not blamed on the difficulty it happens to span", () => {
+  // A fortnight between two kills was never going to teach us anything, so counting it as a cost of
+  // the difficulty rule would be a lie about why the row is blank.
+  const kills = [
+    kill("Ghoul Lord", 0, { zone: "Lower Guk" }),
+    kill("Ghoul Lord", 14 * 24 * 3600, { zone: "Lower Guk 2 (Adaptive)" }),
+  ];
+  const [learned] = learnRespawns(kills, always);
+  assert.equal(learned.crossedDifficulty, 0);
+  assert.match(reason(learned), /Killed once/);
+});
+
+test("a camp with a figure owes no explanation", () => {
+  const [learned] = learnRespawns([kill("Ghoul Lord", 0), kill("Ghoul Lord", 900)], always);
+  assert.equal(learned.samples, 1);
+  assert.equal(untimedReason(learned), null);
+});
+
+test("gaps the player dropped read as dropped, not as never measured", () => {
+  const kills = [kill("Ghoul Lord", 0), kill("Ghoul Lord", 900)];
+  const [learned] = learnRespawns(kills, always, { isDropped: () => true });
+  assert.equal(learned.samples, 0);
+  assert.match(reason(learned), /dropped/);
+});
+
+test("a kill too old to still be counting is refused a clock rather than given a stale one", () => {
+  // `markDead` would count from any past moment and the sweep would prune the result on its first
+  // pass — silently, which is the exact failure this feature exists to end.
+  const grace = OVERDUE_GRACE_SECONDS;
+  assert.equal(killStillCounts(iso(0), 600, T0 + 10_000), true, "ten seconds in");
+  assert.equal(killStillCounts(iso(0), 600, T0 + (600 + grace - 1) * 1000), true, "just inside grace");
+  assert.equal(killStillCounts(iso(0), 600, T0 + (600 + grace) * 1000), false, "grace spent");
+  assert.equal(killStillCounts("not a time", 600, T0), false);
+});
+
+test("a kill seconds old still counts, however short the gap", () => {
+  // Unlike a gap being turned into evidence, this has no floor: a mob killed twenty seconds ago is
+  // the most alive a countdown ever gets, and flooring it at MIN_RESPAWN_SECONDS refused the case
+  // the button is pressed in most often.
+  assert.equal(killStillCounts(iso(0), 600, T0 + 20_000), true);
+});
+
+// ── five defects found by replaying a real 31,000-line log (ADR 0153) ─────────
+
+test("a pet is not a named, whichever way the log names it", () => {
+  // EQ writes an owned creature two ways. `<Owner>`s warder` was already caught; the plain
+  // `<Owner> pet` was not, and put six pets on the board of a real log — one with a learned respawn.
+  const pets = ["Lord Sviir pet", "Orc centurion pet", "fragile pet", "Kainos`s warder"];
+  for (const mob of pets) {
+    const proven = provenNamed([kill(mob, 0), kill(mob, 900)]);
+    assert.equal(proven.size, 0, `${mob} was taken for a named`);
+  }
+});
+
+test("...but a mob whose name merely ends in those letters still counts", () => {
+  // The suffix has to be a whole word, or the guard starts eating real mobs.
+  for (const mob of ["a carpet", "Pettr", "Trumpet"]) {
+    const proven = provenNamed([kill(mob, 0), kill(mob, 900)]);
+    assert.equal(proven.size, 1, `${mob} was mistaken for a pet`);
+  }
+});
+
+test("the pet's owner is still a named in its own right", () => {
+  // Killing "Lord Sviir pet" must not blacklist "Lord Sviir".
+  const proven = provenNamed([kill("Lord Sviir pet", 0), kill("Lord Sviir", 100), kill("Lord Sviir", 700)]);
+  assert.deepEqual([...proven], ["lord sviir"]);
+});
+
+test("a camp nobody has killed says so, rather than claiming one kill", () => {
+  // The row a player types in for a camp they mean to sit at. Every other sentence here is about
+  // kills that happened, and telling them they killed it once is simply untrue.
+  const added = { key: "x|y", mob: "Lord Nagafen", place: "Nagafens Lair", samples: 0, gaps: [], crossedDifficulty: 0 };
+  assert.match(reason(added as RespawnLearning), /Not killed yet/);
+  // One kill is a different sentence, and still the right one.
+  const [once] = learnRespawns([kill("Ghoul Lord", 0)], always);
+  assert.match(reason(once), /Killed once/);
 });

@@ -87,6 +87,28 @@ export function isOwnedName(name: string): boolean {
 }
 
 /**
+ * Is this thing somebody's **pet**, however the log chose to say so?
+ *
+ * EQ writes an owned creature two ways and only one of them is possessive. `<Owner>`s warder` is the
+ * shape `isOwnedName` reads; the other is a plain `<Owner> pet` — `Lord Sviir pet`, `Orc centurion
+ * pet`, `A fragile pet` — and it carries no punctuation at all to give itself away.
+ *
+ * Kept apart from `isOwnedName` rather than folded into it because the two answer different
+ * questions. That one asks *"is this named as belonging to someone"*, which is what attribution
+ * wants; this asks *"is this a pet"*, which is what **classification** wants — and the second form is
+ * a pet without ever naming an owner in a way anything could attribute to.
+ *
+ * Measured on a 31,000-line log: 34 pet deaths written the second way, six of which the article test
+ * then read as nameds and put on the spawn board — one of them with a learned respawn
+ * ([ADR 0153](../../specs/decisions/0153-a-pet-is-not-a-named-and-a-rare-creature-says-so.md)).
+ *
+ * The suffix has to be the **whole last word**: `a carpet` and `Pettr` are not pets.
+ */
+export function isPetName(name: string): boolean {
+  return isOwnedName(name) || /(^|\s)\S.*\spet$/i.test(name) || /^pet$/i.test(name.trim());
+}
+
+/**
  * True if `name` is `owner` or something of theirs — "<Owner>`s warder" (a backtick, not an
  * apostrophe), which is the only ownership the log ever states.
  *
@@ -439,6 +461,9 @@ export function parseCombat(line: LogLine): CombatEvent | null {
       spell: spellName(fade.groups.spell),
       pet: !!fade.groups.pet,
       target: on === SELF ? undefined : on,
+      // The sentence, for the string-file lookup a flavour fade needs. `raw` still carries the
+      // whole line; this is the half that can be matched against a file of sentences.
+      message,
       logId,
       at,
       raw,

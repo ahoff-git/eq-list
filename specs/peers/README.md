@@ -19,13 +19,16 @@ travels peer-to-peer, on request, over that peer's own connection.
     moves when they change. A kind not being shared is **absent**, not zero — the catalogue *is* the
     toggle state.
   - `ask` / `give` — peer-routed (`publish({type:"peer", peer})`). `ask` names a kind and the
-    revision the asker already has; `give` answers with the rows. A `give` with no `rows` means
+    revision the asker already has; `give` answers with the rows. The `items` kind is the one
+    exception to "a kind, whole": nobody wants eleven thousand pages in a message, so its `ask` names
+    a **shard** and its `give` answers with that ~11-page slice
+    ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). A `give` with no `rows` means
     "unchanged", which is kept distinct from a `give` of none (that means "now empty", which
     [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md) reads as an un-share).
   - `SHARE_KINDS` — the table every rule is driven off: label, blurb, family, and a `read` per kind.
     **A kind with no reader cannot be received**, which is how a new kind fails closed rather than
     arriving unchecked.
-- **Three families**, because the rules differ and the table says which a kind is in:
+- **Four families**, because the rules differ and the table says which a kind is in:
   - **authored** (`watches`, `styles`, `lists`, `pins`) — somebody made it. Asked for by a person,
     landed in a tray, **never applied on arrival**. `pins` are the one kind that *also* still
     broadcasts, because the [map](../map/README.md)'s read-only overlay of somebody's live markers is
@@ -36,6 +39,13 @@ travels peer-to-peer, on request, over that peer's own connection.
     filtered out later. Fetched automatically when a peer's `rev` moves.
   - **live** (`timers`, `buffs`, `scores`) — true on somebody else's machine right now. Held in
     memory, dropped when they go, never written to disk.
+  - **mirror** (`items`) — neither made nor observed: a copy of a **third party's public page**, the
+    same for everyone, which anyone could fetch for themselves
+    ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). The **one family applied
+    silently on arrival**, and it may be: there is nothing personal in it, it changes nothing about
+    what the app does, and the alternative to accepting a page is asking eqlwiki the same question a
+    second time. It is also the only family that is *checkable* — a page that looks wrong is
+    re-fetched from the source, and the TTL does that unprompted.
 - **The hub** (`electron/peer-share.ts`) — in main, because main is the only participant always
   running: a hub that answered only while a window was open would drop every ask the moment you
   changed tab. It measures the catalogue on a slow tick (a digest moving *is* the change, so no
@@ -119,8 +129,12 @@ travels peer-to-peer, on request, over that peer's own connection.
 - **No room scoping.** There is one room, `eq-list`, and everything in the catalogue is offered to
   everyone in it. Group- or camp-scoped rooms are not built — see the open question in
   [decisions/README.md](../decisions/README.md).
-- **No bulk transfer.** A `give` is one message. Anything genuinely large — a wiki cache, the game's
-  spell file — would need chunking, and does not have it.
+- **No bulk transfer, still.** A `give` is one message, and nothing here chunks anything. The item
+  catalogue is shared by making the *unit* small enough to fit rather than by splitting a big one:
+  a **shard** is ~11 pages (~15 KB), which is a thing that means something rather than an arbitrary
+  byte range ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). A genuinely large
+  single object — the game's spell file — remains unshareable and would still need the chunking
+  nobody has written.
 
 ## See also
 [architecture](../architecture/README.md) · [map](../map/README.md) ·

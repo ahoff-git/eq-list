@@ -71,7 +71,7 @@
  * [electron/buff-tracker.ts](../../electron/buff-tracker.ts) is the holder that watches the log,
  * persists the choices and raises the alerts.
  */
-import { SELF, spellName } from "./combat-parser";
+import { SELF, isOwnedName, isYours, spellName } from "./combat-parser";
 import { hasArticle } from "./log-parser";
 
 /** The target of a buff on you. Folded to one spelling, since the log writes "you" three ways. */
@@ -196,9 +196,16 @@ export interface KnownBuff {
    * explaining, and because the behaviour genuinely differs: a debuff's reminder is instant and dies
    * with the fight. False also means "we could not tell", which happens with no game install — the
    * target then has to answer it instead (`isEnemyTarget`).
+   *
+   * A row that is `detrimental` is always also `mine`: a debuff earns a row only on evidence you cast
+   * it, since one cast *at* you is nothing you can put back on (`worthWatching`).
    */
   detrimental: boolean;
-  /** We have seen *you* cast it, as opposed to only ever receiving it. */
+  /**
+   * We have seen *you* cast it, as opposed to only ever receiving it.
+   *
+   * For a buff this is colour on the row. For a **debuff** it is the whole of why the row exists.
+   */
   mine: boolean;
   /** How many times we've watched it go up. A rough "is this one you actually maintain". */
   rises: number;
@@ -242,13 +249,28 @@ export function buffKey(spell: string): string {
  * The log writes you as `You`, `YOU` and `your`, and a reflexive target ("worn off of yourself") is
  * still you — `combatant` already folds the first three and `matchFade` already folds the reflexive,
  * so this is one more place agreeing with them rather than a fourth opinion.
+ *
+ * **And it folds your own name and your pet's**, which is the half that was missing. The two lines
+ * about one buff on your pet do not name it the same way:
+ *
+ *     Kainos`s warder's skin sprouts thorns.        the landing — the pet, by name
+ *     Your Shield of Barbs spell has worn off.      the fade — "your pet", named for nobody
+ *
+ * Left unfolded those are two `instanceKey`s, so the buff went up under one and came down under the
+ * other: the rise sat in "Up now" for ever and the fade arrived as an orphan beside it, the same
+ * buff in both lists at once ([ADR 0156](../../specs/decisions/0156-a-pet-is-one-target-not-two.md)).
+ *
+ * `player` is what makes it answerable — `<Owner>`s warder` is the only ownership the log states, and
+ * without a name to compare it to a group-mate's pet reads exactly like yours. Blank means unknown,
+ * and an unknown owner folds nothing: two rows about one pet is a wart, and merging somebody else's
+ * pet into yours would be a lie.
  */
-export function buffTarget(target: string | undefined, pet = false): string {
-  if (pet) return ON_PET;
+export function buffTarget(target: string | undefined, player = ""): string {
   const trimmed = (target ?? "").trim();
   if (!trimmed) return ON_YOU;
   if (/^(?:you|your|yourself|myself)$/i.test(trimmed)) return ON_YOU;
   if (trimmed === SELF) return ON_YOU;
+  if (player && isYours(trimmed, player)) return isOwnedName(trimmed) ? ON_PET : ON_YOU;
   return trimmed;
 }
 
@@ -299,6 +321,29 @@ export function narrowCandidates(
 }
 
 /**
+ * Was this a debuff **on your own side** — you, or your pet?
+ *
+ * The direction `isEnemyTarget` cannot express, and the gap it left. That function answers "is this
+ * about a mob", and it puts you and your pet firmly on the *not a mob* side — correctly, so that a
+ * mis-flagged spell can never sweep away your own reminders. But "not a mob" is then read as "one of
+ * your buffs", and for a **debuff** that is exactly backwards:
+ *
+ *     Your pet's Root spell has worn off.
+ *
+ * is a root somebody put **on your pet**, and the board turned it into a standing "you are missing
+ * this" plus a banner to go and fix it. There is nothing to fix; it wore off, which is the good
+ * outcome. Forty-five of them in one month's log.
+ *
+ * The same rule [ADR 0149](../../specs/decisions/0149-a-debuff-is-only-tracked-if-it-is-yours.md)
+ * applies to the *spell*, applied to the **instance**: a debuff is only a reminder when it is aimed
+ * away from you. You can own the spell and still not own this one landing
+ * ([ADR 0158](../../specs/decisions/0158-a-debuff-on-your-own-side-is-not-a-reminder.md)).
+ */
+export function doneToYou(spell: { detrimental?: boolean }, target: string): boolean {
+  return !!spell.detrimental && (target === ON_YOU || target === ON_PET);
+}
+
+/**
  * Was this on **something you were fighting**?
  *
  * The one question that splits this feature in two, and it has to be answerable without a duration,
@@ -317,6 +362,40 @@ export function isEnemyTarget(target: string, detrimental: boolean): boolean {
   if (target === ON_YOU || target === ON_PET) return false;
   if (detrimental) return true;
   return hasArticle(target);
+}
+
+/**
+ * Is this spell one the board should keep a row for at all?
+ *
+ * A **beneficial** spell always is: the whole feature is "what am I missing", and anything that was
+ * up on you or on somebody you buffed is an answer to it.
+ *
+ * A **detrimental** one only is if it is **yours**. A debuff is not something that happens *for* you,
+ * it is something somebody does *to* a target, and the two directions are not symmetrical:
+ *
+ *  - A root or a snare **you** cast is a thing to put back on — that is the reminder that has to
+ *    arrive the second it drops, and it is the reason debuffs are here at all.
+ *  - A debuff on **you, your pet, or a group-mate** was cast by whatever you are fighting. There is
+ *    nothing to recast, and a standing "you are missing Cripple" over your own head is the app
+ *    reading a thing done to you as a thing you failed to keep up.
+ *
+ * Which makes "yours" the whole of the question, and it is answered by evidence rather than by
+ * inference: **we saw you cast it**. The alternative — asking the spell file which classes may cast
+ * it — needs the player's class, which nothing here knows, and would still be a claim about a
+ * character rather than about what happened.
+ *
+ * And an **instant** spell is never one, whoever cast it. A direct heal, a gate, a cancel: it has no
+ * duration, so it cannot lapse, so a row for it is a promise the board can never keep — it goes "up"
+ * on its landing sentence and stays there for the rest of the session. This is the gate that keeps
+ * the panel a list of things you are keeping up rather than a log of everything you have ever cast
+ * at anybody ([ADR 0157](../../specs/decisions/0157-an-instant-spell-is-not-a-buff.md)).
+ *
+ * Stated here, pure, because it is a *rule* and not a piece of bookkeeping: the tracker supplies the
+ * evidence, and this says what the evidence means.
+ */
+export function worthWatching(spell: { detrimental?: boolean; instant?: boolean }, yours: boolean): boolean {
+  if (spell.instant) return false;
+  return !spell.detrimental || yours;
 }
 
 /** When a lapse should interrupt the player, if ever. */
@@ -379,9 +458,9 @@ export function shouldHold(known: KnownBuff | undefined, reason: BuffLapseReason
  *
  * Everything defaults to on. That is the opposite of a spawn timer's `notify`, and deliberately: a
  * timer is created by *killing* something, which you do hundreds of times an evening to things you
- * are not camping — while a buff row is created by casting a buff or being given one, which is
- * already the set you care about. Enrolling silently would mean the feature did nothing until the
- * player found and ticked twenty boxes.
+ * are not camping — while a buff row is created by casting a buff, being given one, or having a
+ * debuff **of your own** wear off, which is already the set you care about. Enrolling silently would
+ * mean the feature did nothing until the player found and ticked twenty boxes.
  */
 export function newKnownBuff(
   spell: string,

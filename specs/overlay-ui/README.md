@@ -297,7 +297,28 @@ list, hunt, search, damage, session, peers, settings.
     so the lower bound is theirs to set and is never inferred. With no padding (the default) the
     window never opens and the row behaves as a plain countdown. The player can also type their own
     interval (which nothing observed overwrites), **relearn** a mob to throw away what was measured,
-    or say something isn't a named at all. **Mark UP** is the important one
+    or say something isn't a named at all. **A timer can also be built from a kill you already
+    made** ([ADR 0151](../decisions/0151-a-timer-can-be-built-from-a-kill.md)): the add form opens
+    with a picker over the kill log — mob, place, how long ago — and picking one settles the "is this
+    a mob" question with proof rather than guessing off the log tail, then counts the countdown from
+    **when it actually died** rather than from the click. Refused where that clock would already be
+    spent, which sets the figure and says so instead of filing a timer the sweep prunes on sight. And
+    a row with no figure now says *which* blank it is — killed once, gaps you dropped, or gaps the
+    difficulty rule ate — since all three used to read as the app being broken.
+    **An alert arms itself once you are visibly camping** ([ADR 0152](../decisions/0152-a-camp-arms-its-own-alert.md)):
+    two kills of one camp in one sitting, after which the row says `· camping` for as long as the app
+    is the one answering. Off stays off — `notify(key, false)` is stored, and only a camp nobody has
+    decided about may arm itself. And a **gap** stops teaching past three hours
+    (`MAX_LEARNED_GAP_SECONDS`), because past that it describes the player's evening rather than the
+    mob; a *deliberate* observation — "it's up", "not up yet" — keeps the twelve-hour ceiling, and a
+    figure you type keeps none, which is how a genuinely long timer is reached.
+    Five defects found by replaying a real 372,000-line log are fixed in
+    [ADR 0153](../decisions/0153-a-pet-is-not-a-named-and-a-rare-creature-says-so.md): a **pet** is
+    refused under both spellings the game uses (`<Owner>`s warder` *and* the plain `<Owner> pet`,
+    which had six pets on the board); a consider is stripped of `- a rare creature -` before the name
+    is taken, which had been costing every sighting of exactly the mobs worth timing; a **difficulty
+    change** is now noticed per *place* and from disk, so neither a restart nor an errand in between
+    can hide a repop; and a camp nobody has killed says so instead of claiming one kill. **Mark UP** is the important one
     ([ADR 0097](../decisions/0097-a-sighting-is-the-tightest-evidence-there-is.md)): it ends the
     countdown *and* records `R ≤ now − killedAt`, which is the tightest bound the app can get,
     because unlike a kill gap it excludes the time spent reaching and killing the mob. Such a row
@@ -421,6 +442,43 @@ list, hunt, search, damage, session, peers, settings.
     card its **zone** is clickable (opens the map there) and any **coordinate** in its
     Location (e.g. "(1555, -2410)", EQ y,x) opens the map at that zone and drops a marker
     pin (`map.openAt` with a loc). Out-of-era results are badged, with a "hide out of era" toggle.
+  - `ItemSearchPanel` — the **Items tab**: the same drawer opened from the other side. Search finds
+    the page for a name you have; this finds the name for a *shape* you want — "the best thing I
+    could wear on my fingers" — over every item page already cached
+    ([ADR 0152](../decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md)).
+    - **A strip on top says how full the catalogue is, and fills it** (`CatalogueHarvest`). Searching
+      by stat only works over items we hold, and that was ~290 of the wiki's **11,136** — so the strip
+      shows the fraction, and a button trickles the rest down one page at a time
+      ([ADR 0153](../decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)). The pace is
+      offered in hours rather than milliseconds ("Gentle — ~3h"), it names the page in flight while it
+      runs, and Stop keeps the place. The run lives in **main**, so it survives leaving the tab; this
+      component only watches (`useHarvest`), and the catalogue is re-read when a run *ends* rather
+      than on each of eleven thousand progress events. **The room's coverage is drawn as a second,
+      fainter bar behind your own** ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)):
+      a newcomer to a room that has done the work sees a nearly-full pale bar behind an empty solid
+      one, and is told *before* pressing anything that filling will come mostly from peers rather than
+      from the wiki. While running, the note says whether the current page is coming from the wiki or
+      from a peer, and the totals are kept apart for the same reason.
+    - **The corpus is the cache**, merged from `wiki.cachedItems()` and `lucy.cachedItems()`
+      (`itemCatalog`, wiki winning a name collision, Lucy's rows badged). Nothing fetches: the
+      catalogue is what you have already opened and the footer says how big it is. Read once per
+      mount (`useItemCatalog`) — opening the tab is the refresh.
+    - **Criteria are subtractive.** A name box (literal word match, not the fuzzy one — fuzz here
+      would let a criterion *add* rows), six `FacetPicker` dropdowns (slot / class / race / source /
+      zone / flag, several ticks in one being an *or*), stat floors ("INT ≥ 5"), and an
+      *in era only* toggle. Facet options are **derived from the catalogue**, so a picker can never
+      offer a value that returns nothing, and zones appear under one spelling each. A `Clear (n)`
+      button counts what's cutting.
+    - **Value is your own yardstick** (`ItemWeights`): a weight per stat, `{INT: 2, WIS: 1}` making
+      ten wisdom worth five intelligence. Blank means *unweighted*, not zero-weighted, and with none
+      set the Value column is honest about saying nothing. Delay and weight are marked as wanting a
+      negative number.
+    - **Columns follow the question.** A stat earns a sortable column by being weighted or floored;
+      with neither, the card's own numbers show as a line (`statLine`). Every column sorts through
+      the shared `SortHeader`/`nextSort`, a name links in-app (`ItemLink`, hover for the card), and
+      each row carries the same **+ Add** the search results do.
+    - Criteria, weights and sort all persist (`STORAGE_KEYS.item*`) — it is a workbench you come
+      back to, and a weight sheet is a statement about your character rather than a passing filter.
   - `DamagePanel` — the **damage meter** (from `combat-stats.ts` / `combat-history.ts`;
     see [ADR 0014](../decisions/0014-damage-meter-from-the-log.md) and
     [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md)). Two axes:

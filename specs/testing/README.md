@@ -49,6 +49,62 @@ unit-tested.
     including `locText`, where the **order and the rounding are load-bearing**: a coordinate is read
     straight into the game, y first as EQ prints it, and rounded because every position we show is an
     estimate carrying a `±` beside it).
+  - `src/shared/item-stats.ts` → `electron/tests/item-stats.test.ts` (a stat card read as numbers,
+    which is what lets items be searched by what they *are*
+    ([ADR 0152](../decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md)). **Every
+    card line in it is verbatim from the app's own page cache**, the same rule the log parsers
+    follow and for the same reason — this parser's whole job is surviving markup written by many
+    hands over many years. The two that shaped it lead: `Skill: 1H Slashing Atk Delay: 26`, where a
+    general "anything before a colon" reader invents a stat called `Slashing Atk Delay` and silently
+    loses every weapon's delay, and a card that never mentions a stat, which must leave it
+    **absent** rather than zero. Then the fold-ups a corpus of many vintages needs: `ALL except NEC
+    WIZ MAG ENC` expanded to the twelve classes that *can* use it, three spellings of one flag
+    becoming one flag, the off-hand's live typo landing on the real slot, and a slot written as a
+    bare unlabelled line still counting as one. Two refusals are pinned: an effect's name never
+    flags the item, and its casting time is never read as a stat.)
+  - `src/shared/item-search.ts` → `electron/tests/item-search.test.ts` (what a criterion may do, and
+    what a value weight means. The promise that everything rests on is pinned twice over: **a
+    criterion may only ever remove rows** — including the case that would catch a "helpful"
+    widening, where a stat floor asked of a card silent on that stat has to *fail* — and several
+    ticks in one facet being an *or* while two facets are an *and*. The request's own example is
+    pinned as written: INT worth 2 and WIS worth 1 makes ten wisdom exactly level with five
+    intelligence. Then the joins: `Class: ALL` answering a warrior, two spellings of one zone being
+    one filter option, the wiki's copy of an item beating Lucy's, and a grade not arriving as a
+    second item.)
+  - `electron/wiki/harvest.ts` → `electron/tests/wiki-harvest.test.ts` (the catalogue trickle's
+    **schedule**, not its network — every dependency is injected, so the suite runs in milliseconds
+    where the real thing runs for three hours
+    ([ADR 0153](../decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)). What is pinned is
+    everything that makes a long fetch against someone else's server defensible: that it waits
+    *between* pages and not after the last one, that a page we already hold costs **no request and no
+    wait** (the reason re-running is cheap), that it resumes from the checkpoint rather than starting
+    over, that `restart` throws that place away, and that `stop` finishes the page in flight and
+    begins no other — leaving `idle` rather than `done`, so the panel offers Resume. Three refusals
+    matter as much: a broken page is recorded and the run carries on, a second `start` while running
+    is a no-op rather than a second crawl, and an empty roster is a reported **error** rather than a
+    run that instantly "succeeded".) Since
+    [ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md) it also pins the **sharing**: a
+    shard a peer holds is *asked for* and never fetched, a peer who doesn't answer costs exactly one
+    ask before the wiki is used, a shard the room is visibly working on is left alone while its owner
+    keeps publishing, and that same claim is **taken over** once they go quiet. One case earned its
+    place by hanging the suite: a shard containing a page eqlwiki will not serve can never be
+    *complete*, so the planner handed it back for ever — it is now abandoned after one pass.
+  - `src/shared/item-shards.ts` → `electron/tests/item-shards.test.ts` (how a room divides the
+    catalogue, [ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). Two properties carry
+    the feature and both are pinned rather than argued about: a shard is a **property of the title**,
+    so two installs that never speak still agree about it (the fold — case, spacing, padding, and
+    nothing else — is pinned separately, because a peer folding differently would disagree with
+    everyone); and **peers with identical information pick different work**, without which every peer
+    takes the lowest gap and the room fetches one shard N times. That second one is asserted as a
+    *distribution* over thirty ids rather than as "these two differ" — two ids really do collide
+    about 1.6% of the time, which costs one duplicated shard and is fine, whereas everyone agreeing
+    is fatal. It caught a real bug: FNV-1a alone avalanches badly enough that 200 ids picked only 25
+    of 64 shards, so the rank carries a MurmurHash3 finalizer. The refusals matter too — a claim from
+    a peer who has gone quiet **expires**, a peer who won't answer stops being asked and the shard
+    falls through to the wiki, a malformed coverage bitmap reads as "they hold nothing" rather than
+    throwing, and a peer's shards outside our roster can't inflate the room's figures.
+  - `electron/wiki/harvest.ts` → `electron/tests/wiki-harvest.test.ts` — see below; it now covers the
+    sharing as well as the schedule.
   - `src/shared/known-items.ts` → `electron/tests/known-items.test.ts` (the vocabulary of things you
     have actually **held**, which is what search offers when eqlwiki's index can't answer
     ([ADR 0103](../decisions/0103-search-can-answer-from-your-own-log.md)). The case that produced it
@@ -525,7 +581,13 @@ unit-tested.
     so the parser reads the header row), a 416-row list capped as a *selection* with the true total
     kept, a zone-suffixed mob name (`a gnoll pup - Blackburrow`) reduced to what the log prints, and
     the cookie-refusal page recognised as **not an answer** rather than cached as a nameless item
-    ([ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md)).
+    ([ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md)). The same file also pins
+    `parseItemNameList` — Lucy's published `itemlist.txt.gz`, the one thing that site hands out in
+    bulk ([ADR 0154](../decisions/0154-lucy-s-own-name-list-is-worth-holding.md)). It is CSV written
+    by `Text::CSV_XS`, so the two cases that decide whether this may be a `split` are the tests: a
+    name carrying a **comma** (`Bag of the Tinkerers, Improved`) surviving whole, and a **doubled
+    quote** coming back single. The header row and any malformed line are dropped rather than
+    becoming nameless items.
   - `src/shared/lucy-era.ts` → `electron/tests/lucy-era.test.ts` (whether a Lucy item could exist on
     this server at all, derived from its zones since that site has no era field). **Every zone string
     in it is copied off a real Lucy page** — the module exists because of how that site happens to

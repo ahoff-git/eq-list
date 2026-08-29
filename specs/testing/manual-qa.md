@@ -1017,3 +1017,222 @@ full-screen (windowed or borderless) game running behind it.
   **not** also list "Spawn timer" by name; 🎨 with the blank chosen must edit that same look.
 - **The preview lands.** ▶ Preview alert inside one of these drawers should put a sample banner on
   the overlay wearing the look being edited.
+
+## A debuff is only yours (ADR 0149)
+
+The gate is unit-tested; what isn't is which real log lines reach it. Wants a session where things
+are casting at you.
+
+- **A debuff cast at you leaves no trace.** Get crippled, slowed or snared by a mob, let it wear off,
+  and confirm the Buffs tab grows **no row** for it — not a silenced one, none — and that nothing
+  appears on the overlay.
+- **Your own still works.** Snare or root something, let it wear off mid-fight: the banner should be
+  immediate, the standing row should appear, and both should go when the fight ends.
+- **And it says whose it is.** That spell's row under *Spells* should read **yours**, not "cast on
+  you", and carry the `debuff` tag.
+- **It survives the gap between cast and fade.** Snare something, zone, come back, let it wear off —
+  the row should still appear. (`pending` is cleared at a zone line and must not be what answers this.)
+- **Old rows are gone once.** If a `buffs.json` from an earlier build has debuff rows for things cast
+  at you, they should be absent after one launch and the file rewritten — and your own debuffs should
+  come back on the next cast-and-fade rather than staying missing.
+
+## Zoning ends a debuff (ADR 0150)
+
+- **A debuff does not follow you.** Snare something, let it wear off so the standing row appears,
+  then zone. The row should be gone the moment you land.
+- **Your buffs do.** With buffs up, zone: *Up now* should be unchanged, holding the same "up for"
+  figures rather than restarting them.
+- **A debuff on you goes too.** Get slowed or crippled, zone before it wears off, and confirm nothing
+  about it appears afterwards — EQ strips it at the line, so there is nothing to report.
+- **The spell keeps its row.** After all of the above, the *Spells* list should still hold Snare with
+  its ticks as you left them.
+
+## A timer built from a kill (ADR 0151)
+
+Everything here is unit-tested and was verified by replaying a real store (4,559 kill records) through
+the tracker; what has not been done is the clicking. Wants an evening at a camp.
+
+- **The picker offers what you killed.** Spawn tab → *Add a timer* → the *From a recent kill* box.
+  It should list the mobs you have actually killed, newest first, each with its place and how long ago
+  — including ones the article test hasn't settled, and including the mob you killed a minute ago.
+- **Picking fills the form and says Mob.** Name, place and the **Mob** toggle should all be set from
+  the kill, without typing. The hint under the form should name the kill it will count from.
+- **The countdown starts from the kill, not the click.** Pick something you killed a few minutes ago,
+  give it an interval, Add — the row under *Coming up* should already be that few minutes in. This is
+  the one thing to actually watch: a full interval on the clock means the moment isn't reaching
+  `markDead`.
+- **A stale kill sets the figure and no clock.** Pick something you killed days ago. The hint should
+  say so, and the result should be a row under *What we've learned* carrying the figure with **nothing**
+  under *Coming up* — then killing it should start the clock.
+- **A learned camp keeps its history.** Pick a camp that already has measured gaps and give it a
+  figure. Its gaps, sightings and padding should all survive, and it should **not** gain a *Remove*
+  button — only *Not a named…*.
+- **A blank row says why it's blank.** A named you have killed once should read *not timed yet* with
+  "Killed once…" under it. One whose gaps all spanned a difficulty change should say that instead —
+  worth checking after an evening of switching instance difficulty, which is where it came from.
+
+## Searching items by what they are (ADR 0152)
+
+Every rule is unit-tested and the parser was run over the whole real page cache (290 items, 269 with
+numeric stats, and the facets it derives — 18 slots, 16 classes, 122 zones, 9 flags — all read
+correctly). What has not been done is the clicking, in a real window at a real width.
+
+- **The tab opens onto the whole catalogue.** Items tab → a table of everything you've opened, sorted
+  by name, with the card's own numbers in the Stats column. The line beside *Value weights* should
+  say how many of how many, and it should be the number of item pages you've actually visited.
+- **A criterion only ever cuts.** Tick a slot; the count falls. Tick a second slot in the same
+  dropdown; it rises again but stays under the unfiltered total. Add a class, then a stat floor —
+  each one should only ever take rows away, and `Clear (n)` should count them.
+- **The weight sheet is the ranking.** Open *Value weights*, put 2 against INT and 1 against WIS,
+  sort by Value: an item with 5 INT should sit level with one with 10 WIS. Clear the weights and the
+  Value column should go back to `—` rather than to some default order.
+- **Less-is-better needs a sign.** Put `-0.5` against Weight and confirm the heaviest items sink.
+  The boxes for Delay and Weight show a `−` placeholder; check the hover says why.
+- **A stat floor cuts the silent card.** Set `INT ≥ 5`. Quest items with no stats at all must
+  *disappear*, not sit at the bottom with a zero — that's the rule the whole filter rests on.
+- **The columns follow the question.** With no weights and no floors there should be one Stats
+  column of text; weight a stat and it should become its own sortable column, in card order.
+- **It fits a narrow window.** Drag the window in to about half width: the criteria row should wrap
+  rather than push controls off the edge, and a facet menu opened near the right edge should still be
+  readable. Worth checking at 90% and 130% interface scale too.
+- **The joins still work from here.** An item name should hover for its card and open its page
+  (landing on the Search tab); **+ Add** should put it on the list and raise the usual toast; a Lucy
+  row should be badged and should never outrank the wiki's copy of the same name.
+- **It comes back as you left it.** Set some criteria and weights, switch to List, come back — all
+  of it should still be there, and still be there after restarting the app.
+
+## Filling the item catalogue (ADR 0153)
+
+The schedule is unit-tested with injected fakes, and a real 12-second run against the live wiki was
+watched end to end: roster 11,136, nine pages fetched at the 1s pace, cards parsed, checkpoint
+written, and a resume that picked up at 9 rather than starting over. What has not been done is the
+**long** run, or the clicking.
+
+- **It says what it will cost before it starts.** Items tab → the strip on top should read
+  "N items cached" with the pace picker beside it. Pick a pace and confirm the label is in hours.
+- **It runs, visibly.** Press *Fill the catalogue*: the bar should move, the note should name the page
+  in flight, and the ETA should count down. Leave the tab and come back — it should still be running,
+  because the run lives in main, not in the panel.
+- **Stop keeps the place.** Press Stop mid-run: it should finish the page in flight, say
+  "Stopped at N of 11,136", and the button should become *Resume filling*. Resume and confirm it
+  carries on rather than starting from the top.
+- **It survives a restart.** Stop, quit the app, reopen it, go to Items — the strip should offer
+  *Resume filling* from where it was.
+- **A second run is cheap.** Once filled, press *Check for new items*: it should race through the
+  roster (no gap on cached pages) and finish in seconds with a large "already held" count.
+- **The catalogue actually grew.** After a run, the count in the strip and the total in the filter
+  line should both be in the thousands, and a stat search (say `AC ≥ 20`, slot CHEST) should return
+  far more than it did before. Sorting by value should now be over the whole wiki, not your history.
+- **The long run, for real.** The one thing only time can test: leave it going for the full ~3 hours
+  and confirm it finishes, that memory doesn't climb, that the app stays responsive while it runs,
+  and that the failed count stays small. Note what the failures were — a handful is expected, a
+  hundred means something changed.
+- **It is gentle.** Worth one look at the wiki from a browser while it runs: the site should feel
+  entirely normal.
+
+## Lucy's mirrored name list (ADR 0154)
+
+Verified live: the 1.6 MB file downloads, parses to 134,079 names, and `Dragon Dirk` finds
+`Dragoon Dirk` in ~45ms where Lucy's own search finds nothing. Not yet exercised through the UI.
+
+- **A misspelling finds it.** Search tab, with `askLucy` on, for a name neither eqlwiki nor your log
+  knows — misspelled. Lucy's heading should offer sensible hits, where before it offered none.
+- **The first search is the slow one.** On a fresh install the first Lucy search goes over the wire
+  and the mirror downloads behind it; the next should be instant. Confirm nothing blocks visibly.
+- **Turning Lucy off means off.** With `askLucy` unchecked, confirm no mirror download happens and
+  no Lucy results appear.
+
+## A camp arms its own alert (ADR 0152)
+
+Unit-tested and replayed against a real store; the clicking is what's left. Wants an evening at a camp.
+
+- **Two kills, and it speaks.** Sit at a named and kill it twice without touching anything. The row
+  should tick **Notify** by itself and show `· camping` beside it, and the next pop should raise a
+  banner you never asked for.
+- **One kill stays quiet.** Kill a named once on the way past. No tick, no `· camping`, no banner.
+- **Off means off.** Untick a camp you're sitting at, then keep killing it. It must never re-arm, and
+  the `· camping` note should go the moment you touch the box either way.
+- **A login resets the tally.** Kill a named, log out and back in, kill it once more — that is two
+  sittings, so it should still be silent. (Restarting EQ-List does the same.)
+- **A camp with no figure still arms.** A named whose gaps all spanned a difficulty change starts no
+  countdown, but killing it twice should still tick Notify — you are just as much camping it.
+- **First launch after this build**: a camp you had previously switched off may arm itself once, since
+  the old file couldn't tell "off" from "never asked". Turn it off again and it stays off.
+
+## A gap stops teaching after three hours (ADR 0152)
+
+- **An overnight gap teaches nothing.** Kill a named, sleep, kill it in the morning: its figure must
+  not move, and the sample count must not grow.
+- **But it's still "last killed".** That same row's *last killed* should read this morning, and the
+  kill should still be on the map — old kills keep informing location and last-seen.
+- **A long timer is still reachable by hand.** Type 6h on a camp, then mark it **up** five hours after
+  it died: the sighting must be accepted and the figure tighten to 5h. This is the case the two
+  different ceilings exist for — if it's refused, the gap rule has leaked into observations.
+
+## Buff tracking, after the log-replay pass (ADRs 0155–0159)
+
+All five were found by replaying a real 372,004-line log through the real tracker and are covered by
+unit tests. What a replay cannot judge is how the board reads while you play.
+
+- **Your own buffs come down.** The big one (ADR 0155). Get a buff on you, let it wear off, and
+  confirm the row leaves *Up now* and appears as a standing lapse — for a spell that fades with
+  flavour text ("The spirit of wolf leaves you"), not just one that names itself.
+- **A pet buff is one row.** Buff your pet, let it drop, and confirm it does not appear in *Up now*
+  and the missing list at the same time under two names.
+- **A group-mate's pet is still theirs.** Buff someone else's pet: it should get its own row under
+  the pet's name, not merge into yours.
+- **Heals are absent.** Heal a group-mate several times and confirm no `Light Healing` row appears
+  anywhere — and that a heal-over-time you actually maintain still does.
+- **Gate and bind are absent.** Gate, bind, feign: none should enrol.
+- **Nothing nags about a debuff on your side.** Get your pet rooted or yourself snared; when it wears
+  off there should be no banner and no standing row.
+- **`seen up N×` is believable.** Stand next to a bard for a while, then check the *Spells* list: the
+  songs should read in the tens, not the thousands, and the buffs you maintain should not be buried
+  beneath them.
+
+## A room filling the catalogue between it (ADR 0160)
+
+Every rule is unit-tested with injected fakes — the sharding, the planner, the claims, the inbound
+page reader — and the solo harvest was watched against the live wiki. What has **not** happened is
+two real clients in a room, which is the only way to test the half that matters.
+
+- **Two clients, one room, from empty.** On both: Peers tab → switch on *Item pages*. Then press
+  *Fill the catalogue* on both within a few seconds of each other. Watch the strip: they should be
+  fetching **different** pages, and each one's "from peers" count should start climbing. The wiki's
+  total across the pair should end up near 11,136 rather than near 22,000 — worth confirming from the
+  debug log, which names every page fetched.
+- **A newcomer catches up in minutes.** With one client filled, start a *third* install (or clear the
+  other's cache) and open the Items tab. Before pressing anything, the strip should show a pale room
+  bar near full behind an empty solid one, and say peers already hold most of it. Press Fill: it
+  should be almost all "from peers", and finish in minutes rather than hours.
+- **Nothing is duplicated.** While one is mid-shard, the other's note should never name a page the
+  first is currently on. If both idle with "waiting", that is correct behaviour when the only gaps
+  left are claimed — one should pick up within a few minutes.
+- **A peer dropping doesn't strand its shard.** Kill one client mid-run. The other should take over
+  the abandoned shard within ~3 minutes (`CLAIM_TTL_MS`) rather than waiting for ever.
+- **The toggle is real.** With *Item pages* off on the holder, the other client should get nothing
+  from them and fall back to the wiki — no pages should cross.
+- **Pages that arrive are usable.** After taking shards from a peer, search the Items tab by a stat
+  and confirm the peer-sourced items appear with full cards, hover correctly, and open their wiki page.
+- **It is still gentle.** Two clients filling at once is still one request per second *each*; worth
+  one look at eqlwiki in a browser while both run.
+
+## Five spawn-tracking fixes (ADR 0153)
+
+All five were found by replaying a real log and are covered by tests; what wants confirming in game is
+that the log lines really do read as expected on this server.
+
+- **No pets on the board.** After an evening with a pet class in the group, the Timers tab should hold
+  no row ending in "pet" — and the pet's *owner* should still be there in its own right.
+- **Considering a rare named counts as seeing it.** With a countdown running, target the named and
+  consider it. The row should flip to ALIVE, and its figure should become *seen* with the gap since it
+  died. This is the one to watch: it silently did nothing before.
+- **Restart, then change difficulty.** Start a countdown, restart EQ-List, then change instance
+  difficulty. Every mob countdown for that place must go. (Before, it survived.)
+- **Nip out and come back on another difficulty.** Start a countdown, zone to town, then zone back at a
+  *different* difficulty. The countdowns must go. Come back at the **same** difficulty and they must
+  stay.
+- **A timer you made survives a repop.** With both a mob countdown and a plain timer running in one
+  zone, change difficulty: the mob's goes, yours keeps running.
+- **A hand-added camp reads honestly.** Add a mob you have never killed, with no interval. The row
+  should say *"Not killed yet"*, not *"Killed once"*.

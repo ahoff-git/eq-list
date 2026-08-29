@@ -84,6 +84,10 @@ everything else, so this list can stay short enough to read:
     *Gate a shared emote on your own cast* below, and wants the same pending-cast map. Build that one
     first and this rides on it instead of growing a second copy.
 
+- **eqlgs.net is down** (checked 2026-08-28: `HTTP 502 Bad Gateway` at the origin — the host answers,
+  the app behind it doesn't). That blocks the item below, which depends on reading its pages. Worth
+  re-checking before spending any time on it; a 502 is the kind of thing that comes back.
+
 - **An item's era is derived where a neighbour simply states it.** [Lucy](./lucy-data/README.md) is
   in ([ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)) and its one real weakness is the era:
   Lucy has no era or expansion field anywhere, so the verdict is inferred from the zones on its drop

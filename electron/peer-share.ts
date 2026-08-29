@@ -46,6 +46,8 @@ import {
   type ShareOffer,
 } from "../src/shared/peer-share";
 import { PLOTTABLE_CONFIDENCE } from "../src/shared/kill-confidence";
+import { decodeCoverage, type PeerCoverage } from "../src/shared/item-shards";
+import type { SharedItemPage } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
 import type { KillRecord, KnownSpawn } from "../src/shared/types";
 
@@ -108,6 +110,19 @@ const NOTICE_DEBOUNCE_MS = 4_000;
  */
 const ALONE_REJOIN_MS = 5 * 60_000;
 
+/**
+ * The wiki cache, as the share hub needs to see it.
+ *
+ * An interface rather than the client itself, so the hub stays ignorant of eqlwiki and this file
+ * keeps its promise of knowing only about kinds, revisions and peers.
+ */
+export interface ItemShardSource {
+  /** Cheap enough for a minute tick: no page is read to answer it. */
+  status(): { pages: number; cover: string; doing?: number };
+  /** The pages in one shard, ready for the wire. */
+  shard(shard: number): unknown[];
+}
+
 export interface PeerShareHub {
   /** Our own catalogue, as peers see it — what the toggles amount to. */
   offer(): ShareOffer;
@@ -117,6 +132,15 @@ export interface PeerShareHub {
   handle(peerId: string, payload: AwariPayload): boolean;
   /** Ask one peer for one kind, on a person's behalf. Ignores the cooldown — they clicked. */
   ask(peerId: string, kind: ShareKind): void;
+  /** Ask one peer for one **shard** of the item catalogue (ADR 0160). */
+  askShard(peerId: string, shard: number): void;
+  /**
+   * What the room says it holds of the item catalogue — one row per peer offering `items`.
+   *
+   * The planner's whole input. Read rather than pushed, because the harvester asks between shards
+   * and a peer's catalogue may have arrived at any point before that.
+   */
+  itemRoom(): PeerCoverage[];
   /** The roster changed: greet newcomers with our catalogue and drop the departed from the tray. */
   roster(peers: AwariPeer[]): void;
   /** The connection came up or went down. Held, so a window can ask rather than having to have heard. */
@@ -153,10 +177,20 @@ export interface PeerShareDeps {
   changed: () => void;
   /** Somebody is newly offering something worth going to look at (ADR 0143). */
   offered: (notice: PeerOfferNotice) => void;
+  /** Take item pages a peer handed us into the page cache. Returns how many were new. */
+  acceptItems?: (pages: SharedItemPage[], shard?: number) => number;
   /** Leave the room and join again — the owner window's job, relayed by `ipc.ts`. */
   rejoin: () => void;
   /** What we'd share, per kind — the app's own data, read only when asked for. */
   sources: Record<ShareKind, () => unknown[]>;
+  /**
+   * The item catalogue, which is the one kind that cannot be read as "all its rows".
+   *
+   * Eleven thousand pages is neither measurable on a minute tick nor sendable in a message, so this
+   * kind is addressed by **shard**: a cheap status for the catalogue line, and ~11 pages when
+   * somebody asks for one ([ADR 0160](../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
+   */
+  items?: ItemShardSource;
   now?: () => number;
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (handle: unknown) => void;
@@ -175,6 +209,8 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   const asked = new Map<string, number>();
   /** Their catalogues, so an automatic fetch can tell "changed" from "same as last time". */
   const offers = new Map<string, ShareOffer>();
+  /** When each catalogue landed — the clock a shard claim expires against. */
+  const offerAt = new Map<string, number>();
   /** Peers as the roster last described them — where a name and a session id come from. */
   const known = new Map<string, AwariPeer>();
   /** The connection, as the owner window last reported it. Held so a late window can ask for it. */
@@ -205,6 +241,10 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
    * peer comparing revisions can trust the direction even across our restarts within a session.
    */
   function measure(kind: ShareKind): { rows: unknown[]; rev: number } {
+    // `items` is never materialised: there are eleven thousand of them and the catalogue line is
+    // built from `itemStatus()` instead (see `offer`). Measuring it would read the whole page cache
+    // off disk once a minute to produce a number nobody reads.
+    if (kind === "items") return { rows: [], rev: itemRev() };
     const rows = kind === "pins" ? pins : safely(kind, deps.sources[kind]);
     const digest = `${rows.length}:${JSON.stringify(rows).length}`;
     const held = measured.get(kind);
@@ -216,6 +256,38 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     measured.set(kind, next);
     return next;
   }
+
+  /**
+   * Our own catalogue coverage, cached between ticks.
+   *
+   * Cheap by contract (the wiki client keeps the bitmap in memory), but it is read on every offer
+   * and every ask, and the revision has to move when — and only when — the coverage does.
+   */
+  let itemsHeld: { pages: number; cover: string; doing?: number } | null = null;
+  let itemsCover = "";
+  let itemsRev = 0;
+
+  function itemStatus(): { pages: number; cover: string; doing?: number } | null {
+    if (!deps.items) return null;
+    try {
+      itemsHeld = deps.items.status();
+    } catch (e) {
+      log.debug("could not read the item catalogue -", (e as Error).message);
+      return itemsHeld;
+    }
+    // The revision follows the *coverage*, not the page count: a page re-fetched on its TTL changes
+    // the count and nothing a peer would want to re-ask about.
+    if (itemsHeld.cover !== itemsCover) {
+      itemsCover = itemsHeld.cover;
+      itemsRev++;
+    }
+    return itemsHeld;
+  }
+
+  const itemRev = (): number => {
+    itemStatus();
+    return itemsRev;
+  };
 
   /** A source that throws must not take the catalogue down with it — an empty kind is a fine answer. */
   function safely(kind: ShareKind, read: () => unknown[]): unknown[] {
@@ -234,6 +306,14 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     // "I share none" and "I don't share this" must not look alike (ADR 0141).
     for (const spec of SHARE_KINDS) {
       if (!sharing(settings.share, spec.key)) continue;
+      if (spec.key === "items") {
+        const held = itemStatus();
+        if (!held) continue;
+        // The coverage bitmap *is* the coordination channel — 256 characters of hex, in a message
+        // the room was already sending every minute (ADR 0160).
+        catalogue.items = { n: held.pages, rev: itemRev(), cover: held.cover, doing: held.doing };
+        continue;
+      }
       const { rows, rev } = measure(spec.key);
       catalogue[spec.key] = { n: rows.length, rev } satisfies ShareEntry;
     }
@@ -275,6 +355,16 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     const settings = deps.getSettings();
     if (!sharing(settings.share, ask.what)) return void log.debug("ask refused - not sharing", ask.what);
 
+    // A shard, not a kind: "send me every item page you have" is not a request anybody can answer,
+    // so this one names the slice it wants and gets that.
+    if (ask.what === "items") {
+      if (ask.shard === undefined) return void log.debug("items ask ignored - no shard named");
+      const rows = deps.items?.shard(ask.shard) ?? [];
+      deps.send({ kind: AWARI_MSG.give, what: "items", rev: itemRev(), from: deps.getName(), shard: ask.shard, rows }, peerId);
+      log.debug("gave items shard", ask.shard, `(${rows.length} pages)`, "to", peerId);
+      return;
+    }
+
     const { rows, rev } = measure(ask.what);
     // "Nothing changed since the revision you have" is a real answer, and a cheap one — `rows`
     // absent says it, which `readGive` keeps distinct from an empty list (that means "now empty").
@@ -312,6 +402,17 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     if (give.stale) return void log.debug("give unchanged:", give.what, "from", peerId);
 
     const spec = shareKind(give.what);
+    if (spec?.family === "mirror") {
+      // Straight into the page cache, without a tray and without anybody clicking. It is the one
+      // family that may: these are copies of eqlwiki's own public pages, identical for everyone, and
+      // the alternative to accepting one is asking eqlwiki the same question a second time. They are
+      // still read through `readSharedPage` first, and they still expire on our TTL — so a page a
+      // peer got wrong is corrected by the source, on its own
+      // ([ADR 0160](../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
+      const taken = deps.acceptItems?.(give.rows as SharedItemPage[], give.shard) ?? 0;
+      log.debug("took", taken, "of", give.rows.length, "item pages from", peerId, "shard", give.shard);
+      return;
+    }
     if (spec?.family === "observation") {
       // Straight into the existing pipeline, contributor id and all — pulling rather than being
       // pushed changed the transport and nothing about the trust model (ADR 0141). The id rides on
@@ -358,6 +459,9 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     }
     const before = offers.get(peerId);
     offers.set(peerId, catalogue);
+    // When it arrived, which is what a shard claim's TTL is measured against: a peer who stopped
+    // publishing has stopped working, and their claim must not hold a shard for ever (ADR 0160).
+    offerAt.set(peerId, now());
     if (!deps.getSettings().connectPeers) return;
     noteWorthTelling(peerId, newlyOffered(catalogue, before));
     for (const spec of SHARE_KINDS) {
@@ -505,6 +609,32 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       }
     },
     ask: (peerId, kind) => askFor(peerId, kind, true),
+
+    askShard(peerId, shard) {
+      // No cooldown and no revision: a shard is asked for once, by the planner, because it worked
+      // out that this peer has something we don't. Repeating it would mean the planner was wrong,
+      // and a rate limit would only hide that.
+      deps.send({ kind: AWARI_MSG.ask, what: "items", shard }, peerId);
+      log.debug("asked", peerId, "for item shard", shard);
+    },
+
+    itemRoom() {
+      const room: PeerCoverage[] = [];
+      for (const [peerId, catalogue] of offers) {
+        const entry = catalogue.items;
+        if (!entry?.cover) continue;
+        room.push({
+          peerId,
+          have: decodeCoverage(entry.cover),
+          doing: entry.doing,
+          // The catalogue's arrival time is what a claim's TTL is measured from — a peer who has
+          // gone quiet stops holding a shard reserved (`CLAIM_TTL_MS`).
+          at: offerAt.get(peerId) ?? 0,
+        });
+      }
+      return room;
+    },
+
     noteStatus(next) {
       status = next;
       // A join that has only just landed has had no chance to meet anybody, so the loneliness clock
@@ -516,6 +646,7 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       if (!next.connected) {
         known.clear();
         offers.clear();
+        offerAt.clear();
         pendingNotices.clear();
       }
     },
@@ -529,7 +660,11 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       if (peers.length) lastCompany = now();
       known.clear();
       for (const peer of peers) known.set(peer.peerId, peer);
-      for (const peerId of [...offers.keys()]) if (!here.has(peerId)) offers.delete(peerId);
+      for (const peerId of [...offers.keys()]) {
+        if (here.has(peerId)) continue;
+        offers.delete(peerId);
+        offerAt.delete(peerId);
+      }
       // A notice about somebody who left before it went out would point at a row that isn't there.
       for (const peerId of [...pendingNotices.keys()]) if (!here.has(peerId)) pendingNotices.delete(peerId);
       // A newcomer has missed every catalogue we published, so publish again — the same argument
@@ -621,5 +756,8 @@ export function shareSources(context: {
     timers: () => context.spawns.view().running,
     buffs: () => context.buffs.view().active,
     scores: () => context.scores.board().scores,
+    // Addressed by shard, never as a whole (see `PeerShareDeps.items`). Present so the table has no
+    // hole in it, and never called.
+    items: () => [],
   };
 }

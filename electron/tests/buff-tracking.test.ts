@@ -48,7 +48,11 @@ test("every way the log writes you folds to one target", () => {
     assert.equal(buffTarget(said), ON_YOU, `“${said}” should be you`);
   }
   // The pet flag wins outright: the log never names the pet in that sentence.
-  assert.equal(buffTarget("anything", true), ON_PET);
+  // Your own pet and your own name fold; a stranger's pet does not — there is nobody to fold it to.
+  assert.equal(buffTarget("Kainos`s warder", "Kainos"), ON_PET);
+  assert.equal(buffTarget("Kainos", "Kainos"), ON_YOU);
+  assert.equal(buffTarget("Bloop`s warder", "Kainos"), "Bloop`s warder");
+  assert.equal(buffTarget("Kainos`s warder"), "Kainos`s warder"); // no name known: fold nothing
   assert.equal(buffTarget("Bloop"), "Bloop");
   assert.equal(buffTarget("  a gnoll pup  "), "a gnoll pup");
 });

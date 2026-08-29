@@ -10,6 +10,21 @@ export const STORAGE_KEYS = {
   huntZone: "eqlist.main.huntZone",
   /** Main window: whether the Hunt tab groups by zone or by item. */
   huntGrouping: "eqlist.main.huntGrouping",
+  /**
+   * Main window: the Items tab's three standing answers — what you're narrowing by, what a point of
+   * each stat is worth to you, and which column the results are ordered by.
+   *
+   * All three persist, on the same reasoning as the Hunt tab's zone: this is a workbench you leave
+   * and come back to, and a weight sheet in particular is a statement about your character that
+   * shouldn't have to be retyped every session. Three keys rather than one record, because they are
+   * edited by three different controls and a shared key means each writes its own stale copy of the
+   * other two.
+   */
+  itemCriteria: "eqlist.main.itemCriteria",
+  itemWeights: "eqlist.main.itemWeights",
+  itemSort: "eqlist.main.itemSort",
+  /** Main window: how gently the Items tab fills the catalogue from the wiki (ADR 0153). */
+  itemHarvestPace: "eqlist.main.itemHarvestPace",
   /** Map window: dropped pins. */
   mapPins: "eqlist.map.pins",
   /** Map window: which set of maps to draw — bundled images, or a game maps folder. */

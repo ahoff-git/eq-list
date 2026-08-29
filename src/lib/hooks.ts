@@ -21,6 +21,8 @@ import type {
   AppInfo,
   ItemSource,
   ItemCard,
+  CachedItem,
+  HarvestProgress,
   LucyItem,
   LucySearchResult,
   ShoppingListEntry,
@@ -42,6 +44,7 @@ import {
 } from "@/shared/hunt";
 import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { knownItems, type KnownItem } from "@/shared/known-items";
+import { itemCatalog, itemRows, type ItemRow } from "@/shared/item-search";
 import { clockSkew } from "@/shared/spawn-timers";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
@@ -263,6 +266,16 @@ const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
 const NO_ITEM_SOURCES: ItemSource[] = [];
 const NO_ITEM_DROPS: ItemDropSource[] = [];
 const NO_LOOTED: LootedItem[] = [];
+const NO_CATALOG: CachedItem[] = [];
+const NO_HARVEST: HarvestProgress = {
+  status: "idle",
+  total: 0,
+  at: 0,
+  fetched: 0,
+  fromPeers: 0,
+  failed: 0,
+  shards: { present: 0, mine: 0, room: 0 },
+};
 const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };
 const NO_WATCHER: WatcherStatus = { watching: false };
 const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
@@ -484,6 +497,54 @@ export function useKnownItems(): KnownItem[] {
   );
   const mobs = useAllMobs();
   return useMemo(() => knownItems(looted, mobs), [looted, mobs]);
+}
+
+/**
+ * Every item either cache holds, with its card already read as numbers — the Items tab's corpus.
+ *
+ * Read **once per mount** and not followed. The other item hooks track the log, which changes while
+ * you play; this tracks a page cache, which only changes when you open a page — and re-reading six
+ * hundred files on every kill to notice that nothing had, while a table of them is on screen, is the
+ * kind of refresh that costs more than the staleness it fixes. Opening the tab is the refresh.
+ *
+ * Rows are derived here rather than in the panel so the parse happens once per catalogue rather than
+ * once per keystroke: three hundred cards is nothing to parse and a great deal to parse per letter.
+ */
+export function useItemCatalog(refreshKey?: unknown): { rows: ItemRow[]; loading: boolean } {
+  const { value, loading } = useReading<CachedItem[]>(
+    // Both caches at once. Lucy's is gated at the IPC boundary and answers `[]` when it's switched
+    // off, so nothing here has to ask whether that source is in use.
+    async (a) => {
+      const [wiki, lucy] = await Promise.all([a.wiki.cachedItems(), a.lucy.cachedItems()]);
+      return itemCatalog(wiki, lucy);
+    },
+    NO_CATALOG,
+    [refreshKey],
+  );
+  const rows = useMemo(() => itemRows(value), [value]);
+  return { rows, loading };
+}
+
+/**
+ * How far along the catalogue harvest is — status now, then every step of it as it runs.
+ *
+ * **Subscribed before it is read**, which is the rule `useFollowedRead` exists to state: a run that
+ * finishes between the read being issued and the listener being attached would otherwise leave the
+ * panel showing a progress bar that never moves again.
+ *
+ * Not scoped to the panel's lifetime in any other sense — the harvest runs for hours in main, so
+ * this hook only ever *watches*. Closing the tab does not stop it, which is the point.
+ */
+export function useHarvest(): HarvestProgress {
+  const [progress, setProgress] = useState<HarvestProgress>(NO_HARVEST);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const off = a.wiki.onHarvest(setProgress);
+    void a.wiki.harvestStatus().then((p) => setProgress((held) => (held.status === "idle" && held.total === 0 ? p : held)));
+    return off;
+  }, []);
+  return progress;
 }
 
 /**

@@ -63,6 +63,10 @@ avoidable traffic on someone else's server.
     when the gazetteer gains a newly-opened era.
   - **Nothing fetches unasked.** A search is one request; opening an item is one. `cachedByName` never
     touches the network at all, which is what lets an item page show Lucy's card for free.
+    `cachedItems()` is the same promise asked of the whole directory — a projection of the name index
+    it already builds — so Lucy's items join the Items tab's catalogue without a request
+    ([ADR 0152](../decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md)). Gated by
+    `askLucy` at the IPC boundary like the rest, and every row it contributes is badged as Lucy's.
 - `src/shared/polite-queue.ts` — one at a time, a second apart, and the same question asked once.
   Shared rather than Lucy's own, because it is the shape any borrowed source wants. Not a cache: it
   forgets a key the moment it settles, and the clock is injected so the gap is testable without
@@ -100,10 +104,24 @@ avoidable traffic on someone else's server.
 - **No competing with a wiki page that has a card.** Lucy fills gaps, not columns.
 - **No era resolution for results nobody opened.** The list carries no zones, so judging twelve hits
   would be twelve fetches on the one query shape that is by definition a miss.
-- **No index, no crawl, no mirror.** Lucy is far too large to mirror and the useful thing about it is
-  arbitrary lookup, not coverage. There is therefore no fuzzy search against it either: Lucy's own
-  search is a literal substring match, so a misspelling finds nothing — honest, for a source we can't
-  hold a title list for.
+- **No crawl.** Still true, and the reason is unchanged: Lucy is far too large to walk and the useful
+  thing about it is arbitrary lookup, not coverage.
+  - **But there is now a mirror of one thing — its *names*** — because Lucy publishes them itself.
+    `itemlist.txt.gz` (1.6 MB gzipped, 10.9 MB of CSV, **134,079 rows** of `id,name,lucylink`) is on
+    the site's own downloads page, regenerated daily, needing no session cookie. Holding it means a
+    name search costs Lucy **nothing at all** — stronger than the one request ADR 0124 budgeted — and
+    it makes that search **fuzzy**, which this page previously said was impossible: `Dragon Dirk` now
+    finds `Dragoon Dirk` without asking Lucy about a spelling its literal search would have missed.
+    See [ADR 0154](../decisions/0154-lucy-s-own-name-list-is-worth-holding.md).
+  - Two passes, because they cost differently: a substring scan (a few ms) reproduces Lucy's own
+    answer, and the fuzzy pass runs only when that came up short — narrowed to names sharing the
+    query's first letter, which is the difference between ~1000 ms and ~45 ms of the **main process**.
+  - It is **names only**. Lucy publishes raw dumps for *spells* and none for items, and has no
+    advanced search to ask stats of — the only item control on the whole site is one `searchtext`
+    box. So this can never feed the Items tab's stat search; that is filled from the wiki instead
+    ([ADR 0153](../decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)).
+  - A cold or stale mirror falls back to the network search that always worked, and the download
+    happens behind that first search rather than in front of it.
 - **No spells, quests or NPC pages**, though Lucy has all three. Items are the gap; the rest is not.
 - **No setup-check step yet** — see [todo.md](../todo.md).
 

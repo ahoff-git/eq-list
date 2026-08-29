@@ -406,6 +406,16 @@ export interface BuffFadedEvent extends LogEventBase {
   pet: boolean;
   /** Who it wore off, when the log named someone else. Absent means it was on you. */
   target?: string;
+  /**
+   * The line **without its timestamp** — the sentence, as `spells_us_str.txt` writes it.
+   *
+   * Carried on the event rather than left to the reader to re-derive from `raw`, because this is the
+   * one event whose *text* is a lookup key: a fade on you names no spell, so the only way to
+   * attribute it is to match the whole sentence against the game's own string file. Handing over
+   * `raw` instead — timestamp and all — matches nothing, silently, which is exactly what happened
+   * ([ADR 0155](../../specs/decisions/0155-a-fade-carries-the-sentence-not-the-line.md)).
+   */
+  message: string;
 }
 
 /**
@@ -1258,6 +1268,70 @@ export interface LucySearchResult {
   era: LucyEra;
 }
 
+/**
+ * One item out of a cache, in the shape a **search over all of them** needs.
+ *
+ * A `WikiPage` and a `LucyItem` describe the same thing in two vocabularies, and neither is what an
+ * item search wants to carry three hundred of: the wiki's page brings components and rewards, and
+ * Lucy's brings ids and an era rationale, none of which a results table reads. This is the narrow
+ * intersection — a name, a card, where it comes from — so the catalogue crosses IPC as the four
+ * fields that get looked at, and `item-search.ts` can treat both caches as one corpus.
+ *
+ * `origin` stays, because it is the one thing the two are *not* interchangeable about: eqlwiki
+ * describes an ancestor of this build and Lucy describes a different game
+ * ([ADR 0124](../../specs/decisions/0124-lucy-is-a-second-opinion.md)), and a row has to be able to
+ * say which it is.
+ */
+export interface CachedItem {
+  title: string;
+  /** Which cache this came out of — never hidden, since the two are not equally trusted. */
+  origin: "wiki" | "lucy";
+  /** The wiki page to open, when it was the wiki that had it. */
+  wikiPath?: string;
+  /** Lucy's own item id, when it wasn't. */
+  lucyId?: number;
+  card?: ItemCard;
+  sources: ItemSource[];
+  /** True when the source says this era isn't live yet — the wiki's flag, or Lucy's derived one. */
+  outOfEra?: boolean;
+  /** When the cache last fetched it, so a stale catalogue can say so. */
+  fetchedAt: string;
+}
+
+/**
+ * How far along the item-catalogue harvest is
+ * ([ADR 0153](../../specs/decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)).
+ *
+ * Mirrors `electron/wiki/harvest.ts`'s own progress shape. Declared here rather than imported from
+ * there because this is the renderer's half of the bridge and nothing in `src/` may reach into
+ * `electron/` — the same reason every other main-owned value is restated in this file.
+ */
+export interface HarvestProgress {
+  status: "idle" | "running" | "stopping" | "done";
+  /** How many item pages the wiki's own `Category:Items` lists. 0 before a run has asked. */
+  total: number;
+  /** How many of those titles we now hold — the bar. */
+  at: number;
+  /** Pages fetched from the wiki — the ones that cost it something. */
+  fetched: number;
+  /** Pages taken from peers instead: what the room saved us
+   *  ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)). */
+  fromPeers: number;
+  failed: number;
+  /**
+   * Shards of the catalogue: how many the roster touches, how many we hold, and how many **the room
+   * holds between it**. The last is the figure that says whether being in a room was worth it.
+   */
+  shards: { present: number; mine: number; room: number };
+  /** The page or shard in flight, so a stalled run looks stalled rather than merely quiet. */
+  title?: string;
+  /** Where the current work comes from — a peer costs nobody anything, the wiki costs the wiki. */
+  from?: "wiki" | "peer";
+  etaMs?: number;
+  /** Why the last start didn't take (offline, category moved), when it didn't. */
+  error?: string;
+}
+
 /** A screen-region rectangle (display-local CSS pixels) for the screengrab lookup. */
 export interface Rect {
   x: number;
@@ -1505,6 +1579,15 @@ export interface KnownSpawn extends RespawnLearning {
    * alerting for all of them would interrupt an evening for mobs you aren't camping.
    */
   notify: boolean;
+  /**
+   * This camp's alert was armed by the **app**, because you killed it twice in one sitting and are
+   * visibly camping it (ADR 0152) — rather than by you ticking the box.
+   *
+   * Only so the row can say so: an alert that turns itself on without mentioning it is a banner out
+   * of nowhere. Goes false the moment you touch the checkbox either way, since from then on the
+   * answer is yours and there is nothing left to explain.
+   */
+  armed: boolean;
   /**
    * A **saved** style (`CastAlertSettings.styles`) for its pop; absent wears `built-in:spawn`.
    * Never a look of its own: a timer picks a shared look, and edits it as the shared thing it is
@@ -2372,6 +2455,26 @@ export interface EqlApi {
      * refresh weekly), so a newly-added wiki page becomes searchable immediately.
      */
     refresh(): Promise<void>;
+    /**
+     * Every item page already on disk, for the Items tab's search over stats.
+     *
+     * Reads the cache and **nothing else** — no request, no index warm, no crawl. The catalogue is
+     * therefore exactly what you have already looked at, which is the only honest answer a runtime
+     * data source can give ([ADR 0003](../../specs/decisions/0003-eqlwiki-runtime-data-source.md)).
+     */
+    cachedItems(): Promise<CachedItem[]>;
+    /**
+     * Fill the item catalogue from the wiki's own `Category:Items` — one page at a time, with a gap.
+     *
+     * The counterpart to `cachedItems`: that reads what we hold, these are how we come to hold it.
+     * Never starts on its own ([ADR 0153](../../specs/decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)).
+     */
+    harvestStart(opts?: { gapMs?: number; restart?: boolean }): Promise<HarvestProgress>;
+    /** Ask it to stop. Honoured before the next page, so at worst one request is still in flight. */
+    harvestStop(): Promise<HarvestProgress>;
+    harvestStatus(): Promise<HarvestProgress>;
+    /** Every step of a running harvest, in every window — a three-hour job outlives one panel. */
+    onHarvest(cb: (progress: HarvestProgress) => void): Unsubscribe;
   };
   /**
    * Lucy — Live EverQuest's item database, the app's **third and least trusted** source. Asked only
@@ -2397,6 +2500,19 @@ export interface EqlApi {
      * so the link costs this app nothing.
      */
     openInBrowser(target: number | string): Promise<void>;
+    /**
+     * Every Lucy item already cached, for the Items tab — the same cache-only promise `cachedByName`
+     * makes, asked of the whole directory instead of one name.
+     */
+    cachedItems(): Promise<CachedItem[]>;
+    /**
+     * How many item **names** the mirror of Lucy's published list holds, and when it was taken.
+     *
+     * Lucy offers exactly one bulk file — an id/name list, no stats — and holding it is what lets a
+     * Lucy name search be fuzzy and cost that site nothing
+     * ([ADR 0154](../../specs/decisions/0154-lucy-s-own-name-list-is-worth-holding.md)).
+     */
+    nameIndex(): Promise<{ items: number; fetchedAt: string | null }>;
   };
   loot: {
     /**
@@ -2598,8 +2714,12 @@ export interface EqlApi {
      * hand-operated twin of a kill line, for when the app wasn't watching or a pull went unlogged.
      * Seeds a countdown only: one death measures no respawn, so it teaches the estimate nothing.
      * On a `queue` camp it adds a clock rather than restarting the last (ADR 0136).
+     *
+     * `at` starts it from a **past** moment instead — an ISO time, ignored if it hasn't happened
+     * yet. What a timer built from a kill already in the log counts from, so the board shows the
+     * time actually left rather than the full interval (ADR 0151).
      */
-    markDead(key: string): Promise<SpawnView>;
+    markDead(key: string, at?: string): Promise<SpawnView>;
     /**
      * Put a timer on the board by hand — a mob you haven't killed twice yet, or something that
      * isn't a mob at all. `zone` may be blank and `seconds` may be omitted. `kind` says which of the

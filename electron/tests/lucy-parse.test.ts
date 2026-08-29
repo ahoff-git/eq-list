@@ -11,7 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { parseLucyItem, parseLucyItemList, withoutZoneSuffix } from "../lucy/parse";
+import { parseItemNameList, parseLucyItem, parseLucyItemList, withoutZoneSuffix } from "../lucy/parse";
 import { itemUrlFor } from "../lucy/api";
 
 const FIXTURES = path.resolve(__dirname, "../../../fixtures/lucy");
@@ -193,4 +193,40 @@ test("search page → id, name and type per row, sidebar links ignored", () => {
 test("a search that found nothing parses to nothing", () => {
   const empty = '<center> Search Results (0 found) </center><table class="sidebar"></table>';
   assert.deepEqual(parseLucyItemList(empty), []);
+});
+
+// ── Lucy's published name list (ADR 0154) ────────────────────────────────────
+// The one thing Lucy hands out in bulk. Every line below is the real file's shape, taken from the
+// live download: a CSV header, then `id,"name",url`. It is a **name** list — no stats, no slot —
+// which is the fact that decides what it can and cannot be used for.
+
+test("the published name list parses to ids and names", () => {
+  const csv = [
+    "id,name,lucylink",
+    '1001,"Cloth Cap",https://lucy.allakhazam.com/item.html?id=1001',
+    '5013,"Rusty Short Sword",https://lucy.allakhazam.com/item.html?id=5013',
+    '13942,"Dragoon Dirk",https://lucy.allakhazam.com/item.html?id=13942',
+  ].join("\n");
+  assert.deepEqual(parseItemNameList(csv), [
+    { id: 1001, name: "Cloth Cap" },
+    { id: 5013, name: "Rusty Short Sword" },
+    { id: 13942, name: "Dragoon Dirk" },
+  ]);
+});
+
+test("a name carrying a comma survives, which is why this isn't a split", () => {
+  // Written by Text::CSV_XS, so the field is quoted. Splitting on commas loses half the name.
+  const csv = '20000,"Bag of the Tinkerers, Improved",https://lucy.allakhazam.com/item.html?id=20000';
+  assert.deepEqual(parseItemNameList(csv), [{ id: 20000, name: "Bag of the Tinkerers, Improved" }]);
+});
+
+test("an internal quote is doubled in the file, and comes back single", () => {
+  // CSV's own escaping. `"" ` inside a quoted field is one literal quote character.
+  const csv = '21000,"The 6" Blade",https://lucy.allakhazam.com/item.html?id=21000'.replace('6"', '6""');
+  assert.equal(parseItemNameList(csv)[0]?.name, 'The 6" Blade');
+});
+
+test("the header and any malformed line are dropped, not turned into nameless items", () => {
+  const csv = ["id,name,lucylink", "", "not a row at all", '1,"",https://x', '2,"Real Thing",https://x'].join("\n");
+  assert.deepEqual(parseItemNameList(csv), [{ id: 2, name: "Real Thing" }]);
 });

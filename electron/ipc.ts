@@ -299,7 +299,11 @@ function registerSettingsIpc(context: IpcContext): void {
  * The wiki client: search, a page, and the refresh that re-mirrors its indexes.
  */
 function registerWikiIpc(context: IpcContext): void {
-  const { wiki } = context;
+  const { wiki, broadcast } = context;
+
+  // A harvest runs for hours across tab switches and window reopens, so its progress goes to every
+  // window rather than being handed back to whichever one happened to press start.
+  wiki.onHarvest((progress) => broadcast(CH.wikiHarvestProgress, progress));
 
   // ── wiki ──
   ipcMain.handle(CH.wikiSearch, (_e, term: string) => wiki.search(term));
@@ -307,6 +311,15 @@ function registerWikiIpc(context: IpcContext): void {
   ipcMain.handle(CH.wikiSearchZones, (_e, term: string) => wiki.searchZones(term));
   ipcMain.handle(CH.wikiQuestsByZone, (_e, zone: string) => wiki.questsByZone(zone));
   ipcMain.handle(CH.wikiRefresh, () => wiki.refresh());
+  // The Items tab's corpus. Cache-only by contract — see `WikiClient.cachedItems`.
+  ipcMain.handle(CH.wikiCachedItems, () => wiki.cachedItems());
+  // The catalogue harvest (ADR 0153). Only ever starts because a window asked it to — there is no
+  // "warm this on launch", which is the difference between a trickle and a crawl nobody consented to.
+  ipcMain.handle(CH.wikiHarvestStart, (_e, opts: { gapMs?: number; restart?: boolean } | undefined) =>
+    wiki.harvest.start(opts),
+  );
+  ipcMain.handle(CH.wikiHarvestStop, () => wiki.harvest.stop());
+  ipcMain.handle(CH.wikiHarvestStatus, () => wiki.harvest.status());
   // Open a wiki page in the user's browser. `target` is a wikiPath ("/Bone_Chips")
   // or a title ("Bone Chips"); host is validated so only eqlwiki links open.
   ipcMain.handle(CH.wikiOpen, (_e, target: string) => {
@@ -342,6 +355,11 @@ function registerLucyIpc(context: IpcContext): void {
   // Cache-only, and still gated: with the switch off nothing new is fetched either way, but a user who
   // turned Lucy off shouldn't keep meeting its cards on every item page.
   ipcMain.handle(CH.lucyCachedByName, (_e, name: string) => (asking() ? lucy.cachedByName(name) : null));
+  // Gated for the same reason, and cache-only for the same one: Lucy's items join the Items tab's
+  // catalogue only for someone who has that source switched on.
+  ipcMain.handle(CH.lucyCachedItems, () => (asking() ? lucy.cachedItems() : []));
+  // Cache-only and gated, like the rest: how many names the mirror holds, and when it was taken.
+  ipcMain.handle(CH.lucyNameIndex, () => (asking() ? lucy.nameIndex() : { items: 0, fetchedAt: null }));
   // Host-validated like the wiki's, for the same reason: a URL handed to the OS gets checked first.
   // `target` is Lucy's id when a page has been fetched and the item's **name** when it hasn't, which
   // is what lets every item in the app carry a link without one request being made to find an id.
@@ -414,8 +432,8 @@ function registerStatsIpc(context: IpcContext): void {
     spawns.markUp(key, id);
     return spawns.view();
   });
-  ipcMain.handle(CH.spawnsMarkDead, (_e, key: string) => {
-    spawns.markDead(key);
+  ipcMain.handle(CH.spawnsMarkDead, (_e, key: string, at?: string) => {
+    spawns.markDead(key, at);
     return spawns.view();
   });
   ipcMain.handle(CH.spawnsAdd, (_e, name: string, zone: string, seconds?: number | null, kind?: SpawnKind) => {
@@ -732,7 +750,7 @@ const CONTRIBUTED_KINDS = new Set<string>([AWARI_MSG.mobs, AWARI_MSG.kills]);
  *     sharing and nothing stable about you goes out at all (`electron/identity.ts`).
  */
 function registerPeerIpc(context: IpcContext): void {
-  const { broadcast, mobs, peerKills, contributorId, store, killLog, spawns, buffs, scores, watcher } = context;
+  const { broadcast, mobs, peerKills, contributorId, store, killLog, spawns, buffs, scores, watcher, wiki } = context;
 
   /** File what a peer just told us, and let every open window know the pool moved. */
   const fileContribution = (payload: AwariPayload): void => {
@@ -778,6 +796,27 @@ function registerPeerIpc(context: IpcContext): void {
       buffs,
       scores,
     }),
+    // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).
+    items: wiki.items,
+    acceptItems: (pages, shard) => wiki.items.accept(pages, shard),
+  });
+
+  /**
+   * The other half of the cycle: the harvester needs the room, and the hub needs the cache.
+   *
+   * Wired here, after both exist, because they genuinely depend on each other — the hub answers a
+   * shard ask out of the cache, and the cache's harvester decides what to fetch from what the room
+   * already holds. Late-binding it is what keeps either of them from having to construct the other.
+   */
+  wiki.joinRoom({
+    peers: () => shares.itemRoom(),
+    // The transport's own per-session id. It only has to differ from everyone else's, which is what
+    // gives this install a shard order nobody shares (`item-shards.ts`).
+    myId: () => shares.room().status.peerId ?? "solo",
+    askPeer: (peerId, shard) => shares.askShard(peerId, shard),
+    // Publishing a claim is just re-offering the catalogue: the coverage bitmap and the shard we are
+    // on both ride in it, so "I've taken this one" needs no message of its own.
+    claim: () => shares.touch(),
   });
 
   // ── awari peer networking broker (see ADR 0012) ──

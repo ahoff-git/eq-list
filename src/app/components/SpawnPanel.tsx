@@ -1,16 +1,21 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { useCurrentZone, useLogVocabulary, useSpawns } from "@/lib/hooks";
+import { useCurrentZone, useDismiss, useKills, useLogVocabulary, useSpawns } from "@/lib/hooks";
 import {
   countdownMs,
   describeRespawn,
   formatCountdown,
   formatInterval,
+  killStillCounts,
   parseInterval,
+  recentCamps,
   respawnCaveat,
+  untimedReason,
   contradicted,
+  type RecentCamp,
 } from "@/shared/spawn-timers";
+import { fuzzyRank } from "@/shared/fuzzy";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
 import { Caret, Empty } from "./ui";
@@ -65,7 +70,7 @@ export default function SpawnPanel() {
 
   return (
     <div className="spawns">
-      <AddTimer />
+      <AddTimer known={view.known} now={now} />
 
       {/* Said once, at the top, because "why is this list empty / why isn't that mob here" is the
           question the tab otherwise leaves you to guess at. Two routes in, and the automatic one
@@ -145,12 +150,114 @@ const ZONE_OPTIONS: Zone[] = sortZones(
   CURATED_ZONES.map((z) => ({ name: z.name, key: z.file, file: z.file, sortingStr: z.sortingStr })),
 );
 
-function AddTimer() {
+/** How many kills to offer at once — enough to reach past an evening, few enough to read. */
+const MAX_KILL_MATCHES = 12;
+
+/**
+ * The mobs you have actually killed, as a list to pick from.
+ *
+ * Shaped after `ZonePicker` and wearing its classes on purpose — same box, same menu, same
+ * type-to-narrow, same Escape — because this is the same interaction over a different list, and a
+ * second look for it would be a second thing to learn. What differs is what a row has to say: a mob
+ * name alone is not enough to choose by once you have killed the same named in two zones, so the
+ * place and how long ago it died travel with it.
+ */
+function RecentKillPicker({ camps, onPick }: { camps: RecentCamp[]; onPick: (camp: RecentCamp) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useDismiss(boxRef, open, () => setOpen(false));
+
+  const matches = useMemo(() => {
+    const q = query.trim();
+    // Nothing typed: the list is already in the order that matters — newest kill first — so it is
+    // shown as it stands rather than ranked arbitrarily.
+    if (!q) return camps.slice(0, MAX_KILL_MATCHES);
+    // The place is searched alongside the name, so "runnyeye" finds everything you killed there,
+    // which is how a camper thinks about it when they sit back down.
+    return fuzzyRank(q, camps, (c) => `${c.mob} ${c.place}`, { limit: MAX_KILL_MATCHES }).map((m) => m.item);
+  }, [query, camps]);
+
+  const choose = (camp: RecentCamp) => {
+    onPick(camp);
+    setQuery("");
+    setOpen(false);
+  };
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setOpen(true);
+      setActive((i) => Math.max(0, Math.min(matches.length - 1, i + (e.key === "ArrowDown" ? 1 : -1))));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (matches[active]) choose(matches[active]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+      setQuery("");
+    }
+  }
+
+  return (
+    <div className="zone-picker spawn-from-kill no-drag" ref={boxRef}>
+      <input
+        className="field zone-input"
+        value={query}
+        placeholder="From a recent kill…"
+        title="Pick a mob you've killed — it fills in the name and the place, and counts from when it died"
+        onFocus={() => {
+          setOpen(true);
+          setActive(0);
+        }}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+          setActive(0);
+        }}
+        onKeyDown={onKeyDown}
+      />
+      {open && (
+        <div className="zone-menu left">
+          {matches.map((camp, i) => (
+            <button
+              key={camp.key}
+              className={`zone-option ${i === active ? "on" : ""}`}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => choose(camp)}
+            >
+              {camp.mob}
+              <span className="muted small">
+                {" "}
+                · {camp.place} · {when(camp.killedAt)}
+              </span>
+            </button>
+          ))}
+          {!matches.length && (
+            <div className="zone-option muted">
+              {camps.length ? "No kill matches that." : "No kills recorded yet."}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddTimer({ known, now }: { known: KnownSpawn[]; now: number }) {
   const zone = useCurrentZone();
   // The same words the alert rules complete against, from your own log — and mob names are already
   // in it, because a kill line's target is filed under `target` alongside a fade's. Nobody can
   // spell this game's nameds from memory, which is the whole reason `SuggestField` exists.
   const vocabulary = useLogVocabulary();
+  // What you have actually killed. The vocabulary above answers a *different* question — "what words
+  // has the game said lately?" — off the tail of the current log file, so a named you killed this
+  // morning is usually not in it. That mattered more than it looks: an unrecognised name read as
+  // "not a mob", so timing yesterday's named quietly filed it as a plain timer that no kill could
+  // ever restart ([ADR 0151](../../../specs/decisions/0151-a-timer-can-be-built-from-a-kill.md)).
+  const kills = useKills(undefined);
+  const camps = useMemo(() => recentCamps(kills), [kills]);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [place, setPlace] = useState("");
@@ -158,6 +265,15 @@ function AddTimer() {
   // `null` means "however the name reads" — the toggle only pins an answer once someone disagrees
   // with it, so typing a mob's name after choosing *timer* doesn't undo the choice.
   const [kind, setKind] = useState<SpawnKind | null>(null);
+  /**
+   * The kill this timer is being built from, when one was picked.
+   *
+   * Held whole rather than flattened into the fields, because two things on it cannot be recovered
+   * from them: **when it died** — which is what the countdown runs from, not the moment you filled
+   * the form in — and the zone **as the log wrote it**, difficulty and all, which is the string a
+   * countdown has to be filed against.
+   */
+  const [from, setFrom] = useState<RecentCamp | null>(null);
 
   // Opening seeds the zone rather than binding to it: you might be adding a timer for somewhere
   // you're not standing, and a field that rewrites itself as you zone would be unusable.
@@ -166,23 +282,82 @@ function AddTimer() {
     setName("");
     setEvery("");
     setKind(null);
+    setFrom(null);
     setOpen(true);
   };
 
   const typed = name.trim();
-  // "Has your log seen you kill this?" — the vocabulary's own answer, asked of the whole word rather
-  // than of a prefix, so `Ghoul` doesn't count as having killed `Ghoul Lord`.
-  const killed = !!typed && vocabulary.suggest(typed, "target", 1)[0]?.toLowerCase() === typed.toLowerCase();
+  /**
+   * Is this a mob? Three answers, in order of how much they know.
+   *
+   * A **picked kill** settles it: the log recorded you killing this, which is proof of a kind no
+   * completer can offer. Then what the player said. Then the old guess off the log tail, kept for a
+   * name typed by hand that the tail happens to know.
+   */
+  const killed =
+    !!from || (!!typed && vocabulary.suggest(typed, "target", 1)[0]?.toLowerCase() === typed.toLowerCase());
   const chosen: SpawnKind = kind ?? (killed ? "mob" : "custom");
 
   const seconds = parseInterval(every);
   const blankInterval = !every.trim();
   const badInterval = !blankInterval && (seconds === null || seconds <= 0);
   const canAdd = !!typed && !badInterval;
+  /** The typed interval as the tracker takes it: `null` for blank, which means "time it later". */
+  const interval = blankInterval ? null : seconds;
+  /**
+   * The picked kill, still speaking for what is on screen.
+   *
+   * Editing the name or the place after picking means you meant something else, so the kill stops
+   * being the row's source rather than silently timing a camp you have since renamed.
+   */
+  const pinned = from && from.mob === typed && from.place === place.trim() ? from : null;
+
+  /**
+   * The row this camp already has, if the kill log made one. It carries the figure, which is what
+   * decides whether the kill is still worth counting from — and it is why this must **not** be
+   * re-added: `add` would file a learned camp as hand-made, and removing it would then take the
+   * sightings, the padding and the dropped gaps with it while the row came straight back.
+   */
+  const existing = pinned ? known.find((k) => k.key === pinned.key) : undefined;
+  /** What the countdown would run to: what you just typed, else what the camp already knows. */
+  const figure = interval ?? existing?.respawn?.seconds;
+  /**
+   * Whether the picked kill is recent enough to still be counting.
+   *
+   * Without this the honest thing and the silent thing look identical: starting a clock from a kill
+   * three days old produces a timer that is stale before it is a second old, and the sweep prunes it
+   * without a word — the same "I did the thing and nothing happened" this whole change is about. So
+   * it is asked here, and said out loud below either way.
+   */
+  const fresh = !!pinned && figure !== undefined && killStillCounts(pinned.killedAt, figure, now);
+
+  const pick = (camp: RecentCamp) => {
+    setFrom(camp);
+    setName(camp.mob);
+    setPlace(camp.place);
+    setKind("mob");
+  };
 
   const submit = () => {
     if (!canAdd) return;
-    void api()?.spawns.add(typed, place.trim(), blankInterval ? null : seconds, chosen);
+    const spawns = api()?.spawns;
+    if (!spawns) return;
+    if (!pinned) {
+      void spawns.add(typed, place.trim(), interval, chosen);
+      setOpen(false);
+      return;
+    }
+    // An existing row keeps its identity and only gains the figure; a new one is filed against the
+    // zone **as the log wrote it**, difficulty and all, since that is what a countdown belongs to.
+    const claim = existing
+      ? interval !== null
+        ? spawns.state(pinned.key, interval)
+        : null
+      : spawns.add(pinned.mob, pinned.zone, interval, "mob");
+    // Then start it from the moment it actually died, so the board shows the time really left rather
+    // than the whole interval. Only when that clock would still be running: a kill too old to count
+    // from leaves the figure behind and no timer, which is the truthful half of what was asked for.
+    void Promise.resolve(claim).then(() => (fresh ? spawns.markDead(pinned.key, pinned.killedAt) : null));
     setOpen(false);
   };
 
@@ -198,6 +373,11 @@ function AddTimer() {
 
   return (
     <div className="spawn-add">
+      {/* First, because it is the answer for most of the times anyone opens this: the mob is one you
+          just killed, and every field below can be filled from the log rather than remembered. Typing
+          still works for everything it can't know — a camp you have not killed at, and anything that
+          is not a mob at all. */}
+      <RecentKillPicker camps={camps} onPick={pick} />
       {/* `target` is the mob vocabulary — what kills and fades named — so it completes the nameds
           you've actually fought rather than every word in the log. A custom timer's label simply
           matches nothing, which costs the typist nothing: no suggestion is offered and the text
@@ -265,9 +445,17 @@ function AddTimer() {
       <small className={badInterval ? "bad" : ""}>
         {badInterval
           ? "Can't read that — try 22m, 4h, 6m 30s, or a number of seconds."
-          : chosen === "mob"
-            ? "A mob: your kills will keep teaching it. Leave the interval blank to time it later."
-            : "A plain timer: it starts when you say so, and can repeat."}
+          : pinned
+            ? // The one thing a picked kill does that typing the same words does not, said plainly —
+              // and the one time it can't, said just as plainly rather than by doing nothing.
+              fresh
+              ? `From your kill ${when(pinned.killedAt)} — the countdown starts from then, not from now.`
+              : figure === undefined
+                ? `From your kill ${when(pinned.killedAt)}. Give it an interval and the countdown starts from then.`
+                : `Your kill ${when(pinned.killedAt)} is too long ago to still be counting — this sets the figure, and the next kill starts the clock.`
+            : chosen === "mob"
+              ? "A mob: your kills will keep teaching it. Leave the interval blank to time it later."
+              : "A plain timer: it starts when you say so, and can repeat."}
       </small>
     </div>
   );
@@ -423,7 +611,12 @@ function KnownRow({ known }: { known: KnownSpawn }) {
   const toggle = (which: Exclude<Open, null>) => setOpen((o) => (o === which ? null : which));
   // Said out loud under the figure rather than hidden in a tooltip: when the gaps disagree this
   // badly, "22m" is the wrong thing to have read, and the reasons are things you can act on.
-  const caveat = known.respawn ? respawnCaveat(known.respawn) : null;
+  //
+  // A row with **no** figure gets the same line for the same reason. "Not timed yet" is three
+  // different situations wearing one face — killed once, every gap thrown out under you by a
+  // difficulty change, or gaps you dropped yourself — and unexplained they all read as the app
+  // being broken, which is exactly how this was reported (ADR 0151).
+  const caveat = known.respawn ? respawnCaveat(known.respawn) : untimedReason(known);
 
   return (
     <div className="spawn-known-row">
@@ -439,13 +632,24 @@ function KnownRow({ known }: { known: KnownSpawn }) {
       <span className="spawn-actions">
         {/* The one control that changes what the app *does* rather than what it knows, so it leads
             and is a checkbox rather than a button: it's a standing state, not an action. */}
-        <label className="spawn-notify" title="Raise a banner when this one is due">
+        <label
+          className="spawn-notify"
+          title={
+            known.armed
+              ? "Armed for you — you've killed this twice this sitting, so you're evidently camping it. Untick it and it stays off."
+              : "Raise a banner when this one is due"
+          }
+        >
           <input
             type="checkbox"
             checked={known.notify}
             onChange={(e) => void api()?.spawns.notify(known.key, e.target.checked)}
           />
           Notify
+          {/* Said on the row, not just in the tooltip: an alert that turned itself on has to account
+              for itself where it is read, or the first banner is a mystery. It disappears the moment
+              the player touches the box, because then it is their answer and needs no defence. */}
+          {known.armed && <span className="spawn-armed"> · camping</span>}
         </label>
         {/* Only meaningful once something will actually be raised, so it appears with the thing it
             describes rather than sitting greyed out beside it. */}

@@ -108,6 +108,16 @@ const IDX = {
  */
 export const PERMANENT_FORMULAS = new Set([50, 51]);
 
+/**
+ * The duration formula that means **there is no duration**: it happens, and it is over.
+ *
+ * The counterpart to `PERMANENT_FORMULAS` at the other end, and read with the same restraint — the
+ * formula id, never the formula. Zero is not a rule that yields a small number; it is the file's way
+ * of saying the spell has no lasting effect, and it holds a third of the obtainable beneficial
+ * spells: every direct heal, every gate and port, cancel, bind, feign, shrink.
+ */
+export const INSTANT_FORMULA = 0;
+
 /** The highest index we read; a row shorter than this can't be a spell we understand. */
 const MIN_FIELDS = IDX.classes + SPELL_CLASSES.length;
 
@@ -147,6 +157,21 @@ export interface SpellFacts {
    * death, and still gone when you log out. It means nothing will ever end it on a clock.
    */
   permanent: boolean;
+  /**
+   * **This spell has no duration at all** — duration formula `0`, which in this file always comes
+   * with `0` ticks (checked: not one obtainable beneficial spell has formula 0 and ticks above it).
+   *
+   * A direct heal, a gate, a bind, a cancel: something that *happens* and is then over. Read for the
+   * same reason `permanent` is, and with the same restraint — the formula **id** answers a yes/no
+   * question with no arithmetic and no caster level, which is the thing ADR 0080 said we could not
+   * compute.
+   *
+   * It matters because a beneficial spell with a landing sentence looks exactly like a buff to
+   * anything watching the log: `Light Healing` announces itself landing on a group-mate and then
+   * never ends, so it goes "up" and stays up for ever
+   * ([ADR 0157](../../specs/decisions/0157-an-instant-spell-is-not-a-buff.md)).
+   */
+  instant: boolean;
 }
 
 /** A number the file states, or 0 — a blank or junk field must never become NaN downstream. */
@@ -184,6 +209,7 @@ export function parseSpellLine(line: string): SpellFacts | null {
     levels,
     beneficial: num(fields, IDX.goodEffect) > 0,
     permanent: PERMANENT_FORMULAS.has(num(fields, IDX.durationFormula)),
+    instant: num(fields, IDX.durationFormula) === INSTANT_FORMULA,
   };
 }
 

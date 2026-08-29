@@ -18,6 +18,14 @@
  *     sent it. Tagging is not decoration: it is what makes "filter this one out later" possible at
  *     all ([ADR 0132](../../specs/decisions/0132-a-contribution-is-keyed-by-who-made-it.md)).
  *   - **live** — true on somebody else's machine right now. Held in memory, dropped with the peer.
+ *   - **mirror** — neither made nor observed: a copy of a *third party's public page*, which anyone
+ *     could fetch for themselves and which says the same thing to everyone. It is the only family
+ *     applied silently on arrival, and it can be, because there is nothing personal in it and nothing
+ *     it changes about what the app does — it fills a cache that would otherwise be filled by asking
+ *     eqlwiki the same question a second time
+ *     ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)). It is also the one
+ *     family that is *checkable*: a page that looks wrong can be re-fetched from the source, and the
+ *     TTL does exactly that on its own.
  *
  * ## Everything inbound is untrusted
  *
@@ -28,7 +36,17 @@
  * than off a switch somewhere, since a kind added without a reader then fails closed instead of
  * arriving unchecked.
  */
-import type { CastWatch, HighScore, NamedAlertStyle, ShoppingListEntry, WikiPageKind } from "./types";
+import type {
+  CastWatch,
+  HighScore,
+  ItemSource,
+  NamedAlertStyle,
+  ShoppingListEntry,
+  SourceKind,
+  WikiComponent,
+  WikiPage,
+  WikiPageKind,
+} from "./types";
 import type { MobObservation } from "./mob-stats";
 import type { SharedKill } from "./kill-filters";
 import type { BuffInstance, BuffRiseSource } from "./buff-tracking";
@@ -36,10 +54,20 @@ import type { RespawnLearning, SpawnTimer } from "./spawn-timers";
 import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "./buff-tracking";
 import { decodeWatches } from "./watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "./map/pins";
+import { SHARD_COUNT } from "./item-shards";
+
+/**
+ * An item page as it crosses between peers: a `WikiPage` minus the bits that are ours rather than
+ * the wiki's.
+ *
+ * `fetchedAt` is absent on purpose — see `readSharedPage`. The receiver stamps it, so a peer can
+ * never reach into our cache expiry.
+ */
+export type SharedItemPage = Omit<WikiPage, "fetchedAt">;
 
 // ─── The catalogue ──────────────────────────────────────────────────────────
 
-export type ShareFamily = "authored" | "observation" | "live";
+export type ShareFamily = "authored" | "observation" | "live" | "mirror";
 
 export type ShareKind =
   | "watches"
@@ -51,7 +79,8 @@ export type ShareKind =
   | "respawns"
   | "timers"
   | "buffs"
-  | "scores";
+  | "scores"
+  | "items";
 
 /**
  * One shareable kind: what it is, which family's rules it plays by, and how to read one off the
@@ -86,7 +115,21 @@ const MAX_ROWS: Record<ShareKind, number> = {
   timers: 200,
   buffs: 200,
   scores: 200,
+  // One shard is about eleven pages (`item-shards.ts`); the cap is generous headroom for an uneven
+  // hash while still bounding what a single hostile `give` can cost us.
+  items: 64,
 };
+
+/**
+ * Longest an item page's own text may be. Larger than `MAX_TEXT` because these are not names: a card
+ * line is a whole tooltip row, and a source's `detail` is a zone with a revamp tag on it.
+ */
+const MAX_PAGE_TEXT = 400;
+
+/** Caps within one shared page, so a single row cannot be a denial of service on its own. */
+const MAX_PAGE_LINES = 40;
+const MAX_PAGE_SOURCES = 60;
+const MAX_PAGE_PARTS = 60;
 
 /** Longest any free-text field may be once it's ours. Matches `watch-share.ts`. */
 const MAX_TEXT = 200;
@@ -176,6 +219,15 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     noun: "score",
     read: (rows) => readList(rows, MAX_ROWS.scores, readScore),
   },
+  {
+    key: "items",
+    family: "mirror",
+    label: "Item pages",
+    blurb:
+      "Your cached eqlwiki item pages, so a room fills the 11,136-page catalogue once between everyone instead of each of you fetching all of it.",
+    noun: "page",
+    read: (rows) => readList(rows, MAX_ROWS.items, readSharedPage),
+  },
 ];
 
 const BY_KEY = new Map<string, ShareKindSpec>(SHARE_KINDS.map((k) => [k.key, k]));
@@ -210,6 +262,22 @@ export function sharing(settings: ShareSettings | undefined, key: ShareKind): bo
 export interface ShareEntry {
   n: number;
   rev: number;
+  /**
+   * `items` only: which **shards** of the item catalogue this peer holds, as hex
+   * ([`item-shards.ts`](./item-shards.ts)).
+   *
+   * It rides in the catalogue rather than being a message of its own because it is 256 characters
+   * and the catalogue was already being broadcast every minute. That is the whole coordination
+   * channel: from this, every peer can work out what the room is missing without anybody asking
+   * anybody anything ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
+   */
+  cover?: string;
+  /**
+   * `items` only: the shard this peer is fetching from the wiki right now — a claim, so nobody else
+   * spends eleven requests on the same pages. A hint with a TTL, not a lock: a peer that dies mid
+   * shard releases it by going quiet.
+   */
+  doing?: number;
 }
 
 /** What a peer says it has. Kinds it isn't sharing are simply absent — the catalogue is the toggle. */
@@ -219,6 +287,12 @@ export type ShareOffer = Partial<Record<ShareKind, ShareEntry>>;
 export interface ShareAsk {
   what: ShareKind;
   since?: number;
+  /**
+   * `items` only: which shard is wanted. The one kind where "send me this kind" is not a sensible
+   * request — nobody wants eleven thousand pages in a message — so the ask names the ~11-page slice
+   * it can actually carry.
+   */
+  shard?: number;
 }
 
 /**
@@ -231,6 +305,8 @@ export interface ShareGive {
   /** The sender's display name at the time, so a tray row can say who a thing came from. */
   from?: string;
   rows?: unknown;
+  /** `items` only: which shard these rows are, echoed back so an answer can't be mis-filed. */
+  shard?: number;
 }
 
 /**
@@ -364,7 +440,7 @@ export function readAsk(raw: unknown): ShareAsk | null {
   if (!isRecord(raw)) return null;
   const what = typeof raw.what === "string" ? shareKind(raw.what) : undefined;
   if (!what) return null;
-  return { what: what.key, since: int(raw.since) };
+  return { what: what.key, since: int(raw.since), shard: shardNumber(raw.shard) };
 }
 
 /**
@@ -377,14 +453,15 @@ export function readAsk(raw: unknown): ShareAsk | null {
 export function readGive(
   raw: unknown,
   newId: () => string,
-): { what: ShareKind; rev: number; from: string; rows: unknown[]; stale: boolean } | null {
+): { what: ShareKind; rev: number; from: string; rows: unknown[]; stale: boolean; shard?: number } | null {
   if (!isRecord(raw)) return null;
   const spec = typeof raw.what === "string" ? shareKind(raw.what) : undefined;
   if (!spec) return null;
   const rev = int(raw.rev) ?? 0;
   const from = str(raw.from);
-  if (raw.rows === undefined || raw.rows === null) return { what: spec.key, rev, from, rows: [], stale: true };
-  return { what: spec.key, rev, from, rows: spec.read(raw.rows, newId), stale: false };
+  const shard = shardNumber(raw.shard);
+  if (raw.rows === undefined || raw.rows === null) return { what: spec.key, rev, from, rows: [], stale: true, shard };
+  return { what: spec.key, rev, from, rows: spec.read(raw.rows, newId), stale: false, shard };
 }
 
 // ─── Readers, one per kind ──────────────────────────────────────────────────
@@ -449,6 +526,9 @@ function readStyle(raw: unknown, newId: () => string): NamedAlertStyle | null {
 }
 
 const PAGE_KINDS = new Set(["item", "quest", "recipe", "mob", "zone", "spell", "page"]);
+
+/** The source kinds an inbound page may claim. Anything else becomes `unknown` rather than itself. */
+const SOURCE_KINDS = new Set(["drop", "quest", "recipe", "vendor", "forage", "ground", "unknown"]);
 /** Nobody needs nine thousand Bone Chips, and a bad number here is a list row that can never finish. */
 const MAX_NEEDED = 999;
 
@@ -578,6 +658,10 @@ function readRespawn(raw: unknown): RespawnLearning | null {
     samples: clamp(int(raw.samples) ?? 0, 0, 100_000),
     lastKillAt: str(raw.lastKillAt) || undefined,
     gaps: [],
+    // A peer sends a figure, not the workings behind it — so nothing here was thrown out by *our*
+    // difficulty rule, and claiming otherwise would put a sentence on the row about a night we
+    // never sat through.
+    crossedDifficulty: 0,
   };
 }
 
@@ -880,6 +964,97 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /** A trimmed, clamped string — `""` for anything that isn't one. */
+/**
+ * One eqlwiki item page, as a peer sent it.
+ *
+ * This is a **mirror** of a public page rather than anybody's opinion, so it is applied without a
+ * person looking at it — which is exactly why it is checked as hard as anything here. Every field is
+ * rebuilt from scratch: unknown keys never survive, every string is clamped, every list is capped,
+ * and the page `kind` must be one we know. A row that fails any of it is dropped rather than
+ * repaired, because a half-read item page is a card with a hole in it that nothing downstream would
+ * know to distrust.
+ *
+ * `fetchedAt` is taken as **the moment it arrived here**, never as the sender's word for it: a
+ * timestamp is what our own TTL uses to decide when to re-fetch from the wiki, and a peer who set it
+ * to next year would pin their copy in our cache for ever. Losing the real age costs a re-fetch and
+ * keeps the expiry ours ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
+ */
+function readSharedPage(raw: unknown): SharedItemPage | null {
+  if (!isRecord(raw)) return null;
+  const title = str(raw.title);
+  const kind = PAGE_KINDS.has(str(raw.kind)) ? (str(raw.kind) as WikiPageKind) : undefined;
+  // Only items and recipes: this share exists to fill the *item* catalogue, and a peer handing us a
+  // mob or zone page under it would be filling a cache nobody asked them to fill.
+  if (!title || (kind !== "item" && kind !== "recipe")) return null;
+
+  const card = isRecord(raw.card)
+    ? {
+        title: text(raw.card.title) || title,
+        icon: text(raw.card.icon) || undefined,
+        lines: Array.isArray(raw.card.lines)
+          ? raw.card.lines.slice(0, MAX_PAGE_LINES).map(text).filter(Boolean)
+          : [],
+      }
+    : undefined;
+
+  const sources = Array.isArray(raw.sources)
+    ? raw.sources
+        .slice(0, MAX_PAGE_SOURCES)
+        .map((row): ItemSource | null => {
+          if (!isRecord(row)) return null;
+          const where = text(row.where);
+          if (!where) return null;
+          return {
+            kind: SOURCE_KINDS.has(str(row.kind)) ? (str(row.kind) as SourceKind) : "unknown",
+            where,
+            detail: text(row.detail) || undefined,
+          };
+        })
+        .filter((row): row is ItemSource => !!row)
+    : [];
+
+  const components = Array.isArray(raw.components)
+    ? raw.components
+        .slice(0, MAX_PAGE_PARTS)
+        .map((row): WikiComponent | null => {
+          if (!isRecord(row)) return null;
+          const name = text(row.name);
+          if (!name) return null;
+          return {
+            name,
+            qty: clamp(int(row.qty) ?? 1, 1, 999),
+            wikiPath: text(row.wikiPath) || undefined,
+            dropRate: text(row.dropRate) || undefined,
+          };
+        })
+        .filter((row): row is WikiComponent => !!row)
+    : [];
+
+  return {
+    kind,
+    title,
+    wikiPath: text(raw.wikiPath) || `/${title.replace(/ /g, "_")}`,
+    sources,
+    components,
+    // Rewards belong to quests; an item page's are always empty, and rebuilding them here would be
+    // surface for no gain.
+    rewards: [],
+    card,
+    outOfEra: raw.outOfEra === true,
+  };
+}
+
+/** `str`, but at an item page's own length rather than a name's. */
+function text(v: unknown): string {
+  return typeof v === "string" ? v.trim().slice(0, MAX_PAGE_TEXT) : "";
+}
+
+/** A shard index, or `undefined` for anything that isn't one. Bounds-checked: it indexes a bitmap. */
+function shardNumber(v: unknown): number | undefined {
+  const n = int(v);
+  return n === undefined || n < 0 || n >= SHARD_COUNT ? undefined : n;
+}
+
 function str(v: unknown): string {
   return typeof v === "string" ? v.trim().slice(0, MAX_TEXT) : "";
 }

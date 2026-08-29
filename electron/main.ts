@@ -285,6 +285,9 @@ if (!app.requestSingleInstanceLock()) {
     // two files lazily, so handing these over costs nothing until a buff line actually turns up.
     lexicon: () => spells.lexicon(),
     facts: (spell, rank) => spells.find(spell, rank),
+    // Read from the watched log's own filename, and asked each time rather than captured: switching
+    // character switches whose pet `Kainos`s warder` is.
+    player: () => characterFromLogFile(watcher.status().file) ?? "",
     // Asked rather than re-derived: what counts as a fight is the meter's rule and nobody else's
     // (ADR 0036). It decides whether a "rebuff" banner interrupts you or waits for the pull to end.
     inFight: () => combat.inFight(),
@@ -501,6 +504,10 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onLogin((event) => {
     combat.reset();
     history.startSession(event.at);
+    // A camp arms its own alert once you have killed it twice **in one sitting**, so the tracker has
+    // to know where one sitting ends. Nothing about the world is forgotten here — only the tally
+    // (ADR 0152).
+    spawns.noteSitting();
   });
   watcher.onCombat((event) => {
     combat.record(event);

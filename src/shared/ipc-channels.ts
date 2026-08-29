@@ -33,11 +33,19 @@ export const CH = {
   wikiQuestsByZone: "wiki:questsByZone",
   wikiOpen: "wiki:open",
   wikiRefresh: "wiki:refresh",
+  wikiCachedItems: "wiki:cachedItems",
+  wikiHarvestStart: "wiki:harvestStart",
+  wikiHarvestStop: "wiki:harvestStop",
+  wikiHarvestStatus: "wiki:harvestStatus",
+  /** main -> renderer: one step of a running catalogue harvest. */
+  wikiHarvestProgress: "wiki:harvestProgress",
   // lucy — the supplementary item source, asked only where the wiki is silent (invoke)
   lucySearch: "lucy:search",
   lucyGetItem: "lucy:getItem",
   lucyCachedByName: "lucy:cachedByName",
   lucyOpen: "lucy:open",
+  lucyCachedItems: "lucy:cachedItems",
+  lucyNameIndex: "lucy:nameIndex",
   // watcher / zone / stats (invoke)
   watcherStatus: "watcher:status",
   zoneGet: "zone:get",

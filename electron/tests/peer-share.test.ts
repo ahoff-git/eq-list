@@ -405,3 +405,85 @@ test("reconciliation is observations only — nothing authored is re-fetched beh
 test("a kind offered over an empty store is nothing to fetch", () => {
   assert.deepEqual(outOfDate({ mobs: { n: 0, rev: 4 } }, () => undefined), []);
 });
+
+// ── Item pages: the one family applied without anybody looking (ADR 0160) ────
+// Which is exactly why the reader is the safety. These land straight in the page cache, so a field
+// that gets through is a stat card somebody searches by and sorts on.
+
+/** Read one page the way a `give` of the `items` kind does. */
+function readPage(raw: unknown): unknown {
+  const give = readGive({ what: "items", rev: 1, rows: [raw] }, () => "id");
+  return give?.rows[0];
+}
+
+test("an item page a peer sent is rebuilt field by field", () => {
+  const page = readPage({
+    kind: "item",
+    title: "Cloak of Wisdom",
+    wikiPath: "/Cloak_of_Wisdom",
+    card: { title: "Cloak of Wisdom", lines: ["Slot: BACK", "WIS: +10"] },
+    sources: [{ kind: "drop", where: "a heretic prophet", detail: "The Feerrott" }],
+    components: [{ name: "Silk", qty: 2 }],
+    outOfEra: false,
+  }) as Record<string, unknown>;
+
+  assert.equal(page.title, "Cloak of Wisdom");
+  assert.deepEqual(page.sources, [{ kind: "drop", where: "a heretic prophet", detail: "The Feerrott" }]);
+  assert.deepEqual((page.card as { lines: string[] }).lines, ["Slot: BACK", "WIS: +10"]);
+  // `fetchedAt` is never taken from the sender: our TTL is ours, and a peer who set it to next year
+  // would pin their copy in our cache for good.
+  assert.equal("fetchedAt" in page, false);
+});
+
+test("only item pages travel under this kind", () => {
+  // The share exists to fill the *item* catalogue. A peer handing us mob or zone pages under it
+  // would be filling a cache nobody asked them to fill.
+  assert.equal(readPage({ kind: "mob", title: "a gnoll pup" }), undefined);
+  assert.equal(readPage({ kind: "zone", title: "Blackburrow" }), undefined);
+  assert.equal(readPage({ kind: "quest", title: "Bone Chips" }), undefined);
+  assert.ok(readPage({ kind: "recipe", title: "Aviak Eggs" }), "a recipe is an item page that is craftable");
+});
+
+test("a page with no title, or no kind, is dropped rather than repaired", () => {
+  assert.equal(readPage({ kind: "item" }), undefined);
+  assert.equal(readPage({ title: "Nameless" }), undefined);
+  assert.equal(readPage({ kind: "nonsense", title: "Thing" }), undefined);
+  assert.equal(readPage("not an object"), undefined);
+});
+
+test("an unknown source kind becomes `unknown`, never itself", () => {
+  const page = readPage({
+    kind: "item",
+    title: "Thing",
+    sources: [{ kind: "somethingelse", where: "a mob" }, { kind: "vendor", where: "a merchant" }],
+  }) as { sources: { kind: string }[] };
+  assert.deepEqual(page.sources.map((s) => s.kind), ["unknown", "vendor"]);
+});
+
+test("unknown keys never survive, and lists are capped", () => {
+  const page = readPage({
+    kind: "item",
+    title: "Thing",
+    evil: "payload",
+    sources: Array.from({ length: 500 }, () => ({ kind: "drop", where: "a mob" })),
+    card: { title: "Thing", lines: Array.from({ length: 500 }, (_, i) => `line ${i}`) },
+  }) as Record<string, unknown>;
+  assert.equal("evil" in page, false);
+  assert.ok((page.sources as unknown[]).length <= 60, "sources capped");
+  assert.ok(((page.card as { lines: string[] }).lines).length <= 40, "card lines capped");
+});
+
+test("one give cannot carry the whole catalogue", () => {
+  // A shard is about eleven pages; the cap bounds what a hostile peer can spend of our time.
+  const rows = Array.from({ length: 5000 }, (_, i) => ({ kind: "item", title: `Item ${i}` }));
+  const give = readGive({ what: "items", rev: 1, shard: 3, rows }, () => "id");
+  assert.ok((give?.rows.length ?? 0) <= 64, `got ${give?.rows.length}`);
+  assert.equal(give?.shard, 3, "and the shard is echoed back so an answer can't be mis-filed");
+});
+
+test("a shard number outside the bitmap is not a shard", () => {
+  assert.equal(readAsk({ what: "items", shard: -1 })?.shard, undefined);
+  assert.equal(readAsk({ what: "items", shard: 99999 })?.shard, undefined);
+  assert.equal(readAsk({ what: "items", shard: "3" })?.shard, undefined);
+  assert.equal(readAsk({ what: "items", shard: 3 })?.shard, 3);
+});

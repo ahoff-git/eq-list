@@ -24,9 +24,10 @@ import {
   groupDropsByZone,
   splitDropsByCurrentZone,
   otherSources,
+  sourceKindLabel,
   type ZoneDrops,
 } from "@/shared/sources";
-import type { ItemSource, ShoppingListEntry, SourceKind } from "@/shared/types";
+import type { ItemSource, ShoppingListEntry } from "@/shared/types";
 
 /**
  * The shopping list, grouped under the quest/recipe that added each item (added
@@ -345,22 +346,10 @@ function ZoneRow({ drops, here }: { drops: ZoneDrops; here?: boolean }) {
 function SourceLine({ source }: { source: ItemSource }) {
   return (
     <div className="src-line">
-      <span className={`src-kind k-${source.kind}`}>{kindLabel(source.kind)}</span>
+      <span className={`src-kind k-${source.kind}`}>{sourceKindLabel(source.kind)}</span>
       <ItemLink title={source.where} />
       {source.detail && <span className="muted small">{source.detail}</span>}
     </div>
   );
 }
 
-function kindLabel(kind: SourceKind): string {
-  switch (kind) {
-    case "vendor":
-      return "buy";
-    case "quest":
-      return "quest";
-    case "recipe":
-      return "craft";
-    default:
-      return kind;
-  }
-}

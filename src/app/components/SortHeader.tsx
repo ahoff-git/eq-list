@@ -17,6 +17,7 @@ export default function SortHeader<K extends string>({
   onSort,
   title,
   startDesc = true,
+  className,
 }: {
   label: string;
   column: K;
@@ -25,10 +26,21 @@ export default function SortHeader<K extends string>({
   title?: string;
   /** Which way this column opens on its first click — descending suits numbers, ascending names. */
   startDesc?: boolean;
+  /**
+   * The column's own class, for a table whose alignment can't be written as a position.
+   *
+   * The button inherits the header's alignment, so a numeric column has to be able to say it is one
+   * — and in the item search *which* column holds a number changes with the weights, so the
+   * stylesheet cannot name it by `nth-child` the way the fixed tables do.
+   */
+  className?: string;
 }) {
   const active = sort.key === column;
   return (
-    <th className={`sortable ${active ? "sorted" : ""}`} title={title ?? `Sort by ${label.toLowerCase()}`}>
+    <th
+      className={["sortable", active ? "sorted" : "", className ?? ""].filter(Boolean).join(" ")}
+      title={title ?? `Sort by ${label.toLowerCase()}`}
+    >
       <button onClick={() => onSort(nextSort(sort, column, startDesc))}>
         {label}
         {active ? (sort.desc ? " ▾" : " ▴") : ""}

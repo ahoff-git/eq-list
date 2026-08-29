@@ -30,6 +30,7 @@ function spell(id: number, name: string, over: Partial<SpellFacts> = {}): SpellF
     levels: { Druid: 7 },
     beneficial: true,
     permanent: false,
+    instant: false,
     ...over,
   };
 }

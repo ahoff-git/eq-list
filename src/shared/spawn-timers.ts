@@ -61,7 +61,7 @@ import {
   type Confidence,
   type SampleScale,
 } from "./estimates";
-import { isOwnedName } from "./combat-parser";
+import { isPetName } from "./combat-parser";
 import { formatDuration, parseDuration, UNIT_SECONDS } from "./duration";
 import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
@@ -80,23 +80,44 @@ const MS_PER_SECOND = 1000;
 export const MIN_RESPAWN_SECONDS = 90;
 
 /**
- * Above this, the gap is you not being there rather than the mob being slow. A named on a longer
- * timer than half a day exists, but we would never *measure* it — every observation of it would be
- * an arrival time — so recording one would be recording a fiction with a number attached.
+ * The longest a respawn may be *believed* to be at all — the ceiling on what the player can prove by
+ * standing there, rather than on what two kills may teach.
  *
- * Generous on purpose: a placeholder cycle multiplies the gap between two kills of the *named* by
- * however many pops it took, and those are real observations of something, even if what they
- * measure is the cycle rather than the spawn.
+ * Genuinely long timers exist. They tend to hang off special conditions no log line reports, so the
+ * only honest ways to one are a figure the player types or a number taken off the wiki — never a
+ * gap. This bound is therefore about **deliberate observations**: marking a mob *up*, or *not up
+ * yet*, five hours after it died is a thing somebody did on purpose about a mob they already know
+ * is slow, and throwing it away would lose the one kind of evidence a long camp can actually gather.
  */
 export const MAX_RESPAWN_SECONDS = 12 * SECONDS_PER_HOUR;
 
 /**
- * What an observation has to fall inside to count — the two constants above, as the shape
- * `estimates.plausible` takes. Every kind of evidence here is checked against it: a kill gap, a
- * sighting and a "not up yet" are all claims about the same quantity, and a floor that let one of
- * them through on different terms would be a hole in the ratchet.
+ * The longest **gap between two kills** that may teach anything.
+ *
+ * Far tighter than the ceiling above, and for a reason that has nothing to do with the game: past a
+ * few hours, a gap stops describing the mob and starts describing you. You went to bed, you logged
+ * off, you went to another camp — and the app cannot see any of it, so an eight-hour "respawn" is
+ * an absence with a number attached. Measured on a real 4,559-kill log, dropping this from twelve
+ * hours to three cost 3 samples of 163 and moved no camp's figure.
+ *
+ * A long timer is still perfectly reachable — you type it, or take it off the wiki — and nothing
+ * here may overwrite one. What this refuses is *inventing* one from a night's sleep.
+ */
+export const MAX_LEARNED_GAP_SECONDS = 3 * SECONDS_PER_HOUR;
+
+/**
+ * What a **deliberate observation** has to fall inside to count: a sighting, or a "not up yet".
+ * Both are claims the player made on purpose about a mob they were standing next to, so they are
+ * held to the outer ceiling rather than to the gap rule.
  */
 export const RESPAWN_RANGE = { min: MIN_RESPAWN_SECONDS, max: MAX_RESPAWN_SECONDS };
+
+/**
+ * What a **kill gap** has to fall inside to count. Narrower at the top than `RESPAWN_RANGE` for the
+ * reason `MAX_LEARNED_GAP_SECONDS` gives; identical at the bottom, since two kills a minute apart
+ * are two mobs sharing a name however they were come by.
+ */
+export const LEARNED_GAP_RANGE = { min: MIN_RESPAWN_SECONDS, max: MAX_LEARNED_GAP_SECONDS };
 
 /**
  * When a respawn stops being an anecdote. Lower than a drop rate's, and deliberately: a rate needs
@@ -154,6 +175,28 @@ export const MAX_TIMER_SECONDS = 7 * 24 * SECONDS_PER_HOUR;
  * so the number is bounded rather than trusted, exactly as `MAX_REPEAT` is for an alert.
  */
 export const MAX_CAMP_TIMERS = 8;
+
+/**
+ * How many kills of one camp, in one sitting, before the app takes it that you are **camping** it
+ * and arms its alert for you.
+ *
+ * Every named you kill is tracked, so alerting for all of them would be a dozen banners an evening
+ * for mobs you walked past — which is why `notify` is off by default and always will be. But a mob
+ * you have killed twice in one sitting is not a mob you walked past, and making the player go and
+ * tick a box for the thing they are visibly already doing is the app being obtuse.
+ *
+ * Two, and *in one sitting*, is the player's own call: quick to arm, and it takes the pair of kills
+ * being part of the same evening rather than the same fortnight.
+ */
+export const CAMPING_KILLS = 2;
+
+/**
+ * How many recent camps to offer when someone is building a timer from a kill they already made.
+ *
+ * A list you pick from, not a report: long enough to reach back past an evening's play, short enough
+ * to read without scrolling. Everything beyond it is still typeable by hand.
+ */
+export const MAX_RECENT_CAMPS = 40;
 
 /**
  * A typed interval, in whole seconds — `0` for blank, `null` for text we can't read.
@@ -286,6 +329,18 @@ export interface RespawnLearning {
    * anybody made and nothing can be done about them.
    */
   gaps: RespawnGap[];
+  /**
+   * How many otherwise-usable gaps were thrown out because their two ends were recorded in
+   * different **difficulties** of the zone.
+   *
+   * A count, deliberately, and not a listing: the gaps themselves stay absent from `gaps` for the
+   * reason given above — nobody decided to drop them and putting them back is not on offer. But a
+   * camp can be left with *nothing* this way while looking, on screen, exactly like a camp you have
+   * only killed once, and those two blanks want different things from the player: one wants another
+   * kill, the other wants a figure typed in or a night spent at one difficulty. Saying which costs
+   * one integer.
+   */
+  crossedDifficulty: number;
 }
 
 /** How the caller narrows what counts as evidence. Both are the player's own corrections. */
@@ -329,9 +384,11 @@ export function provenNamed(kills: KillRecord[]): Set<string> {
   const named = new Set<string>();
   for (const k of kills) {
     if (!k.named) continue;
-    // A pet says so in its own name, whoever killed it: the log's possessive is the one ownership
-    // it ever states, so this needs no registry and works for a stranger's pet too.
-    if (isOwnedName(k.mob)) continue;
+    // A pet says so in its own name, whoever killed it, so this needs no registry and works for a
+    // stranger's pet too. **Both** ways the log says it: the possessive `<Owner>`s warder`, and the
+    // plain `<Owner> pet`, which has no punctuation to give it away and was letting six pets onto the
+    // board of a real log (ADR 0153).
+    if (isPetName(k.mob)) continue;
     if (people.has(mobKey(k.mob))) continue;
     // **The victim's name is only half the answer.** The log reports every death in earshot, and a
     // player, a pet and a boss are all written without an article — so "Bunnyslayer has been slain
@@ -417,6 +474,7 @@ export function learnRespawns(
     let shortest: number | undefined;
     let longest: number | undefined;
     let samples = 0;
+    let crossedDifficulty = 0;
     const gaps: RespawnGap[] = [];
     for (let i = 1; i < group.length; i += 1) {
       const [before, after] = [group[i - 1], group[i]];
@@ -433,10 +491,16 @@ export function learnRespawns(
       // Guk — so by the time a gap is being measured the difference is invisible unless it was
       // carried this far. `kill-log.ts` makes the same exception for the same reason, about which
       // `/loc` fix may place a kill (ADR 0059).
-      if (before.zone !== after.zone) continue;
       const gap = Math.round((after.at - before.at) / MS_PER_SECOND);
       // Implausible on either side is discarded, never clamped: see the ratchet note up top.
-      if (!plausible(gap, RESPAWN_RANGE)) continue;
+      // Asked *before* the difficulty test so that the count below is "gaps the difficulty cost
+      // us" rather than "gaps that happened to span one" — a fortnight between two kills was
+      // never going to teach us anything, and blaming the difficulty for it would be a lie.
+      if (!plausible(gap, LEARNED_GAP_RANGE)) continue;
+      if (before.zone !== after.zone) {
+        crossedDifficulty += 1;
+        continue;
+      }
       const id = gapId(before.at, after.at);
       const dropped = !!isDropped?.(key, id);
       gaps.push({ id, seconds: gap, endedAt: new Date(after.at).toISOString(), dropped });
@@ -457,11 +521,92 @@ export function learnRespawns(
       samples,
       lastKillAt: new Date(group[group.length - 1].at).toISOString(),
       gaps: listedGaps(gaps),
+      crossedDifficulty,
     });
   }
 
   // Soonest-known first is meaningless as an order; the mob's name is what a reader scans for.
   return learned.sort((a, b) => a.mob.localeCompare(b.mob) || a.place.localeCompare(b.place));
+}
+
+/** A camp you have actually killed at, offered as something to build a timer from. */
+export interface RecentCamp {
+  /** `timerKey` — so a caller can tell at a glance whether this camp is already on the board. */
+  key: string;
+  /** The mob as the log wrote it, article and all: what `noteKill` and `add` are given. */
+  mob: string;
+  /** The place, named the way every other row names it. */
+  place: string;
+  /**
+   * The zone **as recorded**, difficulty and all, from the most recent kill.
+   *
+   * Kept raw rather than folded because this is the string a countdown must be started with: the
+   * tracker compares variants verbatim, and handing it a tidied name would file the timer against a
+   * zone the log never wrote.
+   */
+  zone: string;
+  /** When it last died, ISO — the moment a countdown built from this should measure from. */
+  killedAt: string;
+  /** How many kills of this camp the log holds, so a one-off reads as one. */
+  kills: number;
+  /** Whether the article test ever said this was a named. Unproven is offered anyway — see below. */
+  named: boolean;
+}
+
+/**
+ * The camps you have killed at lately, newest first — the list behind "make a timer from a kill I
+ * already made".
+ *
+ * This exists because the only other way in was **typing the name**, completed against the tail of
+ * the current log file. That answers a different question ("what words has the game said recently?")
+ * and answers this one badly: a named you killed an hour ago has usually scrolled out of the tail,
+ * so it was neither offered nor recognised — and a name the completer doesn't know reads as *not a
+ * mob*, which filed the row as a plain timer that no kill could ever restart. The kill log is the
+ * thing that actually knows what you have killed, and it is already in the renderer's hands.
+ *
+ * **Every kill counts, named or not.** `provenNamed` is the right gate for *automatic* tracking,
+ * where a wrong guess quietly fills the board; it is the wrong gate for a list the player is reading
+ * and choosing from. Whether a mob is worth a timer is exactly the judgement they came here to make,
+ * and refusing to show a mob they killed twenty minutes ago because the article test hasn't settled
+ * it yet is the app being certain in place of the person who was there.
+ *
+ * Skipped, for the reasons the rest of this file skips them: a kill with **no zone** (a countdown
+ * has to be somewhere), and a **peer's** kill (their clock is not yours, and this list's whole
+ * purpose is starting a clock from a moment — ADR 0092).
+ */
+export function recentCamps(kills: KillRecord[], limit: number = MAX_RECENT_CAMPS): RecentCamp[] {
+  const camps = new Map<string, RecentCamp>();
+  for (const k of kills) {
+    if (!k.zone || k.sharedBy) continue;
+    const at = Date.parse(k.at);
+    if (Number.isNaN(at)) continue;
+    const key = timerKey(k.mob, k.zone);
+    const seen = camps.get(key);
+    if (!seen) {
+      camps.set(key, {
+        key,
+        mob: k.mob,
+        place: placeName(k.zone),
+        zone: k.zone,
+        killedAt: k.at,
+        kills: 1,
+        named: !!k.named,
+      });
+      continue;
+    }
+    seen.kills += 1;
+    // One kill without an article settles it for the camp, whichever kill that was — the same rule
+    // `provenNamed` uses, and for the same reason: the article is evidence that only ever appears.
+    seen.named ||= !!k.named;
+    // Records arrive newest-first from the kill log but an eaten log can interleave, so the latest
+    // is asked for rather than assumed. The *raw* zone travels with it: a countdown built from this
+    // kill belongs to the difficulty that kill happened in.
+    if (Date.parse(seen.killedAt) < at) {
+      seen.killedAt = k.at;
+      seen.zone = k.zone;
+    }
+  }
+  return [...camps.values()].sort((a, b) => Date.parse(b.killedAt) - Date.parse(a.killedAt)).slice(0, limit);
 }
 
 /**
@@ -931,4 +1076,56 @@ export function respawnCaveat(respawn: Respawn): string | null {
   }
   if (!erratic(respawn)) return null;
   return "Gaps this far apart usually mean a placeholder cycle, a mob that wanders, or arriving late — treat it as a hint, and pad it.";
+}
+
+/**
+ * Why this camp has no figure — the sentence a blank row owes the player.
+ *
+ * A blank on this board is not one thing, and the three it can be want three different actions. Left
+ * unsaid they all read as "the app isn't working", which is the complaint this answers: a camper who
+ * had killed a named four times could see *not timed yet* and no reason, and no way to guess that
+ * every gap had been thrown out under them.
+ *
+ * `null` once there is a figure, because then there is nothing to explain.
+ */
+export function untimedReason(
+  known: Pick<RespawnLearning, "samples" | "crossedDifficulty" | "gaps" | "lastKillAt">,
+): string | null {
+  if (known.samples > 0) return null;
+  // **Never killed at all** — a row somebody typed in for a camp they mean to sit at, which is the
+  // whole point of being able to add one. Asked first, because every sentence below is about kills
+  // that happened and telling this player they "killed it once" is simply untrue (ADR 0153).
+  if (!known.lastKillAt) return "Not killed yet — set a timer for it, or kill it twice and it learns its own.";
+  // The difficulty leads when it cost anything at all: it is the only one of the three the player
+  // could not have worked out from the row, and the only one with a *stated* cause.
+  if (known.crossedDifficulty > 0) {
+    const gaps = known.crossedDifficulty === 1 ? "The one gap" : `All ${known.crossedDifficulty} gaps`;
+    return `${gaps} measured here spanned a difficulty change, which respawns everything — so none of them are about this mob. Kill it twice at one difficulty, or set the timer yourself.`;
+  }
+  // Something was measured and the player themselves threw it out. Saying so keeps "I dropped that"
+  // from looking like the app losing it.
+  if (known.gaps.length > 0) return "Every gap measured here has been dropped. Put one back under Evidence, or set the timer yourself.";
+  return "Killed once, so there's no gap to measure yet. Kill it again, or set the timer yourself.";
+}
+
+/**
+ * Would a countdown started from this kill still be on the board?
+ *
+ * The question a timer built from a kill **already in the log** has to ask before it starts one.
+ * `markDead` will happily count from any past moment, and the sweep will just as happily prune the
+ * result: a kill three days old is past its by-time and its whole grace period, so the timer is
+ * `stale` before it is a second old and vanishes without a word. That is the same silence this
+ * feature exists to end, so the caller asks first and says what it found instead.
+ *
+ * The same grace `spawnState` uses, because it is the same judgement — "this clock still describes
+ * something" — and two answers to it would eventually disagree.
+ */
+export function killStillCounts(killedAt: string, seconds: number, nowMs: number): boolean {
+  const died = Date.parse(killedAt);
+  if (Number.isNaN(died)) return false;
+  // Not `sinceDeath`, which floors at `MIN_RESPAWN_SECONDS` because it is turning a gap into
+  // *evidence*. This is asking whether a clock would still be ticking, and a mob killed twenty
+  // seconds ago is the most alive a countdown ever gets.
+  const since = (nowMs - died) / MS_PER_SECOND;
+  return since < seconds + OVERDUE_GRACE_SECONDS;
 }

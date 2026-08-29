@@ -27,6 +27,7 @@
  * site does not know us and is only asked about queries eqlwiki already failed, so being slow is the
  * feature ([ADR 0124](../../specs/decisions/0124-lucy-is-a-second-opinion.md)).
  */
+import zlib from "node:zlib";
 import { createPoliteQueue } from "../../src/shared/polite-queue";
 import { createLogger } from "../../src/shared/logging";
 
@@ -44,6 +45,9 @@ const COOKIE_URL = `${LUCY_BASE}/?setcookie=1`;
 const UA = "EQ-List/0.1 (loot overlay; contact adamhoffmang@gmail.com)";
 
 const TIMEOUT_MS = 20_000;
+
+/** The name list is megabytes rather than kilobytes, so it gets its own, longer deadline. */
+const LIST_TIMEOUT_MS = 120_000;
 
 /**
  * The gap between requests. A person clicking around in a browser generates one every few seconds
@@ -186,4 +190,40 @@ export async function itemList(term: string): Promise<ItemListReply> {
 export async function itemPage(id: number): Promise<string> {
   const { body } = await get("/item.html", { id: String(id) });
   return body;
+}
+
+/** Lucy's published id/name list, as offered on its own downloads page. */
+const ITEM_LIST_URL = `${LUCY_BASE}/itemlist.txt.gz`;
+
+/**
+ * Lucy's whole item **name** list, uncompressed — the one thing this site publishes in bulk.
+ *
+ * Measured: 1.6 MB gzipped, 10.9 MB of CSV, 134,080 rows of `id,name,lucylink`. It is a static file
+ * the site offers for exactly this purpose ("useful for matching guild loot systems to Lucy"), so
+ * fetching it is taking what is on the table rather than scraping around the edges — and one
+ * download replaces the endless stream of one-name searches it lets us answer locally
+ * ([ADR 0154](../../specs/decisions/0154-lucy-s-own-name-list-is-worth-holding.md)).
+ *
+ * No cookie is needed: it is served straight off the filesystem rather than through the script that
+ * demands a session. It still goes through the queue, because one large transfer is exactly the kind
+ * of thing that should not land beside a burst of page requests.
+ *
+ * Deliberately **not** an item dump. Lucy publishes stats for spells and not for items, so this
+ * carries no card, no slot and no stat — a name index, which is all it claims to be.
+ */
+export async function fetchItemNameList(): Promise<string> {
+  return queue.run(ITEM_LIST_URL, async () => {
+    const ctrl = new AbortController();
+    // Its own deadline: this is megabytes over a slow old host, not a 3 KB page.
+    const timer = setTimeout(() => ctrl.abort(), LIST_TIMEOUT_MS);
+    try {
+      log.debug("GET", ITEM_LIST_URL);
+      const res = await fetch(ITEM_LIST_URL, { headers: { "User-Agent": UA }, signal: ctrl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${ITEM_LIST_URL}`);
+      const gz = Buffer.from(await res.arrayBuffer());
+      return zlib.gunzipSync(gz).toString("utf8");
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 }

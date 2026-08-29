@@ -196,6 +196,10 @@ const FAMILY_BLURB: Record<ShareFamily, { title: string; hint: string }> = {
     title: "What's true right now",
     hint: "Held in memory on the other end and dropped when you disconnect. Nothing is written to their disk.",
   },
+  mirror: {
+    title: "Pages you've already fetched",
+    hint: "Copies of eqlwiki's own item pages — nothing of yours. Sharing them is how a room fills the catalogue once between everyone instead of each of you fetching all 11,136.",
+  },
 };
 
 /**
@@ -261,7 +265,7 @@ function MyShares({
           </span>
         </div>
       </div>
-      {(["authored", "observation", "live"] as ShareFamily[]).map((family) => (
+      {(["authored", "observation", "live", "mirror"] as ShareFamily[]).map((family) => (
         <div key={family} className="peers-family">
           <div className="peers-family-head">
             <b>{FAMILY_BLURB[family].title}</b>
