@@ -467,6 +467,11 @@ list, hunt, search, damage, session, peers, settings.
       one, and is told *before* pressing anything that filling will come mostly from peers rather than
       from the wiki. While running, the note says whether the current page is coming from the wiki or
       from a peer, and the totals are kept apart for the same reason.
+    - **Rows arrive as JSON text and are parsed in the window** (`useItemCatalog`). Not a detail: with
+      `contextIsolation` on, receiving them as *objects* means `contextBridge` deep-copying a hundred
+      thousand of them on the renderer's thread — measured as roughly ten seconds of the whole app
+      being unusable, while every timing taken in main said the load was fast. A string crosses as one
+      value and parses in 24ms.
     - **Rows arrive built.** The merge, the stat parsing and the zone folding all happen once in
       **main**, which already holds the pages and caches them — so a window never parses a stat card,
       and what crosses is ~4.3 MB of rows rather than 11.3 MB of pages with their cards and sources

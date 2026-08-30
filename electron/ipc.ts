@@ -44,7 +44,8 @@ import type { DragEnd } from "../src/shared/window-snap";
 import { createPeerShareHub, shareSources } from "./peer-share";
 import type { ShareKind } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
-import { forTransfer, itemCatalog, itemRows } from "../src/shared/item-search";
+import { forTransfer, itemRows } from "../src/shared/item-search";
+import { normalizeItemName } from "../src/shared/grouping";
 
 const log = createLogger("ipc");
 
@@ -327,11 +328,21 @@ function registerWikiIpc(context: IpcContext): void {
    * `itemCatalog` exists); it answers `[]` when that source is switched off.
    */
   ipcMain.handle(CH.wikiCachedItems, async () => {
-    const [ours, theirs] = await Promise.all([
-      wiki.cachedItems(),
-      store.getSettings().askLucy ? Promise.resolve(lucy.cachedItems()) : Promise.resolve([]),
-    ]);
-    return forTransfer(itemRows(itemCatalog(ours, theirs)));
+    // **Text, not objects.** With `contextIsolation` on, everything a window receives is deep-copied
+    // by `contextBridge` property by property — for 11,125 rows that is well over a hundred thousand
+    // objects, and it runs on the renderer's own thread, which is why it presented as the whole app
+    // freezing rather than as a slow load. A string crosses as one value and `JSON.parse` on the far
+    // side is native. Main never parses it either: the pack holds text.
+    const ours = await wiki.catalogueJson();
+    const mine = store.getSettings().askLucy ? lucy.cachedItems() : [];
+    if (!mine.length) return ours;
+
+    // Lucy's are appended rather than merged into the pack: a *different game's* items, nearly always
+    // none, and folding its zone names in with eqlwiki's would be folding two games' geography.
+    const theirs = forTransfer(itemRows(mine));
+    if (!theirs.length) return ours;
+    // Spliced as text, so the big half is never parsed here: `[…ours` + `,` + `…theirs]`.
+    return `${ours.slice(0, -1)},${JSON.stringify(theirs).slice(1)}`;
   });
   // The catalogue harvest (ADR 0153). Only ever starts because a window asked it to — there is no
   // "warm this on launch", which is the difference between a trickle and a crawl nobody consented to.

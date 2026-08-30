@@ -525,13 +525,20 @@ Four of the six are **done** and have left this list: rank-aware spell costs
 
 ## Performance
 
-- **The first Items open still costs ~400ms of disk**, warmed a few seconds after launch so it is
-  usually already done. The walk is 11,519 individual `readFileSync` calls for 13.5 MB; a single
-  packed index file (one read, one parse) would make it tens of milliseconds and remove the warm-up
-  entirely. Worth doing if the catalogue grows much past this.
-- **~55ms of structured clone per first mount** (4.3 MB of rows). Held across mounts in the window, so
-  it is paid once per run — but a window opened later still pays it. Sending only the rows a filter
-  actually keeps, or moving the search itself into main, would remove it.
+- ~~The first Items open costs ~400ms of disk~~ — **done**: the built rows are packed to one file
+  (`catalogue.pack`), so a launch reads 26ms instead of walking 11,519 files and parsing eleven
+  thousand cards (~706ms). What remains is the **cold** path after any page is written, which still
+  pays the full walk before it can re-pack.
+- **5.7 MB of JSON text per first mount**, parsed in 24ms and held across mounts. Cheap now, but the
+  text is bigger than the object form because JSON cannot share the repeated `Class: ALL` arrays — a
+  post-parse intern pass would cut the window's memory if that ever matters.
+- **Anything else large crossing `contextBridge` has the same cliff.** The item catalogue is the only
+  payload of this size today; the next one to appear should be text from the start rather than
+  discovered the same way.
+- **A harvest drops the pack on every page it writes**, so the catalogue is rebuilt from scratch the
+  first time anything asks after a run. Fine today (nothing asks mid-run) but it means a three-hour
+  harvest ends with a guaranteed 700ms rebuild. Patching the rows for the one page written, as the
+  shard index already does, would remove that.
 
 ## Build hygiene
 

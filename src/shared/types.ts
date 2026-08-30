@@ -1,7 +1,6 @@
 import type { DataReportRow } from "./data-provenance";
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
-import type { ItemRow } from "./item-search";
 import type { KnowledgeContributor } from "./contributors";
 import type { PeerOfferNotice, ReceivedShare, ShareKind, ShareSettings } from "./peer-share";
 // Re-exported because every consumer of the `peer` bridge reads it off the api surface, and
@@ -2500,7 +2499,16 @@ export interface EqlApi {
      * therefore exactly what you have already looked at, which is the only honest answer a runtime
      * data source can give ([ADR 0003](../../specs/decisions/0003-eqlwiki-runtime-data-source.md)).
      */
-    cachedItems(): Promise<ItemRow[]>;
+    /**
+     * The item catalogue, as **JSON text**.
+     *
+     * Text on purpose, and it is the difference between the Items tab populating in a tenth of a
+     * second and locking the app for ten. `contextIsolation` is on, so everything a window receives
+     * is deep-copied by `contextBridge` property by property — 11,125 rows is well over a hundred
+     * thousand objects, and that copy runs on the renderer's own thread. A string crosses as one
+     * value; `JSON.parse` on this side is native and quick. `useItemCatalog` does the parsing.
+     */
+    cachedItems(): Promise<string>;
     /**
      * Fill the item catalogue from the wiki's own `Category:Items` — one page at a time, with a gap.
      *

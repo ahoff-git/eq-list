@@ -140,6 +140,24 @@ shopping list.
   A page from a peer keeps **its** pull date, and a copy newer than ours replaces ours
   ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)), so a room re-pulls each page
   about once between everyone per TTL rather than once each.
+- **The catalogue crosses to a window as *text*, and is stored as text** (`catalogue.json`,
+  `catalogueJson()`). This is the single biggest thing about the Items tab's speed, and it is not
+  about the data at all: `contextIsolation` is on, so everything a window receives is deep-copied by
+  `contextBridge` **property by property**, and 11,125 rows is well over a hundred thousand objects.
+  That copy runs on the *renderer's own thread* — which is why it presented as the whole app locking
+  up for ten seconds rather than as a slow load, and why every measurement taken in main said the
+  load was fast. A **string crosses as one value**; `JSON.parse` on the far side is native (24ms).
+  Measured end to end: 10ms in main + 24ms in the window, against about ten seconds.
+- **The built catalogue is written down** (`catalogue.json`, `catalogueJson()`). Walking the cache is
+  ~500ms of synchronous reads and building rows from it parses eleven thousand stat cards (~200ms) —
+  **~700ms of main before a window sees anything, on every launch**, because the Items tab is usually
+  the tab you left open. None of it changes until a page does, so the *answer* is packed to one file:
+  measured, **10ms instead of 706ms** — and since the pack holds the JSON that goes on the wire, main
+  never parses it either. The pack's first line is a signature naming the parse version *and* the row
+  shape, so a build that adds a field to a row can never read yesterday's rows and serve them without
+  it; anything unreadable or half-written simply rebuilds.
+  `dropDerived()` clears the item list, the rows and the pack **together** — they were separate once,
+  and the one caller that forgot left a page a peer sent you invisible until the next restart.
 - **The catalogue is built once and held.** Walking 11,519 cache files is ~400ms of *synchronous*
   reads, and main serves every window's IPC — paying it per Items tab mount froze the whole app for a
   third of a second each time. `cachedItems()` keeps its answer and drops it only when *we* write a

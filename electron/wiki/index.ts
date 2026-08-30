@@ -11,6 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import v8 from "node:v8";
 import {
   opensearch,
   fullTextSearch,
@@ -38,6 +39,7 @@ import { bestReading } from "../../src/shared/ocr-variants";
 import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
+import { forTransfer, itemRows, type ItemRow } from "../../src/shared/item-search";
 
 const log = createLogger("wiki");
 /**
@@ -176,6 +178,15 @@ export interface WikiClient {
    * everything, which looks like working and is not.
    */
   levelSources(): LevelSources;
+  /**
+   * The item catalogue as **rows a window can search**, which is the shape the Items tab wants and
+   * the only shape it wants.
+   *
+   * Backed by a packed file, so the ordinary case is one read rather than 11,519 of them plus eleven
+   * thousand cards parsed — about 700ms of main process on every launch, since the Items tab is
+   * usually the tab you left open.
+   */
+  catalogueJson(): Promise<string>;
   items: {
     status(): { pages: number; cover: string; doing?: number };
     shard(shard: number): SharedItemPage[];
@@ -590,8 +601,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       try {
         fs.writeFileSync(fileFor(page.title), JSON.stringify({ version: CACHE_VERSION, page: full }, null, 2), "utf8");
         taken++;
-        // The shard is re-checked once for the whole batch below, so only the list is dropped here.
-        catalogue = null;
+        // The shard is re-checked once for the whole batch below, so only the derived data goes here.
+        dropDerived();
       } catch (e) {
         log.warn("could not keep a shared page:", (e as Error).message);
       }
@@ -613,6 +624,68 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * A named function rather than only a method, because the harvest roster needs it too: the zones and
    * quests worth fetching are exactly the ones these items name (see `harvestRoster`).
    */
+  /**
+   * The built rows, packed into **one file**.
+   *
+   * The walk is 11,519 individual reads (~500ms) and building rows from them parses as many stat
+   * cards (~200ms) — seven hundred milliseconds before a window sees anything, paid on every launch
+   * because the Items tab is usually the tab you left open. None of that work changes until a page
+   * does, so the *answer* is written down: one file, one read, one deserialize.
+   *
+   * `v8.serialize` rather than JSON because it is markedly quicker on a structure this shape and
+   * keeps the shared arrays shared. It is version-specific, which is fine for a cache: a Node upgrade
+   * makes the pack unreadable, `readPack` says so by returning nothing, and the walk rebuilds it.
+   */
+  const packFile = path.join(cacheDir, "catalogue.json");
+  /**
+   * What the pack has to agree with to be usable.
+   *
+   * The parse version because a re-parse changes what a page becomes, and the *row* shape because
+   * this file is `ItemRow[]` — a build that adds a field to a row must not read yesterday's rows and
+   * quietly serve them without it.
+   */
+  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows5`;
+  /** Set once when a write invalidates the pack, so a harvest doesn't unlink a file per page. */
+  let packDropped = false;
+
+  /**
+   * The pack holds **JSON text**, and is handed to a window as text.
+   *
+   * This is the difference between the Items tab taking 100ms to populate and taking ten seconds.
+   * `contextIsolation` is on, so everything a window receives crosses `contextBridge`, which deep-
+   * copies an object graph **property by property** — and 11,125 rows is well over a hundred thousand
+   * objects. That copy runs on the renderer's own thread, which is why it presented as the whole app
+   * freezing rather than as a slow load. A **string is one value**: it crosses in a single copy, and
+   * `JSON.parse` on the far side is native and fast.
+   *
+   * So the built answer is stored as text and passed through as text, and main never parses it at
+   * all — a warm launch is one file read.
+   */
+  function readPack(): string | null {
+    try {
+      const held = fs.readFileSync(packFile, "utf8");
+      // The signature is the first line, so checking it costs nothing and a mismatched pack is never
+      // parsed. A build that changed the row shape must not serve yesterday's rows.
+      const split = held.indexOf("\n");
+      if (split < 0 || held.slice(0, split) !== PACK_SIGNATURE) return null;
+      return held.slice(split + 1);
+    } catch {
+      // Missing or half-written. Same answer either way: build it again.
+      return null;
+    }
+  }
+
+  function writePack(json: string): void {
+    // Fire and forget: the catalogue is already in hand, and a pack that failed to write costs the
+    // next launch a rebuild rather than anything worse.
+    void fs.promises
+      .writeFile(packFile, `${PACK_SIGNATURE}\n${json}`, "utf8")
+      .then(() => {
+        packDropped = false;
+      })
+      .catch((e: unknown) => log.warn("couldn't write the catalogue pack:", (e as Error).message));
+  }
+
   async function cachedItemPages(): Promise<CachedItem[]> {
     if (catalogue) return catalogue;
     // One walk, however many callers arrive at once: the Items tab mounting while the share hub's
@@ -632,6 +705,9 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * knows it — rows built without it silently get a zone estimate for everything.
    */
   let levelEvidence: LevelSources = { mob: () => undefined, quest: () => undefined };
+  /** The built catalogue **as JSON text** — see `readPack` for why text rather than objects. */
+  let rowCache: string | null = null;
+  let rowBuilding: Promise<string> | null = null;
   let building: Promise<CachedItem[]> | null = null;
 
   /**
@@ -653,8 +729,25 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * per write would mean a full walk on the next tick, once every eleven seconds, for three hours.
    * Re-checking the one shard the page belongs to is about eleven reads.
    */
-  function pageWritten(title: string): void {
+  /**
+   * Everything derived from the pages, dropped together.
+   *
+   * One function because they have to go together and one caller already forgot: `acceptItems` used
+   * to clear the item list alone, which left the *rows* — and the pack on disk — describing a
+   * catalogue that no longer existed, so a page a peer sent you never appeared until you restarted.
+   */
+  function dropDerived(): void {
     catalogue = null;
+    rowCache = null;
+    if (packDropped) return;
+    packDropped = true;
+    void fs.promises.rm(packFile, { force: true }).catch(() => {
+      /* a pack we couldn't delete is caught by its signature, or simply rebuilt over */
+    });
+  }
+
+  function pageWritten(title: string): void {
+    dropDerived();
     if (!indexed) return; // nothing built yet to keep current
     const shard = shardOf(title);
     if (byShard.has(shard)) recheckShard(shard);
@@ -913,6 +1006,28 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
 
     items: { status: itemStatus, shard: itemShard, accept: acceptItems },
     levelSources: () => levelEvidence,
+
+    async catalogueJson() {
+      if (rowCache) return rowCache;
+      rowBuilding ??= (async () => {
+        const startedAt = Date.now();
+        const packed = readPack();
+        if (packed) {
+          log.debug("catalogue: read from the pack in", `${Date.now() - startedAt}ms`);
+          rowCache = packed;
+          return packed;
+        }
+        const rows = forTransfer(itemRows(await cachedItemPages(), levelEvidence));
+        const json = JSON.stringify(rows);
+        log.debug("catalogue:", rows.length, "rows built in", `${Date.now() - startedAt}ms`);
+        rowCache = json;
+        writePack(json);
+        return json;
+      })().finally(() => {
+        rowBuilding = null;
+      });
+      return rowBuilding;
+    },
     joinRoom(link) {
       room = link;
     },

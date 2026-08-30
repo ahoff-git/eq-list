@@ -729,7 +729,7 @@ if (!app.requestSingleInstanceLock()) {
     // Here rather than at launch for the same reason the log repair is: after the window has painted,
     // a background job nobody has to know about.
     setTimeout(() => {
-      void wiki.cachedItems().catch(() => {
+      void wiki.catalogueJson().catch(() => {
         /* a cache we couldn't read is the Items tab's problem to report, not a launch failure */
       });
     }, CATALOGUE_WARM_MS);

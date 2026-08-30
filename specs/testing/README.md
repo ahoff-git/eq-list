@@ -128,7 +128,11 @@ unit-tested.
     test — a single global `CACHE_VERSION` bump had invalidated 11,482 item pages a zone-parser change
     never touched. It also pins the **caching contract** the Items tab's speed rests on: the same
     array comes back rather than an equal one (nothing was re-walked), a write drops it, and two
-    callers arriving together share one walk. Note what these tests *don't* claim — a file seeded
+    callers arriving together share one walk, and — since the built rows are **packed to disk** — that
+    a second launch reads the pack instead of walking, that a write drops it so it can never serve a
+    stale catalogue (a real bug: `acceptItems` cleared the item list but not the rows or the pack, so
+    a page a peer sent you stayed invisible until a restart), and that a pack with the wrong signature
+    is rebuilt rather than trusted. Note what these tests *don't* claim — a file seeded
     behind a running client's back is something it is entitled not to notice, so the version tests
     build a fresh client rather than re-reading the same one.
   - `src/shared/item-levels.ts` → `electron/tests/item-levels.test.ts` (*what level do I need to be to

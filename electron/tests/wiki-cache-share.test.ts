@@ -17,7 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createWikiClient } from "../wiki";
-import { itemRows } from "../../src/shared/item-search";
+import { itemRows, type ItemRow } from "../../src/shared/item-search";
 import type { SharedItemPage } from "../../src/shared/peer-share";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -238,5 +238,71 @@ test("two callers arriving at once share one walk", async () => {
     assert.equal(a, b);
   } finally {
     r.cleanup();
+  }
+});
+
+// ─── The packed catalogue ────────────────────────────────────────────
+
+/** The pack is written after the build settles, so a test that reads it has to let that happen. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
+
+test("a second launch reads the pack instead of walking the cache", async () => {
+  // The reason the Items tab stopped being painful: 11,519 reads plus eleven thousand cards parsed is
+  // ~700ms on the process that serves every window, paid on each launch because Items is usually the
+  // tab you left open. The built answer is written down instead.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-pack-"));
+  try {
+    const first = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    first.items.accept([page("Thing", daysAgo(1), 7)]);
+    const built = JSON.parse(await first.catalogueJson()) as ItemRow[];
+    assert.deepEqual(built.map((r) => r.item.title), ["Thing"]);
+    await settle();
+    assert.ok(fs.existsSync(path.join(dir, "catalogue.json")), "a pack was written");
+
+    // A fresh client is what a relaunch is. It must get the same rows without the walk.
+    const next = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const packed = JSON.parse(await next.catalogueJson()) as ItemRow[];
+    assert.deepEqual(packed.map((r) => r.item.title), ["Thing"]);
+    assert.equal(packed[0].stats.stats.ac, 7, "and the built stats came with it");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("writing a page drops the pack, so it can never serve a stale catalogue", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-pack-drop-"));
+  try {
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    wiki.items.accept([page("First", daysAgo(1), 1)]);
+    JSON.parse(await wiki.catalogueJson()) as ItemRow[];
+    await settle();
+
+    wiki.items.accept([page("Second", daysAgo(1), 2)]);
+    await settle();
+    // Whatever became of the file, what a *fresh* client sees must include the new page.
+    const next = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const rows = JSON.parse(await next.catalogueJson()) as ItemRow[];
+    assert.deepEqual(rows.map((r) => r.item.title).sort(), ["First", "Second"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a pack from another build is ignored rather than trusted", async () => {
+  // It carries a signature naming the parse version and the row shape. Without that, a build that
+  // added a field to a row would read yesterday's rows and quietly serve them without it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-pack-sig-"));
+  try {
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    wiki.items.accept([page("Thing", daysAgo(1), 7)]);
+    JSON.parse(await wiki.catalogueJson()) as ItemRow[];
+    await settle();
+
+    fs.writeFileSync(path.join(dir, "catalogue.json"), "not a pack at all", "utf8");
+    const next = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const rows = JSON.parse(await next.catalogueJson()) as ItemRow[];
+    assert.deepEqual(rows.map((r) => r.item.title), ["Thing"], "it rebuilt from the pages");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

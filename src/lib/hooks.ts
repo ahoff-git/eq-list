@@ -550,7 +550,10 @@ export function useItemCatalog(refreshKey?: unknown): { rows: ItemRow[]; loading
     setState((held) => ({ ...held, loading: true }));
     void a.wiki
       .cachedItems()
-      .then((rows) => {
+      // Arrives as **text** — see the bridge note on `cachedItems`. Parsing here, in the window's own
+      // world, is native and fast; receiving the same data as objects is a ten-second freeze.
+      .then((json) => {
+        const rows = JSON.parse(json) as ItemRow[];
         heldCatalogue = { key, rows };
         if (current) setState({ rows, loading: false });
       })

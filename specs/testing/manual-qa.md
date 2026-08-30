@@ -1385,3 +1385,25 @@ off → 11,125. 22 items carry a level stated on the card; 4,911 have no known l
   known level, and those stay visible at every cap — a cap that hid them would drop 44% of the list.
 - **An effect's level is not a requirement.** `Sabertooth Short Bow` has a level-15 proc and no wear
   requirement; it should survive a cap of 5.
+
+## The packed catalogue (the Items tab's launch cost)
+
+Measured in-process against the real 11,519-file cache: **cold 636ms** (walk + build + pack), **warm
+26ms** (a fresh client reading the pack), in-memory 0ms, worst event-loop stall on the warm path 0ms.
+The packed rows carry everything — 22 card-stated levels, 579 mob, 190 quest, 5,455 zone; 154 zones
+and 491 click effects in the facets. Not yet watched through two real launches.
+
+- **The first launch after this change is the slow one.** No pack exists, so it walks (~700ms) and
+  writes `wiki-cache/catalogue.pack` (~4.3 MB). The debug log says `catalogue: N rows built in …`.
+- **Every launch after that is fast.** The log should say `catalogue: N rows from the pack`, and the
+  Items tab should open with no perceptible wait.
+- **A harvest invalidates it.** After fetching pages, the next Items open rebuilds and re-packs — one
+  slow open, then fast again.
+- **Deleting the pack is safe.** Remove `catalogue.pack` while the app is closed; it should rebuild
+  silently on the next open.
+- **A corrupt pack is safe.** Write junk into it; the signature check should reject it and rebuild
+  rather than showing a broken or empty list.
+- **Populating does not freeze the app.** The one that actually mattered: with the tab open and the
+  rows arriving, the mouse must stay live. Move it continuously while the list populates — any stall
+  over a frame or two means something large is crossing `contextBridge` as objects again rather than
+  as text. This was ten seconds of unusable input, and no measurement taken in main showed it.
