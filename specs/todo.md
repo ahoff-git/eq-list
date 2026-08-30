@@ -522,3 +522,22 @@ Four of the six are **done** and have left this list: rank-aware spell costs
   whether a rule should be *silently* suppressed (surprising — the player wrote it) or **told**, as a
   note on the rule's row saying this spell has no duration on this server. The second is more in
   keeping with how every other soft figure here behaves.
+
+## Performance
+
+- **The first Items open still costs ~400ms of disk**, warmed a few seconds after launch so it is
+  usually already done. The walk is 11,519 individual `readFileSync` calls for 13.5 MB; a single
+  packed index file (one read, one parse) would make it tens of milliseconds and remove the warm-up
+  entirely. Worth doing if the catalogue grows much past this.
+- **~55ms of structured clone per first mount** (4.3 MB of rows). Held across mounts in the window, so
+  it is paid once per run — but a window opened later still pays it. Sending only the rows a filter
+  actually keeps, or moving the search itself into main, would remove it.
+
+## Build hygiene
+
+- **A stale `out/` looks exactly like a broken feature.** The renderer bundle and `dist-electron` are
+  built by separate scripts (`build:next`, `build:electron`), and a run that rebuilt only the second
+  left the app pairing a months-old renderer with a current main process — which presented as the
+  Items tab hanging, and cost an hour to diagnose. `npm run app` rebuilds only when the build is
+  *missing*, never when it is merely stale. Worth either stamping both halves with the same version
+  and refusing to start on a mismatch, or making `launch.mjs` compare mtimes against `src/`.

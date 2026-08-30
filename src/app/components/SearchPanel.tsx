@@ -74,6 +74,14 @@ export default function SearchPanel({
   // The page currently open in-app (nav.current) is fetched here.
   const [page, setPage] = useState<WikiPage | null>(null);
   const [loadingPage, setLoadingPage] = useState(false);
+  /**
+   * Bumped by the page's ↻, so the open page is re-read after it has been re-fetched.
+   *
+   * A nonce rather than handing the fresh page straight back, because the effect below is already
+   * the one place that decides what `page` is — two writers of it would be two ideas about which
+   * answer is current.
+   */
+  const [pageNonce, setPageNonce] = useState(0);
 
   const settings = useSettings();
   const hideEra = settings?.hideOutOfEra ?? false;
@@ -191,9 +199,10 @@ export default function SearchPanel({
     return () => {
       cancelled = true;
     };
-    // Re-fetch only when the open page changes; `nav`'s other fields are irrelevant here.
+    // Re-fetch when the open page changes, or when its ↻ has just replaced it; `nav`'s other fields
+    // are irrelevant here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nav.current]);
+  }, [nav.current, pageNonce]);
 
   // Debounced zone suggestions (hidden once a zone is locked in).
   useEffect(() => {
@@ -414,7 +423,7 @@ export default function SearchPanel({
           doesn't, in which case this is its page (ADR 0103). */}
       {nav.current && !loadingPage && !page && <ObservedItemView title={nav.current} />}
 
-      {page && <WikiPageView page={page} />}
+      {page && <WikiPageView page={page} onRefreshed={() => setPageNonce((n) => n + 1)} />}
     </div>
   );
 }

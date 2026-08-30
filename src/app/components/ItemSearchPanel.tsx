@@ -10,15 +10,18 @@ import FacetPicker from "./FacetPicker";
 import ItemWeights from "./ItemWeights";
 import SortHeader from "./SortHeader";
 import { AddButton, CheckField, Empty, PickField, TextField, caretGlyph } from "./ui";
-import { countOf } from "@/shared/format";
+import { countOf, figure } from "@/shared/format";
 import { sourceKindLabel } from "@/shared/sources";
 import type { Sort } from "@/shared/sorting";
 import { STATS, statLine, statMeta, type StatKey } from "@/shared/item-stats";
+import { LEVEL_CONFIDENCE, levelText } from "@/shared/item-levels";
+import { EFFECT_KINDS } from "@/shared/item-stats";
 import {
   FACETS,
   NO_CRITERIA,
   activeCriteria,
   facetOptions,
+  facetlessCount,
   searchItems,
   weightedStats,
   type ItemCriteria,
@@ -26,6 +29,13 @@ import {
   type StatWeights,
   type ValuedItem,
 } from "@/shared/item-search";
+
+/** Which facets are about what an item *does*, rather than what it is or where it came from. */
+/** The level cap in this era. At the slider's far right it means "no cap", which is also the truth. */
+const MAX_PLAYER_LEVEL = 60;
+
+const EFFECT_FACETS = new Set<string>(EFFECT_KINDS.map((k) => k.key));
+const isEffect = (key: string): boolean => EFFECT_FACETS.has(key);
 
 /** How many rows to draw. The catalogue is a few hundred today and a filter is one keystroke away. */
 const MAX_ROWS = 300;
@@ -89,10 +99,15 @@ export default function ItemSearchPanel() {
   const set = (patch: Partial<ItemCriteria>) => setCriteria({ ...active, ...patch });
   const setFacet = (key: string, values: string[]) => set({ facets: { ...active.facets, [key]: values } });
 
-  const options = useMemo(
-    () => Object.fromEntries(FACETS.map((f) => [f.key, facetOptions(rows, f.key)])),
+  // Options and the "how many have none of this" count together, since both are one pass over the
+  // catalogue and both are needed by the same picker.
+  const facets = useMemo(
+    () =>
+      Object.fromEntries(
+        FACETS.map((f) => [f.key, { options: facetOptions(rows, f.key), missing: facetlessCount(rows, f.key) }]),
+      ) as Record<string, { options: string[]; missing: number }>,
     [rows],
-  ) as Record<string, string[]>;
+  );
 
   const found = useMemo(() => searchItems(rows, active, weights, sort), [rows, active, weights, sort]);
 
@@ -102,6 +117,10 @@ export default function ItemSearchPanel() {
     const wanted = new Set<StatKey>([...weightedStats(weights), ...(Object.keys(active.mins) as StatKey[])]);
     return STATS.filter((s) => wanted.has(s.key)).map((s) => s.key);
   }, [weights, active.mins]);
+
+  // How many the level bounds are silent about — see `matchesItem`. Shown beside the slider so a cap
+  // that keeps 4,942 unplaced items is honest about it rather than looking like a filter that failed.
+  const unplaced = useMemo(() => rows.reduce((n, row) => n + (row.level ? 0 : 1), 0), [rows]);
 
   const onSort = (next: Sort<ItemSortKey>) => setSort(next);
   const shown = found.slice(0, MAX_ROWS);
@@ -117,12 +136,13 @@ export default function ItemSearchPanel() {
           value={active.text}
           onChange={(text) => set({ text })}
         />
-        {FACETS.map((facet) => (
+        {FACETS.filter((f) => !isEffect(f.key)).map((facet) => (
           <FacetPicker
             key={facet.key}
             label={facet.label}
             any={facet.any}
-            options={options[facet.key] ?? []}
+            options={facets[facet.key]?.options ?? []}
+            missing={facets[facet.key]?.missing ?? 0}
             chosen={active.facets[facet.key]}
             onChange={(values) => setFacet(facet.key, values)}
           />
@@ -142,6 +162,68 @@ export default function ItemSearchPanel() {
             Clear ({activeCriteria(active)})
           </button>
         )}
+      </div>
+
+      {/* Their own row, because they are a different question from "what is it and where's it from",
+          and because four more dropdowns in the row above would have made ten. Each picker's filter
+          box is fuzzy, which is what makes these usable: the same effect is spelled a dozen ways
+          across the catalogue, so "haste" has to reach `Hastening of Salik` too. */}
+      <div className="row wrap effect-facets">
+        <span className="muted small">Effects</span>
+        {FACETS.filter((f) => isEffect(f.key)).map((facet) => (
+          <FacetPicker
+            key={facet.key}
+            label={facet.label}
+            any={facet.any}
+            options={facets[facet.key]?.options ?? []}
+            missing={facets[facet.key]?.missing ?? 0}
+            chosen={active.facets[facet.key]}
+            onChange={(values) => setFacet(facet.key, values)}
+          />
+        ))}
+        <span className="muted small">type to search — spelling need not be exact</span>
+      </div>
+
+      <div className="row wrap level-band">
+        <span className="muted small">Level</span>
+        <input
+          className="field sm"
+          type="number"
+          min={1}
+          placeholder="any"
+          title="Lowest level you'd use it at"
+          value={active.levelMin ?? ""}
+          onChange={(e) => set({ levelMin: e.target.value.trim() ? Number(e.target.value) : undefined })}
+        />
+        <span className="muted">–</span>
+        {/* The **cap**, as a slider, because it is the one you drag rather than type: "what can I use
+            *now*" is a question you re-ask as you level, and at every step you want to see the list
+            move. At the far right it means no cap at all, which is also the truth at the level cap. */}
+        <input
+          className="level-slider"
+          type="range"
+          min={1}
+          max={MAX_PLAYER_LEVEL}
+          step={1}
+          value={active.levelMax ?? MAX_PLAYER_LEVEL}
+          title="Hide anything you'd have to be higher than this to use"
+          onChange={(e) => {
+            const at = Number(e.target.value);
+            set({ levelMax: at >= MAX_PLAYER_LEVEL ? undefined : at });
+          }}
+        />
+        <span className="level-cap">{active.levelMax ?? `${MAX_PLAYER_LEVEL}+`}</span>
+        {active.levelMax !== undefined && (
+          <button className="btn sm" onClick={() => set({ levelMax: undefined })} title="No level cap">
+            ✕
+          </button>
+        )}
+        {/* Said once here rather than on every row: the number is derived, its quality varies, and a
+            bound is silent about what it could not place — which is a lot of items. */}
+        <span className="muted small">
+          from the card if it says, else the mob that drops it, the quest that gives it, or its zone
+          {unplaced > 0 ? ` · ${figure(unplaced)} unplaced, always shown` : ""}.
+        </span>
       </div>
 
       <StatFloors mins={active.mins} onChange={(mins) => set({ mins })} />
@@ -176,6 +258,15 @@ export default function ItemSearchPanel() {
               <SortHeader label="Slot" column="slot" sort={sort} onSort={onSort} startDesc={false} title="Where it's worn" />
               <SortHeader label="From" column="source" sort={sort} onSort={onSort} startDesc={false} title="Kill it, buy it, quest it or craft it" />
               <SortHeader label="Zone" column="zone" sort={sort} onSort={onSort} startDesc={false} title="Where its sources are" />
+              <SortHeader
+                label="Level"
+                column="level"
+                sort={sort}
+                onSort={onSort}
+                startDesc={false}
+                className="num"
+                title="What level you need to be — from the mob, the quest, or the zone"
+              />
               {columns.map((key) => (
                 <SortHeader key={key} label={statMeta(key).label} column={key} sort={sort} onSort={onSort} className="num" title={`Sort by ${statMeta(key).label}`} />
               ))}
@@ -211,6 +302,7 @@ export default function ItemSearchPanel() {
 /** One result. Split out because it holds nothing — the table just got long enough to read badly. */
 function ItemRowView({ row, columns, scored }: { row: ValuedItem; columns: StatKey[]; scored: boolean }) {
   const zones = row.zones;
+  const level = row.level;
   return (
     <tr className={row.item.outOfEra ? "out-of-era" : undefined}>
       <td>
@@ -234,6 +326,12 @@ function ItemRowView({ row, columns, scored }: { row: ValuedItem; columns: StatK
       </td>
       <td className="muted" title={zones.join(", ")}>
         {zones.length > 1 ? `${zones[0]} +${zones.length - 1}` : (zones[0] ?? "—")}
+      </td>
+      <td
+        className={`num lvl-${level?.from ?? "none"}`}
+        title={level ? `${level.why} — ${LEVEL_CONFIDENCE[level.from]}` : "Nothing places this one yet"}
+      >
+        {level ? levelText(level) : "—"}
       </td>
       {columns.map((key) => (
         <td key={key} className={`num ${row.stats.stats[key] !== undefined ? "num-accent" : "muted"}`}>

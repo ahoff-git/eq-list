@@ -108,6 +108,14 @@ const SETTLE_MS = 1000;
 const SIBLING_WINDOW_DEADLINE_MS = 4000;
 
 /** Run `fn` once `win` has loaded — or at `SIBLING_WINDOW_DEADLINE_MS`, whichever comes first. */
+/**
+ * How long after the window paints to warm the item catalogue.
+ *
+ * Late enough that it is not competing with the renderer's own startup, early enough that it is done
+ * long before anybody clicks a tab.
+ */
+const CATALOGUE_WARM_MS = 4_000;
+
 function afterLoad(win: BrowserWindow, fn: () => void): void {
   const go = once(fn);
   win.webContents.once("did-finish-load", go);
@@ -214,7 +222,11 @@ if (!app.requestSingleInstanceLock()) {
   // build number changes on every push and would mark everything stale for ever.
   setAppVersion(app.getVersion());
   const store = createStore(userData);
-  const wiki = createWikiClient(path.join(userData, "wiki-cache"));
+  // The page TTL is a setting, read per check rather than captured, so changing it takes effect at
+  // once — including for a harvest already running (ADR 0161).
+  const wiki = createWikiClient(path.join(userData, "wiki-cache"), {
+    ttlMs: () => Math.max(1, store.getSettings().wikiPageTtlDays) * 24 * 60 * 60 * 1000,
+  });
   // The supplementary item source, in its own cache directory so its month-long TTL and the wiki's
   // week never share a file (ADR 0124). Created eagerly and cheaply: it reads nothing and fetches
   // nothing until something asks it a question.
@@ -711,6 +723,16 @@ if (!app.requestSingleInstanceLock()) {
     // Restore the map window if it was open last session.
     if (wasMapOpen()) createMapWindow(store.getSettings().overlay);
     log.debug("sibling windows started");
+    // Warm the item catalogue in the background, so the Items tab is instant the *first* time too
+    // rather than only afterwards. It is ~400ms of reading our own disk cache — no network, nothing
+    // fetched — and the walk yields between chunks, so it costs a freshly-painted window nothing.
+    // Here rather than at launch for the same reason the log repair is: after the window has painted,
+    // a background job nobody has to know about.
+    setTimeout(() => {
+      void wiki.cachedItems().catch(() => {
+        /* a cache we couldn't read is the Items tab's problem to report, not a launch failure */
+      });
+    }, CATALOGUE_WARM_MS);
     // A release that changed how a log is read asked for the logs to be read again, and this is the
     // start that does it (ADR 0129). Here rather than earlier because it is seconds of synchronous
     // parsing per log: on the launch path it would be a launch that hangs, and after the window has

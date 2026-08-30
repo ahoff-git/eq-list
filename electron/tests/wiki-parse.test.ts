@@ -123,3 +123,29 @@ test("player-craftable item → recipe components", () => {
   assert.ok(p.components.some((c) => c.name === "Bat Wing"));
   assert.ok(p.sources.some((s) => s.kind === "recipe"));
 });
+
+test("zone page → its NPC roster, which is where an item's level comes from", () => {
+  // The cheap rung of the level hierarchy (ADR 0163): a mob's level is on the mob's page, but a
+  // *zone* page states it for every mob at once — 177 zone pages against 4,214 mob pages, measured.
+  // Blackburrow is the fixture because it has the two shapes that matter: a fixed level and a range.
+  const p = parseFixture("zone-blackburrow", "Blackburrow");
+  assert.equal(p.kind, "zone");
+  const npcs = p.npcs ?? [];
+  assert.ok(npcs.length > 20, `expected a roster, got ${npcs.length}`);
+
+  const burly = npcs.find((n) => n.name === "A Burly Gnoll");
+  assert.equal(burly?.level, "7-9", "a range is kept as the wiki's own text, for `item-levels` to read");
+  const brewer = npcs.find((n) => n.name === "A Gnoll Brewer");
+  assert.equal(brewer?.level, "17", "and so is a single level");
+
+  // The header row is not a row, and nothing arrives half-read.
+  assert.equal(npcs.some((n) => n.name === "NPC Name"), false);
+  assert.ok(npcs.every((n) => n.name && n.level));
+});
+
+test("only zone pages carry a roster", () => {
+  // The table is found by reading its header row, so a page without one simply has no `npcs` —
+  // rather than picking up whatever table happened to be first.
+  assert.equal(parseFixture("item-fungus-tunic", "Fungus Covered Scale Tunic").npcs, undefined);
+  assert.equal(parseFixture("mob-hill-giant", "A Hill Giant").npcs, undefined);
+});

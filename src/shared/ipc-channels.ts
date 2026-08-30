@@ -29,6 +29,7 @@ export const CH = {
   // wiki (invoke)
   wikiSearch: "wiki:search",
   wikiGetPage: "wiki:getPage",
+  wikiRefreshPage: "wiki:refreshPage",
   wikiSearchZones: "wiki:searchZones",
   wikiQuestsByZone: "wiki:questsByZone",
   wikiOpen: "wiki:open",

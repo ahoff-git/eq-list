@@ -416,6 +416,38 @@ function readPage(raw: unknown): unknown {
   return give?.rows[0];
 }
 
+test("public pages share by default; everything of yours does not", () => {
+  // The asymmetry is the decision (ADR 0161): an item page is a copy of a public wiki page with
+  // nothing of yours in it, so "off until asked" protects nothing and costs the room the sharing.
+  assert.equal(sharing(undefined, "items"), true);
+  assert.equal(sharing({}, "items"), true);
+  for (const key of ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores"] as const) {
+    assert.equal(sharing({}, key), false, `${key} must stay off by default`);
+  }
+});
+
+test("an explicit no stays no, which is the whole point of a toggle", () => {
+  assert.equal(sharing({ items: false }, "items"), false);
+  assert.equal(sharing({ items: true }, "items"), true);
+});
+
+test("a page carries its age, so relaying it can't make it immortal", () => {
+  // Without this, A shares to B on day 13 and B to C on day 26, and a page nobody has re-checked
+  // since it was first fetched stays permanently "fresh".
+  const old = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+  const page = readPage({ kind: "item", title: "Thing", fetchedAt: old }) as { fetchedAt?: string };
+  assert.equal(page.fetchedAt, old);
+});
+
+test("a stamp from the future is refused, so a peer can't pin a page in our cache", () => {
+  const ahead = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  const page = readPage({ kind: "item", title: "Thing", fetchedAt: ahead }) as { fetchedAt?: string };
+  // `undefined` means "we'll stamp our own now" — honest, and at worst it costs one re-fetch.
+  assert.equal(page.fetchedAt, undefined);
+  assert.equal((readPage({ kind: "item", title: "Thing", fetchedAt: "nonsense" }) as { fetchedAt?: string }).fetchedAt, undefined);
+  assert.equal((readPage({ kind: "item", title: "Thing", fetchedAt: 12345 }) as { fetchedAt?: string }).fetchedAt, undefined);
+});
+
 test("an item page a peer sent is rebuilt field by field", () => {
   const page = readPage({
     kind: "item",
@@ -430,18 +462,28 @@ test("an item page a peer sent is rebuilt field by field", () => {
   assert.equal(page.title, "Cloak of Wisdom");
   assert.deepEqual(page.sources, [{ kind: "drop", where: "a heretic prophet", detail: "The Feerrott" }]);
   assert.deepEqual((page.card as { lines: string[] }).lines, ["Slot: BACK", "WIS: +10"]);
-  // `fetchedAt` is never taken from the sender: our TTL is ours, and a peer who set it to next year
-  // would pin their copy in our cache for good.
-  assert.equal("fetchedAt" in page, false);
+  // No stamp offered, so none is kept — the receiver treats that as "arrived now".
+  assert.equal(page.fetchedAt, undefined);
 });
 
-test("only item pages travel under this kind", () => {
-  // The share exists to fill the *item* catalogue. A peer handing us mob or zone pages under it
-  // would be filling a cache nobody asked them to fill.
-  assert.equal(readPage({ kind: "mob", title: "a gnoll pup" }), undefined);
-  assert.equal(readPage({ kind: "zone", title: "Blackburrow" }), undefined);
-  assert.equal(readPage({ kind: "quest", title: "Bone Chips" }), undefined);
+test("only the kinds the catalogue is made of travel under this kind", () => {
+  // Items and recipes are the catalogue; mobs and quests are what give an item its level, so they
+  // are in the roster and therefore in the sharing (ADR 0163).
+  assert.ok(readPage({ kind: "item", title: "Cloak of Wisdom" }));
   assert.ok(readPage({ kind: "recipe", title: "Aviak Eggs" }), "a recipe is an item page that is craftable");
+  assert.ok(readPage({ kind: "quest", title: "Aviak Talons" }), "a quest states its own requirement");
+  assert.ok(readPage({ kind: "mob", title: "a gnoll pup" }), "a mob page is read when we have one");
+  // A zone page's whole value is its NPC roster — one table, every mob's level.
+  const zone = readPage({
+    kind: "zone",
+    title: "Blackburrow",
+    npcs: [{ name: "A Burly Gnoll", level: "7-9" }, { name: "no level" }, "rubbish"],
+  }) as { npcs?: { name: string; level: string }[] };
+  assert.deepEqual(zone.npcs, [{ name: "A Burly Gnoll", level: "7-9" }], "and rows without both are dropped");
+  // Still refused: nothing in the Items tab reads one, and a peer filling a cache nobody asked them
+  // to fill is what the list exists to prevent.
+  assert.equal(readPage({ kind: "spell", title: "Minor Healing" }), undefined);
+  assert.equal(readPage({ kind: "page", title: "Main Page" }), undefined);
 });
 
 test("a page with no title, or no kind, is dropped rather than repaired", () => {

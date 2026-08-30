@@ -40,6 +40,24 @@ export default function SettingsPanel() {
       <ForgetData />
 
       <div className="setting">
+        <label>Keep wiki pages for — {settings.wikiPageTtlDays} days</label>
+        <input
+          className="field sm"
+          type="number"
+          min={1}
+          max={365}
+          value={settings.wikiPageTtlDays}
+          onChange={(e) => patch({ wikiPageTtlDays: Math.max(1, Math.min(365, Number(e.target.value) || 1)) })}
+        />
+        <span className="hint">
+          How long a fetched eqlwiki page is good for before it&apos;s fetched again. It matters more
+          than it used to: the Items tab&apos;s catalogue is eleven thousand pages, and peers hand
+          each other copies — a page carries its age with it, so it expires on schedule however many
+          people it passed through. Any single page can be refreshed on the spot with the ↻ beside it.
+        </span>
+      </div>
+
+      <div className="setting">
         <label>Match mode</label>
         <div className="row">
           {(["exact", "contains"] as const).map((m) => (

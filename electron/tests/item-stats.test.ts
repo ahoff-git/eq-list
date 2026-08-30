@@ -70,7 +70,66 @@ test("a spell's name never flags the item", () => {
   // "Quest" inside an effect name would otherwise mark a dropped weapon as a quest item.
   const { flags, effects } = parseItemStats(["Effect: Feet like Cat (Combat, Casting Time: Instant) at Level 20"]);
   assert.deepEqual(flags, []);
-  assert.deepEqual(effects, ["Feet like Cat"]);
+  assert.deepEqual(effects, [{ name: "Feet like Cat", kind: "proc" }]);
+});
+
+test("how you reach an effect is read off the parenthetical", () => {
+  // Every line verbatim from the catalogue. The *kind* is most of what somebody is shopping for — a
+  // worn haste and a clicky haste are not substitutes — so getting this wrong makes the dropdowns
+  // useless rather than merely imprecise.
+  const kindOf = (line: string) => parseItemStats([line]).effects[0]?.kind;
+  assert.equal(kindOf("Effect: Invigor (Combat, Casting Time: Instant) at Level 30"), "proc");
+  assert.equal(kindOf("Effect: Dyn's Dizzying Draught (Proc)"), "proc");
+  assert.equal(kindOf("Effect: Truesight (Worn)"), "worn");
+  assert.equal(kindOf("Effect: Serpent Sight (Worn, Casting Time: Instant)"), "worn");
+  assert.equal(kindOf("Effect: Dulsehound (Any Slot, Casting Time: Instant)"), "click");
+  assert.equal(kindOf("Effect: Gaze (Any Slot/Can Equip, Casting Time: Instant) at Level 20"), "click");
+  // "Must Equip" is a click that has to be worn, not a fifth kind — you still press it.
+  assert.equal(kindOf("Effect: Superior Healing (Must Equip, Casting Time: Instant) at Level 45"), "click");
+  assert.equal(kindOf("Effect: Summon Horse (Casting Time: 3.0)"), "click");
+  // The two that label themselves.
+  assert.equal(kindOf("Focus Effect: Summoning Haste I"), "focus");
+  assert.equal(kindOf("Combat Effect: Knee Shot (Req Level 45)"), "proc");
+});
+
+test("a stated `Required Level` is read — and only from the item's own line", () => {
+  // 19 of 11,155 cards state one, and where they do it is the real gate. Every line here is verbatim
+  // from the catalogue, including the three that look like a requirement and are not.
+  const req = (line: string) => parseItemStats([line]).requiredLevel;
+  assert.equal(req("Req Level: 30"), 30);
+  assert.equal(req("Required Level: 49"), 49);
+  assert.equal(req("Required level of 55."), 55);
+
+  // The traps: these gate the **effect**, not wearing the item. An axe with a level-15 proc can be
+  // held by anyone, and reading 15 as a requirement would hide it from every lower-level search.
+  assert.equal(req("Combat Effect: Knee Shot (Req Level 15)"), undefined);
+  assert.equal(
+    req("Click Effect: Whirl Bolt (Must Equip) - Cast Time: 1.0 seconds, Required Level: 46, Cooldown: 240 seconds"),
+    undefined,
+  );
+  assert.equal(req("Cast Time: 7.3 seconds Required Level: 15"), undefined, "a cast time means it's a spell's line");
+
+  // And the wiki's way of saying "none".
+  assert.equal(req("Recommended level of 10 Required level of 0"), undefined);
+  assert.equal(req("Slot: PRIMARY"), undefined);
+});
+
+test("a bare `Effect:` with nothing after it is not an effect", () => {
+  // 44 lines in the catalogue look exactly like this.
+  assert.deepEqual(parseItemStats(["Effect:"]).effects, []);
+  assert.deepEqual(parseItemStats(["Focus Effect:  "]).effects, []);
+});
+
+test("the same effect named twice on one card is one effect", () => {
+  const { effects } = parseItemStats([
+    "Effect: Haste (Worn)",
+    "Effect: Haste (Worn)",
+    "Focus Effect: Spell Haste I",
+  ]);
+  assert.deepEqual(effects, [
+    { name: "Haste", kind: "worn" },
+    { name: "Spell Haste I", kind: "focus" },
+  ]);
 });
 
 test("an effect's casting time is not read as a stat", () => {
@@ -116,6 +175,7 @@ test("a whole real card reads as its numbers", () => {
   assert.deepEqual(read.classes, ["NEC", "WIZ", "MAG", "ENC"]);
   assert.equal(read.races.length, 16);
   assert.deepEqual(read.flags, ["LORE", "ATTUNABLE"]);
+  assert.deepEqual(read.effects, []);
   assert.equal(statLine(read), "AC 2 · Mana 75 · STA -10 · SV Magic 10 · Weight 0.1");
 });
 

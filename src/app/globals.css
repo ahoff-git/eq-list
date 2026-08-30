@@ -3049,7 +3049,6 @@ kbd {
    be reachable. */
 .facet-options { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
 .facet-options .check-field { font-size: 12px; white-space: nowrap; }
-.facet-clear { margin-top: 6px; width: 100%; }
 
 /* One "at least this much X" row. The pieces sit tight together so a floor reads as one thing. */
 .stat-floors { gap: 6px; }
@@ -3118,3 +3117,30 @@ kbd {
 .cat-bar-room { position: absolute; inset: 0 auto 0 0; background: var(--accent-dim); }
 .cat-bar-fill { position: relative; }
 .cat-note .good { color: var(--good); }
+/* How old the open page's copy is, beside the ↻ that replaces it. Dim and small: it is the reason
+   to press the button, not a heading. */
+.page-age { margin-right: 2px; white-space: nowrap; }
+/* The facet menu's footer: All / Clear side by side, then the note about what ticking anything
+   costs. Full width each, so neither is a target you have to aim for. */
+.facet-actions { gap: 6px; margin-top: 6px; }
+.facet-actions .btn { flex: 1; }
+.facet-note { display: block; margin-top: 6px; line-height: 1.35; }
+/* "(none)" is the absence of every value, not another one of them — so it sits above the list with a
+   rule under it. Read as just another zone it would be baffling; set apart it explains itself. */
+.facet-none { padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+/* The level band, beside the stat floors — the same shape of question, asked of a derived number. */
+.level-band { gap: 6px; align-items: center; }
+.level-band .field { width: 56px; }
+/* How much to trust the figure, in colour rather than another column: a mob's level is a fact, a
+   zone's range is an estimate, and a row that showed them alike would invite a bad trip. */
+.item-table td.lvl-mob { color: var(--text); }
+.item-table td.lvl-quest { color: var(--text); }
+.item-table td.lvl-zone { color: var(--text-dim); font-style: italic; }
+.item-table td.lvl-none { color: var(--text-dim); }
+/* The effect pickers, on their own row: a different question from "what is it and where's it from",
+   and four more dropdowns in the criteria row would have made ten. */
+.effect-facets { gap: 6px; align-items: center; }
+/* The level cap slider. Narrow — it shares a row with the floor box and its explanation — and paired
+   with the number it is currently at, since a slider with no read-out is a guess. */
+.level-slider { width: 120px; accent-color: var(--accent); }
+.level-cap { min-width: 26px; font-variant-numeric: tabular-nums; }

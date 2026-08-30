@@ -108,6 +108,48 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** A cell's text, collapsed — these tables are hand-laid-out and full of stray whitespace. */
+function cellText(el: HTMLElement): string {
+  return el.text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A zone page's NPC roster: every mob in the zone, with its level.
+ *
+ * **This is the cheap way to learn an item's level.** An item page names the mob that drops it, and
+ * the wiki states a mob's level — but there are 4,214 such mobs across the catalogue and only 177
+ * zones, and 99.5% of drop rows name their zone. One table on one zone page therefore answers for a
+ * hundred mobs at once, and the crawl is 24× smaller for the same answer
+ * ([ADR 0163](../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
+ *
+ * The table is found by **reading its header row** for `NPC Name` and `Level`, not by counting or by
+ * position — the same rule the Lucy parser follows, and for the same reason: `eoTable3` is the class
+ * on several tables here, and a zone page grows another the day somebody adds one.
+ *
+ * The level is kept as the wiki's own **text** (`"7-9"`, `"17"`) rather than parsed to numbers, since
+ * reading it is `item-levels.ts`'s job and that module already handles every shape mob pages use.
+ */
+function parseZoneNpcs(content: HTMLElement): { name: string; level: string }[] {
+  for (const table of content.querySelectorAll("table")) {
+    const heads = table.querySelectorAll("th").map((th) => cellText(th).toLowerCase());
+    const name = heads.indexOf("npc name");
+    const level = heads.indexOf("level");
+    if (name === -1 || level === -1) continue;
+
+    const npcs: { name: string; level: string }[] = [];
+    for (const row of table.querySelectorAll("tr")) {
+      const cells = row.querySelectorAll("td");
+      // Skips the header row and any spacer: both are short of the columns we need.
+      if (cells.length <= Math.max(name, level)) continue;
+      const who = cellText(cells[name]);
+      const lvl = cellText(cells[level]);
+      if (who && lvl) npcs.push({ name: who, level: lvl });
+    }
+    if (npcs.length) return npcs;
+  }
+  return [];
+}
+
 // ─── Item sections ──────────────────────────────────────────────────────────
 
 /** "Drops From": alternating zone <p> and <ul> of mobs → one source per mob. */
@@ -511,7 +553,16 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
   }
 
   if (content.querySelector("table.zoneTopTable")) {
-    return { kind: "zone", title, wikiPath, sources: [], components: [], rewards: [], fetchedAt };
+    return {
+      kind: "zone",
+      title,
+      wikiPath,
+      sources: [],
+      components: [],
+      rewards: [],
+      npcs: parseZoneNpcs(content),
+      fetchedAt,
+    };
   }
 
   // Spell pages use their own container; without this they'd fall through to "item".

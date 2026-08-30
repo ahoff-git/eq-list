@@ -34,6 +34,7 @@ const api: EqlApi = {
   wiki: {
     search: (term) => ipcRenderer.invoke(CH.wikiSearch, term),
     getPage: (title) => ipcRenderer.invoke(CH.wikiGetPage, title),
+    refreshPage: (title) => ipcRenderer.invoke(CH.wikiRefreshPage, title),
     searchZones: (term) => ipcRenderer.invoke(CH.wikiSearchZones, term),
     questsByZone: (zone) => ipcRenderer.invoke(CH.wikiQuestsByZone, zone),
     openInBrowser: (target) => ipcRenderer.invoke(CH.wikiOpen, target),

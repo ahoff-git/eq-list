@@ -105,6 +105,19 @@ shopping list.
   page that 404s is recorded by name rather than ending the run. Fetching is `getPage`, so a
   harvested page gets the same caching, version check and era flag as one you opened by hand. The
   schedule is a tested black box — roster, cache test, fetch, clock and sleep are all injected.
+- **The roster is items *plus the zones and quests they name*** — and **zones, not mobs**, which is
+  what makes an item's level affordable ([ADR 0163](../decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
+  A mob's level is on the mob's page and there are 4,214 of them, but a **zone page carries a table of
+  every NPC in the zone with its level** (`parseZoneNpcs`, found by reading the header row for
+  `NPC Name` and `Level`), and 99.5% of drop rows name their zone. So 177 zone pages answer for all
+  4,214 mobs: measured, 15 zone pages yielded 1,288 mobs with levels where 226 mob pages had yielded
+  226. The roster grows by 1,724 rather than 5,761, and a run by 16% rather than 52%.
+  - Individual mob pages are **never fetched for this**. The ones already on disk are read and
+    preferred (a mob page describes that spawn specifically); a missing one is a rung to fall
+    through, not a page to go and get.
+  - `cachedItems()` gathers zone rosters, mob cards and quest cards on the same walk that reads the
+    items, then attaches a `level` to each. Names are folded by `npcKey`, since a zone page writes
+    `A Giant Snake (Blackburrow)` and the drop row writes what the game prints.
 - **…and filled *once per room*, not once per person** — `harvest` plans against what the
   [room](../peers/README.md) holds, not only against this cache
   ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). The roster is cut into 1024
@@ -116,6 +129,33 @@ shopping list.
   catalogue that was already being broadcast; `items.status()` / `items.shard()` / `items.accept()`
   are the cache's side of it, and `joinRoom` late-binds the two halves (the hub needs the cache to
   answer an ask, and the cache needs the hub to send one).
+- **How long a page keeps** — `settings.wikiPageTtlDays`, **14 days** by default, read per freshness
+  check rather than captured so a change takes effect at once (a running harvest included). One TTL
+  for every kind of page: two answers to "how old may a wiki page be" would be two things to keep in
+  step for no gain. It became a setting when pages started circulating between peers — a catalogue a
+  room fills in an afternoon could otherwise sit unchecked for a very long time
+  ([ADR 0161](../decisions/0161-a-public-page-is-shared-by-default.md)). `refreshPage(title)` is the
+  escape hatch: one page, re-fetched now, whatever its age, through the same parser and cache write
+  as any other fetch — it is the ↻ in a page's header, which also says how old the current copy is.
+  A page from a peer keeps **its** pull date, and a copy newer than ours replaces ours
+  ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)), so a room re-pulls each page
+  about once between everyone per TTL rather than once each.
+- **The catalogue is built once and held.** Walking 11,519 cache files is ~400ms of *synchronous*
+  reads, and main serves every window's IPC — paying it per Items tab mount froze the whole app for a
+  third of a second each time. `cachedItems()` keeps its answer and drops it only when *we* write a
+  page (`pageWritten`), which is sound because nothing else writes this directory. The walk **yields
+  every 100 files**, so the longest stall it causes is ~12ms rather than one 400ms block, and two
+  callers arriving together share one walk. The shard index rides the same walk instead of doing a
+  second one, and is patched per written page rather than torn down — a harvest writes a page a
+  second, and rebuilding on each would be a full walk every tick for three hours. Main warms it a few
+  seconds after the window paints, so even the first open is instant.
+- **A parser bump invalidates the kinds it changed, and nothing else.** `CACHE_VERSION` is one number
+  for the whole cache, so bumping it to teach the parser about *zone* pages once threw away 11,482
+  untouched item pages — an empty Items tab and a three-hour re-fetch for every user, for a change
+  item pages were not affected by. `MIN_PARSE_VERSION` states the version each **kind** has to have
+  been parsed at (`zone: 13`, everything else the floor), and `parsedCurrently(kind, version)` is the
+  one test every cache read uses. Raise a kind's entry when *its* parse changes; raise the floor only
+  when something changes for everything.
 - **Cache versioning** — `getPage` caches the *parsed* `WikiPage` to disk, so a
   `parse.ts` change (new page kinds, new fields) would otherwise be masked by
   week-old entries. Cached pages are stored as `{ version, page }`; `getPage` treats

@@ -12,11 +12,30 @@ import type { HarvestProgress } from "@/shared/types";
  * The measurements behind them: a page is ~90 ms of the wiki's work and about 3 KB, and there are
  * 11,136 of them ([ADR 0153](../../../specs/decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)).
  */
-const PACES = [
-  { value: "2000", label: "Very gentle — ~6h" },
-  { value: "1000", label: "Gentle — ~3h" },
-  { value: "500", label: "Brisk — ~1.5h" },
-];
+/**
+ * The pace, named in hours rather than milliseconds — "1000 ms" is not a thing anyone has an opinion
+ * about, and "about four hours, barely noticeable" is.
+ *
+ * The hours are computed from the roster we actually have rather than written down, because the
+ * roster grew: a run is items **plus** the mobs and quests they name, ~16,900 pages rather than
+ * 11,136 ([ADR 0163](../../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
+ * A hard-coded "~3h" would have quietly become wrong the day that changed.
+ */
+const GAPS = [2000, 1000, 500];
+
+/**
+ * Until a run has learned the roster, the measured size of a full one: 11,136 items plus the 177
+ * zones and 1,547 quests that give them their levels
+ * ([ADR 0163](../../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
+ */
+const ASSUMED_PAGES = 12_900;
+
+const paceLabel = (gapMs: number, pages: number): string => {
+  const hours = (pages * gapMs) / 3_600_000;
+  const rounded = hours >= 1 ? `~${Math.round(hours)}h` : `~${Math.round(hours * 60)}m`;
+  const name = gapMs >= 2000 ? "Very gentle" : gapMs >= 1000 ? "Gentle" : "Brisk";
+  return `${name} — ${rounded}`;
+};
 
 const DEFAULT_PACE = "1000";
 
@@ -63,6 +82,11 @@ export default function CatalogueHarvest({
   const roomPercent = shards.present ? Math.min(100, Math.round((shards.room / shards.present) * 100)) : 0;
   const roomAhead = roomPercent > percent + 1;
 
+  // What is left to *fetch*, since that is what the time is spent on — a mostly-filled catalogue
+  // should not be advertised as another four hours.
+  const leftToFetch = total ? Math.max(0, total - progress.at) : ASSUMED_PAGES;
+  const paces = GAPS.map((gapMs) => ({ value: String(gapMs), label: paceLabel(gapMs, leftToFetch) }));
+
   const start = (restart?: boolean) => void api()?.wiki.harvestStart({ gapMs: Number(pace), restart });
   const stop = () => void api()?.wiki.harvestStop();
 
@@ -94,9 +118,9 @@ export default function CatalogueHarvest({
           <PickField
             value={pace}
             onChange={onPace}
-            blank={PACES.find((p) => p.value === DEFAULT_PACE)!.label}
+            blank={paces.find((p) => p.value === DEFAULT_PACE)!.label}
             blankValue={DEFAULT_PACE}
-            options={PACES.filter((p) => p.value !== DEFAULT_PACE)}
+            options={paces.filter((p) => p.value !== DEFAULT_PACE)}
             title="How fast to ask the wiki for pages"
             className="select-sm"
           />

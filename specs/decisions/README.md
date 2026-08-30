@@ -193,9 +193,27 @@ finished, so a number is claimed before a second author can reach for it.
 - [0158: A debuff on your own side is not a reminder](./0158-a-debuff-on-your-own-side-is-not-a-reminder.md)
 - [0159: A refresh is not a rise](./0159-a-refresh-is-not-a-rise.md)
 - [0160: A room fills the catalogue once](./0160-a-room-fills-the-catalogue-once.md)
+- [0161: A public page is shared by default, and carries its own age](./0161-a-public-page-is-shared-by-default.md)
+- [0162: A room of one is checked, not guessed at](./0162-a-room-of-one-is-checked-not-guessed-at.md)
+- [0163: An item wears the level of what drops it](./0163-an-item-wears-the-level-of-what-drops-it.md)
+- [0164: The newest copy in the room wins](./0164-the-newest-copy-in-the-room-wins.md)
 
 ## Open Questions
 
+- **Should `possibleSplit` be read?** `BootstrapResponse` carries a flag for the exact condition
+  [ADR 0162](./0162-a-room-of-one-is-checked-not-guessed-at.md) cures — "the same identity
+  reasserting leadership after being superseded ... a possible sign of two independent rooms under
+  the same roomId" — which core deliberately leaves to its callers, and which our bootstrap client
+  currently discards. The probe makes it unnecessary rather than wrong: it would be a second,
+  cheaper signal, available at join time instead of a rung later. Worth wiring only if the first
+  rung turns out to be too slow in practice, which nothing yet says it is.
+- **Should a join have a deadline of its own?** Every *step* of one is bounded — the bootstrap
+  client times out at 8s and a PeerJS dial at 10s — but `transport.selfId` is not, so a broker that
+  accepts the socket and never answers leaves `connectToRoom` pending for ever: no status reported,
+  no `recoverFrom`, and the only cure is toggling Connect. The transport rejects on a broker
+  *error*, which is what makes this hypothetical rather than observed. A deadline is easy; what is
+  not obvious is what to do with a join that lands *after* it, since abandoning one leaves a ghost
+  in the room. Wanted the moment somebody sees a client stuck on "joining".
 - **Should there be more than one room?** There is exactly one — `eq-list` — and after
   [ADR 0141](./0141-the-room-is-a-meeting-place.md) everything in a catalogue is offered to everyone
   in it. That was fine while the room carried a location and a map click. It is the thing standing in

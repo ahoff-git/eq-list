@@ -176,6 +176,10 @@ export const EQ_RACES: readonly string[] = [
   "HUM", "BAR", "ERU", "ELF", "HIE", "DEF", "HFE", "DWF", "TRL", "OGR", "HFL", "GNM", "IKS", "VAH", "FRG", "DRK",
 ];
 
+/** The "everyone" answers, shared rather than copied per item — see `parseItemStats`. */
+const ALL_CLASSES: string[] = Object.freeze([...EQ_CLASSES]) as unknown as string[];
+const ALL_RACES: string[] = Object.freeze([...EQ_RACES]) as unknown as string[];
+
 /**
  * The flags worth filtering on, and every spelling of each the corpus actually contains.
  *
@@ -198,13 +202,47 @@ const FLAG_SPELLINGS: readonly (readonly [string, readonly string[]])[] = [
 export const ITEM_FLAGS: readonly string[] = FLAG_SPELLINGS.map(([flag]) => flag);
 
 /**
+ * A stated requirement to use the item: `Req Level: 30`, `Required Level: 49`, `Required level of 55.`
+ *
+ * The guards matter more than the pattern. The same words appear on **effect** lines, where they gate
+ * the *effect* rather than the item — `Combat Effect: Knee Shot (Req Level 15)` is a level-15 proc on
+ * an axe anybody can hold, and `Click Effect: Whirl Bolt (Must Equip) - Cast Time: 1.0 seconds,
+ * Required Level: 46` is the same trap without the parentheses. Effect lines are skipped before this
+ * is reached, and a line carrying a cast time is treated as one of them however it begins.
+ */
+const REQUIRED_LEVEL = /\bReq(?:uired)?\s*level\s*(?::\s*|of\s+)(\d+)/i;
+
+/** A cast time means the line is describing a spell, whatever it starts with. */
+const CASTING_LINE = /\bCast(ing)?\s*Time\b/i;
+
+/**
+ * Which kind of effect a line describes, from its label and its parenthetical.
+ *
+ * `Focus Effect:` and `Combat Effect:` say so outright. A bare `Effect:` does not, and the answer is
+ * in the qualifier — see `EffectKind` for the shapes, measured across the catalogue.
+ *
+ * Anything unrecognised is a **click**, which is both the commonest kind and the safer default: it
+ * is the one that says "there is a button here", and a worn effect mislabelled as a click sends the
+ * reader to look for a button that isn't there — while a click mislabelled as worn would have them
+ * believe they already had it.
+ */
+function effectKind(label: string, line: string): EffectKind {
+  if (/^focus/i.test(label)) return "focus";
+  if (/^combat/i.test(label)) return "proc";
+  const qualifier = /\(([^)]*)\)/.exec(line)?.[1] ?? "";
+  if (/\b(combat|proc)\b/i.test(qualifier)) return "proc";
+  if (/\bworn\b/i.test(qualifier)) return "worn";
+  return "click";
+}
+
+/**
  * A line that describes a spell, not the item's own condition.
  *
  * Flags are hunted across every line (they have no label of their own — `MAGIC ITEM LORE ITEM NO
  * DROP` is a whole line), so an effect named "Quest of Fire" would otherwise flag the item as a
  * quest item. Effect lines announce themselves, so they're skipped.
  */
-const EFFECT_LINE = /^(Focus Effect|Combat Effect|Effect)\s*:\s*(.+)$/i;
+const EFFECT_LINE = /^(Focus Effect|Combat Effect|Click Effect|Worn Effect|Effect)\s*:\s*(.+)$/i;
 
 /** Everything a card says about one item, as facts rather than as text. */
 export interface ItemStats {
@@ -221,13 +259,49 @@ export interface ItemStats {
   races: string[];
   /** `MAGIC`, `LORE`, `NO DROP`, … — folded to one spelling each (see `FLAG_SPELLINGS`). */
   flags: string[];
+  /**
+   * The level the card says you must be to **use** it, when it says so at all.
+   *
+   * Rare and authoritative: 19 of 11,155 item cards state one, and where they do it outranks anything
+   * derived from where the item comes from — an item off a level-5 gnoll that says `Required level
+   * of 46` is a level-46 item. See `REQUIRED_LEVEL` for the two lines it is *not* read from.
+   */
+  requiredLevel?: number;
   /** The weapon skill, as written (`1H Slashing`, `Piercing`, `Archery`). */
   skill?: string;
   /** `TINY` … `GIANT`. */
   size?: string;
-  /** Clicky / worn / proc effects and focus effects, by name. */
-  effects: string[];
+  /** What it *does*, beyond its numbers — and how you get at it. See `EFFECT_KINDS`. */
+  effects: ItemEffect[];
 }
+
+/**
+ * How an item's effect is reached, which is the thing a player is actually choosing between.
+ *
+ * A worn haste and a clicky haste are not substitutes: one is free and permanent, one costs a button
+ * press and a cooldown, and a proc is neither — it happens to you. Lumped into one "effects" list the
+ * dropdown would be unusable, because the *kind* is most of what you are shopping for.
+ *
+ * Measured across 1,672 effect lines in the catalogue, the wiki writes the kind in the parenthetical:
+ * `(Combat, …)` and `(Proc)` are procs, `(Worn)` is worn, `(Any Slot…)` and `(Must Equip…)` are
+ * clickies, and `Focus Effect:` labels itself. `Must Equip` is a click that has to be equipped rather
+ * than a fifth kind — you still press it.
+ */
+export type EffectKind = "worn" | "click" | "proc" | "focus";
+
+export interface ItemEffect {
+  /** The spell's name, as the card writes it — `Spell Haste I`, `Feet like Cat`. */
+  name: string;
+  kind: EffectKind;
+}
+
+/** The kinds in the order a picker offers them, with the word a reader uses for each. */
+export const EFFECT_KINDS: readonly { key: EffectKind; label: string; blurb: string }[] = [
+  { key: "worn", label: "Worn effect", blurb: "always on, just for wearing it" },
+  { key: "click", label: "Click effect", blurb: "you press it — some need the item equipped" },
+  { key: "proc", label: "Proc", blurb: "fires on its own in combat" },
+  { key: "focus", label: "Focus", blurb: "improves your own spells" },
+];
 
 /**
  * A blank reading, for an item whose source gave no card at all.
@@ -242,7 +316,7 @@ export const NO_ITEM_STATS: ItemStats = Object.freeze({
   classes: Object.freeze([]) as unknown as string[],
   races: Object.freeze([]) as unknown as string[],
   flags: Object.freeze([]) as unknown as string[],
-  effects: Object.freeze([]) as unknown as string[],
+  effects: Object.freeze([]) as unknown as ItemEffect[],
 });
 
 /**
@@ -332,10 +406,14 @@ export function parseItemStats(lines: readonly string[] | undefined): ItemStats 
 
     const effect = EFFECT_LINE.exec(line);
     if (effect) {
-      // "Feet like Cat (Combat, Casting Time: Instant) at Level 20" — the name is what's before the
-      // parenthetical that qualifies it. The rest is how it fires, which the card itself still shows.
+      // "Feet like Cat (Combat, Casting Time: Instant) at Level 20" — the name is what precedes the
+      // parenthetical, and the parenthetical is what says *how you get at it*.
       const name = effect[2].split(/\s*\(|\s+at Level\b/i)[0].trim();
-      if (name) addAll(out.effects, [name]);
+      // 44 lines in the catalogue are a bare `Effect:` with nothing after it. A nameless effect is
+      // not an effect.
+      if (name && !out.effects.some((e) => e.name === name)) {
+        out.effects.push({ name, kind: effectKind(effect[1], line) });
+      }
       continue; // never scanned for stats or flags: a spell's words are not the item's (see EFFECT_LINE)
     }
 
@@ -358,6 +436,13 @@ export function parseItemStats(lines: readonly string[] | undefined): ItemStats 
     const race = /^Race\s*:\s*(.+)$/i.exec(line);
     if (race) addAll(out.races, expandWhoList(race[1], EQ_RACES));
 
+    if (!CASTING_LINE.test(line)) {
+      const required = REQUIRED_LEVEL.exec(line);
+      // `Required level of 0` is the wiki saying there is no requirement, not a requirement of zero.
+      const wanted = required ? Number(required[1]) : 0;
+      if (wanted > 0 && out.requiredLevel === undefined) out.requiredLevel = wanted;
+    }
+
     const skill = /\bSkill\s*:\s*([A-Za-z0-9][A-Za-z0-9 ]*?)(?=\s+Atk\b|\s*$)/i.exec(line);
     if (skill && !out.skill) out.skill = skill[1].trim();
 
@@ -366,6 +451,18 @@ export function parseItemStats(lines: readonly string[] | undefined): ItemStats 
 
     addAll(out.flags, flagsIn(line));
   }
+
+  /**
+   * Most items say `Class: ALL` and `Race: ALL`, so most items end up holding an identical
+   * sixteen-string array. Handing back the **shared** constant instead of a private copy costs
+   * nothing here and saves 1.5 MB every time the catalogue crosses to a window: structured clone
+   * preserves shared references, so eight thousand items pointing at one array send it once.
+   *
+   * Frozen at the source, so nobody can discover this by mutating one item's list and changing
+   * everybody's.
+   */
+  if (out.classes.length === EQ_CLASSES.length) out.classes = ALL_CLASSES;
+  if (out.races.length === EQ_RACES.length) out.races = ALL_RACES;
 
   // The only number nobody prints, and the only one anyone compares weapons by. Two places, because
   // the difference between a 1.75 and a 1.8 ratio is the whole argument.

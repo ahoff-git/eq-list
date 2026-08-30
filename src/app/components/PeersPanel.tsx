@@ -335,10 +335,12 @@ function Roster({
         // "nobody's on". Saying which is the whole difference between a feature that looks unfinished
         // and one that is merely quiet — and it's what makes a real connection fault visible at all
         // ([ADR 0070](../../../specs/decisions/0070-a-dropped-room-rejoins-itself.md) left this
-        // unanswered, and answering it here is what "0 peers with two clients up" needed).
+        // unanswered, and answering it here is what "0 peers with two clients up" needed). What the
+        // connected copy can now promise is a *measurement* rather than a wait — see
+        // [ADR 0162](../../../specs/decisions/0162-a-room-of-one-is-checked-not-guessed-at.md).
         <p className="muted small">
           {status.connected
-            ? "Nobody else is in the room yet. Anyone else running EQ List with peer networking on shows up here — and if you both started the app at the same moment you can end up in two separate rooms, which the app re-checks every few minutes and Retry connection fixes at once."
+            ? "Nobody else is in the room yet. Anyone else running EQ List with peer networking on shows up here — and if you both started the app at the same moment you can end up in two separate rooms, which the app checks for within about half a minute and fixes on its own. Retry connection does it immediately."
             : "Not in the room yet — still joining, or unable to reach the network. It keeps retrying on its own; turn on Debug logging in the tray if it stays this way."}
         </p>
       ) : (

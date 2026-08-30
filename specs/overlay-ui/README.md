@@ -111,6 +111,14 @@ list, hunt, search, damage, session, peers, settings.
   themselves clickable, and a click that both opened the page and toggled the row would do the second
   thing to whatever the first thing scrolled into view. Several names on one line — what a kill
   dropped, who drops an item in a zone — are a `NameList`, so the comma between them is written once.
+- **A page says how old it is, and offers to replace itself** (`components/RefreshPage.tsx`, in the
+  page header beside the ↗ links). A cached page is good for a fortnight and may have reached you from
+  a peer rather than from eqlwiki, so ↻ re-fetches *that one page* now
+  ([ADR 0161](../decisions/0161-a-public-page-is-shared-by-default.md)). Per-page on purpose: a button
+  that re-fetched everything would be a three-hour job wearing the icon of a small one. The age sits
+  next to it because that is the fact that makes somebody reach for the button — a page fetched an
+  hour ago rarely needs it. `SearchPanel` re-reads the open page off a nonce rather than being handed
+  the fresh one, so the effect that decides what `page` is stays the only writer of it.
 - **A page carries the evidence, not just the claim** (`components/WikiPageView.tsx`). A wiki page is
   someone else's sample of an older build ([ADR 0025](../decisions/0025-observation-over-the-wiki.md)),
   so a **mob's** page ends with `MobKills`: what your own kills taught, one block per zone you've
@@ -459,6 +467,13 @@ list, hunt, search, damage, session, peers, settings.
       one, and is told *before* pressing anything that filling will come mostly from peers rather than
       from the wiki. While running, the note says whether the current page is coming from the wiki or
       from a peer, and the totals are kept apart for the same reason.
+    - **Rows arrive built.** The merge, the stat parsing and the zone folding all happen once in
+      **main**, which already holds the pages and caches them — so a window never parses a stat card,
+      and what crosses is ~4.3 MB of rows rather than 11.3 MB of pages with their cards and sources
+      (`forTransfer` drops both once they have become `stats`, `kinds` and `zones`; items answering
+      `Class: ALL` share one array, which structured clone then sends once). The catalogue is also
+      **kept across mounts** (`useItemCatalog`), so glancing at another tab and back costs nothing at
+      all rather than repeating the transfer.
     - **The corpus is the cache**, merged from `wiki.cachedItems()` and `lucy.cachedItems()`
       (`itemCatalog`, wiki winning a name collision, Lucy's rows badged). Nothing fetches: the
       catalogue is what you have already opened and the footer says how big it is. Read once per
@@ -469,6 +484,51 @@ list, hunt, search, damage, session, peers, settings.
       *in era only* toggle. Facet options are **derived from the catalogue**, so a picker can never
       offer a value that returns nothing, and zones appear under one spelling each. A `Clear (n)`
       button counts what's cutting.
+    - **Each picker has an *All*, and it ticks what is currently *shown*.** With 154 zones that is
+      the difference between a usable filter and a scrolling exercise — and combined with the menu's
+      own filter box it is the real workflow: type "karana", press *All*, and all eight Karana zones
+      are ticked at once. A union rather than a replacement, so filtering twice and pressing it twice
+      builds a selection up instead of discarding the first half.
+    - **A *(none)* row, above the values and separated by a rule**, matching items that have no value
+      at all for that facet (`NO_FACET_VALUE`). It is the other half of the catalogue and a large
+      half: measured on a filled one, **4,560 of 11,171 items name no zone whatsoever** (quest
+      rewards, crafted goods, anything whose sources the wiki never listed), and no combination of
+      real values can reach them. The two halves partition exactly — 6,611 + 4,560 = 11,171 — so
+      *All* is "only things that come from somewhere", *(none)* is "only the ones that don't", and
+      ticking both is the whole catalogue back. It ors with the real values like any other tick, so
+      `[BACK, (none)]` reads "worn on the back, or worn nowhere".
+      - It is deliberately **not** swept up by *All*: if it were, *All* would tick every item in the
+        catalogue and become an elaborate way of changing nothing.
+      - The sentinel is NUL-prefixed rather than a readable `"(none)"` because these lists are
+        populated from wiki text — a facet value that happened to equal the sentinel would silently
+        become this instead, and NUL makes that impossible rather than merely unlikely. Only the
+        stored criteria ever see it; the picker shows "(none)", and a button summarising one chosen
+        value shows "no zone".
+      - While anything is ticked and *(none)* is not, the menu says what is being hidden and how to
+        get it back — the action, rather than a warning about it.
+    - **Four effect pickers — worn, click, proc, focus — on their own row.** A worn haste and a clicky
+      haste are not substitutes, and the *kind* is most of what somebody is shopping for, so they are
+      four facets rather than one "has an effect" list (`EFFECT_KINDS`; the kind is read off the
+      card's parenthetical). Measured on a filled catalogue: 21 worn, 485 click, 275 proc, 81 focus.
+    - **Every picker's filter box is fuzzy**, which is what makes 796 distinct effect names usable:
+      the same thing is spelled a dozen ways (there are **17** effects with "Haste" in the name), so
+      typing one has to reach the others, and a misspelt spell name has to reach anything at all.
+      Substring hits lead and fuzzy ones are offered under them — the same two-pass shape the Lucy
+      mirror uses, which improves the other pickers for free ("Feerot" finds The Feerrott).
+    - **A Level column, a floor, and a *cap on a slider*.** The level is derived — the wiki states one
+      on only 22 of 11,125 cards — so it comes from the card where it says (`Req Level: 30`), else the
+      mob that drops it (whose level comes from the **zone page's NPC roster**, not 4,214 mob pages),
+      else the quest, else the zone's shipped range
+      ([ADR 0163](../decisions/0163-an-item-wears-the-level-of-what-drops-it.md)). The rung shows: a
+      stated or mob level is plain, a zone's is dim italics saying it is only the zone's range.
+      - The **cap is a slider** because it is the one you drag rather than type — "what can I use
+        now" is re-asked as you level. At its far right it means no cap, which is also the truth at
+        the level cap. Measured: cap 10 shows 6,919 of 11,125, cap 40 shows 9,297.
+      - It **overlaps** rather than contains (a mob spanning 21–23 is a level-22 character's item).
+      - **An item nothing could place is never cut by a level bound** — deliberately unlike a stat
+        floor. "At least 5 INT" asked of a silent card has a definite answer; "is this out of reach"
+        asked of an unplaced item has none, and 4,911 items are in that position, so cutting them
+        would quietly hide 44% of the catalogue. The count sits beside the slider instead.
     - **Value is your own yardstick** (`ItemWeights`): a weight per stat, `{INT: 2, WIS: 1}` making
       ten wisdom worth five intelligence. Blank means *unweighted*, not zero-weighted, and with none
       set the Value column is honest about saying nothing. Delay and weight are marked as wanting a

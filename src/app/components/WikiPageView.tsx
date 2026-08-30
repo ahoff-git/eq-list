@@ -5,6 +5,7 @@ import { useNav } from "@/lib/nav";
 import ItemDrops from "./ItemDrops";
 import ItemLink from "./ItemLink";
 import LucySays, { LucyLink } from "./LucySays";
+import RefreshPage from "./RefreshPage";
 import MapLink, { ZoneLink } from "./MapLink";
 import MobKills from "./MobKills";
 import { AddButton } from "./ui";
@@ -24,7 +25,7 @@ import { cardZone, statesNothing } from "@/shared/map/mob-place";
  * Adding goes straight to `api()` rather than through a prop: the list is the main process's, so there
  * is nothing for a parent to mediate.
  */
-export default function WikiPageView({ page }: { page: WikiPage }) {
+export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; onRefreshed?: () => void }) {
   const nav = useNav();
   // Which buttons this page gets. The rule lives in `wiki-add.ts` because the search results list
   // adds by the same one, and the two had drifted — see that file.
@@ -103,6 +104,9 @@ export default function WikiPageView({ page }: { page: WikiPage }) {
         <span className={`badge kind-${page.kind}`}>{page.kind}</span>
         {page.outOfEra && <span className="badge era-out">out of era</span>}
         <span className="spacer" />
+        {/* How old this copy is, and the way to replace it. Before the ↗ links, because it is about
+            *this* page rather than about somewhere else to read it. */}
+        <RefreshPage title={page.title} fetchedAt={page.fetchedAt} onRefreshed={onRefreshed} />
         <button className="btn ghost sm" title="Open on eqlwiki" onClick={() => api()?.wiki.openInBrowser(page.wikiPath)}>
           ↗ eqlwiki
         </button>

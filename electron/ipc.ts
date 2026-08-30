@@ -44,6 +44,7 @@ import type { DragEnd } from "../src/shared/window-snap";
 import { createPeerShareHub, shareSources } from "./peer-share";
 import type { ShareKind } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
+import { forTransfer, itemCatalog, itemRows } from "../src/shared/item-search";
 
 const log = createLogger("ipc");
 
@@ -299,7 +300,7 @@ function registerSettingsIpc(context: IpcContext): void {
  * The wiki client: search, a page, and the refresh that re-mirrors its indexes.
  */
 function registerWikiIpc(context: IpcContext): void {
-  const { wiki, broadcast } = context;
+  const { wiki, lucy, store, broadcast } = context;
 
   // A harvest runs for hours across tab switches and window reopens, so its progress goes to every
   // window rather than being handed back to whichever one happened to press start.
@@ -308,11 +309,30 @@ function registerWikiIpc(context: IpcContext): void {
   // ── wiki ──
   ipcMain.handle(CH.wikiSearch, (_e, term: string) => wiki.search(term));
   ipcMain.handle(CH.wikiGetPage, (_e, title: string) => wiki.getPage(title));
+  // The escape hatch from the TTL: one page, re-fetched now, because a reader thinks it is wrong.
+  ipcMain.handle(CH.wikiRefreshPage, (_e, title: string) => wiki.refreshPage(title));
   ipcMain.handle(CH.wikiSearchZones, (_e, term: string) => wiki.searchZones(term));
   ipcMain.handle(CH.wikiQuestsByZone, (_e, zone: string) => wiki.questsByZone(zone));
   ipcMain.handle(CH.wikiRefresh, () => wiki.refresh());
   // The Items tab's corpus. Cache-only by contract — see `WikiClient.cachedItems`.
-  ipcMain.handle(CH.wikiCachedItems, () => wiki.cachedItems());
+  /**
+   * The Items tab's whole corpus, **built here rather than in the window**.
+   *
+   * The merge, the stat parsing and the zone folding all used to happen in the renderer, off a 6.9 MB
+   * transfer: eleven thousand cards parsed on the UI thread every time the tab was opened. Main
+   * already holds the pages and already caches them, so it does the derivation once and sends rows
+   * that are ready to search — about 1.6 MB, and no parsing on the other side at all.
+   *
+   * Lucy is asked here too, so the zone folding still spans both caches (the same reason
+   * `itemCatalog` exists); it answers `[]` when that source is switched off.
+   */
+  ipcMain.handle(CH.wikiCachedItems, async () => {
+    const [ours, theirs] = await Promise.all([
+      wiki.cachedItems(),
+      store.getSettings().askLucy ? Promise.resolve(lucy.cachedItems()) : Promise.resolve([]),
+    ]);
+    return forTransfer(itemRows(itemCatalog(ours, theirs)));
+  });
   // The catalogue harvest (ADR 0153). Only ever starts because a window asked it to — there is no
   // "warm this on launch", which is the difference between a trickle and a crawl nobody consented to.
   ipcMain.handle(CH.wikiHarvestStart, (_e, opts: { gapMs?: number; restart?: boolean } | undefined) =>
@@ -787,7 +807,6 @@ function registerPeerIpc(context: IpcContext): void {
     fileContribution,
     changed: () => broadcast(CH.peerShareChanged, undefined),
     offered: (notice) => broadcast(CH.peerOffered, notice),
-    rejoin: () => getMainWindow()?.webContents.send(CH.awariRejoin),
     sources: shareSources({
       getList: () => store.getList(),
       getSettings: () => store.getSettings(),

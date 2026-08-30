@@ -15,8 +15,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   NO_CRITERIA,
+  NO_FACET_VALUE,
   activeCriteria,
   facetOptions,
+  facetlessCount,
   itemCatalog,
   itemRows,
   itemValue,
@@ -119,6 +121,100 @@ test("one zone under one spelling, however the wiki wrote it", () => {
   assert.deepEqual(facetOptions(rows(), "zone"), ["The Feerrott"]);
   const inZone = with_({ facets: { ...NO_CRITERIA.facets, zone: ["The Feerrott"] } });
   assert.deepEqual(titles(rows().filter((r) => matchesItem(r, inZone))), ["Cloak of Wisdom", "Aviak Talon"]);
+});
+
+test("ticking every zone is not the same as ticking none", () => {
+  // The distinction behind the picker's *All* button and the note under it. An item with no zone at
+  // all fails a zone filter however many zones are ticked — so "select all" is a real filter ("only
+  // things that come from somewhere"), not a no-op. On a filled catalogue it is 4,560 of 11,171
+  // items, which is far too many to have disappear without a word.
+  const all = rows();
+  const everyZone = with_({ facets: { ...NO_CRITERIA.facets, zone: facetOptions(all, "zone") } });
+  const kept = titles(all.filter((r) => matchesItem(r, everyZone)));
+
+  assert.deepEqual(titles(all.filter((r) => matchesItem(r, NO_CRITERIA))).length, 3, "unfiltered is everything");
+  assert.deepEqual(kept, ["Cloak of Wisdom", "Aviak Talon"], "the quest-only item is cut");
+  assert.equal(kept.includes("Circlet of Intellect"), false);
+});
+
+test("the count behind that warning is the rows with nothing at all for a facet", () => {
+  const all = rows();
+  // One of the three is quest-only, so it names no zone.
+  assert.equal(facetlessCount(all, "zone"), 1);
+  // …and every one of them has a slot and a source, so those warn about nothing.
+  assert.equal(facetlessCount(all, "slot"), 1, "the talon is a quest item with no slot");
+  assert.equal(facetlessCount(all, "source"), 0);
+});
+
+test("`(none)` asks for the half of the catalogue no value can reach", () => {
+  const all = rows();
+  const noZone = with_({ facets: { ...NO_CRITERIA.facets, zone: [NO_FACET_VALUE] } });
+  // Exactly the items ticking every zone would have cut, and nothing else — "show me what the wiki
+  // lists no source for" is a real question, and this is the only way to ask it.
+  assert.deepEqual(titles(all.filter((r) => matchesItem(r, noZone))), ["Circlet of Intellect"]);
+});
+
+test("`(none)` ors with the real values rather than replacing them", () => {
+  const all = rows();
+  const backOrNowhere = with_({ facets: { ...NO_CRITERIA.facets, slot: ["BACK", NO_FACET_VALUE] } });
+  // "worn on the back, or worn nowhere" — one thought, one facet.
+  assert.deepEqual(titles(all.filter((r) => matchesItem(r, backOrNowhere))), ["Cloak of Wisdom", "Aviak Talon"]);
+});
+
+test("every value plus `(none)` is the whole catalogue back", () => {
+  const all = rows();
+  const everything = with_({
+    facets: { ...NO_CRITERIA.facets, zone: [...facetOptions(all, "zone"), NO_FACET_VALUE] },
+  });
+  assert.equal(all.filter((r) => matchesItem(r, everything)).length, all.length);
+});
+
+test("the sentinel is never offered as if it were a value", () => {
+  // It is a pseudo-option the picker adds, not something the catalogue contains — if it leaked into
+  // the derived options it would appear in the list twice and read as a zone.
+  for (const facet of ["zone", "slot", "class", "source", "flag"] as const) {
+    assert.equal(facetOptions(rows(), facet).includes(NO_FACET_VALUE), false, facet);
+  }
+  // And nothing real can collide with it: facet values come from wiki text, which cannot hold a NUL.
+  assert.match(NO_FACET_VALUE, /^\u0000/);
+});
+
+test("each effect kind is its own facet", () => {
+  const catalogue = [
+    item("Worn Haste Belt", ["Slot: WAIST", "Effect: Haste (Worn)"]),
+    item("Clicky Heal Ring", ["Slot: FINGER", "Effect: Superior Healing (Must Equip, Casting Time: Instant)"]),
+    item("Proc Sword", ["Slot: PRIMARY", "Effect: Invigor (Combat, Casting Time: Instant)"]),
+    item("Focus Robe", ["Slot: CHEST", "Focus Effect: Spell Haste I"]),
+  ];
+  const all = itemRows(catalogue);
+  // Four pickers, each offering only what is reached that way — the whole point of splitting them.
+  assert.deepEqual(facetOptions(all, "worn"), ["Haste"]);
+  assert.deepEqual(facetOptions(all, "click"), ["Superior Healing"]);
+  assert.deepEqual(facetOptions(all, "proc"), ["Invigor"]);
+  assert.deepEqual(facetOptions(all, "focus"), ["Spell Haste I"]);
+
+  // A worn haste is not a clicky haste, and asking for one must not return the other.
+  const worn = with_({ facets: { ...NO_CRITERIA.facets, worn: ["Haste"] } });
+  assert.deepEqual(titles(all.filter((r) => matchesItem(r, worn))), ["Worn Haste Belt"]);
+});
+
+test("a level cap hides what is known to be out of reach, and nothing else", () => {
+  // The whole point of the cap: "hide what I can't use yet". An item nothing could place has no
+  // answer to that question, and cutting it would quietly hide 44% of a real catalogue — so the
+  // silence is kept and reported rather than acted on. Deliberately unlike a stat floor.
+  const catalogue = [
+    item("High Thing", ["Req Level: 46", "Slot: HEAD"]),
+    item("Low Thing", ["Req Level: 10", "Slot: HEAD"]),
+    item("Unplaceable", ["Slot: HEAD"]),
+  ];
+  const all = itemRows(catalogue);
+  assert.deepEqual(all.map((r) => r.level?.min), [46, 10, undefined]);
+
+  const capped = with_({ levelMax: 20 });
+  assert.deepEqual(titles(all.filter((r) => matchesItem(r, capped))), ["Low Thing", "Unplaceable"]);
+
+  // A floor reads the same way round.
+  assert.deepEqual(titles(all.filter((r) => matchesItem(r, with_({ levelMin: 40 })))), ["High Thing", "Unplaceable"]);
 });
 
 test("the name box matches words in any order and ignores a grade", () => {

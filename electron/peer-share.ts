@@ -90,27 +90,6 @@ const TRAY_TTL_MS = 30 * 60_000;
 const NOTICE_DEBOUNCE_MS = 4_000;
 
 /**
- * How long the room may stay empty before we quietly try joining again.
- *
- * **This is not a keepalive.** awari heartbeats every connection every two seconds
- * (`DEFAULT_HEARTBEAT_INTERVAL_MS`), so a live session does not idle out and nothing here needs to
- * poke it — a second keepalive on top would be inventing work and would hide real drops behind our
- * own traffic.
- *
- * What it *is* is the cure for the one failure the startup retries deliberately give up on: two
- * clients that begin together can each create their own room, and `REJOIN_DELAYS_MS` stops after
- * three attempts because being genuinely alone is a normal resting state
- * ([ADR 0070](../specs/decisions/0070-a-dropped-room-rejoins-itself.md)). A pair that settles split
- * therefore stays split all evening. Five minutes is slow enough that a solitary player is not
- * reconnecting in a loop — one attempt per five minutes is nothing — and fast enough that two people
- * who sit down together find each other without either of them having to know the button exists.
- *
- * Only ever while the room is **empty**: a room with somebody in it is a room that works, and
- * re-joining it would drop a working session to look for a better one.
- */
-const ALONE_REJOIN_MS = 5 * 60_000;
-
-/**
  * The wiki cache, as the share hub needs to see it.
  *
  * An interface rather than the client itself, so the hub stays ignorant of eqlwiki and this file
@@ -179,8 +158,6 @@ export interface PeerShareDeps {
   offered: (notice: PeerOfferNotice) => void;
   /** Take item pages a peer handed us into the page cache. Returns how many were new. */
   acceptItems?: (pages: SharedItemPage[], shard?: number) => number;
-  /** Leave the room and join again — the owner window's job, relayed by `ipc.ts`. */
-  rejoin: () => void;
   /** What we'd share, per kind — the app's own data, read only when asked for. */
   sources: Record<ShareKind, () => unknown[]>;
   /**
@@ -194,12 +171,22 @@ export interface PeerShareDeps {
   now?: () => number;
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (handle: unknown) => void;
+  /**
+   * The two debounces (a catalogue re-publish, a notice) on the same terms as the tick above.
+   *
+   * Injectable for the same reason: every deadline in here is seconds to minutes long, and a test
+   * that had to wait one out in real time would either be slow or would stop being written.
+   */
+  setTimeout?: (fn: () => void, ms: number) => unknown;
+  clearTimeout?: (handle: unknown) => void;
 }
 
 export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   const now = deps.now ?? (() => Date.now());
   const setTimer = deps.setInterval ?? ((fn, ms) => setInterval(fn, ms));
   const clearTimer = deps.clearInterval ?? ((h) => clearInterval(h as NodeJS.Timeout));
+  const later = deps.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
+  const cancel = deps.clearTimeout ?? ((h) => clearTimeout(h as NodeJS.Timeout));
 
   /** The last measurement of each kind: what it held, and the revision that describes it. */
   const measured = new Map<ShareKind, { rows: unknown[]; digest: string; rev: number }>();
@@ -226,9 +213,9 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   const announced = new Map<string, Set<ShareKind>>();
   /** Newly-offered kinds waiting to become one notice per peer (see `NOTICE_DEBOUNCE_MS`). */
   const pendingNotices = new Map<string, Set<ShareKind>>();
-  let noticeTimer: NodeJS.Timeout | null = null;
+  let noticeTimer: unknown = null;
   let pins: MapPin[] = [];
-  let debounce: NodeJS.Timeout | null = null;
+  let debounce: unknown = null;
 
   const trayKey = (peerId: string, kind: ShareKind) => `${peerId}:${kind}`;
 
@@ -335,8 +322,8 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   }
 
   function touch(): void {
-    if (debounce) clearTimeout(debounce);
-    debounce = setTimeout(() => {
+    if (debounce) cancel(debounce);
+    debounce = later(() => {
       debounce = null;
       publishOffer();
     }, OFFER_DEBOUNCE_MS);
@@ -432,8 +419,17 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     deps.changed();
   }
 
-  /** Ask a peer for a kind, unless we asked very recently. */
+  /**
+   * Ask a peer for a kind, unless we asked very recently — or cannot reach them at all.
+   *
+   * The addressability check is here rather than at each caller because of what it protects: a
+   * `send` to a peer with no session id is **dropped by the owner window**, and asking anyway would
+   * still write the cooldown. A catalogue that arrives a moment before the roster row it belongs to
+   * would therefore burn the one ask and then refuse to repeat it for the next half minute, which
+   * turns a harmless ordering race into a real wait for the data.
+   */
   function askFor(peerId: string, kind: ShareKind, force: boolean): void {
+    if (!known.get(peerId)?.sessionId) return void log.debug("ask held - peer not addressable yet:", peerId, kind);
     const key = trayKey(peerId, kind);
     const last = asked.get(key) ?? 0;
     if (!force && now() - last < ASK_COOLDOWN_MS) return;
@@ -496,8 +492,8 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     const pending = pendingNotices.get(peerId) ?? new Set<ShareKind>();
     for (const kind of fresh) pending.add(kind);
     pendingNotices.set(peerId, pending);
-    if (noticeTimer) clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(flushNotices, NOTICE_DEBOUNCE_MS);
+    if (noticeTimer) cancel(noticeTimer);
+    noticeTimer = later(flushNotices, NOTICE_DEBOUNCE_MS);
   }
 
   /**
@@ -525,14 +521,10 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     pendingNotices.clear();
   }
 
-  /** When the room last had somebody in it — the clock behind `ALONE_REJOIN_MS`. */
-  let lastCompany = now();
-
   const tick = setTimer(() => {
     sweep();
     publishOffer();
     reconcile();
-    watchLoneliness();
   }, OFFER_TICK_MS);
 
   /**
@@ -551,30 +543,10 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   function reconcile(): void {
     if (!deps.getSettings().connectPeers) return;
     for (const [peerId, catalogue] of offers) {
-      if (!known.get(peerId)?.sessionId) continue;
       for (const kind of outOfDate(catalogue, (k) => tray.get(trayKey(peerId, k))?.rev)) {
         askFor(peerId, kind, false);
       }
     }
-  }
-
-  /**
-   * A room that has been empty too long is probably not the room everybody else is in.
-   *
-   * See `ALONE_REJOIN_MS` for why this exists and why it is slow. The clock resets the moment
-   * anybody is seen, so a real solitary session costs one join attempt every five minutes and a
-   * populated one costs none.
-   */
-  function watchLoneliness(): void {
-    if (!deps.getSettings().connectPeers || !status.connected) return;
-    if (known.size > 0) {
-      lastCompany = now();
-      return;
-    }
-    if (now() - lastCompany < ALONE_REJOIN_MS) return;
-    lastCompany = now();
-    log.debug("room empty for", Math.round(ALONE_REJOIN_MS / 1000), "s - re-joining to look again");
-    deps.rejoin();
   }
 
   /** Drop answers nobody has refreshed in a while, so a long session doesn't accumulate the room. */
@@ -637,9 +609,6 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
 
     noteStatus(next) {
       status = next;
-      // A join that has only just landed has had no chance to meet anybody, so the loneliness clock
-      // starts here rather than at whatever it was before the outage.
-      if (next.connected) lastCompany = now();
       // A room we are no longer in has no roster and no catalogues: keeping them would let a window
       // that opens during an outage read a list of people who cannot hear it. The **tray** survives,
       // because what somebody already handed over is ours whether or not they are still here.
@@ -657,7 +626,6 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       // at, and losing a list you were halfway through copying because they logged off is worse
       // than a slightly stale row.
       const here = new Set(peers.map((p) => p.peerId));
-      if (peers.length) lastCompany = now();
       known.clear();
       for (const peer of peers) known.set(peer.peerId, peer);
       for (const peerId of [...offers.keys()]) {
@@ -686,8 +654,8 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     },
     touch,
     stop() {
-      if (debounce) clearTimeout(debounce);
-      if (noticeTimer) clearTimeout(noticeTimer);
+      if (debounce) cancel(debounce);
+      if (noticeTimer) cancel(noticeTimer);
       clearTimer(tick);
     },
   };

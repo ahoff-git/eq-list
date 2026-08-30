@@ -57,13 +57,15 @@ import { PIN_TYPES, type MapPin, type PinKind } from "./map/pins";
 import { SHARD_COUNT } from "./item-shards";
 
 /**
- * An item page as it crosses between peers: a `WikiPage` minus the bits that are ours rather than
- * the wiki's.
+ * An item page as it crosses between peers.
  *
- * `fetchedAt` is absent on purpose — see `readSharedPage`. The receiver stamps it, so a peer can
- * never reach into our cache expiry.
+ * `fetchedAt` **travels with it**, which is the difference between a room that keeps itself fresh
+ * and one whose cache is immortal: if each receiver stamped its own "now", a page could pass A → B →
+ * C for months and never once be re-checked against the wiki. It is clamped on arrival to no later
+ * than the receiver's own clock (`readSharedPage`), so the worst a peer can do with it is tell the
+ * truth or make their copy look *older* than it is — and an older copy is simply re-fetched.
  */
-export type SharedItemPage = Omit<WikiPage, "fetchedAt">;
+export type SharedItemPage = Omit<WikiPage, "fetchedAt"> & { fetchedAt?: string };
 
 // ─── The catalogue ──────────────────────────────────────────────────────────
 
@@ -101,6 +103,19 @@ export interface ShareKindSpec<T = unknown> {
   /** Singular noun for counts ("12 watches", "1 watch"). */
   noun: string;
   read: (rows: unknown, newId: () => string) => T[];
+  /**
+   * Whether this kind is shared when nobody has said either way. **Off for everything but `items`.**
+   *
+   * Every other kind is *yours* — what you made, what you saw, what is true on your machine right
+   * now — and a share of those has to be a decision somebody took. An item page is none of those: it
+   * is a copy of a public eqlwiki page, byte-identical on every install, containing nothing about you
+   * at all. There is nothing for "off by default" to protect, and a room where everybody has to find
+   * a toggle before the network can divide the work is a room that mostly doesn't
+   * ([ADR 0161](../../specs/decisions/0161-a-public-page-is-shared-by-default.md)).
+   *
+   * The toggle still exists and still works; only its resting position differs.
+   */
+  defaultOn?: boolean;
 }
 
 /** Caps. Generous for real use, small enough that a hostile peer can't be a denial of service. */
@@ -130,6 +145,8 @@ const MAX_PAGE_TEXT = 400;
 const MAX_PAGE_LINES = 40;
 const MAX_PAGE_SOURCES = 60;
 const MAX_PAGE_PARTS = 60;
+/** Kael Drakkel lists 508 NPCs, the largest measured — so the cap is generous but still a cap. */
+const MAX_PAGE_NPCS = 1000;
 
 /** Longest any free-text field may be once it's ours. Matches `watch-share.ts`. */
 const MAX_TEXT = 200;
@@ -226,6 +243,7 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb:
       "Your cached eqlwiki item pages, so a room fills the 11,136-page catalogue once between everyone instead of each of you fetching all of it.",
     noun: "page",
+    defaultOn: true,
     read: (rows) => readList(rows, MAX_ROWS.items, readSharedPage),
   },
 ];
@@ -245,9 +263,17 @@ export function kindsOf(family: ShareFamily): ShareKindSpec[] {
 /** Which toggles are on, by kind. A kind absent (or false) is not shared. */
 export type ShareSettings = Partial<Record<ShareKind, boolean>>;
 
-/** Is this kind switched on? Every kind is off until somebody says otherwise. */
+/**
+ * Is this kind switched on?
+ *
+ * An explicit answer always wins, in both directions — the point of a toggle is that turning it off
+ * stays off. Only the *absence* of one falls through to the kind's own default, which is off for
+ * everything except public wiki pages (see `ShareKindSpec.defaultOn`).
+ */
 export function sharing(settings: ShareSettings | undefined, key: ShareKind): boolean {
-  return settings?.[key] === true;
+  const said = settings?.[key];
+  if (typeof said === "boolean") return said;
+  return BY_KEY.get(key)?.defaultOn === true;
 }
 
 // ─── The three messages ─────────────────────────────────────────────────────
@@ -526,6 +552,12 @@ function readStyle(raw: unknown, newId: () => string): NamedAlertStyle | null {
 }
 
 const PAGE_KINDS = new Set(["item", "quest", "recipe", "mob", "zone", "spell", "page"]);
+
+/**
+ * The page kinds the item catalogue is made of, and therefore the only ones that may cross under the
+ * `items` share. Deliberately narrower than `PAGE_KINDS`.
+ */
+const CATALOGUE_KINDS = new Set(["item", "recipe", "mob", "quest", "zone"]);
 
 /** The source kinds an inbound page may claim. Anything else becomes `unknown` rather than itself. */
 const SOURCE_KINDS = new Set(["drop", "quest", "recipe", "vendor", "forage", "ground", "unknown"]);
@@ -974,18 +1006,24 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * repaired, because a half-read item page is a card with a hole in it that nothing downstream would
  * know to distrust.
  *
- * `fetchedAt` is taken as **the moment it arrived here**, never as the sender's word for it: a
- * timestamp is what our own TTL uses to decide when to re-fetch from the wiki, and a peer who set it
- * to next year would pin their copy in our cache for ever. Losing the real age costs a re-fetch and
- * keeps the expiry ours ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
+ * `fetchedAt` is kept but **clamped to no later than now**. The clamp is the whole safety: a peer who
+ * claimed next year would otherwise pin their copy in our cache for ever. Keeping the real age is
+ * what stops the opposite failure — a page relayed between peers indefinitely, each hop resetting the
+ * clock, never once re-checked against the wiki
+ * ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)). A stamp we cannot read
+ * is dropped, and the caller then treats the page as arriving now.
  */
 function readSharedPage(raw: unknown): SharedItemPage | null {
   if (!isRecord(raw)) return null;
   const title = str(raw.title);
   const kind = PAGE_KINDS.has(str(raw.kind)) ? (str(raw.kind) as WikiPageKind) : undefined;
-  // Only items and recipes: this share exists to fill the *item* catalogue, and a peer handing us a
-  // mob or zone page under it would be filling a cache nobody asked them to fill.
-  if (!title || (kind !== "item" && kind !== "recipe")) return null;
+  // Items and recipes, **and the pages that give them a level**: a zone page states the level of
+  // every mob in it, and a quest page states its own requirement
+  // ([ADR 0163](../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)). Mob pages
+  // are here because we *read* them when we have them, not because anything fetches them. Spells are
+  // still refused — nothing in the Items tab reads one, and a peer filling a cache nobody asked them
+  // to fill is what this list exists to prevent.
+  if (!title || !kind || !CATALOGUE_KINDS.has(kind)) return null;
 
   const card = isRecord(raw.card)
     ? {
@@ -1036,12 +1074,41 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
     wikiPath: text(raw.wikiPath) || `/${title.replace(/ /g, "_")}`,
     sources,
     components,
-    // Rewards belong to quests; an item page's are always empty, and rebuilding them here would be
-    // surface for no gain.
+    // Rewards belong to quests, and a quest page is now one of the kinds that travels — but nothing
+    // in the item catalogue reads them (a level comes off the card), so they are dropped rather than
+    // validated. Surface we do not need is surface we do not want.
     rewards: [],
     card,
     outOfEra: raw.outOfEra === true,
+    fetchedAt: readStamp(raw.fetchedAt),
+    // A zone page's whole value here is its NPC roster: one table, every mob's level. Capped and
+    // rebuilt field by field like everything else.
+    npcs: Array.isArray(raw.npcs)
+      ? raw.npcs
+          .slice(0, MAX_PAGE_NPCS)
+          .map((row): { name: string; level: string } | null => {
+            if (!isRecord(row)) return null;
+            const who = text(row.name);
+            const level = text(row.level);
+            return who && level ? { name: who, level } : null;
+          })
+          .filter((row): row is { name: string; level: string } => !!row)
+      : undefined,
   };
+}
+
+/**
+ * A peer's timestamp, believed only as far as it can go wrong in our favour.
+ *
+ * Anything unparseable, and anything in the future, becomes `undefined` — which the receiver reads as
+ * "arrived now". A stamp in the *past* is taken at face value, because a page that is older than it
+ * claims only ever costs a re-fetch.
+ */
+function readStamp(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const at = Date.parse(v);
+  if (!Number.isFinite(at) || at > Date.now()) return undefined;
+  return new Date(at).toISOString();
 }
 
 /** `str`, but at an item page's own length rather than a name's. */

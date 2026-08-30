@@ -8,52 +8,36 @@ import { characterFromLogFile } from "@/shared/log-parser";
 import { AWARI_MSG } from "@/shared/types";
 import type { AwariPayload, AwariPeer } from "@/shared/types";
 import { readOffer } from "@/shared/peer-share";
+import { createRoomWatch, spread, type RoomWatch } from "@/shared/room-watch";
 import type { MessageRoute, RoomSession } from "@awari/protocol";
 
 const log = createLogger("awari");
 
 /**
- * How long to sit in a silent room before trying the join again, and how many times.
- *
- * Two clients that start at the same instant can each create their own room and never
- * discover the other — measured, and it does not heal on its own: two minutes in both were
- * "connected", both alone, with one leader hint registered that only one of them was behind.
- * That's the everyday case of two people launching the app together, so a lone client re-joins
- * a few times; by the second attempt the other's hint is registered and resolves.
- *
- * Bounded, because genuinely being the only player online is normal and must not become an
- * endless reconnect loop. After the last attempt we settle and stop churning.
- */
-const REJOIN_DELAYS_MS = [20_000, 45_000, 90_000];
-
-/**
- * Retrying on a fixed schedule doesn't help two clients that started together: being equally
- * lonely, they re-join in lockstep and race each other into a fresh room every time. Measured
- * — three synchronised retries, still two rooms. Spreading each wait over a wide random range
- * breaks the tie, so one of them registers its hint while the other is still waiting and the
- * later arrival simply finds it.
- */
-function rejoinWait(attempt: number): number {
-  const base = REJOIN_DELAYS_MS[attempt];
-  return base === undefined ? base : Math.round(base * (0.5 + Math.random()));
-}
-
-/**
  * How long to wait before re-joining after the room goes away under us — awari's
  * `onDisconnected`, or a join that never landed at all.
  *
- * Deliberately **unbounded**, unlike the lonely retries above, and the asymmetry is the point:
- * being the only player online is a normal resting state worth settling into, whereas being
- * disconnected never is. The last delay repeats for as long as the outage does, so a bootstrap
- * service or a relay that is down costs one attempt a minute rather than a spin — and the room
- * heals by itself when it comes back, instead of needing the player to guess that toggling
- * Connect off and on is what fixes it.
+ * Deliberately **unbounded**: being disconnected is never a resting state. The last delay repeats
+ * for as long as the outage does, so a bootstrap service or a relay that is down costs one attempt
+ * a minute rather than a spin — and the room heals by itself when it comes back, instead of
+ * needing the player to guess that toggling Connect off and on is what fixes it.
+ *
+ * This is the **only** retry ladder left here. Wondering whether a room of one is really a room of
+ * one used to be a second, differently-tuned ladder beside it (and a third in main); it is now a
+ * question with an answer — see `src/shared/room-watch.ts`.
  */
 const RECONNECT_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
 
-/** Backoff for the nth consecutive failure, holding at the last step rather than running out. */
+/**
+ * Backoff for the nth consecutive failure, holding at the last step rather than running out.
+ *
+ * Spread for the same reason every other wait here is: an outage everybody shares — the bootstrap
+ * service restarting, a relay dropping — ends for everybody at once, and a room's worth of clients
+ * retrying on the same schedule would all come back in the same instant and race each other into
+ * fresh rooms, manufacturing the split this file spends the rest of its length curing.
+ */
 function reconnectWait(failures: number): number {
-  return RECONNECT_DELAYS_MS[Math.min(failures, RECONNECT_DELAYS_MS.length - 1)];
+  return spread(RECONNECT_DELAYS_MS[Math.min(failures, RECONNECT_DELAYS_MS.length - 1)]);
 }
 
 /**
@@ -66,6 +50,8 @@ function reconnectWait(failures: number): number {
  *     own when the room drops or a join fails — awari recovers a leader handoff silently, but
  *     once it reports `onDisconnected` the room is gone until somebody re-joins, and that
  *     somebody is here (see ADR 0070);
+ *   - keeps asking whether a room of one is really one, and re-joins when the answer is no — the
+ *     only place with a transport to ask the question with (see `src/shared/room-watch.ts`);
  *   - relays inbound peer messages + connection status up to the broker, which fans
  *     them out to every window (`api.awari.reportMessage` / `reportStatus`);
  *   - keeps the room roster (who's connected, and the name/zone each announced) and
@@ -86,7 +72,6 @@ export default function AwariHost() {
   const myName = (settings?.playerName || "").trim() || characterFromLogFile(watcher.file) || "";
 
   const sessionRef = useRef<RoomSession | null>(null);
-  const peerIdRef = useRef<string>("");
   /** Who else is in the room: awari's roster, enriched by their `hello` payloads. */
   const rosterRef = useRef(new Map<string, AwariPeer>());
   /** Peers we've already answered, so a mutual greeting settles instead of ping-ponging. */
@@ -153,18 +138,28 @@ export default function AwariHost() {
 
 
   /**
-   * Bumped to re-run the join effect. *Why* we're re-joining lives in the two counters below
-   * rather than in this number, because they must survive a re-join to pace the next one — and
-   * a counter the effect depends on would re-join every time it moved.
+   * Bumped to re-run the join effect. *Why* we're re-joining lives in the state below rather than
+   * in this number, because it must survive a re-join to pace the next one — and a counter the
+   * effect depends on would re-join every time it moved.
    */
   const [joinGeneration, setJoinGeneration] = useState(0);
-  /** Lonely retries spent since we last had a working connection (see `REJOIN_DELAYS_MS`). */
-  const lonelyTriesRef = useRef(0);
   /** Consecutive drops / failed joins, pacing `reconnectWait`. Reset once a room reaches someone. */
   const failuresRef = useRef(0);
+  /**
+   * Whether a room of one is worth doubting yet, and what a look at the directory settled.
+   *
+   * Outlives the join effect on purpose: the rung it is on has to survive a re-join to pace the one
+   * after it. Holding it in the effect is what the two ladders this replaces did, and it is why one
+   * of them spent its budget without ever refunding it while the other had its five-minute clock
+   * reset by every re-join the first one made.
+   */
+  const watchRef = useRef<RoomWatch | null>(null);
+  // Built on first use rather than passed to `useRef`, which would construct one on every render —
+  // and this component re-renders on every position line the log yields.
+  watchRef.current ??= createRoomWatch();
 
-  // Join / leave. Re-runs when the connection is toggled, the bootstrap URL changes, or a
-  // silent room, a dropped room, or a failed join prompts a retry.
+  // Join / leave. Re-runs when the connection is toggled, the bootstrap URL changes, or a dropped
+  // room, a failed join, or a look that found us in the wrong room prompts a retry.
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -173,13 +168,13 @@ export default function AwariHost() {
       return;
     }
     let cancelled = false;
-    let lonely: ReturnType<typeof setTimeout> | null = null;
+    /** The next look at whether this room of one is really one (see `room-watch.ts`). */
+    let look: ReturnType<typeof setTimeout> | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let session: RoomSession | null = null;
     /** Set once awari says the room is unreachable — a dead session gets no graceful leave. */
     let dropped = false;
     const myPeerId = randomPeerId();
-    peerIdRef.current = myPeerId;
     // The Map instance itself never changes; hold it locally so the cleanup below
     // clears the same roster this join populated.
     const roster = rosterRef.current;
@@ -196,9 +191,6 @@ export default function AwariHost() {
       if (cancelled) return;
       const wait = reconnectWait(failuresRef.current);
       failuresRef.current += 1;
-      // A recovered connection re-enters what looks like an empty room, exactly as a cold start
-      // does, so it deserves the same cold-start retries rather than a spent budget.
-      lonelyTriesRef.current = 0;
       log.debug(what, "- re-joining in", wait, "ms");
       retry = setTimeout(rejoinNow, wait);
     };
@@ -209,8 +201,10 @@ export default function AwariHost() {
       bootstrapUrl,
       onMessage: (m) => {
         const sender = m.sender?.peerId;
-        // Never echo ourselves — consumers get a clean peer-only stream.
-        if (!sender || sender === peerIdRef.current) return;
+        // Never echo ourselves — consumers get a clean peer-only stream. Compared against *this*
+        // join's id rather than the newest one: a handler belongs to the session that created it,
+        // and reading a ref would have it filtering by whoever we became after a re-join.
+        if (!sender || sender === myPeerId) return;
         // A peer we have heard from is addressable, whether or not `onPeerJoined` reached us first
         // — the envelope carries the whole `PeerRef`, so this is the same fact from a second source
         // and costs nothing to keep current.
@@ -258,7 +252,7 @@ export default function AwariHost() {
         a.awari.reportMessage({ sender, payload: payload as { kind: string } });
       },
     })
-      .then((s) => {
+      .then(({ session: s, probe }) => {
         if (cancelled) return void s.close();
         session = s;
         sessionRef.current = s;
@@ -266,7 +260,7 @@ export default function AwariHost() {
         // Presence: awari replays every already-active peer to a fresh handler, so
         // this seeds the roster as well as tracking later joins/leaves.
         s.onPeerJoined((peer) => {
-          if (peer.peerId === peerIdRef.current) return;
+          if (peer.peerId === myPeerId) return;
           // A room that reached somebody is a working room: the next outage starts its backoff
           // from the top instead of inheriting the cooldown of an old one.
           failuresRef.current = 0;
@@ -304,6 +298,9 @@ export default function AwariHost() {
           greeted.clear();
           a.awari.reportStatus({ connected: false, peerId: null });
           reportRoster();
+          // Hold the watch's clock: an outage must not bank time towards a look there is no
+          // transport left to take, and the recovery backoff owns this stretch.
+          watchRef.current!.saw({ connected: false, peers: 0 });
           recoverFrom("room unreachable");
         });
         sayHello();
@@ -313,16 +310,39 @@ export default function AwariHost() {
         for (const payload of held) publish(payload);
         if (held.length) log.debug("flushed", held.length, "held payload(s)");
 
-        const attempt = lonelyTriesRef.current;
-        const wait = rejoinWait(attempt);
-        if (wait !== undefined) {
-          lonely = setTimeout(() => {
-            if (cancelled || dropped || roster.size > 0) return;
-            log.debug("room still empty after", wait, "ms - re-joining (attempt", attempt + 2, "of", REJOIN_DELAYS_MS.length + 1, ")");
-            lonelyTriesRef.current += 1;
-            rejoinNow();
-          }, wait);
-        }
+        /**
+         * Keep asking whether this room of one is the room the world can find.
+         *
+         * Re-armed every time round rather than scheduled once, which is the bug the single
+         * `setTimeout` here used to have: a peer who happened to be present at the instant it
+         * fired cancelled the only look this session would ever take, so a client that met
+         * somebody for a minute and was then left alone had nothing watching it at all.
+         *
+         * The looking is what makes this affordable. A look costs one bootstrap POST and one dial;
+         * only an answer re-joins, so a genuinely solitary player never tears anything down.
+         */
+        const takeALook = async () => {
+          look = null;
+          if (cancelled || dropped) return;
+          const watch = watchRef.current!;
+          if (watch.saw({ connected: true, peers: roster.size }) === "probe") {
+            const found = await probe();
+            if (cancelled || dropped) return;
+            const verdict = watch.probed(found);
+            // A probe takes seconds, and somebody can arrive during them. Re-joining then would
+            // drop a room that had just started working to go looking for a better one.
+            if (verdict === "rejoin" && roster.size > 0) {
+              log.debug("a peer arrived while we were looking - staying where we are");
+            } else if (verdict === "rejoin" && found.reached) {
+              log.warn("we are not in the room everybody else is in - it has", found.peers, "- re-joining");
+              return void rejoinNow();
+            } else {
+              log.debug("room of one confirmed - nothing else answers under this id; next look in", watch.waiting(), "ms");
+            }
+          }
+          look = setTimeout(takeALook, Math.max(1_000, watch.waiting()));
+        };
+        look = setTimeout(takeALook, Math.max(1_000, watchRef.current!.waiting()));
       })
       .catch((e) => {
         log.warn("could not join the awari room:", (e as Error).message);
@@ -334,7 +354,7 @@ export default function AwariHost() {
 
     return () => {
       cancelled = true;
-      if (lonely) clearTimeout(lonely);
+      if (look) clearTimeout(look);
       if (retry) clearTimeout(retry);
       sessionRef.current = null;
       roster.clear();
@@ -361,11 +381,12 @@ export default function AwariHost() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, bootstrapUrl, publish, reportRoster, joinGeneration]);
 
-  // A fresh connection gets a fresh set of retries, of both kinds.
+  // Switching Connect off ends the session's history: coming back is a cold start, not the
+  // continuation of whatever went wrong last time.
   useEffect(() => {
     if (connected) return;
-    lonelyTriesRef.current = 0;
     failuresRef.current = 0;
+    watchRef.current = createRoomWatch();
     setJoinGeneration(0);
   }, [connected]);
 
@@ -378,20 +399,21 @@ export default function AwariHost() {
   }, [publish]);
 
   /**
-   * Somebody asked for a fresh join (the Peers tab's "Look again").
+   * Somebody asked for a fresh join (the Peers tab's "Retry connection").
    *
-   * Bumping the generation is exactly what the lonely timer does — tear the session down and come
-   * back under a new peer id — so this reuses it rather than adding a second way to re-join. It is
-   * the manual answer to the one failure the automatic retries deliberately give up on: a pair of
-   * clients that started together, split into two rooms, and ran out of attempts.
+   * Bumping the generation is exactly what the watch does when it finds us in the wrong room — tear
+   * the session down and come back under a new peer id — so this reuses it rather than adding a
+   * second way to re-join. It stays as the fallback for everything the app cannot diagnose, and a
+   * person asking is treated as a cold start: both the backoff and the watch begin again, because
+   * the one thing a click tells us is that whatever we concluded is not what they are seeing.
    */
   useEffect(() => {
     const a = api();
     if (!a) return;
     return a.awari.onRejoin(() => {
       log.debug("re-joining on request");
-      lonelyTriesRef.current = 0;
       failuresRef.current = 0;
+      watchRef.current = createRoomWatch();
       setJoinGeneration((n) => n + 1);
     });
   }, []);

@@ -37,6 +37,9 @@ const DEFAULT_SETTINGS: Settings = {
   matchMode: "exact",
   hideOutOfEra: false,
   askLucy: true,
+  // Two weeks. Long enough that a filled catalogue isn't re-fetched every fortnight for nothing,
+  // short enough that a page is re-checked against the wiki several times a season.
+  wikiPageTtlDays: 14,
   connectPeers: false,
   shareLocation: false,
   // Every share kind off, and listed as an empty object rather than left absent so a settings file

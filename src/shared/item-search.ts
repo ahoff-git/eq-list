@@ -31,7 +31,11 @@
  * Pure and DOM-free — the panel renders these decisions, this module makes them. The argument for
  * all three is [ADR 0152](../../specs/decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md).
  */
-import { parseItemStats, statMeta, type ItemStats, type StatKey } from "./item-stats";
+import { EFFECT_KINDS, parseItemStats, statMeta, type EffectKind, type ItemStats, type StatKey } from "./item-stats";
+import { itemLevel, type ItemLevel, type LevelSources } from "./item-levels";
+
+/** Nothing known about any mob or quest — the zone rung still answers, from the shipped tables. */
+const NO_LEVEL_SOURCES: LevelSources = { mob: () => undefined, quest: () => undefined };
 import { itemBaseName } from "./names";
 import { normalizeItemName } from "./grouping";
 import { normalizeZone } from "./sources";
@@ -44,8 +48,20 @@ export interface ItemRow {
   item: CachedItem;
   /** Its card, read as numbers. `NO_ITEM_STATS` for an item whose source gave no card. */
   stats: ItemStats;
+  /**
+   * What level you need to be — derived, since the wiki states one only for a handful of items
+   * ([item-levels](./item-levels.ts)). Computed here rather than during the cache walk because the
+   * card is already parsed at this point, and parsing eleven thousand of them twice is 130ms of a
+   * build that is trying to be quick.
+   */
+  level?: ItemLevel;
   /** The distinct ways it can be got, in the order its sources list them. */
   kinds: SourceKind[];
+  /**
+   * Effect names by how you reach them — the four `EffectKind` facets, computed once per row rather
+   * than filtered out of `stats.effects` on every keystroke of every picker.
+   */
+  effectsBy: Partial<Record<EffectKind, string[]>>;
   /**
    * The distinct zones any source places it in, under **one spelling each**: the wiki writes both
    * "The Feerrott" and "Feerrott" on different pages, and a zone filter that offered both would hide
@@ -60,7 +76,7 @@ export interface ValuedItem extends ItemRow {
 }
 
 /** What the user can narrow by, beyond the stat floors. Each is a list of values on the item. */
-export type FacetKey = "slot" | "class" | "race" | "flag" | "source" | "zone";
+export type FacetKey = "slot" | "class" | "race" | "flag" | "source" | "zone" | EffectKind;
 
 export interface FacetMeta {
   key: FacetKey;
@@ -77,6 +93,10 @@ export const FACETS: readonly FacetMeta[] = [
   { key: "source", label: "Source", any: "any source" },
   { key: "zone", label: "Zone", any: "any zone" },
   { key: "flag", label: "Flag", any: "any flag" },
+  // The effects, each its own facet rather than one "has an effect" list. A worn haste and a clicky
+  // haste are not substitutes, and the *kind* is most of what somebody is shopping for
+  // ([item-stats](./item-stats.ts)).
+  ...EFFECT_KINDS.map((kind) => ({ key: kind.key, label: kind.label, any: `any ${kind.label.toLowerCase()}` })),
 ];
 
 /**
@@ -95,12 +115,23 @@ export interface ItemCriteria {
   mins: Partial<Record<StatKey, number>>;
   /** Drop what the server hasn't opened yet — the same toggle the Search tab has. */
   hideOutOfEra: boolean;
+  /**
+   * The level band you can actually use, as a pair of bounds on the item's derived level
+   * ([item-levels](./item-levels.ts)).
+   *
+   * Its own criterion rather than a stat floor, because it is not on the card: it is worked out from
+   * the mob, the quest or the zone, and a filter that hid that behind "INT ≥ 5" would be claiming a
+   * precision the number does not have. An item nothing could place is **cut** by either bound —
+   * same rule as a silent stat card, and for the same reason.
+   */
+  levelMin?: number;
+  levelMax?: number;
 }
 
 /** No criteria at all: the whole catalogue. The shape a "Clear" button restores. */
 export const NO_CRITERIA: ItemCriteria = {
   text: "",
-  facets: { slot: [], class: [], race: [], source: [], zone: [], flag: [] },
+  facets: { slot: [], class: [], race: [], source: [], zone: [], flag: [], worn: [], click: [], proc: [], focus: [] },
   mins: {},
   hideOutOfEra: false,
 };
@@ -108,7 +139,8 @@ export const NO_CRITERIA: ItemCriteria = {
 /** How many conditions are currently cutting the list — what a "Clear (3)" button counts. */
 export function activeCriteria(c: ItemCriteria): number {
   const facets = FACETS.reduce((n, f) => n + (c.facets[f.key].length ? 1 : 0), 0);
-  return (c.text.trim() ? 1 : 0) + facets + Object.keys(c.mins).length + (c.hideOutOfEra ? 1 : 0);
+  const levels = (c.levelMin !== undefined ? 1 : 0) + (c.levelMax !== undefined ? 1 : 0);
+  return (c.text.trim() ? 1 : 0) + facets + Object.keys(c.mins).length + levels + (c.hideOutOfEra ? 1 : 0);
 }
 
 /** Weights per stat: how many value points one point of that stat is worth. */
@@ -143,7 +175,7 @@ export function weightedStats(weights: StatWeights): StatKey[] {
  * Built once per catalogue rather than per keystroke — parsing three hundred cards on every letter
  * typed into the name box is the one thing here that would actually be slow.
  */
-export function itemRows(items: readonly CachedItem[]): ItemRow[] {
+export function itemRows(items: readonly CachedItem[], levels?: LevelSources): ItemRow[] {
   // One spelling per zone across the *whole* catalogue, first seen winning — the same rule
   // `groupDropsByZone` uses on a single page, applied across every page so the filter and the
   // column agree with each other.
@@ -160,14 +192,41 @@ export function itemRows(items: readonly CachedItem[]): ItemRow[] {
   return items.map((item) => {
     const kinds: SourceKind[] = [];
     const zones: string[] = [];
-    for (const source of item.sources) {
+    for (const source of item.sources ?? []) {
       if (!kinds.includes(source.kind)) kinds.push(source.kind);
       const zone = source.detail?.trim();
       if (!zone) continue;
       const named = canonicalZone(zone);
       if (!zones.includes(named)) zones.push(named);
     }
-    return { item, stats: parseItemStats(item.card?.lines), kinds, zones };
+    const stats = parseItemStats(item.card?.lines);
+    const effectsBy: Partial<Record<EffectKind, string[]>> = {};
+    for (const effect of stats.effects) (effectsBy[effect.kind] ??= []).push(effect.name);
+    // Without lookups the zone rung still answers, since the zone tables ship with the app.
+    const level = itemLevel(item.sources ?? [], levels ?? NO_LEVEL_SOURCES, stats.requiredLevel);
+    return { item, stats, level, kinds, zones, effectsBy };
+  });
+}
+
+/**
+ * The rows as they cross to a window: everything the panel draws, and nothing it doesn't.
+ *
+ * `itemRows` needs the card (to parse stats) and the sources (to derive kinds and zones); the *panel*
+ * needs neither, because both have already become fields on the row. Dropping them after the
+ * derivation takes the catalogue from 6.9 MB to about 1.6 MB per transfer, and — since the rows
+ * arrive built — the window parses eleven thousand stat cards exactly never.
+ *
+ * Main keeps the full pages; this is only what leaves it.
+ */
+export function forTransfer(rows: readonly ItemRow[]): ItemRow[] {
+  return rows.map((row) => {
+    // `fetchedAt` goes too: the panel never shows a row's age (the ↻ on an item's *page* does, off
+    // the page itself), so it is eleven thousand timestamps nobody reads.
+    const { card, sources, fetchedAt, ...rest } = row.item;
+    void card;
+    void sources;
+    void fetchedAt;
+    return { ...row, item: { ...rest, fetchedAt: "" } };
   });
 }
 
@@ -190,6 +249,21 @@ export function itemCatalog(wiki: readonly CachedItem[], lucy: readonly CachedIt
   return [...byName.values()].sort((a, b) => a.title.localeCompare(b.title));
 }
 
+/**
+ * The pseudo-value meaning **"this item has none of these at all"**.
+ *
+ * The other half of a facet, and on a filled catalogue it is a large half: 4,560 of 11,171 items name
+ * no zone whatsoever. Without it those items are only ever reachable by *not* filtering, so "show me
+ * the things the wiki lists no source for" — a real question, and the one that finds a quest reward —
+ * cannot be asked at all.
+ *
+ * A NUL-prefixed sentinel rather than a readable `"(none)"`, because these lists are populated from
+ * wiki text and a facet value that happened to equal the sentinel would silently become this instead.
+ * NUL cannot appear in a title, a slot or a zone name, so the collision is impossible rather than
+ * merely unlikely. The picker shows it as "(none)"; only the stored criteria ever see this.
+ */
+export const NO_FACET_VALUE = "\u0000none";
+
 /** The values a row offers a facet — what a tick in that dropdown is compared against. */
 export function facetValues(row: ItemRow, facet: FacetKey): readonly string[] {
   switch (facet) {
@@ -205,6 +279,9 @@ export function facetValues(row: ItemRow, facet: FacetKey): readonly string[] {
       return row.kinds;
     case "zone":
       return row.zones;
+    // One facet per effect kind, each offering only the effects reached that way.
+    default:
+      return row.effectsBy[facet] ?? [];
   }
 }
 
@@ -216,6 +293,21 @@ export function facetValues(row: ItemRow, facet: FacetKey): readonly string[] {
  */
 export function facetOptions(rows: readonly ItemRow[], facet: FacetKey): string[] {
   return distinctSorted(rows.flatMap((row) => facetValues(row, facet) as string[]));
+}
+
+/**
+ * How many rows have **nothing at all** for a facet — the number that makes "select all" honest.
+ *
+ * Ticking every zone is not the same as ticking none, and the difference is not small: 4,560 of the
+ * 11,171 items in a filled catalogue name no zone whatsoever (quest rewards, crafted goods, anything
+ * whose sources the wiki never listed). So a bare "select all" would quietly cut 41% of the
+ * catalogue, which is the sort of thing that makes a filter look broken.
+ *
+ * With the count in hand the picker can say so, and what looked like a footgun becomes a filter
+ * worth having on purpose: *only items that come from somewhere I could go*.
+ */
+export function facetlessCount(rows: readonly ItemRow[], facet: FacetKey): number {
+  return rows.reduce((n, row) => n + (facetValues(row, facet).length ? 0 : 1), 0);
 }
 
 /**
@@ -243,7 +335,29 @@ export function matchesItem(row: ItemRow, c: ItemCriteria): boolean {
     const wanted = c.facets[facet.key];
     if (!wanted.length) continue;
     const has = facetValues(row, facet.key);
+    // "(none)" is satisfied by having nothing, which is the one thing no real value can express —
+    // and it ors with the rest, so `[BACK, (none)]` reads "worn on the back, or worn nowhere".
+    if (wanted.includes(NO_FACET_VALUE) && !has.length) continue;
     if (!wanted.some((w) => has.includes(w))) return false;
+  }
+
+  if (c.levelMin !== undefined || c.levelMax !== undefined) {
+    const level = row.level;
+    /**
+     * **A level bound cuts only what it is *known* to cut.**
+     *
+     * Deliberately the opposite of a stat floor, and the difference is real. "At least 5 INT" asked
+     * of a card silent about intelligence has a definite answer — it has not got any. "Is this out of
+     * my reach" asked of an item nothing could place has no answer at all, and **4,942 of 11,162
+     * items** are in that position: cutting them would make the cap quietly hide 44% of the catalogue,
+     * which is not what "hide what I cannot use yet" means. The panel says how many are unplaced
+     * instead, so the silence is visible rather than mistaken for a filter working.
+     */
+    if (!level) return true;
+    // The band overlaps rather than contains: an item off a mob that spans 21–23 is a level-22
+    // character's item, and asking for exactly-within would cut it.
+    if (c.levelMax !== undefined && level.min > c.levelMax) return false;
+    if (c.levelMin !== undefined && level.max < c.levelMin) return false;
   }
 
   for (const [key, min] of Object.entries(c.mins) as [StatKey, number][]) {
@@ -258,7 +372,7 @@ export function matchesItem(row: ItemRow, c: ItemCriteria): boolean {
 }
 
 /** Which column the results are ordered by. A stat key sorts by that stat. */
-export type ItemSortKey = "name" | "value" | "slot" | "source" | "zone" | StatKey;
+export type ItemSortKey = "name" | "value" | "slot" | "source" | "zone" | "level" | StatKey;
 
 /**
  * What a row is worth in the sorted column.
@@ -278,6 +392,10 @@ export function itemSortValue(row: ValuedItem, key: ItemSortKey): string | numbe
       return row.kinds.join(" ");
     case "zone":
       return row.zones.join(" ");
+    // Unplaceable sorts last under "lowest first", which is the useful way round: the rows you can
+    // act on lead, and the ones nothing knows about sit at the bottom rather than the top.
+    case "level":
+      return row.level?.min ?? Number.POSITIVE_INFINITY;
     default:
       return row.stats.stats[key] ?? Number.NEGATIVE_INFINITY;
   }

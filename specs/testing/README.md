@@ -61,7 +61,11 @@ unit-tested.
     WIZ MAG ENC` expanded to the twelve classes that *can* use it, three spellings of one flag
     becoming one flag, the off-hand's live typo landing on the real slot, and a slot written as a
     bare unlabelled line still counting as one. Two refusals are pinned: an effect's name never
-    flags the item, and its casting time is never read as a stat.)
+    flags the item, and its casting time is never read as a stat. Effects also carry **how you reach
+    them** — worn, click, proc or focus, read off the card's parenthetical: a worn haste and a clicky
+    haste are not substitutes, so the kind is what the effect dropdowns are built on. Every classified
+    line is verbatim from the catalogue, `Must Equip` is pinned as a *click* rather than a fifth kind,
+    and a bare `Effect:` with nothing after it — 44 of them exist — is not an effect.)
   - `src/shared/item-search.ts` → `electron/tests/item-search.test.ts` (what a criterion may do, and
     what a value weight means. The promise that everything rests on is pinned twice over: **a
     criterion may only ever remove rows** — including the case that would catch a "helpful"
@@ -70,7 +74,13 @@ unit-tested.
     pinned as written: INT worth 2 and WIS worth 1 makes ten wisdom exactly level with five
     intelligence. Then the joins: `Class: ALL` answering a warrior, two spellings of one zone being
     one filter option, the wiki's copy of an item beating Lucy's, and a grade not arriving as a
-    second item.)
+    second item.) It also pins the rule behind the pickers' *All* button: **ticking every zone is not
+    ticking none** — an item with no zone at all is cut either way — with `facetlessCount` as the
+    number the picker's *(none)* row is built from. Without that distinction "select all" silently
+    drops 41% of a filled catalogue. `NO_FACET_VALUE` is pinned too: it matches **only** rows with
+    nothing for that facet, it *ors* with real values rather than replacing them, every value plus
+    *(none)* is the whole catalogue back, and it never leaks into `facetOptions` — where it would
+    appear twice and read as a zone.
   - `electron/wiki/harvest.ts` → `electron/tests/wiki-harvest.test.ts` (the catalogue trickle's
     **schedule**, not its network — every dependency is injected, so the suite runs in milliseconds
     where the real thing runs for three hours
@@ -105,6 +115,42 @@ unit-tested.
     throwing, and a peer's shards outside our roster can't inflate the room's figures.
   - `electron/wiki/harvest.ts` → `electron/tests/wiki-harvest.test.ts` — see below; it now covers the
     sharing as well as the schedule.
+  - `electron/wiki/index.ts`'s **acceptance of a peer's page** → `electron/tests/wiki-cache-share.test.ts`
+    (filesystem-backed, in a temp directory, because the rule *is* about what ends up on disk).
+    **The newest pull wins** ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)): a
+    newer copy replaces ours and its date becomes our expiry clock, an older one is refused, an
+    equally-old one is not rewritten (no disk write per shard for no change), one already past our TTL
+    is not cached at all, and a stamp from the future cannot pin a page in the cache. The rule is easy
+    to get backwards — skipping anything already held was the obvious version, and it meant a peer's
+    re-pull could never reach anybody. The same file pins the **per-kind parse version**: an item page
+    cached at the previous version is still good, one from before the floor is not, and a zone page
+    from before it carried an NPC roster is re-read rather than trusted. That one is a regression
+    test — a single global `CACHE_VERSION` bump had invalidated 11,482 item pages a zone-parser change
+    never touched. It also pins the **caching contract** the Items tab's speed rests on: the same
+    array comes back rather than an equal one (nothing was re-walked), a write drops it, and two
+    callers arriving together share one walk. Note what these tests *don't* claim — a file seeded
+    behind a running client's back is something it is entitled not to notice, so the version tests
+    build a fresh client rather than re-reading the same one.
+  - `src/shared/item-levels.ts` → `electron/tests/item-levels.test.ts` (*what level do I need to be to
+    get this?* — derived, because the wiki has no such field, and the design is the **hierarchy of
+    evidence**: mob → quest → zone, each answer saying which rung it came from
+    ([ADR 0163](../decisions/0163-an-item-wears-the-level-of-what-drops-it.md)). Card lines are
+    verbatim from the cache, including the two that shaped the parser: a mob whose level is a
+    **range** (`Level: 21 - 23`) and one whose `Level:` row exists but was never filled in — which
+    must read as *unknown*, not zero. Pins that a mob outranks a quest, that the **easiest** mob wins
+    where several drop it ("can I get this yet" is answered by the easiest way in), that the zone rung
+    answers when the others can't and is labelled as the guess it is, and that an item nothing can
+    place has **no level at all** rather than level 1. `37+` keeps its top at 37, and a four-digit
+    "level" is refused as the typo it is. The **stated** requirement is pinned in `item-stats`'s tests
+    with all three traps it must not read: `Combat Effect: Knee Shot (Req Level 15)` and
+    `Click Effect: … Required Level: 46` gate the *effect*, not the item, and `Cast Time: 7.3 seconds
+    Required Level: 15` is the same trap without an `Effect:` prefix — reading any of them would hide
+    an axe anybody can hold from every lower-level search. `Required level of 0` is the wiki saying
+    there is none. `npcKey` is pinned as the **join** the cheap rung depends
+    on — a zone page writes `A Giant Snake (Blackburrow)`, the drop row writes what the game prints —
+    including that a name which is *nothing but* a parenthetical keeps it, since an empty key would
+    match every other empty key and put one mob's level on another's item. That last case was a real
+    bug the test caught.)
   - `src/shared/known-items.ts` → `electron/tests/known-items.test.ts` (the vocabulary of things you
     have actually **held**, which is what search offers when eqlwiki's index can't answer
     ([ADR 0103](../decisions/0103-search-can-answer-from-your-own-log.md)). The case that produced it
@@ -575,6 +621,12 @@ unit-tested.
   - `electron/wiki/parse.ts` → `electron/tests/wiki-parse.test.ts`, pinned against
     real page HTML in `fixtures/wiki/` (item drops, quest turn-ins/rewards, recipe
     components). Re-capture a fixture only when the wiki's markup actually changes.
+    Also pins a **zone page's NPC roster** (`zone-blackburrow.html`), which is where an item's level
+    comes from ([ADR 0163](../decisions/0163-an-item-wears-the-level-of-what-drops-it.md)) —
+    Blackburrow because it carries both shapes that matter, a fixed level (`17`) and a range
+    (`7-9`), kept as the wiki's own text for `item-levels.ts` to read. The table is found by reading
+    its header row for `NPC Name` and `Level`, so the tests also assert that pages *without* one get
+    no roster rather than picking up whichever table came first.
   - `electron/lucy/parse.ts` → `electron/tests/lucy-parse.test.ts`, pinned against real
     lucy.allakhazam.com pages in `fixtures/lucy/` — the tooltip read off its `<br>`-separated block,
     an item's **drops and its merchants** told apart (Lucy puts both in identically-classed tables,
@@ -588,6 +640,17 @@ unit-tested.
     name carrying a **comma** (`Bag of the Tinkerers, Improved`) surviving whole, and a **doubled
     quote** coming back single. The header row and any malformed line are dropped rather than
     becoming nameless items.
+  - `src/shared/peer-share.ts`'s **item-page reader** is pinned in `peer-share.test.ts` alongside the
+    rest ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md),
+    [ADR 0161](../decisions/0161-a-public-page-is-shared-by-default.md)). It is the one family applied
+    **without anybody looking at it**, which is exactly why the reader is the safety: unknown keys
+    never survive, lists are capped, an unknown source kind becomes `unknown` rather than itself, and
+    only items and recipes travel (a peer handing us mob or zone pages under this kind would be
+    filling a cache nobody asked them to fill). Two rules about *time* matter as much: a page
+    **carries its age**, so relaying it between peers cannot make it immortal, and a stamp from the
+    **future** is refused, so a peer cannot pin their copy in our cache. And the default: `items`
+    shares with no toggle set while every other kind stays off — with an explicit `false` still
+    meaning no, which is the whole point of a toggle.
   - `src/shared/lucy-era.ts` → `electron/tests/lucy-era.test.ts` (whether a Lucy item could exist on
     this server at all, derived from its zones since that site has no era field). **Every zone string
     in it is copied off a real Lucy page** — the module exists because of how that site happens to

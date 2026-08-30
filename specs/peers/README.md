@@ -45,13 +45,29 @@ travels peer-to-peer, on request, over that peer's own connection.
     silently on arrival**, and it may be: there is nothing personal in it, it changes nothing about
     what the app does, and the alternative to accepting a page is asking eqlwiki the same question a
     second time. It is also the only family that is *checkable* — a page that looks wrong is
-    re-fetched from the source, and the TTL does that unprompted.
+    re-fetched from the source, and the TTL does that unprompted. The kinds that may cross are
+    `item | recipe | mob | quest | zone` — the pages the item catalogue is made of. Zones and quests
+    are there because an item's *level* is read off them, and a **zone page is the largest thing that
+    travels** (Kael Drakkel lists 508 NPCs, which is why the roster is capped)
+    ([ADR 0163](../decisions/0163-an-item-wears-the-level-of-what-drops-it.md)). Spells stay refused:
+    nothing in the Items tab reads one. It is also the **one kind that is
+    on by default** ([ADR 0161](../decisions/0161-a-public-page-is-shared-by-default.md)): every other
+    kind is something you made, saw, or are doing right now, and this one has nothing of yours in it —
+    so "off until asked" protects nothing while costing the room the whole saving. The toggle still
+    works, and an explicit *off* stays off. A page **carries its age**, clamped on arrival to no later
+    than the receiver's clock, so relaying cannot reset the clock and a page past its TTL is refused
+    rather than cached. **The newest pull wins**: a copy fetched more recently than ours replaces it,
+    and its date becomes our expiry clock, so one person's re-pull refreshes the room rather than N
+    installs re-fetching the same page within days of each other
+    ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)). Nothing chases a refresh —
+    expiry makes a shard incomplete, and the planner then fills that gap from a peer before the wiki.
 - **The hub** (`electron/peer-share.ts`) — in main, because main is the only participant always
   running: a hub that answered only while a window was open would drop every ask the moment you
   changed tab. It measures the catalogue on a slow tick (a digest moving *is* the change, so no
   store has to be taught to call it), answers asks after re-checking the toggle against the
   settings rather than the published offer, files observations, and holds everything else in a
-  received tray with a TTL.
+  received tray with a TTL. It does **not** decide when to re-join: that needs the transport, so it
+  lives with the session (ADR 0162).
 - **The two de-dupes**, and they are not the same de-dupe:
   - **Countdowns** merge by `key` (one mob, one place — a `SpawnTimer`'s `id` is `key#slot` and the
     slot is local bookkeeping). Within a key, two clocks are the same spawn when their `dueAt` are
@@ -73,25 +89,39 @@ travels peer-to-peer, on request, over that peer's own connection.
 - **Keeping itself honest** ([ADR 0145](../decisions/0145-a-room-checks-itself-and-needs-no-game.md)).
   The minute tick that publishes the catalogue also **reconciles** — `outOfDate` names the
   observation kinds a peer holds past the revision we have, and those are asked for again, so a lost
-  `give` or a restart heals instead of leaving two installs disagreeing for ever — and **watches for
-  loneliness**: connected with an empty room for five minutes means re-join, which is what heals a
-  split room without anybody noticing it happened. The catalogue carries our **name** as well as
-  `hello` does, so a peer who missed the one greeting stops being "Someone (3f9a)" within the minute.
-  **No keepalive of our own**: awari heartbeats every connection every two seconds, and a second one
-  would mask the drops the first exists to detect.
+  `give` or a restart heals instead of leaving two installs disagreeing for ever. It is stated as a
+  comparison of what *is* rather than a reaction to an event, which is the shape that cannot drift.
+  The catalogue carries our **name** as well as `hello` does, so a peer who missed the one greeting
+  stops being "Someone (3f9a)" within the minute. **No keepalive of our own**: awari heartbeats every
+  connection every two seconds, and a second one would mask the drops the first exists to detect.
+- **A room of one is checked, not guessed at**
+  ([ADR 0162](../decisions/0162-a-room-of-one-is-checked-not-guessed-at.md)) — the cure for "two
+  people running the app who cannot see each other until, at some point, they can". Two clients that
+  start together each become the genesis leader of their own room under the one id, and from the
+  inside a room you made and a room nobody has joined yet look identical. So after a rung of
+  [`room-watch.ts`](../../src/shared/room-watch.ts)'s ladder (20s / 45s / 90s / 3m / 5m, jittered,
+  holding at five minutes) elapses alone, the client **probes**: awari's read-only `pingRoomStatus`
+  asks the directory who leads this room and asks them who is in it. **Somebody answered** means the
+  room the world can find is not ours — proven, not suspected — and we re-join into it. **Nobody
+  answered** means the leader the directory names is unreachable, and the likeliest unreachable
+  leader is us, since a peer cannot dial itself; so we are the room everyone will find, and being
+  alone means alone. That asymmetry is why only the wrong client ever moves and the split cannot
+  re-race. **Company refunds the ladder**, and looking is not re-joining — which is what lets the
+  ladder run for ever without a solitary player ever losing their session.
 - **The game does not need to be running.** The room is joined off a setting, and the character name
   is read off the *filename* of the newest log in the folder — announced before a line is parsed — so
   you can sit in a room with EverQuest closed. The only gap is a fresh install that has never played,
   which has no name to announce; the Peers tab carries the name field for exactly that.
 - **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray` and `PeerScores`) — **the
-  one home for the whole feature** ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md)).
+  one home for the whole feature** ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) ·
+[ADR 0162](../decisions/0162-a-room-of-one-is-checked-not-guessed-at.md)).
   It was scattered across three screens for a while: the connection and the name in Settings (where
   ADR 0011 left them), two share toggles on the map toolbar, the rest here. A control now lives
   exactly once, and it lives here. Five sections, in the order the questions get asked:
   **Your connection** (connect, the real status light, who you appear as, Retry connection, and the
   bootstrap URL behind a `<details>`), **What you share** (live location first — the one thing that
   is broadcast rather than handed over, and the only share that needs the game running — then a
-  toggle per kind, all off by default), **Who's here** (what each peer offers, and their zone as a
+  toggle per kind, all off by default except *Item pages* — see the `mirror` family), **Who's here** (what each peer offers, and their zone as a
   button that opens the map there), **What's arrived**, and the **scoreboard comparison**.
 - **Saying so.** A peer newly offering something raises a toast whose one action opens the Peers tab
   with their row picked out ([ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md)).

@@ -10,6 +10,7 @@
 import type { AwariMessage, RoomSession } from "@awari/protocol";
 import { createLogger } from "@/shared/logging";
 import { createHttpBootstrapClient, DEFAULT_BOOTSTRAP_URL } from "@/shared/awari-bootstrap";
+import type { RoomProbe } from "@/shared/room-watch";
 
 const log = createLogger("awari");
 
@@ -48,7 +49,7 @@ const ICE_PROVIDERS = ["google", "open-relay"] as const;
  * to recognise a returning peer: identity a player cares about is their character / server
  * name, announced in the `hello` payload and re-announced on every rename (see ADR 0015).
  * Keeping the two apart means the id stays transport-only — a rename can't disturb reconnect
- * semantics, and a rejoin (see `REJOIN_DELAYS_MS`) entering as a new id costs nothing but a
+ * semantics, and a rejoin (see `ALONE_CHECKS_MS`) entering as a new id costs nothing but a
  * fresh `hello`.
  */
 export function randomPeerId(): string {
@@ -61,31 +62,65 @@ export { DEFAULT_BOOTSTRAP_URL };
 export type PeerMessageHandler = (message: AwariMessage) => void;
 
 /**
+ * A live room, and the one question you cannot answer from inside it.
+ *
+ * `probe` asks the **directory** which room the world can find under this id, and asks that room's
+ * leader how many are in it. It is awari's `pingRoomStatus`, which never joins and — the part that
+ * matters — never falls back to becoming the leader when nothing answers, so asking costs nothing
+ * and cannot make the split it is looking for. See `src/shared/room-watch.ts` for what the answer
+ * means; this end only reports what happened.
+ */
+export interface RoomConnection {
+  session: RoomSession;
+  probe: () => Promise<RoomProbe>;
+}
+
+/**
  * Join the shared awari room over PeerJS and deliver incoming messages to
- * `onMessage`. Returns the live session (`publish`, `close`, …). Client-only.
+ * `onMessage`. Returns the live session (`publish`, `close`, …) and a probe that
+ * shares its transport. Client-only.
  */
 export async function connectToRoom(opts: {
   roomId: string;
   peerId: string;
   bootstrapUrl?: string;
   onMessage?: PeerMessageHandler;
-}): Promise<RoomSession> {
-  const { createAwari, PROTOCOL_VERSION } = await import("@awari/core");
+}): Promise<RoomConnection> {
+  const { createAwari, pingRoomStatus, PROTOCOL_VERSION } = await import("@awari/core");
   const { createPeerJsTransport, readPeerJsId, ICE_SERVERS } = await import("@awari/transport-peerjs");
 
   // Built from awari's own presets rather than copied URLs, so their upkeep stays theirs.
   const iceServers = ICE_PROVIDERS.flatMap((provider) => ICE_SERVERS[provider]);
   log.debug("ice servers:", iceServers.length ? ICE_PROVIDERS.join(" + ") : "peerjs defaults");
 
-  const awari = createAwari({
-    transport: createPeerJsTransport(iceServers.length ? { peerOptions: { config: { iceServers } } } : undefined),
-    bootstrap: createHttpBootstrapClient(opts.bootstrapUrl || DEFAULT_BOOTSTRAP_URL, PROTOCOL_VERSION),
-    resolveConnectionId: readPeerJsId,
-    peerId: opts.peerId,
-  });
+  // Held rather than inlined so the probe below re-uses this one PeerJS peer. A probe with a
+  // transport of its own would mean a second broker connection and a second id per look, which is
+  // an expensive way to ask a cheap question — and it would dial the room from an identity nobody
+  // in it has heard of, which is exactly what makes a self-dial hard to tell from a stranger.
+  const transport = createPeerJsTransport(iceServers.length ? { peerOptions: { config: { iceServers } } } : undefined);
+  const bootstrap = createHttpBootstrapClient(opts.bootstrapUrl || DEFAULT_BOOTSTRAP_URL, PROTOCOL_VERSION);
+
+  const awari = createAwari({ transport, bootstrap, resolveConnectionId: readPeerJsId, peerId: opts.peerId });
 
   const session = await awari.join({ roomId: opts.roomId, sessionId: crypto.randomUUID() });
   log.debug("joined awari room", opts.roomId, "as", opts.peerId);
   if (opts.onMessage) session.onMessage(opts.onMessage);
-  return session;
+
+  return {
+    session,
+    async probe() {
+      try {
+        const status = await pingRoomStatus({ transport, bootstrap, resolveConnectionId: readPeerJsId, roomId: opts.roomId });
+        // `undefined` covers both "the directory has no room" and "nobody it named answered", and
+        // they are the same fact here: there is no reachable room but ours.
+        return status ? { reached: true, peers: status.peerCount } : { reached: false };
+      } catch (e) {
+        // A probe is a question, and a question that could not be asked is not an answer. The
+        // bootstrap being down must not read as "there is a room out there" — that would re-join us
+        // out of a working session on the strength of a network error.
+        log.debug("room probe failed:", (e as Error).message);
+        return { reached: false };
+      }
+    },
+  };
 }

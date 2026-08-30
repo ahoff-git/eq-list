@@ -32,14 +32,22 @@ import {
   type PeerCoverage,
 } from "../../src/shared/item-shards";
 import type { SharedItemPage } from "../../src/shared/peer-share";
+import { itemLevel, mobCardLevel, npcKey, parseLevelRange, questCardLevel, type LevelSources } from "../../src/shared/item-levels";
 import { fuzzyRank } from "../../src/shared/fuzzy";
 import { bestReading } from "../../src/shared/ocr-variants";
 import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
-import type { CachedItem, SearchResult, WikiPage } from "../../src/shared/types";
+import type { CachedItem, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
 
 const log = createLogger("wiki");
-const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // a week; wiki data changes slowly
+/**
+ * How long a cached page stays good, when nobody has said otherwise.
+ *
+ * Two weeks, and a **setting** rather than a constant since item pages began circulating between
+ * peers ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)) — a catalogue a
+ * room fills in an afternoon could otherwise sit unchecked for a very long time.
+ */
+const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24 * 14;
 const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 // Bump whenever parse.ts changes how a page becomes a WikiPage (new page kinds,
@@ -54,7 +62,34 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // the drop-data box (the real drop chance, not the per-slot figure); v11: quest info
 // card (Minimum Level / Classes / Related NPCs & Zones) from questTopTable; v12: mob
 // faction impact (Factions / Opposing Factions) appended to the mob card.)
-const CACHE_VERSION = 12;
+// v13: zone pages carry their NPC roster (name + level), which is where an item's level comes from
+// (ADR 0163) — 177 zone pages instead of 4,214 mob pages for the same answer.
+const CACHE_VERSION = 13;
+
+/**
+ * The version a page of each kind has to have been parsed at to still be current.
+ *
+ * **A parser change invalidates the kinds it changed, and nothing else.** `CACHE_VERSION` is one
+ * number for the whole cache, so bumping it for v13 — which only taught the parser to read a *zone*
+ * page's NPC table — threw away 11,482 perfectly good item pages and would have made every user
+ * re-fetch the entire catalogue over three hours. Item pages are byte-identical under v12 and v13,
+ * and saying so here is the difference between a free upgrade and a very expensive one.
+ *
+ * A kind not listed keeps the floor. Raise a kind's entry when *its* parse changes; raise the floor
+ * only when something changes for everything.
+ */
+const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
+  // v13 added `npcs`. A zone page parsed before that has no roster, so it has to be read again.
+  zone: 13,
+};
+
+/** Below this, a page predates parts of the parse every kind depends on. */
+const MIN_PARSE_FLOOR = 12;
+
+/** Was this page parsed by a parser current enough for what we now read off it? */
+function parsedCurrently(kind: WikiPageKind, version: number): boolean {
+  return version >= (MIN_PARSE_VERSION[kind] ?? MIN_PARSE_FLOOR);
+}
 
 // Wiki taxonomy (confirmed against the live wiki). Kept as named constants so a
 // category rename only needs editing here.
@@ -66,6 +101,15 @@ const ITEMS_CATEGORY = "Items";
 export interface WikiClient {
   search(term: string): Promise<SearchResult[]>;
   getPage(title: string): Promise<WikiPage | null>;
+  /**
+   * Re-fetch one page now, whatever its age.
+   *
+   * The escape hatch from the TTL, for the reader who is looking at a card they believe is wrong —
+   * a page edited on the wiki this morning, or one that reached them through a peer. Everything else
+   * about it is an ordinary fetch: same parser, same cache write, same era flag, so the refreshed
+   * page is indistinguishable from any other.
+   */
+  refreshPage(title: string): Promise<WikiPage | null>;
   searchZones(term: string): Promise<SearchResult[]>;
   questsByZone(zone: string): Promise<SearchResult[]>;
   /**
@@ -101,8 +145,9 @@ export interface WikiClient {
    * panel says how big it is rather than implying it is complete
    * ([ADR 0003](../../specs/decisions/0003-eqlwiki-runtime-data-source.md)).
    *
-   * Read fresh from disk on each call rather than held in memory: a page opened a minute ago belongs
-   * in the next search, and a cache of a cache is one more thing that can go stale.
+   * **Held in memory between calls**, and dropped the moment we write a page. Walking the cache is
+   * ~350ms of synchronous reads, and main serves every window's IPC — paying that on each Items tab
+   * mount froze the whole app for a third of a second each time.
    */
   cachedItems(): Promise<CachedItem[]>;
   /**
@@ -124,6 +169,13 @@ export interface WikiClient {
    * with pages a peer sends back
    * ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
    */
+  /**
+   * The mob and quest levels the cache walk gathered, for `itemRows` to place items with.
+   *
+   * Exposed because the walk is what knows them: rows built without it get the zone estimate for
+   * everything, which looks like working and is not.
+   */
+  levelSources(): LevelSources;
   items: {
     status(): { pages: number; cover: string; doing?: number };
     shard(shard: number): SharedItemPage[];
@@ -220,8 +272,13 @@ const isOutEraCategory = (set: Set<string>, cat: string) =>
   set.has(cat.replace(/^Category:\s*/i, "").replace(/_/g, " ").toLowerCase().trim());
 
 /** Create a wiki client that caches parsed pages + search indexes under `cacheDir`. */
-export function createWikiClient(cacheDir: string): WikiClient {
+export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number } = {}): WikiClient {
   fs.mkdirSync(cacheDir, { recursive: true });
+  /**
+   * Read on every freshness test rather than captured, so changing the setting takes effect at once
+   * — including for a harvest that is already running.
+   */
+  const ttlMs = opts.ttlMs ?? (() => DEFAULT_TTL_MS);
   const fileFor = (title: string) => path.join(cacheDir, `${cacheKey(title)}.json`);
 
   const titleIndex = createCachedIndex(path.join(cacheDir, "title-index.json"), fetchAllTitles, "title");
@@ -327,11 +384,11 @@ export function createWikiClient(cacheDir: string): WikiClient {
   }
 
 
-  async function getPageInternal(title: string): Promise<WikiPage | null> {
+  async function getPageInternal(title: string, force = false): Promise<WikiPage | null> {
     const cached = readCache(title);
     // Only a current-version, unexpired entry is a hit; a stale-version entry is
     // re-parsed (but still kept below as an offline fallback).
-    if (cached && cached.version === CACHE_VERSION && cached.ageMs < CACHE_TTL_MS) {
+    if (!force && cached && parsedCurrently(cached.page.kind, cached.version) && cached.ageMs < ttlMs()) {
       log.debug("cache hit", title);
       return cached.page;
     }
@@ -349,6 +406,7 @@ export function createWikiClient(cacheDir: string): WikiClient {
       page.outOfEra = fetched.categories.some((c) => isOutEraCategory(outEra, c));
       try {
         fs.writeFileSync(fileFor(title), JSON.stringify({ version: CACHE_VERSION, page }, null, 2), "utf8");
+        pageWritten(title);
       } catch (e) {
         log.warn("cache write failed", (e as Error).message);
       }
@@ -371,7 +429,7 @@ export function createWikiClient(cacheDir: string): WikiClient {
   /** No network, by contract: cached, parsed by the current parser, and still inside its TTL. */
   const holds = (title: string): boolean => {
     const hit = readCache(title);
-    return !!hit && hit.version === CACHE_VERSION && hit.ageMs < CACHE_TTL_MS;
+    return !!hit && parsedCurrently(hit.page.kind, hit.version) && hit.ageMs < ttlMs();
   };
 
   function loadHarvest(): SavedHarvest | null {
@@ -440,9 +498,22 @@ export function createWikiClient(cacheDir: string): WikiClient {
       const roster = loadHarvest()?.roster ?? [];
       if (roster.length) {
         indexRoster(roster);
+        // **Ride the catalogue's walk rather than doing a second one.** Both wanted the same 11,519
+        // files, and building them separately cost ~700ms of blocked main process between them. The
+        // catalogue is cached, so on every call after the first this is free.
+        const held = new Set((await cachedItemPages()).map((i) => i.title));
         heldTitles = new Set();
         mine = emptyCoverage();
-        for (const shard of byShard.keys()) recheckShard(shard);
+        for (const [shard, titles] of byShard) {
+          let complete = titles.length > 0;
+          for (const title of titles) {
+            // The catalogue only holds items; anything else in the roster (a zone, a quest) still has
+            // to be asked about directly, and there are far fewer of those.
+            if (held.has(title) || holds(title)) heldTitles.add(title);
+            else complete = false;
+          }
+          setShard(mine, shard, complete);
+        }
         log.debug("shard index:", heldTitles.size, "of", roster.length, "held");
       }
       indexed = true;
@@ -462,12 +533,14 @@ export function createWikiClient(cacheDir: string): WikiClient {
     const out: SharedItemPage[] = [];
     for (const title of byShard.get(shard) ?? []) {
       const hit = readCache(title);
-      if (!hit || hit.version !== CACHE_VERSION || hit.ageMs >= CACHE_TTL_MS) continue;
-      const { kind, title: name, wikiPath, sources, components, rewards, card, outOfEra } = hit.page;
-      // Only items travel under this kind, and `fetchedAt` never does — the receiver stamps its own,
-      // so a peer cannot reach into somebody else's cache expiry.
-      if (kind !== "item" && kind !== "recipe") continue;
-      out.push({ kind, title: name, wikiPath, sources, components, rewards, card, outOfEra });
+      if (!hit || !parsedCurrently(hit.page.kind, hit.version) || hit.ageMs >= ttlMs()) continue;
+      const { kind, title: name, wikiPath, sources, components, rewards, card, outOfEra, fetchedAt, npcs } = hit.page;
+      // The same kinds the reader accepts: items and recipes are the catalogue; zones and quests are
+      // what give them a level, and a mob page is read when we have one (ADR 0163).
+      if (kind !== "item" && kind !== "recipe" && kind !== "mob" && kind !== "quest" && kind !== "zone") continue;
+      // The age goes with it, so the page keeps expiring on schedule however many peers it passes
+      // through. The receiver clamps it to no later than their own now, so it can only be honest.
+      out.push({ kind, title: name, wikiPath, sources, components, rewards, card, outOfEra, fetchedAt, npcs });
     }
     return out;
   }
@@ -482,12 +555,43 @@ export function createWikiClient(cacheDir: string): WikiClient {
    */
   function acceptItems(pages: SharedItemPage[], shard?: number): number {
     let taken = 0;
+    const now = Date.now();
     for (const page of pages) {
-      if (holds(page.title)) continue;
-      const full: WikiPage = { ...page, fetchedAt: new Date().toISOString() };
+      // **The page's age travels with it.** Stamping "now" on receipt would be the bug that makes a
+      // room's cache immortal: A shares to B on day 13, B to C on day 26, and a page nobody has
+      // re-checked since it was first fetched stays permanently "fresh". `readSharedPage` has
+      // already clamped the sender's stamp to no later than now, so the worst it can be is honest.
+      const stamped = page.fetchedAt ? Date.parse(page.fetchedAt) : NaN;
+      const fetchedAt = Number.isFinite(stamped) ? Math.min(stamped, now) : now;
+      // Already expired by our own clock: taking it would mean writing a page that is immediately
+      // due for re-fetch, which is worse than not having it — `holds` would say no and the harvest
+      // would go and get it anyway, having paid for the message.
+      if (now - fetchedAt >= ttlMs()) continue;
+
+      /**
+       * **The newest copy in the room wins.**
+       *
+       * Skipping anything we already hold was the obvious rule and the wrong one: it meant a peer who
+       * had re-pulled a page this morning could not give it to somebody holding a copy from a
+       * fortnight ago, and every install expired and re-fetched the same page independently. Comparing
+       * the *pull date* instead means one re-pull serves the room, and everyone's expiry clock is set
+       * by the freshest fetch anybody actually made
+       * ([ADR 0164](../../specs/decisions/0164-the-newest-copy-in-the-room-wins.md)).
+       *
+       * Strictly newer, so an equal stamp is left alone — the common case is a page we both hold at
+       * the same age, and rewriting it would be a disk write per shard for no change.
+       */
+      const held = readCache(page.title);
+      if (held && parsedCurrently(held.page.kind, held.version)) {
+        const ours = Date.parse(held.page.fetchedAt);
+        if (Number.isFinite(ours) && ours >= fetchedAt) continue;
+      }
+      const full: WikiPage = { ...page, fetchedAt: new Date(fetchedAt).toISOString() };
       try {
         fs.writeFileSync(fileFor(page.title), JSON.stringify({ version: CACHE_VERSION, page: full }, null, 2), "utf8");
         taken++;
+        // The shard is re-checked once for the whole batch below, so only the list is dropped here.
+        catalogue = null;
       } catch (e) {
         log.warn("could not keep a shared page:", (e as Error).message);
       }
@@ -499,8 +603,195 @@ export function createWikiClient(cacheDir: string): WikiClient {
   /** How the harvester reaches the room. Late-bound: main wires it once both halves exist. */
   let room: PeerLink = { peers: () => [], myId: () => "solo", askPeer: () => {}, claim: () => {} };
 
+  /**
+   * Every item page on disk, with a **level** worked out for each — **held in memory between calls.**
+   *
+   * Walking 11,519 cache files costs ~350ms of *synchronous* file reads, and main is the process every
+   * window's IPC goes through: doing it on each Items tab mount froze the whole app for a third of a
+   * second, every time. The answer is the same until we write a page, so it is computed once and kept.
+   *
+   * A named function rather than only a method, because the harvest roster needs it too: the zones and
+   * quests worth fetching are exactly the ones these items name (see `harvestRoster`).
+   */
+  async function cachedItemPages(): Promise<CachedItem[]> {
+    if (catalogue) return catalogue;
+    // One walk, however many callers arrive at once: the Items tab mounting while the share hub's
+    // tick asks for coverage is the ordinary case, not a rare one.
+    building ??= buildCatalogue().finally(() => {
+      building = null;
+    });
+    return building;
+  }
+
+  /** The catalogue, and the build in flight. `null` means "not built, or a page has since changed". */
+  let catalogue: CachedItem[] | null = null;
+  /**
+   * The level evidence gathered on the same walk: mob and quest names to their level ranges.
+   *
+   * Kept beside the catalogue because `itemRows` needs it to place an item, and the *walk* is what
+   * knows it — rows built without it silently get a zone estimate for everything.
+   */
+  let levelEvidence: LevelSources = { mob: () => undefined, quest: () => undefined };
+  let building: Promise<CachedItem[]> | null = null;
+
+  /**
+   * How often the walk lets the event loop breathe.
+   *
+   * Thousands of synchronous reads in one go is one unbroken block on the process that serves every
+   * window. Chunked, the longest stall is a few milliseconds and the app stays usable while the
+   * catalogue builds behind it.
+   */
+  const YIELD_EVERY = 100;
+  const breathe = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+  /**
+   * A page was written, so what we hold has moved.
+   *
+   * The catalogue is dropped and rebuilt lazily — it is a list of eleven thousand things and nobody is
+   * looking at it this instant. The **shard index is patched in place**, because something *is*: the
+   * share hub reads it on every catalogue tick, and a harvest writes a page a second. Tearing it down
+   * per write would mean a full walk on the next tick, once every eleven seconds, for three hours.
+   * Re-checking the one shard the page belongs to is about eleven reads.
+   */
+  function pageWritten(title: string): void {
+    catalogue = null;
+    if (!indexed) return; // nothing built yet to keep current
+    const shard = shardOf(title);
+    if (byShard.has(shard)) recheckShard(shard);
+  }
+
+  async function buildCatalogue(): Promise<CachedItem[]> {
+    // The cache directory also holds the mirrored title/zone indexes, which have no `kind` and so
+    // fall out of the filter below on their own — there is no name list to keep in step with.
+    const startedAt = Date.now();
+    let files: string[];
+    try {
+      files = await fs.promises.readdir(cacheDir);
+    } catch (e) {
+      log.warn("couldn't read the page cache:", (e as Error).message);
+      return [];
+    }
+    const items: CachedItem[] = [];
+    /** Level evidence gathered on the same walk — see below. Keyed folded, since an item's sources
+     *  write a mob's name in the log's case ("an aviak quetzel") and its page is titled in the
+     *  wiki's ("An aviak quetzel"). */
+    const mobLevels = new Map<string, { min: number; max: number }>();
+    const questLevels = new Map<string, { min: number; max: number }>();
+    let read = 0;
+    for (const entry of files) {
+      if (!entry.endsWith(".json")) continue;
+      // Thousands of synchronous reads, chunked so the process that serves every window is never
+      // blocked for more than a few milliseconds at a time.
+      if (++read % YIELD_EVERY === 0) await breathe();
+      const hit = readCacheFile(path.join(cacheDir, entry));
+      // Age is deliberately ignored — a week-old card is still a card, and the fetch that would
+      // refresh it belongs to `getPage`, which the user has to ask for. The parser **version** is
+      // not ignored: a page parsed before item cards existed has no card where it should have one,
+      // and a catalogue built on those would silently be missing stats rather than items.
+      if (!hit || !parsedCurrently(hit.page.kind, hit.version)) continue;
+      const { page } = hit;
+      // Mobs and quests are not items, but they are what says how hard an item is to get — so the
+      // one pass that reads the cache collects their levels while it is here rather than walking
+      // eleven thousand files a second time (ADR 0163).
+      if (page.kind === "mob") {
+        // A mob page we happen to hold — the Hunt tab fetches these as you use it — is as good an
+        // answer as the zone's table, and is preferred because it describes that spawn specifically.
+        // Nothing goes and *gets* one: that is the 4,214-page crawl this design avoids.
+        const level = mobCardLevel(page.card?.lines);
+        if (level) mobLevels.set(npcKey(page.title), level);
+        continue;
+      }
+      if (page.kind === "zone") {
+        // **The cheap rung, and where nearly every level actually comes from.** One zone page states
+        // the level of every mob in the zone (ADR 0163). A mob page already read wins; otherwise this
+        // is the answer.
+        for (const npc of page.npcs ?? []) {
+          const key = npcKey(npc.name);
+          if (mobLevels.has(key)) continue;
+          const level = parseLevelRange(npc.level);
+          if (level) mobLevels.set(key, level);
+        }
+        continue;
+      }
+      if (page.kind === "quest") {
+        const level = questCardLevel(page.card?.lines);
+        if (level) questLevels.set(page.title.trim().toLowerCase(), level);
+        continue;
+      }
+      // A recipe is an item page that happens to be craftable, so it carries a card and belongs
+      // here. Zones and spells are neither items nor evidence about one.
+      if (page.kind !== "item" && page.kind !== "recipe") continue;
+      items.push({
+        title: page.title,
+        origin: "wiki",
+        wikiPath: page.wikiPath,
+        card: page.card,
+        sources: page.sources,
+        outOfEra: page.outOfEra,
+        fetchedAt: page.fetchedAt,
+      });
+    }
+
+    // Levels last, because an item's evidence may live in a file the walk had not reached yet when
+    // the item itself was read. `itemLevel` falls through mob → quest → zone, so every item that
+    // names a placeable zone gets *something* even with no mob page held.
+    const lookup: LevelSources = {
+      mob: (name: string) => mobLevels.get(npcKey(name)),
+      quest: (name: string) => questLevels.get(name.trim().toLowerCase()),
+    };
+    levelEvidence = lookup;
+    let placed = 0;
+    for (const item of items) {
+      // Levels are worked out by `itemRows`, where the card is already parsed — see `ItemRow.level`.
+      // Here we only keep the evidence they are read from.
+      if (itemLevel(item.sources ?? [], lookup)) placed++;
+    }
+    log.debug(
+      "catalogue:", items.length, "items;",
+      mobLevels.size, "mob levels,", questLevels.size, "quest levels;",
+      placed, "items placed", `in ${Date.now() - startedAt}ms`,
+    );
+    catalogue = items;
+    return items;
+  }
+
+  /**
+   * What a run covers: every item page, **plus the mobs and quests those items name**.
+   *
+   * The second half is what makes an item's *level* a fact rather than a guess — the wiki never
+   * states an item's level, so it is read off the mob that drops it or the quest that gives it
+   * ([ADR 0163](../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)). Measured on
+   * a filled catalogue: 4,214 distinct mobs and 1,547 quests, so a run grows from 11,136 pages to
+   * about 16,900.
+   *
+   * The sources can only be *discovered from items already held*, so a first run on an empty cache is
+   * items-only and the second picks up the thousands of mobs the first just learned about. That is
+   * why the button says "Check for new items" afterwards and why pressing it again is worth doing —
+   * it is not a no-op, it is the half that fills in the levels.
+   */
+  async function harvestRoster(): Promise<string[]> {
+    const items = await fetchCategoryTitles(ITEMS_CATEGORY);
+    const roster = new Set(items);
+    // Folded, so "an aviak quetzel" and "An aviak quetzel" are not fetched as two pages.
+    const seen = new Set(items.map((t) => t.trim().toLowerCase()));
+    for (const item of await cachedItemPages()) {
+      for (const source of item.sources ?? []) {
+        if (source.kind !== "drop" && source.kind !== "quest") continue;
+        const name = source.where?.trim();
+        if (!name) continue;
+        const key = name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        roster.add(name);
+      }
+    }
+    log.debug("harvest roster:", items.length, "items +", roster.size - items.length, "sources");
+    return [...roster];
+  }
+
   const harvester = createHarvester({
-    roster: () => fetchCategoryTitles(ITEMS_CATEGORY),
+    roster: harvestRoster,
+    // (see `cachedItemPages` below for the catalogue this fills)
     held: holds,
     heldTitles: async () => {
       await ensureShardIndex();
@@ -535,42 +826,7 @@ export function createWikiClient(cacheDir: string): WikiClient {
   });
 
   return {
-    async cachedItems() {
-      // The cache directory also holds the mirrored title/zone indexes, which have no `kind` and so
-      // fall out of the filter below on their own — there is no name list to keep in step with.
-      let files: string[];
-      try {
-        files = await fs.promises.readdir(cacheDir);
-      } catch (e) {
-        log.warn("couldn't read the page cache:", (e as Error).message);
-        return [];
-      }
-      const items: CachedItem[] = [];
-      for (const entry of files) {
-        if (!entry.endsWith(".json")) continue;
-        const hit = readCacheFile(path.join(cacheDir, entry));
-        // Age is deliberately ignored — a week-old card is still a card, and the fetch that would
-        // refresh it belongs to `getPage`, which the user has to ask for. The parser **version** is
-        // not ignored: a page parsed before item cards existed has no card where it should have one,
-        // and a catalogue built on those would silently be missing stats rather than items.
-        if (!hit || hit.version !== CACHE_VERSION) continue;
-        const { page } = hit;
-        // A recipe is an item page that happens to be craftable, so it carries a card and belongs
-        // here. Quests, mobs, zones and spells are not items and have nothing to search by stat.
-        if (page.kind !== "item" && page.kind !== "recipe") continue;
-        items.push({
-          title: page.title,
-          origin: "wiki",
-          wikiPath: page.wikiPath,
-          card: page.card,
-          sources: page.sources,
-          outOfEra: page.outOfEra,
-          fetchedAt: page.fetchedAt,
-        });
-      }
-      log.debug("catalogue:", items.length, "cached item pages");
-      return items;
-    },
+    cachedItems: cachedItemPages,
 
     async refresh() {
       // Drop the session's derived caches, then force both mirrored indexes to re-fetch — so a
@@ -647,7 +903,8 @@ export function createWikiClient(cacheDir: string): WikiClient {
       }
     },
 
-    getPage: getPageInternal,
+    getPage: (title) => getPageInternal(title),
+    refreshPage: (title) => getPageInternal(title, true),
 
     harvest: harvester,
     onHarvest(listener) {
@@ -655,6 +912,7 @@ export function createWikiClient(cacheDir: string): WikiClient {
     },
 
     items: { status: itemStatus, shard: itemShard, accept: acceptItems },
+    levelSources: () => levelEvidence,
     joinRoom(link) {
       room = link;
     },

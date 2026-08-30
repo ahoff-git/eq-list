@@ -1,6 +1,7 @@
 import type { DataReportRow } from "./data-provenance";
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
+import type { ItemRow } from "./item-search";
 import type { KnowledgeContributor } from "./contributors";
 import type { PeerOfferNotice, ReceivedShare, ShareKind, ShareSettings } from "./peer-share";
 // Re-exported because every consumer of the `peer` bridge reads it off the api surface, and
@@ -1203,6 +1204,14 @@ export interface WikiPage {
   rewards: WikiReward[];
   /** The item's own stat card (items/recipes), for the hover tooltip. */
   card?: ItemCard;
+  /**
+   * For **zone** pages: every NPC the zone lists, with its level as the wiki writes it (`"7-9"`).
+   *
+   * The cheap source of an item's level. A mob's level is on the mob's page, but a zone page states
+   * it for every mob at once — 177 zone pages against 4,214 mob pages, for the same answer
+   * ([ADR 0163](../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
+   */
+  npcs?: { name: string; level: string }[];
   /** True if the page is tagged with an era that isn't live yet (can't obtain). */
   outOfEra?: boolean;
   fetchedAt: string;
@@ -1290,8 +1299,16 @@ export interface CachedItem {
   wikiPath?: string;
   /** Lucy's own item id, when it wasn't. */
   lucyId?: number;
+  /**
+   * The stat card and the source rows are what a **row is built from**, not what it is shown as — so
+   * both are optional, and a catalogue that has crossed to a window carries neither.
+   *
+   * They are 5.3 MB of the 6.9 MB the full catalogue used to cost per Items tab mount, and the panel
+   * reads neither: the stats come pre-parsed on the row, and the sources have already become `kinds`
+   * and `zones`. Main keeps the full pages; a window gets what it draws.
+   */
   card?: ItemCard;
-  sources: ItemSource[];
+  sources?: ItemSource[];
   /** True when the source says this era isn't live yet — the wiki's flag, or Lucy's derived one. */
   outOfEra?: boolean;
   /** When the cache last fetched it, so a stale catalogue can say so. */
@@ -1331,6 +1348,7 @@ export interface HarvestProgress {
   /** Why the last start didn't take (offline, category moved), when it didn't. */
   error?: string;
 }
+
 
 /** A screen-region rectangle (display-local CSS pixels) for the screengrab lookup. */
 export interface Rect {
@@ -2127,6 +2145,19 @@ export interface Settings {
    * nobody switches on is a feature nobody has. Off makes the app talk to eqlwiki and nothing else.
    */
   askLucy: boolean;
+  /**
+   * How long a fetched wiki page stays good before it is re-fetched. Days; **14** by default.
+   *
+   * It was a fixed week. It became a setting when item pages started **circulating between peers**
+   * ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)): a cache that a room
+   * fills in an afternoon is a cache that could sit unchanged for a very long time, so how long
+   * "fresh" means is now a decision somebody can see and change rather than a constant nobody can.
+   *
+   * One TTL for every kind of page, not one per kind. Two answers to "how old may a wiki page be"
+   * would be two things to keep in step for no gain — the wiki is edited slowly whatever the page is
+   * about.
+   */
+  wikiPageTtlDays: number;
   /** Opt-in: join the awari peer-to-peer network (see peers + send pings). Default off. */
   connectPeers: boolean;
   /** Broadcast your live location to peers (requires `connectPeers`). Default off. */
@@ -2444,6 +2475,13 @@ export interface EqlApi {
   wiki: {
     search(term: string): Promise<SearchResult[]>;
     getPage(title: string): Promise<WikiPage | null>;
+    /**
+     * Re-fetch one page from the wiki now, whatever its age — the ↻ beside an item.
+     *
+     * For the reader looking at a card they believe is out of date: one edited on the wiki this
+     * morning, or one that reached them through a peer. Resolves with the fresh page.
+     */
+    refreshPage(title: string): Promise<WikiPage | null>;
     /** Fuzzy zone-name suggestions for the "quests by zone" search. */
     searchZones(term: string): Promise<SearchResult[]>;
     /** Quests located in / related to a zone. */
@@ -2462,7 +2500,7 @@ export interface EqlApi {
      * therefore exactly what you have already looked at, which is the only honest answer a runtime
      * data source can give ([ADR 0003](../../specs/decisions/0003-eqlwiki-runtime-data-source.md)).
      */
-    cachedItems(): Promise<CachedItem[]>;
+    cachedItems(): Promise<ItemRow[]>;
     /**
      * Fill the item catalogue from the wiki's own `Category:Items` — one page at a time, with a gap.
      *

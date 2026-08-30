@@ -1,7 +1,7 @@
 "use client";
 import { type DependencyList, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
-import { setRendererDebug } from "@/shared/logging";
+import { createLogger, setRendererDebug } from "@/shared/logging";
 import { UI_SCALE, clampScale, windowOpacity, type ScaleRange } from "@/shared/constants";
 import { useWindowToggle } from "./windowToggles";
 import type {
@@ -21,7 +21,6 @@ import type {
   AppInfo,
   ItemSource,
   ItemCard,
-  CachedItem,
   HarvestProgress,
   LucyItem,
   LucySearchResult,
@@ -44,7 +43,7 @@ import {
 } from "@/shared/hunt";
 import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { knownItems, type KnownItem } from "@/shared/known-items";
-import { itemCatalog, itemRows, type ItemRow } from "@/shared/item-search";
+import type { ItemRow } from "@/shared/item-search";
 import { clockSkew } from "@/shared/spawn-timers";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
@@ -56,6 +55,8 @@ import { parseLogText } from "@/shared/log-parser";
  * Defined at module scope so each `source` has a stable identity — which is what lets `useLive` name
  * honest dependencies instead of an empty array with a lint suppression over it.
  */
+const log = createLogger("hooks");
+
 type Eql = NonNullable<ReturnType<typeof api>>;
 
 interface LiveSource<T> {
@@ -112,11 +113,22 @@ export function useReading<T>(
     if (!a) return; // prerender, or a plain browser: the initial value stands
     let current = true;
     setLoading(true);
-    void read(a).then((next) => {
-      if (!current) return; // superseded — the newer read owns the state now
-      setValue(next);
-      setLoading(false);
-    });
+    void read(a)
+      .then((next) => {
+        if (!current) return; // superseded — the newer read owns the state now
+        setValue(next);
+        setLoading(false);
+      })
+      // **A failed read has to stop loading.** Without this a rejection in main — a handler that
+      // throws, a channel that isn't registered — leaves the panel on its "loading…" line for ever,
+      // which reads as the app having hung rather than as something having gone wrong. The value
+      // stays whatever it was (the initial, usually empty), so the panel falls through to its own
+      // empty state and says something.
+      .catch((e: unknown) => {
+        if (!current) return;
+        log.warn("read failed:", (e as Error)?.message ?? e);
+        setLoading(false);
+      });
     return () => {
       current = false;
     };
@@ -266,7 +278,7 @@ const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
 const NO_ITEM_SOURCES: ItemSource[] = [];
 const NO_ITEM_DROPS: ItemDropSource[] = [];
 const NO_LOOTED: LootedItem[] = [];
-const NO_CATALOG: CachedItem[] = [];
+const NO_CATALOG: ItemRow[] = [];
 const NO_HARVEST: HarvestProgress = {
   status: "idle",
   total: 0,
@@ -510,19 +522,50 @@ export function useKnownItems(): KnownItem[] {
  * Rows are derived here rather than in the panel so the parse happens once per catalogue rather than
  * once per keystroke: three hundred cards is nothing to parse and a great deal to parse per letter.
  */
+/**
+ * The catalogue, kept across mounts.
+ *
+ * The Items panel is unmounted the moment you look at another tab, so without this every glance back
+ * costs the whole transfer again. Module scope rather than a ref: surviving the unmount *is* the
+ * point. Keyed by the refresh key, so a finished harvest still re-reads.
+ */
+let heldCatalogue: { key: string; rows: ItemRow[] } | null = null;
+
 export function useItemCatalog(refreshKey?: unknown): { rows: ItemRow[]; loading: boolean } {
-  const { value, loading } = useReading<CachedItem[]>(
-    // Both caches at once. Lucy's is gated at the IPC boundary and answers `[]` when it's switched
-    // off, so nothing here has to ask whether that source is in use.
-    async (a) => {
-      const [wiki, lucy] = await Promise.all([a.wiki.cachedItems(), a.lucy.cachedItems()]);
-      return itemCatalog(wiki, lucy);
-    },
-    NO_CATALOG,
-    [refreshKey],
+  // **Rows arrive built.** The merge, the stat parsing and the zone folding all happen once in main,
+  // which already holds the pages and caches them — so a window never parses a stat card at all.
+  const key = String(refreshKey ?? "");
+  const [state, setState] = useState<{ rows: ItemRow[]; loading: boolean }>(() =>
+    heldCatalogue?.key === key ? { rows: heldCatalogue.rows, loading: false } : { rows: NO_CATALOG, loading: true },
   );
-  const rows = useMemo(() => itemRows(value), [value]);
-  return { rows, loading };
+
+  useEffect(() => {
+    if (heldCatalogue?.key === key) {
+      setState({ rows: heldCatalogue.rows, loading: false });
+      return;
+    }
+    const a = api();
+    if (!a) return;
+    let current = true;
+    setState((held) => ({ ...held, loading: true }));
+    void a.wiki
+      .cachedItems()
+      .then((rows) => {
+        heldCatalogue = { key, rows };
+        if (current) setState({ rows, loading: false });
+      })
+      // A failed read must stop loading, or the panel sits on its "reading…" line for ever and reads
+      // as the app having hung rather than as something having gone wrong.
+      .catch((e: unknown) => {
+        log.warn("catalogue read failed:", (e as Error)?.message ?? e);
+        if (current) setState((held) => ({ ...held, loading: false }));
+      });
+    return () => {
+      current = false;
+    };
+  }, [key]);
+
+  return state;
 }
 
 /**

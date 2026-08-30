@@ -723,12 +723,22 @@ features for later in [../ideas.md](../ideas.md).
   confirm the other side's rates move (the reconcile pass, not an offer). Then force the drift the
   reconcile exists for — stop one client mid-conversation and restart it — and confirm it catches up
   on the next tick rather than waiting for the far side to kill something.
-- **The split room, and Retry connection.** The failure the retries give up on: launch both clients at the
-  same instant, repeatedly, until they settle in separate rooms (both connected, both alone — the
-  light gold, the roster empty). Confirm **Retry connection** on either side finds the other at once,
-  with `re-joining on request` then `peer joined:` in the log — and then, on a fresh split, confirm it
-  heals **on its own** within five minutes (`room empty for 300 s - re-joining to look again`), since
-  that is the case a person is not supposed to have to notice.
+- **The split room, which now checks rather than guesses**
+  ([ADR 0162](../decisions/0162-a-room-of-one-is-checked-not-guessed-at.md)). Every rule is unit
+  tested (`room-watch.test.ts`), so what needs two real clients is only the part no fake can supply:
+  **that the probe reaches a real leader over a real transport.** Launch both clients at the same
+  instant, repeatedly, until they settle in separate rooms (both connected, both alone — the light
+  gold, the roster empty), with Debug logging on. Expect, within about twenty seconds and with nobody
+  touching anything, **exactly one** of them to log `we are not in the room everybody else is in - it
+  has N - re-joining`, and the other to log `room of one confirmed` and stay put. Both must then see
+  each other. If *both* re-join, the probe is failing to reach the leader and the split can re-race —
+  that is the bug to report. **Retry connection** must still do it immediately on either side
+  (`re-joining on request`, then `peer joined:`).
+- **A solitary player is never re-joined.** The other half of ADR 0162, and the one a wrong fix
+  breaks silently. Run **one** client, connected, alone, for half an hour with Debug logging on.
+  Expect `room of one confirmed` on a lengthening cadence (20s, 45s, 90s, 3m, then every 5m, each
+  jittered) and **no re-join at all** — no `joined awari room` after the first, no roster churn. A
+  second `joined awari room` line here means the probe is reading our own hint as somebody else.
 - **Surviving a drop, and leaving cleanly.** The room now re-joins itself when awari reports it
   unreachable ([ADR 0070](../decisions/0070-a-dropped-room-rejoins-itself.md)), and no unit test can
   reach this — it needs two clients and a *real* drop, which is the hard part to stage. The cheapest
@@ -1236,3 +1246,142 @@ that the log lines really do read as expected on this server.
   zone, change difficulty: the mob's goes, yours keeps running.
 - **A hand-added camp reads honestly.** Add a mob you have never killed, with no interval. The row
   should say *"Not killed yet"*, not *"Killed once"*.
+
+## Freshness, and refreshing a page by hand (ADR 0161)
+
+Verified against the live wiki: a cached read is ~6ms against a ~300ms fetch, ↻ produces a new
+timestamp on an already-fresh page, a page 20 days old is **refused** past the 14-day TTL, and a
+1-day-old shared page keeps the sender's age rather than being stamped "now". Not yet clicked.
+
+- **The age is shown, and the button replaces it.** Open any item page: the header should read a
+  relative age (e.g. "3 days ago") beside a ↻. Press ↻ — it should show "…" briefly and the age
+  should reset to "just now".
+- **It refreshes even when the page is fresh.** That is the point of the button: a page fetched an
+  hour ago must still be re-fetched when asked.
+- **The TTL is real.** Settings → *Keep wiki pages for* → set it to 1 day. Open an item you fetched
+  more than a day ago; it should re-fetch (slower, and the age resets). Set it back to 14.
+- **Changing the TTL takes effect immediately**, including mid-harvest — it is read per check, not
+  captured at startup.
+- **Item pages share without being switched on.** On a fresh install, Peers tab → *Item pages* should
+  already be ticked, and every other share toggle unticked. Untick it and confirm it *stays* unticked
+  across a restart — an explicit no must survive.
+- **Two clients, ages preserved.** Fill on one, take shards on the other, then check an item's page
+  age on the receiver: it should show roughly when the *sender* fetched it, not "just now". This is
+  what stops a room's cache from becoming immortal, and it is the one thing only two clients can show.
+
+## Selecting all of a facet
+
+Pinned in unit tests, and the counts checked against the filled catalogue (11,171 items, 154 zones,
+4,560 of them naming no zone). Not yet clicked.
+
+- **All ticks everything.** Items tab → the Zone picker → *All 154*. The count under the criteria
+  should fall to 6,611 — **not** stay at 11,171, because items with no zone are cut. The note in the
+  menu should say so before you wonder why.
+- **Filter, then All, ticks only what matched.** Type `karana` in the picker's filter box: the button
+  should read *All 8 shown*, and pressing it should tick the eight Karana zones and nothing else.
+- **It adds rather than replaces.** Filter `karana`, press All; clear the filter, type `freeport`,
+  press All. Both sets should be ticked — the second press must not discard the first.
+- **Clear still clears everything**, including values hidden by the current filter.
+- **It works the same on the other five pickers** (slot, class, race, source, flag) — the button is
+  generic, and only the numbers in the note differ.
+- **(none) reaches what no value can.** The Zone picker should list *(none) · 4,560* above the zones,
+  separated by a rule. Tick only that: the results should be the 4,560 items with no zone — quest
+  rewards and crafted goods — which nothing else in the picker can show you.
+- **The halves add up.** *All 154* → 6,611. *(none)* alone → 4,560. Both → 11,171, i.e. no filter at
+  all. If those three don't agree with the catalogue's own total, the facet is lying somewhere.
+- **It ors, it doesn't replace.** Tick `Blackburrow` and *(none)*: you should get Blackburrow's items
+  *plus* the unsourced ones, not one or the other.
+- **The note points at the fix.** With zones ticked and *(none)* not, the menu should say how many are
+  hidden and to tick *(none)* for them — and that note should disappear once you do.
+- **Nothing ever shows the sentinel.** The button, its hover, and the chips should read "(none)" or
+  "no zone" — never a stray control character.
+
+## An item's level (ADR 0163)
+
+Derivation is unit-tested and measured against the filled catalogue: with only 226 mob pages held,
+56% of 11,171 items already get a level (572 from a mob, 190 from a quest, 5,467 from a zone, 4,942
+unplaced). What has not been done is the second harvest that turns most of those estimates into
+facts, or the clicking.
+
+- **The column reads, and says where it got it.** Items tab → a Level column. Hover a row: it should
+  name the evidence — "a festering hag is level 28–30 — from the mob that drops it". A zone-derived
+  one should be **dim italics** and say so; an unplaced one shows "—".
+- **The band cuts to what you can use.** Set Level 1–20: high-end items should disappear, and so
+  should everything with no level at all. Sorting by Level ascending should lead with the low ones and
+  put the unplaceable at the bottom, not the top.
+- **It overlaps rather than contains.** An item off a mob spanning 21–23 should survive a band of
+  1–22 — it is a level-22 character's item.
+- **The second run is where this pays off.** Press *Check for new items* after a completed harvest:
+  the roster should grow from ~11,136 to ~12,900 (the **zones** and quests items name — not the 4,214
+  mobs), and when it finishes the Level column should be mostly mob-derived rather than zone-derived.
+  **This is the run worth actually doing** — the difference between a column of guesses and one of
+  facts, for about half an hour more.
+- **Zone pages are doing the work.** Watch the run: it should fetch zone names, not mob names. If you
+  see it fetching thousands of individual mobs, the roster is wrong.
+- **The pace picker tells the truth about the size.** Its hours are computed from what is left to
+  fetch, so on a fresh install it should read ~3–4h at Gentle and much less once mostly filled.
+- **Zone and quest pages share too.** In a room, a peer should be able to hand over shards containing
+  zone pages — check a level shows as mob-derived on a client that never fetched that zone itself.
+  A zone page is the biggest thing that crosses (Kael Drakkel lists 508 NPCs), so it is the one to
+  watch if a shard transfer ever misbehaves.
+
+## Effect dropdowns and the fuzzy effect search
+
+Parsing is pinned against verbatim card lines and measured on the filled catalogue: 796 distinct
+effect names — 21 worn, 485 click, 275 proc, 81 focus — including **17** with "Haste" in the name,
+which is what the fuzzy search exists for. Not yet clicked.
+
+- **Four pickers, on their own row.** Items tab → *Effects* → Worn / Click / Proc / Focus. Each should
+  offer only effects reached that way; a worn haste must not appear under Click.
+- **The fuzzy search is the point.** Open *Focus* and type `haste`: it should reach `Spell Haste I`,
+  `Summoning Haste II`, `Brittle Haste III` and the rest. Then type it **misspelt** (`hsate`) — the
+  literal pass will find nothing and the fuzzy pass should still offer them.
+- **Literal hits lead.** Type `spell` in Focus: the ones actually containing "spell" should be at the
+  top, with fuzzy near-matches under them rather than interleaved.
+- **It helps the other pickers too.** In Zone, type `Feerot` — The Feerrott should still come up.
+- **Kinds are not interchangeable.** Tick a Worn effect and confirm the results are items that have it
+  *worn*; the same name under Click should give a different set.
+
+## The newest copy in the room (ADR 0164)
+
+Unit-tested against a temp cache; the two-client half is untested.
+
+- **A peer's re-pull reaches you.** With two clients holding the same page, refresh it on one (↻), then
+  let the other take that shard. The second should end up showing the *newer* age on the item page —
+  not its own older one, and not "just now".
+- **An older copy can't overwrite a newer one.** The reverse of the above should change nothing.
+- **Expiry routes through the room first.** Set the TTL to 1 day, let a page expire on one client, and
+  watch it fill: it should come from the peer rather than from eqlwiki. Only with no peer holding it
+  should the wiki be asked.
+
+## The Items tab, for speed
+
+Measured rather than guessed, against the real 11,519-file cache: the catalogue builds in ~400ms once
+(yielding every 100 files, worst event-loop stall 12ms rather than one 400ms block), later reads are
+0ms, `items.status()` went 327ms → 0ms, and what crosses to a window is 4.3 MB of prebuilt rows
+instead of 11.3 MB of pages. Two real launches confirmed exactly one build. What's left is the feel.
+
+- **Opening Items is instant**, both the first time (main warms it ~4s after launch) and every time
+  after. If the first open ever shows "Reading the item cache…" for more than a blink, the warm-up
+  didn't run.
+- **Nothing else stutters while it builds.** On a cold start, open Items immediately and watch the
+  overlay and map: they should stay responsive. A frozen map for half a second means the yield broke.
+- **Switching away and back is free** — no flicker, no "Reading…", the same rows and the same scroll.
+- **Typing in the name box is immediate** on 11k rows, as are the facet pickers and the level band.
+- **After a harvest finishes** the catalogue re-reads once and the count grows; it should not re-read
+  on every page fetched *during* the run.
+
+## The level cap slider
+
+Measured on the real catalogue: cap 10 → 6,919 of 11,125 shown, 20 → 7,487, 40 → 9,297, 60 → 11,122,
+off → 11,125. 22 items carry a level stated on the card; 4,911 have no known level at all.
+
+- **Dragging it shrinks the list.** Items tab → the slider beside the Level floor. Drag it down and
+  the count should fall smoothly; the read-out beside it shows the cap, `60+` at the far right.
+- **The far right means no cap.** At maximum the ✕ disappears and nothing is filtered.
+- **It hides what you can't use.** At cap 20, `Baton of the Sky` (a card that says "Required Level:
+  49") should be gone; hover a surviving row's Level to see which rung placed it.
+- **It does not hide what it can't judge.** The note beside the slider names how many items have no
+  known level, and those stay visible at every cap — a cap that hid them would drop 44% of the list.
+- **An effect's level is not a requirement.** `Sabertooth Short Bow` has a level-15 proc and no wear
+  requirement; it should survive a cap of 5.
