@@ -306,3 +306,41 @@ test("a pack from another build is ignored rather than trusted", async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a launch opens a handful of files, not the whole cache", async () => {
+  /**
+   * The one that stopped an antimalware scanner flattening the machine on every launch.
+   *
+   * Coverage for the peer room is built on the share hub's first catalogue tick, so it runs whether
+   * or not anybody opens the Items tab — and it used to get the titles it needs by walking every page
+   * in the cache. Eleven and a half thousand file opens in a burst is eleven and a half thousand
+   * real-time scans. The pack carries the titles, so it is one read.
+   */
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-opens-"));
+  try {
+    const first = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    first.items.accept([page("A", daysAgo(1), 1), page("B", daysAgo(1), 2), page("C", daysAgo(1), 3)]);
+    await first.catalogueJson();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Count what a *fresh* client — a relaunch — actually opens.
+    const real = fs.readFileSync;
+    let opens = 0;
+    (fs as { readFileSync: typeof fs.readFileSync }).readFileSync = ((...args: Parameters<typeof fs.readFileSync>) => {
+      opens++;
+      return real(...args);
+    }) as typeof fs.readFileSync;
+    try {
+      const next = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+      await next.catalogueJson();
+      next.items.status();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } finally {
+      (fs as { readFileSync: typeof fs.readFileSync }).readFileSync = real;
+    }
+    // A handful: the pack, the harvest state, the mirrored indexes. Emphatically not one per page.
+    assert.ok(opens < 10, `a launch opened ${opens} files`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

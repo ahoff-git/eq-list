@@ -1407,3 +1407,17 @@ and 491 click effects in the facets. Not yet watched through two real launches.
   rows arriving, the mouse must stay live. Move it continuously while the list populates — any stall
   over a frame or two means something large is crossing `contextBridge` as objects again rather than
   as text. This was ten seconds of unusable input, and no measurement taken in main showed it.
+
+## Launch, as an antimalware scanner sees it
+
+Counted rather than timed, because the cost lands in somebody else's process: a relaunch now opens
+**21 files** where it used to open **11,541** (the peer room's coverage was walking the whole page
+cache for a list of titles). Verified against the real 11,521-file cache.
+
+- **Launch should not spike the antimalware service.** Watch Task Manager's *Antimalware Service
+  Executable* while starting the app. A brief flicker is normal; sustained CPU for seconds means
+  something is walking the cache again.
+- **The first launch after this change is still a cold one** — it walks once to build the pack, so
+  expect one slow start, then quiet ones.
+- **A harvest is the other burst** — it writes a page a second for hours. If the scanner is a problem
+  during one, an exclusion for `%APPDATA%\eq-list\wiki-cache` is the blunt fix.

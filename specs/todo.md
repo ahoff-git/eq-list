@@ -532,6 +532,13 @@ Four of the six are **done** and have left this list: rank-aware spell costs
 - **5.7 MB of JSON text per first mount**, parsed in 24ms and held across mounts. Cheap now, but the
   text is bigger than the object form because JSON cannot share the repeated `Class: ALL` arrays — a
   post-parse intern pass would cut the window's memory if that ever matters.
+- **The page cache is 11,521 individual files.** Nothing walks it at launch any more, but a *cold*
+  build still opens every one, and creating them during a harvest is a file per second for three
+  hours — both are shapes an antimalware scanner takes an interest in, and the second resembles the
+  write pattern ransomware heuristics watch for. Consolidating pages into a handful of bundles would
+  remove the whole class of problem; the pack is a first step that only covers reads.
+- **The app is unsigned**, which makes every one of the above more suspicious to a scanner than it
+  would otherwise be. See the code-signing item under Distribution.
 - **Anything else large crossing `contextBridge` has the same cliff.** The item catalogue is the only
   payload of this size today; the next one to appear should be text from the start rather than
   discovered the same way.

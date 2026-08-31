@@ -132,7 +132,11 @@ unit-tested.
     a second launch reads the pack instead of walking, that a write drops it so it can never serve a
     stale catalogue (a real bug: `acceptItems` cleared the item list but not the rows or the pack, so
     a page a peer sent you stayed invisible until a restart), and that a pack with the wrong signature
-    is rebuilt rather than trusted. Note what these tests *don't* claim — a file seeded
+    is rebuilt rather than trusted. One test counts **file opens on a relaunch** and requires a
+    handful rather than one per page: coverage for the peer room is built on every launch, and getting
+    its titles by walking the cache meant 11,519 opens — and 11,519 real-time antimalware scans — each
+    time the app started. That cost is invisible to any timing taken inside the app, which is why it
+    is asserted as a *count* rather than a duration. Note what these tests *don't* claim — a file seeded
     behind a running client's back is something it is entitled not to notice, so the version tests
     build a fresh client rather than re-reading the same one.
   - `src/shared/item-levels.ts` → `electron/tests/item-levels.test.ts` (*what level do I need to be to

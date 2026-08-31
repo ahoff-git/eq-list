@@ -509,10 +509,19 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       const roster = loadHarvest()?.roster ?? [];
       if (roster.length) {
         indexRoster(roster);
-        // **Ride the catalogue's walk rather than doing a second one.** Both wanted the same 11,519
-        // files, and building them separately cost ~700ms of blocked main process between them. The
-        // catalogue is cached, so on every call after the first this is free.
-        const held = new Set((await cachedItemPages()).map((i) => i.title));
+        /**
+         * **The titles come out of the pack, not out of a walk.**
+         *
+         * This is coverage for the peer room, and it is built on the share hub's first catalogue tick
+         * — so it runs on *every launch*, whether or not anybody opens the Items tab. Asking
+         * `cachedItemPages()` for the titles meant 11,519 synchronous file opens every time the app
+         * started, which is also 11,519 real-time antimalware scans; on a machine with Defender
+         * watching that folder it is enough to make the whole system crawl for the first few seconds.
+         *
+         * The pack already knows which titles we hold, so this costs one file read.
+         */
+        await catalogueTitles();
+        const held = new Set(heldTitleList ?? []);
         heldTitles = new Set();
         mine = emptyCoverage();
         for (const [shard, titles] of byShard) {
@@ -531,6 +540,21 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       indexing = null;
     })();
     return indexing;
+  }
+
+  /**
+   * The titles we hold, from the pack when there is one.
+   *
+   * Falls through to the walk only when the pack is missing or stale — which is a rebuild we were
+   * going to have to do anyway.
+   */
+  async function catalogueTitles(): Promise<void> {
+    if (heldTitleList) return;
+    await catalogueJson();
+    if (heldTitleList) return;
+    // The pack had no usable titles line (an older pack, or a malformed one). One walk, then it is
+    // written into the pack for next time.
+    heldTitleList = (await cachedItemPages()).map((i) => i.title);
   }
 
   /** How the room is told what we hold, and what we're working on. Cheap: no page is read. */
@@ -644,7 +668,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * this file is `ItemRow[]` — a build that adds a field to a row must not read yesterday's rows and
    * quietly serve them without it.
    */
-  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows5`;
+  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows6`;
   /** Set once when a write invalidates the pack, so a harvest doesn't unlink a file per page. */
   let packDropped = false;
 
@@ -661,25 +685,39 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * So the built answer is stored as text and passed through as text, and main never parses it at
    * all — a warm launch is one file read.
    */
-  function readPack(): string | null {
+  /**
+   * Three lines: the signature, the titles we hold, then the rows.
+   *
+   * The titles are in here because the **shard index** wants them and nothing else about the pages,
+   * and asking the walk for them was costing a full 11,519-file read on **every launch** — the share
+   * hub builds coverage on its first catalogue tick, so it happened whether or not anybody opened the
+   * Items tab. Eleven and a half thousand file opens in a burst is also eleven and a half thousand
+   * real-time antimalware scans, which is enough to make a machine feel ill.
+   *
+   * Split by line rather than parsed as one object, so the *rows* line can be handed to a window as
+   * text without main ever parsing it (see the `contextBridge` note above).
+   */
+  function readPack(): { titles: string; rows: string } | null {
     try {
       const held = fs.readFileSync(packFile, "utf8");
-      // The signature is the first line, so checking it costs nothing and a mismatched pack is never
-      // parsed. A build that changed the row shape must not serve yesterday's rows.
-      const split = held.indexOf("\n");
-      if (split < 0 || held.slice(0, split) !== PACK_SIGNATURE) return null;
-      return held.slice(split + 1);
+      // A mismatched pack is never parsed: a build that changed the row shape must not read
+      // yesterday's rows and serve them as this shape.
+      const first = held.indexOf("\n");
+      if (first < 0 || held.slice(0, first) !== PACK_SIGNATURE) return null;
+      const second = held.indexOf("\n", first + 1);
+      if (second < 0) return null;
+      return { titles: held.slice(first + 1, second), rows: held.slice(second + 1) };
     } catch {
       // Missing or half-written. Same answer either way: build it again.
       return null;
     }
   }
 
-  function writePack(json: string): void {
+  function writePack(titles: string, rows: string): void {
     // Fire and forget: the catalogue is already in hand, and a pack that failed to write costs the
     // next launch a rebuild rather than anything worse.
     void fs.promises
-      .writeFile(packFile, `${PACK_SIGNATURE}\n${json}`, "utf8")
+      .writeFile(packFile, `${PACK_SIGNATURE}\n${titles}\n${rows}`, "utf8")
       .then(() => {
         packDropped = false;
       })
@@ -708,6 +746,13 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   /** The built catalogue **as JSON text** — see `readPack` for why text rather than objects. */
   let rowCache: string | null = null;
   let rowBuilding: Promise<string> | null = null;
+  /**
+   * The titles the catalogue holds, for the shard index.
+   *
+   * Kept apart from the rows because it is the *only* thing coverage needs, and reading it out of the
+   * pack is what stops every launch walking the whole cache to answer one question.
+   */
+  let heldTitleList: string[] | null = null;
   let building: Promise<CachedItem[]> | null = null;
 
   /**
@@ -739,11 +784,46 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   function dropDerived(): void {
     catalogue = null;
     rowCache = null;
+    heldTitleList = null;
     if (packDropped) return;
     packDropped = true;
     void fs.promises.rm(packFile, { force: true }).catch(() => {
       /* a pack we couldn't delete is caught by its signature, or simply rebuilt over */
     });
+  }
+
+  async function catalogueJson(): Promise<string> {
+    if (rowCache) return rowCache;
+    rowBuilding ??= (async () => {
+      const startedAt = Date.now();
+      const packed = readPack();
+      if (packed) {
+        log.debug("catalogue: read from the pack in", `${Date.now() - startedAt}ms`);
+        rowCache = packed.rows;
+        heldTitleList = readTitles(packed.titles);
+        return packed.rows;
+      }
+      const items = await cachedItemPages();
+      const rows = forTransfer(itemRows(items, levelEvidence));
+      const json = JSON.stringify(rows);
+      const titles = items.map((i) => i.title);
+      log.debug("catalogue:", rows.length, "rows built in", `${Date.now() - startedAt}ms`);
+      rowCache = json;
+      heldTitleList = titles;
+      writePack(JSON.stringify(titles), json);
+      return json;
+    })().finally(() => {
+      rowBuilding = null;
+    });
+    return rowBuilding;
+  }
+  function readTitles(json: string): string[] | null {
+    try {
+      const held = JSON.parse(json) as unknown;
+      return Array.isArray(held) && held.every((t) => typeof t === "string") ? (held as string[]) : null;
+    } catch {
+      return null;
+    }
   }
 
   function pageWritten(title: string): void {
@@ -1007,27 +1087,9 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     items: { status: itemStatus, shard: itemShard, accept: acceptItems },
     levelSources: () => levelEvidence,
 
-    async catalogueJson() {
-      if (rowCache) return rowCache;
-      rowBuilding ??= (async () => {
-        const startedAt = Date.now();
-        const packed = readPack();
-        if (packed) {
-          log.debug("catalogue: read from the pack in", `${Date.now() - startedAt}ms`);
-          rowCache = packed;
-          return packed;
-        }
-        const rows = forTransfer(itemRows(await cachedItemPages(), levelEvidence));
-        const json = JSON.stringify(rows);
-        log.debug("catalogue:", rows.length, "rows built in", `${Date.now() - startedAt}ms`);
-        rowCache = json;
-        writePack(json);
-        return json;
-      })().finally(() => {
-        rowBuilding = null;
-      });
-      return rowBuilding;
-    },
+    catalogueJson,
+
+  /** The titles line, read defensively: a malformed pack is a rebuild, never a throw. */
     joinRoom(link) {
       room = link;
     },

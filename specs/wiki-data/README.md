@@ -140,6 +140,13 @@ shopping list.
   A page from a peer keeps **its** pull date, and a copy newer than ours replaces ours
   ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)), so a room re-pulls each page
   about once between everyone per TTL rather than once each.
+- **A launch opens ~20 files, not 11,519.** The peer room's coverage is built on the share hub's
+  first catalogue tick, so it runs on *every launch* whether or not anybody opens the Items tab — and
+  it used to get the titles it needs by walking every page in the cache. That burst of file opens is
+  also a burst of **real-time antimalware scans**, which is enough to make a whole machine crawl for
+  the first seconds of every run; it is the sort of cost that never shows up in a timing measurement
+  because the time is spent in somebody else's process. The pack carries the titles list beside the
+  rows, so coverage costs one read. Pinned by a test that counts `readFileSync` calls.
 - **The catalogue crosses to a window as *text*, and is stored as text** (`catalogue.json`,
   `catalogueJson()`). This is the single biggest thing about the Items tab's speed, and it is not
   about the data at all: `contextIsolation` is on, so everything a window receives is deep-copied by
