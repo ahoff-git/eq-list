@@ -14,8 +14,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createPeerShareHub, type PeerShareDeps, type PeerShareHub } from "../peer-share";
 import { AWARI_MSG, type AwariPayload, type AwariPeer, type Settings } from "../../src/shared/types";
-import type { ShareKind, ShareSettings } from "../../src/shared/peer-share";
+import { SHARE_PROTOCOL } from "../../src/shared/peer-share";
+import type { PeerVersionNotice, ShareEntry, ShareKind, ShareSettings } from "../../src/shared/peer-share";
 import { ON_YOU } from "../../src/shared/buff-tracking";
+
+/**
+ * One mob observation, as `mobs` shares them. Keyed by mob and zone, so the mob's name is enough to
+ * tell two of them apart and `kills` is the thing a test moves to make one *change*.
+ */
+const obs = (mob: string, kills = 12): Record<string, unknown> => ({
+  mob,
+  zone: "Blackburrow",
+  kills,
+  drops: {},
+  copper: 0,
+  lastAt: "2026-01-01T00:00:00Z",
+});
 
 /** One peer, addressable — a session id is what turns a listed peer into one you can talk to. */
 const peer = (peerId: string, name?: string): AwariPeer => ({ peerId, sessionId: `s-${peerId}`, name });
@@ -29,6 +43,8 @@ interface Rig {
   /** Item pages accepted straight into the cache (the one family that applies itself). */
   accepted: { pages: unknown[]; shard?: number }[];
   notices: { peerId: string; name: string; kinds: ShareKind[] }[];
+  /** "The room speaks a protocol we haven't got" — raised at most once a session. */
+  outdated: PeerVersionNotice[];
   changes: number;
   /** Run the minute tick by hand. */
   tick: () => void;
@@ -52,7 +68,17 @@ const ALL_KINDS: ShareKind[] = ["watches", "styles", "lists", "pins", "mobs", "k
  * `share` defaults to everything on, because the interesting refusals are the ones where a *toggle*
  * says no rather than where the fixture forgot to say yes.
  */
-function rig(over: { share?: ShareSettings; rows?: Record<string, unknown[]>; connectPeers?: boolean; items?: PeerShareDeps["items"]; name?: string } = {}): Rig {
+function rig(
+  over: {
+    share?: ShareSettings;
+    rows?: Record<string, unknown[]>;
+    connectPeers?: boolean;
+    items?: PeerShareDeps["items"];
+    name?: string;
+    /** Replace a kind's whole source — for a test about *how* a kind is read rather than what it holds. */
+    source?: Partial<Record<ShareKind, PeerShareDeps["sources"][ShareKind]>>;
+  } = {},
+): Rig {
   const share: ShareSettings = over.share ?? Object.fromEntries(ALL_KINDS.map((k) => [k, true]));
   const settings = { connectPeers: over.connectPeers ?? true, share } as unknown as Settings;
   const rows: Record<string, unknown[]> = { watches: [], styles: [], lists: [], pins: [], mobs: [], kills: [], respawns: [], timers: [], buffs: [], scores: [], items: [], ...over.rows };
@@ -61,13 +87,19 @@ function rig(over: { share?: ShareSettings; rows?: Record<string, unknown[]>; co
   const filed: AwariPayload[] = [];
   const accepted: Rig["accepted"] = [];
   const notices: Rig["notices"] = [];
+  const outdated: Rig["outdated"] = [];
   let changes = 0;
   let clock = 1_000_000;
   let ticker: (() => void) | null = null;
   /** Pending debounces, newest last. Both hub debounces are single-shot. */
   let pending: (() => void)[] = [];
 
-  const sources = Object.fromEntries(ALL_KINDS.map((k) => [k, () => rows[k]])) as PeerShareDeps["sources"];
+  // No `version` on any of them: the rig changes `rows` in place between calls, and a source that
+  // claimed a version would then have to remember to move it. Absent means "re-read every time",
+  // which is what a test wants and what an un-instrumented store gets.
+  const sources = Object.fromEntries(
+    ALL_KINDS.map((k) => [k, over.source?.[k] ?? { rows: () => rows[k] }]),
+  ) as PeerShareDeps["sources"];
 
   const hub = createPeerShareHub({
     getSettings: () => settings,
@@ -76,6 +108,7 @@ function rig(over: { share?: ShareSettings; rows?: Record<string, unknown[]>; co
     fileContribution: (payload) => void filed.push(payload),
     changed: () => void (changes += 1),
     offered: (n) => void notices.push(n),
+    outdated: (n) => void outdated.push(n),
     acceptItems: (pages, shard) => (accepted.push({ pages, shard }), pages.length),
     sources,
     items: over.items,
@@ -95,6 +128,7 @@ function rig(over: { share?: ShareSettings; rows?: Record<string, unknown[]>; co
     filed,
     accepted,
     notices,
+    outdated,
     get changes() {
       return changes;
     },
@@ -119,12 +153,25 @@ const offerOf = (entries: Record<string, { n: number; rev: number }>, name = "Br
 
 // ── The catalogue ───────────────────────────────────────────────────────────
 
+/**
+ * A catalogue line without its epoch, for a test asserting on the count and the revision.
+ *
+ * The epoch is a fresh token per hub, so it can't be written into an expectation — but it must be
+ * *there*, since a line without one tells a peer "no deltas from me". Checked here rather than
+ * ignored, so dropping it would fail these tests rather than silently costing every room its deltas.
+ */
+function line(entry: ShareEntry | undefined): { n: number; rev: number } {
+  assert.ok(entry, "expected a catalogue line");
+  assert.equal(typeof entry.epoch, "string", "every line carries the run its revision counts within");
+  return { n: entry.n, rev: entry.rev };
+}
+
 test("a kind that isn't switched on is absent from the catalogue, not zero", () => {
   // The catalogue *is* the toggle state (ADR 0141): "I share none" and "I don't share this" must
   // not look alike, or a peer asks for something it will be refused.
   const r = rig({ share: { watches: true, mobs: false }, rows: { watches: [{ id: "w" }] } });
   const offer = r.hub.offer();
-  assert.deepEqual(offer.watches, { n: 1, rev: 1 });
+  assert.deepEqual(line(offer.watches), { n: 1, rev: 1 });
   assert.equal("mobs" in offer, false);
   // Explicitly off is off, and so is never mentioned — except `items`, which is on by default.
   assert.equal("lists" in offer, false);
@@ -151,8 +198,12 @@ test("a source that throws costs its own kind and nothing else", () => {
     },
   });
   const offer = r.hub.offer();
-  assert.deepEqual(offer.styles, { n: 0, rev: 1 }, "a broken kind is empty, not missing and not fatal");
-  assert.deepEqual(offer.watches, { n: 1, rev: 1 });
+  // Empty **and present**, which is the whole point: a kind that vanished from the catalogue would
+  // read as "not shared" and a peer would stop asking. Its revision is 0 rather than 1 because
+  // nothing was ever successfully measured — still monotonic, and it becomes 1 the moment the store
+  // answers, so a peer that asked meanwhile is told there is something new.
+  assert.deepEqual(line(offer.styles), { n: 0, rev: 0 }, "a broken kind is empty, not missing and not fatal");
+  assert.deepEqual(line(offer.watches), { n: 1, rev: 1 });
 });
 
 test("the item catalogue is offered by coverage, and its revision follows the coverage", () => {
@@ -190,7 +241,7 @@ test("the toggle is re-read when the ask arrives, not trusted from the catalogue
   // An offer is a cache of a setting; the setting is the truth, and the gap between them is exactly
   // a toggle somebody switched off ten seconds ago.
   const r = rig({ rows: { watches: [{ id: "a" }] } });
-  assert.deepEqual(r.hub.offer().watches, { n: 1, rev: 1 });
+  assert.deepEqual(line(r.hub.offer().watches), { n: 1, rev: 1 });
 
   (r.settings.share as ShareSettings).watches = false;
   r.hub.handle("bran", { kind: AWARI_MSG.ask, what: "watches" } as unknown as AwariPayload);
@@ -515,4 +566,367 @@ test("a stopped hub stops ticking", () => {
   r.hub.stop();
   r.tick();
   assert.equal(r.sent.length, 0);
+});
+
+// ─── Deltas ─────────────────────────────────────────────────────────────────
+//
+// A delta is a saving on the wire and nothing else: what reaches a store is always that peer's whole
+// current set, so `contributions.ts`'s five rules and every panel's merge go on seeing exactly what
+// they always saw. These are the tests for that promise, and for the three ways a delta is refused —
+// because the failure mode of getting one wrong is not a crash, it is two installs quietly
+// disagreeing about what one of them holds.
+
+/** The catalogue line for a kind, so a test can quote its `rev` and `epoch` back in an ask. */
+function ours(r: Rig, kind: ShareKind): ShareEntry {
+  const entry = r.hub.offer()[kind];
+  assert.ok(entry, `expected to be offering ${kind}`);
+  return entry;
+}
+
+/** Ask the hub for a kind as a peer would, optionally naming what we already hold. */
+function askFor(r: Rig, kind: ShareKind, since?: { rev: number; epoch?: string }): AwariPayload | undefined {
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.ask,
+    what: kind,
+    ...(since ? { since: since.rev, epoch: since.epoch } : {}),
+  } as unknown as AwariPayload);
+  return r.last(AWARI_MSG.give, "bran");
+}
+
+test("an ask naming what it holds is answered with only what moved", () => {
+  const r = rig({ rows: { mobs: [obs("a gnoll"), obs("a gnoll pup")] } });
+  const first = ours(r, "mobs");
+
+  r.rows.mobs = [obs("a gnoll"), obs("a gnoll pup"), obs("a gnoll broodmother")];
+  const give = askFor(r, "mobs", { rev: first.rev, epoch: first.epoch });
+
+  assert.equal(give?.rows, undefined, "a delta is not a whole set");
+  const changes = give?.changes as { k: string; r: { mob: string } }[];
+  assert.equal(changes.length, 1, "two of the three were already held");
+  assert.equal(changes[0].r.mob, "a gnoll broodmother");
+  assert.deepEqual(give?.gone, []);
+});
+
+test("a row that goes is named, so a receiver can stop holding it", () => {
+  const r = rig({ rows: { mobs: [obs("a gnoll"), obs("a gnoll pup")] } });
+  const first = ours(r, "mobs");
+
+  r.rows.mobs = [obs("a gnoll")];
+  const give = askFor(r, "mobs", { rev: first.rev, epoch: first.epoch });
+
+  assert.deepEqual(give?.changes, [], "nothing changed — one thing left");
+  const gone = give?.gone as string[];
+  assert.equal(gone.length, 1);
+  assert.ok(gone[0].includes("a gnoll pup"), `keyed by what it is, got ${gone[0]}`);
+});
+
+test("an ask from another run is answered whole, not with a delta against a number that means nothing", () => {
+  const r = rig({ rows: { mobs: [obs("a gnoll")] } });
+  const first = ours(r, "mobs");
+  r.rows.mobs = [obs("a gnoll"), obs("a gnoll pup")];
+
+  // The revision is real and the epoch is from a run that isn't ours — which is what a peer holding
+  // a number from before our restart looks like. Answering that with a delta would leave them
+  // holding whatever they had, for ever, with both sides believing they agreed.
+  const give = askFor(r, "mobs", { rev: first.rev, epoch: "someone-elses-run" });
+  assert.equal((give?.rows as unknown[]).length, 2, "the whole set, because their number is meaningless here");
+  assert.equal(give?.changes, undefined);
+});
+
+test("a peer that cannot do deltas keeps the exchange it always had", () => {
+  const r = rig({ rows: { mobs: [obs("a gnoll")] } });
+  const first = ours(r, "mobs");
+
+  // No epoch — an older build. It still gets the cheap "nothing changed", because that bargain
+  // predates this and taking it away would cost it a whole exchange a minute.
+  const unchanged = askFor(r, "mobs", { rev: first.rev });
+  assert.equal(unchanged?.rows, undefined);
+  assert.equal(unchanged?.changes, undefined, "and never a delta it could not apply");
+
+  r.rows.mobs = [obs("a gnoll"), obs("a gnoll pup")];
+  const moved = askFor(r, "mobs", { rev: first.rev });
+  assert.equal((moved?.rows as unknown[]).length, 2, "a whole set, which is all it can read");
+});
+
+test("a whole answer carries its rows' keys, so the next delta has something to land on", () => {
+  const r = rig({ rows: { mobs: [obs("a gnoll")] } });
+  const give = askFor(r, "mobs");
+  const keys = give?.keys as string[];
+  assert.equal(keys.length, 1, "one key per row, positionally");
+  assert.ok(keys[0].includes("a gnoll"));
+});
+
+test("a delta is applied to what we hold, and the store still sees the whole set", () => {
+  // Two hubs, so the wire shape is exercised from both ends rather than asserted about.
+  const them = rig({ rows: { mobs: [obs("a gnoll"), obs("a gnoll pup")] } });
+  const us = rig();
+  us.hub.roster([peer("bran", "Bran")]);
+
+  const relay = (): void => {
+    const give = them.last(AWARI_MSG.give, "us");
+    assert.ok(give, "expected an answer to relay");
+    us.hub.handle("bran", { ...give, id: "bran-id", name: "Bran" } as AwariPayload);
+  };
+
+  // A whole set first, which is what an empty receiver always gets.
+  them.hub.handle("us", { kind: AWARI_MSG.ask, what: "mobs" } as unknown as AwariPayload);
+  relay();
+  assert.equal((us.filed.at(-1)?.mobs as unknown[]).length, 2);
+
+  // Then one tally changes, and only that one crosses.
+  const line = them.hub.offer().mobs!;
+  them.rows.mobs = [obs("a gnoll", 40), obs("a gnoll pup")];
+  them.hub.handle("us", {
+    kind: AWARI_MSG.ask,
+    what: "mobs",
+    since: line.rev,
+    epoch: line.epoch,
+  } as unknown as AwariPayload);
+  const delta = them.last(AWARI_MSG.give, "us");
+  assert.equal((delta?.changes as unknown[]).length, 1, "one tally moved");
+  relay();
+
+  // …and what reaches the contribution pipeline is still both of them. This is the whole promise:
+  // `contributions.ts` rule 2 replaces a contributor's set, so a delta filed as-is would delete one.
+  const filed = us.filed.at(-1)?.mobs as { mob: string; kills: number }[];
+  assert.equal(filed.length, 2, "a delta is undone before anything downstream sees it");
+  assert.equal(filed.find((m) => m.mob === "a gnoll")?.kills, 40);
+});
+
+test("a delta for something we hold nothing of is refused, and asked for again from scratch", () => {
+  const r = rig();
+  r.hub.roster([peer("bran", "Bran")]);
+  r.sent.length = 0;
+
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "lists",
+    rev: 9,
+    from: "Bran",
+    epoch: "theirs",
+    changes: [{ k: "fungi", r: { name: "Fungi Staff", needed: 1 } }],
+  } as unknown as AwariPayload);
+
+  assert.equal(r.hub.received("bran", "lists").length, 0, "nothing is guessed at from a delta we can't place");
+  const ask = r.last(AWARI_MSG.ask, "bran");
+  assert.equal(ask?.what, "lists");
+  assert.equal(ask?.since, undefined, "and the re-ask is for everything");
+});
+
+// ─── The kill log's version ─────────────────────────────────────────────────
+
+test("a kind whose source reports an unchanged version is not read again", () => {
+  let reads = 0;
+  let version = 1;
+  const r = rig({
+    rows: { mobs: [obs("a gnoll")] },
+    source: {
+      mobs: {
+        rows: () => {
+          reads += 1;
+          return [obs("a gnoll")];
+        },
+        version: () => version,
+      },
+    },
+  });
+
+  r.hub.offer();
+  r.hub.offer();
+  r.hub.offer();
+  assert.equal(reads, 1, "three measurements, one read — the version answered the other two");
+
+  version = 2;
+  r.hub.offer();
+  assert.equal(reads, 2, "a moved version is paid for");
+});
+
+// ─── Talking to a build that has never heard of a delta ─────────────────────
+//
+// This is a deployed wire protocol, so both directions have to degrade. "Old" here means a peer that
+// sends no `epoch` — on its catalogue, on its ask, or on its give — because that is the only thing
+// that distinguishes one, and every fallback keys off it.
+
+/** The hub's own ask cooldown, so a test can wait one out. */
+const ASK_COOLDOWN = 30_000;
+
+test("an old peer asking gets the cheap unchanged answer it always had", () => {
+  const r = rig({ rows: { lists: [{ id: "x", name: "Fungi Staff" }] } });
+  const rev = ours(r, "lists").rev;
+
+  // No epoch — this build predates them. The bargain "same number, same data" is one every build
+  // before this one was already making, and taking it away would cost an old peer a whole exchange
+  // a minute for a safety it never had.
+  const give = askFor(r, "lists", { rev });
+  assert.equal(give?.rows, undefined, "unchanged");
+  assert.equal(give?.changes, undefined, "and never a delta it could not read");
+});
+
+test("an old peer asking for something that moved gets the whole kind, with the extra fields it ignores", () => {
+  const r = rig({ rows: { lists: [{ id: "x", name: "Fungi Staff" }] } });
+  const rev = ours(r, "lists").rev;
+  r.rows.lists = [
+    { id: "x", name: "Fungi Staff" },
+    { id: "y", name: "Bone Chips" },
+  ];
+
+  const give = askFor(r, "lists", { rev });
+  assert.equal((give?.rows as unknown[]).length, 2, "everything, because it cannot apply a delta");
+  assert.equal(give?.changes, undefined);
+  // `keys` and `epoch` ride along and an older reader simply doesn't look at them — `readGive` takes
+  // `rows` whenever `rows` is there, which is what every build before this one did unconditionally.
+  assert.ok(Array.isArray(give?.keys), "the fields a newer peer would use are still sent");
+});
+
+test("we keep asking an old peer the way it expects to be asked", () => {
+  // The regression this guards: a client that only ever sends `since` alongside an `epoch` sends
+  // neither to a peer that has none — and then re-fetches the whole kind every single time, having
+  // lost the "nothing changed" answer that predates all of this.
+  const us = rig();
+  us.hub.roster([peer("bran", "Bran")]);
+
+  // An old peer's catalogue: a revision, and no epoch anywhere.
+  us.hub.handle("bran", { kind: AWARI_MSG.offer, name: "Bran", mobs: { n: 2, rev: 4 } } as unknown as AwariPayload);
+  // …answering with an old-shaped give: rows, no keys, no epoch.
+  us.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "mobs",
+    rev: 4,
+    from: "Bran",
+    id: "bran-id",
+    name: "Bran",
+    rows: [obs("a gnoll"), obs("a gnoll pup")],
+  } as unknown as AwariPayload);
+
+  us.sent.length = 0;
+  us.wait(ASK_COOLDOWN);
+  // Their catalogue moves on.
+  us.hub.handle("bran", { kind: AWARI_MSG.offer, name: "Bran", mobs: { n: 3, rev: 5 } } as unknown as AwariPayload);
+
+  const ask = us.last(AWARI_MSG.ask, "bran");
+  assert.equal(ask?.since, 4, "we still tell them what we hold");
+  assert.equal(ask?.epoch, undefined, "without an epoch they could not compare");
+});
+
+test("a peer that restarts is asked from scratch rather than for a difference", () => {
+  const us = rig();
+  us.hub.roster([peer("bran", "Bran")]);
+  us.hub.handle("bran", {
+    kind: AWARI_MSG.offer,
+    name: "Bran",
+    mobs: { n: 1, rev: 3, epoch: "run-1" },
+  } as unknown as AwariPayload);
+  us.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "mobs",
+    rev: 3,
+    from: "Bran",
+    id: "bran-id",
+    name: "Bran",
+    epoch: "run-1",
+    rows: [obs("a gnoll")],
+  } as unknown as AwariPayload);
+
+  us.sent.length = 0;
+  us.wait(ASK_COOLDOWN);
+  // They restart: a fresh epoch, and a revision that has started counting again.
+  us.hub.handle("bran", {
+    kind: AWARI_MSG.offer,
+    name: "Bran",
+    mobs: { n: 4, rev: 1, epoch: "run-2" },
+  } as unknown as AwariPayload);
+
+  const ask = us.last(AWARI_MSG.ask, "bran");
+  assert.equal(ask?.since, undefined, "their old number means nothing in their new run");
+});
+
+// ─── "You are the old one" ──────────────────────────────────────────────────
+//
+// The asymmetry these pin: a peer on an *older* build is not something the reader can act on, and
+// raises nothing. A peer on a *newer* one means this install is the one falling back, which is a
+// thing a person can fix — so that, and only that, is worth interrupting somebody about.
+
+/** A catalogue as a peer of some protocol would broadcast it. */
+const offerAt = (protocol: number | undefined, over: Record<string, unknown> = {}): AwariPayload =>
+  ({
+    kind: AWARI_MSG.offer,
+    name: "Bran",
+    ...(protocol === undefined ? {} : { protocol }),
+    mobs: { n: 1, rev: 1 },
+    ...over,
+  }) as unknown as AwariPayload;
+
+test("a peer speaking a protocol we haven't got says so, once", () => {
+  const r = rig();
+  r.hub.roster([peer("bran", "Bran")]);
+
+  r.hub.handle("bran", offerAt(99));
+  assert.equal(r.outdated.length, 0, "waited out, so the room's catalogues coalesce into one line");
+  r.settle();
+  assert.equal(r.outdated.length, 1);
+  assert.equal(r.outdated[0].theirs, 99);
+  assert.deepEqual(r.outdated[0].peers, ["Bran"]);
+
+  // Their catalogue comes round every minute, and being behind is one fact about this install rather
+  // than one per catalogue — so it is said once and then lives on the Peers tab.
+  r.hub.handle("bran", offerAt(99, { mobs: { n: 2, rev: 2 } }));
+  r.hub.handle("bran", offerAt(120));
+  r.settle();
+  assert.equal(r.outdated.length, 1, "not once a minute, and not again for a third protocol");
+});
+
+test("a peer on an older build is not a notice, because nobody reading it could act on it", () => {
+  const r = rig();
+  r.hub.roster([peer("bran", "Bran")]);
+  // No protocol at all — every build shipped before the field existed.
+  r.hub.handle("bran", offerAt(undefined));
+  // …and one that says so explicitly.
+  r.hub.handle("bran", offerAt(1));
+  r.settle();
+  assert.equal(r.outdated.length, 0, "their being behind is their business, and it is on their row");
+});
+
+test("a peer on the same protocol is not news at all", () => {
+  const r = rig();
+  r.hub.roster([peer("bran", "Bran")]);
+  r.hub.handle("bran", offerAt(SHARE_PROTOCOL));
+  r.settle();
+  assert.equal(r.outdated.length, 0);
+});
+
+test("the notice names everyone who is ahead, not whoever we happened to hear from", () => {
+  const r = rig();
+  r.hub.roster([peer("bran", "Bran"), peer("kai", "Kainos")]);
+  r.hub.handle("bran", offerAt(99));
+  r.hub.handle("kai", offerAt(99));
+  r.settle();
+  // A notice naming one person when two are ahead reads as that person's problem rather than ours.
+  assert.deepEqual(r.outdated[0].peers, ["Bran", "Kainos"]);
+});
+
+test("we publish what we speak, so a newer peer can tell we are behind", () => {
+  const r = rig({ rows: { mobs: [obs("a gnoll")] } });
+  r.hub.roster([peer("bran", "Bran")]);
+  r.settle();
+  const published = r.last(AWARI_MSG.offer);
+  assert.equal(published?.protocol, SHARE_PROTOCOL);
+});
+
+test("a peer's protocol reaches the panel, and an unheard-from peer stays unstated", () => {
+  const r = rig();
+  r.hub.roster([peer("bran", "Bran"), peer("quiet", "Quiet")]);
+  r.hub.handle("bran", offerAt(1));
+
+  const rows = Object.fromEntries(r.hub.room().peers.map((p) => [p.peerId, p.protocol]));
+  assert.equal(rows.bran, 1, "they said, so the row can say 'older'");
+  // Guessing here would tell somebody their friend was out of date on no evidence.
+  assert.equal(rows.quiet, undefined, "hasn't said is not the same as said 1");
+});
+
+test("nothing is said about versions while the connection is switched off", () => {
+  const r = rig({ connectPeers: false });
+  r.hub.roster([peer("bran", "Bran")]);
+  r.hub.handle("bran", offerAt(99));
+  r.settle();
+  assert.equal(r.outdated.length, 0);
 });

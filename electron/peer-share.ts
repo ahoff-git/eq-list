@@ -18,9 +18,30 @@
  * stores to call us. That is six chances to forget, in six modules that have no business knowing
  * this one exists. Instead each kind is **materialised on a tick and digested** — the digest moving
  * *is* the change — so a store that grows a new writer keeps working and nothing has to be wired.
- * The cost is the materialisation, which is why the tick is slow and the result is cached: what a
- * peer sees is at most one tick stale, and a stale catalogue is a thing ADR 0141 already accounts
- * for.
+ *
+ * A store *may* volunteer a `version` ([`ShareSource`](#ShareSource)), and where one does the read is
+ * skipped entirely while it holds still. That is an optimisation on top of the rule above rather
+ * than a replacement for it: a store that says nothing still works exactly as it always did, which
+ * is what keeps "nothing has to be wired" true. Only the kill log volunteers one today, because only
+ * it was expensive — `observations()` folds the whole log and `kills()` scans five thousand records,
+ * and both were paid for once a minute whether or not a single mob had died.
+ *
+ * ## What crosses is what moved
+ *
+ * A `give` used to be the whole kind, every time: one tally out of five thousand changing meant five
+ * thousand tallies on the wire. Each kind now states **what a row is** (`ShareKindSpec.rowKey`), and
+ * each row remembers the revision it last changed at — so "everything since `n`" is a question this
+ * hub's own state can answer, and an asker that says what it holds gets back only the difference.
+ *
+ * Two things keep that from becoming a second, subtler protocol nobody can reason about:
+ *
+ *   - **A delta is undone before anything else sees it.** `absorb` folds it into what we hold from
+ *     that peer and hands the *whole* set onwards, so `contributions.ts`'s five rules, the tray, and
+ *     every panel's merge go on receiving precisely what they always received. No store knows.
+ *   - **It is refused whenever it cannot be trusted.** A different `epoch` (their run restarted, or
+ *     ours did), a `since` older than our tombstones reach, or nothing held for them at all — each
+ *     falls back to the whole exchange, which is the well-worn path rather than the exotic one. A
+ *     peer too old to send an epoch never gets a delta, and never notices this happened.
  *
  * ## What is *not* here
  *
@@ -36,16 +57,19 @@ import {
   outOfDate,
   readAsk,
   readGive,
+  readOffer,
+  readProtocol,
+  SHARE_PROTOCOL,
   shareKind,
-  shareableBuffs,
   sharing,
   type PeerOfferNotice,
+  type PeerVersionNotice,
   type ReceivedShare,
+  type ShareDelivery,
   type ShareEntry,
   type ShareKind,
   type ShareOffer,
 } from "../src/shared/peer-share";
-import { PLOTTABLE_CONFIDENCE } from "../src/shared/kill-confidence";
 import { decodeCoverage, type PeerCoverage } from "../src/shared/item-shards";
 import type { SharedItemPage } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
@@ -102,6 +126,27 @@ export interface ItemShardSource {
   shard(shard: number): unknown[];
 }
 
+/**
+ * One kind's data, as the hub reads it.
+ *
+ * `version` is the whole point of this being an object rather than the bare function it used to be.
+ * Measuring a kind means reading every row and working out what changed, and for the kill log that
+ * is a scan of five thousand records — on a timer, almost always to conclude that nothing has moved.
+ * A store that keeps a counter can answer that question for nothing, and the read is then only paid
+ * for when there is something to read.
+ *
+ * **The contract is one-directional and that is what makes it safe to get wrong in one direction.**
+ * A version that moves when nothing changed costs a wasted read and nothing else. A version that
+ * *fails* to move when something did means a peer is never told — so a store that cannot answer
+ * honestly should not answer at all, and one that is unsure should bump.
+ */
+export interface ShareSource {
+  /** Everything we hold of this kind, before the kind's own projection. */
+  rows: () => unknown[];
+  /** A counter that moves whenever `rows()` would answer differently. Optional. */
+  version?: () => number;
+}
+
 export interface PeerShareHub {
   /** Our own catalogue, as peers see it — what the toggles amount to. */
   offer(): ShareOffer;
@@ -156,10 +201,18 @@ export interface PeerShareDeps {
   changed: () => void;
   /** Somebody is newly offering something worth going to look at (ADR 0143). */
   offered: (notice: PeerOfferNotice) => void;
+  /**
+   * Somebody in the room speaks a newer wire protocol than this build does.
+   *
+   * Raised at most once a session — being behind is one fact about *this install*, not one per peer,
+   * and saying it five times because five people are current would make it a chore rather than a
+   * notice.
+   */
+  outdated: (notice: PeerVersionNotice) => void;
   /** Take item pages a peer handed us into the page cache. Returns how many were new. */
   acceptItems?: (pages: SharedItemPage[], shard?: number) => number;
   /** What we'd share, per kind — the app's own data, read only when asked for. */
-  sources: Record<ShareKind, () => unknown[]>;
+  sources: Record<ShareKind, ShareSource>;
   /**
    * The item catalogue, which is the one kind that cannot be read as "all its rows".
    *
@@ -188,10 +241,73 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   const later = deps.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
   const cancel = deps.clearTimeout ?? ((h) => clearTimeout(h as NodeJS.Timeout));
 
-  /** The last measurement of each kind: what it held, and the revision that describes it. */
-  const measured = new Map<ShareKind, { rows: unknown[]; digest: string; rev: number }>();
+  /**
+   * Which **run** this is, stamped on every revision we publish.
+   *
+   * See `ShareEpoch`: a revision counter that restarts is a counter that lies, and this is what makes
+   * the restart detectable rather than silently wrong. Per-run and never persisted, because a restart
+   * already costs one whole exchange today.
+   */
+  const epoch = randomId().slice(0, 8);
+
+  /** One row as we last measured it: what it said, and when it last changed. */
+  interface MeasuredRow {
+    row: unknown;
+    /** What the row said last time, for telling a real change from a re-read. */
+    digest: string;
+    /** The revision at which it last changed. */
+    seq: number;
+  }
+
+  /**
+   * The last measurement of one kind — the state a delta is computed against.
+   *
+   * `seq` is the kind's revision and only ever goes up, so "everything since `n`" is a question the
+   * rows can answer themselves. `gone` is the other half of that answer: a row that left is news
+   * exactly as much as a row that changed, and a delta that could only add would let a receiver hold
+   * a deleted row for ever.
+   */
+  interface Measured {
+    rows: Map<string, MeasuredRow>;
+    /** Keys that have gone, and the revision they went at. */
+    gone: Map<string, number>;
+    /** The kind's revision: the highest `seq` anything in it has been given. */
+    seq: number;
+    /**
+     * The source's own version when this was taken, when it reports one — so an unchanged source
+     * costs nothing at all rather than costing a re-read and a digest.
+     */
+    version?: number;
+    /**
+     * The oldest `since` a delta can still be honestly computed for.
+     *
+     * Tombstones are bounded, and a pruned one is a deletion we can no longer tell anybody about. An
+     * ask from before the floor is answered whole rather than with a delta that would quietly leave
+     * the asker holding rows we know are gone.
+     */
+    floor: number;
+  }
+
+  const measured = new Map<ShareKind, Measured>();
+
+  /**
+   * Most tombstones to keep per kind. Beyond this the oldest go and the floor rises, which costs a
+   * peer that has been away a long time one whole exchange — the thing that already happens on every
+   * restart, so nothing new can go wrong by it.
+   */
+  const MAX_TOMBSTONES = 2000;
   /** Peers' answers, keyed `peerId:kind`. */
   const tray = new Map<string, ReceivedShare>();
+  /**
+   * What we hold from each peer, keyed by that peer's own row keys — the state a delta is applied to.
+   *
+   * Separate from the tray, and not merely a copy of it, for two reasons. **Observations never reach
+   * the tray at all** (they go straight to `contributions.ts`), and they are the kinds a delta is
+   * most worth having for — five thousand tallies, one of which moved. And the tray holds rows for a
+   * *reader*, in the order and shape a panel wants, while this holds them under the sender's keys,
+   * which is the only thing a delta can be applied against.
+   */
+  const heldFrom = new Map<string, { epoch?: string; rev: number; rows: Map<string, unknown> }>();
   /** When we last asked each peer for each kind, keyed the same way. */
   const asked = new Map<string, number>();
   /** Their catalogues, so an automatic fetch can tell "changed" from "same as last time". */
@@ -200,6 +316,18 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   const offerAt = new Map<string, number>();
   /** Peers as the roster last described them — where a name and a session id come from. */
   const known = new Map<string, AwariPeer>();
+  /** What wire protocol each peer speaks, from their catalogue. Read by the Peers tab's rows. */
+  const protocols = new Map<string, number>();
+  /**
+   * Whether we have already said we are behind the room.
+   *
+   * Session-scoped and never reset by a peer coming or going: the fact is about this install, and a
+   * notice that came back every time somebody re-joined would be the chore ADR 0143 is written to
+   * avoid.
+   */
+  let toldAboutVersion = false;
+  /** The pending version notice, coalescing the room's catalogues into one line. */
+  let versionTimer: unknown = null;
   /** The connection, as the owner window last reported it. Held so a late window can ask for it. */
   let status: AwariStatus = { connected: false, peerId: null };
   /**
@@ -220,29 +348,128 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   const trayKey = (peerId: string, kind: ShareKind) => `${peerId}:${kind}`;
 
   /**
-   * Re-read one kind and give it a revision.
+   * The revision we hold from a peer for a kind, or `undefined` for nothing held.
    *
-   * The digest is only ever compared with itself, so it needs to be cheap and stable rather than
-   * cryptographic — `JSON.stringify` over rows we are about to send anyway is both, and a collision
-   * costs one skipped refresh rather than anything wrong. The **revision only ever goes up**, so a
-   * peer comparing revisions can trust the direction even across our restarts within a session.
+   * Read off `heldFrom` rather than off the tray, and that is a fix rather than a tidy-up: the tray
+   * never held observations at all (they go straight to `contributions.ts`), so this answered
+   * `undefined` for every pooled kind — which made `outOfDate` say "behind" every single minute and
+   * re-fetch five thousand tallies that had not moved. Now every kind records what it holds, so the
+   * comparison ADR 0145 describes can actually come out equal.
    */
-  function measure(kind: ShareKind): { rows: unknown[]; rev: number } {
+  const heldRev = (peerId: string, kind: ShareKind): number | undefined => heldFrom.get(trayKey(peerId, kind))?.rev;
+
+  /** An empty measurement, for a kind nothing has been read for yet. */
+  const noMeasurement = (): Measured => ({ rows: new Map(), gone: new Map(), seq: 0, floor: 0 });
+
+  /**
+   * What one row says, for telling a real change from a re-read.
+   *
+   * Only ever compared with itself, so it needs to be cheap and stable rather than cryptographic — a
+   * collision costs one skipped update of one row, and the reconciliation tick catches that.
+   */
+  const digestOf = (row: unknown): string => JSON.stringify(row) ?? "";
+
+  /**
+   * Re-read one kind, and work out what actually moved.
+   *
+   * ## Why a version is asked for first
+   *
+   * This used to materialise every shared kind on every tick and `JSON.stringify` the lot to decide
+   * whether anything had changed — which for the kill log meant scanning five thousand records,
+   * projecting them, serialising the result, and keeping its *length*. The tick was slow precisely to
+   * make that affordable. A source that can say "nothing has written to me since you last asked"
+   * makes the whole question free, so one is asked for and the read is skipped when it says so.
+   *
+   * A source without a version still works exactly as before — read, project, digest — because a
+   * source that cannot answer cheaply must not be forced to answer wrongly.
+   *
+   * ## Why rows are keyed
+   *
+   * The **revision only ever goes up**, and each row remembers the revision it last changed at, so
+   * "everything since `n`" is a question this state can answer without keeping a copy per peer. A row
+   * that leaves becomes a tombstone for the same reason: a delta that could only add would let a
+   * receiver hold a deleted row for ever.
+   */
+  function measure(kind: ShareKind): Measured {
     // `items` is never materialised: there are eleven thousand of them and the catalogue line is
     // built from `itemStatus()` instead (see `offer`). Measuring it would read the whole page cache
     // off disk once a minute to produce a number nobody reads.
-    if (kind === "items") return { rows: [], rev: itemRev() };
-    const rows = kind === "pins" ? pins : safely(kind, deps.sources[kind]);
-    const digest = `${rows.length}:${JSON.stringify(rows).length}`;
-    const held = measured.get(kind);
-    if (held && held.digest === digest) {
-      held.rows = rows;
+    if (kind === "items") {
+      const held = measured.get(kind) ?? noMeasurement();
+      held.seq = itemRev();
+      measured.set(kind, held);
       return held;
     }
-    const next = { rows, digest, rev: (held?.rev ?? 0) + 1 };
-    measured.set(kind, next);
-    return next;
+
+    const held = measured.get(kind) ?? noMeasurement();
+    const source = deps.sources[kind];
+
+    // Pins are pushed in by the map window rather than read from a store, so they have no version to
+    // ask for — the push is the change, and `setPins` re-measures.
+    if (kind !== "pins" && source?.version) {
+      const version = safely(kind, source.version, 0);
+      if (held.version === version && measured.has(kind)) return held;
+      held.version = version;
+    }
+
+    const raw = kind === "pins" ? pins : safely(kind, () => source?.rows() ?? [], []);
+    const spec = shareKind(kind);
+    // Projected **before** anything is keyed or digested, so a change to a field that never leaves
+    // does not make a row look changed to anybody.
+    const rows = spec?.project ? safely(kind, () => spec.project!(raw, { myName: deps.getName() }), []) : raw;
+
+    const seen = new Map<string, MeasuredRow>();
+    let seq = held.seq;
+    let moved = 0;
+
+    for (const row of rows) {
+      const digest = digestOf(row);
+      // A row whose kind cannot identify it is keyed by what it says. It then churns on every edit —
+      // an edit reads as one row leaving and another arriving — which is correct, merely chattier
+      // than a kind that can name its rows.
+      const key = spec?.rowKey?.(row) ?? `~${digest}`;
+      const before = held.rows.get(key);
+      if (before && before.digest === digest) {
+        // Unchanged: it keeps the revision it last moved at, which is what makes a delta narrow.
+        seen.set(key, before);
+        continue;
+      }
+      seq++;
+      moved++;
+      seen.set(key, { row, digest, seq });
+    }
+
+    for (const [key] of held.rows) {
+      if (seen.has(key)) continue;
+      seq++;
+      moved++;
+      held.gone.set(key, seq);
+    }
+    // A key that has come back is no longer gone. Checked after the sweep above so a row that left
+    // and returned within one tick ends up present rather than tombstoned.
+    for (const key of seen.keys()) held.gone.delete(key);
+
+    held.rows = seen;
+    held.seq = seq;
+
+    if (held.gone.size > MAX_TOMBSTONES) {
+      // Oldest first, and the floor rises to the newest one dropped: past this point we can no longer
+      // tell anybody what went, so an older `since` has to be answered whole.
+      const ordered = [...held.gone.entries()].sort((a, b) => a[1] - b[1]);
+      const drop = ordered.slice(0, held.gone.size - MAX_TOMBSTONES);
+      for (const [key, at] of drop) {
+        held.gone.delete(key);
+        held.floor = Math.max(held.floor, at);
+      }
+    }
+
+    measured.set(kind, held);
+    if (moved) log.debug("measured", kind, `${rows.length} rows,`, moved, "moved, rev", seq);
+    return held;
   }
+
+  /** The rows of a measurement, in no particular order — what a whole `give` sends. */
+  const rowsOf = (m: Measured): unknown[] => [...m.rows.values()].map((r) => r.row);
 
   /**
    * Our own catalogue coverage, cached between ticks.
@@ -277,12 +504,12 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   };
 
   /** A source that throws must not take the catalogue down with it — an empty kind is a fine answer. */
-  function safely(kind: ShareKind, read: () => unknown[]): unknown[] {
+  function safely<T>(kind: ShareKind, read: () => T, fallback: T): T {
     try {
-      return read() ?? [];
+      return read() ?? fallback;
     } catch (e) {
       log.debug("could not read", kind, "-", (e as Error).message);
-      return [];
+      return fallback;
     }
   }
 
@@ -301,8 +528,11 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
         catalogue.items = { n: held.pages, rev: itemRev(), cover: held.cover, doing: held.doing };
         continue;
       }
-      const { rows, rev } = measure(spec.key);
-      catalogue[spec.key] = { n: rows.length, rev } satisfies ShareEntry;
+      const held = measure(spec.key);
+      // The epoch rides on every line, because it is what tells a peer whether the `rev` beside it
+      // can be compared with the one they remember (`ShareEpoch`). A peer too old to read it simply
+      // never sends one back, and gets whole answers for ever — which is what it already expected.
+      catalogue[spec.key] = { n: held.rows.size, rev: held.seq, epoch } satisfies ShareEntry;
     }
     return catalogue;
   }
@@ -318,7 +548,10 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
    */
   function publishOffer(): void {
     if (!deps.getSettings().connectPeers) return;
-    deps.send({ kind: AWARI_MSG.offer, name: deps.getName(), ...offer() });
+    // The protocol rides on the **envelope** rather than on each catalogue line: it describes the
+    // client, not a kind, and the catalogue already goes out every minute — so this self-heals for a
+    // peer who missed one, on exactly the argument ADR 0145 makes for the name beside it.
+    deps.send({ kind: AWARI_MSG.offer, name: deps.getName(), protocol: SHARE_PROTOCOL, ...offer() });
   }
 
   function touch(): void {
@@ -352,41 +585,72 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       return;
     }
 
-    const { rows, rev } = measure(ask.what);
-    // "Nothing changed since the revision you have" is a real answer, and a cheap one — `rows`
-    // absent says it, which `readGive` keeps distinct from an empty list (that means "now empty").
-    const stale = ask.since !== undefined && ask.since === rev;
-    deps.send(
-      {
-        kind: AWARI_MSG.give,
-        what: ask.what,
-        rev,
-        from: deps.getName(),
-        ...(stale ? {} : { rows: outbound(ask.what, rows) }),
-      },
-      peerId,
-    );
-    log.debug("gave", ask.what, stale ? "(unchanged)" : `(${rows.length} rows)`, "to", peerId);
+    const held = measure(ask.what);
+    const from = deps.getName();
+
+    // "Nothing changed since the revision you have" is a real answer, and the cheapest one — every
+    // field absent says it, which `readGive` keeps distinct from an empty `rows` (that means "now
+    // empty", which ADR 0056 reads as an un-share).
+    // An asker that named **no** epoch gets the old semantics — "same number, same data" — because
+    // that is the bargain every build before this one was already making, and tightening it here
+    // would cost an old peer a whole exchange a minute for a safety it never had. An asker that named
+    // a *different* epoch is a peer we have restarted under, and their number means nothing to us.
+    const sameRun = ask.epoch === undefined || ask.epoch === epoch;
+    if (ask.since !== undefined && ask.since === held.seq && sameRun) {
+      deps.send({ kind: AWARI_MSG.give, what: ask.what, rev: held.seq, from }, peerId);
+      return void log.debug("gave", ask.what, "(unchanged)", "to", peerId);
+    }
+
+    // A delta is only honest when the asker's number was counted in **this** run and is still inside
+    // what our tombstones can account for. Anything else gets the whole kind — which is what every
+    // exchange was before this, so the fallback is the well-worn path rather than the exotic one.
+    const canDelta =
+      ask.epoch === epoch && ask.since !== undefined && ask.since >= held.floor && ask.since < held.seq;
+
+    if (canDelta) {
+      const since = ask.since!;
+      const changes: { k: string; r: unknown }[] = [];
+      for (const [key, row] of held.rows) if (row.seq > since) changes.push({ k: key, r: row.row });
+      const gone: string[] = [];
+      for (const [key, at] of held.gone) if (at > since) gone.push(key);
+      deps.send({ kind: AWARI_MSG.give, what: ask.what, rev: held.seq, from, epoch, changes, gone }, peerId);
+      return void log.debug(
+        "gave",
+        ask.what,
+        `delta since ${since}: ${changes.length} changed, ${gone.length} gone (of ${held.rows.size})`,
+        "to",
+        peerId,
+      );
+    }
+
+    // Rows and their keys, positionally. The keys are what lets the *next* exchange be a delta: the
+    // asker files these rows under our keys, so a later "this one changed" lands on the right one.
+    const rows: unknown[] = [];
+    const keys: string[] = [];
+    for (const [key, row] of held.rows) {
+      rows.push(row.row);
+      keys.push(key);
+    }
+    deps.send({ kind: AWARI_MSG.give, what: ask.what, rev: held.seq, from, epoch, rows, keys }, peerId);
+    log.debug("gave", ask.what, `(${rows.length} rows)`, "to", peerId);
   }
 
   /**
-   * Last touches before rows leave, for the kinds where "what it means here" isn't what it means
-   * there.
+   * Keep what a peer gave us: observations go to the stores, everything else to the tray.
    *
-   * Only buffs need it, and they need it badly: a target of `ON_YOU` means *the sender*, so it has
-   * to be resolved against our own name **on this side**, since we are the only ones who know whose
-   * board it is (see `shareableBuffs`). Everything else travels as it stands.
+   * ## A delta is undone before anything else sees it
+   *
+   * Everything downstream — the tray, `contributions.ts`'s five rules, every panel that merges —
+   * takes **a peer's whole current set**, and that is deliberately unchanged. A delta is a saving on
+   * the wire and nothing more: it is applied to what we already hold from that peer, and what comes
+   * out the other side is the same complete set the same code has always been handed. So
+   * `contributions.ts` rule 2 ("a report replaces that contributor's set") stays exactly true, and no
+   * store had to learn what a delta is.
    */
-  function outbound(kind: ShareKind, rows: unknown[]): unknown[] {
-    if (kind !== "buffs") return rows;
-    return shareableBuffs(rows as Parameters<typeof shareableBuffs>[0], deps.getName());
-  }
-
-  /** Keep what a peer gave us: observations go to the stores, everything else to the tray. */
   function keep(peerId: string, raw: AwariPayload): void {
     const give = readGive(raw, () => randomId());
     if (!give) return void log.debug("give ignored - unknown kind", raw.what);
-    if (give.stale) return void log.debug("give unchanged:", give.what, "from", peerId);
+    if (give.mode === "unchanged") return void log.debug("give unchanged:", give.what, "from", peerId);
 
     const spec = shareKind(give.what);
     if (spec?.family === "mirror") {
@@ -396,27 +660,82 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       // still read through `readSharedPage` first, and they still expire on our TTL — so a page a
       // peer got wrong is corrected by the source, on its own
       // ([ADR 0160](../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
-      const taken = deps.acceptItems?.(give.rows as SharedItemPage[], give.shard) ?? 0;
-      log.debug("took", taken, "of", give.rows.length, "item pages from", peerId, "shard", give.shard);
+      //
+      // Never a delta: `items` is addressed by shard, and a shard is already the small unit
+      // (ADR 0160). A delta of one would be answering a question nobody asked.
+      const pages = give.mode === "whole" ? give.rows : [];
+      const taken = deps.acceptItems?.(pages as SharedItemPage[], give.shard) ?? 0;
+      log.debug("took", taken, "of", pages.length, "item pages from", peerId, "shard", give.shard);
       return;
     }
+
+    const rows = absorb(peerId, give);
+    if (!rows) return;
+
     if (spec?.family === "observation") {
       // Straight into the existing pipeline, contributor id and all — pulling rather than being
       // pushed changed the transport and nothing about the trust model (ADR 0141). The id rides on
       // the payload the peer sent, exactly as it did when this was a broadcast.
-      deps.fileContribution({ kind: give.what, [give.what]: give.rows, id: raw.id, name: raw.name });
+      deps.fileContribution({ kind: give.what, [give.what]: rows, id: raw.id, name: raw.name });
       return;
     }
     tray.set(trayKey(peerId, give.what), {
       peerId,
       kind: give.what,
       from: give.from,
-      rows: give.rows,
+      rows,
       rev: give.rev,
       at: now(),
     });
-    log.debug("kept", give.rows.length, give.what, "from", peerId);
+    log.debug("kept", rows.length, give.what, "from", peerId);
     deps.changed();
+  }
+
+  /**
+   * Fold a delivery into what we hold from that peer, and hand back their whole current set.
+   *
+   * `null` means "we cannot honestly say what they hold": a delta arrived for a peer or an epoch we
+   * have nothing for, which happens when they restarted, when a `give` was lost, or when this is
+   * simply the first thing we have heard. Nothing is applied and nothing is guessed — `askAgain`
+   * re-asks without a `since`, and the minute reconciliation would have caught it regardless.
+   */
+  function absorb(peerId: string, give: ShareDelivery & { mode: "whole" | "delta" }): unknown[] | null {
+    const key = trayKey(peerId, give.what);
+    if (give.mode === "whole") {
+      const rows = new Map<string, unknown>(give.keyed.map((k): [string, unknown] => [k.key, k.row]));
+      heldFrom.set(key, { epoch: give.epoch, rev: give.rev, rows });
+      return give.rows;
+    }
+
+    const held = heldFrom.get(key);
+    if (!held || held.epoch !== give.epoch) {
+      log.debug("delta unusable:", give.what, "from", peerId, held ? "(epoch moved)" : "(nothing held)");
+      askAgain(peerId, give.what);
+      return null;
+    }
+    for (const { key: k, row } of give.changes) held.rows.set(k, row);
+    for (const k of give.gone) held.rows.delete(k);
+    held.rev = give.rev;
+    log.debug(
+      "applied delta:",
+      give.what,
+      `${give.changes.length} changed, ${give.gone.length} gone, now ${held.rows.size}`,
+      "from",
+      peerId,
+    );
+    return [...held.rows.values()];
+  }
+
+  /**
+   * Ask again from nothing, for a delta we could not use.
+   *
+   * The held state is dropped **first**, which is what makes the next ask a whole one: `since` is
+   * read off what we hold, so a stale entry left in place would ask the same unusable question again.
+   */
+  function askAgain(peerId: string, kind: ShareKind): void {
+    heldFrom.delete(trayKey(peerId, kind));
+    tray.delete(trayKey(peerId, kind));
+    askFor(peerId, kind, true);
   }
 
   /**
@@ -434,8 +753,28 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     const last = asked.get(key) ?? 0;
     if (!force && now() - last < ASK_COOLDOWN_MS) return;
     asked.set(key, now());
-    deps.send({ kind: AWARI_MSG.ask, what: kind, since: tray.get(key)?.rev }, peerId);
-    log.debug("asked", peerId, "for", kind);
+    // `since` is only sent while the epoch it was counted in still matches what the peer is
+    // publishing. A number from before their restart means nothing to them, and sending it alone is
+    // how a receiver would silently miss everything that changed in between.
+    //
+    // **The comparison is what matters, not that either side has one.** Two `undefined`s match, and
+    // that is the case of a peer too old to have epochs at all: it gets `since` with no epoch, which
+    // is exactly the ask every build before this one sent, and answers "unchanged" to it. Requiring
+    // an epoch here instead cost an old peer the cheap answer and re-fetched their whole catalogue
+    // every time it moved — the fallback has to be the *old* exchange, not no exchange.
+    const held = heldFrom.get(key);
+    const theirEpoch = offers.get(peerId)?.[kind]?.epoch;
+    const since = held && held.epoch === theirEpoch ? held.rev : undefined;
+    deps.send(
+      {
+        kind: AWARI_MSG.ask,
+        what: kind,
+        ...(since === undefined ? {} : { since }),
+        ...(since !== undefined && held?.epoch ? { epoch: held.epoch } : {}),
+      },
+      peerId,
+    );
+    log.debug("asked", peerId, "for", kind, since === undefined ? "(everything)" : `(since ${since})`);
   }
 
   /**
@@ -447,12 +786,11 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
    * tray filling up with other people's work you never asked to see.
    */
   function sawOffer(peerId: string, payload: AwariPayload): void {
-    const theirs = (payload.offer ?? payload) as Record<string, unknown>;
-    const catalogue: ShareOffer = {};
-    for (const spec of SHARE_KINDS) {
-      const entry = theirs[spec.key];
-      if (entry && typeof entry === "object") catalogue[spec.key] = entry as ShareEntry;
-    }
+    // Through the shared reader, which checks the shape of every line — the same one the renderer's
+    // roster builder uses. There were two readers for this message and only one of them checked
+    // anything; this was the other.
+    const catalogue = readOffer(payload.offer ?? payload);
+    noteProtocol(peerId, readProtocol(payload.offer ?? payload));
     const before = offers.get(peerId);
     offers.set(peerId, catalogue);
     // When it arrived, which is what a shard claim's TTL is measured against: a peer who stopped
@@ -471,6 +809,45 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   /** The name a notice would use for a peer — announced if they've said, a short id if not. */
   function nameOf(peerId: string): string {
     return known.get(peerId)?.name?.trim() || `Someone (${peerId.slice(-4)})`;
+  }
+
+  /**
+   * Note what protocol a peer speaks, and say something if it is one we haven't got.
+   *
+   * **Only when we are the old one**, which is the asymmetry the whole feature turns on. A peer
+   * running an older build is not something the reader can do anything about
+   * ([ADR 0143](../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md)'s second
+   * narrowing) — it sits on their row in the Peers tab for anyone curious, and raises nothing. A peer
+   * running a *newer* one means this install is the one falling back, and that is a thing a person
+   * can fix.
+   *
+   * **Once a session.** Being behind is one fact about this install rather than one per peer, and a
+   * room where four people are current must not produce four notices — the same discipline
+   * [ADR 0093](../specs/decisions/0093-a-high-score-is-a-personal-best-with-a-floor.md) applied to a
+   * fresh scoreboard. Nor does meeting a *third* protocol later re-raise it: you are behind either
+   * way and the thing to do about it has not changed. The Peers tab carries it durably, which is what
+   * lets the notice be this quiet (`toasts.ts`: a toast is never the only place something is said).
+   */
+  function noteProtocol(peerId: string, theirs: number): void {
+    protocols.set(peerId, theirs);
+    if (theirs <= SHARE_PROTOCOL || toldAboutVersion || versionTimer) return;
+    if (!deps.getSettings().connectPeers) return;
+    // Waited out for the same two reasons the offer notice is
+    // ([ADR 0143](../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md)). Catalogues
+    // arrive one per peer within a second or two of joining, so raising this on the first one to
+    // land would name whoever happened to be first and read as *that person's* problem rather than
+    // as ours. And it lets `hello` land, so the notice can use names instead of "Someone (3f9a)".
+    versionTimer = later(() => {
+      versionTimer = null;
+      if (toldAboutVersion || !deps.getSettings().connectPeers) return;
+      const ahead = [...protocols.entries()].filter(([, p]) => p > SHARE_PROTOCOL);
+      if (!ahead.length) return;
+      toldAboutVersion = true;
+      const newest = Math.max(...ahead.map(([, p]) => p));
+      const names = ahead.map(([id]) => nameOf(id)).sort();
+      log.debug("we are behind the room:", { ours: SHARE_PROTOCOL, newest, names });
+      deps.outdated({ theirs: newest, ours: SHARE_PROTOCOL, peers: names });
+    }, NOTICE_DEBOUNCE_MS);
   }
 
   /**
@@ -543,7 +920,7 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   function reconcile(): void {
     if (!deps.getSettings().connectPeers) return;
     for (const [peerId, catalogue] of offers) {
-      for (const kind of outOfDate(catalogue, (k) => tray.get(trayKey(peerId, k))?.rev)) {
+      for (const kind of outOfDate(catalogue, (k) => heldRev(peerId, k))) {
         askFor(peerId, kind, false);
       }
     }
@@ -556,6 +933,9 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     for (const [key, entry] of tray) {
       if (entry.at < cutoff) {
         tray.delete(key);
+        // The delta state goes with it. Keeping it would leave us asking "what changed since 40?"
+        // about rows we have just thrown away, and filing the answer as if it were the whole set.
+        heldFrom.delete(key);
         dropped += 1;
       }
     }
@@ -564,7 +944,7 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
 
   return {
     offer,
-    mine: (kind) => measure(kind).rows,
+    mine: (kind) => rowsOf(measure(kind)),
     handle(peerId, payload) {
       switch (payload.kind) {
         case AWARI_MSG.offer:
@@ -619,7 +999,17 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
         pendingNotices.clear();
       }
     },
-    room: () => ({ status, peers: [...known.values()] }),
+    room: () => ({
+      status,
+      // The protocol is folded in here rather than tracked by the window, because the catalogue it
+      // comes from is a message the hub already handles and a late-opening panel has missed
+      // (ADR 0144). A peer we have heard no catalogue from is left unstated rather than assumed
+      // current — "hasn't said" and "says 1" look different on a row.
+      peers: [...known.values()].map((p) => {
+        const protocol = protocols.get(p.peerId);
+        return protocol === undefined ? p : { ...p, protocol };
+      }),
+    }),
     roster(peers) {
       // Somebody who has left can't answer and their catalogue is a promise about a session that is
       // over. Their *tray* stays until it ages out: what they already handed over is ours to look
@@ -632,6 +1022,7 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
         if (here.has(peerId)) continue;
         offers.delete(peerId);
         offerAt.delete(peerId);
+        protocols.delete(peerId);
       }
       // A notice about somebody who left before it went out would point at a row that isn't there.
       for (const peerId of [...pendingNotices.keys()]) if (!here.has(peerId)) pendingNotices.delete(peerId);
@@ -646,6 +1037,15 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       for (const [key, entry] of tray) {
         if ((!peerId || entry.peerId === peerId) && (!kind || entry.kind === kind)) tray.delete(key);
       }
+      // The delta state goes with the rows it describes. Left behind, the next ask would say "since
+      // 40" about a set we have just discarded, and the peer would answer with the handful that
+      // moved — which we would then file as though it were everything they hold.
+      for (const key of [...heldFrom.keys()]) {
+        const cut = key.lastIndexOf(":");
+        if (peerId && key.slice(0, cut) !== peerId) continue;
+        if (kind && key.slice(cut + 1) !== kind) continue;
+        heldFrom.delete(key);
+      }
       deps.changed();
     },
     setPins(next) {
@@ -656,6 +1056,7 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     stop() {
       if (debounce) cancel(debounce);
       if (noticeTimer) cancel(noticeTimer);
+      if (versionTimer) cancel(versionTimer);
       clearTimer(tick);
     },
   };
@@ -669,63 +1070,59 @@ function randomId(): string {
 // ─── What we'd share, per kind ──────────────────────────────────────────────
 
 /**
- * The app's own data, shaped for the wire.
+ * The app's own data, as the hub reads it.
  *
  * Separated from the hub because these are the only lines that know what an EQ List *is* — the hub
- * itself only knows about kinds, revisions and peers, and stays readable for it. Each reader is a
- * one-liner over a store that already exists; the interesting decisions are the two exclusions:
+ * itself only knows about kinds, revisions and peers, and stays readable for it.
  *
- *   - **Only your own kills travel.** A peer's kill re-shared under our name is an echo that grows
- *     with every hop, and with three clients in a room it goes round and round. `sharedBy` is the
- *     guard, and it is the same one the map used when this was a broadcast.
- *   - **Only placeable ones.** A position we don't have is nothing the receiver can draw, so it is
- *     weight on the wire and a row in their store for no gain.
+ * **What is no longer here is the point.** These used to shape rows for the wire as well as fetch
+ * them: the kill filter, the respawn reduction. Both were rules about *what a kind is when it
+ * travels*, and both now live on that kind's row in `SHARE_KINDS` beside the reader that checks them
+ * coming the other way — which is what stopped the kill rule being written twice (the map window
+ * plots by the same one now). What is left is genuinely just the fetch, plus the one thing only a
+ * store can answer: whether anything has written to it.
  */
 export function shareSources(context: {
   getList: () => { entries: unknown[] };
   getSettings: () => Settings;
-  killLog: { kills: (zone?: string) => KillRecord[]; observations: () => unknown[] };
+  killLog: {
+    kills: (zone?: string) => KillRecord[];
+    observations: () => unknown[];
+    /** Moves when a kill, a drop or a coin line is recorded. */
+    version: () => number;
+  };
   spawns: { view: () => { running: unknown[]; known: KnownSpawn[] } };
   buffs: { view: () => { active: unknown[] } };
   scores: { board: () => { scores: unknown[] } };
-}): Record<ShareKind, () => unknown[]> {
+}): Record<ShareKind, ShareSource> {
   return {
-    watches: () => context.getSettings().castAlerts?.watches ?? [],
-    styles: () => context.getSettings().castAlerts?.styles ?? [],
-    lists: () => context.getList().entries,
+    watches: { rows: () => context.getSettings().castAlerts?.watches ?? [] },
+    styles: { rows: () => context.getSettings().castAlerts?.styles ?? [] },
+    lists: { rows: () => context.getList().entries },
     // Held by the map window, pushed in through `setPins` — this never runs (see `measure`), and is
     // here so the table has no hole in it for a reader to wonder about.
-    pins: () => [],
-    mobs: () => context.killLog.observations(),
-    kills: () =>
-      context.killLog
-        .kills()
-        .filter((k) => !k.sharedBy && k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
-        .map((k) => ({ zone: k.zone ?? "", y: k.y, x: k.x, mob: k.mob, confidence: k.confidence }))
-        .filter((k) => k.zone),
+    pins: { rows: () => [] },
+    // **The two that were worth a version.** `observations()` folds the whole kill log and `kills()`
+    // scans five thousand records, and until now both were paid for once a minute whether or not a
+    // single kill had happened. Nothing else here is expensive enough to be worth the risk described
+    // below: a list is a few hundred entries and a scoreboard is a dozen rows.
+    mobs: { rows: () => context.killLog.observations(), version: context.killLog.version },
+    kills: { rows: () => context.killLog.kills(), version: context.killLog.version },
     // Read off the Timers tab's own rows rather than re-derived, so there is one rule for what a
     // gap is worth and a peer is handed the figure we actually act on — the player's dismissals,
-    // relearn cutoffs and dropped gaps included, since those are corrections and not noise.
-    //
-    // Reduced to the **conclusion** on the way out. A `KnownSpawn` also carries what this install
-    // decided *about* the camp — whether it alerts, what it wears, how much padding somebody likes
-    // — and that is a setting, not an observation. `gaps` goes for the reason a shared kill carries
-    // no time: the evidence stays on the machine that saw it, and what travels is what it proved.
-    respawns: () =>
-      context.spawns.view().known.map((k) => ({
-        key: k.key,
-        mob: k.mob,
-        place: k.place,
-        shortestSeconds: k.shortestSeconds,
-        longestSeconds: k.longestSeconds,
-        samples: k.samples,
-        lastKillAt: k.lastKillAt,
-      })),
-    timers: () => context.spawns.view().running,
-    buffs: () => context.buffs.view().active,
-    scores: () => context.scores.board().scores,
+    // relearn cutoffs and dropped gaps included, since those are corrections and not noise. What
+    // travels is the conclusion only (`shareableRespawns`).
+    respawns: { rows: () => context.spawns.view().known },
+    // **Deliberately unversioned**, all three. The obvious counter to hook is the store's own save,
+    // and for these it would be a *lie*: a running countdown and a buff that is counting down are
+    // views over a clock, so their rows differ from one second to the next while nothing has been
+    // written. A version that says "unchanged" about rows that have changed is the one failure mode
+    // `ShareSource` says must not happen, and these are cheap to measure anyway.
+    timers: { rows: () => context.spawns.view().running },
+    buffs: { rows: () => context.buffs.view().active },
+    scores: { rows: () => context.scores.board().scores },
     // Addressed by shard, never as a whole (see `PeerShareDeps.items`). Present so the table has no
     // hole in it, and never called.
-    items: () => [],
+    items: { rows: () => [] },
   };
 }

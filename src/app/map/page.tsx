@@ -47,7 +47,7 @@ import TravelPanel from "../components/TravelPanel";
 import MapTravelAside from "../components/MapTravelAside";
 import { useTravelSurvey } from "@/lib/map/useTravelSurvey";
 import { characterFromLogFile } from "@/shared/log-parser";
-import { confidenceTier, PLOTTABLE_CONFIDENCE } from "@/shared/kill-confidence";
+import { confidenceTier, isPlottable } from "@/shared/kill-confidence";
 import { MAP_UI_SCALE } from "@/shared/constants";
 import type { KillEmphasis } from "@/shared/types";
 
@@ -357,7 +357,7 @@ export default function MapWindow() {
   const renderKills = useMemo<RenderKill[]>(
     () =>
       kills
-        .filter((k) => k.y !== undefined && k.x !== undefined && k.confidence >= PLOTTABLE_CONFIDENCE)
+        .filter(isPlottable)
         .map((k) => {
           const tier = confidenceTier(k.confidence);
           return {

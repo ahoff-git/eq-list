@@ -209,6 +209,7 @@ export const CH = {
    * notice per catalogue change would be a notice per kill.
    */
   peerOffered: "evt:peerOffered",
+  peerOutdated: "evt:peerOutdated",
   awariStatusChanged: "evt:awariStatus", // main → all: connection status
   awariPeersChanged: "evt:awariPeers", // main → all: who else is in the room
   /**

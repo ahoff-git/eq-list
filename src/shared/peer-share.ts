@@ -40,6 +40,8 @@ import type {
   CastWatch,
   HighScore,
   ItemSource,
+  KillRecord,
+  KnownSpawn,
   NamedAlertStyle,
   ShoppingListEntry,
   SourceKind,
@@ -55,6 +57,7 @@ import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "./buff-tracking";
 import { decodeWatches } from "./watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "./map/pins";
 import { SHARD_COUNT } from "./item-shards";
+import { isPlottable } from "./kill-confidence";
 
 /**
  * An item page as it crosses between peers.
@@ -85,6 +88,18 @@ export type ShareKind =
   | "items";
 
 /**
+ * What the sender knows that a projection needs and a row does not carry.
+ *
+ * Only a name today, and it is here rather than passed as a bare string because the thing it is
+ * needed for — resolving `ON_YOU` before a buff leaves — is a rule about *who the sender is*, and a
+ * second such rule would otherwise arrive as a second positional argument on every projection.
+ */
+export interface ShareContext {
+  /** The sender's display name, as the room sees it. */
+  myName: string;
+}
+
+/**
  * One shareable kind: what it is, which family's rules it plays by, and how to read one off the
  * wire.
  *
@@ -92,6 +107,15 @@ export type ShareKind =
  * never half-applies. `newId` is passed in rather than reached for, the same way `decodeWatches`
  * takes it: ids come from `crypto.randomUUID()` in a renderer and a test wants to know what it is
  * asserting on.
+ *
+ * ## Why identity and projection are on the table too
+ *
+ * `read` says what a row must survive to be *received*. It said nothing about what a row **is** or
+ * what leaves, and both of those were written by hand somewhere else: the kill projection lived in
+ * `shareSources` (and again, near enough, in the map window), the buff projection was a special case
+ * inside the hub's `outbound`, and no kind stated its identity at all — which is why a `give` could
+ * only ever be the whole kind. Stating all three here is what lets one hub serve every kind without
+ * knowing what any of them are.
  */
 export interface ShareKindSpec<T = unknown> {
   key: ShareKind;
@@ -103,6 +127,30 @@ export interface ShareKindSpec<T = unknown> {
   /** Singular noun for counts ("12 watches", "1 watch"). */
   noun: string;
   read: (rows: unknown, newId: () => string) => T[];
+  /**
+   * **What this row is**, as a string that is the same on two installs holding the same fact.
+   *
+   * The unit a delta is expressed in: a `give` that names changed rows has to name them, and a
+   * receiver merging one has to know which held row it replaces. Content-derived wherever an id
+   * would not survive the crossing — every `authored` kind has its ids **regenerated** by `read`
+   * (`newId`), so a sender's `id` means nothing on the far side and keying on it would make every
+   * row look new for ever.
+   *
+   * `undefined` for a row this kind cannot identify, which is not an error: such a row is simply
+   * never sent as a delta, and its kind falls back to being sent whole.
+   */
+  rowKey?: (row: T) => string | undefined;
+  /**
+   * **What leaves**, given what we hold.
+   *
+   * The last chance to drop rows that are ours rather than the room's, and to reduce a row to the
+   * conclusion the receiver can actually use. Absent means the rows travel as they are.
+   *
+   * Runs *before* identity and before the digest, so a change to a field that never leaves does not
+   * make a row look changed — which is the difference between a delta that carries an evening's real
+   * news and one that carries every local edit to a field nobody else can see.
+   */
+  project?: (rows: readonly unknown[], context: ShareContext) => unknown[];
   /**
    * Whether this kind is shared when nobody has said either way. **Off for everything but `items`.**
    *
@@ -151,6 +199,95 @@ const MAX_PAGE_NPCS = 1000;
 /** Longest any free-text field may be once it's ours. Matches `watch-share.ts`. */
 const MAX_TEXT = 200;
 
+// ─── Identity, one per kind ─────────────────────────────────────────────────
+
+/**
+ * Join the parts of a composite key. NUL-separated for the reason `kill-log.ts`'s `killKey` uses
+ * one: a separator a name can contain is a separator a name can forge a collision with.
+ *
+ * Written as an **escape** rather than as the byte itself, which is the one thing not copied from
+ * there: a literal NUL makes the whole file read as *binary* to git and to grep, and this one holds
+ * a wire protocol whose diffs have to stay readable.
+ */
+const rowKeyOf = (...parts: (string | number | undefined)[]): string => parts.join("\u0000");
+
+/**
+ * A shopping-list entry, keyed the way `store.ts` keys one: **name plus origin**.
+ *
+ * Not `id`, which `readListEntry` regenerates on arrival, and not name alone — the same item can
+ * legitimately sit under two quests, and folding those together would make one of them vanish from
+ * a delta the first time the other changed.
+ */
+function listEntryKey(row: unknown): string | undefined {
+  if (!isRecord(row) || typeof row.name !== "string") return undefined;
+  const origin = isRecord(row.origin) ? rowKeyOf(str(row.origin.kind), str(row.origin.name)) : "";
+  return rowKeyOf(row.name.toLowerCase(), origin);
+}
+
+/** A field-derived key, for a kind whose rows carry a usable one already. */
+function fieldKey(row: unknown, field: string): string | undefined {
+  if (!isRecord(row)) return undefined;
+  const v = row[field];
+  return typeof v === "string" && v ? v : undefined;
+}
+
+// ─── Projection, one per kind ───────────────────────────────────────────────
+
+/**
+ * The kills worth sharing, reduced to what a receiver can draw.
+ *
+ * **The one statement of this rule.** It was written twice — once here on the way out and once in
+ * the map window to decide what to plot — and two copies of "which kills are worth a dot" is exactly
+ * the sort of thing that drifts a threshold at a time.
+ *
+ * Two exclusions, and both are about not echoing:
+ *
+ *   - **Only your own.** A peer's kill re-shared under our name grows with every hop, and three
+ *     clients in a room send it round for ever. `sharedBy` is the guard.
+ *   - **Only placeable ones.** A position we haven't got is nothing the receiver can draw, so it is
+ *     weight on the wire and a row in their store for no gain.
+ */
+export function shareableKills(kills: readonly KillRecord[]): SharedKill[] {
+  const out: SharedKill[] = [];
+  for (const k of kills) {
+    if (k.sharedBy || !isPlottable(k)) continue;
+    const zone = k.zone ?? "";
+    if (!zone) continue;
+    out.push({ zone, y: k.y, x: k.x, mob: k.mob, confidence: k.confidence });
+  }
+  return out;
+}
+
+/**
+ * A learned respawn as it crosses — the conclusion, and none of the workings.
+ *
+ * Distinct from `RespawnLearning` on purpose: the two fields it lacks are `gaps` (the evidence, which
+ * stays on the machine that saw it) and `crossedDifficulty` (a count of what *our* rule threw out,
+ * which would be a sentence about a night the receiver never sat through). `readRespawn` fills both
+ * with empties on arrival rather than letting a peer state them.
+ */
+export type SharedRespawn = Omit<RespawnLearning, "gaps" | "crossedDifficulty">;
+
+/**
+ * A learned respawn, reduced to the **conclusion**.
+ *
+ * A `KnownSpawn` also carries what this install decided *about* the camp — whether it alerts, what
+ * it wears, how much padding somebody likes — and that is a setting, not an observation. `gaps` goes
+ * for the reason a shared kill carries no time: the evidence stays on the machine that saw it, and
+ * what travels is what it proved.
+ */
+export function shareableRespawns(known: readonly KnownSpawn[]): SharedRespawn[] {
+  return known.map((k) => ({
+    key: k.key,
+    mob: k.mob,
+    place: k.place,
+    shortestSeconds: k.shortestSeconds,
+    longestSeconds: k.longestSeconds,
+    samples: k.samples,
+    lastKillAt: k.lastKillAt,
+  }));
+}
+
 /**
  * The kinds, in the order the Peers tab lists them: authored first (the things a person chose to
  * make), then what gets pooled, then what is merely true right now.
@@ -163,6 +300,15 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Your cast/log alert rules, without their looks — a rule travels, a style doesn't.",
     noun: "rule",
     read: (rows, newId) => readWatches(rows, newId),
+    // **No identity, deliberately.** A rule has no name and no id that survives the crossing
+    // (`readWatch` regenerates ids), and what is left — a spell, a message, a list of conditions —
+    // is the whole rule rather than a handle on it. Keying on all of it would just be the content
+    // digest the hub already falls back to, spelled out at greater length and with more ways to
+    // disagree with `readWatch`'s clamping.
+    //
+    // Nothing is lost by it: the fallback is correct because keys **travel** rather than being
+    // re-derived, and a delta would buy almost nothing on a kind capped at fifty rows that is only
+    // ever fetched because somebody clicked.
   },
   {
     key: "styles",
@@ -171,6 +317,8 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Your saved named looks — colour, sound, position, how long a banner stays up.",
     noun: "style",
     read: (rows, newId) => readList(rows, MAX_ROWS.styles, (raw) => readStyle(raw, newId)),
+    // A named look is its name; ids are regenerated on arrival like every authored kind's.
+    rowKey: (row) => (isRecord(row) ? fieldKey(row, "name") : undefined),
   },
   {
     key: "lists",
@@ -179,6 +327,7 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "What you're collecting and what it's for — counts reset, so it arrives as a fresh list.",
     noun: "entry",
     read: (rows, newId) => readList(rows, MAX_ROWS.lists, (raw) => readListEntry(raw, newId)),
+    rowKey: listEntryKey,
   },
   {
     key: "pins",
@@ -187,6 +336,9 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Markers you've dropped on zone maps — camps, spawn points, warnings.",
     noun: "pin",
     read: (rows, newId) => readList(rows, MAX_ROWS.pins, (raw) => readPin(raw, newId)),
+    // Where it is, in which zone, on which layer — a pin has no identity apart from its place.
+    rowKey: (row) =>
+      isRecord(row) ? rowKeyOf(str(row.zone), num(row.layer) ?? "", num(row.y) ?? "", num(row.x) ?? "") : undefined,
   },
   {
     key: "mobs",
@@ -195,6 +347,10 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Drop counts, coin and roam areas — tallies, never your kills or your movements.",
     noun: "tally",
     read: (rows) => readList(rows, MAX_ROWS.mobs, readMobObservation),
+    // Mob and zone **verbatim**, which is what `observeMobs` tallies by — the fold to a place is
+    // `mergeObservations`' job on read, and keying a delta by the folded name would make two
+    // spellings of a camp overwrite each other on the wire (ADR 0083).
+    rowKey: (row) => (isRecord(row) ? rowKeyOf(str(row.mob), str(row.zone)) : undefined),
   },
   {
     key: "kills",
@@ -203,6 +359,10 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Where things died, for a pooled heatmap. Carries no time and no loot.",
     noun: "position",
     read: (rows) => readList(rows, MAX_ROWS.kills, readSharedKill),
+    project: (rows) => shareableKills(rows as readonly KillRecord[]),
+    // A shared kill carries no time and no id, so its place *is* its identity.
+    rowKey: (row) =>
+      isRecord(row) ? rowKeyOf(str(row.zone), str(row.mob), num(row.y) ?? "", num(row.x) ?? "") : undefined,
   },
   {
     key: "respawns",
@@ -211,6 +371,10 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "How long a named took to come back, measured at your camp — the shortest gap you saw.",
     noun: "interval",
     read: (rows) => readList(rows, MAX_ROWS.respawns, readRespawn),
+    project: (rows) => shareableRespawns(rows as readonly KnownSpawn[]),
+    // `key` is the camp — one mob, one place — and is already the identity everything learned about
+    // a respawn is filed under.
+    rowKey: (row) => fieldKey(row, "key"),
   },
   {
     key: "timers",
@@ -219,6 +383,11 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Clocks ticking at your camp right now, so the people sitting with you see the same one.",
     noun: "countdown",
     read: (rows) => readList(rows, MAX_ROWS.timers, readTimer),
+    // The camp plus the death that started this clock. **Not `id`**, which is `key#slot` — local
+    // bookkeeping that `readTimer` deliberately drops, so it is not a thing that exists on both
+    // sides of the wire. The de-dupe that decides whether two peers' clocks are the same spawn is
+    // `mergeTimers`, and stays there; this only has to tell one clock from another.
+    rowKey: (row) => (isRecord(row) ? rowKeyOf(str(row.key), str(row.killedAt)) : undefined),
   },
   {
     key: "buffs",
@@ -227,6 +396,11 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "What's up on you and your pet, and what's lapsed. Nothing about anyone else.",
     noun: "buff",
     read: (rows) => readList(rows, MAX_ROWS.buffs, readBuff),
+    // `ON_YOU` is resolved **before it leaves**, because only the sender knows whose board it is.
+    // This is the outbound half of the rule `readBuff` enforces on the way in.
+    project: (rows, context) => shareableBuffs(rows as readonly BuffInstance[], context.myName),
+    // The same key the buff board files an instance under: what it is a buff of, and whose.
+    rowKey: (row) => (isRecord(row) ? instanceKey(str(row.key), str(row.target)) : undefined),
   },
   {
     key: "scores",
@@ -235,6 +409,8 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Your personal bests, to sit beside other people's. Nothing merges into your board.",
     noun: "score",
     read: (rows) => readList(rows, MAX_ROWS.scores, readScore),
+    // One record per category, which is what a board is.
+    rowKey: (row) => fieldKey(row, "categoryId"),
   },
   {
     key: "items",
@@ -245,6 +421,10 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     noun: "page",
     defaultOn: true,
     read: (rows) => readList(rows, MAX_ROWS.items, readSharedPage),
+    // A page is its title. Stated for completeness rather than for use: `items` is addressed by
+    // **shard** and never as "the whole kind" (ADR 0160), so it is the one kind a delta never runs
+    // over — a shard is already the small unit a delta would otherwise have to invent.
+    rowKey: (row) => fieldKey(row, "title"),
   },
 ];
 
@@ -304,15 +484,131 @@ export interface ShareEntry {
    * shard releases it by going quiet.
    */
   doing?: number;
+  /**
+   * Which **run** of the sender the `rev` counts within (see `ShareEpoch`).
+   *
+   * Absent from a peer too old to send one, which is exactly what makes the delta protocol safe to
+   * deploy into a room of mixed builds: no epoch means no delta, and everything falls back to the
+   * whole-kind exchange that has always worked.
+   */
+  epoch?: string;
+}
+
+/**
+ * A sender's **run**, so a revision can be trusted to mean something.
+ *
+ * A `rev` is a counter, and a counter that restarts is a counter that lies: after a restart our
+ * seventh revision and the one a peer remembers as "7" describe different data, and a delta computed
+ * against it would silently skip everything that changed in between. The epoch is what makes that
+ * detectable — it changes whenever the counter does not continue, so a peer holding a `since` from a
+ * different epoch is told plainly that its number means nothing here and given the whole kind.
+ *
+ * **Deliberately per-run and not persisted.** A restart already costs one full exchange today — the
+ * revision counters start from zero every launch — so keeping this in memory changes nothing about
+ * what a restart costs, and buys the whole feature without a single store having to learn to write a
+ * sequence number to disk. What deltas save is the *evening*: a room sitting together for four hours
+ * exchanging one changed tally at a time, rather than five thousand once a minute.
+ */
+export type ShareEpoch = string;
+
+/**
+ * What this build can say and understand on the wire.
+ *
+ * **Not the app version**, for the reason [`data-provenance.ts`](./data-provenance.ts) spells out at
+ * length about its own revisions: CI stamps a build number into every push to `main`
+ * ([ADR 0064](../../specs/decisions/0064-every-build-has-a-number.md)), so `0.1.41` becomes `0.1.42`
+ * for a CSS change. Comparing app versions would tell everybody in the room they were incompatible
+ * with everybody else, all the time, which trains a person to ignore the one notice that matters.
+ *
+ * So this is a **number bumped by hand, and only when the wire actually moves**. Bump it when a
+ * message gains a field an older peer would be worse off for not understanding — not when a kind is
+ * added (an unknown kind already fails closed), and not when a reader gets stricter.
+ *
+ *   1. Everything up to and including the whole-kind exchange. Every build before deltas existed
+ *      reports this by saying nothing at all — see `readProtocol`.
+ *   2. Deltas: `epoch` on a catalogue line, `since`/`epoch` on an ask, `changes`/`gone`/`keys` on a
+ *      give ([ADR 0171](../../specs/decisions/0171-a-shared-kind-states-what-a-row-is.md)).
+ */
+export const SHARE_PROTOCOL = 2;
+
+/**
+ * What a peer that names no protocol is speaking.
+ *
+ * Every build shipped before this one, which is why it is a real number rather than `undefined`:
+ * "didn't say" and "said 1" describe the same client, and having one answer for both is what keeps
+ * the comparison below from needing a special case.
+ */
+export const PROTOCOL_UNSTATED = 1;
+
+/** Read a peer's protocol off their catalogue. Absent, malformed or absurd all mean "the first one". */
+export function readProtocol(raw: unknown): number {
+  if (!isRecord(raw)) return PROTOCOL_UNSTATED;
+  const stated = int(raw.protocol);
+  // A number below the floor is a peer describing a protocol that never existed; above it, one we
+  // have not written yet — which is the case this whole feature is for, so it is kept as stated.
+  return stated === undefined || stated < PROTOCOL_UNSTATED ? PROTOCOL_UNSTATED : stated;
+}
+
+/**
+ * Somebody in the room is speaking a protocol this build has never heard of.
+ *
+ * **The one thing this app cannot fix by shipping a fix**, which is the whole reason it exists: a
+ * client that is too old to understand a message is also too old to contain the code that would
+ * notice. Nothing added today can make yesterday's build say anything. What it can do is make *this*
+ * build, and every one after it, able to recognise the situation from the other side — so the next
+ * time the wire moves, the people left behind are told rather than left wondering why sharing with
+ * the rest of the camp went quiet.
+ *
+ * Deliberately about **us**, not about them. "Bran is running an old build" is not something a reader
+ * can act on ([ADR 0143](../../specs/decisions/0143-a-notice-may-point-at-where-to-answer-it.md)'s
+ * second narrowing: only what a reader has to act on), and it is on their row in the Peers tab for
+ * anyone curious. "You are the old build" is a thing you can do something about.
+ */
+export interface PeerVersionNotice {
+  /** The newest protocol anybody in the room is speaking. Always greater than `ours`. */
+  theirs: number;
+  /** What we speak — `SHARE_PROTOCOL` at the time of the notice. */
+  ours: number;
+  /** Who is speaking it, named for the notice. Never empty. */
+  peers: string[];
+}
+
+/**
+ * How a peer's build compares with ours, for a row that wants to say so.
+ *
+ * `same` is the overwhelmingly common answer and the panel says nothing for it — a room where
+ * everybody is current should look like a room, not like a compatibility report.
+ */
+export type PeerVersionStanding = "same" | "older" | "newer";
+
+/** Where a peer's protocol stands against ours. */
+export function versionStanding(theirs: number | undefined, ours: number = SHARE_PROTOCOL): PeerVersionStanding {
+  const said = theirs ?? PROTOCOL_UNSTATED;
+  if (said === ours) return "same";
+  return said > ours ? "newer" : "older";
 }
 
 /** What a peer says it has. Kinds it isn't sharing are simply absent — the catalogue is the toggle. */
 export type ShareOffer = Partial<Record<ShareKind, ShareEntry>>;
 
-/** "Send me this kind." `since` is the revision the asker already has, so an unchanged kind can say so. */
+/**
+ * "Send me this kind."
+ *
+ * `since` is the revision the asker already has. It means "everything up to here I have already" —
+ * so a sender whose data has not moved answers *unchanged*, and one whose data has moved answers
+ * with **just what moved**, provided `epoch` says the two are counting within the same run.
+ */
 export interface ShareAsk {
   what: ShareKind;
   since?: number;
+  /**
+   * The epoch `since` was counted in — the one the asker read off our catalogue.
+   *
+   * Absent means "I cannot do deltas, or I have nothing of yours": either way the honest answer is
+   * the whole kind. Never assumed, never inferred — a `since` whose epoch we cannot match is treated
+   * as no `since` at all, because guessing here is how a receiver ends up quietly missing rows.
+   */
+  epoch?: ShareEpoch;
   /**
    * `items` only: which shard is wanted. The one kind where "send me this kind" is not a sensible
    * request — nobody wants eleven thousand pages in a message — so the ask names the ~11-page slice
@@ -322,8 +618,31 @@ export interface ShareAsk {
 }
 
 /**
- * The answer to an `ask`. `rows` absent means "nothing changed since the revision you named" — which
- * is a real answer and not a failure, and is why it is distinguishable from an empty list.
+ * One row in a delta: what it is, and what it now says.
+ *
+ * The key travels rather than being recomputed on arrival, and that is load-bearing. Every
+ * `authored` kind has its ids **regenerated** by `read`, and several kinds drop fields on the way
+ * out — so the receiver frequently cannot derive the sender's key from what it received, and a
+ * receiver that tried would file every update as a new row. The sender owns identity; the receiver
+ * only has to file by it.
+ */
+export interface ShareChange {
+  /** The row's key, as `ShareKindSpec.rowKey` computed it on the sender. */
+  k: string;
+  /** The row. Validated on arrival by the kind's own `read`, exactly like a whole-kind row. */
+  r: unknown;
+}
+
+/**
+ * The answer to an `ask`, in one of three moods.
+ *
+ * - **unchanged** — `rows` and `changes` both absent. A real answer, and the cheapest one.
+ * - **whole** — `rows` present. Everything, and what a peer that asked without an epoch always gets.
+ * - **delta** — `changes` and/or `gone` present, with the `epoch` they are counted in. Only what
+ *   moved since the `since` that was asked with.
+ *
+ * A `give` never carries both `rows` and `changes`: they are two ways of saying what we hold, and a
+ * message that said both would need a rule about which wins.
  */
 export interface ShareGive {
   what: ShareKind;
@@ -331,6 +650,25 @@ export interface ShareGive {
   /** The sender's display name at the time, so a tray row can say who a thing came from. */
   from?: string;
   rows?: unknown;
+  /**
+   * The keys of `rows`, positionally, for a whole send.
+   *
+   * Sent so that a receiver holding a whole set can later have a delta applied to it: the delta
+   * names rows by the sender's key, and a receiver that had filed them under keys of its own making
+   * would match none of them. Positional rather than embedded so the `rows` array keeps the exact
+   * shape a peer too old to know about any of this already reads.
+   *
+   * Best-effort by contract — a receiver that gets a short, long or absent list falls back to
+   * deriving keys itself, which works because every `rowKey` here is derived from what the row says
+   * rather than from an id that would not survive the crossing.
+   */
+  keys?: string[];
+  /** The rows that changed, for a delta. */
+  changes?: ShareChange[];
+  /** The keys of rows that are **gone**, for a delta. */
+  gone?: string[];
+  /** The run `rev` counts within — present on a delta, so a receiver can check it still matches. */
+  epoch?: ShareEpoch;
   /** `items` only: which shard these rows are, echoed back so an answer can't be mis-filed. */
   shard?: number;
 }
@@ -446,7 +784,26 @@ export function offerSummary(kinds: readonly ShareKind[]): string {
   return `${labels[0]}, ${labels[1]} and ${labels.length - 2} more`;
 }
 
-/** Read a peer's catalogue, keeping only kinds we know and counts that are numbers. */
+/**
+ * Longest an epoch may be once it's ours. It is an opaque token we only ever compare for equality,
+ * so the only thing worth checking is that a peer can't make it a payload.
+ */
+const MAX_EPOCH = 64;
+
+/** An epoch off the wire: a short opaque token, or nothing. Never interpreted, only compared. */
+function readEpoch(v: unknown): ShareEpoch | undefined {
+  if (typeof v !== "string") return undefined;
+  const trimmed = v.trim();
+  return trimmed && trimmed.length <= MAX_EPOCH ? trimmed : undefined;
+}
+
+/**
+ * Read a peer's catalogue, keeping only kinds we know and counts that are numbers.
+ *
+ * `cover`, `doing` and `epoch` are kept, which they were not: the hub had grown its own inline
+ * reader precisely because this one dropped the two fields ADR 0160's coordination needs, and the
+ * inline one checked nothing. One reader, and it keeps the whole line.
+ */
 export function readOffer(raw: unknown): ShareOffer {
   const offer: ShareOffer = {};
   if (!isRecord(raw)) return offer;
@@ -456,7 +813,16 @@ export function readOffer(raw: unknown): ShareOffer {
     const n = int(entry.n);
     const rev = int(entry.rev);
     if (n === undefined || rev === undefined || n < 0) continue;
-    offer[spec.key] = { n, rev };
+    const line: ShareEntry = { n, rev };
+    // Only `items` coordinates by coverage, but the check is on the shape rather than on the kind:
+    // a hex string of the right length is the only thing `decodeCoverage` can read anyway.
+    const cover = typeof entry.cover === "string" ? entry.cover : undefined;
+    if (cover && /^[0-9a-fA-F]+$/.test(cover) && cover.length <= SHARD_COUNT) line.cover = cover;
+    const doing = shardNumber(entry.doing);
+    if (doing !== undefined) line.doing = doing;
+    const epoch = readEpoch(entry.epoch);
+    if (epoch) line.epoch = epoch;
+    offer[spec.key] = line;
   }
   return offer;
 }
@@ -466,28 +832,104 @@ export function readAsk(raw: unknown): ShareAsk | null {
   if (!isRecord(raw)) return null;
   const what = typeof raw.what === "string" ? shareKind(raw.what) : undefined;
   if (!what) return null;
-  return { what: what.key, since: int(raw.since), shard: shardNumber(raw.shard) };
+  return {
+    what: what.key,
+    since: int(raw.since),
+    // An epoch that isn't ours is caught by the sender, which compares it with its own. Reading it
+    // here only bounds what a peer can put in the field.
+    epoch: readEpoch(raw.epoch),
+    shard: shardNumber(raw.shard),
+  };
 }
+
+/**
+ * What an inbound `give` turned out to be, once it had been checked.
+ *
+ * Three moods, and they are kept apart because they mean genuinely different things to a store:
+ * `unchanged` says the tally has not moved, `whole` says *this is all of it* (an empty `whole` being
+ * the un-share [ADR 0056](../../specs/decisions/0056-a-dropped-record-keeps-what-it-taught.md)
+ * reads as "stop counting me", not "unsay it"), and `delta` says *this much of it moved*.
+ */
+export type ShareDelivery = { what: ShareKind; rev: number; from: string; shard?: number } & (
+  | { mode: "unchanged" }
+  | { mode: "whole"; rows: unknown[]; keyed: { key: string; row: unknown }[]; epoch?: ShareEpoch }
+  | { mode: "delta"; epoch: ShareEpoch; changes: { key: string; row: unknown }[]; gone: string[] }
+);
 
 /**
  * Read an inbound `give` into rows that are safe to keep, through the reader for that kind.
  *
- * `stale` is the "nothing changed" answer, kept apart from an empty `rows` because they mean
- * opposite things: one says the tally is unchanged, the other says it is now empty (which
- * `contributions.ts` treats as an un-share that keeps what it taught, per ADR 0056).
+ * **A delta's rows go through exactly the same `read` as a whole one.** The saving is in what
+ * crosses, never in what is checked — a row that arrived as "just this one changed" is no more
+ * trustworthy than one that arrived in a batch of five thousand, and a delta path that validated
+ * less would be a way to get an unchecked row in by asking for it differently.
+ *
+ * A `give` claiming to be a delta without an epoch is read as `unchanged` rather than applied: we
+ * cannot tell what it is a delta *of*, and the reconciliation tick will ask again.
  */
-export function readGive(
-  raw: unknown,
-  newId: () => string,
-): { what: ShareKind; rev: number; from: string; rows: unknown[]; stale: boolean; shard?: number } | null {
+export function readGive(raw: unknown, newId: () => string): ShareDelivery | null {
   if (!isRecord(raw)) return null;
   const spec = typeof raw.what === "string" ? shareKind(raw.what) : undefined;
   if (!spec) return null;
   const rev = int(raw.rev) ?? 0;
   const from = str(raw.from);
   const shard = shardNumber(raw.shard);
-  if (raw.rows === undefined || raw.rows === null) return { what: spec.key, rev, from, rows: [], stale: true, shard };
-  return { what: spec.key, rev, from, rows: spec.read(raw.rows, newId), stale: false, shard };
+  const head = { what: spec.key, rev, from, shard } as const;
+
+  // A whole set wins if it is there at all: it is the older shape, and a message carrying both is
+  // one we have no rule for — so we take the one that can be applied without a held state to merge
+  // into. Nothing we send ever carries both.
+  if (raw.rows !== undefined && raw.rows !== null) {
+    const cap = MAX_ROWS[spec.key];
+    const sent = Array.isArray(raw.rows) ? raw.rows.slice(0, cap) : [];
+    const keys = Array.isArray(raw.keys) ? raw.keys : undefined;
+    const rows: unknown[] = [];
+    const keyed: { key: string; row: unknown }[] = [];
+    // Row by row rather than through `readList`, so a row that doesn't survive takes its key with it
+    // and the pairing cannot slip. The validation is identical — the same `read`, the same cap.
+    sent.forEach((entry, i) => {
+      const [row] = spec.read([entry], newId);
+      if (row === undefined) return;
+      rows.push(row);
+      // The sender's key, then one derived from what we were actually given, then the position. The
+      // fallbacks matter for a peer too old to send keys at all: every `rowKey` here reads the row's
+      // own words, so deriving one on this side lands on the same string the sender would have.
+      const key = text(keys?.[i]) || spec.rowKey?.(row) || `#${i}`;
+      keyed.push({ key, row });
+    });
+    return { ...head, mode: "whole", rows, keyed, epoch: readEpoch(raw.epoch) };
+  }
+
+  const hasDelta = Array.isArray(raw.changes) || Array.isArray(raw.gone);
+  if (!hasDelta) return { ...head, mode: "unchanged" };
+
+  const epoch = readEpoch(raw.epoch);
+  if (!epoch) return { ...head, mode: "unchanged" };
+
+  const cap = MAX_ROWS[spec.key];
+  const changes: { key: string; row: unknown }[] = [];
+  if (Array.isArray(raw.changes)) {
+    for (const entry of raw.changes.slice(0, cap)) {
+      if (!isRecord(entry)) continue;
+      const key = text(entry.k);
+      if (!key) continue;
+      // One at a time through the kind's own reader: a row that doesn't survive is dropped and the
+      // rest of the delta still lands, which is the same forgiveness `readList` gives a whole set.
+      const [row] = spec.read([entry.r], newId);
+      if (row === undefined) continue;
+      changes.push({ key, row });
+    }
+  }
+
+  const gone: string[] = [];
+  if (Array.isArray(raw.gone)) {
+    for (const k of raw.gone.slice(0, cap)) {
+      const key = text(k);
+      if (key) gone.push(key);
+    }
+  }
+
+  return { ...head, mode: "delta", epoch, changes, gone };
 }
 
 // ─── Readers, one per kind ──────────────────────────────────────────────────

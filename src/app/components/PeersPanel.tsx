@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useSettings, useWatcherStatus } from "@/lib/hooks";
 import { hasOffered, offeredCount, offeredKinds, shortId, usePeerShare } from "@/lib/usePeerShare";
-import { SHARE_KINDS, kindsOf, sharing, type ShareFamily, type ShareKind } from "@/shared/peer-share";
+import { SHARE_KINDS, kindsOf, sharing, versionStanding, type ShareFamily, type ShareKind } from "@/shared/peer-share";
 import { count } from "@/shared/format";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { CheckField } from "./ui";
@@ -391,6 +391,7 @@ function PeerRow({
         {/* A peer we can't address is one whose session id never reached us — they can be listed
             but not asked, so the row says so rather than offering a button that does nothing. */}
         {!peer.sessionId && <span className="muted small" title="No direct route to them yet">· not reachable</span>}
+        <VersionTag peer={peer} />
       </div>
       {!hasOffered(peer) ? (
         <span className="hint">Hasn&rsquo;t said what they share yet.</span>
@@ -415,5 +416,38 @@ function PeerRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What this peer's build is, when it differs from ours — and nothing at all when it doesn't.
+ *
+ * The **durable** half of the version warning
+ * ([ADR 0171](../../../specs/decisions/0171-a-shared-kind-states-what-a-row-is.md)). The toast says
+ * it once and fades, and `toasts.ts`'s standing invariant is that a notice is never the only place
+ * something important is said — a card nobody can go back to is no use the next evening, when the
+ * question is "why is sharing with Bran slow again?".
+ *
+ * Silent for a peer on the same protocol, which is nearly everybody nearly always: a room where all
+ * is well should look like a room rather than like a compatibility report. Silent, too, for a peer
+ * whose catalogue has not arrived — `protocol` is absent then, and guessing would tell somebody
+ * their friend was out of date on no evidence.
+ */
+function VersionTag({ peer }: { peer: AwariPeer }) {
+  if (peer.protocol === undefined) return null;
+  const standing = versionStanding(peer.protocol);
+  if (standing === "same") return null;
+  const newer = standing === "newer";
+  return (
+    <span
+      className="muted small"
+      title={
+        newer
+          ? "They are running a newer EQ List. Sharing with them falls back to a slower path until you update."
+          : "They are running an older EQ List. Sharing with them falls back to a slower path until they update."
+      }
+    >
+      · {newer ? "newer version" : "older version"}
+    </span>
   );
 }

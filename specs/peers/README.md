@@ -17,17 +17,36 @@ travels peer-to-peer, on request, over that peer's own connection.
   `electron/tests/peer-share.test.ts`):
   - `offer` — broadcast, and the only thing that still is. Per kind: how many rows, and a `rev` that
     moves when they change. A kind not being shared is **absent**, not zero — the catalogue *is* the
-    toggle state.
-  - `ask` / `give` — peer-routed (`publish({type:"peer", peer})`). `ask` names a kind and the
-    revision the asker already has; `give` answers with the rows. The `items` kind is the one
-    exception to "a kind, whole": nobody wants eleven thousand pages in a message, so its `ask` names
-    a **shard** and its `give` answers with that ~11-page slice
-    ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). A `give` with no `rows` means
-    "unchanged", which is kept distinct from a `give` of none (that means "now empty", which
+    toggle state. The envelope also carries our name and our **protocol** (`SHARE_PROTOCOL`) — both
+    ride here rather than in a message of their own because the catalogue comes round every minute,
+    so a peer who missed one is put right within it.
+  - `ask` / `give` — peer-routed (`publish({type:"peer", peer})`). `ask` names a kind, the revision
+    the asker already has, and the **epoch** that revision was counted in; `give` answers in one of
+    three moods — *unchanged* (no rows at all), *whole* (every row, plus their keys), or *delta*
+    (`changes` and `gone`, naming rows by key). The `items` kind is the one exception to "a kind,
+    whole": nobody wants eleven thousand pages in a message, so its `ask` names a **shard** and its
+    `give` answers with that ~11-page slice
+    ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)) — and never a delta, a shard
+    being the small unit already. A `give` with no rows means "unchanged", which is kept distinct
+    from a `give` of none (that means "now empty", which
     [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md) reads as an un-share).
-  - `SHARE_KINDS` — the table every rule is driven off: label, blurb, family, and a `read` per kind.
-    **A kind with no reader cannot be received**, which is how a new kind fails closed rather than
-    arriving unchecked.
+  - **A delta is a saving on the wire and nothing else**
+    ([ADR 0171](../decisions/0171-a-shared-kind-states-what-a-row-is.md)). It is folded into what we
+    already hold from that peer, and the **whole** set is handed onwards — so `contributions.ts`'s
+    five rules, the tray and every panel's merge receive exactly what they always received, and no
+    store knows deltas exist. It is refused, and the whole kind sent instead, whenever it cannot be
+    trusted: a mismatched `epoch` (either side restarted), a `since` older than the tombstones reach,
+    or nothing held for that peer at all. A peer too old to send an epoch is never sent a delta.
+  - `SHARE_KINDS` — the table every rule is driven off: label, blurb, family, and — per kind — a
+    `read`, a `rowKey` and a `project`. **A kind with no reader cannot be received**, which is how a
+    new kind fails closed rather than arriving unchecked. `rowKey` says what a row *is*, so a delta
+    can name one; it is content-derived throughout, because every `authored` kind has its ids
+    regenerated on arrival and an id would name nothing on the far side (`watches` declares none — a
+    rule has no name, so its identity is its whole content). `project` says what *leaves*, and runs
+    before anything is keyed, so a change to a field that never travels does not look like news: the
+    kill filter, the respawn reduction to a conclusion, and the buff's `ON_YOU` all live there now
+    rather than in three places in the hub
+    ([ADR 0171](../decisions/0171-a-shared-kind-states-what-a-row-is.md)).
 - **Four families**, because the rules differ and the table says which a kind is in:
   - **authored** (`watches`, `styles`, `lists`, `pins`) — somebody made it. Asked for by a person,
     landed in a tray, **never applied on arrival**. `pins` are the one kind that *also* still
@@ -66,7 +85,12 @@ travels peer-to-peer, on request, over that peer's own connection.
   changed tab. It measures the catalogue on a slow tick (a digest moving *is* the change, so no
   store has to be taught to call it), answers asks after re-checking the toggle against the
   settings rather than the published offer, files observations, and holds everything else in a
-  received tray with a TTL. It does **not** decide when to re-join: that needs the transport, so it
+  received tray with a TTL. A store *may* volunteer a cheap `version`, and where one does the
+  measurement is skipped while it holds still — only the kill log does, because only it was expensive
+  (`observations()` folds the whole log, `kills()` scans five thousand records, and both were paid
+  for once a minute whether or not a mob had died). `timers`, `buffs` and `scores` deliberately do
+  not: they are views over a clock, so a save-based version would claim "unchanged" about rows that
+  had changed. It does **not** decide when to re-join: that needs the transport, so it
   lives with the session (ADR 0162).
 - **The two de-dupes**, and they are not the same de-dupe:
   - **Countdowns** merge by `key` (one mob, one place — a `SpawnTimer`'s `id` is `key#slot` and the
@@ -114,6 +138,7 @@ travels peer-to-peer, on request, over that peer's own connection.
   which has no name to announce; the Peers tab carries the name field for exactly that.
 - **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray` and `PeerScores`) — **the
   one home for the whole feature** ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) ·
+[ADR 0171](../decisions/0171-a-shared-kind-states-what-a-row-is.md) ·
 [ADR 0162](../decisions/0162-a-room-of-one-is-checked-not-guessed-at.md)).
   It was scattered across three screens for a while: the connection and the name in Settings (where
   ADR 0011 left them), two share toggles on the map toolbar, the rest here. A control now lives
@@ -123,6 +148,21 @@ travels peer-to-peer, on request, over that peer's own connection.
   is broadcast rather than handed over, and the only share that needs the game running — then a
   toggle per kind, all off by default except *Item pages* — see the `mirror` family), **Who's here** (what each peer offers, and their zone as a
   button that opens the map there), **What's arrived**, and the **scoreboard comparison**.
+- **Saying when you are the old one**
+  ([ADR 0172](../decisions/0172-a-room-says-when-you-are-the-old-one.md)). `SHARE_PROTOCOL` is a
+  hand-bumped number — deliberately not the app version, which CI moves on every push — and a peer
+  that names none is speaking the first one, which is every build from before it existed. Meeting a
+  **newer** protocol raises one toast, once a session, coalesced across everyone who is ahead: this
+  install is the one falling back, and that is a thing a person can fix. Meeting an **older** one
+  raises nothing — nobody reading it could act on it (ADR 0143's second narrowing) — and instead
+  marks that peer's row in the tab, which is also where the newer case is recorded durably, since a
+  toast that has faded is no use on a later evening.
+
+  The limit is worth stating: a client too old to understand a message is too old to contain the code
+  that would notice, so **this does nothing for the builds already out there**. It is paid for now
+  because it cannot be paid for later. It is also not the update banner
+  ([ADR 0034](../decisions/0034-update-notification.md)) — that says a release exists and offers a
+  download; this says sharing with these specific people is degraded right now.
 - **Saying so.** A peer newly offering something raises a toast whose one action opens the Peers tab
   with their row picked out ([ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md)).
   The rules are all about not becoming noise: only a kind **newly** on offer (not a count moving —
@@ -159,12 +199,18 @@ travels peer-to-peer, on request, over that peer's own connection.
 - **No room scoping.** There is one room, `eq-list`, and everything in the catalogue is offered to
   everyone in it. Group- or camp-scoped rooms are not built — see the open question in
   [decisions/README.md](../decisions/README.md).
-- **No bulk transfer, still.** A `give` is one message, and nothing here chunks anything. The item
-  catalogue is shared by making the *unit* small enough to fit rather than by splitting a big one:
-  a **shard** is ~11 pages (~15 KB), which is a thing that means something rather than an arbitrary
-  byte range ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). A genuinely large
-  single object — the game's spell file — remains unshareable and would still need the chunking
-  nobody has written.
+- **No bulk transfer, still.** A `give` is one message, and nothing here chunks anything. A delta
+  makes the *usual* message small — what moved rather than what is held — but a first exchange is
+  still the whole kind in one message, and that is what the caps are for. The item catalogue is
+  shared by making the *unit* small enough to fit rather than by splitting a big one: a **shard** is
+  ~11 pages (~15 KB), which is a thing that means something rather than an arbitrary byte range
+  ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). A genuinely large single
+  object — the game's spell file — remains unshareable and would still need the chunking nobody has
+  written.
+- **No sequence numbers on disk.** An epoch is per-run, so a restart costs one whole exchange exactly
+  as it always did. Making a delta survive a restart would mean every shared store learning to write
+  a sequence number, and the saving is in the evening rather than in the launch
+  ([ADR 0171](../decisions/0171-a-shared-kind-states-what-a-row-is.md)).
 
 ## See also
 [architecture](../architecture/README.md) · [map](../map/README.md) ·

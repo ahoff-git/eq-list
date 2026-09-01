@@ -18,6 +18,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { ShareDelivery, ShareKind } from "../../src/shared/peer-share";
+import type { KillRecord } from "../../src/shared/types";
 import {
   SAME_SPAWN_MS,
   compareScores,
@@ -26,8 +28,15 @@ import {
   newlyOffered,
   offerSummary,
   outOfDate,
+  PROTOCOL_UNSTATED,
+  SHARE_KINDS,
+  SHARE_PROTOCOL,
   readAsk,
   readGive,
+  readProtocol,
+  shareableKills,
+  shareableRespawns,
+  versionStanding,
   readOffer,
   shareKind,
   shareableBuffs,
@@ -37,6 +46,20 @@ import {
 import { ON_PET, ON_YOU, type BuffInstance } from "../../src/shared/buff-tracking";
 import type { SpawnTimer } from "../../src/shared/spawn-timers";
 import type { HighScore } from "../../src/shared/types";
+/**
+ * The rows of a **whole** `give` — what almost every reader test is asserting on.
+ *
+ * `readGive` answers a discriminated union now that a `give` may also be a delta, and a test that
+ * sent whole rows wants to say so once rather than narrow at every assertion. It asserts the mood as
+ * well as returning the rows, so a reader that quietly started answering `unchanged` fails here
+ * rather than further down as an empty list.
+ */
+function wholeRows(give: ShareDelivery | null): unknown[] {
+  assert.ok(give, "expected a give");
+  assert.equal(give.mode, "whole");
+  return give.mode === "whole" ? give.rows : [];
+}
+
 
 /** Predictable ids, so an assertion can name what a reader produced. */
 function ids(): () => string {
@@ -109,12 +132,11 @@ test("a kind that isn't switched on is off — absent and false both mean no", (
 
 test("a give with no rows is unchanged, which is not the same as a give of none", () => {
   const unchanged = readGive({ what: "mobs", rev: 4 }, ids());
-  assert.equal(unchanged?.stale, true);
+  assert.equal(unchanged?.mode, "unchanged");
   // An empty list means "I now hold none", which `contributions.ts` treats as an un-share that
   // keeps what it taught (ADR 0056). Collapsing the two would silently freeze a peer's tally.
   const emptied = readGive({ what: "mobs", rev: 5, rows: [] }, ids());
-  assert.equal(emptied?.stale, false);
-  assert.deepEqual(emptied?.rows, []);
+  assert.deepEqual(wholeRows(emptied), []);
 });
 
 // ─── Readers ────────────────────────────────────────────────────────────────
@@ -132,7 +154,7 @@ test("a shared kill without a position is dropped, not defaulted to nowhere", ()
     },
     ids(),
   );
-  assert.deepEqual(give?.rows, [{ zone: "Blackburrow", mob: "a gnoll", y: 100, x: -50, confidence: 0.9 }]);
+  assert.deepEqual(wholeRows(give), [{ zone: "Blackburrow", mob: "a gnoll", y: 100, x: -50, confidence: 0.9 }]);
 });
 
 test("a confidence outside 0–1 is clamped rather than believed", () => {
@@ -140,7 +162,7 @@ test("a confidence outside 0–1 is clamped rather than believed", () => {
     { what: "kills", rev: 1, rows: [{ zone: "z", mob: "m", y: 1, x: 1, confidence: 99 }] },
     ids(),
   );
-  assert.equal((give?.rows[0] as { confidence: number }).confidence, 1);
+  assert.equal((wholeRows(give)[0] as { confidence: number }).confidence, 1);
 });
 
 test("a respawn whose shortest exceeds its longest is impossible, so it is refused", () => {
@@ -155,8 +177,8 @@ test("a respawn whose shortest exceeds its longest is impossible, so it is refus
     },
     ids(),
   );
-  assert.equal(give?.rows.length, 1);
-  assert.equal((give?.rows[0] as { key: string }).key, "k2");
+  assert.equal(wholeRows(give).length, 1);
+  assert.equal((wholeRows(give)[0] as { key: string }).key, "k2");
 });
 
 test("a copied list entry arrives empty of the sender's progress", () => {
@@ -168,7 +190,7 @@ test("a copied list entry arrives empty of the sender's progress", () => {
     },
     ids(),
   );
-  const entry = give?.rows[0] as Record<string, unknown>;
+  const entry = wholeRows(give)[0] as Record<string, unknown>;
   // Their id would collide with ours; their counts are a record of their log, not evidence we have.
   assert.equal(entry.id, "id-1");
   assert.equal(entry.obtained, 0);
@@ -186,7 +208,7 @@ test("a style pointing at a placement we haven't got lands somewhere visible", (
     },
     ids(),
   );
-  const style = (give?.rows[0] as { style: Record<string, unknown> }).style;
+  const style = (wholeRows(give)[0] as { style: Record<string, unknown> }).style;
   // A `loc:` id names a spot in *their* settings, so it would resolve to nothing and the banner
   // would never appear. Clamped duration and a known animation, for the same reason.
   assert.equal(style.position, "top");
@@ -208,8 +230,8 @@ test("a buff still wearing a relative target is refused on arrival", () => {
   // Belt and braces: `shareableBuffs` resolves on the way out, and this is what stops an older or a
   // hand-rolled sender collapsing its self-buffs onto ours.
   const give = readGive({ what: "buffs", rev: 1, rows: [buff(), buff({ target: "Kainos" })] }, ids());
-  assert.equal(give?.rows.length, 1);
-  assert.equal((give?.rows[0] as BuffInstance).target, "Kainos");
+  assert.equal(wholeRows(give).length, 1);
+  assert.equal((wholeRows(give)[0] as BuffInstance).target, "Kainos");
 });
 
 test("nothing is shareable without a name to resolve a target against", () => {
@@ -413,7 +435,7 @@ test("a kind offered over an empty store is nothing to fetch", () => {
 /** Read one page the way a `give` of the `items` kind does. */
 function readPage(raw: unknown): unknown {
   const give = readGive({ what: "items", rev: 1, rows: [raw] }, () => "id");
-  return give?.rows[0];
+  return wholeRows(give)[0];
 }
 
 test("public pages share by default; everything of yours does not", () => {
@@ -519,7 +541,7 @@ test("one give cannot carry the whole catalogue", () => {
   // A shard is about eleven pages; the cap bounds what a hostile peer can spend of our time.
   const rows = Array.from({ length: 5000 }, (_, i) => ({ kind: "item", title: `Item ${i}` }));
   const give = readGive({ what: "items", rev: 1, shard: 3, rows }, () => "id");
-  assert.ok((give?.rows.length ?? 0) <= 64, `got ${give?.rows.length}`);
+  assert.ok(wholeRows(give).length <= 64, `got ${wholeRows(give).length}`);
   assert.equal(give?.shard, 3, "and the shard is echoed back so an answer can't be mis-filed");
 });
 
@@ -528,4 +550,163 @@ test("a shard number outside the bitmap is not a shard", () => {
   assert.equal(readAsk({ what: "items", shard: 99999 })?.shard, undefined);
   assert.equal(readAsk({ what: "items", shard: "3" })?.shard, undefined);
   assert.equal(readAsk({ what: "items", shard: 3 })?.shard, 3);
+});
+
+// ─── Identity, projection, and deltas ───────────────────────────────────────
+
+test("what leaves a kill is where it was, and only for kills we can place and did not borrow", () => {
+  const kill = (over: Partial<KillRecord>): KillRecord =>
+    ({ id: "k", logId: 1, at: iso(0), mob: "a gnoll", zone: "Blackburrow", y: 10, x: 20, confidence: 0.9, ...over }) as KillRecord;
+
+  const out = shareableKills([
+    kill({}),
+    // Somebody else's, which would echo round a room of three for ever.
+    kill({ sharedBy: "Bran" }),
+    // Nothing a receiver could draw.
+    kill({ y: undefined, x: undefined }),
+    kill({ confidence: 0.05 }),
+    // No zone means no map to put it on.
+    kill({ zone: undefined }),
+  ]);
+  assert.deepEqual(out, [{ zone: "Blackburrow", y: 10, x: 20, mob: "a gnoll", confidence: 0.9 }]);
+});
+
+test("a shared respawn is the conclusion, never the evidence behind it", () => {
+  const [out] = shareableRespawns([
+    {
+      key: "k",
+      mob: "a named",
+      place: "Blackburrow",
+      shortestSeconds: 300,
+      longestSeconds: 900,
+      samples: 4,
+      lastKillAt: iso(0),
+      // Neither of these may cross: one is the workings, the other is a count of what *our* rule
+      // threw out, which would be a sentence about a night the receiver never sat through.
+      gaps: [{ seconds: 300, at: iso(0) }],
+      crossedDifficulty: 2,
+      notify: true,
+    } as unknown as Parameters<typeof shareableRespawns>[0][number],
+  ]);
+  assert.deepEqual(Object.keys(out).sort(), ["key", "lastKillAt", "longestSeconds", "mob", "place", "samples", "shortestSeconds"]);
+});
+
+test("every kind's key survives the crossing — the sender's key and the receiver's agree", () => {
+  // **The invariant the whole delta protocol rests on.** A `gone` names a row by key with no row
+  // attached, and a whole answer's keys are only a hint a receiver may have to re-derive. If a key
+  // computed here and a key computed after `read` could differ, a delta would file updates as new
+  // rows and deletions would silently miss — so every `rowKey` reads what the row *says* rather than
+  // an id, and this is what pins that.
+  // `watches` is absent on purpose — it states no identity, and the test below says why.
+  const samples: Partial<Record<ShareKind, unknown>> = {
+    styles: { name: "Loud", style: {} },
+    lists: { id: "theirs", name: "Fungi Staff", needed: 2, origin: { kind: "quest", name: "A Quest" } },
+    pins: { id: "theirs", kind: "camp", zone: "Blackburrow", y: 1, x: 2, title: "Camp" },
+    mobs: { mob: "a gnoll", zone: "Blackburrow", kills: 3, drops: {}, copper: 0, lastAt: iso(0) },
+    kills: { zone: "Blackburrow", mob: "a gnoll", y: 10, x: 20, confidence: 0.9 },
+    respawns: { key: "camp-key", mob: "a named", place: "Blackburrow", samples: 2, shortestSeconds: 300 },
+    timers: { id: "camp-key#2", key: "camp-key", mob: "a named", place: "Blackburrow", killedAt: iso(0), dueAt: iso(600), startAt: iso(600), source: "killed" },
+    buffs: { key: "spell-key", spell: "Haste", target: "Kainos", up: true, at: iso(0), since: iso(0), source: "cast", byYou: true },
+    scores: { categoryId: "biggest-hit", value: 900, at: iso(0), beaten: 1 },
+  };
+
+  for (const [kind, row] of Object.entries(samples)) {
+    const spec = shareKind(kind)!;
+    const sent = spec.rowKey?.(row);
+    assert.ok(sent, `${kind} states an identity`);
+    const give = readGive({ what: kind, rev: 1, rows: [row] }, ids());
+    const received = wholeRows(give);
+    assert.equal(received.length, 1, `${kind} survived its own reader`);
+    assert.equal(spec.rowKey?.(received[0]), sent, `${kind}: the key means the same on both sides`);
+  }
+});
+
+test("a delta's rows are checked exactly as hard as a whole set's", () => {
+  const give = readGive(
+    {
+      what: "kills",
+      rev: 4,
+      epoch: "run-1",
+      changes: [
+        { k: "good", r: { zone: "Blackburrow", mob: "a gnoll", y: 1, x: 2, confidence: 0.9 } },
+        // Off the edge of the world — refused here as it would be in a whole set.
+        { k: "impossible", r: { zone: "Blackburrow", mob: "a gnoll", y: 1e9, x: 0, confidence: 0.9 } },
+        // No key is no row: a change nothing can be filed under is not a change.
+        { r: { zone: "Blackburrow", mob: "a bat", y: 3, x: 4, confidence: 0.9 } },
+      ],
+      gone: ["one that left", ""],
+    },
+    ids(),
+  );
+  assert.equal(give?.mode, "delta");
+  assert.ok(give && give.mode === "delta");
+  assert.deepEqual(give.changes.map((c) => c.key), ["good"]);
+  assert.deepEqual(give.gone, ["one that left"], "an empty key names nothing");
+});
+
+test("a delta that cannot say which run it belongs to is not applied", () => {
+  // Without an epoch there is no telling what it is a delta *of*, and applying it would leave two
+  // installs disagreeing quietly. Read as "nothing changed", which the reconciliation tick undoes.
+  const give = readGive({ what: "mobs", rev: 9, changes: [{ k: "a", r: {} }] }, ids());
+  assert.equal(give?.mode, "unchanged");
+});
+
+test("a catalogue line keeps the fields the room coordinates with", () => {
+  // `cover` and `doing` are ADR 0160's whole coordination channel, and `epoch` is what makes a
+  // revision comparable. This reader used to drop all three, which is why the hub had grown a second
+  // one that checked nothing.
+  const offer = readOffer({
+    items: { n: 100, rev: 3, cover: "ff00", doing: 7, epoch: "run-1" },
+    mobs: { n: 5, rev: 2, cover: "not hex", doing: 99_999 },
+    watches: { n: "lots", rev: 1 },
+  });
+  assert.deepEqual(offer.items, { n: 100, rev: 3, cover: "ff00", doing: 7, epoch: "run-1" });
+  assert.deepEqual(offer.mobs, { n: 5, rev: 2 }, "a coverage that isn't hex and a shard out of range are dropped");
+  assert.equal("watches" in offer, false, "a count that isn't a number is not a catalogue line");
+});
+
+test("a kind with no identity of its own says so, rather than inventing a fragile one", () => {
+  // A rule is its whole content — no name, and an id that is regenerated on arrival. Claiming a key
+  // built out of every field would only duplicate the content digest the hub already falls back to,
+  // while adding a way to disagree with `readWatch`'s clamping. Absent is the honest answer, and the
+  // hub handles it: keys travel on the wire rather than being re-derived on the far side.
+  assert.equal(shareKind("watches")?.rowKey, undefined);
+  // Every other kind does name its rows, because each of them has something stable to name them by.
+  for (const spec of SHARE_KINDS) {
+    if (spec.key === "watches") continue;
+    assert.equal(typeof spec.rowKey, "function", `${spec.key} states an identity`);
+  }
+});
+
+// ─── Which build is speaking ────────────────────────────────────────────────
+
+test("a peer that names no protocol is the one every build before this spoke", () => {
+  // "Didn't say" and "said 1" describe the same client, and having one answer for both is what keeps
+  // the comparison from needing a special case everywhere it is made.
+  assert.equal(readProtocol({}), PROTOCOL_UNSTATED);
+  assert.equal(readProtocol({ protocol: 1 }), PROTOCOL_UNSTATED);
+  assert.equal(readProtocol(null), PROTOCOL_UNSTATED);
+  assert.equal(readProtocol({ protocol: "two" }), PROTOCOL_UNSTATED);
+  // A number below the floor describes a protocol that never existed.
+  assert.equal(readProtocol({ protocol: 0 }), PROTOCOL_UNSTATED);
+  assert.equal(readProtocol({ protocol: -5 }), PROTOCOL_UNSTATED);
+  // One above ours is kept as stated: it is the whole case this exists for.
+  assert.equal(readProtocol({ protocol: 99 }), 99);
+});
+
+test("a build only compares as older or newer, and says nothing when it matches", () => {
+  assert.equal(versionStanding(SHARE_PROTOCOL), "same");
+  assert.equal(versionStanding(SHARE_PROTOCOL + 1), "newer");
+  assert.equal(versionStanding(PROTOCOL_UNSTATED, 2), "older");
+  // Undefined is "they haven't said", which the row treats as unknown rather than as old — but the
+  // comparison itself has to answer something, and the oldest protocol is the honest floor.
+  assert.equal(versionStanding(undefined, 1), "same");
+});
+
+test("the protocol is a hand-bumped number, not the app version", () => {
+  // The reasoning `data-provenance.ts` spells out: CI stamps a build number into every push, so
+  // comparing app versions would tell everyone they were incompatible with everyone, always. Pinned
+  // so a future change to compare something automatic has to argue with this line first.
+  assert.equal(typeof SHARE_PROTOCOL, "number");
+  assert.ok(Number.isInteger(SHARE_PROTOCOL) && SHARE_PROTOCOL >= PROTOCOL_UNSTATED);
 });

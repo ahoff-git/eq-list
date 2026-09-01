@@ -2,10 +2,10 @@ import type { DataReportRow } from "./data-provenance";
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { KnowledgeContributor } from "./contributors";
-import type { PeerOfferNotice, ReceivedShare, ShareKind, ShareSettings } from "./peer-share";
+import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, ShareSettings } from "./peer-share";
 // Re-exported because every consumer of the `peer` bridge reads it off the api surface, and
 // `types.ts` is where that surface is described.
-export type { PeerOfferNotice, ReceivedShare, ShareKind } from "./peer-share";
+export type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind } from "./peer-share";
 import type { SharedKill } from "./kill-filters";
 import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { BuffInstance, BuffView, KnownBuff } from "./buff-tracking";
@@ -2367,6 +2367,15 @@ export interface AwariPeer {
    * it that way. Typed loosely here so `types.ts` doesn't have to depend on the share catalogue.
    */
   offer?: Record<string, { n: number; rev: number }>;
+  /**
+   * The wire protocol their build speaks (`SHARE_PROTOCOL` in `peer-share.ts`).
+   *
+   * **Absent means they have not said**, which is not the same as saying the first one: a peer whose
+   * catalogue hasn't reached us yet is simply unknown, and a row that guessed would tell somebody
+   * their friend was out of date on no evidence at all. `readProtocol` is what turns a catalogue that
+   * *has* arrived without the field into a 1.
+   */
+  protocol?: number;
 }
 
 /**
@@ -3108,6 +3117,14 @@ export interface EqlApi {
      * that has just appeared in their catalogue, coalesced to one per peer.
      */
     onOffered(cb: (notice: PeerOfferNotice) => void): Unsubscribe;
+    /**
+     * The room is speaking a wire protocol this build hasn't got, so sharing with the people in it
+     * is falling back to the slow path — or, for something added later still, not working at all.
+     *
+     * Raised once a session and only when **we** are the old one: a peer on an older build is not
+     * something the reader can act on, and sits on their row in the Peers tab instead.
+     */
+    onOutdated(cb: (notice: PeerVersionNotice) => void): Unsubscribe;
   };
   /** Connected monitors, for choosing where the alert overlay shows (Settings → cast alerts). */
   display: {

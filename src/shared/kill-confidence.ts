@@ -81,3 +81,18 @@ export const CONFIDENCE_TIERS: ConfidenceTier[] = TIERS.map((t) => t.tier);
  * were a measurement is worse than leaving it out. It's still in the list, labelled.
  */
 export const PLOTTABLE_CONFIDENCE = 0.2;
+
+/**
+ * Can this kill be **put somewhere** — a position we have, and one worth believing?
+ *
+ * One sentence, two callers, and they had it written out longhand apiece: the map, deciding what to
+ * draw, and the share hub, deciding what is worth sending (a position the receiver cannot draw is
+ * weight on the wire and a row in their store for no gain). They are not the same *question* — the
+ * map plots peers' kills and the hub refuses to re-send them — but they rest on the same fact, and
+ * the threshold underneath it should not be able to drift between the two.
+ */
+export function isPlottable<T extends { y?: number; x?: number; confidence: number }>(
+  kill: T,
+): kill is T & { y: number; x: number } {
+  return kill.y !== undefined && kill.x !== undefined && kill.confidence >= PLOTTABLE_CONFIDENCE;
+}

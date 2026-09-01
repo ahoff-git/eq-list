@@ -7,7 +7,7 @@ import { createLogger } from "@/shared/logging";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { AWARI_MSG } from "@/shared/types";
 import type { AwariPayload, AwariPeer } from "@/shared/types";
-import { readOffer } from "@/shared/peer-share";
+import { readOffer, readProtocol } from "@/shared/peer-share";
 import { createRoomWatch, spread, type RoomWatch } from "@/shared/room-watch";
 import type { MessageRoute, RoomSession } from "@awari/protocol";
 
@@ -246,6 +246,11 @@ export default function AwariHost() {
             // catalogue comes round every minute, so this heals by itself.
             name: typeof payload.name === "string" && payload.name ? payload.name : prev.name,
             offer: readOffer(payload),
+            // What their build speaks, so the Peers tab can mark a row that differs from ours
+            // (ADR 0171). Read here as well as in the hub because this is the roster the panel
+            // actually draws — and read through the same function, so "didn't say" means 1 in
+            // exactly one place.
+            protocol: readProtocol(payload),
           });
           reportRoster();
         }

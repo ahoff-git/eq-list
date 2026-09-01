@@ -233,6 +233,7 @@ const api: EqlApi = {
     setPins: (pins) => ipcRenderer.send(CH.peerSetPins, pins),
     onChanged: (cb) => on(CH.peerShareChanged, cb),
     onOffered: (cb) => on(CH.peerOffered, cb),
+    onOutdated: (cb) => on(CH.peerOutdated, cb),
   },
   win: {
     minimize: () => ipcRenderer.send(CH.winMinimize),

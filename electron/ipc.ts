@@ -835,6 +835,7 @@ function registerPeerIpc(context: IpcContext): void {
     fileContribution,
     changed: () => broadcast(CH.peerShareChanged, undefined),
     offered: (notice) => broadcast(CH.peerOffered, notice),
+    outdated: (notice) => broadcast(CH.peerOutdated, notice),
     sources: shareSources({
       getList: () => store.getList(),
       getSettings: () => store.getSettings(),

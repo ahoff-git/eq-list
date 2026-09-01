@@ -28,6 +28,7 @@ import Toasts from "./components/Toasts";
 import TabBar, { type TabItem } from "./components/TabBar";
 import PeersPanel from "./components/PeersPanel";
 import PeerOfferToasts from "./components/PeerOfferToasts";
+import PeerVersionToast from "./components/PeerVersionToast";
 import { useBuffs, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -187,6 +188,9 @@ export default function Home() {
       {/* Mounted by the shell, not by the Peers tab: a notice about a tab you aren't on has to come
           from something that is always mounted. */}
       <PeerOfferToasts onView={viewPeer} />
+      {/* Says once, if ever, that this build is behind the room — and points at the tab where the
+          rows say which peers it is behind. */}
+      <PeerVersionToast onView={() => setTab("peers")} />
       {/* Beep only — the banner + flash live in the dedicated click-through overlay window
           (/alert), which floats over the game. This window is the always-alive one that can
           reliably play the sound. */}

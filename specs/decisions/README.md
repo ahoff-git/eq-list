@@ -203,6 +203,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0168: A zone cell that names no place is not a zone](./0168-a-zone-cell-that-names-no-place-is-not-a-zone.md)
 - [0169: The travel graph is built once and remembered](./0169-the-travel-graph-is-built-once-and-remembered.md)
 - [0170: An item's sources are read against the era](./0170-an-item-s-sources-are-read-against-the-era.md)
+- [0171: A shared kind states what a row is](./0171-a-shared-kind-states-what-a-row-is.md)
+- [0172: A room says when you are the old one](./0172-a-room-says-when-you-are-the-old-one.md)
 
 ## Open Questions
 
