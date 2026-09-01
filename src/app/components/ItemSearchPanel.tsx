@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useMemo, useState } from "react";
-import { useHarvest, useItemCatalog } from "@/lib/hooks";
+import { useClosedZones, useHarvest, useItemCatalog } from "@/lib/hooks";
 import { useItemQuery } from "@/lib/useItemQuery";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -98,7 +98,10 @@ export default function ItemSearchPanel() {
     [active.facets, set],
   );
 
-  const { options, counts, found, columns, scored, unplaced } = useItemQuery(rows, active, weights, sort);
+  // Which of the eras this server *has* are actually open — the live half of the era judgement, and
+  // the only half a window can't work out for itself (`item-era.ts`).
+  const closedZones = useClosedZones();
+  const { options, counts, found, columns, scored, unplaced } = useItemQuery(rows, active, weights, sort, closedZones);
   const conditions = activeCriteria(active);
   const shown = useMemo(() => found.slice(0, MAX_ROWS), [found]);
 
@@ -119,7 +122,7 @@ export default function ItemSearchPanel() {
             you are playing, and so takes its values out of the pickers as well as out of the rows. */}
         <CheckField
           label="in era only"
-          title="Hide items the server hasn't opened yet — and everything they alone contribute to the dropdowns"
+          title="Hide items the server hasn't opened yet — judged zone by zone, so a zone it hasn't opened leaves the Zone picker too, along with everything only found there"
           checked={active.hideOutOfEra}
           onChange={(hideOutOfEra) => set({ hideOutOfEra })}
         />

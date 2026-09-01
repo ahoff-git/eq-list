@@ -88,6 +88,16 @@ everything else, so this list can stay short enough to read:
   the app behind it doesn't). That blocks the item below, which depends on reading its pages. Worth
   re-checking before spending any time on it; a 502 is the kind of thing that comes back.
 
+- **Two surfaces still judge an item's era their own way.**
+  [ADR 0170](./decisions/0170-an-item-s-sources-are-read-against-the-era.md) reads an item's sources
+  against the live era on the item page and in the Items tab, and left two behind. The shopping
+  list's row expansion (`ListPanel`, via `groupDropsByZone`) applies **no era test at all**, so it
+  still sends you to Skyfire for the Horn of War; that one is small — the judgement is
+  `src/shared/item-era.ts` and the list is `useClosedZones`. Lucy's is the harder one: its verdict
+  asks only whether the *gazetteer* knows the zone, so it calls a Kunark-only item in era, and it is
+  derived in main at fetch time and **cached with the item** — so making it live means deciding what
+  a cached verdict is worth when the era moves under it.
+
 - **An item's era is derived where a neighbour simply states it.** [Lucy](./lucy-data/README.md) is
   in ([ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)) and its one real weakness is the era:
   Lucy has no era or expansion field anywhere, so the verdict is inferred from the zones on its drop

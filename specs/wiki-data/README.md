@@ -226,7 +226,12 @@ shopping list.
   graph** — a map pack draws them, so without this a route goes confidently through a continent the
   server hasn't opened. Derived rather than listed, so it corrects itself when an era opens; on disk
   because a *stale* answer only over-excludes for a while, while a *missing* one produces a wrong route.
-  It's the one index whose consumer isn't the search UI.
+  It's the one index whose consumer isn't the search UI — and it now has a second one: an item's
+  sources are read against it (`src/shared/item-era.ts`), so "How to get it" and the Items tab can tell
+  the one dragon you could go and kill from the four you can't
+  ([ADR 0170](../decisions/0170-an-item-s-sources-are-read-against-the-era.md)). Reaches a window over
+  `wiki:outOfEraZones`; the era is judged there rather than baked into the catalogue pack, so an era
+  opening needs no rebuild.
 
 - **The zone gazetteer** — the one thing from this wiki that **ships as data** rather than being
   fetched: `src/shared/zones/eql-classic-zone-maps.json`, the EQL wiki's own in-era Zones page (Classic,

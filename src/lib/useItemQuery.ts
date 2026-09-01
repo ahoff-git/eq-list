@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { STATS, type StatKey } from "@/shared/item-stats";
+import { eraCorpus } from "@/shared/item-era";
 import type { Sort } from "@/shared/sorting";
 import {
   FACETS,
@@ -51,6 +52,7 @@ export function useItemQuery(
   criteria: ItemCriteria,
   weights: StatWeights,
   sort: Sort<ItemSortKey>,
+  closedZones?: ReadonlySet<string>,
 ): ItemQuery {
   /**
    * The catalogue the panel is actually working over.
@@ -63,10 +65,17 @@ export function useItemQuery(
    *
    * Applied here rather than inside `searchItems`, which already honours the flag; this is about what
    * the *menus* are built from.
+   *
+   * The judgement itself is [item-era](../shared/item-era.ts) rather than the page flag alone, and
+   * that is what makes the toggle mean what it says: the wiki's flag is a *page category*, so it
+   * catches an item written up on a Velious page and misses one that merely drops in five Kunark
+   * zones. Zone by zone is also the only reading that can take a **zone** out of the Zone picker while
+   * leaving the items that also drop somewhere open — which is the case the item page was getting
+   * wrong too.
    */
   const corpus = useMemo(
-    () => (criteria.hideOutOfEra ? rows.filter((row) => !row.item.outOfEra) : rows),
-    [rows, criteria.hideOutOfEra],
+    () => eraCorpus(rows, closedZones, criteria.hideOutOfEra),
+    [rows, closedZones, criteria.hideOutOfEra],
   );
 
   const options = useMemo(

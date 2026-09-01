@@ -328,6 +328,9 @@ function registerWikiIpc(context: IpcContext): void {
   ipcMain.handle(CH.wikiRefreshPage, (_e, title: string) => wiki.refreshPage(title));
   ipcMain.handle(CH.wikiSearchZones, (_e, term: string) => wiki.searchZones(term));
   ipcMain.handle(CH.wikiQuestsByZone, (_e, zone: string) => wiki.questsByZone(zone));
+  // Which zones the server hasn't opened yet. A window can't work this out for itself and every
+  // "where can I get this" answer needs it — see `item-era.ts`.
+  ipcMain.handle(CH.wikiOutOfEraZones, () => wiki.outOfEraZones());
   ipcMain.handle(CH.wikiRefresh, () => wiki.refresh());
   // The Items tab's corpus. Cache-only by contract — see `WikiClient.cachedItems`.
   /**

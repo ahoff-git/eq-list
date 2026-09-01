@@ -35,6 +35,8 @@ export const CH = {
   wikiRefreshPage: "wiki:refreshPage",
   wikiSearchZones: "wiki:searchZones",
   wikiQuestsByZone: "wiki:questsByZone",
+  /** The zones the server has but hasn't opened yet — eqlwiki's live era flags. */
+  wikiOutOfEraZones: "wiki:outOfEraZones",
   wikiOpen: "wiki:open",
   wikiRefresh: "wiki:refresh",
   wikiCachedItems: "wiki:cachedItems",

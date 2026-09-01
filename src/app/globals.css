@@ -442,6 +442,9 @@ button {
 .page-detail h3 { margin-bottom: 8px; }
 .page-detail ul { list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .page-detail li { display: flex; gap: 8px; align-items: baseline; }
+/* A source in a zone you can't reach this era. Dimmed rather than dropped: it is still the truth
+   about the item, and still what to plan for when the era opens (see `SourceList`). */
+.page-detail li.out-of-era { opacity: 0.55; }
 
 /* inline stat card on a page (item stats / spell description + details) */
 .page-card {

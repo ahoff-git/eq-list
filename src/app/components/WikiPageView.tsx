@@ -1,6 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
-import { useLucyCard, useSettings } from "@/lib/hooks";
+import { useClosedZones, useLucyCard, useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/nav";
 import ItemDrops from "./ItemDrops";
 import ItemLink from "./ItemLink";
@@ -11,6 +11,8 @@ import MobKills from "./MobKills";
 import { AddButton } from "./ui";
 import { addItem, addPage, addPageItself } from "@/lib/addToList";
 import { wikiAddAction } from "@/shared/wiki-add";
+import { sourcesByEra } from "@/shared/item-era";
+import { countOf } from "@/shared/format";
 import type { ItemSource, WikiPage } from "@/shared/types";
 import { cardZone, statesNothing } from "@/shared/map/mob-place";
 
@@ -248,16 +250,46 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
   );
 }
 
+/**
+ * **Where you can go and get it** — the wiki's sources, read against the era the server is running.
+ *
+ * The wiki's drop table is a table about *EverQuest*, so it names every zone an item has ever come
+ * from: McVaxius` Horn of War lists five dragons and, on a server that hasn't opened Kunark, four
+ * of them are places you cannot reach. Printed flat that is one answer and four dead ends, told apart
+ * only by knowing your expansions — so the reachable ones lead and the rest say why they aren't
+ * ([item-era](../../shared/item-era.ts)).
+ *
+ * Marked, never hidden. An unreachable source is still the truth about the item and still the thing to
+ * plan around when the era opens; and the era list is a live read, so an empty one must show a page
+ * that is merely unannotated rather than a page missing rows.
+ */
 function SourceList({ sources }: { sources: ItemSource[] }) {
+  const closed = useClosedZones();
+  const reach = sourcesByEra(sources, closed);
+  const open = reach.filter((r) => !r.shut).length;
+  const noneOpen = open === 0 && reach.length > 0;
+
   return (
     <>
       <h4 className="muted small" style={{ marginTop: 12 }}>How to get it</h4>
+      {open < reach.length && (
+        <p className={noneOpen ? "era-warning small" : "muted small"}>
+          {noneOpen
+            ? "⚠ None of these are reachable yet — every zone the wiki names is one this server hasn’t opened."
+            : `${countOf(open, reach.length, "source")} reachable this era — the rest are marked.`}
+        </p>
+      )}
       <ul>
-        {sources.map((s, i) => (
-          <li key={i}>
+        {reach.map(({ source: s, shut, why }, i) => (
+          <li key={i} className={shut ? "out-of-era" : undefined}>
             <span className={`badge kind-${s.kind}`}>{s.kind}</span>
             <ItemLink title={s.where} />
             {s.detail && <span className="muted small">{s.detail}</span>}
+            {shut && (
+              <span className="badge era-out" title={why}>
+                {shut === "future" ? "not on this server" : "out of era"}
+              </span>
+            )}
           </li>
         ))}
       </ul>

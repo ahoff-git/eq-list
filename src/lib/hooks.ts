@@ -48,6 +48,7 @@ import { clockSkew } from "@/shared/spawn-timers";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
+import { outOfEraSet } from "@/shared/zones/expansions";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -570,6 +571,26 @@ export function useItemCatalog(refreshKey?: unknown): { rows: ItemRow[]; loading
 
   return state;
 }
+
+/**
+ * The zones this server hasn't opened yet, folded ready for `zoneUnavailable`.
+ *
+ * The **live** half of "can you go there" — the permanent half (which expansion a zone came with) ships
+ * with the app, and only eqlwiki knows which of the eras the server has are actually open today. Every
+ * "where can I get this" answer needs both ([item-era](../shared/item-era.ts)).
+ *
+ * Read once per mount and never followed: the answer changes when the server opens an expansion, which
+ * is a thing that happens a few times a year, and main caches it behind its own TTL — so this costs a
+ * message and no request. Empty until it arrives, which is the fail-open the underlying table wants:
+ * a page shown for one frame with nothing marked beats one that marks the wrong things.
+ */
+export function useClosedZones(): ReadonlySet<string> {
+  const titles = useRead((a) => a.wiki.outOfEraZones(), NO_ERA_ZONES, []);
+  return useMemo(() => outOfEraSet(titles), [titles]);
+}
+
+/** Stable, because it is a read's initial value and it feeds a memo's dependencies. */
+const NO_ERA_ZONES: string[] = [];
 
 /**
  * How far along the catalogue harvest is — status now, then every step of it as it runs.

@@ -2495,6 +2495,15 @@ export interface EqlApi {
     searchZones(term: string): Promise<SearchResult[]>;
     /** Quests located in / related to a zone. */
     questsByZone(zone: string): Promise<SearchResult[]>;
+    /**
+     * The zones this server **has but hasn't opened yet**, as eqlwiki's era categories name them.
+     *
+     * The live half of "can you go there" — the permanent half ships with the app
+     * ([ADR 0065](../../specs/decisions/0065-a-zone-belongs-to-an-expansion.md)). A window needs it to
+     * judge where an item can actually be got, since a drop table names every zone the item ever came
+     * from ([item-era](./item-era.ts)). Cached by main and refreshed on its own TTL, so asking is cheap.
+     */
+    outOfEraZones(): Promise<string[]>;
     /** Open a wiki page in the external browser (wikiPath or title). */
     openInBrowser(target: string): Promise<void>;
     /**

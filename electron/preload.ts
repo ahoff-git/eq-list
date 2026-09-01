@@ -41,6 +41,7 @@ const api: EqlApi = {
     refreshPage: (title) => ipcRenderer.invoke(CH.wikiRefreshPage, title),
     searchZones: (term) => ipcRenderer.invoke(CH.wikiSearchZones, term),
     questsByZone: (zone) => ipcRenderer.invoke(CH.wikiQuestsByZone, zone),
+    outOfEraZones: () => ipcRenderer.invoke(CH.wikiOutOfEraZones),
     openInBrowser: (target) => ipcRenderer.invoke(CH.wikiOpen, target),
     refresh: () => ipcRenderer.invoke(CH.wikiRefresh),
     cachedItems: () => ipcRenderer.invoke(CH.wikiCachedItems),
