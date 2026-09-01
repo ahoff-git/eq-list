@@ -1,45 +1,29 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useHarvest, useItemCatalog } from "@/lib/hooks";
+import { useItemQuery } from "@/lib/useItemQuery";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { addByTitle } from "@/lib/addToList";
-import ItemLink from "./ItemLink";
 import CatalogueHarvest from "./CatalogueHarvest";
-import FacetPicker from "./FacetPicker";
+import ItemFacetRow from "./ItemFacetRow";
+import ItemLevelBand from "./ItemLevelBand";
+import ItemTable from "./ItemTable";
 import ItemWeights from "./ItemWeights";
-import SortHeader from "./SortHeader";
-import { AddButton, CheckField, Empty, PickField, TextField, caretGlyph } from "./ui";
-import { countOf, figure } from "@/shared/format";
-import { sourceKindLabel } from "@/shared/sources";
+import StatFloors from "./StatFloors";
+import { CheckField, Empty, TextField, caretGlyph } from "./ui";
+import { countOf } from "@/shared/format";
 import type { Sort } from "@/shared/sorting";
-import { STATS, statLine, statMeta, type StatKey } from "@/shared/item-stats";
-import { LEVEL_CONFIDENCE, levelText } from "@/shared/item-levels";
-import { EFFECT_KINDS } from "@/shared/item-stats";
 import {
-  FACETS,
+  EFFECT_FACETS,
   NO_CRITERIA,
+  PLAIN_FACETS,
   activeCriteria,
-  zonesInFilterOrder,
-  facetOptions,
-  facetCounts,
-  NO_FACET_VALUE,
-  searchItems,
-  weightedStats,
   type ItemCriteria,
   type ItemSortKey,
   type StatWeights,
-  type ValuedItem,
 } from "@/shared/item-search";
 
-/** Which facets are about what an item *does*, rather than what it is or where it came from. */
-/** The level cap in this era. At the slider's far right it means "no cap", which is also the truth. */
-const MAX_PLAYER_LEVEL = 60;
-
-const EFFECT_FACETS = new Set<string>(EFFECT_KINDS.map((k) => k.key));
-const isEffect = (key: string): boolean => EFFECT_FACETS.has(key);
-
-/** How many rows to draw. The catalogue is a few hundred today and a filter is one keystroke away. */
+/** How many rows to draw. Sorted, so these are the best ones — and a filter is one keystroke away. */
 const MAX_ROWS = 300;
 
 /**
@@ -68,6 +52,11 @@ const MAX_ROWS = 300;
  * be asked for "every item with its stats" ([ADR 0003](../../../specs/decisions/0003-eqlwiki-runtime-data-source.md)),
  * so the honest corpus is the cache, and the footer says how big it is rather than implying it's
  * every item in the game.
+ *
+ * This file is the tab's **state and layout only**. The computation is
+ * [useItemQuery](../../lib/useItemQuery.ts) and each band of controls is its own component, because
+ * the two kinds of change — "what does this ask?" and "how is it arranged?" — arrive separately and
+ * were previously in the same four hundred lines.
  */
 export default function ItemSearchPanel() {
   const harvest = useHarvest();
@@ -75,7 +64,7 @@ export default function ItemSearchPanel() {
    * Re-read the catalogue when a run **ends**, not as it goes.
    *
    * The key is constant while the harvest is running, so eleven thousand progress events don't
-   * become eleven thousand re-reads of a growing directory — and it changes once when the run stops
+   * become eleven thousand re-reads of a growing catalogue — and it changes once when the run stops
    * or finishes, which is the moment there is something new to show.
    */
   const catalogueKey = harvest.status === "running" ? "running" : `${harvest.status}:${harvest.fetched}`;
@@ -89,70 +78,29 @@ export default function ItemSearchPanel() {
   });
   const [weights, setWeights] = usePersistentState<StatWeights>(STORAGE_KEYS.itemWeights, {});
   const [sort, setSort] = usePersistentState<Sort<ItemSortKey>>(STORAGE_KEYS.itemSort, { key: "name", desc: false });
-  const [weightsOpen, setWeightsOpen] = useState(false);
   const [pace, setPace] = usePersistentState<string>(STORAGE_KEYS.itemHarvestPace, "1000");
+  const [weightsOpen, setWeightsOpen] = useState(false);
 
-  // A criteria object stored last week can be missing a facet added since; folding it over the empty
-  // shape keeps a new facet from arriving as `undefined` in the middle of a filter.
-  //
-  // Memoized because it is the search's input: rebuilt each render, it would re-run the filter over
-  // the whole catalogue every time anything on the panel moved, including opening the weight sheet.
+  /**
+   * A criteria object stored last week can be missing a facet added since; folding it over the empty
+   * shape keeps a new facet from arriving as `undefined` in the middle of a filter.
+   *
+   * Memoized because it is the query's input: rebuilt each render, every derived value in
+   * `useItemQuery` would recompute whenever anything on the panel moved, the weight sheet included.
+   */
   const active = useMemo<ItemCriteria>(
     () => ({ ...NO_CRITERIA, ...criteria, facets: { ...NO_CRITERIA.facets, ...criteria.facets } }),
     [criteria],
   );
-  const set = (patch: Partial<ItemCriteria>) => setCriteria({ ...active, ...patch });
-  const setFacet = (key: string, values: string[]) => set({ facets: { ...active.facets, [key]: values } });
-
-  // Options and the "how many have none of this" count together, since both are one pass over the
-  // catalogue and both are needed by the same picker.
-  /**
-   * The catalogue the panel is actually working over.
-   *
-   * **The era toggle is not a criterion like the others.** Every other one narrows a query, and the
-   * pickers deliberately keep offering what it cut so you can reason about it (see `counts`). This one
-   * says *which game you are playing* — the out-of-era items are not obtainable on this server at all
-   * — so it takes its values out of the pickers entirely rather than leaving them dimmed at zero.
-   * Measured: it retires 5 whole zones, along with the classes, effects and flags that only Kunark and
-   * Velious items carry.
-   *
-   * Applied here rather than inside `searchItems`, which already honours the flag; this is about what
-   * the *menus* are built from.
-   */
-  const inEra = useMemo(
-    () => (active.hideOutOfEra ? rows.filter((row) => !row.item.outOfEra) : rows),
-    [rows, active.hideOutOfEra],
+  const set = useCallback((patch: Partial<ItemCriteria>) => setCriteria({ ...active, ...patch }), [active, setCriteria]);
+  const setFacet = useCallback(
+    (key: string, values: string[]) => set({ facets: { ...active.facets, [key]: values } }),
+    [active.facets, set],
   );
 
-  const facets = useMemo(
-    () => Object.fromEntries(FACETS.map((f) => [f.key, facetOptions(inEra, f.key)])) as Record<string, string[]>,
-    [inEra],
-  );
-
-  /**
-   * What each value in each picker is worth **under the rest of the criteria** — the numbers beside
-   * the options, and the reason the dead ones dim and sink.
-   *
-   * Memoized on the criteria as well as the rows, so it is one pass per change rather than one per
-   * render: the pickers re-render whenever anything on the panel moves, including opening a menu.
-   */
-  const counts = useMemo(() => facetCounts(inEra, active), [inEra, active]);
-
-  const found = useMemo(() => searchItems(inEra, active, weights, sort), [inEra, active, weights, sort]);
-
-  // The stats worth a column: the ones you're weighting by, plus the ones you've set a floor on.
-  // In `STATS` order rather than the order they were added, so the table reads like a card.
-  const columns = useMemo(() => {
-    const wanted = new Set<StatKey>([...weightedStats(weights), ...(Object.keys(active.mins) as StatKey[])]);
-    return STATS.filter((s) => wanted.has(s.key)).map((s) => s.key);
-  }, [weights, active.mins]);
-
-  // How many the level bounds are silent about — see `matchesItem`. Shown beside the slider so a cap
-  // that keeps 4,942 unplaced items is honest about it rather than looking like a filter that failed.
-  const unplaced = useMemo(() => inEra.reduce((n, row) => n + (row.level ? 0 : 1), 0), [inEra]);
-
-  const onSort = (next: Sort<ItemSortKey>) => setSort(next);
-  const shown = found.slice(0, MAX_ROWS);
+  const { options, counts, found, columns, scored, unplaced } = useItemQuery(rows, active, weights, sort);
+  const conditions = activeCriteria(active);
+  const shown = useMemo(() => found.slice(0, MAX_ROWS), [found]);
 
   return (
     <div className="item-search">
@@ -165,31 +113,20 @@ export default function ItemSearchPanel() {
           value={active.text}
           onChange={(text) => set({ text })}
         />
-        {FACETS.filter((f) => !isEffect(f.key)).map((facet) => (
-          <FacetPicker
-            key={facet.key}
-            label={facet.label}
-            any={facet.any}
-            options={facets[facet.key] ?? []}
-            missing={counts[facet.key]?.get(NO_FACET_VALUE) ?? 0}
-            counts={counts[facet.key]}
-            chosen={active.facets[facet.key]}
-            onChange={(values) => setFacet(facet.key, values)}
-          />
-        ))}
-        {/* The era toggle is this panel's own rather than the Search tab's setting. They answer
-            different questions: that one is about a results list you're reading now, this one is a
-            criterion like the rest, and it has to be in the count that says how many are cutting. */}
+        <ItemFacetRow facets={PLAIN_FACETS} options={options} counts={counts} criteria={active} onChange={setFacet} />
+        {/* This panel's own toggle rather than the Search tab's setting. They answer different
+            questions: that one is about a results list you're reading now; this one says which game
+            you are playing, and so takes its values out of the pickers as well as out of the rows. */}
         <CheckField
           label="in era only"
-          title="Hide items the server hasn't opened yet"
+          title="Hide items the server hasn't opened yet — and everything they alone contribute to the dropdowns"
           checked={active.hideOutOfEra}
           onChange={(hideOutOfEra) => set({ hideOutOfEra })}
         />
         <span className="spacer" />
-        {activeCriteria(active) > 0 && (
+        {conditions > 0 && (
           <button className="btn sm" onClick={() => setCriteria(NO_CRITERIA)} title="Drop every criterion">
-            Clear ({activeCriteria(active)})
+            Clear ({conditions})
           </button>
         )}
       </div>
@@ -200,69 +137,17 @@ export default function ItemSearchPanel() {
           across the catalogue, so "haste" has to reach `Hastening of Salik` too. */}
       <div className="row wrap effect-facets">
         <span className="muted small">Effects</span>
-        {FACETS.filter((f) => isEffect(f.key)).map((facet) => (
-          <FacetPicker
-            key={facet.key}
-            label={facet.label}
-            any={facet.any}
-            options={facets[facet.key] ?? []}
-            missing={counts[facet.key]?.get(NO_FACET_VALUE) ?? 0}
-            counts={counts[facet.key]}
-            chosen={active.facets[facet.key]}
-            onChange={(values) => setFacet(facet.key, values)}
-          />
-        ))}
+        <ItemFacetRow facets={EFFECT_FACETS} options={options} counts={counts} criteria={active} onChange={setFacet} />
         <span className="muted small">type to search — spelling need not be exact</span>
       </div>
 
-      <div className="row wrap level-band">
-        <span className="muted small">Level</span>
-        <input
-          className="field sm"
-          type="number"
-          min={1}
-          placeholder="any"
-          title="Lowest level you'd use it at"
-          value={active.levelMin ?? ""}
-          onChange={(e) => set({ levelMin: e.target.value.trim() ? Number(e.target.value) : undefined })}
-        />
-        <span className="muted">–</span>
-        {/* The **cap**, as a slider, because it is the one you drag rather than type: "what can I use
-            *now*" is a question you re-ask as you level, and at every step you want to see the list
-            move. At the far right it means no cap at all, which is also the truth at the level cap. */}
-        <input
-          className="level-slider"
-          type="range"
-          min={1}
-          max={MAX_PLAYER_LEVEL}
-          step={1}
-          value={active.levelMax ?? MAX_PLAYER_LEVEL}
-          title="Hide anything you'd have to be higher than this to use"
-          onChange={(e) => {
-            const at = Number(e.target.value);
-            set({ levelMax: at >= MAX_PLAYER_LEVEL ? undefined : at });
-          }}
-        />
-        <span className="level-cap">{active.levelMax ?? `${MAX_PLAYER_LEVEL}+`}</span>
-        {active.levelMax !== undefined && (
-          <button className="btn sm" onClick={() => set({ levelMax: undefined })} title="No level cap">
-            ✕
-          </button>
-        )}
-        {/* Said once here rather than on every row: the number is derived, its quality varies, and a
-            bound is silent about what it could not place — which is a lot of items. */}
-        <span className="muted small">
-          from the card if it says, else the mob that drops it, the quest that gives it, or its zone
-          {unplaced > 0 ? ` · ${figure(unplaced)} unplaced, always shown` : ""}.
-        </span>
-      </div>
+      <ItemLevelBand criteria={active} unplaced={unplaced} onChange={set} />
 
       <StatFloors mins={active.mins} onChange={(mins) => set({ mins })} />
 
       <div className="row wrap item-weights-head">
-        <button className="btn sm" onClick={() => setWeightsOpen((o) => !o)} aria-expanded={weightsOpen}>
-          {caretGlyph(weightsOpen)} Value weights
-          {weightedStats(weights).length ? ` (${weightedStats(weights).length})` : ""}
+        <button className="btn sm" onClick={() => setWeightsOpen((open) => !open)} aria-expanded={weightsOpen}>
+          {caretGlyph(weightsOpen)} Value weights{scored.length ? ` (${scored.length})` : ""}
         </button>
         <span className="muted small">
           {loading ? "Reading the item cache…" : countOf(found.length, rows.length, "item")}
@@ -278,196 +163,27 @@ export default function ItemSearchPanel() {
       )}
 
       {!loading && rows.length > 0 && !found.length && (
-        <Empty title="No item matches all of that." hint="Every criterion only ever removes rows — drop one and the list grows back." />
+        <Empty
+          title="No item matches all of that."
+          hint="Every criterion only ever removes rows — drop one and the list grows back."
+        />
       )}
 
       {shown.length > 0 && (
-        <table className="stat-table item-table">
-          <thead>
-            <tr>
-              <SortHeader label="Item" column="name" sort={sort} onSort={onSort} startDesc={false} />
-              <SortHeader label="Slot" column="slot" sort={sort} onSort={onSort} startDesc={false} title="Where it's worn" />
-              <SortHeader label="From" column="source" sort={sort} onSort={onSort} startDesc={false} title="Kill it, buy it, quest it or craft it" />
-              <SortHeader label="Zone" column="zone" sort={sort} onSort={onSort} startDesc={false} title="Where its sources are" />
-              <SortHeader
-                label="Level"
-                column="level"
-                sort={sort}
-                onSort={onSort}
-                startDesc={false}
-                className="num"
-                title="What level you need to be — from the mob, the quest, or the zone"
-              />
-              {columns.map((key) => (
-                <SortHeader key={key} label={statMeta(key).label} column={key} sort={sort} onSort={onSort} className="num" title={`Sort by ${statMeta(key).label}`} />
-              ))}
-              {!columns.length && <th>Stats</th>}
-              <SortHeader
-                label="Value"
-                column="value"
-                sort={sort}
-                onSort={onSort}
-                className="num"
-                title={weightedStats(weights).length ? "Your weights, applied" : "Set some weights and this becomes the ranking"}
-              />
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((row) => (
-              <ItemRowView
-                key={`${row.item.origin}:${row.item.title}`}
-                row={row}
-                columns={columns}
-                scored={!!weightedStats(weights).length}
-                pickedZones={active.facets.zone}
-              />
-            ))}
-          </tbody>
-        </table>
+        <ItemTable
+          rows={shown}
+          columns={columns}
+          sort={sort}
+          onSort={setSort}
+          scored={!!scored.length}
+          pickedZones={active.facets.zone}
+        />
       )}
 
       {found.length > shown.length && (
         <div className="muted small item-more">
           Showing the first {MAX_ROWS} of {found.length}. Narrow it and the rest come into view.
         </div>
-      )}
-    </div>
-  );
-}
-
-/** One result. Split out because it holds nothing — the table just got long enough to read badly. */
-function ItemRowView({
-  row,
-  columns,
-  scored,
-  pickedZones,
-}: {
-  row: ValuedItem;
-  columns: StatKey[];
-  scored: boolean;
-  /** The ticked zones, so the Zone column can lead with one that kept this row. */
-  pickedZones: string[];
-}) {
-  const zones = zonesInFilterOrder(row.zones, pickedZones);
-  const level = row.level;
-  return (
-    <tr className={row.item.outOfEra ? "out-of-era" : undefined}>
-      <td>
-        <ItemLink title={row.item.title} />
-        {/* Lucy describes a different game, so a row sourced from it never passes as the wiki's. */}
-        {row.item.origin === "lucy" && (
-          <span className="chip lucy-chip" title="From Lucy — Live EverQuest's database, not this game's">
-            Lucy
-          </span>
-        )}
-      </td>
-      <td className="muted">{row.stats.slots.join(" ") || "—"}</td>
-      <td>
-        {row.kinds.length
-          ? row.kinds.map((kind) => (
-              <span key={kind} className={`src-kind k-${kind}`}>
-                {sourceKindLabel(kind)}
-              </span>
-            ))
-          : "—"}
-      </td>
-      {/* `+N` is "and N other zones" — the count is in the hover, since the column has to stay narrow. */}
-      <td className="muted" title={zones.length > 1 ? `Drops in ${zones.length} zones: ${zones.join(", ")}` : zones[0]}>
-        {zones.length > 1 ? `${zones[0]} +${zones.length - 1}` : (zones[0] ?? "—")}
-      </td>
-      <td
-        className={`num lvl-${level?.from ?? "none"}`}
-        title={level ? `${level.why} — ${LEVEL_CONFIDENCE[level.from]}` : "Nothing places this one yet"}
-      >
-        {level ? levelText(level) : "—"}
-      </td>
-      {columns.map((key) => (
-        <td key={key} className={`num ${row.stats.stats[key] !== undefined ? "num-accent" : "muted"}`}>
-          {row.stats.stats[key] ?? "—"}
-        </td>
-      ))}
-      {!columns.length && <td className="muted small">{statLine(row.stats) || "—"}</td>}
-      <td className={`num ${scored && row.value ? "num-accent" : "muted"}`}>{scored ? row.value : "—"}</td>
-      <td className="item-add">
-        <AddButton
-          onAdd={() => void addByTitle(row.item.title, row.item.wikiPath)}
-          title="Put it on the shopping list"
-          className="btn sm"
-        >
-          + Add
-        </AddButton>
-      </td>
-    </tr>
-  );
-}
-
-/**
- * The stat floors: "at least this much INT".
- *
- * A floor and a weight are different questions and get different controls. A weight says *how much I
- * care*; a floor says *don't show me this at all*. Conflating them — "sort by INT and read down" —
- * is what makes you scroll past forty items to find the six that clear the bar.
- *
- * An item whose card never mentions the stat fails the floor, which is `matchesItem`'s decision and
- * worth knowing about here: silence is not a zero that might squeak through.
- */
-function StatFloors({
-  mins,
-  onChange,
-}: {
-  mins: Partial<Record<StatKey, number>>;
-  onChange: (mins: Partial<Record<StatKey, number>>) => void;
-}) {
-  const chosen = Object.keys(mins) as StatKey[];
-  const spare = STATS.filter((s) => mins[s.key] === undefined);
-
-  const add = () => {
-    if (!spare.length) return;
-    onChange({ ...mins, [spare[0].key]: 1 });
-  };
-  const drop = (key: StatKey) => {
-    const next = { ...mins };
-    delete next[key];
-    onChange(next);
-  };
-  const retarget = (from: StatKey, to: string) => {
-    if (!to || to === from) return;
-    const next = { ...mins };
-    next[to as StatKey] = next[from] ?? 1;
-    delete next[from];
-    onChange(next);
-  };
-
-  return (
-    <div className="row wrap stat-floors">
-      {chosen.map((key) => (
-        <span className="floor" key={key}>
-          <PickField
-            value={key}
-            blank={statMeta(key).label}
-            blankValue={key}
-            options={spare.map((s) => ({ value: s.key, label: s.label }))}
-            onChange={(to) => retarget(key, to)}
-            title="Which stat this floor is about"
-          />
-          <span className="muted">≥</span>
-          <input
-            className="field sm"
-            type="number"
-            step="any"
-            value={mins[key] ?? 0}
-            onChange={(e) => onChange({ ...mins, [key]: Number(e.target.value) })}
-          />
-          <button className="btn sm" onClick={() => drop(key)} title={`Stop requiring ${statMeta(key).label}`}>
-            ✕
-          </button>
-        </span>
-      ))}
-      {spare.length > 0 && (
-        <button className="btn sm" onClick={add} title="Require a minimum of some stat">
-          + Stat floor
-        </button>
       )}
     </div>
   );

@@ -434,9 +434,15 @@ test("a cache of loose page files is folded into buckets and the files go", asyn
     const titles = (await wiki.cachedItems()).map((i) => i.title);
     assert.deepEqual(titles, ["Cloth Cape", "Rusty Sword"], "every page survived the fold");
 
-    const left = fs.readdirSync(dir).filter((n) => n.endsWith(".json")).sort();
-    assert.deepEqual(left, ["title-index.json"], "the loose page files are gone; the index is not");
-    assert.ok(fs.readdirSync(path.join(dir, "pages")).length > 0, "and the buckets hold them");
+    // Named, not an exact directory listing: the client warms its mirrored title/zone indexes on
+    // construction, so a wiki that happens to answer mid-test writes files of its own here — which is
+    // nothing to do with the migration and made this assertion fail about one run in five.
+    const left = new Set(fs.readdirSync(dir));
+    for (const gone of ["Cloth_Cape.json", "Cloth_Cape_2.json", "Rusty_Sword.json"]) {
+      assert.equal(left.has(gone), false, `${gone} should have been folded in and deleted`);
+    }
+    assert.equal(left.has("title-index.json"), true, "and nothing that isn't a page was touched");
+    assert.ok(fs.readdirSync(path.join(dir, "pages")).length > 0, "the buckets hold them now");
   } finally {
     await cleanup(dir);
   }

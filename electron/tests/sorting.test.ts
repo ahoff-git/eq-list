@@ -31,6 +31,24 @@ test("a sort is stable, so ties keep the order they came in", () => {
   assert.deepEqual(sortRows(rows, { key: "n", desc: false }, pick).map((r) => r.name), ["first", "second", "third"]);
 });
 
+test("the sort key is read once per row, not twice per comparison", () => {
+  /**
+   * The reason `sortRows` decorates rather than comparing straight off the rows. `pick` is a field
+   * read in most tables and something much heavier in one: the Items tab's Zone column picks
+   * `row.zones.join(" ")`, so the naive comparator was doing about 176,000 joins to sort 6,878 rows
+   * (8.6ms; 4.9ms decorated). A "simplification" back to calling `pick` inside the comparator would
+   * be invisible everywhere except there, so it is pinned as a count.
+   */
+  const rows = Array.from({ length: 64 }, (_, i) => ({ n: (i * 37) % 64 }));
+  let reads = 0;
+  const sorted = sortRows(rows, { key: "n", desc: false }, (row) => {
+    reads++;
+    return row.n;
+  });
+  assert.equal(reads, rows.length, `read the key ${reads} times for ${rows.length} rows`);
+  assert.deepEqual(sorted.map((r) => r.n), [...rows.map((r) => r.n)].sort((a, b) => a - b), "and still sorted");
+});
+
 test("a picker's options are each name once, in the order a person reads them", () => {
   const mobs = ["a gnoll pup", "Grikbar kobold", "a gnoll pup", "bandit"];
   assert.deepEqual(distinctSorted(mobs), ["a gnoll pup", "bandit", "Grikbar kobold"]);

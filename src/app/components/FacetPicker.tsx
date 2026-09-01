@@ -74,12 +74,11 @@ export default function FacetPicker({
   useDismiss(box, open, () => setOpen(false));
 
   const all = useMemo(() => {
-    const stale = chosen.filter((c) => !options.includes(c));
-    return [...options, ...stale];
+    // Through a Set: with everything ticked, `chosen.filter(c => !options.includes(c))` was 141 × 141
+    // string comparisons on every render of the menu.
+    const offered = new Set(options);
+    return [...options, ...chosen.filter((c) => !offered.has(c))];
   }, [options, chosen]);
-
-  /** What this value is worth right now. No map means "not counting", so nothing dims. */
-  const leadsSomewhere = (value: string) => !counts || (counts.get(value) ?? 0) > 0;
 
   const needle = filter.trim().toLowerCase();
   /**
@@ -110,22 +109,17 @@ export default function FacetPicker({
     if (!counts) return list;
     // A stable partition, not a sort: the alphabet (or the fuzzy ranking) is preserved within each
     // half, so the only thing that moved is the dead weight, and it moved to the end.
+    const leadsSomewhere = (value: string) => (counts.get(value) ?? 0) > 0;
     const live = list.filter(leadsSomewhere);
     return live.length === list.length ? list : [...live, ...list.filter((o) => !leadsSomewhere(o))];
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `leadsSomewhere` is `counts` in a closure
   }, [all, needle, filter, counts]);
 
   const toggle = (value: string, on: boolean) =>
     onChange(on ? [...chosen, value] : chosen.filter((c) => c !== value));
 
-  /**
-   * Tick everything **currently shown**, which with a filter typed is the useful version: "Karana",
-   * *All*, and the four Karanas are ticked without hunting for them.
-   *
-   * A union rather than a replacement, so filtering twice and pressing it twice builds a selection up
-   * instead of throwing the first half away.
-   */
-  const noneChosen = chosen.includes(NO_FACET_VALUE);
+  /** What is ticked, as a set: asked once per option row, and there can be a hundred and forty. */
+  const held = new Set(chosen);
+  const noneChosen = held.has(NO_FACET_VALUE);
   // Offered while it is *ticked* even at zero, or narrowing would strand a tick nobody can reach.
   const showNone = (missing > 0 || noneChosen) && (!needle || "(none)".includes(needle) || "none".includes(needle));
 
@@ -133,14 +127,16 @@ export default function FacetPicker({
    * *All* means **all**, `(none)` included — because it is a starting point, not a filter.
    *
    * The workflow it serves is *tick everything, then un-tick what I can't do yet*, and for that the
-   * only sensible opening position is the whole catalogue. An *All* that quietly held back the 4,560
+   * only sensible opening position is the whole catalogue. An *All* that quietly held back the 4,618
    * items with no zone would leave the reader deselecting from a set they didn't know was already
    * short.
    *
-   * A union rather than a replacement, so filtering twice and pressing it twice builds a selection up
-   * instead of throwing the first half away.
+   * It ties everything **currently shown**, which with a filter typed is the useful version: type
+   * "karana", press *All*, and the four Karanas are ticked without hunting for them. A union rather
+   * than a replacement, so filtering twice and pressing it twice builds a selection up instead of
+   * throwing the first half away.
    */
-  const pending = [...shown, ...(showNone ? [NO_FACET_VALUE] : [])].filter((o) => !chosen.includes(o));
+  const pending = [...shown, ...(showNone ? [NO_FACET_VALUE] : [])].filter((o) => !held.has(o));
   const selectAll = () => onChange([...chosen, ...pending]);
 
   /** The sentinel is an implementation detail; nobody should ever see it on a button. */
@@ -189,25 +185,25 @@ export default function FacetPicker({
                 onChange={(on) => toggle(NO_FACET_VALUE, on)}
               />
             )}
-            {shown.map((o) => {
-              const held = counts?.get(o) ?? 0;
-              const dead = !leadsSomewhere(o);
+            {shown.map((option) => {
+              const worth = counts?.get(option) ?? 0;
+              const dead = !!counts && worth === 0;
               return (
                 <CheckField
-                  key={o}
+                  key={option}
                   className={dead ? "facet-dead" : undefined}
                   label={
                     counts ? (
                       <>
-                        {o} <span className="muted">· {figure(held)}</span>
+                        {option} <span className="muted">· {figure(worth)}</span>
                       </>
                     ) : (
-                      o
+                      option
                     )
                   }
-                  title={dead ? `No ${label.toLowerCase()} match — nothing here fits the rest of your criteria` : undefined}
-                  checked={chosen.includes(o)}
-                  onChange={(on) => toggle(o, on)}
+                  title={dead ? `Nothing here fits the rest of your criteria` : undefined}
+                  checked={held.has(option)}
+                  onChange={(on) => toggle(option, on)}
                 />
               );
             })}

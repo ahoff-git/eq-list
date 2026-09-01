@@ -120,6 +120,17 @@ export const FACETS: readonly FacetMeta[] = [
 ];
 
 /**
+ * The two halves of the facet list, split once rather than per render.
+ *
+ * An effect facet asks what an item *does*; the rest ask what it is and where it came from. Two
+ * different questions, so two rows of dropdowns on the panel — and four more in the first row would
+ * have made ten.
+ */
+const EFFECT_KEYS = new Set<string>(EFFECT_KINDS.map((kind) => kind.key));
+export const PLAIN_FACETS: readonly FacetMeta[] = FACETS.filter((f) => !EFFECT_KEYS.has(f.key));
+export const EFFECT_FACETS: readonly FacetMeta[] = FACETS.filter((f) => EFFECT_KEYS.has(f.key));
+
+/**
  * Everything one search is narrowed by.
  *
  * Held as one object rather than as six pieces of component state, because "how many criteria are
@@ -180,14 +191,34 @@ export type StatWeights = Partial<Record<StatKey, number>>;
  * where less is better.
  */
 export function itemValue(stats: ItemStats, weights: StatWeights): number {
-  let total = 0;
-  for (const [key, weight] of Object.entries(weights) as [StatKey, number][]) {
-    const has = stats.stats[key];
-    if (has !== undefined && Number.isFinite(weight)) total += has * weight;
-  }
-  // Two places, since a ratio weight makes fractions of a point real. Kept off the integer case by
-  // rounding rather than by formatting, so the sort and the shown number agree.
-  return Math.round(total * 100) / 100;
+  return scorer(weights)(stats);
+}
+
+/**
+ * The same sum, with the weight sheet read **once** instead of once per item.
+ *
+ * `itemValue` is the honest signature and the one tests ask about; this is the one a search over
+ * eleven thousand rows wants, because `Object.entries` on the sheet per row is eleven thousand
+ * throwaway arrays — and an *empty* sheet, which is the common case, was paying for all of them to
+ * arrive at zero.
+ */
+export function scorer(weights: StatWeights): (stats: ItemStats) => number {
+  // Zero and non-finite weights are dropped rather than skipped per row: they cannot change a total,
+  // so the only thing carrying them forward costs is time.
+  const scored = (Object.entries(weights) as [StatKey, number][]).filter(
+    ([, weight]) => Number.isFinite(weight) && weight !== 0,
+  );
+  if (!scored.length) return () => 0;
+  return (stats) => {
+    let total = 0;
+    for (const [key, weight] of scored) {
+      const has = stats.stats[key];
+      if (has !== undefined) total += has * weight;
+    }
+    // Two places, since a ratio weight makes fractions of a point real. Kept off the integer case by
+    // rounding rather than by formatting, so the sort and the shown number agree.
+    return Math.round(total * 100) / 100;
+  };
 }
 
 /** How many stats the weight sheet actually scores — 0 means the Value column is saying nothing. */
@@ -195,12 +226,6 @@ export function weightedStats(weights: StatWeights): StatKey[] {
   return (Object.keys(weights) as StatKey[]).filter((k) => !!weights[k]);
 }
 
-/**
- * The searchable catalogue: cards read as numbers, sources read as kinds and zones.
- *
- * Built once per catalogue rather than per keystroke — parsing three hundred cards on every letter
- * typed into the name box is the one thing here that would actually be slow.
- */
 /**
  * Zone cells that name no place.
  *
@@ -228,6 +253,13 @@ export function namesAPlace(zone: string): boolean {
   return !!trimmed && !NOT_A_PLACE.test(trimmed);
 }
 
+/**
+ * The searchable catalogue: cards read as numbers, sources read as kinds and zones.
+ *
+ * Built once per catalogue rather than per keystroke — parsing eleven thousand cards on every letter
+ * typed into the name box is the one thing here that would actually be slow. Built in **main**, which
+ * already holds the pages, so a window never parses a card at all.
+ */
 export function itemRows(items: readonly CachedItem[], levels?: LevelSources): ItemRow[] {
   // One spelling per zone across the *whole* catalogue, first seen winning — the same rule
   // `groupDropsByZone` uses on a single page, applied across every page so the filter and the
@@ -267,8 +299,8 @@ export function itemRows(items: readonly CachedItem[], levels?: LevelSources): I
  *
  * `itemRows` needs the card (to parse stats) and the sources (to derive kinds and zones); the *panel*
  * needs neither, because both have already become fields on the row. Dropping them after the
- * derivation takes the catalogue from 6.9 MB to about 1.6 MB per transfer, and — since the rows
- * arrive built — the window parses eleven thousand stat cards exactly never.
+ * derivation halves what crosses — measured on the real catalogue, 11.34 MB down to 5.71 MB — and,
+ * since the rows arrive built, the window parses eleven thousand stat cards exactly never.
  *
  * Main keeps the full pages; this is only what leaves it.
  */
@@ -306,7 +338,7 @@ export function itemCatalog(wiki: readonly CachedItem[], lucy: readonly CachedIt
 /**
  * The pseudo-value meaning **"this item has none of these at all"**.
  *
- * The other half of a facet, and on a filled catalogue it is a large half: 4,560 of 11,171 items name
+ * The other half of a facet, and on a filled catalogue it is a large half: 4,618 of 11,126 items name
  * no zone whatsoever. Without it those items are only ever reachable by *not* filtering, so "show me
  * the things the wiki lists no source for" — a real question, and the one that finds a quest reward —
  * cannot be asked at all.
@@ -394,7 +426,7 @@ function matchesOutsideFacets(row: ItemRow, c: ItemCriteria): boolean {
      *
      * Deliberately the opposite of a stat floor, and the difference is real. "At least 5 INT" asked
      * of a card silent about intelligence has a definite answer — it has not got any. "Is this out of
-     * my reach" asked of an item nothing could place has no answer at all, and **4,942 of 11,162
+     * my reach" asked of an item nothing could place has no answer at all, and **4,907 of 11,126
      * items** are in that position: cutting them would make the cap quietly hide 44% of the catalogue,
      * which is not what "hide what I cannot use yet" means. The panel says how many are unplaced
      * instead, so the silence is visible rather than mistaken for a filter working.
@@ -511,13 +543,15 @@ export function searchItems(
   weights: StatWeights,
   sort: Sort<ItemSortKey>,
 ): ValuedItem[] {
+  const score = scorer(weights);
   const kept = rows
     .filter((row) => matchesItem(row, criteria))
-    .map((row) => ({ ...row, value: itemValue(row.stats, weights) }));
+    .map((row) => ({ ...row, value: score(row.stats) }));
   // Ties break by name, so a column of equal values is still in a readable order — `sortRows` is
-  // stable, so pre-sorting by name is all that takes.
-  const named = [...kept].sort((a, b) => a.item.title.localeCompare(b.item.title));
-  return sortRows(named, sort, itemSortValue);
+  // stable, so pre-sorting by name is all that takes. Sorted in place: `kept` is already this
+  // function's own array, and copying 6,878 rows to sort them twice is a copy for nothing.
+  kept.sort((a, b) => a.item.title.localeCompare(b.item.title));
+  return sortRows(kept, sort, itemSortValue);
 }
 
 /** A stat's own column header — the card's spelling, so the table matches what you hover. */

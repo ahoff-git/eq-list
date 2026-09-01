@@ -454,6 +454,14 @@ list, hunt, search, damage, session, peers, settings.
     the page for a name you have; this finds the name for a *shape* you want — "the best thing I
     could wear on my fingers" — over every item page already cached
     ([ADR 0152](../decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md)).
+    - **The panel is state and layout only.** The computation is one hook
+      (`useItemQuery` — the era-scoped corpus, the picker options, their counts, the results, the stat
+      columns, the unplaced tally), and each band of controls is its own component: `ItemFacetRow`
+      (used twice, for the two rows of dropdowns), `ItemLevelBand`, `StatFloors`, `ItemTable`. It had
+      grown to 474 lines holding all of that at once, which is where "what does this ask?" and "how is
+      it arranged?" stop being separable — the two kinds of change arrive separately and now land in
+      separate files. `ItemRowView` is `memo`'d, because three hundred rows were re-rendering whenever
+      anything at all moved, the weight sheet opening included, and none of it changes a row.
     - **A strip on top says how full the catalogue is, and fills it** (`CatalogueHarvest`). Searching
       by stat only works over items we hold, and that was ~290 of the wiki's **11,136** — so the strip
       shows the fraction, and a button trickles the rest down one page at a time
