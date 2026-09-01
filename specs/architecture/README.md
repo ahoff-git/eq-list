@@ -63,12 +63,18 @@ in the main process and all UI in the renderer.
     on a scaled monitor came out proportionally too big — and since that inflated size was what
     got saved on close, the window grew on every launch. Sub-pixel differences aren't persisted,
     since a fractionally-scaled display reads bounds back a pixel off what was set.
-    Per-window UI toggles (active tab, map pin/key/zone/share) persist
-    separately in the renderer via `usePersistentState` (localStorage).
+    Per-window UI toggles (active tab, map pin/key/zone/share, the Items tab's criteria and
+    weights) persist via `usePersistentState`, which writes **both** `localStorage` and
+    `ui-state.ts` in main — the local copy for the first synchronous paint, main's copy as the
+    authority, because `localStorage` belongs to an *origin* and a packaged launch (`app://local`)
+    and a dev one (`http://localhost:3000`) otherwise keep separate settings
+    ([ADR 0166](../decisions/0166-a-panel-setting-belongs-to-the-app-not-to-an-origin.md)).
   - `protocol.ts` — serves the exported renderer over `app://` in production, reading
     files via asar-aware `fs` so it works when packaged.
   - `store.ts` — the one source of truth: shopping list + settings (persisted to
     `userData`), plus loot→list matching.
+  - `ui-state.ts` — the renderer's own panel settings, as one untyped key/value file in `userData`.
+    Not the same thing as `store.ts`'s **settings**, which are the app's and have a shape.
   - `log-watcher.ts` — tails the EQ log; see [log-watching](../log-watching/README.md).
   - `self-check.ts` — "why isn't it doing anything?", answered as a chain of steps with the first
     broken link named and everything downstream reported as *not checked yet* rather than as further

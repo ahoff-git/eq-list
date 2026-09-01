@@ -3128,6 +3128,11 @@ kbd {
 /* "(none)" is the absence of every value, not another one of them — so it sits above the list with a
    rule under it. Read as just another zone it would be baffling; set apart it explains itself. */
 .facet-none { padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+/* A value that would show you nothing: dimmed and sunk to the bottom, never hidden — the count is a
+   statement about your current criteria, and a row that vanished as you narrowed would be one you
+   could no longer reason about. Still clickable, so a tick is never stranded. */
+.facet-options .check-field.facet-dead { opacity: 0.42; }
+.facet-options .check-field.facet-dead:hover { opacity: 0.7; }
 /* The level band, beside the stat floors — the same shape of question, asked of a derived number. */
 .level-band { gap: 6px; align-items: center; }
 .level-band .field { width: 56px; }

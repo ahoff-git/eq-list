@@ -17,6 +17,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createWikiClient } from "../wiki";
+import { createPageStore, type PageStore } from "../wiki/page-store";
+import type { WikiPage } from "../../src/shared/types";
 import { itemRows, type ItemRow } from "../../src/shared/item-search";
 import type { SharedItemPage } from "../../src/shared/peer-share";
 
@@ -136,11 +138,25 @@ test("a sender's stamp from the future cannot pin a page in our cache", async ()
 
 // ─── A parser bump invalidates the kinds it changed, and nothing else ───────────────
 
-/** Write a page straight into the cache at a chosen parse version, as an older build would have. */
-function seed(dir: string, page: Record<string, unknown> & { kind: string; title: string }, version: number) {
-  const key = page.title.replace(/[^a-z0-9]+/gi, "_");
+/**
+ * Write a page straight into the cache at a chosen parse version, as an older build would have.
+ *
+ * Through the store rather than by hand, because the store owns the on-disk shape — a test that
+ * wrote bucket lines itself would be pinning the format instead of the rule. One store per directory,
+ * so a second seed supersedes the first the way a re-parse does.
+ */
+const seeders = new Map<string, PageStore>();
+function seed(
+  dir: string,
+  page: Record<string, unknown> & { kind: string; title: string },
+  version: number,
+  /** The name it is cached *under*, when that differs from the page's own — see the alias test. */
+  as?: string,
+) {
+  const store = seeders.get(dir) ?? createPageStore(dir);
+  seeders.set(dir, store);
   const full = { sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString(), ...page };
-  fs.writeFileSync(path.join(dir, `${key}.json`), JSON.stringify({ version, page: full }), "utf8");
+  store.put(as ?? page.title, version, full as unknown as WikiPage);
 }
 
 test("an item page from the previous parse version is still good", async () => {
@@ -149,9 +165,9 @@ test("an item page from the previous parse version is still good", async () => {
   // would have made every user re-fetch the catalogue over three hours. Item pages did not change.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-version-test-"));
   try {
-    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     seed(dir, { kind: "item", title: "Old But Fine" }, 12);
     seed(dir, { kind: "item", title: "Genuinely Ancient" }, 4);
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     const items = await wiki.cachedItems();
     assert.deepEqual(
       items.map((i) => i.title),
@@ -159,7 +175,7 @@ test("an item page from the previous parse version is still good", async () => {
       "the previous version is kept; one from before the floor is not",
     );
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await cleanup(dir);
   }
 });
 
@@ -181,7 +197,7 @@ test("a zone page from before the roster existed is re-read, not trusted", async
     assert.equal(stale?.level?.from, undefined);
 
     // Re-parsed at the current version, the same roster does place it. A **fresh client**, because
-    // the catalogue is held in memory and invalidated by *our* writes — seeding files behind a
+    // the catalogue is held in memory and invalidated by *our* writes — seeding pages behind a
     // running client's back is exactly the thing it is entitled not to notice.
     seed(dir, { kind: "zone", title: "Blackburrow", npcs: [{ name: "A Gnoll", level: "5-7" }] }, 13);
     const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
@@ -190,7 +206,7 @@ test("a zone page from before the roster existed is re-read, not trusted", async
     assert.equal(fresh?.level?.from, "mob");
     assert.equal(fresh?.level?.min, 5);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await cleanup(dir);
   }
 });
 
@@ -246,6 +262,25 @@ test("two callers arriving at once share one walk", async () => {
 /** The pack is written after the build settles, so a test that reads it has to let that happen. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
 
+/**
+ * Tear down a temp cache, tolerating a write that is still in flight.
+ *
+ * The pack is written fire-and-forget on purpose — the catalogue is already in hand and a failed
+ * write only costs the next launch a rebuild — so one can land while the directory is being removed
+ * and Windows answers ENOTEMPTY. Retrying is the test's problem, not the client's.
+ */
+async function cleanup(dir: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.promises.rm(dir, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      if (attempt >= 20) throw e;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+}
+
 test("a second launch reads the pack instead of walking the cache", async () => {
   // The reason the Items tab stopped being painful: 11,519 reads plus eleven thousand cards parsed is
   // ~700ms on the process that serves every window, paid on each launch because Items is usually the
@@ -265,7 +300,7 @@ test("a second launch reads the pack instead of walking the cache", async () => 
     assert.deepEqual(packed.map((r) => r.item.title), ["Thing"]);
     assert.equal(packed[0].stats.stats.ac, 7, "and the built stats came with it");
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await cleanup(dir);
   }
 });
 
@@ -284,7 +319,7 @@ test("writing a page drops the pack, so it can never serve a stale catalogue", a
     const rows = JSON.parse(await next.catalogueJson()) as ItemRow[];
     assert.deepEqual(rows.map((r) => r.item.title).sort(), ["First", "Second"]);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await cleanup(dir);
   }
 });
 
@@ -303,7 +338,7 @@ test("a pack from another build is ignored rather than trusted", async () => {
     const rows = JSON.parse(await next.catalogueJson()) as ItemRow[];
     assert.deepEqual(rows.map((r) => r.item.title), ["Thing"], "it rebuilt from the pages");
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await cleanup(dir);
   }
 });
 
@@ -341,6 +376,132 @@ test("a launch opens a handful of files, not the whole cache", async () => {
     // A handful: the pack, the harvest state, the mirrored indexes. Emphatically not one per page.
     assert.ok(opens < 10, `a launch opened ${opens} files`);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await cleanup(dir);
+  }
+});
+
+test("a page cached under two names is one item, not two", async () => {
+  /**
+   * Asking for a *graded* item — `Cloth Cape +2`, off the log or the shopping list — finds no page of
+   * that name, so `getPage` retries the base name and caches what comes back under the name it was
+   * asked about. That is deliberate (it stops the next `+2` paying for the fetch again), and it means
+   * the cache holds the same page under two names. The catalogue walks what is held, so without
+   * folding them the Items tab lists the same item twice — 37 times over, on a real cache.
+   */
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-alias-"));
+  try {
+    const same = { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", card: { title: "Cloth Cape", lines: ["AC: 2"] } };
+    seed(dir, same, 13);
+    // The alias `getPage("Cloth Cape +2")` would write: the same page, under the asked-for name.
+    seed(dir, same, 13, "Cloth Cape +2");
+
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const rows = JSON.parse(await wiki.catalogueJson()) as ItemRow[];
+    assert.deepEqual(rows.map((r) => r.item.title), ["Cloth Cape"], "two names, one row");
+    assert.equal(rows[0].stats.stats.ac, 2, "and it is the real page, not an empty stand-in");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+// ─── The old one-file-per-page cache ────────────────────────────────────────
+
+test("a cache of loose page files is folded into buckets and the files go", async () => {
+  /**
+   * The upgrade path off one file per page ([ADR 0165](../../specs/decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)).
+   * Every existing install has thousands of these, so getting this wrong loses somebody's whole
+   * catalogue and costs them a three-hour re-crawl.
+   *
+   * Also pins what migration does with the **graded aliases**: keyed by the page's own title, so
+   * `Cloth_Cape_2.json` folds into the one entry rather than carrying the duplicate forward.
+   */
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-migrate-"));
+  try {
+    const loose = (name: string, page: Record<string, unknown>) =>
+      fs.writeFileSync(
+        path.join(dir, `${name}.json`),
+        JSON.stringify({ version: 13, page: { sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString(), ...page } }),
+        "utf8",
+      );
+    const cape = { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", card: { title: "Cloth Cape", lines: ["AC: 2"] } };
+    loose("Cloth_Cape", cape);
+    loose("Cloth_Cape_2", cape); // the graded alias, same page under a second name
+    loose("Rusty_Sword", { kind: "item", title: "Rusty Sword", wikiPath: "/Rusty_Sword", card: { title: "Rusty Sword", lines: ["AC: 1"] } });
+    // Not pages, and not ours to touch.
+    fs.writeFileSync(path.join(dir, "title-index.json"), JSON.stringify({ fetchedAt: new Date().toISOString(), titles: ["Cloth Cape"] }), "utf8");
+
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const titles = (await wiki.cachedItems()).map((i) => i.title);
+    assert.deepEqual(titles, ["Cloth Cape", "Rusty Sword"], "every page survived the fold");
+
+    const left = fs.readdirSync(dir).filter((n) => n.endsWith(".json")).sort();
+    assert.deepEqual(left, ["title-index.json"], "the loose page files are gone; the index is not");
+    assert.ok(fs.readdirSync(path.join(dir, "pages")).length > 0, "and the buckets hold them");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("a page is readable while the old cache is still being folded in", async () => {
+  // Migration walks thousands of files, and the app is live throughout. A lookup that missed until it
+  // finished would mean an upgrade launch re-fetching pages it already has.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-migrate-live-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "Cloth_Cape.json"),
+      JSON.stringify({ version: 13, page: { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString() } }),
+      "utf8",
+    );
+    const store = createPageStore(dir);
+    // Synchronously, before the migration this construction started can possibly have run.
+    assert.equal(store.get("Cloth Cape")?.page.title, "Cloth Cape", "read through to the old file");
+    await store.ready();
+    assert.equal(store.get("Cloth Cape")?.page.title, "Cloth Cape", "and still there afterwards");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("a cache that never had the old layout stops looking for it", async () => {
+  // The flag that says "read through to the loose files" has to clear even when there are none, or
+  // every lookup that misses the buckets opens a file that has never existed — one wasted open per
+  // cache miss, for the life of the process, on every install that started here.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-fresh-"));
+  try {
+    const store = createPageStore(dir);
+    await store.ready();
+    const real = fs.readFileSync;
+    let opens = 0;
+    (fs as { readFileSync: typeof fs.readFileSync }).readFileSync = ((...args: Parameters<typeof fs.readFileSync>) => {
+      opens++;
+      return real(...args);
+    }) as typeof fs.readFileSync;
+    try {
+      assert.equal(store.get("Nothing At All"), null);
+    } finally {
+      (fs as { readFileSync: typeof fs.readFileSync }).readFileSync = real;
+    }
+    assert.equal(opens, 1, "the bucket, and nothing else");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("a torn line costs one page, not the bucket", async () => {
+  // An append can be cut short by a power cut. The rest of the bucket has to survive it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-torn-"));
+  try {
+    seed(dir, { kind: "item", title: "Whole Thing", wikiPath: "/Whole_Thing" }, 13);
+    const bucket = fs
+      .readdirSync(path.join(dir, "pages"))
+      .map((n) => path.join(dir, "pages", n))
+      .find((f) => fs.readFileSync(f, "utf8").includes("Whole Thing"));
+    assert.ok(bucket, "the page landed in a bucket");
+    fs.appendFileSync(bucket, 'Half A Page	13	{"kind":"item","ti', "utf8");
+
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    assert.deepEqual((await wiki.cachedItems()).map((i) => i.title), ["Whole Thing"]);
+  } finally {
+    await cleanup(dir);
   }
 });

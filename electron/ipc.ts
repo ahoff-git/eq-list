@@ -42,6 +42,7 @@ import { AWARI_MSG } from "../src/shared/types";
 import { readContributor } from "../src/shared/contributors";
 import type { DragEnd } from "../src/shared/window-snap";
 import { createPeerShareHub, shareSources } from "./peer-share";
+import { createUiState } from "./ui-state";
 import type { ShareKind } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
 import { forTransfer, itemRows } from "../src/shared/item-search";
@@ -148,6 +149,13 @@ function registerListIpc(context: IpcContext): void {
  */
 function registerSettingsIpc(context: IpcContext): void {
   const { store, watcher, combat, history, killLog, lootLog, broadcast } = context;
+
+  // ── panel settings ──
+  // Built here rather than by main: nothing outside this bridge reads it, and it needs only the
+  // userData path that every registrar already has.
+  const ui = createUiState(context.userData);
+  ipcMain.handle(CH.uiStateAll, () => ui.all());
+  ipcMain.handle(CH.uiStateSet, (_e, key: string, value: unknown) => ui.set(key, value));
 
   // ── settings ──
   ipcMain.handle(CH.settingsGet, () => store.getSettings());

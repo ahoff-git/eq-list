@@ -1271,24 +1271,65 @@ timestamp on an already-fresh page, a page 20 days old is **refused** past the 1
 
 ## Selecting all of a facet
 
-Pinned in unit tests, and the counts checked against the filled catalogue (11,171 items, 154 zones,
-4,560 of them naming no zone). Not yet clicked.
+Pinned in unit tests, and the counts checked against the filled catalogue. Two sets of numbers,
+because *in era only* is on by default and changes all of them:
 
-- **All ticks everything.** Items tab → the Zone picker → *All 154*. The count under the criteria
-  should fall to 6,611 — **not** stay at 11,171, because items with no zone are cut. The note in the
+| | era on (default) | era off |
+|---|---|---|
+| items | 6,878 | 11,126 |
+| zones offered | 141 | 146 |
+| placed / `(none)` | 3,756 / 3,122 | 6,508 / 4,618 |
+
+Not yet clicked.
+
+- **All ticks everything.** Items tab → the Zone picker → *All 141*. The count under the criteria
+  should fall to 3,756 — **not** stay at 6,878, because items with no zone are cut. The note in the
   menu should say so before you wonder why.
 - **Filter, then All, ticks only what matched.** Type `karana` in the picker's filter box: the button
   should read *All 8 shown*, and pressing it should tick the eight Karana zones and nothing else.
 - **It adds rather than replaces.** Filter `karana`, press All; clear the filter, type `freeport`,
   press All. Both sets should be ticked — the second press must not discard the first.
 - **Clear still clears everything**, including values hidden by the current filter.
+- **Every option says what it is worth, and the dead ones sink**
+  ([ADR 0167](../decisions/0167-a-picker-says-what-a-tick-is-worth.md)). Each row should read
+  `Blackburrow · 214`. Now narrow hard — level cap 20, WIS floor 5, Slot = HEAD and BACK — and reopen
+  the Zone picker: the zones with something should lead, and the rest should be dimmed at `· 0` at the
+  bottom. Measured: **144 of 154 zones led nowhere** under exactly that query, which is what the
+  dimming is for.
+- **With nothing narrowed, nothing should be dimmed.** Open any picker at defaults: every row should
+  carry a count above zero. A `· 0` there means an out-of-era value has leaked into the menu, which
+  the era filter is supposed to remove outright rather than dim (below).
+- **The era filter empties the menus, it doesn't grey them.** Untick *in era only* and reopen the
+  Click picker: it should grow from **296 options to 491**. Proc goes 140 → 275, worn 6 → 21, focus
+  71 → 81, zones 141 → 146. Tick it again and they shrink back. This one filter is different from
+  every other on purpose — it says which game you are playing, so its values leave altogether, and
+  what stays dimmed is only ever about *your* query.
+- **A dimmed row is still clickable.** Tick one: the result count must not change, and you must be
+  able to untick it. Nothing here may strand a selection.
+- **The numbers are per-value, not a breakdown.** Two zones at 100 each do not mean 200 results — they
+  mean the union. Worth knowing before reading them as a total.
+- **Narrowing changes the numbers, and the order with them.** Type a stat floor and watch the open
+  menu re-sort. It should stay legible; a visible lurch on every keystroke means the memo is gone.
+- **No zone is nonsense** ([ADR 0168](../decisions/0168-a-zone-cell-that-names-no-place-is-not-a-zone.md)).
+  With the era filter off the picker should hold **146** zones, and none of them should be `Various Zones`, `Pre-Revamp`,
+  `Zone Name`, `Unconfirmed:`, `Confirmed Drop Zones`, `Unknown`, `Other 50+ zones` or
+  `(ToV East mobs)`. Search *Staff of the Earthcrafter*: its Zone cell should read *Plane of Fear*
+  with no `+1`, since the second cell was `Pre-Revamp` and is now gone.
+  **This needs one relaunch to take** — the pack signature moved to `rows7`, so the first launch
+  rebuilds the catalogue.
+- **The Zone column names a zone you actually ticked.** Press *All*, then untick one zone that shares
+  items with another — Plane of Fear, say. Rows for items that drop in both should stay (the other
+  zone still answers "can I get this"), and their Zone cell must now read the *kept* zone with a `+1`,
+  not the one you just excluded. Hover it: *Drops in 2 zones: …*. Before this, the column led with the
+  excluded zone and the row looked like a filter that had failed.
 - **It works the same on the other five pickers** (slot, class, race, source, flag) — the button is
   generic, and only the numbers in the note differ.
-- **(none) reaches what no value can.** The Zone picker should list *(none) · 4,560* above the zones,
-  separated by a rule. Tick only that: the results should be the 4,560 items with no zone — quest
+- **(none) reaches what no value can.** The Zone picker should list *(none) · 3,122* above the zones,
+  separated by a rule. Tick only that: the results should be those 3,122 items with no zone — quest
   rewards and crafted goods — which nothing else in the picker can show you.
-- **The halves add up.** *All 154* → 6,611. *(none)* alone → 4,560. Both → 11,171, i.e. no filter at
-  all. If those three don't agree with the catalogue's own total, the facet is lying somewhere.
+- **The halves add up.** *All 141* → 3,756. *(none)* alone → 3,122. Both → 6,878, i.e. no filter at
+  all. With the era filter off: 6,508 + 4,618 = 11,126. If those don't agree with the count the panel
+  shows, the facet is lying somewhere.
 - **It ors, it doesn't replace.** Tick `Blackburrow` and *(none)*: you should get Blackburrow's items
   *plus* the unsourced ones, not one or the other.
 - **The note points at the fix.** With zones ticked and *(none)* not, the menu should say how many are
@@ -1388,8 +1429,8 @@ off → 11,125. 22 items carry a level stated on the card; 4,911 have no known l
 
 ## The packed catalogue (the Items tab's launch cost)
 
-Measured in-process against the real 11,519-file cache: **cold 636ms** (walk + build + pack), **warm
-26ms** (a fresh client reading the pack), in-memory 0ms, worst event-loop stall on the warm path 0ms.
+Measured in-process against the real cache: **cold 345ms** (read + build + pack), **warm 11ms** (a
+fresh client reading the pack), in-memory 0ms, worst event-loop stall on the warm path 0ms.
 The packed rows carry everything — 22 card-stated levels, 579 mob, 190 quest, 5,455 zone; 154 zones
 and 491 click effects in the facets. Not yet watched through two real launches.
 
@@ -1419,5 +1460,39 @@ cache for a list of titles). Verified against the real 11,521-file cache.
   something is walking the cache again.
 - **The first launch after this change is still a cold one** — it walks once to build the pack, so
   expect one slow start, then quiet ones.
-- **A harvest is the other burst** — it writes a page a second for hours. If the scanner is a problem
-  during one, an exclusion for `%APPDATA%\eq-list\wiki-cache` is the blunt fix.
+- **A harvest is the other burst** — it writes a page a second for hours. It now *appends* to one of
+  256 existing files rather than creating a new one each time
+  ([ADR 0165](../decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)), which is an
+  ordinary write pattern rather than one that resembles an encryption run. If the scanner is still a
+  problem during one, an exclusion for `%APPDATA%\eq-list\wiki-cache` is the blunt fix.
+
+## The page cache as 256 files (ADR 0165)
+
+Measured in-process against the real cache: migration folded **11,523 loose files into 256 buckets**,
+19.4 MB (53.5 MB on disk) down to **9.0 MB**; a cold catalogue build is **345ms and 261 file opens**
+against 706ms and 11,523, and a rebuild with the buckets resident is **253ms and zero reads**. Not yet
+watched through a full harvest or a crash.
+
+- **The first launch after this change migrates.** It happens in the background, so the app should be
+  usable throughout — open the Items tab immediately and it should work. The debug log says
+  `folded N page files into 256 buckets in …ms`.
+- **Afterwards, `%APPDATA%\eq-list\wiki-cache` holds five files and a `pages/` folder** of 256
+  `.jsonl` files. The loose `*.json` pages should be gone; `title-index.json`, `zone-index.json`,
+  `out-of-era-zones.json`, `harvest.json` and `catalogue.json` should not.
+- **Nothing was lost.** The Items tab's item count should match what it was before the upgrade, less
+  about 36 (the graded aliases, which folded into their base pages).
+- **A page still opens.** Search for an item you had cached and open it — no re-fetch should be needed
+  (watch the network, or just note that it appears instantly offline).
+- **Pulling the plug is survivable.** Kill the app mid-harvest, relaunch, and the catalogue should
+  come back with at most the one page that was being written missing.
+- **A harvest still shares.** Run one with a peer connected; pages should cross as before — the store
+  is underneath all of that and none of it should notice.
+
+## Graded aliases in the catalogue
+
+A page fetched for a graded name (`Cloth Cape +2`) is cached under that name as well as its own, so
+two files can hold one page. Folded on the way into the catalogue; 36 such aliases on a real cache.
+
+- **No item appears twice.** Items tab → sort by name and skim for adjacent identical rows; there
+  should be none. Search a known one (`Cloth Cape`, `Bamboo Bokken`) — exactly one row each.
+- **The row is the real page**, not an empty stand-in: it should carry its stats and its level.

@@ -197,6 +197,10 @@ finished, so a number is claimed before a second author can reach for it.
 - [0162: A room of one is checked, not guessed at](./0162-a-room-of-one-is-checked-not-guessed-at.md)
 - [0163: An item wears the level of what drops it](./0163-an-item-wears-the-level-of-what-drops-it.md)
 - [0164: The newest copy in the room wins](./0164-the-newest-copy-in-the-room-wins.md)
+- [0165: The page cache is a few files, not eleven thousand](./0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)
+- [0166: A panel setting belongs to the app, not to an origin](./0166-a-panel-setting-belongs-to-the-app-not-to-an-origin.md)
+- [0167: A picker says what a tick is worth](./0167-a-picker-says-what-a-tick-is-worth.md)
+- [0168: A zone cell that names no place is not a zone](./0168-a-zone-cell-that-names-no-place-is-not-a-zone.md)
 
 ## Open Questions
 

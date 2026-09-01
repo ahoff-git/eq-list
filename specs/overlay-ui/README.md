@@ -486,24 +486,43 @@ list, hunt, search, damage, session, peers, settings.
     - **Criteria are subtractive.** A name box (literal word match, not the fuzzy one — fuzz here
       would let a criterion *add* rows), six `FacetPicker` dropdowns (slot / class / race / source /
       zone / flag, several ticks in one being an *or*), stat floors ("INT ≥ 5"), and an
-      *in era only* toggle. Facet options are **derived from the catalogue**, so a picker can never
-      offer a value that returns nothing, and zones appear under one spelling each. A `Clear (n)`
-      button counts what's cutting.
-    - **Each picker has an *All*, and it ticks what is currently *shown*.** With 154 zones that is
+      *in era only* toggle — **on by default**, since most of the catalogue is out of era and none of
+      it can be got on this server. Facet options are **derived from the catalogue**, and zones appear
+      under one spelling each, with the wiki's non-place cells (`Various Zones`, `Pre-Revamp`) kept out
+      of the zone list altogether
+      ([ADR 0168](../decisions/0168-a-zone-cell-that-names-no-place-is-not-a-zone.md)) — 146 zones, all
+      of them places. A `Clear (n)` button counts what's cutting; the era toggle deliberately isn't in
+      that count, being the default view rather than a condition you added.
+    - **Every option says what ticking it would get you, and a dead one dims and sinks**
+      (`facetCounts`, [ADR 0167](../decisions/0167-a-picker-says-what-a-tick-is-worth.md)). The count
+      is the rows that pass *every other criterion* and carry that value, so `· 0` means "nothing here
+      fits the rest of what you asked for" rather than "nothing here". It is what turns a flat alphabet
+      of 146 zones into a readable list: narrowed to level ≤ 20, WIS ≥ 5 and two slots, **144 of the
+      154 zones then on offer led nowhere at all**, and the only way to find that out used to be to
+      tick them one at a time. Dimmed rather than hidden and still clickable — the count describes your
+      criteria, not the catalogue, and a row that vanished as you narrowed would be one you could no
+      longer reason about. The sort is a **stable partition**, so the alphabet survives inside each
+      half and so does the fuzzy ranking when a filter is typed. One pass covers all ten facets
+      (13ms over 11,126 rows, 4ms once narrowed), memoized on the criteria.
+    - **Each picker has an *All*, and it ticks what is currently *shown*.** With 146 zones that is
       the difference between a usable filter and a scrolling exercise — and combined with the menu's
       own filter box it is the real workflow: type "karana", press *All*, and all eight Karana zones
       are ticked at once. A union rather than a replacement, so filtering twice and pressing it twice
       builds a selection up instead of discarding the first half.
     - **A *(none)* row, above the values and separated by a rule**, matching items that have no value
       at all for that facet (`NO_FACET_VALUE`). It is the other half of the catalogue and a large
-      half: measured on a filled one, **4,560 of 11,171 items name no zone whatsoever** (quest
+      half: measured on a filled one, **4,618 of 11,126 items name no zone whatsoever** (quest
       rewards, crafted goods, anything whose sources the wiki never listed), and no combination of
-      real values can reach them. The two halves partition exactly — 6,611 + 4,560 = 11,171 — so
-      *All* is "only things that come from somewhere", *(none)* is "only the ones that don't", and
-      ticking both is the whole catalogue back. It ors with the real values like any other tick, so
-      `[BACK, (none)]` reads "worn on the back, or worn nowhere".
-      - It is deliberately **not** swept up by *All*: if it were, *All* would tick every item in the
-        catalogue and become an elaborate way of changing nothing.
+      real values can reach them. The two halves partition exactly — 6,508 + 4,618 = 11,126, and
+      3,756 + 3,122 = 6,878 with the era filter on — so *All* is "only things that come from
+      somewhere", *(none)* is "only the ones that don't", and ticking both is the whole catalogue
+      back. Its count is criteria-aware like every other, which retired `facetlessCount`. It ors with
+      the real values like any other tick, so `[BACK, (none)]` reads "worn on the back, or worn
+      nowhere".
+      - ***All* does sweep it up**, because *All* is a starting point rather than a filter: the
+        workflow is "tick everything, then un-tick what I can't do yet", and an *All* that quietly
+        held back the thousands of items with no zone would leave you deselecting from a set you
+        didn't know was already short.
       - The sentinel is NUL-prefixed rather than a readable `"(none)"` because these lists are
         populated from wiki text — a facet value that happened to equal the sentinel would silently
         become this instead, and NUL makes that impossible rather than merely unlikely. Only the

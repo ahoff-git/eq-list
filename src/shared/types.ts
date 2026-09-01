@@ -2471,6 +2471,16 @@ export interface EqlApi {
     pickLogDir(): Promise<string | null>;
     onChanged(cb: (settings: Settings) => void): Unsubscribe;
   };
+  /**
+   * Panel settings that outlive the window — see `usePersistentState` and `electron/ui-state.ts`.
+   *
+   * Untyped on purpose: the keys are the renderer's own (`storageKeys.ts`) and main only stores
+   * them. `all()` in one call rather than a get per key, because a window warming up wants the lot.
+   */
+  ui: {
+    all(): Promise<Record<string, unknown>>;
+    set(key: string, value: unknown): Promise<void>;
+  };
   wiki: {
     search(term: string): Promise<SearchResult[]>;
     getPage(title: string): Promise<WikiPage | null>;

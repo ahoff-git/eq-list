@@ -136,7 +136,14 @@ unit-tested.
     handful rather than one per page: coverage for the peer room is built on every launch, and getting
     its titles by walking the cache meant 11,519 opens — and 11,519 real-time antimalware scans — each
     time the app started. That cost is invisible to any timing taken inside the app, which is why it
-    is asserted as a *count* rather than a duration. Note what these tests *don't* claim — a file seeded
+    is asserted as a *count* rather than a duration. Another pins that a page cached under **two
+    names** — the graded alias `getPage` writes so a `+2` need not be re-fetched — becomes one row
+    and not two. Three more cover the **bucket store**
+    ([ADR 0165](../decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)): an old
+    one-file-per-page cache is folded into buckets and the loose files deleted while the indexes
+    beside them are left alone, a page is readable *while* that fold is still running (an upgrade
+    must never re-fetch what it already has), and a **torn append** — a line cut short by a power cut
+    — costs the one page rather than the bucket. Note what these tests *don't* claim — a file seeded
     behind a running client's back is something it is entitled not to notice, so the version tests
     build a fresh client rather than re-reading the same one.
   - `src/shared/item-levels.ts` → `electron/tests/item-levels.test.ts` (*what level do I need to be to

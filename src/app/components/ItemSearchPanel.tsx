@@ -20,8 +20,10 @@ import {
   FACETS,
   NO_CRITERIA,
   activeCriteria,
+  zonesInFilterOrder,
   facetOptions,
-  facetlessCount,
+  facetCounts,
+  NO_FACET_VALUE,
   searchItems,
   weightedStats,
   type ItemCriteria,
@@ -81,7 +83,10 @@ export default function ItemSearchPanel() {
 
   // Persisted, like the Hunt tab's zone: this is a workbench you come back to. A half-built query
   // thrown away because you glanced at the List tab is the same annoyance in both places.
-  const [criteria, setCriteria] = usePersistentState<ItemCriteria>(STORAGE_KEYS.itemCriteria, NO_CRITERIA);
+  const [criteria, setCriteria] = usePersistentState<ItemCriteria>(STORAGE_KEYS.itemCriteria, NO_CRITERIA, {
+    key: STORAGE_KEYS.itemCriteriaV1,
+    migrate: (stored) => ({ ...NO_CRITERIA, ...(stored as ItemCriteria), hideOutOfEra: true }),
+  });
   const [weights, setWeights] = usePersistentState<StatWeights>(STORAGE_KEYS.itemWeights, {});
   const [sort, setSort] = usePersistentState<Sort<ItemSortKey>>(STORAGE_KEYS.itemSort, { key: "name", desc: false });
   const [weightsOpen, setWeightsOpen] = useState(false);
@@ -101,15 +106,39 @@ export default function ItemSearchPanel() {
 
   // Options and the "how many have none of this" count together, since both are one pass over the
   // catalogue and both are needed by the same picker.
-  const facets = useMemo(
-    () =>
-      Object.fromEntries(
-        FACETS.map((f) => [f.key, { options: facetOptions(rows, f.key), missing: facetlessCount(rows, f.key) }]),
-      ) as Record<string, { options: string[]; missing: number }>,
-    [rows],
+  /**
+   * The catalogue the panel is actually working over.
+   *
+   * **The era toggle is not a criterion like the others.** Every other one narrows a query, and the
+   * pickers deliberately keep offering what it cut so you can reason about it (see `counts`). This one
+   * says *which game you are playing* — the out-of-era items are not obtainable on this server at all
+   * — so it takes its values out of the pickers entirely rather than leaving them dimmed at zero.
+   * Measured: it retires 5 whole zones, along with the classes, effects and flags that only Kunark and
+   * Velious items carry.
+   *
+   * Applied here rather than inside `searchItems`, which already honours the flag; this is about what
+   * the *menus* are built from.
+   */
+  const inEra = useMemo(
+    () => (active.hideOutOfEra ? rows.filter((row) => !row.item.outOfEra) : rows),
+    [rows, active.hideOutOfEra],
   );
 
-  const found = useMemo(() => searchItems(rows, active, weights, sort), [rows, active, weights, sort]);
+  const facets = useMemo(
+    () => Object.fromEntries(FACETS.map((f) => [f.key, facetOptions(inEra, f.key)])) as Record<string, string[]>,
+    [inEra],
+  );
+
+  /**
+   * What each value in each picker is worth **under the rest of the criteria** — the numbers beside
+   * the options, and the reason the dead ones dim and sink.
+   *
+   * Memoized on the criteria as well as the rows, so it is one pass per change rather than one per
+   * render: the pickers re-render whenever anything on the panel moves, including opening a menu.
+   */
+  const counts = useMemo(() => facetCounts(inEra, active), [inEra, active]);
+
+  const found = useMemo(() => searchItems(inEra, active, weights, sort), [inEra, active, weights, sort]);
 
   // The stats worth a column: the ones you're weighting by, plus the ones you've set a floor on.
   // In `STATS` order rather than the order they were added, so the table reads like a card.
@@ -120,7 +149,7 @@ export default function ItemSearchPanel() {
 
   // How many the level bounds are silent about — see `matchesItem`. Shown beside the slider so a cap
   // that keeps 4,942 unplaced items is honest about it rather than looking like a filter that failed.
-  const unplaced = useMemo(() => rows.reduce((n, row) => n + (row.level ? 0 : 1), 0), [rows]);
+  const unplaced = useMemo(() => inEra.reduce((n, row) => n + (row.level ? 0 : 1), 0), [inEra]);
 
   const onSort = (next: Sort<ItemSortKey>) => setSort(next);
   const shown = found.slice(0, MAX_ROWS);
@@ -141,8 +170,9 @@ export default function ItemSearchPanel() {
             key={facet.key}
             label={facet.label}
             any={facet.any}
-            options={facets[facet.key]?.options ?? []}
-            missing={facets[facet.key]?.missing ?? 0}
+            options={facets[facet.key] ?? []}
+            missing={counts[facet.key]?.get(NO_FACET_VALUE) ?? 0}
+            counts={counts[facet.key]}
             chosen={active.facets[facet.key]}
             onChange={(values) => setFacet(facet.key, values)}
           />
@@ -175,8 +205,9 @@ export default function ItemSearchPanel() {
             key={facet.key}
             label={facet.label}
             any={facet.any}
-            options={facets[facet.key]?.options ?? []}
-            missing={facets[facet.key]?.missing ?? 0}
+            options={facets[facet.key] ?? []}
+            missing={counts[facet.key]?.get(NO_FACET_VALUE) ?? 0}
+            counts={counts[facet.key]}
             chosen={active.facets[facet.key]}
             onChange={(values) => setFacet(facet.key, values)}
           />
@@ -284,7 +315,13 @@ export default function ItemSearchPanel() {
           </thead>
           <tbody>
             {shown.map((row) => (
-              <ItemRowView key={`${row.item.origin}:${row.item.title}`} row={row} columns={columns} scored={!!weightedStats(weights).length} />
+              <ItemRowView
+                key={`${row.item.origin}:${row.item.title}`}
+                row={row}
+                columns={columns}
+                scored={!!weightedStats(weights).length}
+                pickedZones={active.facets.zone}
+              />
             ))}
           </tbody>
         </table>
@@ -300,8 +337,19 @@ export default function ItemSearchPanel() {
 }
 
 /** One result. Split out because it holds nothing — the table just got long enough to read badly. */
-function ItemRowView({ row, columns, scored }: { row: ValuedItem; columns: StatKey[]; scored: boolean }) {
-  const zones = row.zones;
+function ItemRowView({
+  row,
+  columns,
+  scored,
+  pickedZones,
+}: {
+  row: ValuedItem;
+  columns: StatKey[];
+  scored: boolean;
+  /** The ticked zones, so the Zone column can lead with one that kept this row. */
+  pickedZones: string[];
+}) {
+  const zones = zonesInFilterOrder(row.zones, pickedZones);
   const level = row.level;
   return (
     <tr className={row.item.outOfEra ? "out-of-era" : undefined}>
@@ -324,7 +372,8 @@ function ItemRowView({ row, columns, scored }: { row: ValuedItem; columns: StatK
             ))
           : "—"}
       </td>
-      <td className="muted" title={zones.join(", ")}>
+      {/* `+N` is "and N other zones" — the count is in the hover, since the column has to stay narrow. */}
+      <td className="muted" title={zones.length > 1 ? `Drops in ${zones.length} zones: ${zones.join(", ")}` : zones[0]}>
         {zones.length > 1 ? `${zones[0]} +${zones.length - 1}` : (zones[0] ?? "—")}
       </td>
       <td

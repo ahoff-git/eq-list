@@ -31,6 +31,10 @@ const api: EqlApi = {
     pickLogDir: () => ipcRenderer.invoke(CH.settingsPickLogDir),
     onChanged: (cb) => on(CH.settingsChanged, cb),
   },
+  ui: {
+    all: () => ipcRenderer.invoke(CH.uiStateAll),
+    set: (key, value) => ipcRenderer.invoke(CH.uiStateSet, key, value),
+  },
   wiki: {
     search: (term) => ipcRenderer.invoke(CH.wikiSearch, term),
     getPage: (title) => ipcRenderer.invoke(CH.wikiGetPage, title),

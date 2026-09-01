@@ -24,6 +24,7 @@ import {
   fetchCategoriesFor,
 } from "./api";
 import { parseWikiPage } from "./parse";
+import { createPageStore } from "./page-store";
 import { createHarvester, type HarvestProgress, type SavedHarvest } from "./harvest";
 import {
   emptyCoverage,
@@ -35,6 +36,7 @@ import {
 import type { SharedItemPage } from "../../src/shared/peer-share";
 import { itemLevel, mobCardLevel, npcKey, parseLevelRange, questCardLevel, type LevelSources } from "../../src/shared/item-levels";
 import { fuzzyRank } from "../../src/shared/fuzzy";
+import { normalizeItemName } from "../../src/shared/grouping";
 import { bestReading } from "../../src/shared/ocr-variants";
 import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
@@ -210,18 +212,6 @@ export interface PeerLink {
   claim: (shard: number | undefined) => void;
 }
 
-/**
- * Longest cache file name we'll write. A wiki title becomes a file name, and some are very long
- * ("Spell: …" plus a rank); Windows caps a path at 260 characters, so a title is truncated well short
- * of it to leave room for the cache directory. Collisions between two titles that agree for this many
- * characters would only cost a re-fetch.
- */
-const MAX_CACHE_KEY = 120;
-
-function cacheKey(title: string): string {
-  return title.replace(/[^a-z0-9]+/gi, "_").slice(0, MAX_CACHE_KEY);
-}
-
 function toResult(title: string): SearchResult {
   return { title, wikiPath: `/${title.replace(/ /g, "_")}` };
 }
@@ -290,7 +280,11 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * — including for a harvest that is already running.
    */
   const ttlMs = opts.ttlMs ?? (() => DEFAULT_TTL_MS);
-  const fileFor = (title: string) => path.join(cacheDir, `${cacheKey(title)}.json`);
+  /**
+   * Where pages live. 256 append-only bucket files rather than one file per page — see
+   * [page-store](./page-store.ts) for why, and for the migration off the old layout.
+   */
+  const store = createPageStore(cacheDir);
 
   const titleIndex = createCachedIndex(path.join(cacheDir, "title-index.json"), fetchAllTitles, "title");
   const zoneIndex = createCachedIndex(
@@ -369,22 +363,12 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   zoneIndex.ensureFresh();
   outEraZoneIndex.ensureFresh();
 
-  function readCacheFile(file: string): { page: WikiPage; ageMs: number; version: number } | null {
-    try {
-      const raw = fs.readFileSync(file, "utf8");
-      const parsed = JSON.parse(raw) as { version?: number; page?: WikiPage } & Partial<WikiPage>;
-      // v2+ writes an envelope {version, page}; legacy entries were the bare WikiPage.
-      const enveloped = typeof parsed.version === "number" && !!parsed.page;
-      const page = (enveloped ? parsed.page : (parsed as WikiPage)) as WikiPage;
-      const version = enveloped ? (parsed.version as number) : 1;
-      return { page, ageMs: Date.now() - new Date(page.fetchedAt).getTime(), version };
-    } catch {
-      return null;
-    }
+  /** A page we hold, with the one thing the store doesn't know: how old it is by our clock. */
+  function readCache(title: string): { page: WikiPage; ageMs: number; version: number } | null {
+    const held = store.get(title);
+    if (!held) return null;
+    return { ...held, ageMs: Date.now() - new Date(held.page.fetchedAt).getTime() };
   }
-
-  /** The same read, by title — which is how everything but the catalogue walk asks for a page. */
-  const readCache = (title: string) => readCacheFile(fileFor(title));
 
   /** Fuzzy-match `q` against a cached index; empty array if the index isn't ready. */
   function fuzzyOver(index: CachedIndex, q: string): SearchResult[] {
@@ -416,7 +400,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       const outEra = await ensureOutEraSet();
       page.outOfEra = fetched.categories.some((c) => isOutEraCategory(outEra, c));
       try {
-        fs.writeFileSync(fileFor(title), JSON.stringify({ version: CACHE_VERSION, page }, null, 2), "utf8");
+        store.put(title, CACHE_VERSION, page);
         pageWritten(title);
       } catch (e) {
         log.warn("cache write failed", (e as Error).message);
@@ -623,7 +607,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       }
       const full: WikiPage = { ...page, fetchedAt: new Date(fetchedAt).toISOString() };
       try {
-        fs.writeFileSync(fileFor(page.title), JSON.stringify({ version: CACHE_VERSION, page: full }, null, 2), "utf8");
+        store.put(page.title, CACHE_VERSION, full);
         taken++;
         // The shard is re-checked once for the whole batch below, so only the derived data goes here.
         dropDerived();
@@ -667,9 +651,21 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * The parse version because a re-parse changes what a page becomes, and the *row* shape because
    * this file is `ItemRow[]` — a build that adds a field to a row must not read yesterday's rows and
    * quietly serve them without it.
+   *
+   * "Shape" includes **how a field is computed**, which is the easier half to forget. `rows7` is a
+   * change of content, not of structure: the zone list stopped carrying the wiki's non-place cells
+   * (`Various Zones`, `Pre-Revamp` — see `namesAPlace`), and a pack written before that would have
+   * gone on offering them in the Zone picker with nothing in the code to say why.
    */
-  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows6`;
-  /** Set once when a write invalidates the pack, so a harvest doesn't unlink a file per page. */
+  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows7`;
+  /**
+   * Set when a write invalidates the pack — so a harvest doesn't unlink a file per page, and so
+   * `readPack` stops trusting it **at once**.
+   *
+   * The unlink is fire-and-forget, which left a window: a peer's page arriving and the Items tab
+   * asking for the catalogue in the same tick would find the file still on disk and be served the
+   * rows from before the page landed. The flag closes it without making the caller wait on a delete.
+   */
   let packDropped = false;
 
   /**
@@ -698,6 +694,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * text without main ever parsing it (see the `contextBridge` note above).
    */
   function readPack(): { titles: string; rows: string } | null {
+    if (packDropped) return null;
     try {
       const held = fs.readFileSync(packFile, "utf8");
       // A mismatched pack is never parsed: a build that changed the row shape must not read
@@ -754,16 +751,6 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    */
   let heldTitleList: string[] | null = null;
   let building: Promise<CachedItem[]> | null = null;
-
-  /**
-   * How often the walk lets the event loop breathe.
-   *
-   * Thousands of synchronous reads in one go is one unbroken block on the process that serves every
-   * window. Chunked, the longest stall is a few milliseconds and the app stays usable while the
-   * catalogue builds behind it.
-   */
-  const YIELD_EVERY = 100;
-  const breathe = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
   /**
    * A page was written, so what we hold has moved.
@@ -834,34 +821,21 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   }
 
   async function buildCatalogue(): Promise<CachedItem[]> {
-    // The cache directory also holds the mirrored title/zone indexes, which have no `kind` and so
-    // fall out of the filter below on their own — there is no name list to keep in step with.
     const startedAt = Date.now();
-    let files: string[];
-    try {
-      files = await fs.promises.readdir(cacheDir);
-    } catch (e) {
-      log.warn("couldn't read the page cache:", (e as Error).message);
-      return [];
-    }
     const items: CachedItem[] = [];
     /** Level evidence gathered on the same walk — see below. Keyed folded, since an item's sources
      *  write a mob's name in the log's case ("an aviak quetzel") and its page is titled in the
      *  wiki's ("An aviak quetzel"). */
     const mobLevels = new Map<string, { min: number; max: number }>();
     const questLevels = new Map<string, { min: number; max: number }>();
-    let read = 0;
-    for (const entry of files) {
-      if (!entry.endsWith(".json")) continue;
-      // Thousands of synchronous reads, chunked so the process that serves every window is never
-      // blocked for more than a few milliseconds at a time.
-      if (++read % YIELD_EVERY === 0) await breathe();
-      const hit = readCacheFile(path.join(cacheDir, entry));
+    // 256 bucket reads rather than 11,523, and the store breathes between them so main is never
+    // blocked for more than a couple of milliseconds at a time (see `page-store.ts`).
+    await store.each((hit) => {
       // Age is deliberately ignored — a week-old card is still a card, and the fetch that would
       // refresh it belongs to `getPage`, which the user has to ask for. The parser **version** is
       // not ignored: a page parsed before item cards existed has no card where it should have one,
       // and a catalogue built on those would silently be missing stats rather than items.
-      if (!hit || !parsedCurrently(hit.page.kind, hit.version)) continue;
+      if (!parsedCurrently(hit.page.kind, hit.version)) return;
       const { page } = hit;
       // Mobs and quests are not items, but they are what says how hard an item is to get — so the
       // one pass that reads the cache collects their levels while it is here rather than walking
@@ -872,7 +846,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
         // Nothing goes and *gets* one: that is the 4,214-page crawl this design avoids.
         const level = mobCardLevel(page.card?.lines);
         if (level) mobLevels.set(npcKey(page.title), level);
-        continue;
+        return;
       }
       if (page.kind === "zone") {
         // **The cheap rung, and where nearly every level actually comes from.** One zone page states
@@ -884,16 +858,16 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
           const level = parseLevelRange(npc.level);
           if (level) mobLevels.set(key, level);
         }
-        continue;
+        return;
       }
       if (page.kind === "quest") {
         const level = questCardLevel(page.card?.lines);
         if (level) questLevels.set(page.title.trim().toLowerCase(), level);
-        continue;
+        return;
       }
       // A recipe is an item page that happens to be craftable, so it carries a card and belongs
       // here. Zones and spells are neither items nor evidence about one.
-      if (page.kind !== "item" && page.kind !== "recipe") continue;
+      if (page.kind !== "item" && page.kind !== "recipe") return;
       items.push({
         title: page.title,
         origin: "wiki",
@@ -903,7 +877,41 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
         outOfEra: page.outOfEra,
         fetchedAt: page.fetchedAt,
       });
+    });
+
+    /**
+     * **One row per item, however many files hold it.**
+     *
+     * A page can be cached under more than one name. Asking for a *graded* item — `Cloth Cape +2`,
+     * off the log or the shopping list — finds no page of that name, so `getPage` retries the base
+     * name and caches what comes back under the name it was asked about, which is what stops the next
+     * `+2` paying for the fetch again ([ADR 0057](../../specs/decisions/0057-a-grade-is-not-an-identity.md)).
+     * The cost is a second file holding the same page, and the walk reads files.
+     *
+     * Measured on a real cache: 36 such aliases, showing as 37 extra rows — the same item listed
+     * twice in the Items tab. `itemCatalog` used to fold them when the renderer built the rows; it
+     * still does that job for Lucy, and this is the same fold applied where the walk now ends.
+     *
+     * The **newest** copy wins, which is arbitrary between identical twins and right if a re-fetch
+     * ever updated one of them.
+     */
+    const byName = new Map<string, CachedItem>();
+    for (const item of items) {
+      const key = normalizeItemName(item.title);
+      if (!key) continue;
+      const held = byName.get(key);
+      if (!held || item.fetchedAt > held.fetchedAt) byName.set(key, item);
     }
+    if (byName.size !== items.length) {
+      log.debug("catalogue: folded", items.length - byName.size, "duplicate pages (graded aliases)");
+      items.length = 0;
+      items.push(...byName.values());
+    }
+    // Sorted always, not only when something was folded: the store visits pages in bucket order,
+    // which is a hash, so an unsorted catalogue would come out shuffled — and the pack, the coverage
+    // titles and anything reading `cachedItems` would each be looking at a different arrangement
+    // from one build to the next.
+    items.sort((a, b) => a.title.localeCompare(b.title));
 
     // Levels last, because an item's evidence may live in a file the walk had not reached yet when
     // the item itself was read. `itemLevel` falls through mob → quest → zone, so every item that

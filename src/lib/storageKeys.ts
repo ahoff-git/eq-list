@@ -20,7 +20,16 @@ export const STORAGE_KEYS = {
    * edited by three different controls and a shared key means each writes its own stale copy of the
    * other two.
    */
-  itemCriteria: "eqlist.main.itemCriteria",
+  itemCriteria: "eqlist.main.itemCriteria.v2",
+  /**
+   * The same thing before "in era only" became the default.
+   *
+   * A key bump rather than a migration, because a stored `false` and a deliberate `false` are the
+   * same three characters — there is nothing to read that tells them apart. What was stored is
+   * carried across whole (nobody loses a zone list they spent a while ticking); only the era flag
+   * comes over as the new default.
+   */
+  itemCriteriaV1: "eqlist.main.itemCriteria",
   itemWeights: "eqlist.main.itemWeights",
   itemSort: "eqlist.main.itemSort",
   /** Main window: how gently the Items tab fills the catalogue from the wiki (ADR 0153). */

@@ -140,6 +140,27 @@ shopping list.
   A page from a peer keeps **its** pull date, and a copy newer than ours replaces ours
   ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)), so a room re-pulls each page
   about once between everyone per TTL rather than once each.
+- **A page can be cached under two names, and the catalogue folds them.** Asking for a *graded* item
+  (`Cloth Cape +2`, off the log or the shopping list) finds no page of that name, so `getPage` retries
+  the base name and caches the answer under the name it was **asked** about — which is what stops the
+  next `+2` paying for the fetch again ([ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md)),
+  and what leaves the same page held under a second name. The catalogue folds them by
+  `normalizeItemName` at the end of its walk, newest copy winning. Measured on a real cache: 36 such
+  aliases, which had been showing as **37 duplicate rows** in the Items tab. Migration to the bucket
+  store dropped the 36 duplicate *files* — it keys by the page's own title — but the fold stays,
+  because the next graded lookup writes one again.
+- **Pages live in 256 append-only bucket files** ([page-store.ts](../../electron/wiki/page-store.ts),
+  [ADR 0165](../decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)). One file per
+  page was the obvious store and it stopped scaling at eleven thousand: **11,523 files** holding
+  19.4 MB but occupying 53.5 MB of 4 KB clusters, a full read costing 11,523 separate opens — each one
+  a real-time antimalware scan — and a harvest *creating* a file a second for three hours, which is
+  the shape a ransomware heuristic watches for. A page is now one line (`title 	 version 	 json`) in
+  a bucket chosen by `shardOf(title) % 256`; a write **appends**, so it costs what it always did, and
+  a bucket is rewritten only when the superseded lines outweigh the live ones. A full read is **261
+  opens and 345ms** against 11,523 and 706ms, and the cache is 9.0 MB against 53.5 MB. Buckets stay
+  resident once loaded, so a rebuild after a page is written is **253ms and zero disk reads**. The old loose
+  files are folded in on first launch and deleted, with lookups reading through to them meanwhile; a
+  torn append costs one page, because a line is self-contained.
 - **A launch opens ~20 files, not 11,519.** The peer room's coverage is built on the share hub's
   first catalogue tick, so it runs on *every launch* whether or not anybody opens the Items tab — and
   it used to get the titles it needs by walking every page in the cache. That burst of file opens is
@@ -165,12 +186,13 @@ shopping list.
   it; anything unreadable or half-written simply rebuilds.
   `dropDerived()` clears the item list, the rows and the pack **together** — they were separate once,
   and the one caller that forgot left a page a peer sent you invisible until the next restart.
-- **The catalogue is built once and held.** Walking 11,519 cache files is ~400ms of *synchronous*
-  reads, and main serves every window's IPC — paying it per Items tab mount froze the whole app for a
+- **The catalogue is built once and held.** Building it is hundreds of milliseconds of *synchronous*
+  work, and main serves every window's IPC — paying it per Items tab mount froze the whole app for a
   third of a second each time. `cachedItems()` keeps its answer and drops it only when *we* write a
   page (`pageWritten`), which is sound because nothing else writes this directory. The walk **yields
-  every 100 files**, so the longest stall it causes is ~12ms rather than one 400ms block, and two
-  callers arriving together share one walk. The shard index rides the same walk instead of doing a
+  between buckets**, so the longest stall it causes is a couple of milliseconds rather than one long
+  block, and two callers arriving together share one walk. It is **sorted by title always** — the
+  store visits pages in bucket order, which is a hash. The shard index rides the same walk instead of doing a
   second one, and is patched per written page rather than torn down — a harvest writes a page a
   second, and rebuilding on each would be a full walk every tick for three hours. Main warms it a few
   seconds after the window paints, so even the first open is instant.

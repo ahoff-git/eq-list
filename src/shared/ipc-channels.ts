@@ -17,6 +17,9 @@ export const CH = {
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
   settingsPickLogDir: "settings:pickLogDir",
+  // panel settings — the renderer's own state, kept app-wide rather than per origin (`ui-state.ts`)
+  uiStateAll: "uiState:all",
+  uiStateSet: "uiState:set",
   logImport: "log:import",
   logRecent: "log:recent", // the last few thousand lines, for testing an alert rule against them
   lootRecent: "loot:recent",

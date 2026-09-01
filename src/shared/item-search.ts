@@ -70,6 +70,26 @@ export interface ItemRow {
   zones: string[];
 }
 
+/**
+ * A row's zones, ordered so one the **zone filter actually kept** comes first.
+ *
+ * The Zone column shows the first zone and a `+N` for the rest, and with a filter on that was
+ * quietly dishonest: an item dropping in both Plane of Fear and Plane of Hate stays in the list when
+ * you untick Plane of Fear — correctly, since Plane of Hate still answers "can I get this" — but the
+ * column went on leading with Plane of Fear, so the row read as the very thing you had just excluded.
+ * Leading with a kept zone makes the column answer *why this row is here*.
+ *
+ * Untouched when no zone is ticked (there is nothing to lead with) or when there is only one zone.
+ */
+export function zonesInFilterOrder(zones: readonly string[], chosen: readonly string[]): string[] {
+  if (chosen.length === 0 || zones.length < 2) return [...zones];
+  const kept = new Set(chosen);
+  const inFilter = zones.filter((z) => kept.has(z));
+  // None kept means the row matched on something other than its zone — a facet nobody ticked cuts
+  // nothing — so there is no "why" to lead with and the natural order stands.
+  return inFilter.length ? [...inFilter, ...zones.filter((z) => !kept.has(z))] : [...zones];
+}
+
 /** An `ItemRow` scored against a weight sheet. */
 export interface ValuedItem extends ItemRow {
   value: number;
@@ -133,14 +153,20 @@ export const NO_CRITERIA: ItemCriteria = {
   text: "",
   facets: { slot: [], class: [], race: [], source: [], zone: [], flag: [], worn: [], click: [], proc: [], focus: [] },
   mins: {},
-  hideOutOfEra: false,
+  // **On by default.** The out-of-era items are the majority of the catalogue and none of them can be
+  // got on this server, so a list that includes them is answering a question nobody asked. Untick it
+  // to browse what the wiki knows about the game elsewhere.
+  hideOutOfEra: true,
 };
 
 /** How many conditions are currently cutting the list — what a "Clear (3)" button counts. */
 export function activeCriteria(c: ItemCriteria): number {
   const facets = FACETS.reduce((n, f) => n + (c.facets[f.key].length ? 1 : 0), 0);
   const levels = (c.levelMin !== undefined ? 1 : 0) + (c.levelMax !== undefined ? 1 : 0);
-  return (c.text.trim() ? 1 : 0) + facets + Object.keys(c.mins).length + levels + (c.hideOutOfEra ? 1 : 0);
+  // The era flag is deliberately **not** counted. It is the default view rather than a condition you
+  // added, so counting it would leave "Clear (1)" showing with nothing set — and clearing puts it
+  // back on, which is not what a count of 1 leads you to expect.
+  return (c.text.trim() ? 1 : 0) + facets + Object.keys(c.mins).length + levels;
 }
 
 /** Weights per stat: how many value points one point of that stat is worth. */
@@ -175,6 +201,33 @@ export function weightedStats(weights: StatWeights): StatKey[] {
  * Built once per catalogue rather than per keystroke — parsing three hundred cards on every letter
  * typed into the name box is the one thing here that would actually be slow.
  */
+/**
+ * Zone cells that name no place.
+ *
+ * The wiki's drop tables are written by hand, and a handful of their Zone cells hold something that
+ * is not a zone: a leaked header row (`Zone Name`), a section marker (`Confirmed Drop Zones`,
+ * `Unconfirmed:`, `(ToV East mobs)`), or the wiki declining to say where (`Various Zones`,
+ * `Other 50+ zones`, `Unknown`, `Pre-Revamp` — the last being Cazic Thule the god, who dropped
+ * things before the zone was rebuilt).
+ *
+ * Measured on a filled catalogue: **8 such values across 139 items**, `Various Zones` alone
+ * accounting for 106. None of them can answer "which place", so none is offered as a zone; an item
+ * left with no zone at all falls to `(none)`, which is exactly what `(none)` is for, and the halves
+ * of the Zone picker go on adding up.
+ *
+ * Two shape rules and a short list, in that order of preference: a trailing colon and a wholly
+ * parenthesised cell are table furniture wherever they turn up, and a new one of those needs no
+ * code change here.
+ */
+const NOT_A_PLACE =
+  /^(zone names?|various zones?|unknown|unspecified|other \d+\+? zones?|pre-?revamp|post-?revamp|confirmed drop zones?|unconfirmed)$|:$|^\(.*\)$/i;
+
+/** Does this drop row's zone cell name somewhere you could go? */
+export function namesAPlace(zone: string): boolean {
+  const trimmed = zone.trim();
+  return !!trimmed && !NOT_A_PLACE.test(trimmed);
+}
+
 export function itemRows(items: readonly CachedItem[], levels?: LevelSources): ItemRow[] {
   // One spelling per zone across the *whole* catalogue, first seen winning — the same rule
   // `groupDropsByZone` uses on a single page, applied across every page so the filter and the
@@ -195,7 +248,8 @@ export function itemRows(items: readonly CachedItem[], levels?: LevelSources): I
     for (const source of item.sources ?? []) {
       if (!kinds.includes(source.kind)) kinds.push(source.kind);
       const zone = source.detail?.trim();
-      if (!zone) continue;
+      // A cell that isn't a place is no answer to "which place" — see `namesAPlace`.
+      if (!zone || !namesAPlace(zone)) continue;
       const named = canonicalZone(zone);
       if (!zones.includes(named)) zones.push(named);
     }
@@ -296,21 +350,6 @@ export function facetOptions(rows: readonly ItemRow[], facet: FacetKey): string[
 }
 
 /**
- * How many rows have **nothing at all** for a facet — the number that makes "select all" honest.
- *
- * Ticking every zone is not the same as ticking none, and the difference is not small: 4,560 of the
- * 11,171 items in a filled catalogue name no zone whatsoever (quest rewards, crafted goods, anything
- * whose sources the wiki never listed). So a bare "select all" would quietly cut 41% of the
- * catalogue, which is the sort of thing that makes a filter look broken.
- *
- * With the count in hand the picker can say so, and what looked like a footgun becomes a filter
- * worth having on purpose: *only items that come from somewhere I could go*.
- */
-export function facetlessCount(rows: readonly ItemRow[], facet: FacetKey): number {
-  return rows.reduce((n, row) => n + (facetValues(row, facet).length ? 0 : 1), 0);
-}
-
-/**
  * Does the name contain every word typed?
  *
  * A **filter, not a lookup**: deliberately literal where the Search tab is fuzzy. Fuzz is right when
@@ -326,20 +365,27 @@ function matchesText(title: string, text: string): boolean {
   return words.every((w) => name.includes(w));
 }
 
-/** Does this row survive every criterion? See the module note on what "subtractive" means here. */
-export function matchesItem(row: ItemRow, c: ItemCriteria): boolean {
+/**
+ * One facet's question, asked on its own.
+ *
+ * Apart from `matchesItem` because the pickers need it that way: "what would ticking this do" is
+ * "everything except *this* facet, and then this value" (see `facetCounts`), which cannot be asked
+ * of a function that only answers yes or no to the whole criteria object.
+ */
+export function matchesFacet(row: ItemRow, c: ItemCriteria, facet: FacetKey): boolean {
+  const wanted = c.facets[facet];
+  if (!wanted.length) return true;
+  const has = facetValues(row, facet);
+  // "(none)" is satisfied by having nothing, which is the one thing no real value can express —
+  // and it ors with the rest, so `[BACK, (none)]` reads "worn on the back, or worn nowhere".
+  if (wanted.includes(NO_FACET_VALUE) && !has.length) return true;
+  return wanted.some((w) => has.includes(w));
+}
+
+/** Everything the criteria say that **no tick box can relax** — the name, the era, the level, the floors. */
+function matchesOutsideFacets(row: ItemRow, c: ItemCriteria): boolean {
   if (c.hideOutOfEra && row.item.outOfEra) return false;
   if (!matchesText(row.item.title, c.text)) return false;
-
-  for (const facet of FACETS) {
-    const wanted = c.facets[facet.key];
-    if (!wanted.length) continue;
-    const has = facetValues(row, facet.key);
-    // "(none)" is satisfied by having nothing, which is the one thing no real value can express —
-    // and it ors with the rest, so `[BACK, (none)]` reads "worn on the back, or worn nowhere".
-    if (wanted.includes(NO_FACET_VALUE) && !has.length) continue;
-    if (!wanted.some((w) => has.includes(w))) return false;
-  }
 
   if (c.levelMin !== undefined || c.levelMax !== undefined) {
     const level = row.level;
@@ -369,6 +415,58 @@ export function matchesItem(row: ItemRow, c: ItemCriteria): boolean {
   }
 
   return true;
+}
+
+/** Does this row survive every criterion? See the module note on what "subtractive" means here. */
+export function matchesItem(row: ItemRow, c: ItemCriteria): boolean {
+  return matchesOutsideFacets(row, c) && FACETS.every((f) => matchesFacet(row, c, f.key));
+}
+
+/** How many rows each value of each facet speaks for. Absent from a map means none. */
+export type FacetCounts = Record<FacetKey, Map<string, number>>;
+
+/**
+ * **What ticking a box would actually get you** — one number per value, per facet.
+ *
+ * A value's count is the rows that pass *every other criterion* and carry it. Zero therefore means
+ * exactly "there is nothing here for you": no item in that zone survives your level cap, your stat
+ * floors and whatever else you have asked for. That is the number the picker greys out and sorts on,
+ * and it is the difference between a list of 154 zones and a list of the zones worth reading.
+ *
+ * Deliberately independent of what is already ticked **in the same facet**, because ticking within
+ * one widens it — so "Kaladim · 0" stays honest whether or not Befallen is ticked beside it.
+ *
+ * One pass, not one per facet. A row failing **two or more** facets speaks for nothing, since no
+ * single tick can reach it; a row failing exactly one is counted only under that facet; a row that
+ * fails none is counted everywhere. Eleven thousand rows against ten facets is a pass per keystroke,
+ * and this is the shape that keeps it at one pass rather than ten.
+ */
+export function facetCounts(rows: readonly ItemRow[], c: ItemCriteria): FacetCounts {
+  const tally = Object.fromEntries(FACETS.map((f) => [f.key, new Map<string, number>()])) as FacetCounts;
+  const bump = (into: Map<string, number>, key: string) => into.set(key, (into.get(key) ?? 0) + 1);
+
+  for (const row of rows) {
+    if (!matchesOutsideFacets(row, c)) continue;
+    let blocking: FacetKey | null = null;
+    let unreachable = false;
+    for (const facet of FACETS) {
+      if (matchesFacet(row, c, facet.key)) continue;
+      if (blocking) {
+        unreachable = true;
+        break;
+      }
+      blocking = facet.key;
+    }
+    if (unreachable) continue;
+    for (const facet of FACETS) {
+      if (blocking && facet.key !== blocking) continue;
+      const values = facetValues(row, facet.key);
+      // Having nothing for this facet is itself an answer — the one `(none)` offers.
+      if (!values.length) bump(tally[facet.key], NO_FACET_VALUE);
+      else for (const value of values) bump(tally[facet.key], value);
+    }
+  }
+  return tally;
 }
 
 /** Which column the results are ordered by. A stat key sorts by that stat. */

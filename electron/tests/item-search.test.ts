@@ -17,8 +17,10 @@ import {
   NO_CRITERIA,
   NO_FACET_VALUE,
   activeCriteria,
+  zonesInFilterOrder,
   facetOptions,
-  facetlessCount,
+  facetCounts,
+  namesAPlace,
   itemCatalog,
   itemRows,
   itemValue,
@@ -140,10 +142,10 @@ test("ticking every zone is not the same as ticking none", () => {
 test("the count behind that warning is the rows with nothing at all for a facet", () => {
   const all = rows();
   // One of the three is quest-only, so it names no zone.
-  assert.equal(facetlessCount(all, "zone"), 1);
+  assert.equal(facetCounts(all, NO_CRITERIA).zone.get(NO_FACET_VALUE), 1);
   // …and every one of them has a slot and a source, so those warn about nothing.
-  assert.equal(facetlessCount(all, "slot"), 1, "the talon is a quest item with no slot");
-  assert.equal(facetlessCount(all, "source"), 0);
+  assert.equal(facetCounts(all, NO_CRITERIA).slot.get(NO_FACET_VALUE), 1, "the talon is a quest item with no slot");
+  assert.equal(facetCounts(all, NO_CRITERIA).source.get(NO_FACET_VALUE), undefined, "everything has a source");
 });
 
 test("`(none)` asks for the half of the catalogue no value can reach", () => {
@@ -249,17 +251,137 @@ test("the wiki's copy of an item wins over Lucy's, and a grade is not a second i
   assert.equal(catalogue.filter((i) => i.title.startsWith("Dragoon Dirk")).length, 1);
 });
 
+test("the Zone column leads with a zone the filter kept", () => {
+  /**
+   * An item dropping in two zones stays in the list when you untick one of them — the other still
+   * answers "can I get this" — but the column showed the *first* zone and a `+1`, so the row read as
+   * the very zone you had just excluded. The filter was right and the display was not.
+   */
+  const both = ["Plane of Fear", "Plane of Hate"];
+  assert.deepEqual(zonesInFilterOrder(both, ["Plane of Hate"]), ["Plane of Hate", "Plane of Fear"]);
+  assert.deepEqual(zonesInFilterOrder(both, []), both, "nothing ticked, so nothing to lead with");
+  assert.deepEqual(
+    zonesInFilterOrder(both, ["Befallen"]),
+    both,
+    "kept by something other than its zone — no 'why' to lead with",
+  );
+  assert.deepEqual(zonesInFilterOrder(["Befallen"], ["Befallen"]), ["Befallen"], "one zone is already in order");
+});
+
+// ─── What a picker knows before you tick it ─────────────────────────────────
+
+test("a facet value counts what it would leave, judged against every other criterion", () => {
+  /**
+   * The number beside each option, and the whole point of it: an option worth nothing is dimmed and
+   * sunk. "Nothing" has to mean *given the rest of what you asked for* — a zone with three hundred
+   * items in it but none you can wear at level 20 is a dead end, and a menu that still offered it as
+   * though it were live is a menu you have to tick your way through to learn anything.
+   */
+  const rows = itemRows([
+    item("Cloth Cap", ["AC: 2", "Slot: HEAD"], [{ kind: "drop", where: "a gnoll", detail: "Blackburrow" }]),
+    item("Steel Helm", ["AC: 20", "Slot: HEAD"], [{ kind: "drop", where: "a giant", detail: "Rathe Mountains" }]),
+  ]);
+
+  const loose = facetCounts(rows, NO_CRITERIA);
+  assert.equal(loose.zone.get("Blackburrow"), 1);
+  assert.equal(loose.zone.get("Rathe Mountains"), 1);
+
+  // A floor no Blackburrow item meets makes that zone a dead end — while leaving the other alone.
+  const armoured = facetCounts(rows, with_({ mins: { ac: 10 } }));
+  assert.equal(armoured.zone.get("Blackburrow"), undefined, "nothing there clears the floor");
+  assert.equal(armoured.zone.get("Rathe Mountains"), 1);
+});
+
+test("a value's count ignores what is ticked beside it in its own facet", () => {
+  // Ticking within one facet *widens* it, so "what would this get me" cannot depend on its
+  // neighbours — otherwise every count in the menu would change as you ticked the first box.
+  const rows = itemRows([
+    item("Cloth Cap", ["Slot: HEAD"], [{ kind: "drop", where: "a gnoll", detail: "Blackburrow" }]),
+    item("Cloth Cape", ["Slot: BACK"], [{ kind: "drop", where: "a rat", detail: "Befallen" }]),
+  ]);
+  const chosen = with_({ facets: { ...NO_CRITERIA.facets, zone: ["Befallen"] } });
+  const counts = facetCounts(rows, chosen);
+  assert.equal(counts.zone.get("Blackburrow"), 1, "still one item there, ticked or not");
+  assert.equal(counts.zone.get("Befallen"), 1);
+});
+
+test("a criterion in another facet does cut a value's count", () => {
+  // The other half of the same rule: facets narrow each other, so a slot you have ruled out takes
+  // its zones down with it. This is what makes the dimming worth anything.
+  const rows = itemRows([
+    item("Cloth Cap", ["Slot: HEAD"], [{ kind: "drop", where: "a gnoll", detail: "Blackburrow" }]),
+    item("Cloth Cape", ["Slot: BACK"], [{ kind: "drop", where: "a rat", detail: "Befallen" }]),
+  ]);
+  const backOnly = facetCounts(rows, with_({ facets: { ...NO_CRITERIA.facets, slot: ["BACK"] } }));
+  assert.equal(backOnly.zone.get("Befallen"), 1);
+  assert.equal(backOnly.zone.get("Blackburrow"), undefined, "the head slot is ruled out, so its zone is dead");
+});
+
+test("a row two facets away from the results speaks for neither", () => {
+  // No single tick can reach it, so counting it under both would promise something no click delivers.
+  const rows = itemRows([item("Cloth Cap", ["Slot: HEAD"], [{ kind: "drop", where: "a gnoll", detail: "Blackburrow" }])]);
+  const far = facetCounts(
+    rows,
+    with_({ facets: { ...NO_CRITERIA.facets, slot: ["BACK"], zone: ["Befallen"] } }),
+  );
+  assert.equal(far.slot.get("HEAD"), undefined);
+  assert.equal(far.zone.get("Blackburrow"), undefined);
+});
+
+test("a zone cell that names no place is not a zone", () => {
+  /**
+   * The wiki's drop tables are hand-written and a few of their Zone cells hold a leaked header row, a
+   * section marker, or the wiki shrugging — `Various Zones` alone on 106 items. None can answer
+   * "which place", so none is offered, and an item left with nothing falls to `(none)`.
+   * ("Staff of the Earthcrafter" is the one that started this: `Cazic Thule (God)` in `Pre-Revamp`.)
+   */
+  for (const junk of [
+    "Zone Name",
+    "Various Zones",
+    "Other 50+ zones",
+    "Unknown",
+    "Pre-Revamp",
+    "Confirmed Drop Zones",
+    "Unconfirmed:",
+    "(ToV East mobs)",
+    "   ",
+  ]) {
+    assert.equal(namesAPlace(junk), false, junk);
+  }
+  for (const real of ["Blackburrow", "Cabilis (East)", "Accursed Temple of Cazic-Thule (2002)", "The Feerrott"]) {
+    assert.equal(namesAPlace(real), true, real);
+  }
+
+  const rows = itemRows([
+    item("Staff of the Earthcrafter", ["Slot: PRIMARY"], [
+      { kind: "drop", where: "Fright", detail: "Plane of Fear" },
+      { kind: "drop", where: "Cazic Thule (God)", detail: "Pre-Revamp" },
+    ]),
+    item("Widely Dropped Thing", ["Slot: NECK"], [{ kind: "drop", where: "anything", detail: "Various Zones" }]),
+  ]);
+  assert.deepEqual(rows[0].zones, ["Plane of Fear"], "the real zone stays, the annotation goes");
+  assert.deepEqual(rows[1].zones, [], "nothing placed it, so it is one of the placeless");
+  assert.equal(facetCounts(rows, NO_CRITERIA).zone.get(NO_FACET_VALUE), 1);
+});
+
 test("the criteria count is what a Clear button owes the reader", () => {
   assert.equal(activeCriteria(NO_CRITERIA), 0);
   assert.equal(
-    activeCriteria(with_({ text: "cloak", facets: { ...NO_CRITERIA.facets, slot: ["BACK", "HEAD"] }, mins: { wis: 5 }, hideOutOfEra: true })),
-    4,
+    activeCriteria(with_({ text: "cloak", facets: { ...NO_CRITERIA.facets, slot: ["BACK", "HEAD"] }, mins: { wis: 5 } })),
+    3,
     "a facet counts once however many values are ticked in it",
+  );
+  assert.equal(
+    activeCriteria(with_({ hideOutOfEra: false })),
+    0,
+    "the era flag is the default view, not a criterion — counting it would leave Clear (1) with nothing set",
   );
 });
 
-test("an out-of-era item is only dropped when asked", () => {
+test("an out-of-era item is hidden until you ask for it", () => {
+  // The default is on: most of the catalogue is out of era and none of it can be got on this server,
+  // so including it answers a question nobody asked. Untickable, for reading about the game elsewhere.
   const era = itemRows([item("Kunark Thing", ["AC: 10"], [], { outOfEra: true })]);
-  assert.equal(matchesItem(era[0], NO_CRITERIA), true);
-  assert.equal(matchesItem(era[0], with_({ hideOutOfEra: true })), false);
+  assert.equal(matchesItem(era[0], NO_CRITERIA), false, "hidden by default");
+  assert.equal(matchesItem(era[0], with_({ hideOutOfEra: false })), true, "and shown when unticked");
 });

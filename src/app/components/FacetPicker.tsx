@@ -30,6 +30,13 @@ const FUZZY_SCORE = 0.45;
  * A value already ticked is always offered even when nothing in the current results carries it. It
  * has to be: the options are derived from the catalogue, and a tick you can see but cannot untick is
  * a filter you can't get out of.
+ *
+ * **A value that would show you nothing is dimmed and sinks to the bottom** (`counts`). Of 154 zones
+ * a level-20 cap leaves a fraction worth reading, and the old menu offered all 154 in one flat
+ * alphabet — so finding the ones that lead anywhere meant ticking them to find out. Dimmed rather
+ * than hidden, and still clickable: the count is a statement about your current criteria, not about
+ * the catalogue, and a value that vanished when you narrowed would be a value you could not reason
+ * about. Sorting is *stable*, so with a filter typed the relevance order survives inside each half.
  */
 export default function FacetPicker({
   label,
@@ -38,6 +45,7 @@ export default function FacetPicker({
   chosen,
   onChange,
   missing = 0,
+  counts,
 }: {
   label: string;
   /** What "not narrowing by this" reads as — "any slot", "any zone". */
@@ -46,9 +54,17 @@ export default function FacetPicker({
   chosen: readonly string[];
   onChange: (next: string[]) => void;
   /**
-   * How many items have **no value at all** for this facet — see `facetlessCount`. It is both the
-   * count beside the *(none)* row and the reason that row exists: with 4,560 of 11,171 items naming
-   * no zone, "the ones from nowhere" is a large and perfectly reasonable thing to ask for.
+   * How many items each value would leave, given every *other* criterion — see `facetCounts`.
+   * A value missing from the map counts zero. Omit the map entirely and nothing is dimmed.
+   */
+  counts?: ReadonlyMap<string, number>;
+  /**
+   * How many items have **no value at all** for this facet, under the rest of the criteria — the
+   * `(none)` entry of `counts`. It is both the count beside the *(none)* row and the reason that row
+   * exists: with thousands of items naming no zone at all (quest rewards, crafted goods, anything
+   * whose sources the wiki never listed), "the ones from nowhere" is a large and perfectly
+   * reasonable thing to ask for — and a bare "select all" that quietly held them back would look
+   * like a filter that had broken.
    */
   missing?: number;
 }) {
@@ -61,6 +77,9 @@ export default function FacetPicker({
     const stale = chosen.filter((c) => !options.includes(c));
     return [...options, ...stale];
   }, [options, chosen]);
+
+  /** What this value is worth right now. No map means "not counting", so nothing dims. */
+  const leadsSomewhere = (value: string) => !counts || (counts.get(value) ?? 0) > 0;
 
   const needle = filter.trim().toLowerCase();
   /**
@@ -77,15 +96,24 @@ export default function FacetPicker({
    * still finds The Feerrott.
    */
   const shown = useMemo(() => {
-    if (!needle) return all;
-    const literal = all.filter((o) => o.toLowerCase().includes(needle));
-    if (literal.length >= FUZZY_BELOW) return literal;
-    const seen = new Set(literal);
-    const near = fuzzyRank(filter.trim(), all, (o) => o, { limit: FUZZY_BELOW, minScore: FUZZY_SCORE })
-      .map((m) => m.item)
-      .filter((o) => !seen.has(o));
-    return [...literal, ...near];
-  }, [all, needle, filter]);
+    const matching = (): string[] => {
+      if (!needle) return all;
+      const literal = all.filter((o) => o.toLowerCase().includes(needle));
+      if (literal.length >= FUZZY_BELOW) return literal;
+      const seen = new Set(literal);
+      const near = fuzzyRank(filter.trim(), all, (o) => o, { limit: FUZZY_BELOW, minScore: FUZZY_SCORE })
+        .map((m) => m.item)
+        .filter((o) => !seen.has(o));
+      return [...literal, ...near];
+    };
+    const list = matching();
+    if (!counts) return list;
+    // A stable partition, not a sort: the alphabet (or the fuzzy ranking) is preserved within each
+    // half, so the only thing that moved is the dead weight, and it moved to the end.
+    const live = list.filter(leadsSomewhere);
+    return live.length === list.length ? list : [...live, ...list.filter((o) => !leadsSomewhere(o))];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `leadsSomewhere` is `counts` in a closure
+  }, [all, needle, filter, counts]);
 
   const toggle = (value: string, on: boolean) =>
     onChange(on ? [...chosen, value] : chosen.filter((c) => c !== value));
@@ -98,7 +126,8 @@ export default function FacetPicker({
    * instead of throwing the first half away.
    */
   const noneChosen = chosen.includes(NO_FACET_VALUE);
-  const showNone = missing > 0 && (!needle || "(none)".includes(needle) || "none".includes(needle));
+  // Offered while it is *ticked* even at zero, or narrowing would strand a tick nobody can reach.
+  const showNone = (missing > 0 || noneChosen) && (!needle || "(none)".includes(needle) || "none".includes(needle));
 
   /**
    * *All* means **all**, `(none)` included — because it is a starting point, not a filter.
@@ -160,9 +189,28 @@ export default function FacetPicker({
                 onChange={(on) => toggle(NO_FACET_VALUE, on)}
               />
             )}
-            {shown.map((o) => (
-              <CheckField key={o} label={o} checked={chosen.includes(o)} onChange={(on) => toggle(o, on)} />
-            ))}
+            {shown.map((o) => {
+              const held = counts?.get(o) ?? 0;
+              const dead = !leadsSomewhere(o);
+              return (
+                <CheckField
+                  key={o}
+                  className={dead ? "facet-dead" : undefined}
+                  label={
+                    counts ? (
+                      <>
+                        {o} <span className="muted">· {figure(held)}</span>
+                      </>
+                    ) : (
+                      o
+                    )
+                  }
+                  title={dead ? `No ${label.toLowerCase()} match — nothing here fits the rest of your criteria` : undefined}
+                  checked={chosen.includes(o)}
+                  onChange={(on) => toggle(o, on)}
+                />
+              );
+            })}
             {!shown.length && !showNone && <span className="muted small">Nothing matches that.</span>}
           </div>
           {(pending.length > 0 || chosen.length > 0) && (
