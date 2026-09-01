@@ -201,6 +201,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0166: A panel setting belongs to the app, not to an origin](./0166-a-panel-setting-belongs-to-the-app-not-to-an-origin.md)
 - [0167: A picker says what a tick is worth](./0167-a-picker-says-what-a-tick-is-worth.md)
 - [0168: A zone cell that names no place is not a zone](./0168-a-zone-cell-that-names-no-place-is-not-a-zone.md)
+- [0169: The travel graph is built once and remembered](./0169-the-travel-graph-is-built-once-and-remembered.md)
 
 ## Open Questions
 

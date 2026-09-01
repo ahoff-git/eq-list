@@ -43,21 +43,71 @@ export function tokenize(s: string): string[] {
     .filter(Boolean);
 }
 
-/** Levenshtein edit distance (rolling two-row DP). */
+/**
+ * The same split, **remembered** — and the joined form beside it, since every scoring call wants both.
+ *
+ * A score is always asked in a *sweep*: one query against a whole list of candidates, and then the next
+ * query against the same list. Splitting is therefore done over and over on the same strings — resolving
+ * a map pack's 600 zone names against the 352-zone expansion table is ~120k calls, and the candidate
+ * halves of those are 352 strings split 350 times each.
+ *
+ * Private, and the arrays never leave this module: `tokenize` still hands every caller its own array,
+ * because a shared one is only safe where nothing can write to it.
+ */
+const MAX_SPLITS = 20_000;
+const SPLITS = new Map<string, { tokens: string[]; joined: string }>();
+
+function split(s: string): { tokens: string[]; joined: string } {
+  const seen = SPLITS.get(s);
+  if (seen) return seen;
+  const tokens = tokenize(s);
+  const made = { tokens, joined: tokens.join(" ") };
+  // Queries are typed, so this one *can* be fed unbounded input — hence a cap, and dropping the lot
+  // rather than evicting cleverly: every entry is a few microseconds to make again.
+  if (SPLITS.size >= MAX_SPLITS) SPLITS.clear();
+  SPLITS.set(s, made);
+  return made;
+}
+
+/**
+ * The one row the DP below keeps, reused between calls.
+ *
+ * The rolling two-row form allocated a fresh row per character of `a` — for a sweep that scores one
+ * query against hundreds of candidates that is tens of thousands of short-lived arrays, and the garbage
+ * cost more than the arithmetic. One buffer, grown to fit the longest `b` seen and never shrunk, since
+ * the next sweep wants it just as big. Single-threaded and never held across an `await`, so there is no
+ * one to share it with.
+ */
+let dpRow = new Uint16Array(64);
+
+/**
+ * Levenshtein edit distance (rolling one-row DP, the two-row form with the previous row's diagonal
+ * carried in a variable). Distances are bounded by the longer string, so 16 bits is a name length no
+ * caller has.
+ */
 export function levenshtein(a: string, b: string): number {
   if (a === b) return 0;
   if (!a.length) return b.length;
   if (!b.length) return a.length;
-  let prev: number[] = Array.from({ length: b.length + 1 }, (_, j) => j);
+  const width = b.length + 1;
+  if (dpRow.length < width) dpRow = new Uint16Array(width);
+  const row = dpRow;
+  for (let j = 0; j < width; j++) row[j] = j;
   for (let i = 1; i <= a.length; i++) {
-    const cur: number[] = [i];
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    // `row[j - 1]` as it stood *before* this pass overwrote it — the two-row form's `prev[j - 1]`.
+    let diagonal = row[0];
+    row[0] = i;
+    const ca = a.charCodeAt(i - 1);
+    for (let j = 1; j < width; j++) {
+      const above = row[j];
+      const substitute = diagonal + (ca === b.charCodeAt(j - 1) ? 0 : 1);
+      const insert = row[j - 1] + 1;
+      const remove = above + 1;
+      row[j] = Math.min(substitute, insert, remove);
+      diagonal = above;
     }
-    prev = cur;
   }
-  return prev[b.length];
+  return row[b.length];
 }
 
 /** Similarity of two tokens in [0,1]: exact > prefix > substring > edit-distance. */
@@ -76,8 +126,8 @@ export function tokenSimilarity(q: string, c: string): number {
  * is filtered. Whole-string prefix/substring hits and tighter matches rank higher.
  */
 export function fuzzyScore(query: string, text: string): number {
-  const qs = tokenize(query);
-  const cs = tokenize(text);
+  const { tokens: qs, joined: nq } = split(query);
+  const { tokens: cs, joined: nc } = split(text);
   if (!qs.length || !cs.length) return 0;
 
   let total = 0;
@@ -98,8 +148,6 @@ export function fuzzyScore(query: string, text: string): number {
   if (worst < SCORE.weakTokenBelow) score *= SCORE.weakTokenPenalty;
 
   // Whole-query contiguous matches feel the most "right" for autocomplete.
-  const nq = qs.join(" ");
-  const nc = cs.join(" ");
   if (nc === nq) return 1;
   if (nc.startsWith(nq)) score = Math.max(score, SCORE.wholePrefix);
   else if (nc.includes(nq)) score = Math.max(score, SCORE.wholeSubstring);

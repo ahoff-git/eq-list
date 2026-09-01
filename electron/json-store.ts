@@ -43,6 +43,18 @@ export function setAppVersion(version: string): void {
 }
 
 /**
+ * The build doing the writing, for a cache that keys on it.
+ *
+ * A derived store whose *rules* live in code — the travel graph — has no fingerprint for those rules
+ * short of a constant somebody remembers to bump. The running version is that fingerprint: a release
+ * may have changed the build, so a release throws the cache away and pays for one rebuild. Blank
+ * outside the app, which simply means such a cache re-derives every run.
+ */
+export function currentAppVersion(): string {
+  return appVersion;
+}
+
+/**
  * The provenance to write into a store's file — which rules wrote it, which build, and when.
  *
  * `undefined` for an unregistered id rather than a throw: a store naming a concern that isn't in the

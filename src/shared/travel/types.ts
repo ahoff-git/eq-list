@@ -26,7 +26,7 @@
  */
 
 import { normalizeZone } from "../sources";
-import { resolveZone } from "../zones/resolve";
+import { createZoneResolver, type ZoneResolver } from "../zones/resolve";
 
 /** An EQ world position, `/loc` order plus height. */
 export interface TravelAt {
@@ -425,10 +425,34 @@ export function zoneFileFor(
   name: string,
 ): string | undefined {
   if (!normalizeZone(name)) return undefined;
-  const match = resolveZone(name, Object.entries(zoneNames), ([, zoneName]) => zoneName);
+  const match = gazetteerResolver(zoneNames).resolve(name);
   if (match) return match.item[0];
   const bare = name.trim().toLowerCase();
   return files.has(bare) || zoneNames[bare] !== undefined ? bare : undefined;
+}
+
+/**
+ * One resolver per gazetteer, kept for as long as the caller keeps the gazetteer.
+ *
+ * `resolveZone` indexes its candidates and throws the index away, which is right for a list that
+ * arrives per call and wrong for this one: a pack's `file → name` map is fixed for the run, and every
+ * exit label in the folder is resolved against it. Rebuilding the index per label made the build
+ * quadratic — folding, word-splitting and sorting 568 names about 600 times over, ~1.5s of blocked
+ * main process before a single route could be answered. Indexed once it is ~15ms, and the resolver's
+ * own memo then answers the repeats.
+ *
+ * Keyed on the object rather than its contents, in a `WeakMap`, because the gazetteer *is* the
+ * identity: `zoneNamesFor` builds a fresh one per source, nothing mutates one in place, and a map
+ * nobody holds any more should not pin its index in memory.
+ */
+const GAZETTEER_RESOLVERS = new WeakMap<Record<string, string>, ZoneResolver<[string, string]>>();
+
+function gazetteerResolver(zoneNames: Record<string, string>): ZoneResolver<[string, string]> {
+  const cached = GAZETTEER_RESOLVERS.get(zoneNames);
+  if (cached) return cached;
+  const resolver = createZoneResolver(Object.entries(zoneNames), ([, zoneName]) => zoneName);
+  GAZETTEER_RESOLVERS.set(zoneNames, resolver);
+  return resolver;
 }
 
 /**

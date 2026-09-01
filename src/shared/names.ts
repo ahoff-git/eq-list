@@ -318,6 +318,31 @@ const HAND_ALIASES: Record<string, string> = {
 };
 
 /**
+ * **The fold is memoised, because it is the app's most-asked question.**
+ *
+ * Every "is this the same zone?" goes through here — kill records, the map's zone list, the travel
+ * graph's labels, the resolver's own tiers — and the answer is a pure function of a string drawn from a
+ * small vocabulary. Uncached it is `peelOrnaments` (up to six passes of five regexes) plus four more
+ * replacements, and the zone list alone asked it ~100k times to name 402 zones: ~100ms of blocked
+ * renderer, twice over, every time a pack's names landed.
+ */
+const MAX_ZONE_FOLDS = 20_000;
+const ZONE_FOLDS = new Map<string, string>();
+
+function foldZoneName(name: string): string {
+  return zoneBaseName(name)
+    .toLowerCase()
+    // **The apostrophe.** EverQuest's map labels write a backtick — `Erud\`s Crossing`,
+    // `Kurn\`s Tower`, `Dagnor\`s Cauldron` — while the log writes a typewriter one (verified
+    // against a real log: `Ak'Anon`, `Erud's Crossing`), and people type that too. Left unfolded,
+    // a zone the solver named off a label could never match the zone line that takes you there.
+    .replace(/[`’]/g, "'")
+    .replace(/^the\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Every name that means another zone's name, folded: the gazetteer's pairs, then the hand table,
  * which wins.
  *
@@ -358,16 +383,16 @@ function buildZoneAliases(): Record<string, string> {
  * zone fold differently here, which is the whole reason the alias table exists.
  */
 export function zoneFold(name: string): string {
-  return zoneBaseName(name)
-    .toLowerCase()
-    // **The apostrophe.** EverQuest's map labels write a backtick — `Erud\`s Crossing`,
-    // `Kurn\`s Tower`, `Dagnor\`s Cauldron` — while the log writes a typewriter one (verified
-    // against a real log: `Ak'Anon`, `Erud's Crossing`), and people type that too. Left unfolded,
-    // a zone the solver named off a label could never match the zone line that takes you there.
-    .replace(/[`’]/g, "'")
-    .replace(/^the\s+/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const seen = ZONE_FOLDS.get(name);
+  if (seen !== undefined) return seen;
+  const folded = foldZoneName(name);
+  // A vocabulary, not a cache of everything ever asked: zone names come from map files, the log and a
+  // shipped table, so the live set is a few thousand strings. The cap is only there so a caller that
+  // somehow feeds it free text can't grow it without bound — dropping the lot is fine, since every
+  // entry is recomputable.
+  if (ZONE_FOLDS.size >= MAX_ZONE_FOLDS) ZONE_FOLDS.clear();
+  ZONE_FOLDS.set(name, folded);
+  return folded;
 }
 
 /**

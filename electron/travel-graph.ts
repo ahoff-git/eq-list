@@ -11,6 +11,7 @@
  * one pack's coverage stand in for another's.
  */
 
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { zonesFromFiles } from "../src/shared/map/map-sources";
@@ -24,8 +25,8 @@ import { outOfEraSet, zoneAvailable } from "../src/shared/zones/expansions";
 import { answerRoute, travelZone, type TravelAnswer, type TravelEnd } from "../src/shared/travel/route";
 import { surveyZone, type TravelSurvey } from "../src/shared/travel/survey";
 import type { TravelGraph, TravelOptions } from "../src/shared/travel/types";
-import { createZoneNamer, readFolderPois } from "./eq-maps";
-import { readJson, writeJson } from "./json-store";
+import { createZoneNamer, folderSignature, readFolderPois } from "./eq-maps";
+import { currentAppVersion, readJson, writeJson } from "./json-store";
 
 /** The app's gazetteer, passed in so a graph is built from the naming everything else already has. */
 type ZoneNamer = ReturnType<typeof createZoneNamer>;
@@ -141,26 +142,94 @@ export function readGraph(file: string): TravelGraph | undefined {
   return graph;
 }
 
+/** Where a run's built graph is remembered, and the shape it's kept in. */
+const GRAPH_CACHE_FILE = "travel-graphs.json";
+
+/**
+ * Bumped when the *shape* of what's stored changes, so a file written under the old one is dropped
+ * rather than read as the new. The build **rules** need no bump here: they're keyed on the app's
+ * version (see `cacheKey`), which moves with every release that could have changed them.
+ */
+const GRAPH_CACHE_VERSION = 1;
+
+interface StoredGraphs {
+  version: number;
+  /** By map folder: what its graph was built from, and the graph. */
+  folders: Record<string, { key: string; graph: TravelGraph }>;
+}
+
+/**
+ * The hand-authored inputs, fingerprinted — `manual-links.ts` and the shipped adjacency table.
+ *
+ * These are *data*, so they can answer for themselves: stringifying them is both cheap and exact, which
+ * is the same argument `peer-share.ts` makes for the digest it sends. Editing a boat run or a wiki
+ * adjacency therefore drops a stored graph with nothing remembered by hand — which matters most in
+ * development, where those files change and the app's version does not.
+ */
+let curatedFingerprint: string | undefined;
+
+function curatedKey(): string {
+  curatedFingerprint ??= createHash("sha1")
+    .update(JSON.stringify([MANUAL_TRAVEL, NOT_IN_GAME, STALE_DRAWINGS, statedAdjacencies()]))
+    .digest("hex")
+    .slice(0, 12);
+  return curatedFingerprint;
+}
+
+/**
+ * **Everything a stored graph was built from, in one string.** Anything that can change the graph has
+ * to be in here, or the app routes over a stale one:
+ *
+ *  - the **map folder** — its files are the whole survey (`folderSignature`, the same fingerprint the
+ *    gazetteer keys on, so one pack can't be fresh for one of them and stale for the other);
+ *  - the **era** — the wiki's out-of-era list closes and re-opens whole expansions;
+ *  - the **curated inputs** — `manual-links.ts` and the adjacency table (`curatedKey`);
+ *  - the **build itself** — code, which only the running version can speak for.
+ */
+async function cacheKey(source: MapSource, outOfEra: readonly string[]): Promise<string> {
+  const era = [...outOfEra].sort().join(",");
+  return [
+    GRAPH_CACHE_VERSION,
+    currentAppVersion() || "dev",
+    await folderSignature(source.dir),
+    curatedKey(),
+    era ? createHash("sha1").update(era).digest("hex").slice(0, 12) : "none",
+  ].join("|");
+}
+
 /**
  * The graph the app routes over, built on demand and cached per map folder.
  *
- * **Built at runtime rather than read from a file.** The scripts write `data/travel-graph.*.json` for
- * you to read and argue with, but the app doesn't load them: a graph belongs to whichever pack you
- * picked, so a stored one would be an artifact to keep in step with a choice the user can change from
- * the titlebar. Building it costs one pass over the folder's labels — ~1s for 568 files — so it's asked
- * for lazily and kept, and the pass is the shared `readFolderPois`, which reads a few files at a time
- * off the main thread rather than blocking on the whole folder.
+ * **Built from your folders, never shipped.** The scripts write `data/travel-graph.*.json` for you to
+ * read and argue with, and the app still doesn't load them: a graph belongs to whichever pack you
+ * picked, so a *shipped* one would be an artifact to keep in step with a choice the user can change
+ * from the titlebar. What the app keeps is its own build of your own folder, and it keeps it under a
+ * key that says so (`cacheKey`) — which is a cache, not an artifact. Building costs one pass over the
+ * folder's labels, through the shared `readFolderPois`, which reads a few files at a time off the main
+ * thread rather than blocking on the whole folder.
  *
  * The hand-authored pass is applied here, every time, so the travel in `manual-links.ts` is part of
  * what the app routes over and not something only the scripts see. So is `outOfEraZones`, which is why
  * this is async: which zones the server has *open* is a fact about the server, and the wiki is the only
  * thing that knows it.
+ *
+ * **And it is remembered between runs**, in `cacheDir`, against everything it was built from
+ * (`cacheKey`). Building is a folder scan plus a pass over every label it found — most of a second on a
+ * 568-file pack, on the main thread, so every window stops while it happens, and it happened on the
+ * first route or survey of every launch. Reading it back is a couple of milliseconds. Nothing is
+ * *routed* differently: the same build runs the moment the key says the stored answer no longer applies.
  */
 export function createTravelRouter(deps: {
   /** Zones the server has out of era, from the wiki (`WikiClient.outOfEraZones`). */
   outOfEraZones?: () => Promise<string[]>;
   /** The app's gazetteer, so the graph is named from the scan the map window already paid for. */
   namer?: ZoneNamer;
+  /**
+   * Where to keep the built graph between runs — `userData`, beside the gazetteer it's named from.
+   * Left off (the tests, the scripts) and every run builds its own, which is what a caller checking
+   * the *build* wants.
+   */
+  cacheDir?: string;
 }): {
   graph: (source: MapSource) => Promise<TravelGraph>;
   answer: (
@@ -176,6 +245,20 @@ export function createTravelRouter(deps: {
   const cache = new Map<string, TravelGraph>();
   /** In-flight builds, so two routes asked for at once don't each read the folder. */
   const building = new Map<string, Promise<TravelGraph>>();
+  const file = deps.cacheDir ? path.join(deps.cacheDir, GRAPH_CACHE_FILE) : undefined;
+
+  const stored = (): StoredGraphs => {
+    const read = file ? readJson<StoredGraphs>(file, { version: 0, folders: {} }) : { version: 0, folders: {} };
+    return read.version === GRAPH_CACHE_VERSION && read.folders ? read : { version: GRAPH_CACHE_VERSION, folders: {} };
+  };
+
+  /** Keep this folder's graph, leaving every other folder's in place — the gazetteer's own rule. */
+  const remember = (dir: string, key: string, graph: TravelGraph): void => {
+    if (!file) return;
+    const all = stored();
+    all.folders[dir] = { key, graph };
+    writeJson(file, all, { what: "travel graph" });
+  };
 
   const build = async (source: MapSource): Promise<TravelGraph> => {
     // A failed era lookup must not quietly produce a graph that routes through Kunark, so it's said
@@ -188,6 +271,20 @@ export function createTravelRouter(deps: {
     }
     if (!outOfEra.length) log.warn("no out-of-era zone list — a route may go through a zone the server hasn't opened");
 
+    // Asked before the folder is read, because the whole point is not to read it. A graph kept under an
+    // older shape is refused the same way a read one is (`readGraph`) — it's no use and mustn't crash a
+    // caller three layers up.
+    const key = await cacheKey(source, outOfEra);
+    const kept = stored().folders[source.dir];
+    if (kept?.key === key && Array.isArray(kept.graph?.nodes) && Array.isArray(kept.graph?.edges)) {
+      log.debug("travel graph from cache", {
+        source: source.id,
+        nodes: kept.graph.nodes.length,
+        edges: kept.graph.edges.length,
+      });
+      return kept.graph;
+    }
+
     const { graph: read, report } = await buildFromSource(source, outOfEra, deps.namer);
     const { graph: routed, report: manual } = applyManual(read, MANUAL_TRAVEL);
     log.debug("travel graph ready", {
@@ -198,6 +295,7 @@ export function createTravelRouter(deps: {
       hand: manual.applied.length,
       edges: routed.edges.length,
     });
+    remember(source.dir, key, routed);
     return routed;
   };
 

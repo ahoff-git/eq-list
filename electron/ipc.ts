@@ -100,7 +100,13 @@ export function registerIpc(context: IpcContext): void {
   const zoneNamer = createZoneNamer(userData);
   // The wiki is what knows which zones the server has open, so the graph asks it rather than carrying
   // a list of its own (see `absentZonesFor`).
-  const travel = createTravelRouter({ outOfEraZones: () => wiki.outOfEraZones(), namer: zoneNamer });
+  // Kept in `userData` between runs too, beside the gazetteer and against the same folder fingerprint —
+  // building it is most of a second of blocked main process on a big pack (see `createTravelRouter`).
+  const travel = createTravelRouter({
+    outOfEraZones: () => wiki.outOfEraZones(),
+    namer: zoneNamer,
+    cacheDir: userData,
+  });
 
   const shared: SharedIpc = { mapReader, zoneNamer, travel };
 
@@ -722,9 +728,9 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
     return source ? zoneNamer.names(source) : {};
   });
   /**
-   * How to get from one zone to another. Built from the same folder the map is drawn from, on first
-   * ask and then kept — a graph belongs to the pack you picked, so it isn't stored anywhere and can't
-   * fall out of step with that choice (see specs/travel).
+   * How to get from one zone to another. Built from the same folder the map is drawn from, on first ask
+   * and then kept — in memory for the run, and on disk between runs against a fingerprint of that folder,
+   * so it can't fall out of step with the pack you picked (see specs/travel).
    *
    * Every failure comes back as a *reason*, because "no route" covers four different situations and a
    * person needs to know which: a zone this pack has no map for, a typo, an island in the graph, or a

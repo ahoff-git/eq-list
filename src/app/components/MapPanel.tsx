@@ -130,6 +130,15 @@ const HIT_RADIUS = { pin: 9, self: 8, peer: 7, ping: 8, kill: 6, poi: 7, graph: 
 const DRAG_SLOP = 4;
 
 /**
+ * How far outside the canvas a marker's own point may sit and still be drawn.
+ *
+ * A cull, not a crop: a caption runs to the right of its point and a ring around it, so the margin has
+ * to clear the widest thing a point can grow into rather than the point itself. Generous on purpose —
+ * measuring text to shave it would cost more than it saves, and everything past it is invisible anyway.
+ */
+const MARKER_CULL_MARGIN = 400;
+
+/**
  * How a kill dot is drawn from its confidence, which is the whole point of the heatmap: a guess has
  * to *look* like a guess. Both the size and the opacity scale with it, from `weightFloor` (so a kill
  * with no usable position is still a visible dot rather than nothing) up to a measured one.
@@ -572,6 +581,33 @@ export default function MapPanel({
     setPan((p) => clampPan(p, zoom, canvasSize, mapRect));
   }, [canvasSize, mapRect, zoom]);
 
+  /**
+   * The zone's lines, **in base-canvas coordinates**, batched into one path per colour: a few thousand
+   * segments with a stroke each would be thousands of context switches, and the biggest zones carry
+   * twenty thousand.
+   *
+   * Built here rather than in the draw below because it does not depend on the view. Zoom and pan are
+   * applied to the *context* — a translate and a scale — so the geometry underneath is the same at every
+   * crop, and rebuilding twenty thousand `Path2D` segments per mousemove was most of what made dragging
+   * a big zone stutter. The path outlives the drag; only the transform moves.
+   */
+  const mapPaths = useMemo(() => {
+    if (!vector || !view) return undefined;
+    const paths = new Map<string, Path2D>();
+    for (const seg of vector.segments) {
+      if (!segmentInBands(seg, bands)) continue;
+      const a = eqToCanvasCoords({ y: seg.y1, x: seg.x1 }, projection, view);
+      const b = eqToCanvasCoords({ y: seg.y2, x: seg.x2 }, projection, view);
+      if (!a || !b) continue;
+      const key = seg.color ?? MAP_COLORS.mapLine;
+      let path = paths.get(key);
+      if (!path) paths.set(key, (path = new Path2D()));
+      path.moveTo(a.x, a.y);
+      path.lineTo(b.x, b.y);
+    }
+    return paths;
+  }, [vector, bands, projection, view]);
+
   // Draw the map's geometry under the current view (zoom/pan). This canvas is static between
   // zone/zoom changes; the moving markers live on the one stacked above it.
   useEffect(() => {
@@ -583,30 +619,16 @@ export default function MapPanel({
     ctx.save();
     ctx.translate(pan.x, pan.y);
     ctx.scale(zoom, zoom);
-    if (vector && view) {
-      // Batched into one path per color: a few thousand segments with a stroke each would
-      // be thousands of context switches, and the biggest zones carry twenty thousand.
-      const paths = new Map<string, Path2D>();
-      for (const seg of vector.segments) {
-        if (!segmentInBands(seg, bands)) continue;
-        const a = eqToCanvasCoords({ y: seg.y1, x: seg.x1 }, projection, view);
-        const b = eqToCanvasCoords({ y: seg.y2, x: seg.x2 }, projection, view);
-        if (!a || !b) continue;
-        const key = seg.color ?? MAP_COLORS.mapLine;
-        let path = paths.get(key);
-        if (!path) paths.set(key, (path = new Path2D()));
-        path.moveTo(a.x, a.y);
-        path.lineTo(b.x, b.y);
-      }
+    if (mapPaths) {
       // Hairlines: the view is already scaled, so undo it to keep strokes one pixel wide.
       ctx.lineWidth = 1 / zoom;
-      for (const [color, path] of paths) {
+      for (const [color, path] of mapPaths) {
         ctx.strokeStyle = color;
         ctx.stroke(path);
       }
     }
     ctx.restore();
-  }, [vector, bands, projection, view, zoom, pan, canvasSize]);
+  }, [mapPaths, zoom, pan, canvasSize]);
 
   // Draw the overlay (grid, trail, peers, loc, pings, pins) — coords via `toScreen`,
   // so markers/text stay a constant size while the map zooms/pans under them.
@@ -617,6 +639,24 @@ export default function MapPanel({
     if (!projection || !view) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
+
+    /**
+     * Is this marker's point near enough the canvas to be worth drawing?
+     *
+     * Zoomed in, most of a zone is off screen, and the two loops that scale — a busy pack's labels and
+     * a night's kills — were drawing every one of them: a `fillText` the viewer can't see costs the same
+     * shaping and rasterising as one they can, and this redraws on every `/loc`, ping frame and pan.
+     * Only used for the loops that draw *at* a point; a line between two points may cross the canvas
+     * with both ends outside it, so trails and route legs are left alone.
+     *
+     * The margin is deliberately loose — a caption runs to the right of its point and a ring around it,
+     * and nothing here is worth a text measurement to shave.
+     */
+    const near = (p: Point): boolean =>
+      p.x > -MARKER_CULL_MARGIN &&
+      p.y > -MARKER_CULL_MARGIN &&
+      p.x < canvasSize.width + MARKER_CULL_MARGIN &&
+      p.y < canvasSize.height + MARKER_CULL_MARGIN;
 
     // Layers, bottom to top. **The order is the whole point**: what's drawn later covers
     // what came before, so history sits under anything live and your own pins sit over all of it.
@@ -762,7 +802,7 @@ export default function MapPanel({
         ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
         for (const poi of visiblePois) {
           const p = toScreen(poi);
-          if (!p) continue;
+          if (!p || !near(p)) continue;
           ctx.fillStyle = poi.color ?? MAP_COLORS.poi;
           ctx.beginPath();
           ctx.arc(p.x, p.y, 2, 0, 2 * Math.PI);
@@ -780,7 +820,7 @@ export default function MapPanel({
     function drawKills(ctx: CanvasRenderingContext2D): void {
       for (const kill of kills) {
         const p = toScreen(kill);
-        if (!p) continue;
+        if (!p || !near(p)) continue;
         const weight = Math.max(KILL_DOT.weightFloor, kill.confidence);
         // Hovering a mob's name picks its kills out here. Everything else fades rather than
         // vanishing — a marker you can still see is context; one that disappears is a lie about

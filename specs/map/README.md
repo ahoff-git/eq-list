@@ -45,6 +45,14 @@ world coordinates, so a map knows where it is. See
   "no colour given", and a black line on a dark panel is no map at all. Points of interest are drawn
   on the *overlay* canvas instead, so their labels stay a constant size as you zoom, like every other
   marker and like the game's own map.
+
+  **The paths are built once and only the transform moves.** Zoom and pan are a translate and a scale
+  on the context, so the geometry underneath is the same at every crop; rebuilding 20k `Path2D`
+  segments per mousemove was most of what made dragging a big zone stutter. The overlay has no such
+  luxury — its markers must stay a constant size, so they are re-placed every frame — but it **culls to
+  the canvas**: a label or a kill dot whose point is more than `MARKER_CULL_MARGIN` outside it costs the
+  same shaping and rasterising as one you can see, and zoomed in, most of a zone is outside it. Only for
+  markers drawn *at* a point; a trail or a route leg may cross the canvas with both ends off it.
 - **Location feed** — a `/loc` line (`Your Location is Y, X, Z`) becomes a `LocEvent`
   via `parseLocLine` (`src/shared/log-parser.ts`) and flows through the same
   main→IPC→renderer pipeline as the `zone` event (`watcher.onLoc` → `currentLoc` →

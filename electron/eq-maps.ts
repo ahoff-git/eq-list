@@ -264,8 +264,12 @@ interface StoredGazetteers {
  * way a pack actually changes — installed, updated in place, uninstalled. It is not a content hash and
  * doesn't try to be: the failure it can miss is an edit that keeps the byte count *and* the timestamp,
  * and the cost of that is one stale zone name until something else touches the folder.
+ *
+ * Exported because the travel graph is remembered against the same folder and must notice the same
+ * changes (`travel-graph.ts`) — one fingerprint, so a pack can't be fresh for one and stale for the
+ * other.
  */
-async function folderSignature(dir: string): Promise<string> {
+export async function folderSignature(dir: string): Promise<string> {
   let files = 0;
   let bytes = 0;
   let newest = 0;

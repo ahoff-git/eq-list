@@ -465,14 +465,21 @@ as insurance.
   sieved out before parsing, because the base file of a big zone is most of a megabyte of `L` geometry
   a travel graph never looks at.
 
-  **The app builds its graph at runtime and never reads the stored one.** `createTravelRouter` builds
-  on first ask and caches per folder, exactly as `createZoneNamer` does and for the same reason: a
-  graph belongs to whichever pack you picked, so a file on disk would be an artifact to keep in step
-  with a choice you can change from the titlebar. It costs one pass over that folder's labels — 22ms
-  on a small folder, ~1s for 568 files — and the hand-authored pass is applied every time, so the
-  travel in `manual-links.ts` is part of what the app routes over rather than something only the
-  scripts see. It's **async** because of the era list: which zones the server has open is a fact about
-  the server, and the wiki is the only thing that knows it. Concurrent asks share one build.
+  **The app builds its graph from your folders and never reads the shipped one.** `createTravelRouter`
+  builds on first ask and caches per folder, exactly as `createZoneNamer` does and for the same reason:
+  a graph belongs to whichever pack you picked, so a *shipped* file would be an artifact to keep in step
+  with a choice you can change from the titlebar. The hand-authored pass is applied every time, so the
+  travel in `manual-links.ts` is part of what the app routes over rather than something only the scripts
+  see. It's **async** because of the era list: which zones the server has open is a fact about the server,
+  and the wiki is the only thing that knows it. Concurrent asks share one build.
+
+  **And the build is kept between runs**, in `userData`'s `travel-graphs.json`, under a key naming
+  everything it was built from — the folder's own signature (the gazetteer's, shared), the era list, a
+  fingerprint of `manual-links.ts` and the adjacency table, and the app's version, which is the only thing
+  that can speak for a change to the build code. Reading it back is ~17ms against ~283ms to build a
+  568-file pack, and the first ask arrives *at launch* (the 🧭 panel's open state is persisted, and the map
+  window is restored), where it used to hold the main process for over two seconds — see
+  [ADR 0169](../decisions/0169-the-travel-graph-is-built-once-and-remembered.md).
 
   The scripts derive the same list through the same client and the same disk cache, so a graph built by
   hand and one built by the app exclude the same zones; `travel:build --offline` skips the wiki and says
@@ -670,4 +677,6 @@ as insurance.
 [ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md) ·
 [ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md) ·
 [ADR 0069](../decisions/0069-a-succor-is-a-port-inside-one-zone.md) ·
-[ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md) · [testing](../testing/README.md)
+[ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md) ·
+[ADR 0169](../decisions/0169-the-travel-graph-is-built-once-and-remembered.md) ·
+[testing](../testing/README.md)

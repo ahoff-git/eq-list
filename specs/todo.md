@@ -525,6 +525,15 @@ Four of the six are **done** and have left this list: rank-aware spell costs
 
 ## Performance
 
+- **The zone list still pays ~110ms of Levenshtein, once per process.** Down from ~500ms
+  ([ADR 0169](./decisions/0169-the-travel-graph-is-built-once-and-remembered.md)), and it is one-time —
+  the resolver memoises its misses — but it is *renderer* time at map-window open, and it is paid again
+  in the main window and in main. All of it is `zoneAvailable` falling through to the `fuzzy` tier for
+  the ~250 names a 568-file pack draws that the 352-zone expansion table has never heard of: custom
+  zones, instances, expansions past this server. `zones/resolve.ts` records that, measured against the
+  shipped table, that tier fires on **nothing**, so the question is whether it should be reached at all
+  from a bulk availability check — or whether the sweep wants an admissible prune, which needs a bound
+  on `fuzzyScore` and so belongs inside `fuzzy.ts` rather than beside it.
 - **5.7 MB of JSON text per first mount**, parsed in 24ms and held across mounts. Cheap now, but the
   text is bigger than the object form because JSON cannot share the repeated `Class: ALL` arrays — a
   post-parse intern pass would cut the window's memory if that ever matters.
