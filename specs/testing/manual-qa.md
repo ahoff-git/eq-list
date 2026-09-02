@@ -1303,6 +1303,42 @@ point anywhere useful, which only the live wiki can say.
 - **It is still last, and still gentle.** Exploring must never start while shards remain, and must
   keep one request per gap. Worth one look at eqlwiki in a browser while a run is in its shape phase.
 
+## Windows moves the window now (ADR 0182)
+
+The app stopped running its own drag: the floats are opaque so Windows will snap them, and the title
+bar is an ordinary caption. Four things were measured directly on the running window — the window
+carries `WS_THICKFRAME | WS_CAPTION | WS_MAXIMIZEBOX`, the title bar hit-tests as `HTCAPTION` over a
+5px resize border, `Win+←` snaps it to a half, and a caption double-click maximizes and restores it.
+What no sandbox can check is a **real drag**: Windows' modal move loop ignores injected mouse input
+(a native Notepad window ignores a synthetic caption drag exactly the same way), so every gesture
+below needs a hand on the mouse.
+
+- **Drag to an edge.** Take the title bar to the left edge, then the right: the OS's own snap preview
+  should appear and releasing should land a half. The top edge maximizes; the corner bands give
+  quarters. This is the headline of the change and the one thing only a person can confirm.
+- **Drag a snapped window loose.** Grab the title bar of a half or a maximized window: it should come
+  free under the pointer at the size it had before, not slide around still snapped. Windows owns the
+  restore size now — the app no longer remembers it.
+- **Escape mid-drag** puts the window back where the press found it.
+- **Win+arrows, on both windows.** ←/→ halves, ↑ maximize, ↓ restore then minimize, and
+  Win+Shift+←/→ to move between monitors. Also worth one look at **Win+Z** snap layouts, and at
+  FancyZones if it is installed — all of these were impossible before and none of them are code we
+  hold, so they either all work or the window styles are wrong.
+- **Double-click the title bar** maximizes and restores, and the ▢ / ❐ glyph follows — that glyph is
+  still ours, fed by main's `maximize`/`unmaximize` events, so it is the part that could drift.
+- **Every control in a title bar still clicks.** This is the regression to hunt. A caption swallows
+  presses over it, so a control that lost its `no-drag` is not merely draggable — it is dead. Click
+  every one on both windows: 🗺, the scale buttons, ◐, 👻, 📌, hide/close, and on the map the source
+  dropdown, the zone picker, the floors button and the *follow* checkbox. Then type in a title-bar
+  field and confirm the text still selects.
+- **The look.** The float is opaque now and its corners are Windows' rather than CSS. Confirm the
+  corner still reads as rounded, that the opacity slider and ◐ still go translucent all the way down
+  (they set whole-window opacity, which snapping does not mind), and that nothing flashes the wrong
+  shade on launch — `FLOAT_BG` in `windows.ts` is kept in step with `--bg` by hand.
+- **The overlays kept their transparency.** The cast-alert banner and the lookup selector are still
+  `transparent: true` and click-through: confirm an alert still draws over the game with no window
+  box around it, and that clicks still pass through to EverQuest.
+
 ## Five spawn-tracking fixes (ADR 0153)
 
 All five were found by replaying a real log and are covered by tests; what wants confirming in game is

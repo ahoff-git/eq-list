@@ -59,7 +59,7 @@ export default function ResizablePanel({
       const grip = e.currentTarget;
       const from = e.clientY;
       // Captured, so the moves keep arriving here once the pointer has left a 6px-tall handle —
-      // which it does immediately. The same reason `useWindowDrag` captures.
+      // which it does immediately.
       grip.setPointerCapture(e.pointerId);
       setDragging(true);
       const move = (ev: PointerEvent) => {

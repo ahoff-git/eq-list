@@ -15,7 +15,6 @@ import type { MapSourceReport } from "./map/map-sources";
 import type { TravelAnswer, TravelEnd } from "./travel/route";
 import type { TravelAvoided, TravelOptions } from "./travel/types";
 import type { TravelSurvey } from "./travel/survey";
-import type { DragEnd } from "./window-snap";
 
 /** A zone's vector map as it crosses IPC: geometry, labels, and who drew it. */
 export type LoadedMap = EqMap & { credits: string[] };
@@ -29,8 +28,6 @@ export type { MapSourceReport };
 export type { BuffInstance, BuffView, KnownBuff };
 /** Re-exported so a renderer can type a route without reaching into the travel module. */
 export type { TravelAnswer, TravelAvoided, TravelEnd, TravelOptions, TravelSurvey };
-/** Re-exported for the same reason: a titlebar ends a drag without importing the geometry. */
-export type { DragEnd };
 
 /**
  * types.ts — the shared contract between the Electron main process and the
@@ -3157,18 +3154,6 @@ export interface EqlApi {
     minimize(): void;
     /** Maximize this window, or restore it if it already is. */
     toggleMaximize(): void;
-    /**
-     * Drag this window by its titlebar, with Windows-style snapping — the gesture the renderer
-     * watches and the main process acts on (`window-drag.ts`). Drive it with `useWindowDrag`
-     * rather than by hand: the three calls are one gesture, and a `dragStart` with no `dragEnd`
-     * leaves the window following the pointer.
-     *
-     * No coordinates cross: main reads the cursor itself, so nothing here has to reason about a
-     * window's CSS zoom or a monitor's scale factor.
-     */
-    dragStart(): void;
-    dragMove(): void;
-    dragEnd(how: DragEnd): void;
     /**
      * This window maximized or restored — by our button or by anything else (a drag-region
      * double-click, Win+Up, the taskbar). Drives the titlebar button's glyph, and fires again

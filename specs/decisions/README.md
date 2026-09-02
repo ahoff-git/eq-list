@@ -137,7 +137,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0105: A tracked item says so when it drops](./0105-a-tracked-item-says-so-when-it-drops.md)
 - [0106: An add says what it did](./0106-an-add-says-what-it-did.md)
 - [0107: An inferred number has rules, and they are shared](./0107-an-inferred-number-has-rules-and-they-are-shared.md)
-- [0108: A frameless window snaps like a framed one](./0108-a-frameless-window-snaps-like-a-framed-one.md)
+- [0108: A frameless window snaps like a framed one](./0108-a-frameless-window-snaps-like-a-framed-one.md) — **superseded by 0182**: the blocker was `transparent: true`, not the frame, and Windows does it all
 - [0109: A route can be denied one place, not just a whole network](./0109-a-route-can-be-denied-one-place.md)
 - [0110: A launched window is visible, or it says why](./0110-a-launched-window-is-visible-or-it-says-why.md)
 - [0111: One zone, one map file](./0111-one-zone-one-map-file.md)
@@ -215,6 +215,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0180: The wiki has a shape — zone and quest links reach items no category files](./0180-the-wiki-has-a-shape-and-it-moves.md)
 - [0181: A new install asks the room for a roster before it crawls for one](./0181-a-new-install-asks-before-it-crawls.md)
 - [0181: The wiki says what changed — `recentchanges` replaces polling the clock](./0181-the-wiki-says-what-changed.md)
+- [0182: Window management is Windows' job — drop `transparent: true` and the hand-rolled snap](./0182-window-management-is-windows-job.md)
 
 ## Open Questions
 

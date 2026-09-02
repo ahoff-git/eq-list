@@ -593,9 +593,11 @@ reading like a measurement, and they are shared code
   nothing before the saved value arrives. Remembering and applying stay separate channels. ([0074](./0074-how-a-window-was-left-is-window-state.md))
 - **The interface scale only shrinks, and it is a CSS `zoom` per window.** One shared range, one
   clamp, read by every consumer. ([0026](./0026-interface-scale-only-shrinks.md), [0041](./0041-interface-scale-is-a-css-zoom-per-window.md))
-- **A frameless window snaps like a framed one.** The renderer owns the gesture and main owns the
-  window, with no coordinate crossing between them; the cursor decides, and ending a drag is three
-  different things the renderer names. ([0108](./0108-a-frameless-window-snaps-like-a-framed-one.md))
+- **Window management is Windows' job.** The floats are opaque so the OS will snap them, the title
+  bar is a `-webkit-app-region: drag` caption, and nothing in the app watches a pointer to move a
+  window. Translucency is whole-window opacity, never per-pixel alpha.
+  ([0182](./0182-window-management-is-windows-job.md), superseding
+  [0108](./0108-a-frameless-window-snaps-like-a-framed-one.md))
 - **A panel's height belongs to its reader.** Bounded by default, dragged to a *share* of the window
   rather than a pixel count, remembered per panel, and scrolling whatever doesn't fit. ([0112](./0112-a-panel-s-height-belongs-to-its-reader.md))
 - **A measurement is converted once, at the boundary, into the units a style is written in**, and a

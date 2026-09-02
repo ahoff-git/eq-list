@@ -6,6 +6,10 @@
  * pinned always-on-top and hidden to the tray. In dev the renderer is the `next dev`
  * server; in prod it's the exported bundle served over app:// (see protocol.ts).
  *
+ * The float is translucent by whole-window `opacity`, never by `transparent: true` — a
+ * per-pixel-alpha window is one Windows refuses to snap, and the app would rather have Aero Snap
+ * than see-through corners ([ADR 0182](../specs/decisions/0182-window-management-is-windows-job.md)).
+ *
  * A window reopens the way it was left — position, size, maximized, and its title-bar toggles
  * (pinned / ◐ opaque / 👻 click-through), all from window-state.ts and applied here as the window
  * is created, so none of it arrives a frame late. DevTools only open when EQL_DEVTOOLS is set,
@@ -23,7 +27,6 @@ import {
   windowToggles,
   type Bounds,
 } from "./window-state";
-import { hideSnapPreview } from "./window-drag";
 import { CH } from "../src/shared/ipc-channels";
 import { windowOpacity } from "../src/shared/constants";
 import { once } from "../src/shared/once";
@@ -365,6 +368,15 @@ const APP_URL = "app://local";
 const PRELOAD = path.join(__dirname, "preload.js");
 
 /**
+ * What a float paints before its page has painted anything.
+ *
+ * Kept in step with `--bg` in `globals.css` by hand, because Electron needs a colour to open the
+ * window with and the stylesheet does not exist yet at that point. Wrong only shows as a flash of
+ * the wrong shade on launch; it is the one duplication the pre-paint background forces.
+ */
+const FLOAT_BG = "#0e1013";
+
+/**
  * How long after creating a full-display window to re-assert its bounds.
  *
  * Both the alert overlay and the screengrab selector have to cover exactly one monitor, and on a
@@ -459,7 +471,8 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
     minHeight: 420,
     show: false,
     frame: false,
-    transparent: true,
+    // Opaque on purpose: `transparent: true` costs the window its WS_THICKFRAME, and with it every
+    // Windows snap gesture (ADR 0182). Translucency comes from `opacity` below instead.
     resizable: true,
     title: "EQ List",
     icon: windowIcon(),
@@ -467,7 +480,7 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
     // Opened at the translucency it was left at — the saved slider, or full if its ◐ was on —
     // so there's no flash; the renderer owns it from then on (`useWindowOpacity`).
     opacity: windowOpacity(toggles.opaque, look?.opacity ?? 1),
-    backgroundColor: "#00000000",
+    backgroundColor: FLOAT_BG,
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -522,15 +535,14 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
     minHeight: 320,
     show: false,
     frame: false,
-    transparent: true,
-    resizable: true,
+    resizable: true, // and opaque, so Windows can snap it — see the main window and ADR 0182
     title: "EQ List — Map",
     icon: windowIcon(),
     alwaysOnTop: toggles.pinned ?? true,
     // The same saved slider as the main window (one look for the app), but this window's own ◐ —
     // set up front for the same reason (no flash) and owned by its renderer from then on.
     opacity: windowOpacity(toggles.opaque, look?.opacity ?? 1),
-    backgroundColor: "#00000000",
+    backgroundColor: FLOAT_BG,
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -723,7 +735,6 @@ function rebuildAlertWindow(dying: BrowserWindow | null): void {
 /** Strip every overlay of its hold on the screen. The last resort — see `main.ts`'s crash handler. */
 export function neutralizeOverlays(): void {
   destroyLookupWindows();
-  hideSnapPreview(); // a drag interrupted by the throw would leave its preview sitting on the game
   if (alertWindow && !alertWindow.isDestroyed()) {
     setAlertInteractive(false); // solid + fullscreen is the state that locks a desktop
     makeHarmless(alertWindow);

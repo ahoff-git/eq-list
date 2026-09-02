@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by 0182
 
 ## Context
 

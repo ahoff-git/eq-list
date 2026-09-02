@@ -48,32 +48,30 @@ list, hunt, search, damage, session, peers, settings.
   Show/hide also works from the
   global hotkey `Ctrl/Cmd+Shift+O` (`OVERLAY_HOTKEY`, registered in `main.ts`) and the
   tray. One window, styled once; see [ADR 0009](../decisions/0009-single-window-with-tray.md).
-- **Dragging and snapping** (`Titlebar` + `useWindowDrag`, `electron/window-drag.ts`,
-  `shared/window-snap.ts`): the title bar drags the window **with Windows-style snapping** — drag to
-  the top edge to maximize, to a side for a half, into a side's top/bottom quarter-band for a quarter,
-  with a translucent preview of where it will land; drag a maximized or snapped window and it is
-  **pulled loose under the pointer** at the size it had before; **double-click** the bar to
-  maximize/restore; **Escape** mid-drag puts the window back exactly where the press found it. This is
-  *not* `-webkit-app-region: drag`, which is Chromium's own move loop and can only ever move the
-  window — the whole reason none of the above used to work
-  ([ADR 0108](../decisions/0108-a-frameless-window-snaps-like-a-framed-one.md)). The split: the
-  **renderer owns the gesture** (`dragStart` / `dragMove` / `dragEnd(how)`), **main owns the window**,
-  and **no coordinate crosses** — `dragMove` is a pulse and main reads
-  `screen.getCursorScreenPoint()`, so a window's CSS `zoom` and a mixed-DPI desktop can't skew the
-  drag. The geometry is pure and tested without a screen (`window-snap.ts`); the **cursor** decides
-  the zone, not the window's edges, and a press only becomes a drag once it leaves the spot it landed
-  in. `no-drag` on a control still means what it always did — it's now the class `useWindowDrag` looks
-  for rather than a CSS property — so **every control in a title bar must carry it**.
+- **Dragging and snapping** (`Titlebar`, and `-webkit-app-region: drag` in `globals.css`): the title
+  bar is the window's **caption**, and Windows moves it. Everything a caption does comes with that
+  and none of it is ours: drag to an edge for a half or a quarter with the OS's own preview, drag to
+  the top to maximize, drag a snapped window loose, Escape to cancel, double-click to
+  maximize/restore, **Win+arrows**, Win+Shift+arrows across monitors, Win+Z layouts, Aero Shake,
+  FancyZones. The floats are **opaque** for exactly this reason — Electron strips `WS_THICKFRAME`
+  from a `transparent: true` window, and Windows will not snap a window with no sizing border, which
+  is what used to make all of the above impossible and is why the app once ran the drag itself
+  ([ADR 0182](../decisions/0182-window-management-is-windows-job.md), superseding
+  [0108](../decisions/0108-a-frameless-window-snaps-like-a-framed-one.md)). Translucency is
+  unaffected: it was always whole-window `setOpacity`, never per-pixel alpha. `no-drag` is the CSS
+  property again, spelled the same everywhere it already appears, and the rule is unchanged and now
+  stricter in its consequence — a caption swallows presses over it, so **every control in a title bar
+  must carry `no-drag`** or it cannot be clicked at all.
 - **Maximize / restore** (`MaximizeButton` + `useMaximized`): a frameless window draws its own
   titlebar, so it has to be given what the OS would normally provide. The button asks main to
   `maximize()`/`unmaximize()`, and main reports the window's `maximize`/`unmaximize` events
   back — so the glyph (▢ / ❐) follows the window even when something else maximizes it
   (a **double-click on the title bar**, a drag to the top edge, `Win+↑`, the taskbar), and is
   re-announced on every load so a reloaded renderer can't start out wrong. The button is the
-  *display* of that state, never a second copy of it, which is why the double-click and the snap both
-  simply call the same `win.toggleMaximize()`. Maximizing **squares the window's corners and hides
-  its border** (`.maximized`): the rounded float look would otherwise leave four notches of
-  desktop showing. The state persists per window in `window-state.json` beside — not instead
+  *display* of that state, never a second copy of it. Maximizing **hides the window's border**
+  (`.maximized`), which would otherwise be a line ruled across the edge of the screen; the corners
+  are DWM's and it rounds or squares them itself. The state persists per window in
+  `window-state.json` beside — not instead
   of — the bounds, which stay the size to restore *to*; "Reset window position" clears it, since
   a window lost behind a maximized frame is what that button is for. Both the main and map
   windows have it; the **cast-alert overlay does not**, being click-through and

@@ -34,6 +34,10 @@ body {
 }
 
 body {
+  /* Transparent for the click-through overlays (the alert banner, the lookup selector), whose
+     windows are still `transparent: true` and whose pages are mostly empty screen. The app's own
+     floats paint `--bg` over this from `.app` / `.map-win`, and their windows are opaque —
+     see ADR 0182. */
   background: transparent;
   color: var(--text);
   font-family: var(--font);
@@ -202,28 +206,33 @@ button {
   height: 100%;
   background: var(--bg);
 }
-/* Frameless float: rounded + bordered (the body is transparent so the corners show
-   through). The background is SOLID — translucency is controlled solely by the
-   window's opacity (the slider / the title-bar toggle), so 100% is truly 100% opaque.
-   A translucent CSS background here would leave residual see-through even at 100%. */
+/* Frameless float: bordered, and squared off at the corners.
+ *
+ * No `border-radius`: the window is opaque now (ADR 0182 — a per-pixel-alpha window is one Windows
+ * will not snap), so a CSS radius has nothing to reveal but the window's own backdrop and reads as
+ * four smudged corners. Windows 11 rounds and clips the window itself, which is the corner the user
+ * actually sees.
+ *
+ * The background is SOLID — translucency is controlled solely by the window's opacity (the slider /
+ * the title-bar toggle), so 100% is truly 100% opaque. A translucent CSS background here would
+ * leave residual see-through even at 100%. Keep it in step with `FLOAT_BG` in `windows.ts`, which
+ * is the colour the window opens at before this stylesheet exists. */
 .app.glass {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
   overflow: hidden;
 }
-/* Maximized, the float look stops making sense: the window fills the work area, so rounded
-   corners and a border would just be four notches of desktop showing through. */
+/* Maximized, the float look stops making sense: the window fills the work area, so its border would
+   just be a line ruled across the edge of the screen. */
 .app.glass.maximized,
 .map-win.maximized {
-  border-radius: 0;
   border-color: transparent;
 }
 .titlebar {
-  /* The window's drag handle. The drag itself is ours rather than Chromium's
-     `-webkit-app-region: drag` — that one only ever moved the window, so a frameless window got no
-     snap zones and no double-click to maximize (see `useWindowDrag`, ADR 0108). What's left here is
-     what a caption looks like: text you can't select out from under the gesture. */
+  /* The window's drag handle, and the whole of how this window is moved: `drag` makes the element
+     hit-test as the caption, so Windows runs the move loop and every snap gesture a caption has
+     comes with it (ADR 0182). Nothing in JS watches the pointer here. */
+  -webkit-app-region: drag;
   user-select: none;
   cursor: default;
   display: flex;
@@ -239,11 +248,17 @@ button {
 }
 .titlebar h1 .mark { color: var(--accent); }
 .win-controls { display: flex; gap: 2px; }
-/* `no-drag` marks a control inside the drag handle: `useWindowDrag` looks for it and leaves the
-   press alone, so the control is pressed rather than the window moved. A class rather than a style,
-   since the gesture is read in JS now — but the typing controls still need their text selectable. */
+/* `no-drag` marks a control inside a drag handle, and is now the literal CSS property again: a
+   caption region swallows every press over it, so an unmarked control is a control that cannot be
+   clicked. The class is applied well outside the titlebar (overlay HUDs, panels), where it costs
+   nothing — an element only carves a hole out of a caption if it is inside one. */
+.no-drag { -webkit-app-region: no-drag; }
+/* The typing controls still need their text selectable, and their own presses. */
 .titlebar input,
-.titlebar textarea { user-select: text; }
+.titlebar textarea {
+  -webkit-app-region: no-drag;
+  user-select: text;
+}
 .wc {
   background: transparent;
   border: none;
@@ -1739,8 +1754,7 @@ kbd {
   height: 100%; /* see .app — percentages survive the root `zoom`, `vh` doesn't */
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
+  overflow: hidden; /* and no radius — same reason as `.app.glass` */
 }
 /* The map's bar carries a lot: title, source, zone picker, follow, and six controls. Past a
    certain narrowness they can't share one line, and the overflow used to push the close button off
