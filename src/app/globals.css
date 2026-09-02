@@ -2589,7 +2589,18 @@ kbd {
 /* Suggested crowd-control watches: click-to-add chips grouped by effect (see cast-suggestions.ts). */
 .cast-suggest .cs-row { gap: 6px; margin-top: 4px; align-items: baseline; }
 .cast-suggest .cs-cat { min-width: 46px; }
-.cast-suggest .cs-chip.added { color: var(--good); border-color: var(--accent-dim); opacity: 1; cursor: default; }
+/* A chip for a watch you already have. Deliberately NOT `.btn.added`: that class is the
+   just-pressed pop (solid green fill, dark text), and its fill left this green ✓ label
+   unreadable green-on-green. This is a resting state, not a press, so it reads as a tinted
+   outline instead of a filled button. */
+.cast-suggest .cs-chip.cs-on,
+.cast-suggest .cs-chip.cs-on:hover {
+  color: var(--good);
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  border-color: color-mix(in srgb, var(--good) 45%, transparent);
+  opacity: 1;
+  cursor: default;
+}
 
 /* Alert-style controls (color / sound / position / motion / duration / monitor) in Settings —
    used for the defaults and for a watch's own style, hence the shared `.astyle` class. */

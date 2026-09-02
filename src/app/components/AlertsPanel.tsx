@@ -313,7 +313,7 @@ export default function AlertsPanel() {
                     return (
                       <button
                         key={s.spell}
-                        className={`btn sm ghost cs-chip ${added ? "added" : ""}`}
+                        className={`btn sm ghost cs-chip ${added ? "cs-on" : ""}`}
                         title={s.note}
                         disabled={added}
                         onClick={() => addSuggestion(s)}
