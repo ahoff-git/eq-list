@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useClosedZones, useHarvest, useItemCatalog } from "@/lib/hooks";
 import { useItemQuery } from "@/lib/useItemQuery";
 import { usePersistentState } from "@/lib/usePersistentState";
@@ -79,7 +79,7 @@ export default function ItemSearchPanel() {
   const [weights, setWeights] = usePersistentState<StatWeights>(STORAGE_KEYS.itemWeights, {});
   const [sort, setSort] = usePersistentState<Sort<ItemSortKey>>(STORAGE_KEYS.itemSort, { key: "name", desc: false });
   const [pace, setPace] = usePersistentState<string>(STORAGE_KEYS.itemHarvestPace, "1000");
-  const [weightsOpen, setWeightsOpen] = useState(false);
+  const [weightsOpen, setWeightsOpen] = usePersistentState(STORAGE_KEYS.itemWeightsOpen, false);
 
   /**
    * A criteria object stored last week can be missing a facet added since; folding it over the empty

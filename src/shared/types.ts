@@ -1211,6 +1211,23 @@ export interface WikiPage {
    * ([ADR 0163](../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
    */
   npcs?: { name: string; level: string }[];
+  /**
+   * For **zone** and **quest** pages: every content page this one links to, by title.
+   *
+   * The wiki's *shape* as seen from a page we already hold. The category walk only finds what the
+   * wiki has filed as an item, and a few hundred real items are filed as nothing at all; a zone page
+   * links to what is in the zone and a quest page to what the quest involves, so between them they
+   * name pages no closure reaches — at no request of their own, since both kinds are already fetched
+   * for levels ([ADR 0180](../../specs/decisions/0180-the-wiki-has-a-shape-and-it-moves.md)).
+   *
+   * A link is a *candidate*, never a claim: nothing here says the target is an item, and finding out
+   * costs a fetch.
+   *
+   * De-duplicated within a page and uncapped. The repetition that matters is *between* pages — thirty
+   * zone pages naming the same guard — and that is folded away by the set the reader gathers them
+   * into, so capping a single page would only lose shape where there is most of it.
+   */
+  links?: string[];
   /** True if the page is tagged with an era that isn't live yet (can't obtain). */
   outOfEra?: boolean;
   fetchedAt: string;
@@ -1324,7 +1341,11 @@ export interface CachedItem {
  */
 export interface HarvestProgress {
   status: "idle" | "running" | "stopping" | "done";
-  /** How many item pages the wiki's own `Category:Items` lists. 0 before a run has asked. */
+  /**
+   * How many pages the roster holds — every item the **category walk** reached, not the flat listing
+   * of `Category:Items` ([ADR 0177](../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)).
+   * 0 before a run has asked.
+   */
   total: number;
   /** How many of those titles we now hold — the bar. */
   at: number;
@@ -1334,6 +1355,8 @@ export interface HarvestProgress {
    *  ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)). */
   fromPeers: number;
   failed: number;
+  /** Items the walk (or a peer) turned up that we had no record of at all — what exploring found. */
+  found: number;
   /**
    * Shards of the catalogue: how many the roster touches, how many we hold, and how many **the room
    * holds between it**. The last is the figure that says whether being in a room was worth it.

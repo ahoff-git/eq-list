@@ -69,6 +69,19 @@ in the main process and all UI in the renderer.
     authority, because `localStorage` belongs to an *origin* and a packaged launch (`app://local`)
     and a dev one (`http://localhost:3000`) otherwise keep separate settings
     ([ADR 0166](../decisions/0166-a-panel-setting-belongs-to-the-app-not-to-an-origin.md)).
+    Main's record is fetched **once per window into a live mirror**
+    ([ui-mirror.ts](../../src/shared/ui-mirror.ts)) rather than held as the snapshot it first was: a
+    snapshot is re-applied by every remount, so changing a dropdown and switching tabs away and back
+    silently reverted the change — the writes were all fine, the read was answering from a
+    photograph. A write updates the mirror, and main's reply fills gaps rather than overwriting, so a
+    remount reads back the newest value and reads it *synchronously* (no flash of defaults).
+    `usePersistentShape` is the same hook for a **record** of settings — a filter bar, a set of
+    bounds — folding what was stored over the current defaults, because a record written last week
+    can be missing a field added since and a filter arriving with `undefined` where a mode should be
+    matches nothing. A hook writes **only a value somebody chose** — loaded from a store, or set by
+    the panel. A window that has never held a setting stays silent rather than publishing its default
+    into main as authority, which is how a default came to outrank, and then overwrite, a real weight
+    sheet held under the other origin.
   - `protocol.ts` — serves the exported renderer over `app://` in production, reading
     files via asar-aware `fs` so it works when packaged.
   - `store.ts` — the one source of truth: shopping list + settings (persisted to

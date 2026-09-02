@@ -14,6 +14,7 @@ import {
   instanceKey,
   narrowCandidates,
   newKnownBuff,
+  alternativesLabel,
   announceWhen,
   isEnemyTarget,
   shouldHold,
@@ -119,6 +120,30 @@ test("undecided names every candidate, in a stable order", () => {
   assert.deepEqual(got?.alsoCouldBe, ["Thorncoat", "Barbcoat"]);
   // Same input, same answer: a reminder that renamed itself between sessions would be unusable.
   assert.deepEqual(narrowCandidates(["Thistlecoat", "Thorncoat", "Barbcoat"], () => false, () => false), got);
+});
+
+// ── how an undecided fade words its alternatives ──────────────────────────────
+
+test("no alternatives is no sentence, so a caller can concatenate blindly", () => {
+  assert.equal(alternativesLabel(undefined), "");
+  assert.equal(alternativesLabel([]), "");
+});
+
+test("uncapped names every alternative — the panel row has the room", () => {
+  assert.equal(alternativesLabel(["Thorncoat", "Barbcoat", "Bladecoat"]), "or Thorncoat / Barbcoat / Bladecoat");
+});
+
+test("a cap names that many and counts the rest, so a banner can't run off the screen", () => {
+  // The complaint this answers: six ranks of one spell became a banner that was mostly slashes.
+  const six = ["Thorncoat", "Barbcoat", "Bladecoat", "Spikecoat", "Diamondskin", "Steelskin"];
+  assert.equal(alternativesLabel(six, 1), "or Thorncoat +5 more");
+  assert.equal(alternativesLabel(six, 2), "or Thorncoat / Barbcoat +4 more");
+  // A cap the list doesn't reach adds nothing: there is no remainder to admit to.
+  assert.equal(alternativesLabel(["Thorncoat"], 2), "or Thorncoat");
+});
+
+test("a cap of nothing still names one, since a count alone names no spell at all", () => {
+  assert.equal(alternativesLabel(["Thorncoat", "Barbcoat"], 0), "or Thorncoat +1 more");
 });
 
 // ── what gets said, and what only gets recorded ───────────────────────────────

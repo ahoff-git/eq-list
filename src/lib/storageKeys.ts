@@ -4,7 +4,17 @@
  * Values persist per window (see `usePersistentState`).
  */
 export const STORAGE_KEYS = {
-  /** Main window: the active tab. */
+  /**
+   * Main window: where you are and how you got there — the whole trail (ADR 0173), not just the
+   * screen showing. One key rather than two, because the tab is *part of* a place: a separately
+   * stored "active tab" would be a second answer to where the window is, and back would be walking
+   * a trail that the tab strip had already left.
+   */
+  nav: "eqlist.main.nav",
+  /**
+   * Main window: the active tab, before a tab became one place on a trail. Read once, as the first
+   * place of a new trail, so an upgrade opens on the tab it was closed on.
+   */
   activeTab: "eqlist.main.tab",
   /** Main window: the Hunt tab's zone filter. */
   huntZone: "eqlist.main.huntZone",
@@ -32,10 +42,38 @@ export const STORAGE_KEYS = {
   itemCriteriaV1: "eqlist.main.itemCriteria",
   itemWeights: "eqlist.main.itemWeights",
   itemSort: "eqlist.main.itemSort",
+  /**
+   * Main window: whether the weight sheet is open.
+   *
+   * The sheet is where the Value column comes from, so a reader who set it up wants to *see* it set
+   * up — a collapsed sheet on returning to the tab reads as "my weights are gone" even though the
+   * button beside it carries the count. The map window persists its three panels for the same reason.
+   */
+  itemWeightsOpen: "eqlist.main.itemWeightsOpen",
   /** Main window: how gently the Items tab fills the catalogue from the wiki (ADR 0153). */
   itemHarvestPace: "eqlist.main.itemHarvestPace",
+  /**
+   * Main window: the Loot tab's standing answers — which half you're reading, what you've narrowed
+   * the feed to, and the order of each table.
+   *
+   * The feed is live and the panel is not, so these are the same kind of thing as the Hunt tab's zone:
+   * a filter you set once because it is how you want to read the feed, not a search you ran a moment
+   * ago. They were the last dropdowns in the app resetting on a tab switch.
+   */
+  lootView: "eqlist.main.lootView",
+  lootFilters: "eqlist.main.lootFilters",
+  lootSort: "eqlist.main.lootSort",
+  lootPriceSort: "eqlist.main.lootPriceSort",
   /** Map window: dropped pins. */
   mapPins: "eqlist.map.pins",
+  /**
+   * Map window: the one set of kill filters the ☠ list and the 📖 mob panel share.
+   *
+   * Persisted like the rest of that window's controls. The bar always shows what is set and carries a
+   * Clear, so a filter that outlives a session is visible rather than a mystery — which is the test a
+   * remembered narrowing has to pass.
+   */
+  mapKillFilters: "eqlist.map.killFilters",
   /** Map window: which set of maps to draw — bundled images, or a game maps folder. */
   mapSource: "eqlist.map.source",
   /** Map window: the viewed-zone override (blank = follow current zone). */

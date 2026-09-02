@@ -164,15 +164,15 @@ export default function SearchPanel({
   }, [term, mode, refreshNonce]);
 
   // A screengrab lookup prefills the box (name mode) and its text searches normally. It's a
-  // one-shot: applying it clears the open page, so we tell the owner it's been used and it
-  // drops it. This panel is unmounted whenever another tab shows, and a prefill still sitting
-  // there would be re-applied on the next mount — clicking an item name in the List / Hunt /
-  // Loot tabs jumps here, and would land on the old lookup text instead of the clicked page.
-  // Keyed on `prefill` only, NOT on `nav` changing, for the same reason.
+  // one-shot: we tell the owner it's been used and it drops it. This panel is unmounted whenever
+  // another tab shows, and a prefill still sitting there would be re-applied on the next mount —
+  // clicking an item name in the List / Hunt / Loot tabs jumps here, and would land on the old
+  // lookup text instead of the clicked page. Keyed on `prefill` only, NOT on `nav` changing, for
+  // the same reason. Closing whatever page was open isn't ours: the owner navigates to this tab's
+  // own view to deliver the prefill, which *is* the page closing (ADR 0173).
   useEffect(() => {
     if (!prefill) return;
     setMode("name");
-    nav.clear();
     setTerm(prefill);
     onPrefillUsed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,9 +217,11 @@ export default function SearchPanel({
     return () => clearTimeout(id);
   }, [zoneTerm, mode, selectedZone]);
 
+  // Searching another way is a different question, so an open page is not the answer to it any
+  // more. It's left *behind* you rather than dropped, so back re-opens the page you were reading.
   function switchMode(m: Mode) {
     setMode(m);
-    nav.clear();
+    nav.closePage();
   }
 
   // Force the wiki search index to re-fetch (it's mirrored to disk and otherwise only updates

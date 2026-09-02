@@ -198,4 +198,12 @@ export const STALE_DRAWINGS: Readonly<Record<string, string>> = {
   // the game's own file. Its being a second East Freeport rather than a spelling of one is why the
   // rule can't see it.
   freeporteast: "freporte",
+  // **`northro` is the revamped North Ro**, and it says so too: LDoN camps, a Wayfarer port,
+  // `to The Commonlands` and `to Freeport Sewers`, where this server has East and West Commonlands and
+  // no sewer zone line. `nro` is the classic drawing — its exits are the wiki's own neighbour list for
+  // the zone — and it is the one that marks the **wizard spire**, which the revamp drew nowhere. Left
+  // unfolded, the graph carried North Ro twice, and the half a player could name by its long name was
+  // the half with no port on it: the Navigation tab knew of no way to teleport there. `nro` is what the
+  // gazetteer names now, and "northro" is not a spelling of that name, so no rule pairs them.
+  northro: "nro",
 };

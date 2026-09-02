@@ -1,6 +1,8 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useItemPrices, useLootFeed, useShoppingList } from "@/lib/hooks";
+import { usePersistentShape, usePersistentState } from "@/lib/usePersistentState";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { lootKey } from "@/shared/loot-feed";
 import {
   DEFAULT_LOOT_FILTERS,
@@ -72,10 +74,15 @@ export default function LootPanel() {
   // every launch, so on its own it can repeat the value it already held and the refetch is skipped.
   const prices = useItemPrices(drops[0] ? lootKey(drops[0]) : "");
 
-  const [view, setView] = useState<View>("drops");
-  const [filters, setFilters] = useState<LootFilters>(DEFAULT_LOOT_FILTERS);
-  const [lootSort, setLootSort] = useState<Sort<LootSortKey>>(DEFAULT_LOOT_SORT);
-  const [priceSort, setPriceSort] = useState<Sort<PriceSortKey>>(DEFAULT_PRICE_SORT);
+  // All four persist: this is a panel you set up the way you read it, and every one of them was
+  // resetting the moment you looked at another tab.
+  const [view, setView] = usePersistentState<View>(STORAGE_KEYS.lootView, "drops");
+  const [filters, setFilters] = usePersistentShape<LootFilters>(STORAGE_KEYS.lootFilters, DEFAULT_LOOT_FILTERS);
+  const [lootSort, setLootSort] = usePersistentState<Sort<LootSortKey>>(STORAGE_KEYS.lootSort, DEFAULT_LOOT_SORT);
+  const [priceSort, setPriceSort] = usePersistentState<Sort<PriceSortKey>>(
+    STORAGE_KEYS.lootPriceSort,
+    DEFAULT_PRICE_SORT,
+  );
 
   // Names on the shopping list, normalized the same way the store matches them.
   const wanted = useMemo(

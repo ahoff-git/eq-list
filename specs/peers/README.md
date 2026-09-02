@@ -27,7 +27,13 @@ travels peer-to-peer, on request, over that peer's own connection.
     whole": nobody wants eleven thousand pages in a message, so its `ask` names a **shard** and its
     `give` answers with that ~11-page slice
     ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)) — and never a delta, a shard
-    being the small unit already. A `give` with no rows means "unchanged", which is kept distinct
+    being the small unit already. That `give` also carries the shard's **roster titles**: the names
+    the sender's category walk found there, held or not
+    ([ADR 0177](../decisions/0177-the-item-list-is-a-walk-not-a-listing.md)). A few hundred bytes on
+    a ~15 KB message, and the thing that stops every install repeating the same 194 listing requests
+    to rediscover the same 680 items. A title is a claim about the *wiki*, not about the peer: it is
+    only ever added, never used to remove one, and never taken as evidence the page exists — it makes
+    its shard incomplete, which is how it becomes work. The worst a bad one can do is cost a 404. A `give` with no rows means "unchanged", which is kept distinct
     from a `give` of none (that means "now empty", which
     [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md) reads as an un-share).
   - **A delta is a saving on the wire and nothing else**
@@ -80,6 +86,33 @@ travels peer-to-peer, on request, over that peer's own connection.
     installs re-fetching the same page within days of each other
     ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)). Nothing chases a refresh —
     expiry makes a shard incomplete, and the planner then fills that gap from a peer before the wiki.
+    **And the fill starts itself** ([ADR 0176](../decisions/0176-a-room-fills-itself.md)): a peer
+    holding shards we lack is noticed on the same minute tick and starts an ordinary run, so two
+    people who are merely *connected* converge without either of them opening this tab. The gate is
+    the room — an empty one starts nothing, so nothing changes for somebody playing alone — and the
+    newcomer's case goes further still: a run with **no roster at all** and a peer holding shards
+    takes its roster from the room rather than walking for one
+    ([ADR 0181](../decisions/0181-a-new-install-asks-before-it-crawls.md)), so joining is worth
+    something from the first minute rather than three minutes in. The roster rides the shard `give`
+    that was already carrying pages, so nothing new crosses the wire; it is deliberately *not* written
+    down as walked, so the wiki still gets asked properly once the room has given what it can. A peer
+    offering nothing is not a source, so two fresh installs meeting each other both walk. The
+    *Item pages* toggle gates asking exactly as it gates answering. The tick also starts a run when our
+    **roster has expired**, which no coverage test can notice — an install holding every page its
+    roster names has no gaps, so without that reason the weekly walk
+    ([ADR 0177](../decisions/0177-the-item-list-is-a-walk-not-a-listing.md)) would never begin and the
+    catalogue would freeze on the day it first filled while the wiki kept gaining items. The rule this
+    cost: a run started by a timer can now walk the category graph — **194 requests, about three
+    minutes** at the default pace — which is paid at most weekly per install, once per *room* in
+    practice since the titles travel, and never at all by somebody playing alone. The 11,847-page
+    crawl is still only reached when the room cannot supply a shard. A shard `give` also carries the
+    sender's **refusals** — titles it has checked and found not to be items
+    ([ADR 0180](../decisions/0180-the-wiki-has-a-shape-and-it-moves.md)). That is the larger half of
+    the exchange by volume and the same argument as the titles: the answer is *no* for nearly every
+    candidate, it costs a fetch to learn, and it is the same for everybody. A refusal can only ever
+    make a fetch **not** happen — it removes nothing, contradicts no page we hold, and never
+    over-writes a first-hand verdict — so the worst a lying peer achieves is that we fail to discover
+    something, which is where every install was before it existed.
 - **The hub** (`electron/peer-share.ts`) — in main, because main is the only participant always
   running: a hub that answered only while a window was open would drop every ask the moment you
   changed tab. It measures the catalogue on a slow tick (a digest moving *is* the change, so no
@@ -113,7 +146,10 @@ travels peer-to-peer, on request, over that peer's own connection.
 - **Keeping itself honest** ([ADR 0145](../decisions/0145-a-room-checks-itself-and-needs-no-game.md)).
   The minute tick that publishes the catalogue also **reconciles** — `outOfDate` names the
   observation kinds a peer holds past the revision we have, and those are asked for again, so a lost
-  `give` or a restart heals instead of leaving two installs disagreeing for ever. It is stated as a
+  `give` or a restart heals instead of leaving two installs disagreeing for ever. `items` reconciles
+  in the same place but by **coverage** rather than by revision — a shard is wanted because the
+  planner worked out we lack it, not because a number moved — which is where a fill now starts itself
+  ([ADR 0176](../decisions/0176-a-room-fills-itself.md)). It is stated as a
   comparison of what *is* rather than a reaction to an event, which is the shape that cannot drift.
   The catalogue carries our **name** as well as `hello` does, so a peer who missed the one greeting
   stops being "Someone (3f9a)" within the minute. **No keepalive of our own**: awari heartbeats every
@@ -138,6 +174,7 @@ travels peer-to-peer, on request, over that peer's own connection.
   which has no name to announce; the Peers tab carries the name field for exactly that.
 - **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray` and `PeerScores`) — **the
   one home for the whole feature** ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) ·
+[ADR 0176](../decisions/0176-a-room-fills-itself.md) ·
 [ADR 0171](../decisions/0171-a-shared-kind-states-what-a-row-is.md) ·
 [ADR 0162](../decisions/0162-a-room-of-one-is-checked-not-guessed-at.md)).
   It was scattered across three screens for a while: the connection and the name in Settings (where
@@ -151,7 +188,11 @@ travels peer-to-peer, on request, over that peer's own connection.
 - **Saying when you are the old one**
   ([ADR 0172](../decisions/0172-a-room-says-when-you-are-the-old-one.md)). `SHARE_PROTOCOL` is a
   hand-bumped number — deliberately not the app version, which CI moves on every push — and a peer
-  that names none is speaking the first one, which is every build from before it existed. Meeting a
+  that names none is speaking the first one, which is every build from before it existed. It stands
+  at **3**: 1 is everything before deltas, 2 added them
+  ([ADR 0171](../decisions/0171-a-shared-kind-states-what-a-row-is.md)), and 3 added roster titles to
+  an `items` give (ADR 0177) — a peer on 2 still sends pages, and simply teaches you nothing about
+  items it knows of and you don't, which is a degradation and therefore a number. Meeting a
   **newer** protocol raises one toast, once a session, coalesced across everyone who is ahead: this
   install is the one falling back, and that is a thing a person can fix. Meeting an **older** one
   raises nothing — nobody reading it could act on it (ADR 0143's second narrowing) — and instead
@@ -223,4 +264,6 @@ travels peer-to-peer, on request, over that peer's own connection.
 [ADR 0143](../decisions/0143-a-notice-may-point-at-where-to-answer-it.md) ·
 [ADR 0144](../decisions/0144-state-is-asked-for-as-well-as-pushed.md) ·
 [ADR 0145](../decisions/0145-a-room-checks-itself-and-needs-no-game.md) ·
-[ADR 0146](../decisions/0146-one-home-for-the-peer-network.md)
+[ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) ·
+[ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md) ·
+[ADR 0176](../decisions/0176-a-room-fills-itself.md)

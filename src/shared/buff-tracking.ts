@@ -285,6 +285,23 @@ export function targetLabel(target: string): string {
 }
 
 /**
+ * How a fade we could not narrow names its other candidates: `or Thorncoat / Barbcoat`.
+ *
+ * `cap` is how many get named before the remainder is counted instead, and it exists because the two
+ * places this is read have very different room. A panel row can carry all six ranks of a spell and be
+ * read at leisure; a banner is a glance, and a spell family with half a dozen shared fade sentences
+ * turns one into a wall of slashes that pushes the name you were being warned about off the edge of
+ * it. Past the first alternative the fact worth having on a banner is *that* it is ambiguous, and a
+ * count says that as well as a list does — the list is a click away on the Buffs tab.
+ */
+export function alternativesLabel(alsoCouldBe: readonly string[] | undefined, cap = Infinity): string {
+  if (!alsoCouldBe?.length) return "";
+  const named = alsoCouldBe.slice(0, Math.max(1, cap));
+  const rest = alsoCouldBe.length - named.length;
+  return `or ${named.join(" / ")}${rest > 0 ? ` +${rest} more` : ""}`;
+}
+
+/**
  * Narrow a shared sentence to the spell it was actually about.
  *
  * The candidates come from [spell-strings.ts](./spell-strings.ts), which cannot tell two spells with

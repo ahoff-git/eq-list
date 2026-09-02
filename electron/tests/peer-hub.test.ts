@@ -63,6 +63,14 @@ interface Rig {
 const ALL_KINDS: ShareKind[] = ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "items"];
 
 /**
+ * The roster half of `ItemShardSource`, for the tests that are about something else.
+ *
+ * Spread in rather than defaulted inside `rig`, so a test that *is* about roster titles has to say
+ * so — a fixture that quietly supplied a working one would let a regression in the sharing pass.
+ */
+const noTitles = { shardTitles: () => [] as string[], learnTitles: () => 0 };
+
+/**
  * A hub with nothing real behind it.
  *
  * `share` defaults to everything on, because the interesting refusals are the ones where a *toggle*
@@ -209,7 +217,7 @@ test("a source that throws costs its own kind and nothing else", () => {
 test("the item catalogue is offered by coverage, and its revision follows the coverage", () => {
   // A page re-fetched on its TTL moves the count and nothing a peer would want to re-ask about.
   let status = { pages: 100, cover: "ff00", doing: 3 };
-  const r = rig({ items: { status: () => status, shard: () => [] } });
+  const r = rig({ items: { status: () => status, shard: () => [], ...noTitles } });
   assert.deepEqual(r.hub.offer().items, { n: 100, rev: 1, cover: "ff00", doing: 3 });
 
   status = { pages: 101, cover: "ff00", doing: 3 };
@@ -274,7 +282,7 @@ test("an ask for a kind nobody has heard of is ignored rather than guessed at", 
 });
 
 test("an items ask has to name a shard — 'send me all eleven thousand' is not a request", () => {
-  const r = rig({ items: { status: () => ({ pages: 5, cover: "f0" }), shard: (n) => [{ page: n }] } });
+  const r = rig({ items: { status: () => ({ pages: 5, cover: "f0" }), shard: (n) => [{ page: n }], ...noTitles } });
   r.hub.handle("bran", { kind: AWARI_MSG.ask, what: "items" } as unknown as AwariPayload);
   assert.equal(r.sent.length, 0);
 
@@ -929,4 +937,235 @@ test("nothing is said about versions while the connection is switched off", () =
   r.hub.handle("bran", offerAt(99));
   r.settle();
   assert.equal(r.outdated.length, 0);
+});
+
+/**
+ * The nudge that makes a connected room fill itself
+ * ([ADR 0176](../decisions/0176-a-room-fills-itself.md)). The hub's part is small and is all that is
+ * tested here: it asks the catalogue's owner, on the tick, and only when the toggle allows it. What
+ * to *do* about it is the wiki client's decision and is tested with the planner.
+ */
+function fillRig(over: { share?: ShareSettings; connectPeers?: boolean } = {}) {
+  const fills: number[] = [];
+  const r = rig({
+    ...over,
+    items: { status: () => ({ pages: 0, cover: "" }), shard: () => [], ...noTitles, fill: () => void fills.push(1) },
+  });
+  return { ...r, fills };
+}
+
+test("the tick asks the catalogue whether the room has anything for it", () => {
+  // Before this, the planner only ever ran inside a run somebody had clicked — so two peers could
+  // sit connected, each holding half the catalogue, and neither would ever ask.
+  const r = fillRig();
+  assert.equal(r.fills.length, 0);
+  r.tick();
+  assert.equal(r.fills.length, 1);
+  r.tick();
+  assert.equal(r.fills.length, 2);
+});
+
+test("item pages switched off means we don't quietly fill from the room either", () => {
+  // The toggle has always gated answering; it gates asking too, or turning it off would still leave
+  // the room filling your cache.
+  const r = fillRig({ share: { items: false } as ShareSettings });
+  r.tick();
+  assert.equal(r.fills.length, 0);
+});
+
+test("a room we are not connected to is never filled from", () => {
+  const r = fillRig({ connectPeers: false });
+  r.tick();
+  assert.equal(r.fills.length, 0);
+});
+
+// ─── Roster titles ride the shard give (ADR 0177) ───────────────────────────
+
+test("a shard give carries the names we know as well as the pages we hold", () => {
+  // The cheap half of the exchange, and the half that travels regardless of what we managed to
+  // fetch: a peer whose roster is short by an item it has never heard of cannot ask for it, cannot
+  // count it missing, and would never find out.
+  const r = rig({
+    items: {
+      status: () => ({ pages: 5, cover: "f0" }),
+      shard: () => [],
+      shardTitles: (n) => [`Item in ${n}`, "Mistmoore Heirloom Ring"],
+      learnTitles: () => 0,
+    },
+  });
+
+  r.hub.handle("bran", { kind: AWARI_MSG.ask, what: "items", shard: 7 } as unknown as AwariPayload);
+
+  const give = r.last(AWARI_MSG.give, "bran");
+  assert.deepEqual(give?.rows, [], "we hold none of them");
+  assert.deepEqual(give?.titles, ["Item in 7", "Mistmoore Heirloom Ring"], "and still say what exists");
+});
+
+test("titles a peer sends are folded into our roster", () => {
+  const learned: string[][] = [];
+  const r = rig({
+    items: {
+      status: () => ({ pages: 0, cover: "" }),
+      shard: () => [],
+      shardTitles: () => [],
+      learnTitles: (titles) => {
+        learned.push([...titles]);
+        return titles.length;
+      },
+    },
+  });
+
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "items",
+    shard: 3,
+    rows: [],
+    titles: ["Mistmoore Heirloom Ring", "Rusty Axe"],
+  } as unknown as AwariPayload);
+
+  assert.deepEqual(learned, [["Mistmoore Heirloom Ring", "Rusty Axe"]]);
+});
+
+test("a give from a peer too old to send titles still works", () => {
+  // Protocol 2 sends pages and no names. That is a degradation, not a failure — it teaches us
+  // nothing about items we've never heard of, and everything else is unchanged.
+  const learned: string[][] = [];
+  const r = rig({
+    items: {
+      status: () => ({ pages: 0, cover: "" }),
+      shard: () => [],
+      shardTitles: () => [],
+      learnTitles: (titles) => {
+        learned.push([...titles]);
+        return titles.length;
+      },
+    },
+  });
+
+  r.hub.handle("bran", { kind: AWARI_MSG.give, what: "items", shard: 3, rows: [] } as unknown as AwariPayload);
+
+  assert.deepEqual(learned, [], "nothing offered, nothing learned, no crash");
+});
+
+test("rubbish in a titles field is dropped rather than believed", () => {
+  const learned: string[][] = [];
+  const r = rig({
+    items: {
+      status: () => ({ pages: 0, cover: "" }),
+      shard: () => [],
+      shardTitles: () => [],
+      learnTitles: (titles) => {
+        learned.push([...titles]);
+        return titles.length;
+      },
+    },
+  });
+
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "items",
+    shard: 3,
+    rows: [],
+    titles: ["  Rusty Axe  ", "", 7, null, { no: 1 }, "Rusty Axe"],
+  } as unknown as AwariPayload);
+
+  assert.deepEqual(learned, [["Rusty Axe"]], "trimmed, de-duplicated, and non-strings dropped");
+});
+
+// ─── Refusals travel too (ADR 0180) ─────────────────────────────────────────
+
+/** An item source that records what it was handed, with the shape hooks wired. */
+function shapeRig(over: { notItems?: (shard: number) => string[] } = {}) {
+  const took: string[][] = [];
+  const r = rig({
+    items: {
+      status: () => ({ pages: 0, cover: "" }),
+      shard: () => [],
+      shardTitles: () => [],
+      learnTitles: () => 0,
+      shardNotItems: over.notItems ?? (() => []),
+      learnNotItems: (titles) => {
+        took.push([...titles]);
+        return titles.length;
+      },
+    },
+  });
+  return { ...r, took };
+}
+
+test("a give carries the refusals for its shard", () => {
+  // The larger half by volume: a zone page links to thousands of pages the walk never files, and the
+  // answer is no for nearly all of them. Without this every install pays for the same dead ends.
+  const r = shapeRig({ notItems: (n) => [`Not an item in ${n}`, "Some Faction"] });
+
+  r.hub.handle("bran", { kind: AWARI_MSG.ask, what: "items", shard: 7 } as unknown as AwariPayload);
+
+  const give = r.last(AWARI_MSG.give, "bran");
+  assert.deepEqual(give?.notItems, ["Not an item in 7", "Some Faction"]);
+});
+
+test("refusals a peer sends are folded into ours", () => {
+  const r = shapeRig();
+
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "items",
+    shard: 3,
+    rows: [],
+    notItems: ["Some Faction", "A Red Link"],
+  } as unknown as AwariPayload);
+
+  assert.deepEqual(r.took, [["Some Faction", "A Red Link"]]);
+});
+
+test("a peer too old to send refusals still works", () => {
+  // Protocol 3 sends titles and no refusals. A degradation, not a failure: we simply pay for our own
+  // dead ends as we did before this existed.
+  const r = shapeRig();
+  r.hub.handle("bran", { kind: AWARI_MSG.give, what: "items", shard: 3, rows: [] } as unknown as AwariPayload);
+  assert.deepEqual(r.took, [], "nothing offered, nothing taken, no crash");
+});
+
+test("rubbish in a refusals field is dropped rather than believed", () => {
+  // Read exactly as titles are — same cap, same de-dupe. A refusal can only ever skip a fetch, but
+  // that is no reason to hand junk to the store.
+  const r = shapeRig();
+
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "items",
+    shard: 3,
+    rows: [],
+    notItems: ["  Some Faction  ", "", 7, null, { no: 1 }, "Some Faction"],
+  } as unknown as AwariPayload);
+
+  assert.deepEqual(r.took, [["Some Faction"]], "trimmed, de-duped, and the rest dropped");
+});
+
+test("a page's links survive the wire, and rubbish in them does not", () => {
+  // `readSharedPage` rebuilds every field by hand, so a field nobody adds there is silently dropped —
+  // which for `links` would mean an install that filled from a room had no shape to explore and
+  // nothing to say so (ADR 0180).
+  const r = rig();
+
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "items",
+    shard: 3,
+    rows: [
+      {
+        kind: "zone",
+        title: "Blackburrow",
+        wikiPath: "/Blackburrow",
+        sources: [],
+        components: [],
+        rewards: [],
+        links: ["  Gnoll Hide Lariat  ", "", 7, null, { no: 1 }, "Gnoll Hide Lariat", "A Gnoll"],
+        fetchedAt: new Date().toISOString(),
+      },
+    ],
+  } as unknown as AwariPayload);
+
+  const zone = r.accepted[0]?.pages[0] as { links?: string[] } | undefined;
+  assert.deepEqual(zone?.links, ["Gnoll Hide Lariat", "A Gnoll"], "trimmed, de-duped, rest dropped");
 });

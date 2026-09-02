@@ -99,6 +99,25 @@ unit-tested.
     keeps publishing, and that same claim is **taken over** once they go quiet. One case earned its
     place by hanging the suite: a shard containing a page eqlwiki will not serve can never be
     *complete*, so the planner handed it back for ever — it is now abandoned after one pass.
+    [ADR 0177](../decisions/0177-the-item-list-is-a-walk-not-a-listing.md) added the **roster's own
+    lifetime**, which was the silent half of the same feature: a fresh roster is reused, one a week
+    old is walked again (so an item added to the wiki can ever be found), a checkpoint written before
+    rosters had dates re-walks once, a walk that comes back **short** keeps what we had rather than
+    un-sharing shards the room depends on, and a walk that comes back **empty** leaves the old roster
+    alone — a moment offline must not become an install that stops filling. Plus the titles a peer
+    names: one we haven't heard of becomes a page we go and fetch, the same one twice is added once,
+    and an install with **no roster learns nothing**, because a roster invented from a peer's message
+    would make a never-filled install indistinguishable from an empty one (ADR 0176 depends on
+    telling those apart).
+  - `src/shared/ui-mirror.ts` → `electron/tests/ui-mirror.test.ts` (what a window believes about its
+    own panel settings, and who gets the last word). A window fetches main's settings record once and
+    keeps it; the bug was what "keeps" meant. Held as a **snapshot**, it was re-applied by every panel
+    remount — so changing a dropdown and switching tabs away and back silently reverted the change,
+    with every write in the chain working perfectly. The tests pin the two rules that make it a
+    mirror instead: a value written is the value read back, and main's reply **fills gaps rather than
+    overwriting**, so a user quick enough to change a setting inside the first round trip doesn't have
+    it undone by the answer. One of them exists only to stop the gap test being rewritten as a
+    truthiness test: an unticked box, an empty filter and a zeroed weight are all real settings.
   - `src/shared/item-shards.ts` → `electron/tests/item-shards.test.ts` (how a room divides the
     catalogue, [ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). Two properties carry
     the feature and both are pinned rather than argued about: a shard is a **property of the title**,
@@ -114,7 +133,33 @@ unit-tested.
     falls through to the wiki, a malformed coverage bitmap reads as "they hold nothing" rather than
     throwing, and a peer's shards outside our roster can't inflate the room's figures.
   - `electron/wiki/harvest.ts` → `electron/tests/wiki-harvest.test.ts` — see below; it now covers the
-    sharing as well as the schedule.
+    sharing and the **roster's expiry** as well as the schedule.
+  - `electron/wiki/changes.ts` → `electron/tests/wiki-changes.test.ts` (reading the wiki's own account
+    of what it changed, [ADR 0181](../decisions/0181-the-wiki-says-what-changed.md)). This replaces two
+    guesses with a fact, so what is pinned is the ways a fact gets mishandled: acting on news a copy
+    **already contains** (staleness is judged against our copy's pull date, not the cursor, so a page
+    fetched by hand or handed over by a peer isn't fetched twice), moving the **cursor past changes
+    never seen** (an empty batch leaves it alone; an unreadable timestamp can't become it but still
+    invalidates), one page edited five times being one re-fetch, and a delete resolving itself through
+    the ordinary 404 path rather than a second code path that would almost never run. The one that
+    would be silent and expensive has three tests of its own: **"we have not been told" is only
+    evidence when we were listening** — a missing, unreadable, or beyond-retention cursor all read as
+    untracked, which is what stops a fresh install keeping pages for ninety days on the strength of
+    news it was never in a position to receive.
+  - `electron/wiki/explore.ts` → `electron/tests/wiki-explore.test.ts` (the **category walk** that
+    finds items we have never heard of, [ADR 0177](../decisions/0177-the-item-list-is-a-walk-not-a-listing.md)).
+    The bug it exists to prevent is silent and therefore worth pinning hard: a missing title is not an
+    error, it is a page that is never fetched, never shared and never counted absent. So the properties
+    are the ones that make the walk *complete* and *bounded* — it **descends** into subcategories (the
+    680 pages a flat listing cannot see), a **category cycle terminates** rather than walking until
+    the budget runs out, the **gap goes around every request** and not every category (`Category:Items`
+    is 23 continuations on its own), **Stop reaches it** so the roster phase isn't three unstoppable
+    minutes, a category the wiki refuses costs that category and not the walk, a runaway graph is
+    **capped and says so** rather than returning a short list that looks complete, and one page in two
+    categories is one title. The wiki is a fixture graph, so it runs in milliseconds. The **seeds**
+    are asserted too ([ADR 0178](../decisions/0178-a-mob-page-is-worth-its-own-fetch.md)): dropping
+    `Category:NPCs` would silently cost the Hunt tab every drop rate the wiki has, and nothing else
+    in the suite would notice.
   - `electron/wiki/index.ts`'s **acceptance of a peer's page** → `electron/tests/wiki-cache-share.test.ts`
     (filesystem-backed, in a temp directory, because the rule *is* about what ends up on disk).
     **The newest pull wins** ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)): a
@@ -231,6 +276,15 @@ unit-tested.
     reconciliation that stops two installs drifting apart for ever — stated as a comparison of
     revisions rather than a reaction to an offer, which is the shape that cannot drift, and pinned to
     observations only so nothing authored is re-fetched behind a reader's back.
+  - `electron/peer-share.ts` (the hub itself) → `electron/tests/peer-hub.test.ts` — every store it
+    reads is injected, so what is under test is the hub's own judgement. Beyond the catalogue,
+    the toggles and the tray,
+    [ADR 0177](../decisions/0177-the-item-list-is-a-walk-not-a-listing.md) added the **roster titles
+    on a shard give**: that they go out *even when we hold none of the pages* (a peer that has never
+    heard of an item cannot ask for it, so the names are the half worth sending regardless), that
+    inbound ones are folded into our roster, that a peer too old to send any is a degradation and not
+    a failure, and that rubbish in the field is trimmed, de-duplicated and dropped rather than
+    believed.
   - `src/shared/spawn-timers.ts` → `electron/tests/spawn-timers.test.ts` (the respawn-learning
     rules, [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)): that
     the figure is the **shortest** gap and never the mean, that a later longer gap can't stretch it
@@ -511,6 +565,13 @@ unit-tested.
     is that `0%` is a reading (a measured nothing is real) while an absent or non-finite value is a gap.
   - `src/shared/sorting.ts` → `electron/tests/sorting.test.ts` (what a header click does, and that a
     sort is stable and non-mutating — both of which its callers lean on).
+  - `src/shared/nav-trail.ts` → `electron/tests/nav-trail.test.ts` (where the window has been, as a
+    list of places — [ADR 0173](../decisions/0173-back-goes-back-one-place.md)). The rules a back
+    button rests on and nothing else: a move appends, an arrival where you already are doesn't, a
+    page and its tab are different places, and going somewhere new after going back drops the
+    forward ones. The first test is the bug the module exists for — Hunt → a mob's page → back
+    lands on **Hunt**. Also the breadcrumb window and how tolerantly a persisted trail is read,
+    since that value has been through storage and may be an older build's bare tab name.
   - `src/shared/tooltip.ts` → `electron/tests/tooltip.test.ts` (a hover card placed right of its
     anchor, left when the right won't fit, sliding up to clear the window's foot, the below/above
     fallback for a window too narrow for either side — flipped without covering the anchor — and the

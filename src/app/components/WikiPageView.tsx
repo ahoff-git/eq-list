@@ -1,7 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
 import { useClosedZones, useLucyCard, useSettings } from "@/lib/hooks";
-import { useNav } from "@/lib/nav";
 import ItemDrops from "./ItemDrops";
 import ItemLink from "./ItemLink";
 import LucySays, { LucyLink } from "./LucySays";
@@ -20,15 +19,15 @@ import { cardZone, statesNothing } from "@/shared/map/mob-place";
  * A wiki page, read in the app: what it is, how to get it, and what it puts on your list.
  *
  * Its own component because **reading** a page is a different job from **finding** one, and it shows:
- * every kind of page lays out differently (a quest's turn-ins, a mob's loot, a recipe's components), it
- * carries the back/forward of the in-app history, and it owns the add-to-list buttons. Inline it was
- * 135 of SearchPanel's lines, below the search box it has nothing else to do with.
+ * every kind of page lays out differently (a quest's turn-ins, a mob's loot, a recipe's components) and
+ * it owns the add-to-list buttons. Inline it was 135 of SearchPanel's lines, below the search box it
+ * has nothing else to do with. Getting *away* from it is the window's job, not this one's: the trail
+ * crosses tabs, so back and forward live in the shell's `NavBar` (ADR 0173).
  *
  * Adding goes straight to `api()` rather than through a prop: the list is the main process's, so there
  * is nothing for a parent to mediate.
  */
 export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; onRefreshed?: () => void }) {
-  const nav = useNav();
   // Which buttons this page gets. The rule lives in `wiki-add.ts` because the search results list
   // adds by the same one, and the two had drifted — see that file.
   const add = wikiAddAction(page);
@@ -94,14 +93,6 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
   return (
     <div className="page-detail">
       <div className="row">
-        <button className="btn ghost sm" title="Back" onClick={() => nav.back()}>
-          ←
-        </button>
-        {nav.canForward && (
-          <button className="btn ghost sm" title="Forward" onClick={() => nav.forward()}>
-            →
-          </button>
-        )}
         <h3>{page.title}</h3>
         <span className={`badge kind-${page.kind}`}>{page.kind}</span>
         {page.outOfEra && <span className="badge era-out">out of era</span>}

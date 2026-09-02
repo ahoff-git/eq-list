@@ -17,7 +17,7 @@ import {
   useWindowOpacity,
   useZoneMobs,
 } from "@/lib/hooks";
-import { usePersistentState } from "@/lib/usePersistentState";
+import { usePersistentShape, usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { PASS_THROUGH, useClickThrough } from "@/lib/clickThrough";
 import { useWindowPin } from "@/lib/windowToggles";
@@ -278,7 +278,12 @@ export default function MapWindow() {
   /** The route on the map: every leg, drawn quietly, with the one under the pointer picked out. */
   const [routeLegs, setRouteLegs] = useState<{ from: string; to: string }[]>([]);
   const [hoverLeg, setHoverLeg] = useState<{ from: string; to: string } | null>(null);
-  const [killFilters, setKillFilters] = useState<KillFilters>(DEFAULT_KILL_FILTERS);
+  // Persisted like the rest of this window's controls: the bar shows what is set and carries a Clear,
+  // so a narrowing that outlives a session is visible rather than a mystery.
+  const [killFilters, setKillFilters] = usePersistentShape<KillFilters>(
+    STORAGE_KEYS.mapKillFilters,
+    DEFAULT_KILL_FILTERS,
+  );
   const [selected, setSelected] = useState<{ id: string; x: number; y: number } | null>(null);
   // Which kills the map should pick out: set while a name is hovered — a row in the ☠ list, or a
   // mob in the main window's Hunt tab — so pointing at one answers "where did those die?".

@@ -361,8 +361,10 @@ function registerWikiIpc(context: IpcContext): void {
     // Spliced as text, so the big half is never parsed here: `[…ours` + `,` + `…theirs]`.
     return `${ours.slice(0, -1)},${JSON.stringify(theirs).slice(1)}`;
   });
-  // The catalogue harvest (ADR 0153). Only ever starts because a window asked it to — there is no
-  // "warm this on launch", which is the difference between a trickle and a crawl nobody consented to.
+  // The catalogue harvest (ADR 0153). A window asking is one of the two ways a run begins; the other
+  // is the room holding pages we lack, noticed on the share hub's tick (ADR 0176). What has *not*
+  // changed is that neither is a "warm this on launch": alone, nothing starts at all, which is the
+  // difference between a trickle and a crawl nobody consented to.
   ipcMain.handle(CH.wikiHarvestStart, (_e, opts: { gapMs?: number; restart?: boolean } | undefined) =>
     wiki.harvest.start(opts),
   );

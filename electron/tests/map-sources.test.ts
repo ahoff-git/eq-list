@@ -59,7 +59,7 @@ test("the curated list outranks a solved name", () => {
 
 test("no two zones share a name — that would be one place listed twice", () => {
   // `tox`/`toxxulia`, `northro`/`nro` and `steamfont`/`steamfontmts` are the same zones twice.
-  const names = zonesFromFiles("stock", FILES, { tox: "Toxxulia Forest", nro: "Northern Desert of Ro" }).map(
+  const names = zonesFromFiles("stock", FILES, { tox: "Toxxulia Forest", northro: "Northern Desert of Ro" }).map(
     (z) => z.name,
   );
   assert.equal(new Set(names).size, names.length, `duplicates: ${names.join(", ")}`);
@@ -70,11 +70,11 @@ test("no two zones share a name — that would be one place listed twice", () =>
 test("a name a letter out is the same claim, not a second zone", () => {
   // The reported case: the pack's label for `tox` misspells the forest, so uniqueness by exact string
   // let the same place into the picker twice — once with a map, once without (ADR 0075).
-  const zones = zonesFromFiles("stock", FILES, { tox: "Toxulia Forest", nro: "Northern Desert of Roo" });
+  const zones = zonesFromFiles("stock", FILES, { tox: "Toxulia Forest", northro: "Northern Desert of Roo" });
   const byFile = new Map(zones.map((z) => [z.file!, z.name]));
   assert.equal(byFile.get("toxxulia"), "Toxxulia Forest");
   assert.equal(byFile.get("tox"), "Tox", "the loser falls back to its file name");
-  assert.equal(byFile.get("nro"), "Nro");
+  assert.equal(byFile.get("northro"), "Northro");
   assert.equal(zones.filter((z) => z.name.toLowerCase().includes("tox")).length, 2, "one zone, one map, one stub");
 });
 

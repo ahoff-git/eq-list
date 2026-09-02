@@ -215,7 +215,10 @@ as insurance.
     **An old drawing a pack keeps beside its current one** is folded away by hand where no rule can see
     it (`STALE_DRAWINGS` in `manual-links.ts`): `toxxulia` is the pre-split map of a zone that is now
     Tox *and* Kerra Ridge, so its exits mix two zones' and belong to neither; `freeporteast` is the
-    modern East Freeport and says so, labelling `to The Devastation`, six expansions past this server.
+    modern East Freeport and says so, labelling `to The Devastation`, six expansions past this server;
+    `northro` is the revamped North Ro and says so too, labelling `to The Commonlands` and
+    `to Freeport Sewers` where this server has East and West Commonlands and no sewer zone line
+    ([ADR 0174](../decisions/0174-the-era-decides-which-drawing-is-the-zone.md)).
     The evidence that the survivor is the right one is the same every time, and it is what makes
     discarding the other safe: **the surviving file agrees with the game's own map and the discarded one
     does not.** Brewall's `misty` puts `to Rivervale` at `2551, -408` where the game's own file has

@@ -1124,7 +1124,7 @@ written, and a resume that picked up at 9 rather than starting over. What has no
   in flight, and the ETA should count down. Leave the tab and come back — it should still be running,
   because the run lives in main, not in the panel.
 - **Stop keeps the place.** Press Stop mid-run: it should finish the page in flight, say
-  "Stopped at N of 11,136", and the button should become *Resume filling*. Resume and confirm it
+  "Stopped at N of <roster>", and the button should become *Resume filling*. Resume and confirm it
   carries on rather than starting from the top.
 - **It survives a restart.** Stop, quit the app, reopen it, go to Items — the strip should offer
   *Resume filling* from where it was.
@@ -1133,7 +1133,8 @@ written, and a resume that picked up at 9 rather than starting over. What has no
 - **The catalogue actually grew.** After a run, the count in the strip and the total in the filter
   line should both be in the thousands, and a stat search (say `AC ≥ 20`, slot CHEST) should return
   far more than it did before. Sorting by value should now be over the whole wiki, not your history.
-- **The long run, for real.** The one thing only time can test: leave it going for the full ~3 hours
+- **The long run, for real.** The one thing only time can test: leave it going for the full run
+  (~6 hours at the default pace since ADR 0178 added the mobs)
   and confirm it finishes, that memory doesn't climb, that the app stays responsive while it runs,
   and that the failed count stays small. Note what the failures were — a handful is expected, a
   hundred means something changed.
@@ -1209,8 +1210,9 @@ two real clients in a room, which is the only way to test the half that matters.
 - **Two clients, one room, from empty.** On both: Peers tab → switch on *Item pages*. Then press
   *Fill the catalogue* on both within a few seconds of each other. Watch the strip: they should be
   fetching **different** pages, and each one's "from peers" count should start climbing. The wiki's
-  total across the pair should end up near 11,136 rather than near 22,000 — worth confirming from the
-  debug log, which names every page fetched.
+  total across the pair should end up near the roster size rather than near twice it (~19,800 rather
+  than ~40,000 since [ADR 0178](../decisions/0178-a-mob-page-is-worth-its-own-fetch.md)) — worth
+  confirming from the debug log, which names every page fetched.
 - **A newcomer catches up in minutes.** With one client filled, start a *third* install (or clear the
   other's cache) and open the Items tab. Before pressing anything, the strip should show a pale room
   bar near full behind an empty solid one, and say peers already hold most of it. Press Fill: it
@@ -1226,6 +1228,80 @@ two real clients in a room, which is the only way to test the half that matters.
   and confirm the peer-sourced items appear with full cards, hover correctly, and open their wiki page.
 - **It is still gentle.** Two clients filling at once is still one request per second *each*; worth
   one look at eqlwiki in a browser while both run.
+
+## A room that fills itself (ADR 0176)
+
+The gate is unit-tested from both sides — the hub's nudge and the planner's answer — but "two people
+who never open the Peers tab end up with the same catalogue" is only true or false on real machines.
+
+- **Nobody presses anything.** One client with a filled catalogue, one empty, both with *Item pages*
+  on. Connect them and then **leave them alone** — do not open the Items tab and do not press *Fill*.
+  Within a minute or two the empty one should start a run on its own, almost entirely "from peers".
+  This is the whole feature; if it needs a click, it has not worked.
+- **Alone, nothing happens.** Start a single client with no peers and leave it for an hour. It must
+  never start a run, and the debug log must show no `action=parse` traffic. This is the property most
+  worth re-checking after any change here.
+- **Off means off.** With *Item pages* switched off on the empty client, connecting to a full one
+  should start nothing at all — the toggle gates asking as well as answering.
+- **A fresh install can still be woken.** The hardest case, and the one that used to be impossible:
+  an install that has *never* run a fill has no roster. Connect it to a full peer and leave it. It
+  should list the category (a few seconds of requests) and then fill from the peer — not crawl.
+- **It gives up gracefully.** If a shard can never be completed (eqlwiki has pages in
+  `Category:Items` that 404), the automatic run should back off rather than retry every ten minutes
+  all evening. Worth one look at the debug log after a long session: `room fill: starting` lines
+  should get further apart, not stay at ten-minute intervals for hours.
+- **A filled catalogue still re-walks (ADR 0179).** The failure this one guards against is invisible
+  by construction, so it has to be provoked. Take a client with a **complete** catalogue, edit
+  `listedAt` in `harvest.json` to more than a week ago, restart, and connect it to a peer. It should
+  start a run within a couple of minutes — a *walk* first (the note names categories, not pages) —
+  even though it has no gaps. Without this the catalogue freezes on the roster it first walked and
+  reports itself full for ever, which is the one bug here that never announces itself.
+- **And alone it still doesn't.** Same trick — a week-old `listedAt` — with **no peers**. It must
+  start nothing at all. A solo install explores from the button, not from a timer.
+
+## A new install asks before it crawls (ADR 0181)
+
+- **The three-minute walk doesn't happen.** A completely fresh install (no `harvest.json`) connected
+  to a well-stocked peer. Start a fill and watch the note: it should go straight to taking shards
+  from the peer, **not** to "the item list — N categories…". The debug log says
+  `bootstrap: taking a roster from N peer(s) rather than walking`.
+- **And the walk still happens later.** After that run finishes, `harvest.json` must have **no**
+  `listedAt`. Leave it connected: within ~10 minutes the room-fill tick should start a second run
+  that *does* walk. If `listedAt` is set after a bootstrap, the catalogue is permanently capped at
+  whatever the room knew — that is the failure this detail exists to prevent.
+- **A room with nothing to give is crawled anyway.** Point a fresh install at a peer running an
+  older build (protocol 2, no titles), or kill the peer mid-bootstrap. The run must ask, get nothing,
+  and then walk in the *same* run rather than finishing with an empty catalogue.
+- **Two fresh installs both walk.** Connect two brand-new installs to each other with nothing
+  cached. Neither is a source, so both should walk — they must not sit waiting for each other.
+
+## Reading the wiki's shape (ADR 0180)
+
+The arithmetic and the sharing are unit-tested; what is not is whether the *links* on a real page
+point anywhere useful, which only the live wiki can say.
+
+- **A big zone page's shape is read whole.** Links are uncapped, so fetch a large zone (Kael Drakkel
+  lists 508 NPCs) and confirm its cached page carries links well past a thousand, and that a shard
+  `give` containing it still arrives intact at a peer. This is the one place the message-size budget
+  could bite.
+- **It finds something.** On a filled catalogue, let a run reach the end of its shards and keep
+  watching. It should carry on into candidates — the note names a page, and the debug log says
+  `shape: N candidates to check`. After a while, `shape: discovered …` lines should appear. If N is
+  in the tens of thousands rather than the low thousands, something upstream is handing junk to the
+  candidate set and the cap is masking it.
+- **What it finds is really an item.** Take a title from a `shape: discovered` line and open it in
+  the Items tab. It should have a card, hover correctly, and open its wiki page — and it should be a
+  page a plain `Category:Items` listing genuinely does not contain (check the category on the wiki).
+  This is the whole claim of ADR 0180, and it is the one worth verifying by hand at least once.
+- **A dead end is checked once, ever.** Note a title from the log that was probed and not discovered.
+  Stop, start a fresh run, and confirm it is **not** probed again — `shape.json` should hold it. This
+  is what keeps exploring from costing the same few thousand requests every run.
+- **Refusals cross.** Two clients, one that has explored and one that has not. The second should take
+  refusals in a `give` (`(+N refusals)` in the debug log) and then probe noticeably fewer candidates
+  than the first one did. This is the once-per-room saving; without it each install pays the full
+  price.
+- **It is still last, and still gentle.** Exploring must never start while shards remain, and must
+  keep one request per gap. Worth one look at eqlwiki in a browser while a run is in its shape phase.
 
 ## Five spawn-tracking fixes (ADR 0153)
 
@@ -1268,6 +1344,57 @@ timestamp on an already-fresh page, a page 20 days old is **refused** past the 1
 - **Two clients, ages preserved.** Fill on one, take shards on the other, then check an item's page
   age on the receiver: it should show roughly when the *sender* fetched it, not "just now". This is
   what stops a room's cache from becoming immortal, and it is the one thing only two clients can show.
+
+## Settings that outlive a glance
+
+The bug behind this section: main's settings record was fetched at page load and held as a snapshot,
+and every panel remount re-applied it — so a change made after launch was reverted the moment you
+looked at another tab and came back. Pinned in unit tests at the mirror
+([ui-mirror.test.ts](../../electron/tests/ui-mirror.test.ts)); the wiring around it is by hand.
+
+- **A change survives a tab switch.** Items tab → tick a zone, set a stat floor, drag the level cap.
+  Switch to Hunt, switch back. Everything you set should still be set. This is the one that was
+  broken, and it was broken for *every* persisted control, not just the Items tab.
+- **And a restart.** Same again, then quit and relaunch. Note the app must be **quit**, not killed —
+  `localStorage` is flushed lazily, though main's copy is written within half a second either way.
+- **And a switch between launch styles.** Set something in the packaged app, then run `npm run dev`
+  (or the reverse). The setting should follow you: that is the whole reason main holds a copy
+  ([ADR 0166](../decisions/0166-a-panel-setting-belongs-to-the-app-not-to-an-origin.md)).
+- **Returning to a tab doesn't flash.** Switch away and back and watch the criteria row: it should
+  paint with your settings already in place. A visible flicker of the defaults means a remount is
+  waiting on main again rather than reading the mirror.
+- **The Loot tab remembers how you read it.** Drops/Prices, the fate dropdown, the text filters, and
+  the sort of each table. All four used to reset on a tab switch.
+- **The map's kill filters remember too.** Map window → ☠ → set a mob, a window, or shared-only.
+  Close and reopen the map. Still set, and the bar still shows what it is — a remembered narrowing
+  has to be visible, or it reads as an empty map.
+- **Nothing remembers a half-typed form.** The spawn alert's *Where*, and the travel panel's from/to,
+  are questions you are asking now rather than settings, and should be blank on a fresh open.
+
+### A default is not an answer
+
+The second bug in the same mechanism, and the more expensive one: main's copy is the authority for
+every origin, so the first window to mount a hook it had **no** stored value for used to write its
+`initial` into main as though it were a decision. From then on that default outranked the genuine
+value the *other* origin held in `localStorage`, overwrote it there too, and the setting was gone.
+
+The Items tab's weight sheet is where it showed. Read out of the renderer's write log, in order:
+`{"int":2,"wis":1}` → `{}` → `{}` → `{"wis":50,"int":100,"mana":1}` → `{}`. Two sheets typed and
+thrown away by a default with a louder voice than either.
+
+- **Weights survive everything.** Items tab → *Value weights* → set INT 100, WIS 50, MANA 1. The Value
+  column should populate and the header should read `Value = 100×INT + 50×WIS + 1×MANA`. Now: switch
+  tabs and back; quit and relaunch; open the app the *other* way (packaged vs `npm run dev`). All
+  three should still show your sheet.
+- **The sheet is still open when you come back.** It is where the Value column comes from, and a
+  collapsed one reads as "my weights are gone" even with the count on the button.
+- **Clearing is a decision and sticks.** *Clear 3 weights*, relaunch: still cleared. It must not come
+  back — "the user chose empty" and "nobody has chosen" are different, and only the first is stored.
+- **A window that has never held a setting stays silent.** The check that catches a regression here:
+  quit, delete `%APPDATA%\eq-list\ui-state.json`, launch, and go nowhere near the Items tab. Quit
+  and look at the file — it should **not** have grown an `itemWeights` (or `itemSort`, or
+  `lootFilters`) entry just because a panel mounted. Every key in there should be something you
+  actually set.
 
 ## Selecting all of a facet
 
@@ -1353,12 +1480,15 @@ facts, or the clicking.
 - **It overlaps rather than contains.** An item off a mob spanning 21–23 should survive a band of
   1–22 — it is a level-22 character's item.
 - **The second run is where this pays off.** Press *Check for new items* after a completed harvest:
-  the roster should grow from ~11,136 to ~12,900 (the **zones** and quests items name — not the 4,214
-  mobs), and when it finishes the Level column should be mostly mob-derived rather than zone-derived.
-  **This is the run worth actually doing** — the difference between a column of guesses and one of
-  facts, for about half an hour more.
-- **Zone pages are doing the work.** Watch the run: it should fetch zone names, not mob names. If you
-  see it fetching thousands of individual mobs, the roster is wrong.
+  the roster should grow by the **zones and quests items name**, and when it finishes the Level column
+  should be mostly mob-derived rather than zone-derived. **This is the run worth actually doing** —
+  the difference between a column of guesses and one of facts.
+- **Zone pages are doing the work — for levels.** A run should fetch all 177 zone pages, and the Level
+  column should still be right for mobs whose own page is missing or won't parse; that fallback is the
+  whole of ADR 0163 and it survives [ADR 0178](../decisions/0178-a-mob-page-is-worth-its-own-fetch.md).
+  What is **no longer** a fault is seeing the run fetch thousands of individual mobs: that is now
+  deliberate, and it is where the drop rates and spawn locations come from. The check that used to
+  read "if you see it fetching mobs, the roster is wrong" is retired.
 - **The pace picker tells the truth about the size.** Its hours are computed from what is left to
   fetch, so on a fresh install it should read ~3–4h at Gentle and much less once mostly filled.
 - **Zone and quest pages share too.** In a room, a peer should be able to hand over shards containing
@@ -1496,3 +1626,101 @@ two files can hold one page. Folded on the way into the catalogue; 36 such alias
 - **No item appears twice.** Items tab → sort by name and skim for adjacent identical rows; there
   should be none. Search a known one (`Cloth Cape`, `Bamboo Bokken`) — exactly one row each.
 - **The row is the real page**, not an empty stand-in: it should carry its stats and its level.
+
+## Back goes back one place (ADR 0173)
+
+The window's history now holds **places** (a tab plus the page on it) rather than page titles, owns
+which tab shows, and is persisted. All of that is unit-tested in
+`electron/tests/nav-trail.test.ts`; what a sandbox can't do is press the buttons.
+
+- **Back crosses tabs.** Hunt → click a mob's name (the page opens on Search) → **←** in the bar
+  under the tabs. It should land back on **Hunt**, not on an empty search box. Same from List and
+  Loot, and the same by **Alt+←** and the mouse's thumb button.
+- **The trail is drawn, and it is clickable.** After a few moves the bar reads e.g.
+  `List › Hunt › Ghoulbane`; clicking `List` jumps there, and **→** comes back. More than four places
+  deep it starts with `…`. On a freshly opened window that hasn't moved, the bar isn't there at all.
+- **A new search no longer breaks back.** Open a page, switch Search between "By name" and "By zone",
+  then **←** — the page you were reading should come back (it used to clear the history outright).
+- **A screengrab lookup still lands on a clean box.** `Ctrl+Shift+L` over an item name with a page
+  already open: the page closes, the OCR'd text is in the box, and **←** returns to that page.
+- **A peer notice still points at the row.** Accept a peer offer's "view" and the Peers tab opens with
+  the row picked out; **←** returns to where you were.
+- **It reopens where it was left.** Quit on a wiki page and relaunch: the same page. Quit on Timers:
+  Timers. Upgrading from a build before this one should open on the tab it was closed on, once.
+
+## The item list is a walk, and it expires (ADR 0177)
+
+The walk itself was run end to end against the live wiki through the shipped code, with both seeds:
+**19,791 titles across 80 categories in 228 requests / 79 s** at a 250 ms gap, `complete`, nothing
+truncated, no category refused, and `Mistmoore Heirloom Ring`, `A Bloodgill Goblin` and
+`Lord Yelinak` all present. (Items alone: 11,847 over 76 categories, 680 more than the flat listing.) The schedule, the expiry and
+the peer titles are unit-tested with injected fakes. What a sandbox cannot do is the clicking, the
+week, or the second machine.
+
+- **The 680 are really there.** Items tab → the item total should reach **11,847** rather than
+  11,167. Search `Mistmoore Heirloom Ring` — it should be a real row with its stats, not a
+  "couldn't load".
+- **The mobs are really there, and they are the point** (ADR 0178). After a full run, open a mob page
+  you have never visited (`A Bloodgill Goblin`): it should carry its **stat card** (spawn zone,
+  location, level, race, class, HP), its **faction impact**, and a loot list with **drop
+  percentages**. Then check the **Hunt tab** ranks over the whole game rather than over pages you
+  happened to open — that is the whole reason mobs are in the roster, and it is the thing that was
+  missing before.
+- **A mob page beats the zone table where both exist.** An item whose level came from a zone roster
+  should keep the same level or a better-sourced one once the mob's own page is held — never lose it.
+- **The roster phase is legible, not a hang.** Press *Fill the catalogue* on an install with no saved
+  roster and watch the first four minutes: the note should read *Fetching the page list — N
+  categories, N pages so far*, with both counts visibly climbing, **before** any page is fetched. If
+  it sits silent, the note isn't reaching the panel.
+- **The pace labels moved with the roster.** They are computed, not written down, so with ~21,500
+  pages they should read about **~12h / ~6h / ~3h** rather than the old ~4h/~2h/~1h. If they still
+  show the old figures, the roster isn't reaching the label.
+- **Stop reaches the walk.** Press Stop during that phase. It should stop within a second or two —
+  not run to the end of the walk first.
+- **It says what it found.** After a walk that adds titles, the strip should carry
+  *· 680 items we had no record of* in green. After one that adds none, that line should be **absent**
+  rather than reading "0".
+- **The week actually elapses.** The one thing only time can test: leave an install a week, press
+  *Check for new items*, and confirm it re-walks (the roster phase reappears) rather than going
+  straight to pages. To force it sooner, edit `listedAt` in `userData/wiki-cache/harvest.json` to a
+  date over seven days old and start a run.
+- **A short walk doesn't shrink the catalogue.** Pull the network mid-walk and let it finish: the
+  total should stay where it was, and the strip should show an error rather than a suddenly tiny
+  catalogue. Nothing should become un-shared.
+
+### Two clients (ADR 0177, protocol 3)
+
+- **Names cross, not just pages.** On A, fill the catalogue. On B, delete `harvest.json` and
+  `catalogue.json`, relaunch, and fill. B's roster should reach 19,791 without B making 228 listing
+  requests of its own — check B's `wiki-explore` debug log is quiet while `wiki-harvest` reports
+  titles learned from a peer.
+- **A title a peer knows and cannot fetch still travels.** On A, note a title in `failed`. B should
+  still end up with that title in its roster (and try it itself) — that is the case the whole "send
+  the whole shard, not what we hold" rule exists for.
+- **An older peer is a degradation, not a break.** Against a build on protocol 2, sharing should still
+  work page-for-page, B should raise the "you are the old one" notice on A's side, and neither should
+  error.
+
+## The wiki says what changed (ADR 0181)
+
+Verified live through the shipped code: a fortnight of `recentchanges` is **4,495 changes fetched in
+0.9 s**, which resolve to **1,363 pages to re-fetch against the 19,790 a blanket TTL would take** —
+93%. The planner and the tracking-currency rule are unit-tested. What a sandbox can't do is watch a
+real cache behave over days.
+
+- **The catch-up runs and says so.** Press *Fill the catalogue* on a filled install: before any page
+  is fetched the note should read *Fetching what changed since <date>*, then possibly *checking N new
+  pages*. On a caught-up install it should finish in a second or two.
+- **It re-fetches only what moved.** After a completed fill, wait a day and run again. It should fetch
+  a double-digit number of pages, not thousands. The debug log (`wiki-changes`) names the count.
+- **A page you edit is picked up.** Edit any page on eqlwiki (or find one edited today in its history),
+  then run. That page should be re-fetched; its neighbours should not.
+- **A new page joins on its own.** Find a page created on eqlwiki in the last few days that carries an
+  item or NPC category. After a run it should be in the catalogue without a full walk having happened.
+- **The ninety-day ceiling only applies when tracking works.** Delete `wiki-cache/changes.json` and
+  relaunch: pages older than **14 days** should start expiring again on the clock, exactly as before
+  ADR 0181. Put it back and the ceiling returns to the setting.
+- **A failed catch-up is not a failed run.** Pull the network, press *Fill*, restore it: the run should
+  carry on (the log says *could not read recent changes*) rather than erroring out.
+- **The setting still means what it says.** Set `wikiPageTtlDays` to 1 and confirm pages re-fetch daily
+  regardless of what the wiki reports — tracking makes pages younger than the ceiling, never older.

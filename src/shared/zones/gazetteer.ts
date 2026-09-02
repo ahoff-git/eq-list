@@ -20,7 +20,7 @@
  * **The supplied table does not overrule what we verified**, though: `VERIFIED` comes first, and
  * first wins. Two reasons, both about a name being load-bearing rather than cosmetic — a canonical
  * name is what the expansion lookup and stored pins are keyed by, and where the two disagree about a
- * *file* (`tox` / `toxxulia`, `steamfont` / `steamfontmts`, `nro` / `northro`) the entry we kept is
+ * *file* (`tox` / `toxxulia`, `steamfont` / `steamfontmts`) the entry we kept is
  * the one that exists in a real install. Nothing is lost by ordering it this way: the loser stays in
  * the list as a **candidate** (a folder with only `tox` names it Toxxulia Forest, where before it
  * showed "Tox"), and every other spelling becomes an alias, so both resolve.
@@ -105,8 +105,19 @@ const VERIFIED: CuratedZone[] = [
   { name: "Steamfont Mountains", file: "steamfontmts" },
   { name: "Ak'Anon", file: "akanon" },
   { name: "RunnyEye Citadel", file: "runnyeye" },
-  // Fandom's name for `northro`, and the one the expansion lookup is keyed by. `nro` follows below.
-  { name: "Northern Desert of Ro", file: "northro", sortingStr: "Ro" },
+  /*
+   * **`nro`, not `northro`** — a pack ships both, and they are one zone drawn in two eras. The exits
+   * decide it, which is this list's own rule: `nro` labels `to East Commonlands`, `to Oasis of Marr`,
+   * `to East Freeport` and `to Iceclad Ocean`, and that is exactly the neighbour list the wiki
+   * adjacency this app already ships gives "The Northern Desert of Ro". `northro` is the revamp — LDoN
+   * camps, a Wayfarer port, `to The Commonlands` and `to Freeport Sewers`, none of which this server
+   * has — redrawn in its own coordinate frame, and it marks no wizard spire, which is how the miss
+   * surfaced: the Navigation tab knew of no port to a zone the game ports wizards to.
+   *
+   * Fandom's spelling is "North Ro", and that is what the expansion lookup is keyed by; it stays an
+   * alias (`names.ts`), so both spellings resolve either way round.
+   */
+  { name: "Northern Desert of Ro", file: "nro", sortingStr: "Ro" },
   { name: "East Commonlands", file: "ecommons", sortingStr: "Commonlands" },
   { name: "The Estate of Unrest", file: "unrest" },
   // EQ Legends' own zone, which no EverQuest gazetteer will ever carry — the supplied table lists

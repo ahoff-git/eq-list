@@ -323,3 +323,63 @@ export function roomCoverage(opts: {
     room: countShards(between),
   };
 }
+
+/**
+ * Every shard the room holds between it — what an install with no roster of its own goes on.
+ *
+ * Normally `present` comes from our own roster: a shard with no title of ours in it is not a gap. A
+ * **new install has no roster**, so that test says "no gaps" about a catalogue it holds none of, and
+ * the honest substitute is what the room says exists
+ * ([ADR 0181](../../specs/decisions/0181-a-new-install-asks-before-it-crawls.md)). It is a weaker
+ * statement — the room's coverage is not the wiki's — but it is the only one available before
+ * anybody has walked anything, and it is replaced by the real thing as soon as a walk happens.
+ */
+export function roomShards(peers: readonly PeerCoverage[]): Coverage {
+  const out = emptyCoverage();
+  for (const peer of peers) {
+    for (let i = 0; i < COVERAGE_BYTES; i++) out[i] |= peer.have[i];
+  }
+  return out;
+}
+
+/**
+ * Is there anything in the room worth starting a fill for?
+ *
+ * The question a client asks itself on the share hub's tick, so that two peers who are simply
+ * *connected* end up with each other's pages — before this, the planner above only ever ran inside a
+ * run somebody had clicked, so a room could sit there with both halves of the catalogue and neither
+ * side asking ([ADR 0176](../../specs/decisions/0176-a-room-fills-itself.md)).
+ *
+ * Deliberately not `planShardStep(...).action === "ask"`: that answers *what to do next* and needs a
+ * roster to answer it at all. This answers *is it worth waking up*, which has to be answerable
+ * before we have a roster — otherwise the one install that would benefit most, a fresh one, is the
+ * one install that can never be woken.
+ *
+ * So there are two readings, and which applies is not a heuristic:
+ *
+ *  - **With a roster**, `present` says which shards exist and `mine` says which we hold, so the
+ *    question is exact: does any peer hold a shard we lack and know we want?
+ *  - **Without one** (nobody has ever filled here), `present` is empty and would say "no gaps" about
+ *    a catalogue we hold nothing of. A peer offering *anything* is then reason enough to start, and
+ *    the run's own first step is to go and learn the roster.
+ */
+export function roomOffersMore(opts: {
+  mine: Coverage;
+  present: Coverage;
+  peers: readonly PeerCoverage[];
+  /**
+   * Whether `present` means anything yet. False on an install that has never run a fill, where an
+   * empty `present` is ignorance rather than the absence of gaps.
+   */
+  hasRoster: boolean;
+}): boolean {
+  const { mine, present, peers, hasRoster } = opts;
+  if (!hasRoster) return peers.some((peer) => countShards(peer.have) > 0);
+  for (let i = 0; i < COVERAGE_BYTES; i++) {
+    // The gaps, as bits: shards the roster touches and we do not hold.
+    const gaps = present[i] & ~mine[i];
+    if (!gaps) continue;
+    for (const peer of peers) if (peer.have[i] & gaps) return true;
+  }
+  return false;
+}

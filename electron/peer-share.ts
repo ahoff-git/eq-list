@@ -124,6 +124,29 @@ export interface ItemShardSource {
   status(): { pages: number; cover: string; doing?: number };
   /** The pages in one shard, ready for the wire. */
   shard(shard: number): unknown[];
+  /**
+   * The **names** in one shard — what our category walk says belongs there, held or not.
+   *
+   * Sent with the pages so a peer learns about items it has never heard of without repeating the
+   * walk ([ADR 0177](../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)). Separate
+   * from `shard` because they answer different questions: that one is what we *have*, this is what
+   * we know *exists*, and the gap between them is the useful part.
+   */
+  shardTitles(shard: number): string[];
+  /** Fold roster titles a peer named into ours. Returns how many were new. */
+  learnTitles(titles: readonly string[]): number;
+  /** Titles in this shard we have checked and found not to be items (ADR 0180). */
+  shardNotItems?(shard: number): string[];
+  /** Fold a peer's refusals into ours, so we never pay for those fetches. Returns how many were new. */
+  learnNotItems?(titles: readonly string[]): number;
+  /**
+   * The room holds pages we lack — go and get them, if that is worth doing.
+   *
+   * The hub does not decide *whether*: it knows who is in the room and what they offer, and the
+   * catalogue's owner knows what we hold and what a fill would cost. So this is a nudge on the tick
+   * and the answer is the wiki client's ([ADR 0176](../../specs/decisions/0176-a-room-fills-itself.md)).
+   */
+  fill?(): void;
 }
 
 /**
@@ -580,8 +603,25 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     if (ask.what === "items") {
       if (ask.shard === undefined) return void log.debug("items ask ignored - no shard named");
       const rows = deps.items?.shard(ask.shard) ?? [];
-      deps.send({ kind: AWARI_MSG.give, what: "items", rev: itemRev(), from: deps.getName(), shard: ask.shard, rows }, peerId);
-      log.debug("gave items shard", ask.shard, `(${rows.length} pages)`, "to", peerId);
+      // The names go with the pages, and cost a few hundred bytes on a message that is already ~15 KB.
+      // A peer whose roster is short by an item it has never heard of cannot ask for it, cannot count
+      // it missing, and would never find out — so the cheapest half of this exchange is the half that
+      // travels regardless of what we managed to fetch (ADR 0177).
+      const titles = deps.items?.shardTitles(ask.shard) ?? [];
+      // The refusals for this shard travel beside the titles: the same few thousand dead ends
+      // otherwise cost every install in the room its own fetch each (ADR 0180).
+      const notItems = deps.items?.shardNotItems?.(ask.shard) ?? [];
+      deps.send(
+        { kind: AWARI_MSG.give, what: "items", rev: itemRev(), from: deps.getName(), shard: ask.shard, rows, titles, notItems },
+        peerId,
+      );
+      log.debug(
+        "gave items shard",
+        ask.shard,
+        `(${rows.length} pages, ${titles.length} titles, ${notItems.length} refusals)`,
+        "to",
+        peerId,
+      );
       return;
     }
 
@@ -665,7 +705,26 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       // (ADR 0160). A delta of one would be answering a question nobody asked.
       const pages = give.mode === "whole" ? give.rows : [];
       const taken = deps.acceptItems?.(pages as SharedItemPage[], give.shard) ?? 0;
-      log.debug("took", taken, "of", pages.length, "item pages from", peerId, "shard", give.shard);
+      // The names first, then the pages: a title we learn here makes its shard incomplete, which is
+      // what turns "an item we had never heard of" into work the planner will pick up (ADR 0177).
+      // Learned even when no page came with them — a peer that knows of an item it has failed to
+      // fetch is telling us something we could not otherwise find out.
+      const learned = give.titles?.length ? (deps.items?.learnTitles(give.titles) ?? 0) : 0;
+      // A refusal only ever *skips* a fetch — it removes nothing and contradicts no page we hold, so
+      // the worst a lying peer achieves is that we fail to discover something (ADR 0180).
+      const spared = give.notItems?.length ? (deps.items?.learnNotItems?.(give.notItems) ?? 0) : 0;
+      log.debug(
+        "took",
+        taken,
+        "of",
+        pages.length,
+        "item pages from",
+        peerId,
+        "shard",
+        give.shard,
+        learned ? `(+${learned} new titles)` : "",
+        spared ? `(+${spared} refusals)` : "",
+      );
       return;
     }
 
@@ -918,12 +977,18 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
    * than one a tick.
    */
   function reconcile(): void {
-    if (!deps.getSettings().connectPeers) return;
+    const settings = deps.getSettings();
+    if (!settings.connectPeers) return;
     for (const [peerId, catalogue] of offers) {
       for (const kind of outOfDate(catalogue, (k) => heldRev(peerId, k))) {
         askFor(peerId, kind, false);
       }
     }
+    // `items` reconciles by **coverage** rather than by revision, so it cannot go through the loop
+    // above: a shard is asked for because the planner worked out we lack it, not because a number
+    // moved. Same rule as every other kind, though — the toggle gates asking as well as answering,
+    // so a person who has turned item pages off does not quietly fill from the room (ADR 0176).
+    if (deps.items?.fill && sharing(settings.share, "items")) deps.items.fill();
   }
 
   /** Drop answers nobody has refreshed in a while, so a long session doesn't accumulate the room. */

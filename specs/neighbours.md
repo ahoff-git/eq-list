@@ -94,6 +94,9 @@ extracted from a local client install. Not a competitor; a data layer, and a pro
 
 | Open this | For |
 |---|---|
+| `src/mediawiki.ts` | **The other wiki client.** `assertNoWikiApiError` — MediaWiki reports rate limits and bad parameters *inside a 200*, so `res.ok` is not the test; and `getRecentChanges`, the incremental refresh we poll a clock for instead. Both read in [wiki-data](./wiki-data/README.md) |
+| `src/http.ts` | `cacheable` — keeping in-band API errors out of a shared cache so a momentary rate limit isn't replayed for a whole TTL. Also the maintenance-interstitial detector, which is the same "a 200 is not a success" lesson twice |
+| `src/era.ts` | Worth reading to confirm **ours is better**: keyword markers over page text, where we read `Template:PageEra` and follow the server. The one place we should not borrow |
 | `src/data/eql-client/manifest.json` | The provenance pattern: every source file with bytes, mtime and **sha256**, plus `extractedAt` and `extractorVersion` |
 | `src/data/eql-client/zones.json` | A client-derived zone inventory — 192 map files' labelled POIs with x/y/z, and a `classicExpansionHint` per zone |
 | `scripts/extract-eql-reference.mjs` · `extract-eql-client.mjs` | How the client install becomes a committed dataset |
@@ -228,6 +231,8 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | Unmatched log lines *(shipped — [ADR 0079](./decisions/0079-an-unread-line-is-counted-by-its-shape.md))* | `CombatTracker.unmatched` in `eql_combat_tracker.py` — **eql-log-reader** |
 | In-zone A\* (and why not) | `_nav_graph()` / `_nav_path()` in `eql_atlas_map.py` — **eql-log-reader** |
 | Provenance manifests / client-derived datasets | `src/data/eql-client/manifest.json`, `scripts/extract-eql-reference.mjs` — **everquest-legends-mcp** |
+| A wiki API error arrives as HTTP 200 *(shipped — see [wiki-data](./wiki-data/README.md))* | `assertNoWikiApiError` in `src/mediawiki.ts` — **everquest-legends-mcp** |
+| Incremental refresh via `recentchanges` *(shipped — [ADR 0181](./decisions/0181-the-wiki-says-what-changed.md))* | `getRecentChanges` in `src/mediawiki.ts` — **everquest-legends-mcp** |
 | Data-integrity tests | `src/lib/maps.test.ts` — **everquest-legends-companion** |
 | An item's era, stated rather than derived *(the open half of [ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md))* | the expansion badge and "verified as available in EverQuest Legends" flag on `/item/search` — **EQLGS**, keyed on the same item ids we already hold |
 | `/out inventory` | `main.js` (`pollInv`) + `renderer/app.js` (`INV_SECTIONS`, `WORN_RX`) — **eqltools-companion** · `internal/inventorysync/observer.go` — **eqdps** |

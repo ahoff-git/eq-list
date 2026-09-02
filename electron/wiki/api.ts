@@ -18,6 +18,23 @@ const API = `${WIKI_BASE}/api.php`;
 const UA = "EQ-List/0.1 (loot overlay; contact adamhoffmang@gmail.com)";
 const TIMEOUT_MS = 20_000;
 
+/**
+ * **MediaWiki reports failure inside a 200.** `res.ok` is not the test.
+ *
+ * A rate limit, a read-only wiki, or a parameter this build sends that a later MediaWiki no longer
+ * accepts all arrive as HTTP 200 with an `error` (or merely a `warnings`) block and **no `query` at
+ * all** — measured against eqlwiki, which answers an unrecognised `list=` exactly that way. Read
+ * optimistically, that is indistinguishable from "the category is empty", which is how a listing
+ * helper turns somebody else's outage into a roster that is silently short and looks complete. That
+ * is the failure [ADR 0177](../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)
+ * exists to prevent, arriving through the one door it wasn't watching — noticed by reading
+ * `everquest-legends-mcp`'s `assertNoWikiApiError`, which carries the same comment
+ * ([neighbours](../../specs/neighbours.md)).
+ *
+ * So an `error` throws, and a `warnings` is logged: a warning is how the API says it *changed* what
+ * you asked for (it clamps an out-of-range `cmlimit` and says so), which is worth seeing in a log
+ * even though the answer is usable.
+ */
 async function apiGet<T>(params: Record<string, string>): Promise<T> {
   const url = `${API}?${new URLSearchParams({ format: "json", ...params }).toString()}`;
   const ctrl = new AbortController();
@@ -26,7 +43,16 @@ async function apiGet<T>(params: Record<string, string>): Promise<T> {
     log.debug("GET", url);
     const res = await fetch(url, { headers: { "User-Agent": UA }, signal: ctrl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-    return (await res.json()) as T;
+    const body = (await res.json()) as T & {
+      error?: { code?: string; info?: string };
+      warnings?: unknown;
+    };
+    if (body.warnings) log.warn("wiki API warning for", params.action, JSON.stringify(body.warnings).slice(0, 300));
+    // `action=parse` on a page that isn't there is an *answer*, and `fetchPageHtml` reads it as one.
+    if (body.error && params.action !== "parse") {
+      throw new Error(`wiki API error (${body.error.code ?? "unknown"}): ${body.error.info ?? "no detail"}`);
+    }
+    return body;
   } finally {
     clearTimeout(timer);
   }
@@ -83,41 +109,190 @@ export async function fetchAllTitles(maxPages = 80): Promise<string[]> {
   );
 }
 
+/** One row of a MediaWiki `list=` answer. `ns` is what tells a subcategory from a page. */
+interface ListMember {
+  title: string;
+  ns: number;
+}
+
 /**
- * Every title a MediaWiki `list=` query returns, following its continuation.
+ * Every member a MediaWiki `list=` query returns, following its continuation.
  *
  * Two of these were written out, for `allpages` and `categorymembers`. They differ only in the list
  * name and its **continuation prefix** — `apcontinue`, `cmcontinue` — which is MediaWiki's convention,
  * along with the answer arriving under `query.<list>`. Stating that once means the paging, the cap and
  * the stop condition are the same for the next list we ask about; a copy that dropped the `break`
  * would quietly make `maxPages` requests every time.
+ *
+ * It yields whole members rather than titles because a category listing's **namespace** is the one
+ * field that matters to the category walk — ns 14 is a subcategory to follow, ns 0 is a page to
+ * record — and a helper that threw it away is what kept the roster flat
+ * ([ADR 0177](../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)).
  */
+async function fetchListMembers(
+  list: string,
+  prefix: string,
+  params: Record<string, string>,
+  maxPages: number,
+): Promise<ListMember[]> {
+  const key = `${prefix}continue`;
+  const members: ListMember[] = [];
+  let next: string | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const data = await apiGet<{
+      query?: Record<string, ListMember[] | undefined>;
+      continue?: Record<string, string | undefined>;
+    }>({ action: "query", list, formatversion: "2", ...params, ...(next ? { [key]: next } : {}) });
+    members.push(...readListBlock(data.query, list));
+    next = data.continue?.[key];
+    if (!next) break;
+  }
+  return members;
+}
+
+/**
+ * The rows of a `list=` answer — **throwing when there is no answer at all**.
+ *
+ * The distinction this draws is the whole point, and it is measured rather than assumed: a category
+ * that does not exist comes back as `query.categorymembers: []` — a present block holding nothing,
+ * which honestly means "empty". A request the API refused comes back with **no `query` key**. Folded
+ * together by an `?? []`, the second reads as the first, and a wiki having a bad minute becomes a
+ * roster permanently short of whatever we were asking about
+ * ([ADR 0177](../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)).
+ *
+ * So: an empty list is an answer, and a missing one is an error the caller has to see.
+ */
+function readListBlock(
+  query: Record<string, ListMember[] | undefined> | undefined,
+  list: string,
+): ListMember[] {
+  const rows = query?.[list];
+  if (!rows) throw new Error(`wiki API returned no "${list}" block — the request was refused, not empty`);
+  return rows;
+}
+
+/** The same, for the callers that only ever wanted the names. */
 async function fetchListTitles(
   list: string,
   prefix: string,
   params: Record<string, string>,
   maxPages: number,
 ): Promise<string[]> {
-  const key = `${prefix}continue`;
-  const titles: string[] = [];
-  let next: string | undefined;
-  for (let page = 0; page < maxPages; page++) {
-    const data = await apiGet<{
-      query?: Record<string, { title: string }[] | undefined>;
-      continue?: Record<string, string | undefined>;
-    }>({ action: "query", list, ...params, ...(next ? { [key]: next } : {}) });
-    for (const p of data.query?.[list] ?? []) titles.push(p.title);
-    next = data.continue?.[key];
-    if (!next) break;
-  }
-  return titles;
+  return (await fetchListMembers(list, prefix, params, maxPages)).map((m) => m.title);
 }
+
+/** `Foo` and `Category:Foo` both name the same category; the API only accepts the second. */
+const categoryTitle = (category: string): string =>
+  category.startsWith("Category:") ? category : `Category:${category}`;
 
 /** Titles of a category's content-namespace (ns=0) members, paginated. */
 export async function fetchCategoryTitles(category: string, maxPages = 40): Promise<string[]> {
-  const cmtitle = category.startsWith("Category:") ? category : `Category:${category}`;
   // ns=0 only: without it the answer also carries the category's sub-categories and files.
-  return fetchListTitles("categorymembers", "cm", { cmtitle, cmnamespace: "0", cmlimit: "max" }, maxPages);
+  return fetchListTitles(
+    "categorymembers",
+    "cm",
+    { cmtitle: categoryTitle(category), cmnamespace: "0", cmlimit: "max" },
+    maxPages,
+  );
+}
+
+/** One request's worth of a category: its pages, the categories below it, and where to resume. */
+export interface CategorySlice {
+  pages: string[];
+  subcats: string[];
+  /** MediaWiki's `cmcontinue`; absent when this was the last slice of the category. */
+  cursor?: string;
+}
+
+/**
+ * **One request** against one category, returning its members split by namespace.
+ *
+ * Two things about the shape, and both are deliberate. It asks for `0|14` rather than `0`, which is
+ * the whole of [ADR 0177](../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md):
+ * `fetchCategoryTitles` asks for ns 0 and therefore cannot see that `Category:Items` has thirty
+ * children, so an item filed only in one of them is invisible to us for ever. Asking for both in the
+ * same request costs nothing extra and turns a listing into a walk.
+ *
+ * And it hands back the **cursor** instead of following it. `fetchCategoryTitles` paginates
+ * internally, which is right for a caller that wants an answer and wrong for the walk: `Category:Items`
+ * is twenty-three continuations, and a helper that swallows them would fire twenty-three requests
+ * back to back inside what is supposed to be a page-a-second trickle. Yielding the cursor lets the
+ * explorer put its gap around **every** request rather than around every category.
+ */
+export async function fetchCategorySlice(category: string, cursor?: string): Promise<CategorySlice> {
+  const data = await apiGet<{
+    query?: Record<string, ListMember[] | undefined>;
+    continue?: { cmcontinue?: string };
+  }>({
+    action: "query",
+    list: "categorymembers",
+    cmtitle: categoryTitle(category),
+    cmnamespace: "0|14",
+    cmlimit: "max",
+    formatversion: "2",
+    ...(cursor ? { cmcontinue: cursor } : {}),
+  });
+  const pages: string[] = [];
+  const subcats: string[] = [];
+  // Same rule as `readListBlock`: no block means refused, which must not read as an empty category.
+  for (const m of readListBlock(data.query, "categorymembers")) (m.ns === 14 ? subcats : pages).push(m.title);
+  return { pages, subcats, cursor: data.continue?.cmcontinue };
+}
+
+/** One thing that happened on the wiki. `type` is `edit`, `new` or `log` (a delete, move, …). */
+export interface WikiChange {
+  title: string;
+  /** ISO 8601, as MediaWiki writes it. The newest of these becomes the next cursor. */
+  timestamp: string;
+  type: string;
+}
+
+/**
+ * How far back `list=recentchanges` goes — `$wgRCMaxAge`, measured at **~90 days** on eqlwiki.
+ *
+ * The number that decides when change-tracking has to give up and the full walk take over: ask for a
+ * window older than this and the answer is not "nothing changed", it is "I no longer know".
+ */
+export const CHANGES_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * Everything that changed in the content namespace since `since`, newest first.
+ *
+ * The other shape of the same question. Every other refresh in this app is a **poll on a clock** —
+ * a page expires and is re-fetched whether or not anybody touched it — and this is the wiki simply
+ * saying what it did ([ADR 0181](../../specs/decisions/0181-the-wiki-says-what-changed.md), read off
+ * `everquest-legends-mcp`'s `getRecentChanges`, [neighbours](../../specs/neighbours.md)).
+ *
+ * Measured against eqlwiki: a fortnight of changes is **9 requests** and names 1,362 pages of our
+ * roster, where the TTL would re-fetch all 19,790.
+ */
+export async function fetchRecentChanges(since: Date, maxPages = 40): Promise<WikiChange[]> {
+  const out: WikiChange[] = [];
+  let next: string | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const data = await apiGet<{
+      query?: { recentchanges?: WikiChange[] };
+      continue?: { rccontinue?: string };
+    }>({
+      action: "query",
+      list: "recentchanges",
+      rcnamespace: "0",
+      rclimit: "max",
+      rcprop: "title|timestamp|ids",
+      // `rcdir=older` walks back from now; `rcend` is where to stop. Asking this way round means a
+      // long gap costs more requests rather than silently returning only the most recent few.
+      rcdir: "older",
+      rcend: since.toISOString(),
+      formatversion: "2",
+      ...(next ? { rccontinue: next } : {}),
+    });
+    const rows = data.query?.recentchanges;
+    if (!rows) throw new Error(`wiki API returned no "recentchanges" block — the request was refused`);
+    out.push(...rows);
+    next = data.continue?.rccontinue;
+    if (!next) break;
+  }
+  return out;
 }
 
 /**

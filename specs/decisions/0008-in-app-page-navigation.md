@@ -1,7 +1,7 @@
 # 0008: In-app page navigation with a history stack
 
 ## Status
-Accepted
+Superseded by [0173](./0173-back-goes-back-one-place.md)
 
 ## Context
 The control window let you open one wiki page at a time; the "↗ eqlwiki" button

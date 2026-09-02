@@ -33,6 +33,7 @@ import { useBuffs, useMaximized, useRendererDebug, useShoppingList, useSettings,
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
+import NavBar from "./components/NavBar";
 import { PASS_THROUGH, useClickThrough } from "@/lib/clickThrough";
 import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
@@ -41,19 +42,43 @@ import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 type Tab = "list" | "hunt" | "timers" | "buffs" | "loot" | "search" | "items" | "damage" | "session" | "alerts" | "peers" | "settings";
 
 /**
+ * The app, or the page that says where to get it.
+ *
+ * Thin on purpose: it decides only whether there is a host to be an overlay *for*, and puts the
+ * window inside the nav provider that owns where it is. Everything else is `ControlWindow`, which
+ * can then simply ask (`useNav`) rather than being handed a tab and a setter.
+ */
+export default function Home() {
+  // Undetermined until mounted (keeps SSR/first-client render consistent).
+  const [inElectron, setInElectron] = useState<boolean | null>(null);
+  useEffect(() => {
+    setInElectron(!!api());
+  }, []);
+
+  if (inElectron === null) return null; // brief pre-mount frame
+  if (!inElectron) return <LandingView />;
+  return (
+    <NavProvider>
+      <ControlWindow />
+    </NavProvider>
+  );
+}
+
+/**
  * The single app window: a frameless, translucent float (the "overlay" look) that
  * hosts everything — list, hunt, search, session, settings. The titlebar is the
  * drag handle (`Titlebar`: snaps at the screen edges, maximizes on a double-click) and
  * carries the window controls (pin / minimize / hide-to-tray).
+ *
+ * **Which tab shows is `nav`'s**, not this component's: a tab is one place on the trail that back
+ * walks (ADR 0173), and a tab owned here would be a move the trail never recorded.
  */
-export default function Home() {
-  const [tab, setTab] = usePersistentState<Tab>(STORAGE_KEYS.activeTab, "list");
+function ControlWindow() {
+  const nav = useNav();
   // Text handed to the Search box from outside it (see the onPrefill effect). Held here
   // because SearchPanel is unmounted while another tab shows, and cleared as soon as it
   // takes it — a prefill left sitting here would be re-applied by every later mount.
   const [prefill, setPrefill] = useState<string | null>(null);
-  // Undetermined until mounted (keeps SSR/first-client render consistent).
-  const [inElectron, setInElectron] = useState<boolean | null>(null);
   const list = useShoppingList();
   // Read here rather than only in the panel, so the tab itself can say how many buffs are down —
   // the one number in this feature that is worth seeing without opening it.
@@ -70,16 +95,17 @@ export default function Home() {
    * that asked it.
    */
   const [focusPeer, setFocusPeer] = useState<string | null>(null);
+  const openTab = nav.openTab;
   const viewPeer = useCallback(
     (peerId: string) => {
       setFocusPeer(peerId);
-      setTab("peers");
+      openTab("peers");
     },
-    [setTab],
+    [openTab],
   );
   useEffect(() => {
-    if (tab !== "peers") setFocusPeer(null);
-  }, [tab]);
+    if (nav.tab !== "peers") setFocusPeer(null);
+  }, [nav.tab]);
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -121,25 +147,19 @@ export default function Home() {
   // because that is the view the tab has always opened on.
   const [huntGrouping, setHuntGrouping] = usePersistentState<HuntGrouping>(STORAGE_KEYS.huntGrouping, "zone");
 
-  // Stable so NavProvider's callbacks (and thus `nav`'s identity) don't churn each render
-  // (`setTab` is a stable state setter).
-  const showSearch = useCallback(() => setTab("search"), [setTab]);
   const prefillUsed = useCallback(() => setPrefill(null), []);
 
-  useEffect(() => {
-    setInElectron(!!api());
-  }, []);
-
   // A screengrab lookup fills the Search box with OCR'd text and jumps here (so does a
-  // name clicked in the map window, which has no search of its own).
+  // name clicked in the map window, which has no search of its own). Going to the tab is what
+  // closes any page open on it — the box is a different place from a page (ADR 0173).
   useEffect(() => {
     const a = api();
     if (!a) return;
     return a.search.onPrefill((text) => {
-      setTab("search");
+      openTab("search");
       setPrefill(text);
     });
-  }, [setTab]);
+  }, [openTab]);
 
   const tabItems: TabItem[] = [
     { key: "list", label: list.entries.length ? `List (${list.entries.length})` : "List" },
@@ -177,12 +197,12 @@ export default function Home() {
     { key: "peers", label: peersLabel(peers.length, settings?.connectPeers) },
     { key: "settings", label: "Settings" },
   ];
-
-  if (inElectron === null) return null; // brief pre-mount frame
-  if (!inElectron) return <LandingView />;
+  // A remembered trail can name a tab this build no longer has (renamed, or dropped): show the
+  // first tab rather than an empty panel.
+  const tab = (tabItems.some((t) => t.key === nav.tab) ? nav.tab : tabItems[0].key) as Tab;
 
   return (
-    <NavProvider onOpen={showSearch}>
+    <>
       <NavKeys />
       <AwariHost />
       {/* Mounted by the shell, not by the Peers tab: a notice about a tab you aren't on has to come
@@ -190,7 +210,7 @@ export default function Home() {
       <PeerOfferToasts onView={viewPeer} />
       {/* Says once, if ever, that this build is behind the room — and points at the tab where the
           rows say which peers it is behind. */}
-      <PeerVersionToast onView={() => setTab("peers")} />
+      <PeerVersionToast onView={() => openTab("peers")} />
       {/* Beep only — the banner + flash live in the dedicated click-through overlay window
           (/alert), which floats over the game. This window is the always-alive one that can
           reliably play the sound. */}
@@ -224,7 +244,11 @@ export default function Home() {
 
         <UpdateBanner />
 
-        <TabBar items={tabItems} active={tab} onSelect={(k) => setTab(k as Tab)} />
+        <TabBar items={tabItems} active={tab} onSelect={openTab} />
+
+        {/* Where you have been, under the tabs and above the panel — because the trail crosses both
+            (ADR 0173). Draws nothing on a window that hasn't been anywhere. */}
+        <NavBar />
 
         {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}
         <div className="panel" {...PASS_THROUGH}>
@@ -255,7 +279,7 @@ export default function Home() {
       {/* Outside `.app`, which clips its children (`overflow: hidden`): a notice is drawn over the
           window, not inside the panel that raised it — so it survives switching tabs. */}
       <Toasts />
-    </NavProvider>
+    </>
   );
 }
 

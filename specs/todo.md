@@ -238,12 +238,15 @@ everything else, so this list can stay short enough to read:
   the frames genuinely differ, the same `to Innothule Swamp` sitting at `-1101, 3200` in `sro` and
   `342, 596` in `southro` — so the kept drawing has to win and those labels are simply lost.
 
-  Two threads to pull, neither obvious: **which drawing should win?** Today it is the *named* one, which
-  is right for the map overlay (the survey must be drawn in the frame you are looking at) and often
-  wrong for coverage. And **East Freeport is currently two zones in the graph**, since `freeporteast`
-  isn't a spelling of "East Freeport" and the fold's rule can't see it — the same is likely true of
-  other pairs the spelling test misses. Worth an audit of the pack's file list against the gazetteer
-  before deciding anything.
+  One thread left to pull: **which drawing should win?** Today it is the *named* one, which is right for
+  the map overlay (the survey must be drawn in the frame you are looking at) and often wrong for
+  coverage. [ADR 0174](./decisions/0174-the-era-decides-which-drawing-is-the-zone.md) settles only the
+  case where the two drawings are two *eras* — there the era decides and the name doesn't get a vote —
+  and says nothing about a pair that is one era drawn twice, which is what `oceanoftears`/`oot` is.
+
+  The audit this asked for has since been run twice and each pass found one pair the spelling test
+  misses: `freeporteast` and then `northro`, both now in `STALE_DRAWINGS`. Worth running again against
+  the pack's whole file list rather than waiting for the next bug report.
 
 - **More second copies of a zone, in the same shape as the ones already listed.** `NOT_IN_GAME` and
   `STALE_DRAWINGS` cleared the ones that were producing visible noise; the same query that found them

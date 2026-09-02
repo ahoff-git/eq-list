@@ -16,6 +16,15 @@ and recipes, so a user can search for a goal and add everything it needs to the
 shopping list.
 
 ## Responsibilities
+- **A 200 is not a success** (`apiGet`). MediaWiki reports rate limits, read-only spells and
+  parameters it no longer accepts *inside* an HTTP 200, with an `error` or merely a `warnings` block
+  and **no `query` at all**. Measured: eqlwiki answers an unrecognised `list=` exactly that way, while
+  a category that genuinely does not exist answers `categorymembers: []`. Read with an `?? []` those
+  two are the same, which is how a bad minute at the wiki becomes a roster that is silently short and
+  reports itself complete — the failure [ADR 0177](../decisions/0177-the-item-list-is-a-walk-not-a-listing.md)
+  exists to prevent, through the one door it wasn't watching. So an `error` throws, a `warnings` is
+  logged, and a **missing list block throws** while an empty one is an answer. Read off
+  `everquest-legends-mcp`'s `assertNoWikiApiError` ([neighbours](../neighbours.md)).
 - `electron/wiki/api.ts` — thin MediaWiki API client (one place for base URL,
   User-Agent, timeout): `opensearch` / `fullTextSearch` (server fallback),
   `fetchAllTitles` / `fetchCategoryTitles` (for the search indexes),
@@ -94,17 +103,78 @@ shopping list.
   ([ADR 0152](../decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md)). Entries
   parsed under an older `CACHE_VERSION` are skipped rather than included card-less, since a
   catalogue quietly missing stats is worse than one missing rows.
+- **The roster is a walk over the category graph, and it expires**
+  (`electron/wiki/explore.ts`, [ADR 0177](../decisions/0177-the-item-list-is-a-walk-not-a-listing.md),
+  [ADR 0178](../decisions/0178-a-mob-page-is-worth-its-own-fetch.md)).
+  *List `Category:Items`* was the roster for a long time and it has two wrong answers in it. The
+  category lists **11,167** pages directly; its transitive closure — thirty subcategories, theirs in
+  turn, **76 categories** — holds **11,847**. So **680 item pages** were unreachable by construction,
+  `Mistmoore Heirloom Ring` among them. And the answer was fetched *once* and kept: `start()` reused
+  any saved roster and no button passes `restart`, so an install that filled in March was still
+  working from March's item list in September. Both failures are silent — a missing title is a page
+  that is never fetched, never shared, and never counted absent, while the panel reads "11,167 of
+  11,167" and means it.
+  - **Two seeds — `Category:Items` and `Category:NPCs` — because those are the two things this app
+    reads pages for** ([ADR 0178](../decisions/0178-a-mob-page-is-worth-its-own-fetch.md)). Mobs are
+    not a byproduct of the crawl: the wiki's **drop rates live on the mob page and nowhere else**
+    (an item's "Drops From" names the mob and the zone but no rate), and so do the spawn zone and
+    location, the level/race/class/HP line and the faction impact. 7,944 NPCs over four categories in
+    **34 requests**, disjoint from the items but for one page. Seeding them also removes a two-pass
+    awkwardness: mobs used to enter the roster only by being *named by an item already held*, so a
+    first run was items-only and you had to press the button again.
+  - Quests and zones are still **not** seeded — their only job is giving an item a level, and the
+    ones no item names are pages nothing would read. They keep arriving by being named as a source.
+  - The walk descends and **stops at the closure edge**, which is where the wiki stops *asserting*
+    what a page is. Hopping sideways into an item's other categories reaches 10,947 more pages
+    through the zone and era categories, which hold everything in a zone indiscriminately, and nothing
+    tells them apart before fetching — `Template:Itempage` is on 47 of 60 mob pages, because a mob
+    transcludes an item tooltip per line of loot. **3,744** ns-0 pages are left outside every closure;
+    see the open question in [decisions/README.md](../decisions/README.md).
+  - Cycle-safe, because the graph has cycles (`Weapons` and `Equipment` each reach the other's
+    children), and capped, so a re-parented tree can't make a bounded walk unbounded.
+  - **The gap goes round every request, not every category** — `Category:Items` alone is 23
+    continuations, so `fetchCategorySlice` yields the cursor instead of following it. Measured: **194
+    requests in 68s** at 250ms, about three minutes at the default pace.
+  - **A roster over a week old is walked again**, which is the whole of "periodically explore the
+    wiki" — no timer of its own, since a run already starts on the button and on the room-fill tick
+    (ADR 0176). A walk that comes back *shorter* than what we hold is treated as a bad crawl rather
+    than as deletions and both are kept; one that comes back empty leaves the old roster alone.
+  - What it found is said out loud, and only when non-zero: most weeks it will find nothing, and "0
+    new items" every time would train people to stop reading the line.
 - **Filling that corpus — `harvest`** (`electron/wiki/harvest.ts`). `cachedItems` reads what we hold;
-  this is how we come to hold it. A resumable, rate-limited trickle over `Category:Items` (**11,136
-  pages**), one `action=parse` at a time with a gap — one second by default, which measured against
+  this is how we come to hold it. A resumable, rate-limited trickle over the roster above (**~21,500
+  pages**: 11,847 items, 7,944 NPCs, and the zones and quests they name), one `action=parse` at a time
+  with a gap — one second by default, which measured against
   the live wiki (~90 ms and ~3 KB a page) is about a 10% duty cycle for roughly three hours
-  ([ADR 0153](../decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)). It **never starts
-  on its own**: the Items tab's button is the only way in. It checkpoints after every fetched page so
+  ([ADR 0153](../decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)). It starts in exactly
+  two ways ([ADR 0176](../decisions/0176-a-room-fills-itself.md), and a first run **asks the room for a
+  roster before it crawls for one** — [ADR 0181](../decisions/0181-a-new-install-asks-before-it-crawls.md)):
+  the Items tab's button, or the share
+  hub's minute tick finding a reason — a [peer](../peers/README.md) holding shards we lack, or **our
+  own roster having expired**, which is the only way the weekly walk is reached on an install nobody
+  clicks (a filled catalogue has no gaps, so coverage alone would say "nothing to do" for ever and
+  the roster would freeze). Either way two connected installs converge with nobody pressing anything.
+  **Alone it never starts at all**, which is the part that matters: the gate is the room, not a timer
+  — so a solo install explores the wiki from the button, which now genuinely does what it says. It checkpoints after every fetched page so
   stopping costs the page in flight and nothing else; it skips a page already cached at the current
   version with no request *and no gap*, so a second run over a filled catalogue takes seconds; and a
   page that 404s is recorded by name rather than ending the run. Fetching is `getPage`, so a
   harvested page gets the same caching, version check and era flag as one you opened by hand. The
   schedule is a tested black box — roster, cache test, fetch, clock and sleep are all injected.
+- **Reading the wiki's shape — `wiki-shape.ts`** ([ADR 0180](../decisions/0180-the-wiki-has-a-shape-and-it-moves.md)).
+  A walk finds only what the wiki has **filed**, and 3,744 ns-0 pages sit outside every closure with a
+  few hundred real items among them. They are invisible to the category graph and still *linked*: a
+  zone page names what is in the zone, a quest page names what the quest involves, and both are
+  fetched anyway for levels. So those two kinds — and only those two — carry their outbound links, and
+  the arithmetic is a set subtraction: **links minus the roster minus what we have already checked**.
+  A link is a candidate and never a claim; the fetch is the classifier. A candidate that parses as an
+  item goes through the roster's one door (`learn`, the same one a peer's titles use) and is
+  thereafter indistinguishable from any other title. **A candidate that is not an item never enters
+  the roster** — it would leave its shard permanently incomplete and quietly decay the coverage the
+  room coordinates on. Verdicts are kept on disk, cleared by a `CACHE_VERSION` bump like a page, and
+  **shared with peers**, because "not an item" is the answer for nearly everything and costs a request
+  each time it is re-learned. Exploring runs last, after the planner says the roster is satisfied, at
+  the same pace as every other request.
 - **The roster is items *plus the zones and quests they name*** — and **zones, not mobs**, which is
   what makes an item's level affordable ([ADR 0163](../decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
   A mob's level is on the mob's page and there are 4,214 of them, but a **zone page carries a table of
@@ -112,12 +182,24 @@ shopping list.
   `NPC Name` and `Level`), and 99.5% of drop rows name their zone. So 177 zone pages answer for all
   4,214 mobs: measured, 15 zone pages yielded 1,288 mobs with levels where 226 mob pages had yielded
   226. The roster grows by 1,724 rather than 5,761, and a run by 16% rather than 52%.
-  - Individual mob pages are **never fetched for this**. The ones already on disk are read and
-    preferred (a mob page describes that spawn specifically); a missing one is a rung to fall
-    through, not a page to go and get.
+  - Individual mob pages are never fetched **for this** — the qualifier matters, and for a while it
+    stopped being read. A zone page is still how a level is learned in bulk, and still the rung a
+    missing or unparseable mob page falls through to. But mob pages **are** fetched now, for what only
+    they carry ([ADR 0178](../decisions/0178-a-mob-page-is-worth-its-own-fetch.md)); the ones on disk
+    are still preferred over the zone table, because a mob page describes that spawn specifically.
   - `cachedItems()` gathers zone rosters, mob cards and quest cards on the same walk that reads the
     items, then attaches a `level` to each. Names are folded by `npcKey`, since a zone page writes
     `A Giant Snake (Blackburrow)` and the drop row writes what the game prints.
+- **…and the *names* are shared too, not only the pages.** A peer answering a shard ask sends the
+  roster titles its own walk found in that shard beside the pages — a few hundred bytes on a ~15 KB
+  message, and what stops every install repeating the same 194 requests to rediscover the same 680
+  items ([ADR 0177](../decisions/0177-the-item-list-is-a-walk-not-a-listing.md)). Deliberately the
+  **whole shard, not only what the sender holds**: a title somebody knows about and has failed to
+  fetch is the one a peer most needs. A learned title is only ever added, never used to remove one,
+  and never taken as evidence the page exists — it just makes its shard incomplete, which is how it
+  becomes work. An install with no roster of its own learns nothing, because a roster invented from a
+  peer message would make a never-filled install indistinguishable from an empty one, which is a
+  distinction ADR 0176 depends on.
 - **…and filled *once per room*, not once per person** — `harvest` plans against what the
   [room](../peers/README.md) holds, not only against this cache
   ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). The roster is cut into 1024
@@ -129,7 +211,33 @@ shopping list.
   catalogue that was already being broadcast; `items.status()` / `items.shard()` / `items.accept()`
   are the cache's side of it, and `joinRoom` late-binds the two halves (the hub needs the cache to
   answer an ask, and the cache needs the hub to send one).
-- **How long a page keeps** — `settings.wikiPageTtlDays`, **14 days** by default, read per freshness
+- **The wiki says what changed, and that decides what is stale**
+  (`electron/wiki/changes.ts`, [ADR 0181](../decisions/0181-the-wiki-says-what-changed.md)). Every
+  other refresh here is a **poll on a clock**: a page expires and is re-fetched whether or not anybody
+  touched it, which at 19,790 pages and a fortnight's TTL is 19,790 requests to discover that almost
+  nothing moved — while the one page edited yesterday stays wrong for another thirteen days. The clock
+  is both too eager and too slow. `list=recentchanges` is the wiki simply saying what it did.
+  - Measured: a fortnight of changes is **9 requests** naming **1,362** roster pages, against 19,790
+    re-fetches. **93% fewer, and fresher.** New pages: 6 requests a week against the walk's 228.
+  - **An edit invalidates; it does not fetch.** A superseded page makes `holds()` false → its shard
+    incomplete → the planner picks it up, which is already how all work is found. No second path.
+  - Staleness is judged against **our copy's own pull date**, never the cursor — a page fetched after
+    the edit (by hand, or from a peer under [ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md))
+    is already current. The same test clears the flag on write, so a peer's *older* copy can't mark us
+    up to date.
+  - A **new** title is judged by the categories the walk reached, so the incremental path applies the
+    walk's own definition rather than a second rule that could drift from it.
+  - Runs at the **start of every run**, with no timer of its own — which keeps ADR 0153's rule as
+    ADR 0176 left it. Never fatal: nine requests must not become a single point of failure.
+- **How long a page keeps** — `settings.wikiPageTtlDays`, **90 days** by default since the wiki now
+  tells us what changed, and the ceiling no longer has to do that job on its own. The setting keeps
+  its meaning exactly (the most a page may age; tracking makes pages *younger*, never older), so
+  setting it to one day still gives a one-day refresh. **Silence only counts when we were listening:**
+  with no change cursor, or one older than the wiki remembers (~90 days), the ceiling drops back to
+  the old **14 days** and the clock does the work alone — so a fresh, offline, or never-harvested
+  install behaves exactly as it did before ([ADR 0181](../decisions/0181-the-wiki-says-what-changed.md)).
+  What follows is the original argument for the setting, which stands:
+- **(historical) The TTL as the only freshness test** — `settings.wikiPageTtlDays`, 14 days by default, read per freshness
   check rather than captured so a change takes effect at once (a running harvest included). One TTL
   for every kind of page: two answers to "how old may a wiki page be" would be two things to keep in
   step for no gain. It became a setting when pages started circulating between peers — a catalogue a
@@ -243,6 +351,24 @@ shopping list.
   and because these facts about EverQuest don't change — unlike the era flags above, which do.
   It is data supplied from outside, so it is **checked rather than trusted**:
   `electron/tests/zone-gazetteer.test.ts` is the review a re-supplied file has to pass.
+
+## Measurements
+The numbers above, taken against the live wiki and worth re-taking rather than trusting:
+
+| | |
+|---|---|
+| `Category:Items`, listed flat | 11,167 pages |
+| `Category:Items`, walked transitively | **11,847** pages over **76** categories |
+| Items only a subcategory knows about | **680** |
+| `Category:NPCs`, walked transitively | **7,944** pages over **4** categories, in **34** requests |
+| Overlap between the two closures | 1 page |
+| Both seeds together | 19,790 of the wiki's ns-0 pages |
+| Requests for one full walk (items only) | 194, in 68s at a 250ms gap |
+| Titles per peer shard | 11.6 avg / 24 max (items) → 19.3 / 34 (with NPCs), against a cap of 64 |
+| Categories on the whole wiki | 715 |
+| ns-0 pages on the whole wiki | 23,481 non-redirect |
+| Pages reachable by hopping *sideways* out of the item closure | 10,947, indiscriminate |
+| Left outside every seed's closure | 3,744 |
 
 ## Non-responsibilities
 - No build-time generation of **item, quest or recipe** data — that is fetched at runtime and cached

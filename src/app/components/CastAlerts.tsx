@@ -5,12 +5,15 @@ import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
 import { categoryOf, formatScore } from "@/shared/high-scores";
 import { alertPlacement } from "@/shared/alert-styles";
-import { ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
+import { alternativesLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
 import type { AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, HighScore, LootAlert } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
 const MAX_ALERTS = 4; // cap so a caster spamming a spell can't bury the screen
+// How many of an ambiguous fade's other candidates a banner names before it counts them instead.
+// One: a banner is a glance, and the Buffs tab has the full list for when you want it.
+const BANNER_ALTERNATIVES = 1;
 
 interface ActiveAlert extends CastAlertEvent {
   id: number;
@@ -233,7 +236,9 @@ function buffBanner(buff: BuffInstance): { icon: string; body: ReactNode; hint?:
       : buff.target === ON_PET
         ? "your pet"
         : buff.target;
-  const also = buff.alsoCouldBe?.length ? ` — or ${buff.alsoCouldBe.join(" / ")}` : "";
+  // Capped: some spell families word half a dozen ranks' fades identically, and the whole list would
+  // run the banner off the screen (see `alternativesLabel`). The panel row names them all.
+  const also = alternativesLabel(buff.alsoCouldBe, BANNER_ALTERNATIVES);
   return {
     icon: "🛡",
     body: (
@@ -241,12 +246,12 @@ function buffBanner(buff: BuffInstance): { icon: string; body: ReactNode; hint?:
         <b>{buff.spell}</b> down{who ? <> on <b>{who}</b></> : ""}
       </>
     ),
-    hint:
-      (buff.reason === "died"
-        ? "lost on death"
-        : buff.permanent
-          ? "dispelled — it has no timer"
-          : "re-cast!") + also,
+    hint: [
+      buff.reason === "died" ? "lost on death" : buff.permanent ? "dispelled — it has no timer" : "re-cast!",
+      also,
+    ]
+      .filter(Boolean)
+      .join(" — "),
   };
 }
 

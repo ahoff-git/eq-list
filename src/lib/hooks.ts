@@ -287,6 +287,7 @@ const NO_HARVEST: HarvestProgress = {
   fetched: 0,
   fromPeers: 0,
   failed: 0,
+  found: 0,
   shards: { present: 0, mine: 0, room: 0 },
 };
 const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };

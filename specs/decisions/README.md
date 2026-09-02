@@ -38,7 +38,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0005: Static-export renderer served over an app:// protocol](./0005-renderer-static-export-and-app-protocol.md)
 - [0006: Fuzzy search over a cached title index](./0006-fuzzy-search-with-title-index.md)
 - [0007: Quests-by-zone via backlinks ∩ Category:Quests](./0007-quests-by-zone-via-backlinks.md)
-- [0008: In-app page navigation with a history stack](./0008-in-app-page-navigation.md)
+- [0008: In-app page navigation with a history stack](./0008-in-app-page-navigation.md) — superseded by [0173](./0173-back-goes-back-one-place.md)
 - [0009: One translucent window + a system tray (merge overlay and control window)](./0009-single-window-with-tray.md) — *its `clickThrough` retention reversed by 0032; the working feature is 0073*
 - [0010: Port eq-map's map core; show the map in a sibling window](./0010-ported-map-core.md) — **superseded by 0042** for the image core; the `/loc` feed and the map window stand
 - [0011: Opt-in peer location sharing over awari](./0011-awari-peer-location-sharing.md) — **superseded by 0012**
@@ -205,8 +205,24 @@ finished, so a number is claimed before a second author can reach for it.
 - [0170: An item's sources are read against the era](./0170-an-item-s-sources-are-read-against-the-era.md)
 - [0171: A shared kind states what a row is](./0171-a-shared-kind-states-what-a-row-is.md)
 - [0172: A room says when you are the old one](./0172-a-room-says-when-you-are-the-old-one.md)
+- [0173: Back goes back one place, and a tab is a place](./0173-back-goes-back-one-place.md)
+- [0174: The era decides which drawing is the zone](./0174-the-era-decides-which-drawing-is-the-zone.md)
+- [0175: A lapse is read at a glance and cleared in a column](./0175-a-lapse-is-read-at-a-glance-and-cleared-in-a-column.md)
+- [0176: A room fills itself, so two connected peers share a catalogue unprompted](./0176-a-room-fills-itself.md)
+- [0177: The item list is a walk over the category graph, it expires, and its titles travel between peers](./0177-the-item-list-is-a-walk-not-a-listing.md)
+- [0178: A mob page is worth its own fetch — `Category:NPCs` is a second seed of the walk](./0178-a-mob-page-is-worth-its-own-fetch.md)
+- [0179: A stale roster is a reason to start, so a room's catalogue grows with the wiki](./0179-a-stale-roster-is-a-reason-to-start.md)
+- [0180: The wiki has a shape — zone and quest links reach items no category files](./0180-the-wiki-has-a-shape-and-it-moves.md)
+- [0181: A new install asks the room for a roster before it crawls for one](./0181-a-new-install-asks-before-it-crawls.md)
+- [0181: The wiki says what changed — `recentchanges` replaces polling the clock](./0181-the-wiki-says-what-changed.md)
 
 ## Open Questions
+
+- **Should a verdict expire?** ADR 0180 writes down "checked, not an item" and clears it only on a
+  `CACHE_VERSION` bump, so a red link the wiki turns into a real item page next month stays skipped
+  until then. That is deliberate — the alternative is re-probing thousands of dead ends every week —
+  but it is the one place where the catalogue can now be *stale by choice*, and giving a verdict its
+  own (long) expiry is the obvious answer if anybody ever misses an item because of it.
 
 - **Should `possibleSplit` be read?** `BootstrapResponse` carries a flag for the exact condition
   [ADR 0162](./0162-a-room-of-one-is-checked-not-guessed-at.md) cures — "the same identity

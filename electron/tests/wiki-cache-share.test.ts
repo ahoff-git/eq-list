@@ -20,16 +20,27 @@ import { createWikiClient } from "../wiki";
 import { createPageStore, type PageStore } from "../wiki/page-store";
 import type { WikiPage } from "../../src/shared/types";
 import { itemRows, type ItemRow } from "../../src/shared/item-search";
+import { shardOf } from "../../src/shared/item-shards";
 import type { SharedItemPage } from "../../src/shared/peer-share";
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL_DAYS = 14;
 
-function rig() {
+function rig(opts: { roster?: string[] } = {}) {
   // One client per test. The catalogue is held in memory and dropped by the client's *own* writes, so
   // a test that seeded files directly and then re-read the same client would be asking it to notice
   // something it is entitled to miss.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-share-test-"));
+  // `itemShard` hands out the *roster's* titles for a shard, not whatever the cache happens to hold —
+  // so a test about what we would give a peer has to have a roster for there to be anything to give.
+  if (opts.roster) {
+    const at = new Date().toISOString();
+    fs.writeFileSync(
+      path.join(dir, "harvest.json"),
+      JSON.stringify({ roster: opts.roster, listedAt: at, fetched: 0, fromPeers: 0, failed: [], startedAt: at, updatedAt: at }),
+      "utf8",
+    );
+  }
   const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
   return {
     wiki,
@@ -180,8 +191,8 @@ test("an item page from the previous parse version is still good", async () => {
 });
 
 test("a zone page from before the roster existed is re-read, not trusted", async () => {
-  // The other half: v13 is exactly when a zone page gained `npcs`, so one cached before it has no
-  // roster and must not be treated as current — or its mobs would never get levels.
+  // The other half: a zone page gained `npcs` at v13 and `links` at v14, so one cached below the
+  // current floor must not be treated as current — or its mobs would never get levels.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-version-zone-"));
   try {
     seed(dir, { kind: "zone", title: "Blackburrow", npcs: [{ name: "A Gnoll", level: "5-7" }] }, 12);
@@ -199,7 +210,7 @@ test("a zone page from before the roster existed is re-read, not trusted", async
     // Re-parsed at the current version, the same roster does place it. A **fresh client**, because
     // the catalogue is held in memory and invalidated by *our* writes — seeding pages behind a
     // running client's back is exactly the thing it is entitled not to notice.
-    seed(dir, { kind: "zone", title: "Blackburrow", npcs: [{ name: "A Gnoll", level: "5-7" }] }, 13);
+    seed(dir, { kind: "zone", title: "Blackburrow", npcs: [{ name: "A Gnoll", level: "5-7" }] }, 14);
     const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     const items = await wiki.cachedItems();
     const fresh = itemRows(items, wiki.levelSources())[0];
@@ -510,4 +521,58 @@ test("a torn line costs one page, not the bucket", async () => {
   } finally {
     await cleanup(dir);
   }
+});
+
+/**
+ * The other direction: when the cache goes and *asks* for copies
+ * ([ADR 0176](../decisions/0176-a-room-fills-itself.md)).
+ *
+ * Only the refusal is pinned here, and deliberately so — a test that let the fill actually start
+ * would go to the network for a roster. That a room with something to give does start one is the
+ * planner's decision and is tested against `roomOffersMore` in `item-shards.test.ts`.
+ */
+test("nobody in the room means nothing is started, however often the tick asks", async () => {
+  // The safety property of filling automatically: a solo install must never find itself crawling
+  // the wiki because of a timer. The room is the gate, and an empty room is shut.
+  const { wiki } = rig();
+  wiki.items.fill();
+  wiki.items.fill();
+  // `fill` reaches the shard index through a promise, so the decision lands a macrotask later.
+  await new Promise((r) => setImmediate(r));
+  assert.equal(wiki.harvest.status().status, "idle");
+});
+
+/**
+ * The shape has to survive the wire, or filling from a room quietly disables exploring
+ * ([ADR 0180](../decisions/0180-the-wiki-has-a-shape-and-it-moves.md)).
+ *
+ * Worth a test of its own because the failure is silent *and* self-sustaining: a page taken from a
+ * peer is written under the current `CACHE_VERSION`, so a link-less zone page looks perfectly
+ * current and is never re-fetched to gain one. An install that filled from the room would have
+ * nothing to explore, for ever, and nothing would say so.
+ */
+test("a zone page we took from a peer is handed on with its links intact", async () => {
+  const { wiki } = rig({ roster: ["Blackburrow"] });
+  wiki.items.accept([
+    {
+      kind: "zone",
+      title: "Blackburrow",
+      wikiPath: "/Blackburrow",
+      sources: [],
+      components: [],
+      rewards: [],
+      npcs: [{ name: "A Gnoll", level: "5-7" }],
+      links: ["Gnoll Hide Lariat", "A Gnoll"],
+      fetchedAt: new Date().toISOString(),
+    },
+  ]);
+  // The shard index is built off a promise the accessors only *kick off* — so ask for it, then let
+  // it land before reading what we would hand a peer.
+  wiki.items.status();
+  for (let i = 0; i < 50; i++) await new Promise((r) => setImmediate(r));
+
+  const onward = wiki.items.shard(shardOf("Blackburrow"));
+  const zone = onward.find((p) => p.title === "Blackburrow");
+  assert.ok(zone, "the zone page is ours to give");
+  assert.deepEqual(zone?.links, ["Gnoll Hide Lariat", "A Gnoll"], "and it still carries its shape");
 });

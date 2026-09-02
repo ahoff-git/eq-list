@@ -528,8 +528,12 @@ export type ShareEpoch = string;
  *      reports this by saying nothing at all — see `readProtocol`.
  *   2. Deltas: `epoch` on a catalogue line, `since`/`epoch` on an ask, `changes`/`gone`/`keys` on a
  *      give ([ADR 0171](../../specs/decisions/0171-a-shared-kind-states-what-a-row-is.md)).
+ *   3. Roster titles on an `items` give: the names a peer knows are in the shard, whether or not it
+ *      holds them ([ADR 0177](../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)).
+ *      A peer speaking 2 sends pages without them, which still works and simply teaches us nothing
+ *      about items we have never heard of — a degradation, so it is worth a number.
  */
-export const SHARE_PROTOCOL = 2;
+export const SHARE_PROTOCOL = 4;
 
 /**
  * What a peer that names no protocol is speaking.
@@ -671,6 +675,37 @@ export interface ShareGive {
   epoch?: ShareEpoch;
   /** `items` only: which shard these rows are, echoed back so an answer can't be mis-filed. */
   shard?: number;
+  /**
+   * `items` only: the **roster titles** the sender believes are in this shard.
+   *
+   * Not the titles of `rows` — those are already there. These are what the sender's category walk
+   * found, including pages it has not managed to fetch, which is exactly the set worth passing on:
+   * one install discovering that `Mistmoore Heirloom Ring` exists is a fact the whole room can use,
+   * and re-walking the category graph on every install to rediscover it is the waste this avoids
+   * ([ADR 0177](../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)).
+   *
+   * A title is only ever *added* to the receiver's roster, never used to remove one, and never taken
+   * as evidence that the page exists — completeness stays self-assessed, so the worst a bad title
+   * can do is cost one 404 and land in `failed`.
+   */
+  titles?: string[];
+  /**
+   * `items` only: titles in this shard the sender has checked and found **not** to be items
+   * ([ADR 0180](../../specs/decisions/0180-the-wiki-has-a-shape-and-it-moves.md)).
+   *
+   * The counterpart to `titles`, and the more valuable half by volume. A zone page links to thousands
+   * of pages the category walk never files as items, and finding out what one is costs a fetch — but
+   * the answer is the same for everybody, and it is *no* for the overwhelming majority. Without this
+   * every install in a room independently pays for the same few thousand dead ends, which is exactly
+   * the once-per-person waste [ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)
+   * exists to end.
+   *
+   * A refusal, like a title, is a claim about the **wiki** and not about the peer, and it is only
+   * ever used to *skip* a fetch — never to remove anything or to contradict a page we hold. The worst
+   * a lying peer achieves is that we don't discover an item we would otherwise have found, which is
+   * the position every install was in before this existed.
+   */
+  notItems?: string[];
 }
 
 /**
@@ -850,7 +885,21 @@ export function readAsk(raw: unknown): ShareAsk | null {
  * the un-share [ADR 0056](../../specs/decisions/0056-a-dropped-record-keeps-what-it-taught.md)
  * reads as "stop counting me", not "unsay it"), and `delta` says *this much of it moved*.
  */
-export type ShareDelivery = { what: ShareKind; rev: number; from: string; shard?: number } & (
+export type ShareDelivery = {
+  what: ShareKind;
+  rev: number;
+  from: string;
+  shard?: number;
+  /**
+   * `items` only: the roster titles the sender says are in this shard (ADR 0177).
+   *
+   * On the head rather than inside `whole`, because it is true of every mood: a peer that holds no
+   * page at all in a shard still knows which titles belong to it, and that answer is worth having.
+   */
+  titles?: string[];
+  /** `items` only: titles the sender checked and found not to be items (ADR 0180). */
+  notItems?: string[];
+} & (
   | { mode: "unchanged" }
   | { mode: "whole"; rows: unknown[]; keyed: { key: string; row: unknown }[]; epoch?: ShareEpoch }
   | { mode: "delta"; epoch: ShareEpoch; changes: { key: string; row: unknown }[]; gone: string[] }
@@ -874,7 +923,14 @@ export function readGive(raw: unknown, newId: () => string): ShareDelivery | nul
   const rev = int(raw.rev) ?? 0;
   const from = str(raw.from);
   const shard = shardNumber(raw.shard);
-  const head = { what: spec.key, rev, from, shard } as const;
+  // Only `items` is addressed by shard and only `items` carries a roster, so reading titles off any
+  // other kind would be accepting a field that has no meaning there.
+  const titles = spec.key === "items" ? readShardTitles(raw.titles) : undefined;
+  // Refusals are read exactly as titles are — same cap, same de-dupe, same "items only" rule. They
+  // are a list of names and nothing more, and they can only ever cause a fetch **not** to happen
+  // ([ADR 0180](../../specs/decisions/0180-the-wiki-has-a-shape-and-it-moves.md)).
+  const notItems = spec.key === "items" ? readShardTitles(raw.notItems) : undefined;
+  const head = { what: spec.key, rev, from, shard, titles, notItems } as const;
 
   // A whole set wins if it is there at all: it is the older shape, and a message carrying both is
   // one we have no rule for — so we take the one that can be applied without a held state to merge
@@ -1455,6 +1511,24 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * ([ADR 0160](../../specs/decisions/0160-a-room-fills-the-catalogue-once.md)). A stamp we cannot read
  * is dropped, and the caller then treats the page as arriving now.
  */
+/**
+ * The roster titles off an `items` give — a plain list of names, read as strictly as any row.
+ *
+ * Capped at the same number as the pages, because a shard is the same eleven-ish titles either way
+ * and a peer sending ten thousand of them is not describing a shard. De-duplicated and stripped of
+ * blanks here rather than by the caller, so the one thing the wiki client receives is a clean list
+ * ([ADR 0177](../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)).
+ */
+export function readShardTitles(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out = new Set<string>();
+  for (const value of raw.slice(0, MAX_ROWS.items)) {
+    const title = str(value);
+    if (title) out.add(title);
+  }
+  return [...out];
+}
+
 function readSharedPage(raw: unknown): SharedItemPage | null {
   if (!isRecord(raw)) return null;
   const title = str(raw.title);
@@ -1523,6 +1597,23 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
     card,
     outOfEra: raw.outOfEra === true,
     fetchedAt: readStamp(raw.fetchedAt),
+    /**
+     * The page's outbound links — the shape a receiver reads candidates out of (ADR 0180).
+     *
+     * It has to be rebuilt here or it does not travel at all, and the failure would be silent and
+     * self-sustaining: a received page is written under the **current** `CACHE_VERSION`, so a
+     * link-less zone page taken from a peer looks perfectly current and is never re-fetched to gain
+     * one. An install that filled from the room would then have no shape to explore, for ever.
+     *
+     * Names only, de-duplicated, and deliberately **not capped**: a truncated shape loses candidates
+     * precisely on the pages that have most of them, and the duplication is nearly all *between*
+     * pages — thirty zone pages naming the same guard — which the receiver's own set folds away for
+     * nothing. A link is a claim about the wiki that costs at worst one fetch to disprove, and the
+     * verdict is written down, so this is read on exactly the terms the roster titles beside it are.
+     */
+    links: Array.isArray(raw.links)
+      ? [...new Set(raw.links.map((l) => text(l)).filter((l): l is string => !!l))]
+      : undefined,
     // A zone page's whole value here is its NPC roster: one table, every mob's level. Capped and
     // rebuilt field by field like everything else.
     npcs: Array.isArray(raw.npcs)

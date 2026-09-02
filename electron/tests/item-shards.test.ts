@@ -24,6 +24,7 @@ import {
   hasShard,
   planShardStep,
   roomCoverage,
+  roomOffersMore,
   setShard,
   shardOf,
   type PeerCoverage,
@@ -199,4 +200,82 @@ test("hasShard refuses an out-of-range index rather than reading past the bitmap
   assert.equal(hasShard(cover, -1), false);
   assert.equal(hasShard(cover, SHARD_COUNT), false);
   assert.equal(hasShard(cover, SHARD_COUNT + 5000), false);
+});
+
+/**
+ * Waking up: a room that holds pages we lack has to be reason enough to start, or the whole feature
+ * waits on somebody clicking a button ([ADR 0176](../decisions/0176-a-room-fills-itself.md)).
+ */
+test("a peer holding a shard we lack is reason to start", () => {
+  assert.equal(
+    roomOffersMore({
+      mine: emptyCoverage(),
+      present: firstShards(10),
+      peers: [peer("them", [3, 4])],
+      hasRoster: true,
+    }),
+    true,
+  );
+});
+
+test("a peer holding only what we already hold is not", () => {
+  // The guard against re-running the expensive index every minute for nothing.
+  assert.equal(
+    roomOffersMore({
+      mine: firstShards(10),
+      present: firstShards(10),
+      peers: [peer("them", [3, 4])],
+      hasRoster: true,
+    }),
+    false,
+  );
+});
+
+test("a peer holding shards outside our roster is not", () => {
+  // Symmetrical with `roomCoverage` above: a shard our roster doesn't touch is not a gap.
+  assert.equal(
+    roomOffersMore({
+      mine: emptyCoverage(),
+      present: firstShards(3),
+      peers: [peer("them", [900, 901])],
+      hasRoster: true,
+    }),
+    false,
+  );
+});
+
+test("an empty room is never reason to start", () => {
+  assert.equal(
+    roomOffersMore({ mine: emptyCoverage(), present: firstShards(10), peers: [], hasRoster: true }),
+    false,
+  );
+  // Nor is a peer who is themselves empty — two fresh installs must not wake each other in a loop.
+  assert.equal(
+    roomOffersMore({ mine: emptyCoverage(), present: emptyCoverage(), peers: [peer("them", [])], hasRoster: false }),
+    false,
+  );
+});
+
+test("without a roster, any peer holding anything is reason to start", () => {
+  // The case that matters most and the one an exact gap test gets wrong: a fresh install's `present`
+  // is empty, so "do they have a shard we lack?" answers no about a catalogue we hold none of.
+  assert.equal(
+    roomOffersMore({
+      mine: emptyCoverage(),
+      present: emptyCoverage(),
+      peers: [peer("them", [3, 4])],
+      hasRoster: false,
+    }),
+    true,
+  );
+  // And with a roster, that same emptiness genuinely does mean "no gaps".
+  assert.equal(
+    roomOffersMore({
+      mine: emptyCoverage(),
+      present: emptyCoverage(),
+      peers: [peer("them", [3, 4])],
+      hasRoster: true,
+    }),
+    false,
+  );
 });

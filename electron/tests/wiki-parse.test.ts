@@ -149,3 +149,38 @@ test("only zone pages carry a roster", () => {
   assert.equal(parseFixture("item-fungus-tunic", "Fungus Covered Scale Tunic").npcs, undefined);
   assert.equal(parseFixture("mob-hill-giant", "A Hill Giant").npcs, undefined);
 });
+
+// ─── The wiki's shape (ADR 0180) ────────────────────────────────────────────
+
+test("a zone page carries the pages it links to", () => {
+  // The links are how a page the category walk never files as an item is found at all: a zone page
+  // names what is in the zone, and we already fetch it for the NPC levels.
+  const zone = parseFixture("zone-blackburrow", "Blackburrow");
+  assert.equal(zone.kind, "zone");
+  assert.ok(zone.links?.length, "a zone page links to plenty");
+  // Titles, not hrefs — a title is what the roster, the shards and the peers all speak in.
+  assert.ok(
+    zone.links?.every((l) => !l.startsWith("/") && !l.includes("_")),
+    "links are titles, not paths",
+  );
+  // The same filter the rest of the parser uses, so the namespaces nothing can fetch are gone.
+  assert.ok(
+    zone.links?.every((l) => !/^(Category|File|Special|Template|Help|Talk):/i.test(l)),
+    "no category, file or template links",
+  );
+  assert.equal(new Set(zone.links).size, zone.links?.length, "de-duplicated");
+});
+
+test("a quest page carries its links too", () => {
+  const quest = parseFixture("quest-aviak-talons", "Aviak Talons");
+  assert.equal(quest.kind, "quest");
+  assert.ok(quest.links?.length, "a quest page names what it involves");
+});
+
+test("an item page carries no links, and a mob page carries none either", () => {
+  // Deliberate: only the two curated kinds carry a shape. Items and mobs are the *targets* of the
+  // discovery, and giving them links would have bumped their parse version too — 11,847 pages
+  // re-read instead of ~1,700, for links nothing reads.
+  const item = parseFixture("item-fungus-tunic", "Fungus Covered Scale Tunic");
+  assert.equal(item.links, undefined);
+});

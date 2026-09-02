@@ -1,7 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
 import { useKnownItems, useLucyCard, useSettings } from "@/lib/hooks";
-import { useNav } from "@/lib/nav";
 import { count, dayTime } from "@/shared/format";
 import { normalizeItemName } from "@/shared/grouping";
 import ItemDrops from "./ItemDrops";
@@ -24,7 +23,6 @@ import { addItem } from "@/lib/addToList";
  * "we've never seen this and neither has the wiki" is a real answer and a blank page is not.
  */
 export default function ObservedItemView({ title }: { title: string }) {
-  const nav = useNav();
   const key = normalizeItemName(title);
   const mine = useKnownItems().find((i) => normalizeItemName(i.item) === key);
   const lucy = useLucyCard(title);
@@ -33,14 +31,6 @@ export default function ObservedItemView({ title }: { title: string }) {
   return (
     <div className="page-detail">
       <div className="row">
-        <button className="btn ghost sm" title="Back" onClick={() => nav.back()}>
-          ←
-        </button>
-        {nav.canForward && (
-          <button className="btn ghost sm" title="Forward" onClick={() => nav.forward()}>
-            →
-          </button>
-        )}
         <h3>{title}</h3>
         {mine && (
           <span

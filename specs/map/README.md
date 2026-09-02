@@ -229,8 +229,10 @@ world coordinates, so a map knows where it is. See
 
   **What we verified ourselves still comes first**, since a canonical name is what the expansion lookup
   and stored pins are keyed by; where the two disagree about a *file* (`tox`/`toxxulia`,
-  `steamfont`/`steamfontmts`, `nro`/`northro`) the loser stays as a **candidate**, so a folder with only
-  the other file is named rather than showing "Tox". The alias side is filtered — nothing under four
+  `steamfont`/`steamfontmts`) the loser stays as a **candidate**, so a folder with only
+  the other file is named rather than showing "Tox". They also disagreed about `nro`/`northro`, and
+  there the verified entry was simply **wrong** — it named the revamp drawing — so it says `nro` now:
+  [ADR 0174](../decisions/0174-the-era-decides-which-drawing-is-the-zone.md). The alias side is filtered — nothing under four
   characters, no label covering several maps, and **no bracketed spelling**, because the fold reads a
   trailing parenthetical as a ruleset tag and `Qeynos (North)` folds to `qeynos`, which renamed a whole
   city to one of its halves until a test caught it.

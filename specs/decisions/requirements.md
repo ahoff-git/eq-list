@@ -366,6 +366,17 @@ reading like a measurement, and they are shared code
   total is shown. ([0124](./0124-lucy-is-a-second-opinion.md))
 - **An OCR grab is corrected before it is searched**, one letter at a time first, judged against names
   we know, with raw winning ties and a correction having to clear a floor as well as beat raw. ([0081](./0081-an-ocr-grab-is-corrected-before-it-is-searched.md))
+- **The page list is a *walk* over the category graph and it expires.** `Category:Items` and
+  `Category:NPCs` are descended transitively (the item listing alone misses 680 pages), the walk is
+  cycle-safe, capped, and paced per **request** rather than per category, and a roster over a week old
+  is walked again — which is the whole of "periodically explore the wiki", needing no timer of its
+  own. A walk that comes back short or empty is not believed. It stops at the closure edge, where the
+  wiki stops asserting what a page is. ([0177](./0177-the-item-list-is-a-walk-not-a-listing.md))
+- **The seeds are the things the app reads pages for: items and NPCs.** A mob page is fetched for
+  what only it carries — the drop rates behind the Hunt tab, the spawn location, the stat card, the
+  faction impact. A zone page remains how a level is learned in bulk and the rung a missing mob page
+  falls through to, which is all ADR 0163 ever claimed. Quests and zones are not seeded; they arrive
+  by being named as an item's source. ([0178](./0178-a-mob-page-is-worth-its-own-fetch.md), narrowing [0163](./0163-an-item-wears-the-level-of-what-drops-it.md))
 
 ## Alerts
 
@@ -555,7 +566,12 @@ reading like a measurement, and they are shared code
 - **One translucent always-on-top window plus a tray.** Closing hides; the tray owns Quit and the
   debug actions. ([0009](./0009-single-window-with-tray.md))
 - **One in-app navigation history, one link action.** Only an explicit ↗ leaves the app, and the
-  overlay deliberately does not participate. ([0008](./0008-in-app-page-navigation.md))
+  overlay deliberately does not participate. ([0008](./0008-in-app-page-navigation.md),
+  [0173](./0173-back-goes-back-one-place.md))
+- **Back goes back one place, and a tab is a place.** The history holds tab-plus-page, so a name
+  clicked on one tab returns to that tab; the trail owns which tab shows, is persisted, and is drawn
+  as a breadcrumb with back/forward in the shell rather than inside a page.
+  ([0173](./0173-back-goes-back-one-place.md))
 - **An error goes to the log, not over the game.** Every full-viewport error UI on an always-on-top
   window is a blackout of the game, so the dev overlay is killed from the main process, errors go to
   the debug file by all three routes, and a crash fallback is silent in the windows that cover a
@@ -612,6 +628,10 @@ reading like a measurement, and they are shared code
   vetted and each contributor is capped. ([0132](./0132-a-contribution-is-keyed-by-who-made-it.md))
 - **Provenance is shown, not scored.** Peers' data is stored, always attributed, and removable; every
   merged figure reports how much of it you saw yourself. ([0024](./0024-mob-knowledge.md), [0132](./0132-a-contribution-is-keyed-by-who-made-it.md))
+- **A shard `give` carries the names as well as the pages**, held or not, so one install's category
+  walk reaches the room instead of everyone repeating it. A learned title is only ever added, never
+  removes one, and is never evidence the page exists — completeness stays self-assessed, so the worst
+  a bad title costs is one 404. ([0177](./0177-the-item-list-is-a-walk-not-a-listing.md))
 
 ## Stored data
 

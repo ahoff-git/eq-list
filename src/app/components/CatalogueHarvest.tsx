@@ -9,8 +9,8 @@ import type { HarvestProgress } from "@/shared/types";
  * number means, because "1000 ms" is not a thing anyone has an opinion about but "about three
  * hours, barely noticeable" is.
  *
- * The measurements behind them: a page is ~90 ms of the wiki's work and about 3 KB, and there are
- * 11,136 of them ([ADR 0153](../../../specs/decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)).
+ * The measurements behind them: a page is ~90 ms of the wiki's work and about 3 KB
+ * ([ADR 0153](../../../specs/decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)).
  */
 /**
  * The pace, named in hours rather than milliseconds — "1000 ms" is not a thing anyone has an opinion
@@ -18,17 +18,25 @@ import type { HarvestProgress } from "@/shared/types";
  *
  * The hours are computed from the roster we actually have rather than written down, because the
  * roster grew: a run is items **plus** the mobs and quests they name, ~16,900 pages rather than
- * 11,136 ([ADR 0163](../../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
- * A hard-coded "~3h" would have quietly become wrong the day that changed.
+ * 11,136 ([ADR 0163](../../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)),
+ * and grew again when the item list became a category *walk* rather than a listing
+ * ([ADR 0177](../../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)).
+ * A hard-coded "~3h" would have quietly become wrong the day either of those changed.
  */
 const GAPS = [2000, 1000, 500];
 
 /**
- * Until a run has learned the roster, the measured size of a full one: 11,136 items plus the 177
- * zones and 1,547 quests that give them their levels
+ * Until a run has learned the roster, the measured size of a full one: **11,847 items** (the category
+ * walk's answer, 680 more than `Category:Items` lists on its own
+ * ([ADR 0177](../../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md))) plus
+ * **7,944 NPCs** ([ADR 0178](../../../specs/decisions/0178-a-mob-page-is-worth-its-own-fetch.md))
+ * plus the 177 zones and 1,547 quests that give an item its level
  * ([ADR 0163](../../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)).
+ *
+ * Only a starting guess: the moment a run learns the real roster the labels are computed from that
+ * instead, which is why this being a little wrong costs nothing.
  */
-const ASSUMED_PAGES = 12_900;
+const ASSUMED_PAGES = 21_500;
 
 const paceLabel = (gapMs: number, pages: number): string => {
   const hours = (pages * gapMs) / 3_600_000;
@@ -181,6 +189,15 @@ export default function CatalogueHarvest({
         )}
         {progress.failed > 0 && !running && progress.status !== "done" && (
           <span>· {figure(progress.failed)} failed</span>
+        )}
+        {/* What exploring the wiki actually turned up. Said only when there is something to say:
+            the walk re-runs weekly and most weeks finds nothing, and "0 new items" every time would
+            train people to stop reading the line
+            ([ADR 0177](../../../specs/decisions/0177-the-item-list-is-a-walk-not-a-listing.md)). */}
+        {progress.found > 0 && !running && (
+          <span className="good">
+            · {figure(progress.found)} {progress.found === 1 ? "item" : "items"} we had no record of
+          </span>
         )}
       </div>
     </div>

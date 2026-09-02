@@ -55,7 +55,7 @@ test("what we verified ourselves outranks the supplied table", () => {
   // Same file, different name: ours stays, and the table's becomes an alias (checked below).
   assert.equal(byFile.get("crushbone"), "Clan Crushbone"); // the table says "Crushbone"
   assert.equal(byFile.get("kerraridge"), "Kerra Ridge"); // the table says "Kerra Isle"
-  assert.equal(byFile.get("northro"), "Northern Desert of Ro"); // the table says "North Ro"
+  assert.equal(byFile.get("nro"), "Northern Desert of Ro"); // the table says "North Ro"
   // And the entries no EverQuest gazetteer can carry survive.
   assert.equal(byFile.get("newsebexp"), "New Sebilis Expedition");
   assert.equal(byFile.get("tutoriala"), "EverQuest Legends Tutorial");
@@ -72,8 +72,10 @@ test("the supplied table confirms the two entries that cost the most to work out
 });
 
 test("one zone under two short names is a candidate, not a duplicate", () => {
-  // Grouped by the **fold**, not the string: `northro` shows as "Northern Desert of Ro" and `nro` as
-  // "North Ro", which are two spellings of one zone and so exactly the case this is about.
+  // Grouped by the **fold**, not the string: `steamfontmts` shows as "Steamfont Mountains" and
+  // `steamfont` as "Steamfont", which are two spellings of one zone and so exactly the case this is
+  // about. `nro` is *not* here any more: the verified entry now claims that file, so the table's
+  // "North Ro" candidate for it is skipped and `northro` — the revamp drawing — is named by nobody.
   const byZone = new Map<string, string[]>();
   for (const zone of CURATED_ZONES) {
     const key = zoneKey(zone.name);
@@ -83,7 +85,7 @@ test("one zone under two short names is a candidate, not a duplicate", () => {
   // Pinned exactly: a re-supplied table adding a pair here is something to look at, not to absorb.
   assert.deepEqual(
     shared.map(([key, files]) => `${key}: ${files.join(",")}`).sort(),
-    ["northern desert of ro: northro,nro", "steamfont mountains: steamfontmts,steamfont", "toxxulia forest: toxxulia,tox"],
+    ["steamfont mountains: steamfontmts,steamfont", "toxxulia forest: toxxulia,tox"],
   );
   // The folder decides which one is real, and only one is ever offered.
   const both = zonesFromFiles("stock", ["tox", "toxxulia"]).map((z) => `${z.file}=${z.name}`);

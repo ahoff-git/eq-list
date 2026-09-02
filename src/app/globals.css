@@ -324,6 +324,50 @@ button {
   pointer-events: none;
 }
 
+/* ── The trail (`NavBar`) ─────────────────────────────────────────────────────
+   Between the tabs and the panel, and only there when there is somewhere to go back to. Sits on the
+   raised strip the tabs sit on so it reads as part of the window's frame rather than as the top line
+   of whatever panel is open — the trail belongs to the window, not to the page. One line, ellipsised
+   from the left, because a long page title must not push the ← off a narrow overlay. */
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 16px 6px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* Nowhere to go that way: still there, so the pair doesn't shuffle sideways as you move. */
+.crumbs .btn:disabled { opacity: 0.3; cursor: default; }
+.crumbs .btn:disabled:hover { border-color: transparent; color: var(--text-dim); }
+.crumbs .btn, .crumb-sep, .crumb-more { flex-shrink: 0; }
+.crumb {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* The tabs you came through keep their names whole; it's the page title at the end — the long
+     one — that gives way, and says so with an …. */
+  flex-shrink: 0;
+}
+.crumb:hover { background: var(--bg-input); color: var(--text); }
+/* Where you are: named, not offered. */
+.crumb.here {
+  color: var(--text);
+  cursor: default;
+  flex-shrink: 1;
+  min-width: 3em;
+}
+.crumb.here:hover { background: transparent; }
+.crumb-sep, .crumb-more { color: var(--text-dim); opacity: 0.6; font-size: 12px; }
+
 .panel {
   flex: 1;
   overflow-y: auto;
@@ -1064,7 +1108,6 @@ button {
   color: var(--text);
   text-shadow: 0 1px 2px #000;
 }
-.buff-hud-row .bhr-mark { color: var(--bad); }
 .buff-hud-row .bhr-name { font-weight: 600; }
 .buff-hud-row .bhr-who { color: var(--text-dim); font-size: 12px; }
 .buff-hud-row .bhr-x {
@@ -1077,9 +1120,11 @@ button {
   line-height: 1;
   border-radius: var(--radius);
   /* A real target, not a hairline ✕ you have to hunt for: the moment you reach for this is mid-fight.
-     Negative margins keep it from growing the row it sits on. */
+     Negative margins keep it from growing the row it leads. It leads every row at the same width, so
+     a death strip's worth of them is one column to click down — see `HudRow`. */
   padding: 3px 6px;
-  margin: -3px -4px -3px 0;
+  margin: -3px 0 -3px -4px;
+  flex: 0 0 auto;
 }
 .buff-hud-row .bhr-x:hover { color: var(--text); background: rgba(255, 255, 255, 0.12); }
 
@@ -2479,12 +2524,19 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The hint is capped like the body, and for the same reason: a lapsed buff's hint can carry the other
+   spells the game's sentence might have meant, and the wording already counts the ones it doesn't
+   name (`alternativesLabel`) — this is the floor under anything that still runs long. */
 .cast-alert .ca-hint {
   margin-left: 2px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.78em;
   opacity: 0.85;
+  max-width: 30ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* A record banner's "what it landed on" — present on the celebration only, and the part of that
    sentence you don't need to have read by the time the banner goes. */

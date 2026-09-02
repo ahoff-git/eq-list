@@ -37,9 +37,11 @@ const DEFAULT_SETTINGS: Settings = {
   matchMode: "exact",
   hideOutOfEra: false,
   askLucy: true,
-  // Two weeks. Long enough that a filled catalogue isn't re-fetched every fortnight for nothing,
-  // short enough that a page is re-checked against the wiki several times a season.
-  wikiPageTtlDays: 14,
+  // Ninety days, since the wiki now tells us what it changed and the clock no longer has to guess
+  // ([ADR 0181](../specs/decisions/0181-the-wiki-says-what-changed.md)). This is a **ceiling**, not a
+  // schedule: an edited page is invalidated within a run, so pages are typically far younger than
+  // this, and the old fortnight is still what applies whenever change-tracking isn't working.
+  wikiPageTtlDays: 90,
   connectPeers: false,
   shareLocation: false,
   // Every share kind off, and listed as an empty object rather than left absent so a settings file

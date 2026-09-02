@@ -74,16 +74,19 @@ export default function BuffOverlay() {
  * shouldn't cost a trip to another window. It is the one part of a reminder that takes a click —
  * `SOLID` makes the overlay hand itself back for as long as the cursor is on the ✕ and glass again
  * the moment it leaves, so the row you are reading never comes between you and the mob behind it.
+ *
+ * **The ✕ leads the row** so that a stack of them is a column at one x, whatever the spells are
+ * called. Dying is the case that decides this: it strips everything at once, so the list you are
+ * clearing is the long one, and rows closing under the cursor bring the next ✕ to the spot the
+ * pointer is already on — clearing eight becomes eight clicks in one place rather than eight
+ * journeys to a ragged right edge. It also replaces the row's ⚠, rather than sitting beside it:
+ * every row here is a warning, the colour bar already says which look it wears, and two glyphs where
+ * only one is clickable is a thing to work out mid-fight.
  */
 function HudRow({ buff, color }: { buff: BuffInstance; color: string }) {
   const who = buff.target === ON_YOU ? "" : buff.target === ON_PET ? "pet" : buff.target;
   return (
     <div className="buff-hud-row" style={{ borderLeftColor: color }}>
-      <span className="bhr-mark" aria-hidden>
-        ⚠
-      </span>
-      <span className="bhr-name">{buff.spell}</span>
-      {who && <span className="bhr-who">{who}</span>}
       <button
         {...SOLID}
         className="bhr-x"
@@ -92,6 +95,8 @@ function HudRow({ buff, color }: { buff: BuffInstance; color: string }) {
       >
         ✕
       </button>
+      <span className="bhr-name">{buff.spell}</span>
+      {who && <span className="bhr-who">{who}</span>}
     </div>
   );
 }

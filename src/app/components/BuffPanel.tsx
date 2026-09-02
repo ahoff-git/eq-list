@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useBuffs, useSettings } from "@/lib/hooks";
-import { heldMs, targetLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
+import { alternativesLabel, heldMs, targetLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
 import { Empty } from "./ui";
@@ -185,7 +185,7 @@ function LapsedRow({ buff, now }: { buff: BuffInstance; now: number }) {
         // more than one spell, so this is a routine state and not an edge — and the player can tell
         // which of two ranks they had up far more easily than we can.
         <span className="buff-maybe small" title="The game words these spells' fades identically, so we can't tell which one ended">
-          or {buff.alsoCouldBe.join(" / ")}
+          {alternativesLabel(buff.alsoCouldBe)}
         </span>
       ) : null}
       <button

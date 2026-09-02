@@ -101,9 +101,11 @@ list, hunt, search, damage, session, peers, settings.
   relative to the bottom is what used to land the card on the word you were pointing at. A card
   above is pinned by its own bottom edge, so a late-loading icon grows away from the name rather
   than back over it.
-  Browser-style **back/forward** walks the stack: mouse thumb buttons (forwarded from
-  main as `app-command` on `CH.navCommand`) and **Alt+←/→**. Only the explicit
-  "↗ eqlwiki" button leaves the app. See [ADR 0008](../decisions/0008-in-app-page-navigation.md).
+  Browser-style **back/forward** walks the trail: mouse thumb buttons (forwarded from
+  main as `app-command` on `CH.navCommand`), **Alt+←/→**, and the `NavBar` below the tabs. Only the
+  explicit "↗ eqlwiki" button leaves the app. See
+  [ADR 0008](../decisions/0008-in-app-page-navigation.md) and
+  [ADR 0173](../decisions/0173-back-goes-back-one-place.md).
   **"Every name" means every name**: the mob a kill row is about, the mob a knowledge row tallies, the
   corpse a drop came off, the zone a hunt points at, and the mob and zone in the camp report are all
   `ItemLink`s too — they were plain text, so the same word was a link in one panel and inert in the one
@@ -219,7 +221,17 @@ list, hunt, search, damage, session, peers, settings.
   dropdown) instead of shrinking their labels off the edge — so every tab stays reachable
   without resizing. It measures natural tab widths from an off-screen ghost row and
   re-fits on resize (`ResizeObserver`) and when a label changes (the List count).
-- **Tabs** (all wrapped in `NavProvider`):
+- **The trail** (`lib/nav.tsx` + `shared/nav-trail.ts`, drawn by `components/NavBar.tsx`): where the
+  window is, and how it got there. A **place** is a tab *plus* the page open on it, and every move
+  appends one — so back from a page opened by a name click on Hunt returns to **Hunt**, which is the
+  bug that shaped this ([ADR 0173](../decisions/0173-back-goes-back-one-place.md)). `NavProvider` is
+  therefore the single owner of the active tab (`nav.tab` / `nav.openTab`); nothing else holds one.
+  The trail persists (`eqlist.main.nav`, inheriting the old `eqlist.main.tab` once) and is capped at
+  50 places. `NavBar` sits **between the tab strip and the panel** — ← →, then the crumbs, each a
+  jump back to that place, named by its page or its tab — and draws nothing until there is somewhere
+  to go back to. Closing a page is a move (`closePage`), not an erasure, so a re-started search still
+  has the page you were reading behind it.
+- **Tabs** (all wrapped in `NavProvider`, which decides which of them shows):
   - `ListPanel` — the shopping list **grouped by the quest/recipe that added each
     item** (collapsible sub-bullets; standalone items fall into "Other"). Grouping is
     `src/shared/grouping.ts` (`groupByOrigin`). Entries are keyed by **name + origin**, so
@@ -262,7 +274,10 @@ list, hunt, search, damage, session, peers, settings.
     *banner* until the fight ends free: the quiet half is already saying it
     ([ADR 0141](../decisions/0141-a-debuff-is-the-mirror-image-of-a-buff.md)). Anchored and styled exactly like `SpawnOverlay`, with
     one difference: it takes clicks (`pointer-events: auto`) because it carries a ✕, which only
-    reaches the pointer while the player has taken the window's clicks back with 👻.
+    reaches the pointer while the player has taken the window's clicks back with 👻. That ✕ **leads
+    the row**, so a death strip's worth of reminders is one column to click down and each row closing
+    brings the next control under the cursor
+    ([ADR 0175](../decisions/0175-a-lapse-is-read-at-a-glance-and-cleared-in-a-column.md)).
   - `BuffPanel` — the **Buffs tab**: what you are keeping up, what has dropped, and which spells the
     app should mention. Three lists, answering different questions — **Not active** is why the tab
     exists, **Up now** is the reassuring half, **Spells** holds the checkboxes and nothing urgent.
@@ -279,7 +294,11 @@ list, hunt, search, damage, session, peers, settings.
     while **your own buffs** wait for the fight to end before interrupting you — nobody stops swinging to
     rebuff — and stay listed until the buff is back. Rows **admit what they don't know**: where the game
     words several spells' fades identically the alternatives are named rather than picked, and a buff
-    whose target was never stated reads *someone* rather than guessing at you. There is deliberately **no countdown** — the
+    whose target was never stated reads *someone* rather than guessing at you. The panel row names
+    every candidate; the *banner* names one and counts the rest, because a glance can't carry six ranks
+    of a spell and the spell you were warned about is what a full list pushed off the screen
+    ([ADR 0175](../decisions/0175-a-lapse-is-read-at-a-glance-and-cleared-in-a-column.md)). Both word it
+    from one place, `alternativesLabel`. There is deliberately **no countdown** — the
     game's file states a duration *formula*, and applying one needs a caster level EQL's log will not
     give us. The rules are `src/shared/buff-tracking.ts` and `src/shared/spell-strings.ts` (both pure
     + tested); the board itself is `electron/buff-tracker.ts`, which — unlike the spawn tracker —
@@ -1066,6 +1085,7 @@ given up on shows a built-in notice pointing at the tray instead of staying a bl
 [ADR 0005](../decisions/0005-renderer-static-export-and-app-protocol.md) ·
 [ADR 0008](../decisions/0008-in-app-page-navigation.md) ·
 [ADR 0009](../decisions/0009-single-window-with-tray.md) ·
+[ADR 0173](../decisions/0173-back-goes-back-one-place.md) ·
 [ADR 0052](../decisions/0052-an-error-goes-to-the-log-not-the-screen.md) ·
 [ADR 0110](../decisions/0110-a-launched-window-is-visible-or-it-says-why.md) ·
 [ADR 0112](../decisions/0112-a-panel-s-height-belongs-to-its-reader.md)

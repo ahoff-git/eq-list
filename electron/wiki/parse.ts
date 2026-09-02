@@ -20,6 +20,7 @@ import { WIKI_BASE } from "./api";
 import { htmlToLines } from "../html-text";
 import type { WikiPage, ItemSource, WikiComponent, SourceKind, ItemCard, WikiReward } from "../../src/shared/types";
 
+
 const ELEMENT_NODE = 1;
 
 export function pathToTitle(path: string): string {
@@ -102,6 +103,31 @@ function isContentLink(a: HTMLElement): boolean {
 function linkName(a: HTMLElement): string {
   const p = linkPath(a);
   return p ? pathToTitle(p) : a.text.trim();
+}
+
+/**
+ * Every content page this one points at — the **shape** of the wiki as seen from here.
+ *
+ * Only zone and quest pages carry this, and the reason is what makes it worth the bytes: the walk
+ * over `Category:Items` only ever finds what the wiki has *filed* as an item, and a few hundred real
+ * items are filed as nothing at all
+ * ([ADR 0180](../../specs/decisions/0180-the-wiki-has-a-shape-and-it-moves.md)). A zone page links to
+ * what is in that zone and a quest page to what the quest involves, so their links are a curated
+ * guess at "what exists" that costs no request of its own — we already fetch both kinds for levels.
+ *
+ * Titles, not paths, because a title is what the roster, the shards and the peers all speak in. The
+ * same `isContentLink` filter the rest of this file uses, so categories, files and templates are
+ * already excluded, and de-duplicated because a zone page names a popular mob a dozen times.
+ */
+function parseContentLinks(content: HTMLElement): string[] {
+  const seen = new Set<string>();
+  for (const a of content.querySelectorAll("a")) {
+    if (!isContentLink(a)) continue;
+    const name = linkName(a);
+    // A link with no title is a fragment or an oddity; neither names a page anybody could fetch.
+    if (name) seen.add(name);
+  }
+  return [...seen];
 }
 
 function escapeRe(s: string): string {
@@ -548,6 +574,7 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       components: parseWalkthroughTurnIns(walkthrough),
       rewards: parseRewards(reward),
       card,
+      links: parseContentLinks(content),
       fetchedAt,
     };
   }
@@ -561,6 +588,7 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       components: [],
       rewards: [],
       npcs: parseZoneNpcs(content),
+      links: parseContentLinks(content),
       fetchedAt,
     };
   }
