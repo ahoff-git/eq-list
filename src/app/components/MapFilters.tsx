@@ -32,6 +32,10 @@ export default function MapFilters({
   zRange,
   height,
   onHeight,
+  heightFollow,
+  onHeightFollow,
+  heightFollowRange,
+  onHeightFollowRange,
   hiddenPinKinds,
   onPinKind,
   huntPins,
@@ -58,6 +62,12 @@ export default function MapFilters({
   /** The hand-set window, or null for the whole span. Only offered when there are no floors. */
   height: HeightPick | null;
   onHeight: (pick: HeightPick | null) => void;
+  /** Whether the window instead re-centres on your own `/loc` height as you move. */
+  heightFollow: boolean;
+  onHeightFollow: (on: boolean) => void;
+  /** The ± half-width of that followed window, in raw `/loc` z. */
+  heightFollowRange: number;
+  onHeightFollowRange: (range: number) => void;
   hiddenPinKinds: ReadonlySet<PinKind>;
   onPinKind: (kind: PinKind, visible: boolean) => void;
   /** How many of the hunt's mobs this zone can place — the row says so, since zero explains itself. */
@@ -131,32 +141,67 @@ export default function MapFilters({
           <header>
             <span className="muted small">Height</span>
             <span className="muted small">{wholeSpan ? "all" : `${lo} … ${hi}`}</span>
-            <button className="btn ghost sm" disabled={wholeSpan} onClick={() => onHeight(null)}>
+            <button
+              className="btn ghost sm"
+              disabled={wholeSpan && !heightFollow}
+              onClick={() => {
+                // "all" ends any following too — otherwise the next `/loc` line quietly narrows
+                // the view straight back, and the button would read as having done nothing.
+                onHeightFollow(false);
+                onHeight(null);
+              }}
+            >
               all
             </button>
           </header>
-          <label className="row height-row" title="Draw only what stands between these heights. This map's author labelled no storeys, so these are raw /loc heights — the zone's own, from its geometry.">
-            <span className="muted small">from</span>
-            <input
-              type="range"
-              min={lowest}
-              max={highest}
-              step={step}
-              value={lo}
-              onChange={(e) => setHeight({ lo: Number(e.target.value) })}
+          <div className="row height-row">
+            <CheckField
+              checked={heightFollow}
+              onChange={onHeightFollow}
+              title="Keep this window centred on your own /loc height as you move, instead of dragging it by hand."
+              label="Follow my height"
             />
-          </label>
-          <label className="row height-row">
-            <span className="muted small">to</span>
-            <input
-              type="range"
-              min={lowest}
-              max={highest}
-              step={step}
-              value={hi}
-              onChange={(e) => setHeight({ hi: Number(e.target.value) })}
-            />
-          </label>
+            {heightFollow && (
+              <>
+                <span className="muted small">±</span>
+                <input
+                  type="number"
+                  className="height-follow-range"
+                  min={1}
+                  step={step}
+                  value={heightFollowRange}
+                  onChange={(e) => onHeightFollowRange(Math.max(1, Math.round(Number(e.target.value)) || 1))}
+                  title="How far above and below your own height to draw."
+                />
+              </>
+            )}
+          </div>
+          {!heightFollow && (
+            <>
+              <label className="row height-row" title="Draw only what stands between these heights. This map's author labelled no storeys, so these are raw /loc heights — the zone's own, from its geometry.">
+                <span className="muted small">from</span>
+                <input
+                  type="range"
+                  min={lowest}
+                  max={highest}
+                  step={step}
+                  value={lo}
+                  onChange={(e) => setHeight({ lo: Number(e.target.value) })}
+                />
+              </label>
+              <label className="row height-row">
+                <span className="muted small">to</span>
+                <input
+                  type="range"
+                  min={lowest}
+                  max={highest}
+                  step={step}
+                  value={hi}
+                  onChange={(e) => setHeight({ hi: Number(e.target.value) })}
+                />
+              </label>
+            </>
+          )}
         </section>
       )}
 

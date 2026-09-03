@@ -113,6 +113,10 @@ export default function MapWindow() {
     zRange,
     height,
     setHeight,
+    heightFollow,
+    setHeightFollow,
+    heightFollowRange,
+    setHeightFollowRange,
     bands,
     viewLayer,
     viewLayers,
@@ -678,6 +682,10 @@ export default function MapWindow() {
             zRange={zRange}
             height={height}
             onHeight={setHeight}
+            heightFollow={heightFollow}
+            onHeightFollow={setHeightFollow}
+            heightFollowRange={heightFollowRange}
+            onHeightFollowRange={setHeightFollowRange}
             hiddenPinKinds={pinKinds.hidden}
             onPinKind={pinKinds.setVisible}
             huntPins={huntMarks.length}

@@ -88,7 +88,26 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // (ADR 0163) — 177 zone pages instead of 4,214 mob pages for the same answer.
 // v14: zone and quest pages carry their outbound content links — the wiki's *shape*, which is how a
 // page the category walk never files as an item is found at all (ADR 0180).
-const CACHE_VERSION = 14;
+// v15: quest turn-ins also match a quantity-less "loot a/the <item>" mention, not only a stated
+// quantity — most multi-step quests never say "1 Gnoll's Eye", they just say "loot a Gnoll's Eye".
+// v16: a quest whose walkthrough is split across two headings (e.g. "TLDR; Walkthrough" and "Full
+// Walkthrough") now reads all of them — a page with only the first parsed missed every turn-in the
+// rest of the prose named.
+// v17: turn-ins also match a quantity-less "get <item>" mention (a checklist-style "**Get** Koalindl
+// Fish" bullet, not only "loot"), and anything that also names the quest's own reward is dropped from
+// the turn-in list — you receive that, you don't shop for it.
+// v18: a quantity/verb cue is read from the mention's own <li>/<p>/<dd>/<td>, not the whole flattened
+// section — a coordinate ending one <li> ("Barbarian Jaw: +1465, -4500, -230") was bleeding into the
+// *next* <li>'s link as its quantity ("230 Barbarian Skull"), fabricating triple-digit shopping-list
+// counts on any quest with a ground-spawn coordinate list.
+// v19: turn-ins also match a link immediately followed by "is/are dropped" — a page that names the
+// item only in its own drop-source sentence ("The Shining Metallic Robes is dropped rarely off the
+// ghoul arch magi") had no quantity, "loot", or "get" cue for v18 to find at all.
+// v20: that drop-source cue now also reads a bare active "drop(s) from" (no "is/are") and a
+// passive "purchas…" under any modal auxiliary ("may be purchased", "can be purchased") — v19 only
+// caught the "is/are dropped" phrasing, and most drop-source sentences on the wiki use the plainer
+// "X drops from Y" or "X may be purchased from Y" instead.
+const CACHE_VERSION = 20;
 
 /**
  * The version a page of each kind has to have been parsed at to still be current.
@@ -103,12 +122,18 @@ const CACHE_VERSION = 14;
  * only when something changes for everything.
  */
 const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
-  // v14 added `links` to zones as well as v13's `npcs`.
+  // v14 added `links` to zones as well as v13's `npcs`. Zones are untouched by v15, so they stay here
+  // rather than following the floor up — a zone page parsed at v14 is still exactly what v15 would make.
   zone: 14,
-  // v14 added `links`. A quest page parsed before it has no shape to read, so it comes again — but
-  // only quests and zones do: item and mob pages are byte-identical under v13 and v14, and saying so
-  // here is the difference between re-reading ~1,700 pages and re-reading 11,847 (ADR 0180).
-  quest: 14,
+  // v16: also merges every heading matching "walkthrough" instead of reading only the first — a quest
+  // cached at v14 or v15 may be missing turn-ins that only appeared past a second such heading.
+  // v17: also catches "get <item>" turn-ins and excludes anything that's also the quest's reward.
+  // v18: a cached quest may hold a fabricated triple-digit quantity from the cross-<li> bleed; it has
+  // to be re-parsed to drop that, not merely to gain something new.
+  // v19: also catches an item named only in its own "is/are dropped" sentence.
+  // v20: that cue also covers bare "drop(s) from" and modal-passive "purchas…".
+  // Item, mob, spell and zone pages are unaffected by v15 through v20.
+  quest: 20,
 };
 
 /** Below this, a page predates parts of the parse every kind depends on. */

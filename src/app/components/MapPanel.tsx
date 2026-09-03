@@ -163,6 +163,17 @@ const KILL_DOT = {
 const MIN_GRID_STEP = 50;
 
 /**
+ * How much of the zone's own diagonal a single `/loc`-to-`/loc` hop has to cover before it's drawn
+ * as a hint rather than a path. `/loc` is typed by hand, at whatever pace the player chooses, so
+ * distance alone can't *prove* a hop wasn't walked — but a jump this large is far more often a gate,
+ * an evac, or a same-zone port than someone strolling that far between two lines they happened to
+ * type. Scaled to the zone rather than a flat number of units, because "far" means something
+ * different in a small dungeon room than in a sprawling outdoor zone. A guess, not a measurement —
+ * there's no log of which hops really were teleports to check it against.
+ */
+const FAR_TRAIL_FRACTION = 0.2;
+
+/**
  * How long a fresh ping animates. A ping is a "look here" gesture, so it announces
  * itself with expanding rings and then settles into a plain marker that stays put —
  * long enough to catch your eye across the room, short enough not to distract.
@@ -176,6 +187,8 @@ const MAP_COLORS = {
   peer: "limegreen",
   ping: "gold",
   trail: "steelblue",
+  /** A trail hop too far to be a walk — see `FAR_TRAIL_FRACTION`. A hint, not a path: quiet on purpose. */
+  trailFar: "rgba(148, 163, 184, 0.4)",
   gridOrigin: "orange",
   gridRing: "rgba(235, 244, 255, 0.95)",
   gridCore: "rgba(10, 15, 24, 0.85)",
@@ -244,7 +257,7 @@ export default function MapPanel({
   /** Draw the little confidence glyph on each kill. */
   showKillConfidence?: boolean;
   /** The `/loc` trail, oldest→newest (owned by the parent so it can be cleared). */
-  trail?: { y: number; x: number }[];
+  trail?: { y: number; x: number; z: number }[];
   /** Peers' live locations. `name` is theirs, for the hover label. */
   peers?: { y: number; x: number; name?: string }[];
   /** Peer pings; `at` (ms) is when it arrived, which drives the drop-in animation. */
@@ -664,7 +677,7 @@ export default function MapPanel({
     drawPois(ctx);
     drawKills(ctx);
     drawGraph(ctx);
-    drawTrail(ctx);
+    drawTrail(ctx, projection);
     drawPeers(ctx);
     drawPings(ctx);
     drawPins(ctx);
@@ -864,12 +877,30 @@ export default function MapPanel({
     }
     }
 
-    /** Your own path, from the /loc lines you typed. */
-    function drawTrail(ctx: CanvasRenderingContext2D): void {
+    /**
+     * Your own path, from the /loc lines you typed. A hop that covers more of the zone than
+     * `FAR_TRAIL_FRACTION` allows is drawn as a faint dashed hint instead of a solid line — see
+     * that constant for why distance is what stands in for "probably not a walk".
+     *
+     * Takes `projection` as a parameter rather than closing over it: the effect's own guard
+     * proves it exists, but that proof doesn't reach inside a nested function (see `drawGrid`).
+     */
+    function drawTrail(ctx: CanvasRenderingContext2D, projection: MapProjection): void {
+      const farDist = Math.hypot(projection.image.width, projection.image.height) * FAR_TRAIL_FRACTION;
       for (let i = 1; i < trail.length; i++) {
-        const a = toScreen(trail[i - 1]);
-        const b = toScreen(trail[i]);
-        if (a && b) drawLine(a.x, a.y, b.x, b.y, MAP_COLORS.trail, 2, ctx);
+        const prev = trail[i - 1];
+        const here = trail[i];
+        const a = toScreen(prev);
+        const b = toScreen(here);
+        if (!a || !b) continue;
+        const dist = Math.hypot(here.y - prev.y, here.x - prev.x, here.z - prev.z);
+        if (dist > farDist) {
+          ctx.setLineDash([5, 4]);
+          drawLine(a.x, a.y, b.x, b.y, MAP_COLORS.trailFar, 1, ctx);
+          ctx.setLineDash([]);
+        } else {
+          drawLine(a.x, a.y, b.x, b.y, MAP_COLORS.trail, 2, ctx);
+        }
     }
     }
 

@@ -216,6 +216,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0181: A new install asks the room for a roster before it crawls for one](./0181-a-new-install-asks-before-it-crawls.md)
 - [0181: The wiki says what changed — `recentchanges` replaces polling the clock](./0181-the-wiki-says-what-changed.md)
 - [0182: Window management is Windows' job — drop `transparent: true` and the hand-rolled snap](./0182-window-management-is-windows-job.md)
+- [0183: The hand-set height window can follow your own `/loc` height](./0183-a-height-window-can-follow-you.md)
+- [0184: A trail hop too far to be walked is drawn as a hint, not a path](./0184-a-trail-hop-too-far-is-a-hint-not-a-path.md)
 
 ## Open Questions
 

@@ -110,8 +110,9 @@ test("itemDemands names who wants an item, and sums to the same total", () => {
   assert.deepEqual(
     demands.map((d) => [d.label, d.kind, d.need, d.runs]),
     [
-      ["Rat Ear Pie", "recipe", 4, 2], // 2 per pie × 2 runs
+      // groupByOrigin now sorts groups A-Z ("Rat Catcher" before "Rat Ear Pie"), Other last.
       ["Rat Catcher", "quest", 4, 1],
+      ["Rat Ear Pie", "recipe", 4, 2], // 2 per pie × 2 runs
       ["Other items", null, 1, 1],
     ],
   );
@@ -164,4 +165,32 @@ test("a mob doesn't hold an otherwise unfinished group back either", () => {
   ]);
   assert.equal(g.complete, false);
   assert.equal(g.needed, 2);
+});
+
+// ── sort order: unfinished leads, A-Z otherwise ─────────────────────────────────
+
+test("groups sort unfinished-first, then A-Z; Other always last regardless", () => {
+  const groups = groupByOrigin([
+    entry({ name: "A", needed: 1, obtained: 1, origin: { kind: "quest", name: "Zeta Quest" } }), // done
+    entry({ name: "B", needed: 1, obtained: 0, origin: { kind: "quest", name: "Alpha Quest" } }), // not done
+    entry({ name: "C", needed: 1, obtained: 0, origin: { kind: "quest", name: "Beta Quest" } }), // not done
+    entry({ name: "D" }), // Other
+  ]);
+  assert.deepEqual(
+    groups.map((g) => g.label),
+    ["Alpha Quest", "Beta Quest", "Zeta Quest", "Other items"],
+  );
+});
+
+test("entries within a group sort still-needed-first, then A-Z; a mob always counts as still-needed", () => {
+  const [g] = groupByOrigin([
+    entry({ name: "Zircon", needed: 1, obtained: 0, origin: { kind: "quest", name: "Q" } }),
+    entry({ name: "Amber", needed: 1, obtained: 1, origin: { kind: "quest", name: "Q" } }), // done, sinks
+    entry({ name: "Beryl", needed: 1, obtained: 0, origin: { kind: "quest", name: "Q" } }),
+    entry({ name: "Aardvark", kind: "mob", origin: { kind: "quest", name: "Q" } }), // never "done"
+  ]);
+  assert.deepEqual(
+    g.entries.map((e) => e.name),
+    ["Aardvark", "Beryl", "Zircon", "Amber"],
+  );
 });

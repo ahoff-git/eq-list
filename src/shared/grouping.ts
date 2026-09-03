@@ -9,6 +9,11 @@
  * A quest/recipe group can be run multiple times (`runs`, from list.questRuns) —
  * that scales each entry's needed count. `effectiveNeeded(entry, runs)` is the
  * single source of truth for "how many you actually need".
+ *
+ * `groupByOrigin` also decides the order everything renders in: unfinished groups before finished
+ * ones (A-Z within each), "Other items" always last since it isn't a real quest/recipe to finish;
+ * and within a group, still-needed entries before satisfied ones (A-Z within each). One sort, so
+ * the control window and the overlay can't land on two different orders for the same list.
  */
 import type { ShoppingList, ShoppingListEntry, WikiPageKind } from "./types";
 import { itemBaseName } from "./names";
@@ -174,8 +179,24 @@ export function groupByOrigin(
     // Clamp per entry so overflow drops don't inflate group progress.
     g.obtained = countable.reduce((n, e) => n + Math.min(e.obtained, effectiveNeeded(e, g.runs)), 0);
     g.complete = countable.length > 0 && countable.every((e) => satisfied(e, g.runs));
+    // Still-needed rows first (a mob always counts as still-needed — see `isMobEntry`), then A-Z,
+    // so what's left to do leads the group and finished/hunted rows don't have to be hunted for
+    // among them.
+    g.entries.sort((a, b) => {
+      const doneA = !isMobEntry(a) && satisfied(a, g.runs);
+      const doneB = !isMobEntry(b) && satisfied(b, g.runs);
+      if (doneA !== doneB) return doneA ? 1 : -1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
   }
-  // Preserve first-seen order (Map is insertion-ordered); "Other" sinks to the end.
-  groups.sort((a, b) => (a.key === OTHER_KEY ? 1 : 0) - (b.key === OTHER_KEY ? 1 : 0));
+  // Unfinished groups first, then A-Z within each bucket; "Other" — the catch-all rather than a
+  // real quest/recipe — always sinks to the very end regardless of its own completion.
+  groups.sort((a, b) => {
+    if (a.key === OTHER_KEY || b.key === OTHER_KEY) {
+      return (a.key === OTHER_KEY ? 1 : 0) - (b.key === OTHER_KEY ? 1 : 0);
+    }
+    if (a.complete !== b.complete) return a.complete ? 1 : -1;
+    return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+  });
   return groups;
 }

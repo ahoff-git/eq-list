@@ -55,6 +55,83 @@ test("quest page → giver/zone sources, turn-in components, rewards", () => {
   assert.ok(!p.card!.lines.some((l) => /quest giver|start zone/i.test(l)));
 });
 
+test("quest page → quantity-less turn-ins are caught by the \"loot\" cue", () => {
+  const p = parseFixture("quest-gnoll-slayer", "The Gnoll Slayer");
+  assert.equal(p.kind, "quest");
+  // Every turn-in here is "loot a/the <item>" with no stated quantity — none of the
+  // digit-quantity matches the original heuristic relied on ("hand in 4 Aviak Talons").
+  assert.ok(p.components.some((c) => c.name === "Baby Joseph Sayer" && c.qty === 1));
+  assert.ok(p.components.some((c) => c.name === "Gnoll's Eye" && c.qty === 1));
+  assert.ok(p.components.some((c) => c.name === "Journal of Greater Enchantment" && c.qty === 1));
+  // "looted from a krag elder"-style source mobs must stay excluded: the cue only
+  // fires when the verb sits right against the link (at most one article between).
+  assert.ok(!p.components.some((c) => /Lord Elgnub|Lteth Val Scribe|one eyed gnoll/i.test(c.name)));
+});
+
+test("quest page → a split \"TLDR / Full\" walkthrough is read as one, not just the first half", () => {
+  const p = parseFixture("quest-exotic-drinks", "Exotic Drinks");
+  assert.equal(p.kind, "quest");
+  // "Full Walkthrough" is the SECOND heading matching /walkthrough/i — a `find` that stopped at
+  // "TLDR; Walkthrough" would only ever see the digit-quantity "Get 3 Honeycombs" turn-in and miss
+  // every item the full prose names.
+  assert.ok(p.components.some((c) => c.name === "Honeycomb" && c.qty === 3));
+  // Every other ingredient is named only by a "**Get** <item>" checklist bullet, with neither a
+  // quantity nor "loot" — the "get" cue is what catches these.
+  for (const name of ["Kiola Nut", "Honey Jum", "Erud's Tonic", "Koalindl Fish", "Barkeep Compendium"]) {
+    assert.ok(p.components.some((c) => c.name === name && c.qty === 1), `expected ${name} as a turn-in`);
+  }
+  // "Get Stein of Moggok" is the same checklist bullet, but Stein of Moggok is the quest's own final
+  // reward — something you receive, not something to add to a shopping list — so it must be excluded.
+  assert.ok(!p.components.some((c) => c.name === "Stein of Moggok"));
+  assert.ok(p.rewards.some((r) => r.item === "Stein of Moggok"));
+});
+
+test("quest page → a coordinate ending one <li> is never read as the next <li>'s quantity", () => {
+  const p = parseFixture("quest-ivan-mcmannus-remains", "Ivan McMannus' Remains");
+  assert.equal(p.kind, "quest");
+  // A ground-spawn list ("Barbarian Jaw: +1465, -4500, -230" then "Barbarian Skull: ...") used to
+  // flatten into one string where the trailing "-230" read as "230 Barbarian Skull" — a bogus
+  // 230-item shopping-list entry. None of these items carry a real quantity or verb cue of their
+  // own, so none should be picked up at all (a miss here is far safer than a fabricated count).
+  assert.ok(!p.components.some((c) => c.name === "Barbarian Jaw"));
+  assert.ok(!p.components.some((c) => c.name === "Barbarian Skull"));
+  assert.ok(!p.components.some((c) => c.name === "Barbarian Femur"));
+  // The fourth piece, Barbarian Rib, IS named with a cue ("is dropped by a 'goblin diver'") rather
+  // than a coordinate, so it should be caught — this is what tells the miss above apart from a
+  // heuristic that's simply blind to every link in the section.
+  assert.ok(p.components.some((c) => c.name === "Barbarian Rib" && c.qty === 1));
+});
+
+test("quest page → an item named only in its own drop-source sentence is still caught", () => {
+  const p = parseFixture("quest-shiny-robe-underfoot", "Shiny Robe of the Underfoot Quest");
+  assert.equal(p.kind, "quest");
+  // The only linked mention of the turn-in item is "The Shining Metallic Robes is dropped rarely
+  // off the ghoul arch magi" — no quantity, no "loot"/"get" verb before it. The "is dropped" cue
+  // reads it the same way an item page's own "Drops From" section would.
+  assert.ok(p.components.some((c) => c.name === "Shining Metallic Robes" && c.qty === 1));
+  // The two possible rewards must stay out of the turn-in list.
+  assert.ok(!p.components.some((c) => c.name === "Shiny Hunk of Metal" || c.name === "Shiny Robe of the Underfoot"));
+});
+
+test("quest page → active-voice \"drop(s) from\" and passive \"may be purchased\" are both caught", () => {
+  const p = parseFixture("quest-shovel-of-ponz", "Shovel Of Ponz Quest");
+  assert.equal(p.kind, "quest");
+  // "A Ruby may be purchased from a jewelry merchant." — a modal-passive "purchase" cue.
+  assert.ok(p.components.some((c) => c.name === "Ruby" && c.qty === 1));
+  // "A Gargoyle Eye drops from various gargoyles around the world." — bare active "drops from",
+  // no "is/are" auxiliary. The trailing "from" is what makes this safe: it's what a mob-as-subject
+  // sentence ("the Bixie drops Honeycomb") never has.
+  assert.ok(p.components.some((c) => c.name === "Gargoyle Eye" && c.qty === 1));
+  // "Hill Giant Toes drop from various hill giants around the world." — same shape, plural verb.
+  assert.ok(p.components.some((c) => c.name === "Hill Giant Toes" && c.qty === 1));
+  // "A Shovel (identifies as "Shovel of Earth") drops from magicians..." — the parenthetical aside
+  // between the link and "drops" sits outside every cue's tight window, so this one is a known,
+  // accepted miss rather than something the heuristic is expected to reach.
+  assert.ok(!p.components.some((c) => c.name === "A Shovel"));
+  // The final reward must stay out of the turn-in list.
+  assert.ok(!p.components.some((c) => c.name === "Shovel of Ponz"));
+});
+
 test("spell page → classified as spell with a description/details card", () => {
   const p = parseFixture("spell-burst-of-fire", "Burst of Fire");
   assert.equal(p.kind, "spell");

@@ -89,6 +89,13 @@ export const STORAGE_KEYS = {
   /** Map window: whether zoning in-game snaps the map back to your zone. */
   mapFollowZone: "eqlist.map.followZone",
   /**
+   * Map window: whether the hand-set height window (for a zone with no labelled floors) keeps
+   * itself centred on your own `/loc` height as you move, instead of staying where it was dragged.
+   */
+  mapHeightFollow: "eqlist.map.heightFollow",
+  /** Map window: the ± half-width of that follow window, in raw `/loc` z. */
+  mapHeightFollowRange: "eqlist.map.heightFollowRange",
+  /**
    * Map window: whether the map marks your hunt's mobs where your kills place them (ADR 0142).
    *
    * Persisted, unlike the pin-kind filter beside it: that one narrows what you drew to look at one

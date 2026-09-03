@@ -12,7 +12,8 @@
  *  - Item "Player crafted": <dl><dd> "N x <item link> - <how>" recipe rows.
  *  - Quests: a vertical table.questTopTable (th label → td value), a Reward <ul>,
  *    and a Walkthrough with turn-in items as prose wikilinks; we treat a link as
- *    a turn-in only when preceded by a quantity ("hand in 4 Aviak Talons").
+ *    a turn-in when preceded by a quantity ("hand in 4 Aviak Talons") or by "loot"
+ *    with at most an article between ("loot a Gnoll's Eye").
  *  - Tables use eoTable2/eoTable3, never `.wikitable`.
  */
 import { parse, HTMLElement, type Node } from "node-html-parser";
@@ -309,14 +310,53 @@ function parseRewards(section: Section | undefined): WikiReward[] {
 }
 
 /**
- * Turn-in items from the Walkthrough prose. Heuristic: a link counts only when a
- * quantity precedes it in the text ("hand in 4 Aviak Talons"), which filters out
- * NPC/zone/faction links. Quantity-less mentions are intentionally dropped — the
- * user can still add items by hand.
+ * The nearest list-item/paragraph/definition/table-cell ancestor's own text — the
+ * mention's own sentence, not the whole section.
+ *
+ * Matching a cue against the *whole* flattened section is what let a ground-spawn
+ * coordinate list misfire: "<li>Barbarian Jaw: +1465, -4500, -230</li><li>Barbarian
+ * Skull: ...</li>" flattens to "...-230 Barbarian Skull...", and a **trailing
+ * coordinate off one `<li>` reads as the *next* `<li>`'s quantity** ("230 Barbarian
+ * Skull") — a real page turned this into a shopping-list entry for 230 Barbarian
+ * Skulls. Scoping to the tag the mention actually sits in keeps every existing match
+ * (a `<p>` already *is* this ancestor, and a nested "loot" `<li>` still carries its own
+ * sentence) while making that cross-item bleed impossible.
  */
+function nearestBlockText(a: HTMLElement, el: HTMLElement): string {
+  for (let p = a.parentNode as HTMLElement | null; p && p !== el; p = p.parentNode as HTMLElement | null) {
+    if (p.tagName === "LI" || p.tagName === "P" || p.tagName === "DD" || p.tagName === "TD") return p.text;
+  }
+  return el.text;
+}
+
+/**
+ * Turn-in items from the Walkthrough prose. Heuristic: a link counts when a quantity
+ * precedes it in its own sentence ("hand in 4 Aviak Talons"), which filters out NPC/
+ * zone/faction links. Multi-step quests often name a single required item with no
+ * quantity at all ("loot a Gnoll's Eye", or a checklist bullet "**Get** Koalindl
+ * Fish"), so a link with no article (or only "a"/"an"/"the"/"some") between it and a
+ * preceding "loot" or "get" also counts, as qty 1 — tight enough that "looted from a
+ * krag elder" (source mob, not the item) doesn't match, since "from" sits between the
+ * verb and the link. A third, *backward*-looking cue catches a page that only ever
+ * names the item in its own drop/purchase-source sentence — the mirror image, link
+ * then verb:
+ *  - passive "is/are/may be/can be/will be drop…" ("The Shining Metallic Robes is
+ *    dropped rarely off the ghoul arch magi", "A Ruby may be purchased from a jewelry
+ *    merchant") needs nothing else, since only an item is ever described this way.
+ *  - bare active "drop… from", with no auxiliary ("Gargoyle Eye drops from various
+ *    gargoyles"), requires "from" right after the verb — that's what tells the item
+ *    (sourced *from* something) apart from "the Bixie drops Honeycomb", a mob as the
+ *    same-shaped subject, which "from" never follows.
+ *  - bare "purchas…" carries no such ambiguity either way — nothing else is ever
+ *    purchased in this prose — so it alone needs no qualifier at all.
+ * Mentions with none of these cues are intentionally dropped — the user can still add
+ * items by hand. The caller drops anything that also names a reward: a "Get X" bullet
+ * fires on the quest's own final reward too, which is something you receive, not shop for.
+ */
+const PASSIVE_AUX = "(?:is|are|may be|can be|will be)\\s+";
+
 function parseWalkthroughTurnIns(section: Section | undefined): WikiComponent[] {
   if (!section) return [];
-  const text = section.els.map((e) => e.text).join(" ").replace(/\s+/g, " ");
   const seen = new Map<string, WikiComponent>();
   for (const el of section.els) {
     for (const a of el.querySelectorAll("a")) {
@@ -324,9 +364,25 @@ function parseWalkthroughTurnIns(section: Section | undefined): WikiComponent[] 
       const display = a.text.trim().replace(/\s+/g, " "); // as written in the prose (may be plural)
       const name = linkName(a); // canonical page title (what loot lines say)
       if (!display || !name || seen.has(name)) continue;
+      const text = nearestBlockText(a, el).replace(/\s+/g, " ");
       // Detect the quantity next to the mention as it appears in the prose.
-      const m = text.match(new RegExp(`(\\d+)\\s+${escapeRe(display)}`, "i"));
-      if (m) seen.set(name, { name, qty: parseInt(m[1], 10), wikiPath: linkPath(a) });
+      const qtyM = text.match(new RegExp(`(\\d+)\\s+${escapeRe(display)}`, "i"));
+      if (qtyM) {
+        seen.set(name, { name, qty: parseInt(qtyM[1], 10), wikiPath: linkPath(a) });
+        continue;
+      }
+      const verbM = text.match(new RegExp(`\\b(?:loot|get)\\w*\\s+(?:(?:a|an|the|some)\\s+)?${escapeRe(display)}`, "i"));
+      if (verbM) {
+        seen.set(name, { name, qty: 1, wikiPath: linkPath(a) });
+        continue;
+      }
+      const sourceM = text.match(
+        new RegExp(
+          `${escapeRe(display)}[,\\s]*\\b(?:${PASSIVE_AUX}(?:drop|purchas)\\w*|drop\\w*\\s+from|purchas\\w*)`,
+          "i",
+        ),
+      );
+      if (sourceM) seen.set(name, { name, qty: 1, wikiPath: linkPath(a) });
     }
   }
   return [...seen.values()];
@@ -563,16 +619,28 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
   }
 
   if (content.querySelector("table.questTopTable")) {
-    const walkthrough = sections.find((s) => /walkthrough/i.test(s.id) || /walkthrough/i.test(s.heading));
+    // Some quests split the walkthrough into more than one heading ("TLDR; Walkthrough" plus a
+    // "Full Walkthrough" with the actual turn-in prose) — `find` would silently read only the first
+    // and miss every item named in the rest, so every matching section is merged, in page order.
+    const walkthroughSections = sections.filter((s) => /walkthrough/i.test(s.id) || /walkthrough/i.test(s.heading));
+    const walkthrough = walkthroughSections.length
+      ? { id: "Walkthrough", heading: "Walkthrough", empty: false, els: walkthroughSections.flatMap((s) => s.els) }
+      : undefined;
     const reward = sections.find((s) => /reward/i.test(s.id) || /reward/i.test(s.heading));
     const { sources, card } = parseQuestInfo(content, title);
+    const rewards = parseRewards(reward);
+    // A "Get X" bullet fires on the quest's own final reward as readily as on anything you need to
+    // shop for; a reward is something you receive, not a turn-in, so it's dropped here rather than
+    // taught to the (already tight) prose heuristic.
+    const rewardNames = new Set(rewards.map((r) => r.item).filter((n): n is string => !!n));
+    const components = parseWalkthroughTurnIns(walkthrough).filter((c) => !rewardNames.has(c.name));
     return {
       kind: "quest",
       title,
       wikiPath,
       sources,
-      components: parseWalkthroughTurnIns(walkthrough),
-      rewards: parseRewards(reward),
+      components,
+      rewards,
       card,
       links: parseContentLinks(content),
       fetchedAt,

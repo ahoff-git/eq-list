@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useShoppingList, useMatchFlashes, useCurrentZone, useSettings } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import ItemLink, { NameList } from "./ItemLink";
@@ -99,7 +99,14 @@ export default function ListPanel() {
               <div className="group-header" onClick={() => toggle(g.key)}>
                 <Caret open={!isCollapsed} />
                 {g.kind && <span className={`badge kind-${g.kind}`}>{g.kind}</span>}
-                <span className="group-label">{g.label}</span>
+                {/* "Other items" has no page behind it — nothing to open — so it stays plain text;
+                    every real quest/recipe group opens the same way an item name does (ItemLink
+                    stops the click reaching the header's own onClick, so this doesn't also toggle it). */}
+                {g.kind ? (
+                  <ItemLink title={g.label} className="group-label" />
+                ) : (
+                  <span className="group-label">{g.label}</span>
+                )}
                 <span className="spacer" />
                 {g.kind && (
                   <span className="group-runs" onClick={(ev) => ev.stopPropagation()} title="How many times you'll run this">
@@ -200,25 +207,40 @@ function EntryRow({
   // qty × the group's runs. Obtained can exceed need (you can over-loot) but not go below 0.
   const setObtained = (delta: number) => api()?.list.update(entry.id, { obtained: Math.max(0, entry.obtained + delta) });
 
-  // Lazily fetch this item's sources the first time it's expanded (cached in main).
-  async function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && sources === null && !loading) {
-      setLoading(true);
-      try {
-        const page = await api()?.wiki.getPage(entry.name);
+  // Fetched as soon as the row mounts (cached in main, so this is usually free) rather than waiting
+  // for the ▸ to be clicked: "where do I get this" is exactly what a shopping list is for, so the row
+  // shows its best answer — a zone and its mobs, or a vendor/quest/craft line — without a click. The
+  // caret still exists for the full breakdown (every zone, every other source). Never for a mob: it
+  // has no sources of its own to look up (it's the thing being hunted, not a thing that drops).
+  useEffect(() => {
+    if (isMob) return;
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const page = await api()?.wiki.getPage(entry.name);
+      if (!cancelled) {
         setSources(page?.sources ?? []);
-      } finally {
         setLoading(false);
       }
-    }
-  }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.name, isMob]);
+
+  const toggle = () => setOpen((o) => !o);
 
   const drops = sources ? groupDropsByZone(sources) : null;
   const others = sources ? otherSources(sources) : [];
   const split = drops ? splitDropsByCurrentZone(drops, currentZone) : null;
   const nothing = !!sources && !!drops && drops.length === 0 && others.length === 0;
+  // The row's one-line answer: the current zone's drop if there is one, else the first known drop
+  // zone, else the first non-drop source. `split` already orders "here" before "elsewhere", so the
+  // first entry across both is exactly the one the full breakdown would lead with.
+  const hereZone = split?.here[0] ?? null;
+  const bestZone = hereZone ?? split?.elsewhere[0] ?? null;
+  const isHere = !!hereZone;
+  const bestOther = !bestZone ? (others[0] ?? null) : null;
 
   return (
     <div className="entry-wrap">
@@ -226,7 +248,30 @@ function EntryRow({
         <button className="entry-caret" title="Where to get it" onClick={toggle}>
           {caretGlyph(open)}
         </button>
-        <ItemLink title={entry.name} className="entry-name" />
+        <div className="entry-main">
+          <ItemLink title={entry.name} className="entry-name" />
+          {/* The one-line answer, right under the name — see the effect above for why it's already
+              here and not waiting on a click. Silent while loading and when nothing is known, rather
+              than a placeholder that would flicker true on almost every row (this is cache-fast). */}
+          {!isMob && !loading && (bestZone || bestOther) && (
+            <div className="entry-summary muted small">
+              {bestZone ? (
+                <>
+                  <span className={`es-zone ${isHere ? "here" : ""}`}>{bestZone.zone}</span>
+                  {" — "}
+                  <NameList names={bestZone.mobs} />
+                </>
+              ) : (
+                bestOther && (
+                  <>
+                    <span className={`src-kind k-${bestOther.kind}`}>{sourceKindLabel(bestOther.kind)}</span>
+                    <ItemLink title={bestOther.where} />
+                  </>
+                )
+              )}
+            </div>
+          )}
+        </div>
         {/* A mob has no count to show and never will: nothing drops it, so "0 of 1" would be a
             progress bar that can't move. It says what it *is* instead — a thing to go and kill,
             which is what the Hunt tab lists it as. */}
