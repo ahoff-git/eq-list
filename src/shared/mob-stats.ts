@@ -31,6 +31,7 @@ import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
 import { ratio } from "./numbers";
 import { locText } from "./format";
+import { legacyContributorId } from "./contributors";
 
 /** Positions this poor are ignored when working out where a mob lives. */
 const AREA_MIN_CONFIDENCE = 0.2;
@@ -312,7 +313,7 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
       // one person who renamed themselves mid-evening is still one. A tally from before ids (or from
       // a build too old to send one) falls back to the name, which is the best it can be credited by.
       const ids = seenBy.get(key) ?? new Set<string>();
-      const id = obs.byId ?? `name:${obs.by}`;
+      const id = obs.byId ?? legacyContributorId(obs.by);
       if (!ids.has(id)) {
         ids.add(id);
         known.contributors.push(obs.by);

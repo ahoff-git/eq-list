@@ -71,7 +71,11 @@ export function sanitizeObservations(input: unknown[]): MobObservation[] {
     if (!isFinNum(r.kills) || !plausible(r.kills, KILLS_PLAUSIBLE)) continue;
     const kills = r.kills;
 
-    const drops: Record<string, number> = {};
+    // A peer names this key (an item name), so it is written to a prototype-less object rather than
+    // `{}` — a literal `__proto__` would otherwise be read back as this object's own prototype instead
+    // of an owned entry, silently losing that one drop rather than corrupting anything wider, but a
+    // sanitizer whose whole job is "vet what a peer sends" should not depend on that being harmless.
+    const drops: Record<string, number> = Object.create(null);
     if (r.drops && typeof r.drops === "object" && !Array.isArray(r.drops)) {
       for (const [item, count] of Object.entries(r.drops as Record<string, unknown>)) {
         // A drop is counted once per kill, so it can never outnumber the kills it came from.
