@@ -25,9 +25,11 @@
  */
 
 import { SELF } from "./combat-parser";
+import { to24Hour } from "./game-clock";
 import { parseCoins } from "./money";
 import type {
   CoinEvent,
+  GameTimeEvent,
   LogLine,
   LootEvent,
   LootFate,
@@ -461,6 +463,33 @@ export function parseParty(line: LogLine): PartyEvent | null {
     };
   }
   return null;
+}
+
+/**
+ * "Game Time: <Day>, <Month> <D>, <Year> - <H> <AM/PM>" — the hour of day in Norrath, all a `/time`
+ * response ever states (no minute; the running clock extrapolates the rest — `game-clock.ts`). The
+ * date is read past rather than captured: this app tracks time of day, not the game's calendar.
+ *
+ * The companion "Earth Time: ..." line says nothing this doesn't already have from the bracket
+ * timestamp, so it's left unparsed — a line nothing claims, same as any other.
+ *
+ * Verified against a real line from a live client:
+ *   [Thu Sep 03 18:57:41 2026] Game Time: Monday, October 23, 3175 - 6 PM
+ */
+const GAME_TIME_RE = /^Game Time: \w+, \w+ \d{1,2}, \d+ - (?<hour>\d{1,2}) (?<ampm>AM|PM)$/;
+
+export function parseGameTime(line: LogLine): GameTimeEvent | null {
+  const m = line.message.match(GAME_TIME_RE);
+  if (!m?.groups) return null;
+  const hour12 = Number(m.groups.hour);
+  if (hour12 < 1 || hour12 > 12) return null;
+  return {
+    kind: "gameTime",
+    hour: to24Hour(hour12, m.groups.ampm as "AM" | "PM"),
+    logId: line.logId,
+    raw: line.raw,
+    at: line.at,
+  };
 }
 
 // "Your Location is 1234.5, -678.9, 42.0" → LocEvent. EQ reports the triple y-first.

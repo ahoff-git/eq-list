@@ -11,6 +11,7 @@ import AlertSourceRow from "./AlertSourceRow";
 import CastWatchRow, { type WatchPane } from "./CastWatchRow";
 import WatchLibrary from "./WatchLibrary";
 import WatchShare from "./WatchShare";
+import GameTimeAlarms from "./GameTimeAlarms";
 import {
   ALERT_SOURCES,
   alertStyle,
@@ -326,6 +327,8 @@ export default function AlertsPanel() {
                 </div>
               ))}
             </div>
+
+            <GameTimeAlarms />
 
             {/* The three things that alert **without a rule**. They were missing from the tab named
                 after them, so the only way to learn a loot banner existed — let alone which look it

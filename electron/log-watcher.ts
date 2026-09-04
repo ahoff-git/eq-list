@@ -16,7 +16,7 @@ import { splitLine } from "../src/shared/log-parser";
 import { catchUpState, type CaughtUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
-import type { CoinEvent, LootEvent, LogLine, LoginEvent, PartyEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, SightingEvent, WatcherStatus } from "../src/shared/types";
+import type { CoinEvent, GameTimeEvent, LootEvent, LogLine, LoginEvent, PartyEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, SightingEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
@@ -40,6 +40,8 @@ export interface LogWatcher {
   onKill(cb: (e: KillEvent) => void): void;
   onLoc(cb: (e: LocEvent) => void): void;
   onCoin(cb: (e: CoinEvent) => void): void;
+  /** A `/time` response — the log stating the hour of day in Norrath. */
+  onGameTime(cb: (e: GameTimeEvent) => void): void;
   onCombat(cb: (e: CombatEvent) => void): void;
   onLevel(cb: (e: LevelEvent) => void): void;
   /** You considered or hailed something — so it is in front of you, alive (ADR 0097). */
@@ -197,21 +199,24 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
       const lines = body.split(/\r?\n/).flatMap((raw) => splitLine(raw) ?? []);
       widest = catchUpState(lines);
       if (widest.zone) {
-        log.debug("caught up", { file: path.basename(file), zone: widest.zone.zone, loc: !!widest.loc, window });
+        log.debug("caught up", { file: path.basename(file), zone: widest.zone.zone, loc: !!widest.loc, gameTime: !!widest.gameTime, window });
         bus.emit("zone", widest.zone);
         if (widest.loc) bus.emit("loc", widest.loc);
+        if (widest.gameTime) bus.emit("gameTime", widest.gameTime);
         return;
       }
       // That was the whole file, so there simply isn't a zone line to find — no point widening.
       if (from === 0) break;
     }
     // No zone line anywhere we looked, which used to mean giving up entirely on a log big enough to
-    // outrun the widest window — dropping a `/loc` we had in hand. A position with no zone line
-    // before it still describes where you are (see `catchUpState`), and it's the same reading the
-    // whole-file case has always emitted, so a long log shouldn't be the one case that discards it.
-    if (widest.loc) {
-      log.debug("caught up on position only — no zone line found", { file: path.basename(file) });
-      bus.emit("loc", widest.loc);
+    // outrun the widest window — dropping a `/loc` (or a `/time`) we had in hand. Either still
+    // describes the present with no zone line before it (see `catchUpState`), and it's the same
+    // reading the whole-file case has always emitted, so a long log shouldn't be the one case that
+    // discards it.
+    if (widest.loc || widest.gameTime) {
+      log.debug("caught up on position/time only — no zone line found", { file: path.basename(file) });
+      if (widest.loc) bus.emit("loc", widest.loc);
+      if (widest.gameTime) bus.emit("gameTime", widest.gameTime);
     } else {
       log.debug("no zone line within the catch-up window", { file: path.basename(file) });
     }
@@ -353,6 +358,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onKill: (cb) => void bus.on("kill", cb),
     onLoc: (cb) => void bus.on("loc", cb),
     onCoin: (cb) => void bus.on("coin", cb),
+    onGameTime: (cb) => void bus.on("gameTime", cb),
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
     onSighting: (cb) => void bus.on("sighting", cb),

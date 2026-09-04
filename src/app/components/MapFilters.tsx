@@ -171,7 +171,7 @@ export default function MapFilters({
                   step={step}
                   value={heightFollowRange}
                   onChange={(e) => onHeightFollowRange(Math.max(1, Math.round(Number(e.target.value)) || 1))}
-                  title="How far above and below your own height to draw."
+                  title="How far above and below your own height to draw, at minimum — widened automatically so a slope you're standing on doesn't have its far edge cut off."
                 />
               </>
             )}

@@ -34,6 +34,7 @@ import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { PeerKillStore } from "./peer-kills";
 import type { SpawnTracker } from "./spawn-tracker";
 import type { BuffTracker } from "./buff-tracker";
+import type { GameClockTracker } from "./game-clock-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
@@ -71,6 +72,8 @@ export interface IpcContext {
   spawns: SpawnTracker;
   /** Which of your buffs are up, and which have lapsed (`buff-tracker.ts`). */
   buffs: BuffTracker;
+  /** The running Norrath clock and its alarms (`game-clock-tracker.ts`). */
+  gameClock: GameClockTracker;
   lookup: Lookup;
   /** The app's own data folder — where the stores and the remembered zone names live. */
   userData: string;
@@ -428,7 +431,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, buffs, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, buffs, gameClock, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -535,6 +538,24 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.spawnsRepeat, (_e, key: string, on: boolean) => {
     spawns.repeat(key, on);
     return spawns.view();
+  });
+  // The running game clock and its alarms — every edit hands the whole view back, like the boards above.
+  ipcMain.handle(CH.gameClockView, () => gameClock.view());
+  ipcMain.handle(CH.gameClockAdd, (_e, minute: number, message?: string) => {
+    gameClock.add(minute, message);
+    return gameClock.view();
+  });
+  ipcMain.handle(CH.gameClockUpdate, (_e, id: string, minute: number, message?: string) => {
+    gameClock.update(id, minute, message);
+    return gameClock.view();
+  });
+  ipcMain.handle(CH.gameClockRemove, (_e, id: string) => {
+    gameClock.remove(id);
+    return gameClock.view();
+  });
+  ipcMain.handle(CH.gameClockToggle, (_e, id: string, enabled: boolean) => {
+    gameClock.toggle(id, enabled);
+    return gameClock.view();
   });
   // The buff board. Every edit hands the whole view back, like the spawn board's — these are small
   // changes to a small list, and returning it means a panel never has to guess what its click did.
@@ -798,7 +819,7 @@ const CONTRIBUTED_KINDS = new Set<string>([AWARI_MSG.mobs, AWARI_MSG.kills]);
  *     sharing and nothing stable about you goes out at all (`electron/identity.ts`).
  */
 function registerPeerIpc(context: IpcContext): void {
-  const { broadcast, mobs, peerKills, contributorId, store, killLog, spawns, buffs, scores, watcher, wiki } = context;
+  const { broadcast, mobs, peerKills, contributorId, store, killLog, spawns, buffs, scores, watcher, wiki, gameClock } = context;
 
   /** File what a peer just told us, and let every open window know the pool moved. */
   const fileContribution = (payload: AwariPayload): void => {
@@ -843,10 +864,13 @@ function registerPeerIpc(context: IpcContext): void {
       spawns,
       buffs,
       scores,
+      gameClock,
     }),
     // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).
     items: wiki.items,
     acceptItems: (pages, shard) => wiki.items.accept(pages, shard),
+    // A peer's `/time` reading — kept only if it's newer than what we already have (ADR 0189).
+    acceptGameTime: (reading) => gameClock.notePeerReading(reading.hour, reading.at ? Date.parse(reading.at) : Date.now()),
   });
 
   /**

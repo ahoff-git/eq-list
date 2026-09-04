@@ -1767,6 +1767,40 @@ kbd {
 }
 .dot.on { background: var(--good); }
 
+/* The running Norrath clock, in the status bar — see GameClock.tsx. */
+.gameclock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.gc-icon {
+  font-size: 13px;
+  line-height: 1;
+  filter: drop-shadow(0 0 3px var(--gc-glow, transparent));
+}
+.gc-day { --gc-glow: #f0b42999; }
+.gc-night { --gc-glow: #7c8cff99; }
+.gc-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+/* A sliver showing how far through the current day/night half the clock sits — sunrise/sunset to
+   the other end — so the reading is a glance at *where in the cycle you are*, not just a number. */
+.gc-track {
+  width: 32px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.gc-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--gc-glow, var(--accent)), var(--accent));
+}
+.gc-night .gc-fill { background: linear-gradient(90deg, var(--gc-glow, #7c8cff), #7c8cff); }
+
 /* ── map window ───────────────────────────────────────────────── */
 .map-win {
   display: flex;
@@ -2400,6 +2434,16 @@ kbd {
 .pin-menu-head { display: flex; align-items: center; gap: 6px; font-weight: 600; }
 .pin-menu .field { font-size: 12px; padding: 5px 7px; }
 .pin-menu textarea.field { resize: vertical; }
+/* The kind picker (a row of `.pin-btn`, sized for the 220px popover) and the location field
+   beside its "at" label — both share the pin editor's own scale rather than the toolbar's. */
+.pin-menu-kinds { flex-wrap: wrap; gap: 2px; }
+.pin-menu-kinds .pin-btn { font-size: 13px; padding: 2px 5px; }
+.pin-menu-loc { gap: 6px; }
+.pin-menu-loc .field { flex: 1; min-width: 0; }
+/* The toolbar's "paste a location" box: same field, sized to hold "-1234, -5678" without
+   crowding the buttons on either side of it. */
+.map-toolbar-paste { gap: 3px; }
+.map-toolbar-paste .field { width: 132px; font-size: 12px; padding: 2px 6px; }
 .pin-tip {
   position: fixed;
   z-index: 1000;

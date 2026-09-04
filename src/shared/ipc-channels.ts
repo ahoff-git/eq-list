@@ -101,6 +101,12 @@ export const CH = {
   spawnsStop: "spawns:stop",
   spawnsQueue: "spawns:queue", // a fresh kill adds a countdown instead of restarting: a placeholder camp
   spawnsRepeat: "spawns:repeat", // a custom timer starts itself again when it comes due
+  // gameClock — the running Norrath clock (extrapolated from the last `/time`), and its alarms
+  gameClockView: "gameClock:view",
+  gameClockAdd: "gameClock:add", // set an alarm for a time of day
+  gameClockUpdate: "gameClock:update", // change an alarm's time or message, same id
+  gameClockRemove: "gameClock:remove",
+  gameClockToggle: "gameClock:toggle",
   // buffs — what you're keeping up, and what has lapsed
   buffsView: "buffs:view",
   buffsTrack: "buffs:track", // watch this spell, or stop: the durable silence, which keeps the row
@@ -221,6 +227,7 @@ export const CH = {
   alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
   spawnsChanged: "evt:spawnsChanged", // main → all: a timer started, came due, or aged out
+  gameClockChanged: "evt:gameClockChanged", // main → all: a `/time` reading arrived, or an alarm changed
   buffsChanged: "evt:buffsChanged", // main → all: a buff went up, lapsed, or a choice about one changed
   dataChanged: "evt:dataChanged", // main → all: stored data changed in bulk (a log was eaten, a store cleared)
   updateAvailable: "evt:updateAvailable", // main → all: a newer build is published

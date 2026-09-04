@@ -132,6 +132,31 @@ test("quest page → active-voice \"drop(s) from\" and passive \"may be purchase
   assert.ok(!p.components.some((c) => c.name === "Shovel of Ponz"));
 });
 
+test("quest page → a \"Checklist\" heading is merged in alongside \"Walkthrough\"", () => {
+  const p = parseFixture("quest-rogue-redemption", "Rogue Redemption");
+  assert.equal(p.kind, "quest");
+  // The entire turn-in list on this quest lives under a "Checklist" heading, separate from
+  // "Walkthrough" — a merge that only matched /walkthrough/i would read nothing here at all.
+  assert.ok(p.components.some((c) => c.name === "Sealed Note" && c.qty === 1)); // "get a Sealed Note"
+  assert.ok(p.components.some((c) => c.name === "Sparkle" && c.qty === 1)); // "loot the Sparkle purse"
+  assert.ok(p.components.some((c) => c.name === "Blood Spirit" && c.qty === 1)); // "loot Blood Spirit"
+  assert.ok(p.components.some((c) => c.name === "Blackburrow Gnoll Skin" && c.qty === 4)); // "4 ... Skins"
+  assert.ok(p.components.some((c) => c.name === "Gem Case" && c.qty === 1)); // "get the Gem Case"
+  assert.ok(p.components.some((c) => c.name === "A Sparkling Sapphire" && c.qty === 1)); // "purchased from"
+  // "buy Underfoot Triple Bock", "buy Vasty Deep Ale", "buy Gator Gulp Ale", "buy Lendel's Grand
+  // Lager" — the "buy" cue, alongside "loot"/"get".
+  for (const name of ["Underfoot Triple Bock", "Vasty Deep Ale", "Gator Gulp Ale", "Lendel's Grand Lager"]) {
+    assert.ok(p.components.some((c) => c.name === name && c.qty === 1), `expected ${name} as a turn-in`);
+  }
+  // "find Lon the Redeemed", "find Conium Darkblade" and "find Toxdil" are NPCs, named with the exact
+  // same "find <link>" shape as the one real miss on this page ("find The Oblong Bottle") — proof
+  // that adding "find" as a cue would tag NPCs as items, which is why it isn't one.
+  assert.ok(!p.components.some((c) => ["Lon the Redeemed", "Conium Darkblade", "Toxdil"].includes(c.name)));
+  assert.ok(!p.components.some((c) => c.name === "The Oblong Bottle"));
+  // The final reward must stay out of the turn-in list.
+  assert.ok(!p.components.some((c) => c.name === "Burning Rapier"));
+});
+
 test("spell page → classified as spell with a description/details card", () => {
   const p = parseFixture("spell-burst-of-fire", "Burst of Fire");
   assert.equal(p.kind, "spell");

@@ -289,6 +289,47 @@ export function mapZRange(map: EqMap): ZBand | undefined {
   return bounds ? { minZ: bounds.minZ, maxZ: bounds.maxZ } : undefined;
 }
 
+/**
+ * How far, in world units, counts as "near you" when widening the /loc-follow height window for a
+ * slope — a fraction of the zone's own diagonal, the same reasoning `FAR_TRAIL_FRACTION`
+ * (`MapPanel.tsx`) uses for the opposite question, a hop too far to be a walk. A guess, not a
+ * measurement: too small and a shallow ramp's far edge still falls outside it and disappears; too
+ * large and it starts pulling in a genuinely different part of the zone.
+ */
+const LOCAL_SLOPE_RADIUS_FRACTION = 0.05;
+
+/**
+ * The /loc-follow height window around `at`: `halfWidth` above and below at minimum, widened to
+ * include any geometry standing near you. A window sized for "one storey" clips the far edge off a
+ * gradual slope — the ground right under your feet is honestly outside a flat ± band the moment
+ * the terrain tilts — so this looks at what's actually nearby and grows to fit it instead of
+ * trusting the guess alone.
+ *
+ * This is not floor detection ([ADR 0040](../../../specs/decisions/0040-floors-come-from-the-mapmaker.md)
+ * stays out of that): it never clusters the whole map or names a level, it only asks "what heights
+ * sit within a short walk of here", which is a fact about geometry near a point rather than a claim
+ * about how the zone divides into storeys. Scored by segment endpoint, not the whole segment — a
+ * stair rail six units away belongs here, the floor above it across the map does not.
+ */
+export function followHeightWindow(map: EqMap, at: { y: number; x: number; z: number }, halfWidth: number): ZBand {
+  let minZ = at.z - halfWidth;
+  let maxZ = at.z + halfWidth;
+  const bounds = mapBounds(map);
+  if (!bounds) return { minZ, maxZ };
+  const radius = Math.hypot(bounds.maxY - bounds.minY, bounds.maxX - bounds.minX) * LOCAL_SLOPE_RADIUS_FRACTION;
+  for (const s of map.segments) {
+    if (Math.hypot(s.y1 - at.y, s.x1 - at.x) <= radius) {
+      minZ = Math.min(minZ, s.z1);
+      maxZ = Math.max(maxZ, s.z1);
+    }
+    if (Math.hypot(s.y2 - at.y, s.x2 - at.x) <= radius) {
+      minZ = Math.min(minZ, s.z2);
+      maxZ = Math.max(maxZ, s.z2);
+    }
+  }
+  return { minZ, maxZ };
+}
+
 /** How much empty world to leave around the geometry, as a fraction of its span. */
 const VIEW_PAD = 0.03;
 

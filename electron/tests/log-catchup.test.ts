@@ -2,8 +2,8 @@
  * Black-box tests for recovering "where am I" from a log's tail.
  *
  * The watcher anchors at the end of an existing log and replays nothing (ADR 0030), which left an
- * app started mid-session not knowing its zone. Only two lines carry *state* rather than news, and
- * the rule that matters is which position is still true after a zone change.
+ * app started mid-session not knowing its zone. Only three lines carry *state* rather than news, and
+ * the rule that matters is which of them is still true after a zone change.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -54,6 +54,24 @@ test("a position with no zone line before it is kept", () => {
   const state = catchUpState(lines(`${at("00:11:00")}Your Location is 12.00, 34.00, 5.00`));
   assert.equal(state.zone, undefined);
   assert.deepEqual([state.loc?.y, state.loc?.x], [12, 34]);
+});
+
+test("the last /time reading is the time of day", () => {
+  const state = catchUpState(
+    lines(`${at("00:10:00")}Game Time: Monday, October 23, 3175 - 6 PM`, `${at("00:10:00")}Earth Time: Wednesday, July 29, 2026 00:10:00`),
+  );
+  assert.equal(state.gameTime?.hour, 18);
+});
+
+test("a /time reading survives a zone change — walking through a door doesn't reset the clock", () => {
+  const state = catchUpState(
+    lines(
+      `${at("00:10:00")}Game Time: Monday, October 23, 3175 - 6 PM`,
+      `${at("00:15:00")}You have entered Clan Crushbone.`,
+    ),
+  );
+  assert.equal(state.zone?.zone, "Clan Crushbone");
+  assert.equal(state.gameTime?.hour, 18);
 });
 
 test("the newest position wins", () => {

@@ -4,6 +4,7 @@
  * persisted client-side (localStorage) and can be shared to peers over awari.
  * Pure/dependency-free so both the renderer and the room hook can share the shapes.
  */
+import type { Loc } from "./types";
 
 export type PinKind = "star" | "danger" | "camp" | "loot" | "note";
 
@@ -59,3 +60,22 @@ export function pinType(kind: string): PinType {
  * app made reads at a glance as different from the five you made yourself.
  */
 export const HUNT_PIN: Omit<PinType, "key"> = { label: "Hunt", color: "#ff8c42", glyph: "◎" };
+
+/** The first two numbers in the text, comma-separated — everything `parsePastedLoc` needs. */
+const PASTED_LOC_RE = /(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/;
+
+/**
+ * A location typed or pasted by hand, read as EQ's own y-first pair.
+ *
+ * Takes just "5125, -1030" as readily as a whole `/loc` line copied verbatim
+ * ("Your Location is 5125.00, -1030.00, 3.50") — the first two numbers found are `y, x`, and a
+ * third (the height) or any words around them are ignored. One rule either way means a paste
+ * doesn't have to be trimmed down to the pair first.
+ */
+export function parsePastedLoc(text: string): Loc | null {
+  const m = text.match(PASTED_LOC_RE);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const x = Number(m[2]);
+  return Number.isFinite(y) && Number.isFinite(x) ? { y, x } : null;
+}

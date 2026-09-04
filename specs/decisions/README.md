@@ -218,6 +218,11 @@ finished, so a number is claimed before a second author can reach for it.
 - [0182: Window management is Windows' job — drop `transparent: true` and the hand-rolled snap](./0182-window-management-is-windows-job.md)
 - [0183: The hand-set height window can follow your own `/loc` height](./0183-a-height-window-can-follow-you.md)
 - [0184: A trail hop too far to be walked is drawn as a hint, not a path](./0184-a-trail-hop-too-far-is-a-hint-not-a-path.md)
+- [0185: The follow window widens for a slope, not just a flat guess](./0185-the-follow-window-widens-for-a-slope.md)
+- [0186: The game clock runs forward from the last `/time` reading, at a fixed ratio](./0186-the-game-clock-runs-forward-from-the-last-time-reading.md) — superseded by 0187
+- [0187: The clock anchors on the reported hour's midpoint, not its start](./0187-the-clock-anchors-on-the-hours-midpoint.md)
+- [0188: The clock's pace calibrates itself, live, from consecutive readings](./0188-the-clocks-pace-calibrates-itself.md)
+- [0189: The clock reading is shared like a mirrored page; the learned pace is never sent at all](./0189-the-clock-reading-is-shared-like-a-mirrored-page.md)
 
 ## Open Questions
 

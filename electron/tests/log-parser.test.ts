@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseCoin,
+  parseGameTime,
   parseLoot,
   parseLevel,
   parseZone,
@@ -40,6 +41,7 @@ const parseLocLine = on(parseLoc);
 const parseLevelLine = on(parseLevel);
 const parseCoinLine = on(parseCoin);
 const parseLoginLine = on(parseLogin);
+const parseGameTimeLine = on(parseGameTime);
 
 test("splitLine extracts the message, an ISO time, and carries the line id", () => {
   const r = splitLine("[Fri Jul 17 18:41:14 2026] Hello world", 42);
@@ -293,4 +295,25 @@ test("parseLoginLine finds the line that starts a sitting, and not the level one
   // And the dispatcher agrees, which is what actually runs.
   assert.equal(parseLine("[Wed Jul 29 00:31:02 2026] Welcome to level 14!")?.kind, "level");
   assert.equal(parseLine("[Tue Jul 21 20:23:23 2026] Welcome to EverQuest Legends!")?.kind, "login");
+});
+
+test("parseGameTimeLine reads a real /time response, folding the 12-hour reading to 0-23", () => {
+  // Verbatim from a live client's log:
+  //   [Thu Sep 03 18:57:41 2026] Game Time: Monday, October 23, 3175 - 6 PM
+  //   [Thu Sep 03 18:57:41 2026] Earth Time: Thursday, September 03, 2026 18:57:41
+  const t = parseGameTimeLine("[Thu Sep 03 18:57:41 2026] Game Time: Monday, October 23, 3175 - 6 PM");
+  assert.ok(t);
+  assert.equal(t!.hour, 18);
+  assert.equal(t!.at, "2026-09-03T18:57:41");
+
+  // The companion "Earth Time" line names nothing this doesn't already have from the bracket
+  // timestamp, and isn't the shape a `/time` reading takes — it must not be read as one.
+  assert.equal(parseGameTimeLine("[Thu Sep 03 18:57:41 2026] Earth Time: Thursday, September 03, 2026 18:57:41"), null);
+
+  // Midnight and noon, which read from opposite ends of `to24Hour`.
+  assert.equal(parseGameTimeLine("[Thu Sep 03 18:57:41 2026] Game Time: Monday, October 23, 3175 - 12 AM")!.hour, 0);
+  assert.equal(parseGameTimeLine("[Thu Sep 03 18:57:41 2026] Game Time: Monday, October 23, 3175 - 12 PM")!.hour, 12);
+
+  // And the dispatcher agrees.
+  assert.equal(parseLine("[Thu Sep 03 18:57:41 2026] Game Time: Monday, October 23, 3175 - 6 PM")?.kind, "gameTime");
 });

@@ -1,5 +1,7 @@
 "use client";
 import { PIN_TYPES, pinType, type PinKind } from "@/shared/map/pins";
+import type { Loc } from "@/shared/map/types";
+import LocField from "./LocField";
 
 /** A boolean the map window owns, with the setter for it — `useState`'s pair, named. */
 export type Flag = [on: boolean, set: (next: (cur: boolean) => boolean) => void];
@@ -17,6 +19,7 @@ export type Flag = [on: boolean, set: (next: (cur: boolean) => boolean) => void]
 export default function MapToolbar({
   tool,
   onTool,
+  onPlaceAt,
   onClearTrail,
   trailLength,
   killCount,
@@ -27,6 +30,8 @@ export default function MapToolbar({
   /** The pin kind being held, `"move"` while dragging pins, or null. */
   tool: PinKind | "move" | null;
   onTool: (next: (cur: PinKind | "move" | null) => PinKind | "move" | null) => void;
+  /** Drop a pin at a typed/pasted location rather than a map click — the held kind, or "star" with none held. */
+  onPlaceAt: (loc: Loc) => void;
   onClearTrail: () => void;
   trailLength: number;
   killCount: number;
@@ -102,6 +107,10 @@ export default function MapToolbar({
           : moveMode
             ? "move mode — drag a pin"
             : "pick a pin, or click to ping"}
+      </span>
+      <span className="row map-toolbar-paste" title="Type or paste a location — the y, x a /loc reports — to drop a pin there without clicking the map">
+        <span aria-hidden>📍</span>
+        <LocField placeholder="paste a location — y, x" onCommit={onPlaceAt} />
       </span>
       <span className="spacer" />
       <button

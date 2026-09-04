@@ -8,20 +8,22 @@
  * app mid-session left it not knowing *where you are* — the map had no zone, and every "here" panel
  * had nothing to scope to, until you happened to zone again.
  *
- * State and news are different things, and only two lines carry state: the zone you entered, and
- * your last `/loc`. Both describe the present rather than an event to react to, so they can be
- * recovered without replaying anything. Nothing else is: no kills, no loot, no experience, no casts.
+ * State and news are different things, and only three lines carry state: the zone you entered, your
+ * last `/loc`, and your last `/time`. All three describe the present rather than an event to react
+ * to, so they can be recovered without replaying anything. Nothing else is: no kills, no loot, no
+ * experience, no casts.
  *
  * Pure, so what counts as recoverable state is decided in one tested place.
  */
 
-import { parseLoc, parseZone } from "./log-parser";
-import type { LocEvent, LogLine, ZoneEvent } from "./types";
+import { parseGameTime, parseLoc, parseZone } from "./log-parser";
+import type { GameTimeEvent, LocEvent, LogLine, ZoneEvent } from "./types";
 
-/** The state a tail implies. Either may be absent — the tail may simply not reach back far enough. */
+/** The state a tail implies. Any may be absent — the tail may simply not reach back far enough. */
 export interface CaughtUpState {
   zone?: ZoneEvent;
   loc?: LocEvent;
+  gameTime?: GameTimeEvent;
 }
 
 /**
@@ -54,7 +56,8 @@ export function isSameSitting(lastAt: string | undefined, now: number = Date.now
  * A zone line **clears any position** read before it: a `/loc` from the zone you just left would
  * otherwise be plotted on the map of the zone you're in, which is worse than having no dot at all.
  * A position with no zone line before it is kept — no zoning happened within the tail, so it's a
- * fix for wherever you already were.
+ * fix for wherever you already were. The time of day carries across a zone line untouched: nothing
+ * about walking through a door resets the clock.
  */
 export function catchUpState(lines: LogLine[]): CaughtUpState {
   const state: CaughtUpState = {};
@@ -67,6 +70,8 @@ export function catchUpState(lines: LogLine[]): CaughtUpState {
     }
     const loc = parseLoc(line);
     if (loc) state.loc = loc;
+    const gameTime = parseGameTime(line);
+    if (gameTime) state.gameTime = gameTime;
   }
   return state;
 }

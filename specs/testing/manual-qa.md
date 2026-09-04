@@ -237,6 +237,20 @@ features for later in [../ideas.md](../ideas.md).
     recognise, that the readout matches your `/loc` z, that **all** restores the whole map, and that
     travelling to another zone drops the window rather than carrying a meaningless height across
     ([ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md)).
+- **Follow my height, and the slope it's meant to fix (ADRs 0183, 0185).** On a zone with no
+  labelled floors, turn on "Follow my height" and walk around: the window should re-centre on your
+  `/loc` z without touching the sliders, and a manual drag (or "all") should turn following back
+  off. Then specifically walk a **gradual slope** — a ramp, a hillside path, the incline into a
+  cave mouth — with a fairly tight ± range set: the ground ahead of and behind you on the same
+  incline should stay drawn rather than fading out partway up, since the window is supposed to
+  widen for nearby geometry rather than clip it at a flat guess. Worth trying a **steep drop-off**
+  too (a cliff, a stairwell) to confirm it doesn't over-widen into an unrelated area far below.
+- **The `/loc` trail's far hops, drawn as a hint (ADR 0184).** Build up a trail by walking normally,
+  then get evac'd/succored, gated, or ported to elsewhere in the **same zone** (a zone change clears
+  the trail, so it has to be a same-zone jump). The line connecting the two should render faint,
+  grey and dashed rather than the regular solid blue — confirm ordinary walked segments (even a
+  fairly long one, if you don't `/loc` often) stay solid, and only the genuinely teleported hop
+  changes style.
 - **Cast-alert overlay, over the game.** With cast alerts on, confirm the banner + flash appear
   in the **click-through overlay on top of the game** (not just the app window), that clicking where
   the banner is still clicks the game beneath it, that the **beep** fires (even as the first alert
@@ -650,8 +664,50 @@ features for later in [../ideas.md](../ideas.md).
   network and confirm the wiki row goes amber while the log rows stay green, and that **Copy report**
   produces text worth pasting into an issue.
 
+- **The game clock and its alarms.** ([ADR 0186](../decisions/0186-the-game-clock-runs-forward-from-the-last-time-reading.md),
+  [ADR 0187](../decisions/0187-the-clock-anchors-on-the-hours-midpoint.md),
+  [ADR 0188](../decisions/0188-the-clocks-pace-calibrates-itself.md).)
+  The parser is pinned against a real captured line and the tracker's math against an injected clock,
+  but nothing has watched the clock actually tick on screen. Type `/time` in game and confirm the
+  status bar picks it up within a couple of seconds, showing the right hour (☀️ by day, 🌙 by night)
+  and a smooth reading — come back a minute later and it should have moved, not be sitting on the
+  same value `/time` reported. Then restart the app **without** typing `/time` again and confirm the
+  clock is still there (recovered from the log's tail, the same way zone/loc are) rather than reading
+  "no /time read yet". In Alerts → Game-time alarms, add one for a couple of game-minutes from now
+  (a game day is 72 real minutes, so "5 minutes from now" is under a real minute away) and confirm the
+  banner pops at the right moment, once, wearing the ordinary alert look. Add one for a time already
+  just passed, restart the app, and confirm it does **not** fire on startup — only a fresh crossing
+  should ever speak.
+
+  **The pace now calibrates itself live — this is how to watch it happen, and how to tell it apart
+  from noise.** Turn on Debug logging and type `/time` a few times over an evening, ideally a few
+  minutes apart rather than back to back (a gap of a few seconds teaches it almost nothing on
+  purpose — see ADR 0188). Each reading after the first logs `game time check — our running guess vs.
+  what /time just said`, with `guessed`, `reported`, `offByGameMinutes`, and — only when that pair was
+  spaced well enough to actually move anything — `learnedRatePerMinute: { from, to }`. Confirm the
+  `to` figure drifts toward wherever your server's real pace sits and then **settles**, rather than
+  wandering indefinitely: a few readings early in a session moving it a point or two toward, say,
+  20.5, then holding steady there across later readings, is exactly the intended shape. A pace that
+  keeps climbing or falling with no sign of settling, or that jumps by a huge amount off one pair, is
+  worth reporting with those log lines (and the real elapsed time between the readings) attached —
+  that would mean either `impliedRate`'s day-wrap guess got confused (a genuinely unusual server pace
+  crossed with an unlucky gap) or something is off in the weighting itself.
+
 ## Peer networking — two clients
 
+- **The shared game clock — never run with a real peer.**
+  ([ADR 0189](../decisions/0189-the-clock-reading-is-shared-like-a-mirrored-page.md).) The reader and
+  the hub dispatch are unit-tested; two real clients are what's missing. With both connected and
+  *Time of day* on (it's on by default — confirm it's actually listed under **What you share** →
+  mirror), type `/time` on **one** client only and confirm the **other** client's status-bar clock
+  picks it up within the minute tick without ever typing `/time` itself — that's the whole point.
+  Then the freshness rule: with both clients now holding readings, type `/time` again on whichever
+  one is behind and confirm it's the one that jumps forward, never the more-current one regressing to
+  a stale peer message. Quit and relaunch the client that never typed `/time` and confirm the clock
+  is still there after reconnecting (it should re-fetch on the fresh offer, not sit blank waiting for
+  someone to type `/time` a third time). Finally, turn **Time of day** off on one client, confirm it
+  stops both giving *and* auto-fetching (no more asks going out for it in the debug log), and that the
+  other client's clock is unaffected either way.
 - **Connected users, two clients.** With peer networking on, confirm the 👥 panel lists the other
   client (name from its `hello`, not a peer id), that a peer connected *without* location sharing
   still appears, that the row's zone button jumps the map there, and that leaving removes the row.

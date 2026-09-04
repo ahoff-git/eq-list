@@ -71,7 +71,7 @@ import {
   type ShareOffer,
 } from "../src/shared/peer-share";
 import { decodeCoverage, type PeerCoverage } from "../src/shared/item-shards";
-import type { SharedItemPage } from "../src/shared/peer-share";
+import type { SharedGameTime, SharedItemPage } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
 import type { KillRecord, KnownSpawn } from "../src/shared/types";
 
@@ -234,6 +234,11 @@ export interface PeerShareDeps {
   outdated: (notice: PeerVersionNotice) => void;
   /** Take item pages a peer handed us into the page cache. Returns how many were new. */
   acceptItems?: (pages: SharedItemPage[], shard?: number) => number;
+  /**
+   * Take a peer's `/time` reading — applied only if it teaches the local clock anything (the game
+   * clock's own tracker decides whether it's newer than what it already has).
+   */
+  acceptGameTime?: (reading: SharedGameTime) => void;
   /** What we'd share, per kind — the app's own data, read only when asked for. */
   sources: Record<ShareKind, ShareSource>;
   /**
@@ -694,37 +699,48 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
 
     const spec = shareKind(give.what);
     if (spec?.family === "mirror") {
-      // Straight into the page cache, without a tray and without anybody clicking. It is the one
-      // family that may: these are copies of eqlwiki's own public pages, identical for everyone, and
-      // the alternative to accepting one is asking eqlwiki the same question a second time. They are
-      // still read through `readSharedPage` first, and they still expire on our TTL — so a page a
-      // peer got wrong is corrected by the source, on its own
-      // ([ADR 0160](../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
-      //
-      // Never a delta: `items` is addressed by shard, and a shard is already the small unit
-      // (ADR 0160). A delta of one would be answering a question nobody asked.
-      const pages = give.mode === "whole" ? give.rows : [];
-      const taken = deps.acceptItems?.(pages as SharedItemPage[], give.shard) ?? 0;
-      // The names first, then the pages: a title we learn here makes its shard incomplete, which is
-      // what turns "an item we had never heard of" into work the planner will pick up (ADR 0177).
-      // Learned even when no page came with them — a peer that knows of an item it has failed to
-      // fetch is telling us something we could not otherwise find out.
-      const learned = give.titles?.length ? (deps.items?.learnTitles(give.titles) ?? 0) : 0;
-      // A refusal only ever *skips* a fetch — it removes nothing and contradicts no page we hold, so
-      // the worst a lying peer achieves is that we fail to discover something (ADR 0180).
-      const spared = give.notItems?.length ? (deps.items?.learnNotItems?.(give.notItems) ?? 0) : 0;
-      log.debug(
-        "took",
-        taken,
-        "of",
-        pages.length,
-        "item pages from",
-        peerId,
-        "shard",
-        give.shard,
-        learned ? `(+${learned} new titles)` : "",
-        spared ? `(+${spared} refusals)` : "",
-      );
+      // Applied straight in, without a tray and without anybody clicking — the one family that may,
+      // because a mirror kind is a copy of a fact that is the same for everyone and personal to
+      // nobody. `items` and `gameTime` both live here but need none of the same plumbing, so each
+      // gets its own small branch rather than one pretending they're shaped alike.
+      if (give.what === "items") {
+        // Straight into the page cache. These are copies of eqlwiki's own public pages, and the
+        // alternative to accepting one is asking eqlwiki the same question a second time. They are
+        // still read through `readSharedPage` first, and they still expire on our TTL — so a page a
+        // peer got wrong is corrected by the source, on its own
+        // ([ADR 0160](../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
+        //
+        // Never a delta: `items` is addressed by shard, and a shard is already the small unit
+        // (ADR 0160). A delta of one would be answering a question nobody asked.
+        const pages = give.mode === "whole" ? give.rows : [];
+        const taken = deps.acceptItems?.(pages as SharedItemPage[], give.shard) ?? 0;
+        // The names first, then the pages: a title we learn here makes its shard incomplete, which is
+        // what turns "an item we had never heard of" into work the planner will pick up (ADR 0177).
+        // Learned even when no page came with them — a peer that knows of an item it has failed to
+        // fetch is telling us something we could not otherwise find out.
+        const learned = give.titles?.length ? (deps.items?.learnTitles(give.titles) ?? 0) : 0;
+        // A refusal only ever *skips* a fetch — it removes nothing and contradicts no page we hold, so
+        // the worst a lying peer achieves is that we fail to discover something (ADR 0180).
+        const spared = give.notItems?.length ? (deps.items?.learnNotItems?.(give.notItems) ?? 0) : 0;
+        log.debug(
+          "took",
+          taken,
+          "of",
+          pages.length,
+          "item pages from",
+          peerId,
+          "shard",
+          give.shard,
+          learned ? `(+${learned} new titles)` : "",
+          spared ? `(+${spared} refusals)` : "",
+        );
+      } else if (give.what === "gameTime") {
+        // Always whole (`gameTime` has exactly one row, per `SHARE_KINDS`'s `MAX_ROWS`); a delta of
+        // one row would be answering a question nobody asked, same as `items`.
+        const [reading] = give.mode === "whole" ? (give.rows as SharedGameTime[]) : [];
+        if (reading) deps.acceptGameTime?.(reading);
+        log.debug("game time from", peerId, reading ? `hour ${reading.hour}` : "(nothing to take)");
+      }
       return;
     }
 
@@ -837,12 +853,18 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   }
 
   /**
-   * A peer's catalogue arrived: fetch the **observations** they're offering that have moved on.
+   * A peer's catalogue arrived: fetch the **observations** they're offering that have moved on —
+   * plus `gameTime`, the one exception.
    *
-   * Only observations, and only automatically. They are the pooled family — wanted by default,
-   * filed without anybody looking, and the whole reason for a shared body of knowledge. Everything
-   * else waits for a person to click, because an authored artifact fetched behind your back is a
-   * tray filling up with other people's work you never asked to see.
+   * Observations are the pooled family — wanted by default, filed without anybody looking, and the
+   * whole reason for a shared body of knowledge. Everything else waits for a person to click, because
+   * an authored artifact fetched behind your back is a tray filling up with other people's work you
+   * never asked to see. `gameTime` is `mirror`, not `observation`, but earns the same automatic ask
+   * for the same reason `items` earns being applied on arrival: it is a fact about the server, not
+   * about the peer, and there is nothing here for "wait to be asked" to protect
+   * ([ADR 0189](../specs/decisions/0189-the-clock-reading-is-shared-like-a-mirrored-page.md)). `items`
+   * itself is fetched by its own shard walk rather than through here, which is why it needs no
+   * carve-out of its own.
    */
   function sawOffer(peerId: string, payload: AwariPayload): void {
     // Through the shared reader, which checks the shape of every line — the same one the renderer's
@@ -858,7 +880,7 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     if (!deps.getSettings().connectPeers) return;
     noteWorthTelling(peerId, newlyOffered(catalogue, before));
     for (const spec of SHARE_KINDS) {
-      if (spec.family !== "observation") continue;
+      if (spec.family !== "observation" && spec.key !== "gameTime") continue;
       const entry = catalogue[spec.key];
       if (!entry || entry.n <= 0) continue;
       askFor(peerId, spec.key, false);
@@ -1159,6 +1181,8 @@ export function shareSources(context: {
   spawns: { view: () => { running: unknown[]; known: KnownSpawn[] } };
   buffs: { view: () => { active: unknown[] } };
   scores: { board: () => { scores: unknown[] } };
+  /** The clock's own last `/time` reading, for sharing — see `game-clock-tracker.ts`'s `reading()`. */
+  gameClock: { reading: () => { hour: number; at: string } | null };
 }): Record<ShareKind, ShareSource> {
   return {
     watches: { rows: () => context.getSettings().castAlerts?.watches ?? [] },
@@ -1189,5 +1213,13 @@ export function shareSources(context: {
     // Addressed by shard, never as a whole (see `PeerShareDeps.items`). Present so the table has no
     // hole in it, and never called.
     items: { rows: () => [] },
+    // Exactly one row, or none while this run has never read a `/time` line of its own — a peer with
+    // nothing to say offers nothing, rather than a hollow reading nobody typed.
+    gameTime: {
+      rows: () => {
+        const reading = context.gameClock.reading();
+        return reading ? [reading] : [];
+      },
+    },
   };
 }

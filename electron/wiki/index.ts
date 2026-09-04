@@ -107,7 +107,12 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // passive "purchas…" under any modal auxiliary ("may be purchased", "can be purchased") — v19 only
 // caught the "is/are dropped" phrasing, and most drop-source sentences on the wiki use the plainer
 // "X drops from Y" or "X may be purchased from Y" instead.
-const CACHE_VERSION = 20;
+// v21: a "Checklist" heading is now merged in alongside "Walkthrough" (some quests split their
+// turn-in list into one of these plus a narrative "Walkthrough", and a merge keyed only on
+// /walkthrough/i read nothing at all off the "Checklist" half), and the forward "loot"/"get" cue
+// also matches "buy" — deliberately not "find", which on inspection tags NPCs ("find Toxdil") as
+// readily as items ("find The Oblong Bottle").
+const CACHE_VERSION = 21;
 
 /**
  * The version a page of each kind has to have been parsed at to still be current.
@@ -132,8 +137,9 @@ const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
   // to be re-parsed to drop that, not merely to gain something new.
   // v19: also catches an item named only in its own "is/are dropped" sentence.
   // v20: that cue also covers bare "drop(s) from" and modal-passive "purchas…".
-  // Item, mob, spell and zone pages are unaffected by v15 through v20.
-  quest: 20,
+  // v21: also merges a "Checklist" heading in, and the forward cue also matches "buy".
+  // Item, mob, spell and zone pages are unaffected by v15 through v21.
+  quest: 21,
 };
 
 /** Below this, a page predates parts of the parse every kind depends on. */

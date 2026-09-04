@@ -1,6 +1,7 @@
 "use client";
 import { useWatcherStatus, useLootFeed, useCurrentZone } from "@/lib/hooks";
 import ZoneTag from "./ZoneTag";
+import GameClock from "./GameClock";
 
 /**
  * Bottom bar: is the log being watched, current zone, and the most recent drop.
@@ -27,6 +28,9 @@ export default function StatusBar() {
           · 📍 <ZoneTag zone={zone} link={false} />
         </span>
       )}
+      <span>
+        · <GameClock />
+      </span>
       <span className="spacer" />
       {last && (
         <span className="muted">

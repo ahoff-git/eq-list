@@ -15,7 +15,7 @@
  * doesn't own, so the order only affects cost — never the outcome.
  */
 import { parseCombat } from "./combat-parser";
-import { parseCoin, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseParty, parseSighting, parseXp, parseZone, splitLine } from "./log-parser";
+import { parseCoin, parseGameTime, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseParty, parseSighting, parseXp, parseZone, splitLine } from "./log-parser";
 import type { CombatEvent, LogEvent, LogLine } from "./types";
 
 /** Everything a log line can turn into. */
@@ -63,6 +63,9 @@ const MATCHERS: ((line: LogLine) => ParsedEvent | null)[] = [
   parseLoc,
   parseLevel,
   parseCoin,
+  // A `/time` response. Rare — a couple of lines whenever the player types it — so it costs
+  // nothing to leave this late, after everything that owns a busier line outright.
+  parseGameTime,
   // A consider or a hail. Before `parseParty`, whose group-chat pattern is looser than either of
   // these — and after everything that owns a line outright, since it is a handful of lines a night.
   parseSighting,

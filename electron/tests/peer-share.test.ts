@@ -441,8 +441,12 @@ function readPage(raw: unknown): unknown {
 test("public pages share by default; everything of yours does not", () => {
   // The asymmetry is the decision (ADR 0161): an item page is a copy of a public wiki page with
   // nothing of yours in it, so "off until asked" protects nothing and costs the room the sharing.
+  // `gameTime` earns the same default for the same reason (ADR 0189): a `/time` reading is a fact
+  // about the server, not about you.
   assert.equal(sharing(undefined, "items"), true);
   assert.equal(sharing({}, "items"), true);
+  assert.equal(sharing(undefined, "gameTime"), true);
+  assert.equal(sharing({}, "gameTime"), true);
   for (const key of ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores"] as const) {
     assert.equal(sharing({}, key), false, `${key} must stay off by default`);
   }
@@ -468,6 +472,42 @@ test("a stamp from the future is refused, so a peer can't pin a page in our cach
   assert.equal(page.fetchedAt, undefined);
   assert.equal((readPage({ kind: "item", title: "Thing", fetchedAt: "nonsense" }) as { fetchedAt?: string }).fetchedAt, undefined);
   assert.equal((readPage({ kind: "item", title: "Thing", fetchedAt: 12345 }) as { fetchedAt?: string }).fetchedAt, undefined);
+});
+
+// ── Time of day: the room's second mirrored fact — a fact about the server, not about the sender,
+// and much simpler than a wiki page (ADR 0189). Always exactly one row. ────────────────────────────
+
+/** Read one reading the way a `give` of the `gameTime` kind does. */
+function readTimeGive(raw: unknown): unknown[] {
+  return wholeRows(readGive({ what: "gameTime", rev: 1, rows: [raw] }, () => "id"));
+}
+
+test("gameTime is mirror, on by default, and always the same row", () => {
+  const spec = shareKind("gameTime");
+  assert.equal(spec?.family, "mirror");
+  assert.equal(spec?.defaultOn, true);
+  assert.equal(spec?.rowKey?.({ hour: 3 } as never), "gameTime");
+});
+
+test("a reading needs an hour that could actually be one", () => {
+  assert.deepEqual(readTimeGive({ hour: 18, at: "2026-09-03T18:00:00.000Z" }), [{ hour: 18, at: "2026-09-03T18:00:00.000Z" }]);
+  assert.deepEqual(readTimeGive({ hour: -1 }), []);
+  assert.deepEqual(readTimeGive({ hour: 24 }), []);
+  assert.deepEqual(readTimeGive({}), []);
+});
+
+test("a reading with no readable timestamp is kept, but as 'read just now' rather than a lie", () => {
+  const [row] = readTimeGive({ hour: 9, at: "nonsense" }) as { hour: number; at?: string }[];
+  assert.equal(row.hour, 9);
+  assert.equal(row.at, undefined);
+});
+
+test("a reading claiming to be from the future is trusted no further than our own clock", () => {
+  // The same clamp `readSharedPage`'s `fetchedAt` gets — a peer's clock running ahead must not be
+  // able to make a reading look newer than anything we could have taken ourselves.
+  const future = new Date(Date.now() + 60_000).toISOString();
+  const [row] = readTimeGive({ hour: 9, at: future }) as { hour: number; at?: string }[];
+  assert.equal(row.at, undefined);
 });
 
 test("an item page a peer sent is rebuilt field by field", () => {

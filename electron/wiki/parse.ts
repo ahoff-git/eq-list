@@ -335,9 +335,10 @@ function nearestBlockText(a: HTMLElement, el: HTMLElement): string {
  * zone/faction links. Multi-step quests often name a single required item with no
  * quantity at all ("loot a Gnoll's Eye", or a checklist bullet "**Get** Koalindl
  * Fish"), so a link with no article (or only "a"/"an"/"the"/"some") between it and a
- * preceding "loot" or "get" also counts, as qty 1 — tight enough that "looted from a
- * krag elder" (source mob, not the item) doesn't match, since "from" sits between the
- * verb and the link. A third, *backward*-looking cue catches a page that only ever
+ * preceding "loot", "get" or "buy" also counts, as qty 1 — tight enough that "looted
+ * from a krag elder" (source mob, not the item) doesn't match, since "from" sits
+ * between the verb and the link. A third, *backward*-looking cue catches a page that
+ * only ever
  * names the item in its own drop/purchase-source sentence — the mirror image, link
  * then verb:
  *  - passive "is/are/may be/can be/will be drop…" ("The Shining Metallic Robes is
@@ -371,7 +372,9 @@ function parseWalkthroughTurnIns(section: Section | undefined): WikiComponent[] 
         seen.set(name, { name, qty: parseInt(qtyM[1], 10), wikiPath: linkPath(a) });
         continue;
       }
-      const verbM = text.match(new RegExp(`\\b(?:loot|get)\\w*\\s+(?:(?:a|an|the|some)\\s+)?${escapeRe(display)}`, "i"));
+      const verbM = text.match(
+        new RegExp(`\\b(?:loot|get|buy|bought)\\w*\\s+(?:(?:a|an|the|some)\\s+)?${escapeRe(display)}`, "i"),
+      );
       if (verbM) {
         seen.set(name, { name, qty: 1, wikiPath: linkPath(a) });
         continue;
@@ -620,9 +623,12 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
 
   if (content.querySelector("table.questTopTable")) {
     // Some quests split the walkthrough into more than one heading ("TLDR; Walkthrough" plus a
-    // "Full Walkthrough" with the actual turn-in prose) — `find` would silently read only the first
-    // and miss every item named in the rest, so every matching section is merged, in page order.
-    const walkthroughSections = sections.filter((s) => /walkthrough/i.test(s.id) || /walkthrough/i.test(s.heading));
+    // "Full Walkthrough" with the actual turn-in prose, or a "Checklist" alongside the "Walkthrough"
+    // proper) — `find` would silently read only the first and miss every item named in the rest, so
+    // every matching section is merged, in page order.
+    const walkthroughSections = sections.filter(
+      (s) => /walkthrough|checklist/i.test(s.id) || /walkthrough|checklist/i.test(s.heading),
+    );
     const walkthrough = walkthroughSections.length
       ? { id: "Walkthrough", heading: "Walkthrough", empty: false, els: walkthroughSections.flatMap((s) => s.els) }
       : undefined;

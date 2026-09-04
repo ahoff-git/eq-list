@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { detectFloors, floorAt, mapZRange, type EqMap, type MapFloor, type ZBand } from "@/shared/map/eqmap";
+import { detectFloors, floorAt, followHeightWindow, mapZRange, type EqMap, type MapFloor, type ZBand } from "@/shared/map/eqmap";
 import type { HeightPick } from "@/app/components/MapFilters";
 import type { LocEvent } from "@/shared/types";
 
@@ -90,14 +90,17 @@ export function useFloors(vector: EqMap | null, loc: LocEvent | null, zoneName: 
 
   // Re-centres the hand-set window on your own height as you move, in place of dragging it
   // yourself. Only offered where the window itself is (no labelled floors, ADR 0040 leaves those
-  // to the mapmaker) — this never invents a floor, it just keeps the same manual span following you.
-  // Keyed on `loc.z` alone, not `loc`: a fresh `/loc` at the same height is not a reason to write a
-  // new window, and the object arrives with a new identity on every line parsed.
+  // to the mapmaker) — this never invents a floor, it just keeps the same manual span following you,
+  // widened by `followHeightWindow` when the ground nearby needs more room than the guess allows
+  // (a slope's far edge, say). Keyed on `loc.x`/`loc.y`/`loc.z` rather than `loc`: a fresh `/loc` at
+  // the same position is not a reason to write a new window, and the object arrives with a new
+  // identity on every line parsed.
   useEffect(() => {
-    if (!heightFollow || loc == null || !zoneName || floors.length > 1) return;
-    setHeightPick({ zone: zoneName, lo: loc.z - heightFollowRange, hi: loc.z + heightFollowRange });
+    if (!heightFollow || loc == null || !zoneName || floors.length > 1 || !vector) return;
+    const { minZ, maxZ } = followHeightWindow(vector, loc, heightFollowRange);
+    setHeightPick({ zone: zoneName, lo: minZ, hi: maxZ });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above the effect
-  }, [heightFollow, loc?.z, heightFollowRange, zoneName, floors.length]);
+  }, [heightFollow, loc?.x, loc?.y, loc?.z, heightFollowRange, zoneName, floors.length, vector]);
 
   const bands = useMemo<ZBand[] | undefined>(() => {
     if (floors.length > 1) {

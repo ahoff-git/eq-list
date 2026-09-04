@@ -113,6 +113,19 @@ travels peer-to-peer, on request, over that peer's own connection.
     make a fetch **not** happen — it removes nothing, contradicts no page we hold, and never
     over-writes a first-hand verdict — so the worst a lying peer achieves is that we fail to discover
     something, which is where every install was before it existed.
+
+    `mirror`'s second kind, `gameTime`, is a far simpler cousin: the [game clock](../decisions/0186-the-game-clock-runs-forward-from-the-last-time-reading.md)'s
+    last `/time` reading, `{hour, at}`, always exactly one row and never a delta — none of the
+    shard/roster/crawl machinery above applies to it. It shares the family's two defining traits (on
+    by default; applied straight in, never trayed) but needed one carve-out: it is fetched
+    *automatically*, the one exception to "only `observation` is asked for without a person clicking"
+    ([ADR 0189](../decisions/0189-the-clock-reading-is-shared-like-a-mirrored-page.md)) — `items`
+    itself never goes through that path at all, since its own shard walk supplies it. The newest
+    reading always wins, clamped on arrival to no later than the receiver's own clock, exactly as a
+    page's `fetchedAt` is. What is **not** shared is the clock's own learned pace: there is no
+    mechanism here (or anywhere else in this table) for blending several installs' independent
+    estimates of one number, so each install keeps deriving its own pace from whichever readings —
+    its own or a peer's — turn out to be the newest it has seen.
 - **The hub** (`electron/peer-share.ts`) — in main, because main is the only participant always
   running: a hub that answered only while a window was open would drop every ask the moment you
   changed tab. It measures the catalogue on a slow tick (a digest moving *is* the change, so no
@@ -183,7 +196,8 @@ travels peer-to-peer, on request, over that peer's own connection.
   **Your connection** (connect, the real status light, who you appear as, Retry connection, and the
   bootstrap URL behind a `<details>`), **What you share** (live location first — the one thing that
   is broadcast rather than handed over, and the only share that needs the game running — then a
-  toggle per kind, all off by default except *Item pages* — see the `mirror` family), **Who's here** (what each peer offers, and their zone as a
+  toggle per kind, all off by default except *Item pages* and *Time of day* — see the `mirror`
+  family), **Who's here** (what each peer offers, and their zone as a
   button that opens the map there), **What's arrived**, and the **scoreboard comparison**.
 - **Saying when you are the old one**
   ([ADR 0172](../decisions/0172-a-room-says-when-you-are-the-old-one.md)). `SHARE_PROTOCOL` is a

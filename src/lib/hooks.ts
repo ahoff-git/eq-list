@@ -18,6 +18,7 @@ import type {
   KillRecord,
   SpawnView,
   BuffView,
+  GameClockView,
   AppInfo,
   ItemSource,
   ItemCard,
@@ -45,6 +46,7 @@ import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { knownItems, type KnownItem } from "@/shared/known-items";
 import type { ItemRow } from "@/shared/item-search";
 import { clockSkew } from "@/shared/spawn-timers";
+import { advanceGameMinutes, DEFAULT_RATE } from "@/shared/game-clock";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
@@ -273,6 +275,7 @@ const NO_MOBS: MobKnowledge[] = [];
  */
 const NO_SPAWNS: SpawnView = { now: "", running: [], known: [], dismissed: [] };
 const NO_BUFFS: BuffView = { now: "", active: [], lapsed: [], known: [], lexicon: false };
+const NO_GAME_CLOCK: GameClockView = { minutes: null, daytime: null, now: "", rate: DEFAULT_RATE, alarms: [] };
 const NO_SOURCES: Record<string, ItemSource[]> = {};
 const NO_FACTS: Record<string, SpellFacts> = {};
 const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
@@ -764,6 +767,33 @@ export function useSpawns(): { view: SpawnView; now: number } {
   // every render would pin `now` to the moment of the fetch and the clock would stop dead.
   const skew = useMemo(() => clockSkew(view.now, Date.now()), [view]);
   return { view, now: Date.now() + skew };
+}
+
+/**
+ * The running Norrath clock and its alarms.
+ *
+ * `view.minutes` is where the clock stood at the last fetch; `minutes` here is that, ticked forward
+ * by however long it's been since (`advanceGameMinutes`) — the same "fetch on change, tick locally"
+ * split `useSpawns` uses for its countdowns, so an open tab doesn't ask main for the time every
+ * second just to move a clock face. `null` until a `/time` line has been read this run.
+ */
+export function useGameClock(): { view: GameClockView; minutes: number | null } {
+  const view = useFollowedRead<GameClockView>(
+    (a) => a.gameClock.view(),
+    (a, reload) => a.gameClock.onChanged(reload),
+    NO_GAME_CLOCK,
+    [],
+  );
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  // Not memoized: recomputed on every render, including the ones the tick above drives, so the
+  // clock actually moves. Memoizing on `view` would pin it to the moment of the last fetch, the same
+  // bug `useSpawns` warns about for its countdowns.
+  const minutes = view.minutes === null ? null : advanceGameMinutes(view.minutes, Date.now() - Date.parse(view.now), view.rate);
+  return { view, minutes };
 }
 
 /**

@@ -152,6 +152,14 @@ const api: EqlApi = {
     repeat: (key, on) => ipcRenderer.invoke(CH.spawnsRepeat, key, on),
     onChanged: (cb) => on(CH.spawnsChanged, cb),
   },
+  gameClock: {
+    view: () => ipcRenderer.invoke(CH.gameClockView),
+    add: (minute, message) => ipcRenderer.invoke(CH.gameClockAdd, minute, message),
+    update: (id, minute, message) => ipcRenderer.invoke(CH.gameClockUpdate, id, minute, message),
+    remove: (id) => ipcRenderer.invoke(CH.gameClockRemove, id),
+    toggle: (id, enabled) => ipcRenderer.invoke(CH.gameClockToggle, id, enabled),
+    onChanged: (cb) => on(CH.gameClockChanged, cb),
+  },
   buffs: {
     view: () => ipcRenderer.invoke(CH.buffsView),
     track: (key, on) => ipcRenderer.invoke(CH.buffsTrack, key, on),

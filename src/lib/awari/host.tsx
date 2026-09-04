@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { connectToRoom, randomPeerId, ROOM_ID } from "@/lib/awari/net";
 import { useSettings, useCurrentZone, usePlayerLoc, useWatcherStatus } from "@/lib/hooks";
+import { showToast } from "@/lib/toast";
+import { shortId } from "@/lib/usePeerShare";
 import { createLogger } from "@/shared/logging";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { AWARI_MSG } from "@/shared/types";
@@ -39,6 +41,14 @@ const RECONNECT_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
 function reconnectWait(failures: number): number {
   return spread(RECONNECT_DELAYS_MS[Math.min(failures, RECONNECT_DELAYS_MS.length - 1)]);
 }
+
+/**
+ * How long a "peer joined" toast waits before it fires, so a `hello` in flight has a chance to land
+ * first — the same race `peer-share.ts`'s `NOTICE_DEBOUNCE_MS` is written against: the data channel
+ * racing the join event means no name could possibly be here yet at the instant `onPeerJoined` fires.
+ * Long enough for that to usually resolve, short enough that the toast still reads as "now".
+ */
+const JOIN_TOAST_DELAY_MS = 2_000;
 
 /**
  * The app's single awari connection, owned by the always-alive main window — route
@@ -180,6 +190,12 @@ export default function AwariHost() {
     const roster = rosterRef.current;
     const greeted = greetedRef.current;
     const pending = pendingRef.current;
+    /** Peers whose "joined" toast is waiting out `JOIN_TOAST_DELAY_MS`, so a departure can cancel it. */
+    const joinToasts = new Map<string, ReturnType<typeof setTimeout>>();
+    const cancelJoinToasts = () => {
+      for (const timer of joinToasts.values()) clearTimeout(timer);
+      joinToasts.clear();
+    };
 
     /** Re-run this effect, which tears the old session down and joins again from a fresh peer id. */
     const rejoinNow = () => {
@@ -264,6 +280,13 @@ export default function AwariHost() {
         a.awari.reportStatus({ connected: true, peerId: myPeerId });
         // Presence: awari replays every already-active peer to a fresh handler, so
         // this seeds the roster as well as tracking later joins/leaves.
+        //
+        // That replay is what `seeded` guards against: it runs synchronously, inside this very call
+        // to `onPeerJoined`, so everybody already in the room is announced before the line below has
+        // a chance to flip it true. Only a peer who arrives afterwards — a real, later join — sees
+        // `seeded` already on. Without this, every relaunch would toast once per person already
+        // connected, which is exactly the spam a "peer joined" toast must not become.
+        let seeded = false;
         s.onPeerJoined((peer) => {
           if (peer.peerId === myPeerId) return;
           // A room that reached somebody is a working room: the next outage starts its backoff
@@ -276,12 +299,31 @@ export default function AwariHost() {
           log.debug("peer joined:", peer.peerId, "- room now", roster.size);
           reportRoster();
           sayHello(); // a new arrival doesn't know us yet
+          if (seeded) {
+            const peerId = peer.peerId;
+            const timer = setTimeout(() => {
+              joinToasts.delete(peerId);
+              showToast({
+                title: `${roster.get(peerId)?.name?.trim() || shortId(peerId)} joined`,
+                tone: "info",
+                key: `peer-joined:${peerId}`,
+              });
+            }, JOIN_TOAST_DELAY_MS);
+            joinToasts.set(peerId, timer);
+          }
         });
+        seeded = true;
         s.onPeerLeft((peer) => {
           roster.delete(peer.peerId);
           log.debug("peer left:", peer.peerId, "- room now", roster.size);
           greeted.delete(peer.peerId); // a returning peer gets greeted again
           reportRoster();
+          // Gone before their toast fired — they weren't here long enough to have "joined" anything.
+          const timer = joinToasts.get(peer.peerId);
+          if (timer) {
+            clearTimeout(timer);
+            joinToasts.delete(peer.peerId);
+          }
         });
         // awari has exhausted its own leader recovery: every contact it could resolve failed, so
         // this peer cannot reach the room again without re-joining. **Nothing used to listen for
@@ -301,6 +343,7 @@ export default function AwariHost() {
           sessionRef.current = null;
           roster.clear();
           greeted.clear();
+          cancelJoinToasts(); // nobody the outage takes with it gets to have "joined"
           a.awari.reportStatus({ connected: false, peerId: null });
           reportRoster();
           // Hold the watch's clock: an outage must not bank time towards a look there is no
@@ -361,6 +404,7 @@ export default function AwariHost() {
       cancelled = true;
       if (look) clearTimeout(look);
       if (retry) clearTimeout(retry);
+      cancelJoinToasts();
       sessionRef.current = null;
       roster.clear();
       greeted.clear();

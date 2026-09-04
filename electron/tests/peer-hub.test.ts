@@ -42,6 +42,8 @@ interface Rig {
   filed: AwariPayload[];
   /** Item pages accepted straight into the cache (the one family that applies itself). */
   accepted: { pages: unknown[]; shard?: number }[];
+  /** Game-time readings accepted straight into the clock — `gameTime`'s own version of `accepted`. */
+  acceptedGameTime: unknown[];
   notices: { peerId: string; name: string; kinds: ShareKind[] }[];
   /** "The room speaks a protocol we haven't got" — raised at most once a session. */
   outdated: PeerVersionNotice[];
@@ -60,7 +62,7 @@ interface Rig {
   last: (kind: string, peerId?: string) => AwariPayload | undefined;
 }
 
-const ALL_KINDS: ShareKind[] = ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "items"];
+const ALL_KINDS: ShareKind[] = ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "items", "gameTime"];
 
 /**
  * The roster half of `ItemShardSource`, for the tests that are about something else.
@@ -89,11 +91,12 @@ function rig(
 ): Rig {
   const share: ShareSettings = over.share ?? Object.fromEntries(ALL_KINDS.map((k) => [k, true]));
   const settings = { connectPeers: over.connectPeers ?? true, share } as unknown as Settings;
-  const rows: Record<string, unknown[]> = { watches: [], styles: [], lists: [], pins: [], mobs: [], kills: [], respawns: [], timers: [], buffs: [], scores: [], items: [], ...over.rows };
+  const rows: Record<string, unknown[]> = { watches: [], styles: [], lists: [], pins: [], mobs: [], kills: [], respawns: [], timers: [], buffs: [], scores: [], items: [], gameTime: [], ...over.rows };
 
   const sent: Rig["sent"] = [];
   const filed: AwariPayload[] = [];
   const accepted: Rig["accepted"] = [];
+  const acceptedGameTime: Rig["acceptedGameTime"] = [];
   const notices: Rig["notices"] = [];
   const outdated: Rig["outdated"] = [];
   let changes = 0;
@@ -118,6 +121,7 @@ function rig(
     offered: (n) => void notices.push(n),
     outdated: (n) => void outdated.push(n),
     acceptItems: (pages, shard) => (accepted.push({ pages, shard }), pages.length),
+    acceptGameTime: (reading) => void acceptedGameTime.push(reading),
     sources,
     items: over.items,
     now: () => clock,
@@ -135,6 +139,7 @@ function rig(
     sent,
     filed,
     accepted,
+    acceptedGameTime,
     notices,
     outdated,
     get changes() {
@@ -342,6 +347,19 @@ test("an item page applies itself; nothing authored ever does", () => {
   assert.equal(r.hub.received("bran", "watches").length, 1, "it waits in the tray");
 });
 
+test("a game-time reading applies itself too, the same as an item page", () => {
+  const r = rig();
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "gameTime",
+    rev: 1,
+    rows: [{ hour: 18, at: "2026-09-03T18:00:00.000Z" }],
+  } as unknown as AwariPayload);
+  assert.equal(r.acceptedGameTime.length, 1);
+  assert.deepEqual(r.acceptedGameTime[0], { hour: 18, at: "2026-09-03T18:00:00.000Z" });
+  assert.equal(r.hub.received("bran", "gameTime").length, 0, "never trayed — it's applied, not held");
+});
+
 test("an unchanged answer leaves the tray exactly as it was", () => {
   const r = rig();
   const give = { kind: AWARI_MSG.give, what: "lists", rev: 2, from: "Bran", rows: [{ id: "a", name: "x" }] };
@@ -421,6 +439,14 @@ test("an offer fetches observations by itself and leaves everything authored alo
   r.hub.handle("bran", offerOf({ mobs: { n: 5, rev: 2 }, watches: { n: 3, rev: 1 }, timers: { n: 2, rev: 1 } }));
   const asks = r.to("bran").filter((p) => p.kind === AWARI_MSG.ask).map((p) => p.what);
   assert.deepEqual(asks, ["mobs"], "a watch rule fetched behind its reader's back is a tray nobody asked to fill");
+});
+
+test("gameTime is fetched automatically too, mirror family though it is (ADR 0189)", () => {
+  const r = rig();
+  r.hub.roster([peer("bran", "Bran")]);
+  r.hub.handle("bran", offerOf({ watches: { n: 3, rev: 1 }, gameTime: { n: 1, rev: 4 } }));
+  const asks = r.to("bran").filter((p) => p.kind === AWARI_MSG.ask).map((p) => p.what);
+  assert.deepEqual(asks, ["gameTime"], "the one mirror kind that isn't fetched by its own shard walk");
 });
 
 test("a kind offered over an empty store is nothing to fetch", () => {

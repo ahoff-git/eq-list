@@ -70,6 +70,22 @@ import { isPlottable } from "./kill-confidence";
  */
 export type SharedItemPage = Omit<WikiPage, "fetchedAt"> & { fetchedAt?: string };
 
+/**
+ * A `/time` reading as it crosses between peers — the same fact, whoever's log it came from.
+ *
+ * `at` **travels with it**, the same reasoning `SharedItemPage.fetchedAt` carries: a reading is only
+ * worth anything next to the moment it was true, and a receiver stamping its own "now" on arrival
+ * would turn every reading into "just now" — a ten-minute-old anchor would look as fresh as one from
+ * this instant. Optional for the same reason `fetchedAt` is: absent, unreadable, or claiming a
+ * moment later than the receiver's own clock (`readStamp`) is treated as "just now" on the way in —
+ * the worst that fallback can do is make a stale reading look newer than it is, which a
+ * same-or-newer-only merge rule already treats as no stronger a claim than that.
+ */
+export interface SharedGameTime {
+  hour: number;
+  at?: string;
+}
+
 // ─── The catalogue ──────────────────────────────────────────────────────────
 
 export type ShareFamily = "authored" | "observation" | "live" | "mirror";
@@ -85,7 +101,8 @@ export type ShareKind =
   | "timers"
   | "buffs"
   | "scores"
-  | "items";
+  | "items"
+  | "gameTime";
 
 /**
  * What the sender knows that a projection needs and a row does not carry.
@@ -181,6 +198,8 @@ const MAX_ROWS: Record<ShareKind, number> = {
   // One shard is about eleven pages (`item-shards.ts`); the cap is generous headroom for an uneven
   // hash while still bounding what a single hostile `give` can cost us.
   items: 64,
+  // There is only ever one clock — a second row would just be a lie somebody sent.
+  gameTime: 1,
 };
 
 /**
@@ -425,6 +444,20 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     // **shard** and never as "the whole kind" (ADR 0160), so it is the one kind a delta never runs
     // over — a shard is already the small unit a delta would otherwise have to invent.
     rowKey: (row) => fieldKey(row, "title"),
+  },
+  {
+    key: "gameTime",
+    family: "mirror",
+    label: "Time of day",
+    blurb:
+      "The in-game clock's last known reading, so a room's own /time calls keep everyone's clock accurate without everyone having to type it themselves.",
+    noun: "reading",
+    // `mirror`'s other reason for defaulting on: this is a fact about the server, not about you
+    // (ADR 0161's argument, unchanged) — there is nothing here "off until asked" would protect.
+    defaultOn: true,
+    read: (rows) => readList(rows, MAX_ROWS.gameTime, readSharedGameTime),
+    // Always the same row — there is only one clock, so nothing needs a content-derived identity.
+    rowKey: () => "gameTime",
   },
 ];
 
@@ -1628,6 +1661,13 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
           .filter((row): row is { name: string; level: string } => !!row)
       : undefined,
   };
+}
+
+function readSharedGameTime(raw: unknown): SharedGameTime | null {
+  if (!isRecord(raw)) return null;
+  const hour = int(raw.hour);
+  if (hour === undefined || hour < 0 || hour > 23) return null;
+  return { hour, at: readStamp(raw.at) };
 }
 
 /**

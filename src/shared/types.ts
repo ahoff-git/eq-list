@@ -260,6 +260,16 @@ export interface PartyEvent extends LogEventBase {
   who?: string;
 }
 
+/**
+ * A parsed "Game Time: ..., ... - 6 PM" line — the log stating the hour of day in Norrath. Never a
+ * minute; the running clock a player sees is extrapolated from this (`game-clock.ts`).
+ */
+export interface GameTimeEvent extends LogEventBase {
+  kind: "gameTime";
+  /** 0-23, folded from the log's 12-hour reading ("6 PM" → 18). */
+  hour: number;
+}
+
 export type LogEvent =
   | LootEvent
   | ZoneEvent
@@ -270,7 +280,37 @@ export type LogEvent =
   | CoinEvent
   | LoginEvent
   | SightingEvent
-  | PartyEvent;
+  | PartyEvent
+  | GameTimeEvent;
+
+/** One "tell me at this time of day" alarm against the running Norrath clock. */
+export interface GameTimeAlarm {
+  id: string;
+  enabled: boolean;
+  /** Minutes since game-midnight (`game-clock.ts`'s `parseGameClockTime` / `formatGameClock`). */
+  minute: number;
+  /** What the banner says; a plain sentence built from the time when absent. */
+  message?: string;
+}
+
+/** Everything the game-clock widget and its alarm list show. */
+export interface GameClockView {
+  /** Minutes since game-midnight, extrapolated from the last `/time` reading — null until one arrives. */
+  minutes: number | null;
+  /** Whether it's daylight right now, by the classic 6 AM–6 PM split. Null alongside `minutes`. */
+  daytime: boolean | null;
+  /** Main's clock at the moment of this view, so a renderer can keep ticking `minutes` forward itself
+   *  (`advanceGameMinutes`) between fetches, the same way `SpawnView.now` lets a countdown move. */
+  now: string;
+  /**
+   * Game-minutes per real millisecond, as currently learned (`learnRate`) — starts at the documented
+   * 20:1 pace and drifts toward whatever this server actually runs. Carried here so a renderer
+   * ticking `minutes` forward locally uses the same pace the tracker does, rather than a hardcoded
+   * default that would visibly disagree with it as the learned rate moves.
+   */
+  rate: number;
+  alarms: GameTimeAlarm[];
+}
 
 // ─── Combat events (see combat-parser.ts) ───────────────────────────────────
 
@@ -2690,6 +2730,18 @@ export interface EqlApi {
     /** The player's last logged location (from `/loc`), or null if none yet. */
     current(): Promise<LocEvent | null>;
     onChanged(cb: (loc: LocEvent | null) => void): Unsubscribe;
+  };
+  /** The running Norrath clock, extrapolated from the last `/time` reading, and its alarms. */
+  gameClock: {
+    view(): Promise<GameClockView>;
+    /** Set an alarm for this time of day (minutes since game-midnight). */
+    add(minute: number, message?: string): Promise<GameClockView>;
+    /** Change what an alarm fires at and/or what it says — same alarm, same id. */
+    update(id: string, minute: number, message?: string): Promise<GameClockView>;
+    remove(id: string): Promise<GameClockView>;
+    toggle(id: string, enabled: boolean): Promise<GameClockView>;
+    /** Fires when a `/time` reading arrives or an alarm changes, so an open tab needn't poll. */
+    onChanged(cb: () => void): Unsubscribe;
   };
   /** The damage meter: per-combatant damage/DPS for the current fight and session. */
   combat: {

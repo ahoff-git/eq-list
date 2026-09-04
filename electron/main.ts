@@ -48,6 +48,7 @@ import { characterFromLogFile } from "../src/shared/log-parser";
 import { createAlertRouter } from "./alert-router";
 import { createSpawnTracker } from "./spawn-tracker";
 import { createBuffTracker } from "./buff-tracker";
+import { createGameClockTracker } from "./game-clock-tracker";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -305,6 +306,14 @@ if (!app.requestSingleInstanceLock()) {
     inFight: () => combat.inFight(),
   });
   buffs.onChanged(() => broadcast(CH.buffsChanged, undefined));
+  // The running Norrath clock: a `/time` line sets it, the game's own fixed pace carries it forward
+  // between readings (`game-clock.ts`), and its alarms pop down the same `raiseAlert` path too.
+  const gameClock = createGameClockTracker({
+    userDataDir: userData,
+    getSettings: () => store.getSettings().castAlerts,
+    raise: raiseAlert,
+  });
+  gameClock.onChanged(() => broadcast(CH.gameClockChanged, undefined));
 
   registerIpc({
     store,
@@ -324,6 +333,7 @@ if (!app.requestSingleInstanceLock()) {
     contributorId,
     spawns,
     buffs,
+    gameClock,
     lookup,
     userData,
     logFile,
@@ -499,6 +509,9 @@ if (!app.requestSingleInstanceLock()) {
     combat.recordCoin(event);
     if (killLog.noteCoin(event)) killsChanged();
   });
+  // A `/time` response — live, or recovered from a catch-up tail the same way zone/loc are (ADR 0043:
+  // state, not news). Either way it's just the hour the log stated and the moment it said so.
+  watcher.onGameTime((event) => gameClock.noteReading(event.hour, Date.parse(event.at)));
   // Who's grouped with you decides whose fights the meter counts (ADR 0067). Nothing else
   // needs it, so it goes straight to the tracker that does.
   watcher.onParty((event) => combat.recordParty(event));
@@ -778,6 +791,8 @@ if (!app.requestSingleInstanceLock()) {
     spawns.flush();
     spawns.dispose();
     buffs.flush();
+    gameClock.flush();
+    gameClock.dispose();
     watcher.stop(); // records the read position, so the next run resumes exactly here
     cursor.flush();
   });

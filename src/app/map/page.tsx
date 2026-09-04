@@ -34,7 +34,7 @@ import { findZone, mapZoneName, onLayer, sortZones } from "@/shared/map/zones";
 import { samePlace } from "@/shared/zones/place";
 import { zoneDifficultyLabel } from "@/shared/names";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
-import { HUNT_PIN, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
+import { HUNT_PIN, PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import { huntPins, unplacedHuntMobs } from "@/shared/map/hunt-pins";
 import MapFilters from "../components/MapFilters";
 import MapTitlebar from "../components/MapTitlebar";
@@ -550,6 +550,24 @@ export default function MapWindow() {
     setPins((prev) => [...prev, pin]);
     setSelected({ id: pin.id, x: clientX, y: clientY }); // open the editor to title/note it
   }
+  /**
+   * The toolbar's "paste a location" field: the same drop `placePin` does, but at a typed/pasted
+   * coordinate instead of a map click, so there's no click position to open the editor at — it
+   * opens near the toolbar instead, which is where the field that raised it sits.
+   */
+  function placePinAt(eq: { y: number; x: number }) {
+    if (!zoneKey) return;
+    const pin: MapPin = {
+      id: crypto.randomUUID(),
+      kind: heldPin ?? PIN_TYPES[0].key,
+      zone: zoneKey,
+      layer: viewLayer,
+      y: eq.y,
+      x: eq.x,
+    };
+    setPins((prev) => [...prev, pin]);
+    setSelected({ id: pin.id, x: 12, y: 40 });
+  }
   function updatePin(id: string, patch: Partial<MapPin>) {
     setPins((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }
@@ -600,6 +618,7 @@ export default function MapWindow() {
       <MapToolbar
         tool={tool}
         onTool={setTool}
+        onPlaceAt={placePinAt}
         onClearTrail={trail.clear}
         trailLength={trail.points.length}
         killCount={kills.length}

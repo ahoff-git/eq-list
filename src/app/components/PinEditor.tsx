@@ -1,8 +1,10 @@
 "use client";
-import { pinType, type MapPin } from "@/shared/map/pins";
+import { PIN_TYPES, pinType, type MapPin } from "@/shared/map/pins";
+import LocField from "./LocField";
 
 /**
- * The little editor that opens over a pin you clicked: what to call it, what to remember about it.
+ * The little editor that opens over a pin you clicked: what kind it is, where it sits, what to
+ * call it, what to remember about it.
  *
  * Positioned at the click rather than docked, because it's about **that** pin and a panel elsewhere on
  * screen would make you look away from it. Title and note are separate because they're shown
@@ -30,6 +32,23 @@ export default function PinEditor({
         <span style={{ color: kind.color }}>{kind.glyph}</span>
         {kind.label}
       </div>
+      <div className="row pin-menu-kinds">
+        {PIN_TYPES.map((t) => (
+          <button
+            key={t.key}
+            className={`pin-btn ${pin.kind === t.key ? "held" : ""}`}
+            style={{ color: t.color }}
+            title={t.label}
+            onClick={() => onChange({ kind: t.key })}
+          >
+            {t.glyph}
+          </button>
+        ))}
+      </div>
+      <label className="row pin-menu-loc" title="Type or paste a location (the same y, x a /loc reports) to move the pin there — or drag it with the map's move tool.">
+        <span className="muted small">at</span>
+        <LocField value={{ y: pin.y, x: pin.x }} onCommit={(loc) => onChange(loc)} />
+      </label>
       <input
         className="field"
         placeholder="Title (shown on the map)"
