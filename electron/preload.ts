@@ -41,6 +41,7 @@ const api: EqlApi = {
     refreshPage: (title) => ipcRenderer.invoke(CH.wikiRefreshPage, title),
     searchZones: (term) => ipcRenderer.invoke(CH.wikiSearchZones, term),
     questsByZone: (zone) => ipcRenderer.invoke(CH.wikiQuestsByZone, zone),
+    searchFactions: (term) => ipcRenderer.invoke(CH.wikiSearchFactions, term),
     outOfEraZones: () => ipcRenderer.invoke(CH.wikiOutOfEraZones),
     openInBrowser: (target) => ipcRenderer.invoke(CH.wikiOpen, target),
     refresh: () => ipcRenderer.invoke(CH.wikiRefresh),
@@ -158,6 +159,8 @@ const api: EqlApi = {
     update: (id, minute, message) => ipcRenderer.invoke(CH.gameClockUpdate, id, minute, message),
     remove: (id) => ipcRenderer.invoke(CH.gameClockRemove, id),
     toggle: (id, enabled) => ipcRenderer.invoke(CH.gameClockToggle, id, enabled),
+    setPinned: (on) => ipcRenderer.invoke(CH.gameClockSetPinned, on),
+    setPinPosition: (fx, fy) => ipcRenderer.invoke(CH.gameClockSetPinPosition, fx, fy),
     onChanged: (cb) => on(CH.gameClockChanged, cb),
   },
   buffs: {

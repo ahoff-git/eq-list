@@ -223,6 +223,10 @@ finished, so a number is claimed before a second author can reach for it.
 - [0187: The clock anchors on the reported hour's midpoint, not its start](./0187-the-clock-anchors-on-the-hours-midpoint.md)
 - [0188: The clock's pace calibrates itself, live, from consecutive readings](./0188-the-clocks-pace-calibrates-itself.md)
 - [0189: The clock reading is shared like a mirrored page; the learned pace is never sent at all](./0189-the-clock-reading-is-shared-like-a-mirrored-page.md)
+- [0190: The pinned clock is dragged into position directly, not placed from Settings](./0190-the-pinned-clock-is-dragged-not-placed-from-settings.md)
+- [0191: The debug comparison was reading its two sides by different conventions](./0191-the-debug-comparison-was-comparing-mismatched-conventions.md)
+- [0192: Factions ride their own wiki pages, and tracking a raise-mob reuses the shopping list](./0192-factions-ride-their-own-wiki-pages.md)
+- [0193: A faction alert rides the existing line watch, ahead of a verified log line](./0193-a-faction-alert-rides-the-existing-line-watch.md)
 
 ## Open Questions
 

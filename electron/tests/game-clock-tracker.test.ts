@@ -231,6 +231,43 @@ test("a peer's reading still learns the pace, exactly as our own would", () => {
   assert.ok(h.tracker.view().rate > DEFAULT_RATE);
 });
 
+test("the clock starts unpinned, at a sensible default spot", () => {
+  const h = harness();
+  const view = h.tracker.view();
+  assert.equal(view.pinned, false);
+  assert.ok(view.pinAt.fx > 0 && view.pinAt.fx < 1);
+  assert.ok(view.pinAt.fy > 0 && view.pinAt.fy < 1);
+});
+
+test("setPinned toggles the on-screen clock", () => {
+  const h = harness();
+  h.tracker.setPinned(true);
+  assert.equal(h.tracker.view().pinned, true);
+  h.tracker.setPinned(false);
+  assert.equal(h.tracker.view().pinned, false);
+});
+
+test("setPinPosition moves it, and clamps to the display", () => {
+  const h = harness();
+  h.tracker.setPinPosition(0.25, 0.75);
+  assert.deepEqual(h.tracker.view().pinAt, { fx: 0.25, fy: 0.75 });
+  h.tracker.setPinPosition(-1, 2);
+  assert.deepEqual(h.tracker.view().pinAt, { fx: 0, fy: 1 });
+});
+
+test("pinned and its position survive a restart, the same as the anchor and the alarms do", () => {
+  const dir = tempDir();
+  const first = harness({ dir });
+  first.tracker.setPinned(true);
+  first.tracker.setPinPosition(0.1, 0.9);
+  first.tracker.flush();
+
+  const second = harness({ dir });
+  const view = second.tracker.view();
+  assert.equal(view.pinned, true);
+  assert.deepEqual(view.pinAt, { fx: 0.1, fy: 0.9 });
+});
+
 test("remove takes the alarm off the board", () => {
   const h = harness();
   h.tracker.noteReading(18, T0);

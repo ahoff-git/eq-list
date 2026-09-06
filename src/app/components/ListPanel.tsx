@@ -108,7 +108,12 @@ export default function ListPanel() {
                   <span className="group-label">{g.label}</span>
                 )}
                 <span className="spacer" />
-                {g.kind && (
+                {/* Gated on there being anything *countable* in the group, not just a `kind` — a
+                    faction group's entries are all mobs (`countableEntries` excludes every one of
+                    them), and "how many times you'll run this" isn't a question a hunt list answers;
+                    a bare `g.kind` check would show the stepper for it anyway, the same way it would
+                    for any future kind whose entries are never countable. */}
+                {g.kind && countable.length > 0 && (
                   <span className="group-runs" onClick={(ev) => ev.stopPropagation()} title="How many times you'll run this">
                     <button className="btn ghost sm" onClick={() => setRuns(g, -1)} disabled={g.runs <= 1}>
                       −

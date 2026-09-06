@@ -93,6 +93,12 @@ export function describeAdd(summary: AddSummary, what?: string): AddMessage {
   }
   const title = `+ ${what ?? first.name}`;
   if (summary.items.length === 1) return { title, detail: itemDetail(first) };
+  // A batch of mobs (e.g. "+ Track all N raise mobs" on a faction page) is hunt targets, not stock
+  // to collect — the same distinction the single-item case already draws in `itemDetail`, extended
+  // to a whole batch so it doesn't fall through to "N to collect in all" once there's more than one.
+  if (summary.items.every((i) => i.kind === "mob")) {
+    return { title, detail: `${count(summary.items.length, "mob")} added — see the Hunt tab` };
+  }
   return {
     title,
     detail: `${count(summary.items.length, "item")} · ${summary.needed} to collect in all`,

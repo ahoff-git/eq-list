@@ -271,13 +271,18 @@ Two invocations do more than scale numbers, and both are now accounted for
 ## Non-responsibilities
 - Does not decide what counts as "wanted" — that's matching in the store.
 - Parses loot, coin, zone, xp, kill, level, loc and combat lines today (combat including casts,
-  spell outcomes, deaths, buff fades and mode changes). Still out of scope: faction hits,
-  skill-ups, and buff/debuff *landings* — which stay out deliberately, even though the grammar for
-  them now exists. A landing is per-spell prose (`Bloop is surrounded by a brief lupine aura.`), so
+  spell outcomes, deaths, buff fades and mode changes). Still out of scope: **structured** faction
+  hits, skill-ups, and buff/debuff *landings* — which stay out deliberately, even though the grammar
+  for them now exists. A landing is per-spell prose (`Bloop is surrounded by a brief lupine aura.`), so
   it cannot be matched by a pattern; it is matched by *lookup*, against the game's own string file
   (`src/shared/spell-strings.ts`). The buff board reads those lines straight off `onLine` for that
   reason ([ADR 0140](../decisions/0140-a-buff-is-watched-until-it-lapses.md)). A `landing` event kind
-  is the obvious next step if a second consumer ever wants one.
+  is the obvious next step if a second consumer ever wants one. A faction hit is narrower: **alerting**
+  on one needs no parser at all — a raw-line watch already covers it
+  ([ADR 0193](../decisions/0193-a-faction-alert-rides-the-existing-line-watch.md)) — but turning one
+  into structured `{faction, delta}` data (for pooled, observed-vs-wiki tracking, the way
+  `mob-knowledge.ts` tracks drop rates) still needs a real captured line first, the same discipline
+  every parser above was held to.
 - Does not decide **which corpse** a coin line's money came from — the line names none, so that
   guess lives in `electron/kill-log.ts` where the kills are
   ([ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)).

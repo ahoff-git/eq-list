@@ -329,6 +329,7 @@ function registerWikiIpc(context: IpcContext): void {
   ipcMain.handle(CH.wikiRefreshPage, (_e, title: string) => wiki.refreshPage(title));
   ipcMain.handle(CH.wikiSearchZones, (_e, term: string) => wiki.searchZones(term));
   ipcMain.handle(CH.wikiQuestsByZone, (_e, zone: string) => wiki.questsByZone(zone));
+  ipcMain.handle(CH.wikiSearchFactions, (_e, term: string) => wiki.searchFactions(term));
   // Which zones the server hasn't opened yet. A window can't work this out for itself and every
   // "where can I get this" answer needs it — see `item-era.ts`.
   ipcMain.handle(CH.wikiOutOfEraZones, () => wiki.outOfEraZones());
@@ -555,6 +556,14 @@ function registerStatsIpc(context: IpcContext): void {
   });
   ipcMain.handle(CH.gameClockToggle, (_e, id: string, enabled: boolean) => {
     gameClock.toggle(id, enabled);
+    return gameClock.view();
+  });
+  ipcMain.handle(CH.gameClockSetPinned, (_e, on: boolean) => {
+    gameClock.setPinned(on);
+    return gameClock.view();
+  });
+  ipcMain.handle(CH.gameClockSetPinPosition, (_e, fx: number, fy: number) => {
+    gameClock.setPinPosition(fx, fy);
     return gameClock.view();
   });
   // The buff board. Every edit hands the whole view back, like the spawn board's — these are small

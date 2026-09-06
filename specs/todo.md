@@ -141,6 +141,23 @@ everything else, so this list can stay short enough to read:
   contribution payload — the machinery from
   [ADR 0132](./decisions/0132-a-contribution-is-keyed-by-who-made-it.md) carries it unchanged.
 
+- **Faction standing changes are unread — and one real line unblocks the rest.** The alerting half
+  shipped ahead of it ([ADR 0193](./decisions/0193-a-faction-alert-rides-the-existing-line-watch.md)):
+  a faction page's "🔔 Alert me" button adds a raw-line watch (`spell: "faction standing"`) scoped to
+  that faction's name, which is a reasonable bet (it's EQ's near-universal system-message opener) but
+  — like ADR 0121's consider-level gap — not one built from a real captured line the way every parser
+  in `log-parser.ts` was. What's missing is **one real line, copied out of a live EQL log**, showing a
+  faction change as this client actually words it (kill a mob or turn in a quest that moves one).
+
+  With the line in hand: extend `log-parser.ts` with a `parseFactionChange` → `FactionEvent
+  {faction, delta?, direction}`, correct `buildFactionWatch`'s trigger word if it turns out wrong, and
+  build a pooled `FactionObservation` store mirroring `mob-knowledge.ts`/`contributions.ts` exactly
+  (own `sanitize`/merge, same five rules) so a tracked faction-mob's kill or a tracked quest's turn-in
+  credits an observed delta — real evidence of what raises/lowers a faction, alongside (and able to
+  contradict) whatever the wiki's own faction page says. No existing pipeline credits a `kind: "mob"`
+  shopping-list entry today (`store.applyLoot` explicitly excludes them), so this correlator is new
+  work, modeled on the kill-log → mob-knowledge derivation rather than on loot crediting.
+
 - **Nothing yet shows the pooled provenance it now carries.** `src/shared/pooling.ts` can say whose a
   figure mostly is, split a pooled drop rate back into your evidence and each contributor's, and name
   the drops where the two plainly disagree — and no panel reads it yet. The mob knowledge panel shows

@@ -59,13 +59,22 @@ shopping list.
   **backlinks ∩ `Category:Quests`**, unioned over the zone's **redirect aliases**
   (quests link a zone as `[[Befallen]]`, `[[Highpass]]`, `[[Highpass_Hold|…]]`, etc.).
   See [ADR 0007](../decisions/0007-quests-by-zone-via-backlinks.md).
+- **Factions are seeded, not just discovered** — unlike quests and zones (only ever found by being
+  named from a page already fetched), `Category:Factions` names the **complete** roster of 258
+  faction pages in a single `list=categorymembers` call, mirrored into `faction-index.json` exactly
+  like `zoneIndex` mirrors `Category:Zones`. `searchFactions(term)` fuzzy-matches it, with no
+  fallback to a wider search (the mirror already **is** the whole namespace) and no era flagging
+  (a faction isn't gated by an expansion the way a zone or an item's source is). Each faction's own
+  page (`Template:Factionpage`, `.eql-factionpage`) states, in two columns, the zones/quests/mobs
+  that raise and lower it — **direction only, never an amount**: the wiki names no point values here
+  at all. See [ADR 0192](../decisions/0192-factions-ride-their-own-wiki-pages.md).
 - `electron/wiki/parse.ts` — a **pure** black box: page HTML → normalized `WikiPage`
   (`kind`, `sources`, `components`, `rewards`). Encodes the real wiki DOM:
   - **Page kind** is decided by a signature container class so NPCs/zones/spells
     aren't mistaken for items: `.mobStatsBox`/`.eql-mobpage-stats` → `mob`,
     `table.questTopTable` → `quest`, `table.zoneTopTable` → `zone`,
-    `.eql-spellpage`/`.spellStatsBox` → `spell`, else `item`. (`recipe` is an item
-    page whose sources include a `recipe` kind.)
+    `.eql-spellpage`/`.spellStatsBox` → `spell`, `.eql-factionpage` → `faction`,
+    else `item`. (`recipe` is an item page whose sources include a `recipe` kind.)
   - Item pages: fixed `<h2 id="…">` sections; `span.esec` = empty section.
     `Drops_From` (zone `<p>` + `<ul>` of mobs), `Sold_by` (`table.eoTable3`),
     `Related_quests`/`Tradeskill_recipes` (`<ul>` of links), `Player_crafted`
@@ -93,7 +102,13 @@ shopping list.
       (Spawn Zone / Location) + Level/Race/Class/HP/Special, plus the mob portrait, then
       **faction impact** (the "Factions" / "Opposing Factions" lists — "None" is dropped).
     - **quests**: the `questTopTable` info rows (Minimum Level / Classes / Related
-      NPCs & Zones) — the giver/start-zone rows stay as sources, not card lines.
+      NPCs & Zones) — the giver/start-zone rows stay as sources, not card lines —
+      plus a best-effort "Faction note:" line when the Walkthrough's own prose
+      states a standing-tier aside ("obtainable at apprehensive faction"). Scanned
+      from `<p>` asides only, never `<dl>/<dd>` dialogue, and only when a tier word
+      sits within a few words of "faction" — both guards exist because "kindly",
+      "warmly" and "indifferent" are ordinary English and turn up constantly in NPC
+      speech. Most quests carry no such note; this is a snippet, never a parsed range.
   - Tables use `eoTable2/eoTable3`, never `.wikitable`.
 - **The cache, read as a corpus** — `cachedItems()` walks the page cache and returns every `item` /
   `recipe` page as a `CachedItem` (name, card, sources, era flag). It makes **no request**: no index
@@ -399,4 +414,5 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
 ## See also
 [architecture](../architecture/README.md) · [lucy-data](../lucy-data/README.md) ·
 [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md) ·
-[ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md)
+[ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md) ·
+[ADR 0192](../decisions/0192-factions-ride-their-own-wiki-pages.md)

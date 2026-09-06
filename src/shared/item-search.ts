@@ -96,7 +96,7 @@ export interface ValuedItem extends ItemRow {
 }
 
 /** What the user can narrow by, beyond the stat floors. Each is a list of values on the item. */
-export type FacetKey = "slot" | "class" | "race" | "flag" | "source" | "zone" | EffectKind;
+export type FacetKey = "slot" | "weapon" | "class" | "race" | "flag" | "source" | "zone" | EffectKind;
 
 export interface FacetMeta {
   key: FacetKey;
@@ -108,6 +108,7 @@ export interface FacetMeta {
 
 export const FACETS: readonly FacetMeta[] = [
   { key: "slot", label: "Slot", any: "any slot" },
+  { key: "weapon", label: "Weapon", any: "any weapon" },
   { key: "class", label: "Class", any: "any class" },
   { key: "race", label: "Race", any: "any race" },
   { key: "source", label: "Source", any: "any source" },
@@ -162,7 +163,19 @@ export interface ItemCriteria {
 /** No criteria at all: the whole catalogue. The shape a "Clear" button restores. */
 export const NO_CRITERIA: ItemCriteria = {
   text: "",
-  facets: { slot: [], class: [], race: [], source: [], zone: [], flag: [], worn: [], click: [], proc: [], focus: [] },
+  facets: {
+    slot: [],
+    weapon: [],
+    class: [],
+    race: [],
+    source: [],
+    zone: [],
+    flag: [],
+    worn: [],
+    click: [],
+    proc: [],
+    focus: [],
+  },
   mins: {},
   // **On by default.** The out-of-era items are the majority of the catalogue and none of them can be
   // got on this server, so a list that includes them is answering a question nobody asked. Untick it
@@ -350,11 +363,30 @@ export function itemCatalog(wiki: readonly CachedItem[], lucy: readonly CachedIt
  */
 export const NO_FACET_VALUE = "\u0000none";
 
+/**
+ * A weapon skill, read as the question a player actually asks: **can I dual-wield this**.
+ *
+ * `Skill:` names the exact weapon skill (`1H Slashing`, `2H Blunt`, `Piercing`, `Archery`, `Hand to
+ * Hand`, `Throwing`) and every one of the handed ones starts with its hand — so "1H Slashing" and "1H
+ * Blunt" both answer "1H" to that question, and offering them as two unrelated facet values would
+ * make "find me a one-hander" a scavenger hunt through every damage type. A skill with no hand at all
+ * says nothing about it, so it stands for itself.
+ */
+function weaponSkillFacetValue(skill: string | undefined): string | undefined {
+  if (!skill) return undefined;
+  const hand = /^(1H|2H)\b/i.exec(skill)?.[1];
+  return hand ? hand.toUpperCase() : skill;
+}
+
 /** The values a row offers a facet — what a tick in that dropdown is compared against. */
 export function facetValues(row: ItemRow, facet: FacetKey): readonly string[] {
   switch (facet) {
     case "slot":
       return row.stats.slots;
+    case "weapon": {
+      const value = weaponSkillFacetValue(row.stats.skill);
+      return value ? [value] : [];
+    }
     case "class":
       return row.stats.classes;
     case "race":

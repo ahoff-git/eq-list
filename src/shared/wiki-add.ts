@@ -35,6 +35,10 @@ export function wikiAddAction(page: Pick<WikiPage, "kind" | "components">): Wiki
     // A place, not a thing.
     case "zone":
       return "none";
+    // A group, not a thing — its page has its own bespoke "+ Track all raise mobs" action
+    // (WikiPageView), not the generic self/components buttons.
+    case "faction":
+      return "none";
     default:
       return "self";
   }
@@ -55,4 +59,17 @@ export function wikiAddAction(page: Pick<WikiPage, "kind" | "components">): Wiki
  */
 export function wikiAddKind(page: Pick<WikiPage, "kind">): ShoppingListEntry["kind"] {
   return page.kind === "mob" ? "mob" : undefined;
+}
+
+/**
+ * The note a faction-mob entry carries, wherever it's added from.
+ *
+ * There are two buttons that file one of these — the bulk "+ Track all raise mobs" on a faction
+ * page (`addFromPage`) and the per-mob "+ Track" beside each one (`FactionSideColumn`) — and `upsert`
+ * treats the same mob added by either as *one* entry. Two independent template strings is how that
+ * entry ends up with whichever wording happened to be added first, and drifts the moment one of the
+ * two is reworded without the other.
+ */
+export function factionRaiseNote(faction: string): string {
+  return `Raises ${faction}`;
 }

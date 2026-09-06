@@ -14,7 +14,7 @@ import { searchKnownItems, unknownToTheWiki, type KnownItem } from "@/shared/kno
 import { count } from "@/shared/format";
 import type { LucyEra, LucySearchResult, SearchResult, WikiPage } from "@/shared/types";
 
-type Mode = "name" | "zone";
+type Mode = "name" | "zone" | "faction";
 
 /**
  * How long to sit on a keystroke before asking the wiki.
@@ -70,6 +70,10 @@ export default function SearchPanel({
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [quests, setQuests] = useState<SearchResult[]>([]);
   const [loadingQuests, setLoadingQuests] = useState(false);
+
+  // faction mode
+  const [factionTerm, setFactionTerm] = useState("");
+  const [factionSuggestions, setFactionSuggestions] = useState<SearchResult[]>([]);
 
   // The page currently open in-app (nav.current) is fetched here.
   const [page, setPage] = useState<WikiPage | null>(null);
@@ -217,6 +221,20 @@ export default function SearchPanel({
     return () => clearTimeout(id);
   }, [zoneTerm, mode, selectedZone]);
 
+  // Debounced faction suggestions. Unlike zone mode there's no second step — a faction's own page
+  // already has everything (raise/lower zones, quests, mobs), so picking a result just opens it.
+  useEffect(() => {
+    const a = api();
+    if (mode !== "faction" || !a || factionTerm.trim().length < MIN_QUERY_CHARS) {
+      setFactionSuggestions([]);
+      return;
+    }
+    const id = setTimeout(async () => {
+      setFactionSuggestions(await a.wiki.searchFactions(factionTerm));
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [factionTerm, mode]);
+
   // Searching another way is a different question, so an open page is not the answer to it any
   // more. It's left *behind* you rather than dropped, so back re-opens the page you were reading.
   function switchMode(m: Mode) {
@@ -303,6 +321,9 @@ export default function SearchPanel({
         </button>
         <button className={segCls(mode === "zone")} onClick={() => switchMode("zone")}>
           By zone
+        </button>
+        <button className={segCls(mode === "faction")} onClick={() => switchMode("faction")}>
+          By faction
         </button>
       </div>
       <div className="row" style={{ marginBottom: 8, gap: 10 }}>
@@ -416,6 +437,25 @@ export default function SearchPanel({
               </div>
             </div>
           )}
+        </>
+      )}
+
+      {mode === "faction" && !nav.current && (
+        <>
+          <input
+            className="field"
+            placeholder="Type a faction name (spelling can be rough)…"
+            value={factionTerm}
+            onChange={(e) => setFactionTerm(e.target.value)}
+            autoFocus
+          />
+          <div className="results">
+            {factionSuggestions.map((f) => (
+              <div className="result" key={f.wikiPath}>
+                <ItemLink title={f.title} className="name" />
+              </div>
+            ))}
+          </div>
         </>
       )}
 

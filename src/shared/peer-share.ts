@@ -1082,7 +1082,7 @@ function readStyle(raw: unknown, newId: () => string): NamedAlertStyle | null {
   };
 }
 
-const PAGE_KINDS = new Set(["item", "quest", "recipe", "mob", "zone", "spell", "page"]);
+const PAGE_KINDS = new Set(["item", "quest", "recipe", "mob", "zone", "spell", "faction", "page"]);
 
 /**
  * The page kinds the item catalogue is made of, and therefore the only ones that may cross under the

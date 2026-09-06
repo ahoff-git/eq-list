@@ -18,19 +18,28 @@
  * has to be persisted, the same way a spawn timer's due time is. A pop goes down the same `raise` path
  * as every other alert (`spawn-tracker.ts`'s "the two meet at raise"), wearing the alert defaults
  * rather than a notification system of its own.
+ *
+ * `pinned`/`pinAt` are a UI preference riding along in the same file rather than a fact about the
+ * clock — whether the reading is shown pinned over the game, and where. Kept here anyway because it
+ * has nowhere better to live: it isn't shared with peers, isn't a `Settings` field anyone edits by
+ * hand, and is small enough that giving it a store of its own would be a file for two numbers and a
+ * boolean.
  */
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "../src/shared/logging";
 import { alertStyle } from "../src/shared/alert-styles";
 import {
+  clampUnit,
   crossedMinute,
   currentGameMinutes,
+  DEFAULT_PIN_AT,
   DEFAULT_RATE,
   formatGameClock,
   isDaytime,
   learnRate,
   minuteDelta,
+  readingMinutes,
   type GameClockAnchor,
 } from "../src/shared/game-clock";
 import type { CastAlertEvent, CastAlertSettings, GameClockView, GameTimeAlarm } from "../src/shared/types";
@@ -47,11 +56,29 @@ interface Stored {
   alarms: GameTimeAlarm[];
   /** Game-minutes per real ms, as learned so far (`learnRate`). Absent on disk predates it. */
   rate: number;
+  /** Whether the clock is pinned over the game right now. */
+  pinned: boolean;
+  /** Where it sits, as a fraction of the display — kept even while unpinned, so turning it back on
+   *  puts it back where it was rather than resetting it. */
+  pinAt: { fx: number; fy: number };
 }
 
 function load(file: string): Stored {
   const stored = readJson<Partial<Stored>>(file, {});
-  return { anchor: stored.anchor ?? null, alarms: stored.alarms ?? [], rate: stored.rate ?? DEFAULT_RATE };
+  return {
+    anchor: stored.anchor ?? null,
+    alarms: stored.alarms ?? [],
+    rate: stored.rate ?? DEFAULT_RATE,
+    pinned: stored.pinned ?? false,
+    // Read through the same `clampUnit` guard `setPinPosition` writes through — a hand-edited or
+    // corrupted settings file could otherwise hand back an out-of-[0,1] or partial `{fx}`/`{fy}`,
+    // which `GameClockOverlay.tsx` would render straight into `left`/`top` percentages (off-screen,
+    // or `NaN%` for the missing field) with nothing to self-heal it until the user redrags the pin.
+    pinAt: {
+      fx: clampUnit(stored.pinAt?.fx ?? DEFAULT_PIN_AT.fx),
+      fy: clampUnit(stored.pinAt?.fy ?? DEFAULT_PIN_AT.fy),
+    },
+  };
 }
 
 export interface GameClockTrackerDeps {
@@ -90,6 +117,10 @@ export interface GameClockTracker {
   update(id: string, minute: number, message?: string): void;
   remove(id: string): void;
   toggle(id: string, enabled: boolean): void;
+  /** Pin (or unpin) the running clock over the game. */
+  setPinned(on: boolean): void;
+  /** Where the pinned clock sits, as a fraction of the display — set by dragging it. */
+  setPinPosition(fx: number, fy: number): void;
   /** Fires whenever the clock is read afresh or an alarm changes. */
   onChanged(cb: () => void): void;
   flush(): void;
@@ -165,7 +196,10 @@ export function createGameClockTracker({
   function applyReading(hour: number, atMs: number): void {
     if (state.anchor) {
       const guessed = currentGameMinutes(state.anchor, atMs, state.rate);
-      const reported = hour * 60;
+      // Read the same way `guessed` is (`readingMinutes`'s midpoint) — comparing it against the raw
+      // floor made this look 30 minutes worse than the model actually was, every single time, which
+      // is a bug in the comparison rather than in the clock (see the fix that added this comment).
+      const reported = readingMinutes(hour);
       const before = state.rate;
       state.rate = learnRate(state.rate, state.anchor.hour, hour, atMs - state.anchor.sampledAtMs);
       log.debug("game time check — our running guess vs. what /time just said", {
@@ -215,8 +249,20 @@ export function createGameClockTracker({
         daytime: minutes === null ? null : isDaytime(minutes),
         now: new Date(now()).toISOString(),
         rate: state.rate,
+        pinned: state.pinned,
+        pinAt: state.pinAt,
         alarms: [...state.alarms].sort((a, b) => a.minute - b.minute),
       };
+    },
+
+    setPinned(on) {
+      state.pinned = on;
+      changed();
+    },
+
+    setPinPosition(fx, fy) {
+      state.pinAt = { fx: clampUnit(fx), fy: clampUnit(fy) };
+      changed();
     },
 
     add(minute, message) {

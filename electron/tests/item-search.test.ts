@@ -200,6 +200,31 @@ test("each effect kind is its own facet", () => {
   assert.deepEqual(titles(all.filter((r) => matchesItem(r, worn))), ["Worn Haste Belt"]);
 });
 
+test("a weapon's hand collapses the damage type, and a hand-less skill stands for itself", () => {
+  // "1H Slashing" and "1H Blunt" both answer "can I dual-wield this" with "1H" — the question a
+  // player is actually shopping by. Archery has no hand at all, so it offers itself.
+  const catalogue = [
+    item("Rusty Shortsword", ["Skill: 1H Slashing  Atk Delay: 20", "DMG: 6", "Slot: PRIMARY"]),
+    item("Warhammer", ["Skill: 1H Blunt  Atk Delay: 25", "DMG: 8", "Slot: PRIMARY"]),
+    item("Great Axe", ["Skill: 2H Slashing  Atk Delay: 44", "DMG: 18", "Slot: PRIMARY"]),
+    item("Short Bow", ["Skill: Archery  Atk Delay: 30", "DMG: 5", "Slot: RANGE"]),
+    item("Cloak of Wisdom", ["Slot: BACK", "WIS: +10"]),
+  ];
+  const all = itemRows(catalogue);
+  assert.deepEqual(facetOptions(all, "weapon"), ["1H", "2H", "Archery"]);
+
+  const oneHanded = with_({ facets: { ...NO_CRITERIA.facets, weapon: ["1H"] } });
+  assert.deepEqual(titles(all.filter((r) => matchesItem(r, oneHanded))), ["Rusty Shortsword", "Warhammer"]);
+
+  const twoHanded = with_({ facets: { ...NO_CRITERIA.facets, weapon: ["2H"] } });
+  assert.deepEqual(titles(all.filter((r) => matchesItem(r, twoHanded))), ["Great Axe"]);
+
+  // The non-weapon has no skill at all, so it fails both — the same silence rule every other facet
+  // follows, and it's reachable only through `(none)`.
+  const anyWeapon = with_({ facets: { ...NO_CRITERIA.facets, weapon: ["1H", "2H", "Archery"] } });
+  assert.equal(titles(all.filter((r) => matchesItem(r, anyWeapon))).includes("Cloak of Wisdom"), false);
+});
+
 test("a level cap hides what is known to be out of reach, and nothing else", () => {
   // The whole point of the cap: "hide what I can't use yet". An item nothing could place has no
   // answer to that question, and cutting it would quietly hide 44% of a real catalogue — so the

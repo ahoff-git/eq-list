@@ -15,6 +15,7 @@ import { stripArticle } from "../src/shared/log-parser";
 import { isMobEntry, normalizeItemName, originKey } from "../src/shared/grouping";
 import { MAP_UI_SCALE, clampScale, clampUiScale } from "../src/shared/constants";
 import { BUILT_IN_STYLES, RECORD_STYLE_ID } from "../src/shared/alert-styles";
+import { factionRaiseNote } from "../src/shared/wiki-add";
 import { readJson, writeJson } from "./json-store";
 import type {
   ShoppingList,
@@ -195,7 +196,12 @@ export function createStore(userDataDir: string): Store {
       (e) => normalize(e.name) === normalize(name) && originKey(e.origin) === key,
     );
     if (existing) {
-      if (extra.needed) existing.needed += extra.needed;
+      // A mob has no "needed" to speak of — it's a hunt target, not a stackable quantity
+      // (`isMobEntry`/`countableEntries` exclude it from every count the list shows) — so a
+      // re-add (e.g. the per-mob "+ Track" on a faction page, which goes through the same
+      // generic `addEntry` an item add does) must not bump it, the way every other mob-adding
+      // path already avoids doing by never passing `needed` at all.
+      if (extra.needed && !isMobEntry(existing)) existing.needed += extra.needed;
       return;
     }
     list.entries.push({
@@ -228,6 +234,16 @@ export function createStore(userDataDir: string): Store {
 
     addFromPage(page) {
       const origin = { kind: page.kind, name: page.title } as ShoppingListEntry["origin"];
+      // A faction page names a *group* of mobs to go kill, not a thing to obtain — so "+ Add" on it
+      // files every raise-side mob as its own `kind: "mob"` entry (same shape a lone mob page adds
+      // itself as), grouped under this faction's origin. Lower-side mobs aren't bulk-added: they're
+      // shown for information (avoid killing these), not something a "raise my faction" action asks for.
+      if (page.kind === "faction") {
+        for (const m of page.raise?.mobs ?? []) {
+          upsert(m.name, { kind: "mob", origin, note: factionRaiseNote(page.title) });
+        }
+        return emitList();
+      }
       // A **mob** is a thing to go kill, and adding one means you want *it* — not its loot table.
       // Checked before `components`, because a mob page keeps its known drops in that field: the
       // old order therefore dumped every drop onto the list, or (with no loot listed) put the mob's

@@ -309,6 +309,10 @@ export interface GameClockView {
    * default that would visibly disagree with it as the learned rate moves.
    */
   rate: number;
+  /** Whether the running clock is pinned over the game right now, click-through and stationary. */
+  pinned: boolean;
+  /** Where the pinned clock sits, as a fraction of the display — remembered even while unpinned. */
+  pinAt: { fx: number; fy: number };
   alarms: GameTimeAlarm[];
 }
 
@@ -1201,7 +1205,21 @@ export interface WikiComponent {
   dropRate?: string;
 }
 
-export type WikiPageKind = "item" | "quest" | "recipe" | "mob" | "zone" | "spell" | "page";
+export type WikiPageKind = "item" | "quest" | "recipe" | "mob" | "zone" | "spell" | "faction" | "page";
+
+/** One mob/NPC listed on a faction page — a title plus its zone/role note, if the wiki gave one. */
+export interface FactionMobRef {
+  name: string;
+  /** As the wiki writes it: "Zone - role" (e.g. "Qeynos Catacombs - Merchant") or just "Zone". */
+  note?: string;
+}
+
+/** One side (raise or lower) of a faction page: the zones, quests and mobs that move it that way. */
+export interface FactionSide {
+  zones: string[];
+  quests: string[];
+  mobs: FactionMobRef[];
+}
 
 /**
  * One reward line from a quest/recipe. `item`/`wikiPath` are set only when the whole
@@ -1265,6 +1283,10 @@ export interface WikiPage {
    * into, so capping a single page would only lose shape where there is most of it.
    */
   links?: string[];
+  /** For **faction** pages: what raises this faction — the zones it's tied to, the quests, the mobs to kill. */
+  raise?: FactionSide;
+  /** For **faction** pages: the mirror image of `raise` — what lowers it. */
+  lower?: FactionSide;
   /** True if the page is tagged with an era that isn't live yet (can't obtain). */
   outOfEra?: boolean;
   fetchedAt: string;
@@ -2564,6 +2586,8 @@ export interface EqlApi {
     searchZones(term: string): Promise<SearchResult[]>;
     /** Quests located in / related to a zone. */
     questsByZone(zone: string): Promise<SearchResult[]>;
+    /** Fuzzy faction-name suggestions, over the full `Category:Factions` roster (258 pages, one fetch). */
+    searchFactions(term: string): Promise<SearchResult[]>;
     /**
      * The zones this server **has but hasn't opened yet**, as eqlwiki's era categories name them.
      *
@@ -2740,6 +2764,10 @@ export interface EqlApi {
     update(id: string, minute: number, message?: string): Promise<GameClockView>;
     remove(id: string): Promise<GameClockView>;
     toggle(id: string, enabled: boolean): Promise<GameClockView>;
+    /** Pin (or unpin) the running clock over the game, click-through, in the alert overlay. */
+    setPinned(on: boolean): Promise<GameClockView>;
+    /** Where the pinned clock sits, as a fraction of the display (0-1 each way) — set by dragging it. */
+    setPinPosition(fx: number, fy: number): Promise<GameClockView>;
     /** Fires when a `/time` reading arrives or an alarm changes, so an open tab needn't poll. */
     onChanged(cb: () => void): Unsubscribe;
   };

@@ -15,6 +15,7 @@ import {
   learnRate,
   minuteDelta,
   parseGameClockTime,
+  readingMinutes,
   to24Hour,
   type GameClockAnchor,
 } from "../../src/shared/game-clock";
@@ -29,6 +30,22 @@ test("to24Hour folds the 12-hour reading the log gives", () => {
 test("a reading anchors at the hour's midpoint, not its start (ADR 0187)", () => {
   const anchor: GameClockAnchor = { hour: 18, sampledAtMs: 0 }; // "6 PM"
   assert.equal(currentGameMinutes(anchor, 0), 18 * 60 + 30); // read as 6:30, not 6:00
+});
+
+test("readingMinutes is the one place a reading's midpoint is computed — a bug found the hard way", () => {
+  // `currentGameMinutes` and a comparison against a fresh reading (`game-clock-tracker.ts`'s debug
+  // log) both need "this hour, read as a moment" — and for months only one of them added the
+  // midpoint, silently comparing an extrapolated guess against the *other* reading's bare floor.
+  // Every logged "off by" was 30 minutes worse than the model actually was, always in the same
+  // direction — not noise, a real bug in the comparison, discovered by replaying a real evening's
+  // readings and finding the discrepancy was one-sided rather than centered on zero. Pinning both
+  // sides to the same function is what makes that impossible to reintroduce by accident.
+  assert.equal(readingMinutes(18), 18 * 60 + 30);
+  assert.equal(readingMinutes(0), 30); // midnight reads as 12:30 AM, not 12:00
+  const anchor: GameClockAnchor = { hour: 9, sampledAtMs: 12_345 };
+  // At zero elapsed time, "where the clock stands" and "what this reading means" must be the exact
+  // same number — they're the same fact asked two ways.
+  assert.equal(currentGameMinutes(anchor, anchor.sampledAtMs), readingMinutes(anchor.hour));
 });
 
 test("the clock advances at the game's fixed pace: 1 real minute is 20 game minutes", () => {

@@ -112,7 +112,14 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // /walkthrough/i read nothing at all off the "Checklist" half), and the forward "loot"/"get" cue
 // also matches "buy" — deliberately not "find", which on inspection tags NPCs ("find Toxdil") as
 // readily as items ("find The Oblong Bottle").
-const CACHE_VERSION = 21;
+// v22: faction pages (Template:Factionpage — `.eql-factionpage`) are now their own kind, parsed
+// into raise/lower zones/quests/mobs; a quest's card also gains a "Faction note:" line when its
+// Walkthrough states a standing-tier aside ("obtainable at apprehensive faction").
+const CACHE_VERSION = 22;
+
+/** The version "faction" became a kind the parser could produce at all — see the misclassified
+ * check below, which only needs to distrust a cached kind *older* than this. */
+const FACTION_KIND_INTRODUCED_AT = 22;
 
 /**
  * The version a page of each kind has to have been parsed at to still be current.
@@ -138,8 +145,9 @@ const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
   // v19: also catches an item named only in its own "is/are dropped" sentence.
   // v20: that cue also covers bare "drop(s) from" and modal-passive "purchas…".
   // v21: also merges a "Checklist" heading in, and the forward cue also matches "buy".
-  // Item, mob, spell and zone pages are unaffected by v15 through v21.
-  quest: 21,
+  // v22: the card also gains a "Faction note:" line when the Walkthrough states one.
+  // Item, mob, spell and zone pages are unaffected by v15 through v22.
+  quest: 22,
 };
 
 /** Below this, a page predates parts of the parse every kind depends on. */
@@ -154,6 +162,7 @@ function parsedCurrently(kind: WikiPageKind, version: number): boolean {
 // category rename only needs editing here.
 const ZONES_CATEGORY = "Zones";
 const QUESTS_CATEGORY = "Quests";
+const FACTIONS_CATEGORY = "Factions";
 
 export interface WikiClient {
   search(term: string): Promise<SearchResult[]>;
@@ -169,6 +178,8 @@ export interface WikiClient {
   refreshPage(title: string): Promise<WikiPage | null>;
   searchZones(term: string): Promise<SearchResult[]>;
   questsByZone(zone: string): Promise<SearchResult[]>;
+  /** Fuzzy faction-name suggestions, mirrored from `Category:Factions` (258 pages, one fetch — see zoneIndex). */
+  searchFactions(term: string): Promise<SearchResult[]>;
   /**
    * Zone page titles the server currently has **out of era**, derived rather than listed: every page
    * in `Category:Zones` whose categories include one of the eras `Template:PageEra` says isn't live.
@@ -378,6 +389,11 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     () => fetchCategoryTitles(ZONES_CATEGORY).then((ts) => ts.filter((t) => !/cleanupproject/i.test(t))),
     "zone",
   );
+  const factionIndex = createCachedIndex(
+    path.join(cacheDir, "faction-index.json"),
+    () => fetchCategoryTitles(FACTIONS_CATEGORY),
+    "faction",
+  );
   const zoneQuestsCache = new Map<string, SearchResult[]>();
   /**
    * The derived out-of-era zone list, mirrored to disk like the other indexes.
@@ -447,6 +463,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   titleIndex.ensureFresh();
   zoneIndex.ensureFresh();
   outEraZoneIndex.ensureFresh();
+  factionIndex.ensureFresh();
 
   /** A page we hold, with the one thing the store doesn't know: how old it is by our clock. */
   function readCache(title: string): { page: WikiPage; ageMs: number; version: number } | null {
@@ -466,9 +483,23 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
 
   async function getPageInternal(title: string, force = false): Promise<WikiPage | null> {
     const cached = readCache(title);
+    // A page cached *before* faction support existed has no version to catch it: "faction" never
+    // existed as a kind for `MIN_PARSE_VERSION` to floor, so a title that's since turned out to be
+    // a faction (fetched back then under the generic "item" fallback) would otherwise read as
+    // current forever. `Category:Factions` is a small, already-mirrored roster, so checking a hit
+    // against it is cheap and this self-heals the moment the title is re-fetched — but only entries
+    // *older* than `FACTION_KIND_INTRODUCED_AT` are suspect: `Category:Factions` can (via a redirect
+    // or a stub the wiki hasn't converted to Template:Factionpage) list a title that a current-version
+    // parse still won't classify as "faction", and without the version guard that title would fail
+    // this check forever, turning every view of it into a live fetch instead of a cache hit.
+    const misclassified =
+      cached &&
+      cached.version < FACTION_KIND_INTRODUCED_AT &&
+      cached.page.kind !== "faction" &&
+      (factionIndex.get() ?? []).includes(title);
     // Only a current-version, unexpired entry is a hit; a stale-version entry is
     // re-parsed (but still kept below as an offline fallback).
-    if (!force && cached && parsedCurrently(cached.page.kind, cached.version) && cached.ageMs < ttlMs()) {
+    if (!force && cached && !misclassified && parsedCurrently(cached.page.kind, cached.version) && cached.ageMs < ttlMs()) {
       log.debug("cache hit", title);
       return cached.page;
     }
@@ -1544,7 +1575,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       zoneQuestsCache.clear();
       outEraSet = null;
       outEraAt = 0;
-      await Promise.all([titleIndex.refresh(), zoneIndex.refresh()]);
+      await Promise.all([titleIndex.refresh(), zoneIndex.refresh(), factionIndex.refresh()]);
       // After the zone index, since it's derived from it.
       await outEraZoneIndex.refresh();
       log.debug("wiki indexes refreshed on demand");
@@ -1585,6 +1616,16 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       const zones = fuzzyOver(zoneIndex, q);
       if (zones.length) return zones;
       return this.search(q); // fallback (already era-flagged)
+    },
+
+    async searchFactions(term) {
+      const q = term.trim();
+      if (q.length < 2) return [];
+      // `Category:Factions` is the whole namespace (258 pages, mirrored in `factionIndex`), so
+      // there's no fallback to a wider search the way `search`/`searchZones` have one — a miss here
+      // really is "no faction by that name" rather than "not indexed yet". Not era-flagged either:
+      // a faction isn't a page an expansion opens or closes.
+      return fuzzyOver(factionIndex, q);
     },
 
     async questsByZone(zone) {

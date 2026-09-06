@@ -1767,12 +1767,48 @@ kbd {
 }
 .dot.on { background: var(--good); }
 
-/* The running Norrath clock, in the status bar — see GameClock.tsx. */
-.gameclock {
+/* The running Norrath clock's face — icon, reading, day/night track — see GameClockFace.tsx. Shared
+   by the status-bar toggle (.gameclock-toggle) and the pinned overlay (.gameclock-hud) below. */
+.gameclock-face {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
+/* The status-bar button: click to pin/unpin the clock over the game. Reset to look like the plain
+   inline text it replaced, not a button, since it sits inline in the status bar among other spans. */
+.gameclock-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.gameclock-toggle:hover .gc-time { text-decoration: underline; }
+/* The pinned copy, floating over the game in the click-through alert overlay (GameClockOverlay.tsx).
+   Positioned as a fraction of the display (left/top set inline) so it survives a resolution change,
+   the same convention a custom alert spot uses (.overlay-at.pos-custom). Bigger than the status-bar
+   reading — this one has to be read at a glance across a game window, not a narrow bar. */
+.gameclock-hud {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(14, 16, 19, 0.72);
+  cursor: grab;
+  user-select: none;
+}
+.gameclock-hud:active { cursor: grabbing; }
+.gameclock-hud .gc-time { font-size: 15px; }
+.gameclock-hud .gc-icon { font-size: 16px; }
 .gc-icon {
   font-size: 13px;
   line-height: 1;

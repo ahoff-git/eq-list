@@ -286,3 +286,78 @@ test("an item page carries no links, and a mob page carries none either", () => 
   const item = parseFixture("item-fungus-tunic", "Fungus Covered Scale Tunic");
   assert.equal(item.links, undefined);
 });
+
+// ─── Faction pages (ADR 0192) ───────────────────────────────────────────────
+
+test("faction page → raise/lower zones, quests and mobs, with no point values", () => {
+  const p = parseFixture("faction-priests-of-life", "Priests of Life");
+  assert.equal(p.kind, "faction");
+  assert.equal(p.sources.length, 0);
+  assert.equal(p.components.length, 0);
+
+  assert.ok(p.raise);
+  assert.ok(p.raise!.zones.includes("Qeynos Aqueducts"));
+  assert.ok(p.raise!.quests.includes("Errand for Tonmerk"));
+  const bruax = p.raise!.mobs.find((m) => m.name === "Bruax Grengar");
+  assert.ok(bruax, "Bruax Grengar should be listed as a raise mob");
+  assert.equal(bruax!.note, "Qeynos Catacombs - Necromancer Guildmaster");
+  // A mob with no " - role" half still carries its zone as the whole note.
+  const pyzjn = p.raise!.mobs.find((m) => m.name === "Pyzjn");
+  assert.equal(pyzjn?.note, "Qeynos Hills");
+
+  assert.ok(p.lower);
+  assert.ok(p.lower!.zones.includes("Blackburrow"));
+  assert.ok(p.lower!.quests.includes("Trumpy's Head"));
+  assert.ok(p.lower!.mobs.some((m) => m.name === "Astaed Wemor"));
+});
+
+test("faction page → zones, quests and mobs are de-duplicated by their canonical title", () => {
+  // "Qeynos Badge Quests" backs four differently-worded badge entries in the real page, and East/West
+  // Freeport both link the same `/Freeport` page — the canonical title collapses each into one, and
+  // the parser has to too, or the UI renders (and React keys) literal duplicate rows.
+  const p = parseFixture("faction-priests-of-life", "Priests of Life");
+  const count = (arr: string[], name: string) => arr.filter((x) => x === name).length;
+  assert.equal(count(p.raise!.quests, "Qeynos Badge Quests"), 1);
+  assert.equal(count(p.lower!.zones, "Freeport"), 1);
+  assert.equal(new Set(p.raise!.zones).size, p.raise!.zones.length, "raise zones are unique");
+  assert.equal(new Set(p.raise!.quests).size, p.raise!.quests.length, "raise quests are unique");
+  assert.equal(new Set(p.lower!.zones).size, p.lower!.zones.length, "lower zones are unique");
+  assert.equal(new Set(p.raise!.mobs.map((m) => m.name)).size, p.raise!.mobs.length, "mobs are unique");
+});
+
+test("faction search is a distinct kind from item/mob/quest/zone", () => {
+  const p = parseFixture("faction-priests-of-life", "Priests of Life");
+  assert.notEqual(p.kind, "item");
+  assert.equal(p.card, undefined);
+});
+
+// ─── A quest's own faction-tier note (ADR 0192) ─────────────────────────────
+
+test("quest page → a Walkthrough aside naming a faction tier becomes a card line", () => {
+  const p = parseFixture("quest-bear-hide-armor", "Bear Hide Armor");
+  assert.equal(p.kind, "quest");
+  assert.ok(p.card, "the tier note should still produce a card even with no questTopTable card lines");
+  // The whole <p> is the unit (it's one sentence pair: "Chanda Miller ... makes bear hide armor.
+  // (All 3 pieces obtainable at apprehensive faction.)") — matched as a substring rather than the
+  // full line, since the note carries whatever else shares its paragraph.
+  assert.ok(
+    p.card!.lines.some(
+      (l) => l.startsWith("Faction note:") && l.includes("All 3 pieces obtainable at apprehensive faction"),
+    ),
+  );
+});
+
+test("quest page → a second, differently-worded tier aside is still caught (\"offer at Kindly faction\")", () => {
+  const p = parseFixture("quest-aviak-talons", "Aviak Talons");
+  assert.ok(
+    p.card!.lines.some((l) => l.startsWith("Faction note:") && /Kindly faction/.test(l)),
+    "the Walkthrough's own opening aside names a tier right next to \"faction\"",
+  );
+});
+
+test("quest page → ordinary prose with no tier word near \"faction\" never misfires", () => {
+  // Shovel of Ponz mentions no faction-tier word anywhere on the page at all — the cleanest possible
+  // negative: no coincidental "kindly"/"warmly"/etc. for the proximity guard to (correctly) reject.
+  const p = parseFixture("quest-shovel-of-ponz", "Shovel Of Ponz Quest");
+  assert.ok(!p.card?.lines.some((l) => l.startsWith("Faction note:")));
+});

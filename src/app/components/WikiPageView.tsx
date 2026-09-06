@@ -9,10 +9,11 @@ import MapLink, { ZoneLink } from "./MapLink";
 import MobKills from "./MobKills";
 import { AddButton } from "./ui";
 import { addItem, addPage, addPageItself } from "@/lib/addToList";
-import { wikiAddAction } from "@/shared/wiki-add";
+import { factionRaiseNote, wikiAddAction } from "@/shared/wiki-add";
 import { sourcesByEra } from "@/shared/item-era";
 import { countOf } from "@/shared/format";
-import type { ItemSource, WikiPage } from "@/shared/types";
+import type { FactionSide, ItemSource, WikiPage } from "@/shared/types";
+import { buildFactionWatch, isFactionWatched } from "@/shared/faction-watch";
 import { cardZone, statesNothing } from "@/shared/map/mob-place";
 
 /**
@@ -38,9 +39,15 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
   // Read for any page naming a thing you can hold, and **cache-only** — opening a wiki page must not
   // put traffic on someone else's site. Read even when the block below won't show it, because the
   // ↗ Lucy link is a better link when it has an id than when it has only a name.
-  const isThing = page.kind !== "mob" && page.kind !== "zone" && page.kind !== "spell";
+  const isThing = page.kind !== "mob" && page.kind !== "zone" && page.kind !== "spell" && page.kind !== "faction";
   const lucy = useLucyCard(isThing ? page.title : null);
-  const askLucy = useSettings()?.askLucy ?? true;
+  const settings = useSettings();
+  const askLucy = settings?.askLucy ?? true;
+  // A faction page's own "alert me" toggle — reuses the existing raw-line watch mechanism
+  // (ADR 0050) rather than a bespoke alert path, scoped to this faction by name so it only ever
+  // fires on this one's standing changing. See the `buildFactionWatch` doc for the wording caveat.
+  const factionWatches = settings?.castAlerts.watches ?? [];
+  const factionWatched = page.kind === "faction" && isFactionWatched(factionWatches, page.title);
 
   // The mob's zone, for coordinate clicks (open the map there + drop a marker). Read by the rule the
   // map reads it with (`cardZone`), since the map now places a hunted mob from this same card and
@@ -133,6 +140,23 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
             )}
           </>
         )}
+        {/* A faction is a group of mobs to go kill, not a thing to obtain — its own action rather
+            than the generic self/components buttons above, which `wikiAddAction` returns "none" for. */}
+        {page.kind === "faction" && (page.raise?.mobs.length ?? 0) > 0 && (
+          <AddButton className="btn primary sm" onAdd={() => void addPage(page)}>
+            + Track all {page.raise!.mobs.length} raise mobs
+          </AddButton>
+        )}
+        {page.kind === "faction" && (
+          <button
+            className="btn sm"
+            disabled={factionWatched}
+            title="Add a log watch: a banner whenever a line mentions this faction's standing"
+            onClick={() => void api()?.settings.update({ castAlerts: { watches: [...factionWatches, buildFactionWatch(page.title)] } })}
+          >
+            {factionWatched ? "🔔 Alerted" : "🔔 Alert me on standing changes"}
+          </button>
+        )}
         {/* A mob is `self` too, and the secondary button is deliberately not offered to it: a mob
             page keeps its **loot** in `components`, so it read "+ Add all 12 ingredients" — and since
             `addFromPage` now files a mob as a mob, pressing it added the named again rather than
@@ -212,13 +236,16 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
           Spell — add it to watch for it dropping, or open it on eqlwiki for how to acquire it.
         </p>
       )}
+      {page.kind === "faction" && page.raise && page.lower && <FactionSides title={page.title} raise={page.raise} lower={page.lower} />}
 
       {page.sources.length > 0 && <SourceList sources={page.sources} />}
       {/* The wiki's claims are above; this is what killing things actually taught us about the item
           itself — who drops it, where, and what it sells for. Offered to every page that names a
           *thing you can hold* (a spell page is its scroll, and scrolls drop): a mob's own evidence is
           `MobKills` above, and a zone isn't loot. It renders nothing when nothing is known. */}
-      {page.kind !== "mob" && page.kind !== "zone" && <ItemDrops item={page.title} sources={page.sources} />}
+      {page.kind !== "mob" && page.kind !== "zone" && page.kind !== "faction" && (
+        <ItemDrops item={page.title} sources={page.sources} />
+      )}
       {page.rewards.length > 0 && (
         <>
           <h4 className="muted small" style={{ marginTop: 12 }}>Rewards</h4>
@@ -238,6 +265,100 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
           block is an answer. */}
       {lucy && !page.card && <LucySays item={lucy} />}
     </div>
+  );
+}
+
+/**
+ * A faction page's two halves — what raises it, what lowers it — each broken into the zones it's
+ * tied to, the quests that move it, and the mobs to kill for it. No point values: the wiki names
+ * only direction, never amount ([ADR 0192](../../../specs/decisions/0192-factions-ride-their-own-wiki-pages.md)).
+ * Track buttons are offered on the raise side only — the lower side is informational (avoid killing
+ * these), which is also why "+ Track all" above only ever bulk-adds `raise` mobs.
+ */
+function FactionSides({ title, raise, lower }: { title: string; raise: FactionSide; lower: FactionSide }) {
+  return (
+    <div className="row wrap" style={{ marginTop: 12, gap: 24, alignItems: "flex-start" }}>
+      <FactionSideColumn title={title} label="Raises" side={raise} trackable />
+      <FactionSideColumn title={title} label="Lowers" side={lower} trackable={false} />
+    </div>
+  );
+}
+
+function FactionSideColumn({
+  title,
+  label,
+  side,
+  trackable,
+}: {
+  title: string;
+  label: string;
+  side: FactionSide;
+  trackable: boolean;
+}) {
+  if (!side.zones.length && !side.quests.length && !side.mobs.length) return null;
+  return (
+    <div style={{ minWidth: 220, flex: "1 1 260px" }}>
+      <h4 className="muted small">{label}</h4>
+      <FactionList heading="Zones" items={side.zones} keyOf={(z) => z} render={(z) => <ZoneLink zone={z} />} />
+      <FactionList
+        heading={`Quests (${side.quests.length})`}
+        items={side.quests}
+        keyOf={(q) => q}
+        render={(q) => <ItemLink title={q} />}
+      />
+      <FactionList
+        heading={`Mobs (${side.mobs.length})`}
+        items={side.mobs}
+        keyOf={(m) => m.name}
+        render={(m) => (
+          <>
+            <ItemLink title={m.name} />
+            {m.note && <span className="muted small">{m.note}</span>}
+            {trackable && (
+              <AddButton
+                className="btn ghost sm"
+                onAdd={() =>
+                  void addItem({ name: m.name, kind: "mob", note: factionRaiseNote(title), origin: { kind: "faction", name: title } })
+                }
+              >
+                + Track
+              </AddButton>
+            )}
+          </>
+        )}
+      />
+    </div>
+  );
+}
+
+/**
+ * One of `FactionSideColumn`'s sub-lists — the "if there's anything, put a heading over it" shape
+ * every one of Zones/Quests/Mobs shares, differing only in what each row renders. Nothing here
+ * knows *why* a heading names a count and another doesn't ("Zones" vs "Quests (N)") or what the
+ * mob row's track button needs — that stays in the caller's `render`, so this only ever owns the
+ * wrapper.
+ */
+function FactionList<T>({
+  heading,
+  items,
+  keyOf,
+  render,
+}: {
+  heading: string;
+  items: T[];
+  keyOf: (item: T) => string;
+  render: (item: T) => React.ReactNode;
+}) {
+  if (!items.length) return null;
+  return (
+    <>
+      <h5 className="muted small">{heading}</h5>
+      <ul>
+        {items.map((item) => (
+          <li key={keyOf(item)}>{render(item)}</li>
+        ))}
+      </ul>
+    </>
   );
 }
 

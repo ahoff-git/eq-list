@@ -27,6 +27,10 @@ test("a zone is a place, so there is nothing to add", () => {
   assert.equal(wikiAddAction(page("zone")), "none");
 });
 
+test("a faction is a group, not a thing — its own bespoke action, not the generic buttons", () => {
+  assert.equal(wikiAddAction(page("faction")), "none");
+});
+
 test("quests and recipes contribute what they list", () => {
   assert.equal(wikiAddAction(page("quest", ["Aviak Talon"])), "components");
   assert.equal(wikiAddAction(page("recipe", ["Water Flask"])), "components");
@@ -53,7 +57,7 @@ test("a mob adds itself as a mob, not as an item", () => {
 });
 
 test("everything else adds itself as an item, which the entry says by saying nothing", () => {
-  for (const kind of ["item", "page", "spell", "quest", "recipe", "zone"] as const) {
+  for (const kind of ["item", "page", "spell", "quest", "recipe", "zone", "faction"] as const) {
     assert.equal(wikiAddKind({ kind }), undefined, kind);
   }
 });

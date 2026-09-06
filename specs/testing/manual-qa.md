@@ -693,6 +693,27 @@ features for later in [../ideas.md](../ideas.md).
   that would mean either `impliedRate`'s day-wrap guess got confused (a genuinely unusual server pace
   crossed with an unlucky gap) or something is off in the weighting itself.
 
+  `offByGameMinutes` should now center on roughly zero, swinging maybe ±30–45 minutes on a short or
+  unlucky pair — if you captured a log **before** [ADR 0191](../decisions/0191-the-debug-comparison-was-comparing-mismatched-conventions.md),
+  it will have read a steady 30 minutes more negative than this for every single line; that was a bug
+  in the comparison, not the clock, and is fixed now. A log captured after ADR 0191 that's still
+  substantially one-sided (not just occasionally large, but consistently the same sign across a whole
+  evening) is the thing actually worth chasing next.
+
+- **The pinned clock, over the game.** ([ADR 0190](../decisions/0190-the-pinned-clock-is-dragged-not-placed-from-settings.md).)
+  Nothing here has been seen on screen — the overlay window and click-through are both real Electron
+  behavior a sandbox can't render. With EQ running and `/time` already read once, click the status-bar
+  clock and confirm a copy of it appears **over the game**, in the same click-through overlay a cast
+  alert uses (clicking the game *through* it should still work — turn your character, whatever's
+  under the clock). Click the status-bar clock again and confirm it disappears. Then the drag: press
+  and hold on the floating clock and move the mouse — it should follow smoothly with no lag, including
+  if the cursor briefly leaves the clock mid-drag (the whole window should stay solid until you
+  release, not drop the drag the moment the cursor crosses back onto "game" territory). Release, and
+  confirm a **plain click** (no movement) does *not* nudge its position at all. Restart the app and
+  confirm it reappears pinned, in the exact spot it was dragged to. Finally, confirm it never pulses,
+  wiggles, or floats the way an alert banner can — it should sit dead still while the numbers inside
+  it tick over.
+
 ## Peer networking — two clients
 
 - **The shared game clock — never run with a real peer.**

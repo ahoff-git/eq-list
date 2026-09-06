@@ -35,6 +35,7 @@ export const CH = {
   wikiRefreshPage: "wiki:refreshPage",
   wikiSearchZones: "wiki:searchZones",
   wikiQuestsByZone: "wiki:questsByZone",
+  wikiSearchFactions: "wiki:searchFactions",
   /** The zones the server has but hasn't opened yet — eqlwiki's live era flags. */
   wikiOutOfEraZones: "wiki:outOfEraZones",
   wikiOpen: "wiki:open",
@@ -107,6 +108,8 @@ export const CH = {
   gameClockUpdate: "gameClock:update", // change an alarm's time or message, same id
   gameClockRemove: "gameClock:remove",
   gameClockToggle: "gameClock:toggle",
+  gameClockSetPinned: "gameClock:setPinned", // pin/unpin the clock over the game
+  gameClockSetPinPosition: "gameClock:setPinPosition", // where the pinned clock sits, dragged
   // buffs — what you're keeping up, and what has lapsed
   buffsView: "buffs:view",
   buffsTrack: "buffs:track", // watch this spell, or stop: the durable silence, which keeps the row

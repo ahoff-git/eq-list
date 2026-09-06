@@ -46,7 +46,7 @@ import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { knownItems, type KnownItem } from "@/shared/known-items";
 import type { ItemRow } from "@/shared/item-search";
 import { clockSkew } from "@/shared/spawn-timers";
-import { advanceGameMinutes, DEFAULT_RATE } from "@/shared/game-clock";
+import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/game-clock";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
@@ -275,7 +275,15 @@ const NO_MOBS: MobKnowledge[] = [];
  */
 const NO_SPAWNS: SpawnView = { now: "", running: [], known: [], dismissed: [] };
 const NO_BUFFS: BuffView = { now: "", active: [], lapsed: [], known: [], lexicon: false };
-const NO_GAME_CLOCK: GameClockView = { minutes: null, daytime: null, now: "", rate: DEFAULT_RATE, alarms: [] };
+const NO_GAME_CLOCK: GameClockView = {
+  minutes: null,
+  daytime: null,
+  now: "",
+  rate: DEFAULT_RATE,
+  pinned: false,
+  pinAt: DEFAULT_PIN_AT,
+  alarms: [],
+};
 const NO_SOURCES: Record<string, ItemSource[]> = {};
 const NO_FACTS: Record<string, SpellFacts> = {};
 const NO_MOB_LOOT: Record<string, Record<string, string>> = {};

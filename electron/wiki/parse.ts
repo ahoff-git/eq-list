@@ -19,7 +19,15 @@
 import { parse, HTMLElement, type Node } from "node-html-parser";
 import { WIKI_BASE } from "./api";
 import { htmlToLines } from "../html-text";
-import type { WikiPage, ItemSource, WikiComponent, SourceKind, ItemCard, WikiReward } from "../../src/shared/types";
+import type {
+  WikiPage,
+  ItemSource,
+  WikiComponent,
+  SourceKind,
+  ItemCard,
+  WikiReward,
+  FactionSide,
+} from "../../src/shared/types";
 
 
 const ELEMENT_NODE = 1;
@@ -252,6 +260,48 @@ function parseComponents(section: Section): WikiComponent[] {
 // the quest as a card — "Minimum Level"/"Classes" answer "can my character do this?",
 // and Related NPCs/Zones give context. Matched as lowercased substrings of the label.
 const QUEST_CARD_LABELS = ["level", "class", "race", "faction", "related npc", "related zone"];
+
+/**
+ * EQ's faction-standing tiers, the adjective forms wiki prose uses for an aside like "obtainable at
+ * apprehensive faction" or "repeatable until kindly". The same nine-tier scale `log-parser.ts`'s
+ * `CONSIDER_REGARDS` reads off a `/consider` response, but a different textual shape entirely (a
+ * whole sentence about an NPC's regard vs. a bare adjective in editorial prose) — kept separate
+ * rather than shared, since unifying them would only couple two parsers that read different text.
+ */
+const FACTION_TIER_WORD =
+  "(?:ally|warmly|kindly|amiabl\\w*|indiffer\\w*|apprehens\\w*|dubious\\w*|threat\\w*|scowl\\w*)";
+
+/**
+ * A tier word has to sit within a few words of "faction" to count. "Kindly", "warmly" and
+ * "indifferent" are ordinary English and turn up constantly in NPC dialogue ("she kindly agreed to
+ * help"), so a bare word search would misfire on nearly every walkthrough that has any conversation
+ * in it at all — this is why `parseFactionTierNote` only ever scans `<p>` asides, never `<dl>/<dd>`
+ * speech, and why the match still requires "faction" nearby rather than the tier word alone.
+ */
+const FACTION_TIER_RE = new RegExp(
+  `\\b${FACTION_TIER_WORD}\\b(?:\\s+\\w+){0,3}\\s+faction\\b|\\bfaction\\b(?:\\s+\\w+){0,3}\\s+${FACTION_TIER_WORD}\\b`,
+  "i",
+);
+
+/**
+ * A quest's own editorial note about the faction standing it needs, when the wiki states one — e.g.
+ * Bear Hide Armor's Walkthrough opens with "(All 3 pieces obtainable at apprehensive faction.)". Most
+ * quests have no such note; the wiki also has no fixed place to put one, so this is a best-effort
+ * scan of the Walkthrough's own `<p>` asides (never its `<dl>/<dd>` dialogue, which is exactly where
+ * the ordinary-English false positives would come from) — surfaced verbatim as a card line rather
+ * than parsed into a structured range, since the wiki names no range that could be parsed out.
+ */
+function parseFactionTierNote(section: Section | undefined): string | undefined {
+  if (!section) return undefined;
+  for (const el of section.els) {
+    const paras = el.tagName === "P" ? [el] : el.querySelectorAll("p");
+    for (const p of paras) {
+      const text = p.text.replace(/\s+/g, " ").trim();
+      if (text && FACTION_TIER_RE.test(text)) return text;
+    }
+  }
+  return undefined;
+}
 
 /**
  * Parse the vertical questTopTable once (th→td key/value rows) into both the giver/zone
@@ -597,6 +647,76 @@ function parseSpellCard(content: HTMLElement, title: string): ItemCard | undefin
   return { title, icon, lines };
 }
 
+// ─── Faction page ───────────────────────────────────────────────────────────
+
+/**
+ * One column of a faction page (`.eql-factionpage-raise` / `-lower`): its Zones/Quests/Mobs
+ * `.eql-factionpage-section`s, told apart by their own `<h2>` text rather than position — the
+ * two columns share the same three headings, just with different ids (`Zones_Raise` vs
+ * `Zones_Lower`). A mob `<li>` is `<a>name</a> <span>(Zone - role)</span>`; the span, when
+ * present, is taken whole as the note rather than re-derived from the link text, since it is
+ * already exactly "Zone" or "Zone - role" with nothing else in it.
+ */
+/**
+ * Push each of a section's `<li><a>` rows onto `into`, in first-seen order and deduplicated
+ * (against `seen`, shared across every section this is called for) by the canonical title a
+ * plain push wouldn't collapse on its own.
+ *
+ * A zone or quest is often linked under more than one badge row on the same page (Freeport's
+ * east/west halves both link `/Freeport`, four "Qeynos Badge Quests" entries all link the same
+ * page) — the canonical *title* collapses those, so a plain push would hand the UI literal
+ * duplicate strings to render (and, keyed by name, duplicate React keys in the same list).
+ * Shared by the zone and quest branches below; mobs stay a loop of their own since a mob `<li>`
+ * carries an extra note span the other two don't.
+ */
+function collectUniqueLinkNames(items: HTMLElement[], into: string[], seen: Set<string>): void {
+  for (const li of items) {
+    const a = li.querySelector("a");
+    const name = a && linkName(a);
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      into.push(name);
+    }
+  }
+}
+
+/**
+ * One column of a faction page (`.eql-factionpage-raise` / `-lower`): its Zones/Quests/Mobs
+ * `.eql-factionpage-section`s, told apart by their own `<h2>` text rather than position — the
+ * two columns share the same three headings, just with different ids (`Zones_Raise` vs
+ * `Zones_Lower`). A mob `<li>` is `<a>name</a> <span>(Zone - role)</span>`; the span, when
+ * present, is taken whole as the note rather than re-derived from the link text, since it is
+ * already exactly "Zone" or "Zone - role" with nothing else in it.
+ */
+function parseFactionSide(col: HTMLElement): FactionSide {
+  const zones: string[] = [];
+  const zoneSeen = new Set<string>();
+  const quests: string[] = [];
+  const questSeen = new Set<string>();
+  const mobs: FactionSide["mobs"] = [];
+  const mobSeen = new Set<string>();
+  for (const section of col.querySelectorAll(".eql-factionpage-section")) {
+    const heading = (section.querySelector("h2, h3")?.text ?? "").trim().toLowerCase();
+    const items = section.querySelectorAll("li");
+    if (heading.startsWith("zone")) {
+      collectUniqueLinkNames(items, zones, zoneSeen);
+    } else if (heading.startsWith("quest")) {
+      collectUniqueLinkNames(items, quests, questSeen);
+    } else if (heading.startsWith("mob")) {
+      for (const li of items) {
+        const a = li.querySelector("a");
+        if (!a) continue;
+        const name = linkName(a);
+        if (!name || mobSeen.has(name)) continue;
+        mobSeen.add(name);
+        const note = li.querySelector("span")?.text.replace(/^\(|\)$/g, "").trim() || undefined;
+        mobs.push({ name, note });
+      }
+    }
+  }
+  return { zones, quests, mobs };
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export function parseWikiPage(title: string, wikiPath: string, html: string): WikiPage {
@@ -640,6 +760,12 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
     // taught to the (already tight) prose heuristic.
     const rewardNames = new Set(rewards.map((r) => r.item).filter((n): n is string => !!n));
     const components = parseWalkthroughTurnIns(walkthrough).filter((c) => !rewardNames.has(c.name));
+    // Folded into the existing info card (rather than a field of its own) so it shows up everywhere
+    // that card already renders — the quest's own page and any hover preview of it — for free.
+    const tierNote = parseFactionTierNote(walkthrough);
+    const cardWithTier = tierNote
+      ? { title, lines: [...(card?.lines ?? []), `Faction note: ${tierNote}`] }
+      : card;
     return {
       kind: "quest",
       title,
@@ -647,7 +773,7 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       sources,
       components,
       rewards,
-      card,
+      card: cardWithTier,
       links: parseContentLinks(content),
       fetchedAt,
     };
@@ -663,6 +789,25 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       rewards: [],
       npcs: parseZoneNpcs(content),
       links: parseContentLinks(content),
+      fetchedAt,
+    };
+  }
+
+  // Faction pages (Template:Factionpage) use their own container; without this they'd fall
+  // through to "item". No per-entry point values are given anywhere on the page — just which
+  // zones/quests/mobs move the faction which way.
+  if (content.querySelector(".eql-factionpage")) {
+    const raiseCol = content.querySelector(".eql-factionpage-raise");
+    const lowerCol = content.querySelector(".eql-factionpage-lower");
+    return {
+      kind: "faction",
+      title,
+      wikiPath,
+      sources: [],
+      components: [],
+      rewards: [],
+      raise: raiseCol ? parseFactionSide(raiseCol) : { zones: [], quests: [], mobs: [] },
+      lower: lowerCol ? parseFactionSide(lowerCol) : { zones: [], quests: [], mobs: [] },
       fetchedAt,
     };
   }

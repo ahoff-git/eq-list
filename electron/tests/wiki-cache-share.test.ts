@@ -384,8 +384,9 @@ test("a launch opens a handful of files, not the whole cache", async () => {
     } finally {
       (fs as { readFileSync: typeof fs.readFileSync }).readFileSync = real;
     }
-    // A handful: the pack, the harvest state, the mirrored indexes. Emphatically not one per page.
-    assert.ok(opens < 10, `a launch opened ${opens} files`);
+    // A handful: the pack, the harvest state, the mirrored indexes (title/zone/out-of-era/faction).
+    // Emphatically not one per page.
+    assert.ok(opens < 11, `a launch opened ${opens} files`);
   } finally {
     await cleanup(dir);
   }

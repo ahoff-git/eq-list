@@ -42,6 +42,20 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
 }
 
+/** Keep a fraction-of-the-display coordinate (`pinAt.fx`/`fy`) inside `[0, 1]` — shared by the
+ *  renderer (dragging the pinned clock) and the tracker (persisting where it landed), so the two
+ *  can't quietly drift apart on what counts as in-bounds. */
+export function clampUnit(n: number): number {
+  return clamp(n, 0, 1);
+}
+
+/**
+ * Where the pinned clock starts, before anyone has ever dragged it — unobtrusive, easy to find.
+ * Shared so the tracker's own first-launch default and a window's placeholder view (before main has
+ * answered at all) can't quietly disagree about what "not yet placed" looks like.
+ */
+export const DEFAULT_PIN_AT = { fx: 0.5, fy: 0.06 };
+
 /** Minutes in a full game day (24 game hours). */
 export const GAME_DAY_MINUTES = 24 * 60;
 
@@ -81,17 +95,30 @@ export function advanceGameMinutes(minutes: number, elapsedRealMs: number, rate:
 }
 
 /**
+ * A `/time` reading's hour, read as its own best single-point estimate: the hour's **midpoint**
+ * (`:30`) rather than its start ([ADR 0187](../../specs/decisions/0187-the-clock-anchors-on-the-hours-midpoint.md)).
+ * `/time` truncates to the hour ("6 PM" could be anywhere from 6:00 to 6:59), and `:30` is the
+ * estimate that minimizes expected error given nothing narrower to go on — at most 30 minutes off,
+ * in either direction, averaging zero.
+ *
+ * The one place that midpoint is applied, so a reading is read the same way whether it's the anchor
+ * `currentGameMinutes` extrapolates from or the "what `/time` just said" side of a comparison
+ * (`game-clock-tracker.ts`'s debug log) — the two disagreeing by exactly 30 minutes, always in the
+ * same direction, is the bug this exists to make impossible to reintroduce.
+ */
+export function readingMinutes(hour: number): number {
+  return hour * 60 + 30;
+}
+
+/**
  * Minutes since game-midnight, right now — the anchor's hour, carried forward to `nowMs` at `rate`.
  *
- * `/time` truncates to the hour ("6 PM" could be anywhere from 6:00 to 6:59), so this starts
- * extrapolating from that hour's **midpoint** (`:30`) rather than its start
- * ([ADR 0187](../../specs/decisions/0187-the-clock-anchors-on-the-hours-midpoint.md)). A `:00`
+ * Starts from the anchor's own midpoint estimate (`readingMinutes`), not its literal floor — a `:00`
  * anchor is a *guaranteed* lag of up to 59 minutes that never corrects itself before the next
- * reading; `:30` is the estimate that minimizes expected error given nothing narrower than the hour
- * to go on — at most 30 minutes off, in either direction, averaging zero.
+ * reading, where the midpoint's error averages zero.
  */
 export function currentGameMinutes(anchor: GameClockAnchor, nowMs: number, rate: number = DEFAULT_RATE): number {
-  return advanceGameMinutes(anchor.hour * 60 + 30, nowMs - anchor.sampledAtMs, rate);
+  return advanceGameMinutes(readingMinutes(anchor.hour), nowMs - anchor.sampledAtMs, rate);
 }
 
 /**
