@@ -237,14 +237,16 @@ features for later in [../ideas.md](../ideas.md).
     recognise, that the readout matches your `/loc` z, that **all** restores the whole map, and that
     travelling to another zone drops the window rather than carrying a meaningless height across
     ([ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md)).
-- **Follow my height, and the slope it's meant to fix (ADRs 0183, 0185).** On a zone with no
-  labelled floors, turn on "Follow my height" and walk around: the window should re-centre on your
-  `/loc` z without touching the sliders, and a manual drag (or "all") should turn following back
-  off. Then specifically walk a **gradual slope** — a ramp, a hillside path, the incline into a
-  cave mouth — with a fairly tight ± range set: the ground ahead of and behind you on the same
-  incline should stay drawn rather than fading out partway up, since the window is supposed to
-  widen for nearby geometry rather than clip it at a flat guess. Worth trying a **steep drop-off**
-  too (a cliff, a stairwell) to confirm it doesn't over-widen into an unrelated area far below.
+- **Follow my height, and the crossfade it draws with (ADRs 0183, 0194).** On a zone with no
+  labelled floors, turn on "Follow my height" and walk around: the map should re-centre on your
+  `/loc` z without touching any slider, and a manual drag (or "all") should turn following back off.
+  The header should read **"following"** rather than a `lo … hi` range while it's on. Then walk a
+  **gradual slope** — a ramp, a hillside path, the incline into a cave mouth — with a fairly tight ±
+  range set: the level you're leaving and the one you're arriving at should visibly **crossfade**
+  as you climb (lines and labels both), rather than either one hard-cutting at some point along the
+  ramp. Standing still on a level, all of it should draw at full strength even where the floor
+  itself isn't perfectly flat. Worth trying a **steep drop-off** too (a cliff, a stairwell) to
+  confirm the fade doesn't reach implausibly far below/above you.
 - **The `/loc` trail's far hops, drawn as a hint (ADR 0184).** Build up a trail by walking normally,
   then get evac'd/succored, gated, or ported to elsewhere in the **same zone** (a zone change clears
   the trail, so it has to be a same-zone jump). The line connecting the two should render faint,

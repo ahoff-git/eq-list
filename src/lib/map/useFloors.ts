@@ -1,10 +1,16 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { detectFloors, floorAt, followHeightWindow, mapZRange, type EqMap, type MapFloor, type ZBand } from "@/shared/map/eqmap";
+import { detectFloors, floorAt, mapZRange, type EqMap, type MapFloor, type ZBand } from "@/shared/map/eqmap";
 import type { HeightPick } from "@/app/components/MapFilters";
 import type { LocEvent } from "@/shared/types";
+
+/** The centre and half-width a `followOpacity` fade is scored against — see `Floors.followCenter`. */
+export interface FollowCenter {
+  z: number;
+  core: number;
+}
 
 /**
  * The follow window's default half-width, in raw `/loc` z — a guess at "one storey", good enough
@@ -36,8 +42,18 @@ export interface Floors {
   /** The ± half-width of the followed window, in raw `/loc` z. */
   heightFollowRange: number;
   setHeightFollowRange: (range: number) => void;
-  /** The heights to draw, and the heights a label must sit in to be drawn. Undefined is all of them. */
+  /**
+   * The heights to draw, and the heights a label must sit in to be drawn. Undefined is all of
+   * them — which is also what following gives you: it fades geometry by distance instead of
+   * cutting it off, so there is no hard band to hand back while it's on (see `followCenter`).
+   */
   bands: ZBand[] | undefined;
+  /**
+   * While following, what a draw's opacity is scored against (`followOpacity`) — your own height
+   * as the centre, `heightFollowRange` as the core half-width. Undefined whenever following isn't
+   * both on and applicable (labelled floors keep ADR 0040's on/off answer instead).
+   */
+  followCenter: FollowCenter | undefined;
   /** The floor a pin or ping made now belongs to — only when exactly one is in view. */
   viewLayer: number | undefined;
   /** The floors markers are filtered to. Undefined filters nothing out. */
@@ -88,26 +104,27 @@ export function useFloors(vector: EqMap | null, loc: LocEvent | null, zoneName: 
   const zRange = useMemo(() => (vector ? mapZRange(vector) : undefined), [vector]);
   const height: HeightPick | null = heightPick && heightPick.zone === zoneName ? heightPick : null;
 
-  // Re-centres the hand-set window on your own height as you move, in place of dragging it
-  // yourself. Only offered where the window itself is (no labelled floors, ADR 0040 leaves those
-  // to the mapmaker) — this never invents a floor, it just keeps the same manual span following you,
-  // widened by `followHeightWindow` when the ground nearby needs more room than the guess allows
-  // (a slope's far edge, say). Keyed on `loc.x`/`loc.y`/`loc.z` rather than `loc`: a fresh `/loc` at
-  // the same position is not a reason to write a new window, and the object arrives with a new
-  // identity on every line parsed.
-  useEffect(() => {
-    if (!heightFollow || loc == null || !zoneName || floors.length > 1 || !vector) return;
-    const { minZ, maxZ } = followHeightWindow(vector, loc, heightFollowRange);
-    setHeightPick({ zone: zoneName, lo: minZ, hi: maxZ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above the effect
-  }, [heightFollow, loc?.x, loc?.y, loc?.z, heightFollowRange, zoneName, floors.length, vector]);
+  // What a draw's opacity fades against while following, in place of the hand-dragged window.
+  // Only offered where the window itself is (no labelled floors — ADR 0040 leaves those to the
+  // mapmaker): this never invents a floor or a level, it only says how far a height sits from
+  // where you are right now. A plain computed value rather than written state, unlike the old
+  // window it replaces — there is nothing here that needs to survive past the `/loc` it came from.
+  // Keyed on `loc.z` alone, not `loc`: a fresh `/loc` at the same height is not a reason to hand
+  // back a new object, and the object arrives with a new identity on every line parsed.
+  const followCenter: FollowCenter | undefined = useMemo(
+    () => (heightFollow && loc != null && floors.length <= 1 ? { z: loc.z, core: heightFollowRange } : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
+    [heightFollow, loc?.z, floors.length, heightFollowRange],
+  );
 
   const bands = useMemo<ZBand[] | undefined>(() => {
     if (floors.length > 1) {
       if (shownLayers.length === floors.length) return undefined;
       return floors.filter((f) => shownLayers.includes(f.layer)).map(({ minZ, maxZ }) => ({ minZ, maxZ }));
     }
-    if (!height || !zRange) return undefined;
+    // Following fades geometry by distance instead (`followCenter`); a hard band on top of that
+    // would just clip what the fade already handles more honestly.
+    if (heightFollow || !height || !zRange) return undefined;
     // The outermost edges open out to infinity, so a handle at the end of its scale can't clip the top
     // or bottom of the map by a rounding unit — the same reason `detectFloors` does it.
     return [
@@ -116,7 +133,7 @@ export function useFloors(vector: EqMap | null, loc: LocEvent | null, zoneName: 
         maxZ: height.hi >= zRange.maxZ ? Infinity : height.hi,
       },
     ];
-  }, [floors, shownLayers, height, zRange]);
+  }, [floors, shownLayers, height, zRange, heightFollow]);
 
   const viewLayers = useMemo(
     () => (floors.length > 1 && shownLayers.length < floors.length ? new Set(shownLayers) : undefined),
@@ -141,6 +158,7 @@ export function useFloors(vector: EqMap | null, loc: LocEvent | null, zoneName: 
     heightFollowRange,
     setHeightFollowRange,
     bands,
+    followCenter,
     // With more than one storey on screen there's no single one to claim, so a pin made now belongs to
     // the zone rather than to a floor.
     viewLayer: floors.length > 1 && shownLayers.length === 1 ? shownLayers[0] : undefined,

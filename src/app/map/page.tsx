@@ -118,6 +118,7 @@ export default function MapWindow() {
     heightFollowRange,
     setHeightFollowRange,
     bands,
+    followCenter,
     viewLayer,
     viewLayers,
   } = useFloors(vector, loc, mapZone);
@@ -729,6 +730,7 @@ export default function MapWindow() {
             zone={zone}
             vector={vector}
             bands={bands}
+            followCenter={followCenter}
             hiddenPoiKinds={poiKinds.hidden}
             emphasis={emphasis}
             kills={renderKills}

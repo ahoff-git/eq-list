@@ -140,7 +140,7 @@ export default function MapFilters({
         <section>
           <header>
             <span className="muted small">Height</span>
-            <span className="muted small">{wholeSpan ? "all" : `${lo} … ${hi}`}</span>
+            <span className="muted small">{heightFollow ? "following" : wholeSpan ? "all" : `${lo} … ${hi}`}</span>
             <button
               className="btn ghost sm"
               disabled={wholeSpan && !heightFollow}
@@ -171,7 +171,7 @@ export default function MapFilters({
                   step={step}
                   value={heightFollowRange}
                   onChange={(e) => onHeightFollowRange(Math.max(1, Math.round(Number(e.target.value)) || 1))}
-                  title="How far above and below your own height to draw, at minimum — widened automatically so a slope you're standing on doesn't have its far edge cut off."
+                  title="How far above and below your own height draws at full strength. Beyond that it fades out over the same distance again, so a level you're leaving and one you're arriving at crossfade as you climb the ramp between them, instead of one simply vanishing."
                 />
               </>
             )}

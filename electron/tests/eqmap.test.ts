@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import {
   detectFloors,
   floorAt,
-  followHeightWindow,
+  followOpacity,
   inBands,
   mapBounds,
   mapZRange,
@@ -234,24 +234,15 @@ test("a hand-set window is chosen within the map's own height span", () => {
   assert.equal(mapZRange(parseEqMap("")), undefined);
 });
 
-test("the follow window widens for nearby geometry, but not for a distant slope", () => {
-  const map = parseEqMap(
-    [
-      "L 0, 0, 0, -1000, -1000, 0, 0, 0, 0", // sets the zone's own bounds, corner to corner
-      "L 0, -50, 50, -500, -500, 999, 0, 0, 0", // one endpoint near the player and raised, one far off and higher still
-    ].join("\n"),
-  );
-  const window = followHeightWindow(map, { y: 0, x: 0, z: 0 }, 10);
-  assert.equal(window.minZ, -10); // nothing nearby sits lower than the base window
-  assert.equal(window.maxZ, 50); // widened to the nearby endpoint's height...
-  assert.notEqual(window.maxZ, 999); // ...but the distant endpoint doesn't pull it any further
-});
-
-test("with nothing nearby, the follow window is just the base half-width", () => {
-  const map = parseEqMap("L 0, 0, 0, -1000, -1000, 0, 0, 0, 0");
-  // Both ends of the only segment are corners of the zone, far outside "near" the centre.
-  assert.deepEqual(followHeightWindow(map, { y: 500, x: 500, z: 20 }, 15), { minZ: 5, maxZ: 35 });
-  assert.deepEqual(followHeightWindow(parseEqMap(""), { y: 0, x: 0, z: 0 }, 10), { minZ: -10, maxZ: 10 });
+test("followOpacity is solid on your own level, gone two storeys off, and half way between", () => {
+  assert.equal(followOpacity(100, 100, 30), 1); // exactly where you stand
+  assert.equal(followOpacity(115, 100, 30), 1); // still your level
+  assert.equal(followOpacity(130, 100, 30), 1); // right at the edge of "your level" — inclusive
+  assert.equal(followOpacity(160, 100, 30), 0); // two storeys off — gone
+  assert.equal(followOpacity(145, 100, 30), 0.5); // halfway through the fade band
+  assert.equal(followOpacity(200, 100, 30), 0); // far beyond the fade band, not just at its edge
+  // Symmetric: a level below fades the same way a level above does.
+  assert.equal(followOpacity(55, 100, 30), 0.5);
 });
 
 test("a degenerate map still projects (no divide by zero)", () => {

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerLoc } from "@/lib/hooks";
 import { canvasToEqCoords, clampPan, eqToCanvasCoords, fitRect } from "@/shared/map/coords";
-import { inBands, mapBounds, segmentInBands, vectorProjection, type EqMap, type ZBand } from "@/shared/map/eqmap";
+import { followOpacity, inBands, mapBounds, segmentInBands, vectorProjection, type EqMap, type ZBand } from "@/shared/map/eqmap";
 import { POI_KINDS, poiKind, type PoiKind } from "@/shared/map/poi-kinds";
 import { zoneLinkName } from "@/shared/map/zone-names";
 import { zoneKey } from "@/shared/names";
@@ -174,6 +174,14 @@ const MIN_GRID_STEP = 50;
 const FAR_TRAIL_FRACTION = 0.2;
 
 /**
+ * How many opacity buckets the follow fade (`followOpacity`) is quantised into when batching the
+ * zone's lines for drawing — see `mapPaths`. Coarse enough to keep the stroke count bounded on a
+ * twenty-thousand-segment zone, fine enough that stepping through them as you actually walk a ramp
+ * reads as a smooth crossfade rather than a strobe.
+ */
+const FOLLOW_ALPHA_STEPS = 12;
+
+/**
  * How long a fresh ping animates. A ping is a "look here" gesture, so it announces
  * itself with expanding rings and then settles into a plain marker that stays put —
  * long enough to catch your eye across the room, short enough not to distract.
@@ -244,6 +252,7 @@ export default function MapPanel({
   showGrid = false,
   vector,
   bands,
+  followCenter,
   hiddenPoiKinds,
   emphasis,
   survey,
@@ -284,6 +293,13 @@ export default function MapPanel({
    * Stairs belong to both floors they touch, so they stay drawn.
    */
   bands?: ZBand[];
+  /**
+   * While the `/loc`-follow window is on, the height and half-width geometry fades against instead
+   * of a hard band (`followOpacity`) — your own level draws at full strength and a ramp to the next
+   * one crossfades along its length, rather than the far side of a slope simply not being there.
+   * Undefined draws by `bands` alone, same as before this existed.
+   */
+  followCenter?: { z: number; core: number };
   /** Label kinds to leave off the map (see `poiKind`) — a busy zone is mostly labels. */
   hiddenPoiKinds?: ReadonlySet<PoiKind>;
   /**
@@ -457,14 +473,21 @@ export default function MapPanel({
     const marked = new Set(
       (survey?.nodes ?? []).flatMap((n) => n.at.map((p) => `${Math.round(p.y)},${Math.round(p.x)}`)),
     );
-    return vector.pois.filter(
-      (poi) =>
-        inBands(poi.z, bands) &&
-        !hiddenPoiKinds?.has(poiKind(poi.label)) &&
-        !goesNowhere(poi.label) &&
-        !marked.has(`${Math.round(poi.y)},${Math.round(poi.x)}`),
-    );
-  }, [vector, bands, hiddenPoiKinds, survey]);
+    return vector.pois
+      .filter(
+        (poi) =>
+          !hiddenPoiKinds?.has(poiKind(poi.label)) &&
+          !goesNowhere(poi.label) &&
+          !marked.has(`${Math.round(poi.y)},${Math.round(poi.x)}`),
+      )
+      // While following, a label fades the same way the lines around it do; otherwise it's the
+      // usual hard in/out (`bands`) — one or the other, same as `mapPaths`.
+      .map((poi) => ({
+        ...poi,
+        opacity: followCenter ? followOpacity(poi.z, followCenter.z, followCenter.core) : inBands(poi.z, bands) ? 1 : 0,
+      }))
+      .filter((poi) => poi.opacity > 0);
+  }, [vector, bands, followCenter, hiddenPoiKinds, survey]);
 
   /**
    * Everything on the map that answers to the cursor. Built in one place so hovering doesn't need
@@ -595,31 +618,45 @@ export default function MapPanel({
   }, [canvasSize, mapRect, zoom]);
 
   /**
-   * The zone's lines, **in base-canvas coordinates**, batched into one path per colour: a few thousand
-   * segments with a stroke each would be thousands of context switches, and the biggest zones carry
-   * twenty thousand.
+   * The zone's lines, **in base-canvas coordinates**, batched into one path per colour (and, while
+   * following, per opacity bucket): a few thousand segments with a stroke each would be thousands
+   * of context switches, and the biggest zones carry twenty thousand.
    *
    * Built here rather than in the draw below because it does not depend on the view. Zoom and pan are
    * applied to the *context* — a translate and a scale — so the geometry underneath is the same at every
    * crop, and rebuilding twenty thousand `Path2D` segments per mousemove was most of what made dragging
    * a big zone stutter. The path outlives the drag; only the transform moves.
+   *
+   * While `followCenter` is set, canvas alpha is per-*stroke*, not per-segment, so a truly smooth
+   * fade would mean one stroke call per segment — exactly the cost this batching exists to avoid.
+   * `FOLLOW_ALPHA_STEPS` buckets each segment's opacity instead: still one path per (colour, bucket)
+   * pair, and a fade a person walks across in real time reads as smooth well before the eye can
+   * count the steps.
    */
   const mapPaths = useMemo(() => {
     if (!vector || !view) return undefined;
-    const paths = new Map<string, Path2D>();
+    const paths = new Map<string, { path: Path2D; color: string; alpha: number }>();
     for (const seg of vector.segments) {
-      if (!segmentInBands(seg, bands)) continue;
+      let bucket = FOLLOW_ALPHA_STEPS;
+      if (followCenter) {
+        const opacity = followOpacity((seg.z1 + seg.z2) / 2, followCenter.z, followCenter.core);
+        if (opacity <= 0) continue;
+        bucket = Math.round(opacity * FOLLOW_ALPHA_STEPS);
+      } else if (!segmentInBands(seg, bands)) {
+        continue;
+      }
       const a = eqToCanvasCoords({ y: seg.y1, x: seg.x1 }, projection, view);
       const b = eqToCanvasCoords({ y: seg.y2, x: seg.x2 }, projection, view);
       if (!a || !b) continue;
-      const key = seg.color ?? MAP_COLORS.mapLine;
-      let path = paths.get(key);
-      if (!path) paths.set(key, (path = new Path2D()));
-      path.moveTo(a.x, a.y);
-      path.lineTo(b.x, b.y);
+      const color = seg.color ?? MAP_COLORS.mapLine;
+      const key = `${color}#${bucket}`;
+      let entry = paths.get(key);
+      if (!entry) paths.set(key, (entry = { path: new Path2D(), color, alpha: bucket / FOLLOW_ALPHA_STEPS }));
+      entry.path.moveTo(a.x, a.y);
+      entry.path.lineTo(b.x, b.y);
     }
     return paths;
-  }, [vector, bands, projection, view]);
+  }, [vector, bands, followCenter, projection, view]);
 
   // Draw the map's geometry under the current view (zoom/pan). This canvas is static between
   // zone/zoom changes; the moving markers live on the one stacked above it.
@@ -635,10 +672,12 @@ export default function MapPanel({
     if (mapPaths) {
       // Hairlines: the view is already scaled, so undo it to keep strokes one pixel wide.
       ctx.lineWidth = 1 / zoom;
-      for (const [color, path] of mapPaths) {
+      for (const { path, color, alpha } of mapPaths.values()) {
+        ctx.globalAlpha = alpha;
         ctx.strokeStyle = color;
         ctx.stroke(path);
       }
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
   }, [mapPaths, zoom, pan, canvasSize]);
@@ -816,6 +855,7 @@ export default function MapPanel({
         for (const poi of visiblePois) {
           const p = toScreen(poi);
           if (!p || !near(p)) continue;
+          ctx.globalAlpha = poi.opacity;
           ctx.fillStyle = poi.color ?? MAP_COLORS.poi;
           ctx.beginPath();
           ctx.arc(p.x, p.y, 2, 0, 2 * Math.PI);

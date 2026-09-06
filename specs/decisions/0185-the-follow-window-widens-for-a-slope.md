@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [0194](./0194-the-follow-window-fades-instead-of-cutting-off.md)
 
 ## Context
 

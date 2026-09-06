@@ -1805,6 +1805,12 @@ kbd {
   background: rgba(14, 16, 19, 0.72);
   cursor: grab;
   user-select: none;
+  /* Always sized off its own content, never off whatever room is left beside it. Without this, a
+     `position: fixed` box near the right edge of the display can be laid out as if squeezed for
+     space, so its flex children (icon/time/track/label) shrink or wrap to fit — the clock changing
+     shape depending on where it's been dragged, rather than looking the same everywhere. */
+  width: max-content;
+  white-space: nowrap;
 }
 .gameclock-hud:active { cursor: grabbing; }
 .gameclock-hud .gc-time { font-size: 15px; }

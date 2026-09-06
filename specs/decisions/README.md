@@ -218,7 +218,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0182: Window management is Windows' job — drop `transparent: true` and the hand-rolled snap](./0182-window-management-is-windows-job.md)
 - [0183: The hand-set height window can follow your own `/loc` height](./0183-a-height-window-can-follow-you.md)
 - [0184: A trail hop too far to be walked is drawn as a hint, not a path](./0184-a-trail-hop-too-far-is-a-hint-not-a-path.md)
-- [0185: The follow window widens for a slope, not just a flat guess](./0185-the-follow-window-widens-for-a-slope.md)
+- [0185: The follow window widens for a slope, not just a flat guess](./0185-the-follow-window-widens-for-a-slope.md) — superseded by [0194](./0194-the-follow-window-fades-instead-of-cutting-off.md)
 - [0186: The game clock runs forward from the last `/time` reading, at a fixed ratio](./0186-the-game-clock-runs-forward-from-the-last-time-reading.md) — superseded by 0187
 - [0187: The clock anchors on the reported hour's midpoint, not its start](./0187-the-clock-anchors-on-the-hours-midpoint.md)
 - [0188: The clock's pace calibrates itself, live, from consecutive readings](./0188-the-clocks-pace-calibrates-itself.md)
@@ -227,6 +227,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0191: The debug comparison was reading its two sides by different conventions](./0191-the-debug-comparison-was-comparing-mismatched-conventions.md)
 - [0192: Factions ride their own wiki pages, and tracking a raise-mob reuses the shopping list](./0192-factions-ride-their-own-wiki-pages.md)
 - [0193: A faction alert rides the existing line watch, ahead of a verified log line](./0193-a-faction-alert-rides-the-existing-line-watch.md)
+- [0194: The follow window fades instead of cutting off](./0194-the-follow-window-fades-instead-of-cutting-off.md)
 
 ## Open Questions
 
