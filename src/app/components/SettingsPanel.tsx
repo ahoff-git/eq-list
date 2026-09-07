@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useAppInfo, useSettings } from "@/lib/hooks";
+import { useAppInfo, useCapabilities, useSettings } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
 import LogSettings from "./LogSettings";
@@ -22,6 +22,7 @@ import type { DeepPartial, Settings } from "@/shared/types";
 export default function SettingsPanel() {
   const settings = useSettings();
   const info = useAppInfo();
+  const capabilities = useCapabilities();
 
   if (!settings) return <p className="muted">Loading settings…</p>;
 
@@ -31,8 +32,13 @@ export default function SettingsPanel() {
     <div>
       {/* First, deliberately. Settings is where you land when something isn't working, and the
           check's answer is nearly always about the controls immediately below it — so it reads
-          diagnosis first, then the knobs that fix what it named. */}
-      <SelfCheck />
+          diagnosis first, then the knobs that fix what it named.
+          Log-only: every step it walks (log folder, active file, whether the game is still
+          writing) is about a local EverQuest log a browser tab doesn't have. `app.selfCheck()`
+          answers `[]` there, which read as a false all-clear ("NOT CHECKED… Everything the app
+          needs is in place") rather than as "not applicable" — so this doesn't offer the check
+          at all rather than let it lie. */}
+      {capabilities.log && <SelfCheck />}
       <LogSettings settings={settings} patch={patch} />
       {/* Above Forget, deliberately: "this needs re-reading" and "throw this away" are neighbouring
           thoughts, and the recoverable one should be met first. */}
@@ -150,41 +156,45 @@ export default function SettingsPanel() {
         </span>
       </div>
 
-      <div className="setting">
-        <label>Shortcuts</label>
-        <div className="hotkeys">
-          {(info?.hotkeys ?? []).map((h) => (
-            <div className="hotkey" key={h.action}>
-              <kbd>{h.label}</kbd>
-              <span>{h.action}</span>
-              <span className={`hk-status ${h.registered ? "ok" : "bad"}`}>
-                {h.registered ? "active" : "in use by another app"}
-              </span>
+      {capabilities.shortcuts && (
+        <div className="setting">
+          <label>Shortcuts</label>
+          <div className="hotkeys">
+            {(info?.hotkeys ?? []).map((h) => (
+              <div className="hotkey" key={h.action}>
+                <kbd>{h.label}</kbd>
+                <span>{h.action}</span>
+                <span className={`hk-status ${h.registered ? "ok" : "bad"}`}>
+                  {h.registered ? "active" : "in use by another app"}
+                </span>
+              </div>
+            ))}
+            <div className="hotkey">
+              <kbd>Esc</kbd>
+              <span>Close the overlay / screengrab window</span>
+              <span />
             </div>
-          ))}
-          <div className="hotkey">
-            <kbd>Esc</kbd>
-            <span>Close the overlay / screengrab window</span>
-            <span />
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="setting">
-        <label>Screengrab item lookup</label>
-        <span className="hint">
-          Press <kbd>{screengrabLabel(info)}</kbd> (or the button below), then drag a box over an item
-          name on screen (on any monitor). The text is read with OCR and dropped into the Search box
-          here, so you can pick the item. The first lookup downloads the OCR model (~a few MB, needs
-          internet) so it may take a moment; later lookups are fast. Turn on Debug logging above to
-          print the recognized text to the console.
-        </span>
-        <div className="row" style={{ marginTop: 6 }}>
-          <button className="btn" onClick={() => api()?.lookup.open()}>
-            Test screengrab lookup
-          </button>
+      {capabilities.lookup && (
+        <div className="setting">
+          <label>Screengrab item lookup</label>
+          <span className="hint">
+            Press <kbd>{screengrabLabel(info)}</kbd> (or the button below), then drag a box over an item
+            name on screen (on any monitor). The text is read with OCR and dropped into the Search box
+            here, so you can pick the item. The first lookup downloads the OCR model (~a few MB, needs
+            internet) so it may take a moment; later lookups are fast. Turn on Debug logging above to
+            print the recognized text to the console.
+          </span>
+          <div className="row" style={{ marginTop: 6 }}>
+            <button className="btn" onClick={() => api()?.lookup.open()}>
+              Test screengrab lookup
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

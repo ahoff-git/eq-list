@@ -49,7 +49,7 @@ import { useTravelSurvey } from "@/lib/map/useTravelSurvey";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, isPlottable } from "@/shared/kill-confidence";
 import { MAP_UI_SCALE } from "@/shared/constants";
-import type { KillEmphasis } from "@/shared/types";
+import type { KillEmphasis, MapFocus } from "@/shared/types";
 
 import { clock } from "@/shared/format";
 import { distinctSorted } from "@/shared/sorting";
@@ -200,10 +200,8 @@ export default function MapWindow() {
   // A `focus` says what the marker *is*: the mob and the drop the coordinate was derived from. With
   // one, the 📖 panel comes up narrowed to that row and the mob's kills are ringed, so the answer to
   // "where did this drop" arrives with its evidence rather than as a star on a map (ADR 0104).
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    return a.map.onViewZone(({ zone, loc, label, focus }) => {
+  const applyViewZone = useCallback(
+    ({ zone, loc, label, focus }: { zone: string; loc?: { y: number; x: number }; label?: string; focus?: MapFocus }) => {
       const zname = mapZoneName(zone, zonesRef.current);
       setOverride(zname); // canonical name so the dropdown reflects it
       if (focus?.mob || focus?.drop) {
@@ -221,8 +219,37 @@ export default function MapWindow() {
           ? prev
           : [...prev, { id: crypto.randomUUID(), kind: "star", zone: zname, y: loc.y, x: loc.x, title: label }],
       );
+    },
+    // The only "deps" are stable state setters (setOverride/setPins).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    return a.map.onViewZone(applyViewZone);
+  }, [applyViewZone]);
+
+  // The web build opens the map as a **new browser tab** rather than a second Electron window
+  // (`EqlApi.map.open`/`openAt` — see `src/lib/web-api.ts`), so there is no live `onViewZone` push
+  // to receive: the target rides in the URL instead, read once on mount and then cleared so a
+  // refresh doesn't keep re-applying it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const zone = params.get("zone");
+    if (!zone) return;
+    const y = params.get("y");
+    const x = params.get("x");
+    applyViewZone({
+      zone,
+      loc: y !== null && x !== null ? { y: Number(y), x: Number(x) } : undefined,
+      label: params.get("label") ?? undefined,
+      focus: { mob: params.get("mob") ?? undefined, drop: params.get("drop") ?? undefined },
     });
-    // Subscribe once — the only "deps" are stable state setters (setOverride/setPins).
+    window.history.replaceState(null, "", window.location.pathname);
+    // Once, on mount — `applyViewZone` is stable and re-running this on every render would re-open
+    // a URL the user has already navigated away from.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

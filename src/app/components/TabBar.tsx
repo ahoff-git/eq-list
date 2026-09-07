@@ -6,6 +6,10 @@ import { count } from "@/shared/format";
 export interface TabItem {
   key: string;
   label: string;
+  /** Greyed out and inert — a capability this host doesn't have (`EqlApi.platform.capabilities`). */
+  disabled?: boolean;
+  /** Why, for the greyed-out tab's tooltip. Ignored when `disabled` isn't set. */
+  disabledReason?: string;
 }
 
 const GAP = 4; // must match `.tabs` gap in globals.css
@@ -74,7 +78,13 @@ export default function TabBar({
   return (
     <div className="tabs" ref={rowRef}>
       {visible.map((t) => (
-        <button key={t.key} className={`tab ${active === t.key ? "active" : ""}`} onClick={() => onSelect(t.key)}>
+        <button
+          key={t.key}
+          className={`tab ${active === t.key ? "active" : ""} ${t.disabled ? "disabled" : ""}`}
+          disabled={t.disabled}
+          title={t.disabled ? t.disabledReason : undefined}
+          onClick={() => onSelect(t.key)}
+        >
           {t.label}
         </button>
       ))}
@@ -95,8 +105,10 @@ export default function TabBar({
               {overflow.map((t) => (
                 <button
                   key={t.key}
-                  className={`tab-menu-item ${active === t.key ? "active" : ""}`}
+                  className={`tab-menu-item ${active === t.key ? "active" : ""} ${t.disabled ? "disabled" : ""}`}
                   role="menuitem"
+                  disabled={t.disabled}
+                  title={t.disabled ? t.disabledReason : undefined}
                   onClick={() => {
                     onSelect(t.key);
                     setMenuOpen(false);

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
+import { useCapabilities, useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/nav";
 import ItemLink from "./ItemLink";
 import { EraBadge } from "./LucySays";
@@ -89,6 +89,7 @@ export default function SearchPanel({
 
   const settings = useSettings();
   const hideEra = settings?.hideOutOfEra ?? false;
+  const capabilities = useCapabilities();
   const keep = (list: SearchResult[]) => (hideEra ? list.filter((r) => !r.outOfEra) : list);
   const shownResults = keep(results);
   const shownQuests = keep(quests);
@@ -327,9 +328,11 @@ export default function SearchPanel({
         </button>
       </div>
       <div className="row" style={{ marginBottom: 8, gap: 10 }}>
-        <button className="btn sm" title={`Screengrab lookup — or press ${LOOKUP_HOTKEY.label}`} onClick={() => api()?.lookup.open()}>
-          📷 Look up from screen
-        </button>
+        {capabilities.lookup && (
+          <button className="btn sm" title={`Screengrab lookup — or press ${LOOKUP_HOTKEY.label}`} onClick={() => api()?.lookup.open()}>
+            📷 Look up from screen
+          </button>
+        )}
         <button
           className="btn sm"
           title="Re-fetch the wiki's search index now. It's mirrored to disk and otherwise only refreshes about weekly, so a just-added item can be missing from search until you do this."

@@ -1,9 +1,12 @@
 import type { EqlApi } from "@/shared/types";
+import { getWebApi } from "@/lib/web-api";
 
 /**
- * The preload bridge lives on `window.eql` (see electron/preload.ts). It's absent
- * during Next's static prerender and in a plain browser, so always go through
- * `api()` and handle null — callers simply no-op when there's no Electron host.
+ * The preload bridge lives on `window.eql` (see electron/preload.ts). It's absent during Next's
+ * static prerender (no `window` at all — `api()` returns `null`) and in a plain browser, where
+ * `api()` falls back to the web implementation (`src/lib/web-api.ts`) instead of `window.eql` —
+ * itself a real `EqlApi`, so every existing `api()?.foo()` call site keeps working unchanged.
+ * `EqlApi.platform.capabilities` is what tells a caller which host it got.
  */
 declare global {
   interface Window {
@@ -12,7 +15,8 @@ declare global {
 }
 
 export function api(): EqlApi | null {
-  return typeof window !== "undefined" && window.eql ? window.eql : null;
+  if (typeof window === "undefined") return null;
+  return window.eql ?? getWebApi();
 }
 
 /**

@@ -101,6 +101,19 @@ if (!dataDir) {
     console.log(copied ? `${folder}: ${files} files, ${fmtMB(bytes)}` : `${folder}: none on disk yet`);
   }
 
+  // A plain static file server has no directory listing, so the Lucy item cache (one file per id,
+  // named by id) needs an index written alongside it — the same reason maps/zone-files.json exists.
+  const lucyItemsDir = path.join(outDir, "lucy-cache", "items");
+  if (fs.existsSync(lucyItemsDir)) {
+    const ids = fs
+      .readdirSync(lucyItemsDir)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => Number(f.slice(0, -".json".length)))
+      .filter((id) => Number.isInteger(id));
+    fs.writeFileSync(path.join(lucyItemsDir, "..", "items-index.json"), JSON.stringify(ids));
+    console.log(`lucy-cache: ${ids.length} cached item page(s) indexed`);
+  }
+
   // --- travel graph + zone-name cache: two files, copied as-is -----------------------------------
   const travelOut = path.join(outDir, "travel");
   fs.mkdirSync(travelOut, { recursive: true });
@@ -126,7 +139,10 @@ if (!dir) {
   const { sources } = listSources(dir);
   const mapsOut = path.join(outDir, "maps");
   const sourceSummaries = [];
+  /** sourceId -> its zone short names, so the web build can list zones with no folder listing to read. */
+  const zoneFiles = {};
   for (const source of sources) {
+    zoneFiles[source.id] = source.files;
     const destDir = path.join(mapsOut, source.id);
     let files = 0;
     let bytes = 0;
@@ -140,9 +156,20 @@ if (!dir) {
         }
       }
     }
-    sourceSummaries.push({ id: source.id, label: source.label, zones: source.files.length, files, bytes });
+    sourceSummaries.push({
+      id: source.id,
+      label: source.label,
+      // The travel graph cache (travel-graphs.json) is keyed by this exact folder path — carried so
+      // the web build can look its graph up without re-deriving the key (see src/lib/web/travel.ts).
+      dir: source.dir,
+      zones: source.files.length,
+      files,
+      bytes,
+    });
   }
   manifest.sections.maps = { sources: sourceSummaries };
+  fs.mkdirSync(mapsOut, { recursive: true });
+  fs.writeFileSync(path.join(mapsOut, "zone-files.json"), JSON.stringify(zoneFiles));
   if (sources.length) {
     console.log(
       `maps: ${sources.length} source(s) — ${few(sourceSummaries.map((s) => `${s.label} (${s.zones} zones)`), 6)}`,

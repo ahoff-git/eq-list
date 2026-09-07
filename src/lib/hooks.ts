@@ -28,6 +28,7 @@ import type {
   ShoppingListEntry,
   LootedItem,
   Unsubscribe,
+  EqlCapabilities,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob-stats";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
@@ -998,6 +999,34 @@ export function useSettings(): Settings | null {
  * per-renderer, so a window that skips it silently discards its own diagnostics. The
  * awari connection lives in the main window, which is exactly where they're wanted.
  */
+const ALL_CAPABILITIES_OFF: EqlCapabilities = {
+  log: false,
+  windowing: false,
+  shortcuts: false,
+  lookup: false,
+  overlayPlacement: false,
+  update: false,
+  display: false,
+};
+
+/**
+ * What this host can actually do (`EqlApi.platform.capabilities`) — the one thing every tab and
+ * every window-chrome control checks before showing itself as available rather than disabled.
+ *
+ * Starts all-false and corrects itself in an effect rather than reading `api()` directly at render
+ * time: `api()` is `null` during Next's static prerender (no `window`), so the first client render
+ * has to match that server output or React logs a hydration mismatch. The correction lands within a
+ * tick of mount, same as the capability itself never changing mid-session — this only ever fires once.
+ */
+export function useCapabilities(): EqlCapabilities {
+  const [capabilities, setCapabilities] = useState<EqlCapabilities>(ALL_CAPABILITIES_OFF);
+  useEffect(() => {
+    const found = api()?.platform.capabilities;
+    if (found) setCapabilities(found);
+  }, []);
+  return capabilities;
+}
+
 export function useRendererDebug(): void {
   const settings = useSettings();
   const debug = settings?.debug ?? false;

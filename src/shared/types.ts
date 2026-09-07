@@ -2571,7 +2571,44 @@ export interface UpdateNotice {
 /** Unsubscribe function returned by every `on*` subscription. */
 export type Unsubscribe = () => void;
 
+/**
+ * What this host can actually do — read once (it never changes mid-session) rather than probed per
+ * feature, so a tab strip or a titlebar button can style itself off one flat object instead of every
+ * caller guessing from what a method happens to return.
+ *
+ * Electron reports every flag true. The web build (`src/lib/web-api.ts`) reports which of them a
+ * plain browser tab can genuinely back: search/map/travel and the awari peer room all work with no
+ * game running, so those stay true; everything that needs a local EverQuest log, native windowing, a
+ * global hotkey, or screen capture is false there, and the ordinary "one shell, gated by capability"
+ * rule ([specs/architecture](../../specs/architecture/README.md)) is what disables the tab or control
+ * that needs it rather than hiding it.
+ */
+export interface EqlCapabilities {
+  /** A local EverQuest log to tail — kills, loot, XP, buffs, spawns, damage, alerts all ride on it. */
+  log: boolean;
+  /** Native window management — pin/opacity/click-through, hide-to-tray, multiple OS windows. */
+  windowing: boolean;
+  /** Global hotkeys and the mouse-thumb-button `app-command` (`nav.onCommand`). */
+  shortcuts: boolean;
+  /** Screengrab OCR lookup. */
+  lookup: boolean;
+  /** The click-through alert overlay's on-screen placement UI. */
+  overlayPlacement: boolean;
+  /** Release-channel update checks. */
+  update: boolean;
+  /** Enumerating connected monitors. */
+  display: boolean;
+}
+
+/** What a host is, and what it can do — `EqlApi.platform`. Synchronous: it never changes mid-session. */
+export interface EqlPlatform {
+  kind: "electron" | "web";
+  capabilities: EqlCapabilities;
+}
+
 export interface EqlApi {
+  /** What this host is and can do — see `EqlPlatform`. */
+  platform: EqlPlatform;
   list: {
     get(): Promise<ShoppingList>;
     /** Add a single item to watch. Returns the updated list. */

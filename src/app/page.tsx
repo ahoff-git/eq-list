@@ -19,7 +19,6 @@ import type { AwariPeer, BuffView, Settings } from "@/shared/types";
 import DamagePanel from "./components/DamagePanel";
 import LootPanel from "./components/LootPanel";
 import StatusBar from "./components/StatusBar";
-import LandingView from "./components/LandingView";
 import PinButton from "./components/PinButton";
 import OpacityButton from "./components/OpacityButton";
 import ClickThroughButton from "./components/ClickThroughButton";
@@ -30,7 +29,7 @@ import TabBar, { type TabItem } from "./components/TabBar";
 import PeersPanel from "./components/PeersPanel";
 import PeerOfferToasts from "./components/PeerOfferToasts";
 import PeerVersionToast from "./components/PeerVersionToast";
-import { useBuffs, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
+import { useBuffs, useCapabilities, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
@@ -43,21 +42,12 @@ import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 type Tab = "list" | "hunt" | "timers" | "buffs" | "loot" | "search" | "items" | "spells" | "damage" | "session" | "alerts" | "peers" | "settings";
 
 /**
- * The app, or the page that says where to get it.
- *
- * Thin on purpose: it decides only whether there is a host to be an overlay *for*, and puts the
- * window inside the nav provider that owns where it is. Everything else is `ControlWindow`, which
- * can then simply ask (`useNav`) rather than being handed a tab and a setter.
+ * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
+ * always answers (Electron's bridge, or `src/lib/web-api.ts`), and `ControlWindow` asks
+ * `useCapabilities()` for what this particular host can actually do rather than the renderer
+ * branching on which host it is.
  */
 export default function Home() {
-  // Undetermined until mounted (keeps SSR/first-client render consistent).
-  const [inElectron, setInElectron] = useState<boolean | null>(null);
-  useEffect(() => {
-    setInElectron(!!api());
-  }, []);
-
-  if (inElectron === null) return null; // brief pre-mount frame
-  if (!inElectron) return <LandingView />;
   return (
     <NavProvider>
       <ControlWindow />
@@ -119,6 +109,8 @@ function ControlWindow() {
       offStatus();
     };
   }, []);
+  // What this host can actually do — a browser tab has no game log and no native window chrome.
+  const capabilities = useCapabilities();
   // Squares the window's corners while maximized (see globals.css).
   const maximized = useMaximized();
   const settings = useSettings();
@@ -162,26 +154,30 @@ function ControlWindow() {
     });
   }, [openTab]);
 
+  // Every one of these reads a live EverQuest log — no log on this host, nothing for the tab to show.
+  const needsLog = !capabilities.log;
+  const noLog = "Needs the desktop app — no EverQuest log to read here.";
+
   const tabItems: TabItem[] = [
     { key: "list", label: list.entries.length ? `List (${list.entries.length})` : "List" },
     { key: "hunt", label: "Hunt" },
     // Beside Hunt, which is the tool it belongs with. `TabBar` collapses from the *end*, so a
     // ninth tab put after Settings would be the first one to disappear at the default width —
     // and a timer you cannot see is worse than no timer (ADR 0092).
-    { key: "timers", label: "Timers" },
+    { key: "timers", label: "Timers", disabled: needsLog, disabledReason: noLog },
     // Beside Timers, because it is the same kind of thing: a board of what is running out. It goes
     // *before* Loot for the same reason Timers goes before Alerts — `TabBar` collapses from the end,
     // and a buff that dropped is something you need to see mid-fight, which is exactly when you
     // cannot go hunting through a » menu for it. The count is what is currently **missing**, since
     // that is the only number here anyone acts on.
-    { key: "buffs", label: buffsLabel(buffs) },
-    { key: "loot", label: "Loot" },
+    { key: "buffs", label: buffsLabel(buffs), disabled: needsLog, disabledReason: noLog },
+    { key: "loot", label: "Loot", disabled: needsLog, disabledReason: noLog },
     // Fourth, not last but one. `TabBar` collapses whatever doesn't fit into its » menu from the
     // **end**, and at the window's default width only six tabs fit — so putting alerts after
     // Settings would have left the feature *less* reachable than when it was a group inside
     // Settings. The count is the *enabled* rules, since that's what's live, and "off" is worth
     // saying out loud here: a silent overlay looks identical to one with nothing to say.
-    { key: "alerts", label: alertsLabel(settings?.castAlerts) },
+    { key: "alerts", label: alertsLabel(settings?.castAlerts), disabled: needsLog, disabledReason: noLog },
     { key: "search", label: "Search" },
     // Straight after Search, because it is the same drawer opened from the other side: Search finds
     // the page for a name you have, Items finds the name for a shape you want. Neither is wanted
@@ -190,8 +186,8 @@ function ControlWindow() {
     // Beside Items, the same drawer as Items opened on a different shelf — one browses what you
     // could wear, this browses what you could cast. Same "not needed mid-fight" grouping.
     { key: "spells", label: "Spells" },
-    { key: "damage", label: "Damage" },
-    { key: "session", label: "Session" },
+    { key: "damage", label: "Damage", disabled: needsLog, disabledReason: noLog },
+    { key: "session", label: "Session", disabled: needsLog, disabledReason: noLog },
     // Before Settings, and after everything you look at while playing. It is the same kind of thing
     // as Settings — a place you go to decide something and then leave — but it also has a live half
     // (who is here, what has arrived), which is why it isn't a group inside it
@@ -227,22 +223,30 @@ function ControlWindow() {
           </h1>
           <span className="spacer" />
           <div className="win-controls no-drag">
-            <button className="wc" title="Open map window" onClick={openMapWindow}>
+            <button className="wc" title="Open the map" onClick={openMapWindow}>
               🗺
             </button>
-            <ScaleButtons
-              scale={uiScale}
-              onScale={(next) => api()?.settings.update({ overlay: { fontScale: next } })}
-            />
-            <OpacityButton opaque={opaque} opacity={sliderOpacity} onToggle={toggleOpaque} />
-            <ClickThroughButton on={clickThrough.on} what="the list" onToggle={clickThrough.toggle} />
-            <PinButton
-              pinned={pinned}
-              onToggle={togglePinned}
-              title={`Always on top: ${pinned ? "on" : "off"} · ${OVERLAY_HOTKEY.label} shows/hides`}
-            />
-            {/* Hide, not close: the app keeps watching the log from the tray. */}
-            <WindowButtons dismissTitle="Hide to tray" dismiss={() => api()?.win.hide()} />
+            {/* Everything past here is native-window chrome — pinning, opacity and click-through
+                all assume a frameless window sitting over the game, which a browser tab doesn't
+                have. A plain document has its own titlebar and its own way to close, so there is
+                nothing to disable-and-grey here; the cluster simply isn't drawn. */}
+            {capabilities.windowing && (
+              <>
+                <ScaleButtons
+                  scale={uiScale}
+                  onScale={(next) => api()?.settings.update({ overlay: { fontScale: next } })}
+                />
+                <OpacityButton opaque={opaque} opacity={sliderOpacity} onToggle={toggleOpaque} />
+                <ClickThroughButton on={clickThrough.on} what="the list" onToggle={clickThrough.toggle} />
+                <PinButton
+                  pinned={pinned}
+                  onToggle={togglePinned}
+                  title={`Always on top: ${pinned ? "on" : "off"} · ${OVERLAY_HOTKEY.label} shows/hides`}
+                />
+                {/* Hide, not close: the app keeps watching the log from the tray. */}
+                <WindowButtons dismissTitle="Hide to tray" dismiss={() => api()?.win.hide()} />
+              </>
+            )}
           </div>
         </Titlebar>
 

@@ -15,6 +15,10 @@ function on<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
 }
 
 const api: EqlApi = {
+  platform: {
+    kind: "electron",
+    capabilities: { log: true, windowing: true, shortcuts: true, lookup: true, overlayPlacement: true, update: true, display: true },
+  },
   list: {
     get: () => ipcRenderer.invoke(CH.listGet),
     add: (input) => ipcRenderer.invoke(CH.listAdd, input),
