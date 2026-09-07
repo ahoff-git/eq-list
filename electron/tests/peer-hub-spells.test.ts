@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createPeerShareHub, type PeerShareDeps } from "../peer-share";
+import { createPeerShareHub, type PeerShareDeps } from "../../src/shared/peer-share-hub";
 import { AWARI_MSG, type AwariPayload, type AwariPeer, type Settings } from "../../src/shared/types";
 import type { ShareKind, ShareSettings } from "../../src/shared/peer-share";
 

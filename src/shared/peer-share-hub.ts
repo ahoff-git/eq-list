@@ -1,16 +1,20 @@
 /**
- * peer-share.ts — the half of peer sharing that has to be running: answering asks, and keeping what
- * arrives.
+ * peer-share-hub.ts — the half of peer sharing that has to be running: answering asks, and keeping
+ * what arrives.
  *
- * [ADR 0141](../specs/decisions/0141-the-room-is-a-meeting-place.md) made the room a meeting place
+ * [ADR 0141](../../specs/decisions/0141-the-room-is-a-meeting-place.md) made the room a meeting place
  * and the data peer-to-peer, and the rules for what may cross are pure and next door in
- * [src/shared/peer-share.ts](../src/shared/peer-share.ts). This is the holder: what our catalogue
- * says, who is allowed to have what, and where a peer's answer goes when it lands.
+ * [peer-share.ts](./peer-share.ts). This is the holder: what our catalogue says, who is allowed to
+ * have what, and where a peer's answer goes when it lands.
  *
- * **It lives in main for the same reason contributions do** ([ADR 0132](../specs/decisions/0132-a-contribution-is-keyed-by-who-made-it.md)):
- * main is the only participant that is always running. A share hub that answered only while the
- * Peers tab was open would drop every ask the moment somebody switched to their list, and a peer
- * whose data arrived while no window wanted it would have shared it into nothing.
+ * **Framework-agnostic on purpose** — no `fs`, no Node built-ins, only `shared/` imports — because it
+ * has two hosts: Electron main runs one instance for the app-level connection (`electron/ipc.ts`,
+ * "lives in main for the same reason contributions do",
+ * [ADR 0132](../../specs/decisions/0132-a-contribution-is-keyed-by-who-made-it.md): main is the only
+ * participant that is always running, so a hub that answered only while the Peers tab was open would
+ * drop every ask the moment somebody switched tabs), and the web build runs one directly in the tab
+ * that owns its awari connection — there is no main process to hold it there instead
+ * (see [web-api.ts](../lib/web-api.ts)).
  *
  * ## The catalogue is measured, not tracked
  *
@@ -49,8 +53,8 @@
  * the panel that draws them merges with `mergeTimers` / `mergeBuffs` — so the de-dupe is one tested
  * function rather than a main-process opinion the windows have to agree with.
  */
-import { createLogger } from "../src/shared/logging";
-import { AWARI_MSG, type AwariPayload, type AwariPeer, type AwariStatus, type Settings } from "../src/shared/types";
+import { createLogger } from "./logging";
+import { AWARI_MSG, type AwariPayload, type AwariPeer, type AwariStatus, type Settings } from "./types";
 import {
   SHARE_KINDS,
   newlyOffered,
@@ -69,11 +73,11 @@ import {
   type ShareEntry,
   type ShareKind,
   type ShareOffer,
-} from "../src/shared/peer-share";
-import { decodeCoverage, type PeerCoverage } from "../src/shared/item-shards";
-import type { SharedGameTime, SharedItemPage, SharedSpellPage } from "../src/shared/peer-share";
-import type { MapPin } from "../src/shared/map/pins";
-import type { KillRecord, KnownSpawn } from "../src/shared/types";
+} from "./peer-share";
+import { decodeCoverage, type PeerCoverage } from "./item-shards";
+import type { SharedGameTime, SharedItemPage, SharedSpellPage } from "./peer-share";
+import type { MapPin } from "./map/pins";
+import type { KillRecord, KnownSpawn } from "./types";
 
 const log = createLogger("peer-share");
 

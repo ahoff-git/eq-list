@@ -40,7 +40,7 @@ import { readLogTail } from "./log-tail";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import { AWARI_MSG } from "../src/shared/types";
 import { readContributor } from "../src/shared/contributors";
-import { createPeerShareHub, shareSources } from "./peer-share";
+import { createPeerShareHub, shareSources } from "../src/shared/peer-share-hub";
 import { createUiState } from "./ui-state";
 import type { ShareKind } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
