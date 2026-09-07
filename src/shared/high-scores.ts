@@ -315,9 +315,11 @@ export function eventCandidates(event: CombatEvent, mine: (name: string) => bool
   if (event.qualifier) out.push({ categoryId: qualCategory(event.qualifier), value, at: event.at, detail });
   if (event.melee && event.verb) {
     out.push({ categoryId: meleeCategory(meleeSkill(event.verb)), value, at: event.at, detail });
-  } else if (event.spell) {
+  } else if (event.spell && !event.shield) {
     // A tick and a landing are different achievements: one is a spell's whole damage arriving at
-    // once, the other is the best a slow burn ever managed in six seconds.
+    // once, the other is the best a slow burn ever managed in six seconds. A damage shield's
+    // flavour word ("flames") also rides in `spell`, but a shield firing is nobody's nuke —
+    // `event.shield` is what tells the two apart (same test `damage-tree.ts`'s `damageKind` uses).
     out.push({ categoryId: event.tick ? "biggest-tick" : "biggest-nuke", value, at: event.at, detail });
   }
   return out;

@@ -378,6 +378,8 @@ export interface HealEvent extends LogEventBase {
   /** What the heal would have restored, when the log reports an overheal. */
   attempted?: number;
   spell?: string;
+  /** The log's own trailing tag ("Critical", …), when a heal carried one. */
+  qualifier?: string;
 }
 
 /**

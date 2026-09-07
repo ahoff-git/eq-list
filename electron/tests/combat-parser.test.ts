@@ -239,12 +239,37 @@ test("damage-shield damage is credited to the shield's wearer", () => {
   assert.equal(e.melee, false);
 });
 
+test("a tagged damage-shield tick parses instead of vanishing", () => {
+  // Same trap as a heal's: every other damage shape allows a trailing "(Critical)"/"(Riposte)"
+  // tag outside the full stop, and the shield pattern was the one shape that didn't — so a tagged
+  // shield line failed to match at all rather than merely losing its tag.
+  const e = parse(
+    "A female rat is burned by Kainos`s warder's flames for 2 points of non-melee damage. (Critical)",
+  ) as DamageEvent;
+  assert.ok(e, "the shield tick must still parse with a trailing qualifier");
+  assert.equal(e.amount, 2);
+  assert.equal(e.qualifier, "Critical");
+});
+
 test("an overhealing heal meters what actually landed", () => {
   const e = parse("You healed Kainos`s warder for 1 (20) hit points by Inner Fire.") as HealEvent;
   assert.equal(e.kind, "heal");
   assert.equal(e.amount, 1);
   assert.equal(e.attempted, 20);
   assert.equal(e.spell, "Inner Fire");
+});
+
+test("a critical heal parses instead of vanishing — the qualifier sits after the full stop", () => {
+  // Every other damage shape carries a trailing "(Critical)"/"(Riposte)" tag outside the sentence
+  // (see `QUALIFIER`); a heal line can carry one too, and a pattern anchored at a bare `\.$` fails
+  // the *whole* line rather than just dropping the tag — the heal would vanish, not merely lose it.
+  const e = parse("You healed Kainos`s warder for 8 hit points. (Critical)") as HealEvent;
+  assert.ok(e, "the heal must still parse with a trailing qualifier");
+  assert.equal(e.kind, "heal");
+  assert.equal(e.amount, 8);
+  assert.equal(e.qualifier, "Critical");
+  const plain = parse("You healed Kainos`s warder for 8 hit points.") as HealEvent;
+  assert.equal(plain.qualifier, undefined);
 });
 
 // ── casting lifecycle: what makes cast time and resist rates measurable ──

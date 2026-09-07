@@ -496,9 +496,12 @@ export function createMainWindow(overlay?: OverlaySettings): BrowserWindow {
   reviveOnce(mainWindow, "main");
   applyToggles(mainWindow, toggles);
   revealWhenReady("main", mainWindow);
-  // Mouse thumb buttons (and some keyboards) fire browser back/forward as an
-  // app-command; forward it so the renderer can walk its own page history instead
-  // of the OS trying to navigate a non-existent browser.
+  // Some keyboards' dedicated back/forward keys — and a mouse whose OEM driver emits a real
+  // WM_APPCOMMAND rather than a plain XButton click — surface here. An ordinary mouse's thumb
+  // buttons don't: Chromium consumes that XButton click itself (there's no browser history to
+  // navigate, so nothing visible happens) before it ever reaches DefWindowProc's translation to
+  // WM_APPCOMMAND, so `app-command` never fires for it. That path is instead a `mouseup` listener
+  // in the renderer (`NavKeys`, page.tsx), which Chromium dispatches to the page regardless.
   mainWindow.on("app-command", (_e, cmd) => {
     if (cmd === "browser-backward") mainWindow?.webContents.send(CH.navCommand, "back");
     else if (cmd === "browser-forward") mainWindow?.webContents.send(CH.navCommand, "forward");

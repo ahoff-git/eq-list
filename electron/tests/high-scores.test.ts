@@ -68,6 +68,23 @@ test("a spell landing and a DoT tick are different records", () => {
   assert.ok(!eventCandidates(spell(true), mine).some((c) => c.categoryId === "biggest-nuke"));
 });
 
+test("a damage shield's flavour word is not a nuke", () => {
+  // A shield's "flames"/"thorns" word rides in `spell` exactly like a real spell's name does
+  // (see `combat-parser.ts`'s `damage()`), but the shield never was one — `shield: true` is what
+  // tells the two apart, and without checking it a wearer's damage shield inflated the nuke board.
+  const shield = damage({
+    attacker: "Kainos`s warder",
+    target: "a female rat",
+    amount: 2,
+    spell: "flames",
+    shield: true,
+    damageType: "non-melee",
+  });
+  const ids = eventCandidates(shield, mine).map((c) => c.categoryId);
+  assert.ok(!ids.includes("biggest-nuke"), `expected no biggest-nuke, got ${ids.join(", ")}`);
+  assert.deepEqual(ids, ["biggest-hit"]);
+});
+
 test("a hit on you is a survival record; ours-on-ours is neither", () => {
   const hit = (attacker: string, target: string): DamageEvent =>
     damage({ attacker, target, amount: 188, spell: "Ice Comet" });

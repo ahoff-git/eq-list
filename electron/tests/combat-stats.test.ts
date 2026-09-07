@@ -215,6 +215,19 @@ test("a bare name nothing has placed makes the fight say its figures are provisi
   assert.equal(f.yourDealt, 10); // …and only *yours* is claimed
 });
 
+test("a bare name is provisional even when the only evidence is a miss", () => {
+  // The identical uncertainty a landed hit gets flagged for: a name with no article that hasn't
+  // fought anything yet could be your own unproven pet, a group-mate, or a stranger — and that is
+  // just as true when the only line involving it is a whiff.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Garn tries to bite a coyote, but misses!"],
+  ]);
+  assert.deepEqual(t.snapshot().fight.unsettled, ["Garn"]);
+});
+
 test("a creature is placed by its article, and a named one by having been fought", () => {
   const t = tracker();
   t.setPlayer("Kainos");
@@ -1233,6 +1246,21 @@ test("castless damage sources are not free casts", () => {
     [3, "A female rat is burned by Kainos`s warder's flames for 2 points of non-melee damage."],
   ]);
   assert.equal(t.snapshot().session.invocations.find((i) => i.mode === "spellblade")?.procs ?? 0, 0);
+});
+
+test("a damage shield's flavour word never becomes a phantom row in the Spells table", () => {
+  // "flames" rides in `event.spell` exactly like a real spell's name does (see `combat-parser.ts`),
+  // but a damage shield is never cast — no cast line, no rank, no mana — so it must not join the
+  // per-spell table as though it were one of the player's spells.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "A female rat is burned by Kainos`s warder's flames for 2 points of non-melee damage."],
+  ]);
+  assert.equal(t.snapshot().session.spells.length, 0);
+  // The damage is still real and still on the pet's own row, just not filed as a "spell".
+  const pet = t.snapshot().session.byCombatant.find((c) => c.name === "Kainos`s warder")!;
+  assert.equal(pet.dealt, 2);
 });
 
 // One cast of an area spell lands on each target separately, and only the first of those

@@ -189,8 +189,16 @@ const SPELL_RE = new RegExp(
   `^(?<attacker>.+?) (?:${VERBS}) (?<target>.+?) for (?<amount>\\d+) points? of (?<type>\\w+) damage by (?<spell>.+?)\\.${QUALIFIER}`,
 );
 
-/** Damage shields: the *wearer* is the attacker, the one who ran into it is the target. */
-const SHIELD_RE = /^(?<target>.+?) is (?<verb>\w+) by (?<attacker>.+?)'s (?<source>\w+) for (?<amount>\d+) points? of (?<type>non-melee) damage\.$/;
+/**
+ * Damage shields: the *wearer* is the attacker, the one who ran into it is the target.
+ *
+ * Carries `QUALIFIER` like every other damage shape — a shield tick tagged "(Critical)" is a real
+ * line a bare `\.$` anchor would fail outright, the same trap that once dropped every tagged
+ * swing (see `QUALIFIER`'s own note).
+ */
+const SHIELD_RE = new RegExp(
+  String.raw`^(?<target>.+?) is (?<verb>\w+) by (?<attacker>.+?)'s (?<source>\w+) for (?<amount>\d+) points? of (?<type>non-melee) damage\.${QUALIFIER}`,
+);
 
 /**
  * A swing that didn't land. Two grammars, because EQ words a plain whiff and an active
@@ -248,8 +256,12 @@ const DOT_BY_RE = new RegExp(
 );
 
 // "for 8 hit points" or, when it overheals, "for 1 (20) hit points" — the first
-// number is what actually landed, which is the one worth metering.
-const HEAL_RE = /^(?<healer>.+?) healed (?<target>.+?) for (?<amount>\d+)(?: \((?<attempted>\d+)\))? hit points(?: by (?<spell>.+?))?\.$/;
+// number is what actually landed, which is the one worth metering. Carries `QUALIFIER` too: a
+// critical heal is tagged exactly like a critical swing, and a bare `\.$` anchor would drop the
+// whole line rather than merely the tag.
+const HEAL_RE = new RegExp(
+  String.raw`^(?<healer>.+?) healed (?<target>.+?) for (?<amount>\d+)(?: \((?<attempted>\d+)\))? hit points(?: by (?<spell>.+?))?\.${QUALIFIER}`,
+);
 
 // ── Casting lifecycle ───────────────────────────────────────────────────────
 // A cast's *start* is what makes cast time measurable: pair it with the damage or
@@ -430,6 +442,7 @@ export function parseCombat(line: LogLine): CombatEvent | null {
       amount: Number(heal.groups.amount),
       attempted: heal.groups.attempted ? Number(heal.groups.attempted) : undefined,
       spell: heal.groups.spell ? spellName(heal.groups.spell) : undefined,
+      qualifier: heal.groups.qualifier,
       logId,
       at,
       raw,

@@ -832,7 +832,11 @@ export function createCombatStats(
         doubt(w, canon(event.target));
         w.mark(at); // only damage defines when a fight ran
         if (isMine(event.attacker)) w.bucket(at, event.amount);
-        if (event.spell && isMine(canon(event.attacker))) {
+        // A damage shield's flavour word ("flames") rides in `spell` too (see `combat-parser.ts`'s
+        // `damage()`), but it is castless — no cast, no rank, no mana — so it must not join the
+        // Spells table as though it were one of yours to cast. `damageKind` next door draws the
+        // same line via `!event.shield` when it classifies a cell as "Spell" versus "Other".
+        if (event.spell && !event.shield && isMine(canon(event.attacker))) {
           const sp = w.spell(event.spell);
           const mode = modeTally(sp.byInvocation, invocation);
           sp.damage += event.amount;
@@ -879,6 +883,12 @@ export function createCombatStats(
         const t = w.tally(attacker);
         t.misses += 1;
         w.damage.record(event); // a miss is a hit-rate fact about a skill against a target
+        // Same reasoning as a landed hit's: either side of a whiff can be the unplaceable one —
+        // a bare-named pet's swing missing before it's proven, or a mob missing a group-mate we
+        // haven't been told about yet. Skipping this left a miss-only exchange looking settled
+        // when the identical exchange as a landed hit would have been flagged (ADR 0130).
+        doubt(w, attacker);
+        doubt(w, canon(event.target));
 
         if (isMine(attacker)) {
           modeTally(t.byStance, stance).misses += 1;

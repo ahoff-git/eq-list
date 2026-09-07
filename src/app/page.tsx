@@ -324,9 +324,16 @@ function buffsLabel(view: BuffView): string {
 }
 
 /**
- * Browser-style back/forward for the in-app page history: the mouse thumb buttons
- * (forwarded from main as `app-command`) and Alt+←/→. Rendered inside NavProvider
+ * Browser-style back/forward for the in-app page history: an ordinary mouse's thumb buttons,
+ * the rarer hardware that sends a real `app-command`, and Alt+←/→. Rendered inside NavProvider
  * so it can drive the shared history; renders nothing.
+ *
+ * The thumb buttons are read as `mouseup` with `button` 3 (back) / 4 (forward) — the standard
+ * DOM codes for them — rather than through `app-command`: Chromium consumes an ordinary XButton
+ * click itself (there's no browser history here for it to navigate, so nothing visible happens)
+ * before it ever reaches the native translation to `WM_APPCOMMAND`, so main's `app-command`
+ * listener (`windows.ts`) never sees it. Capture phase, so a page under the pointer can't swallow
+ * it first by stopping propagation.
  */
 function NavKeys() {
   const nav = useNav();
@@ -334,6 +341,19 @@ function NavKeys() {
     const a = api();
     if (!a) return;
     return a.nav.onCommand((dir) => (dir === "back" ? nav.back() : nav.forward()));
+  }, [nav]);
+  useEffect(() => {
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault();
+        nav.back();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        nav.forward();
+      }
+    };
+    window.addEventListener("mouseup", onMouseUp, true);
+    return () => window.removeEventListener("mouseup", onMouseUp, true);
   }, [nav]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
