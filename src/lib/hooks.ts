@@ -45,6 +45,7 @@ import {
 import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { knownItems, type KnownItem } from "@/shared/known-items";
 import type { ItemRow } from "@/shared/item-search";
+import type { SpellRow } from "@/shared/spell-search";
 import { clockSkew } from "@/shared/spawn-timers";
 import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/game-clock";
 import type { AlertUsage } from "@/shared/alert-styles";
@@ -584,6 +585,51 @@ export function useItemCatalog(refreshKey?: unknown): { rows: ItemRow[]; loading
   return state;
 }
 
+const NO_SPELL_CATALOG: SpellRow[] = [];
+/** Mirrors `heldCatalogue` — see `useItemCatalog` for why this survives an unmount. */
+let heldSpellCatalogue: { key: string; rows: SpellRow[] } | null = null;
+
+/**
+ * Every spell page the wiki cache holds, with its card already read as numbers — the Spells tab's
+ * corpus. Mirrors `useItemCatalog` exactly, over the spell catalogue instead
+ * ([ADR 0195](../../specs/decisions/0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)).
+ */
+export function useSpellCatalog(refreshKey?: unknown): { rows: SpellRow[]; loading: boolean } {
+  const key = String(refreshKey ?? "");
+  const [state, setState] = useState<{ rows: SpellRow[]; loading: boolean }>(() =>
+    heldSpellCatalogue?.key === key
+      ? { rows: heldSpellCatalogue.rows, loading: false }
+      : { rows: NO_SPELL_CATALOG, loading: true },
+  );
+
+  useEffect(() => {
+    if (heldSpellCatalogue?.key === key) {
+      setState({ rows: heldSpellCatalogue.rows, loading: false });
+      return;
+    }
+    const a = api();
+    if (!a) return;
+    let current = true;
+    setState((held) => ({ ...held, loading: true }));
+    void a.wiki
+      .cachedSpells()
+      .then((json) => {
+        const rows = JSON.parse(json) as SpellRow[];
+        heldSpellCatalogue = { key, rows };
+        if (current) setState({ rows, loading: false });
+      })
+      .catch((e: unknown) => {
+        log.warn("spell catalogue read failed:", (e as Error)?.message ?? e);
+        if (current) setState((held) => ({ ...held, loading: false }));
+      });
+    return () => {
+      current = false;
+    };
+  }, [key]);
+
+  return state;
+}
+
 /**
  * The zones this server hasn't opened yet, folded ready for `zoneUnavailable`.
  *
@@ -621,6 +667,21 @@ export function useHarvest(): HarvestProgress {
     if (!a) return;
     const off = a.wiki.onHarvest(setProgress);
     void a.wiki.harvestStatus().then((p) => setProgress((held) => (held.status === "idle" && held.total === 0 ? p : held)));
+    return off;
+  }, []);
+  return progress;
+}
+
+/** The `spells` counterpart to `useHarvest` — same subscribe-before-read shape, over the spell harvest. */
+export function useSpellHarvest(): HarvestProgress {
+  const [progress, setProgress] = useState<HarvestProgress>(NO_HARVEST);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const off = a.wiki.onSpellHarvest(setProgress);
+    void a.wiki
+      .spellHarvestStatus()
+      .then((p) => setProgress((held) => (held.status === "idle" && held.total === 0 ? p : held)));
     return off;
   }, []);
   return progress;

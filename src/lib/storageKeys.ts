@@ -52,6 +52,11 @@ export const STORAGE_KEYS = {
   itemWeightsOpen: "eqlist.main.itemWeightsOpen",
   /** Main window: how gently the Items tab fills the catalogue from the wiki (ADR 0153). */
   itemHarvestPace: "eqlist.main.itemHarvestPace",
+  /** Main window: the Spells tab's standing answers — the same workbench reasoning as the Items tab. */
+  spellCriteria: "eqlist.main.spellCriteria",
+  spellSort: "eqlist.main.spellSort",
+  /** Main window: how gently the Spells tab fills the catalogue from the wiki (ADR 0196). */
+  spellHarvestPace: "eqlist.main.spellHarvestPace",
   /**
    * Main window: the Loot tab's standing answers — which half you're reading, what you've narrowed
    * the feed to, and the order of each table.

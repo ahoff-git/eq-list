@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { openMapWindow } from "@/lib/showOnMap";
 import SearchPanel from "./components/SearchPanel";
 import ItemSearchPanel from "./components/ItemSearchPanel";
+import SpellSearchPanel from "./components/SpellSearchPanel";
 import WindowButtons from "./components/WindowButtons";
 import Titlebar from "./components/Titlebar";
 import ScaleButtons from "./components/ScaleButtons";
@@ -39,7 +40,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "buffs" | "loot" | "search" | "items" | "damage" | "session" | "alerts" | "peers" | "settings";
+type Tab = "list" | "hunt" | "timers" | "buffs" | "loot" | "search" | "items" | "spells" | "damage" | "session" | "alerts" | "peers" | "settings";
 
 /**
  * The app, or the page that says where to get it.
@@ -186,6 +187,9 @@ function ControlWindow() {
     // the page for a name you have, Items finds the name for a shape you want. Neither is wanted
     // mid-fight, so both sit late enough that `TabBar` may fold them into the » menu.
     { key: "items", label: "Items" },
+    // Beside Items, the same drawer as Items opened on a different shelf — one browses what you
+    // could wear, this browses what you could cast. Same "not needed mid-fight" grouping.
+    { key: "spells", label: "Spells" },
     { key: "damage", label: "Damage" },
     { key: "session", label: "Session" },
     // Before Settings, and after everything you look at while playing. It is the same kind of thing
@@ -266,6 +270,7 @@ function ControlWindow() {
           {tab === "loot" && <LootPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
           {tab === "items" && <ItemSearchPanel />}
+          {tab === "spells" && <SpellSearchPanel />}
           {tab === "damage" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "alerts" && <AlertsPanel />}

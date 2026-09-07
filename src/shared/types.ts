@@ -1235,6 +1235,25 @@ export interface WikiReward {
 }
 
 /**
+ * One quest inside a "gear-set" bundle page — one NPC offering several independent armor-piece
+ * quests off a single `questTopTable` (e.g. eqlwiki's `ShadowBound Armor Quests`, `Cleric Kael Armor
+ * Quests`), each with its own turn-ins and its own one reward. Present only on `WikiPage.subQuests`
+ * when `parseWikiPage` found 2+ such quests on the page — see
+ * [ADR 0197](../../specs/decisions/0197-a-gear-set-quest-page-is-several-quests.md).
+ */
+export interface WikiSubQuest {
+  /** The armor piece's own name (the wiki's per-quest heading / reward-table item name). */
+  title: string;
+  /** The parent page's `wikiPath`, plus `#<heading id>` when a matching heading exists. */
+  wikiPath: string;
+  /** The shared giver/start-zone — the same array the parent `WikiPage.sources` carries. */
+  sources: ItemSource[];
+  components: WikiComponent[];
+  /** Just this piece's own reward row (typically one entry). */
+  rewards: WikiReward[];
+}
+
+/**
  * The item stat card the wiki shows on hover (type, weight, class/race, effects…).
  * Present only for pages that have their own item block (items/recipes). Powers the
  * in-app hover tooltip.
@@ -1285,6 +1304,14 @@ export interface WikiPage {
    * into, so capping a single page would only lose shape where there is most of it.
    */
   links?: string[];
+  /**
+   * For a **quest** page shaped like a "gear-set" bundle (one giver/zone, several independently
+   * turned-in armor pieces): each piece as its own quest. `components`/`rewards` above stay the flat
+   * union of every entry here, so the existing "add the whole page" action is unaffected — this is
+   * additive, for a UI that wants to show and add each piece separately. See
+   * [ADR 0197](../../specs/decisions/0197-a-gear-set-quest-page-is-several-quests.md).
+   */
+  subQuests?: WikiSubQuest[];
   /** For **faction** pages: what raises this faction — the zones it's tied to, the quests, the mobs to kill. */
   raise?: FactionSide;
   /** For **faction** pages: the mirror image of `raise` — what lowers it. */
@@ -1389,6 +1416,21 @@ export interface CachedItem {
   /** True when the source says this era isn't live yet — the wiki's flag, or Lucy's derived one. */
   outOfEra?: boolean;
   /** When the cache last fetched it, so a stale catalogue can say so. */
+  fetchedAt: string;
+}
+
+/**
+ * One spell page already on disk, for the Spells tab.
+ *
+ * Its own shape rather than a reuse of `CachedItem` — a spell has no `origin`/`lucyId` (no Lucy
+ * merge in v1), no `sources` (a spell isn't "obtained" the way an item is) and no `outOfEra`. See
+ * [ADR 0195](../../specs/decisions/0195-a-spell-catalog-trusts-the-wikis-own-numbers.md).
+ */
+export interface CachedSpell {
+  title: string;
+  wikiPath?: string;
+  /** The spell's own card — reuses `ItemCard`, since `parseSpellCard` already builds one. */
+  card?: ItemCard;
   fetchedAt: string;
 }
 
@@ -2624,6 +2666,11 @@ export interface EqlApi {
      */
     cachedItems(): Promise<string>;
     /**
+     * Every spell page already on disk, for the Spells tab — the same "cache only, JSON text" deal
+     * `cachedItems` makes, over `CachedSpell[]` instead ([ADR 0195](../../specs/decisions/0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)).
+     */
+    cachedSpells(): Promise<string>;
+    /**
      * Fill the item catalogue from the wiki's own `Category:Items` — one page at a time, with a gap.
      *
      * The counterpart to `cachedItems`: that reads what we hold, these are how we come to hold it.
@@ -2635,6 +2682,16 @@ export interface EqlApi {
     harvestStatus(): Promise<HarvestProgress>;
     /** Every step of a running harvest, in every window — a three-hour job outlives one panel. */
     onHarvest(cb: (progress: HarvestProgress) => void): Unsubscribe;
+    /**
+     * Fill the spell catalogue from `Category:Spells`, peer-shared the same way — the `spells`
+     * counterpart to `harvestStart`/`harvestStop`/`harvestStatus`/`onHarvest`. `HarvestProgress`'s
+     * shape carries no catalogue-specific fields, so both harvests share the one type.
+     * ([ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md))
+     */
+    spellHarvestStart(opts?: { gapMs?: number; restart?: boolean }): Promise<HarvestProgress>;
+    spellHarvestStop(): Promise<HarvestProgress>;
+    spellHarvestStatus(): Promise<HarvestProgress>;
+    onSpellHarvest(cb: (progress: HarvestProgress) => void): Unsubscribe;
   };
   /**
    * Lucy — Live EverQuest's item database, the app's **third and least trusted** source. Asked only

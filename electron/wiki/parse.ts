@@ -26,6 +26,7 @@ import type {
   SourceKind,
   ItemCard,
   WikiReward,
+  WikiSubQuest,
   FactionSide,
 } from "../../src/shared/types";
 
@@ -329,6 +330,20 @@ function parseQuestInfo(content: HTMLElement, title: string): { sources: ItemSou
 }
 
 /**
+ * An `.hbdiv > a` embedded-item-card link — a reward tile, a gear-set table cell, mob loot — as a
+ * `WikiReward`. `container`'s own text is the name PLUS the whole stat-tooltip dump, so this always
+ * reads the anchor instead: its text for display, `linkName` for identity. Shared by `parseRewards`
+ * and `parseGearSetRewards` so the one idiom for "unwrap an embedded item card" lives in one place.
+ */
+function hbLinkReward(container: HTMLElement): WikiReward | undefined {
+  const hb = container.querySelector(".hbdiv a");
+  if (!hb || !isContentLink(hb)) return undefined;
+  const name = hb.text.replace(/\s+/g, " ").trim();
+  if (!name) return undefined;
+  return { text: name, item: linkName(hb), wikiPath: linkPath(hb) };
+}
+
+/**
  * Reward <ul> → reward lines. When a line IS a single linked item (its whole text is
  * one content link, e.g. a reward weapon), we tag it with the item name/path so the
  * UI can make it hover/open like a list item. Faction/coin/XP lines stay plain text.
@@ -339,13 +354,9 @@ function parseRewards(section: Section | undefined): WikiReward[] {
   for (const el of section.els) {
     if (el.tagName !== "UL") continue;
     for (const li of el.querySelectorAll("li")) {
-      // Item rewards render as `.hbdiv > a` with an embedded `.hb` stat tooltip, so
-      // `li.text` is the name PLUS the whole stat dump. Take the anchor for both the
-      // display text and the identity, ignoring the tooltip. (Same shape as mob loot.)
-      const hb = li.querySelector(".hbdiv a");
-      if (hb && isContentLink(hb)) {
-        const name = hb.text.replace(/\s+/g, " ").trim();
-        if (name) rewards.push({ text: name, item: linkName(hb), wikiPath: linkPath(hb) });
+      const hb = hbLinkReward(li);
+      if (hb) {
+        rewards.push(hb);
         continue;
       }
       const text = li.text.replace(/\s+/g, " ").trim();
@@ -357,6 +368,149 @@ function parseRewards(section: Section | undefined): WikiReward[] {
     }
   }
   return rewards;
+}
+
+// ─── Gear-set quest bundles (ADR 0197) ─────────────────────────────────────────
+
+/** Case/whitespace-folded, for matching a name against itself however the wiki capitalizes it twice. */
+function foldName(s: string): string {
+  return s.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** A gear-set table row always names an item, unlike a plain `<ul>` reward line (which may be a
+ * coin/faction line with no `item` at all) — narrowed here so callers never need a `reward.item!`. */
+type GearSetReward = WikiReward & { item: string };
+
+/** Every reward row of a `table.eql-gear-set-table` (Template:Gear_Set), first-seen deduplicated by
+ * name — a set piece worn in two slots (e.g. two bracers) lists the same item twice. */
+function parseGearSetRewards(content: HTMLElement): GearSetReward[] {
+  const table = content.querySelector("table.eql-gear-set-table");
+  if (!table) return [];
+  const seen = new Set<string>();
+  const rewards: GearSetReward[] = [];
+  for (const row of table.querySelectorAll("tr")) {
+    if (/\bsortbottom\b/.test(row.getAttribute("class") ?? "")) continue; // the Totals row
+    const td = row.querySelector("td");
+    if (!td) continue; // the header row has th, not td
+    const reward = hbLinkReward(td);
+    if (!reward?.item) continue;
+    const key = foldName(reward.item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rewards.push(reward as GearSetReward);
+  }
+  return rewards;
+}
+
+/** `el` plus every `.checkbox-list` (Template:CheckboxList) it contains, at any depth. */
+function findCheckboxLists(el: HTMLElement): HTMLElement[] {
+  const self = /\bcheckbox-list\b/.test(el.getAttribute("class") ?? "") ? [el] : [];
+  return [...self, ...el.querySelectorAll(".checkbox-list")];
+}
+
+/**
+ * `el`'s canonical name when it is a `<ul>` naming exactly one thing — a bare marker such as
+ * `<ul><li><a>Templar's Crown</a></li></ul>` — else `null`. This is what tells a "which piece do the
+ * next few turn-ins belong to" marker apart from an actual turn-in list inside the same consolidated
+ * `.checkbox-list` (see `parseGearSetBundle`'s checklist-pairs method).
+ */
+function soleLinkName(el: HTMLElement): string | null {
+  if (el.tagName !== "UL") return null;
+  const lis = el.querySelectorAll("li");
+  if (lis.length !== 1) return null;
+  const a = lis[0].querySelector("a");
+  if (!a || !isContentLink(a)) return null;
+  const text = lis[0].text.replace(/\s+/g, " ").trim();
+  const linkText = a.text.replace(/\s+/g, " ").trim();
+  return linkText === text ? linkName(a) : null;
+}
+
+/**
+ * Every `<li>` under `container` (however deep — a plain `<ul>`, or `<dl><dd><ul>`, both appear) as a
+ * turn-in component: the `<li>`'s **first** content link is the item — a parenthetical aside about
+ * where to get it, or another link entirely, may follow in the same `<li>` and is ignored — with an
+ * optional leading "3x " quantity read off the `<li>`'s own text (default 1). A structural read
+ * rather than the prose-cue heuristic `parseWalkthroughTurnIns` uses elsewhere: measured against real
+ * gear-set pages, a checklist `<li>` puts the link first with no quantity/verb cue in front of it at
+ * all ("Skeletal Toe (drops off giant skeletons in Rathe Mountains)"), which every existing cue misses.
+ */
+function parseChecklistItems(container: HTMLElement): WikiComponent[] {
+  const seen = new Map<string, WikiComponent>();
+  for (const li of container.querySelectorAll("li")) {
+    const a = li.querySelector("a");
+    if (!a || !isContentLink(a)) continue;
+    const name = linkName(a);
+    if (!name || seen.has(name)) continue;
+    const qtyM = li.text.replace(/\s+/g, " ").trim().match(/^(\d+)\s*x\b/i);
+    seen.set(name, { name, qty: qtyM ? parseInt(qtyM[1], 10) : 1, wikiPath: linkPath(a) });
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Splits a "gear-set" bundle page — one NPC offering several independent armor-piece quests off a
+ * single shared `questTopTable`, e.g. eqlwiki's `ShadowBound Armor Quests` or `Cleric Kael Armor
+ * Quests` — into one `WikiSubQuest` per reward-table row. Two real DOM shapes name which turn-ins go
+ * with which piece, tried in this order, matched by the piece's own **name** (never table/heading
+ * position — the two shapes disagree on order and Cleric Kael's headings ("Helm", "Breastplate", …)
+ * don't even name the reward at all):
+ *  - **Per-piece heading**: an `<h2>` whose own heading text equals the reward's name, holding its own
+ *    `.checkbox-list` (ShadowBound Armor Quests).
+ *  - **Consolidated checklist**: a single `<h2 id="Checklist">` holding one `.checkbox-list` with
+ *    repeating (bare-marker `<ul>`, turn-in list) pairs in reward-table order (Cleric Kael Armor
+ *    Quests) — `soleLinkName` tells a marker apart from a turn-in list in the same container.
+ * Returns `[]` (never treat the page as a bundle) unless **2 or more** reward rows got turn-ins from
+ * either method — the gear-set table alone is not enough of a signal (`Curscale Armor Quest` also
+ * carries one, with every piece's turn-ins folded into one undifferentiated Walkthrough instead), so
+ * requiring 2 real matches is what keeps an ordinary quest that merely reuses this template flat.
+ */
+function parseGearSetBundle(
+  content: HTMLElement,
+  sections: Section[],
+  wikiPath: string,
+  sharedSources: ItemSource[],
+): WikiSubQuest[] {
+  const rewardRows = parseGearSetRewards(content);
+  if (rewardRows.length < 2) return [];
+
+  const byHeading = new Map<string, WikiComponent[]>();
+  for (const section of sections) {
+    if (section.empty) continue;
+    const lists = section.els.flatMap(findCheckboxLists);
+    if (!lists.length) continue;
+    const items = lists.flatMap(parseChecklistItems);
+    if (items.length) byHeading.set(foldName(section.heading), items);
+  }
+
+  const byMarker = new Map<string, WikiComponent[]>();
+  const checklistSection = sections.find((s) => !s.empty && /checklist/i.test(s.heading));
+  for (const list of checklistSection?.els.flatMap(findCheckboxLists) ?? []) {
+    let current: string | null = null;
+    for (const child of childElements(list)) {
+      const marker = soleLinkName(child);
+      if (marker) {
+        current = foldName(marker);
+        if (!byMarker.has(current)) byMarker.set(current, []);
+        continue;
+      }
+      if (current) byMarker.get(current)!.push(...parseChecklistItems(child));
+    }
+  }
+
+  const matched = rewardRows.filter((r) => byHeading.has(foldName(r.item)) || byMarker.has(foldName(r.item)));
+  if (matched.length < 2) return [];
+
+  return rewardRows.map((reward) => {
+    const key = foldName(reward.item);
+    const heading = sections.find((s) => !s.empty && foldName(s.heading) === key);
+    return {
+      title: reward.item,
+      wikiPath: heading ? `${wikiPath}#${heading.id}` : wikiPath,
+      sources: sharedSources,
+      components: byHeading.get(key) ?? byMarker.get(key) ?? [],
+      rewards: [reward],
+    };
+  });
 }
 
 /**
@@ -754,7 +908,12 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       : undefined;
     const reward = sections.find((s) => /reward/i.test(s.id) || /reward/i.test(s.heading));
     const { sources, card } = parseQuestInfo(content, title);
-    const rewards = parseRewards(reward);
+    // A "Gear Set" reward table (Template:Gear_Set — an armor-questline's shared table of pieces,
+    // stats and totals) isn't the `<ul>` every ordinary quest's Reward section is, so `parseRewards`
+    // reads zero rewards off one. Tried only when the `<ul>` reading found nothing, so an ordinary
+    // quest that happens to also carry a stray gear-set table elsewhere is untouched.
+    const ulRewards = parseRewards(reward);
+    const rewards = ulRewards.length ? ulRewards : parseGearSetRewards(content);
     // A "Get X" bullet fires on the quest's own final reward as readily as on anything you need to
     // shop for; a reward is something you receive, not a turn-in, so it's dropped here rather than
     // taught to the (already tight) prose heuristic.
@@ -766,13 +925,19 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
     const cardWithTier = tierNote
       ? { title, lines: [...(card?.lines ?? []), `Faction note: ${tierNote}`] }
       : card;
+    // A "gear-set" bundle (see ADR 0197): one giver/zone offering several independently turned-in
+    // armor pieces, sharing this one reward table. `subQuests` splits them out; the flat
+    // `components`/`rewards` stay the union, so the plain single-quest shape below is unaffected
+    // for every page that isn't one (`parseGearSetBundle` returns `[]` unless it found 2+ of them).
+    const subQuests = parseGearSetBundle(content, sections, wikiPath, sources);
     return {
       kind: "quest",
       title,
       wikiPath,
       sources,
-      components,
-      rewards,
+      components: subQuests.length ? subQuests.flatMap((q) => q.components) : components,
+      rewards: subQuests.length ? subQuests.flatMap((q) => q.rewards) : rewards,
+      subQuests: subQuests.length ? subQuests : undefined,
       card: cardWithTier,
       links: parseContentLinks(content),
       fetchedAt,

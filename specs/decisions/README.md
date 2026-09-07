@@ -228,6 +228,9 @@ finished, so a number is claimed before a second author can reach for it.
 - [0192: Factions ride their own wiki pages, and tracking a raise-mob reuses the shopping list](./0192-factions-ride-their-own-wiki-pages.md)
 - [0193: A faction alert rides the existing line watch, ahead of a verified log line](./0193-a-faction-alert-rides-the-existing-line-watch.md)
 - [0194: The follow window fades instead of cutting off](./0194-the-follow-window-fades-instead-of-cutting-off.md)
+- [0195: A spell catalog trusts the wiki's own numbers, not the game file's](./0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)
+- [0196: Spells get their own shard-addressed mirror](./0196-spells-get-their-own-shard-addressed-mirror.md)
+- [0197: A "gear-set" quest page is several quests](./0197-a-gear-set-quest-page-is-several-quests.md)
 
 ## Open Questions
 
@@ -270,6 +273,22 @@ finished, so a number is claimed before a second author can reach for it.
   at once: the player sees an empty board and no reason for it. A toast would be the obvious answer
   and the app is careful about spending them; the alternative is a line on the tab itself, which is
   the one place nobody is looking at the moment it happens.
+
+- **Should the hub's sharded-mirror kinds generalize?** [ADR 0196](./0196-spells-get-their-own-shard-addressed-mirror.md)
+  gave `spells` its own copy of every `items`-specific branch in the share hub (`offer`/`measure`/
+  `answer`/`keep`, `askShard`/`itemRoom`) rather than building a table-driven "sharded kind" concept
+  the two could share — a deliberate call to leave a mature, heavily-ADR'd subsystem alone rather than
+  restructure it for a second user. Worth doing properly the day a *third* shard-addressed catalogue
+  is proposed; before that, the duplication is small enough to just read twice.
+
+- **Should the spell catalog ever join the exact game file?** [ADR 0195](./0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)
+  reads only the wiki's approximate numbers, deliberately narrower than
+  [ADR 0080](./0080-the-game-s-own-spell-file.md)'s install-exact mana/cast/recast/levels — a
+  different question (ranking) at a different bar (approximate) than the tracker's (measured,
+  persisted). A player whose install we can find could get the exact figures on this tab too, the
+  wiki's standing in as the fallback the way it already does on the damage meter. Not done here
+  because nothing yet asks for exactness on a browsing tab — worth doing the day someone notices the
+  wiki and the game file disagree on a spell they're comparing.
 
 - A zone states what level its monsters are, and we never check it
   ([ADR 0122](./0122-a-zone-wears-its-levels.md)). `mob-knowledge` is accumulating observed level
@@ -400,3 +419,9 @@ and degrading to blank facts when the file isn't there.*
   Today a fight is one flat window from first swing to last.
 - Should the overlay toggle hotkey be user-configurable? (Currently a fixed
   `Ctrl/Cmd+Shift+O` via Electron's built-in `globalShortcut` — no native dep.)
+- **Should a page with several *full, independent* `questTopTable`s also split?**
+  [ADR 0197](./0197-a-gear-set-quest-page-is-several-quests.md) only splits a *shared-giver* bundle
+  (one `questTopTable`, several turn-in checklists off it). `Monk Quests` concatenates five complete,
+  differently-gived quest write-ups on one page instead — a bigger, messier shape (worth a survey of
+  how many `Category:Gear_Sets`/`Category:Quests` pages actually look like this before designing
+  anything) that today still reads as one flat quest off the first table, same as before ADR 0197.

@@ -157,6 +157,65 @@ test("quest page → a \"Checklist\" heading is merged in alongside \"Walkthroug
   assert.ok(!p.components.some((c) => c.name === "Burning Rapier"));
 });
 
+// ─── Gear-set quest bundles (ADR 0197) ──────────────────────────────────────
+
+test("gear-set bundle (per-piece heading) → one sub-quest per armor piece, each with its own reward and turn-ins", () => {
+  const p = parseFixture("quest-shadowbound-armor", "ShadowBound Armor Quests");
+  assert.equal(p.kind, "quest");
+  // The shared giver/zone/level info is unaffected — one card, one set of sources for the whole page.
+  assert.ok(p.sources.some((s) => s.detail === "Quest giver" && s.where === "Syllina"));
+  assert.ok(p.card!.lines.some((l) => /^Minimum Level:\s*24$/.test(l)));
+
+  assert.equal(p.subQuests?.length, 3);
+  const boots = p.subQuests!.find((q) => q.title === "ShadowBound Boots");
+  assert.ok(boots, "ShadowBound Boots should be its own sub-quest");
+  assert.equal(boots!.wikiPath, "/ShadowBound_Armor_Quests#ShadowBound_Boots");
+  assert.ok(boots!.rewards.length === 1 && boots!.rewards[0].item === "ShadowBound Boots");
+  for (const name of ["Scepter", "Skeletal Toe", "Eye of Shadow", "Shadow Silk"]) {
+    assert.ok(boots!.components.some((c) => c.name === name), `expected ${name} as a Boots turn-in`);
+  }
+  // The gloves and robe sub-quests only ever pick up their OWN section's turn-ins.
+  const gloves = p.subQuests!.find((q) => q.title === "ShadowBound Gloves");
+  assert.ok(gloves!.components.some((c) => c.name === "Hand of Shadow"));
+  assert.ok(!gloves!.components.some((c) => c.name === "Skeletal Toe"), "Boots' turn-in must not bleed into Gloves");
+  const robe = p.subQuests!.find((q) => q.title === "Robe of Enshroudment");
+  assert.ok(robe!.components.some((c) => c.name === "Mask of Shadow"));
+
+  // The flat, page-level fields stay the union — the existing "add whole page" action is unaffected.
+  assert.equal(p.rewards.length, 3);
+  assert.ok(p.components.some((c) => c.name === "Skeletal Toe"));
+  assert.ok(p.components.some((c) => c.name === "Mask of Shadow"));
+});
+
+test("gear-set bundle (consolidated checklist) → matched by name, not by heading or table order", () => {
+  const p = parseFixture("quest-cleric-kael-armor", "Cleric Kael Armor Quests");
+  assert.equal(p.kind, "quest");
+  // The per-piece <h2> headings ("Helm", "Breastplate", …) name the *slot*, not the reward — proof
+  // this page is only picked up by the consolidated-"Checklist" method, not the per-heading one.
+  assert.equal(p.subQuests?.length, 7);
+  const crown = p.subQuests!.find((q) => q.title === "Templar's Crown");
+  assert.ok(crown, "Templar's Crown should be its own sub-quest");
+  // No per-piece heading matches its name, so it falls back to the page's own wikiPath.
+  assert.equal(crown!.wikiPath, "/Cleric_Kael_Armor_Quests");
+  assert.ok(crown!.components.some((c) => c.name === "Ancient Tarnished Plate Helmet"));
+  assert.ok(crown!.components.some((c) => c.name === "Crushed Onyx Sapphire" && c.qty === 3));
+  // The reward table lists "Templar's Bracer" twice (worn in both bracer slots) — deduplicated to
+  // one sub-quest rather than two identical ones.
+  assert.equal(p.subQuests!.filter((q) => q.title === "Templar's Bracer").length, 1);
+});
+
+test("a gear-set table with no per-piece breakdown stays a single quest, but its rewards are still read", () => {
+  const p = parseFixture("quest-curscale-armor", "Curscale Armor Quest");
+  assert.equal(p.kind, "quest");
+  // Every piece's turn-ins are folded into one undifferentiated Walkthrough — no heading or
+  // "Checklist" section distinguishes them, so this must NOT become a bundle.
+  assert.equal(p.subQuests, undefined);
+  // The `<ul>`-based reward reading finds nothing on this page (it's a gear-set table instead), so
+  // without the fallback this quest would show zero rewards despite naming eleven of them.
+  assert.equal(p.rewards.length, 11);
+  assert.ok(p.rewards.some((r) => r.item === "Curscale Belt"));
+});
+
 test("spell page → classified as spell with a description/details card", () => {
   const p = parseFixture("spell-burst-of-fire", "Burst of Fire");
   assert.equal(p.kind, "spell");

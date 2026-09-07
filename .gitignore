@@ -32,6 +32,12 @@
 # src/shared/travel/manual-links.ts and is committed.
 /data/
 
+# the web build's static data snapshot (see scripts/build-web-snapshot.mjs) — globbed from
+# *your* wiki/lucy caches and *your* EverQuest install's map files, so it's per-machine the same
+# way /data/ is. Deploying it is a separate, deliberate step, not something git tracks here.
+/public/data/
+/scripts/web-snapshot.log
+
 # misc
 .DS_Store
 *.pem

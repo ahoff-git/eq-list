@@ -41,15 +41,16 @@ import {
   type PeerCoverage,
 } from "../../src/shared/item-shards";
 import { candidatesFrom, probeOrder, type Verdict } from "../../src/shared/wiki-shape";
-import type { SharedItemPage } from "../../src/shared/peer-share";
+import type { SharedItemPage, SharedSpellPage } from "../../src/shared/peer-share";
 import { itemLevel, mobCardLevel, npcKey, parseLevelRange, questCardLevel, type LevelSources } from "../../src/shared/item-levels";
 import { fuzzyRank } from "../../src/shared/fuzzy";
 import { normalizeItemName } from "../../src/shared/grouping";
 import { bestReading } from "../../src/shared/ocr-variants";
 import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
-import type { CachedItem, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
+import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
 import { forTransfer, itemRows, type ItemRow } from "../../src/shared/item-search";
+import { spellRows } from "../../src/shared/spell-search";
 
 const log = createLogger("wiki");
 /**
@@ -115,7 +116,11 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // v22: faction pages (Template:Factionpage — `.eql-factionpage`) are now their own kind, parsed
 // into raise/lower zones/quests/mobs; a quest's card also gains a "Faction note:" line when its
 // Walkthrough states a standing-tier aside ("obtainable at apprehensive faction").
-const CACHE_VERSION = 22;
+// v23: a quest whose Reward section is a `table.eql-gear-set-table` (Template:Gear_Set) instead of a
+// `<ul>` now has its rewards read at all; and a "gear-set" bundle page — one giver/zone offering
+// several independently turned-in armor pieces off that one table (ADR 0197) — is now split into
+// `subQuests`, one per piece, each with its own turn-ins and reward.
+const CACHE_VERSION = 23;
 
 /** The version "faction" became a kind the parser could produce at all — see the misclassified
  * check below, which only needs to distrust a cached kind *older* than this. */
@@ -146,8 +151,12 @@ const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
   // v20: that cue also covers bare "drop(s) from" and modal-passive "purchas…".
   // v21: also merges a "Checklist" heading in, and the forward cue also matches "buy".
   // v22: the card also gains a "Faction note:" line when the Walkthrough states one.
-  // Item, mob, spell and zone pages are unaffected by v15 through v22.
-  quest: 22,
+  // v23: a gear-set-table Reward section is now read, and a gear-set bundle page now splits into
+  // `subQuests` — a quest cached at v22 or earlier may be missing rewards entirely (silently, if its
+  // Reward section was table-shaped) or show one undifferentiated turn-in list where several
+  // independent ones exist.
+  // Item, mob, spell and zone pages are unaffected by v15 through v23.
+  quest: 23,
 };
 
 /** Below this, a page predates parts of the parse every kind depends on. */
@@ -218,6 +227,35 @@ export interface WikiClient {
    * mount froze the whole app for a third of a second each time.
    */
   cachedItems(): Promise<CachedItem[]>;
+  /**
+   * The spell catalogue as **rows a window can search** — the Spells tab's counterpart to
+   * `catalogueJson`, over `SpellRow[]` instead. No pack file: the spell corpus is small enough
+   * (only what's been viewed) that the walk itself is the cost worth avoiding, and it's already
+   * shared with the item walk below. See
+   * [ADR 0195](../../specs/decisions/0195-a-spell-catalog-trusts-the-wikis-own-numbers.md).
+   */
+  spellCatalogueJson(): Promise<string>;
+  /**
+   * Fill the spell catalogue from `Category:Spells`, peer-shared on the same shard-addressed terms
+   * as `items` — see [ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md).
+   */
+  spellHarvest: {
+    start(opts?: { gapMs?: number; restart?: boolean }): HarvestProgress;
+    stop(): HarvestProgress;
+    status(): HarvestProgress;
+  };
+  /** Called with each step of a running spell harvest, so a window can draw the progress. */
+  onSpellHarvest(listener: (progress: HarvestProgress) => void): void;
+  spells: {
+    status(): { pages: number; cover: string; doing?: number };
+    shard(shard: number): SharedSpellPage[];
+    shardTitles(shard: number): string[];
+    accept(pages: SharedSpellPage[], shard?: number): number;
+    learnTitles(titles: readonly string[]): number;
+    fill(): void;
+  };
+  /** Hand the client its half of the spell room — the `spells` counterpart to `joinRoom`. */
+  joinSpellRoom(link: PeerLink): void;
   /**
    * Fill the item catalogue from `Category:Items`, one page at a time with a gap between them.
    *
@@ -536,6 +574,9 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    */
   const harvestFile = path.join(cacheDir, "harvest.json");
   const harvestListeners: ((progress: HarvestProgress) => void)[] = [];
+  /** The `spells` counterpart — its own checkpoint file and listener array, a second `createHarvester`. */
+  const spellHarvestFile = path.join(cacheDir, "spell-harvest.json");
+  const spellHarvestListeners: ((progress: HarvestProgress) => void)[] = [];
 
   /**
    * What the wiki has told us it changed, and how far we have read
@@ -694,6 +735,14 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     }
   }
 
+  function loadSpellHarvest(): SavedHarvest | null {
+    try {
+      return JSON.parse(fs.readFileSync(spellHarvestFile, "utf8")) as SavedHarvest;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * The shard index: which shards our roster touches, and which of them we hold outright.
    *
@@ -737,6 +786,45 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       }
     }
     setShard(mine, shard, complete);
+  }
+
+  /**
+   * The `spells` counterpart to the shard-index block above — same reasoning, a much smaller roster.
+   * See [ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md).
+   */
+  let spellShardRoster: string[] = [];
+  let spellByShard = new Map<number, string[]>();
+  let spellPresent = emptyCoverage();
+  let spellMine = emptyCoverage();
+  let spellHeldTitles = new Set<string>();
+  let spellIndexing: Promise<void> | null = null;
+  let spellIndexed = false;
+  let spellClaimed: number | undefined;
+
+  function indexSpellRoster(roster: string[]): void {
+    spellShardRoster = roster;
+    spellByShard = new Map();
+    spellPresent = emptyCoverage();
+    for (const title of roster) {
+      const shard = shardOf(title);
+      setShard(spellPresent, shard);
+      const bucket = spellByShard.get(shard);
+      if (bucket) bucket.push(title);
+      else spellByShard.set(shard, [title]);
+    }
+  }
+
+  function recheckSpellShard(shard: number): void {
+    const titles = spellByShard.get(shard) ?? [];
+    let complete = titles.length > 0;
+    for (const title of titles) {
+      if (holds(title)) spellHeldTitles.add(title);
+      else {
+        spellHeldTitles.delete(title);
+        complete = false;
+      }
+    }
+    setShard(spellMine, shard, complete);
   }
 
   /**
@@ -810,6 +898,41 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   function itemStatus(): { pages: number; cover: string; doing?: number } {
     void ensureShardIndex();
     return { pages: heldTitles.size, cover: encodeCoverage(mine), doing: claimed };
+  }
+
+  /**
+   * The `spells` counterpart to `ensureShardIndex` — built from the spell harvest's own checkpoint,
+   * with no pack to read titles out of first: the spell corpus is small enough that `holds(title)`
+   * per roster title is cheap on its own (ADR 0195/0196).
+   */
+  function ensureSpellShardIndex(): Promise<void> {
+    if (spellIndexed) return Promise.resolve();
+    spellIndexing ??= (async () => {
+      const roster = loadSpellHarvest()?.roster ?? [];
+      if (roster.length) {
+        indexSpellRoster(roster);
+        spellHeldTitles = new Set();
+        spellMine = emptyCoverage();
+        for (const [shard, titles] of spellByShard) {
+          let complete = titles.length > 0;
+          for (const title of titles) {
+            if (holds(title)) spellHeldTitles.add(title);
+            else complete = false;
+          }
+          setShard(spellMine, shard, complete);
+        }
+        log.debug("spell shard index:", spellHeldTitles.size, "of", roster.length, "held");
+      }
+      spellIndexed = true;
+      spellIndexing = null;
+    })();
+    return spellIndexing;
+  }
+
+  /** How the room is told what we hold of the spell catalogue — the `spells` counterpart above. */
+  function spellStatus(): { pages: number; cover: string; doing?: number } {
+    void ensureSpellShardIndex();
+    return { pages: spellHeldTitles.size, cover: encodeCoverage(spellMine), doing: spellClaimed };
   }
 
   /**
@@ -894,6 +1017,52 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     });
   }
 
+  /** The `spells` counterpart to the backoff state above — see `fillFromRoom`. */
+  const SPELL_ROOM_FILL_COOLDOWN_MS = 10 * 60 * 1000;
+  const SPELL_ROOM_FILL_MAX_MS = 6 * 60 * 60 * 1000;
+  let spellRoomFillAt = 0;
+  let spellRoomFillWait: number = SPELL_ROOM_FILL_COOLDOWN_MS;
+  let spellRoomFillHeld = -1;
+  let spellRoomFillPeers = 0;
+
+  /** Start a spell fill because the room has pages we don't — the `spells` counterpart to `fillFromRoom`. */
+  function fillSpellsFromRoom(): void {
+    const { status } = spellHarvester.status();
+    if (status === "running" || status === "stopping") return;
+    const at = Date.now();
+    if (at - spellRoomFillAt < spellRoomFillWait) return;
+    void ensureSpellShardIndex().then(() => {
+      const peers = spellRoom.peers();
+      const heldNow = countShards(spellMine);
+      if (peers.length > spellRoomFillPeers) spellRoomFillWait = SPELL_ROOM_FILL_COOLDOWN_MS;
+      else if (spellRoomFillHeld >= 0) {
+        spellRoomFillWait =
+          heldNow > spellRoomFillHeld
+            ? SPELL_ROOM_FILL_COOLDOWN_MS
+            : Math.min(spellRoomFillWait * 2, SPELL_ROOM_FILL_MAX_MS);
+      }
+      spellRoomFillHeld = -1;
+      spellRoomFillPeers = peers.length;
+      if (!peers.length) return;
+      if (
+        !spellHarvester.rosterExpired() &&
+        !roomOffersMore({ mine: spellMine, present: spellPresent, peers, hasRoster: spellShardRoster.length > 0 })
+      ) {
+        return;
+      }
+      spellRoomFillAt = at;
+      spellRoomFillHeld = heldNow;
+      log.debug(
+        "spell room fill: starting;",
+        peers.length,
+        "peer(s) hold pages we don't; next wait",
+        spellRoomFillWait,
+        "ms",
+      );
+      spellHarvester.start();
+    });
+  }
+
   /** The pages of one shard, stripped to what crosses the wire. */
   function itemShard(shard: number): SharedItemPage[] {
     const out: SharedItemPage[] = [];
@@ -917,6 +1086,25 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   function itemShardTitles(shard: number): string[] {
     void ensureShardIndex();
     return [...(byShard.get(shard) ?? [])];
+  }
+
+  /** The `spells` counterpart to `itemShard` — a spell page has no sources/components/links to carry. */
+  function spellShard(shard: number): SharedSpellPage[] {
+    const out: SharedSpellPage[] = [];
+    for (const title of spellByShard.get(shard) ?? []) {
+      const hit = readCache(title);
+      if (!hit || !parsedCurrently(hit.page.kind, hit.version) || hit.ageMs >= ttlMs()) continue;
+      const { kind, title: name, wikiPath, card, fetchedAt } = hit.page;
+      if (kind !== "spell") continue;
+      out.push({ title: name, wikiPath, card, fetchedAt });
+    }
+    return out;
+  }
+
+  /** The `spells` counterpart to `itemShardTitles`. */
+  function spellShardTitles(shard: number): string[] {
+    void ensureSpellShardIndex();
+    return [...(spellByShard.get(shard) ?? [])];
   }
 
   /**
@@ -993,6 +1181,27 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     return fresh.length;
   }
 
+  /** The `spells` counterpart to `learnItemTitles` — same reasoning, the spell harvester's own roster. */
+  function learnSpellTitles(titles: readonly string[]): number {
+    const fresh = spellHarvester.learn(titles);
+    if (!fresh.length) return 0;
+    if (spellIndexed) {
+      const touched = new Set<number>();
+      for (const title of fresh) {
+        spellShardRoster.push(title);
+        const shard = shardOf(title);
+        const bucket = spellByShard.get(shard);
+        if (bucket) bucket.push(title);
+        else spellByShard.set(shard, [title]);
+        setShard(spellPresent, shard);
+        touched.add(shard);
+      }
+      for (const shard of touched) recheckSpellShard(shard);
+    }
+    log.debug("learned", fresh.length, "new spell roster titles from a peer");
+    return fresh.length;
+  }
+
   /**
    * Take item pages a peer handed us into the cache.
    *
@@ -1048,8 +1257,49 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     return taken;
   }
 
+  /**
+   * The `spells` counterpart to `acceptItems` — same "newest copy wins, age travels" rule, minus the
+   * item-pack invalidation (spells have no pack; only `spellCatalogue`/`spellRowCache` to drop).
+   */
+  function acceptSpells(pages: SharedSpellPage[], shard?: number): number {
+    let taken = 0;
+    const now = Date.now();
+    for (const page of pages) {
+      const stamped = page.fetchedAt ? Date.parse(page.fetchedAt) : NaN;
+      const fetchedAt = Number.isFinite(stamped) ? Math.min(stamped, now) : now;
+      if (now - fetchedAt >= ttlMs()) continue;
+      const held = readCache(page.title);
+      if (held && parsedCurrently(held.page.kind, held.version)) {
+        const ours = Date.parse(held.page.fetchedAt);
+        if (Number.isFinite(ours) && ours >= fetchedAt) continue;
+      }
+      const full: WikiPage = {
+        kind: "spell",
+        title: page.title,
+        wikiPath: page.wikiPath ?? `/${page.title.replace(/ /g, "_")}`,
+        sources: [],
+        components: [],
+        rewards: [],
+        card: page.card,
+        fetchedAt: new Date(fetchedAt).toISOString(),
+      };
+      try {
+        store.put(page.title, CACHE_VERSION, full);
+        taken++;
+        spellCatalogue = null;
+        spellRowCache = null;
+      } catch (e) {
+        log.warn("could not keep a shared spell page:", (e as Error).message);
+      }
+    }
+    if (taken) recheckSpellShard(shard ?? (pages[0] ? shardOf(pages[0].title) : -1));
+    return taken;
+  }
+
   /** How the harvester reaches the room. Late-bound: main wires it once both halves exist. */
   let room: PeerLink = { peers: () => [], myId: () => "solo", askPeer: () => {}, claim: () => {} };
+  /** The `spells` counterpart — a separate room link, since coverage is per-kind. */
+  let spellRoom: PeerLink = { peers: () => [], myId: () => "solo", askPeer: () => {}, claim: () => {} };
 
   /**
    * Every item page on disk, with a **level** worked out for each — **held in memory between calls.**
@@ -1160,6 +1410,16 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     return building;
   }
 
+  /**
+   * The spell pages the same walk gathered. If nothing has built the catalogue yet, this triggers
+   * the very same walk `cachedItemPages` would — there's only one, and either tab may ask first.
+   */
+  async function cachedSpellPages(): Promise<CachedSpell[]> {
+    if (spellCatalogue) return spellCatalogue;
+    await cachedItemPages();
+    return spellCatalogue ?? [];
+  }
+
   /** The catalogue, and the build in flight. `null` means "not built, or a page has since changed". */
   let catalogue: CachedItem[] | null = null;
   /**
@@ -1180,6 +1440,14 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    */
   let heldTitleList: string[] | null = null;
   let building: Promise<CachedItem[]> | null = null;
+  /**
+   * The spell catalogue, gathered on the same walk as `catalogue` — see `buildCatalogue`. No pack
+   * file: unlike the item catalogue this is small enough that an in-memory cache is enough, and the
+   * walk that fills it is already paid for by whichever of the two catalogues asks first.
+   */
+  let spellCatalogue: CachedSpell[] | null = null;
+  let spellRowCache: string | null = null;
+  let spellRowBuilding: Promise<string> | null = null;
 
   /**
    * A page was written, so what we hold has moved.
@@ -1201,6 +1469,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     catalogue = null;
     rowCache = null;
     heldTitleList = null;
+    spellCatalogue = null;
+    spellRowCache = null;
     if (packDropped) return;
     packDropped = true;
     void fs.promises.rm(packFile, { force: true }).catch(() => {
@@ -1233,6 +1503,21 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     });
     return rowBuilding;
   }
+
+  async function spellCatalogueJson(): Promise<string> {
+    if (spellRowCache) return spellRowCache;
+    spellRowBuilding ??= (async () => {
+      const startedAt = Date.now();
+      const spells = await cachedSpellPages();
+      const json = JSON.stringify(spellRows(spells));
+      log.debug("spell catalogue:", spells.length, "rows built in", `${Date.now() - startedAt}ms`);
+      spellRowCache = json;
+      return json;
+    })().finally(() => {
+      spellRowBuilding = null;
+    });
+    return spellRowBuilding;
+  }
   function readTitles(json: string): string[] | null {
     try {
       const held = JSON.parse(json) as unknown;
@@ -1256,14 +1541,16 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
         saveChanges();
       }
     }
-    if (!indexed) return; // nothing built yet to keep current
     const shard = shardOf(title);
-    if (byShard.has(shard)) recheckShard(shard);
+    if (indexed && byShard.has(shard)) recheckShard(shard);
+    if (spellIndexed && spellByShard.has(shard)) recheckSpellShard(shard);
   }
 
   async function buildCatalogue(): Promise<CachedItem[]> {
     const startedAt = Date.now();
     const items: CachedItem[] = [];
+    /** Gathered on the same walk as `items` — see `spellCatalogue` for why a second walk isn't worth it. */
+    const spells: CachedSpell[] = [];
     /** Rebuilt by this walk, so it describes exactly the pages the cache holds right now. */
     shapeLinks = new Set<string>();
     /** Level evidence gathered on the same walk — see below. Keyed folded, since an item's sources
@@ -1312,8 +1599,15 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
         for (const link of page.links ?? []) shapeLinks.add(link);
         return;
       }
+      // A spell is neither an item nor evidence about one, but it's on the same walk, so it's
+      // collected here rather than in a second pass over the same 256 buckets (ADR 0163's reasoning,
+      // applied again — see `spellCatalogue`).
+      if (page.kind === "spell") {
+        spells.push({ title: page.title, wikiPath: page.wikiPath, card: page.card, fetchedAt: page.fetchedAt });
+        return;
+      }
       // A recipe is an item page that happens to be craftable, so it carries a card and belongs
-      // here. Zones and spells are neither items nor evidence about one.
+      // here. Zones are neither items nor evidence about one.
       if (page.kind !== "item" && page.kind !== "recipe") return;
       items.push({
         title: page.title,
@@ -1379,6 +1673,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       mobLevels.size, "mob levels,", questLevels.size, "quest levels;",
       placed, "items placed", `in ${Date.now() - startedAt}ms`,
     );
+    spells.sort((a, b) => a.title.localeCompare(b.title));
+    spellCatalogue = spells;
     catalogue = items;
     return items;
   }
@@ -1523,6 +1819,38 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     return { titles: [...roster], complete: walk.complete, categories: walk.categories };
   }
 
+  /**
+   * What a spell run covers: every page `Category:Spells` reaches.
+   *
+   * Simpler than `harvestRoster` — a spell isn't "obtained" from a mob or a quest the way an item is,
+   * so there is no secondary "mine another page's sources" step. `Category:Spells` also holds
+   * `Category:NPC_Only_Spells` as a subcategory (653 pages, confirmed against the live wiki), which
+   * the walk reaches like any other — those spells simply show up with no player Classes line, the
+   * same "shown, not hidden" honesty item search already gives anything nothing can place
+   * ([ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md)).
+   */
+  async function spellRoster(
+    gapMs: number,
+    note: (what: string) => void,
+  ): Promise<{ titles: string[]; complete: boolean; categories: string[] }> {
+    const walk = await exploreCategories(
+      ["Category:Spells"],
+      {
+        listCategory: fetchCategorySlice,
+        wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+        stopped: () => spellHarvester.status().status !== "running",
+        onProgress: ({ categories, titles }) =>
+          note(`the spell list — ${categories} categories, ${titles} pages so far`),
+      },
+      gapMs,
+    );
+    log.debug(
+      `spell harvest roster: ${walk.titles.length} pages across ${walk.categories.length} categories` +
+        (walk.truncated ? " (walk truncated)" : ""),
+    );
+    return { titles: walk.titles, complete: walk.complete, categories: walk.categories };
+  }
+
   const harvester = createHarvester({
     roster: harvestRoster,
     catchUp: catchUpOnChanges,
@@ -1562,6 +1890,47 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     now: () => Date.now(),
     onProgress: (progress) => {
       for (const listener of harvestListeners) listener(progress);
+    },
+  });
+
+  /**
+   * The spell catalogue's own harvester — a second, independent instance of the same generic
+   * scheduler, wired to the spell roster/shard-index/room functions above instead of the item ones.
+   * No `candidates`/`probe` (no shape-discovery for spells) and no secondary `catchUp` poll yet — see
+   * [ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md).
+   */
+  const spellHarvester = createHarvester({
+    roster: spellRoster,
+    catchUp: async () => 0,
+    held: holds,
+    heldTitles: async () => {
+      await ensureSpellShardIndex();
+      return spellHeldTitles;
+    },
+    fetch: async (title) => !!(await getPageInternal(title)),
+    peers: () => spellRoom.peers(),
+    myId: () => spellRoom.myId(),
+    askPeer: (peerId, shard) => spellRoom.askPeer(peerId, shard),
+    claim: (shard) => {
+      spellClaimed = shard;
+      spellRoom.claim(shard);
+    },
+    load: loadSpellHarvest,
+    save: (state) => {
+      try {
+        fs.writeFileSync(spellHarvestFile, JSON.stringify(state), "utf8");
+      } catch (e) {
+        log.warn("spell harvest checkpoint failed:", (e as Error).message);
+      }
+      if (!spellIndexed && state.roster.length) {
+        indexSpellRoster(state.roster);
+        spellIndexed = true;
+      }
+    },
+    wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+    now: () => Date.now(),
+    onProgress: (progress) => {
+      for (const listener of spellHarvestListeners) listener(progress);
     },
   });
 
@@ -1660,6 +2029,10 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     onHarvest(listener) {
       harvestListeners.push(listener);
     },
+    spellHarvest: spellHarvester,
+    onSpellHarvest(listener) {
+      spellHarvestListeners.push(listener);
+    },
 
     items: {
       status: itemStatus,
@@ -1671,13 +2044,25 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       learnTitles: learnItemTitles,
       fill: fillFromRoom,
     },
+    spells: {
+      status: spellStatus,
+      shard: spellShard,
+      shardTitles: spellShardTitles,
+      accept: acceptSpells,
+      learnTitles: learnSpellTitles,
+      fill: fillSpellsFromRoom,
+    },
     levelSources: () => levelEvidence,
 
     catalogueJson,
+    spellCatalogueJson,
 
   /** The titles line, read defensively: a malformed pack is a rebuild, never a throw. */
     joinRoom(link) {
       room = link;
+    },
+    joinSpellRoom(link) {
+      spellRoom = link;
     },
   };
 }

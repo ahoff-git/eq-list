@@ -12,7 +12,7 @@ import { addItem, addPage, addPageItself } from "@/lib/addToList";
 import { factionRaiseNote, wikiAddAction } from "@/shared/wiki-add";
 import { sourcesByEra } from "@/shared/item-era";
 import { countOf } from "@/shared/format";
-import type { FactionSide, ItemSource, WikiPage } from "@/shared/types";
+import type { FactionSide, ItemSource, WikiPage, WikiSubQuest } from "@/shared/types";
 import { buildFactionWatch, isFactionWatched } from "@/shared/faction-watch";
 import { cardZone, statesNothing } from "@/shared/map/mob-place";
 
@@ -32,6 +32,11 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
   // Which buttons this page gets. The rule lives in `wiki-add.ts` because the search results list
   // adds by the same one, and the two had drifted — see that file.
   const add = wikiAddAction(page);
+  // A "gear-set" bundle (ADR 0197): one giver/zone offering several independently turned-in armor
+  // pieces off this one page. Rendered as its own list of sections below, in place of the flat
+  // turn-ins/rewards every other quest gets — the flat `page.components`/`page.rewards` (the union,
+  // still read by the bulk "+ Add full quest" button above) stay exactly as they were.
+  const bundle = page.kind === "quest" ? page.subQuests : undefined;
   // What each button does — and what it *says* it did — is `lib/addToList.ts`: the kind travels with
   // a `self` add (a mob is a thing to *kill*), and every add answers back with a toast naming the new
   // total needed, since the list it changes is on another tab.
@@ -191,36 +196,42 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
         </div>
       )}
 
-      {page.components.length > 0 && (
+      {bundle && bundle.length > 0 ? (
+        <QuestBundleSections subQuests={bundle} page={page} addOne={addOne} />
+      ) : (
         <>
-          <h4 className="muted small" style={{ marginTop: 12 }}>
-            {page.kind === "quest" ? "Turn-in items" : page.kind === "mob" ? "Known loot" : "Ingredients"}
-          </h4>
-          <ul>
-            {page.components.map((c) => (
-              <li key={c.name}>
-                <span>
-                  {c.qty > 1 ? `${c.qty}× ` : ""}
-                  <ItemLink title={c.name} />
-                  {c.dropRate && (
-                    <span className="badge rarity" title="Drop rate">
-                      {c.dropRate}
+          {page.components.length > 0 && (
+            <>
+              <h4 className="muted small" style={{ marginTop: 12 }}>
+                {page.kind === "quest" ? "Turn-in items" : page.kind === "mob" ? "Known loot" : "Ingredients"}
+              </h4>
+              <ul>
+                {page.components.map((c) => (
+                  <li key={c.name}>
+                    <span>
+                      {c.qty > 1 ? `${c.qty}× ` : ""}
+                      <ItemLink title={c.name} />
+                      {c.dropRate && (
+                        <span className="badge rarity" title="Drop rate">
+                          {c.dropRate}
+                        </span>
+                      )}
                     </span>
-                  )}
-                </span>
-                <AddButton className="btn ghost sm" onAdd={() => addOne(c.name, c.qty, c.wikiPath)}>
-                  + Add
-                </AddButton>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+                    <AddButton className="btn ghost sm" onAdd={() => addOne(c.name, c.qty, c.wikiPath)}>
+                      + Add
+                    </AddButton>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
-      {page.kind === "quest" && page.components.length === 0 && (
-        <p className="muted small" style={{ marginTop: 12 }}>
-          Couldn’t auto-detect turn-in items for this quest — add them manually from the search box.
-        </p>
+          {page.kind === "quest" && page.components.length === 0 && (
+            <p className="muted small" style={{ marginTop: 12 }}>
+              Couldn’t auto-detect turn-in items for this quest — add them manually from the search box.
+            </p>
+          )}
+        </>
       )}
       {page.kind === "mob" && page.components.length === 0 && (
         <p className="muted small" style={{ marginTop: 12 }}>No known loot listed — open it on eqlwiki to check.</p>
@@ -246,7 +257,7 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
       {page.kind !== "mob" && page.kind !== "zone" && page.kind !== "faction" && (
         <ItemDrops item={page.title} sources={page.sources} />
       )}
-      {page.rewards.length > 0 && (
+      {!bundle && page.rewards.length > 0 && (
         <>
           <h4 className="muted small" style={{ marginTop: 12 }}>Rewards</h4>
           <ul>
@@ -265,6 +276,81 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
           block is an answer. */}
       {lucy && !page.card && <LucySays item={lucy} />}
     </div>
+  );
+}
+
+/**
+ * A "gear-set" bundle page's own quests, one section each — the split ADR 0197 describes: one giver
+ * shared above, several armor pieces each turned in on their own. Each section gets its own "+ Add
+ * full quest" (built from the sub-quest alone, so it lands on the shopping list under *its own* name
+ * rather than the whole page's — the same `addPage`/`origin.name` pairing a plain quest uses) and its
+ * own per-item "+ Add", reusing `addOne` from the parent rather than a second copy of that wiring.
+ */
+function QuestBundleSections({
+  subQuests,
+  page,
+  addOne,
+}: {
+  subQuests: WikiSubQuest[];
+  page: WikiPage;
+  addOne: (name: string, qty: number, wikiPath?: string) => void;
+}) {
+  return (
+    <>
+      {subQuests.map((q) => {
+        const subPage: WikiPage = {
+          kind: "quest",
+          title: q.title,
+          wikiPath: q.wikiPath,
+          sources: q.sources,
+          components: q.components,
+          rewards: q.rewards,
+          card: page.card,
+          fetchedAt: page.fetchedAt,
+        };
+        return (
+          <div key={q.title} className="page-card" style={{ marginTop: 12 }}>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <h4 className="small" style={{ margin: 0 }}>
+                <ItemLink title={q.title} />
+              </h4>
+              <span className="spacer" />
+              <AddButton className="btn primary sm" onAdd={() => void addPage(subPage)}>
+                + Add full quest{q.components.length ? ` (${q.components.length} items)` : ""}
+              </AddButton>
+            </div>
+            {q.components.length > 0 ? (
+              <ul>
+                {q.components.map((c) => (
+                  <li key={c.name}>
+                    <span>
+                      {c.qty > 1 ? `${c.qty}× ` : ""}
+                      <ItemLink title={c.name} />
+                    </span>
+                    <AddButton className="btn ghost sm" onAdd={() => addOne(c.name, c.qty, c.wikiPath)}>
+                      + Add
+                    </AddButton>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted small">Couldn’t auto-detect turn-in items for this one — add them manually.</p>
+            )}
+            {q.rewards.length > 0 && (
+              <p className="muted small">
+                Reward:{" "}
+                {q.rewards.map((r, i) => (
+                  <span key={i}>
+                    {i > 0 && ", "}
+                    {r.item ? <ItemLink title={r.item} label={r.text} /> : r.text}
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </>
   );
 }
 

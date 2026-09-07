@@ -321,6 +321,7 @@ function registerWikiIpc(context: IpcContext): void {
   // A harvest runs for hours across tab switches and window reopens, so its progress goes to every
   // window rather than being handed back to whichever one happened to press start.
   wiki.onHarvest((progress) => broadcast(CH.wikiHarvestProgress, progress));
+  wiki.onSpellHarvest((progress) => broadcast(CH.wikiSpellHarvestProgress, progress));
 
   // ── wiki ──
   ipcMain.handle(CH.wikiSearch, (_e, term: string) => wiki.search(term));
@@ -363,6 +364,8 @@ function registerWikiIpc(context: IpcContext): void {
     // Spliced as text, so the big half is never parsed here: `[…ours` + `,` + `…theirs]`.
     return `${ours.slice(0, -1)},${JSON.stringify(theirs).slice(1)}`;
   });
+  // The Spells tab's counterpart — cache-only, same as items, and no Lucy merge yet (ADR 0195).
+  ipcMain.handle(CH.wikiCachedSpells, () => wiki.spellCatalogueJson());
   // The catalogue harvest (ADR 0153). A window asking is one of the two ways a run begins; the other
   // is the room holding pages we lack, noticed on the share hub's tick (ADR 0176). What has *not*
   // changed is that neither is a "warm this on launch": alone, nothing starts at all, which is the
@@ -372,6 +375,12 @@ function registerWikiIpc(context: IpcContext): void {
   );
   ipcMain.handle(CH.wikiHarvestStop, () => wiki.harvest.stop());
   ipcMain.handle(CH.wikiHarvestStatus, () => wiki.harvest.status());
+  // The spell catalogue's own harvest (ADR 0196) — same contract, `Category:Spells` instead.
+  ipcMain.handle(CH.wikiSpellHarvestStart, (_e, opts: { gapMs?: number; restart?: boolean } | undefined) =>
+    wiki.spellHarvest.start(opts),
+  );
+  ipcMain.handle(CH.wikiSpellHarvestStop, () => wiki.spellHarvest.stop());
+  ipcMain.handle(CH.wikiSpellHarvestStatus, () => wiki.spellHarvest.status());
   // Open a wiki page in the user's browser. `target` is a wikiPath ("/Bone_Chips")
   // or a title ("Bone Chips"); host is validated so only eqlwiki links open.
   ipcMain.handle(CH.wikiOpen, (_e, target: string) => {
@@ -878,6 +887,9 @@ function registerPeerIpc(context: IpcContext): void {
     // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).
     items: wiki.items,
     acceptItems: (pages, shard) => wiki.items.accept(pages, shard),
+    // The spell catalogue, addressed by shard on the same terms (ADR 0196).
+    spells: wiki.spells,
+    acceptSpells: (pages, shard) => wiki.spells.accept(pages, shard),
     // A peer's `/time` reading — kept only if it's newer than what we already have (ADR 0189).
     acceptGameTime: (reading) => gameClock.notePeerReading(reading.hour, reading.at ? Date.parse(reading.at) : Date.now()),
   });
@@ -897,6 +909,14 @@ function registerPeerIpc(context: IpcContext): void {
     askPeer: (peerId, shard) => shares.askShard(peerId, shard),
     // Publishing a claim is just re-offering the catalogue: the coverage bitmap and the shard we are
     // on both ride in it, so "I've taken this one" needs no message of its own.
+    claim: () => shares.touch(),
+  });
+
+  // The `spells` counterpart — a second, independent room link (ADR 0196).
+  wiki.joinSpellRoom({
+    peers: () => shares.spellRoom(),
+    myId: () => shares.room().status.peerId ?? "solo",
+    askPeer: (peerId, shard) => shares.askSpellShard(peerId, shard),
     claim: () => shares.touch(),
   });
 

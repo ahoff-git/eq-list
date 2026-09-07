@@ -39,6 +39,7 @@
 import type {
   CastWatch,
   HighScore,
+  ItemCard,
   ItemSource,
   KillRecord,
   KnownSpawn,
@@ -69,6 +70,19 @@ import { isPlottable } from "./kill-confidence";
  * truth or make their copy look *older* than it is — and an older copy is simply re-fetched.
  */
 export type SharedItemPage = Omit<WikiPage, "fetchedAt"> & { fetchedAt?: string };
+
+/**
+ * A spell page as it crosses between peers — the same "public page, self-checking" deal
+ * `SharedItemPage` makes, over the much smaller shape a spell's card actually has (no sources,
+ * components, npcs or links to carry). See
+ * [ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md).
+ */
+export interface SharedSpellPage {
+  title: string;
+  wikiPath?: string;
+  card?: ItemCard;
+  fetchedAt?: string;
+}
 
 /**
  * A `/time` reading as it crosses between peers — the same fact, whoever's log it came from.
@@ -102,6 +116,7 @@ export type ShareKind =
   | "buffs"
   | "scores"
   | "items"
+  | "spells"
   | "gameTime";
 
 /**
@@ -198,6 +213,9 @@ const MAX_ROWS: Record<ShareKind, number> = {
   // One shard is about eleven pages (`item-shards.ts`); the cap is generous headroom for an uneven
   // hash while still bounding what a single hostile `give` can cost us.
   items: 64,
+  // The spell catalogue reuses the same 1024 shards over a much smaller (~2,054-page) roster, so a
+  // shard holds far fewer pages on average — the item cap is still a harmless ceiling, not a tight one.
+  spells: 64,
   // There is only ever one clock — a second row would just be a lie somebody sent.
   gameTime: 1,
 };
@@ -446,6 +464,18 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     rowKey: (row) => fieldKey(row, "title"),
   },
   {
+    key: "spells",
+    family: "mirror",
+    label: "Spell pages",
+    blurb:
+      "Your cached eqlwiki spell pages, so a room fills the ~2,054-page spell catalogue once between everyone instead of each of you fetching all of it.",
+    noun: "page",
+    defaultOn: true,
+    read: (rows) => readList(rows, MAX_ROWS.spells, readSharedSpellPage),
+    // Same reasoning as `items`: addressed by shard, never as a whole, so a delta never runs over it.
+    rowKey: (row) => fieldKey(row, "title"),
+  },
+  {
     key: "gameTime",
     family: "mirror",
     label: "Time of day",
@@ -502,8 +532,9 @@ export interface ShareEntry {
   n: number;
   rev: number;
   /**
-   * `items` only: which **shards** of the item catalogue this peer holds, as hex
-   * ([`item-shards.ts`](./item-shards.ts)).
+   * `items`/`spells` only: which **shards** of the catalogue this peer holds, as hex
+   * ([`item-shards.ts`](./item-shards.ts)). Both kinds share the same 1024-shard numbering, so this
+   * field means whichever catalogue the line it sits on names.
    *
    * It rides in the catalogue rather than being a message of its own because it is 256 characters
    * and the catalogue was already being broadcast every minute. That is the whole coordination
@@ -512,9 +543,9 @@ export interface ShareEntry {
    */
   cover?: string;
   /**
-   * `items` only: the shard this peer is fetching from the wiki right now — a claim, so nobody else
-   * spends eleven requests on the same pages. A hint with a TTL, not a lock: a peer that dies mid
-   * shard releases it by going quiet.
+   * `items`/`spells` only: the shard this peer is fetching from the wiki right now — a claim, so
+   * nobody else spends the same requests on the same pages. A hint with a TTL, not a lock: a peer
+   * that dies mid shard releases it by going quiet.
    */
   doing?: number;
   /**
@@ -647,9 +678,9 @@ export interface ShareAsk {
    */
   epoch?: ShareEpoch;
   /**
-   * `items` only: which shard is wanted. The one kind where "send me this kind" is not a sensible
-   * request — nobody wants eleven thousand pages in a message — so the ask names the ~11-page slice
-   * it can actually carry.
+   * `items`/`spells` only: which shard is wanted. The two kinds where "send me this kind" is not a
+   * sensible request — nobody wants the whole catalogue in a message — so the ask names the shard's
+   * worth it can actually carry.
    */
   shard?: number;
 }
@@ -706,10 +737,10 @@ export interface ShareGive {
   gone?: string[];
   /** The run `rev` counts within — present on a delta, so a receiver can check it still matches. */
   epoch?: ShareEpoch;
-  /** `items` only: which shard these rows are, echoed back so an answer can't be mis-filed. */
+  /** `items`/`spells` only: which shard these rows are, echoed back so an answer can't be mis-filed. */
   shard?: number;
   /**
-   * `items` only: the **roster titles** the sender believes are in this shard.
+   * `items`/`spells` only: the **roster titles** the sender believes are in this shard.
    *
    * Not the titles of `rows` — those are already there. These are what the sender's category walk
    * found, including pages it has not managed to fetch, which is exactly the set worth passing on:
@@ -924,7 +955,7 @@ export type ShareDelivery = {
   from: string;
   shard?: number;
   /**
-   * `items` only: the roster titles the sender says are in this shard (ADR 0177).
+   * `items`/`spells` only: the roster titles the sender says are in this shard (ADR 0177).
    *
    * On the head rather than inside `whole`, because it is true of every mood: a peer that holds no
    * page at all in a shard still knows which titles belong to it, and that answer is worth having.
@@ -956,12 +987,12 @@ export function readGive(raw: unknown, newId: () => string): ShareDelivery | nul
   const rev = int(raw.rev) ?? 0;
   const from = str(raw.from);
   const shard = shardNumber(raw.shard);
-  // Only `items` is addressed by shard and only `items` carries a roster, so reading titles off any
-  // other kind would be accepting a field that has no meaning there.
-  const titles = spec.key === "items" ? readShardTitles(raw.titles) : undefined;
-  // Refusals are read exactly as titles are — same cap, same de-dupe, same "items only" rule. They
-  // are a list of names and nothing more, and they can only ever cause a fetch **not** to happen
-  // ([ADR 0180](../../specs/decisions/0180-the-wiki-has-a-shape-and-it-moves.md)).
+  // `items` and `spells` are both addressed by shard and both carry a roster, so reading titles off
+  // any other kind would be accepting a field that has no meaning there.
+  const titles = spec.key === "items" || spec.key === "spells" ? readShardTitles(raw.titles) : undefined;
+  // Refusals are read exactly as titles are — same cap, same de-dupe. `items` only: there is no
+  // shape-discovery for spells (`Category:Spells` isn't known to have items' outbound-link gap), so
+  // nothing about a spell title is ever "checked and found not to be one".
   const notItems = spec.key === "items" ? readShardTitles(raw.notItems) : undefined;
   const head = { what: spec.key, rev, from, shard, titles, notItems } as const;
 
@@ -1570,8 +1601,11 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
   // every mob in it, and a quest page states its own requirement
   // ([ADR 0163](../../specs/decisions/0163-an-item-wears-the-level-of-what-drops-it.md)). Mob pages
   // are here because we *read* them when we have them, not because anything fetches them. Spells are
-  // still refused — nothing in the Items tab reads one, and a peer filling a cache nobody asked them
-  // to fill is what this list exists to prevent.
+  // still refused *here* — not because nothing reads one any more (the Spells tab does,
+  // [ADR 0195](../../specs/decisions/0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)), but
+  // because they now travel through their own dedicated `spells` kind and reader
+  // (`readSharedSpellPage`) instead of being smuggled in under `items`
+  // ([ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md)).
   if (!title || !kind || !CATALOGUE_KINDS.has(kind)) return null;
 
   const card = isRecord(raw.card)
@@ -1660,6 +1694,32 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
           })
           .filter((row): row is { name: string; level: string } => !!row)
       : undefined,
+  };
+}
+
+/**
+ * A spell page as a peer sent it — the same rebuild-from-scratch discipline `readSharedPage` applies,
+ * over the much smaller shape a spell's card has: no sources, components or links to validate, since
+ * nothing reads a spell's *acquisition* the way an item's is.
+ */
+function readSharedSpellPage(raw: unknown): SharedSpellPage | null {
+  if (!isRecord(raw)) return null;
+  const title = str(raw.title);
+  if (!title) return null;
+  const card = isRecord(raw.card)
+    ? {
+        title: text(raw.card.title) || title,
+        icon: text(raw.card.icon) || undefined,
+        lines: Array.isArray(raw.card.lines)
+          ? raw.card.lines.slice(0, MAX_PAGE_LINES).map(text).filter(Boolean)
+          : [],
+      }
+    : undefined;
+  return {
+    title,
+    wikiPath: text(raw.wikiPath) || `/${title.replace(/ /g, "_")}`,
+    card,
+    fetchedAt: readStamp(raw.fetchedAt),
   };
 }
 

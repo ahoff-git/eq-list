@@ -41,11 +41,17 @@ export const CH = {
   wikiOpen: "wiki:open",
   wikiRefresh: "wiki:refresh",
   wikiCachedItems: "wiki:cachedItems",
+  wikiCachedSpells: "wiki:cachedSpells",
   wikiHarvestStart: "wiki:harvestStart",
   wikiHarvestStop: "wiki:harvestStop",
+  wikiSpellHarvestStart: "wiki:spellHarvestStart",
+  wikiSpellHarvestStop: "wiki:spellHarvestStop",
   wikiHarvestStatus: "wiki:harvestStatus",
   /** main -> renderer: one step of a running catalogue harvest. */
   wikiHarvestProgress: "wiki:harvestProgress",
+  wikiSpellHarvestStatus: "wiki:spellHarvestStatus",
+  /** main -> renderer: one step of a running spell-catalogue harvest. */
+  wikiSpellHarvestProgress: "wiki:spellHarvestProgress",
   // lucy — the supplementary item source, asked only where the wiki is silent (invoke)
   lucySearch: "lucy:search",
   lucyGetItem: "lucy:getItem",

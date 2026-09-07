@@ -1438,6 +1438,27 @@ that the log lines really do read as expected on this server.
 - **A hand-added camp reads honestly.** Add a mob you have never killed, with no interval. The row
   should say *"Not killed yet"*, not *"Killed once"*.
 
+## Gear-set quest bundles (ADR 0197)
+
+The parser was verified end to end against the **live** wiki (`fetchPageHtml` + `parseWikiPage`, run
+directly against `ShadowBound Armor Quests`, `Cleric Kael Armor Quests` and `Curscale Armor Quest`) and
+the new `WikiPageView` section typechecks, but it was never rendered in the actual app window — no
+Electron GUI driver exists in this repo yet, so the visual/click path is unconfirmed.
+
+- **Search "ShadowBound Armor Quests"** in the Search tab. The page should show the shared
+  giver/zone/level card once, then **three** sections — ShadowBound Boots, ShadowBound Gloves, Robe of
+  Enshroudment — each with its own turn-in list, its own reward line, and its own "+ Add full quest"
+  button, in place of one flat "Turn-in items"/"Rewards" list.
+- **Press "+ Add full quest" on just one piece** (e.g. Boots). The shopping list should gain a group
+  named "ShadowBound Boots" holding only that piece's 4 turn-ins — not the other two pieces', and not
+  a group named after the whole page.
+- **Press the page-level bulk "+ Add full quest" button** (top of the page, next to the ↗ eqlwiki
+  link). The list should gain all three pieces' turn-ins at once, grouped under one "ShadowBound Armor
+  Quests" origin — the pre-existing whole-page action, unchanged.
+- **Search "Curscale Armor Quest"** as a negative check: it should render as one ordinary quest (no
+  per-piece sections) but its eleven-item reward table should now actually show under "Rewards" —
+  before this change it silently showed none.
+
 ## Freshness, and refreshing a page by hand (ADR 0161)
 
 Verified against the live wiki: a cached read is ~6ms against a ~300ms fetch, ↻ produces a new

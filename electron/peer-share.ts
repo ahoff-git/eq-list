@@ -71,7 +71,7 @@ import {
   type ShareOffer,
 } from "../src/shared/peer-share";
 import { decodeCoverage, type PeerCoverage } from "../src/shared/item-shards";
-import type { SharedGameTime, SharedItemPage } from "../src/shared/peer-share";
+import type { SharedGameTime, SharedItemPage, SharedSpellPage } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
 import type { KillRecord, KnownSpawn } from "../src/shared/types";
 
@@ -188,6 +188,10 @@ export interface PeerShareHub {
    * and a peer's catalogue may have arrived at any point before that.
    */
   itemRoom(): PeerCoverage[];
+  /** Ask one peer for one **shard** of the spell catalogue — the `spells` counterpart to `askShard`. */
+  askSpellShard(peerId: string, shard: number): void;
+  /** What the room says it holds of the spell catalogue — the `spells` counterpart to `itemRoom`. */
+  spellRoom(): PeerCoverage[];
   /** The roster changed: greet newcomers with our catalogue and drop the departed from the tray. */
   roster(peers: AwariPeer[]): void;
   /** The connection came up or went down. Held, so a window can ask rather than having to have heard. */
@@ -234,6 +238,8 @@ export interface PeerShareDeps {
   outdated: (notice: PeerVersionNotice) => void;
   /** Take item pages a peer handed us into the page cache. Returns how many were new. */
   acceptItems?: (pages: SharedItemPage[], shard?: number) => number;
+  /** Take spell pages a peer handed us into the page cache. Returns how many were new. */
+  acceptSpells?: (pages: SharedSpellPage[], shard?: number) => number;
   /**
    * Take a peer's `/time` reading — applied only if it teaches the local clock anything (the game
    * clock's own tracker decides whether it's newer than what it already has).
@@ -249,6 +255,12 @@ export interface PeerShareDeps {
    * somebody asks for one ([ADR 0160](../specs/decisions/0160-a-room-fills-the-catalogue-once.md)).
    */
   items?: ItemShardSource;
+  /**
+   * The spell catalogue, addressed by shard on the same terms as `items` — see
+   * [ADR 0196](../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md). A much
+   * smaller roster (~2,054 pages against items' ~11,136), sharing the same 1024-shard numbering.
+   */
+  spells?: ItemShardSource;
   now?: () => number;
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (handle: unknown) => void;
@@ -428,6 +440,14 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       measured.set(kind, held);
       return held;
     }
+    // `spells` is unmaterialised for the same reason `items` is — its catalogue line comes from
+    // `spellStatus()` in `offer` instead.
+    if (kind === "spells") {
+      const held = measured.get(kind) ?? noMeasurement();
+      held.seq = spellRev();
+      measured.set(kind, held);
+      return held;
+    }
 
     const held = measured.get(kind) ?? noMeasurement();
     const source = deps.sources[kind];
@@ -531,6 +551,31 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     return itemsRev;
   };
 
+  /** The `spells` counterpart to `itemsHeld`/`itemsCover`/`itemsRev` — see `itemStatus`. */
+  let spellsHeld: { pages: number; cover: string; doing?: number } | null = null;
+  let spellsCover = "";
+  let spellsRev = 0;
+
+  function spellStatus(): { pages: number; cover: string; doing?: number } | null {
+    if (!deps.spells) return null;
+    try {
+      spellsHeld = deps.spells.status();
+    } catch (e) {
+      log.debug("could not read the spell catalogue -", (e as Error).message);
+      return spellsHeld;
+    }
+    if (spellsHeld.cover !== spellsCover) {
+      spellsCover = spellsHeld.cover;
+      spellsRev++;
+    }
+    return spellsHeld;
+  }
+
+  const spellRev = (): number => {
+    spellStatus();
+    return spellsRev;
+  };
+
   /** A source that throws must not take the catalogue down with it — an empty kind is a fine answer. */
   function safely<T>(kind: ShareKind, read: () => T, fallback: T): T {
     try {
@@ -554,6 +599,12 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
         // The coverage bitmap *is* the coordination channel — 256 characters of hex, in a message
         // the room was already sending every minute (ADR 0160).
         catalogue.items = { n: held.pages, rev: itemRev(), cover: held.cover, doing: held.doing };
+        continue;
+      }
+      if (spec.key === "spells") {
+        const held = spellStatus();
+        if (!held) continue;
+        catalogue.spells = { n: held.pages, rev: spellRev(), cover: held.cover, doing: held.doing };
         continue;
       }
       const held = measure(spec.key);
@@ -627,6 +678,20 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
         "to",
         peerId,
       );
+      return;
+    }
+
+    // The `spells` counterpart — same shard-addressed shape, minus the `notItems` refusal list (no
+    // shape-discovery exists for spells, so there is nothing of that kind to send).
+    if (ask.what === "spells") {
+      if (ask.shard === undefined) return void log.debug("spells ask ignored - no shard named");
+      const rows = deps.spells?.shard(ask.shard) ?? [];
+      const titles = deps.spells?.shardTitles(ask.shard) ?? [];
+      deps.send(
+        { kind: AWARI_MSG.give, what: "spells", rev: spellRev(), from: deps.getName(), shard: ask.shard, rows, titles },
+        peerId,
+      );
+      log.debug("gave spells shard", ask.shard, `(${rows.length} pages, ${titles.length} titles)`, "to", peerId);
       return;
     }
 
@@ -733,6 +798,23 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
           give.shard,
           learned ? `(+${learned} new titles)` : "",
           spared ? `(+${spared} refusals)` : "",
+        );
+      } else if (give.what === "spells") {
+        // The `spells` counterpart to the `items` branch above — same shard-addressed, never-a-delta
+        // reasoning, minus the refusal list (no shape-discovery for spells).
+        const pages = give.mode === "whole" ? give.rows : [];
+        const taken = deps.acceptSpells?.(pages as SharedSpellPage[], give.shard) ?? 0;
+        const learned = give.titles?.length ? (deps.spells?.learnTitles(give.titles) ?? 0) : 0;
+        log.debug(
+          "took",
+          taken,
+          "of",
+          pages.length,
+          "spell pages from",
+          peerId,
+          "shard",
+          give.shard,
+          learned ? `(+${learned} new titles)` : "",
         );
       } else if (give.what === "gameTime") {
         // Always whole (`gameTime` has exactly one row, per `SHARE_KINDS`'s `MAX_ROWS`); a delta of
@@ -1006,11 +1088,12 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
         askFor(peerId, kind, false);
       }
     }
-    // `items` reconciles by **coverage** rather than by revision, so it cannot go through the loop
-    // above: a shard is asked for because the planner worked out we lack it, not because a number
-    // moved. Same rule as every other kind, though — the toggle gates asking as well as answering,
-    // so a person who has turned item pages off does not quietly fill from the room (ADR 0176).
+    // `items`/`spells` reconcile by **coverage** rather than by revision, so neither goes through the
+    // loop above: a shard is asked for because the planner worked out we lack it, not because a
+    // number moved. Same rule as every other kind, though — the toggle gates asking as well as
+    // answering, so a person who has turned a kind off does not quietly fill from the room (ADR 0176).
     if (deps.items?.fill && sharing(settings.share, "items")) deps.items.fill();
+    if (deps.spells?.fill && sharing(settings.share, "spells")) deps.spells.fill();
   }
 
   /** Drop answers nobody has refreshed in a while, so a long session doesn't accumulate the room. */
@@ -1070,6 +1153,21 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
           // gone quiet stops holding a shard reserved (`CLAIM_TTL_MS`).
           at: offerAt.get(peerId) ?? 0,
         });
+      }
+      return room;
+    },
+
+    askSpellShard(peerId, shard) {
+      deps.send({ kind: AWARI_MSG.ask, what: "spells", shard }, peerId);
+      log.debug("asked", peerId, "for spell shard", shard);
+    },
+
+    spellRoom() {
+      const room: PeerCoverage[] = [];
+      for (const [peerId, catalogue] of offers) {
+        const entry = catalogue.spells;
+        if (!entry?.cover) continue;
+        room.push({ peerId, have: decodeCoverage(entry.cover), doing: entry.doing, at: offerAt.get(peerId) ?? 0 });
       }
       return room;
     },
@@ -1213,6 +1311,8 @@ export function shareSources(context: {
     // Addressed by shard, never as a whole (see `PeerShareDeps.items`). Present so the table has no
     // hole in it, and never called.
     items: { rows: () => [] },
+    // The `spells` counterpart — same reasoning, never called.
+    spells: { rows: () => [] },
     // Exactly one row, or none while this run has never read a `/time` line of its own — a peer with
     // nothing to say offers nothing, rather than a hollow reading nobody typed.
     gameTime: {

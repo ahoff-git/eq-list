@@ -85,6 +85,18 @@ shopping list.
     `item` set only when the whole line is one linked item, so a reward weapon is
     hover/openable but faction/coin lines stay plain); and turn-ins mined heuristically
     from `Walkthrough` (a link counts only when a quantity precedes it).
+  - **Gear-set bundles** ([ADR 0197](../decisions/0197-a-gear-set-quest-page-is-several-quests.md)):
+    a `Reward` section shaped as `table.eql-gear-set-table` (`Template:Gear_Set`, not the ordinary
+    `<ul>`) is read as one reward row per item (first `.hbdiv > a` per row, Totals row skipped,
+    deduplicated by name — a set piece worn in two slots lists the same item twice). When **2 or
+    more** rows also get their own turn-ins — either a per-piece `<h2>` naming the reward and holding
+    its own `.checkbox-list`, or a single consolidated `<h2 id="Checklist">` whose `.checkbox-list`
+    holds repeating (bare single-link `<ul>` naming the piece, turn-in list) pairs — the page is split
+    into `WikiPage.subQuests`, one per piece, matched by the piece's own name rather than heading or
+    table position (the two shapes disagree on order). `components`/`rewards` at the top level stay
+    the flat union either way, so the whole-page "add everything" action is unaffected. A gear-set
+    table with fewer than 2 matched pieces (`Curscale Armor Quest`: eleven pieces, one undifferentiated
+    Walkthrough) stays a single ordinary quest — only its reward-row reading changes.
   - Mob/NPC pages: loot is gathered from **every** section whose heading contains
     "Loot" (Known / Common / Unique …) — walk each heading (through its `.mw-heading`
     wrapper and whatever div the `<ul>` is nested in) to its `<ul>`s, dedupe by name.
