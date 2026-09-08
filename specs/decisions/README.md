@@ -241,6 +241,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0205: A recast only means a new mob once not proven otherwise](./0205-a-recast-only-means-a-new-mob-once-not-proven-otherwise.md)
 - [0206: A duration that disagrees with itself says so](./0206-a-duration-that-disagrees-with-itself-says-so.md)
 - [0207: A retired kill still remembers its own line](./0207-a-retired-kill-still-remembers-its-own-line.md)
+- [0208: An observed drop rate is a lower bound, and says so](./0208-an-observed-drop-rate-is-a-lower-bound-and-says-so.md)
 
 ## Open Questions
 
@@ -435,3 +436,45 @@ and degrading to blank facts when the file isn't there.*
   differently-gived quest write-ups on one page instead — a bigger, messier shape (worth a survey of
   how many `Category:Gear_Sets`/`Category:Quests` pages actually look like this before designing
   anything) that today still reads as one flat quest off the first table, same as before ADR 0197.
+
+- **Can a respawn timer tell two spawn points sharing a name apart?** `learnRespawns`
+  (`spawn-timers.ts`) keys a timer by name and turns the gap between consecutive kills of that name
+  into a respawn estimate. Where a camp genuinely has two independent spawns of the same named-or-not
+  mob, the gap between a kill at one and a kill at the other is not either spawn's respawn — it's
+  whatever the two happened to interleave to — and nothing here can tell that shape apart from one
+  spawn point being slow. `MIN_RESPAWN_SECONDS` catches the tightest version of this (two kills a
+  minute apart), but two spawns each on a real multi-minute timer, killed alternately, produce a gap
+  sequence indistinguishable from one erratic spawn — which `durationErratic`'s cousin here
+  (`ERRATIC_RATIO`) would flag as unreliable without explaining why, rather than as two real numbers.
+  The log gives no mob id to key on instead ([ADR 0135](./0135-a-countdown-is-an-instance-and-a-timer-is-its-own-kind.md)'s
+  whole reason for existing); the only other signal available is *position* — which is exactly the
+  question below, and any fix here would have to be built on an answer to it rather than invented
+  twice. Not attempted without a real captured log showing this shape to measure against — the
+  standard [ADR 0206](./0206-a-duration-that-disagrees-with-itself-says-so.md) and
+  [ADR 0208](./0208-an-observed-drop-rate-is-a-lower-bound-and-says-so.md) both held themselves to.
+
+- **Should a mob's roam area detect more than one spawn point?** `areaOf` (`mob-stats.ts`) folds
+  every confidently-placed kill of a mob into one centre and one spread, silently averaging two
+  genuinely separate camps of the same name into a single wrong point roughly between them — a real
+  gap for any mob with more than one spawn (common for common trash, less so for a unique named).
+  Telling that apart from one spawn with a wide, honest roam radius needs some notion of clustering —
+  whether the points form one blob or two — which nothing here does today, and which would ripple
+  into `mergeAreas`' weighted-centroid pooling and every place `roamWhy`/`MobArea` is read (the map
+  pin, the roam-radius tooltip) if the shape ever became "one mob, several areas" instead of one.
+  Worth building the day there's a real logged case to shape it around and to tune any
+  distance-based split against, rather than a plausible-sounding radius picked with nothing to check
+  it against.
+
+- **Does a kill's confidence account for movement *after* the fix it was placed from?**
+  `confidenceFor` (`kill-log.ts`) penalizes a fix for movement measured *before* it — comparing it
+  against the fix before that — but a kill is placed from whichever fix was most recent at the time,
+  and there is, by construction, no later fix to say whether the player kept moving between typing
+  `/loc` and landing the kill. A single `/loc` taken at the start of a raid pull, with combat then
+  ranging well away from it for the next 30–50 seconds, reads as a stationary, trusted fix the whole
+  way through — `moved` only ever reflects the *pair before* it, and a solo fix (no earlier one to
+  pair with) carries no movement signal at all rather than an unproven one. `ageSec`'s decay softens
+  this but doesn't target it — a kill at 15s gets the same partial trust whether the player camped in
+  place or sprinted the whole time. The honest fixes available are a flat extra discount for a fix
+  with no `prev` to corroborate it, or none at all; neither has a real measured raid log behind it to
+  size the discount from, which is why nothing has been changed here yet rather than guessing a
+  number.
