@@ -1788,42 +1788,85 @@ export interface SpawnView {
 // ─── Goals (timeboxed farming) ──────────────────────────────────────────────
 
 /** What a goal counts toward: an item's loot lines, or a mob's kills. */
-export type GoalTargetKind = "item" | "mob";
+/** `"any"` is a wildcard: every kill counts, with nothing to type at all. */
+export type GoalTargetKind = "item" | "mob" | "any";
 
-/** One goal's want: a kind and a name, matched the same way that kind is matched everywhere else
- *  in the app — an item against loot lines the way the shopping list does, a mob against kill
- *  lines the way a spawn timer does. */
+/**
+ * One goal's want: a kind and a name.
+ *
+ * An **item** matches loot lines the way the shopping list does (either name containing the
+ * other). A **mob**'s name is matched the way an alert's own trigger is — plain text, a
+ * case-insensitive substring of the kill line's mob name (`goalWantsMob`, mirroring
+ * `cast-alerts.ts`'s `triggerHit`) — so "gnoll" alone reaches every gnoll variant a camp turns up,
+ * the same generosity a watch's trigger already gets. **`"any"`** carries no meaningful name (the
+ * tracker fills in a fixed display label): it's the same wildcard idea as a blank alert trigger
+ * paired with conditions, applied here as its own explicit option rather than an empty string with
+ * hidden meaning, since a goal has no conditions of its own to carry the match instead.
+ */
 export interface GoalTarget {
   kind: GoalTargetKind;
   name: string;
 }
 
 /**
- * A timeboxed farming target — "20 of this in the next hour" — tracked by its own tracker
- * (`electron/goal-tracker.ts`) rather than folded into the shopping list's lifetime counts or the
- * spawn tracker's camp model, neither of which carries a clock (see ADR 0198).
+ * A goal's shape (ADR 0199): the ordinary kind reaches a fixed quantity within one timebox
+ * (`"target"`); a `"streak"` has no quantity at all — it just re-arms its own window on every
+ * qualifying hit, for as long as none is missed. Absent on a `Goal`/`GoalTemplate` read from a file
+ * written before streaks existed, which is read as `"target"`, the only mode that could have made it.
+ */
+export type GoalMode = "target" | "streak";
+
+/**
+ * A timeboxed farming target — "20 of this in the next hour", or "kill one every 10 seconds" —
+ * tracked by its own tracker (`electron/goal-tracker.ts`) rather than folded into the shopping
+ * list's lifetime counts or the spawn tracker's camp model, neither of which carries a clock (see
+ * ADR 0198).
+ *
+ * One flat shape for both modes (ADR 0199) rather than a `TargetGoal`/`StreakGoal` split: the two
+ * share every field but the two this doc calls out, and a union would have forced every reader —
+ * `goal-tracker.ts`, both panels, the overlay, every existing test — to narrow on `mode` before
+ * touching a field the ordinary case never stopped having a use for.
  */
 export interface Goal {
   id: string;
   target: GoalTarget;
+  /** Defaults to `"target"` wherever absent — see `GoalMode`. */
+  mode?: GoalMode;
+  /** The quantity to reach. Unused (`0`) on a `"streak"` goal, which has no fixed amount. */
   qty: number;
-  /** Progress since `startedAt`, counted only from log lines the tracker has seen while running. */
+  /** Progress since `startedAt` for a `"target"` goal; the **current streak** for a `"streak"` one —
+   *  hits since the last break (or since it started), counted only from log lines the tracker has
+   *  seen while running. */
   obtained: number;
   startedAt: string;
+  /** The timebox's length for a `"target"` goal; the window a `"streak"` goal re-arms on every hit. */
   durationSec: number;
-  /** `startedAt` + `durationSec`, stored so remaining time is always derived from it, never the
-   *  reverse — the same rule a spawn timer's `dueAt` follows. */
+  /** `startedAt` + `durationSec` for a `"target"` goal, fixed for its whole run. For a `"streak"`
+   *  goal this is the *next* hit's deadline, pushed out by `durationSec` every time one lands —
+   *  stored either way so remaining time is always derived from it, never the reverse, the same rule
+   *  a spawn timer's `dueAt` follows. */
   dueAt: string;
-  /** Which fractions of `MILESTONE_FRACTIONS` (`goal-progress.ts`) have already been bannered. */
+  /** Which fractions of `MILESTONE_FRACTIONS` (`goal-progress.ts`) have already been bannered.
+   *  Always empty on a `"streak"` goal — a streak has no milestones, only a running count. */
   announcedMilestones: number[];
-  /** The one-time completed/expired banner has already fired — set at load for a goal that finished
-   *  while the app was shut, so it is shown but never spoken about after the fact. */
+  /** The one-time completed/expired/streak-broken banner has already fired — set at load for a goal
+   *  that finished while the app was shut, so it is shown but never spoken about after the fact.
+   *  Never set on a `"streak"` goal with `autoRestart` on: a break there is banner-worthy news but
+   *  never a *final* result, so the goal stays open for the next hit instead of finishing. */
   resultAnnounced: boolean;
   /** A saved alert style, or the built-in "Goal" look when absent. */
   styleId?: string;
+  /** `"streak"` only: the longest run reached since the goal started, kept across an `autoRestart`
+   *  reset so the player can still see their best even after the live count drops back to 0. */
+  bestStreak?: number;
+  /** `"streak"` only: what a missed window does — reset `obtained` to 0 and keep running (`true`),
+   *  or finish the goal the same way an ordinary one expires (`false`/absent). */
+  autoRestart?: boolean;
 }
 
-/** Whether a goal is still running, was met, or ran out of time unmet — see `goalState`. */
+/** Whether a goal is still running, was met, or ran out of time unmet — see `goalState`. A
+ *  `"streak"` goal only ever reaches `"running"` or `"expired"` (a break): it has no `"completed"`,
+ *  since there's nothing sized enough to complete. */
 export type GoalState = "running" | "completed" | "expired";
 
 export interface RunningGoal extends Goal {
@@ -1831,17 +1874,23 @@ export interface RunningGoal extends Goal {
 }
 
 /**
- * A goal's want, saved for reuse — "20 Phosphorous Powder in an hour" typed once and started again
- * next session, rather than retyped. Nothing about progress or a clock: those only exist once a
- * template is started, at which point it becomes an ordinary `Goal`.
+ * A goal's want, saved for reuse — "20 Phosphorous Powder in an hour", or "kill one every 10
+ * seconds" — typed once and started again next session, rather than retyped. Nothing about progress
+ * or a clock: those only exist once a template is started, at which point it becomes an ordinary
+ * `Goal`. Mirrors `Goal`'s own flat, mode-tagged shape for the same reason (ADR 0199).
  */
 export interface GoalTemplate {
   id: string;
   target: GoalTarget;
+  /** Defaults to `"target"` wherever absent — see `GoalMode`. */
+  mode?: GoalMode;
+  /** Unused (`0`) on a `"streak"` template. */
   qty: number;
   durationSec: number;
   /** A name for the row, when the target alone doesn't say enough ("Powder run"). */
   label?: string;
+  /** `"streak"` only — see `Goal.autoRestart`. */
+  autoRestart?: boolean;
 }
 
 /** Everything the Goals tab and its floater show — running goals and finished ones, until cleared,
@@ -1855,14 +1904,24 @@ export interface GoalView {
 /**
  * A goal's alert, carried **raw** for the same reason a loot/record alert is (`CastAlertEvent.loot`,
  * `.record`): the overlay words it from the payload rather than being handed a finished sentence.
+ *
+ * `"streak-broken"` (ADR 0199) is its own kind rather than reusing `"expired"`: a streak has no
+ * `qty`/`obtained` to report, only `streak`/`bestStreak`, and a reader that switched on `kind` alone
+ * would otherwise get `undefined` where it expected a count.
  */
 export interface GoalAlertPayload {
-  kind: "milestone" | "completed" | "expired";
+  kind: "milestone" | "completed" | "expired" | "streak-broken";
   target: GoalTarget;
-  qty: number;
-  obtained: number;
-  /** 25/50/75 for a milestone; absent for `completed`/`expired`. */
+  /** `"milestone"` / `"completed"` / `"expired"` only. */
+  qty?: number;
+  /** `"milestone"` / `"completed"` / `"expired"` only. */
+  obtained?: number;
+  /** 25/50/75 for a milestone; absent otherwise. */
   pct?: number;
+  /** `"streak-broken"` only: the run that just ended. */
+  streak?: number;
+  /** `"streak-broken"` only: the best run this goal has reached. */
+  bestStreak?: number;
 }
 
 /**
@@ -3140,12 +3199,20 @@ export interface EqlApi {
     view(): Promise<GoalView>;
     /** Start a new goal — `null` back means a blank name or a non-positive qty/duration. */
     start(target: GoalTarget, qty: number, durationSec: number): Promise<GoalView>;
+    /**
+     * Start a streak challenge (ADR 0199): no fixed quantity, just a window that re-arms on every
+     * qualifying hit until one is missed. `autoRestart` says what a miss does — reset to 0 and keep
+     * running (`true`), or finish like an ordinary expired goal (`false`).
+     */
+    startStreak(target: GoalTarget, intervalSec: number, autoRestart: boolean): Promise<GoalView>;
     /** Drop a running goal early. Nothing measured is lost, so this asks nothing back to confirm. */
     abandon(id: string): Promise<GoalView>;
     /** Clear every completed/expired goal off the board. */
     clearFinished(): Promise<GoalView>;
     /** Save a want for reuse, without starting it. */
     saveTemplate(target: GoalTarget, qty: number, durationSec: number, label?: string): Promise<GoalView>;
+    /** Save a streak want for reuse, without starting it. */
+    saveStreakTemplate(target: GoalTarget, intervalSec: number, autoRestart: boolean, label?: string): Promise<GoalView>;
     /** Forget a saved template. Does not touch any goal already started from it. */
     deleteTemplate(id: string): Promise<GoalView>;
     /** Fires when a goal starts, progresses, finishes, or is cleared, or a template is saved/deleted. */

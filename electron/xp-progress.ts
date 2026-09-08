@@ -93,7 +93,12 @@ export function createXpProgress(userDataDir: string, nowIso: () => string = () 
     },
 
     levelUp(level, at) {
-      // A level-up is self-correcting: whatever drift the estimate had, it's zero now.
+      // A level-up is self-correcting: whatever drift the estimate had, it's zero now. Unlike
+      // `hp-estimate.ts`'s bounds, that holds even for EQL's per-class numbering (a "…19 20 21
+      // 13" run when a new class unlocks): the percentage genuinely reset for that class's next
+      // level, so taking the log's own number — lower or not — is the honest reading here, not a
+      // bug to guard against (specs/todo.md's "a level that goes down" considered this half and
+      // left it as is; only `hp`'s bounds needed the guard).
       state = {
         intoLevel: 0,
         level: level ?? (state.level !== undefined ? state.level + 1 : undefined),

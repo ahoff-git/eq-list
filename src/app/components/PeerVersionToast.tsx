@@ -47,7 +47,7 @@ export default function PeerVersionToast({ onView }: { onView: () => void }) {
         // Names the people rather than the numbers: "protocol 3" means nothing to a player, and the
         // thing they actually recognise is who they are sitting with. Two names and a count, on the
         // same reasoning `offerSummary` uses for the same reason.
-        detail: `${listNames(notice.peers)} ${notice.peers.length === 1 ? "is" : "are"} running a newer version — sharing with ${notice.peers.length === 1 ? "them" : "them"} is falling back to a slower path until you update.`,
+        detail: `${listNames(notice.peers)} ${notice.peers.length === 1 ? "is" : "are"} running a newer version — sharing with them is falling back to a slower path until you update.`,
         // A warning rather than plain news: nothing is broken, but something is worse than it should
         // be and will stay that way until somebody acts.
         tone: "warn",

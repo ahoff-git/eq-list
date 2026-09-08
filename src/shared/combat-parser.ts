@@ -14,6 +14,8 @@
  *   spell   You hit a coyote for 12 points of cold damage by Blast of Cold.
  *   shield  A female rat is burned by Kainos`s warder's flames for 2 points of
  *           non-melee damage.
+ *           You are burned by a fire elemental's flames for 4 points of non-melee damage.
+ *           A wild tiger is pierced by YOUR thorns for 1 point of non-melee damage.
  *   miss    Kainos`s warder tries to bite a coyote, but misses!
  *           You try to pierce a large plague rat, but miss!
  *           A kobold scout tries to hit YOU, but misses! (Riposte)
@@ -195,9 +197,25 @@ const SPELL_RE = new RegExp(
  * Carries `QUALIFIER` like every other damage shape — a shield tick tagged "(Critical)" is a real
  * line a bare `\.$` anchor would fail outright, the same trap that once dropped every tagged
  * swing (see `QUALIFIER`'s own note).
+ *
+ * `(?:is|are)`, not a bare "is": EQ conjugates for the target the way `DOT_FROM_RE` does for
+ * "has taken"/"have taken" — a mob or a pet "is" burned, but "You are burned by a fire elemental`s
+ * flames…" when the shield you just melee'd hits you back. A bare "is" never matched that, so
+ * every incoming hit from an enemy's own damage shield went unread.
  */
 const SHIELD_RE = new RegExp(
-  String.raw`^(?<target>.+?) is (?<verb>\w+) by (?<attacker>.+?)'s (?<source>\w+) for (?<amount>\d+) points? of (?<type>non-melee) damage\.${QUALIFIER}`,
+  String.raw`^(?<target>.+?) (?:is|are) (?<verb>\w+) by (?<attacker>.+?)'s (?<source>\w+) for (?<amount>\d+) points? of (?<type>non-melee) damage\.${QUALIFIER}`,
+);
+
+/**
+ * Your own damage shield. EQ words a pet's or a group-mate's shield with the `'s` possessive
+ * `SHIELD_RE` reads, but writes yours with no possessive at all — `by YOUR thorns`, capitalized,
+ * where the pet form is `by Kainos`s warder's thorns`. `SHIELD_RE`'s `'s` anchor never matches
+ * that, so every shield you wear yourself went unread: 907 lines, 1,576 damage on a real log
+ * (thorns 1,034, flames 542). Same shape as `DOT_MINE_RE`'s "your" for a DoT tick, one line along.
+ */
+const SHIELD_SELF_RE = new RegExp(
+  String.raw`^(?<target>.+?) is (?<verb>\w+) by YOUR (?<source>\w+) for (?<amount>\d+) points? of (?<type>non-melee) damage\.${QUALIFIER}`,
 );
 
 /**
@@ -392,6 +410,11 @@ export function parseCombat(line: LogLine): CombatEvent | null {
 
   const shield = message.match(SHIELD_RE);
   if (shield?.groups) return damage(shield.groups, line, false);
+
+  // Checked after the possessive form so a pet's or a group-mate's shield is never re-read as
+  // yours; "your" is what `combatant()` already folds to `SELF` for a DoT's own "your" form.
+  const selfShield = message.match(SHIELD_SELF_RE);
+  if (selfShield?.groups) return damage({ ...selfShield.groups, attacker: "your" }, line, false);
 
   const dot = message.match(DOT_FROM_RE) ?? message.match(DOT_MINE_RE) ?? message.match(DOT_BY_RE);
   if (dot?.groups) {

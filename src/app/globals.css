@@ -1001,6 +1001,15 @@ button {
 }
 .goals-add .field.qty { width: 64px; }
 .goals-add .field.dur { width: 90px; }
+/* "Any kill" has nothing to type, so its field reads as a fact rather than an input. */
+.goals-add .goal-any-kill {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+  font-style: italic;
+  background: transparent;
+  border-color: transparent;
+}
 .goals-templates { display: flex; flex-direction: column; gap: 4px; }
 .goal-template-row {
   display: flex;

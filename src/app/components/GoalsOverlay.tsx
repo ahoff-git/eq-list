@@ -46,8 +46,12 @@ export default function GoalsOverlay() {
 }
 
 function HudRow({ goal, now, color }: { goal: RunningGoal; now: number; color: string }) {
+  const isStreak = goal.mode === "streak";
   const remainingMs = Math.max(0, Date.parse(goal.dueAt) - now);
-  const pct = goal.qty > 0 ? Math.min(1, goal.obtained / goal.qty) : 0;
+  // A streak has no quantity to fill toward — the bar instead drains as its window closes, so a run
+  // about to break reads the same way a target goal running short of time would.
+  const pct = isStreak ? remainingMs / (goal.durationSec * 1000) : goal.qty > 0 ? Math.min(1, goal.obtained / goal.qty) : 0;
+  const progress = isStreak ? `🔥 streak ${goal.obtained}` : `${goal.obtained} / ${goal.qty}`;
   return (
     <div className="goal-hud-row" style={{ borderLeftColor: color }}>
       <div className="ghr-top">
@@ -57,9 +61,7 @@ function HudRow({ goal, now, color }: { goal: RunningGoal; now: number; color: s
       <div className="ghr-bar">
         <div className="ghr-fill" style={{ width: `${pct * 100}%`, background: color }} />
       </div>
-      <span className="ghr-progress">
-        {goal.obtained} / {goal.qty}
-      </span>
+      <span className="ghr-progress">{progress}</span>
     </div>
   );
 }

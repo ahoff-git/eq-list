@@ -39,10 +39,18 @@ import type { AwariPeer, AwariStatus, Settings } from "@/shared/types";
  * and the 👥 list of who is where — a live view you want while the game is full-screen and this
  * window is hidden. Views may live where they are needed; the controls behind them may not.
  */
-export default function PeersPanel({ focusPeer }: { focusPeer?: string | null }) {
+export default function PeersPanel({
+  focusPeer,
+  onViewPeer,
+}: {
+  focusPeer?: string | null;
+  /** Jumps to a peer's row in the roster below — how a name in the tray answers "who is that?". */
+  onViewPeer: (peerId: string) => void;
+}) {
   const settings = useSettings();
   const share = usePeerShare();
   const [openKind, setOpenKind] = useState<ShareKind | null>(null);
+  const knownPeerIds = useMemo(() => new Set(share.peers.map((p) => p.peerId)), [share.peers]);
 
   if (!settings) return <p className="muted">Loading settings…</p>;
 
@@ -81,6 +89,8 @@ export default function PeersPanel({ focusPeer }: { focusPeer?: string | null })
         open={openKind}
         onOpen={setOpenKind}
         onClear={share.clear}
+        onViewPeer={onViewPeer}
+        knownPeerIds={knownPeerIds}
       />
       <PeerScores received={share.received} />
     </div>

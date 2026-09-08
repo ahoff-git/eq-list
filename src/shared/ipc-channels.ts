@@ -111,9 +111,11 @@ export const CH = {
   // goals (ADR 0198) — timeboxed farming targets, several may run at once
   goalsView: "goals:view",
   goalsStart: "goals:start",
+  goalsStartStreak: "goals:startStreak", // a streak challenge (ADR 0199) — no quantity, just a window that re-arms on every hit
   goalsAbandon: "goals:abandon",
   goalsClearFinished: "goals:clearFinished",
   goalsSaveTemplate: "goals:saveTemplate",
+  goalsSaveStreakTemplate: "goals:saveStreakTemplate",
   goalsDeleteTemplate: "goals:deleteTemplate",
   // gameClock — the running Norrath clock (extrapolated from the last `/time`), and its alarms
   gameClockView: "gameClock:view",

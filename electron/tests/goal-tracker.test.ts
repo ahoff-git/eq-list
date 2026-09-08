@@ -115,6 +115,25 @@ test("a kill credits a matching mob goal by one, regardless of a stack size that
   assert.equal(tracker.view().goals[0].obtained, 2);
 });
 
+test("a mob goal is plain text: typing just \"gnoll\" credits every gnoll variant, not only an exact name", () => {
+  const { tracker } = harness();
+  tracker.start({ kind: "mob", name: "gnoll" }, 5, 3600);
+  tracker.noteKill(kill("a gnoll pup", 1));
+  tracker.noteKill(kill("a gnoll pup guard", 2));
+  tracker.noteKill(kill("an orc pawn", 3)); // no "gnoll" in it — must not count
+  assert.equal(tracker.view().goals[0].obtained, 2);
+});
+
+test("an \"any\" goal is credited by every kill, needs no typed name, and files under a fixed label", () => {
+  const { tracker } = harness();
+  const goal = tracker.start({ kind: "any", name: "" }, 5, 3600);
+  assert.ok(goal);
+  assert.equal(goal!.target.name, "Any kill");
+  tracker.noteKill(kill("a gnoll pup", 1));
+  tracker.noteKill(kill("Lord Nagafen", 2));
+  assert.equal(tracker.view().goals[0].obtained, 2);
+});
+
 test("milestones announce once each, lowest first, even when one line crosses two", () => {
   const { tracker, raised } = harness();
   tracker.start({ kind: "item", name: "Powder" }, 20, 3600);
@@ -215,6 +234,145 @@ test("goals and templates persist across a restart", () => {
   const second = harness({ dir });
   assert.equal(second.tracker.view().goals.length, 1);
   assert.equal(second.tracker.view().templates.length, 1);
+});
+
+test("starting a streak files it running, due at start + interval, with no streak yet", () => {
+  const { tracker } = harness();
+  const goal = tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 10, false);
+  assert.ok(goal);
+  assert.equal(goal!.dueAt, new Date(T0 + 10_000).toISOString());
+  assert.equal(goal!.obtained, 0);
+  assert.equal(tracker.view().goals[0].state, "running");
+});
+
+test("startStreak refuses a blank name or a non-positive interval, and files nothing", () => {
+  const { tracker } = harness();
+  assert.equal(tracker.startStreak({ kind: "mob", name: " " }, 10, false), null);
+  assert.equal(tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 0, false), null);
+  assert.equal(tracker.view().goals.length, 0);
+});
+
+test("a hit within the window extends the streak, tracks the best, and pushes the window out again", () => {
+  const { tracker, tick } = harness();
+  tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 10, false);
+  tick(4);
+  tracker.noteKill(kill("a gnoll pup", 4));
+  let goal = tracker.view().goals[0];
+  assert.equal(goal.obtained, 1);
+  assert.equal(goal.bestStreak, 1);
+  assert.equal(goal.dueAt, new Date(T0 + 4000 + 10_000).toISOString());
+  tick(8);
+  tracker.noteKill(kill("a gnoll pup", 8));
+  goal = tracker.view().goals[0];
+  assert.equal(goal.obtained, 2);
+  assert.equal(goal.bestStreak, 2);
+});
+
+test("a streak left unhit at its due time breaks exactly once, from the sweep, and finishes by default", () => {
+  const { tracker, raised, tick } = harness();
+  tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 10, false);
+  tracker.noteKill(kill("a gnoll pup", 1));
+  tick(20);
+  const goal = tracker.view().goals[0];
+  assert.equal(goal.state, "expired");
+  const broken = raised.filter((a) => a.goal?.kind === "streak-broken");
+  assert.equal(broken.length, 1);
+  assert.equal(broken[0].goal?.streak, 1);
+  assert.equal(broken[0].goal?.bestStreak, 1);
+  raised.length = 0;
+  tick(21);
+  assert.equal(raised.length, 0, "an already-broken streak doesn't break twice");
+});
+
+test("auto-restart resets the streak to 0 and keeps running instead of finishing", () => {
+  const { tracker, raised, tick } = harness();
+  tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 10, true);
+  tracker.noteKill(kill("a gnoll pup", 1));
+  tracker.noteKill(kill("a gnoll pup", 5));
+  tick(20);
+  const goal = tracker.view().goals[0];
+  assert.equal(goal.state, "running", "auto-restart never finishes on its own");
+  assert.equal(goal.obtained, 0, "the live streak resets");
+  assert.equal(goal.bestStreak, 2, "the best is kept across the reset");
+  assert.equal(raised.filter((a) => a.goal?.kind === "streak-broken").length, 1);
+});
+
+test("a kill arriving after the window has already lapsed breaks it first, non-auto-restart doesn't also start counting it", () => {
+  const { tracker, raised, advanceClock } = harness();
+  tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 10, false);
+  // Mirrors the target-goal race: real time has passed the window, but nothing has told this goal
+  // so yet (the sweep interval is never invoked).
+  advanceClock(11);
+  tracker.noteKill(kill("a gnoll pup", 11));
+  const goal = tracker.view().goals[0];
+  assert.equal(goal.state, "expired");
+  assert.equal(goal.obtained, 0, "the late hit isn't credited to a goal that just finished");
+  assert.equal(raised.filter((a) => a.goal?.kind === "streak-broken").length, 1);
+});
+
+test("a kill arriving after the window has lapsed on an auto-restart goal breaks it, then starts the next streak at 1", () => {
+  const { tracker, advanceClock } = harness();
+  tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 10, true);
+  advanceClock(11);
+  tracker.noteKill(kill("a gnoll pup", 11));
+  const goal = tracker.view().goals[0];
+  assert.equal(goal.state, "running");
+  assert.equal(goal.obtained, 1, "the hit that discovered the break also starts the next run");
+  assert.equal(goal.dueAt, new Date(T0 + 11_000 + 10_000).toISOString());
+});
+
+test("a streak that broke while the app was shut is picked back up silently if auto-restart, finished silently otherwise", () => {
+  const dir = tempDir();
+  {
+    const first = harness({ dir, startSec: 0 });
+    first.tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 10, false);
+    first.tracker.startStreak({ kind: "item", name: "Loot" }, 10, true);
+    first.tracker.flush();
+  }
+  const second = harness({ dir, startSec: 3600 });
+  const [finished, restarted] = second.tracker.view().goals.sort((a, b) => Number(a.autoRestart) - Number(b.autoRestart));
+  assert.equal(finished.state, "expired");
+  assert.equal(restarted.state, "running", "auto-restart has nothing to finish, so it's simply picked back up");
+  assert.equal(restarted.obtained, 0);
+  assert.equal(second.raised.length, 0, "no banner for something that happened while we were shut");
+});
+
+test("a saved streak template can be started, and started templates don't touch each other", () => {
+  const { tracker } = harness();
+  tracker.saveStreakTemplate({ kind: "mob", name: "gnoll pup" }, 15, true, "Gnoll streak");
+  const [template] = tracker.view().templates;
+  assert.equal(template.label, "Gnoll streak");
+  assert.equal(template.autoRestart, true);
+  const started = tracker.startStreak(template.target, template.durationSec, template.autoRestart ?? false)!;
+  assert.equal(started.durationSec, 15);
+  assert.equal(started.autoRestart, true);
+});
+
+test("a file written before streaks existed (no mode field) is read as an ordinary target goal", () => {
+  const dir = tempDir();
+  fs.writeFileSync(
+    path.join(dir, "goals.json"),
+    JSON.stringify({
+      goals: [
+        {
+          id: "g1",
+          target: { kind: "item", name: "Powder" },
+          qty: 20,
+          obtained: 5,
+          startedAt: new Date(T0).toISOString(),
+          durationSec: 3600,
+          dueAt: new Date(T0 + 3600_000).toISOString(),
+          announcedMilestones: [],
+          resultAnnounced: false,
+        },
+      ],
+      templates: [],
+    }),
+  );
+  const { tracker } = harness({ dir });
+  assert.equal(tracker.view().goals[0].state, "running");
+  tracker.noteLoot(loot("Powder", 1, 10));
+  assert.equal(tracker.view().goals[0].obtained, 6, "an untagged goal still credits normally");
 });
 
 test("the overlay's own switch silences a goal alert the same way it silences every other kind", () => {

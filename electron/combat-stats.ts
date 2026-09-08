@@ -24,6 +24,7 @@ import { createDamageCells, rollUpDamage } from "../src/shared/damage-tree";
 import { createDotAttribution } from "../src/shared/dot-attribution";
 import { createFightScope } from "../src/shared/fight-scope";
 import { hasArticle } from "../src/shared/log-parser";
+import { createLogger } from "../src/shared/logging";
 import { createNameRegistry } from "../src/shared/name-registry";
 import { ratio, round } from "../src/shared/numbers";
 import { createParty } from "../src/shared/party";
@@ -98,6 +99,8 @@ const UNKNOWN_MODE = "unknown";
 
 /** Cap the per-second sparkline so one endless fight can't grow without bound. */
 const MAX_BUCKETS = 900;
+
+const log = createLogger("combat-stats");
 
 export interface CombatTracker {
   record(event: CombatEvent): void;
@@ -555,6 +558,7 @@ export function createCombatStats(
    */
   const doubt = (w: Window, name: string): void => {
     if (!name || placed(name)) return;
+    if (!w.doubted.has(name)) log.debug("name unplaced, recorded as doubtful", name);
     w.doubted.add(name);
   };
 
@@ -861,6 +865,7 @@ export function createCombatStats(
           // its own — the signature of a free cast (Spell Blade grants them silently).
           // Ticks are excluded upstream; castless sources are excluded by the repertoire.
           if (unpairedLanding && !event.tick && castRepertoire.has(event.spell)) {
+            log.debug("free cast detected", { spell: event.spell, amount: event.amount, invocation });
             mode.procs += 1;
             mode.procDamage += event.amount;
             const inv = w.invocationTally(invocation);
@@ -1002,7 +1007,14 @@ export function createCombatStats(
   function endFight(reason: FightEndReason): void {
     if (fightFiled || !fight.span.firstAt) return;
     fightFiled = true;
-    bus.emit("fightEnd", { ...summarize(fight), endReason: reason });
+    const filed = { ...summarize(fight), endReason: reason };
+    log.debug("fight filed", {
+      reason,
+      durationSec: filed.durationSec,
+      totalDealt: filed.totalDealt,
+      combatants: filed.byCombatant.length,
+    });
+    bus.emit("fightEnd", filed);
   }
 
   /** Start the next fight's row set. The flag rides with the window — see `endFight`. */
@@ -1087,7 +1099,10 @@ export function createCombatStats(
       // judged. It's what makes the first swing of a fight have to stand on its own: without
       // it, a stranger fighting the twin of last pull's mob would open a fight of ours.
       const swing = event.kind === "damage" || event.kind === "miss";
-      if (stale && swing) scope.reset();
+      if (stale && swing) {
+        log.debug("stale swing, new engagement — enemy set reset", { endReason });
+        scope.reset();
+      }
       // Somebody else's fight is somebody else's business (ADR 0067).
       if (!scope.admits(event)) return;
 
@@ -1130,7 +1145,11 @@ export function createCombatStats(
       // cast was too old to pair", which `pairCast` also reports as 0.
       unpairedLanding = !hadPending && !sameCast;
 
-      if (event.kind === "damage" && !event.tick && event.spell && isMine(canon(event.attacker))) {
+      // A damage shield's flavour word ("flames") rides in `event.spell` too, but a shield never
+      // casts — crediting its firing as `lastLanding` let a self-heal moments later file the
+      // invocation's healing under "flames" as though it were a spell you cast, the exact phantom
+      // row `!event.shield` exists everywhere else in this file to prevent.
+      if (event.kind === "damage" && !event.tick && event.spell && !event.shield && isMine(canon(event.attacker))) {
         lastLanding = { spell: event.spell, at };
       }
 

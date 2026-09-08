@@ -1224,6 +1224,20 @@ test("...nor when the log proved it on its own", () => {
   assert.equal(h.tracker.view().running.length, 1, "removing one row can't untrack a mob you've camped");
 });
 
+test("removing a custom timer must not withdraw an unrelated named claim of the same name", () => {
+  // `markNamed` makes its claim with no `added` row behind it at all. A same-named *custom* egg
+  // timer added afterwards has nothing to do with that claim — but `remove` used to look up the
+  // kind of the row it had just deleted, which reads as absent (falls back to "mob") whatever the
+  // row actually was, and withdrew the claim regardless.
+  const kills = [record("gnoll pup", 0, { named: false }), record("gnoll pup", 900, { named: false })];
+  const h = harness({ kills });
+  h.tracker.markNamed("gnoll pup", true);
+  assert.equal(h.tracker.view().known.length, 1);
+  const custom = h.tracker.add("gnoll pup", ZONE, 600, "custom")!;
+  h.tracker.remove(custom);
+  assert.equal(h.tracker.view().known.length, 1, "an unrelated custom timer's removal must not erase the claim");
+});
+
 test("a repop drops the mob's clocks and leaves the timer you made alone", () => {
   const h = timed();
   const key = h.tracker.add(CUSTOM, ZONE, 600, "custom")!;

@@ -10,8 +10,10 @@ import {
   goalWantsItem,
   goalWantsMob,
   MAX_GOAL_SECONDS,
+  MAX_STREAK_INTERVAL_SECONDS,
   nextMilestone,
   parseGoalDuration,
+  parseStreakInterval,
   runningGoalTargets,
 } from "../../src/shared/goal-progress";
 import type { RunningGoal } from "../../src/shared/types";
@@ -75,6 +77,34 @@ test("parseGoalDuration refuses a unit it doesn't accept, rather than silently r
   assert.equal(parseGoalDuration("2d"), null);
 });
 
+test("a streak goal has no completion — running while its window hasn't lapsed, whatever its (unused) obtained/qty say", () => {
+  const streak = { mode: "streak" as const, obtained: 0, qty: 0, dueAt: new Date(T0 + 1000).toISOString() };
+  assert.equal(goalState(streak, T0), "running");
+});
+
+test("a streak goal expires the instant its window lapses — there is no obtained/qty check to beat it there", () => {
+  const streak = { mode: "streak" as const, obtained: 50, qty: 0, dueAt: new Date(T0).toISOString() };
+  assert.equal(goalState(streak, T0), "expired");
+});
+
+test("mode absent reads as \"target\", so a file written before streaks existed behaves exactly as before", () => {
+  assert.equal(goalState({ obtained: 20, qty: 20, dueAt: new Date(T0 - 1).toISOString() }, T0), "completed");
+});
+
+test("parseStreakInterval reads seconds and minutes, and refuses what it can't", () => {
+  assert.equal(parseStreakInterval("10s"), 10);
+  assert.equal(parseStreakInterval("2m"), 120);
+  assert.equal(parseStreakInterval("1m 30s"), 90);
+  assert.equal(parseStreakInterval(""), 0);
+  assert.equal(parseStreakInterval("nonsense"), null);
+});
+
+test("parseStreakInterval clamps at its own ceiling, not the goal duration's", () => {
+  assert.equal(parseStreakInterval("1h"), null, "hours are a goal duration's unit, not a streak's");
+  assert.equal(parseStreakInterval("45m"), MAX_STREAK_INTERVAL_SECONDS);
+  assert.ok(MAX_STREAK_INTERVAL_SECONDS < MAX_GOAL_SECONDS, "a streak window is meant to stay tight");
+});
+
 test("goalWantsItem matches the same way the shopping list does — either name containing the other", () => {
   assert.ok(goalWantsItem({ kind: "item", name: "Phosphorous Powder" }, "a Phosphorous Powder"));
   assert.ok(goalWantsItem({ kind: "item", name: "Powder" }, "Phosphorous Powder"));
@@ -89,6 +119,20 @@ test("goalWantsItem never matches a mob goal, and goalWantsMob never matches an 
 test("goalWantsMob folds the article and case the same way a kill line does", () => {
   assert.ok(goalWantsMob({ kind: "mob", name: "a Gnoll Pup" }, "gnoll pup"));
   assert.ok(!goalWantsMob({ kind: "mob", name: "gnoll pup" }, "orc pawn"));
+});
+
+test("goalWantsMob is plain text — a substring of the mob's name, the same rule an alert trigger uses", () => {
+  assert.ok(goalWantsMob({ kind: "mob", name: "gnoll" }, "a gnoll pup"));
+  assert.ok(goalWantsMob({ kind: "mob", name: "gnoll" }, "a gnoll pup guard"));
+  // Needle in haystack, not the item match's either-way generosity: the mob's own name must
+  // contain what was typed, not the other way round — typing the whole sentence back matches
+  // nothing real, the same way an alert's trigger wouldn't.
+  assert.ok(!goalWantsMob({ kind: "mob", name: "a gnoll pup that also fights orcs" }, "gnoll pup"));
+});
+
+test("goalWantsMob's \"any\" kind matches every kill, and needs no name at all", () => {
+  assert.ok(goalWantsMob({ kind: "any", name: "" }, "a gnoll pup"));
+  assert.ok(goalWantsMob({ kind: "any", name: "" }, "Lord Nagafen"));
 });
 
 function goal(over: Partial<RunningGoal>): RunningGoal {
@@ -115,4 +159,11 @@ test("runningGoalTargets splits by kind and drops anything not running", () => {
   const { items, mobs } = runningGoalTargets(goals);
   assert.deepEqual(items.map((t) => t.name), ["Powder"]);
   assert.deepEqual(mobs.map((t) => t.name), ["gnoll pup"]);
+});
+
+test("runningGoalTargets buckets an \"any\" target with the mobs — it answers every one of them", () => {
+  const goals = [goal({ id: "a", target: { kind: "any", name: "Any kill" }, state: "running" })];
+  const { items, mobs } = runningGoalTargets(goals);
+  assert.equal(items.length, 0);
+  assert.deepEqual(mobs.map((t) => t.kind), ["any"]);
 });

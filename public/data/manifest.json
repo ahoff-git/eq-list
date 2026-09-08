@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-09-08T00:26:29.297Z",
+  "generatedAt": "2026-09-08T17:53:53.830Z",
   "sections": {
     "wikiCache": {
-      "bytes": 30441995,
+      "bytes": 30452956,
       "files": 265
     },
     "lucyCache": {
@@ -12,6 +12,26 @@
     "travel": {
       "bytes": 447406,
       "files": 2
+    },
+    "maps": {
+      "sources": [
+        {
+          "id": "stock",
+          "label": "Game maps (maps folder)",
+          "dir": "G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\maps",
+          "zones": 138,
+          "files": 213,
+          "bytes": 71235505
+        },
+        {
+          "id": "brewall",
+          "label": "Brewall",
+          "dir": "G:\\Daybreak Game Company\\Installed Games\\EverQuest Legends\\maps\\Brewall",
+          "zones": 568,
+          "files": 1695,
+          "bytes": 149433005
+        }
+      ]
     }
   }
 }

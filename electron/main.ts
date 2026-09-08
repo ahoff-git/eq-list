@@ -541,7 +541,9 @@ if (!app.requestSingleInstanceLock()) {
   });
   watcher.onLevel((event) => {
     xp.levelUp(event.level, event.at);
-    hp.levelUp(event.level); // more hit points now, so the old bounds are void
+    // More hit points now, so the old bounds are void — unless this is EQL's per-class numbering
+    // reporting a level *below* the highest seen, which isn't a real level change (`hp-estimate.ts`).
+    hp.levelUp(event.level);
   });
   // Logging in is the log's own "a new sitting starts here" (ADR 0054). Reset *before* the id
   // changes, so the fight in progress — and every counter on the Session tab — files under the

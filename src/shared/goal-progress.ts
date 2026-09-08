@@ -10,7 +10,7 @@ import { parseDuration } from "./duration";
 import { stripArticle } from "./log-parser";
 import { normalizeItemName } from "./grouping";
 import { mobKey } from "./mob-stats";
-import type { Goal, GoalState, GoalTarget, RunningGoal } from "./types";
+import type { Goal, GoalMode, GoalState, GoalTarget, RunningGoal } from "./types";
 
 /** The progress fractions a running goal is bannered at, in the order they're crossed. */
 export const MILESTONE_FRACTIONS = [0.25, 0.5, 0.75] as const;
@@ -29,15 +29,36 @@ export function parseGoalDuration(text: string | null | undefined): number | nul
 }
 
 /**
+ * A streak's window is meant to keep the pace tight — long enough to type a target and glance back
+ * at the screen, short enough that "streak" still means something rather than reading as an
+ * ordinary timed goal wearing a different label. Its own ceiling for the reason `MAX_GOAL_SECONDS`'s
+ * comment gives: reusing another feature's cap is how a typed value ends up silently clamped to a
+ * limit that was never this feature's own.
+ */
+export const MAX_STREAK_INTERVAL_SECONDS = 30 * 60;
+
+/** `"10s"`, `"90s"`, `"2m"`, `"1m 30s"` — seconds and minutes only; see `MAX_STREAK_INTERVAL_SECONDS`. */
+export function parseStreakInterval(text: string | null | undefined): number | null {
+  return parseDuration(text, { units: ["s", "m"], max: MAX_STREAK_INTERVAL_SECONDS });
+}
+
+/**
  * Whether a goal is still running, was met, or ran out of time unmet.
  *
  * Completion is checked **before** expiry: a goal whose last loot line landed at the very moment its
  * clock ran out is a goal you met, not one that timed out on you — the two read very differently to
  * the player even though both happened in the same second. Mirrors `spawnState`'s shape, one clause
  * shorter, since a goal has no window/alive/stale phases to speak of.
+ *
+ * A `"streak"` goal (ADR 0199, absent `mode` reads as `"target"`) has no quantity to complete — it
+ * only ever runs or breaks, so the completion clause simply never fires for one and the clock is the
+ * whole answer.
  */
-export function goalState(goal: Pick<Goal, "obtained" | "qty" | "dueAt">, nowMs: number): GoalState {
-  if (goal.obtained >= goal.qty) return "completed";
+export function goalState(
+  goal: Pick<Goal, "obtained" | "qty" | "dueAt"> & { mode?: GoalMode },
+  nowMs: number,
+): GoalState {
+  if ((goal.mode ?? "target") === "target" && goal.obtained >= goal.qty) return "completed";
   if (nowMs >= Date.parse(goal.dueAt)) return "expired";
   return "running";
 }
@@ -74,9 +95,22 @@ export function goalWantsItem(target: GoalTarget, itemName: string): boolean {
   return a === b || a.includes(b) || b.includes(a);
 }
 
-/** Whether a mob goal's target names this mob — exact once both are folded to a bare lowercase name. */
+/**
+ * Whether a mob goal's target names this mob.
+ *
+ * `"any"` matches every kill, deliberately with no further check — that's the whole point of the
+ * option. Otherwise this is **plain text**, the same rule an alert's own trigger uses
+ * (`cast-alerts.ts`'s `triggerHit`): the typed target, folded to a bare lowercase name, need only be
+ * a **substring** of the kill's — needle in haystack, same direction a watch matches in — so "gnoll"
+ * alone reaches "a gnoll pup", "a gnoll pup guard" and every other variant a camp turns up, rather
+ * than requiring the exact name spawn timers key on. A goal is a rougher, faster-to-type ask than a
+ * spawn timer's identity, and this is what makes typing "gnoll" for an evening of gnoll country
+ * actually work.
+ */
 export function goalWantsMob(target: GoalTarget, mob: string): boolean {
-  return target.kind === "mob" && mobKey(target.name) === mobKey(mob);
+  if (target.kind === "any") return true;
+  if (target.kind !== "mob") return false;
+  return mobKey(mob).includes(mobKey(target.name));
 }
 
 /**
@@ -89,6 +123,9 @@ export function runningGoalTargets(goals: readonly RunningGoal[]): { items: Goal
   const running = goals.filter((g) => g.state === "running");
   return {
     items: running.filter((g) => g.target.kind === "item").map((g) => g.target),
-    mobs: running.filter((g) => g.target.kind === "mob").map((g) => g.target),
+    // "any" belongs here too: `goalWantsMob` already answers every mob for it, so an "any kill"
+    // goal correctly emphasizes (or, with hiding on, keeps) every mob row on the Hunt tab rather
+    // than none — the whole point of the wildcard is that every kill is a step toward it.
+    mobs: running.filter((g) => g.target.kind === "mob" || g.target.kind === "any").map((g) => g.target),
   };
 }

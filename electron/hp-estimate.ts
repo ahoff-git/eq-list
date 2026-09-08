@@ -261,6 +261,15 @@ export function createHpEstimate(
     },
 
     levelUp(level) {
+      // EQL levels per **class**, not the character as a whole — the same "Welcome to level N!"
+      // line fires once per class, so a real log runs "…19 20 21 13" the moment a new class
+      // unlocks. A number below the highest ever seen isn't more hit points, it's a different
+      // class's counter — so it must not void bounds a real level-up already earned, or a
+      // level-13 primary-unlock throws away everything learned by level 21.
+      if (level !== undefined && state.level !== undefined && level < state.level) {
+        log.debug("lower per-class level ignored; hp bounds kept", { reported: level, highest: state.level });
+        return;
+      }
       // More hit points now: every bound collected at the old level is wrong. (The floor is
       // arguably still valid — you don't lose health by levelling — but carrying it forward
       // would also carry any bad reading forward for good, and the floor is the bound most

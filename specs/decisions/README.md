@@ -232,6 +232,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0196: Spells get their own shard-addressed mirror](./0196-spells-get-their-own-shard-addressed-mirror.md)
 - [0197: A "gear-set" quest page is several quests](./0197-a-gear-set-quest-page-is-several-quests.md)
 - [0198: A goal is a timeboxed target, tracked on its own and focusable from the List and Hunt tabs](./0198-a-goal-is-a-timeboxed-target.md)
+- [0199: A streak goal has no quantity — only a window that re-arms on every hit](./0199-a-streak-goal-has-no-quantity-only-a-window-that-re-arms.md)
+- [0200: Your own damage shield is yours, read the way "your" already is](./0200-your-own-damage-shield-is-yours.md)
 
 ## Open Questions
 

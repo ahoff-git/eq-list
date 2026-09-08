@@ -256,6 +256,26 @@ test("levelling up discards everything, including a stated figure", () => {
   assert.equal(s.level, 15);
 });
 
+test("a lower level from a different class doesn't discard bounds already earned", () => {
+  // EQL levels per class: "Welcome to level N!" fires once per class, so a real log runs
+  // "…19 20 21 13" the moment a new class primary-unlocks. That 13 is not a demotion, and must
+  // not throw away the bounds the character earned reaching 21.
+  const hp = tracker();
+  hp.levelUp(21);
+  feed(hp, [
+    [1, "A skeleton punches YOU for 300 points of damage."],
+    // A lull banks the window: you took 300 and lived, so you have more than 300.
+    [40, "A skeleton punches YOU for 5 points of damage."],
+  ]);
+  assert.equal(hp.state().atLeast, 300);
+
+  hp.levelUp(13); // a new class unlocked, starting from its own level 13
+
+  const s = hp.state();
+  assert.equal(s.atLeast, 300, "the floor earned at 21 must survive a lower per-class level line");
+  assert.equal(s.level, 21, "the highest level seen is still the character's real level");
+});
+
 test("the player's own figure is kept alongside the evidence", () => {
   const hp = tracker();
   feed(hp, [

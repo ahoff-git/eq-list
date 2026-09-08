@@ -25,6 +25,7 @@ import OpacityButton from "./components/OpacityButton";
 import ClickThroughButton from "./components/ClickThroughButton";
 import CastAlerts from "./components/CastAlerts";
 import UpdateBanner from "./components/UpdateBanner";
+import WebDownloadBanner from "./components/WebDownloadBanner";
 import Toasts from "./components/Toasts";
 import TabBar, { type TabItem } from "./components/TabBar";
 import PeersPanel from "./components/PeersPanel";
@@ -99,6 +100,11 @@ function ControlWindow() {
     },
     [openTab],
   );
+  // Its own callback rather than an inline arrow at the call site: `PeerVersionToast`'s effect
+  // depends on `onView`'s identity, so a fresh function every render would tear down and
+  // re-subscribe its listener every render too — the churn `viewPeer` above is already careful to
+  // avoid for the sibling toast.
+  const viewPeers = useCallback(() => openTab("peers"), [openTab]);
   useEffect(() => {
     if (nav.tab !== "peers") setFocusPeer(null);
   }, [nav.tab]);
@@ -220,7 +226,7 @@ function ControlWindow() {
       <PeerOfferToasts onView={viewPeer} />
       {/* Says once, if ever, that this build is behind the room — and points at the tab where the
           rows say which peers it is behind. */}
-      <PeerVersionToast onView={() => openTab("peers")} />
+      <PeerVersionToast onView={viewPeers} />
       {/* Beep only — the banner + flash live in the dedicated click-through overlay window
           (/alert), which floats over the game. This window is the always-alive one that can
           reliably play the sound. */}
@@ -261,6 +267,7 @@ function ControlWindow() {
         </Titlebar>
 
         <UpdateBanner />
+        <WebDownloadBanner />
 
         <TabBar items={tabItems} active={tab} onSelect={openTab} />
 
@@ -289,7 +296,7 @@ function ControlWindow() {
           {tab === "damage" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "alerts" && <AlertsPanel />}
-          {tab === "peers" && <PeersPanel focusPeer={focusPeer} />}
+          {tab === "peers" && <PeersPanel focusPeer={focusPeer} onViewPeer={viewPeer} />}
           {tab === "settings" && <SettingsPanel />}
         </div>
 

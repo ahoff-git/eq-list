@@ -251,6 +251,37 @@ test("a tagged damage-shield tick parses instead of vanishing", () => {
   assert.equal(e.qualifier, "Critical");
 });
 
+test("your own damage shield parses — EQ words it 'by YOUR', not with the 's possessive", () => {
+  // 907 lines, 1,576 damage on a real log went unread this way: `SHIELD_RE` binds on the `'s`
+  // possessive a pet's or a group-mate's shield carries, and your own shield has none at all.
+  const e = parse("A wild tiger is pierced by YOUR thorns for 1 point of non-melee damage.") as DamageEvent;
+  assert.ok(e, "a self-shield line must parse");
+  assert.equal(e.kind, "damage");
+  assert.equal(e.attacker, "You");
+  assert.equal(e.target, "a wild tiger");
+  assert.equal(e.amount, 1);
+  assert.equal(e.spell, "thorns");
+  assert.equal(e.shield, true);
+  assert.equal(e.damageType, "non-melee");
+  assert.equal(e.melee, false);
+});
+
+test("taking a hit from an enemy's own damage shield parses — the target conjugates 'are', not 'is'", () => {
+  // `SHIELD_RE` hardcoded "is", which only ever agrees with a third-person target (a mob, a pet).
+  // "You" needs "are" — the same has/have split `DOT_FROM_RE` already carries for its target — and
+  // without it every incoming hit from a mob's own shield went unread rather than merely mislabelled.
+  const e = parse("You are burned by a fire elemental's flames for 4 points of non-melee damage.") as DamageEvent;
+  assert.ok(e, "an incoming shield line naming You as the target must parse");
+  assert.equal(e.kind, "damage");
+  assert.equal(e.attacker, "a fire elemental");
+  assert.equal(e.target, "You");
+  assert.equal(e.amount, 4);
+  assert.equal(e.spell, "flames");
+  assert.equal(e.shield, true);
+  assert.equal(e.damageType, "non-melee");
+  assert.equal(e.melee, false);
+});
+
 test("an overhealing heal meters what actually landed", () => {
   const e = parse("You healed Kainos`s warder for 1 (20) hit points by Inner Fire.") as HealEvent;
   assert.equal(e.kind, "heal");

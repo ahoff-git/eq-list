@@ -20,6 +20,8 @@ export const STORAGE_KEYS = {
   huntZone: "eqlist.main.huntZone",
   /** Main window: whether the Hunt tab groups by zone or by item. */
   huntGrouping: "eqlist.main.huntGrouping",
+  /** Main window: whether the "this is the web view, get the desktop app" banner was dismissed. */
+  webDownloadDismissed: "eqlist.main.webDownloadDismissed",
   /**
    * Main window: whether the List and Hunt tabs are focused on the active goals (ADR 0198) —
    * emphasizing goal-relevant items/mobs and, when the reader also asked to, hiding the rest. One

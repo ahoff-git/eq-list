@@ -473,6 +473,21 @@ test("coin follows the corpse you were just looting, not merely the newest kill"
   assert.equal(byMob.get("a gnoll"), undefined);
 });
 
+test("coin doesn't follow a corpse you looted but didn't kill", () => {
+  // The doc comment on `noteCoin` promises "strangers' corpses are never candidates" for *either*
+  // signal, but only the fallback loop checked `mine` — the stronger, "corpse you were just
+  // looting" signal skipped the check entirely and would credit a stranger's kill with money you
+  // never took, the exact figure the rule exists to protect.
+  const k = createKillLog(tempDir());
+  k.setPlayer("Kainos");
+  k.record("a gnoll", "Bunnyslayer", ZONE, stamp(20), 20); // a stranger's kill
+  k.noteLoot(looted("Bone Chips", "a gnoll", 24)); // you looted it anyway
+  assert.equal(k.noteCoin(coin(50, 25)), false, "no corpse of yours to credit it to");
+
+  const byMob = new Map(k.kills().map((x) => [x.mob, x.coin]));
+  assert.equal(byMob.get("a gnoll"), undefined, "you didn't kill it, so its coin isn't credited to it");
+});
+
 test("with nothing being looted, coin goes to the newest kill of yours", () => {
   const k = createKillLog(tempDir());
   k.setPlayer("Kainos");

@@ -163,6 +163,10 @@ reading like a measurement, and they are shared code
   out to be. "Unproven" is a statement about what we know, not about the data. ([0127](./0127-an-unknown-name-is-held-not-dropped.md))
 - **A DoT tick belongs to whoever cast it** — resolved once, at the top of `record`, before any
   consumer reads the attacker, and never re-guessed where the log named a caster. ([0071](./0071-a-dot-tick-belongs-to-whoever-cast-it.md), [0095](./0095-your-own-dot-tick-is-yours.md))
+- **Your own damage shield counts, whichever way the log words the wearer** — a group-mate's or a
+  pet's shield names them with `'s`, yours is named `YOUR` with none — and neither form's flavour word
+  ("flames"/"thorns") is ever mistaken for a spell you cast, in the Spells table or in what a later
+  unattributed heal gets credited to. ([0095](./0095-your-own-dot-tick-is-yours.md), [0200](./0200-your-own-damage-shield-is-yours.md))
 - **Every tally splits by stance and invocation**, filed under whichever mode was active, presented
   combined, split on hover. Modes are taken from the log rather than enumerated, and file under
   "unknown" before one is named. ([0020](./0020-split-by-stance-and-invocation.md))

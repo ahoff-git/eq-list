@@ -167,31 +167,6 @@ everything else, so this list can stay short enough to read:
   is likewise wired end to end with nothing calling it — it's what a "who have I pooled with, and
   forget this one" list would be built on (`forgetPeers(id)` already takes an id).
 
-- **Your own damage shield is unread.** The other half of
-  [ADR 0095](./decisions/0095-your-own-dot-tick-is-yours.md), which fixed the DoT ticks and left this
-  because it is a different line shape. Same first-person asymmetry, one wording along:
-
-  | line | read? |
-  |---|---|
-  | `A pledge familiar is pierced by Kainos`s warder's thorns for 6 points…` | ✅ the pet's |
-  | `A wild tiger is pierced by YOUR thorns for 1 point of non-melee damage.` | ❌ **your own** |
-
-  `SHIELD_RE` binds on the `'s` possessive, and `by YOUR thorns` hasn't got one. **907 lines, 1,576
-  damage** on the log ADR 0095 measured (thorns 1,034, flames 542) — small next to the ticks, and real.
-  It needs its own thought rather than a copied regex: a shield is damage you dealt *by being hit*
-  (`shield: true`, no spell), the amounts are tiny and the line count is not, and `YOUR` is
-  capitalised where the tick form's `your` is not — so the two aren't one pattern with a flag.
-
-- **A level that goes down may confuse the XP and HP trackers.** The same sweep found that EQL levels
-  are **per class**: `You have gained a level! Welcome to level 11!` appears four separate times in one
-  character's log, the sequence runs `… 19 20 21 13`, and the achievement line beside it reads
-  `Primary Class Unlock - Wizard`. The log's level line names no class. `xp.levelUp(level, at)` and
-  `hp.levelUp(level)` both assume a level only ever rises — `hp` voids its inferred bounds on a
-  level-up ([ADR 0018](./decisions/0018-inferred-max-hit-points.md)), so a 21 → 13 line throws away
-  bounds learned at 21 and starts inferring against a level the character isn't. Worth checking what
-  each actually does with a *lower* level before deciding the rule; "ignore a level below the highest
-  seen" is probably right for `hp` and probably wrong for `xp`, since the percentage really did reset.
-
 - **A replayed gap is read and parsed in one tick.** Startup no longer stalls on the maps
   ([ADR 0072](./decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md)), but the other thing
   that begins at launch still can: `log-watcher.poll()` reads *everything* appended since the cursor in

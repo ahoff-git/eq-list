@@ -167,10 +167,10 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
               : a.event === "buff"
                 ? "🛡"
                 // A timeboxed goal (ADR 0198) — a milestone or completion reads as news (🎯); running
-                // out of time unmet reads as the opposite of a spawn's ⏰, so it earns its own glyph
-                // rather than being read as "your camp timer is up".
+                // out of time unmet, or a streak (ADR 0199) breaking, reads as the opposite of a
+                // spawn's ⏰, so both earn the same glyph rather than "your camp timer is up".
                 : a.event === "goal"
-                  ? a.goal?.kind === "expired"
+                  ? a.goal?.kind === "expired" || a.goal?.kind === "streak-broken"
                     ? "⌛"
                     : "🎯"
                   : "⚠";
@@ -279,6 +279,18 @@ function buffBanner(buff: BuffInstance): { icon: string; body: ReactNode; hint?:
  * the tracker already built.
  */
 function goalBanner(goal: GoalAlertPayload): { icon: string; body: ReactNode; hint?: string } {
+  // A streak (ADR 0199) has no `qty`/`obtained` to word — only the run that just ended — so it's
+  // handled before `of` is ever built rather than being another branch that ignores it.
+  if (goal.kind === "streak-broken") {
+    return {
+      icon: "⌛",
+      body: (
+        <>
+          <b>{goal.target.name}</b> — streak broken at <b>{goal.streak}</b> (best {goal.bestStreak})
+        </>
+      ),
+    };
+  }
   const of = (
     <>
       {goal.obtained} of {goal.qty}

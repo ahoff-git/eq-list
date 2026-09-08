@@ -15,7 +15,8 @@
   "scripts": {
     "dev:next": "next dev",
     "dev:electron": "cross-env EQL_DEV=1 node scripts/dev-electron.mjs",
-    "dev": "concurrently -k -n next,electron -c blue,magenta \"npm:dev:next\" \"npm:dev:electron\"",
+    "dev:snapshot": "node scripts/dev-snapshot-loop.mjs",
+    "dev": "concurrently -k -n next,electron,snapshot -c blue,magenta,green \"npm:dev:next\" \"npm:dev:electron\" \"npm:dev:snapshot\"",
     "build:next": "next build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build": "npm run build:next && npm run build:electron",

@@ -1263,6 +1263,21 @@ test("a damage shield's flavour word never becomes a phantom row in the Spells t
   assert.equal(pet.dealt, 2);
 });
 
+test("a damage shield firing doesn't let a later invocation heal file under its flavour word", () => {
+  // The same trap one hop further downstream: `event.spell` on a shield tick used to seed
+  // `lastLanding`, so an unattributed self-heal moments later credited "thorns" as the spell
+  // the invocation healed off of — the identical phantom row the test above guards against,
+  // reached through the invocation-heal path instead of the direct one.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin reciting the divine invocation."],
+    [2, "A pledge familiar is pierced by Kainos`s warder's thorns for 6 points of non-melee damage."],
+    [2, "You healed Kainos for 8 hit points."],
+  ]);
+  assert.equal(t.snapshot().session.spells.length, 0);
+});
+
 // One cast of an area spell lands on each target separately, and only the first of those
 // finds the cast in flight. Counting the rest as free casts made two area spells produce 61
 // of the 65 "free casts" in a real log — and put them under whichever invocation happened to

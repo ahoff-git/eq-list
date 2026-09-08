@@ -165,10 +165,14 @@ const api: EqlApi = {
   goals: {
     view: () => ipcRenderer.invoke(CH.goalsView),
     start: (target, qty, durationSec) => ipcRenderer.invoke(CH.goalsStart, target, qty, durationSec),
+    startStreak: (target, intervalSec, autoRestart) =>
+      ipcRenderer.invoke(CH.goalsStartStreak, target, intervalSec, autoRestart),
     abandon: (id) => ipcRenderer.invoke(CH.goalsAbandon, id),
     clearFinished: () => ipcRenderer.invoke(CH.goalsClearFinished),
     saveTemplate: (target, qty, durationSec, label) =>
       ipcRenderer.invoke(CH.goalsSaveTemplate, target, qty, durationSec, label),
+    saveStreakTemplate: (target, intervalSec, autoRestart, label) =>
+      ipcRenderer.invoke(CH.goalsSaveStreakTemplate, target, intervalSec, autoRestart, label),
     deleteTemplate: (id) => ipcRenderer.invoke(CH.goalsDeleteTemplate, id),
     onChanged: (cb) => on(CH.goalsChanged, cb),
   },

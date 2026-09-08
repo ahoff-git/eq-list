@@ -1023,7 +1023,12 @@ export function createSpawnTracker({
       // Withdraw the "this is a named" claim `add` made, so a timer you deleted leaves nothing
       // behind — but only if nothing else still stands behind it: another hand-added row for the
       // same mob elsewhere, or the log having proved it by the article test on its own.
-      if (gone && kindOf(key) === "mob") {
+      //
+      // Read off `gone`, not `kindOf(key)`: `state.added[key]` was just deleted above, so `kindOf`
+      // would find nothing there and fall back to its "absent means mob" default regardless of
+      // what this row actually was — silently withdrawing a named claim (or reviving a dismissal)
+      // whenever a *custom* timer happened to share a mob's name and got removed.
+      if (gone && gone.kind !== "custom") {
         const mk = mobKey(gone.mob);
         const elsewhere = Object.values(state.added).some((a) => a.kind !== "custom" && mobKey(a.mob) === mk);
         if (!elsewhere && !provenNamed(kills()).has(mk)) delete state.said[mk];

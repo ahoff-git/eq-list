@@ -323,9 +323,11 @@ function createWebApi(): EqlApi {
     goals: {
       view: async () => EMPTY_GOALS,
       start: async () => EMPTY_GOALS,
+      startStreak: async () => EMPTY_GOALS,
       abandon: async () => EMPTY_GOALS,
       clearFinished: async () => EMPTY_GOALS,
       saveTemplate: async () => EMPTY_GOALS,
+      saveStreakTemplate: async () => EMPTY_GOALS,
       deleteTemplate: async () => EMPTY_GOALS,
       onChanged: () => noop,
     },

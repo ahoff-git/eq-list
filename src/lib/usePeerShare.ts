@@ -67,7 +67,19 @@ export function usePeerShare(): PeerShareView {
   useEffect(() => {
     const a = api();
     if (!a) return;
-    const reload = () => void a.peer.received().then(setReceived);
+    // Counted rather than a boolean, the same "latest wins" guard `useFollowedRead` uses for every
+    // other panel that re-reads over IPC: a peer handing over several kinds in quick succession
+    // fires `onChanged` once per kind, so more than one `reload` can be in flight at once over a
+    // channel that promises nothing about reply order. Without this, a burst can resolve out of
+    // order and leave the tray showing a superseded snapshot that a later, faster reply already
+    // overwrote and then un-overwrote.
+    let latest = 0;
+    const reload = () => {
+      const mine = ++latest;
+      void a.peer.received().then((next) => {
+        if (mine === latest) setReceived(next);
+      });
+    };
     // Catch up on what we missed by not existing yet — the join, and everyone already in the room.
     const seed = () =>
       void a.peer.room().then((room) => {
@@ -85,6 +97,7 @@ export function usePeerShare(): PeerShareView {
       if (!s.connected) setPeers(NO_PEERS);
     });
     return () => {
+      latest += 1; // nothing in flight may land after we've gone
       offPeers();
       offShare();
       offStatus();

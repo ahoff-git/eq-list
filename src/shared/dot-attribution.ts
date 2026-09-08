@@ -23,7 +23,10 @@
  * left exactly as the log wrote it, phantom attacker and all: a guess would be worse than the
  * log's own limit.
  */
+import { createLogger } from "./logging";
 import type { CombatEvent, DamageEvent } from "./types";
+
+const log = createLogger("dot-attribution");
 
 export interface DotAttribution {
   /**
@@ -52,7 +55,12 @@ export function createDotAttribution(): DotAttribution {
     resolve(event) {
       if (event.kind !== "damage" || !event.casterUnknown || !event.spell) return event;
       const caster = casters.get(event.spell);
-      if (!caster) return event;
+      if (!caster) {
+        // No cast line was ever seen for this spell, so the tick stays attributed to itself —
+        // a phantom row in the meter. Worth knowing about when a report says damage went missing.
+        log.debug("no known caster for DoT tick, left unattributed", event.spell);
+        return event;
+      }
       // `casterUnknown` is cleared, not just overwritten: the attacker is now stated, and a
       // downstream reader must not go on treating the name as a stand-in.
       return { ...event, attacker: caster, casterUnknown: undefined } satisfies DamageEvent;

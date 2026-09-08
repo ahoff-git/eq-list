@@ -30,11 +30,22 @@ export default function PeerTray({
   open,
   onOpen,
   onClear,
+  onViewPeer,
+  knownPeerIds,
 }: {
   received: ReceivedShare[];
   open: ShareKind | null;
   onOpen: (kind: ShareKind | null) => void;
   onClear: (peerId?: string, kind?: ShareKind) => void;
+  /** Jumps to that peer's row in the roster above — how a name in the tray answers "who is that?". */
+  onViewPeer: (peerId: string) => void;
+  /**
+   * Who's actually in the roster right now. The tray outlives a peer's connection (`usePeerShare`
+   * keeps `received` on disconnect), so a name here can point at nobody the roster can show — and a
+   * button that would do nothing is worse than no button, the same call the roster's own "not
+   * reachable" row already makes.
+   */
+  knownPeerIds: ReadonlySet<string>;
 }) {
   // Scores are compared rather than listed, so they're drawn by `PeerScores` and skipped here.
   const kinds = useMemo(
@@ -66,7 +77,7 @@ export default function PeerTray({
               </button>
               {open === spec.key && (
                 <div className="peers-tray-body">
-                  <Body kind={spec.key} received={received} />
+                  <Body kind={spec.key} received={received} onViewPeer={onViewPeer} knownPeerIds={knownPeerIds} />
                   <button className="btn ghost sm" onClick={() => onClear(undefined, spec.key)}>
                     Clear these
                   </button>
@@ -79,14 +90,24 @@ export default function PeerTray({
   );
 }
 
-function Body({ kind, received }: { kind: ShareKind; received: ReceivedShare[] }) {
+function Body({
+  kind,
+  received,
+  onViewPeer,
+  knownPeerIds,
+}: {
+  kind: ShareKind;
+  received: ReceivedShare[];
+  onViewPeer: (peerId: string) => void;
+  knownPeerIds: ReadonlySet<string>;
+}) {
   switch (kind) {
     case "watches":
       return <Watches received={received} />;
     case "styles":
       return <Styles received={received} />;
     case "lists":
-      return <Lists received={received} />;
+      return <Lists received={received} onViewPeer={onViewPeer} knownPeerIds={knownPeerIds} />;
     case "pins":
       return <Pins received={received} />;
     case "timers":
@@ -100,8 +121,33 @@ function Body({ kind, received }: { kind: ShareKind; received: ReceivedShare[] }
   }
 }
 
-/** A row's provenance, worded the same way everywhere: what it is, and whose. */
-function By({ by }: { by: string }) {
+/**
+ * A row's provenance, worded the same way everywhere: what it is, and whose.
+ *
+ * Clickable wherever the caller can name a `peerId` — it jumps to that peer's row in the roster
+ * above, the same "who is that?" answer a peer-offer toast's View button gives. Plain text
+ * everywhere else, since a peer id isn't always available (a row can outlive the peer that sent it).
+ */
+function By({
+  by,
+  peerId,
+  onViewPeer,
+}: {
+  by: string;
+  peerId?: string;
+  onViewPeer?: (peerId: string) => void;
+}) {
+  if (peerId && onViewPeer) {
+    return (
+      <span className="muted small">
+        {" "}
+        · from{" "}
+        <button className="link" title={`Show ${by} in the roster above`} onClick={() => onViewPeer(peerId)}>
+          {by}
+        </button>
+      </span>
+    );
+  }
   return <span className="muted small"> · from {by}</span>;
 }
 
@@ -213,7 +259,15 @@ function Styles({ received }: { received: ReceivedShare[] }) {
  * group if it names a quest you're already running. Their **counts don't travel**
  * (`readListEntry`), so what you get is what to collect, with the collecting still yours to do.
  */
-function Lists({ received }: { received: ReceivedShare[] }) {
+function Lists({
+  received,
+  onViewPeer,
+  knownPeerIds,
+}: {
+  received: ReceivedShare[];
+  onViewPeer: (peerId: string) => void;
+  knownPeerIds: ReadonlySet<string>;
+}) {
   const rows = useMemo(() => rowsOf<ShoppingListEntry>(received, "lists"), [received]);
 
   const add = (entries: ShoppingListEntry[]) => {
@@ -228,13 +282,17 @@ function Lists({ received }: { received: ReceivedShare[] }) {
   // actually being handed — a flat run of thirty item names is not a thing anybody wants to copy
   // one at a time.
   const groups = useMemo(() => {
-    const by = new Map<string, { title: string; entries: ShoppingListEntry[]; by: string }>();
+    const by = new Map<string, { title: string; entries: ShoppingListEntry[]; by: string; peerId: string }>();
     for (const r of rows) {
       const title = r.row.origin ? `${r.row.origin.name} (${r.row.origin.kind})` : "Other items";
-      const key = `${r.by}:${title}`;
+      // Keyed by peerId rather than display name: two peers can share a name (an unset
+      // `playerName` falls back to the same-looking short id, and a typed one isn't unique
+      // either), and folding them into one group would point the group's "By" link at whichever
+      // of them happened to arrive first.
+      const key = `${r.peerId}:${title}`;
       const group = by.get(key);
       if (group) group.entries.push(r.row);
-      else by.set(key, { title, entries: [r.row], by: r.by });
+      else by.set(key, { title, entries: [r.row], by: r.by, peerId: r.peerId });
     }
     return [...by.values()];
   }, [rows]);
@@ -246,7 +304,11 @@ function Lists({ received }: { received: ReceivedShare[] }) {
           <div className="tray-row">
             <span className="tray-what">
               <b>{group.title}</b>
-              <By by={group.by} />
+              <By
+                by={group.by}
+                peerId={knownPeerIds.has(group.peerId) ? group.peerId : undefined}
+                onViewPeer={onViewPeer}
+              />
             </span>
             <span className="muted small">{count(group.entries.length, "entry", "entries")}</span>
             <button className="btn sm" onClick={() => add(group.entries)}>

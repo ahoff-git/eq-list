@@ -558,6 +558,10 @@ function registerStatsIpc(context: IpcContext): void {
     goals.start(target, qty, durationSec);
     return goals.view();
   });
+  ipcMain.handle(CH.goalsStartStreak, (_e, target: GoalTarget, intervalSec: number, autoRestart: boolean) => {
+    goals.startStreak(target, intervalSec, autoRestart);
+    return goals.view();
+  });
   ipcMain.handle(CH.goalsAbandon, (_e, id: string) => {
     goals.abandon(id);
     return goals.view();
@@ -570,6 +574,13 @@ function registerStatsIpc(context: IpcContext): void {
     goals.saveTemplate(target, qty, durationSec, label);
     return goals.view();
   });
+  ipcMain.handle(
+    CH.goalsSaveStreakTemplate,
+    (_e, target: GoalTarget, intervalSec: number, autoRestart: boolean, label?: string) => {
+      goals.saveStreakTemplate(target, intervalSec, autoRestart, label);
+      return goals.view();
+    },
+  );
   ipcMain.handle(CH.goalsDeleteTemplate, (_e, id: string) => {
     goals.deleteTemplate(id);
     return goals.view();
