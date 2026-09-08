@@ -985,6 +985,92 @@ test("the fight ending still sweeps every slot, up and lapsed alike", () => {
   assert.equal(h.buffs.view().lapsed.filter((b) => b.key === "root").length, 0);
 });
 
+// ── an area mez re-lands on its own crowd, not a phantom new one (ADR 0205) ─────
+//
+// Found replaying a real log against this feature: some detrimental spells here land on several
+// same-named mobs from one cast — "You begin casting Mesmerization." followed by three separate
+// "a gnoll elite has been mesmerized." lines in the same second, all three real and distinct. The
+// tests below reproduce that shape with a synthetic mob name.
+
+test("one cast landing on the same name twice at once opens two slots, not a refresh", () => {
+  const h = harness();
+  h.cast("Mesmerize", 0);
+  h.line("a wild tiger is mesmerized.", 2);
+  h.line("a wild tiger is mesmerized.", 2); // same second — a second, distinct tiger, not a re-hit
+  const up = h.buffs.view().active.filter((b) => b.key === "mesmerize");
+  assert.equal(up.length, 2);
+  assert.deepEqual(up.map((b) => b.slot).sort(), [1, 2]);
+});
+
+test("proven from that, a later recast re-lands on the same two before opening a third", () => {
+  const h = harness();
+  h.cast("Mesmerize", 0);
+  h.line("a wild tiger is mesmerized.", 2); // slot 1
+  h.line("a wild tiger is mesmerized.", 2); // slot 2 — proves the spell can do this
+  const since1 = h.buffs.view().active.find((b) => b.slot === 1)?.since;
+
+  // A second cast, same two tigers still up, plus one more landing than before.
+  h.cast("Mesmerize", 10);
+  h.line("a wild tiger is mesmerized.", 12);
+  h.line("a wild tiger is mesmerized.", 12);
+  h.line("a wild tiger is mesmerized.", 12);
+
+  const up = h.buffs.view().active.filter((b) => b.key === "mesmerize");
+  assert.equal(up.length, 3, "two refreshed, one genuinely new — not three more phantom tigers");
+  assert.deepEqual(up.map((b) => b.slot).sort(), [1, 2, 3]);
+  // The refreshed ones got a fresh timer rather than keeping the original moment — an area spell's
+  // recast is a real, fresh application, not a continuation the way a self-buff's topping-up is.
+  assert.notEqual(h.buffs.view().active.find((b) => b.slot === 1)?.since, since1);
+});
+
+test("reusing a lapsed slot is never treated as proof on its own", () => {
+  const h = harness();
+  h.cast("Mesmerize", 0);
+  h.line("a wild tiger is mesmerized.", 2); // slot 1, single landing this cast
+  h.fade({ spell: "Mesmerize", target: "a wild tiger", offsetSec: 60 }); // breaks
+  h.cast("Mesmerize", 65);
+  h.line("a wild tiger is mesmerized.", 67); // recast — reuses slot 1, proves nothing
+  h.cast("Mesmerize", 100);
+  h.line("a wild tiger is mesmerized.", 102); // a genuinely second tiger, still up alongside the first
+  const up = h.buffs.view().active.filter((b) => b.key === "mesmerize");
+  assert.equal(up.length, 2, "an unproven spell still opens a new slot for a second same-named mob");
+  assert.deepEqual(up.map((b) => b.slot).sort(), [1, 2]);
+});
+
+test("an untouched spell stays unproven and behaves exactly as before this feature", () => {
+  const h = harness();
+  h.cast("Mesmerize", 0);
+  h.line("a wild tiger is mesmerized.", 2);
+  h.cast("Mesmerize", 10);
+  h.line("a wild tiger is mesmerized.", 12); // a second cast, one landing, nothing lapsed
+  const up = h.buffs.view().active.filter((b) => b.key === "mesmerize");
+  // Still two slots: single-target reasoning is untouched for a spell that's never proven otherwise.
+  assert.equal(up.length, 2);
+  assert.equal(h.buffs.view().known.find((k) => k.key === "mesmerize")?.aoe, undefined);
+});
+
+test("proof survives a restart, the same way permanence and duration already do", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-buffs-"));
+  const deps = {
+    userDataDir: dir,
+    getSettings: () => SETTINGS,
+    raise: () => {},
+    lexicon: () => buildBuffLexicon(parseSpellStringFile(STRINGS), SPELLS),
+    facts: (spell: string) => [...SPELLS.values()].find((s) => s.name.toLowerCase() === spell.trim().toLowerCase()),
+    player: () => PLAYER,
+    inFight: () => false,
+  };
+  const first = createBuffTracker(deps);
+  first.combat({ kind: "cast", caster: "You", spell: "Mesmerize", at: iso(0), raw: "You begin casting Mesmerize.", logId: 0 });
+  first.line({ logId: 1, at: iso(2), message: "a wild tiger is mesmerized.", raw: "a wild tiger is mesmerized." });
+  first.line({ logId: 2, at: iso(2), message: "a wild tiger is mesmerized.", raw: "a wild tiger is mesmerized." });
+  assert.equal(first.view().known.find((k) => k.key === "mesmerize")?.aoe, true);
+  first.flush();
+
+  const second = createBuffTracker(deps);
+  assert.equal(second.view().known.find((k) => k.key === "mesmerize")?.aoe, true);
+});
+
 test("a spell's duration is learned from its own fades, and only ever tightens", () => {
   const h = harness();
   mezTiger(h, 0, 1); // since = iso(1)

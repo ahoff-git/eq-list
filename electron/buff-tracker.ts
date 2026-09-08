@@ -58,6 +58,7 @@ import {
   buffKey,
   buffTarget,
   enemySlot,
+  enemySlotForLanding,
   evictable,
   instanceKey,
   isEnemyTarget,
@@ -77,6 +78,7 @@ import {
   type BuffInstance,
   type BuffLapseReason,
   type BuffView,
+  type EnemyEpisodeContext,
   type KnownBuff,
 } from "../src/shared/buff-tracking";
 import type { BuffLexicon } from "../src/shared/spell-strings";
@@ -125,7 +127,10 @@ interface StoredBuff {
   lastLapse?: string;
   /** Learned from confirmed fades — see `KnownBuff.durationSeconds`. */
   durationSeconds?: number;
+  durationSpreadSeconds?: number;
   durationSamples?: number;
+  /** Proven area-effect — see `KnownBuff.aoe`. */
+  aoe?: boolean;
 }
 
 export interface BuffTrackerDeps {
@@ -292,6 +297,17 @@ export function createBuffTracker({
    * once is stored with `mine`, and that is what carries the answer across a restart.
    */
   const castByYou = new Set<string>();
+  /**
+   * The cast a same-named `onEnemy` pair's landings are currently being counted against, keyed by
+   * `instanceKey(key, target)` — what tells a *second* landing of one cast (proof of an area effect,
+   * see `enemySlotForLanding`) from a landing that belongs to a *later*, separate cast.
+   *
+   * `upAtStart` is fixed the moment the episode opens and never re-read mid-episode, or a landing
+   * would count a sibling this same episode only just created as something to refresh. Session-scoped
+   * like `pending`, and cleared alongside the board sweeps that end an episode's meaning — a fight
+   * ending or a zone line.
+   */
+  const enemyEpisodes = new Map<string, EnemyEpisodeContext & { castAt: number; newOpened: number }>();
   const listeners: (() => void)[] = [];
   /**
    * Whether anything has yet given us a reason to read the game's files.
@@ -418,7 +434,9 @@ export function createBuffTracker({
       lastUp: row.lastUp,
       lastLapse: row.lastLapse,
       durationSeconds: row.durationSeconds,
+      durationSpreadSeconds: row.durationSpreadSeconds,
       durationSamples: row.durationSamples,
+      aoe: row.aoe,
     };
   }
 
@@ -428,13 +446,65 @@ export function createBuffTracker({
 
   /**
    * Every `onEnemy` sibling instance of one spell on one target, up or lapsed — what `enemySlot`
-   * picks a slot from. Reads the board's *values*, never its keys, which is what lets slotting stay
-   * entirely inside `rise`/`lapse` without the rest of the tracker knowing it happened.
+   * picks a slot from, and what an episode's `upAtStart` snapshot is ordered by. Reads the board's
+   * *values*, never its keys, which is what lets slotting stay entirely inside `rise`/`lapse` without
+   * the rest of the tracker knowing it happened.
    */
-  function enemySiblingSlots(key: string, target: string): { up: boolean; slot: number }[] {
-    const out: { up: boolean; slot: number }[] = [];
-    for (const b of board.values()) if (b.onEnemy && b.key === key && b.target === target) out.push({ up: b.up, slot: b.slot });
+  function enemySiblingSlots(key: string, target: string): { up: boolean; slot: number; since: string }[] {
+    const out: { up: boolean; slot: number; since: string }[] = [];
+    for (const b of board.values()) {
+      if (b.onEnemy && b.key === key && b.target === target) out.push({ up: b.up, slot: b.slot, since: b.since });
+    }
     return out;
+  }
+
+  /**
+   * Which slot an `onEnemy` landing takes, episode-aware once this spell has proven it can land on
+   * more than one same-named target from a single cast — see `enemySlotForLanding`
+   * ([ADR 0205](../specs/decisions/0205-a-recast-only-means-a-new-mob-once-not-proven-otherwise.md)).
+   *
+   * The episode is identified by `pending`'s own cast moment for this spell — the same value
+   * `castRecently` already reads to attribute a landing to a cast at all, so there is nothing new to
+   * track *when* a cast happened, only what its landings did once it's known which one they belong
+   * to.
+   *
+   * **Proof is recognised here, not assumed anywhere else.** Two landings in one cast that both need
+   * a genuinely new slot — never before seen, up or lapsed — can only mean two distinct mobs were hit
+   * at once; a single-target spell cannot produce that. Reusing a *lapsed* slot proves nothing (a
+   * broken mez remezzed is ordinary for any spell), so only a truly fresh slot number counts toward
+   * the proof.
+   */
+  function enemyLandingSlot(key: string, target: string, provenAoe: boolean): number {
+    const pairKey = instanceKey(key, target);
+    const siblings = enemySiblingSlots(key, target);
+    const castAt = pending.get(key);
+    // No cast this can be pinned to (shouldn't normally happen for a gated onEnemy landing) — fall
+    // back to the plain rule rather than guessing at an episode.
+    if (castAt === undefined) return enemySlot(siblings);
+
+    let episode = enemyEpisodes.get(pairKey);
+    if (!episode || episode.castAt !== castAt) {
+      const upAtStart = siblings
+        .filter((s) => s.up)
+        .sort((a, b) => Date.parse(a.since) - Date.parse(b.since))
+        .map((s) => s.slot);
+      episode = { castAt, index: 0, upAtStart, newOpened: 0 };
+      enemyEpisodes.set(pairKey, episode);
+    }
+
+    const slot = enemySlotForLanding(siblings, episode, provenAoe);
+    const neverSeenBefore = !siblings.some((s) => s.slot === slot);
+    episode.index += 1;
+    if (neverSeenBefore) {
+      episode.newOpened += 1;
+      if (episode.newOpened >= 2 && !provenAoe) {
+        edit(key, (row) => {
+          row.aoe = true;
+        });
+        log.debug("spell proven to land on several same-named targets from one cast", { key, target });
+      }
+    }
+    return slot;
   }
 
   /** The one place a row is edited, so every setter saves and announces alike. */
@@ -473,10 +543,12 @@ export function createBuffTracker({
     if (!known.tracked) return; // unchecked means the app is not watching this one at all
     const key = known.key;
     const onEnemy = isEnemyTarget(target, known.detrimental);
-    // Slotted for an `onEnemy` instance — see `enemySlot` — so a second same-named mob opens a new
-    // row instead of silently overwriting the first one's timer (ADR 0202). Everything else keeps
-    // the bare, unslotted key it always has.
-    const slot = onEnemy ? enemySlot(enemySiblingSlots(key, target)) : 1;
+    // Slotted for an `onEnemy` instance, episode-aware once the spell has proven it can land on
+    // several same-named targets from one cast (ADR 0205) — so a second same-named mob opens a new
+    // row instead of silently overwriting the first one's timer (ADR 0202), and an area spell's
+    // recast re-lands on the crowd it already has rather than inventing a new one for each landing.
+    // Everything else keeps the bare, unslotted key it always has.
+    const slot = onEnemy ? enemyLandingSlot(key, target, !!known.aoe) : 1;
     const id = onEnemy ? slottedInstanceKey(key, target, slot) : instanceKey(key, target);
     const existing = board.get(id);
     const instance: BuffInstance = {
@@ -485,10 +557,12 @@ export function createBuffTracker({
       target,
       up: true,
       at,
-      // A refresh keeps the original moment; a re-cast after a lapse starts again from now. For an
-      // `onEnemy` row this is never a refresh: `enemySlot` only ever hands back a *lapsed* sibling's
-      // slot or a brand new one, so `existing` here is either undefined or already `up: false`.
-      since: existing?.up ? existing.since : at,
+      // A refresh keeps the original moment for one of *your own* buffs — "how long have I had
+      // haste" is not restarted by topping it up. An `onEnemy` row is never that question: every rise
+      // there is a fresh application of the debuff, whether it opens a slot, reclaims a lapsed one,
+      // or refreshes one an area spell just re-landed on — so its timer always restarts, which is
+      // what a duration prediction needs in order to stay honest rather than reading short (ADR 0205).
+      since: onEnemy || !existing?.up ? at : existing.since,
       source,
       byYou: opts.byYou || !!existing?.byYou,
       permanent: known.permanent,
@@ -501,12 +575,12 @@ export function createBuffTracker({
     // rather than left to fire at the end of the fight, which is the whole point of holding it: the
     // hold exists so the app can tell you what is *still* wrong when you get a moment.
     held.delete(id);
-    // A **refresh is not a rise**. The instance above already treats it as one thing continuing —
-    // it keeps its `since` — and the count has to agree, or it stops meaning what the row says it
-    // means. A bard song re-lands every few seconds, so counting pulses made `Anthem de Arms` read
-    // *seen up 7,232×* beside a buff you actually maintain reading 8, which is the figure inverted
-    // rather than merely inflated (ADR 0159).
-    const refresh = !!existing?.up;
+    // A **refresh is not a rise** for one of your own buffs (ADR 0159) — a bard song re-lands every
+    // few seconds, and counting pulses made `Anthem de Arms` read *seen up 7,232×* beside a buff you
+    // actually maintain reading 8. An `onEnemy` row's "refresh" is the opposite case: an area spell
+    // re-landing on something already up is itself a real, fresh application of the debuff, just not
+    // a new *instance* of it — so it always counts.
+    const refresh = !onEnemy && !!existing?.up;
     edit(key, (row) => {
       if (!refresh) row.rises = (row.rises ?? 0) + 1;
       row.lastUp = at;
@@ -628,10 +702,13 @@ export function createBuffTracker({
       r.lastLapse = at;
       if (learnedSeconds !== undefined) {
         const learned = tightenDuration(
-          r.durationSeconds !== undefined ? { seconds: r.durationSeconds, count: r.durationSamples ?? 0 } : undefined,
+          r.durationSeconds !== undefined
+            ? { seconds: r.durationSeconds, spreadSeconds: r.durationSpreadSeconds, count: r.durationSamples ?? 0 }
+            : undefined,
           learnedSeconds,
         );
         r.durationSeconds = learned.seconds;
+        r.durationSpreadSeconds = learned.spreadSeconds;
         r.durationSamples = learned.count;
       }
     });
@@ -882,6 +959,9 @@ export function createBuffTracker({
       // Buffs cross a zone line; a half-finished cast does not. Clearing the pending map is what
       // stops a cast begun in one zone being credited with a landing sentence read in the next.
       pending.clear();
+      // And an episode belongs to one cast in one zone — a mob standing where you left it is not
+      // still mid-landing from a spell you cast three zones ago.
+      enemyEpisodes.clear();
       // And neither does anything that belonged to the zone you left. **Every debuff goes**: zoning
       // strips the ones on you outright, and the ones you cast are on mobs standing where you left
       // them. So does anything else aimed at something you were fighting — a buff on a charmed pet
@@ -927,6 +1007,9 @@ export function createBuffTracker({
         board.delete(id);
         swept += 1;
       }
+      // Same reasoning as the rows themselves: an episode about a fight that just ended is an
+      // episode about mobs that are gone or scattered, not something a later pull should inherit.
+      enemyEpisodes.clear();
       if (swept) log.debug("fight ended; dropped enemy rows", { reason, swept });
       if (swept || held.size) changed();
     },

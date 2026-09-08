@@ -73,7 +73,7 @@
  */
 import { SELF, isOwnedName, isYours, spellName } from "./combat-parser";
 import { hasArticle } from "./log-parser";
-import { plausible, tighten } from "./estimates";
+import { disagrees, plausible, tighten } from "./estimates";
 
 /** The target of a buff on you. Folded to one spelling, since the log writes "you" three ways. */
 export const ON_YOU = "you";
@@ -235,8 +235,18 @@ export interface KnownBuff {
    * ([ADR 0202](../../specs/decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)).
    */
   durationSeconds?: number;
+  /** The longest confirmed gap — how far `durationErratic` can call the short figure a fluke. */
+  durationSpreadSeconds?: number;
   /** How many confirmed fades that figure rests on. */
   durationSamples?: number;
+  /**
+   * Proven, from a single cast landing on more than one same-named target at once, that this is an
+   * area spell rather than a single-target one — never guessed, only ever set from that evidence.
+   * Absent or `false` reads as single-target, which keeps `enemySlot`'s original reasoning for every
+   * spell that has never shown otherwise
+   * ([ADR 0205](../../specs/decisions/0205-a-recast-only-means-a-new-mob-once-not-proven-otherwise.md)).
+   */
+  aoe?: boolean;
 }
 
 /** Everything the Buffs panel draws. `now` travels with it, as `SpawnView`'s does and for the same reason. */
@@ -335,9 +345,11 @@ export function instanceSlot(id: string): number {
  *
  * Deliberately does not try to tell a genuine recast-before-expiry on the *same* mob apart from a
  * fresh mob — both look identical from the log, and guessing between them is exactly the ambiguity
- * ADR 0202 accepts rather than resolves. In practice this is rarely reached: crowd control is
- * recast because it broke, not ahead of time, so "no slot is lapsed" is nearly always "this is a new
- * mob".
+ * ADR 0202 accepts rather than resolves. In practice this is rarely reached for single-target crowd
+ * control: it's recast because it broke, not ahead of time, so "no slot is lapsed" is nearly always
+ * "this is a new mob" — **for a spell that only ever hits one target per cast.** A spell proven to
+ * hit several at once needs a different question asked first; see `enemySlotForLanding`
+ * ([ADR 0205](../../specs/decisions/0205-a-recast-only-means-a-new-mob-once-not-proven-otherwise.md)).
  */
 export function enemySlot(siblings: readonly { up: boolean; slot: number }[]): number {
   const lapsed = siblings.filter((s) => !s.up).map((s) => s.slot);
@@ -348,9 +360,65 @@ export function enemySlot(siblings: readonly { up: boolean; slot: number }[]): n
   return slot;
 }
 
-/** What repeated fades of one detrimental spell have taught about how long it actually lasts. */
+/**
+ * One landing's place within the cast it belongs to: which same-named siblings were already up the
+ * moment this cast started, oldest first.
+ *
+ * `index` is 0 for the first landing this cast produced for this exact (spell, target) pair, 1 for
+ * the second, and so on — several can share one cast because some detrimental spells are area
+ * effects, and a real log shows it plainly: one "You begin casting Mesmerization" followed by three
+ * separate "a gnoll elite has been mesmerized." lines in the same second, all three real, distinct
+ * gnoll elites. `upAtStart` is a snapshot taken once, when the first landing of this cast arrived —
+ * not re-read as the cast's own later landings open new slots, or a landing would count a sibling
+ * this same cast only just created.
+ */
+export interface EnemyEpisodeContext {
+  index: number;
+  upAtStart: readonly number[];
+}
+
+/**
+ * Which slot a landing takes, once a spell has shown it can hit more than one same-named target from
+ * a single cast.
+ *
+ * **Unproven, this is exactly `enemySlot`** — every landing opens a new slot unless one is lapsed,
+ * because a single-target spell recast while its target is still up almost never means "the same
+ * target again"; it means a second mob (`enemySlot`'s own reasoning, unchanged).
+ *
+ * **Proven, the question flips.** An area spell's recast usually re-lands on the same crowd it hit
+ * last time — that's what "area effect" means — so this cast's landings are matched to what was
+ * *already up when the cast started*, oldest first: the first landing refreshes the oldest sibling,
+ * the second the next-oldest, and so on. Only once the cast has produced more landings than there
+ * were siblings to refresh does it fall through to `enemySlot` and open something new — which is
+ * exactly the shape a real add joining an already-mezzed pack takes: the same names refresh, and the
+ * one landing left over is the new one.
+ *
+ * A refresh here always means a **fresh application**, not a continuation — see `rise()` in
+ * `buff-tracker.ts`, which resets `since` for every `onEnemy` rise regardless of which branch this
+ * function took, unlike a self-buff's "how long have I had this" (ADR 0205).
+ */
+export function enemySlotForLanding(
+  siblings: readonly { up: boolean; slot: number }[],
+  episode: EnemyEpisodeContext,
+  provenToHitSeveral: boolean,
+): number {
+  if (provenToHitSeveral && episode.index < episode.upAtStart.length) {
+    return episode.upAtStart[episode.index];
+  }
+  return enemySlot(siblings);
+}
+
+/**
+ * What repeated fades of one detrimental spell have taught about how long it actually lasts.
+ *
+ * `seconds` is the shortest confirmed gap, the figure a countdown is built from. `spreadSeconds` is
+ * the longest, carried for the same reason `Respawn.spreadSeconds` is
+ * ([spawn-timers.ts](./spawn-timers.ts)): the gap between the two is how much the shortest one is
+ * worth trusting, and a figure that hides its own spread is worth less than one that states it.
+ */
 export interface DurationEstimate {
   seconds: number;
+  spreadSeconds?: number;
   count: number;
 }
 
@@ -365,9 +433,50 @@ export interface DurationEstimate {
  * the tightest and safest figure, and it only ever ratchets down — erring toward "expires sooner
  * than shown" is the safe failure for a reminder that exists because letting it lapse is bad; erring
  * the other way would be a false sense of security.
+ *
+ * The longest gap is folded too, the way `spawn-timers.ts` folds a kill gap's counterpart — not to
+ * report a maximum, but so `durationErratic` can say when the shortest one is a fluke rather than a
+ * figure ([ADR 0206](../../specs/decisions/0206-a-duration-that-disagrees-with-itself-says-so.md)).
  */
 export function tightenDuration(seen: DurationEstimate | undefined, seconds: number): DurationEstimate {
-  return { seconds: tighten(seen?.seconds, seconds, "upper"), count: (seen?.count ?? 0) + 1 };
+  return {
+    seconds: tighten(seen?.seconds, seconds, "upper"),
+    spreadSeconds: tighten(seen?.spreadSeconds, seconds, "lower"),
+    count: (seen?.count ?? 0) + 1,
+  };
+}
+
+/**
+ * How far the longest confirmed gap may run past the shortest before the shortest stops being worth
+ * showing as a countdown.
+ *
+ * Not `spawn-timers.ts`'s `ERRATIC_RATIO` (1.5×) — a respawn is close to fixed, so any real spread
+ * there means something else is going on. A debuff's duration isn't: mez ends the instant its target
+ * takes damage from *anything*, and charm re-checks its hold periodically and can fail early, so
+ * ordinary play produces real variance that means nothing is wrong. Measured on a real log: charm's
+ * gaps ran 4s–140s (a 35× spread) and mez's 1s–167s, both from entirely ordinary sessions with
+ * nothing anomalous about them — a 1.5× tolerance would call almost every one of them erratic and
+ * the countdown would rarely show anything at all. `5` tolerates that kind of everyday spread and
+ * still catches the shape a genuinely unreliable sample makes.
+ */
+const ERRATIC_DURATION_RATIO = 5;
+
+/**
+ * Has this spell's learned duration disagreed with itself enough that the shortest figure shouldn't
+ * be shown as a confident countdown?
+ *
+ * Without this, one unlucky early break — the player's own AoE nuke splashing a mezzed target, a
+ * charm that failed its very first resist check — ratchets the estimate down permanently, and every
+ * *ordinary* cast afterwards reads as expiring seconds after it lands. Erring toward "expires sooner
+ * than shown" (`tightenDuration`'s own reasoning) stops being the safe failure the moment the shown
+ * figure is wrong so often nobody trusts it — the countdown itself becomes the alert a player learns
+ * to ignore. `count < 2` reads as not erratic: a single sample has nothing yet to disagree with, and
+ * refusing to show anything until a second confirms it would be a worse failure than trusting the
+ * first honestly.
+ */
+export function durationErratic(estimate: Pick<DurationEstimate, "seconds" | "spreadSeconds" | "count">): boolean {
+  if (estimate.count < 2) return false;
+  return disagrees(estimate.seconds, estimate.spreadSeconds, ERRATIC_DURATION_RATIO);
 }
 
 /**

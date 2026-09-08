@@ -238,6 +238,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0202: Two mobs sharing a name get two debuff rows, and their duration is learned](./0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)
 - [0203: A regex condition refuses its own danger](./0203-a-regex-condition-refuses-its-own-danger.md)
 - [0204: A contribution back to the wiki is yours alone](./0204-a-contribution-back-to-the-wiki-is-yours-alone.md)
+- [0205: A recast only means a new mob once not proven otherwise](./0205-a-recast-only-means-a-new-mob-once-not-proven-otherwise.md)
+- [0206: A duration that disagrees with itself says so](./0206-a-duration-that-disagrees-with-itself-says-so.md)
 
 ## Open Questions
 

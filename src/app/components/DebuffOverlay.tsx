@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { SOLID } from "@/lib/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { alertPlacement, alertStyle, BUFF_STYLE_ID } from "@/shared/alert-styles";
-import { heldMs, targetLabel } from "@/shared/buff-tracking";
+import { durationErratic, heldMs, targetLabel } from "@/shared/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types";
 
@@ -81,9 +81,19 @@ export default function DebuffOverlay() {
   );
 }
 
-/** How much longer an up instance is predicted to hold, in seconds — `undefined` if never learned. */
+/**
+ * How much longer an up instance is predicted to hold, in seconds — `undefined` if never learned, or
+ * if what's been learned disagrees with itself too much to show as a figure
+ * ([ADR 0206](../../../specs/decisions/0206-a-duration-that-disagrees-with-itself-says-so.md)). A
+ * mez broken early by a stray nuke, or a charm that failed its first resist check, would otherwise
+ * ratchet the estimate down once and read every ordinary cast afterwards as expiring seconds after
+ * it lands — the countdown becoming the alert nobody trusts, instead of the one that mattered.
+ */
 function predictedRemaining(buff: BuffInstance, known: KnownBuff | undefined, now: number): number | undefined {
   if (known?.durationSeconds === undefined) return undefined;
+  if (durationErratic({ seconds: known.durationSeconds, spreadSeconds: known.durationSpreadSeconds, count: known.durationSamples ?? 0 })) {
+    return undefined;
+  }
   return Math.max(0, known.durationSeconds - Math.round(heldMs(buff, now) / 1000));
 }
 

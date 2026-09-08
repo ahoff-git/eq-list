@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 import {
   buffKey,
   buffTarget,
+  durationErratic,
   enemySlot,
+  enemySlotForLanding,
   evictable,
   heldMs,
   instanceKey,
@@ -28,6 +30,7 @@ import {
   ON_UNKNOWN,
   ON_YOU,
   type BuffInstance,
+  type EnemyEpisodeContext,
   type KnownBuff,
 } from "../../src/shared/buff-tracking";
 
@@ -306,15 +309,15 @@ test("no lapsed slot at all: the gap between two up slots fills before a new one
   assert.equal(enemySlot([{ up: true, slot: 1 }, { up: true, slot: 3 }]), 2);
 });
 
-test("a learned duration only ever tightens, and counts every sample", () => {
+test("a learned duration only ever tightens its floor, and counts every sample", () => {
   const first = tightenDuration(undefined, 180);
-  assert.deepEqual(first, { seconds: 180, count: 1 });
-  // A shorter confirmed fade narrows the figure — the safe direction for a warning.
+  assert.deepEqual(first, { seconds: 180, spreadSeconds: 180, count: 1 });
+  // A shorter confirmed fade narrows the floor — the safe direction for a warning.
   const shorter = tightenDuration(first, 120);
-  assert.deepEqual(shorter, { seconds: 120, count: 2 });
-  // A longer one teaches nothing new about the floor, but the sample still counts.
+  assert.deepEqual(shorter, { seconds: 120, spreadSeconds: 180, count: 2 });
+  // A longer one teaches nothing new about the floor, but widens the spread and still counts.
   const longer = tightenDuration(shorter, 200);
-  assert.deepEqual(longer, { seconds: 120, count: 3 });
+  assert.deepEqual(longer, { seconds: 120, spreadSeconds: 200, count: 3 });
 });
 
 test("an implausible rise-to-fade gap is not worth learning from", () => {
@@ -322,4 +325,72 @@ test("an implausible rise-to-fade gap is not worth learning from", () => {
   assert.equal(plausibleDuration(0), false); // a fade at the same instant as the rise
   assert.equal(plausibleDuration(-5), false); // clock disagreement
   assert.equal(plausibleDuration(7200), false); // an app restart or a replayed gap, not a duration
+});
+
+// ── a duration that disagrees with itself says so (ADR 0206) ───────────────────
+//
+// Measured replaying a real log: charm's confirmed durations ran 4s-140s and mez's 1s-167s, both
+// from ordinary sessions with nothing anomalous about them — mez ends the instant its target takes
+// any damage, and charm re-checks its hold and can fail early. A single unlucky sample must not
+// convince the countdown it knows the duration to the second.
+
+test("a single sample is never erratic — there's nothing yet for it to disagree with", () => {
+  assert.equal(durationErratic(tightenDuration(undefined, 4)), false);
+});
+
+test("two closely-agreeing samples are trusted", () => {
+  const est = tightenDuration(tightenDuration(undefined, 120), 140);
+  assert.equal(durationErratic(est), false);
+});
+
+test("a wildly disagreeing sample — the real shape a stray nuke or an early resist makes — is erratic", () => {
+  const est = tightenDuration(tightenDuration(undefined, 140), 4); // the measured charm spread
+  assert.equal(durationErratic(est), true);
+});
+
+test("ordinary resist/damage variance is tolerated, not just measurement noise", () => {
+  // The measured mez spread (1s-167s) is the extreme end; something in between should still read as
+  // real disagreement rather than being smoothed over by too loose a tolerance.
+  assert.equal(durationErratic(tightenDuration(tightenDuration(undefined, 10), 60)), true);
+  // But ordinary closely-clustered variance (well under the 5x tolerance) is not erratic.
+  assert.equal(durationErratic(tightenDuration(tightenDuration(undefined, 60), 80)), false);
+});
+
+// ── an area spell's recast re-lands on its own crowd (ADR 0205) ────────────────
+
+const episode = (over: Partial<EnemyEpisodeContext> = {}): EnemyEpisodeContext => ({
+  index: 0,
+  upAtStart: [],
+  ...over,
+});
+
+test("unproven, a landing behaves exactly like enemySlot alone", () => {
+  const siblings = [{ up: true, slot: 1 }];
+  // Whatever enemySlot alone would say, enemySlotForLanding says too when it isn't proven —
+  // opening a new slot rather than refreshing the one already up.
+  assert.equal(enemySlotForLanding(siblings, episode({ index: 0, upAtStart: [1] }), false), enemySlot(siblings));
+  assert.equal(enemySlotForLanding(siblings, episode({ index: 0, upAtStart: [1] }), false), 2);
+});
+
+test("proven, the first landings of a cast refresh whatever was already up, oldest first", () => {
+  const siblings = [{ up: true, slot: 1 }, { up: true, slot: 3 }];
+  const ep = episode({ upAtStart: [1, 3] }); // oldest first, as the holder snapshots it
+  assert.equal(enemySlotForLanding(siblings, { ...ep, index: 0 }, true), 1);
+  assert.equal(enemySlotForLanding(siblings, { ...ep, index: 1 }, true), 3);
+});
+
+test("proven, a landing beyond what was already up falls through to opening one", () => {
+  const siblings = [{ up: true, slot: 1 }];
+  const ep = episode({ upAtStart: [1] });
+  // Index 0 refreshes the one that was up; index 1 has nothing left to match, so it's new — the
+  // shape a real add joining an already-mezzed pack takes.
+  assert.equal(enemySlotForLanding(siblings, { ...ep, index: 1 }, true), 2);
+});
+
+test("proven but nothing was up yet: every landing opens fresh, same as discovering the first ones", () => {
+  const ep = episode({ upAtStart: [] });
+  assert.equal(enemySlotForLanding([], { ...ep, index: 0 }, true), 1);
+  // A second landing in the same cast, still nothing up yet in this snapshot (both are new adds).
+  const afterFirst = [{ up: true, slot: 1 }];
+  assert.equal(enemySlotForLanding(afterFirst, { ...ep, index: 1 }, true), 2);
 });

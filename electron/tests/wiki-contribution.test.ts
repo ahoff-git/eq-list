@@ -83,3 +83,24 @@ test("the mob name and character both appear, so a pasted block is self-explanat
   const text = buildWikiContribution(base);
   assert.match(text, /== a decaying skeleton — from Kainos's own kills ==/);
 });
+
+// Reproduced from a real captured log: several graded copies of one item ("Arrow", "Arrow +2",
+// "Arrow +3", "Arrow +4") fold onto one line by `reconcileDrops`'s own base-name rule, and one grade
+// happened to be peer-only (myCount 0) — confirming the fold still excludes it from the total rather
+// than quietly including a peer's drop once it's merged under a shared name.
+test("graded copies of one item fold to one line, and a peer-only grade still doesn't count", () => {
+  const zones = [
+    zone({
+      myKills: 213,
+      drops: [
+        { item: "Arrow", count: 4, rate: 4 / 213, myCount: 4 },
+        { item: "Arrow +2", count: 7, rate: 7 / 213, myCount: 7 },
+        { item: "Arrow +3", count: 31, rate: 31 / 213, myCount: 31 },
+        { item: "Arrow +4", count: 2, rate: 2 / 213, myCount: 0 }, // a peer's kill, never yours
+      ],
+    }),
+  ];
+  const text = buildWikiContribution({ ...base, wikiDrops: {}, zones });
+  assert.match(text, /\{\{:Arrow\}\} — seen 42 of 213 kills \(20%\)/); // 4+7+31+0, not +2
+  assert.doesNotMatch(text, /Arrow \+2|Arrow \+3|Arrow \+4/); // graded names never appear on their own
+});
