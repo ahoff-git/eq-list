@@ -125,6 +125,10 @@ export const CH = {
   gameClockToggle: "gameClock:toggle",
   gameClockSetPinned: "gameClock:setPinned", // pin/unpin the clock over the game
   gameClockSetPinPosition: "gameClock:setPinPosition", // where the pinned clock sits, dragged
+  // damageOverlay — the floating damage meter's own pin state (not the fight data itself)
+  damageOverlayView: "damageOverlay:view",
+  damageOverlaySetPinned: "damageOverlay:setPinned", // pin/unpin the meter over the game
+  damageOverlaySetPinPosition: "damageOverlay:setPinPosition", // where the pinned meter sits, dragged
   // buffs — what you're keeping up, and what has lapsed
   buffsView: "buffs:view",
   buffsTrack: "buffs:track", // watch this spell, or stop: the durable silence, which keeps the row
@@ -247,6 +251,7 @@ export const CH = {
   spawnsChanged: "evt:spawnsChanged", // main → all: a timer started, came due, or aged out
   goalsChanged: "evt:goalsChanged", // main → all: a goal started, progressed, finished, or was cleared
   gameClockChanged: "evt:gameClockChanged", // main → all: a `/time` reading arrived, or an alarm changed
+  damageOverlayChanged: "evt:damageOverlayChanged", // main → all: the damage meter was pinned, unpinned, or moved
   buffsChanged: "evt:buffsChanged", // main → all: a buff went up, lapsed, or a choice about one changed
   dataChanged: "evt:dataChanged", // main → all: stored data changed in bulk (a log was eaten, a store cleared)
   updateAvailable: "evt:updateAvailable", // main → all: a newer build is published

@@ -50,6 +50,7 @@ import { createSpawnTracker } from "./spawn-tracker";
 import { createGoalTracker } from "./goal-tracker";
 import { createBuffTracker } from "./buff-tracker";
 import { createGameClockTracker } from "./game-clock-tracker";
+import { createDamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -324,6 +325,10 @@ if (!app.requestSingleInstanceLock()) {
     raise: raiseAlert,
   });
   gameClock.onChanged(() => broadcast(CH.gameClockChanged, undefined));
+  // The floating damage meter's pin state — the fight data it draws is `combat`'s, pushed the same
+  // way the Damage tab gets it; this tracker only remembers whether the HUD is up and where.
+  const damageOverlay = createDamageOverlayTracker({ userDataDir: userData });
+  damageOverlay.onChanged(() => broadcast(CH.damageOverlayChanged, undefined));
 
   registerIpc({
     store,
@@ -345,6 +350,7 @@ if (!app.requestSingleInstanceLock()) {
     goals,
     buffs,
     gameClock,
+    damageOverlay,
     lookup,
     userData,
     logFile,
@@ -817,6 +823,7 @@ if (!app.requestSingleInstanceLock()) {
     buffs.flush();
     gameClock.flush();
     gameClock.dispose();
+    damageOverlay.flush();
     watcher.stop(); // records the read position, so the next run resumes exactly here
     cursor.flush();
   });

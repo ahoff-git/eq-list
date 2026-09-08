@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useCombatStats, useCurrentZone, useHpEstimate, useRead } from "@/lib/hooks";
+import { useCombatStats, useCurrentZone, useDamageOverlay, useHpEstimate, useRead } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import DamageMeter, { type DamageView } from "./DamageMeter";
@@ -87,6 +87,7 @@ const NO_BESTS: FightBest[] = [];
 
 export default function DamagePanel() {
   const stats = useCombatStats();
+  const damageOverlay = useDamageOverlay();
   /**
    * Where the log says you are. This is the zone for a **live** window: a stored fight carries the
    * camp it was fought in, and the two live scopes have none of their own — a fight is happening
@@ -175,6 +176,17 @@ export default function DamagePanel() {
           </span>
         )}
         <span className="spacer" />
+        <button
+          className="btn ghost sm"
+          title={
+            damageOverlay.pinned
+              ? "Hide the floating damage meter over the game"
+              : "Pin a ranked damage meter over the game — click-through, drag its grip to place"
+          }
+          onClick={() => void api()?.damageOverlay.setPinned(!damageOverlay.pinned)}
+        >
+          📌
+        </button>
         {window && window.totalDealt > 0 && (
           <button
             className="btn ghost sm"

@@ -29,6 +29,7 @@ import type {
   EqlApi,
   FightStats,
   GameClockView,
+  DamageOverlayView,
   GoalView,
   HarvestProgress,
   HpEstimate,
@@ -95,6 +96,10 @@ const EMPTY_CLOCK: GameClockView = {
   pinAt: { fx: 0.02, fy: 0.02 },
   alarms: [],
 };
+
+// The web build has no overlay window to pin anything over (`capabilities.overlayPlacement: false`),
+// so the meter simply never reports itself pinned — the Damage tab's 📌 button has nothing to do.
+const EMPTY_DAMAGE_OVERLAY: DamageOverlayView = { pinned: false, pinAt: { fx: 0.82, fy: 0.24 } };
 
 /**
  * Opens the map as a **new browser tab** — there's no second Electron window to reuse — carrying
@@ -255,6 +260,13 @@ function createWebApi(): EqlApi {
       toggle: async () => EMPTY_CLOCK,
       setPinned: async () => EMPTY_CLOCK,
       setPinPosition: async () => EMPTY_CLOCK,
+      onChanged: () => noop,
+    },
+
+    damageOverlay: {
+      view: async () => EMPTY_DAMAGE_OVERLAY,
+      setPinned: async () => EMPTY_DAMAGE_OVERLAY,
+      setPinPosition: async () => EMPTY_DAMAGE_OVERLAY,
       onChanged: () => noop,
     },
 

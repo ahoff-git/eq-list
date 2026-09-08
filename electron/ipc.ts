@@ -36,6 +36,7 @@ import type { SpawnTracker } from "./spawn-tracker";
 import type { GoalTracker } from "./goal-tracker";
 import type { BuffTracker } from "./buff-tracker";
 import type { GameClockTracker } from "./game-clock-tracker";
+import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
@@ -77,6 +78,8 @@ export interface IpcContext {
   buffs: BuffTracker;
   /** The running Norrath clock and its alarms (`game-clock-tracker.ts`). */
   gameClock: GameClockTracker;
+  /** The floating damage meter's pin state (`damage-overlay-tracker.ts`) — not the fight data itself. */
+  damageOverlay: DamageOverlayTracker;
   lookup: Lookup;
   /** The app's own data folder — where the stores and the remembered zone names live. */
   userData: string;
@@ -444,7 +447,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, goals, buffs, gameClock, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, goals, buffs, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -610,6 +613,16 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.gameClockSetPinPosition, (_e, fx: number, fy: number) => {
     gameClock.setPinPosition(fx, fy);
     return gameClock.view();
+  });
+  // The floating damage meter's own pin state — the fight data it draws comes from `combat`/`CH.combatGet`.
+  ipcMain.handle(CH.damageOverlayView, () => damageOverlay.view());
+  ipcMain.handle(CH.damageOverlaySetPinned, (_e, on: boolean) => {
+    damageOverlay.setPinned(on);
+    return damageOverlay.view();
+  });
+  ipcMain.handle(CH.damageOverlaySetPinPosition, (_e, fx: number, fy: number) => {
+    damageOverlay.setPinPosition(fx, fy);
+    return damageOverlay.view();
   });
   // The buff board. Every edit hands the whole view back, like the spawn board's — these are small
   // changes to a small list, and returning it means a panel never has to guess what its click did.

@@ -186,6 +186,12 @@ const api: EqlApi = {
     setPinPosition: (fx, fy) => ipcRenderer.invoke(CH.gameClockSetPinPosition, fx, fy),
     onChanged: (cb) => on(CH.gameClockChanged, cb),
   },
+  damageOverlay: {
+    view: () => ipcRenderer.invoke(CH.damageOverlayView),
+    setPinned: (on) => ipcRenderer.invoke(CH.damageOverlaySetPinned, on),
+    setPinPosition: (fx, fy) => ipcRenderer.invoke(CH.damageOverlaySetPinPosition, fx, fy),
+    onChanged: (cb) => on(CH.damageOverlayChanged, cb),
+  },
   buffs: {
     view: () => ipcRenderer.invoke(CH.buffsView),
     track: (key, on) => ipcRenderer.invoke(CH.buffsTrack, key, on),

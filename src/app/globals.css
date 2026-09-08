@@ -1316,6 +1316,88 @@ button {
 }
 .buff-hud-row .bhr-x:hover { color: var(--text); background: rgba(255, 255, 255, 0.12); }
 
+/* ── floating damage meter (DamageMeterOverlay.tsx) ───────────── */
+/* Glass except its own grip: unlike every HUD above, this one is meant to be read while clicking
+   and moving through the game underneath it, so only `.dmg-hud-grip` is a `SOLID` island — the
+   panel itself takes no clicks. Anchored by its top-left corner rather than centered (unlike
+   `.gameclock-hud`), so a fight adding rows grows the panel downward instead of shifting the
+   pinned point sideways. */
+.dmg-hud {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  min-width: 180px;
+  max-width: 320px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(14, 16, 19, 0.72);
+  font-size: 12px;
+  color: var(--text);
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none; /* everything but the grip passes clicks to the game */
+}
+.dmg-hud-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dmg-hud-grip {
+  pointer-events: auto; /* the one part of the HUD you can click — see .dmg-hud */
+  cursor: grab;
+  color: var(--text-dim);
+  line-height: 1;
+  user-select: none;
+}
+.dmg-hud-grip:active { cursor: grabbing; }
+.dmg-hud-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.dmg-hud-empty { padding: 2px 0 4px; }
+.dmg-hud-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dmg-hud-row.mine .dmg-hud-name { color: var(--accent); font-weight: 600; }
+.dmg-hud-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dmg-hud-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dmg-hud-nums {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.dmg-hud-dps { color: var(--text-dim); }
+/* Two of these per row, stacked: the top one's segments are Melee/Spell/Other, the bottom one's
+   are the individual skill or spell behind them — same width, so the eye reads them as one bar
+   split two ways. Sized to this dealer's rank against the top dealer (inline `width`); each
+   segment inside is then a share of *that*, so its absolute width is correct without either bar
+   having to know the other's scale. */
+.dmg-hud-bar-outer {
+  display: flex;
+  height: 5px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+}
+.dmg-hud-seg { height: 100%; }
+
 /* ── session stats ───────────────────────────────────────────── */
 .stat-row {
   display: flex;

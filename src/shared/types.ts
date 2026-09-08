@@ -1118,6 +1118,15 @@ export interface SessionSummary {
   unsettled?: boolean;
 }
 
+// ─── Damage overlay (the pinned meter, see `damage-overlay.ts`) ─────────────
+/** What the floating damage-meter HUD needs about itself — not a fact about any fight. */
+export interface DamageOverlayView {
+  /** Whether the meter is pinned over the game right now, click-through but for its own grip. */
+  pinned: boolean;
+  /** Where it sits, as a fraction of the display — remembered even while unpinned. */
+  pinAt: { fx: number; fy: number };
+}
+
 // ─── High scores (personal bests) ───────────────────────────────────────────
 
 /**
@@ -3012,6 +3021,16 @@ export interface EqlApi {
     /** Where the pinned clock sits, as a fraction of the display (0-1 each way) — set by dragging it. */
     setPinPosition(fx: number, fy: number): Promise<GameClockView>;
     /** Fires when a `/time` reading arrives or an alarm changes, so an open tab needn't poll. */
+    onChanged(cb: () => void): Unsubscribe;
+  };
+  /** The floating damage meter's own state — pinned or not, and where (`DamageMeterOverlay.tsx`). */
+  damageOverlay: {
+    view(): Promise<DamageOverlayView>;
+    /** Pin (or unpin) the meter over the game, click-through, in the alert overlay. */
+    setPinned(on: boolean): Promise<DamageOverlayView>;
+    /** Where the pinned meter sits, as a fraction of the display (0-1 each way) — set by dragging its grip. */
+    setPinPosition(fx: number, fy: number): Promise<DamageOverlayView>;
+    /** Fires whenever the pin state changes, so an open tab's toggle button stays in sync. */
     onChanged(cb: () => void): Unsubscribe;
   };
   /** The damage meter: per-combatant damage/DPS for the current fight and session. */

@@ -21,6 +21,7 @@ import type {
   GoalView,
   GoalTarget,
   GameClockView,
+  DamageOverlayView,
   AppInfo,
   ItemSource,
   ItemCard,
@@ -54,6 +55,7 @@ import { runningGoalTargets } from "@/shared/goal-progress";
 import { usePersistentState } from "./usePersistentState";
 import { STORAGE_KEYS } from "./storageKeys";
 import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/game-clock";
+import { DEFAULT_OVERLAY_PIN_AT } from "@/shared/damage-overlay";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
@@ -292,6 +294,7 @@ const NO_GAME_CLOCK: GameClockView = {
   pinAt: DEFAULT_PIN_AT,
   alarms: [],
 };
+const NO_DAMAGE_OVERLAY: DamageOverlayView = { pinned: false, pinAt: DEFAULT_OVERLAY_PIN_AT };
 const NO_SOURCES: Record<string, ItemSource[]> = {};
 const NO_FACTS: Record<string, SpellFacts> = {};
 const NO_MOB_LOOT: Record<string, Record<string, string>> = {};
@@ -971,6 +974,19 @@ export function useGameClock(): { view: GameClockView; minutes: number | null } 
   // bug `useSpawns` warns about for its countdowns.
   const minutes = view.minutes === null ? null : advanceGameMinutes(view.minutes, Date.now() - Date.parse(view.now), view.rate);
   return { view, minutes };
+}
+
+/**
+ * The floating damage meter's own state — pinned or not, and where. Nothing here ticks locally
+ * (unlike the game clock): a pin position only ever changes when the player drags it.
+ */
+export function useDamageOverlay(): DamageOverlayView {
+  return useFollowedRead<DamageOverlayView>(
+    (a) => a.damageOverlay.view(),
+    (a, reload) => a.damageOverlay.onChanged(reload),
+    NO_DAMAGE_OVERLAY,
+    [],
+  );
 }
 
 /**
