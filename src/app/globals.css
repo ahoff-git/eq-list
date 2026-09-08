@@ -987,6 +987,89 @@ button {
   color: var(--text-dim);
 }
 
+/* ── goals tab (ADR 0198) ──────────────────────────────────────── */
+.goals { display: flex; flex-direction: column; gap: 10px; }
+.goals-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.goals-add .field.qty { width: 64px; }
+.goals-add .field.dur { width: 90px; }
+.goals-templates { display: flex; flex-direction: column; gap: 4px; }
+.goal-template-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.goal-template-row .gtr-name { font-weight: 500; }
+.goal-template-row .gtr-detail { flex: 1; color: var(--text-dim); font-size: 12px; }
+.goal-focus-controls { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+.goals-finished-head { display: flex; align-items: center; gap: 10px; }
+.goals-finished-head h2 { margin: 0; }
+.goal-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+/* A finished goal is read, not watched — quieter than a running one. */
+.goal-row.completed { border-color: var(--good); }
+.goal-row.expired { opacity: 0.7; }
+.goal-row .gr-top,
+.goal-row .gr-bottom { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.goal-row .gr-name { font-weight: 500; }
+.goal-row .gr-kind { color: var(--text-dim); font-style: normal; font-size: 12px; }
+.goal-row .gr-status {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.goal-row.completed .gr-status { color: var(--good); font-weight: 600; }
+.goal-row .gr-bar {
+  height: 5px;
+  border-radius: 2px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.goal-row .gr-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+.goal-row.completed .gr-fill { background: var(--good); }
+.goal-row .gr-progress {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+/* The warning a focused List/Hunt tab shows while hiding rows — leads with what it did and offers
+   the undo in the same breath, the same shape a destructive confirm uses elsewhere in the app. */
+.goal-focus-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 12px;
+}
+.goal-focus-banner span { flex: 1; }
+/* A row the reader chose to keep visible despite it being outside the focused goals: named the same
+   way a row that's merely dimmed is, so "why is this greyed out" is answerable at a glance. */
+.goal-focus-dim { opacity: 0.45; }
+.goal-focus-match { outline: 1px solid var(--accent-dim); outline-offset: -1px; }
+
 /* ── pinned spawn countdowns, drawn over the game (ADR 0099) ─── */
 /* Anchored by each timer's own alert position, so a countdown appears where its banner would —
    including a custom placed spot. One stack per position, like the banners. */
@@ -1032,6 +1115,62 @@ button {
 .spawn-hud-row.due .shr-clock { color: var(--good); font-weight: 700; }
 .spawn-hud-row.alive { background: rgba(70, 200, 107, 0.22); }
 .spawn-hud-row.alive .shr-clock { color: var(--good); font-weight: 700; }
+
+/* ── pinned goals, drawn over the game (ADR 0198) ─────────────── */
+/* Same shape as `.spawn-hud`/`.spawn-hud-row` on purpose — both answer "what's running out" and sit
+   over the game, so a second visual language between them would read as two apps. On by default
+   (no opt-in toggle), so this shows the moment a goal starts rather than waiting on a pin. */
+.goal-hud {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: 92%;
+  pointer-events: none;
+}
+.goal-hud-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  border-left: 2px solid var(--border);
+  background: rgba(14, 16, 19, 0.72);
+  font-size: 13px;
+  color: var(--text);
+  text-shadow: 0 1px 2px #000;
+  min-width: 140px;
+}
+.goal-hud-row .ghr-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.goal-hud-row .ghr-clock {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+.goal-hud-row .ghr-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.goal-hud-row .ghr-fill {
+  height: 100%;
+  border-radius: 2px;
+}
+.goal-hud-row .ghr-progress {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-dim);
+  align-self: flex-end;
+}
 
 /* ── buffs (the buff board) ───────────────────────────────────── */
 /* Deliberately the spawn board's shapes and spacings rather than a look of its own: the two tabs

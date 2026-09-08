@@ -18,6 +18,8 @@ import type {
   KillRecord,
   SpawnView,
   BuffView,
+  GoalView,
+  GoalTarget,
   GameClockView,
   AppInfo,
   ItemSource,
@@ -48,6 +50,9 @@ import { knownItems, type KnownItem } from "@/shared/known-items";
 import type { ItemRow } from "@/shared/item-search";
 import type { SpellRow } from "@/shared/spell-search";
 import { clockSkew } from "@/shared/spawn-timers";
+import { runningGoalTargets } from "@/shared/goal-progress";
+import { usePersistentState } from "./usePersistentState";
+import { STORAGE_KEYS } from "./storageKeys";
 import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/game-clock";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
@@ -277,6 +282,7 @@ const NO_MOBS: MobKnowledge[] = [];
  */
 const NO_SPAWNS: SpawnView = { now: "", running: [], known: [], dismissed: [] };
 const NO_BUFFS: BuffView = { now: "", active: [], lapsed: [], known: [], lexicon: false };
+const NO_GOALS: GoalView = { now: "", goals: [], templates: [] };
 const NO_GAME_CLOCK: GameClockView = {
   minutes: null,
   daytime: null,
@@ -778,9 +784,17 @@ export function useStyleUsage(): AlertUsage {
     () => list.entries.filter((e) => e.notify && e.kind !== "mob").length,
     [list],
   );
+  // `useGoalsBoard` rather than `useGoals`, which pulses once a second to move its countdowns —
+  // this only wants how many are currently running, the same restraint `spawns` above already
+  // applies for the same reason.
+  const goals = useGoalsBoard();
+  const goalsRunning = useMemo(
+    () => goals.goals.filter((g) => g.state === "running").length,
+    [goals],
+  );
   return useMemo(
-    () => ({ spawns: spawns.known, buffs: buffs.known, lootArmed }),
-    [spawns, buffs, lootArmed],
+    () => ({ spawns: spawns.known, buffs: buffs.known, lootArmed, goalsRunning }),
+    [spawns, buffs, lootArmed, goalsRunning],
   );
 }
 
@@ -837,6 +851,90 @@ export function useSpawns(): { view: SpawnView; now: number } {
   // every render would pin `now` to the moment of the fetch and the clock would stop dead.
   const skew = useMemo(() => clockSkew(view.now, Date.now()), [view]);
   return { view, now: Date.now() + skew };
+}
+
+/**
+ * The goals board, refetched only when main says a goal started, progressed, finished, or a template
+ * was saved/deleted — no ticking clock of its own. For anything that just needs to know *which*
+ * goals exist (a tab's running count, the List/Hunt focus filter) rather than move a countdown; see
+ * `useGoals` for the version that also ticks.
+ */
+function useGoalsBoard(): GoalView {
+  return useFollowedRead<GoalView>(
+    (a) => a.goals.view(),
+    (a, reload) => a.goals.onChanged(reload),
+    NO_GOALS,
+    [],
+  );
+}
+
+/**
+ * Timeboxed farming goals (ADR 0198) — running and recently-finished, plus the same two-clock shape
+ * `useSpawns` uses and for the same reason: the **list** is refetched only when main says a goal
+ * started, progressed, or finished; the **tick** is this window's own second hand, so a countdown
+ * moves without a round trip per second for a number already derivable from `dueAt`.
+ */
+export function useGoals(): { view: GoalView; now: number } {
+  const view = useGoalsBoard();
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const skew = useMemo(() => clockSkew(view.now, Date.now()), [view]);
+  return { view, now: Date.now() + skew };
+}
+
+/** How many goals are currently running — for a tab label, the same restrained "count only" read
+ *  `useStyleUsage` and `useGoalFocus` also use rather than pulling in `useGoals`'s 1Hz tick. */
+export function useGoalsRunning(): number {
+  const view = useGoalsBoard();
+  return useMemo(() => view.goals.filter((g) => g.state === "running").length, [view]);
+}
+
+export interface GoalFocus {
+  /** Goal-relevant rows on the List/Hunt tabs are emphasized. */
+  active: boolean;
+  setActive: (on: boolean) => void;
+  /** Within focus, non-matching rows are hidden outright rather than merely dimmed. Meaningless
+   *  (and always reads `false`) while `active` is off. */
+  hiding: boolean;
+  setHiding: (on: boolean) => void;
+  /** The running item/mob goals to emphasize or keep, by target. */
+  itemTargets: GoalTarget[];
+  mobTargets: GoalTarget[];
+  /** How many goals are currently running. Focus has nothing to focus on at zero. */
+  running: number;
+}
+
+/**
+ * The List and Hunt tabs' shared "focus on my goals" state (ADR 0198): which of the running goals'
+ * items and mobs to emphasize, and whether the reader has also asked to hide everything else.
+ *
+ * One persisted toggle for **both** tabs (`STORAGE_KEYS.goalFocus`) rather than one apiece, because
+ * it's a single standing decision — "I'm heads-down on my goals right now" — and a per-tab version
+ * would let List and Hunt disagree about what "focused" means. `hiding` is a second, narrower toggle
+ * on top: emphasizing is free to turn on, hiding rows is the stronger claim a reader has to ask for
+ * separately, which is what makes the warning banner (drawn by each panel) and its one-click undo
+ * meaningful — turning `hiding` back off is never more than the banner's own button away.
+ *
+ * A plain `useFollowedRead` rather than `useGoals`, which pulses once a second to move its
+ * countdowns — a panel's row emphasis only needs to know *which* goals are running, not their clocks.
+ */
+export function useGoalFocus(): GoalFocus {
+  const [active, setActive] = usePersistentState<boolean>(STORAGE_KEYS.goalFocus, false);
+  const [hiding, setHiding] = usePersistentState<boolean>(STORAGE_KEYS.goalFocusHide, false);
+  const goals = useGoalsBoard();
+  const { items, mobs } = useMemo(() => runningGoalTargets(goals.goals), [goals]);
+  return {
+    active,
+    setActive,
+    hiding: active && hiding,
+    setHiding,
+    itemTargets: items,
+    mobTargets: mobs,
+    running: items.length + mobs.length,
+  };
 }
 
 /**

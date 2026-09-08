@@ -33,11 +33,12 @@ import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { PeerKillStore } from "./peer-kills";
 import type { SpawnTracker } from "./spawn-tracker";
+import type { GoalTracker } from "./goal-tracker";
 import type { BuffTracker } from "./buff-tracker";
 import type { GameClockTracker } from "./game-clock-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import { AWARI_MSG } from "../src/shared/types";
 import { readContributor } from "../src/shared/contributors";
 import { createPeerShareHub, shareSources } from "../src/shared/peer-share-hub";
@@ -70,6 +71,8 @@ export interface IpcContext {
   contributorId: string;
   /** Respawn countdowns for the nameds you kill (ADR 0092). */
   spawns: SpawnTracker;
+  /** Timeboxed farming targets — several may run at once (`goal-tracker.ts`, ADR 0198). */
+  goals: GoalTracker;
   /** Which of your buffs are up, and which have lapsed (`buff-tracker.ts`). */
   buffs: BuffTracker;
   /** The running Norrath clock and its alarms (`game-clock-tracker.ts`). */
@@ -441,7 +444,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, buffs, gameClock, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, goals, buffs, gameClock, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -548,6 +551,28 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.spawnsRepeat, (_e, key: string, on: boolean) => {
     spawns.repeat(key, on);
     return spawns.view();
+  });
+  // Timeboxed farming goals (ADR 0198) — every edit hands the whole view back, like the boards above.
+  ipcMain.handle(CH.goalsView, () => goals.view());
+  ipcMain.handle(CH.goalsStart, (_e, target: GoalTarget, qty: number, durationSec: number) => {
+    goals.start(target, qty, durationSec);
+    return goals.view();
+  });
+  ipcMain.handle(CH.goalsAbandon, (_e, id: string) => {
+    goals.abandon(id);
+    return goals.view();
+  });
+  ipcMain.handle(CH.goalsClearFinished, () => {
+    goals.clearFinished();
+    return goals.view();
+  });
+  ipcMain.handle(CH.goalsSaveTemplate, (_e, target: GoalTarget, qty: number, durationSec: number, label?: string) => {
+    goals.saveTemplate(target, qty, durationSec, label);
+    return goals.view();
+  });
+  ipcMain.handle(CH.goalsDeleteTemplate, (_e, id: string) => {
+    goals.deleteTemplate(id);
+    return goals.view();
   });
   // The running game clock and its alarms — every edit hands the whole view back, like the boards above.
   ipcMain.handle(CH.gameClockView, () => gameClock.view());

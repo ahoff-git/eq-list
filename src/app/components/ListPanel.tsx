@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useShoppingList, useMatchFlashes, useCurrentZone, useSettings } from "@/lib/hooks";
+import { useGoalFocus, useShoppingList, useMatchFlashes, useCurrentZone, useSettings, type GoalFocus } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import ItemLink, { NameList } from "./ItemLink";
 import { LucyLink } from "./LucySays";
@@ -8,6 +8,8 @@ import { count } from "@/shared/format";
 import { Caret, caretGlyph, Empty } from "./ui";
 import { AlertStyleDrawer } from "./AlertStyleField";
 import { LOOT_STYLE_ID } from "@/shared/alert-styles";
+import { goalWantsItem, goalWantsMob } from "@/shared/goal-progress";
+import GoalFocusBanner from "./GoalFocusBanner";
 import {
   countableEntries,
   effectiveNeeded,
@@ -45,6 +47,10 @@ export default function ListPanel() {
   const askLucy = useSettings()?.askLucy ?? true;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [styling, setStyling] = useState(false);
+  // Which items your running goals want (ADR 0198) — emphasized while focus is on, and the rest
+  // hidden as well once the reader also asks for that. Read once here, not per row, for the same
+  // reason `askLucy` is.
+  const focus = useGoalFocus();
   // Every armed row wears the one Loot look — there is no style per row (ADR 0105) — so the control
   // for it belongs to the list rather than to any entry, and only once something is armed: before
   // that it describes a banner nothing will raise.
@@ -87,6 +93,13 @@ export default function ListPanel() {
       )}
       {armed && styling && <AlertStyleDrawer fallback={LOOT_STYLE_ID} />}
 
+      {focus.active && focus.hiding && (
+        <GoalFocusBanner
+          hidden={list.entries.filter((e) => !matchesGoalFocus(e, focus)).length}
+          onShowAll={() => focus.setHiding(false)}
+        />
+      )}
+
       <div className="groups">
         {groups.map((g) => {
           const isCollapsed = !!collapsed[g.key];
@@ -94,6 +107,11 @@ export default function ListPanel() {
           // left a group reading "2/3" for ever — see `isMobEntry`; hidden altogether when a group
           // holds nothing else, since "0/0" is not progress.
           const countable = countableEntries(g.entries);
+          // While focused *and* hiding, a group with nothing goal-relevant left in it has nothing to
+          // show at all — its header would just be an empty shell over a group the reader asked to
+          // stop seeing.
+          const visible = focus.active && focus.hiding ? g.entries.filter((e) => matchesGoalFocus(e, focus)) : g.entries;
+          if (focus.active && focus.hiding && visible.length === 0) return null;
           return (
             <div className={`group ${g.complete ? "done" : ""}`} key={g.key}>
               <div className="group-header" onClick={() => toggle(g.key)}>
@@ -156,7 +174,7 @@ export default function ListPanel() {
               </div>
               {!isCollapsed && (
                 <div className="group-entries">
-                  {g.entries.map((e) => (
+                  {visible.map((e) => (
                     <EntryRow
                       key={e.id}
                       entry={e}
@@ -165,6 +183,9 @@ export default function ListPanel() {
                       flashing={flashed.has(e.id)}
                       currentZone={zone}
                       askLucy={askLucy}
+                      // Only worth marking in emphasize-only mode — once hiding is on, every row left
+                      // on screen already matches, and outlining all of them would say nothing.
+                      goalMatch={focus.active && !focus.hiding ? matchesGoalFocus(e, focus) : undefined}
                     />
                   ))}
                 </div>
@@ -184,6 +205,7 @@ function EntryRow({
   flashing,
   currentZone,
   askLucy,
+  goalMatch,
 }: {
   entry: ShoppingListEntry;
   runs: number;
@@ -193,6 +215,9 @@ function EntryRow({
   currentZone: string | null;
   /** Whether to offer the ↗ Lucy link. Passed rather than read here — see `ListPanel`. */
   askLucy: boolean;
+  /** Goal focus is on (but not hiding): `true` outlines the row, `false` dims it, `undefined` means
+   *  focus isn't active at all and the row is drawn exactly as it always was. */
+  goalMatch?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [sources, setSources] = useState<ItemSource[] | null>(null);
@@ -205,7 +230,14 @@ function EntryRow({
   // A mob is never "done" — there's no count to complete — so it must not be struck through the way
   // a finished item is.
   const met = !isMob && satisfied(entry, runs);
-  const cls = ["entry", met ? "done" : "", isMob ? "is-mob" : "", flashing ? "flash" : ""]
+  const cls = [
+    "entry",
+    met ? "done" : "",
+    isMob ? "is-mob" : "",
+    flashing ? "flash" : "",
+    goalMatch === true ? "goal-focus-match" : "",
+    goalMatch === false ? "goal-focus-dim" : "",
+  ]
     .filter(Boolean)
     .join(" ");
   // +/- adjust how many you've ACQUIRED (obtained); needed comes from the quest/recipe
@@ -390,6 +422,16 @@ function ZoneRow({ drops, here }: { drops: ZoneDrops; here?: boolean }) {
       <NameList names={drops.mobs} className="dz-mobs" />
     </div>
   );
+}
+
+/**
+ * Whether a row is what a running goal wants (ADR 0198) — an item goal against an item row, a mob
+ * goal against a "hunt" row, never the other kind: a mob goal names nothing an item row could ever
+ * satisfy, and the reverse.
+ */
+function matchesGoalFocus(entry: ShoppingListEntry, focus: GoalFocus): boolean {
+  if (isMobEntry(entry)) return focus.mobTargets.some((t) => goalWantsMob(t, entry.name));
+  return focus.itemTargets.some((t) => goalWantsItem(t, entry.name));
 }
 
 /** A non-drop source (vendor / quest / craft …), colored by kind. */

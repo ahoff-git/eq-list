@@ -231,6 +231,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0195: A spell catalog trusts the wiki's own numbers, not the game file's](./0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)
 - [0196: Spells get their own shard-addressed mirror](./0196-spells-get-their-own-shard-addressed-mirror.md)
 - [0197: A "gear-set" quest page is several quests](./0197-a-gear-set-quest-page-is-several-quests.md)
+- [0198: A goal is a timeboxed target, tracked on its own and focusable from the List and Hunt tabs](./0198-a-goal-is-a-timeboxed-target.md)
 
 ## Open Questions
 

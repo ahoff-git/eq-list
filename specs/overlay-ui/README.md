@@ -387,6 +387,24 @@ list, hunt, search, damage, session, peers, settings.
     dismissed with a way back, because dismissing one removes its row and the only control that
     could undo it lived there. Sits beside Hunt because `TabBar` collapses from the *end* and a
     timer you can't see is worse than no timer.
+  - `GoalsPanel` — the **Goals tab**: a timeboxed farming target — "20 Phosphorous Powder in the next
+    hour", or a kill quota — tracked by its own `electron/goal-tracker.ts` rather than layered onto the
+    shopping list's lifetime counts or a spawn timer's camp evidence, neither of which carries a clock
+    ([ADR 0198](../decisions/0198-a-goal-is-a-timeboxed-target.md)). Several goals run at once; each
+    progresses **the instant** a matching loot or kill line lands, and is bannered at fixed milestones
+    (25/50/75%) as well as at completion and expiration — the tracker raises those directly, the same
+    "this was worth hearing on its own" path a loot alert and a personal best already take. A want can
+    be **saved for reuse** without starting it, and deleted without touching a goal already running.
+    The progress floater (`GoalsOverlay`, on the same `/alert` window as `SpawnOverlay`) is **on by
+    default** — unlike a spawn timer's opt-in pin, a goal exists only because you started it on
+    purpose for exactly this session, so there is no "most of these you don't care about" to filter.
+    **The List and Hunt tabs can focus on the running goals**: one shared toggle emphasizes a matching
+    row on either tab (outlined, the rest dimmed), and a second, narrower toggle also **hides**
+    everything else — which, because it can make real unfinished work vanish from the screen, draws
+    its own warning banner (`GoalFocusBanner`) naming how much is hidden, with a **Show all** button
+    that is exactly the toggle going back off. A Hunt-tab mob row matches by being a mob-kill goal's
+    own target **or** by dropping something an item goal wants — "kill this" and "kill this for that"
+    are the same trip.
   - `HuntPanel` — the **Hunt tab**: inverts "how do I get each needed item" into
     "where do I go to farm what's left" — plus the mobs you put on the list to kill for their own
     sake ([ADR 0098](../decisions/0098-a-mob-is-a-thing-you-hunt.md)). A **target** is placed by

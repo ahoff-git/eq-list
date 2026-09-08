@@ -108,6 +108,13 @@ export const CH = {
   spawnsStop: "spawns:stop",
   spawnsQueue: "spawns:queue", // a fresh kill adds a countdown instead of restarting: a placeholder camp
   spawnsRepeat: "spawns:repeat", // a custom timer starts itself again when it comes due
+  // goals (ADR 0198) — timeboxed farming targets, several may run at once
+  goalsView: "goals:view",
+  goalsStart: "goals:start",
+  goalsAbandon: "goals:abandon",
+  goalsClearFinished: "goals:clearFinished",
+  goalsSaveTemplate: "goals:saveTemplate",
+  goalsDeleteTemplate: "goals:deleteTemplate",
   // gameClock — the running Norrath clock (extrapolated from the last `/time`), and its alarms
   gameClockView: "gameClock:view",
   gameClockAdd: "gameClock:add", // set an alarm for a time of day
@@ -236,6 +243,7 @@ export const CH = {
   alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
   spawnsChanged: "evt:spawnsChanged", // main → all: a timer started, came due, or aged out
+  goalsChanged: "evt:goalsChanged", // main → all: a goal started, progressed, finished, or was cleared
   gameClockChanged: "evt:gameClockChanged", // main → all: a `/time` reading arrived, or an alarm changed
   buffsChanged: "evt:buffsChanged", // main → all: a buff went up, lapsed, or a choice about one changed
   dataChanged: "evt:dataChanged", // main → all: stored data changed in bulk (a log was eaten, a store cleared)

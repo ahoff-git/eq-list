@@ -6,7 +6,7 @@ import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
 import { categoryOf, formatScore } from "@/shared/high-scores";
 import { alertPlacement } from "@/shared/alert-styles";
 import { alternativesLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
-import type { AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, HighScore, LootAlert } from "@/shared/types";
+import type { AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, GoalAlertPayload, HighScore, LootAlert } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -166,7 +166,14 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
               // tellable apart without reading either.
               : a.event === "buff"
                 ? "🛡"
-                : "⚠";
+                // A timeboxed goal (ADR 0198) — a milestone or completion reads as news (🎯); running
+                // out of time unmet reads as the opposite of a spawn's ⏰, so it earns its own glyph
+                // rather than being read as "your camp timer is up".
+                : a.event === "goal"
+                  ? a.goal?.kind === "expired"
+                    ? "⌛"
+                    : "🎯"
+                  : "⚠";
   // A record before the `message` check: it has no wording to override, and it words itself from the
   // shared catalog rather than being handed a sentence (see `recordAlert`).
   if (a.event === "record" && a.record) return recordBanner(a.record);
@@ -176,6 +183,9 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
   // And a lapsed buff, for the same reason again: nothing wrote it a sentence, and the facts it words
   // itself from — which spell, on whom, and whether we could narrow it — are all in the payload.
   if (a.event === "buff" && a.buff) return buffBanner(a.buff);
+  // A goal, the same way again: nothing wrote it a sentence, and the counts it words itself from are
+  // already in the payload (see `goal-tracker.ts`'s `announce`).
+  if (a.event === "goal" && a.goal) return goalBanner(a.goal);
   if (a.message?.trim()) return { icon, body: <b>{a.message}</b> };
   if (a.event === "spawn") {
     return {
@@ -263,6 +273,47 @@ function buffBanner(buff: BuffInstance): { icon: string; body: ReactNode; hint?:
  * instead — the point of the last one is that it was the last one, not that it was the fifth — and it
  * is the last banner that entry raises (see `AlertRouter.loot`).
  */
+/**
+ * The banner for a timeboxed goal (ADR 0198) reaching a milestone, being met, or running out of time
+ * unmet. The counts travel raw, like a drop's, so this words them rather than repeating a sentence
+ * the tracker already built.
+ */
+function goalBanner(goal: GoalAlertPayload): { icon: string; body: ReactNode; hint?: string } {
+  const of = (
+    <>
+      {goal.obtained} of {goal.qty}
+    </>
+  );
+  if (goal.kind === "expired") {
+    return {
+      icon: "⌛",
+      body: (
+        <>
+          <b>{goal.target.name}</b> — time&rsquo;s up, {of}
+        </>
+      ),
+    };
+  }
+  if (goal.kind === "completed") {
+    return {
+      icon: "🎯",
+      body: (
+        <>
+          <b>{goal.target.name}</b> — <b>done!</b> {of}
+        </>
+      ),
+    };
+  }
+  return {
+    icon: "🎯",
+    body: (
+      <>
+        <b>{goal.target.name}</b> — {of} ({goal.pct}%)
+      </>
+    ),
+  };
+}
+
 function lootBanner(loot: LootAlert): { icon: string; body: ReactNode; hint?: string } {
   const done = loot.obtained >= loot.needed;
   return {

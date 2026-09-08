@@ -21,6 +21,17 @@ export const STORAGE_KEYS = {
   /** Main window: whether the Hunt tab groups by zone or by item. */
   huntGrouping: "eqlist.main.huntGrouping",
   /**
+   * Main window: whether the List and Hunt tabs are focused on the active goals (ADR 0198) —
+   * emphasizing goal-relevant items/mobs and, when the reader also asked to, hiding the rest. One
+   * key for both tabs, since it's one standing decision ("I'm heads-down on my goals right now"),
+   * not a per-tab filter that would leave the two disagreeing about what "focused" means.
+   */
+  goalFocus: "eqlist.main.goalFocus",
+  /** Main window: within goal focus, whether unrelated rows are hidden outright rather than merely
+   *  dimmed. Off by default — hiding is the stronger claim and earns its own opt-in and its own
+   *  warning banner. */
+  goalFocusHide: "eqlist.main.goalFocusHide",
+  /**
    * Main window: the Items tab's three standing answers — what you're narrowing by, what a point of
    * each stat is worth to you, and which column the results are ordered by.
    *

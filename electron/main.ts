@@ -47,6 +47,7 @@ import { once } from "../src/shared/once";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createAlertRouter } from "./alert-router";
 import { createSpawnTracker } from "./spawn-tracker";
+import { createGoalTracker } from "./goal-tracker";
 import { createBuffTracker } from "./buff-tracker";
 import { createGameClockTracker } from "./game-clock-tracker";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
@@ -287,6 +288,15 @@ if (!app.requestSingleInstanceLock()) {
     raise: raiseAlert,
   });
   spawns.onChanged(() => broadcast(CH.spawnsChanged, undefined));
+  // Timeboxed farming goals (ADR 0198) — its own tracker, not a layer over the spawn board or the
+  // shopping list, since neither carries a clock and this is nothing but one. Progress comes from
+  // the same loot/kill lines those two already read; its pop goes down the same `raiseAlert` path.
+  const goals = createGoalTracker({
+    userDataDir: userData,
+    getSettings: () => store.getSettings().castAlerts,
+    raise: raiseAlert,
+  });
+  goals.onChanged(() => broadcast(CH.goalsChanged, undefined));
   // The buff board. The mirror image of the spawn tracker: it holds a fact about *this session*
   // rather than about the world, so nothing about which buffs are up is persisted — only the
   // player's choices about which ones to watch. Both files' headers say why.
@@ -332,6 +342,7 @@ if (!app.requestSingleInstanceLock()) {
     peerKills,
     contributorId,
     spawns,
+    goals,
     buffs,
     gameClock,
     lookup,
@@ -484,6 +495,10 @@ if (!app.requestSingleInstanceLock()) {
       // list can't disagree about how far along you are (ADR 0105).
       alerts.loot(event, entry, effectiveNeeded(entry, runsFor(store.getList(), entry)));
     }
+    // A separate question from the list above: a goal is timeboxed and counts from when it started,
+    // where a list entry counts for life — so this reads the same loot line independently rather
+    // than borrowing the list's own counters (ADR 0198).
+    goals.noteLoot(event);
   });
   // Considering or hailing a mob you're timing counts as seeing it up — free evidence from what a
   // camper does anyway, through exactly the path the "It's up" button uses (ADR 0097).
@@ -500,7 +515,12 @@ if (!app.requestSingleInstanceLock()) {
     // looser one of its own: the log reports every death in earshot, and a stranger's kill at a busy
     // camp is not a link in your chain (ADR 0027). Asked *after* `recordKill`, so the fight scope has
     // already taken this event.
-    if (combat.countsKill(event.target)) scores.noteKill(event.at, currentZone);
+    if (combat.countsKill(event.target)) {
+      scores.noteKill(event.at, currentZone);
+      // A mob-goal's kills go through the same "was this actually yours" gate as the streak, rather
+      // than growing a second opinion about whose kill it was.
+      goals.noteKill(event);
+    }
   });
   // Coin off a corpse goes to both ledgers it belongs in: the session's money (for a rate) and
   // the mob that paid it (for the long-run per-kill figure). An auto-sold item's coin is skipped
@@ -790,6 +810,8 @@ if (!app.requestSingleInstanceLock()) {
     peerKills.flush();
     spawns.flush();
     spawns.dispose();
+    goals.flush();
+    goals.dispose();
     buffs.flush();
     gameClock.flush();
     gameClock.dispose();

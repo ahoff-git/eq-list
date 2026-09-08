@@ -267,7 +267,7 @@ export function newStyleId(styles: NamedAlertStyle[]): string {
  */
 export interface AlertSource {
   /** Stable key — the row's React key, and what a test names. */
-  id: "record" | "spawn" | "loot" | "buff";
+  id: "record" | "spawn" | "loot" | "buff" | "goal";
   /** What the Alerts tab calls it. */
   label: string;
   /** What sets it off, and **where its on/off lives** — the one thing its row can't show inline. */
@@ -329,6 +329,9 @@ export interface AlertUsage {
   lootArmed?: number;
   /** Every buff the board knows about — the same per-thing style question a spawn timer asks. */
   buffs?: readonly BuffWearer[];
+  /** How many goals (ADR 0198) are currently running — there is no per-goal style to ask about,
+   *  only whether the feature has anything armed right now. */
+  goalsRunning?: number;
 }
 
 /**
@@ -358,6 +361,7 @@ export const RECORD_STYLE_ID = "built-in:record";
 export const SPAWN_STYLE_ID = "built-in:spawn";
 export const LOOT_STYLE_ID = "built-in:loot";
 export const BUFF_STYLE_ID = "built-in:buff";
+export const GOAL_STYLE_ID = "built-in:goal";
 
 export const ALERT_SOURCES: AlertSource[] = [
   {
@@ -474,6 +478,31 @@ export const ALERT_SOURCES: AlertSource[] = [
         position: "top-left",
         durationMs: 8000,
         animation: "pulse",
+      },
+    },
+  },
+  {
+    id: "goal",
+    label: "Goals",
+    hint: "A timeboxed farming goal reaching a milestone, being met, or running out of time. Started and stopped from the Goals tab — there is no per-goal style, only this one shared look (ADR 0198).",
+    unit: "goal",
+    armed: (u) => u.goalsRunning ?? 0,
+    // Not a choice: like `loot`, this style is named outright by whatever raises the alert, so every
+    // goal wears it and there is nothing to resolve from data.
+    worn: () => GOAL_STYLE_ID,
+    style: {
+      id: GOAL_STYLE_ID,
+      name: "Goal",
+      // Violet, so it reads as its own thing beside gold (record/loot), green (spawn) and blue
+      // (buff) — a milestone is good news, not a warning, so it doesn't flash.
+      style: {
+        sound: true,
+        flash: false,
+        color: "#8a63d2",
+        soundName: "chime",
+        position: "top-right",
+        durationMs: 7000,
+        animation: "float",
       },
     },
   },

@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useCurrentZone, useHunt, useSettings, useMobLoot, useMobKnowledge } from "@/lib/hooks";
+import { useCurrentZone, useGoalFocus, useHunt, useSettings, useMobLoot, useMobKnowledge } from "@/lib/hooks";
+import { goalWantsItem, goalWantsMob } from "@/shared/goal-progress";
+import GoalFocusBanner from "./GoalFocusBanner";
 import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/drop-truth";
 import { mobKey } from "@/shared/mob-stats";
 import ItemLink from "./ItemLink";
@@ -88,6 +90,10 @@ export default function HuntPanel({
   onGrouping: (grouping: HuntGrouping) => void;
 }) {
   const zone = useCurrentZone();
+  // Which mobs your running goals want you to kill (ADR 0198) — a mob-kill goal directly, or an
+  // item goal by way of a mob that drops it. Emphasized while focus is on, and everything else
+  // dropped from both views as well once the reader also asks for that.
+  const focus = useGoalFocus();
   const settings = useSettings();
   const followZone = settings?.overlay.followZone ?? false;
   const setFollowZone = (on: boolean) => api()?.settings.update({ overlay: { followZone: on } });
@@ -192,6 +198,29 @@ export default function HuntPanel({
   // Named mobs have no item to be grouped under, so they'd vanish from a by-item page (ADR 0098).
   const targetPlaces = useMemo(() => huntTargetPlaces(allZones), [allZones]);
 
+  // Whether a mob is what a running goal wants: named directly (a mob-kill goal), or by way of an
+  // item it drops (an item goal) — either is a real reason to head there, so both count.
+  const goalMatchMob = useCallback(
+    (mob: string, items: { item: string }[]) =>
+      focus.mobTargets.some((t) => goalWantsMob(t, mob)) ||
+      items.some((it) => focus.itemTargets.some((t) => goalWantsItem(t, it.item))),
+    [focus],
+  );
+  const hiding = focus.active && focus.hiding;
+  // By-zone: drop mobs nothing running wants, then zones left with none of them.
+  const zonesShown = useMemo(() => {
+    if (!hiding) return zones;
+    return zones.map((z) => ({ ...z, mobs: z.mobs.filter((m) => goalMatchMob(m.mob, m.items)) })).filter((z) => z.mobs.length > 0);
+  }, [zones, hiding, goalMatchMob]);
+  const hiddenMobs = useMemo(
+    () => (hiding ? zones.reduce((n, z) => n + z.mobs.filter((m) => !goalMatchMob(m.mob, m.items)).length, 0) : 0),
+    [zones, hiding, goalMatchMob],
+  );
+  const targetPlacesShown = useMemo(
+    () => (hiding ? targetPlaces.filter((p) => goalMatchMob(p.mob, [])) : targetPlaces),
+    [targetPlaces, hiding, goalMatchMob],
+  );
+
   // What the picker offers while grouped by item: the things on the page, shaped as the picker
   // matches over — a name is a name, and the interaction is the one the zone filter already had.
   const itemOptions = useMemo<Zone[]>(
@@ -199,6 +228,14 @@ export default function HuntPanel({
     [itemGroups],
   );
   const shownItems = pickedItem ? itemGroups.filter((g) => g.item === pickedItem) : itemGroups;
+  // By-item: a group matches by its own item, or by any place it's found at also being a wanted mob.
+  const shownItemsFiltered = useMemo(() => {
+    if (!hiding) return shownItems;
+    return shownItems.filter(
+      (g) => focus.itemTargets.some((t) => goalWantsItem(t, g.item)) || g.places.some((p) => goalMatchMob(p.mob, [])),
+    );
+  }, [shownItems, hiding, focus.itemTargets, goalMatchMob]);
+  const hiddenItems = hiding ? shownItems.length - shownItemsFiltered.length + (targetPlaces.length - targetPlacesShown.length) : 0;
 
   if (!huntHasWork(needed, targets)) {
     return (
@@ -274,6 +311,14 @@ export default function HuntPanel({
 
       {loading && allZones.length === 0 && <p className="muted">Looking up drop sources…</p>}
 
+      {focus.active && focus.hiding && (grouping === "zone" ? hiddenMobs : hiddenItems) > 0 && (
+        <GoalFocusBanner
+          hidden={grouping === "zone" ? hiddenMobs : hiddenItems}
+          noun="mob"
+          onShowAll={() => focus.setHiding(false)}
+        />
+      )}
+
       {!loading && grouping === "zone" && zones.length === 0 && narrow && (
         <p className="muted small">Nothing on your list drops in {narrow}.</p>
       )}
@@ -285,16 +330,28 @@ export default function HuntPanel({
       {!loading && allZones.length === 0 && (
         <p className="muted small">None of your needed items have a known drop source.</p>
       )}
+      {!loading && hiding && grouping === "zone" && zonesShown.length === 0 && zones.length > 0 && (
+        <p className="muted small">Nothing left to kill for your goals here — try &ldquo;Show all&rdquo;.</p>
+      )}
 
+      {/* Only worth marking rows in emphasize-only mode: once hiding is on, everything left already
+          matches, and outlining all of it would say nothing. */}
       {grouping === "zone" ? (
-        <ZoneGroups zones={zones} here={zone} truthFor={truthFor} emphasize={emphasize} />
+        <ZoneGroups
+          zones={zonesShown}
+          here={zone}
+          truthFor={truthFor}
+          emphasize={emphasize}
+          matchMob={focus.active && !hiding ? goalMatchMob : undefined}
+        />
       ) : (
         <ItemGroups
-          groups={shownItems}
+          groups={shownItemsFiltered}
           // Asked about one item, the mobs you're hunting for their own sake aren't an answer.
-          targets={pickedItem ? [] : targetPlaces}
+          targets={pickedItem ? [] : targetPlacesShown}
           here={zone}
           emphasize={emphasize}
+          matchMob={focus.active && !hiding ? goalMatchMob : undefined}
         />
       )}
 
@@ -317,11 +374,14 @@ function ZoneGroups({
   here,
   truthFor,
   emphasize,
+  matchMob,
 }: {
   zones: HuntZone[];
   here: string | null;
   truthFor: TruthFor;
   emphasize: (mob: string | null) => void;
+  /** Set only in emphasize-only focus mode (ADR 0198) — a row outlines or dims by its answer. */
+  matchMob?: (mob: string, items: { item: string }[]) => boolean;
 }) {
   return (
     <>
@@ -334,7 +394,7 @@ function ZoneGroups({
             </div>
             {z.mobs.map((m) => (
               <div
-                className="hunt-mob"
+                className={`hunt-mob ${matchMob ? (matchMob(m.mob, m.items) ? "goal-focus-match" : "goal-focus-dim") : ""}`}
                 key={m.mob}
                 // The whole row is about this mob, items included, so it's all one target —
                 // there's nothing in it that would want to point somewhere else.
@@ -383,11 +443,14 @@ function ItemGroups({
   targets,
   here,
   emphasize,
+  matchMob,
 }: {
   groups: RatedItemGroup[];
   targets: HuntPlace[];
   here: string | null;
   emphasize: (mob: string | null) => void;
+  /** Set only in emphasize-only focus mode (ADR 0198) — a row outlines or dims by its answer. */
+  matchMob?: (mob: string, items: { item: string }[]) => boolean;
 }) {
   return (
     <>
@@ -400,7 +463,7 @@ function ItemGroups({
             </span>
           </div>
           {g.places.map((p) => (
-            <PlaceRow key={`${p.zone}|${p.mob}`} place={p} here={here} emphasize={emphasize}>
+            <PlaceRow key={`${p.zone}|${p.mob}`} place={p} here={here} emphasize={emphasize} matchMob={matchMob} matchItems={[{ item: g.item }]}>
               <Rate truth={p.truth} shown={p.shown} always />
             </PlaceRow>
           ))}
@@ -413,7 +476,7 @@ function ItemGroups({
             <span className="hi-name">On your list to kill</span>
           </div>
           {targets.map((p) => (
-            <PlaceRow key={`${p.zone}|${p.mob}`} place={p} here={here} emphasize={emphasize} />
+            <PlaceRow key={`${p.zone}|${p.mob}`} place={p} here={here} emphasize={emphasize} matchMob={matchMob} matchItems={[]} />
           ))}
         </div>
       )}
@@ -426,17 +489,23 @@ function PlaceRow({
   place,
   here,
   emphasize,
+  matchMob,
+  matchItems = [],
   children,
 }: {
   place: HuntPlace;
   here: string | null;
   emphasize: (mob: string | null) => void;
+  /** Set only in emphasize-only focus mode (ADR 0198). */
+  matchMob?: (mob: string, items: { item: string }[]) => boolean;
+  /** The item(s) this row is under, for `matchMob`'s item-goal half. */
+  matchItems?: { item: string }[];
   children?: ReactNode;
 }) {
   const youAreHere = here ? zoneMatches(here, place.zone) : false;
   return (
     <div
-      className={`hunt-place ${youAreHere ? "here" : ""}`}
+      className={`hunt-place ${youAreHere ? "here" : ""} ${matchMob ? (matchMob(place.mob, matchItems) ? "goal-focus-match" : "goal-focus-dim") : ""}`}
       onMouseEnter={() => emphasize(place.mob)}
       onMouseLeave={() => emphasize(null)}
     >

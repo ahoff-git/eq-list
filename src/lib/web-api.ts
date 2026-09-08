@@ -29,6 +29,7 @@ import type {
   EqlApi,
   FightStats,
   GameClockView,
+  GoalView,
   HarvestProgress,
   HpEstimate,
   MapFocus,
@@ -68,6 +69,7 @@ const EMPTY_FIGHT: FightStats = {
 const EMPTY_COMBAT: CombatStats = { startedAt: new Date().toISOString(), fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
 const EMPTY_BUFFS: BuffView = { now: new Date().toISOString(), active: [], lapsed: [], known: [], lexicon: false };
 const EMPTY_SPAWNS: SpawnView = { now: new Date().toISOString(), running: [], known: [], dismissed: [] };
+const EMPTY_GOALS: GoalView = { now: new Date().toISOString(), goals: [], templates: [] };
 const EMPTY_SCOREBOARD: ScoreBoard = { character: "", scores: [], streak: 0, seeded: false };
 const EMPTY_HP: HpEstimate = { atLeast: 0, samples: 0, updatedAt: new Date().toISOString() };
 // A harvest is Electron-only (there's no wiki category walk on the web — the snapshot is this
@@ -313,6 +315,18 @@ function createWebApi(): EqlApi {
       stop: async () => EMPTY_SPAWNS,
       queue: async () => EMPTY_SPAWNS,
       repeat: async () => EMPTY_SPAWNS,
+      onChanged: () => noop,
+    },
+
+    // Timeboxed farming targets, tracked against a live kill/loot log — no log on the web, same as
+    // spawns/buffs.
+    goals: {
+      view: async () => EMPTY_GOALS,
+      start: async () => EMPTY_GOALS,
+      abandon: async () => EMPTY_GOALS,
+      clearFinished: async () => EMPTY_GOALS,
+      saveTemplate: async () => EMPTY_GOALS,
+      deleteTemplate: async () => EMPTY_GOALS,
       onChanged: () => noop,
     },
 

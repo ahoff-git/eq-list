@@ -65,6 +65,25 @@ interface Manifest {
 
 let manifestPromise: Promise<Manifest | null> | null = null;
 
+/**
+ * Whether this machine has ever taken a snapshot at all, checked **once** and shared by every
+ * reader below — the same `manifest()` fetch, not a new request each time.
+ *
+ * `public/data/` is gitignored, exactly like the existing `/data/` travel-graph output (per-install,
+ * not shared): a fresh checkout or a different machine simply never ran `npm run web:snapshot`, and
+ * has none of it. Without this gate, every reader below discovered that the same way — by trying its
+ * own fetches and taking a 404 each: 256 of them for a bucket walk (`allPages`), one each for the
+ * index files, one for the item pack. A visitor with no snapshot got a wall of console errors on
+ * page load rather than a quiet, honest "nothing to search yet".
+ */
+async function hasSection(key: keyof Manifest["sections"]): Promise<boolean> {
+  const m = await manifest();
+  return !!m?.sections[key];
+}
+
+/** The same gate, for `lucy-snapshot.ts` — a separate module, reusing this one's memoized manifest. */
+export const manifestHasLucyCache = (): Promise<boolean> => hasSection("lucyCache");
+
 /** The snapshot's own manifest — what it holds and when it was taken. Fetched once, cached. */
 export function manifest(): Promise<Manifest | null> {
   manifestPromise ??= getJson<Manifest>("manifest.json");
@@ -102,9 +121,10 @@ function loadBucket(n: number): Promise<Map<string, StoredPage>> {
   let loading = bucketCache.get(n);
   if (loading) return loading;
   loading = (async () => {
+    const out = new Map<string, StoredPage>();
+    if (!(await hasSection("wikiCache"))) return out;
     const hex = n.toString(16).padStart(2, "0");
     const text = await getText(`wiki-cache/pages/${hex}.jsonl`);
-    const out = new Map<string, StoredPage>();
     if (!text) return out;
     // Last line for a title wins — an append-only bucket, same as the store that wrote it.
     for (const line of text.split("\n")) {
@@ -177,6 +197,7 @@ interface SavedHarvest {
 
 /** The item-catalogue roster this machine last walked — what `harvest.json` remembers. */
 export async function itemRoster(): Promise<string[]> {
+  if (!(await hasSection("wikiCache"))) return [];
   const saved = await getJson<SavedHarvest>("wiki-cache/harvest.json");
   return saved?.roster ?? [];
 }
@@ -193,7 +214,9 @@ const indexCache = new Map<string, Promise<string[]>>();
 function loadIndex(file: string): Promise<string[]> {
   let loading = indexCache.get(file);
   if (loading) return loading;
-  loading = getJson<CachedIndexFile>(`wiki-cache/${file}`).then((j) => j?.titles ?? []);
+  loading = hasSection("wikiCache").then((has) =>
+    has ? getJson<CachedIndexFile>(`wiki-cache/${file}`).then((j) => j?.titles ?? []) : [],
+  );
   indexCache.set(file, loading);
   return loading;
 }
@@ -235,10 +258,10 @@ export async function questsByZone(zone: string): Promise<SearchResult[]> {
   return out;
 }
 
-export async function outOfEraZones(): Promise<string[]> {
-  const j = await getJson<CachedIndexFile>("wiki-cache/out-of-era-zones.json");
-  return j?.titles ?? [];
-}
+// Same shape as the other mirrored indexes, and now shares `loadIndex`'s memoizing + `hasSection`
+// gate — this used to fetch fresh (and unconditionally) on every call, which is where 3 of the
+// duplicate `out-of-era-zones.json` 404s in a snapshot-less environment came from.
+export const outOfEraZones = (): Promise<string[]> => loadIndex("out-of-era-zones.json");
 
 // ─── The packed item catalogue (`electron/wiki/index.ts`'s `writePack`/`readPack`) ───────────────
 
@@ -250,6 +273,7 @@ let itemsPromise: Promise<string> | null = null;
  */
 export function cachedItemsJson(): Promise<string> {
   itemsPromise ??= (async () => {
+    if (!(await hasSection("wikiCache"))) return "[]";
     const text = await getText("wiki-cache/catalogue.json");
     if (!text) return "[]";
     // `${signature}\n${titles}\n${rows}` — see `writePack`. The signature is read but not enforced
@@ -284,6 +308,7 @@ export function cachedSpellsJson(): Promise<string> {
 // ─── Map sources + zone geometry (raw .txt, parsed by the same shared `parseEqMap` Electron uses) ─
 
 export async function mapSources(): Promise<MapSourceReport> {
+  if (!(await hasSection("maps"))) return { sources: [] };
   const [m, listing] = await Promise.all([manifest(), getJson<Record<string, string[]>>("maps/zone-files.json")]);
   const sources = m?.sections.maps?.sources ?? [];
   return { sources: sources.map((s) => ({ id: s.id, label: s.label, dir: s.dir, files: listing?.[s.id] ?? [] })) };
@@ -294,6 +319,7 @@ const CREDITS_SUFFIX = "_2";
 
 /** One zone's merged geometry + POIs + credits — the web counterpart to `createMapReader().load`. */
 export async function loadMap(sourceId: string, zoneFile: string): Promise<(EqMap & { credits: string[] }) | undefined> {
+  if (!(await hasSection("maps"))) return undefined;
   const layers: EqMap[] = [];
   for (const suffix of GEOMETRY_SUFFIXES) {
     const text = await getText(`maps/${sourceId}/${zoneFile}${suffix}.txt`);
@@ -315,7 +341,7 @@ interface StoredGraphs {
 let graphsPromise: Promise<StoredGraphs | null> | null = null;
 
 function loadGraphs(): Promise<StoredGraphs | null> {
-  graphsPromise ??= getJson<StoredGraphs>("travel/travel-graphs.json");
+  graphsPromise ??= hasSection("travel").then((has) => (has ? getJson<StoredGraphs>("travel/travel-graphs.json") : null));
   return graphsPromise;
 }
 

@@ -162,6 +162,16 @@ const api: EqlApi = {
     repeat: (key, on) => ipcRenderer.invoke(CH.spawnsRepeat, key, on),
     onChanged: (cb) => on(CH.spawnsChanged, cb),
   },
+  goals: {
+    view: () => ipcRenderer.invoke(CH.goalsView),
+    start: (target, qty, durationSec) => ipcRenderer.invoke(CH.goalsStart, target, qty, durationSec),
+    abandon: (id) => ipcRenderer.invoke(CH.goalsAbandon, id),
+    clearFinished: () => ipcRenderer.invoke(CH.goalsClearFinished),
+    saveTemplate: (target, qty, durationSec, label) =>
+      ipcRenderer.invoke(CH.goalsSaveTemplate, target, qty, durationSec, label),
+    deleteTemplate: (id) => ipcRenderer.invoke(CH.goalsDeleteTemplate, id),
+    onChanged: (cb) => on(CH.goalsChanged, cb),
+  },
   gameClock: {
     view: () => ipcRenderer.invoke(CH.gameClockView),
     add: (minute, message) => ipcRenderer.invoke(CH.gameClockAdd, minute, message),

@@ -1785,6 +1785,86 @@ export interface SpawnView {
   dismissed: string[];
 }
 
+// ─── Goals (timeboxed farming) ──────────────────────────────────────────────
+
+/** What a goal counts toward: an item's loot lines, or a mob's kills. */
+export type GoalTargetKind = "item" | "mob";
+
+/** One goal's want: a kind and a name, matched the same way that kind is matched everywhere else
+ *  in the app — an item against loot lines the way the shopping list does, a mob against kill
+ *  lines the way a spawn timer does. */
+export interface GoalTarget {
+  kind: GoalTargetKind;
+  name: string;
+}
+
+/**
+ * A timeboxed farming target — "20 of this in the next hour" — tracked by its own tracker
+ * (`electron/goal-tracker.ts`) rather than folded into the shopping list's lifetime counts or the
+ * spawn tracker's camp model, neither of which carries a clock (see ADR 0198).
+ */
+export interface Goal {
+  id: string;
+  target: GoalTarget;
+  qty: number;
+  /** Progress since `startedAt`, counted only from log lines the tracker has seen while running. */
+  obtained: number;
+  startedAt: string;
+  durationSec: number;
+  /** `startedAt` + `durationSec`, stored so remaining time is always derived from it, never the
+   *  reverse — the same rule a spawn timer's `dueAt` follows. */
+  dueAt: string;
+  /** Which fractions of `MILESTONE_FRACTIONS` (`goal-progress.ts`) have already been bannered. */
+  announcedMilestones: number[];
+  /** The one-time completed/expired banner has already fired — set at load for a goal that finished
+   *  while the app was shut, so it is shown but never spoken about after the fact. */
+  resultAnnounced: boolean;
+  /** A saved alert style, or the built-in "Goal" look when absent. */
+  styleId?: string;
+}
+
+/** Whether a goal is still running, was met, or ran out of time unmet — see `goalState`. */
+export type GoalState = "running" | "completed" | "expired";
+
+export interface RunningGoal extends Goal {
+  state: GoalState;
+}
+
+/**
+ * A goal's want, saved for reuse — "20 Phosphorous Powder in an hour" typed once and started again
+ * next session, rather than retyped. Nothing about progress or a clock: those only exist once a
+ * template is started, at which point it becomes an ordinary `Goal`.
+ */
+export interface GoalTemplate {
+  id: string;
+  target: GoalTarget;
+  qty: number;
+  durationSec: number;
+  /** A name for the row, when the target alone doesn't say enough ("Powder run"). */
+  label?: string;
+}
+
+/** Everything the Goals tab and its floater show — running goals and finished ones, until cleared,
+ *  plus the saved templates a new goal can be started from. */
+export interface GoalView {
+  now: string;
+  goals: RunningGoal[];
+  templates: GoalTemplate[];
+}
+
+/**
+ * A goal's alert, carried **raw** for the same reason a loot/record alert is (`CastAlertEvent.loot`,
+ * `.record`): the overlay words it from the payload rather than being handed a finished sentence.
+ */
+export interface GoalAlertPayload {
+  kind: "milestone" | "completed" | "expired";
+  target: GoalTarget;
+  qty: number;
+  obtained: number;
+  /** 25/50/75 for a milestone; absent for `completed`/`expired`. */
+  pct?: number;
+}
+
 /**
  * Which kills the map should pick out: some mobs', or a single kill by id. Transient — it lives
  * for as long as a cursor rests on a name, and is never stored.
@@ -2159,8 +2239,11 @@ export interface CastAlertEvent {
    * from a buff ending: a fade is a watch the player wrote firing on a line, and says whatever that
    * watch says, while this is the buff board reporting that a thing it was tracking is now missing —
    * and it carries the buff itself, so the banner can name a target the log's own sentence didn't.
+   *
+   * A **goal** is a timeboxed farming target crossing a milestone, being met, or running out of
+   * time unmet (ADR 0198) — carried raw like `loot`, so the overlay can word "15 of 20" itself.
    */
-  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff";
+  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff" | "goal";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
   /**
@@ -2191,6 +2274,11 @@ export interface CastAlertEvent {
    * part the game's own sentence usually leaves out.
    */
   buff?: BuffInstance;
+  /**
+   * For a `goal` alert, the milestone/completion/expiration it's about — carried raw for the same
+   * reason a drop is: the counts are already known, and the overlay words them itself.
+   */
+  goal?: GoalAlertPayload;
   /**
    * The look and sound this alert should use, already resolved from the defaults and the watch's
    * own overrides (`alertStyle`). Carried with the alert so the overlay renders what *this* watch
@@ -3041,6 +3129,26 @@ export interface EqlApi {
     /** Whether a custom timer starts itself again when it comes due. */
     repeat(key: string, on: boolean): Promise<SpawnView>;
     /** Fires when a timer starts, is due, or ages out, so the tab needn't poll main for the list. */
+    onChanged(cb: () => void): Unsubscribe;
+  };
+  /**
+   * Timeboxed farming targets (ADR 0198) — several may run at once. Every edit returns the whole
+   * view, the same convention `spawns` uses, so a panel never has to guess what its own click did.
+   */
+  goals: {
+    /** Running and recently-finished goals. `now` comes with it, for the same reason `SpawnView`'s does. */
+    view(): Promise<GoalView>;
+    /** Start a new goal — `null` back means a blank name or a non-positive qty/duration. */
+    start(target: GoalTarget, qty: number, durationSec: number): Promise<GoalView>;
+    /** Drop a running goal early. Nothing measured is lost, so this asks nothing back to confirm. */
+    abandon(id: string): Promise<GoalView>;
+    /** Clear every completed/expired goal off the board. */
+    clearFinished(): Promise<GoalView>;
+    /** Save a want for reuse, without starting it. */
+    saveTemplate(target: GoalTarget, qty: number, durationSec: number, label?: string): Promise<GoalView>;
+    /** Forget a saved template. Does not touch any goal already started from it. */
+    deleteTemplate(id: string): Promise<GoalView>;
+    /** Fires when a goal starts, progresses, finishes, or is cleared, or a template is saved/deleted. */
     onChanged(cb: () => void): Unsubscribe;
   };
   /**

@@ -402,6 +402,31 @@ unit-tested.
     **difficulty change** end to end, from the zone line: the gap across it teaches nothing, the
     countdown it invalidated is cleared, and leaving the zone and coming back is *not* mistaken for
     one.
+  - `src/shared/goal-progress.ts` → `electron/tests/goal-progress.test.ts` (the rules behind a
+    timeboxed goal, [ADR 0198](../decisions/0198-a-goal-is-a-timeboxed-target.md)): `goalState` checks
+    **completion before expiry**, so a goal met at the exact instant its clock runs out reads as met
+    rather than expired; `nextMilestone` offers the **lowest** unannounced fraction a ratio has
+    reached, asserted against a single big stack that crosses two thresholds at once (it must offer
+    each in turn, not skip to the higher one); and `parseGoalDuration` is pinned with its **own**
+    ceiling and its own units — refusing the days a spawn timer accepts, and clamping rather than
+    reading a duration typed for a different feature, which is the exact mistake ADR 0135 already
+    found once. Plus `goalWantsItem`/`goalWantsMob` matching the same way the shopping list and a kill
+    line already do, and never crossing kinds (an item goal can't match a mob, or the reverse).
+  - `electron/goal-tracker.ts` → `electron/tests/goal-tracker.test.ts` (the holder). A scratch userData
+    dir, an injected clock and sweep, same as the spawn tracker. What's pinned: a loot or kill line
+    credits **every** running goal it matches and no other; milestones announce **once each**, lowest
+    first, even from one line that crosses two; completion fires its banner exactly once and stops
+    crediting the goal afterward; a goal left unmet expires from the **sweep**, once, never twice; and
+    — the rule shared with `spawn-tracker.ts` — **a goal that ran out of time while the app was shut is
+    shown but never bannered**, asserted the same way: build a tracker, let time pass out of its sight,
+    reopen it. Also that `clearFinished` drops only finished goals, a saved template starts and deletes
+    independently of any goal already running from it, and both goals and templates survive a restart.
+  - `electron/tests/goal-flow.test.ts` — the goal **flow** end to end, from raw log text through the
+    real `splitLine` → `parseSplitLine` path into `noteLoot`/`noteKill`, the same shape as
+    `spawn-flow.test.ts` and for the same reason: the unit tests are blind to a mismatch between how
+    the parser spells a name and how the tracker matches one. Covers a farming session credited by
+    real loot lines, a kill quota credited by real kill lines (and completing), a session that expires
+    from the sweep, and a milestone banner driven by real loot text mid-session.
   - `src/shared/hunt.ts` → `electron/tests/hunt.test.ts` also covers **mob targets**
     ([ADR 0098](../decisions/0098-a-mob-is-a-thing-you-hunt.md)): that a mob entry is never an
     outstanding item, that a target lands in the zones you've killed it in and is still listed when

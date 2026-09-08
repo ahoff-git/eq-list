@@ -12,11 +12,16 @@
 import { fuzzyRank } from "@/shared/fuzzy";
 import { itemBaseName } from "@/shared/names";
 import { normalizeItemName } from "@/shared/grouping";
+import { manifestHasLucyCache } from "./snapshot";
 import type { CachedItem, LucyItem, LucySearchResult } from "@/shared/types";
 
 const DATA_BASE = "/data/lucy-cache";
 
 async function getJson<T>(path: string): Promise<T | null> {
+  // Gitignored per-machine, exactly like `wiki-cache/` — a fresh checkout has none of it, and
+  // fetching anyway just means a 404 per file (up to hundreds for `items/<id>.json`) instead of one
+  // shared, cached "no Lucy cache here" check.
+  if (!(await manifestHasLucyCache())) return null;
   try {
     const res = await fetch(`${DATA_BASE}/${path}`);
     if (!res.ok) return null;
