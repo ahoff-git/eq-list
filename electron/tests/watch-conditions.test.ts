@@ -11,6 +11,7 @@ import {
   conditionMatches,
   conditionsHold,
   describeCondition,
+  looksUnsafe,
   watchSpeaks,
   type WatchSubject,
 } from "../../src/shared/watch-conditions";
@@ -157,4 +158,53 @@ test("a condition describes itself in words, including when inverted", () => {
 test("activeConditions counts only the rows that do something", () => {
   assert.equal(activeConditions(undefined).length, 0);
   assert.equal(activeConditions([cond({ text: "a" }), cond({ text: " " })]).length, 1);
+});
+
+// ── regex (ADR 0203) ────────────────────────────────────────────────────────────
+
+test("regex matches a real pattern, case-insensitively, against the field it's pointed at", () => {
+  const subject: WatchSubject = { subject: "…", line: "You have taken 1234 points of damage.", zone: "…" };
+  assert.equal(conditionMatches(cond({ field: "line", op: "regex", text: "\\d{3,}" }), subject), true);
+  assert.equal(conditionMatches(cond({ field: "line", op: "regex", text: "^you have taken" }), subject), true);
+  assert.equal(conditionMatches(cond({ field: "line", op: "regex", text: "\\d{5,}" }), subject), false);
+});
+
+test("regex case-folds by the `i` flag, not by lower-casing the pattern", () => {
+  // Lower-casing the *text* would turn `\D` (not-a-digit) into `\d` (a digit) — the opposite class —
+  // and this line has no digits at all, so a corrupted pattern would flip the answer.
+  const subject: WatchSubject = { subject: "…", line: "No digits here at all." };
+  assert.equal(conditionMatches(cond({ field: "line", op: "regex", text: "\\D+" }), subject), true);
+});
+
+test("an unreadable pattern fails closed rather than throwing", () => {
+  const subject: WatchSubject = { subject: "…", line: "anything" };
+  assert.equal(conditionMatches(cond({ field: "line", op: "regex", text: "(unterminated" }), subject), false);
+});
+
+test("a dangerous pattern never runs, even against a line it would otherwise match", () => {
+  // `(a+)+$` against a run of a's with no trailing match is the textbook catastrophic-backtracking
+  // case — this asserts the refusal, not the timing, so the test itself can't hang.
+  const subject: WatchSubject = { subject: "…", line: "a".repeat(30) };
+  assert.equal(looksUnsafe("(a+)+$"), true);
+  assert.equal(conditionMatches(cond({ field: "line", op: "regex", text: "(a+)+$" }), subject), false);
+});
+
+test("looksUnsafe catches nested repetition and its common shapes", () => {
+  for (const pattern of ["(a+)+", "(a*)+", "(a+)*", "(.*)+", "(\\d+)+", "((a+)b)+"]) {
+    assert.equal(looksUnsafe(pattern), true, pattern);
+  }
+});
+
+test("looksUnsafe leaves ordinary patterns alone", () => {
+  for (const pattern of ["\\d+", "a.*b", "(foo|bar)", "(foo|bar)+", "^You begin casting", "\\d{3,5}", "(a+)?"]) {
+    assert.equal(looksUnsafe(pattern), false, pattern);
+  }
+});
+
+test("looksUnsafe isn't fooled by an escaped paren or a literal quantifier inside a character class", () => {
+  // `\(a+\)+` is a literal "(a+)+" string to match, not a group at all.
+  assert.equal(looksUnsafe("\\(a+\\)+"), false);
+  // `+`/`*` inside `[...]` are ordinary characters, not quantifiers.
+  assert.equal(looksUnsafe("([+*]+)+"), true); // still dangerous — the *outer* shape is what matters
+  assert.equal(looksUnsafe("[+*()]+"), false); // no group at all here
 });

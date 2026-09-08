@@ -27,7 +27,14 @@
 import { lineSubject, matchCast, matchFade, matchLine } from "./cast-alerts";
 import { parseSplitLine } from "./parse-line";
 import { alertCue, parseDelay, usableCancels } from "./alert-schedule";
-import { activeConditions, conditionMatches, describeCondition, wantsCast, watchSpeaks } from "./watch-conditions";
+import {
+  activeConditions,
+  conditionMatches,
+  describeCondition,
+  looksUnsafe,
+  wantsCast,
+  watchSpeaks,
+} from "./watch-conditions";
 import { lineShape } from "./unmatched-lines";
 import type { CastAlertSettings, CastWatch, LogLine, WatchCondition } from "./types";
 
@@ -86,6 +93,27 @@ export function checkWatch(watch: CastWatch, others: CastWatch[] = []): WatchIss
   for (const c of conditions) {
     if (readable.has(c.field) || c.exclude) continue;
     warn(`“${describeCondition(c)}” can't hold here: ${WHY_UNAVAILABLE[c.field]}`);
+  }
+
+  // ── a regex that can't run at all ─────────────────────────────────────────────
+  // Two different failures, both errors: one is *this pattern is wrong*, the other is *this pattern
+  // is dangerous to whoever's watcher runs it* — `matchRegex` refuses the second unconditionally, so
+  // saying so here is what stops the row looking broken with no explanation.
+  for (const c of [...(watch.conditions ?? []), ...(watch.cancelWhen ?? [])]) {
+    if (c.op !== "regex" || !c.text.trim()) continue;
+    if (looksUnsafe(c.text)) {
+      err(
+        `“${c.text.trim()}” can hang the log watcher for everyone — it has a repeated group inside ` +
+          `another repeated group, which a regex engine can take an extremely long time to give up on. ` +
+          `Rewrite it without the nested repetition.`,
+      );
+      continue;
+    }
+    try {
+      new RegExp(c.text);
+    } catch (e) {
+      err(`“${c.text.trim()}” isn't a pattern this can read: ${e instanceof Error ? e.message : String(e)}.`);
+    }
   }
 
   // ── timing ───────────────────────────────────────────────────────────────────

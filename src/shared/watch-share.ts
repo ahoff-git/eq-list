@@ -21,6 +21,7 @@
  * recipient hasn't got, and a full style would impose the sender's colours and their idea of where
  * the banner belongs. What travels is the rule — what to match, and when to say it.
  */
+import { looksUnsafe } from "./watch-conditions";
 import type { CastWatch, WatchCondition, WatchField, WatchOp } from "./types";
 
 /** Version-stamped, so a later format can be told apart rather than half-read. */
@@ -32,7 +33,7 @@ const MAX_CONDITIONS = 20;
 const MAX_TEXT = 200;
 
 const FIELDS: WatchField[] = ["subject", "caster", "target", "line", "zone"];
-const OPS: WatchOp[] = ["contains", "exact", "starts", "ends"];
+const OPS: WatchOp[] = ["contains", "exact", "starts", "ends", "regex"];
 const RETRIGGERS: NonNullable<CastWatch["retrigger"]>[] = ["restart", "queue", "ignore"];
 const DEATHS: NonNullable<CastWatch["cancelOnDeath"]>[] = ["auto", "always", "never"];
 
@@ -140,7 +141,15 @@ function readWatch(raw: unknown, newId: () => string): CastWatch | null {
   return watch;
 }
 
-/** Conditions, dropping any row that isn't one rather than failing the whole rule over it. */
+/**
+ * Conditions, dropping any row that isn't one rather than failing the whole rule over it.
+ *
+ * A regex row is the one that needs a fourth question asked of it: not just *is this the right
+ * shape*, but *is this safe to ever run* — this string arrived from a stranger via the clipboard,
+ * the exact untrusted path the module header warns about, so `looksUnsafe` is asked here rather than
+ * trusted to the editor the sender may never have seen. Dropped silently, the same as any other
+ * unreadable row: a partially-imported rule already says so at the watch level.
+ */
 function readConditions(raw: unknown): WatchCondition[] {
   if (!Array.isArray(raw)) return [];
   const out: WatchCondition[] = [];
@@ -148,11 +157,23 @@ function readConditions(raw: unknown): WatchCondition[] {
     if (!isRecord(item)) continue;
     const text = str(item.text);
     if (!text || !oneOf(item.field, FIELDS) || !oneOf(item.op, OPS)) continue;
+    if (item.op === "regex" && !safeToImport(text)) continue;
     const condition: WatchCondition = { field: item.field, op: item.op, text };
     if (item.exclude === true) condition.exclude = true;
     out.push(condition);
   }
   return out;
+}
+
+/** Would this compile, and does it avoid the nested-repetition shape `looksUnsafe` refuses to run? */
+function safeToImport(pattern: string): boolean {
+  if (looksUnsafe(pattern)) return false;
+  try {
+    new RegExp(pattern);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);

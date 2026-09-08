@@ -237,8 +237,9 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
         <p className="muted small" style={{ marginTop: 12 }}>No known loot listed — open it on eqlwiki to check.</p>
       )}
       {/* The wiki's claims are above; this is what killing the thing actually taught us, and it's the
-          one place on the page that can open a map (see `MobKills`). */}
-      {page.kind === "mob" && <MobKills mob={page.title} />}
+          one place on the page that can open a map (see `MobKills`). `components` travels too, so a
+          "Copy for wiki" button can say what the page doesn't already know without a second fetch. */}
+      {page.kind === "mob" && <MobKills mob={page.title} components={page.components} />}
       {page.kind === "zone" && (
         <p className="muted small" style={{ marginTop: 12 }}>Zone page — open it on eqlwiki to browse its contents.</p>
       )}

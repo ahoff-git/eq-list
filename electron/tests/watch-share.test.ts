@@ -112,10 +112,25 @@ test("values of the wrong type are dropped, not coerced into something surprisin
 
 test("a condition that isn't one is dropped without failing the rule around it", () => {
   const [back] = decodeWatches(
-    '{"spell":"Fear","conditions":[{"field":"nope","op":"contains","text":"x"},{"field":"line","op":"regex","text":"x"},{"field":"line","op":"contains","text":""},{"field":"line","op":"contains","text":"real"}]}',
+    '{"spell":"Fear","conditions":[{"field":"nope","op":"contains","text":"x"},{"field":"line","op":"fuzzy","text":"x"},{"field":"line","op":"contains","text":""},{"field":"line","op":"contains","text":"real"}]}',
     newId,
   ).watches;
   assert.deepEqual(back.conditions, [{ field: "line", op: "contains", text: "real" }]);
+});
+
+test("a safe regex condition survives import; a dangerous or broken one is dropped, silently, like any other malformed row (ADR 0203)", () => {
+  const [back] = decodeWatches(
+    JSON.stringify({
+      spell: "Fear",
+      conditions: [
+        { field: "line", op: "regex", text: "\\d{3,}" },
+        { field: "line", op: "regex", text: "(a+)+" }, // catastrophic backtracking
+        { field: "line", op: "regex", text: "(unterminated" }, // won't even compile
+      ],
+    }),
+    newId,
+  ).watches;
+  assert.deepEqual(back.conditions, [{ field: "line", op: "regex", text: "\\d{3,}" }]);
 });
 
 test("a hostile paste is capped rather than accepted whole", () => {

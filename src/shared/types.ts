@@ -2022,8 +2022,13 @@ export interface HpEstimate {
  */
 export type WatchField = "subject" | "caster" | "target" | "line" | "zone";
 
-/** How a condition compares its text. `contains` is the rule every watch had before conditions. */
-export type WatchOp = "contains" | "exact" | "starts" | "ends";
+/**
+ * How a condition compares its text. `contains` is the rule every watch had before conditions.
+ * `regex` is a real pattern — see `looksUnsafe`/`matchRegex` in
+ * [watch-conditions.ts](./watch-conditions.ts) for the shapes it refuses to run at all
+ * ([ADR 0203](../../specs/decisions/0203-a-regex-condition-refuses-its-own-danger.md)).
+ */
+export type WatchOp = "contains" | "exact" | "starts" | "ends" | "regex";
 
 /**
  * One extra thing that must (or must not) be true for a watch to fire.

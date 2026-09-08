@@ -363,6 +363,14 @@ test("a launch opens a handful of files, not the whole cache", async () => {
    * real-time scans. The pack carries the titles, so it is one read.
    */
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-opens-"));
+  // The background index refresh (title/zone/out-of-era/faction) hits the real wiki over the
+  // network. Whether those writes land on disk before this test's own counting window is a race
+  // against real-world latency — never mocked elsewhere, and harmless everywhere else, but it
+  // makes the migration scan below (which reads every `.json` file already in the cache dir) see a
+  // different set of files each time. Cutting the network off is what makes the count a property
+  // of the code rather than of however fast the wiki answered this run.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (() => Promise.reject(new Error("network disabled for this test"))) as typeof fetch;
   try {
     const first = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     first.items.accept([page("A", daysAgo(1), 1), page("B", daysAgo(1), 2), page("C", daysAgo(1), 3)]);
@@ -388,6 +396,7 @@ test("a launch opens a handful of files, not the whole cache", async () => {
     // Emphatically not one per page.
     assert.ok(opens < 11, `a launch opened ${opens} files`);
   } finally {
+    globalThis.fetch = realFetch;
     await cleanup(dir);
   }
 });

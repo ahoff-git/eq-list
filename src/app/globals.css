@@ -3262,6 +3262,11 @@ kbd {
 /* `and` / `not` — the same width either way, so flipping one doesn't shuffle the row. */
 .watch-cond .cond-not { width: 38px; text-align: center; }
 .watch-cond .cond-not.on { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+/* A regex is punctuation-dense — parens and brackets are what the pattern *is* — so it reads in the
+   same monospace face as a countdown clock rather than the proportional font every other condition's
+   plain words use. `.mono` lands on the `<input>` itself (`SuggestField`'s own `className`), inside
+   the `.cond-text` wrapper span it renders. */
+.watch-cond .cond-text .field.mono { font-family: var(--mono); }
 
 /* The color swatch beside a map-label toggle — the color those labels actually are on this map. */
 .poi-dot {

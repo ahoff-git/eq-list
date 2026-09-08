@@ -97,11 +97,13 @@ export default function WatchConditionRows({
               vocabulary doesn't hold, so it offers nothing rather than a term out of context. */}
           <SuggestField
             slot="cond-text"
-            className="field"
+            className={`field ${c.op === "regex" ? "mono" : ""}`}
             value={c.text}
             vocabulary={vocabulary}
-            kind={VOCABULARY_FOR[c.field]}
-            placeholder="words to look for"
+            // A pattern isn't a term from the log's own vocabulary, and suggesting one would offer a
+            // spell name where a regex belongs.
+            kind={c.op === "regex" ? undefined : VOCABULARY_FOR[c.field]}
+            placeholder={c.op === "regex" ? "regex, e.g. \\d+ HP" : "words to look for"}
             onChange={(text) => patch(i, { text })}
           />
           <button className="btn ghost sm" title="Remove this condition" onClick={() => remove(i)}>

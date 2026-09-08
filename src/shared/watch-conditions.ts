@@ -74,7 +74,94 @@ function compare(haystack: string, op: WatchOp, needle: string): boolean {
       return haystack.startsWith(needle);
     case "ends":
       return haystack.endsWith(needle);
+    case "regex":
+      // Never reached: `conditionMatches` routes regex to `matchRegex` before the text is folded to
+      // lower case, because folding a *pattern* corrupts it (`\D` and `\d` are opposites). Kept as an
+      // exhaustive case rather than a `default` so a sixth `WatchOp` fails to compile here too.
+      return false;
   }
+}
+
+/**
+ * Does a regex condition hold, without ever running a pattern shaped to hang the thread that's
+ * asking.
+ *
+ * Node has no regex execution timeout — once a catastrophic-backtracking pattern starts, nothing on
+ * this thread can interrupt it, and the log watcher polls on this exact thread twice a second
+ * ([ADR 0203](../../specs/decisions/0203-a-regex-condition-refuses-its-own-danger.md)). So the check
+ * has to happen *before* the pattern is ever compiled, not as a UI hint someone could ignore:
+ * `looksUnsafe` is asked first, unconditionally, for every caller — a shared rule, an imported one, a
+ * hand-edited settings file, not only one that passed through the editor.
+ *
+ * Case-insensitive by default, like every other operator here — the `i` flag, not a lower-cased
+ * pattern, because lower-casing pattern *text* mangles escapes (`\D` becomes `\d`, the opposite
+ * class). An invalid pattern fails closed: it simply never matches, the same answer a blank
+ * condition already gives.
+ */
+function matchRegex(haystack: string, pattern: string): boolean {
+  if (looksUnsafe(pattern)) return false;
+  try {
+    return new RegExp(pattern, "i").test(haystack);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Does this pattern have the shape that causes catastrophic backtracking: a group that can repeat
+ * itself as a whole *and* can also repeat something inside it, so the engine has exponentially many
+ * ways to fail the same match?
+ *
+ * This is a structural scan, not a full static analysis (that needs an AST and a star-height
+ * calculation, the way `safe-regex`-style tools do it) — it catches the one shape behind the large
+ * majority of real ReDoS reports (`(x+)+`, `(x*)+`, `(x+)*`, `(.*)+` and their kin), and it is
+ * deliberately conservative: a pattern that merely *looks* like this shape is refused even where it
+ * would actually be safe, because the cost of a false refusal is a rejected pattern and the cost of a
+ * false pass is a hung log watcher. It does **not** catch every dangerous pattern — alternation
+ * between overlapping branches (`(a|a)*`) can also blow up without any nested quantifier, and this
+ * scan doesn't reason about branch overlap at all. That gap is accepted rather than solved: closing
+ * it needs the same AST-level analysis this function deliberately avoids, and the risk it leaves open
+ * is bounded by EQ's own log lines being short (see the ADR for the full reasoning).
+ */
+export function looksUnsafe(pattern: string): boolean {
+  // One entry per currently-open group: has a quantifier appeared directly inside its body?
+  const groups: boolean[] = [];
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === "\\") {
+      i++; // the escaped character is never special, whatever it is
+      continue;
+    }
+    if (inClass) {
+      if (ch === "]") inClass = false;
+      continue;
+    }
+    if (ch === "[") {
+      inClass = true;
+      continue;
+    }
+    if (ch === "(") {
+      groups.push(false);
+      continue;
+    }
+    if (ch === ")") {
+      const hadQuantifier = groups.pop() ?? false;
+      const repeats = isQuantifierStart(pattern[i + 1]);
+      if (hadQuantifier && repeats) return true;
+      // A repeat (or a repeat found inside a nested group) still counts against the *enclosing*
+      // group, the same way `(a(b+)+)+` is dangerous two levels up, not just one.
+      if (groups.length && (hadQuantifier || repeats)) groups[groups.length - 1] = true;
+      continue;
+    }
+    if (isQuantifierStart(ch) && groups.length) groups[groups.length - 1] = true;
+  }
+  return false;
+}
+
+/** `+`, `*` and `{` all mean "this can repeat more than once" for this scan's purposes; `?` doesn't. */
+function isQuantifierStart(ch: string | undefined): boolean {
+  return ch === "+" || ch === "*" || ch === "{";
 }
 
 /**
@@ -86,9 +173,11 @@ function compare(haystack: string, op: WatchOp, needle: string): boolean {
  * end the cue.
  */
 export function conditionMatches(condition: WatchCondition, subject: WatchSubject): boolean {
-  const needle = condition.text.trim().toLowerCase();
-  if (!needle) return false;
-  return compare(fieldText(subject, condition.field).toLowerCase(), condition.op, needle);
+  const text = condition.text.trim();
+  if (!text) return false;
+  const haystack = fieldText(subject, condition.field);
+  if (condition.op === "regex") return matchRegex(haystack, text);
+  return compare(haystack.toLowerCase(), condition.op, text.toLowerCase());
 }
 
 /**
@@ -168,6 +257,7 @@ const OP_WORDS: Record<WatchOp, string> = {
   exact: "is",
   starts: "starts",
   ends: "ends",
+  regex: "matches",
 };
 
 /**
@@ -186,12 +276,14 @@ export const WATCH_OPS: { value: WatchOp; label: string }[] = [
   { value: "exact", label: "is exactly" },
   { value: "starts", label: "starts with" },
   { value: "ends", label: "ends with" },
+  { value: "regex", label: "matches (regex)" },
 ];
 const EXCLUDE_WORDS: Record<WatchOp, string> = {
   contains: "hasn't",
   exact: "isn't",
   starts: "doesn't start",
   ends: "doesn't end",
+  regex: "doesn't match",
 };
 
 /** The conditions that actually do something — what the UI counts, so a blank row isn't advertised. */

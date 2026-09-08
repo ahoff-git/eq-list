@@ -82,6 +82,31 @@ test("two watches aimed at exactly the same thing: only the first can fire", () 
   assert.deepEqual(checkWatch(a, [a]), []); // itself doesn't count
 });
 
+// ── a regex that can't run at all (ADR 0203) ────────────────────────────────────
+
+test("a dangerous regex is an error naming the shape, not a silent refusal", () => {
+  const dangerous = watch({ conditions: [{ field: "line", op: "regex", text: "(a+)+" }] });
+  assert.equal(checkWatch(dangerous)[0].level, "error");
+  assert.match(messages(checkWatch(dangerous)), /can hang the log watcher/);
+  // A safe pattern raises nothing.
+  assert.deepEqual(checkWatch(watch({ conditions: [{ field: "line", op: "regex", text: "\\d{3,}" }] })), []);
+});
+
+test("a regex that can't even compile is an error naming the syntax problem", () => {
+  const broken = watch({ conditions: [{ field: "line", op: "regex", text: "(unterminated" }] });
+  assert.equal(checkWatch(broken)[0].level, "error");
+  assert.match(messages(checkWatch(broken)), /isn't a pattern this can read/);
+});
+
+test("a dangerous cancel-when regex is caught too, not only a firing condition", () => {
+  const w = watch({ delay: "10", cancelWhen: [{ field: "line", op: "regex", text: "(a*)*" }] });
+  assert.match(messages(checkWatch(w)), /can hang the log watcher/);
+});
+
+test("a blank regex condition raises nothing — there's no pattern yet to judge", () => {
+  assert.deepEqual(checkWatch(watch({ conditions: [{ field: "line", op: "regex", text: "  " }] })), []);
+});
+
 // ── timing ─────────────────────────────────────────────────────────────────────
 
 test("the timing complaints are the ones the queue would silently apply", () => {

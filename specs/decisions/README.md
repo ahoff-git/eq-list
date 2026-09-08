@@ -236,6 +236,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0200: Your own damage shield is yours, read the way "your" already is](./0200-your-own-damage-shield-is-yours.md)
 - [0201: A detrimental spell's landing is indexed too](./0201-a-detrimental-spells-landing-is-indexed-too.md)
 - [0202: Two mobs sharing a name get two debuff rows, and their duration is learned](./0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)
+- [0203: A regex condition refuses its own danger](./0203-a-regex-condition-refuses-its-own-danger.md)
+- [0204: A contribution back to the wiki is yours alone](./0204-a-contribution-back-to-the-wiki-is-yours-alone.md)
 
 ## Open Questions
 

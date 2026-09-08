@@ -222,7 +222,7 @@ The tables above go repo → file. This one goes the other way, for picking up a
 |---|---|
 | OCR corrected before it is searched *(shipped — [ADR 0081](./decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md))* | `OcrVariants()`, `EqWikiOverlay/Wiki/EqlWikiProvider.cs` — **eql-tooltip** |
 | An alert can be scheduled, not just raised | `TrackedRule.cs` (`AlertDelaySeconds`, `IsCombatCue`) — **EQBuddy** · `src-tauri/src/engine.rs` — **eql-alerts** |
-| A watch can hold a regex, and can't hang the watcher | `TrackedRule.cs` (`RegexMatchTimeoutException`) — **EQBuddy** |
+| A watch can hold a regex, and can't hang the watcher *(shipped — [ADR 0203](./decisions/0203-a-regex-condition-refuses-its-own-danger.md), a static refusal of the nested-quantifier shape rather than a runtime timeout)* | `TrackedRule.cs` (`RegexMatchTimeoutException`) — **EQBuddy** |
 | A named's respawn is learned from your own kills | `SpawnTimers.cs` · `SpawnCatalog.cs` · `SpawnOverrides.cs` — **EQBuddy** · `eql_atlas_baseline.json.gz` — **eql-log-reader** |
 | An alert can be spoken | `src-tauri/src/tts.rs`, `src/speech.ts` — **eql-alerts** · watch-rule speech in `README.md` — **EQBuddy** |
 | The game's own data files | `SPELL_FORMAT.md` — **eql-info** · `eql_spell_db.py`, `eql_verified_spells.py` — **eql-log-reader** · `FadeMessageCatalog.cs` — **EQBuddy** |
@@ -242,6 +242,7 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | Rank-aware costs *(shipped — [ADR 0080](./decisions/0080-the-game-s-own-spell-file.md))* | `src-tauri/src/engine.rs` — **eql-alerts** · `SPELL_FORMAT.md` — **eql-info** |
 | A fight records why it ended *(shipped — [ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md))* | `internal/combat/combat.go` (`EndReason`, `ForgetEnemies`) — **eqdps** |
 | Pet proof and the bystander rule *(shipped — [ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md); three further proofs are open in [todo.md](./todo.md))* | `src-tauri/src/fight/mod.rs` (~735, ~975, `looks_like_npc`) · `src-tauri/src/parse/misc.rs` — **eql-meter** |
+| "Copy for wiki" — your own drops the page doesn't know about, as text to paste *(shipped — [ADR 0204](./decisions/0204-a-contribution-back-to-the-wiki-is-yours-alone.md); deliberately stops short of the wiki's own rarity word and numbered `.ddb` box, which this app has no way to assign correctly)* | `WikiContribution.cs` · `DropsReport.cs` — **EQBuddy** |
 
 One item on this page has **no** prior art to read, and that's worth knowing before starting it: the
 *command channel* in [ideas.md](./ideas.md) exists only in eql-log-reader's `eql_atlas.py`.

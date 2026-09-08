@@ -1,10 +1,13 @@
 "use client";
-import { useMobZones } from "@/lib/hooks";
+import { useMobZones, useSettings } from "@/lib/hooks";
+import { copyText } from "@/lib/clipboard";
 import { ringMob, ringOnHover } from "@/lib/showOnMap";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
 import { count } from "@/shared/format";
 import { describeCoins, formatCoins } from "@/shared/money";
 import type { MobKnowledge } from "@/shared/mob-stats";
+import type { WikiComponent } from "@/shared/types";
+import { buildWikiContribution } from "@/shared/wiki-contribution";
 import ItemLink from "./ItemLink";
 import { RoamLink, ZoneLink } from "./MapLink";
 
@@ -24,9 +27,10 @@ import { RoamLink, ZoneLink } from "./MapLink";
  * kills on an already-open map (the Hunt tab's gesture); it never opens one, since a window that
  * appears because the cursor crossed a name is one nobody asked for.
  */
-export default function MobKills({ mob }: { mob: string }) {
+export default function MobKills({ mob, components }: { mob: string; components: WikiComponent[] }) {
   const zones = useMobZones(mob);
   const kills = zones.reduce((n, z) => n + z.kills, 0);
+  const character = (useSettings()?.playerName || "").trim() || "you";
 
   if (zones.length === 0) {
     return (
@@ -37,10 +41,24 @@ export default function MobKills({ mob }: { mob: string }) {
     );
   }
 
+  const copyForWiki = () => {
+    const wikiDrops = Object.fromEntries(components.map((c) => [c.name, c.dropRate]));
+    const text = buildWikiContribution({ mob, character, at: new Date().toISOString(), wikiDrops, zones });
+    void copyText(text, "the wiki contribution");
+  };
+
   return (
     <>
       <h4 className="muted small" style={{ marginTop: 12 }}>
         Your kills · {count(kills, "kill")} in {count(zones.length, "zone")}
+        <button
+          className="btn ghost sm"
+          style={{ marginLeft: 8 }}
+          title="Copy your own drops the page doesn't list yet, as text you can paste into an eqlwiki edit"
+          onClick={copyForWiki}
+        >
+          Copy for wiki
+        </button>
       </h4>
       <div className="mob-kills" onMouseLeave={() => ringMob(null)}>
         {zones.map((z) => (

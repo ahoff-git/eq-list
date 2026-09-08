@@ -132,6 +132,16 @@ list, hunt, search, damage, session, peers, settings.
   source on the page names that mob and **unseen in N** where the page names one our kills keep
   failing to confirm — plus what it has vendored for. It renders nothing when nothing is known, and
   only a page the wiki *says* drops gets a "you haven't seen this yet" note.
+
+  **`MobKills` can also say it back.** A **Copy for wiki** button beside its heading turns the same
+  reconciliation `drop-truth.ts` already computes into text worth pasting into an eqlwiki edit
+  (`buildWikiContribution`, `src/shared/wiki-contribution.ts`) — a suggested `{{:Item Name}}` line
+  (the real transclusion syntax, checked against a live page's raw wikitext) for anything undocumented,
+  a flag for anything the page claims that a real sample of your own kills hasn't produced, plain
+  English otherwise. It deliberately stops short of the wiki's own rarity word and numbered `.ddb`
+  citation box — this app has no way to assign either correctly, and a fabricated one would be a
+  citation wearing a real template's clothes. Only `myKills`/`MobDrop.myCount` ever reach the text, so
+  a contribution never borrows a peer's pooled figure ([ADR 0204](../decisions/0204-a-contribution-back-to-the-wiki-is-yours-alone.md)).
 - **An add says what it did** (`src/lib/addToList.ts`, `src/lib/toast.ts`, `components/Toasts.tsx`).
   Every **+ Add** in the app — a search result, a result from your own log, a page's buttons, a
   component row — goes through one module that reads the list before and after itself and raises a
@@ -942,14 +952,25 @@ list, hunt, search, damage, session, peers, settings.
     [ADR 0082](../decisions/0082-an-alert-can-be-scheduled.md).
 
     Past its trigger a watch carries **conditions** — a field (`subject` / `caster` / `target` /
-    `line` / `zone`), an operator (`contains` / `exact` / `starts` / `ends`), some text, and
-    optionally *not*. That is what says "Charm, but not from my own warder", "only in Lower Guk", or —
-    with **any** instead of **all** — "either of these two wordings" in one watch. The rules are
-    `watch-conditions.ts`, pure: an **exclusion is always `and not`** whatever the fold says, a
-    **blank row says nothing**, and a **blank trigger steps aside** so a watch can be nothing but
-    conditions, while a watch that says nothing at all still matches nothing. Everything about *the
-    event* — your own casts, named casters, the live window — stays in `cast-alerts.ts`, which builds
-    the `WatchSubject` the conditions read; the zone is handed in, since no line says it.
+    `line` / `zone`), an operator (`contains` / `exact` / `starts` / `ends` / **`regex`**), some text,
+    and optionally *not*. That is what says "Charm, but not from my own warder", "only in Lower Guk",
+    "a number over 3 digits in the sentence" (`regex`), or — with **any** instead of **all** — "either
+    of these two wordings" in one watch. The rules are `watch-conditions.ts`, pure: an **exclusion is
+    always `and not`** whatever the fold says, a **blank row says nothing**, and a **blank trigger
+    steps aside** so a watch can be nothing but conditions, while a watch that says nothing at all
+    still matches nothing. Everything about *the event* — your own casts, named casters, the live
+    window — stays in `cast-alerts.ts`, which builds the `WatchSubject` the conditions read; the zone
+    is handed in, since no line says it.
+
+    A **regex condition never runs a pattern shaped to hang the watcher.** Node has no regex
+    execution timeout, and the log watcher polls on its own thread twice a second, so `looksUnsafe`
+    (a structural scan for a group that repeats both as a whole and inside itself — the shape behind
+    most real ReDoS reports) is asked **before** a pattern is ever compiled, for every caller alike: the
+    editor, an imported shared rule, a hand-edited settings file. `checkWatch` turns the same answer
+    into a row-level error naming the shape; `watch-share.ts`'s import path asks it too and drops an
+    unsafe pattern silently, the same treatment any other malformed imported field gets — that one
+    matters most, since it's the one path built to accept a stranger's paste
+    ([ADR 0203](../decisions/0203-a-regex-condition-refuses-its-own-danger.md)).
 
     A waiting cue can also be **called off**: `cancelWhen` matches whole log lines as they arrive
     ("has been slain" ends a re-mez reminder), `retrigger` says whether a second match restarts,

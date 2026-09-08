@@ -300,25 +300,6 @@ the kind of thing worth borrowing rather than rediscovering a year later.
 
 Every repo named below, and the file to open in it, is in [neighbours.md](./neighbours.md).
 
-- **A watch can hold a regex, and can't hang the watcher.** *Smaller than it was:*
-  [ADR 0084](./decisions/0084-a-watch-is-a-rule-not-a-substring.md) took the cases this item led with
-  — "either spelling of this raid call" is now `match: any` with a second condition, and an anchored
-  match is `starts` / `ends` — without a pattern language or its hazards. What's left is genuine
-  patterns: a number in the sentence, a name shape, anything a fixed string can't describe. Worth
-  asking first whether that's a real request or a completionist one, because the cost below hasn't
-  moved at all.
-
-  A per-watch `.*` toggle makes the text a real `RegExp` (case-insensitive, as the plain mode already
-  is). The care is entirely in the failure modes, and both are ours to own now that
-  [ADR 0050](./decisions/0050-a-watch-can-read-a-whole-log-line.md) points watches at *every* line: an
-  **invalid** pattern must match nothing and say why where the user typed it, rather than throwing
-  inside the poll; and a **runaway** pattern must be cut off — EQBuddy caps a match at 100 ms and catches
-  `RegexMatchTimeoutException` in `src/EQBuddy.Core/TrackedRule.cs`, a luxury .NET gives it and Node
-  doesn't — because the watcher polls twice a second on the main process's thread and a backtrack stalls
-  log tailing outright. Node has no regex timeout, so the cut-off needs deciding rather than assuming:
-  the cheap version is to reject patterns with the nested-quantifier shapes that backtrack, the honest
-  version is to match somewhere that can be abandoned.
-
 - **An alert can be spoken.** [alertSounds.ts](../src/lib/alertSounds.ts) synthesizes beeps, and a beep
   can only say *something* happened — mid-fight, distinguishing four of them means looking away from the
   game, which is the one thing an overlay exists to prevent. `speechSynthesis` is already in the renderer
