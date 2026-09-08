@@ -353,6 +353,7 @@ function createWebApi(): EqlApi {
       forget: async () => EMPTY_BUFFS,
       dismiss: async () => EMPTY_BUFFS,
       dismissAll: async () => EMPTY_BUFFS,
+      clearInstance: async () => EMPTY_BUFFS,
       onChanged: () => noop,
     },
 

@@ -4,6 +4,7 @@ import AlertPlacement from "../components/AlertPlacement";
 import SpawnOverlay from "../components/SpawnOverlay";
 import GoalsOverlay from "../components/GoalsOverlay";
 import BuffOverlay from "../components/BuffOverlay";
+import DebuffOverlay from "../components/DebuffOverlay";
 import GameClockOverlay from "../components/GameClockOverlay";
 import DamageMeterOverlay from "../components/DamageMeterOverlay";
 import { useSolidIslands } from "@/lib/clickThrough";
@@ -18,12 +19,12 @@ import { useSolidIslands } from "@/lib/clickThrough";
  * the window is glass by default and turns solid only while the cursor is on a control that asked
  * to be one (a reminder's ✕), so the few things drawn here that *do* something still do it.
  *
- * `SpawnOverlay`, `GoalsOverlay`, `BuffOverlay`, `GameClockOverlay` and `DamageMeterOverlay` share the
- * window rather than opening more, because everything that makes this one right for a banner —
- * frameless, transparent, always-on-top, click-through — is what a pinned countdown, a standing "you
- * are missing this", a placeable clock and a live damage meter all want too, and each extra window
- * would be another lot of state to place and remember. All of them render nothing until they have
- * something to say.
+ * `SpawnOverlay`, `GoalsOverlay`, `BuffOverlay`, `DebuffOverlay`, `GameClockOverlay` and
+ * `DamageMeterOverlay` share the window rather than opening more, because everything that makes this
+ * one right for a banner — frameless, transparent, always-on-top, click-through — is what a pinned
+ * countdown, a standing "you are missing this", a placeable clock and a live damage meter all want
+ * too, and each extra window would be another lot of state to place and remember. All of them render
+ * nothing until they have something to say.
  */
 export default function AlertOverlay() {
   useSolidIslands();
@@ -33,6 +34,7 @@ export default function AlertOverlay() {
       <SpawnOverlay />
       <GoalsOverlay />
       <BuffOverlay />
+      <DebuffOverlay />
       <GameClockOverlay />
       <DamageMeterOverlay />
       <AlertPlacement />

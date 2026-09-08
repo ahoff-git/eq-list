@@ -35,7 +35,10 @@ export default function BuffOverlay() {
   // `onScreen` is a *spell's* choice, so the list is filtered by the catalogue rather than by the
   // instance — and a spell whose row has been unchecked is already off the board entirely.
   const wanted = new Map(view.known.map((k) => [k.key, k]));
-  const showing = view.lapsed.filter((b) => wanted.get(b.key)?.onScreen !== false);
+  // `onEnemy` rows belong to `DebuffOverlay` instead (ADR 0202) — up is exactly as worth a glance as
+  // lapsed for crowd control, which is the opposite of the "only show what's missing" rule below, so
+  // it earns its own component rather than a second meaning bolted onto this one.
+  const showing = view.lapsed.filter((b) => !b.onEnemy && wanted.get(b.key)?.onScreen !== false);
   if (!showing.length || !ca) return null;
 
   const looks = showing.map((buff) => ({

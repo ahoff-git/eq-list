@@ -9,11 +9,16 @@ import assert from "node:assert/strict";
 import {
   buffKey,
   buffTarget,
+  enemySlot,
   evictable,
   heldMs,
   instanceKey,
+  instanceSlot,
   narrowCandidates,
   newKnownBuff,
+  plausibleDuration,
+  slottedInstanceKey,
+  tightenDuration,
   alternativesLabel,
   announceWhen,
   isEnemyTarget,
@@ -238,6 +243,7 @@ test("how long it was held is measured to now while up, and to the lapse once do
     byYou: true,
     permanent: false,
     onEnemy: false,
+    slot: 1,
   };
   const now = Date.parse(AT) + 60_000;
   assert.equal(heldMs(base, now), 60_000);
@@ -263,4 +269,57 @@ test("only rows nobody has touched may be evicted, oldest first", () => {
     evictable(rows).map((k) => k.key),
     ["b", "a"],
   );
+});
+
+// ── telling two same-named mobs apart (ADR 0202) ───────────────────────────────
+
+test("a slot rides along in the id and reads back off it", () => {
+  assert.equal(slottedInstanceKey("mesmerize", "a wild tiger", 2), `${instanceKey("mesmerize", "a wild tiger")}#2`);
+  assert.equal(instanceSlot(slottedInstanceKey("mesmerize", "a wild tiger", 2)), 2);
+  // Anything that never had one reads as the one value that means "not several".
+  assert.equal(instanceSlot(instanceKey("mesmerize", "a wild tiger")), 1);
+  assert.equal(instanceSlot("not an id at all"), 1);
+});
+
+test("a fresh mob with no siblings takes slot 1", () => {
+  assert.equal(enemySlot([]), 1);
+});
+
+test("a second same-named mob opens the next slot while the first is still up", () => {
+  assert.equal(enemySlot([{ up: true, slot: 1 }]), 2);
+});
+
+test("a mob that broke free hands its slot back to the next recast", () => {
+  assert.equal(enemySlot([{ up: false, slot: 1 }]), 1);
+});
+
+test("reuse beats opening a new slot, even with a later one free", () => {
+  // Slot 1 broke, slot 2 is still holding: the recast is "the first one again", not a third mob.
+  assert.equal(enemySlot([{ up: true, slot: 2 }, { up: false, slot: 1 }]), 1);
+});
+
+test("more than one lapsed slot: the lowest comes back first", () => {
+  assert.equal(enemySlot([{ up: false, slot: 1 }, { up: false, slot: 3 }]), 1);
+});
+
+test("no lapsed slot at all: the gap between two up slots fills before a new one opens", () => {
+  assert.equal(enemySlot([{ up: true, slot: 1 }, { up: true, slot: 3 }]), 2);
+});
+
+test("a learned duration only ever tightens, and counts every sample", () => {
+  const first = tightenDuration(undefined, 180);
+  assert.deepEqual(first, { seconds: 180, count: 1 });
+  // A shorter confirmed fade narrows the figure — the safe direction for a warning.
+  const shorter = tightenDuration(first, 120);
+  assert.deepEqual(shorter, { seconds: 120, count: 2 });
+  // A longer one teaches nothing new about the floor, but the sample still counts.
+  const longer = tightenDuration(shorter, 200);
+  assert.deepEqual(longer, { seconds: 120, count: 3 });
+});
+
+test("an implausible rise-to-fade gap is not worth learning from", () => {
+  assert.equal(plausibleDuration(45), true);
+  assert.equal(plausibleDuration(0), false); // a fade at the same instant as the rise
+  assert.equal(plausibleDuration(-5), false); // clock disagreement
+  assert.equal(plausibleDuration(7200), false); // an app restart or a replayed gap, not a duration
 });

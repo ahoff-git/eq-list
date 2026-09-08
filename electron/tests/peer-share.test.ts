@@ -99,6 +99,7 @@ function buff(over: Partial<BuffInstance> = {}): BuffInstance {
     byYou: false,
     permanent: false,
     onEnemy: false,
+    slot: 1,
     ...over,
   };
 }

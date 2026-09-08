@@ -73,6 +73,7 @@
  */
 import { SELF, isOwnedName, isYours, spellName } from "./combat-parser";
 import { hasArticle } from "./log-parser";
+import { plausible, tighten } from "./estimates";
 
 /** The target of a buff on you. Folded to one spelling, since the log writes "you" three ways. */
 export const ON_YOU = "you";
@@ -162,6 +163,17 @@ export interface BuffInstance {
    * on. Your own buffs are the reverse on both counts.
    */
   onEnemy: boolean;
+  /**
+   * Which of possibly several same-named `onEnemy` instances this is — `1` everywhere else.
+   *
+   * EQ's log names a mob only by its display name, and two adds can share one, so `key`+`target`
+   * alone cannot tell them apart. A slot is how two rows for "a wild tiger" are told apart on screen
+   * and in a click, exactly the way a spawn timer's `key#slot` tells apart two clocks for one camp
+   * ([ADR 0202](../../specs/decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)). It says
+   * nothing about *which* tiger — slots are reused as they come and go — only that this row and that
+   * one are two different mobs, not one refreshed.
+   */
+  slot: number;
 }
 
 /** What the player has decided about one spell, and what we've seen of it. */
@@ -212,6 +224,19 @@ export interface KnownBuff {
   /** Last seen going up / lapsing, ISO. */
   lastUp?: string;
   lastLapse?: string;
+  /**
+   * What repeated fades have taught about how long this spell actually lasts, in seconds — absent
+   * until the first confirmed fade of an `onEnemy` instance. Learned, never read off a formula: the
+   * Buffs tab's own header explains why an ordinary buff never gets one — the game's file states a
+   * duration *formula*, and applying it needs a caster level the log never gives, so a clock built
+   * on it would be a guess wearing a number. This is not that guess. It is measured from your own
+   * casts landing and later fading, the same technique `spawn-timers.ts` uses for a respawn, and it
+   * is only ever learned for a debuff you cast on something you were fighting
+   * ([ADR 0202](../../specs/decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)).
+   */
+  durationSeconds?: number;
+  /** How many confirmed fades that figure rests on. */
+  durationSamples?: number;
 }
 
 /** Everything the Buffs panel draws. `now` travels with it, as `SpawnView`'s does and for the same reason. */
@@ -277,6 +302,84 @@ export function buffTarget(target: string | undefined, player = ""): string {
 /** One buff on one target. Two instances of a spell on two people are two things to keep up. */
 export function instanceKey(key: string, target: string): string {
   return `${key} ${target}`;
+}
+
+/**
+ * One `onEnemy` instance's own identity: its target plus which same-named sibling it is.
+ *
+ * Only `onEnemy` rows are ever slotted — a buff on you, your pet, or a named player never collides,
+ * since none of those share a display name with something else worth telling apart (ADR 0202).
+ * Mirrors `timerId` in [spawn-timers.ts](./spawn-timers.ts) deliberately: same problem, same shape.
+ */
+export function slottedInstanceKey(key: string, target: string, slot: number): string {
+  return `${instanceKey(key, target)}#${slot}`;
+}
+
+/** Which sibling an id names, read back off its own text. `1` for anything unslotted. */
+export function instanceSlot(id: string): number {
+  const slot = Number(id.slice(id.lastIndexOf("#") + 1));
+  return Number.isInteger(slot) && slot > 0 ? slot : 1;
+}
+
+/**
+ * Which slot a fresh `onEnemy` rise should take, given its current siblings for that spell and
+ * target.
+ *
+ * **Reuse the lowest lapsed slot first.** That is "the mez that just broke got recast" — the common
+ * case in real play, since crowd control is chain-recast onto whichever one just came loose — and
+ * reusing is what keeps a slot number meaningful for a whole fight instead of climbing forever.
+ *
+ * **Only once none is lapsed does a rise open a new slot** — the lowest not already up, so a
+ * dismissed slot's number comes straight back into use rather than a row always appending. That is
+ * "a second same-named mob got hit", the case a slot exists for at all.
+ *
+ * Deliberately does not try to tell a genuine recast-before-expiry on the *same* mob apart from a
+ * fresh mob — both look identical from the log, and guessing between them is exactly the ambiguity
+ * ADR 0202 accepts rather than resolves. In practice this is rarely reached: crowd control is
+ * recast because it broke, not ahead of time, so "no slot is lapsed" is nearly always "this is a new
+ * mob".
+ */
+export function enemySlot(siblings: readonly { up: boolean; slot: number }[]): number {
+  const lapsed = siblings.filter((s) => !s.up).map((s) => s.slot);
+  if (lapsed.length) return Math.min(...lapsed);
+  const up = new Set(siblings.filter((s) => s.up).map((s) => s.slot));
+  let slot = 1;
+  while (up.has(slot)) slot++;
+  return slot;
+}
+
+/** What repeated fades of one detrimental spell have taught about how long it actually lasts. */
+export interface DurationEstimate {
+  seconds: number;
+  count: number;
+}
+
+/**
+ * Fold one more confirmed fade into what earlier ones taught about a spell's duration.
+ *
+ * Same shape and same rule as a spawn timer's `Sighting`/`tightenSighting` (`estimates.ts`'s
+ * `tighten`, kept a domain-specific wrapper rather than a shared record type for the reason that
+ * file gives — the bookkeeping is nobody else's business but the rule is). Every observed gap is an
+ * **upper bound**: you can recast early, and the fade line can lag the true moment by a tick or two,
+ * but nothing can make the mob break loose *later* than the log says. So the shortest one seen is
+ * the tightest and safest figure, and it only ever ratchets down — erring toward "expires sooner
+ * than shown" is the safe failure for a reminder that exists because letting it lapse is bad; erring
+ * the other way would be a false sense of security.
+ */
+export function tightenDuration(seen: DurationEstimate | undefined, seconds: number): DurationEstimate {
+  return { seconds: tighten(seen?.seconds, seconds, "upper"), count: (seen?.count ?? 0) + 1 };
+}
+
+/**
+ * Is this rise-to-fade gap worth learning from at all?
+ *
+ * Guards against the gap being made of something other than the spell running its course — an app
+ * restart between the two, a clock jump, a log gap replayed hours later. A generous range: EQL's
+ * mesmerize and charm lines run from a few seconds to tens of minutes, and a discarded outlier costs
+ * nothing where a kept one would poison the ratchet for good.
+ */
+export function plausibleDuration(seconds: number): boolean {
+  return plausible(seconds, { min: 1, max: 3600 });
 }
 
 /** How a target reads in a sentence: "you", "your pet", a name, or an admission. */

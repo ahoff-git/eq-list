@@ -59,6 +59,14 @@ export default function BuffPanel() {
   const now = Date.parse(view.now) || Date.now();
 
   const bare = !view.known.length && !view.active.length && !view.lapsed.length;
+  // A mob whose name is shared by another currently-listed instance gets a `#slot` suffix — only
+  // where it disambiguates, the same rule the spawn board's own shared-camp numbering follows.
+  // Counted across both lists together: a lapsed slot and an up sibling for the same mob are still
+  // two rows for one name.
+  const rows = [...view.active, ...view.lapsed];
+  const several = new Set(
+    rows.filter((b, i) => rows.some((o, j) => j !== i && o.key === b.key && o.target === b.target)).map((b) => `${b.key} ${b.target}`),
+  );
   // Both the banner and the on-screen list ride the alert overlay window, which only exists while
   // alerts are on — so tracking can be working perfectly and produce nothing over the game. Saying
   // so is the same courtesy the scoreboard's celebration pays (ADR 0120's note on `HighScoreSettings`):
@@ -120,7 +128,12 @@ export default function BuffPanel() {
             </button>
           </h2>
           {view.lapsed.map((buff) => (
-            <LapsedRow key={`${buff.key} ${buff.target}`} buff={buff} now={now} />
+            <LapsedRow
+              key={`${buff.key} ${buff.target}#${buff.slot}`}
+              buff={buff}
+              now={now}
+              several={several.has(`${buff.key} ${buff.target}`)}
+            />
           ))}
         </section>
       )}
@@ -129,7 +142,12 @@ export default function BuffPanel() {
         <section className="buff-active">
           <h2>Up now</h2>
           {view.active.map((buff) => (
-            <ActiveRow key={`${buff.key} ${buff.target}`} buff={buff} now={now} />
+            <ActiveRow
+              key={`${buff.key} ${buff.target}#${buff.slot}`}
+              buff={buff}
+              now={now}
+              several={several.has(`${buff.key} ${buff.target}`)}
+            />
           ))}
         </section>
       )}
@@ -154,7 +172,7 @@ export default function BuffPanel() {
  * offered beside recasting because the honest third option is "I know, and I'm not going to": a
  * standing warning you can't stand down is one you start ignoring, which costs you the next real one.
  */
-function LapsedRow({ buff, now }: { buff: BuffInstance; now: number }) {
+function LapsedRow({ buff, now, several }: { buff: BuffInstance; now: number; several: boolean }) {
   return (
     <div className={`buff-row lapsed ${buff.reason === "died" ? "died" : ""}`}>
       <span className="buff-mark" aria-hidden>
@@ -162,6 +180,7 @@ function LapsedRow({ buff, now }: { buff: BuffInstance; now: number }) {
       </span>
       <span className="buff-name">
         {buff.spell}
+        {several && <em className="spawn-slot"> #{buff.slot}</em>}
         {buff.permanent && (
           // Worth saying here rather than only on the settings row: a permanent buff that has gone is
           // never a timer running out, so "it was dispelled, or you died" is the whole meaning of the
@@ -191,7 +210,7 @@ function LapsedRow({ buff, now }: { buff: BuffInstance; now: number }) {
       <button
         className="btn ghost sm"
         title="Stand this one down — it stays tracked, so you'll be told next time"
-        onClick={() => void api()?.buffs.dismiss(buff.key, buff.target)}
+        onClick={() => void api()?.buffs.dismiss(buff.key, buff.target, buff.onEnemy ? buff.slot : undefined)}
       >
         Dismiss
       </button>
@@ -200,13 +219,16 @@ function LapsedRow({ buff, now }: { buff: BuffInstance; now: number }) {
 }
 
 /** One buff that is up. Quiet by design: it is here to be scanned, not read. */
-function ActiveRow({ buff, now }: { buff: BuffInstance; now: number }) {
+function ActiveRow({ buff, now, several }: { buff: BuffInstance; now: number; several: boolean }) {
   return (
     <div className="buff-row active">
       <span className="buff-mark" aria-hidden>
         ●
       </span>
-      <span className="buff-name">{buff.spell}</span>
+      <span className="buff-name">
+        {buff.spell}
+        {several && <em className="spawn-slot"> #{buff.slot}</em>}
+      </span>
       <span className="buff-target">{targetSentence(buff)}</span>
       <span className="buff-note muted small">
         {/* How long, not how long *left*: the log knows when it went up and nothing honest knows when

@@ -1324,6 +1324,9 @@ function readBuff(raw: unknown): BuffInstance | null {
     // what was on **them or their pet**, so a shared buff cannot be on something they were fighting.
     // Taking it off the wire would let a bad sender mark a buff urgent on somebody else's screen.
     onEnemy: false,
+    // A slot only exists to tell apart several same-named mobs on *your own* screen, which a peer's
+    // shared buff never is — so it is always `1`, the unslotted value.
+    slot: 1,
   };
 }
 

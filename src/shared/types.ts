@@ -3267,10 +3267,19 @@ export interface EqlApi {
     /**
      * Dismiss one standing "this is down" without recasting the spell — you know, and you are not
      * going to re-buff it right now. The spell stays tracked, so the next lapse says so again.
+     * `slot` picks which of several same-named mobs' rows — pass `buff.slot` for an `onEnemy` row,
+     * omit it for anything else.
      */
-    dismiss(key: string, target: string): Promise<BuffView>;
+    dismiss(key: string, target: string, slot?: number): Promise<BuffView>;
     /** Clear every standing lapse at once — the "I have re-buffed, be quiet" button. */
     dismissAll(): Promise<BuffView>;
+    /**
+     * Forget one `onEnemy` instance outright, up or lapsed — for when the order-based slot numbering
+     * guessed wrong ([ADR 0202](../../specs/decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)).
+     * Unlike `dismiss`, this also removes a row that is currently up: it says "that isn't real", not
+     * "I know, be quiet".
+     */
+    clearInstance(key: string, target: string, slot: number): Promise<BuffView>;
     /** Fires when a buff goes up, lapses, or a choice about one changes. */
     onChanged(cb: () => void): Unsubscribe;
   };

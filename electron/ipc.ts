@@ -647,12 +647,16 @@ function registerStatsIpc(context: IpcContext): void {
     buffs.forget(key);
     return buffs.view();
   });
-  ipcMain.handle(CH.buffsDismiss, (_e, key: string, target: string) => {
-    buffs.dismiss(key, target);
+  ipcMain.handle(CH.buffsDismiss, (_e, key: string, target: string, slot?: number) => {
+    buffs.dismiss(key, target, slot);
     return buffs.view();
   });
   ipcMain.handle(CH.buffsDismissAll, () => {
     buffs.dismissAll();
+    return buffs.view();
+  });
+  ipcMain.handle(CH.buffsClearInstance, (_e, key: string, target: string, slot: number) => {
+    buffs.clearInstance(key, target, slot);
     return buffs.view();
   });
   // The loot feed's history — tracked in the main process, so the tab shows drops from before

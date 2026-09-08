@@ -276,6 +276,21 @@ list, hunt, search, damage, session, peers, settings.
     the row**, so a death strip's worth of reminders is one column to click down and each row closing
     brings the next control under the cursor
     ([ADR 0175](../decisions/0175-a-lapse-is-read-at-a-glance-and-cleared-in-a-column.md)).
+  - `DebuffOverlay` — the debuffs you're keeping on something you're fighting, **up and missing
+    both**, on the same `/alert` window
+    ([ADR 0202](../decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)). `BuffOverlay`
+    shows only what's missing because an ordinary buff's "up" needs no glance; crowd control is the
+    opposite — you're juggling several timers, so "still holding" is as worth a look as "just
+    broke" — which is why `onEnemy` rows live here instead. Two mobs sharing a display name (EQ's
+    log names one no other way) are told apart by an **order-based `#slot`**, the same numbering
+    `SpawnOverlay` uses for two clocks on one camp: a heuristic, not an identity, and admittedly
+    wrong when cast order and engagement order disagree. An up row's clock is a **learned
+    prediction** (`~Ns left`), not the refused formula-based guess `BuffPanel` explains below — it's
+    measured from your own confirmed fades, the technique `SpawnPanel` already uses for a respawn,
+    and it only ever tightens toward "sooner", the safe direction for a reminder that exists because
+    letting the thing lapse is bad. Both states carry a ✕: on a lapsed row it's `BuffOverlay`'s "I
+    know, stop reminding me"; on an up row it's new — "that isn't real, forget it" — for correcting
+    a slot the heuristic guessed wrong.
   - `BuffPanel` — the **Buffs tab**: what you are keeping up, what has dropped, and which spells the
     app should mention. Three lists, answering different questions — **Not active** is why the tab
     exists, **Up now** is the reassuring half, **Spells** holds the checkboxes and nothing urgent.
@@ -296,9 +311,12 @@ list, hunt, search, damage, session, peers, settings.
     every candidate; the *banner* names one and counts the rest, because a glance can't carry six ranks
     of a spell and the spell you were warned about is what a full list pushed off the screen
     ([ADR 0175](../decisions/0175-a-lapse-is-read-at-a-glance-and-cleared-in-a-column.md)). Both word it
-    from one place, `alternativesLabel`. There is deliberately **no countdown** — the
+    from one place, `alternativesLabel`. There is deliberately **no countdown** here — the
     game's file states a duration *formula*, and applying one needs a caster level EQL's log will not
-    give us. The rules are `src/shared/buff-tracking.ts` and `src/shared/spell-strings.ts` (both pure
+    give us. `DebuffOverlay` above shows one anyway for `onEnemy` rows, and that isn't a reversal:
+    it's *learned* from your own fades rather than computed from the formula, the same distinction
+    that already separates a spawn timer's countdown from a wiki's claimed respawn
+    ([ADR 0202](../decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)). The rules are `src/shared/buff-tracking.ts` and `src/shared/spell-strings.ts` (both pure
     + tested); the board itself is `electron/buff-tracker.ts`, which — unlike the spawn tracker —
     persists only the *choices*, because which buffs are up is a fact about a login rather than about
     the world.

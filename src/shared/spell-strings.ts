@@ -63,11 +63,21 @@
  *
  * ## What is indexed, and why so little of it
  *
- * The index is gated to spells that are **obtainable** on this server and **beneficial** — ~5k rows
- * out of ~74k. Both halves of that gate pay for themselves. Ungated, the file's NPC and
- * out-of-era tiers would hand a player's own sentence to a spell nobody can cast (the collision
- * problem ADR 0080 already solved for mana costs, in the same file, for the same reason); and a
- * detrimental spell's landing is a *debuff* on somebody, which is not what any of this is for.
+ * The index is gated to spells that are **obtainable** on this server — ~10k rows out of ~74k. That
+ * gate pays for itself: ungated, the file's NPC and out-of-era tiers would hand a player's own
+ * sentence to a spell nobody can cast (the collision problem ADR 0080 already solved for mana costs,
+ * in the same file, for the same reason).
+ *
+ * **A detrimental spell's landing is indexed too**, which was not always true here — this file used
+ * to stop at beneficial spells, on the reasoning that a debuff's landing is somebody else's business
+ * unless it is yours. That reasoning is still right; it just belongs somewhere else. A crowd-control
+ * spell (a mez, a charm) needs to be tracked *as one of several same-named instances*, and telling
+ * those apart needs to know the moment each one **landed**, not only the moment one of them faded —
+ * a fade line alone can say "one of your mezzes broke" but never "which mob". The enrolment gate
+ * that keeps this from becoming a feed of every nearby caster's nukes was never the lexicon's job in
+ * the first place: `worthWatching`/`castByYou` in [buff-tracking.ts](./buff-tracking.ts) already
+ * refuse a debuff no landing sentence can be shown to be yours, and that gate is unchanged
+ * ([ADR 0201](../../specs/decisions/0201-a-detrimental-spells-landing-is-indexed-too.md)).
  *
  * Pure: text in, facts out. No I/O, no clock. [electron/spells.ts](../../electron/spells.ts) finds
  * the file and holds the result.
@@ -174,7 +184,7 @@ function bareSentence(sentence: string): string {
 export interface OtherLanding {
   /** The name the line began with, exactly as the log wrote it. */
   target: string;
-  /** Every obtainable beneficial spell that writes this sentence. Never empty. */
+  /** Every obtainable spell that writes this sentence, beneficial or not. Never empty. */
   spells: SpellFacts[];
 }
 
@@ -273,9 +283,11 @@ export function buildBuffLexicon(
 
   for (const [id, sentences] of strings) {
     const spell = spellsById.get(id);
-    // The gate, and both halves of it earn their place — see the header. An id the spell file didn't
-    // yield at all (a row too short to parse) is simply unknown, and unknown is not indexable.
-    if (!spell || !spell.beneficial || !isObtainable(spell)) continue;
+    // The gate — see the header. An id the spell file didn't yield at all (a row too short to parse)
+    // is simply unknown, and unknown is not indexable. Obtainability is the only filter: a detrimental
+    // spell is indexed exactly like a beneficial one now, and it is `worthWatching`'s job, not this
+    // file's, to decide whose debuff is worth a row.
+    if (!spell || !isObtainable(spell)) continue;
     if (sentences.onYou || sentences.onOther) announces.add(baseName(spell.name));
     if (sentences.gone) add(fades, sentences.gone, spell);
     if (sentences.onYou) add(onYou, sentences.onYou, spell);

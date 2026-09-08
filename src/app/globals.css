@@ -1316,6 +1316,61 @@ button {
 }
 .buff-hud-row .bhr-x:hover { color: var(--text); background: rgba(255, 255, 255, 0.12); }
 
+/* ── debuffs you're keeping on something you're fighting, drawn over the game (ADR 0202) ── */
+/* Same shape as `.buff-hud`/`.buff-hud-row` — both are a standing reminder over the game with a
+   click-through window and one clickable ✕ — but this one shows an **up** row too, which is the
+   whole reason it isn't just another filter on that one: for crowd control, "still holding" is as
+   worth a glance as "just broke". */
+.debuff-hud {
+  position: fixed;
+  z-index: 92;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 92%;
+  pointer-events: none;
+}
+.debuff-hud-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  border-left: 2px solid var(--border);
+  background: rgba(14, 16, 19, 0.72);
+  font-size: 13px;
+  color: var(--text);
+  text-shadow: 0 1px 2px #000;
+}
+.debuff-hud-row .dhr-clock {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 64px;
+  color: var(--text-dim);
+}
+.debuff-hud-row .dhr-name { font-weight: 600; }
+.debuff-hud-row .dhr-who { color: var(--text-dim); font-size: 12px; }
+/* State lives on the clock, the same split `.spawn-hud-row` keeps between its edge and its clock —
+   an up row is quiet, a lapsed one is the call to action. */
+.debuff-hud-row.up .dhr-clock { color: var(--good); }
+.debuff-hud-row.lapsed { border-left-color: var(--bad); }
+.debuff-hud-row.lapsed .dhr-clock { color: var(--bad); font-weight: 700; }
+.debuff-hud-row .dhr-x {
+  pointer-events: auto; /* the one part of a reminder you can click — see .debuff-hud */
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  margin: -3px 0 -3px -4px;
+  flex: 0 0 auto;
+}
+.debuff-hud-row .dhr-x:hover { color: var(--text); background: rgba(255, 255, 255, 0.12); }
+
 /* ── floating damage meter (DamageMeterOverlay.tsx) ───────────── */
 /* Glass except its own grip: unlike every HUD above, this one is meant to be read while clicking
    and moving through the game underneath it, so only `.dmg-hud-grip` is a `SOLID` island — the

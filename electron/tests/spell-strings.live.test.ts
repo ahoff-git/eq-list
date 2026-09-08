@@ -51,13 +51,15 @@ test("the real string file parses into a plausible set of sentences", liveOnly()
 
 test("the gate cuts ~74k spells down to the few thousand a character here can hold", liveOnly(), () => {
   const indexed = lexicon().size;
-  // Measured on the install this was written against: 7,076 obtainable beneficial spells, of which
-  // 3,851 carry a fade sentence and 4,633 a landing-on-other — 422 *distinct* fade sentences, 272 of
-  // them shared by more than one spell. The bounds are loose because a patch may move any of those.
-  assert.ok(indexed > 1_000, `expected thousands of obtainable buffs indexed, got ${indexed}`);
+  // Measured on the install this was written against, before ADR 0201 widened the gate past
+  // beneficial-only: 7,076 obtainable beneficial spells indexed. Obtainability alone still admits
+  // roughly double that once detrimental spells count too, so the loose bound below is widened with
+  // it rather than tightened — the thing it guards against (the gate doing nothing at all) is still
+  // an order of magnitude past either figure.
+  assert.ok(indexed > 1_000, `expected thousands of obtainable spells indexed, got ${indexed}`);
   // If the gate were doing nothing this would be in the tens of thousands — which is the failure that
   // hands a player's own sentence to an out-of-era spell of the same name.
-  assert.ok(indexed < strings().size / 3, `the obtainable/beneficial gate looks inert (${indexed})`);
+  assert.ok(indexed < strings().size / 1.5, `the obtainability gate looks inert (${indexed})`);
 });
 
 test("the sentence cast-alerts called unmappable maps", liveOnly(), () => {

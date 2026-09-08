@@ -166,18 +166,29 @@ test("landsQuietly is the wait-or-not question, asked of the spell", () => {
   assert.equal(lex.landsQuietly("Spirit of Wolf II"), false);
 });
 
-test("out-of-era and detrimental spells never claim a sentence", () => {
+test("an out-of-era spell never claims a sentence", () => {
   const strings = parseSpellStringFile(FIXTURE);
   const byId = new Map<number, SpellFacts>([
     // A level-70 version of the same name: obtainable nowhere on this server.
     [278, spell(278, "Spirit of Wolf", { levels: { Druid: 70 } })],
-    // Beneficial-looking sentence on a detrimental spell: a debuff landing is not our business.
-    [254, spell(254, "Firefist", { beneficial: false })],
   ]);
   const lex = buildBuffLexicon(strings, byId);
   assert.deepEqual(lex.fadedBy("The spirit of wolf leaves you."), []);
-  assert.deepEqual(lex.landedOnYou("Your fist bursts into flame."), []);
   assert.equal(lex.size, 0);
+});
+
+test("a detrimental spell's landing is indexed too — telling apart same-named mobs needs it", () => {
+  // ADR 0201: a debuff's landing used to be excluded outright ("not our business"). It is needed to
+  // tell two same-named mobs apart the moment a mez/charm lands on the second one, so the gate here
+  // is obtainability alone now — whether the row is worth showing anyone is `worthWatching`'s call.
+  const strings = parseSpellStringFile(FIXTURE);
+  const byId = new Map<number, SpellFacts>([[254, spell(254, "Firefist", { beneficial: false })]]);
+  const lex = buildBuffLexicon(strings, byId);
+  assert.equal(lex.landedOnYou("Your fist bursts into flame.")[0]?.name, "Firefist");
+  const landed = lex.landedOnOther("Bloop's fist bursts into flame.");
+  assert.equal(landed?.target, "Bloop");
+  assert.equal(landed?.spells[0]?.name, "Firefist");
+  assert.equal(lex.size, 1);
 });
 
 test("an id the facts file never yielded is simply unknown", () => {

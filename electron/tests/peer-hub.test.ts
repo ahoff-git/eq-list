@@ -304,7 +304,7 @@ test("a buff's 'on you' is resolved to our name before it leaves", () => {
     name: "Arya",
     rows: {
       buffs: [
-        { key: "spirit of wolf", spell: "Spirit of Wolf", target: ON_YOU, up: true, at: "2024-01-01T00:00:00.000Z", since: "2024-01-01T00:00:00.000Z", source: "landed", byYou: false, permanent: false, onEnemy: false },
+        { key: "spirit of wolf", spell: "Spirit of Wolf", target: ON_YOU, up: true, at: "2024-01-01T00:00:00.000Z", since: "2024-01-01T00:00:00.000Z", source: "landed", byYou: false, permanent: false, onEnemy: false, slot: 1 },
       ],
     },
   });

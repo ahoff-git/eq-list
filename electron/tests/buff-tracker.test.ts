@@ -45,12 +45,15 @@ function facts(id: number, name: string, over: Partial<SpellFacts> = {}): SpellF
 }
 
 /**
- * Six spells, chosen to cover the cases that differ:
+ * Seven spells, chosen to cover the cases that differ:
  *  - Spirit of Wolf — announces on you and on others, and fades with words. The ordinary buff.
  *  - Thistlecoat    — **permanent** on EQL, and shares its fade sentence with Thorncoat.
  *  - Thorncoat      — the other half of that shared sentence.
  *  - Complete Heal  — beneficial but says nothing at all: no landing, no fade.
  *  - Root / Snare   — **detrimental**, which is what makes them behave oppositely in both directions.
+ *  - Mesmerize      — **detrimental with a landing sentence** (ADR 0201), the case none of the above
+ *    covers: a debuff whose *rise*, not only its fade, is observable — the case ADR 0202's slotting
+ *    exists for.
  */
 const SPELLS = new Map<number, SpellFacts>([
   [278, facts(278, "Spirit of Wolf")],
@@ -59,6 +62,7 @@ const SPELLS = new Map<number, SpellFacts>([
   [13, facts(13, "Complete Heal")],
   [10, facts(10, "Root", { beneficial: false })],
   [11, facts(11, "Snare", { beneficial: false })],
+  [20, facts(20, "Mesmerize", { beneficial: false })],
 ]);
 
 const STRINGS = [
@@ -66,6 +70,7 @@ const STRINGS = [
   "278^^^You feel the spirit of wolf enter you.^ is surrounded by a brief lupine aura.^The spirit of wolf leaves you.^",
   "515^^^Your skin sprouts thistles.^'s skin sprouts thistles.^Your skin returns to normal.^",
   "519^^^Your skin sprouts thorns.^'s skin sprouts thorns.^Your skin returns to normal.^",
+  "20^^^^ is mesmerized.^",
 ].join("\n");
 
 const SETTINGS: CastAlertSettings = {
@@ -883,4 +888,122 @@ test("permanence comes from the spell file, and reaches the row and the alert", 
 test("the view says whether the sentence file was found", () => {
   assert.equal(harness().buffs.view().lexicon, true);
   assert.equal(harness({ lexicon: false }).buffs.view().lexicon, false);
+});
+
+// ── two same-named mobs get two rows (ADR 0201, ADR 0202) ──────────────────────
+
+/** Mesmerize a wild tiger via cast + landing emote, the only path that produces a real rise. */
+function mezTiger(h: Harness, castAt: number, landAt: number) {
+  h.cast("Mesmerize", castAt);
+  h.line("a wild tiger is mesmerized.", landAt);
+}
+
+test("a detrimental spell's landing is now seen, not just its fade", () => {
+  const h = harness();
+  mezTiger(h, 0, 1);
+  const up = h.buffs.view().active;
+  assert.equal(up.length, 1);
+  assert.equal(up[0].spell, "Mesmerize");
+  assert.equal(up[0].target, "a wild tiger");
+  assert.equal(up[0].onEnemy, true);
+  assert.equal(up[0].slot, 1);
+});
+
+test("a second same-named mob opens a second row instead of overwriting the first", () => {
+  const h = harness();
+  mezTiger(h, 0, 1);
+  mezTiger(h, 5, 6);
+  const up = h.buffs.view().active.filter((b) => b.key === "mesmerize");
+  assert.equal(up.length, 2);
+  assert.deepEqual(up.map((b) => b.slot).sort(), [1, 2]);
+  // Two real, distinct rises — not one refreshed twice, which is what would make this read as one
+  // tiger recast rather than two mezzed (ADR 0159's "a refresh is not a rise", the other way round).
+  assert.equal(h.buffs.view().known.find((k) => k.key === "mesmerize")?.rises, 2);
+});
+
+test("a fade closes the oldest up sibling, not whichever the map happens to return first", () => {
+  const h = harness();
+  mezTiger(h, 0, 1); // slot 1, since = iso(1)
+  mezTiger(h, 5, 6); // slot 2, since = iso(6)
+  h.raised.length = 0;
+  h.fade({ spell: "Mesmerize", target: "a wild tiger", offsetSec: 100 });
+  const view = h.buffs.view();
+  assert.equal(view.active.filter((b) => b.key === "mesmerize").length, 1);
+  assert.equal(view.active.find((b) => b.key === "mesmerize")?.slot, 2, "the younger one is still up");
+  const lapsed = view.lapsed.find((b) => b.key === "mesmerize");
+  assert.equal(lapsed?.slot, 1, "the older one is the one that broke");
+  assert.equal(h.raised.length, 1, "still announced at once, like any onEnemy lapse");
+});
+
+test("recasting after a break reuses that slot, not a fresh one", () => {
+  const h = harness();
+  mezTiger(h, 0, 1); // slot 1
+  mezTiger(h, 5, 6); // slot 2
+  h.fade({ spell: "Mesmerize", target: "a wild tiger", offsetSec: 100 }); // slot 1 breaks
+  mezTiger(h, 105, 106); // recast — should land back on slot 1
+  const up = h.buffs.view().active.filter((b) => b.key === "mesmerize");
+  assert.equal(up.length, 2);
+  assert.deepEqual(up.map((b) => b.slot).sort(), [1, 2], "slot 1 came back, not slot 3");
+});
+
+test("dismissing one lapsed slot leaves its sibling alone", () => {
+  const h = harness();
+  mezTiger(h, 0, 1); // slot 1
+  mezTiger(h, 5, 6); // slot 2
+  h.fade({ spell: "Mesmerize", target: "a wild tiger", offsetSec: 100 }); // slot 1 breaks
+  h.fade({ spell: "Mesmerize", target: "a wild tiger", offsetSec: 101 }); // slot 2 breaks too
+  assert.equal(h.buffs.view().lapsed.filter((b) => b.key === "mesmerize").length, 2);
+  h.buffs.dismiss("mesmerize", "a wild tiger", 1);
+  const lapsed = h.buffs.view().lapsed.filter((b) => b.key === "mesmerize");
+  assert.equal(lapsed.length, 1);
+  assert.equal(lapsed[0].slot, 2);
+});
+
+test("clearInstance forgets a wrong slot outright, even while it's up", () => {
+  const h = harness();
+  mezTiger(h, 0, 1); // slot 1
+  mezTiger(h, 5, 6); // slot 2 — really just a refresh the numbering misread as a second tiger
+  assert.equal(h.buffs.view().active.filter((b) => b.key === "mesmerize").length, 2);
+  // `dismiss` refuses a row that's up, on purpose — this is the other control, for "that isn't real".
+  h.buffs.dismiss("mesmerize", "a wild tiger", 2);
+  assert.equal(h.buffs.view().active.filter((b) => b.key === "mesmerize").length, 2, "dismiss left it alone");
+  h.buffs.clearInstance("mesmerize", "a wild tiger", 2);
+  const up = h.buffs.view().active.filter((b) => b.key === "mesmerize");
+  assert.equal(up.length, 1);
+  assert.equal(up[0].slot, 1);
+});
+
+test("the fight ending still sweeps every slot, up and lapsed alike", () => {
+  const h = harness({ lexicon: false });
+  h.fighting(true);
+  h.cast("Root");
+  h.fade({ spell: "Root", target: "a wild tiger" }); // orphan lapse, slot 1
+  h.cast("Root");
+  h.fade({ spell: "Root", target: "a rat", offsetSec: 1 }); // a different mob, still slot 1 (own target)
+  assert.equal(h.buffs.view().lapsed.filter((b) => b.key === "root").length, 2);
+  h.endFight();
+  assert.equal(h.buffs.view().lapsed.filter((b) => b.key === "root").length, 0);
+});
+
+test("a spell's duration is learned from its own fades, and only ever tightens", () => {
+  const h = harness();
+  mezTiger(h, 0, 1); // since = iso(1)
+  h.fade({ spell: "Mesmerize", target: "a wild tiger", offsetSec: 121 }); // 120s later
+  let known = h.buffs.view().known.find((k) => k.key === "mesmerize");
+  assert.equal(known?.durationSeconds, 120);
+  assert.equal(known?.durationSamples, 1);
+
+  // A second, shorter confirmed duration narrows the figure further.
+  mezTiger(h, 130, 131);
+  h.fade({ spell: "Mesmerize", target: "a wild tiger", offsetSec: 191 }); // 60s later
+  known = h.buffs.view().known.find((k) => k.key === "mesmerize");
+  assert.equal(known?.durationSeconds, 60);
+  assert.equal(known?.durationSamples, 2);
+
+  // A longer one teaches nothing new about the floor, but the sample count still grows.
+  mezTiger(h, 200, 201);
+  h.fade({ spell: "Mesmerize", target: "a wild tiger", offsetSec: 401 }); // 200s later
+  known = h.buffs.view().known.find((k) => k.key === "mesmerize");
+  assert.equal(known?.durationSeconds, 60, "a longer gap must not loosen the figure back up");
+  assert.equal(known?.durationSamples, 3);
 });

@@ -57,12 +57,16 @@ import {
   announceWhen,
   buffKey,
   buffTarget,
+  enemySlot,
   evictable,
   instanceKey,
   isEnemyTarget,
   narrowCandidates,
   newKnownBuff,
+  plausibleDuration,
   shouldHold,
+  slottedInstanceKey,
+  tightenDuration,
   doneToYou,
   worthWatching,
   CAST_WINDOW_MS,
@@ -119,6 +123,9 @@ interface StoredBuff {
   rises?: number;
   lastUp?: string;
   lastLapse?: string;
+  /** Learned from confirmed fades — see `KnownBuff.durationSeconds`. */
+  durationSeconds?: number;
+  durationSamples?: number;
 }
 
 export interface BuffTrackerDeps {
@@ -200,10 +207,21 @@ export interface BuffTracker {
   style(key: string, styleId: string | null): void;
   /** Forget the row entirely. It returns, fresh, if the spell is cast again. */
   forget(key: string): void;
-  /** Stand one lapse down without recasting the spell. */
-  dismiss(key: string, target: string): void;
+  /**
+   * Stand one lapse down without recasting the spell. `slot` picks which of several same-named
+   * mobs' rows — omitted for anything that was never slotted in the first place.
+   */
+  dismiss(key: string, target: string, slot?: number): void;
   /** Stand every lapse down. */
   dismissAll(): void;
+  /**
+   * Remove one `onEnemy` instance outright, up or lapsed — for when the order-based slot guessed
+   * wrong (ADR 0202). Unlike `dismiss`, this also works on a row that is currently **up**: the two
+   * controls answer different situations. `dismiss` says "I know it dropped, stop reminding me" — a
+   * lapse that is real, just acknowledged. This says "that isn't real, forget it happened" — the
+   * instance itself was a bad guess, not merely a fact you've seen.
+   */
+  clearInstance(key: string, target: string, slot: number): void;
   /** Told when the board changes, so the panel needn't poll. */
   onChanged(cb: () => void): void;
   /** Write any pending changes now (shutdown). */
@@ -399,11 +417,24 @@ export function createBuffTracker({
       rises: row.rises ?? 0,
       lastUp: row.lastUp,
       lastLapse: row.lastLapse,
+      durationSeconds: row.durationSeconds,
+      durationSamples: row.durationSamples,
     };
   }
 
   function isoNow(): string {
     return new Date(now()).toISOString();
+  }
+
+  /**
+   * Every `onEnemy` sibling instance of one spell on one target, up or lapsed — what `enemySlot`
+   * picks a slot from. Reads the board's *values*, never its keys, which is what lets slotting stay
+   * entirely inside `rise`/`lapse` without the rest of the tracker knowing it happened.
+   */
+  function enemySiblingSlots(key: string, target: string): { up: boolean; slot: number }[] {
+    const out: { up: boolean; slot: number }[] = [];
+    for (const b of board.values()) if (b.onEnemy && b.key === key && b.target === target) out.push({ up: b.up, slot: b.slot });
+    return out;
   }
 
   /** The one place a row is edited, so every setter saves and announces alike. */
@@ -441,7 +472,12 @@ export function createBuffTracker({
     });
     if (!known.tracked) return; // unchecked means the app is not watching this one at all
     const key = known.key;
-    const id = instanceKey(key, target);
+    const onEnemy = isEnemyTarget(target, known.detrimental);
+    // Slotted for an `onEnemy` instance — see `enemySlot` — so a second same-named mob opens a new
+    // row instead of silently overwriting the first one's timer (ADR 0202). Everything else keeps
+    // the bare, unslotted key it always has.
+    const slot = onEnemy ? enemySlot(enemySiblingSlots(key, target)) : 1;
+    const id = onEnemy ? slottedInstanceKey(key, target, slot) : instanceKey(key, target);
     const existing = board.get(id);
     const instance: BuffInstance = {
       key,
@@ -449,12 +485,15 @@ export function createBuffTracker({
       target,
       up: true,
       at,
-      // A refresh keeps the original moment; a re-cast after a lapse starts again from now.
+      // A refresh keeps the original moment; a re-cast after a lapse starts again from now. For an
+      // `onEnemy` row this is never a refresh: `enemySlot` only ever hands back a *lapsed* sibling's
+      // slot or a brand new one, so `existing` here is either undefined or already `up: false`.
       since: existing?.up ? existing.since : at,
       source,
       byYou: opts.byYou || !!existing?.byYou,
       permanent: known.permanent,
-      onEnemy: isEnemyTarget(target, known.detrimental),
+      onEnemy,
+      slot,
       alsoCouldBe: opts.alsoCouldBe,
     };
     board.set(id, instance);
@@ -473,7 +512,7 @@ export function createBuffTracker({
       row.lastUp = at;
       if (opts.byYou) row.mine = true;
     });
-    log.debug("buff up", { spell: known.spell, target, source, byYou: opts.byYou });
+    log.debug("buff up", { spell: known.spell, target, source, byYou: opts.byYou, slot });
   }
 
   /**
@@ -518,7 +557,11 @@ export function createBuffTracker({
     // held lapse is still on the board with `up: false`, so the same question has a different answer
     // either side of the loop — which made every real lapse fall through to the orphan branch below,
     // announcing twice and replacing its own start time.
-    const affected = matchingInstances(row.key, target);
+    const affected = matchingInstances(row.key, target, row.detrimental);
+    // Set inside the loop below, and applied once after it: at most one `onEnemy` instance can ever
+    // be in `affected` (`matchingInstances` returns only the single oldest sibling for an enemy
+    // target), so there is never more than one figure to learn from a single fade.
+    let learnedSeconds: number | undefined;
     for (const id of affected) {
       const was = board.get(id);
       if (!was?.up) continue;
@@ -536,18 +579,33 @@ export function createBuffTracker({
         alsoCouldBe: alsoCouldBe ?? was.alsoCouldBe,
       };
       board.delete(id);
-      if (shouldHold(row, reason)) board.set(instanceKey(row.key, lapsed.target), lapsed);
+      // Re-set under the **same** id rather than reconstructed from `key`+`target`: for a slotted
+      // `onEnemy` row `id` carries the slot and a bare rebuild would lose it, silently colliding a
+      // second slot's later lapse into this one (ADR 0202).
+      if (shouldHold(row, reason)) board.set(id, lapsed);
+      // Only a genuine, watched rise teaches anything — an orphan's `since` is fabricated, and
+      // "died"/"recast" aren't the spell running its course.
+      if (reason === "faded" && was.onEnemy) {
+        const seconds = Math.round((Date.parse(at) - Date.parse(was.since)) / 1000);
+        if (plausibleDuration(seconds)) learnedSeconds = seconds;
+      }
       speak(row, reason, lapsed);
-      log.debug("buff lapsed", { spell: lapsed.spell, target: lapsed.target, reason });
+      log.debug("buff lapsed", { spell: lapsed.spell, target: lapsed.target, reason, slot: lapsed.slot });
     }
 
     // Nothing was up: the buff was cast before the app was watching, or its landing line was
     // silent. The lapse is still real and still worth holding, filed under whatever the fade named.
     if (!affected.length) {
+      const settled = target ?? ON_YOU;
+      const onEnemy = isEnemyTarget(settled, row.detrimental);
+      // Slotted exactly like a rise would be — an orphan for a mob nobody saw mezzed is still worth
+      // telling apart from a sibling that's still up, once ADR 0202's landing-detection actually
+      // catches most of these; the orphan path stays as the fallback it always was.
+      const slot = onEnemy ? enemySlot(enemySiblingSlots(row.key, settled)) : 1;
       const orphan: BuffInstance = {
         key: row.key,
         spell: row.spell,
-        target: target ?? ON_YOU,
+        target: settled,
         up: false,
         at,
         // Nothing observed it going up, so the best we can say is that it went up no later than the
@@ -557,27 +615,50 @@ export function createBuffTracker({
         source: "landed",
         byYou: row.mine,
         permanent: row.permanent,
-        onEnemy: isEnemyTarget(target ?? ON_YOU, row.detrimental),
+        onEnemy,
+        slot,
         alsoCouldBe,
       };
-      if (shouldHold(row, reason)) board.set(instanceKey(row.key, orphan.target), orphan);
+      const id = onEnemy ? slottedInstanceKey(row.key, settled, slot) : instanceKey(row.key, settled);
+      if (shouldHold(row, reason)) board.set(id, orphan);
       speak(row, reason, orphan);
     }
 
     edit(row.key, (r) => {
       r.lastLapse = at;
+      if (learnedSeconds !== undefined) {
+        const learned = tightenDuration(
+          r.durationSeconds !== undefined ? { seconds: r.durationSeconds, count: r.durationSamples ?? 0 } : undefined,
+          learnedSeconds,
+        );
+        r.durationSeconds = learned.seconds;
+        r.durationSamples = learned.count;
+      }
     });
   }
 
   /**
    * Which board entries a fade is about.
    *
-   * A named target matches its own instance **and** an `ON_UNKNOWN` placeholder for the same spell,
-   * because the placeholder is that same buff before we knew where it went. An unnamed fade (a
-   * self-fade) matches only the instance on you.
+   * An `onEnemy` target can have several slots up at once, and a fade line names only the mob, not
+   * which one — so the **oldest** up sibling is taken to be the one that just broke: EQ durations
+   * are close to fixed per spell, so whichever landed first is statistically the one that ran out
+   * first (ADR 0202). `onEnemy`-ness is asked of the target and the spell's own `detrimental`
+   * before the board is even looked at, since which branch applies is fixed by those two rather than
+   * by what happens to be sitting in the board right now.
+   *
+   * Everything else is unslotted, and a named target matches its own instance **and** an
+   * `ON_UNKNOWN` placeholder for the same spell, because the placeholder is that same buff before we
+   * knew where it went. An unnamed fade (a self-fade) matches only the instance on you.
    */
-  function matchingInstances(key: string, target: string | null): string[] {
+  function matchingInstances(key: string, target: string | null, detrimental: boolean | undefined): string[] {
     const wanted = target ?? ON_YOU;
+    if (isEnemyTarget(wanted, !!detrimental)) {
+      const up = [...board.entries()].filter(([, b]) => b.onEnemy && b.key === key && b.target === wanted && b.up);
+      if (!up.length) return [];
+      up.sort(([, a], [, b]) => Date.parse(a.since) - Date.parse(b.since) || a.slot - b.slot);
+      return [up[0][0]];
+    }
     const ids = [instanceKey(key, wanted)];
     if (wanted !== ON_UNKNOWN) ids.push(instanceKey(key, ON_UNKNOWN));
     return ids.filter((id) => board.get(id)?.up);
@@ -907,13 +988,20 @@ export function createBuffTracker({
       save();
       changed();
     },
-    dismiss(key, target) {
-      const id = instanceKey(key, target);
+    dismiss(key, target, slot) {
+      const id = slot !== undefined ? slottedInstanceKey(key, target, slot) : instanceKey(key, target);
       const buff = board.get(id);
       if (!buff || buff.up) return;
       board.delete(id);
       // Dismissing means "I know" — so a banner still queued for the end of the fight has been
       // answered already and must not arrive later saying it again.
+      held.delete(id);
+      changed();
+    },
+    clearInstance(key, target, slot) {
+      const id = slottedInstanceKey(key, target, slot);
+      if (!board.has(id)) return;
+      board.delete(id);
       held.delete(id);
       changed();
     },

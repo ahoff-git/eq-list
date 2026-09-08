@@ -234,6 +234,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0198: A goal is a timeboxed target, tracked on its own and focusable from the List and Hunt tabs](./0198-a-goal-is-a-timeboxed-target.md)
 - [0199: A streak goal has no quantity — only a window that re-arms on every hit](./0199-a-streak-goal-has-no-quantity-only-a-window-that-re-arms.md)
 - [0200: Your own damage shield is yours, read the way "your" already is](./0200-your-own-damage-shield-is-yours.md)
+- [0201: A detrimental spell's landing is indexed too](./0201-a-detrimental-spells-landing-is-indexed-too.md)
+- [0202: Two mobs sharing a name get two debuff rows, and their duration is learned](./0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)
 
 ## Open Questions
 
