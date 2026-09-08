@@ -32,10 +32,12 @@
 # src/shared/travel/manual-links.ts and is committed.
 /data/
 
-# the web build's static data snapshot (see scripts/build-web-snapshot.mjs) — globbed from
-# *your* wiki/lucy caches and *your* EverQuest install's map files, so it's per-machine the same
-# way /data/ is. Deploying it is a separate, deliberate step, not something git tracks here.
-/public/data/
+# the web build's static data snapshot (see scripts/build-web-snapshot.mjs). Only the map files are
+# ignored here: your own EverQuest install's files plus a third-party pack, ~215 MB and not obviously
+# ours to redistribute — a hosted deployment goes without maps until there's a real plan for that.
+# wiki-cache/, lucy-cache/, travel/ and manifest.json ARE committed (see "Publishing" in the script's
+# own doc comment) — they're a mirror of public wiki pages, small, and genuinely ours to ship.
+/public/data/maps/
 /scripts/web-snapshot.log
 
 # misc

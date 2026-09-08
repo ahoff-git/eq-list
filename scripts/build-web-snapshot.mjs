@@ -19,13 +19,32 @@
  *   npm run web:snapshot                     # this machine's userData + configured log folder
  *   npm run web:snapshot -- --logs "<dir>"   # a Logs folder, an EQ install, or a maps folder
  *   npm run web:snapshot -- --out "<dir>"    # where the snapshot goes (default: ./public/data)
+ *   npm run web:snapshot -- --no-maps        # skip map files entirely — see "publish" below
  *
  * Needs `npm run build:electron` first — reuses the compiled map-source reader rather than a
  * second copy of the map format in JavaScript (same convention as build-travel-graph.mjs).
+ *
+ * ## Publishing (`npm run web:snapshot:publish`)
+ *
+ * `public/data/` is gitignored — a personal, per-install artifact, same as `/data/`'s travel
+ * graphs — so a hosted deployment built from git history alone has never had any of this. Until
+ * there's a real plan for the map data specifically (your own install's files plus a third-party
+ * pack, ~215 MB and growing every refresh — too large to comfortably commit, and not obviously
+ * ours to redistribute), the wiki/Lucy/travel thirds of the snapshot are committed instead: small
+ * (~38 MB), genuinely ours (a mirror of public wiki pages), and enough for search/items/spells/
+ * quests/peers to work on the hosted site. `--no-maps` is what makes that honest — it skips the
+ * `maps` section **entirely** (not merely the files) so `manifest.json` never claims a map source
+ * exists that the deployment doesn't actually carry; without it, the Map tab would show a picker
+ * offering sources with zero zones in them, which is a worse failure than not offering the tab at
+ * all (`hasSection("maps")` in `src/lib/web/snapshot.ts` is what reads this claim).
+ *
+ * Refreshing what's hosted is: `npm run web:snapshot:publish`, then commit `public/data/wiki-cache`,
+ * `public/data/lucy-cache`, `public/data/travel`, and `public/data/manifest.json` — never
+ * `public/data/maps`, which stays gitignored and local-only.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT, appDataDirs, dirOpt, few, helpIfAsked, load, opt } from "./lib/cli.mjs";
+import { ROOT, appDataDirs, dirOpt, few, flag, helpIfAsked, load, opt } from "./lib/cli.mjs";
 
 helpIfAsked(import.meta.url);
 
@@ -131,11 +150,14 @@ if (!dataDir) {
 }
 
 // --- map files: raw .txt, straight from this machine's EverQuest install -------------------------
-const dir = logDir();
-if (!dir) {
-  console.log("maps: no configured log folder and no --logs given — skipped");
-  manifest.sections.maps = { sources: [] };
-} else {
+// `--no-maps` skips this whole section, `manifest.sections.maps` included — see "Publishing" above.
+function buildMapsSection() {
+  const dir = logDir();
+  if (!dir) {
+    console.log("maps: no configured log folder and no --logs given — skipped");
+    manifest.sections.maps = { sources: [] };
+    return;
+  }
   const { sources } = listSources(dir);
   const mapsOut = path.join(outDir, "maps");
   const sourceSummaries = [];
@@ -177,6 +199,12 @@ if (!dir) {
   } else {
     console.log("maps: no maps folder found under", dir);
   }
+}
+
+if (flag("no-maps")) {
+  console.log("maps: skipped (--no-maps)");
+} else {
+  buildMapsSection();
 }
 
 fs.writeFileSync(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));

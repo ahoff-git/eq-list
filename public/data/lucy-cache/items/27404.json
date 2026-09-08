@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "fetchedAt": "2026-09-03T05:01:09.468Z",
+  "value": {
+    "id": 27404,
+    "name": "Rabid Grizzly Skin",
+    "card": {
+      "title": "Rabid Grizzly Skin",
+      "icon": "https://everquest.allakhazam.com/pgfx/item_1221.png",
+      "lines": [
+        "WT: 0.2 Size: SMALL",
+        "Class: ALL",
+        "Race: ALL"
+      ]
+    },
+    "sources": [
+      {
+        "kind": "drop",
+        "where": "a grizzly bear",
+        "detail": "North Karana"
+      },
+      {
+        "kind": "drop",
+        "where": "a rabid grizzly",
+        "detail": "Qeynos Hills"
+      }
+    ],
+    "sourceRows": 2,
+    "era": "in-era",
+    "eraWhy": "Lucy places it in North Karana (and 1 other), which this server runs — so the zone exists here, though whether this build's version of it holds the item is another matter.",
+    "fetchedAt": "2026-09-03T05:01:09.468Z"
+  }
+}

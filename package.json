@@ -31,6 +31,7 @@
     "travel:build": "npm run build:electron && node scripts/build-travel-graph.mjs",
     "travel:manual": "node scripts/apply-travel-manual.mjs",
     "web:snapshot": "npm run build:electron && node scripts/build-web-snapshot.mjs",
+    "web:snapshot:publish": "npm run build:electron && node scripts/build-web-snapshot.mjs --no-maps",
     "test": "npm run build:electron && node --test \"dist-electron/electron/tests/**/*.test.js\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
