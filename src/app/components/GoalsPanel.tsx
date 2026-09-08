@@ -38,6 +38,9 @@ export default function GoalsPanel() {
     await api()?.goals.start(target, qtyNum, durationSec!);
     if (saveAsTemplate) await api()?.goals.saveTemplate(target, qtyNum, durationSec!);
     setName("");
+    // A one-time choice about *this* goal, not a standing preference — left checked, it would
+    // silently save a duplicate template for every goal started afterward.
+    setSaveAsTemplate(false);
   }
 
   return (

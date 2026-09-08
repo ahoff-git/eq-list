@@ -157,6 +157,37 @@ export function createGoalTracker({
     }
   }
 
+  /**
+   * Whether a goal is still open for credit **right now**.
+   *
+   * `noteLoot`/`noteKill` used to guard only on `resultAnnounced`, which the 1-second sweep sets — but
+   * a burst of *replayed* log lines (a slow disk read, or the app catching up on a gap) is processed
+   * in one synchronous pass, and `setInterval`'s sweep callback cannot run in the middle of it. Without
+   * this check, a goal whose due time had already passed in real wall-clock terms kept being
+   * credited — and could even complete or cross a milestone — for however long the batch took.
+   *
+   * This is **not** the startup case above: a goal that ran out while the app was shut is already
+   * marked spoken-for before the first line of any replay ever reaches here, so what this actually
+   * catches is a deadline passing *live*, mid-run, just a moment ahead of the sweep's own schedule —
+   * which is still real news and gets the ordinary expired banner, exactly as the sweep would have
+   * given it.
+   */
+  function stillRunning(goal: Goal, at: number): boolean {
+    if (goal.resultAnnounced) return false;
+    const state = goalState(goal, at);
+    if (state === "running") return true;
+    // "completed" should already have been caught by `announceProgress` the instant it happened —
+    // this branch exists for it anyway rather than assuming "expired", so a future caller of
+    // `stillRunning` can't be handed the wrong banner for the terminal state it actually found.
+    goal.resultAnnounced = true;
+    announce(
+      { kind: state === "completed" ? "completed" : "expired", target: goal.target, qty: goal.qty, obtained: goal.obtained },
+      at,
+      goal.styleId,
+    );
+    return false;
+  }
+
   function sweep(): void {
     const at = now();
     let any = false;
@@ -220,8 +251,13 @@ export function createGoalTracker({
       let any = false;
       for (const goal of state.goals) {
         if (goal.resultAnnounced || !goalWantsItem(goal.target, event.item)) continue;
+        const at = now();
+        if (!stillRunning(goal, at)) {
+          any = true; // resolved silently by the check above — the board still needs to know
+          continue;
+        }
         goal.obtained += event.qty;
-        announceProgress(goal, now());
+        announceProgress(goal, at);
         any = true;
       }
       if (any) changed();
@@ -231,8 +267,13 @@ export function createGoalTracker({
       let any = false;
       for (const goal of state.goals) {
         if (goal.resultAnnounced || !goalWantsMob(goal.target, event.target)) continue;
+        const at = now();
+        if (!stillRunning(goal, at)) {
+          any = true;
+          continue;
+        }
         goal.obtained += 1;
-        announceProgress(goal, now());
+        announceProgress(goal, at);
         any = true;
       }
       if (any) changed();

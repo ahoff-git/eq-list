@@ -314,7 +314,7 @@ export default function HuntPanel({
       {focus.active && focus.hiding && (grouping === "zone" ? hiddenMobs : hiddenItems) > 0 && (
         <GoalFocusBanner
           hidden={grouping === "zone" ? hiddenMobs : hiddenItems}
-          noun="mob"
+          noun={grouping === "zone" ? "mob" : "item"}
           onShowAll={() => focus.setHiding(false)}
         />
       )}
@@ -332,6 +332,9 @@ export default function HuntPanel({
       )}
       {!loading && hiding && grouping === "zone" && zonesShown.length === 0 && zones.length > 0 && (
         <p className="muted small">Nothing left to kill for your goals here — try &ldquo;Show all&rdquo;.</p>
+      )}
+      {!loading && hiding && grouping === "item" && shownItemsFiltered.length === 0 && targetPlacesShown.length === 0 && (shownItems.length > 0 || targetPlaces.length > 0) && (
+        <p className="muted small">Nothing left to farm for your goals here — try &ldquo;Show all&rdquo;.</p>
       )}
 
       {/* Only worth marking rows in emphasize-only mode: once hiding is on, everything left already

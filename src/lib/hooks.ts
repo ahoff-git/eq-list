@@ -926,15 +926,24 @@ export function useGoalFocus(): GoalFocus {
   const [hiding, setHiding] = usePersistentState<boolean>(STORAGE_KEYS.goalFocusHide, false);
   const goals = useGoalsBoard();
   const { items, mobs } = useMemo(() => runningGoalTargets(goals.goals), [goals]);
-  return {
-    active,
-    setActive,
-    hiding: active && hiding,
-    setHiding,
-    itemTargets: items,
-    mobTargets: mobs,
-    running: items.length + mobs.length,
-  };
+  const effectiveHiding = active && hiding;
+  // Memoized on the values that actually change, not reconstructed on every render: `HuntPanel`
+  // builds a `useCallback`/`useMemo` chain (`goalMatchMob`, `zonesShown`, `shownItemsFiltered`, …) on
+  // top of this whole object, and a fresh object identity every render — which a plain literal here
+  // would be, `setActive`/`setHiding` included — would silently defeat every one of those memos and
+  // recompute the tab's whole filtered view on every render, not just when a goal or a toggle changes.
+  return useMemo(
+    () => ({
+      active,
+      setActive,
+      hiding: effectiveHiding,
+      setHiding,
+      itemTargets: items,
+      mobTargets: mobs,
+      running: items.length + mobs.length,
+    }),
+    [active, setActive, effectiveHiding, setHiding, items, mobs],
+  );
 }
 
 /**

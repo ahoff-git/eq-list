@@ -41,6 +41,9 @@ interface Harness {
   tracker: GoalTracker;
   raised: CastAlertEvent[];
   tick(toSec: number): void;
+  /** Move the clock **without** running the sweep — a synchronous burst of replayed log lines is
+   *  exactly this: real time has moved on, but nothing has told the tracker so yet. */
+  advanceClock(toSec: number): void;
   dir: string;
 }
 
@@ -68,6 +71,9 @@ function harness(options: { settings?: CastAlertSettings; dir?: string; startSec
     tick(toSec) {
       nowSec = toSec;
       sweep?.();
+    },
+    advanceClock(toSec) {
+      nowSec = toSec;
     },
     dir,
   };
@@ -131,6 +137,21 @@ test("completion fires once, says done, and nothing further is credited or spoke
   tracker.noteLoot(loot("Powder", 5, 20)); // more of the same item, goal already finished
   assert.equal(raised.length, 0);
   assert.equal(tracker.view().goals[0].obtained, 5, "a finished goal doesn't keep counting");
+});
+
+test("a loot line arriving after the clock has already run out is not credited, even if the sweep hasn't caught up yet", () => {
+  const { tracker, raised, advanceClock } = harness({ startSec: 0 });
+  tracker.start({ kind: "item", name: "Powder" }, 20, 60);
+  // The clock moves on, but the sweep interval is never invoked — a synchronous burst of replayed
+  // log lines looks exactly like this to the tracker: real time has passed the due time, but
+  // nothing has told this goal so yet.
+  advanceClock(61);
+  tracker.noteLoot(loot("Powder", 5, 61));
+  const goal = tracker.view().goals[0];
+  assert.equal(goal.obtained, 0, "a line that arrives after time is up must not still be credited");
+  assert.equal(goal.state, "expired");
+  assert.equal(raised.filter((a) => a.goal?.kind === "expired").length, 1, "resolved as expired exactly once");
+  assert.equal(raised.some((a) => a.goal?.kind === "milestone" || a.goal?.kind === "completed"), false);
 });
 
 test("a goal left unmet at its due time expires exactly once, from the sweep", () => {
