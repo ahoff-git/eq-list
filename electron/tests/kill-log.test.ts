@@ -390,11 +390,28 @@ test("clearing the log forgets where the player was, too", () => {
 // watched live — records each real event exactly once. record()/noteLoot() say whether they
 // actually added, so an importer can report only what was new.
 
-test("the same kill line read twice records one kill", () => {
+// A replay only has to recognise what a signature **before it began** already accounted for — two
+// occurrences that both arise *inside* one replay, with nothing recorded before it, are trusted as
+// two real kills for the same reason live-watching trusts them (see below): nothing here can tell
+// a duplicated line from a genuine AoE double-kill sharing one second, so only "was this already on
+// record before this pass started" is ever grounds to refuse one.
+test("a kill line already recorded is recognised as a duplicate on a later replay", () => {
   const k = createKillLog(tempDir());
   assert.equal(k.record("a kobold", "You", ZONE, stamp(10), 1), true);
-  assert.equal(k.record("a kobold", "You", ZONE, stamp(10), 1), false, "the replay is a no-op");
+  k.startReplay(); // as log-import.ts does before walking a file that may repeat this line
+  assert.equal(k.record("a kobold", "You", ZONE, stamp(10), 1), false, "already recorded before this replay began");
   assert.equal(k.kills().length, 1);
+});
+
+// The reason a replay has to announce itself: live-watching never revisits a line, so two calls
+// sharing one signature outside a replay are trusted as two genuinely different kills — an AoE mez
+// landing on two same-named mobs in the same second is exactly this shape (ADR 0207, "Same second,
+// different mob").
+test("the same signature recorded twice outside a replay is trusted as two real kills", () => {
+  const k = createKillLog(tempDir());
+  assert.equal(k.record("a kobold", "You", ZONE, stamp(10), 1), true);
+  assert.equal(k.record("a kobold", "You", ZONE, stamp(10), 1), true, "no replay in progress to doubt it");
+  assert.equal(k.kills().length, 2);
 });
 
 test("two real kills of the same mob a second apart are both kept", () => {
@@ -404,11 +421,12 @@ test("two real kills of the same mob a second apart are both kept", () => {
   assert.equal(k.kills().length, 2);
 });
 
-test("the same loot line read twice adds one drop", () => {
+test("a loot line already recorded is recognised as a duplicate on a later replay", () => {
   const k = createKillLog(tempDir());
   kill(k, "a kobold", 10);
   assert.equal(k.noteLoot(looted("Bone Chips", "a kobold", 12)), true);
-  assert.equal(k.noteLoot(looted("Bone Chips", "a kobold", 12)), false, "same line, no second drop");
+  k.startReplay();
+  assert.equal(k.noteLoot(looted("Bone Chips", "a kobold", 12)), false, "already recorded before this replay began");
   assert.deepEqual(k.kills()[0].drops, ["Bone Chips"]);
 });
 
@@ -420,6 +438,7 @@ test("re-eating the same sequence changes nothing, even across a restart", () =>
   first.flush();
 
   const again = createKillLog(dir); // keys were persisted, so the replay recognises both lines
+  again.startReplay(); // a re-import always announces itself first, same as log-import.ts
   assert.equal(again.record("a kobold", "You", ZONE, stamp(10), 1), false, "kill already known");
   assert.equal(again.noteLoot(looted("Bone Chips", "a kobold", 12)), false, "drop already known");
   assert.equal(again.kills().length, 1);
@@ -532,7 +551,11 @@ test("the same coin line read twice adds the money once", () => {
  * it while every surviving record keeps its own. Getting that wrong is invisible in ordinary
  * play and shows up as either a doubled kill or a permanently swallowed line after a trim.
  */
-test("the cap forgets the lines it drops and keeps the lines it doesn't", () => {
+// Before ADR 0207, a trimmed record's dedup key was forgotten along with the record itself, so a
+// re-read (or a log eaten a second time after the cap had already retired it) recorded — then
+// re-retired — the same history again, silently doubling the observation. Keys now outlive the
+// record they came from, so a replay recognises a trimmed line exactly as well as a held one.
+test("the cap trims records, but a replay still recognises a trimmed line's key", () => {
   const k = createKillLog(tempDir());
   // A distinct second per kill, well past the cap. Not `stamp`, which only spans an hour.
   const at = (i: number) => new Date(Date.parse("2026-07-29T00:00:00Z") + i * 1000).toISOString();
@@ -541,17 +564,22 @@ test("the cap forgets the lines it drops and keeps the lines it doesn't", () => 
 
   const kept = k.kills(); // newest first
   assert.ok(kept.length < OVER, "the log is capped rather than growing without bound");
+  assert.equal(kept.some((r) => r.mob === "a kobold 0"), false, "the oldest was trimmed away");
 
-  // A record that survived the trim still recognises its own line, and the drop hung on it.
+  // Loot the still-held newest corpse live, before any replay — so the replay below has
+  // something real on permanent record to recognise, rather than seeing it for the first time.
   const newest = kept[0];
   const drop: LootEvent = { ...looted("Bone Chips", newest.mob, 0), at: newest.at };
-  assert.equal(k.noteLoot(drop), true);
-  assert.equal(k.noteLoot(drop), false, "its loot line still dedups");
-  assert.equal(k.record(newest.mob, "You", ZONE, newest.at, 1), false, "its kill line still dedups");
+  assert.equal(k.noteLoot(drop), true, "first sight of this drop line, live");
 
-  // The oldest was trimmed away, so its line is unread again — an index entry pointing at a
-  // record that no longer exists would block it forever.
-  assert.equal(k.record("a kobold 0", "You", ZONE, at(0), 1), true, "a trimmed line can be recorded again");
+  k.startReplay(); // as log-import.ts always does before re-walking a file's lines
+  assert.equal(k.noteLoot(drop), false, "a held record's drop line still dedups on replay");
+  assert.equal(k.record(newest.mob, "You", ZONE, newest.at, 1), false, "a held record's kill line still dedups on replay");
+  assert.equal(
+    k.record("a kobold 0", "You", ZONE, at(0), 1),
+    false,
+    "a trimmed record's kill line still dedups — its key was never forgotten",
+  );
 });
 
 /**

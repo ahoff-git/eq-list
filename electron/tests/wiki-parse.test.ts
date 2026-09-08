@@ -157,6 +157,20 @@ test("quest page → a \"Checklist\" heading is merged in alongside \"Walkthroug
   assert.ok(!p.components.some((c) => c.name === "Burning Rapier"));
 });
 
+test("quest page → a bare \"Item from Source\" checklist bullet, with no verb at all, is still caught", () => {
+  const p = parseFixture("quest-acumen-mask", "Acumen Mask Quest");
+  assert.equal(p.kind, "quest");
+  // None of these carry a quantity, a "loot/get/buy" verb, or a "drop(s)/purchased" cue — just a
+  // bare "<item> from <source>" — so only the checklist's own structure (link first) catches them.
+  for (const name of ["Glowing Mask", "Patch of Shadow", "Darkbone Skull", "Bonechipped Mask"]) {
+    assert.ok(p.components.some((c) => c.name === name && c.qty === 1), `expected ${name} as a turn-in`);
+  }
+  // The sources named alongside each item (mobs, zones) must not themselves be read as turn-ins.
+  assert.ok(!p.components.some((c) => /skeleton monk|Froglok Scryer|shadowed man|dark bone|Goblin Headmaster/i.test(c.name)));
+  // The reward stays out of the turn-in list.
+  assert.ok(!p.components.some((c) => c.name === "Acumen Mask"));
+});
+
 // ─── Gear-set quest bundles (ADR 0197) ──────────────────────────────────────
 
 test("gear-set bundle (per-piece heading) → one sub-quest per armor piece, each with its own reward and turn-ins", () => {

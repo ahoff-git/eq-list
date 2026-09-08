@@ -59,6 +59,18 @@ export function rateConfidence(kills: number): RateConfidence {
 }
 
 /**
+ * The bias no sample size fixes: `kills` counts every corpse credited to you, but a drop is only
+ * counted if you personally looted it — and EQ never tells a bystander what someone else looted
+ * ([ADR 0207](../../specs/decisions/0207-a-retired-kill-still-remembers-its-own-line.md)'s own
+ * consequences note the same gap for the raw kill log). A group or raid where someone else loots
+ * the corpse you finished off is invisible here: the kill still counts, its drop doesn't, so the
+ * rate reads low rather than wrong in either direction. More kills make the *count* more solid; they
+ * never close this gap, which is why it's said once beside every observed rate rather than only the
+ * thin ones.
+ */
+const LOOT_VISIBILITY_CAVEAT = "Counts kills credited to you even when someone else looted the corpse first, so a grouped or raided rate can read low.";
+
+/**
  * Why a rate is dimmed or not — the wording for each rung of the ladder above.
  *
  * It lives here with the thresholds rather than in the panel, because two panels now show the same
@@ -68,11 +80,11 @@ export function rateConfidence(kills: number): RateConfidence {
 export function rateWhy(kills: number): string {
   switch (rateConfidence(kills)) {
     case "solid":
-      return `Out of ${kills} kills — a rate worth trusting.`;
+      return `Out of ${kills} kills — a rate worth trusting. ${LOOT_VISIBILITY_CAVEAT}`;
     case "fair":
-      return `Out of ${kills} kills — indicative, not settled.`;
+      return `Out of ${kills} kills — indicative, not settled. ${LOOT_VISIBILITY_CAVEAT}`;
     default:
-      return `Out of only ${kills} kills. Treat this as a hint; kill more (or pool with peers).`;
+      return `Out of only ${kills} kills. Treat this as a hint; kill more (or pool with peers). ${LOOT_VISIBILITY_CAVEAT}`;
   }
 }
 

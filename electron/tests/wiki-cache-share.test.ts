@@ -173,10 +173,11 @@ function seed(
 test("an item page from the previous parse version is still good", async () => {
   // The regression this pins cost real money: `CACHE_VERSION` is one number for the whole cache, so
   // bumping it to teach the parser about *zone* pages threw away 11,482 untouched item pages and
-  // would have made every user re-fetch the catalogue over three hours. Item pages did not change.
+  // would have made every user re-fetch the catalogue over three hours. Items now carry their own
+  // floor too (v25, `parseLinkList`), so "still good" means "at or above *that*", not the general one.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-version-test-"));
   try {
-    seed(dir, { kind: "item", title: "Old But Fine" }, 12);
+    seed(dir, { kind: "item", title: "Old But Fine" }, 25);
     seed(dir, { kind: "item", title: "Genuinely Ancient" }, 4);
     const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     const items = await wiki.cachedItems();
@@ -199,7 +200,7 @@ test("a zone page from before the roster existed is re-read, not trusted", async
     seed(
       dir,
       { kind: "item", title: "Gnoll Thing", sources: [{ kind: "drop", where: "a gnoll", detail: "Nowhere At All" }] },
-      12,
+      25,
     );
     // The zone is stale, so its roster is not read and the item gets no mob level from it. The level
     // itself lives on the *row*, so this asks the same question `itemRows` would.
@@ -216,6 +217,45 @@ test("a zone page from before the roster existed is re-read, not trusted", async
     const fresh = itemRows(items, wiki.levelSources())[0];
     assert.equal(fresh?.level?.from, "mob");
     assert.equal(fresh?.level?.min, 5);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+// ─── A quest's zone is hoisted onto the item that names it ──────────────────
+
+// Not tied to a parse milestone like the version-floor tests above — these are about the
+// quest-zone hoist, not about gating, so the pages just need to read as unquestionably current.
+const CURRENT = 1_000_000;
+
+test("a quest's own Start Zone reaches the item whose only source is that quest", async () => {
+  // `Related_quests` names the quest and nothing else — the zone lives on the quest's *own* page,
+  // and the catalogue walk cross-references it the same way it does a mob's or a quest's level.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-zone-"));
+  try {
+    seed(dir, { kind: "quest", title: "Bear Hide Armor", sources: [{ kind: "quest", where: "North Kaladim", detail: "Start zone" }] }, CURRENT);
+    seed(dir, { kind: "item", title: "Bear Hide Cap", sources: [{ kind: "quest", where: "Bear Hide Armor" }] }, CURRENT);
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const items = await wiki.cachedItems();
+    const rows = itemRows(items, wiki.levelSources(), wiki.questZoneSource());
+    assert.deepEqual(rows.find((r) => r.item.title === "Bear Hide Cap")?.zones, ["North Kaladim"]);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test('a "Tests" quest with no page data at all still places its item, off the title alone', async () => {
+  // The real gap this exists for: eqlwiki's per-class armor "Tests" quests have no `questTopTable`,
+  // so they cache as empty pages — no card, no sources, nothing to cross-reference. Seeded here as
+  // the real cache holds one, confirmed against `public/data/wiki-cache/pages/f4.jsonl`.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-zone-tests-"));
+  try {
+    seed(dir, { kind: "item", title: "Wizard Plane of Sky Tests", sources: [] }, CURRENT);
+    seed(dir, { kind: "item", title: "Augmentor's Mask", sources: [{ kind: "quest", where: "Wizard Plane of Sky Tests" }] }, CURRENT);
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const items = await wiki.cachedItems();
+    const rows = itemRows(items, wiki.levelSources(), wiki.questZoneSource());
+    assert.deepEqual(rows.find((r) => r.item.title === "Augmentor's Mask")?.zones, ["Plane of Sky"]);
   } finally {
     await cleanup(dir);
   }
@@ -412,9 +452,9 @@ test("a page cached under two names is one item, not two", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-alias-"));
   try {
     const same = { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", card: { title: "Cloth Cape", lines: ["AC: 2"] } };
-    seed(dir, same, 13);
+    seed(dir, same, 25);
     // The alias `getPage("Cloth Cape +2")` would write: the same page, under the asked-for name.
-    seed(dir, same, 13, "Cloth Cape +2");
+    seed(dir, same, 25, "Cloth Cape +2");
 
     const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     const rows = JSON.parse(await wiki.catalogueJson()) as ItemRow[];
@@ -441,7 +481,7 @@ test("a cache of loose page files is folded into buckets and the files go", asyn
     const loose = (name: string, page: Record<string, unknown>) =>
       fs.writeFileSync(
         path.join(dir, `${name}.json`),
-        JSON.stringify({ version: 13, page: { sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString(), ...page } }),
+        JSON.stringify({ version: 25, page: { sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString(), ...page } }),
         "utf8",
       );
     const cape = { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", card: { title: "Cloth Cape", lines: ["AC: 2"] } };
@@ -518,13 +558,13 @@ test("a torn line costs one page, not the bucket", async () => {
   // An append can be cut short by a power cut. The rest of the bucket has to survive it.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-torn-"));
   try {
-    seed(dir, { kind: "item", title: "Whole Thing", wikiPath: "/Whole_Thing" }, 13);
+    seed(dir, { kind: "item", title: "Whole Thing", wikiPath: "/Whole_Thing" }, 25);
     const bucket = fs
       .readdirSync(path.join(dir, "pages"))
       .map((n) => path.join(dir, "pages", n))
       .find((f) => fs.readFileSync(f, "utf8").includes("Whole Thing"));
     assert.ok(bucket, "the page landed in a bucket");
-    fs.appendFileSync(bucket, 'Half A Page	13	{"kind":"item","ti', "utf8");
+    fs.appendFileSync(bucket, 'Half A Page	25	{"kind":"item","ti', "utf8");
 
     const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     assert.deepEqual((await wiki.cachedItems()).map((i) => i.title), ["Whole Thing"]);

@@ -69,6 +69,11 @@ export function buildWikiContribution({ mob, character, at, wikiDrops, zones }: 
     return lines.join("\n").trim();
   }
 
+  // EQ never tells a bystander what someone else looted, so a corpse a group- or raid-mate
+  // looted first counts toward the kills above but shows no drop below — these rates can only
+  // read low from that, never high.
+  lines.push("Kills counted here include any where someone else looted the corpse first, so a rate can read lower than the truth — never higher.", "");
+
   const truth = reconcileDrops(wikiDrops, myCounts, myKills);
   const undocumented = truth.filter((t) => t.verdict === "undocumented" && t.seen > 0);
   const suspicious = truth.filter((t) => t.suspicious);

@@ -3560,8 +3560,14 @@ kbd {
 .item-table td.num,
 .item-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .item-table td { vertical-align: top; }
-.item-table .src-kind + .src-kind { margin-left: 6px; }
+/* A quest chip is an `ItemLink` wrapping a `.src-kind` rather than being one directly (it needs its
+   own hover text), so the ordinary `.src-kind + .src-kind` gap misses it on either side. */
+.item-table .src-kind + .src-kind,
+.item-table .src-kind + .src-kind-link,
+.item-table .src-kind-link + .src-kind,
+.item-table .src-kind-link + .src-kind-link { margin-left: 6px; }
 .item-table .item-add { text-align: right; }
+.item-table .item-add > .btn + .btn { margin-left: 6px; }
 /* Out of era is dimmed rather than hidden — the toggle hides it; this only says which they are. */
 .item-table tr.out-of-era { opacity: 0.55; }
 .lucy-chip { margin-left: 6px; }

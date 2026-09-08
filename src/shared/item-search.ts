@@ -40,6 +40,7 @@ import { itemBaseName } from "./names";
 import { normalizeItemName } from "./grouping";
 import { normalizeZone } from "./sources";
 import { distinctSorted, sortRows, type Sort } from "./sorting";
+import { zoneFromTestsQuestTitle } from "./zones/quest-zone";
 import type { CachedItem, SourceKind } from "./types";
 
 /** One item in the searchable catalogue: what the cache holds, plus what it means. */
@@ -57,6 +58,8 @@ export interface ItemRow {
   level?: ItemLevel;
   /** The distinct ways it can be got, in the order its sources list them. */
   kinds: SourceKind[];
+  /** The distinct quests it's related to, in source order — so a "quest" chip has somewhere to link. */
+  quests: string[];
   /**
    * Effect names by how you reach them — the four `EffectKind` facets, computed once per row rather
    * than filtered out of `stats.effects` on every keystroke of every picker.
@@ -272,8 +275,19 @@ export function namesAPlace(zone: string): boolean {
  * Built once per catalogue rather than per keystroke — parsing eleven thousand cards on every letter
  * typed into the name box is the one thing here that would actually be slow. Built in **main**, which
  * already holds the pages, so a window never parses a card at all.
+ *
+ * `questZone` is the catalogue build's cross-reference from a quest's title to its own page's "Start
+ * zone" (`electron/wiki/index.ts`'s `questZones`, gathered the same walk as `questLevels`) — a quest
+ * source never carries a zone of its own (`Related_quests` is a bare link list), so without it every
+ * item obtainable only by quest would show no zone at all. Where that lookup has nothing — a quest
+ * page never fetched, or, for eqlwiki's "Tests" armor quests, one with no `questTopTable` to read in
+ * the first place — the quest's own title is tried as a last resort (`zoneFromTestsQuestTitle`).
  */
-export function itemRows(items: readonly CachedItem[], levels?: LevelSources): ItemRow[] {
+export function itemRows(
+  items: readonly CachedItem[],
+  levels?: LevelSources,
+  questZone?: (questTitle: string) => string | undefined,
+): ItemRow[] {
   // One spelling per zone across the *whole* catalogue, first seen winning — the same rule
   // `groupDropsByZone` uses on a single page, applied across every page so the filter and the
   // column agree with each other.
@@ -290,9 +304,14 @@ export function itemRows(items: readonly CachedItem[], levels?: LevelSources): I
   return items.map((item) => {
     const kinds: SourceKind[] = [];
     const zones: string[] = [];
+    const quests: string[] = [];
     for (const source of item.sources ?? []) {
       if (!kinds.includes(source.kind)) kinds.push(source.kind);
-      const zone = source.detail?.trim();
+      if (source.kind === "quest" && source.where && !quests.includes(source.where)) quests.push(source.where);
+      let zone = source.detail?.trim();
+      if (!zone && source.kind === "quest" && source.where) {
+        zone = questZone?.(source.where) ?? zoneFromTestsQuestTitle(source.where);
+      }
       // A cell that isn't a place is no answer to "which place" — see `namesAPlace`.
       if (!zone || !namesAPlace(zone)) continue;
       const named = canonicalZone(zone);
@@ -303,7 +322,7 @@ export function itemRows(items: readonly CachedItem[], levels?: LevelSources): I
     for (const effect of stats.effects) (effectsBy[effect.kind] ??= []).push(effect.name);
     // Without lookups the zone rung still answers, since the zone tables ship with the app.
     const level = itemLevel(item.sources ?? [], levels ?? NO_LEVEL_SOURCES, stats.requiredLevel);
-    return { item, stats, level, kinds, zones, effectsBy };
+    return { item, stats, level, kinds, zones, quests, effectsBy };
   });
 }
 

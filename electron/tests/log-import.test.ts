@@ -31,6 +31,7 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
   const coins: number[] = [];
   const killLog: KillLog = {
     setPlayer() {},
+    startReplay() {},
     noteLoc: (loc: LocEvent) => locs.push(loc.y),
     record: (mob, killer, zone) => {
       recorded.push({ mob, killer, zone });
@@ -70,6 +71,7 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
 function stubKillLog(): KillLog {
   return {
     setPlayer() {},
+    startReplay() {},
     noteLoc: () => {},
     record: () => true,
     noteLoot: () => true,

@@ -590,9 +590,11 @@ function Rate({ truth, shown = bestRate(truth), always = false }: { truth: DropT
 /** Say which source a rate came from, and why that one is leading. */
 function rateWhy(truth: DropTruth, source: "observed" | "wiki"): string {
   if (source === "observed") {
+    // A corpse someone else in your group loots first still counts toward `kills` but shows no
+    // drop here — EQ never tells a bystander what somebody else looted — so this can read low.
     return `Seen ${truth.seen} times in ${truth.kills} of your own kills${
       truth.wikiRate ? ` — the wiki says ${truth.wikiRate}` : " — the wiki doesn't list it at all"
-    }.`;
+    }. Counts kills credited to you even when someone else looted the corpse first.`;
   }
   return `The wiki's figure${
     truth.kills ? `, from an older build. You've killed it ${truth.kills} times so far` : ""

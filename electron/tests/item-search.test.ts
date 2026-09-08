@@ -410,3 +410,52 @@ test("an out-of-era item is hidden until you ask for it", () => {
   assert.equal(matchesItem(era[0], NO_CRITERIA), false, "hidden by default");
   assert.equal(matchesItem(era[0], with_({ hideOutOfEra: false })), true, "and shown when unticked");
 });
+
+test("a quest source carries its own name, for a chip to link to", () => {
+  const [circlet] = itemRows([
+    item("Circlet of Intellect", ["Slot: HEAD"], [{ kind: "quest", where: "Apprentice Heretic" }]),
+  ]);
+  assert.deepEqual(circlet.quests, ["Apprentice Heretic"]);
+  // A drop-only item names none — an empty list, not a chip with nowhere to go.
+  assert.deepEqual(itemRows([item("Aviak Talon", [], [drop("a krag elder", "Feerrott")])])[0].quests, []);
+});
+
+test("a quest source's zone is hoisted from the quest's own \"Start zone\"", () => {
+  // `Related_quests` names the quest and nothing else — the zone the catalogue build cross-references
+  // in from the quest's own page (`electron/wiki/index.ts`'s `questZones`), handed in the same way
+  // `levelSources` hands in a mob's or a quest's level.
+  const questZone = (name: string) => (name === "Bear Hide Armor" ? "North Kaladim" : undefined);
+  const [cap] = itemRows(
+    [item("Bear Hide Cap", ["Slot: HEAD"], [{ kind: "quest", where: "Bear Hide Armor" }])],
+    undefined,
+    questZone,
+  );
+  assert.deepEqual(cap.zones, ["North Kaladim"]);
+});
+
+test('a "Tests" quest with no page of its own still places its item, off the quest\'s own title', () => {
+  // eqlwiki's per-class armor "Tests" quests carry no `questTopTable` at all — nothing for the
+  // catalogue build to cross-reference — so the title itself is the fallback: "Wizard Plane of Sky
+  // Tests" reads as "Plane of Sky" the same way the zone-level resolver reads "North Qeynos" as
+  // "Qeynos". No `questZone` lookup is passed here, so this is the fallback answering alone.
+  const [mask] = itemRows([
+    item("Augmentor's Mask", ["Slot: FACE"], [{ kind: "quest", where: "Wizard Plane of Sky Tests" }]),
+  ]);
+  assert.deepEqual(mask.zones, ["Plane of Sky"]);
+
+  // A "Tests" quest that names no real zone at all is left unplaced, not given a made-up one.
+  const [untitled] = itemRows([item("Something Odd", [], [{ kind: "quest", where: "Crusader's Tests" }])]);
+  assert.deepEqual(untitled.zones, []);
+});
+
+test("the quest cross-reference outranks the title guess when both are available", () => {
+  // Contrived — a real "Tests" quest has no Start Zone to cross-reference at all — but the ordering
+  // itself is the thing worth pinning: a fact beats a guess about the same source.
+  const questZone = () => "Some Other Zone";
+  const [mask] = itemRows(
+    [item("Augmentor's Mask", [], [{ kind: "quest", where: "Wizard Plane of Sky Tests" }])],
+    undefined,
+    questZone,
+  );
+  assert.deepEqual(mask.zones, ["Some Other Zone"]);
+});

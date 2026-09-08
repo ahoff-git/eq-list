@@ -4,6 +4,7 @@ import ItemLink from "./ItemLink";
 import SortHeader from "./SortHeader";
 import { AddButton } from "./ui";
 import { addByTitle } from "@/lib/addToList";
+import { api } from "@/lib/api";
 import { sourceKindLabel } from "@/shared/sources";
 import { LEVEL_CONFIDENCE, levelText } from "@/shared/item-levels";
 import { statLine, statMeta, type StatKey } from "@/shared/item-stats";
@@ -127,6 +128,8 @@ const ItemRowView = memo(function ItemRowView({
   const zones = zonesInFilterOrder(row.zones, pickedZones);
   const level = row.level;
   const zoneTitle = zones.length > 1 ? `Drops in ${zones.length} zones: ${zones.join(", ")}` : zones[0];
+  // Lucy has no page here to open — only a wiki-origin row carries a `wikiPath`.
+  const wikiPath = row.item.wikiPath;
 
   return (
     <tr className={row.item.outOfEra ? "out-of-era" : undefined}>
@@ -142,11 +145,30 @@ const ItemRowView = memo(function ItemRowView({
       <td className="muted">{row.stats.slots.join(" ") || "—"}</td>
       <td>
         {row.kinds.length
-          ? row.kinds.map((kind) => (
-              <span key={kind} className={`src-kind k-${kind}`}>
-                {sourceKindLabel(kind)}
-              </span>
-            ))
+          ? row.kinds.map((kind) =>
+              // A quest chip goes to the quest itself — the same "look this up" an item's own name
+              // gives you — rather than sitting there as a label with nowhere to go. Several related
+              // quests link to the first; the hover names them all.
+              kind === "quest" && row.quests.length ? (
+                <ItemLink
+                  key={kind}
+                  title={row.quests[0]}
+                  className="src-kind-link"
+                  label={
+                    <span
+                      className={`src-kind k-${kind}`}
+                      title={row.quests.length > 1 ? `Quests: ${row.quests.join(", ")}` : row.quests[0]}
+                    >
+                      {sourceKindLabel(kind)}
+                    </span>
+                  }
+                />
+              ) : (
+                <span key={kind} className={`src-kind k-${kind}`}>
+                  {sourceKindLabel(kind)}
+                </span>
+              ),
+            )
           : "—"}
       </td>
       {/* `+N` is "and N other zones" — the count is in the hover, since the column has to stay narrow. */}
@@ -167,6 +189,11 @@ const ItemRowView = memo(function ItemRowView({
       {!columns.length && <td className="muted small">{statLine(row.stats) || "—"}</td>}
       <td className={`num ${scored && row.value ? "num-accent" : "muted"}`}>{scored ? row.value : "—"}</td>
       <td className="item-add">
+        {wikiPath && (
+          <button className="btn ghost sm" title="Open on eqlwiki" onClick={() => api()?.wiki.openInBrowser(wikiPath)}>
+            ↗
+          </button>
+        )}
         <AddButton
           onAdd={() => void addByTitle(row.item.title, row.item.wikiPath)}
           title="Put it on the shopping list"

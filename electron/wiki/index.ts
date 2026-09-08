@@ -120,7 +120,16 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // `<ul>` now has its rewards read at all; and a "gear-set" bundle page — one giver/zone offering
 // several independently turned-in armor pieces off that one table (ADR 0197) — is now split into
 // `subQuests`, one per piece, each with its own turn-ins and reward.
-const CACHE_VERSION = 23;
+// v24: a bare `.checkbox-list` bullet with no quantity/verb/drop-source cue at all ("Glowing Mask
+// from a skeleton monk") is now read structurally (link first, gated to `<li>`s where nothing but
+// an article precedes it) — every prior cue requires some qualifying word next to the link, which
+// this shape never has, so a quest built this way previously showed zero turn-ins.
+// v25: an item's "Related quests"/"Tradeskill recipes" line now names the *linked page's* title
+// (`linkName`) rather than the link's own text — a piped link's display text can differ from what
+// it points at ("Wizard Test of Concentration" reading as a page that was never fetched, when the
+// href is really `/Wizard_Plane_of_Sky_Tests`), and everything keyed off the old `where` had nothing
+// to find.
+const CACHE_VERSION = 25;
 
 /** The version "faction" became a kind the parser could produce at all — see the misclassified
  * check below, which only needs to distrust a cached kind *older* than this. */
@@ -155,8 +164,14 @@ const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
   // `subQuests` — a quest cached at v22 or earlier may be missing rewards entirely (silently, if its
   // Reward section was table-shaped) or show one undifferentiated turn-in list where several
   // independent ones exist.
-  // Item, mob, spell and zone pages are unaffected by v15 through v23.
-  quest: 23,
+  // v24: a bare checklist bullet with no verb cue is now read structurally — a quest cached at v23
+  // or earlier may be missing turn-ins entirely (silently) if its checklist was written this way.
+  quest: 24,
+  // v25: an item or recipe page cached before it may hold a "Related quests"/"Tradeskill recipes"
+  // `where` that names a piped link's display text instead of the page it actually points to — see
+  // `parseLinkList`. Mob, spell and zone pages are unaffected.
+  item: 25,
+  recipe: 25,
 };
 
 /** Below this, a page predates parts of the parse every kind depends on. */
@@ -282,6 +297,12 @@ export interface WikiClient {
    * everything, which looks like working and is not.
    */
   levelSources(): LevelSources;
+  /**
+   * A quest's own "Start zone", by its title — the cache walk's other cross-reference, gathered the
+   * same pass as `levelSources`. An item's `Related_quests` link names the quest and nothing else, so
+   * this is the only way `itemRows` learns where a quest-only item is obtainable.
+   */
+  questZoneSource(): (questTitle: string) => string | undefined;
   /**
    * The item catalogue as **rows a window can search**, which is the shape the Items tab wants and
    * the only shape it wants.
@@ -1334,9 +1355,11 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * "Shape" includes **how a field is computed**, which is the easier half to forget. `rows7` is a
    * change of content, not of structure: the zone list stopped carrying the wiki's non-place cells
    * (`Various Zones`, `Pre-Revamp` — see `namesAPlace`), and a pack written before that would have
-   * gone on offering them in the Zone picker with nothing in the code to say why.
+   * gone on offering them in the Zone picker with nothing in the code to say why. `rows8`: a quest
+   * source's zone is now hoisted from the quest's own "Start zone" (or, for a "Tests" quest with no
+   * such page, from its title) — a pack written before that has quest-only items with no zone at all.
    */
-  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows7`;
+  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows8`;
   /**
    * Set when a write invalidates the pack — so a harvest doesn't unlink a file per page, and so
    * `readPack` stops trusting it **at once**.
@@ -1429,6 +1452,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * knows it — rows built without it silently get a zone estimate for everything.
    */
   let levelEvidence: LevelSources = { mob: () => undefined, quest: () => undefined };
+  /** The counterpart to `levelEvidence` — see `questZoneSource`. */
+  let questZoneEvidence: (questTitle: string) => string | undefined = () => undefined;
   /** The built catalogue **as JSON text** — see `readPack` for why text rather than objects. */
   let rowCache: string | null = null;
   let rowBuilding: Promise<string> | null = null;
@@ -1490,7 +1515,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
         return packed.rows;
       }
       const items = await cachedItemPages();
-      const rows = forTransfer(itemRows(items, levelEvidence));
+      const rows = forTransfer(itemRows(items, levelEvidence, questZoneEvidence));
       const json = JSON.stringify(rows);
       const titles = items.map((i) => i.title);
       log.debug("catalogue:", rows.length, "rows built in", `${Date.now() - startedAt}ms`);
@@ -1558,6 +1583,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
      *  wiki's ("An aviak quetzel"). */
     const mobLevels = new Map<string, { min: number; max: number }>();
     const questLevels = new Map<string, { min: number; max: number }>();
+    const questZones = new Map<string, string>();
     // 256 bucket reads rather than 11,523, and the store breathes between them so main is never
     // blocked for more than a couple of milliseconds at a time (see `page-store.ts`).
     await store.each((hit) => {
@@ -1594,6 +1620,11 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       if (page.kind === "quest") {
         const level = questCardLevel(page.card?.lines);
         if (level) questLevels.set(page.title.trim().toLowerCase(), level);
+        // An item's own "Related quests" link names the quest and nothing else (`parseLinkList`) —
+        // the zone it starts in only ever lives on the quest's *own* page, in its `questTopTable`'s
+        // "Start zone" row (`parseQuestInfo`).
+        const startZone = page.sources.find((s) => s.detail === "Start zone")?.where;
+        if (startZone) questZones.set(page.title.trim().toLowerCase(), startZone);
         // The shape, gathered on the walk that was happening anyway — the links of a zone or quest
         // page are how a title no category files as an item is found at all (ADR 0180).
         for (const link of page.links ?? []) shapeLinks.add(link);
@@ -1662,6 +1693,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       quest: (name: string) => questLevels.get(name.trim().toLowerCase()),
     };
     levelEvidence = lookup;
+    questZoneEvidence = (name: string) => questZones.get(name.trim().toLowerCase());
     let placed = 0;
     for (const item of items) {
       // Levels are worked out by `itemRows`, where the card is already parsed — see `ItemRow.level`.
@@ -1670,7 +1702,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     }
     log.debug(
       "catalogue:", items.length, "items;",
-      mobLevels.size, "mob levels,", questLevels.size, "quest levels;",
+      mobLevels.size, "mob levels,", questLevels.size, "quest levels,", questZones.size, "quest zones;",
       placed, "items placed", `in ${Date.now() - startedAt}ms`,
     );
     spells.sort((a, b) => a.title.localeCompare(b.title));
@@ -2053,6 +2085,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       fill: fillSpellsFromRoom,
     },
     levelSources: () => levelEvidence,
+    questZoneSource: () => questZoneEvidence,
 
     catalogueJson,
     spellCatalogueJson,

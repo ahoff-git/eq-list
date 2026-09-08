@@ -223,14 +223,23 @@ function parseSoldBy(section: Section): ItemSource[] {
   return sources;
 }
 
-/** A <ul> of links → sources of a given kind (Related quests, Tradeskill recipes). */
+/**
+ * A <ul> of links → sources of a given kind (Related quests, Tradeskill recipes).
+ *
+ * `linkName`, not the link's own text: a "Related quests" line is written for a walkthrough, and a
+ * gear-set bundle's individual test is often a piped link whose display text names the specific
+ * piece ("Wizard Test of Concentration") while the href points at the page that actually exists
+ * ("Wizard Plane of Sky Tests") — reading the text left `where` naming a page that was never fetched
+ * and never will be, and everything downstream that keys off it (the in-app link, the quest's own
+ * "Start zone") silently had nothing to find.
+ */
 function parseLinkList(section: Section, kind: SourceKind): ItemSource[] {
   const sources: ItemSource[] = [];
   for (const el of section.els) {
     if (el.tagName !== "UL") continue;
     for (const li of el.querySelectorAll("li")) {
       const a = li.querySelector("a");
-      const name = (a?.text ?? li.text).trim();
+      const name = (a ? linkName(a) : li.text).trim();
       if (name) sources.push({ kind, where: name });
     }
   }
@@ -595,6 +604,40 @@ function parseWalkthroughTurnIns(section: Section | undefined): WikiComponent[] 
   return [...seen.values()];
 }
 
+/**
+ * Turn-ins named by a bare `.checkbox-list` (Template:CheckboxList) bullet with no verb at all —
+ * "Glowing Mask from a skeleton monk", "Skeletal Toe (drops off giant skeletons)" — which
+ * `parseWalkthroughTurnIns`'s quantity/verb/source cues all miss, since none of them qualify a
+ * link that's simply followed by "from"/"(" with nothing else. Read structurally instead, the
+ * same "the link names the item" rule `parseChecklistItems` uses for gear-set bundles.
+ *
+ * Gated to `<li>`s where the link is (almost) the very first thing in it — nothing before it but
+ * whitespace or a leading "a/an/the" — because the same template is also reused for plain
+ * numbered walkthrough steps ("Go to Sol Ro temple and find Lon the Redeemed ... get a Sealed
+ * Note"), where the first link is often an NPC or a place, not the item; those are left for
+ * `parseWalkthroughTurnIns`'s cues, which already read them correctly.
+ */
+function parseChecklistTurnIns(walkthrough: Section | undefined): WikiComponent[] {
+  if (!walkthrough) return [];
+  const seen = new Map<string, WikiComponent>();
+  for (const el of walkthrough.els) {
+    for (const list of findCheckboxLists(el)) {
+      for (const li of list.querySelectorAll("li")) {
+        const a = li.querySelector("a");
+        if (!a || !isContentLink(a)) continue;
+        const text = li.text.replace(/\s+/g, " ").trim();
+        const linkText = a.text.replace(/\s+/g, " ").trim();
+        if (!text.replace(/^(?:a|an|the)\s+/i, "").startsWith(linkText)) continue;
+        const name = linkName(a);
+        if (!name || seen.has(name)) continue;
+        const qtyM = text.match(/^(\d+)\s*x\b/i);
+        seen.set(name, { name, qty: qtyM ? parseInt(qtyM[1], 10) : 1, wikiPath: linkPath(a) });
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
 // ─── Mob / NPC sections ───────────────────────────────────────────────────────
 
 /** The `.mw-heading` wrapper of a heading, when present, else the heading itself. */
@@ -918,7 +961,11 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
     // shop for; a reward is something you receive, not a turn-in, so it's dropped here rather than
     // taught to the (already tight) prose heuristic.
     const rewardNames = new Set(rewards.map((r) => r.item).filter((n): n is string => !!n));
-    const components = parseWalkthroughTurnIns(walkthrough).filter((c) => !rewardNames.has(c.name));
+    // Bare checklist bullets first (a name collision there is read structurally, not guessed), then
+    // whatever the prose heuristic catches elsewhere in the same Walkthrough.
+    const checklistTurnIns = parseChecklistTurnIns(walkthrough);
+    const proseTurnIns = parseWalkthroughTurnIns(walkthrough).filter((c) => !checklistTurnIns.some((t) => t.name === c.name));
+    const components = [...checklistTurnIns, ...proseTurnIns].filter((c) => !rewardNames.has(c.name));
     // Folded into the existing info card (rather than a field of its own) so it shows up everywhere
     // that card already renders — the quest's own page and any hover preview of it — for free.
     const tierNote = parseFactionTierNote(walkthrough);

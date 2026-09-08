@@ -23,6 +23,7 @@ function stubKillLog(): KillLog & { player: string } {
     setPlayer(name: string) {
       stub.player = name;
     },
+    startReplay() {},
     noteLoc: () => {},
     record: () => true,
     noteLoot: () => true,
