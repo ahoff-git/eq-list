@@ -98,8 +98,9 @@ function AchievementRow({ achievement }: { achievement: RunningAchievement }) {
   );
 }
 
-/** A checkbox for most kinds; a `"count"` criterion (ADR 0214) also shows its running tally, since
- *  "14 of 25" is the whole point and a bare checkbox would hide it until the last kill. */
+/** A checkbox for most kinds; a tallying criterion (`"count"` (ADR 0214) or `"raceKill"` (ADR 0215))
+ *  also shows its running total, since "14 of 25" is the whole point and a bare checkbox would hide
+ *  it until the last kill. */
 function CriterionRow({
   criterion,
   done,
@@ -112,7 +113,8 @@ function CriterionRow({
   onChange: (done: boolean) => void;
 }) {
   const title = criterion.kind === "manual" ? "The log can't see this — tick it yourself" : "Checks itself off, or tick it yourself";
-  if (criterion.kind === "count" && !done) {
+  const tallying = criterion.kind === "count" || criterion.kind === "raceKill";
+  if (tallying && !done) {
     return (
       <div className="row achv-count">
         <CheckField label={criterion.label} checked={done} onChange={onChange} title={title} />

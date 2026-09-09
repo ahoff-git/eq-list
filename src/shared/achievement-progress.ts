@@ -1,6 +1,6 @@
 /**
  * achievement-progress.ts — whether a criterion is satisfied, and whether an achievement is
- * (ADR 0212, `"count"` criteria added by ADR 0214).
+ * (ADR 0212, `"count"` criteria added by ADR 0214, `"raceKill"` by ADR 0215).
  *
  * Pure and zero-I/O, like `goal-progress.ts` next door: `electron/achievement-tracker.ts` is the
  * only thing that owns state, and this is tested without any of it.
@@ -16,8 +16,15 @@
  * additionally only ever offers this module a cast event where `event.caster === SELF` — so even
  * though `matchCast`'s own logic lets an ordinary mob's cast through unconditionally (the alert
  * engine's own job, warning about threats), an achievement never sees one.
+ *
+ * A `"raceKill"` criterion reuses the log's own already-parsed `KillEvent` (`log-parser.ts`'s
+ * `parseKill`) rather than raw-line text: the mob's name is looked up in `mob-races.ts` (built from
+ * the wiki's own mob pages) and compared against the criterion's `race`, generously — see
+ * `isRace`. `electron/achievement-tracker.ts` only ever offers this module a kill where
+ * `event.killer === SELF`, the same self-only discipline every other criterion kind holds to.
  */
 import { matchCast, matchFade, matchLine, type MatchContext } from "./cast-alerts";
+import { isRace } from "./mob-races";
 import { placeKey } from "./zones/place";
 import type {
   AchievementCriterion,
@@ -29,6 +36,7 @@ import type {
   CastEvent,
   CastWatch,
   HighScore,
+  KillEvent,
   LogLine,
   RunningAchievement,
 } from "./types";
@@ -133,6 +141,16 @@ export function matchesHighScore(
 ): boolean {
   if (criterion.kind !== "highscore" || !criterion.highscore) return false;
   return record.categoryId === criterion.highscore.categoryId && record.value >= criterion.highscore.atLeast;
+}
+
+/**
+ * Does this kill count toward a `"raceKill"` criterion? The mob's own name (not the criterion's
+ * text) decides its race, generously matched — see `isRace`. `electron/achievement-tracker.ts` is
+ * what keeps this to the player's own kills; this function trusts whatever event it's handed.
+ */
+export function matchesRaceKill(criterion: AchievementCriterion, event: Pick<KillEvent, "target">): boolean {
+  if (criterion.kind !== "raceKill" || !criterion.race) return false;
+  return isRace(event.target, criterion.race);
 }
 
 /** A fresh, empty progress record for an achievement just met for the first time. */

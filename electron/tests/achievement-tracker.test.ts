@@ -11,7 +11,7 @@ import path from "node:path";
 import { createAchievementTracker, type AchievementTracker } from "../achievement-tracker";
 import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
 import { CURATED_ZONES } from "../../src/shared/zones/gazetteer";
-import type { CastAlertEvent, CastAlertSettings, CombatEvent, HighScore, LogLine } from "../../src/shared/types";
+import type { CastAlertEvent, CastAlertSettings, CombatEvent, HighScore, KillEvent, LogLine } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-17T12:00:00.000Z");
 
@@ -26,6 +26,13 @@ function line(message: string, atSec: number): LogLine {
 
 function cast(caster: string, spell: string, atSec: number): CombatEvent {
   return { kind: "cast", caster, spell, at: new Date(T0 + atSec * 1000).toISOString(), raw: "", logId: atSec };
+}
+
+function kill(target: string, killer: string, atSec: number): KillEvent {
+  return {
+    kind: "kill", target, killer, named: false, killerNamed: false,
+    at: new Date(T0 + atSec * 1000).toISOString(), raw: "", logId: atSec,
+  };
 }
 
 interface Harness {
@@ -284,6 +291,132 @@ test("a wizard-created criterion with a count > 1 becomes a tallying \"count\" c
   assert.equal(tracker.view().achievements.find((a) => a.definition.id === def.id)!.done.length, 0);
   tracker.line(line("You have slain a rat!", 3));
   assert.equal(tracker.view().achievements.find((a) => a.definition.id === def.id)!.done.length, 1);
+});
+
+// ── ADR 0215: raceKill criteria, and the rest of this batch's stock content ─────────────────────
+
+test("a raceKill criterion tallies only the player's own kill credit, never a bystander's", () => {
+  const { tracker } = harness();
+  tracker.kill(kill("Peg Leg", "Bob", 1)); // real Dwarf mob, but Bob got the credit, not the player
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.tally["dwarves"] ?? 0, 0);
+  tracker.kill(kill("Peg Leg", "You", 2));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.tally["dwarves"], 1);
+});
+
+test("a raceKill criterion never credits a kill of the wrong race", () => {
+  const { tracker } = harness();
+  tracker.kill(kill("Marda", "You", 1)); // a real mob, but an Ogre, not a Dwarf
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.tally["dwarves"] ?? 0, 0);
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-ogre")!.tally["ogres"], 1);
+});
+
+test("50 real dwarf-race kills complete Short Fuse", () => {
+  const { tracker, raised } = harness();
+  for (let i = 1; i <= 49; i++) tracker.kill(kill("Peg Leg", "You", i));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.done.length, 0);
+  tracker.kill(kill("Peg Leg", "You", 50));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!.done.length, 1);
+  assert.equal(raised.at(-1)?.achievement?.kind, "completed");
+});
+
+test("reaching level 50 completes Half Century", () => {
+  const { tracker } = harness();
+  tracker.line(line("You have gained a level! Welcome to level 50!", 1));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:level-50")!.done.length, 1);
+});
+
+test("Renaissance Adventurer is 16 plain manual criteria, one per class, each independently tickable", () => {
+  const { tracker } = harness();
+  const def = tracker.view().achievements.find((a) => a.definition.id === "stock:level-50-all-classes")!.definition;
+  assert.equal(def.criteria.length, 16);
+  assert.ok(def.criteria.every((c) => c.kind === "manual"));
+  tracker.setManual(def.id, "class:Wizard", true);
+  const progress = tracker.view().achievements.find((a) => a.definition.id === def.id)!;
+  assert.deepEqual(progress.done, ["class:Wizard"]);
+  assert.equal(progress.done.length < def.criteria.length, true);
+});
+
+test("reaching Ally with all three of Qeynos's factions completes Friend of Qeynos, two of three doesn't", () => {
+  const { tracker } = harness();
+  tracker.line(line("Your faction standing with Merchants of Qeynos could not possibly get any better.", 1));
+  tracker.line(line("Your faction standing with Guards of Qeynos could not possibly get any better.", 2));
+  const partial = tracker.view().achievements.find((a) => a.definition.id === "stock:ally-qeynos")!;
+  assert.equal(partial.done.length, 2); // two of the three factions — not yet complete
+  assert.equal(partial.total, 3);
+  tracker.line(line("Your faction standing with Corrupt Qeynos Guards could not possibly get any better.", 3));
+  const complete = tracker.view().achievements.find((a) => a.definition.id === "stock:ally-qeynos")!;
+  assert.equal(complete.done.length, 3);
+  assert.ok(complete.completedAt);
+});
+
+test("Friend of the Iksar needs only its one required faction", () => {
+  const { tracker } = harness();
+  tracker.line(line("Your faction standing with New Sebilisian Expedition could not possibly get any better.", 1));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:ally-iksar")!.done.length, 1);
+});
+
+test("cast-based silly achievements fire on the player's own cast and stay self-scoped", () => {
+  const { tracker } = harness();
+  tracker.combat(cast("a shade", "Feign Death", 1));
+  tracker.combat(cast("a shade", "Mesmerization", 1));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:feign")!.done.length, 0);
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:mez")!.done.length, 0);
+
+  tracker.combat(cast("You", "Feign Death", 2));
+  tracker.combat(cast("You", "Mesmerization", 2));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:feign")!.done.length, 1);
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:mez")!.done.length, 1);
+});
+
+test("burning a faction to the floor completes Persona Non Grata, and an ordinary faction hit doesn't", () => {
+  const { tracker } = harness();
+  tracker.line(line("Your faction standing with Agents of Mistmoore has been adjusted by -3.", 1));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:faction-enemy")!.done.length, 0);
+  tracker.line(line("Your faction standing with Agents of Mistmoore could not possibly get any worse.", 2));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:faction-enemy")!.done.length, 1);
+});
+
+test("reaching level 60 completes The Long Road, and an earlier level doesn't", () => {
+  const { tracker } = harness();
+  tracker.line(line("You have gained a level! Welcome to level 59!", 1));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:level-60")!.done.length, 0);
+  tracker.line(line("You have gained a level! Welcome to level 60!", 2));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:level-60")!.done.length, 1);
+});
+
+test("Craftmaster's regex fires on any tradeskill mastery announcement, not on an unrelated one", () => {
+  const { tracker } = harness();
+  tracker.line(line("You have completed achievement: Rat Killer", 1));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:tradeskill-mastery")!.done.length, 0);
+  tracker.line(line("You have completed achievement: Smithing (50)", 2));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:tradeskill-mastery")!.done.length, 1);
+});
+
+test("Rat Killer completes only on the exact in-game achievement of the same name", () => {
+  const { tracker } = harness();
+  tracker.line(line("You have completed achievement: The More You Gnoll!", 1));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:rat-killer")!.done.length, 0);
+  tracker.line(line("You have completed achievement: Rat Killer", 2));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:rat-killer")!.done.length, 1);
+});
+
+test("Achievement Hunter tallies any ten in-game achievement completions, whatever they are", () => {
+  const { tracker } = harness();
+  const names = [
+    "5 Alternate Advancement Points", "Ak'Anon Traveler", "Blackburrow Traveler", "Rat Killer",
+    "Guards of Qeynos", "Halas Traveler", "Kerra Isle", "Level 5", "Level 10", "Merchants of Qeynos",
+  ];
+  names.slice(0, 9).forEach((n, i) => tracker.line(line(`You have completed achievement: ${n}`, i + 1)));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:achievement-hunter")!.done.length, 0);
+  tracker.line(line(`You have completed achievement: ${names[9]}`, 10));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:achievement-hunter")!.done.length, 1);
+});
+
+test("spiders tally generously across variant names, same as hill giants", () => {
+  const { tracker } = harness();
+  tracker.line(line("You have slain a rock spider!", 1));
+  tracker.line(line("You have slain a giant heart spider!", 2));
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:spiders")!.tally["spiders"], 2);
 });
 
 test("progress and tallies both survive a restart", () => {

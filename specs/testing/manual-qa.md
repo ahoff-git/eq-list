@@ -785,6 +785,29 @@ features for later in [../ideas.md](../ideas.md).
       damage's confirmed line doesn't prove the death) — tick them by hand and confirm they behave
       like any other manual criterion.
 
+  **A second batch (ADR 0215) added `"raceKill"` criteria, race-unlock faction achievements, and two
+  level-progression ones — all unit-tested against real mob names and real faction lines, but never
+  watched tick on screen:**
+  12. **Half Century** and **Renaissance Adventurer**: level to 50 and confirm the first completes;
+      open the second and confirm it lists all **16** classes as plain checkboxes (there's no log
+      signal for which class a character is, so every box here is manual on purpose) — tick one and
+      confirm the achievement stays open until all 16 are checked.
+  13. **Nothing Personal**, **No Love Lost**, **Anti-Intellectualism**, **Short Fuse**, **Big
+      Trouble**, **Troll Toll**, **Ogre Achiever**, **Scaled Back** (kill 50 of a race): kill a
+      **named** NPC of one of these races and confirm it ticks the right one — the match is a wiki
+      stat-card lookup (`mob-races.ts`, ADR 0215), not text in the kill line, so this is the one
+      thing only a real kill against the live table can prove. If a kill of an obviously-that-race
+      mob never ticks, check whether `mob-races.generated.ts` actually has that mob's page (the
+      wiki cache may simply not have fetched it yet) before assuming the lookup is wrong.
+  14. **Friend of the Barbarians / Dwarves / Erudites / Gnomes / Halflings**, **Friend of Qeynos**,
+      **Friend of the Iksar**: reach Ally standing with one real faction and confirm the matching
+      criterion ticks with a 🏅 banner naming it; reach Ally with **all** of one achievement's
+      factions and confirm the 🎉 completion banner fires. The faction *names* per race came from a
+      third-party guide cross-checked against a real log where possible — Barbarian, Dwarf, Erudite
+      and Qeynos's three were each directly confirmed this way, but Gnome and Halfling each have one
+      faction (`King Ak'Anon`, `Merchants of Rivervale`) that wasn't independently seen in the log
+      used for this research. If either never ticks at Ally, that's the name to correct.
+
 ## Peer networking — two clients
 
 - **The shared game clock — never run with a real peer.**

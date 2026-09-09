@@ -1,13 +1,14 @@
 /**
  * achievement-tracker.ts — the achievement board: stock achievements plus whatever the player has
  * typed in, and saying so as a criterion is checked off or a whole achievement completes
- * (ADR 0212, `"count"` criteria added by ADR 0214).
+ * (ADR 0212, `"count"` criteria added by ADR 0214, `"raceKill"` by ADR 0215).
  *
  * The matching rules are next door in
  * [achievement-progress.ts](../src/shared/achievement-progress.ts), pure and tested; this is the
  * holder that carries them out and the only state involved. It receives exactly the events
  * `alert-router.ts`/`goal-tracker.ts`/`high-scores.ts` already receive — a combat event, a raw log
- * line, a zone arrival, a fallen record — there is no achievement-specific parsing anywhere.
+ * line, a zone arrival, a fallen record, and (ADR 0215) the same already-parsed `KillEvent`
+ * `goal-tracker.ts`'s own `noteKill` reads — there is no achievement-specific parsing anywhere.
  *
  * Definitions and progress are stored apart: the stock catalog (`achievement-library.ts`) is code
  * and never touches disk, while a custom achievement and every achievement's progress both live in
@@ -27,6 +28,7 @@ import {
   matchesFade,
   matchesHighScore,
   matchesLine,
+  matchesRaceKill,
   matchesZone,
   nextUnannouncedCriterion,
   runningView,
@@ -44,6 +46,7 @@ import type {
   CastEvent,
   CombatEvent,
   HighScore,
+  KillEvent,
   LogLine,
 } from "../src/shared/types";
 import { createSaver, readJson } from "./json-store";
@@ -88,6 +91,10 @@ export interface AchievementTracker {
   zone(rawZone: string): void;
   /** A personal best just fell: check every outstanding high-score criterion. */
   record(record: HighScore): void;
+  /** A kill the log has already parsed: check every outstanding `"raceKill"` criterion. Ignored
+   *  unless the log credited it to the player (ADR 0215) — the same self-only rule every other
+   *  criterion kind holds to. */
+  kill(event: KillEvent): void;
   /** Add a custom achievement. `null` for a blank title or no criteria. */
   create(input: { title: string; description?: string; category?: string; criteria: AchievementCriterionInput[] }): AchievementDefinition | null;
   /** Forget a custom achievement and its progress. A stock one is refused silently. */
@@ -173,8 +180,13 @@ export function createAchievementTracker({
     }
   }
 
+  /** Does this criterion accumulate toward a threshold rather than complete on its first match —
+   *  `"count"` and `"raceKill"` both do, and only in how the tracker responds to a match, never in
+   *  how it's matched (that's `achievement-progress.ts`'s business). */
+  const tallies = (criterion: AchievementCriterion) => criterion.kind === "count" || criterion.kind === "raceKill";
+
   /**
-   * A `"count"` criterion's tally moved but hasn't reached its goal yet — still worth a quiet
+   * A tallying criterion's count moved but hasn't reached its goal yet — still worth a quiet
    * banner naming the running total, since a kill count is rare enough per achievement that every
    * step is news (unlike a farming goal's fixed 25/50/75% milestones). `done`/`total` ride along too
    * (see `AchievementAlertPayload`), but the overlay renders `tally`/`tallyGoal` instead when set.
@@ -201,9 +213,10 @@ export function createAchievementTracker({
    * what "matches" means, the same way `alert-router.ts`'s `combat`/`line` differ only in which of
    * `matchCast`/`matchFade`/`matchLine` they call.
    *
-   * A `"count"` criterion never jumps straight to `done`: each match only increments its tally, and
-   * only crossing `count.atLeast` moves it in — from there it flows through `announceProgress`
-   * exactly like every other kind, so the completion cascade needs no special case for it.
+   * A tallying criterion (`"count"`, `"raceKill"`) never jumps straight to `done`: each match only
+   * increments its tally, and only crossing `count.atLeast` moves it in — from there it flows
+   * through `announceProgress` exactly like every other kind, so the completion cascade needs no
+   * special case for it.
    */
   function applyMatch(matches: (criterion: AchievementCriterion) => boolean): void {
     const at = now();
@@ -216,7 +229,7 @@ export function createAchievementTracker({
         if (existing?.done.includes(criterion.id)) continue;
         if (!matches(criterion)) continue;
         const progress = ensureProgress(definition.id);
-        if (criterion.kind === "count") {
+        if (tallies(criterion)) {
           const goal = criterion.count?.atLeast ?? 1;
           const tally = tallyOf(progress, criterion.id) + 1;
           progress.tally = { ...progress.tally, [criterion.id]: tally };
@@ -268,6 +281,15 @@ export function createAchievementTracker({
 
     record(record) {
       applyMatch((c) => matchesHighScore(c, record));
+    },
+
+    kill(event) {
+      // The log names a kill's credit ("You have slain X!") apart from its bystander sentence
+      // ("X has been slain by Y!") the exact same way `parseKill` folds both into one `KillEvent` —
+      // `killer` is the log's own answer to whose it was, so this is the one check achievements
+      // need, the same self-only rule every other criterion kind holds to (ADR 0215).
+      if (event.killer !== SELF) return;
+      applyMatch((c) => matchesRaceKill(c, event));
     },
 
     create(input) {

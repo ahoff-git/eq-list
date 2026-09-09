@@ -536,6 +536,7 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onSighting((event) => spawns.noteSighting(event.target, currentZone));
   watcher.onKill((event) => {
     combat.recordKill(event.target, event.at);
+    achievements.kill(event); // a "raceKill" criterion — gated to the player's own credit internally (ADR 0215)
     if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named, event.killerNamed)) {
       killsChanged();
       // After the record, never before: the tracker learns from the kill log, so the kill that

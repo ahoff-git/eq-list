@@ -1938,12 +1938,17 @@ export interface GoalAlertPayload {
 // ─── Achievements ───────────────────────────────────────────────────────────
 
 /**
- * How a criterion is satisfied (ADR 0212, `"count"` added by ADR 0214):
+ * How a criterion is satisfied (ADR 0212, `"count"` added by ADR 0214, `"raceKill"` by ADR 0215):
  *  - `"watch"` — the same shape an alert rule matches with (a cast, a fade, or a raw log line).
  *    A cast/fade is always scoped to the player's own — see `AchievementWatch`.
  *  - `"count"` — the same matching as `"watch"`, but each match increments a running tally
  *    (`AchievementProgress.tally`) instead of completing outright; done once the tally reaches
  *    `count.atLeast`. "Kill 25 hill giants" is one of these, not 25 `"watch"` criteria.
+ *  - `"raceKill"` — the player's own kill credit (`KillEvent`, `killer === SELF`) whose target's
+ *    race — looked up from the wiki's own mob pages, `mob-races.ts` — matches `race`. Tallies to
+ *    `count.atLeast` exactly like `"count"` does, since "kill 50 Iksar" needs the same running total
+ *    a substring-matched kill count does; the two only differ in *how* a kill is recognised as
+ *    counting (name lookup vs. text match).
  *  - `"zone"` — a canonical zone visited, matched with `placeKey` (`zones/place.ts`) against the
  *    live `zone` event — the same alias-and-typo-tolerant resolver kill-log grouping already
  *    trusts, so a difficulty variant (or a known alternate spelling) of a place still counts.
@@ -1951,7 +1956,7 @@ export interface GoalAlertPayload {
  *  - `"manual"` — no log evidence; the player ticks it themselves. Always available as an override on
  *    every other kind too — nothing here is verification, only an optional shortcut.
  */
-export type AchievementCriterionKind = "watch" | "count" | "zone" | "highscore" | "manual";
+export type AchievementCriterionKind = "watch" | "count" | "raceKill" | "zone" | "highscore" | "manual";
 
 /**
  * One condition an achievement criterion can watch the log for — everything a `CastWatch` matches
@@ -1976,7 +1981,11 @@ export interface AchievementCriterion {
   zone?: string;
   /** `kind: "highscore"` only. */
   highscore?: { categoryId: string; atLeast: number };
-  /** `kind: "count"` only — how many matches `watch` needs before this criterion is done. */
+  /** `kind: "raceKill"` only — matched generously against `mob-races.ts` (`isRace`), so "Iksar" also
+   *  reaches "Iksar Citizen" and "Spectral Iksar". */
+  race?: string;
+  /** `kind: "count"` or `"raceKill"` — how many matches are needed before this criterion is done.
+   *  Absent (or 1) is a plain single-fire tally. */
   count?: { atLeast: number };
 }
 

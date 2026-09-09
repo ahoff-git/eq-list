@@ -15,6 +15,7 @@ import {
   matchesFade,
   matchesHighScore,
   matchesLine,
+  matchesRaceKill,
   matchesZone,
   nextUnannouncedCriterion,
   runningView,
@@ -82,6 +83,13 @@ test("tallyOf reads a count criterion's running total, or 0 if it has never matc
   progress.tally = { "hill-giants": 14 };
   assert.equal(tallyOf(progress, "hill-giants"), 14);
   assert.equal(tallyOf(undefined, "hill-giants"), 0);
+});
+
+test("a raceKill criterion matches a kill whose target belongs to that race, looked up rather than guessed from text (ADR 0215)", () => {
+  const c: AchievementCriterion = { id: "c", label: "dwarves", kind: "raceKill", race: "Dwarf", count: { atLeast: 50 } };
+  assert.equal(matchesRaceKill(c, { target: "Peg Leg" }), true); // real mob, real race, no "dwarf" in the name
+  assert.equal(matchesRaceKill(c, { target: "Marda" }), false); // a real mob, but an Ogre
+  assert.equal(matchesRaceKill(c, { target: "Not A Real Mob" }), false); // the table has never heard of it
 });
 
 test("a manual or zone/highscore criterion never matches via the watch path", () => {

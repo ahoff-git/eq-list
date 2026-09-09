@@ -166,13 +166,17 @@ everything else, so this list can stay short enough to read:
   contribution payload — the machinery from
   [ADR 0132](./decisions/0132-a-contribution-is-keyed-by-who-made-it.md) carries it unchanged.
 
-- **Faction standing changes are unread — and one real line unblocks the rest.** The alerting half
-  shipped ahead of it ([ADR 0193](./decisions/0193-a-faction-alert-rides-the-existing-line-watch.md)):
+- **Faction standing changes are unread — the real line has now turned up, second-hand.** The
+  alerting half shipped ahead of it ([ADR 0193](./decisions/0193-a-faction-alert-rides-the-existing-line-watch.md)):
   a faction page's "🔔 Alert me" button adds a raw-line watch (`spell: "faction standing"`) scoped to
   that faction's name, which is a reasonable bet (it's EQ's near-universal system-message opener) but
   — like ADR 0121's consider-level gap — not one built from a real captured line the way every parser
-  in `log-parser.ts` was. What's missing is **one real line, copied out of a live EQL log**, showing a
-  faction change as this client actually words it (kill a mob or turn in a quest that moves one).
+  in `log-parser.ts` was. Found while researching achievement content (ADR 0214), in a real 52,000-line
+  log: `"Your faction standing with Agents of Mistmoore has been adjusted by -3."` (and the floor case,
+  `"Your faction standing with Agents of Mistmoore could not possibly get any worse."`) — confirming
+  `buildFactionWatch`'s bet on "faction standing" was already right, and giving the actual sentence
+  shape (`with <faction> has been adjusted by <±N>`) `parseFactionChange` would read. Not yet wired into
+  a parser or tested against — this is one line copied out, not the extraction built from it.
 
   With the line in hand: extend `log-parser.ts` with a `parseFactionChange` → `FactionEvent
   {faction, delta?, direction}`, correct `buildFactionWatch`'s trigger word if it turns out wrong, and

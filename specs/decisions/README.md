@@ -248,6 +248,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0212: An achievement criterion can watch the log or wait to be told](./0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)
 - [0213: Every stock alert claims its own corner](./0213-every-stock-alert-claims-its-own-corner.md)
 - [0214: A counted criterion tallies, and a cast criterion is always yours](./0214-a-counted-criterion-tallies-and-a-cast-criterion-is-always-yours.md)
+- [0215: A raceKill criterion reads the wiki's own mob card, off the log's own parsed kill](./0215-a-racekill-criterion-reads-the-wiki-s-own-mob-card.md)
 
 ## Open Questions
 
