@@ -48,6 +48,21 @@ test("a position from the zone you left is discarded", () => {
   assert.equal(state.loc, undefined);
 });
 
+test("a restriction notice reusing the zone-arrival sentence doesn't count as a zone line", () => {
+  // "You have entered an area where levitation effects do not function." matches the same sentence
+  // as a real arrival, but no gazetteer names it — it must leave the last *known* zone in place, and
+  // must not clear a `/loc` that's still valid because nothing about it means the player moved.
+  const state = catchUpState(
+    lines(
+      `${at("00:10:00")}You have entered Clan Crushbone.`,
+      `${at("00:11:00")}Your Location is 400.00, -300.00, 15.00`,
+      `${at("00:12:00")}You have entered an area where levitation effects do not function.`,
+    ),
+  );
+  assert.equal(state.zone?.zone, "Clan Crushbone");
+  assert.deepEqual([state.loc?.y, state.loc?.x, state.loc?.z], [400, -300, 15]);
+});
+
 test("a position with no zone line before it is kept", () => {
   // A long camp in one zone: the tail reaches back past the `/loc` but not past the zoning, so the
   // fix is for wherever we already are.

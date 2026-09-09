@@ -45,6 +45,7 @@ import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
 import { createLogger, setLogSink, formatLogParts } from "../src/shared/logging";
 import { once } from "../src/shared/once";
 import { characterFromLogFile } from "../src/shared/log-parser";
+import { classifyZoneLine } from "../src/shared/zones/place";
 import { createAlertRouter } from "./alert-router";
 import { createSpawnTracker } from "./spawn-tracker";
 import { createGoalTracker } from "./goal-tracker";
@@ -446,6 +447,17 @@ if (!app.requestSingleInstanceLock()) {
     scores.seed(history.search("", Number.MAX_SAFE_INTEGER).fights);
   });
   watcher.onZone((event) => {
+    // The client reuses the zone-arrival sentence for restriction notices too ("You have entered
+    // an area where levitation effects do not function."), which is indistinguishable from a real
+    // arrival until it's checked against the zones we actually know. An unresolved capture leaves
+    // `currentZone` exactly where it was — the most recent *known* zone — rather than guess; it's
+    // logged so a real gap (a patch, an era opening) can be told apart from more of this and fixed
+    // in `zones/place.ts` (the gazetteer or `NOT_A_ZONE`) rather than staying silent forever.
+    const verdict = classifyZoneLine(event.zone);
+    if (verdict !== "known") {
+      if (verdict === "unresolved") log.debug("zone line didn't resolve to a known place, staying put", { raw: event.zone });
+      return;
+    }
     if (event.zone === currentZone) return;
     // Before `currentZone` moves, so the tracker can compare where you were with where you are:
     // changing the instance difficulty respawns everything, and it arrives as a different *variant*

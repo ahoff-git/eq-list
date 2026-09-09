@@ -61,6 +61,14 @@ test("a spell with no card sorts to the bottom under every column's own default 
   assert.equal(foundDesc[0]?.spell.title, "Burst of Fire");
 });
 
+test("a spell with no card sorts to the bottom even reversed — a header click, not just the opening view", () => {
+  // The reported bug: "Level" opens ascending, so a fixed `Infinity` sentinel for "no level" landed
+  // last there by luck rather than by rule — flip to descending (the second click every sortable
+  // header invites) and it used to jump to the *top*, ahead of every real level.
+  const found = searchSpells(rows(), NO_CRITERIA, { key: "level", desc: true });
+  assert.equal(found.at(-1)?.spell.title, "Unknowable Rune", "still last, even sorted 'highest first'");
+});
+
 test("level sorts by the lowest level any class can cast it at", () => {
   const found = searchSpells(rows(), NO_CRITERIA, { key: "level", desc: false });
   assert.deepEqual(

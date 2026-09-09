@@ -66,14 +66,24 @@ const FATE_LABEL: Record<LootFate, string> = {
 
 type View = "drops" | "prices";
 
-export default function LootPanel() {
-  const drops = useLootFeed(200);
-  const list = useShoppingList();
-  // Only a sale can change a price, and the newest drop is the cheapest signal that one landed.
-  // Keyed by the drop's whole identity rather than its `logId`: that counter restarts at zero
-  // every launch, so on its own it can repeat the value it already held and the refetch is skipped.
-  const prices = useItemPrices(drops[0] ? lootKey(drops[0]) : "");
+/** Fetched by default — enough for a typical evening without pulling the ledger over IPC on every mount. */
+const DEFAULT_FETCH = 200;
 
+/**
+ * Fetched once a filter is actively narrowing things, so a search reaches the whole ledger
+ * (`MAX_LOOT`, electron/loot-log.ts) rather than silently answering "not found" for anything
+ * older than whatever the default fetch happened to hold.
+ */
+const SEARCH_FETCH = 20_000;
+
+/**
+ * How many matching rows `DropTable` draws. It has no virtualization, so a filter that matches
+ * more than this says so instead of handing it thousands of rows — the same cap `ItemSearchPanel`
+ * and `SpellSearchPanel` use over their own catalogues.
+ */
+const MAX_ROWS = 300;
+
+export default function LootPanel() {
   // All four persist: this is a panel you set up the way you read it, and every one of them was
   // resetting the moment you looked at another tab.
   const [view, setView] = usePersistentState<View>(STORAGE_KEYS.lootView, "drops");
@@ -84,18 +94,27 @@ export default function LootPanel() {
     DEFAULT_PRICE_SORT,
   );
 
+  const drops = useLootFeed(isFiltered(filters) ? SEARCH_FETCH : DEFAULT_FETCH);
+  const list = useShoppingList();
+  // Only a sale can change a price, and the newest drop is the cheapest signal that one landed.
+  // Keyed by the drop's whole identity rather than its `logId`: that counter restarts at zero
+  // every launch, so on its own it can repeat the value it already held and the refetch is skipped.
+  const prices = useItemPrices(drops[0] ? lootKey(drops[0]) : "");
+
   // Names on the shopping list, normalized the same way the store matches them.
   const wanted = useMemo(
     () => new Set(list.entries.map((e) => normalizeItemName(e.name))),
     [list.entries],
   );
 
-  const shown = useMemo(
+  const matches = useMemo(
     () => sortLoot(filterLoot(drops, filters, wanted), lootSort),
     [drops, filters, wanted, lootSort],
   );
-  // Tallied over what's on screen, so the numbers describe what you're actually looking at.
-  const totals = useMemo(() => tallyFates(shown), [shown]);
+  // Capped for the table the way ItemSearchPanel/SpellSearchPanel cap theirs — see MAX_ROWS.
+  const shown = useMemo(() => matches.slice(0, MAX_ROWS), [matches]);
+  // Tallied over every match, not just the rows drawn, so a truncated table doesn't under-count.
+  const totals = useMemo(() => tallyFates(matches), [matches]);
   const sources = useMemo(() => lootSources(drops), [drops]);
   // The camps the ledger covers, folded — see `lootZones`. From the whole ledger rather than the
   // filtered rows, so choosing a zone can't remove the option you'd need to choose a different one.
@@ -133,8 +152,11 @@ export default function LootPanel() {
         <span className="spacer" />
         {view === "drops" && (
           <>
-            <span className="muted small" title="Drops shown, of the whole ledger">
-              {countOf(shown.length, drops.length, "drop")}
+            <span
+              className="muted small"
+              title={isFiltered(filters) ? "Drops matching the filters, of the whole ledger" : "Drops shown, of what's loaded"}
+            >
+              {countOf(matches.length, drops.length, "drop")}
             </span>
             {LOOT_FATES.filter((fate) => totals[fate] > 0).map((fate) => (
               <span key={fate} className={`fate-tally f-${fate}`}>
@@ -149,6 +171,12 @@ export default function LootPanel() {
         <>
           <LootFilterBar filters={filters} onFilters={setFilters} sources={sources} zones={zones} />
           <DropTable drops={shown} wanted={wanted} sort={lootSort} onSort={setLootSort} />
+          {matches.length > shown.length && (
+            <p className="muted small">
+              Showing the first {MAX_ROWS} of {matches.length} matching drops. Narrow the filters and the rest come
+              into view.
+            </p>
+          )}
         </>
       ) : (
         <PriceTable prices={sortedPrices} sort={priceSort} onSort={setPriceSort} />

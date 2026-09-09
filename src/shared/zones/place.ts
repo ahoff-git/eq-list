@@ -81,6 +81,46 @@ export function isKnownPlace(zone: string): boolean {
 }
 
 /**
+ * "You have entered ..." sentences confirmed, by hand, to name an *effect* rather than a place —
+ * the client reuses the zone-arrival sentence for restriction notices (see `parseZone` in
+ * `../log-parser.ts`). `isKnownPlace` alone already refuses these; this list exists only to keep a
+ * *confirmed* one out of the "unresolved" bucket `classifyZoneLine` sends to the debug log, so that
+ * log stays useful for the ones nobody's looked at yet rather than filling up with a repeat.
+ *
+ * Grown by hand after reading that log — see `classifyZoneLine`.
+ */
+const NOT_A_ZONE = new Set<string>(
+  ["an area where levitation effects do not function"].map((s) => s.trim().toLowerCase()),
+);
+
+/** Is this a "You have entered ..." sentence someone has already confirmed isn't a zone? */
+export function isConfirmedNotAZone(raw: string): boolean {
+  return NOT_A_ZONE.has(raw.trim().toLowerCase());
+}
+
+/**
+ * What a "You have entered ..." capture means, for a caller that has to decide whether the player
+ * actually moved:
+ *
+ *   - `"known"`       — the gazetteer names this zone. A real arrival.
+ *   - `"blacklisted"` — confirmed, by hand, to be a restriction notice rather than a zone. Silent:
+ *                        this is the noise `isKnownPlace` alone can't clear from the log below.
+ *   - `"unresolved"`  — neither table has an opinion. Could be a zone the gazetteer hasn't caught
+ *                        up to yet (a patch, an era opening) or a notice nobody's confirmed yet.
+ *                        The caller's move either way is the same: keep the player on the most
+ *                        recent *known* zone rather than guess, and log the raw sentence so it can
+ *                        be told apart later — added to the gazetteer if it turns out to be real,
+ *                        or to `NOT_A_ZONE` above if it turns out to be more of this.
+ */
+export type ZoneLineVerdict = "known" | "blacklisted" | "unresolved";
+
+export function classifyZoneLine(raw: string): ZoneLineVerdict {
+  if (isKnownPlace(raw)) return "known";
+  if (isConfirmedNotAZone(raw)) return "blacklisted";
+  return "unresolved";
+}
+
+/**
  * Are these two names the same place? The table first, then the one-edit rule for a pair the table
  * can't reach at all — a filter is allowed that second chance, because being too generous here shows
  * a row that doesn't belong, while a key that's too generous would merge two camps' samples.

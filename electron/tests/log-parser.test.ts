@@ -217,6 +217,14 @@ test("parseZoneLine reads zone-change lines and drops leading 'the'", () => {
   assert.equal(t!.zone, "Feerrott");
 
   assert.equal(parseZoneLine("[Mon Jul 20 19:02:14 2026] You say, 'hi'"), null);
+
+  // The client reuses this sentence for a zone-restriction notice, not just arrivals. This parser
+  // stays a dumb capture either way — see `zones/place.ts`'s `classifyZoneLine` for where that's told
+  // apart, which needs the gazetteer this file deliberately doesn't have.
+  const notice = parseZoneLine(
+    "[Mon Jul 20 19:02:14 2026] You have entered an area where levitation effects do not function.",
+  );
+  assert.equal(notice!.zone, "an area where levitation effects do not function");
 });
 
 test("parseXpLine handles solo, party, and percentage variants", () => {

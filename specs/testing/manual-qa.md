@@ -83,6 +83,14 @@ features for later in [../ideas.md](../ideas.md).
   **one** row, not two. See [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md).
 - **Loot tab, live.** Confirm the Loot tab shows drops that landed **before** it was opened, keeps
   them **across a restart**, and follows live ones (`electron/loot-log.ts`).
+- **Loot tab search reaching an old drop** ([ADR 0211](../decisions/0211-a-loot-filter-searches-the-ledger-not-the-window.md)).
+  Verified against a real player's ledger outside the app (a fetch of 200 found nothing, a fetch of
+  20,000 found all 34 occurrences), but nothing has watched the panel itself do it. Play until you've
+  clearly got more than 200 drops logged, type the name of something old into the item box, and
+  confirm it's found — with a beat for the bigger fetch rather than an instant answer. Clear the box
+  and confirm the count drops back to the recent-200 view. Then, if you can rack up more than 300
+  matches on one filter (a common trash name is the way to try), confirm the "showing the first 300
+  of N" line appears and the fate tallies above it still count all N, not just the 300 drawn.
 - **Money, live — the one to check line-by-line.** Coin is now counted in two ledgers
   ([ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)) and the grammar came from a real
   log this sandbox can't re-read, so the first real session is the verification. Confirm, in order:

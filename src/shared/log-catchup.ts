@@ -18,6 +18,7 @@
 
 import { parseGameTime, parseLoc, parseZone } from "./log-parser";
 import type { GameTimeEvent, LocEvent, LogLine, ZoneEvent } from "./types";
+import { classifyZoneLine } from "./zones/place";
 
 /** The state a tail implies. Any may be absent — the tail may simply not reach back far enough. */
 export interface CaughtUpState {
@@ -58,14 +59,21 @@ export function isSameSitting(lastAt: string | undefined, now: number = Date.now
  * A position with no zone line before it is kept — no zoning happened within the tail, so it's a
  * fix for wherever you already were. The time of day carries across a zone line untouched: nothing
  * about walking through a door resets the clock.
+ *
+ * Only a line `classifyZoneLine` calls `"known"` counts as a zone line at all — the client reuses
+ * "You have entered ..." for restriction notices as well as arrivals (`parseZone`'s own doc), and
+ * one of those in the tail must not overwrite `state.zone` with a sentence no gazetteer names, nor
+ * clear a `/loc` that's still valid because nothing actually moved.
  */
 export function catchUpState(lines: LogLine[]): CaughtUpState {
   const state: CaughtUpState = {};
   for (const line of lines) {
     const zone = parseZone(line);
     if (zone) {
-      state.zone = zone;
-      state.loc = undefined;
+      if (classifyZoneLine(zone.zone) === "known") {
+        state.zone = zone;
+        state.loc = undefined;
+      }
       continue;
     }
     const loc = parseLoc(line);

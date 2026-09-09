@@ -66,17 +66,32 @@ export function compareValues(a: string | number, b: string | number): number {
  * moment it is not: the Items tab's Zone column picks `row.zones.join(" ")`, so sorting 6,878 rows
  * meant about 176,000 joins. Measured on that column: **8.6ms → 4.9ms**, and the saving grows with
  * whatever the most expensive `pick` in the app happens to be.
+ *
+ * **`undefined` always sorts last, whichever direction is showing.** A card that never gave a value
+ * is "no data", not a number — `pick` should return `undefined` for it rather than a signed
+ * `Infinity` standing in as a fake reading. Encoding it as a literal `Infinity`/`-Infinity` instead
+ * only sorts it last in the column's *own* default direction; the very next click, which reverses
+ * that direction, sends every row with no data to the *top* instead of the highest real numbers —
+ * that was the Spells tab's Level column, sorted "biggest first", showing nothing but blank rows.
  */
 export function sortRows<T, K extends string>(
   rows: readonly T[],
   sort: Sort<K>,
-  pick: (row: T, key: K) => string | number,
+  pick: (row: T, key: K) => string | number | undefined,
 ): T[] {
   const direction = sort.desc ? -1 : 1;
   const keys = rows.map((row) => pick(row, sort.key));
   const order = rows.map((_, i) => i);
   // The tiebreak is deliberately *outside* `direction`: reversing the sort must not reverse the order
   // of rows the column cannot tell apart, which is what "stable in both directions" means.
-  order.sort((a, b) => direction * compareValues(keys[a], keys[b]) || a - b);
+  order.sort((a, b) => {
+    const ka = keys[a];
+    const kb = keys[b];
+    if (ka === undefined || kb === undefined) {
+      if (ka === kb) return a - b;
+      return ka === undefined ? 1 : -1;
+    }
+    return direction * compareValues(ka, kb) || a - b;
+  });
   return order.map((i) => rows[i]);
 }

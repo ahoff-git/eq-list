@@ -62,6 +62,28 @@ test("distinct keeps first-seen order, because some lists are already in the ord
   assert.deepEqual(distinct([]), []);
 });
 
+test("undefined sorts last, whichever direction is showing", () => {
+  // The bug this pins: a fixed `Infinity` sentinel only sorts last in *one* direction — the very next
+  // header click, which reverses it, used to send every row with no data to the top instead of the
+  // highest real numbers (the Spells tab's Level column, sorted "biggest first", showing nothing but
+  // blank rows).
+  const rows = [{ n: 3 }, { n: undefined }, { n: 1 }, { n: undefined }, { n: 2 }];
+  const pick = (r: (typeof rows)[number]) => r.n;
+
+  const asc = sortRows(rows, { key: "n", desc: false }, pick);
+  assert.deepEqual(asc.map((r) => r.n), [1, 2, 3, undefined, undefined]);
+
+  const desc = sortRows(rows, { key: "n", desc: true }, pick);
+  assert.deepEqual(desc.map((r) => r.n), [3, 2, 1, undefined, undefined]);
+});
+
+test("two rows with no data tie in their original order, in either direction", () => {
+  const rows = [{ id: "a", n: undefined }, { id: "b", n: 1 }, { id: "c", n: undefined }];
+  const pick = (r: (typeof rows)[number]) => r.n;
+  assert.deepEqual(sortRows(rows, { key: "n", desc: false }, pick).map((r) => r.id), ["b", "a", "c"]);
+  assert.deepEqual(sortRows(rows, { key: "n", desc: true }, pick).map((r) => r.id), ["b", "a", "c"]);
+});
+
 test("sorting leaves the caller's array alone", () => {
   const rows = [{ n: 2 }, { n: 1 }];
   const sorted = sortRows(rows, { key: "n", desc: false }, (r) => r.n);

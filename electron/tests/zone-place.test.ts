@@ -12,7 +12,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { placeKey, placeName, samePlace } from "../../src/shared/zones/place";
+import { classifyZoneLine, placeKey, placeName, samePlace } from "../../src/shared/zones/place";
 import { zoneKey } from "../../src/shared/names";
 
 test("a recorded name resolves to the place we name, however it was written", () => {
@@ -59,6 +59,18 @@ test("a place is grouped by key, and two real zones never share one", () => {
   assert.notEqual(placeKey("Upper Guk"), placeKey("Lower Guk"));
   // A sub-zone is its own camp, not its parent's: `narrow` is deliberately off here.
   assert.notEqual(placeKey("North Qeynos"), placeKey("Qeynos"));
+});
+
+test("classifyZoneLine tells a real arrival from a restriction notice and from the unknown", () => {
+  assert.equal(classifyZoneLine("Clan Crushbone"), "known");
+  assert.equal(classifyZoneLine("The Feerrott"), "known");
+  // Confirmed by hand — the client reuses the arrival sentence for this notice too.
+  assert.equal(classifyZoneLine("an area where levitation effects do not function"), "blacklisted");
+  // Case shouldn't matter: the log always writes it the same way, but the check doesn't rely on that.
+  assert.equal(classifyZoneLine("An Area Where Levitation Effects Do Not Function"), "blacklisted");
+  // Neither table has an opinion — a zone the gazetteer hasn't caught up to yet, or an unconfirmed
+  // notice. Either way the caller keeps the player on the last known zone rather than guess.
+  assert.equal(classifyZoneLine("Somewhere Nobody Has Confirmed"), "unresolved");
 });
 
 test("a filter may be looser than a key", () => {

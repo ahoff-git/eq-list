@@ -219,7 +219,15 @@ export function parseCoin(line: LogLine): CoinEvent | null {
   };
 }
 
-/** "You have entered <zone>." → ZoneEvent, or null. Leading "the " is dropped. */
+/**
+ * "You have entered <zone>." → ZoneEvent, or null. Leading "the " is dropped.
+ *
+ * The client reuses this exact sentence for zone *restriction* notices, not just arrivals — "You
+ * have entered an area where levitation effects do not function." matches just as well as a real
+ * zone change. This parser stays a dumb capture of the sentence anyway: telling a notice from an
+ * arrival needs the gazetteer, and this file is pure and dependency-free by design (see header).
+ * `zones/place.ts`'s `classifyZoneLine` is where a caller with that table decides which is which.
+ */
 const ENTER_ZONE = /^You have entered (?:the )?(?<zone>.+?)\.$/;
 
 export function parseZone(line: LogLine): ZoneEvent | null {

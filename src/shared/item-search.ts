@@ -558,10 +558,12 @@ export type ItemSortKey = "name" | "value" | "slot" | "source" | "zone" | "level
 /**
  * What a row is worth in the sorted column.
  *
- * A stat the card never gave sorts as `-Infinity`, so "most AC first" leads with the items that
- * actually have AC rather than with the three hundred that never claimed any.
+ * A stat the card never gave, or a level nothing places, is `undefined` — not a signed `Infinity`
+ * standing in for one. `sortRows` puts a row with no data last whichever direction is showing,
+ * rather than only in whichever direction happened to be this column's default (a fixed `Infinity`
+ * sorts last in *that* direction and to the *top* the moment a header click reverses it).
  */
-export function itemSortValue(row: ValuedItem, key: ItemSortKey): string | number {
+export function itemSortValue(row: ValuedItem, key: ItemSortKey): string | number | undefined {
   switch (key) {
     case "name":
       return row.item.title.toLowerCase();
@@ -573,12 +575,10 @@ export function itemSortValue(row: ValuedItem, key: ItemSortKey): string | numbe
       return row.kinds.join(" ");
     case "zone":
       return row.zones.join(" ");
-    // Unplaceable sorts last under "lowest first", which is the useful way round: the rows you can
-    // act on lead, and the ones nothing knows about sit at the bottom rather than the top.
     case "level":
-      return row.level?.min ?? Number.POSITIVE_INFINITY;
+      return row.level?.min;
     default:
-      return row.stats.stats[key] ?? Number.NEGATIVE_INFINITY;
+      return row.stats.stats[key];
   }
 }
 

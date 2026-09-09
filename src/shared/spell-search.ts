@@ -91,23 +91,22 @@ export function manaPerDamage(stats: SpellStats): number | undefined {
 /**
  * What a row is worth in the sorted column.
  *
- * A value the card never gave sorts to the bottom of that column's **own default direction** —
- * `level`/`mana`/`castSec`/`recastSec`/`range` default ascending (cheapest/lowest first), so unknown
- * is `+Infinity`; `damage` defaults descending (biggest first), so unknown is `-Infinity`;
- * `manaPerDamage` defaults ascending (most efficient first), so unknown is `+Infinity` too.
+ * A value the card never gave is `undefined`, not a signed `Infinity` standing in for one —
+ * `sortRows` puts a row with no data last whichever direction is showing, rather than only in
+ * whichever direction happened to be this column's default.
  */
-export function spellSortValue(row: SpellRow, key: SpellSortKey): string | number {
+export function spellSortValue(row: SpellRow, key: SpellSortKey): string | number | undefined {
   switch (key) {
     case "name":
       return row.spell.title.toLowerCase();
     case "level":
-      return minLevel(row.stats.levels) ?? Number.POSITIVE_INFINITY;
+      return minLevel(row.stats.levels);
     case "damage":
-      return row.stats.damage ?? Number.NEGATIVE_INFINITY;
+      return row.stats.damage;
     case "manaPerDamage":
-      return manaPerDamage(row.stats) ?? Number.POSITIVE_INFINITY;
+      return manaPerDamage(row.stats);
     default:
-      return row.stats[key] ?? Number.POSITIVE_INFINITY;
+      return row.stats[key];
   }
 }
 

@@ -257,6 +257,22 @@ test("sorting by a stat leads with the items that have it", () => {
   assert.equal(found[1].stats.stats.wis, undefined);
 });
 
+test("a stat nothing has still sorts last when the column is reversed", () => {
+  // `desc: true` is this column's default (most-first) direction, and the test above already covers
+  // it. The header's own second click reverses it ("least first"), and a fixed `Infinity` sentinel
+  // used to answer that click by sending every item with no stat to the *top* — ahead of the one
+  // real value, which is exactly backwards for "least first" too, since there's nothing lower than it.
+  const found = searchItems(rows(), NO_CRITERIA, {}, { key: "wis", desc: false });
+  assert.equal(found[0]?.item.title, "Cloak of Wisdom", "the only real value leads even sorted ascending");
+  assert.equal(found.at(-1)?.stats.stats.wis, undefined, "the ones with nothing still trail");
+});
+
+test("a level nothing places still sorts last, ascending or descending", () => {
+  const catalogue = [item("High Thing", ["Req Level: 46", "Slot: HEAD"]), item("Unplaceable", ["Slot: HEAD"])];
+  const found = searchItems(itemRows(catalogue), NO_CRITERIA, {}, { key: "level", desc: true });
+  assert.equal(found.at(-1)?.item.title, "Unplaceable");
+});
+
 test("sorting by value ranks by the weights you set", () => {
   const found = searchItems(rows(), NO_CRITERIA, { int: 2, wis: 1 }, { key: "value", desc: true });
   assert.deepEqual(titles(found), ["Circlet of Intellect", "Cloak of Wisdom", "Aviak Talon"]);

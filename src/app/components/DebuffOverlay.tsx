@@ -1,10 +1,12 @@
 "use client";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { SOLID } from "@/lib/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { alertPlacement, alertStyle, BUFF_STYLE_ID } from "@/shared/alert-styles";
 import { durationErratic, heldMs, targetLabel } from "@/shared/buff-tracking";
 import { formatDuration } from "@/shared/duration";
+import { clockSkew } from "@/shared/spawn-timers";
 import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types";
 
 /**
@@ -37,7 +39,17 @@ import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types
 export default function DebuffOverlay() {
   const view = useBuffs();
   const ca = useSettings()?.castAlerts;
-  const now = Date.parse(view.now) || Date.now();
+  // `useBuffs` deliberately stays a fetch behind (see its own doc comment) — fine for "up or down",
+  // but this HUD's whole point is a countdown, and one pinned to the timestamp of the last buff event
+  // only moves when some other buff happens to change, which reads as stuck. So this overlay keeps
+  // its own half-second pulse, `now` measured against main's clock the same way `useSpawns` does.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 500);
+    return () => clearInterval(id);
+  }, []);
+  const skew = useMemo(() => clockSkew(view.now, Date.now()), [view]);
+  const now = Date.now() + skew;
   const wanted = new Map(view.known.map((k) => [k.key, k]));
   const onScreen = (b: BuffInstance) => b.onEnemy && wanted.get(b.key)?.onScreen !== false;
   // Lapsed first, so the urgent half leads a stack that has both.

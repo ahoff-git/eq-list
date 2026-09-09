@@ -244,6 +244,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0208: An observed drop rate is a lower bound, and says so](./0208-an-observed-drop-rate-is-a-lower-bound-and-says-so.md)
 - [0209: A swing's verb is a skill only when the log names one](./0209-a-swings-verb-is-a-skill-only-when-the-log-names-one.md)
 - [0210: Out-of-era flagging reaches the spells tab, the shopping list and Lucy's live verdict](./0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)
+- [0211: A loot filter searches the ledger, not the window](./0211-a-loot-filter-searches-the-ledger-not-the-window.md)
 
 ## Open Questions
 
