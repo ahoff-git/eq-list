@@ -5,15 +5,20 @@
  * thing I could wear", but "rank what I already have cached by level, cost, range, damage". So this
  * keeps the shape — rows built once from the cache, a criteria object, a sort key — and drops what
  * a spell doesn't need: no stat weights (a spell's damage isn't subjective the way a WIS ring's
- * worth is), no effect facets, no era toggle, no on-disk pack. See
+ * worth is), no effect facets, no on-disk pack. See
  * [ADR 0195](../../specs/decisions/0195-a-spell-catalog-trusts-the-wikis-own-numbers.md) for why the
- * numbers themselves are approximate.
+ * numbers themselves are approximate, and
+ * [ADR 0210](../../specs/decisions/0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)
+ * for the era toggle 0195 deferred.
  *
  * Pure and DOM-free — the panel renders these decisions, this module makes them.
  */
+import { createLogger } from "./logging";
 import { parseSpellStats, type SpellStats } from "./spell-stats";
 import { distinctSorted, sortRows, type Sort } from "./sorting";
 import type { CachedSpell } from "./types";
+
+const log = createLogger("spell-search");
 
 /** One spell in the searchable catalogue: what the cache holds, plus what it means. */
 export interface SpellRow {
@@ -32,12 +37,15 @@ export interface SpellCriteria {
   text: string;
   /** Ticked classes. An empty list is "don't narrow by class". Several ticked are an *or*. */
   classes: string[];
+  /** Drop what the server hasn't opened yet — the same toggle the Items tab has. */
+  hideOutOfEra: boolean;
 }
 
-export const NO_CRITERIA: SpellCriteria = { text: "", classes: [] };
+export const NO_CRITERIA: SpellCriteria = { text: "", classes: [], hideOutOfEra: true };
 
 /** How many conditions are currently cutting the list. */
 export function activeCriteria(c: SpellCriteria): number {
+  // The era flag is deliberately not counted — see `item-search.ts`'s `activeCriteria` for why.
   return (c.text.trim() ? 1 : 0) + (c.classes.length ? 1 : 0);
 }
 
@@ -56,6 +64,7 @@ function matchesText(title: string, text: string): boolean {
 
 /** Does this row survive every criterion? */
 export function matchesSpell(row: SpellRow, c: SpellCriteria): boolean {
+  if (c.hideOutOfEra && row.spell.outOfEra) return false;
   if (!matchesText(row.spell.title, c.text)) return false;
   if (c.classes.length && !c.classes.some((cls) => row.stats.levels[cls] !== undefined)) return false;
   return true;
@@ -104,6 +113,10 @@ export function spellSortValue(row: SpellRow, key: SpellSortKey): string | numbe
 
 /** The whole question, answered: cut the catalogue down, order it. */
 export function searchSpells(rows: readonly SpellRow[], criteria: SpellCriteria, sort: Sort<SpellSortKey>): SpellRow[] {
+  if (criteria.hideOutOfEra) {
+    const outOfEra = rows.reduce((n, row) => n + (row.spell.outOfEra ? 1 : 0), 0);
+    if (outOfEra) log.debug("era filter hiding", outOfEra, "of", rows.length, "cached spells");
+  }
   const kept = rows.filter((row) => matchesSpell(row, criteria));
   // Ties break by name, the same way `searchItems` does — `sortRows` is stable.
   kept.sort((a, b) => a.spell.title.localeCompare(b.spell.title));

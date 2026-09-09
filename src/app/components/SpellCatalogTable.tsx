@@ -79,9 +79,10 @@ const SpellRowView = memo(function SpellRowView({ row }: { row: SpellRow }) {
     .join(", ");
 
   return (
-    <tr>
+    <tr className={row.spell.outOfEra ? "out-of-era" : undefined}>
       <td>
         <ItemLink title={row.spell.title} />
+        {row.spell.outOfEra && <span className="badge era-out">out of era</span>}
       </td>
       <td className="num">{minLevel(stats.levels) ?? "—"}</td>
       <td className={`num ${stats.mana !== undefined ? "num-accent" : "muted"}`}>{stats.mana ?? "—"}</td>

@@ -1115,9 +1115,9 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     for (const title of spellByShard.get(shard) ?? []) {
       const hit = readCache(title);
       if (!hit || !parsedCurrently(hit.page.kind, hit.version) || hit.ageMs >= ttlMs()) continue;
-      const { kind, title: name, wikiPath, card, fetchedAt } = hit.page;
+      const { kind, title: name, wikiPath, card, outOfEra, fetchedAt } = hit.page;
       if (kind !== "spell") continue;
-      out.push({ title: name, wikiPath, card, fetchedAt });
+      out.push({ title: name, wikiPath, card, outOfEra, fetchedAt });
     }
     return out;
   }
@@ -1302,6 +1302,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
         components: [],
         rewards: [],
         card: page.card,
+        outOfEra: page.outOfEra,
         fetchedAt: new Date(fetchedAt).toISOString(),
       };
       try {
@@ -1634,7 +1635,13 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       // collected here rather than in a second pass over the same 256 buckets (ADR 0163's reasoning,
       // applied again — see `spellCatalogue`).
       if (page.kind === "spell") {
-        spells.push({ title: page.title, wikiPath: page.wikiPath, card: page.card, fetchedAt: page.fetchedAt });
+        spells.push({
+          title: page.title,
+          wikiPath: page.wikiPath,
+          card: page.card,
+          outOfEra: page.outOfEra,
+          fetchedAt: page.fetchedAt,
+        });
         return;
       }
       // A recipe is an item page that happens to be craftable, so it carries a card and belongs

@@ -25,9 +25,13 @@
  * Pure, so the whole judgement is testable against real Lucy zone strings.
  */
 import { count } from "./format";
+import { createLogger } from "./logging";
 import { zoneBaseName } from "./names";
+import { zoneAvailable } from "./zones/expansions";
 import { isKnownPlace } from "./zones/place";
 import type { LucyEra } from "./types";
+
+const log = createLogger("lucy-era");
 
 /**
  * An expansion tag Lucy appends to a revamped zone: `The Overthere [RoS]`, `Crystal Caverns [ToV]`.
@@ -109,8 +113,16 @@ export interface EraVerdict {
  *
  * `why` names the actual zone that decided it, because that is the sentence a player can check: "it
  * comes from The Hole, which this server runs" is arguable, and "out of era" on its own is not.
+ *
+ * `closed` is the live out-of-era zone list ([useClosedZones](./zones/expansions.ts)'s
+ * `zoneAvailable`). Without it, "placeable" (the gazetteer has ever heard of the zone — a permanent
+ * fact) is all this can go on, which is exactly the gap [ADR 0170](../../specs/decisions/0170-an-item-s-sources-are-read-against-the-era.md)
+ * named: a Kunark-only item reads in-era before Kunark has actually opened. With `closed` supplied,
+ * a placeable zone that is currently shut no longer counts as reachable — it only ever *narrows*
+ * "in-era" to "out-of-era", never the other way, so an item the gazetteer can't place at all stays
+ * out-of-era exactly as it always has.
  */
-export function eraFromSourceZones(zones: readonly string[]): EraVerdict {
+export function eraFromSourceZones(zones: readonly string[], closed?: ReadonlySet<string>): EraVerdict {
   const seen: string[] = [];
   for (const z of zones) {
     const t = z.trim();
@@ -125,11 +137,21 @@ export function eraFromSourceZones(zones: readonly string[]): EraVerdict {
 
   const placeable = seen.filter(placeableZone);
   if (placeable.length) {
+    const open = closed ? placeable.filter((z) => zoneAvailable(placeableReading(z) ?? z, closed)) : placeable;
+    if (open.length) {
+      const first = open[0];
+      const rest = open.length > 1 ? ` (and ${count(open.length - 1, "other")})` : "";
+      return {
+        era: "in-era",
+        why: `Lucy places it in ${first}${rest}, which this server runs — so the zone exists here, though whether this build's version of it holds the item is another matter.`,
+      };
+    }
+    log.debug("every placeable zone is currently shut —", placeable.join(", "));
     const first = placeable[0];
     const rest = placeable.length > 1 ? ` (and ${count(placeable.length - 1, "other")})` : "";
     return {
-      era: "in-era",
-      why: `Lucy places it in ${first}${rest}, which this server runs — so the zone exists here, though whether this build's version of it holds the item is another matter.`,
+      era: "out-of-era",
+      why: `Lucy places it in ${first}${rest}, which this server runs but hasn't opened yet.`,
     };
   }
   return {

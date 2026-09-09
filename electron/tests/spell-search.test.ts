@@ -48,6 +48,8 @@ const CATALOGUE: CachedSpell[] = [
   spell("Unknowable Rune", []),
 ];
 
+const OUT_OF_ERA_SPELL: CachedSpell = { ...spell("Ice Comet", ["Mana: 100"]), outOfEra: true };
+
 const rows = () => spellRows(CATALOGUE);
 
 test("a spell with no card sorts to the bottom under every column's own default direction", () => {
@@ -92,6 +94,15 @@ test("the name filter is literal and subtractive, not fuzzy", () => {
   assert.equal(rows().filter((r) => matchesSpell(r, criteria)).length, 1);
   const typo: SpellCriteria = { ...NO_CRITERIA, text: "brust" };
   assert.equal(rows().filter((r) => matchesSpell(r, typo)).length, 0);
+});
+
+test("hideOutOfEra cuts a flagged spell by default, and untucking it brings the row back", () => {
+  const withEra = spellRows([...CATALOGUE, OUT_OF_ERA_SPELL]);
+  const found = searchSpells(withEra, NO_CRITERIA, { key: "name", desc: false });
+  assert.ok(!found.some((r) => r.spell.title === "Ice Comet"), "out-of-era spell is hidden by default");
+
+  const shown = searchSpells(withEra, { ...NO_CRITERIA, hideOutOfEra: false }, { key: "name", desc: false });
+  assert.ok(shown.some((r) => r.spell.title === "Ice Comet"), "unticking the toggle brings it back");
 });
 
 test("classOptions lists every class any cached spell names", () => {

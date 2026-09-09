@@ -81,6 +81,9 @@ export interface SharedSpellPage {
   title: string;
   wikiPath?: string;
   card?: ItemCard;
+  /** True when the sender's copy is tagged with an era that isn't live yet — travels with the page
+   *  the same way `SharedItemPage.outOfEra` does. */
+  outOfEra?: boolean;
   fetchedAt?: string;
 }
 
@@ -1722,6 +1725,7 @@ function readSharedSpellPage(raw: unknown): SharedSpellPage | null {
     title,
     wikiPath: text(raw.wikiPath) || `/${title.replace(/ /g, "_")}`,
     card,
+    outOfEra: raw.outOfEra === true,
     fetchedAt: readStamp(raw.fetchedAt),
   };
 }

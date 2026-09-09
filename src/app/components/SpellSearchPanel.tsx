@@ -7,7 +7,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import FacetPicker from "./FacetPicker";
 import SpellCatalogTable from "./SpellCatalogTable";
 import SpellCatalogueHarvest from "./SpellCatalogueHarvest";
-import { Empty, TextField } from "./ui";
+import { CheckField, Empty, TextField } from "./ui";
 import { countOf } from "@/shared/format";
 import type { Sort } from "@/shared/sorting";
 import { activeCriteria, NO_CRITERIA, type SpellCriteria, type SpellSortKey } from "@/shared/spell-search";
@@ -59,6 +59,12 @@ export default function SpellSearchPanel() {
           options={classes}
           chosen={active.classes}
           onChange={(next) => set({ classes: next })}
+        />
+        <CheckField
+          label="in era only"
+          title="Hide spells the server hasn't opened yet"
+          checked={active.hideOutOfEra}
+          onChange={(hideOutOfEra) => set({ hideOutOfEra })}
         />
         <span className="spacer" />
         {conditions > 0 && (

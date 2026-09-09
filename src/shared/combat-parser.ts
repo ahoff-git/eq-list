@@ -11,6 +11,7 @@
  *           You pierce a large plague rat for 6 points of damage.
  *           A coyote bashes Kainos`s warder for 1 point of damage.   ← singular
  *           You kick a kobold scout for 6 points of damage. (Critical)
+ *           You frenzy on a lesser ebon drake for 3 points of damage.   ← "on" before the target; frenzy alone is worded this way
  *   spell   You hit a coyote for 12 points of cold damage by Blast of Cold.
  *   shield  A female rat is burned by Kainos`s warder's flames for 2 points of
  *           non-melee damage.
@@ -130,6 +131,10 @@ export function isTheirs(name: string, owner: string): boolean {
  * bite"). The list has to be enumerated rather than matched as `\w+`: the attacker
  * pattern is lazy, so a generic verb would split "A skeleton punches YOU" into
  * attacker "A" + verb "skeleton". Longest-first so "bites" never matches as "bite".
+ *
+ * "frenzy"/"frenzies" is a plain entry here like the rest — its "on" before the target
+ * ("You frenzy on a lesser ebon drake…") is handled once, in `MELEE_RE` and `MISS_RE`,
+ * rather than special-cased in this list.
  */
 const MELEE_VERBS = [
   "backstabs", "backstab",
@@ -138,18 +143,21 @@ const MELEE_VERBS = [
   "claws", "claw",
   "cleaves", "cleave",
   "crushes", "crush",
+  "frenzies", "frenzy",
   "gores", "gore",
   "hits", "hit",
   "kicks", "kick",
   "mauls", "maul",
   "pierces", "pierce",
   "punches", "punch",
+  "reaves", "reave",
   "rends", "rend",
   "shoots", "shoot",
   "slams", "slam",
   "slashes", "slash",
   "slices", "slice",
   "smashes", "smash",
+  "smites", "smite",
   "stings", "sting",
   "strikes", "strike",
 ] as const;
@@ -180,9 +188,11 @@ export function meleeSkill(verb: string): string {
  */
 const QUALIFIER = String.raw`(?: \((?<qualifier>[^)]+)\))?$`;
 
-// `point` is singular for 1 damage, so `points?` throughout.
+// `point` is singular for 1 damage, so `points?` throughout. `(?:on )?` is for "frenzy" alone
+// ("You frenzy on a lesser ebon drake…") — every other verb goes straight into its target, and no
+// EQ name starts with "on ", so the optional literal costs the rest of the alternation nothing.
 const MELEE_RE = new RegExp(
-  `^(?<attacker>.+?) (?<verb>${VERBS}) (?<target>.+?) for (?<amount>\\d+) points? of damage\\.${QUALIFIER}`,
+  `^(?<attacker>.+?) (?<verb>${VERBS}) (?:on )?(?<target>.+?) for (?<amount>\\d+) points? of damage\\.${QUALIFIER}`,
 );
 
 // Spell/proc damage carries a damage type and the spell name; checked before the
@@ -225,8 +235,10 @@ const SHIELD_SELF_RE = new RegExp(
  * the player's own log had 92 of them, all invisible.
  */
 const AVOIDANCE = "dodge|dodges|parry|parries|block|blocks|riposte|ripostes";
+// `(?:on )?` before the target, same as `MELEE_RE` — "tries to frenzy on Saphrium, but misses!"
+// would otherwise read "on Saphrium" as the target's own name.
 const MISS_RE = new RegExp(
-  `^(?<attacker>.+?) (?:tries|try) to (?<verb>\\w+) (?<target>.+?), but ` +
+  `^(?<attacker>.+?) (?:tries|try) to (?<verb>\\w+) (?:on )?(?<target>.+?), but ` +
     `(?:miss(?:es)?|(?<defender>.+?) (?<avoided>${AVOIDANCE}))!${QUALIFIER}`,
 );
 

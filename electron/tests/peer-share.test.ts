@@ -439,6 +439,12 @@ function readPage(raw: unknown): unknown {
   return wholeRows(give)[0];
 }
 
+/** Read one page the way a `give` of the `spells` kind does. */
+function readSpellPage(raw: unknown): unknown {
+  const give = readGive({ what: "spells", rev: 1, rows: [raw] }, () => "id");
+  return wholeRows(give)[0];
+}
+
 test("public pages share by default; everything of yours does not", () => {
   // The asymmetry is the decision (ADR 0161): an item page is a copy of a public wiki page with
   // nothing of yours in it, so "off until asked" protects nothing and costs the room the sharing.
@@ -527,6 +533,20 @@ test("an item page a peer sent is rebuilt field by field", () => {
   assert.deepEqual((page.card as { lines: string[] }).lines, ["Slot: BACK", "WIS: +10"]);
   // No stamp offered, so none is kept — the receiver treats that as "arrived now".
   assert.equal(page.fetchedAt, undefined);
+});
+
+test("a spell page a peer sent keeps its era flag, the same way an item page does", () => {
+  const inEra = readSpellPage({ title: "Minor Healing", card: { title: "Minor Healing", lines: ["Mana: 10"] } }) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(inEra.outOfEra, false, "not asserted by the sender, so not flagged");
+
+  const flagged = readSpellPage({ title: "Ice Comet", card: { title: "Ice Comet", lines: ["Mana: 100"] }, outOfEra: true }) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(flagged.outOfEra, true);
 });
 
 test("only the kinds the catalogue is made of travel under this kind", () => {

@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCombat, combatant, SELF } from "../../src/shared/combat-parser";
+import { parseCombat, combatant, meleeSkill, SELF } from "../../src/shared/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type {
   BuffFadedEvent,
@@ -227,6 +227,43 @@ test("archery ('shoots') is a melee-table attack like the rest", () => {
   const e = parse("Bunnyslayer shoots a mountain lion for 9 points of damage.") as DamageEvent;
   assert.equal(e.attacker, "Bunnyslayer");
   assert.equal(e.amount, 9);
+});
+
+// Berserker's Frenzy, Shadow Knight's Reave and a cleric/paladin's Smite were three verbs the
+// original list never had at all — the log lines fell through every pattern and vanished rather
+// than being mislabeled. Frenzy is also the only verb worded with "on" before its target ("You
+// frenzy on a lesser ebon drake…"), first-person and third alike.
+test("frenzy, reave and smite parse as their own melee skills", () => {
+  const frenzy = parse("You frenzy on a lesser ebon drake for 3 points of damage.") as DamageEvent;
+  assert.equal(frenzy.attacker, SELF);
+  assert.equal(frenzy.target, "a lesser ebon drake");
+  assert.equal(frenzy.verb, "frenzy");
+  assert.equal(meleeSkill(frenzy.verb!), "Frenzy");
+
+  const frenziesOnYou = parse("Sabertooth Overseer frenzies on YOU for 22 points of damage.") as DamageEvent;
+  assert.equal(frenziesOnYou.attacker, "Sabertooth Overseer");
+  assert.equal(frenziesOnYou.target, SELF);
+
+  const reave = parse("Dukem reaves a gnoll bouncer for 12 points of damage.") as DamageEvent;
+  assert.equal(reave.target, "a gnoll bouncer");
+  assert.equal(meleeSkill(reave.verb!), "Reave");
+
+  const smite = parse("You smite a minotaur slaver for 1 point of damage.") as DamageEvent;
+  assert.equal(meleeSkill(smite.verb!), "Smite");
+});
+
+test("a whiffed frenzy still names its target, not \"on <target>\"", () => {
+  const missed = parse("Sabertooth Overseer tries to frenzy on Saphrium, but misses!") as MissEvent;
+  assert.equal(missed.kind, "miss");
+  assert.equal(missed.attacker, "Sabertooth Overseer");
+  assert.equal(missed.target, "Saphrium");
+  assert.equal(missed.verb, "frenzy");
+
+  const parried = parse(
+    "Sabertooth Overseer tries to frenzy on Saphrium, but Saphrium parries!",
+  ) as MissEvent;
+  assert.equal(parried.target, "Saphrium");
+  assert.equal(parried.avoidance, "parry");
 });
 
 test("damage-shield damage is credited to the shield's wearer", () => {

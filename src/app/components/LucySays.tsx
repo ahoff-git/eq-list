@@ -1,7 +1,8 @@
 "use client";
+import { useClosedZones } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { count, countOf } from "@/shared/format";
-import { placeableReading } from "@/shared/lucy-era";
+import { eraFromSourceZones, placeableReading } from "@/shared/lucy-era";
 import { groupDropsByZone, otherSources } from "@/shared/sources";
 import { ZoneLink } from "./MapLink";
 import type { LucyEra, LucyItem } from "@/shared/types";
@@ -25,12 +26,22 @@ export default function LucySays({ item }: { item: LucyItem }) {
   const zoneDrops = groupDropsByZone(item.sources);
   const others = otherSources(item.sources);
   const shown = zoneDrops.reduce((n, z) => n + z.mobs.length, 0) + others.length;
+  // Recomputed live rather than trusting `item.era`/`item.eraWhy` — those are derived once in main
+  // at fetch time and cached with the item, so they can only ever know whether the gazetteer has
+  // heard of a zone (permanent), never whether that zone's era has actually opened yet (live). This
+  // is the same "bake cheap, widen live at render" split the wiki side already uses for
+  // `page.outOfEra`/`eraCorpus` ([ADR 0170](../../../specs/decisions/0170-an-item-s-sources-are-read-against-the-era.md)).
+  const closed = useClosedZones();
+  const verdict = eraFromSourceZones(
+    item.sources.map((s) => s.detail ?? ""),
+    closed,
+  );
 
   return (
     <section className="lucy-says">
       <h4 className="muted small lucy-head">
         From Lucy · Live EverQuest, not this build
-        <EraBadge era={item.era} why={item.eraWhy} />
+        <EraBadge era={verdict.era} why={verdict.why} />
         <span className="spacer" />
         <LucyLink target={item.id} />
       </h4>
@@ -58,7 +69,7 @@ export default function LucySays({ item }: { item: LucyItem }) {
         <>
           <p className="muted small lucy-note">
             Lucy has it dropping in {count(zoneDrops.length, "zone")} —{" "}
-            {item.era === "out-of-era" ? "none of which this server runs" : "the ones this server runs first"}.
+            {verdict.era === "out-of-era" ? "none of which this server runs" : "the ones this server runs first"}.
           </p>
           <ul className="lucy-list">
             {zoneDrops.map((z) => (

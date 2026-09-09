@@ -1432,7 +1432,7 @@ export interface CachedItem {
  * One spell page already on disk, for the Spells tab.
  *
  * Its own shape rather than a reuse of `CachedItem` — a spell has no `origin`/`lucyId` (no Lucy
- * merge in v1), no `sources` (a spell isn't "obtained" the way an item is) and no `outOfEra`. See
+ * merge in v1) and no `sources` (a spell isn't "obtained" the way an item is). See
  * [ADR 0195](../../specs/decisions/0195-a-spell-catalog-trusts-the-wikis-own-numbers.md).
  */
 export interface CachedSpell {
@@ -1440,6 +1440,8 @@ export interface CachedSpell {
   wikiPath?: string;
   /** The spell's own card — reuses `ItemCard`, since `parseSpellCard` already builds one. */
   card?: ItemCard;
+  /** True when the page is tagged with an era that isn't live yet — the wiki's page-category flag. */
+  outOfEra?: boolean;
   fetchedAt: string;
 }
 

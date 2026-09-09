@@ -1,6 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useGoalFocus, useShoppingList, useMatchFlashes, useCurrentZone, useSettings, type GoalFocus } from "@/lib/hooks";
+import {
+  useClosedZones,
+  useGoalFocus,
+  useShoppingList,
+  useMatchFlashes,
+  useCurrentZone,
+  useSettings,
+  type GoalFocus,
+} from "@/lib/hooks";
 import { api } from "@/lib/api";
 import ItemLink, { NameList } from "./ItemLink";
 import { LucyLink } from "./LucySays";
@@ -29,7 +37,12 @@ import {
   sourceKindLabel,
   type ZoneDrops,
 } from "@/shared/sources";
+import { zoneShut } from "@/shared/item-era";
+import { unavailableReason, zoneExpansion } from "@/shared/zones/expansions";
+import { createLogger } from "@/shared/logging";
 import type { ItemSource, ShoppingListEntry } from "@/shared/types";
+
+const log = createLogger("shopping-list");
 
 /**
  * The shopping list, grouped under the quest/recipe that added each item (added
@@ -45,6 +58,9 @@ export default function ListPanel() {
   // Read once here and passed down, not read per row: `useSettings` costs an IPC read and a listener
   // per instance, and a long list would pay one of each per item to learn a single flag.
   const askLucy = useSettings()?.askLucy ?? true;
+  // Same reasoning as `askLucy` — `useClosedZones` costs a message per mount, so the live half of the
+  // era judgement is read once and passed down rather than once per row.
+  const closedZones = useClosedZones();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [styling, setStyling] = useState(false);
   // Which items your running goals want (ADR 0198) — emphasized while focus is on, and the rest
@@ -183,6 +199,7 @@ export default function ListPanel() {
                       flashing={flashed.has(e.id)}
                       currentZone={zone}
                       askLucy={askLucy}
+                      closedZones={closedZones}
                       // Only worth marking in emphasize-only mode — once hiding is on, every row left
                       // on screen already matches, and outlining all of them would say nothing.
                       goalMatch={focus.active && !focus.hiding ? matchesGoalFocus(e, focus) : undefined}
@@ -205,6 +222,7 @@ function EntryRow({
   flashing,
   currentZone,
   askLucy,
+  closedZones,
   goalMatch,
 }: {
   entry: ShoppingListEntry;
@@ -215,6 +233,8 @@ function EntryRow({
   currentZone: string | null;
   /** Whether to offer the ↗ Lucy link. Passed rather than read here — see `ListPanel`. */
   askLucy: boolean;
+  /** The live out-of-era zone list. Passed rather than read here — see `ListPanel`. */
+  closedZones: ReadonlySet<string>;
   /** Goal focus is on (but not hiding): `true` outlines the row, `false` dims it, `undefined` means
    *  focus isn't active at all and the row is drawn exactly as it always was. */
   goalMatch?: boolean;
@@ -377,7 +397,7 @@ function EntryRow({
           {split && (
             <>
               {split.here.map((d) => (
-                <ZoneRow key={d.zone} drops={d} here />
+                <ZoneRow key={d.zone} drops={d} here closedZones={closedZones} />
               ))}
               {split.here.length > 0 && split.elsewhere.length > 0 && (
                 <button className="entry-more" onClick={() => setShowOthers((s) => !s)}>
@@ -386,7 +406,8 @@ function EntryRow({
                     : `+ ${count(split.elsewhere.length, "other zone")}`}
                 </button>
               )}
-              {(split.here.length === 0 || showOthers) && split.elsewhere.map((d) => <ZoneRow key={d.zone} drops={d} />)}
+              {(split.here.length === 0 || showOthers) &&
+                split.elsewhere.map((d) => <ZoneRow key={d.zone} drops={d} closedZones={closedZones} />)}
             </>
           )}
           {others.map((s, i) => (
@@ -413,13 +434,28 @@ function countTitle(obtained: number, need: number, demands: ItemDemand[]): stri
   return [`You have ${obtained} of ${total} needed:`, ...lines].join("\n");
 }
 
-/** Drop mobs for one zone (current zone highlighted); mob names are in-app links. */
-function ZoneRow({ drops, here }: { drops: ZoneDrops; here?: boolean }) {
+/**
+ * Drop mobs for one zone (current zone highlighted); mob names are in-app links.
+ *
+ * Badged, never hidden, the same rule `WikiPageView`'s `SourceList` applies to a source: the mobs
+ * are still the truth about where the item comes from, and still what to plan around when the era
+ * opens ([ADR 0170](../../../specs/decisions/0170-an-item-s-sources-are-read-against-the-era.md)
+ * named this exact gap — the shopping list applied no era test at all).
+ */
+function ZoneRow({ drops, here, closedZones }: { drops: ZoneDrops; here?: boolean; closedZones: ReadonlySet<string> }) {
+  const shut = zoneShut(drops.zone, closedZones);
+  const why = shut ? unavailableReason(shut, zoneExpansion(drops.zone)) : undefined;
+  if (shut) log.debug("marked", drops.zone, "out of era:", why);
   return (
-    <div className={`drop-zone ${here ? "here" : ""}`}>
+    <div className={`drop-zone ${here ? "here" : ""} ${shut ? "out-of-era" : ""}`.trim()}>
       <span className="src-kind k-drop">kill</span>
       <span className="dz-name">{drops.zone}</span>
       <NameList names={drops.mobs} className="dz-mobs" />
+      {shut && (
+        <span className="badge era-out" title={why}>
+          {shut === "future" ? "not on this server" : "out of era"}
+        </span>
+      )}
     </div>
   );
 }

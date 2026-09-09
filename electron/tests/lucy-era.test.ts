@@ -9,6 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { eraFromSourceZones, placeableZone, zoneReadings } from "../../src/shared/lucy-era";
+import { outOfEraSet } from "../../src/shared/zones/expansions";
 
 // ── reading one of Lucy's zone strings ────────────────────────────────────────
 
@@ -88,4 +89,39 @@ test("the reason counts the other in-era zones rather than listing them all", ()
   const v = eraFromSourceZones(["Grobb", "Southern Felwithe", "Paineel"]);
   assert.equal(v.era, "in-era");
   assert.match(v.why, /and 2 others/);
+});
+
+// ── the live half: a zone the gazetteer knows, but the server hasn't opened yet ────────────────
+// ADR 0170's named gap — `placeableZone` alone only asks whether the zone exists on this server at
+// all (permanent), never whether that expansion's era is open *right now* (live). `closed` (the
+// same live list `useClosedZones()` reads) lets the verdict tell the two apart.
+
+test("a placeable zone the live list marks shut is out of era, not in era", () => {
+  const closed = outOfEraSet(["Grobb"]);
+  const v = eraFromSourceZones(["Grobb"], closed);
+  assert.equal(v.era, "out-of-era");
+  assert.match(v.why, /Grobb/);
+  assert.match(v.why, /hasn't opened/);
+});
+
+test("omitting the live list falls back to the permanent-only reading", () => {
+  // Same zone as above, no `closed` argument — reproduces the pre-existing behavior exactly.
+  const v = eraFromSourceZones(["Grobb"]);
+  assert.equal(v.era, "in-era");
+});
+
+test("an unplaceable zone stays out of era whether or not a live list is supplied", () => {
+  // `closed` only ever narrows "in-era" to "out-of-era" — it can't rescue a zone the gazetteer
+  // never heard of in the first place.
+  const closed = outOfEraSet(["Grobb"]);
+  const v = eraFromSourceZones(["Kael Drakkel"], closed);
+  assert.equal(v.era, "out-of-era");
+  assert.match(v.why, /Kael Drakkel/);
+});
+
+test("one open zone among several placeable ones still reads in era, naming the open one", () => {
+  const closed = outOfEraSet(["Paineel"]);
+  const v = eraFromSourceZones(["Kael Drakkel", "Grobb", "Paineel"], closed);
+  assert.equal(v.era, "in-era");
+  assert.match(v.why, /Grobb/, "the open zone decided it, not the shut one");
 });

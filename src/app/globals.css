@@ -627,6 +627,8 @@ button {
 .drop-zone .dz-name { color: var(--text-dim); font-weight: 600; white-space: nowrap; }
 .drop-zone.here .dz-name { color: var(--good); }
 .drop-zone .dz-mobs { color: var(--text-dim); }
+/* Out of era is dimmed rather than hidden — see the `.item-table`/`.spell-catalog-table` rule above. */
+.drop-zone.out-of-era { opacity: 0.55; }
 .entry-more {
   align-self: flex-start;
   background: none;
@@ -3569,7 +3571,8 @@ kbd {
 .item-table .item-add { text-align: right; }
 .item-table .item-add > .btn + .btn { margin-left: 6px; }
 /* Out of era is dimmed rather than hidden — the toggle hides it; this only says which they are. */
-.item-table tr.out-of-era { opacity: 0.55; }
+.item-table tr.out-of-era,
+.spell-catalog-table tr.out-of-era { opacity: 0.55; }
 .lucy-chip { margin-left: 6px; }
 .item-more { padding-top: 4px; }
 

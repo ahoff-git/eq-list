@@ -202,7 +202,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0167: A picker says what a tick is worth](./0167-a-picker-says-what-a-tick-is-worth.md)
 - [0168: A zone cell that names no place is not a zone](./0168-a-zone-cell-that-names-no-place-is-not-a-zone.md)
 - [0169: The travel graph is built once and remembered](./0169-the-travel-graph-is-built-once-and-remembered.md)
-- [0170: An item's sources are read against the era](./0170-an-item-s-sources-are-read-against-the-era.md)
+- [0170: An item's sources are read against the era](./0170-an-item-s-sources-are-read-against-the-era.md) — *its shopping-list and Lucy-verdict gaps closed by 0210; the Items tab's Lucy-zone-matching gap stands*
 - [0171: A shared kind states what a row is](./0171-a-shared-kind-states-what-a-row-is.md)
 - [0172: A room says when you are the old one](./0172-a-room-says-when-you-are-the-old-one.md)
 - [0173: Back goes back one place, and a tab is a place](./0173-back-goes-back-one-place.md)
@@ -242,6 +242,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0206: A duration that disagrees with itself says so](./0206-a-duration-that-disagrees-with-itself-says-so.md)
 - [0207: A retired kill still remembers its own line](./0207-a-retired-kill-still-remembers-its-own-line.md)
 - [0208: An observed drop rate is a lower bound, and says so](./0208-an-observed-drop-rate-is-a-lower-bound-and-says-so.md)
+- [0209: A swing's verb is a skill only when the log names one](./0209-a-swings-verb-is-a-skill-only-when-the-log-names-one.md)
+- [0210: Out-of-era flagging reaches the spells tab, the shopping list and Lucy's live verdict](./0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)
 
 ## Open Questions
 
