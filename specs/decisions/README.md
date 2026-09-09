@@ -249,6 +249,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0213: Every stock alert claims its own corner](./0213-every-stock-alert-claims-its-own-corner.md)
 - [0214: A counted criterion tallies, and a cast criterion is always yours](./0214-a-counted-criterion-tallies-and-a-cast-criterion-is-always-yours.md)
 - [0215: A raceKill criterion reads the wiki's own mob card, off the log's own parsed kill](./0215-a-racekill-criterion-reads-the-wiki-s-own-mob-card.md)
+- [0216: An achievement is quiet during a replayed gap](./0216-an-achievement-is-quiet-during-a-replayed-gap.md)
+- [0217: A custom zone criterion is a zone criterion](./0217-a-custom-zone-criterion-is-a-zone-criterion.md)
 
 ## Open Questions
 

@@ -165,7 +165,6 @@ const CRITERION_TYPES: {
     label: "Enter a zone",
     vocab: "zone",
     placeholder: "RunnyEye Citadel",
-    template: (name) => `You have entered ${name}`,
     defaultLabel: (name) => `Enter ${name}`,
   },
   {
@@ -198,6 +197,9 @@ function toInput(w: WizardCriterion): AchievementCriterionInput {
   if (w.type === "manual") return { label: w.label.trim() };
   const value = w.value.trim();
   const label = w.label.trim() || def.defaultLabel?.(value) || value;
+  // A zone's own name, resolved via `placeKey` (ADR 0217) — never templated into a raw line and
+  // matched as text, which could only ever match the one exact wording it was given.
+  if (w.type === "zone") return { label, trigger: { text: value, zone: true } };
   const text = w.type === "line" ? value : (def.template?.(value) ?? value);
   const countNum = Math.floor(Number(w.count));
   const count = w.count.trim() && Number.isFinite(countNum) && countNum > 1 ? countNum : undefined;
@@ -367,7 +369,7 @@ function CriterionStep({
             title={vocabulary.size ? "Suggested from your own recent log" : "No recent log read yet — type it by hand"}
           />
         )}
-        {criterion.type !== "manual" && (
+        {criterion.type !== "manual" && criterion.type !== "zone" && (
           <>
             <span className="small muted">×</span>
             <input

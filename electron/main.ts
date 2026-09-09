@@ -308,6 +308,11 @@ if (!app.requestSingleInstanceLock()) {
     getZone: () => currentZone,
     raise: raiseAlert,
   });
+  // Silent until the log has caught up, for the same reason `scores` is (see `scores.setQuiet`
+  // above): a replayed gap can satisfy a criterion or finish an achievement outright, and progress
+  // still lands, but a 🏅/🎉 banner for something that happened while the app was shut is that same
+  // lie about the present.
+  achievements.setQuiet(true);
   achievements.onChanged(() => broadcast(CH.achievementsChanged, undefined));
   // The buff board. The mirror image of the spawn tracker: it holds a fact about *this session*
   // rather than about the world, so nothing about which buffs are up is persisted — only the
@@ -655,14 +660,18 @@ if (!app.requestSingleInstanceLock()) {
     if (!continuing) combat.reset();
   });
   /**
-   * From here on the log is *news*, so a record is worth saying out loud (see `scores.setQuiet`).
+   * From here on the log is *news*, so a record — or a criterion — is worth saying out loud (see
+   * `scores.setQuiet` and `achievements.setQuiet`).
    *
    * Its own listener, registered **after** the one above, for two reasons that pull the same way:
    * that handler returns early when there was no gap — and a launch with nothing to replay still has
    * to come off mute — and its last act is `combat.reset()`, which banks the fight the replay was in
    * the middle of. Those records are as old as the rest of the gap, so unmuting has to follow.
    */
-  watcher.onCaughtUp(() => scores.setQuiet(false));
+  watcher.onCaughtUp(() => {
+    scores.setQuiet(false);
+    achievements.setQuiet(false);
+  });
   // Fights are filed as they end, so history survives a crash as well as a clean quit — and the same
   // moment is when a fight's own records are claimed, since "most damage in a fight" isn't knowable
   // until the fight has one. Its hits are re-offered too, which changes nothing while the app is

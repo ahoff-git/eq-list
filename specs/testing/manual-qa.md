@@ -808,6 +808,21 @@ features for later in [../ideas.md](../ideas.md).
       faction (`King Ak'Anon`, `Merchants of Rivervale`) that wasn't independently seen in the log
       used for this research. If either never ticks at Ally, that's the name to correct.
 
+  **A third batch (ADR 0216, ADR 0217) found and fixed two real bugs during an adversarial pass over
+  the tracker and the wizard, both unit-tested but neither watched live:**
+  15. **Restart after a log gap stays quiet.** Close the app, get a kill or two that would satisfy a
+      criterion (or finish an achievement outright) while it's shut, then relaunch. Confirm the
+      progress lands — the row shows done, the tally is right — with **no** 🏅/🎉 banner for any of it;
+      only something that happens **after** the catch-up gap finishes should banner. Before ADR 0216,
+      every criterion the backlog satisfied would banner live on launch, exactly like `high-scores.ts`
+      already knew not to do for a record.
+  16. **A custom "Enter a zone" achievement folds a difficulty variant.** Build one in the wizard
+      picking a zone you've actually visited, save it, then zone into a *different difficulty* of that
+      same place (or, if none is handy, confirm the criterion's `kind` is `"zone"` rather than
+      `"watch"` some other way) and confirm it still ticks. Before ADR 0217 this step quietly built a
+      raw-text watch instead of a real zone criterion — the common case still worked by luck of
+      sentence structure, but it never got the alias/typo folding a stock zone criterion gets for free.
+
 ## Peer networking — two clients
 
 - **The shared game clock — never run with a real peer.**

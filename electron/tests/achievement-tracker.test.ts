@@ -163,6 +163,21 @@ test("a custom achievement's manual criteria work exactly like a stock one's", (
   assert.equal(raised[1].achievement?.kind, "completed");
 });
 
+test("a custom achievement's zone trigger becomes a real \"zone\" criterion, matched by placeKey rather than raw line text (ADR 0217)", () => {
+  const { tracker } = harness();
+  const def = tracker.create({
+    // One edit off "Blackburrow" — a raw-text watch could never find this in a correctly-spelled
+    // log line, but `placeKey`'s typo tolerance (ADR 0075) resolves it to the same place anyway.
+    title: "My Own Tour",
+    criteria: [{ label: "Visit Blackburrow", trigger: { text: "Blackburrrow", zone: true } }],
+  })!;
+  assert.equal(def.criteria[0].kind, "zone");
+  assert.equal(def.criteria[0].zone, "Blackburrrow");
+
+  tracker.zone("Blackburrow");
+  assert.equal(tracker.view().achievements.find((a) => a.definition.id === def.id)!.done.length, 1);
+});
+
 test("a custom achievement's line trigger becomes a watch criterion, regex included", () => {
   const { tracker } = harness();
   const def = tracker.create({
@@ -417,6 +432,58 @@ test("spiders tally generously across variant names, same as hill giants", () =>
   tracker.line(line("You have slain a rock spider!", 1));
   tracker.line(line("You have slain a giant heart spider!", 2));
   assert.equal(tracker.view().achievements.find((a) => a.definition.id === "stock:spiders")!.tally["spiders"], 2);
+});
+
+// ── setQuiet: a replayed startup gap files progress without bannering it ───────────────────────
+
+test("while quiet, a completed criterion and a finished achievement both update silently", () => {
+  const { tracker, raised } = harness();
+  tracker.setQuiet(true);
+
+  tracker.line(line("You have slain a rat.", 1)); // stock:first-blood — one criterion, so also completion
+  const first = tracker.view().achievements.find((a) => a.definition.id === "stock:first-blood")!;
+  assert.equal(first.done.length, 1);
+  assert.ok(first.completedAt);
+  assert.equal(raised.length, 0);
+});
+
+test("while quiet, a tallying criterion still counts and still completes at threshold, silently", () => {
+  const { tracker, raised } = harness();
+  tracker.setQuiet(true);
+
+  for (let i = 1; i <= 50; i++) tracker.kill(kill("Peg Leg", "You", i));
+  const done = tracker.view().achievements.find((a) => a.definition.id === "stock:kill-dwarf")!;
+  assert.equal(done.tally["dwarves"], 50);
+  assert.equal(done.done.length, 1);
+  assert.ok(done.completedAt);
+  assert.equal(raised.length, 0);
+});
+
+test("setQuiet(false) lets banners resume, and doesn't retroactively announce what quiet already filed", () => {
+  const { tracker, raised } = harness();
+  tracker.setQuiet(true);
+  tracker.setManual("stock:say-hello", "hello", true);
+  assert.equal(raised.length, 0);
+
+  tracker.setQuiet(false);
+  assert.equal(raised.length, 0); // unmuting itself speaks for nothing
+
+  tracker.line(line("You have slain a rat.", 1));
+  assert.equal(raised.length, 1); // a fresh match after unmuting banners normally
+  assert.equal(raised[0].achievement?.title, "First Blood");
+});
+
+test("a multi-criterion achievement finished entirely within a quiet gap never announces even its later criteria once unmuted", () => {
+  const { tracker, raised } = harness();
+  tracker.setQuiet(true);
+  const zoneName = CURATED_ZONES[0].name;
+  tracker.zone(`${zoneName} 2 (Adaptive)`); // one of Grand Tour's many criteria — progress, not completion
+  assert.equal(raised.length, 0);
+
+  tracker.setQuiet(false);
+  assert.equal(raised.length, 0);
+  const tour = tracker.view().achievements.find((a) => a.definition.id === "stock:grand-tour")!;
+  assert.equal(tour.done.length, 1); // filed regardless of quiet
 });
 
 test("progress and tallies both survive a restart", () => {

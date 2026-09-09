@@ -1977,7 +1977,9 @@ export interface AchievementCriterion {
   kind: AchievementCriterionKind;
   /** `kind: "watch"` or `"count"`. */
   watch?: AchievementWatch;
-  /** `kind: "zone"` only — a name from `CURATED_ZONES` (`zones/gazetteer.ts`). */
+  /** `kind: "zone"` only — a name from `CURATED_ZONES` (`zones/gazetteer.ts`) for a stock
+   *  achievement, or whatever the player typed for a custom one; either way matched via `placeKey`,
+   *  never as raw line text (ADR 0217). */
   zone?: string;
   /** `kind: "highscore"` only. */
   highscore?: { categoryId: string; atLeast: number };
@@ -2055,6 +2057,10 @@ export interface AchievementCriterionInput {
     /** Match the player's own *casting* of a spell named by `text`, rather than a raw log line
      *  containing it. Always self-scoped (ADR 0214) — there is no way to ask for anyone else's. */
     onCast?: boolean;
+    /** `text` is a zone's own name, resolved via `placeKey` exactly like a stock zone criterion
+     *  (ADR 0217) — never templated into "You have entered …" and matched as raw line text, which
+     *  can't fold a difficulty variant or a known alternate spelling the way `placeKey` does. */
+    zone?: boolean;
   };
 }
 

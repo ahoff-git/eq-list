@@ -108,6 +108,13 @@ export interface AchievementTracker {
   view(): AchievementView;
   /** Fires whenever a criterion, an achievement, or the custom list changes. */
   onChanged(cb: () => void): void;
+  /**
+   * Whether progress landing right now is **news**. Off while a startup gap is being replayed —
+   * everything logged while the app was shut is fed through this same live path, and a banner for a
+   * kill you made last night is exactly the lie `high-scores.ts`'s own `setQuiet` exists to prevent.
+   * Progress still lands and still persists while quiet; only the banner is skipped.
+   */
+  setQuiet(quiet: boolean): void;
   flush(): void;
 }
 
@@ -122,6 +129,10 @@ export function createAchievementTracker({
   const state = load(file);
   const saver = createSaver(file, "achievements", () => state, WRITE_DEBOUNCE_MS, { concern: "achievements" });
   let listener: (() => void) | null = null;
+  // Mirrors `high-scores.ts`'s own `quiet`: on during a startup gap replay, so every criterion the
+  // backlog satisfies still lands (done/tally/completedAt all update normally) but announces nothing
+  // — a banner is a claim that this just happened, and a gap only ever holds the past.
+  let quiet = false;
 
   const changed = () => {
     saver.save();
@@ -143,6 +154,7 @@ export function createAchievementTracker({
    *  follows, and for the same reason: nothing here is an emergency worth overriding it for. */
   function announce(payload: CastAlertEvent["achievement"], at: number): void {
     if (!payload) return;
+    if (quiet) return;
     const settings = getSettings();
     if (!settings.enabled) return;
     raise({
@@ -300,6 +312,10 @@ export function createAchievementTracker({
         const label = c.label.trim();
         const text = c.trigger?.text.trim();
         if (!text) return { id: randomUUID(), label, kind: "manual" };
+        // A zone name, resolved via `placeKey` exactly like a stock zone criterion — not templated
+        // into a raw line watch, which could only ever match the one exact wording it was given
+        // (ADR 0217).
+        if (c.trigger?.zone) return { id: randomUUID(), label, kind: "zone", zone: text };
         const onCast = !!c.trigger?.onCast;
         const watch = c.trigger?.regex
           ? { spell: "", onLine: !onCast, onCast, conditions: [{ field: "line" as const, op: "regex" as const, text }] }
@@ -359,6 +375,10 @@ export function createAchievementTracker({
 
     onChanged(cb) {
       listener = cb;
+    },
+
+    setQuiet(next) {
+      quiet = next;
     },
 
     flush: () => saver.flush(),
