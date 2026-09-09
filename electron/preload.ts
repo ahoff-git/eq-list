@@ -176,6 +176,14 @@ const api: EqlApi = {
     deleteTemplate: (id) => ipcRenderer.invoke(CH.goalsDeleteTemplate, id),
     onChanged: (cb) => on(CH.goalsChanged, cb),
   },
+  achievements: {
+    view: () => ipcRenderer.invoke(CH.achievementsView),
+    create: (input) => ipcRenderer.invoke(CH.achievementsCreate, input),
+    deleteCustom: (id) => ipcRenderer.invoke(CH.achievementsDeleteCustom, id),
+    setManual: (achievementId, criterionId, done) =>
+      ipcRenderer.invoke(CH.achievementsSetManual, achievementId, criterionId, done),
+    onChanged: (cb) => on(CH.achievementsChanged, cb),
+  },
   gameClock: {
     view: () => ipcRenderer.invoke(CH.gameClockView),
     add: (minute, message) => ipcRenderer.invoke(CH.gameClockAdd, minute, message),

@@ -1075,6 +1075,74 @@ button {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   font-size: 12px;
 }
+
+/* ── achievements (ADR 0212) ─────────────────────────────────── */
+.achievements { display: flex; flex-direction: column; gap: 8px; }
+.achv-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.achv-row.completed { border-color: var(--good); }
+.achv-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.achv-icon { width: 1.2em; text-align: center; }
+.achv-title { font-weight: 500; }
+.achv-progress {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+.achv-row.completed .achv-progress { color: var(--good); font-weight: 600; }
+.achv-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+.achv-criteria {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.achv-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.achv-form-criteria { display: flex; flex-direction: column; gap: 10px; }
+.achv-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.achv-step-no { font-family: var(--mono); }
+.achv-count-input { width: 56px; }
+.achv-count .check-field { flex: 1; }
+.achv-tally {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
 .goal-focus-banner span { flex: 1; }
 /* A row the reader chose to keep visible despite it being outside the focused goals: named the same
    way a row that's merely dimmed is, so "why is this greyed out" is answerable at a glance. */

@@ -21,6 +21,17 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **RunnyEye Citadel's live zone-arrival text doesn't resolve to its own gazetteer entry.**
+  `CURATED_ZONES` names it `"RunnyEye Citadel"`, but a real captured log's zone line reads
+  `"The Liberated Citadel of Runnyeye"` (confirmed from a live install's own `kill-log.json`, which
+  holds real kill records stamped with that exact zone string). `classifyZoneLine` calls that string
+  `"unresolved"` today, so **`currentZone` never actually updates on entering this zone live** — every
+  reader keyed on it (the kill log, mob knowledge, achievements' `"zone"` criteria, ADR 0212/0214)
+  silently never sees an arrival. Found while building the achievements feature's Grand Tour
+  criterion, not caused by it — the fix belongs to the gazetteer/alias table (ADR 0075, ADR 0076),
+  not to achievements. Likely a missing `ZONE_NAME_PAIRS` entry connecting the two spellings; worth
+  checking whether other zones with a wordier in-game name than their curated one have the same gap
+  before assuming this is the only one.
 - **Hold an unplaceable name loosely, then process it** — [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md),
   in the order the measurements set rather than the order the idea suggests. Today an unproven named
   pet is *dropped*: `pet-registry.ts` learns one only from `<Pet> told you, 'Attacking <mob> Master.'`

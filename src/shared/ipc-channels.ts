@@ -117,6 +117,11 @@ export const CH = {
   goalsSaveTemplate: "goals:saveTemplate",
   goalsSaveStreakTemplate: "goals:saveStreakTemplate",
   goalsDeleteTemplate: "goals:deleteTemplate",
+  // achievements (ADR 0212) — stock plus custom, each with one or more criteria
+  achievementsView: "achievements:view",
+  achievementsCreate: "achievements:create",
+  achievementsDeleteCustom: "achievements:deleteCustom",
+  achievementsSetManual: "achievements:setManual",
   // gameClock — the running Norrath clock (extrapolated from the last `/time`), and its alarms
   gameClockView: "gameClock:view",
   gameClockAdd: "gameClock:add", // set an alarm for a time of day
@@ -251,6 +256,7 @@ export const CH = {
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
   spawnsChanged: "evt:spawnsChanged", // main → all: a timer started, came due, or aged out
   goalsChanged: "evt:goalsChanged", // main → all: a goal started, progressed, finished, or was cleared
+  achievementsChanged: "evt:achievementsChanged", // main → all: a criterion, an achievement, or the custom list changed
   gameClockChanged: "evt:gameClockChanged", // main → all: a `/time` reading arrived, or an alarm changed
   damageOverlayChanged: "evt:damageOverlayChanged", // main → all: the damage meter was pinned, unpinned, or moved
   buffsChanged: "evt:buffsChanged", // main → all: a buff went up, lapsed, or a choice about one changed

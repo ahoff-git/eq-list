@@ -34,12 +34,13 @@ import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { PeerKillStore } from "./peer-kills";
 import type { SpawnTracker } from "./spawn-tracker";
 import type { GoalTracker } from "./goal-tracker";
+import type { AchievementTracker } from "./achievement-tracker";
 import type { BuffTracker } from "./buff-tracker";
 import type { GameClockTracker } from "./game-clock-tracker";
 import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
 import { AWARI_MSG } from "../src/shared/types";
 import { readContributor } from "../src/shared/contributors";
 import { createPeerShareHub, shareSources } from "../src/shared/peer-share-hub";
@@ -76,6 +77,8 @@ export interface IpcContext {
   goals: GoalTracker;
   /** Which of your buffs are up, and which have lapsed (`buff-tracker.ts`). */
   buffs: BuffTracker;
+  /** Stock plus custom achievements, each with one or more criteria (`achievement-tracker.ts`, ADR 0212). */
+  achievements: AchievementTracker;
   /** The running Norrath clock and its alarms (`game-clock-tracker.ts`). */
   gameClock: GameClockTracker;
   /** The floating damage meter's pin state (`damage-overlay-tracker.ts`) — not the fight data itself. */
@@ -447,7 +450,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, goals, buffs, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -587,6 +590,23 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.goalsDeleteTemplate, (_e, id: string) => {
     goals.deleteTemplate(id);
     return goals.view();
+  });
+  // Achievements (ADR 0212) — every edit hands the whole view back, like the boards above.
+  ipcMain.handle(CH.achievementsView, () => achievements.view());
+  ipcMain.handle(
+    CH.achievementsCreate,
+    (_e, input: { title: string; description?: string; category?: string; criteria: AchievementCriterionInput[] }) => {
+      achievements.create(input);
+      return achievements.view();
+    },
+  );
+  ipcMain.handle(CH.achievementsDeleteCustom, (_e, id: string) => {
+    achievements.deleteCustom(id);
+    return achievements.view();
+  });
+  ipcMain.handle(CH.achievementsSetManual, (_e, achievementId: string, criterionId: string, done: boolean) => {
+    achievements.setManual(achievementId, criterionId, done);
+    return achievements.view();
   });
   // The running game clock and its alarms — every edit hands the whole view back, like the boards above.
   ipcMain.handle(CH.gameClockView, () => gameClock.view());

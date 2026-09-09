@@ -12,6 +12,7 @@ import ListPanel from "./components/ListPanel";
 import HuntPanel, { type HuntGrouping } from "./components/HuntPanel";
 import SpawnPanel from "./components/SpawnPanel";
 import GoalsPanel from "./components/GoalsPanel";
+import AchievementsPanel from "./components/AchievementsPanel";
 import BuffPanel from "./components/BuffPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import SessionPanel from "./components/SessionPanel";
@@ -31,7 +32,7 @@ import TabBar, { type TabItem } from "./components/TabBar";
 import PeersPanel from "./components/PeersPanel";
 import PeerOfferToasts from "./components/PeerOfferToasts";
 import PeerVersionToast from "./components/PeerVersionToast";
-import { useBuffs, useCapabilities, useGoalsRunning, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
+import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/nav";
@@ -41,7 +42,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "goals" | "buffs" | "loot" | "search" | "items" | "spells" | "damage" | "session" | "alerts" | "peers" | "settings";
+type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "search" | "items" | "spells" | "damage" | "session" | "alerts" | "peers" | "settings";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -80,6 +81,9 @@ function ControlWindow() {
   // count, and it would otherwise re-render the whole shell once a second regardless of which tab
   // is open.
   const goalsRunning = useGoalsRunning();
+  // Same restrained "how many" read as `goalsRunning`, for the same reason — the tab label wants a
+  // count, not the ticking clocks the panel itself reads.
+  const achievementsRunning = useAchievementsRunning();
   // Only the roster, for the tab's own count — the panel does its own reading. Cheap: it's a
   // brokered event this window is already receiving as the connection's owner.
   const [peers, setPeers] = useState<AwariPeer[]>([]);
@@ -181,6 +185,11 @@ function ControlWindow() {
     // loot/kill lines), so it's gated the same way. The count is *running* goals, silent at zero, the
     // same restraint the tabs below it use.
     { key: "goals", label: goalsLabel(goalsRunning), disabled: needsLog, disabledReason: noLog },
+    // Beside Goals — the fourth "what's running" board, and log-gated for the same reason: a
+    // `"watch"`/`"zone"`/`"highscore"` criterion (ADR 0212) needs the log the web build doesn't
+    // have. The manual half would work without one, but a tab that only half-works reads as broken
+    // rather than as a feature, so it stays behind the same gate as its siblings.
+    { key: "achievements", label: achievementsLabel(achievementsRunning), disabled: needsLog, disabledReason: noLog },
     // Beside Timers, because it is the same kind of thing: a board of what is running out. It goes
     // *before* Loot for the same reason Timers goes before Alerts — `TabBar` collapses from the end,
     // and a buff that dropped is something you need to see mid-fight, which is exactly when you
@@ -288,6 +297,7 @@ function ControlWindow() {
           )}
           {tab === "timers" && <SpawnPanel />}
           {tab === "goals" && <GoalsPanel />}
+          {tab === "achievements" && <AchievementsPanel />}
           {tab === "buffs" && <BuffPanel />}
           {tab === "loot" && <LootPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
@@ -346,6 +356,10 @@ function peersLabel(peers: number, connected: boolean | undefined): string {
  */
 function goalsLabel(running: number): string {
   return running ? `Goals (${running})` : "Goals";
+}
+
+function achievementsLabel(running: number): string {
+  return running ? `Achievements (${running})` : "Achievements";
 }
 
 /**

@@ -24,6 +24,7 @@ import * as store from "@/lib/web/local-store";
 import { answerRoute, travelZone } from "@/shared/travel/route";
 import { surveyZone } from "@/shared/travel/survey";
 import type {
+  AchievementView,
   BuffView,
   CombatStats,
   EqlApi,
@@ -71,6 +72,7 @@ const EMPTY_COMBAT: CombatStats = { startedAt: new Date().toISOString(), fight: 
 const EMPTY_BUFFS: BuffView = { now: new Date().toISOString(), active: [], lapsed: [], known: [], lexicon: false };
 const EMPTY_SPAWNS: SpawnView = { now: new Date().toISOString(), running: [], known: [], dismissed: [] };
 const EMPTY_GOALS: GoalView = { now: new Date().toISOString(), goals: [], templates: [] };
+const EMPTY_ACHIEVEMENTS: AchievementView = { achievements: [] };
 const EMPTY_SCOREBOARD: ScoreBoard = { character: "", scores: [], streak: 0, seeded: false };
 const EMPTY_HP: HpEstimate = { atLeast: 0, samples: 0, updatedAt: new Date().toISOString() };
 // A harvest is Electron-only (there's no wiki category walk on the web — the snapshot is this
@@ -341,6 +343,16 @@ function createWebApi(): EqlApi {
       saveTemplate: async () => EMPTY_GOALS,
       saveStreakTemplate: async () => EMPTY_GOALS,
       deleteTemplate: async () => EMPTY_GOALS,
+      onChanged: () => noop,
+    },
+
+    // Criteria that watch the log or the scoreboard need both, neither of which exists on the web —
+    // same honest no-op as spawns/buffs/goals above.
+    achievements: {
+      view: async () => EMPTY_ACHIEVEMENTS,
+      create: async () => EMPTY_ACHIEVEMENTS,
+      deleteCustom: async () => EMPTY_ACHIEVEMENTS,
+      setManual: async () => EMPTY_ACHIEVEMENTS,
       onChanged: () => noop,
     },
 

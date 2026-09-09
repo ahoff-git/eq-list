@@ -289,6 +289,16 @@ features for later in [../ideas.md](../ideas.md).
   prompted it: change the **monitor** and confirm the overlay moves *immediately*, with no other
   setting touched, and that the banner is the right size on a secondary or HiDPI screen (it used to
   inherit the primary display's dimensions).
+- **Stock corners don't collide by default (ADR 0213).** Leave every alert style untouched and put
+  more than one standing board over the game at once: pin a spawn timer's countdown (Timers tab, 🔔
+  then the on-screen toggle) while a goal is running (Goals tab) — the countdown should sit
+  **top-right** and the goal's progress bar **bottom-right**, two boards rather than one smeared over
+  the other. Let a self-buff lapse (Buffs tab) while a mez/root/snare is up on something you're
+  fighting — the missing-buff list should sit **top-left** and the crowd-control row **bottom-left**.
+  A loot drop's banner firing while a timer is pinned should land dead-center **top**, over neither
+  board. Then confirm the exception still holds: give one specific spell its own saved style pointed
+  at, say, the missing-buff corner, and confirm *that* row — buff or debuff — goes exactly where the
+  style says, unlike the ones still on the default.
 - **Windows reopen the size you left them.** Size and place the main window (and the map), quit via
   the tray, relaunch, and confirm both come back **exactly** as they were. Worth repeating three or
   four times on a **mixed-DPI** desktop with the window on the scaled monitor: the size used to be
@@ -723,6 +733,57 @@ features for later in [../ideas.md](../ideas.md).
   confirm it reappears pinned, in the exact spot it was dragged to. Finally, confirm it never pulses,
   wiggles, or floats the way an alert banner can — it should sit dead still while the numbers inside
   it tick over.
+
+- **Achievements — the tab, the checkbox, and the little party.**
+  ([ADR 0212](../decisions/0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md).)
+  The matching and the tracker's state machine are unit-tested black boxes, and one live launch
+  against a real install already confirmed the wiring end to end: on startup the log's current zone
+  (`Ak'Anon`) checked off that exact criterion under **Grand Tour** and was recorded as announced in
+  `achievements.json`, with no exceptions anywhere in the main-process log. What that pass couldn't
+  see is the **screen** — nobody watched a checkbox move or a banner appear. To confirm:
+  1. Open the **Achievements** tab and expand **Grand Tour** — the zone you're standing in right now
+     should already show ticked (it was, in the file, even though nobody clicked it).
+  2. **Zone out** to anywhere new and confirm a 🏅 banner names that zone by title, with "N of \<total\>"
+     in the hint — over the game, on the same overlay a cast alert uses.
+  3. Tick **Say Hello**'s manual checkbox by hand and confirm a 🎉 "complete!" banner fires
+     immediately — the "little party" — with a different look from the ordinary 🏅 one (pink, wiggling,
+     per `built-in:achievement` in `alert-styles.ts`). Untick it and confirm the banner does **not**
+     repeat (reopening isn't news); tick it again and confirm it **does** celebrate a second time.
+  4. Land a swing for 500+ damage (or edit `high-scores.json` to fake one) and confirm **Now We're
+     Talking** completes off the scoreboard alone, with no cast or line involved.
+  5. **＋ New achievement**: add one with a title and a criterion whose trigger text is something
+     you can actually say or do (a raw-text watch, e.g. `/ooc test achievement`), save it, then say
+     it in game and confirm the row completes and celebrates exactly like a stock one.
+  6. Restart the app and confirm every ticked box and every custom achievement survived.
+
+  **ADR 0214 added counted criteria, a hard self-scoping rule for cast criteria, five new stock
+  achievements built from real game/wiki/install data, and the Achievement Wizard — none of it
+  seen on screen yet** (the tracker-level logic is covered by unit tests, including the
+  self-scoping and tallying rules specifically, and a live launch confirmed the app still boots
+  clean with the new stock catalog loaded — but nobody has looked at the wizard's own layout):
+  7. Open the wizard (**✨ Achievement Wizard**) and confirm each of the four log-driven step
+     types — **Kill a mob**, **Cast a spell**, **Enter a zone**, **See a log line** — offers
+     suggestions from **your own recent log** (the ghost-text/dropdown `SuggestField` already used
+     on the Alerts/Timers tabs) rather than a blank box, and that **Just check it off myself**
+     shows no suggestion field at all, only a plain label. Confirm the **×** count field: leaving
+     it blank or typing 1 makes an ordinary checkbox criterion; typing a higher number makes a
+     `"count"` one.
+  8. **Beanstalk Problem** (kill 25 hill giants): kill one and confirm a 🏅 banner reads "14 of 25"
+     -style progress rather than the achievement's own "0 of 1" — then get to 25 and confirm the
+     🎉 completion banner instead, with no tally in it.
+  9. **Good as New** (cast a resurrection spell): confirm casting it **yourself** completes it, and
+     — the one that needs a second character or a grouped mob nearby — confirm **someone else's**
+     resurrection cast (or a mob happening to cast something with "resurrect" in the name, if one
+     ever does) does **not**.
+  10. **Citadel Cleared** and **Royal Execution**: the exact kill-line wording for the five RunnyEye
+      Citadel named mobs was inferred from the wiki's own no-article naming convention rather than a
+      captured log line (see ADR 0214) — the one thing only real kills can confirm is whether each
+      one actually reads `"You have slain <name>!"` with **no** leading article. If a row never
+      ticks after an actual kill, that's the wording to fix, not a code bug.
+  11. **Oops**, **Glub Glub**, **Gravity Wins**: confirm **Oops** fires on an ordinary death; the
+      other two are deliberately `"manual"` (no confirmed line exists for drowning, and falling
+      damage's confirmed line doesn't prove the death) — tick them by hand and confirm they behave
+      like any other manual criterion.
 
 ## Peer networking — two clients
 

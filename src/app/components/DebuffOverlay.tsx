@@ -36,6 +36,16 @@ import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types
  *
  * Rides the existing alert window, like every other piece drawn over the game.
  */
+/**
+ * Where a debuff lands when nobody picked a look for it — `BuffOverlay`'s corner is `BUFF_STYLE_ID`'s
+ * `top-left`, and both boards default there since a debuff with no style of its own falls back to
+ * the very same id. Out of the box that put a crowd-control class's two *standing* boards on the
+ * same pixel — a mez/root list drawn under, or over, the missing-buffs list it has nothing to do
+ * with. A row that names its own saved style still goes exactly where that style says (below); this
+ * only redirects the shared, unconfigured fallback.
+ */
+const DEBUFF_DEFAULT_POSITION: AlertPositionValue = "bottom-left";
+
 export default function DebuffOverlay() {
   const view = useBuffs();
   const ca = useSettings()?.castAlerts;
@@ -61,13 +71,16 @@ export default function DebuffOverlay() {
   const several = new Set(
     rows.filter((b, i) => rows.some((o, j) => j !== i && o.key === b.key && o.target === b.target)).map((b) => `${b.key} ${b.target}`),
   );
-  const looks = rows.map((buff) => ({
-    buff,
-    known: wanted.get(buff.key),
-    style: alertStyle(ca, { styleId: wanted.get(buff.key)?.styleId ?? BUFF_STYLE_ID }),
-  }));
+  const looks = rows.map((buff) => {
+    const styleId = wanted.get(buff.key)?.styleId;
+    const style = alertStyle(ca, { styleId: styleId ?? BUFF_STYLE_ID });
+    // Only an explicit choice earns the position that choice named — the shared fallback is
+    // redirected to this board's own corner instead (see `DEBUFF_DEFAULT_POSITION`).
+    const position = styleId ? style.position : DEBUFF_DEFAULT_POSITION;
+    return { buff, known: wanted.get(buff.key), style, position };
+  });
   const stacks = new Map<AlertPositionValue, typeof looks>();
-  for (const look of looks) stacks.set(look.style.position, [...(stacks.get(look.style.position) ?? []), look]);
+  for (const look of looks) stacks.set(look.position, [...(stacks.get(look.position) ?? []), look]);
   const locations = ca.locations ?? [];
 
   return (

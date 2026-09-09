@@ -5,6 +5,7 @@ import { createLogger, setRendererDebug } from "@/shared/logging";
 import { UI_SCALE, clampScale, windowOpacity, type ScaleRange } from "@/shared/constants";
 import { useWindowToggle } from "./windowToggles";
 import type {
+  AchievementView,
   ShoppingList,
   Settings,
   WatcherStatus,
@@ -285,6 +286,7 @@ const NO_MOBS: MobKnowledge[] = [];
 const NO_SPAWNS: SpawnView = { now: "", running: [], known: [], dismissed: [] };
 const NO_BUFFS: BuffView = { now: "", active: [], lapsed: [], known: [], lexicon: false };
 const NO_GOALS: GoalView = { now: "", goals: [], templates: [] };
+const NO_ACHIEVEMENTS: AchievementView = { achievements: [] };
 const NO_GAME_CLOCK: GameClockView = {
   minutes: null,
   daytime: null,
@@ -795,9 +797,10 @@ export function useStyleUsage(): AlertUsage {
     () => goals.goals.filter((g) => g.state === "running").length,
     [goals],
   );
+  const achievementsRunning = useAchievementsRunning();
   return useMemo(
-    () => ({ spawns: spawns.known, buffs: buffs.known, lootArmed, goalsRunning }),
-    [spawns, buffs, lootArmed, goalsRunning],
+    () => ({ spawns: spawns.known, buffs: buffs.known, lootArmed, goalsRunning, achievementsRunning }),
+    [spawns, buffs, lootArmed, goalsRunning, achievementsRunning],
   );
 }
 
@@ -893,6 +896,27 @@ export function useGoals(): { view: GoalView; now: number } {
 export function useGoalsRunning(): number {
   const view = useGoalsBoard();
   return useMemo(() => view.goals.filter((g) => g.state === "running").length, [view]);
+}
+
+/**
+ * Achievements (ADR 0212) — the stock catalog plus whatever the player has typed in, joined with
+ * progress. No 1Hz tick of its own: unlike a goal or a spawn timer, nothing here counts down, so a
+ * refetch only when main says something actually changed is the whole story.
+ */
+export function useAchievements(): AchievementView {
+  return useFollowedRead<AchievementView>(
+    (a) => a.achievements.view(),
+    (a, reload) => a.achievements.onChanged(reload),
+    NO_ACHIEVEMENTS,
+    [],
+  );
+}
+
+/** How many achievements are still incomplete — the same restrained "count only" read
+ *  `useStyleUsage` and `useGoalsRunning` use rather than a component holding the whole view. */
+export function useAchievementsRunning(): number {
+  const view = useAchievements();
+  return useMemo(() => view.achievements.filter((a) => a.done.length < a.total).length, [view]);
 }
 
 export interface GoalFocus {

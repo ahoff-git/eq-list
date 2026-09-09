@@ -267,7 +267,7 @@ export function newStyleId(styles: NamedAlertStyle[]): string {
  */
 export interface AlertSource {
   /** Stable key — the row's React key, and what a test names. */
-  id: "record" | "spawn" | "loot" | "buff" | "goal";
+  id: "record" | "spawn" | "loot" | "buff" | "goal" | "achievement";
   /** What the Alerts tab calls it. */
   label: string;
   /** What sets it off, and **where its on/off lives** — the one thing its row can't show inline. */
@@ -332,6 +332,9 @@ export interface AlertUsage {
   /** How many goals (ADR 0198) are currently running — there is no per-goal style to ask about,
    *  only whether the feature has anything armed right now. */
   goalsRunning?: number;
+  /** How many achievements (ADR 0212) are still incomplete — there is no per-achievement style to
+   *  ask about, only whether the feature has anything armed right now. */
+  achievementsRunning?: number;
 }
 
 /**
@@ -362,6 +365,7 @@ export const SPAWN_STYLE_ID = "built-in:spawn";
 export const LOOT_STYLE_ID = "built-in:loot";
 export const BUFF_STYLE_ID = "built-in:buff";
 export const GOAL_STYLE_ID = "built-in:goal";
+export const ACHIEVEMENT_STYLE_ID = "built-in:achievement";
 
 export const ALERT_SOURCES: AlertSource[] = [
   {
@@ -440,7 +444,11 @@ export const ALERT_SOURCES: AlertSource[] = [
         flash: false,
         color: "#d4a03c",
         soundName: "levelup",
-        position: "top-right",
+        // `top`, not `top-right` — a drop is a banner only, with no standing board of its own, so it
+        // has no reason to claim the corner `SpawnOverlay`'s pinned countdowns already live in. It
+        // shares the top with the record and dispel banners instead, which stack fine together
+        // (`CastAlerts` groups every banner by position itself, whatever raised them).
+        position: "top",
         durationMs: 5000,
         animation: "float",
       },
@@ -500,9 +508,38 @@ export const ALERT_SOURCES: AlertSource[] = [
         flash: false,
         color: "#8a63d2",
         soundName: "chime",
-        position: "top-right",
+        // `bottom-right`, not `top-right` — a goal is on by default and stands the whole run,
+        // exactly like a pinned spawn timer, so the two need a corner each rather than the same one:
+        // camping a named while farming a drop goal used to stack their two boards on top of each
+        // other out of the box.
+        position: "bottom-right",
         durationMs: 7000,
         animation: "float",
+      },
+    },
+  },
+  {
+    id: "achievement",
+    label: "Achievements",
+    hint: "A criterion checked off, or a whole achievement completed (ADR 0212) — stock or one you typed in yourself. One shared look; there is no per-achievement style.",
+    unit: "achievement",
+    armed: (u) => u.achievementsRunning ?? 0,
+    // Not a choice: like `loot`/`goal`, this style is named outright by whatever raises the alert.
+    worn: () => ACHIEVEMENT_STYLE_ID,
+    style: {
+      id: ACHIEVEMENT_STYLE_ID,
+      name: "Achievement",
+      // Pink, so it reads as its own thing beside gold (record/loot), green (spawn), blue (buff) and
+      // violet (goal) — and it wiggles rather than floats or pulses, the one flourish that says
+      // "little party" without needing a second look for the rarer, bigger moment of completing one.
+      style: {
+        sound: true,
+        flash: false,
+        color: "#e0529f",
+        soundName: "levelup",
+        position: "top",
+        durationMs: 6000,
+        animation: "wiggle",
       },
     },
   },

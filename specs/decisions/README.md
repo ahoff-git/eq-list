@@ -245,6 +245,9 @@ finished, so a number is claimed before a second author can reach for it.
 - [0209: A swing's verb is a skill only when the log names one](./0209-a-swings-verb-is-a-skill-only-when-the-log-names-one.md)
 - [0210: Out-of-era flagging reaches the spells tab, the shopping list and Lucy's live verdict](./0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)
 - [0211: A loot filter searches the ledger, not the window](./0211-a-loot-filter-searches-the-ledger-not-the-window.md)
+- [0212: An achievement criterion can watch the log or wait to be told](./0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)
+- [0213: Every stock alert claims its own corner](./0213-every-stock-alert-claims-its-own-corner.md)
+- [0214: A counted criterion tallies, and a cast criterion is always yours](./0214-a-counted-criterion-tallies-and-a-cast-criterion-is-always-yours.md)
 
 ## Open Questions
 
@@ -481,3 +484,13 @@ and degrading to blank facts when the file isn't there.*
   with no `prev` to corroborate it, or none at all; neither has a real measured raid log behind it to
   size the discount from, which is why nothing has been changed here yet rather than guessing a
   number.
+
+- **Should achievements ever bridge to the companion web app's shared library?**
+  [ADR 0212](./0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md) builds
+  achievements entirely local to this app on purpose — no accounts, no networking, nothing shared
+  between players. The companion project's version is the opposite shape: a cloud-backed shared
+  catalog you and your peers both check off, meant to be shown around. Wiring the two together (this
+  app auto-completing a criterion that shows up on the shared list) would need this app to gain real
+  networking and some way to know which account it's writing for — both new territory it has never
+  needed before. Worth revisiting if the two ever grow enough overlap that keeping two achievement
+  boards straight becomes its own annoyance; nothing forces the question today.

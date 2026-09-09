@@ -6,7 +6,7 @@ import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
 import { categoryOf, formatScore } from "@/shared/high-scores";
 import { alertPlacement } from "@/shared/alert-styles";
 import { alternativesLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
-import type { AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, GoalAlertPayload, HighScore, LootAlert } from "@/shared/types";
+import type { AchievementAlertPayload, AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, GoalAlertPayload, HighScore, LootAlert } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -173,7 +173,14 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
                   ? a.goal?.kind === "expired" || a.goal?.kind === "streak-broken"
                     ? "⌛"
                     : "🎯"
-                  : "⚠";
+                  // An achievement (ADR 0212) — a criterion checked off reads as ordinary news; the
+                  // whole thing completing gets the party glyph, the same split a goal draws between
+                  // a milestone and "done!".
+                  : a.event === "achievement"
+                    ? a.achievement?.kind === "completed"
+                      ? "🎉"
+                      : "🏅"
+                    : "⚠";
   // A record before the `message` check: it has no wording to override, and it words itself from the
   // shared catalog rather than being handed a sentence (see `recordAlert`).
   if (a.event === "record" && a.record) return recordBanner(a.record);
@@ -186,6 +193,9 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
   // A goal, the same way again: nothing wrote it a sentence, and the counts it words itself from are
   // already in the payload (see `goal-tracker.ts`'s `announce`).
   if (a.event === "goal" && a.goal) return goalBanner(a.goal);
+  // An achievement (ADR 0212), the same way again: nothing wrote it a sentence, and the counts it
+  // words itself from are already in the payload (see `achievement-tracker.ts`'s `announce`).
+  if (a.event === "achievement" && a.achievement) return achievementBanner(a.achievement);
   if (a.message?.trim()) return { icon, body: <b>{a.message}</b> };
   if (a.event === "spawn") {
     return {
@@ -323,6 +333,35 @@ function goalBanner(goal: GoalAlertPayload): { icon: string; body: ReactNode; hi
         <b>{goal.target.name}</b> — {of} ({goal.pct}%)
       </>
     ),
+  };
+}
+
+/**
+ * A criterion checked off, a `"count"` criterion's tally moving (ADR 0214), or a whole achievement
+ * completed (ADR 0212). The **title leads** every case, because that's what you recognise without
+ * reading; a criterion names *which one* in the hint, and completion says so in the body instead —
+ * the same split `goalBanner` draws between a milestone and "done!". A `tally` reads as "14 of 25"
+ * in place of the achievement's own `done`/`total`, which for a counted criterion is usually "0 of
+ * 1" right up until the tally itself finishes and would say nothing useful next to it.
+ */
+function achievementBanner(achievement: AchievementAlertPayload): { icon: string; body: ReactNode; hint?: string } {
+  if (achievement.kind === "completed") {
+    return {
+      icon: "🎉",
+      body: (
+        <>
+          <b>{achievement.title}</b> — <b>complete!</b>
+        </>
+      ),
+      hint: `${achievement.done} of ${achievement.total}`,
+    };
+  }
+  const progress =
+    achievement.tally !== undefined ? `${achievement.tally} of ${achievement.tallyGoal}` : `${achievement.done} of ${achievement.total}`;
+  return {
+    icon: "🏅",
+    body: <b>{achievement.title}</b>,
+    hint: `${achievement.criterionLabel} — ${progress}`,
   };
 }
 

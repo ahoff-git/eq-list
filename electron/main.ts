@@ -49,6 +49,7 @@ import { classifyZoneLine } from "../src/shared/zones/place";
 import { createAlertRouter } from "./alert-router";
 import { createSpawnTracker } from "./spawn-tracker";
 import { createGoalTracker } from "./goal-tracker";
+import { createAchievementTracker } from "./achievement-tracker";
 import { createBuffTracker } from "./buff-tracker";
 import { createGameClockTracker } from "./game-clock-tracker";
 import { createDamageOverlayTracker } from "./damage-overlay-tracker";
@@ -299,6 +300,15 @@ if (!app.requestSingleInstanceLock()) {
     raise: raiseAlert,
   });
   goals.onChanged(() => broadcast(CH.goalsChanged, undefined));
+  // Achievements (ADR 0212): stock plus custom, each criterion checked the moment the same event
+  // an alert rule or the scoreboard would react to arrives — see the four hooks below.
+  const achievements = createAchievementTracker({
+    userDataDir: userData,
+    getSettings: () => store.getSettings().castAlerts,
+    getZone: () => currentZone,
+    raise: raiseAlert,
+  });
+  achievements.onChanged(() => broadcast(CH.achievementsChanged, undefined));
   // The buff board. The mirror image of the spawn tracker: it holds a fact about *this session*
   // rather than about the world, so nothing about which buffs are up is persisted — only the
   // player's choices about which ones to watch. Both files' headers say why.
@@ -350,6 +360,7 @@ if (!app.requestSingleInstanceLock()) {
     spawns,
     goals,
     buffs,
+    achievements,
     gameClock,
     damageOverlay,
     lookup,
@@ -401,6 +412,7 @@ if (!app.requestSingleInstanceLock()) {
   // every window, so a scoreboard that happens to be open updates itself rather than going stale.
   scores.onRecord((record) => {
     alerts.record(record);
+    achievements.record(record);
     broadcast(CH.recordSet, record);
   });
 
@@ -468,6 +480,7 @@ if (!app.requestSingleInstanceLock()) {
     buffs.noteZone(event.zone);
     currentZone = event.zone;
     combat.setZone(currentZone); // so finished fights are filed against the right camp
+    achievements.zone(currentZone); // a "visit this zone" criterion, folded the same way (ADR 0212)
     broadcast(CH.zoneChanged, currentZone);
     // Your position does not survive the trip. A `/loc` describes a spot in *that* zone, and the
     // map redraws for this one — so keeping it plots you somewhere you have never stood, with
@@ -580,6 +593,9 @@ if (!app.requestSingleInstanceLock()) {
     // The alert path runs *after* the meter and the HP estimate, always: only an alert may ever wait
     // or be dropped, never the ledger. What it does with the event is `alert-router.ts`.
     alerts.combat(event);
+    // Same event, same reasoning: a cast/fade achievement criterion is checked exactly like an
+    // alert rule would be, and nothing here may delay the ledger either.
+    achievements.combat(event);
     // After the alert router, and for the same reason it comes after the meter: the buff board is
     // the second thing that can put a banner up off its own bat, and nothing that keeps a ledger
     // may be delayed behind either of them.
@@ -600,6 +616,7 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onLine((line) => {
     logClock.note(line.at);
     alerts.line(line);
+    achievements.line(line); // a raw-line achievement criterion, matched the same way an alert rule is
     // Landing sentences ("Bloop is surrounded by a brief lupine aura.") are the one thing that says
     // a buff went *up* on somebody, and no parser models them — they are per-spell prose out of the
     // game's own string file. Cheap to offer every line: the lexicon's first move is a map lookup on

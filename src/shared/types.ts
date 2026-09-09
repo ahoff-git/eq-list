@@ -1935,6 +1935,142 @@ export interface GoalAlertPayload {
   bestStreak?: number;
 }
 
+// ─── Achievements ───────────────────────────────────────────────────────────
+
+/**
+ * How a criterion is satisfied (ADR 0212, `"count"` added by ADR 0214):
+ *  - `"watch"` — the same shape an alert rule matches with (a cast, a fade, or a raw log line).
+ *    A cast/fade is always scoped to the player's own — see `AchievementWatch`.
+ *  - `"count"` — the same matching as `"watch"`, but each match increments a running tally
+ *    (`AchievementProgress.tally`) instead of completing outright; done once the tally reaches
+ *    `count.atLeast`. "Kill 25 hill giants" is one of these, not 25 `"watch"` criteria.
+ *  - `"zone"` — a canonical zone visited, matched with `placeKey` (`zones/place.ts`) against the
+ *    live `zone` event — the same alias-and-typo-tolerant resolver kill-log grouping already
+ *    trusts, so a difficulty variant (or a known alternate spelling) of a place still counts.
+ *  - `"highscore"` — a scoreboard category reaching at least a threshold, ever.
+ *  - `"manual"` — no log evidence; the player ticks it themselves. Always available as an override on
+ *    every other kind too — nothing here is verification, only an optional shortcut.
+ */
+export type AchievementCriterionKind = "watch" | "count" | "zone" | "highscore" | "manual";
+
+/**
+ * One condition an achievement criterion can watch the log for — everything a `CastWatch` matches
+ * with, minus `id`/`enabled`, which the matcher fills in synthetically (ADR 0212).
+ *
+ * A cast or fade built this way is **always the player's own** (ADR 0214): the tracker only ever
+ * offers a criterion a cast event where `event.caster === SELF`, and the synthetic watch it builds
+ * hardcodes `includeSelf: true` so that a genuine self-cast is never rejected by the player's own,
+ * unrelated alert settings. There is no field here that opts a criterion into matching a mob's or
+ * another player's cast — an achievement answers "did *I* do this", never "did anything nearby".
+ */
+export type AchievementWatch = Pick<CastWatch, "spell" | "conditions" | "match" | "onCast" | "onFade" | "onLine">;
+
+/** One thing that has to be true for an achievement to complete. */
+export interface AchievementCriterion {
+  id: string;
+  label: string;
+  kind: AchievementCriterionKind;
+  /** `kind: "watch"` or `"count"`. */
+  watch?: AchievementWatch;
+  /** `kind: "zone"` only — a name from `CURATED_ZONES` (`zones/gazetteer.ts`). */
+  zone?: string;
+  /** `kind: "highscore"` only. */
+  highscore?: { categoryId: string; atLeast: number };
+  /** `kind: "count"` only — how many matches `watch` needs before this criterion is done. */
+  count?: { atLeast: number };
+}
+
+/**
+ * What an achievement is — a title and a list of criteria, **all** of which must be met.
+ *
+ * `isOfficial` achievements ship in code (`src/shared/achievement-library.ts`) and are never written
+ * into the save file; a player-authored one is `isOfficial: false` and lives in `achievements.json`
+ * beside its own progress.
+ */
+export interface AchievementDefinition {
+  id: string;
+  title: string;
+  description?: string;
+  category?: string;
+  isOfficial: boolean;
+  criteria: AchievementCriterion[];
+}
+
+/** One achievement's state, persisted regardless of whether its definition is stock or custom. */
+export interface AchievementProgress {
+  id: string;
+  /** Criterion ids satisfied so far — a `"count"` criterion joins this the moment its tally
+   *  crosses `count.atLeast`, exactly like every other kind. */
+  done: string[];
+  /**
+   * Running counts for `"count"` criteria, by criterion id (ADR 0214). Absent or 0 means never
+   * matched. Untouched by kinds that don't count — this is purely the number behind a tally, not a
+   * second copy of `done`.
+   */
+  tally: Record<string, number>;
+  completedAt?: string;
+  /** The completion banner has already fired — never announced twice. */
+  resultAnnounced: boolean;
+  /** Criterion ids already bannered, so a replayed log can't repeat one. */
+  announcedCriteria: string[];
+}
+
+/** An achievement joined with its progress, the shape the tab and its create form read. */
+export interface RunningAchievement {
+  definition: AchievementDefinition;
+  done: string[];
+  /** `"count"` criteria's running tallies, by criterion id — see `AchievementProgress.tally`. */
+  tally: Record<string, number>;
+  total: number;
+  completedAt?: string;
+}
+
+/** Everything the Achievements tab shows. */
+export interface AchievementView {
+  achievements: RunningAchievement[];
+}
+
+/**
+ * A custom achievement's want, as the create form sends it. Each criterion is either plain manual
+ * or carries a raw-text-or-regex trigger (ADR 0212 keeps `"zone"`/`"highscore"` out of the authoring
+ * surface — those stay tools this codebase uses to build stock content). A trigger with `count` set
+ * becomes a `"count"` criterion (ADR 0214) instead of a single-fire `"watch"` — "kill 25 of these",
+ * not "kill this once."
+ */
+export interface AchievementCriterionInput {
+  label: string;
+  trigger?: {
+    text: string;
+    regex?: boolean;
+    count?: number;
+    /** Match the player's own *casting* of a spell named by `text`, rather than a raw log line
+     *  containing it. Always self-scoped (ADR 0214) — there is no way to ask for anyone else's. */
+    onCast?: boolean;
+  };
+}
+
+/**
+ * An achievement's alert, carried **raw** for the same reason a goal's is (`CastAlertEvent.goal`):
+ * the overlay words it from the payload rather than being handed a finished sentence.
+ */
+export interface AchievementAlertPayload {
+  kind: "criterion" | "completed";
+  title: string;
+  /** `"criterion"` only — which one was just satisfied, or (with `tally` set) which one is
+   *  progressing. */
+  criterionLabel?: string;
+  done: number;
+  total: number;
+  /**
+   * A `"count"` criterion's running tally and its goal (ADR 0214), present on every increment —
+   * including ones below the threshold, which never reach `done`/`total` any other way. When set,
+   * the overlay renders "14 of 25" instead of `done`/`total`, since the achievement's own count is
+   * usually 0 of 1 right up until the tally itself finishes and says nothing useful next to it.
+   */
+  tally?: number;
+  tallyGoal?: number;
+}
+
 /**
  * Which kills the map should pick out: some mobs', or a single kill by id. Transient — it lives
  * for as long as a cursor rests on a name, and is never stored.
@@ -2317,8 +2453,12 @@ export interface CastAlertEvent {
    *
    * A **goal** is a timeboxed farming target crossing a milestone, being met, or running out of
    * time unmet (ADR 0198) — carried raw like `loot`, so the overlay can word "15 of 20" itself.
+   *
+   * An **achievement** (ADR 0212) is one criterion being satisfied, or the whole thing completing —
+   * carried raw like a goal, and the two are told apart by `achievement.kind` the same way a goal's
+   * milestone and completion are.
    */
-  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff" | "goal";
+  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff" | "goal" | "achievement";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
   /**
@@ -2354,6 +2494,11 @@ export interface CastAlertEvent {
    * reason a drop is: the counts are already known, and the overlay words them itself.
    */
   goal?: GoalAlertPayload;
+  /**
+   * For an `achievement` alert, the criterion or completion it's about — carried raw for the same
+   * reason a goal's is: the counts are already known, and the overlay words them itself.
+   */
+  achievement?: AchievementAlertPayload;
   /**
    * The look and sound this alert should use, already resolved from the defaults and the watch's
    * own overrides (`alertStyle`). Carried with the alert so the overlay renders what *this* watch
@@ -3242,6 +3387,28 @@ export interface EqlApi {
     /** Forget a saved template. Does not touch any goal already started from it. */
     deleteTemplate(id: string): Promise<GoalView>;
     /** Fires when a goal starts, progresses, finishes, or is cleared, or a template is saved/deleted. */
+    onChanged(cb: () => void): Unsubscribe;
+  };
+  /**
+   * Achievements (ADR 0212): a stock catalog shipped in code plus whatever the player has typed in,
+   * each with one or more criteria that watch the log, the scoreboard, or wait to be told by hand.
+   * Every edit returns the whole view, the same convention `goals`/`spawns` use.
+   */
+  achievements: {
+    view(): Promise<AchievementView>;
+    /** Add a custom achievement. `null` back means a blank title or no criteria. */
+    create(input: {
+      title: string;
+      description?: string;
+      category?: string;
+      criteria: AchievementCriterionInput[];
+    }): Promise<AchievementView>;
+    /** Forget a custom achievement and its progress. Refuses a stock one (nothing happens). */
+    deleteCustom(id: string): Promise<AchievementView>;
+    /** Tick or untick one criterion by hand — the only way a `"manual"` one is ever satisfied, and an
+     *  override available on every kind (ADR 0212: nothing here is verification). */
+    setManual(achievementId: string, criterionId: string, done: boolean): Promise<AchievementView>;
+    /** Fires when a criterion is satisfied, an achievement completes, or a custom one is added/removed. */
     onChanged(cb: () => void): Unsubscribe;
   };
   /**
