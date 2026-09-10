@@ -16,7 +16,7 @@ import { splitLine } from "../src/shared/log-parser";
 import { catchUpState, type CaughtUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
-import type { CoinEvent, GameTimeEvent, LootEvent, LogLine, LoginEvent, PartyEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, SightingEvent, WatcherStatus } from "../src/shared/types";
+import type { CoinEvent, FactionEvent, GameTimeEvent, LootEvent, LogLine, LoginEvent, PartyEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, SightingEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
@@ -46,6 +46,8 @@ export interface LogWatcher {
   onLevel(cb: (e: LevelEvent) => void): void;
   /** You considered or hailed something — so it is in front of you, alive (ADR 0097). */
   onSighting(cb: (e: SightingEvent) => void): void;
+  /** A faction-standing change — a stated delta, or a floor/ceiling hit. */
+  onFaction(cb: (e: FactionEvent) => void): void;
   /** Your group changing — who the damage meter counts as your side (ADR 0067). */
   onParty(cb: (e: PartyEvent) => void): void;
   /** Logging in — the log's own mark for "a new sitting starts here" (ADR 0054). */
@@ -362,6 +364,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
     onSighting: (cb) => void bus.on("sighting", cb),
+    onFaction: (cb) => void bus.on("faction", cb),
     onParty: (cb) => void bus.on("party", cb),
     onLogin: (cb) => void bus.on("login", cb),
     onLine: (cb) => void bus.on("line", cb),

@@ -29,6 +29,7 @@ import type { XpTracker } from "./xp-progress";
 import type { HpTracker } from "./hp-estimate";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
+import type { FactionLog } from "./faction-log";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { PeerKillStore } from "./peer-kills";
@@ -65,6 +66,8 @@ export interface IpcContext {
   hp: HpTracker;
   killLog: KillLog;
   lootLog: LootLog;
+  /** What has raised or lowered your faction standing (`faction-log.ts`). */
+  factionLog: FactionLog;
   updates: UpdateChecker;
   mobs: MobKnowledgeStore;
   /** Kill positions other players have shared, kept across sessions (`peer-kills.ts`). */
@@ -164,7 +167,7 @@ function registerListIpc(context: IpcContext): void {
  * Settings, the cast-alert test, and digesting a past log — the Settings tab's own surface.
  */
 function registerSettingsIpc(context: IpcContext): void {
-  const { store, watcher, combat, history, killLog, lootLog, broadcast } = context;
+  const { store, watcher, combat, history, killLog, lootLog, factionLog, broadcast } = context;
 
   // ── panel settings ──
   // Built here rather than by main: nothing outside this bridge reads it, and it needs only the
@@ -296,10 +299,11 @@ function registerSettingsIpc(context: IpcContext): void {
     const file = res.filePaths[0];
     const live = characterFromLogFile(watcher.status().file) ?? "";
     try {
-      const result = digestLog(file, live, killLog, history, lootLog);
+      const result = digestLog(file, live, killLog, history, lootLog, factionLog);
       killLog.flush();
       history.flush();
       lootLog.flush();
+      factionLog.flush();
       // The fights it just filed are new to the history and so new to the **scoreboard**, which was
       // seeded from whatever was on disk when this character was first seen. Silently, by `absorb`'s
       // own contract: an evening you're only now digesting is not news, however good it was. Filed
@@ -447,10 +451,10 @@ function registerLucyIpc(context: IpcContext): void {
 
 /**
  * Everything the log taught us: where you are, the damage meter, experience, health, kills,
- * loot and pooled mob knowledge.
+ * loot, faction standing and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, mobs, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, mobs, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -473,12 +477,14 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.hpSet, (_e, max: number) => hp.set(max));
   ipcMain.handle(CH.hpSetRegen, (_e, perTick: number) => hp.setRegen(perTick));
   ipcMain.handle(CH.killsAll, (_e, zone?: string) => killLog.kills(zone));
-  // Forget recorded kills and the loot feed. `scope` defaults to the records only — the observed
-  // drop rates, roam areas and vendor prices they taught are kept unless the caller says
-  // "everything", which the UI only sends after asking a second time (ADR 0056).
+  // Forget recorded kills, the loot feed, and the faction ledger. `scope` defaults to the records
+  // only — the observed drop rates, roam areas and vendor prices they taught are kept unless the
+  // caller says "everything", which the UI only sends after asking a second time (ADR 0056). A
+  // faction hit has nothing else for `scope` to keep (see `FactionLog.clear`), so it always empties.
   ipcMain.handle(CH.killsClear, (_e, scope: ForgetScope = "records") => {
     killLog.clear(scope);
     lootLog.clear(scope);
+    factionLog.clear(scope);
     broadcast(CH.killsChanged, undefined);
     broadcast(CH.dataChanged, undefined);
   });
@@ -687,6 +693,11 @@ function registerStatsIpc(context: IpcContext): void {
   // Every item the ledger has ever held — what search falls back on when the wiki's index has
   // never heard of the thing you looted (ADR 0103).
   ipcMain.handle(CH.lootItems, () => lootLog.items());
+  // The faction feed's history, the same shape as the loot feed's — tracked in the main process, so
+  // the tab shows hits from before it was opened, then follows live ones over CH.factionEvent.
+  ipcMain.handle(CH.factionRecent, (_e, limit?: number) => factionLog.recent(limit));
+  // Every faction touched, folded to its net standing.
+  ipcMain.handle(CH.factionStandings, () => factionLog.standings());
   ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
   ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
   // Who has told us what. Reporting is **not** here: contributions are filed by `registerPeerIpc`

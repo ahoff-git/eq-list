@@ -201,3 +201,29 @@ export function createSaver(
     },
   };
 }
+
+/** A store's "something changed" signal, and whoever is listening for it. */
+export interface ChangeNotifier {
+  /** Something changed: save it, then tell the listener, if there is one. */
+  changed(): void;
+  /** Fires on every `changed()`. One subscriber — `main.ts` wires each tracker to broadcast on its
+   *  own IPC channel and nothing else ever needs to hear it, so a list was never needed. */
+  onChanged(cb: () => void): void;
+}
+
+/**
+ * The other half of a tracker's `changed()`/`onChanged()`, next to its `Saver` — five trackers wrote
+ * this same pair (a `listener` closed over by both) by hand.
+ */
+export function createChangeNotifier(saver: Saver): ChangeNotifier {
+  let listener: (() => void) | null = null;
+  return {
+    changed() {
+      saver.save();
+      listener?.();
+    },
+    onChanged(cb) {
+      listener = cb;
+    },
+  };
+}

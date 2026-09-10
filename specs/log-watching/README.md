@@ -32,6 +32,11 @@ as they drop and the damage meter can show how the fight went.
   in a fortnight's real log), which is what the damage history groups by; it's matched *after*
   `parseLevel`, whose "Welcome to level 14!" shares the opening words. See
   [ADR 0054](../decisions/0054-a-sitting-is-a-login.md).
+  `parseFactionChange` reads a faction-standing change: `Your faction standing with <faction> has
+  been adjusted by <±N>.`, and the two capped wordings that state no number at all — `...could not
+  possibly get any worse/better.` Carries no zone, unlike a loot line: a standing is a fact about
+  your character, not about where you were standing when the game told you about it. See
+  [ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md).
   Timestamps are kept as the log's naive local wall clock (no zone offset).
   An **item's grade** (`Crushbone Belt +2`) and a **zone's difficulty and ruleset**
   (`The Steamfont Mountains 2 (Adaptive)`) are
@@ -159,16 +164,17 @@ as they drop and the damage meter can show how the fight went.
   1,077 drops, 560 fights across 12 sittings, 115 item prices — in ~330ms.
   See [ADR 0055](../decisions/0055-eating-a-log-fills-history.md) and
   [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md).
-- **What ages out, and what never does.** Every store on disk is capped, but a cap on the kill log
-  or the loot ledger is a cap on *evidence* — drop rates, roam areas and vendor prices are derived
-  from them, so evicting a record used to un-learn what it taught (measured: the kill log filled in
-  ~5 weeks, the loot feed in ~9 days). Both now **fold a record into a summary before dropping it**
-  — `kill-log`'s `retired` observations behind `observations()`, `loot-log`'s `retired` prices
-  behind `prices()` — so only detail ages out and the knowledge is permanent. **Clearing works the
-  same way**: `clear()` retires the records on the way out and keeps everything they taught;
-  `clear("everything")` is the only path that unlearns, and the UI only sends it after asking a
-  second question. Combat history is the exception and stays lossy: a fight teaches nothing beyond
-  itself. See [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md).
+- **What ages out, and what never does.** Every store on disk is capped, but a cap on the kill log,
+  the loot ledger or the faction ledger is a cap on *evidence* — drop rates, roam areas, vendor
+  prices and a faction's net are all derived from them, so evicting a record used to un-learn what
+  it taught (measured: the kill log filled in ~5 weeks, the loot feed in ~9 days). All three now
+  **fold a record into a summary before dropping it** — `kill-log`'s `retired` observations behind
+  `observations()`, `loot-log`'s `retired` prices behind `prices()`, `faction-log`'s `retired`
+  standings behind `standings()` — so only detail ages out and the knowledge is permanent.
+  **Clearing works the same way**: `clear()` retires the records on the way out and keeps everything
+  they taught; `clear("everything")` is the only path that unlearns, and the UI only sends it after
+  asking a second question. Combat history is the exception and stays lossy: a fight teaches nothing
+  beyond itself. See [ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md).
 - `electron/kill-log.ts` — where each kill happened and how much to believe it, plus what it
   dropped (attached as the loot lines arrive) and **who killed it**. The log reports every death
   in earshot, so a record knows whether it was yours; your own death isn't a kill and isn't
@@ -186,6 +192,12 @@ as they drop and the damage meter can show how the fight went.
   replayed gap can't file a drop twice. Per-item vendor prices are derived from the auto-sells in
   it, and a sale that leaves the feed leaves its price behind
   ([ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)).
+- `electron/faction-log.ts` — the same shape as `loot-log.ts`, for faction-standing changes: an
+  always-on, log-line-keyed feed, folded to a net standing per faction. A hit aging out of the
+  capped feed is folded into a retained standing first, so the cap trims detail, never a faction's
+  net ([ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)). No pooling with
+  peers and no correlation to the mob or quest that produced a hit — that's real future work, not
+  yet built. See [ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md).
 - `src/shared/name-registry.ts` — one spelling per creature. EQ capitalizes a name at the start
   of a sentence, so the damage meter and the kill log would otherwise disagree about what a mob
   is called; both take their names from here.
@@ -270,19 +282,18 @@ Two invocations do more than scale numbers, and both are now accounted for
 
 ## Non-responsibilities
 - Does not decide what counts as "wanted" — that's matching in the store.
-- Parses loot, coin, zone, xp, kill, level, loc and combat lines today (combat including casts,
-  spell outcomes, deaths, buff fades and mode changes). Still out of scope: **structured** faction
-  hits, skill-ups, and buff/debuff *landings* — which stay out deliberately, even though the grammar
-  for them now exists. A landing is per-spell prose (`Bloop is surrounded by a brief lupine aura.`), so
+- Parses loot, coin, zone, xp, kill, level, loc, faction-standing and combat lines today (combat
+  including casts, spell outcomes, deaths, buff fades and mode changes). Still out of scope:
+  skill-ups and buff/debuff *landings* — which stay out deliberately, even though the grammar for
+  them now exists. A landing is per-spell prose (`Bloop is surrounded by a brief lupine aura.`), so
   it cannot be matched by a pattern; it is matched by *lookup*, against the game's own string file
   (`src/shared/spell-strings.ts`). The buff board reads those lines straight off `onLine` for that
   reason ([ADR 0140](../decisions/0140-a-buff-is-watched-until-it-lapses.md)). A `landing` event kind
-  is the obvious next step if a second consumer ever wants one. A faction hit is narrower: **alerting**
-  on one needs no parser at all — a raw-line watch already covers it
-  ([ADR 0193](../decisions/0193-a-faction-alert-rides-the-existing-line-watch.md)) — but turning one
-  into structured `{faction, delta}` data (for pooled, observed-vs-wiki tracking, the way
-  `mob-knowledge.ts` tracks drop rates) still needs a real captured line first, the same discipline
-  every parser above was held to.
+  is the obvious next step if a second consumer ever wants one. A faction hit is now structured
+  (`parseFactionChange` → `FactionEvent`, [ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md)),
+  fed into its own ledger (`electron/faction-log.ts`) — but crediting a hit to *what caused it* (a
+  tracked faction-mob's kill, a tracked quest's turn-in) and pooling it with peers, the way
+  `mob-knowledge.ts` does for drop rates, is real future work and not yet built (see `specs/todo.md`).
 - Does not decide **which corpse** a coin line's money came from — the line names none, so that
   guess lives in `electron/kill-log.ts` where the kills are
   ([ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)).
@@ -294,4 +305,5 @@ Two invocations do more than scale numbers, and both are now accounted for
 [ADR 0030](../decisions/0030-history-is-not-news.md) ·
 [ADR 0043](../decisions/0043-state-is-not-news-either.md) ·
 [ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md) ·
-[ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)
+[ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md) ·
+[ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md)

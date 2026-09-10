@@ -1,7 +1,7 @@
 /**
  * constants.ts — small shared constants used by both processes.
  */
-import { round } from "./numbers";
+import { clamp, round } from "./numbers";
 
 /**
  * Global hotkey to show/hide the overlay. Works even when the overlay is
@@ -69,7 +69,7 @@ export type ScaleRange = { min: number; max: number; step: number };
 /** Clamp a stored or user-supplied scale into a range, rounded to whole percent. */
 export function clampScale(scale: number, range: ScaleRange): number {
   if (!Number.isFinite(scale)) return range.max;
-  return Math.min(range.max, Math.max(range.min, round(scale, 2)));
+  return clamp(round(scale, 2), range.min, range.max);
 }
 
 /** Clamp into the overlay's range (60%–100%). */

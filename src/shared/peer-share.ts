@@ -59,6 +59,7 @@ import { decodeWatches } from "./watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "./map/pins";
 import { SHARD_COUNT } from "./item-shards";
 import { isPlottable } from "./kill-confidence";
+import { clamp } from "./numbers";
 
 /**
  * An item page as it crosses between peers.
@@ -1797,6 +1798,3 @@ function iso(v: unknown): string | null {
   return s && !Number.isNaN(Date.parse(s)) ? s : null;
 }
 
-function clamp(n: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, n));
-}

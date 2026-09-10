@@ -13,6 +13,7 @@
  * Pure and stateless, like `log-clock.ts`: a test moves the "now" that drives it, and a caller (the
  * tracker) is the only thing that remembers the last reading and the currently learned rate.
  */
+import { clamp } from "./numbers";
 
 /** Game minutes per real millisecond — the documented 20-per-real-minute pace, and nothing more
  *  than a fresh install's starting guess (see the file header, and `learnRate`). */
@@ -37,16 +38,36 @@ const MAX_RATE = DEFAULT_RATE * 4;
 const MIN_LEARN_GAP_MS = 5_000;
 const MAX_LEARN_GAP_MS = 60 * 60_000;
 
-/** Keep a number inside `[lo, hi]`. */
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, n));
-}
-
 /** Keep a fraction-of-the-display coordinate (`pinAt.fx`/`fy`) inside `[0, 1]` — shared by the
  *  renderer (dragging the pinned clock) and the tracker (persisting where it landed), so the two
  *  can't quietly drift apart on what counts as in-bounds. */
 export function clampUnit(n: number): number {
   return clamp(n, 0, 1);
+}
+
+/** Where a drag landed, kept inside the display — the two coordinates of a `pinAt` clamped
+ *  together, so a caller setting a pinned position never has to remember to do both. */
+export function clampPinAt(fx: number, fy: number): { fx: number; fy: number } {
+  return { fx: clampUnit(fx), fy: clampUnit(fy) };
+}
+
+/** A pinned overlay's persisted shape — flat fields on a tracker's own `Stored` (never nested under
+ *  a `pin: {...}` key, so the shape already on disk doesn't move). `damage-overlay-tracker.ts` and
+ *  this file's own tracker each carry one of these, and used to carry the same load-with-clamp logic
+ *  twice — this is that logic, once, parameterized on which default position each starts from. */
+export interface PinFields {
+  pinned: boolean;
+  pinAt: { fx: number; fy: number };
+}
+
+/** A stored pin, read through the same clamp a drag writes through — a hand-edited or corrupted
+ *  file could otherwise hand back an out-of-[0,1] or partial `{fx}`/`{fy}`, which a renderer would
+ *  draw straight into `left`/`top` percentages. */
+export function loadPinFields(stored: Partial<PinFields> | undefined, fallback: { fx: number; fy: number }): PinFields {
+  return {
+    pinned: stored?.pinned ?? false,
+    pinAt: clampPinAt(stored?.pinAt?.fx ?? fallback.fx, stored?.pinAt?.fy ?? fallback.fy),
+  };
 }
 
 /**

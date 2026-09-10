@@ -14,6 +14,8 @@
  * two lengths a drag divides may both be read off the screen: the scale cancels out.
  */
 
+import { clamp } from "./numbers";
+
 /** The bounds a panel is held inside, as a % of its window. */
 export const PANEL_PCT = {
   /** Enough for a heading and a row. Below this a panel is a scrollbar with a hint of content. */
@@ -26,7 +28,7 @@ export const PANEL_PCT = {
 
 /** A share, held inside the bounds above. */
 export function clampPanelPct(pct: number): number {
-  return Math.min(PANEL_PCT.max, Math.max(PANEL_PCT.min, pct));
+  return clamp(pct, PANEL_PCT.min, PANEL_PCT.max);
 }
 
 /**

@@ -36,6 +36,7 @@ import { createCombatStats } from "./combat-stats";
 import { loginSession } from "./combat-history";
 import type { DerivedFight, LogImportResult as SharedImportResult } from "../src/shared/types";
 import type { CombatHistory } from "./combat-history";
+import type { FactionLog } from "./faction-log";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
 
@@ -47,10 +48,10 @@ import type { LootLog } from "./loot-log";
 export type LogImportResult = Omit<SharedImportResult, "file">;
 
 /**
- * Digest `file` into every store that can take it — the kill log, and whichever of `history` and
- * `lootLog` the caller hands over. It's a **catch-up**: the aim is that eating a log leaves the
- * app in the state it would have reached had it been running, so anything the log can teach
- * should land.
+ * Digest `file` into every store that can take it — the kill log, and whichever of `history`,
+ * `lootLog` and `factionLog` the caller hands over. It's a **catch-up**: the aim is that eating a
+ * log leaves the app in the state it would have reached had it been running, so anything the log
+ * can teach should land.
  *
  * What deliberately doesn't (ADR 0055): the **live meter** (an old evening isn't this session),
  * **experience and health** (they describe the character *now*, and an old log describes a weaker,
@@ -78,10 +79,11 @@ export function digestLog(
   killLog: KillLog,
   history?: CombatHistory,
   lootLog?: LootLog,
+  factionLog?: FactionLog,
 ): LogImportResult {
   try {
     killLog.setPlayer(characterFromLogFile(file) ?? "");
-    return importLog(file, killLog, history, lootLog);
+    return importLog(file, killLog, history, lootLog, factionLog);
   } finally {
     killLog.setPlayer(live);
   }
@@ -92,6 +94,7 @@ export function importLog(
   killLog: KillLog,
   history?: CombatHistory,
   lootLog?: LootLog,
+  factionLog?: FactionLog,
 ): LogImportResult {
   // This can legitimately re-encounter a line already recorded — eating the same log twice, or one
   // already watched live — so kills and drops must compare against everything on permanent record
@@ -107,6 +110,7 @@ export function importLog(
   let fights = 0;
   let sessions = 0;
   let loot = 0;
+  let factionHits = 0;
   /** Drops the ledger already held and can now say the zone of — see the header. */
   let placed = 0;
 
@@ -176,6 +180,11 @@ export function importLog(
         if (killLog.noteCoin(event)) coin += event.copper;
         combat?.recordCoin(event);
         break;
+      case "faction":
+        // Keyed by its own line the same way a drop is (ADR 0033), so a log eaten twice — or eaten
+        // after being watched live — reports zero rather than doubling a faction's net standing.
+        if (factionLog?.add(event) === "added") factionHits++;
+        break;
       case "xp":
         combat?.recordXp(event);
         break;
@@ -210,6 +219,7 @@ export function importLog(
     fights,
     sessions,
     loot,
+    factionHits,
     placed,
     refreshed: outcome.refreshed,
     superseded: outcome.superseded,

@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { clock, count } from "@/shared/format";
+import { clock, count, locText } from "@/shared/format";
 import { confidenceTier } from "@/shared/kill-confidence";
 import { mobChoices, type KillFilters } from "@/shared/kill-filters";
 import ItemLink, { NameList } from "./ItemLink";
@@ -272,7 +272,7 @@ function KillRow({
           where in fact there is nothing to say. */}
       <ZoneDifficultyTag zone={kill.zone} />
       <span className="muted small" title={tier.why}>
-        {kill.y !== undefined ? `${Math.round(kill.y)}, ${Math.round(kill.x ?? 0)}` : "no position"}
+        {kill.y !== undefined ? locText({ y: kill.y, x: kill.x ?? 0 }) : "no position"}
       </span>
     </div>
   );

@@ -30,7 +30,7 @@ import { randomUUID } from "node:crypto";
 import { createLogger } from "../src/shared/logging";
 import { alertStyle } from "../src/shared/alert-styles";
 import {
-  clampUnit,
+  clampPinAt,
   crossedMinute,
   currentGameMinutes,
   DEFAULT_PIN_AT,
@@ -38,12 +38,16 @@ import {
   formatGameClock,
   isDaytime,
   learnRate,
+  loadPinFields,
   minuteDelta,
   readingMinutes,
   type GameClockAnchor,
+  type PinFields,
 } from "../src/shared/game-clock";
 import type { CastAlertEvent, CastAlertSettings, GameClockView, GameTimeAlarm } from "../src/shared/types";
-import { createSaver, readJson } from "./json-store";
+import { raiseIfEnabled } from "./alert-gate";
+import { createChangeNotifier, createSaver, readJson } from "./json-store";
+import { realClearInterval, realInterval } from "./ticker";
 
 const log = createLogger("game-clock-tracker");
 
@@ -51,16 +55,11 @@ const log = createLogger("game-clock-tracker");
 const SWEEP_MS = 1000;
 const WRITE_DEBOUNCE_MS = 2000;
 
-interface Stored {
+interface Stored extends PinFields {
   anchor: GameClockAnchor | null;
   alarms: GameTimeAlarm[];
   /** Game-minutes per real ms, as learned so far (`learnRate`). Absent on disk predates it. */
   rate: number;
-  /** Whether the clock is pinned over the game right now. */
-  pinned: boolean;
-  /** Where it sits, as a fraction of the display — kept even while unpinned, so turning it back on
-   *  puts it back where it was rather than resetting it. */
-  pinAt: { fx: number; fy: number };
 }
 
 function load(file: string): Stored {
@@ -69,15 +68,12 @@ function load(file: string): Stored {
     anchor: stored.anchor ?? null,
     alarms: stored.alarms ?? [],
     rate: stored.rate ?? DEFAULT_RATE,
-    pinned: stored.pinned ?? false,
-    // Read through the same `clampUnit` guard `setPinPosition` writes through — a hand-edited or
-    // corrupted settings file could otherwise hand back an out-of-[0,1] or partial `{fx}`/`{fy}`,
-    // which `GameClockOverlay.tsx` would render straight into `left`/`top` percentages (off-screen,
-    // or `NaN%` for the missing field) with nothing to self-heal it until the user redrags the pin.
-    pinAt: {
-      fx: clampUnit(stored.pinAt?.fx ?? DEFAULT_PIN_AT.fx),
-      fy: clampUnit(stored.pinAt?.fy ?? DEFAULT_PIN_AT.fy),
-    },
+    // `loadPinFields` reads `pinned`/`pinAt` through the same clamp `setPinPosition` writes through —
+    // a hand-edited or corrupted settings file could otherwise hand back an out-of-[0,1] or partial
+    // `{fx}`/`{fy}`, which `GameClockOverlay.tsx` would render straight into `left`/`top` percentages
+    // (off-screen, or `NaN%` for the missing field) with nothing to self-heal it until the user
+    // redrags the pin.
+    ...loadPinFields(stored, DEFAULT_PIN_AT),
   };
 }
 
@@ -132,23 +128,14 @@ export function createGameClockTracker({
   getSettings,
   raise,
   now = Date.now,
-  setInterval: setEvery = (fn, ms) => {
-    const t = setInterval(fn, ms);
-    // A tick must never be the reason the process is still up after a quit.
-    t.unref?.();
-    return t;
-  },
-  clearInterval: clearEvery = (h) => clearInterval(h as NodeJS.Timeout),
+  setInterval: setEvery = realInterval,
+  clearInterval: clearEvery = realClearInterval,
 }: GameClockTrackerDeps): GameClockTracker {
   const file = path.join(userDataDir, "game-clock.json");
   const state = load(file);
   const saver = createSaver(file, "game clock", () => state, WRITE_DEBOUNCE_MS);
-  let listener: (() => void) | null = null;
-
-  const changed = () => {
-    saver.save();
-    listener?.();
-  };
+  const notifier = createChangeNotifier(saver);
+  const changed = notifier.changed;
 
   /**
    * Where the clock stood at the last sweep, so a *crossing* fires an alarm rather than a *level* —
@@ -159,17 +146,17 @@ export function createGameClockTracker({
   let lastMinutes = state.anchor ? currentGameMinutes(state.anchor, now(), state.rate) : null;
 
   function fire(alarm: GameTimeAlarm): void {
-    const settings = getSettings();
-    if (!settings.enabled) return;
-    raise({
-      caster: "",
-      spell: "",
-      at: new Date(now()).toISOString(),
-      event: "timer",
-      message: alarm.message?.trim() || `It's ${formatGameClock(alarm.minute)} in Norrath`,
-      style: alertStyle(settings),
+    raiseIfEnabled(getSettings, raise, (settings) => {
+      log.debug("game-time alarm fired", { minute: alarm.minute, message: alarm.message });
+      return {
+        caster: "",
+        spell: "",
+        at: new Date(now()).toISOString(),
+        event: "timer",
+        message: alarm.message?.trim() || `It's ${formatGameClock(alarm.minute)} in Norrath`,
+        style: alertStyle(settings),
+      };
     });
-    log.debug("game-time alarm fired", { minute: alarm.minute, message: alarm.message });
   }
 
   function sweep(): void {
@@ -261,7 +248,7 @@ export function createGameClockTracker({
     },
 
     setPinPosition(fx, fy) {
-      state.pinAt = { fx: clampUnit(fx), fy: clampUnit(fy) };
+      state.pinAt = clampPinAt(fx, fy);
       changed();
     },
 
@@ -288,9 +275,7 @@ export function createGameClockTracker({
       changed();
     },
 
-    onChanged(cb) {
-      listener = cb;
-    },
+    onChanged: notifier.onChanged,
 
     flush: () => saver.flush(),
     dispose: () => clearEvery(handle),

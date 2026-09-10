@@ -10,6 +10,7 @@ import path from "node:path";
 import { importLog } from "../log-import";
 import { createCombatHistory } from "../combat-history";
 import { createLootLog } from "../loot-log";
+import { createFactionLog } from "../faction-log";
 import type { KillLog } from "../kill-log";
 import type { CoinEvent, LocEvent, LootEvent } from "../../src/shared/types";
 
@@ -270,6 +271,32 @@ test("a second helping places the drops it already holds", () => {
 
     // A third helping has nothing left to do, which is what makes the remedy self-limiting.
     assert.equal(importLog(file, stubKillLog(), undefined, createLootLog(dir)).placed, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("eating a log fills the faction ledger, once", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-"));
+  const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(
+    file,
+    [
+      "[Fri Jul 17 18:00:10 2026] Your faction standing with Agents of Mistmoore has been adjusted by -3.",
+      "[Fri Jul 17 18:00:20 2026] Your faction standing with Agents of Mistmoore could not possibly get any worse.",
+    ].join("\n"),
+  );
+  const factionLog = createFactionLog(dir);
+
+  try {
+    const res = importLog(file, stubKillLog(), undefined, undefined, factionLog);
+    assert.equal(res.factionHits, 2);
+    assert.deepEqual(factionLog.recent().map((e) => e.direction), ["floor", "lowered"]);
+    assert.equal(factionLog.standings()[0].net, -3);
+
+    // A second helping adds nothing: the ledger is keyed by the log line (ADR 0033).
+    assert.equal(importLog(file, stubKillLog(), undefined, undefined, factionLog).factionHits, 0);
+    assert.equal(factionLog.recent().length, 2);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

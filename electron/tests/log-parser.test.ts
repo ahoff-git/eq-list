@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseCoin,
+  parseFactionChange,
   parseGameTime,
   parseLoot,
   parseLevel,
@@ -42,6 +43,7 @@ const parseLevelLine = on(parseLevel);
 const parseCoinLine = on(parseCoin);
 const parseLoginLine = on(parseLogin);
 const parseGameTimeLine = on(parseGameTime);
+const parseFactionLine = on(parseFactionChange);
 
 test("splitLine extracts the message, an ISO time, and carries the line id", () => {
   const r = splitLine("[Fri Jul 17 18:41:14 2026] Hello world", 42);
@@ -324,4 +326,43 @@ test("parseGameTimeLine reads a real /time response, folding the 12-hour reading
 
   // And the dispatcher agrees.
   assert.equal(parseLine("[Thu Sep 03 18:57:41 2026] Game Time: Monday, October 23, 3175 - 6 PM")?.kind, "gameTime");
+});
+
+test("parseFactionLine reads a stated adjustment, signed", () => {
+  // Verbatim from a real captured log (specs/todo.md): a faction lowered by a stated amount.
+  const down = parseFactionLine("[Fri Jul 17 18:41:14 2026] Your faction standing with Agents of Mistmoore has been adjusted by -3.");
+  assert.ok(down);
+  assert.equal(down!.faction, "Agents of Mistmoore");
+  assert.equal(down!.delta, -3);
+  assert.equal(down!.direction, "lowered");
+
+  const up = parseFactionLine("[Fri Jul 17 18:41:14 2026] Your faction standing with Priests of Marr has been adjusted by 5.");
+  assert.ok(up);
+  assert.equal(up!.delta, 5);
+  assert.equal(up!.direction, "raised");
+
+  // And the dispatcher agrees.
+  assert.equal(
+    parseLine("[Fri Jul 17 18:41:14 2026] Your faction standing with Priests of Marr has been adjusted by 5.")?.kind,
+    "faction",
+  );
+});
+
+test("parseFactionLine reads the floor and ceiling wordings, which state no number", () => {
+  // Also verbatim from the same captured log.
+  const floor = parseFactionLine("[Fri Jul 17 18:41:14 2026] Your faction standing with Agents of Mistmoore could not possibly get any worse.");
+  assert.ok(floor);
+  assert.equal(floor!.faction, "Agents of Mistmoore");
+  assert.equal(floor!.delta, null);
+  assert.equal(floor!.direction, "floor");
+
+  // The ceiling wording — the one `achievement-library.ts`'s Ally criteria already match verbatim.
+  const ceiling = parseFactionLine("[Fri Jul 17 18:41:14 2026] Your faction standing with Priests of Marr could not possibly get any better.");
+  assert.ok(ceiling);
+  assert.equal(ceiling!.delta, null);
+  assert.equal(ceiling!.direction, "ceiling");
+});
+
+test("ignores chatter that merely mentions a faction", () => {
+  assert.equal(parseFactionLine("[Fri Jul 17 18:41:14 2026] Bob tells the guild, 'faction standing is annoying'"), null);
 });

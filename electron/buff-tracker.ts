@@ -90,6 +90,7 @@ import type {
   FightEndReason,
   LogLine,
 } from "../src/shared/types";
+import { raiseIfEnabled } from "./alert-gate";
 import { createSaver, readJson } from "./json-store";
 
 const log = createLogger("buff-tracker");
@@ -776,19 +777,20 @@ export function createBuffTracker({
    * sentences that can drift.
    */
   function announce(buff: BuffInstance): void {
-    const settings = getSettings();
     // The overlay only exists while alerts are on, so there is nothing to raise onto otherwise —
-    // and the board still holds the lapse, which is the part that doesn't need a window.
-    if (!settings.enabled) return;
-    const known = stored.known[buff.key];
-    raise({
-      caster: "",
-      spell: buff.spell,
-      at: buff.at,
-      event: "buff",
-      target: buff.target === ON_YOU ? undefined : buff.target,
-      buff,
-      style: alertStyle(settings, { styleId: known?.styleId ?? BUFF_STYLE_ID }),
+    // and the board still holds the lapse, which is the part that doesn't need a window. That gate
+    // is `raiseIfEnabled`'s; the board is untouched either way.
+    raiseIfEnabled(getSettings, raise, (settings) => {
+      const known = stored.known[buff.key];
+      return {
+        caster: "",
+        spell: buff.spell,
+        at: buff.at,
+        event: "buff",
+        target: buff.target === ON_YOU ? undefined : buff.target,
+        buff,
+        style: alertStyle(settings, { styleId: known?.styleId ?? BUFF_STYLE_ID }),
+      };
     });
   }
 

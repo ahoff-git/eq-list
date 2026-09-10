@@ -1,12 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { parsePastedLoc } from "@/shared/map/pins";
+import { locText } from "@/shared/format";
 import type { Loc } from "@/shared/map/types";
-
-/** How a `Loc` is shown back — whole EQ units, y first, the same order a paste is read in. */
-function formatLoc(loc: Loc): string {
-  return `${Math.round(loc.y)}, ${Math.round(loc.x)}`;
-}
 
 /**
  * A location, typed or pasted the way EQ states one — "5125, -1030", the same y-first order a
@@ -31,12 +27,12 @@ export default function LocField({
   className?: string;
   title?: string;
 }) {
-  const [text, setText] = useState(value ? formatLoc(value) : "");
+  const [text, setText] = useState(value ? locText(value) : "");
   // Deliberately on the coordinates, not the `value` object: the caller's pin gets a fresh
   // reference on every unrelated edit (title, note, kind), and resyncing on those would blow
   // away a location this field is still mid-typing.
   useEffect(() => {
-    if (value) setText(formatLoc(value));
+    if (value) setText(locText(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value?.y, value?.x]);
 
@@ -46,7 +42,7 @@ export default function LocField({
       onCommit(loc);
       if (!value) setText("");
     } else {
-      setText(value ? formatLoc(value) : "");
+      setText(value ? locText(value) : "");
     }
   }
 
@@ -59,7 +55,7 @@ export default function LocField({
       onChange={(e) => setText(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") setText(value ? formatLoc(value) : "");
+        if (e.key === "Escape") setText(value ? locText(value) : "");
       }}
       onBlur={submit}
     />

@@ -246,6 +246,17 @@ export const DATA_CONCERNS: DataConcern[] = [
       "A drop now records the zone it was looted in, so the Loot tab can say which camp gave you what (ADR 0136). Drops recorded before that have no zone; re-reading a log fills it in for every one still covered by a log file on disk — which is why the column starts partly blank and fills in from the back.",
   },
   {
+    id: "faction-log",
+    label: "Faction ledger",
+    file: "faction-log.json",
+    revision: 1,
+    remedy: "re-eat",
+    // Same argument as loot-log: the logs are on this machine, and extracting a faction hit from a
+    // line needs no judgement from anybody — so a future rule fix can put this right on its own.
+    unattended: true,
+    blurb: "Every faction-standing change the log has shown — what raised or lowered it, and by how much.",
+  },
+  {
     id: "spawn-timers",
     label: "Respawn timers",
     file: "spawn-timers.json",

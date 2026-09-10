@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { useMemo } from "react";
+import { useRead } from "@/lib/hooks";
 import type { TravelSettings, TravelSurvey } from "@/shared/types";
 
 /**
@@ -20,8 +20,6 @@ export function useTravelSurvey(
   zone: string,
   travel: TravelSettings | undefined,
 ): TravelSurvey | null {
-  const [survey, setSurvey] = useState<TravelSurvey | null>(null);
-
   /**
    * Which networks count as usable, on their own. `settings` is replaced wholesale whenever anything
    * in it changes, so depending on the object would re-ask for the survey every time an unrelated
@@ -32,21 +30,13 @@ export function useTravelSurvey(
     [travel?.druid, travel?.wizard, travel?.gnome, travel?.succor],
   );
 
-  useEffect(() => {
-    if (!open || !sourceId || !zone) {
-      setSurvey(null);
-      return;
-    }
-    let cancelled = false;
-    void api()
-      ?.travel.survey(sourceId, zone, allowed)
-      .then((result) => {
-        if (!cancelled) setSurvey(result ?? null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, sourceId, zone, allowed]);
-
-  return survey;
+  return useRead(
+    async (a) => {
+      if (!open || !sourceId || !zone) return null;
+      const result = await a.travel.survey(sourceId, zone, allowed);
+      return result ?? null;
+    },
+    null,
+    [open, sourceId, zone, allowed],
+  );
 }

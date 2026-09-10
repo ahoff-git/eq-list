@@ -151,6 +151,46 @@ export interface LootedItem {
   lastAt: string;
 }
 
+/** Which way a faction-standing change went — from the log's own wording. */
+export type FactionDirection = "raised" | "lowered" | "floor" | "ceiling";
+
+/**
+ * A parsed "Your faction standing with X..." line — see `parseFactionChange` for the three
+ * wordings it covers.
+ *
+ * Unlike a drop, this carries no zone: a standing is a fact about your character, not about where
+ * you were standing when the game told you about it, so ADR 0136's "logged data says where it
+ * happened" rule has nothing to attach to here the way it does for a loot line.
+ */
+export interface FactionEvent extends LogEventBase {
+  kind: "faction";
+  /** The faction named, exactly as the log wrote it — the same spelling a wiki faction page titles itself. */
+  faction: string;
+  /**
+   * The signed amount the line stated, or `null` for the floor/ceiling wording, which states no
+   * number at all ("could not possibly get any worse/better").
+   */
+  delta: number | null;
+  /** `"raised"`/`"lowered"` for a stated amount; `"floor"`/`"ceiling"` for the two capped wordings. */
+  direction: FactionDirection;
+}
+
+/**
+ * One faction's standing, as the ledger folds it: every stated delta summed, plus how many hits of
+ * each kind produced it. `net` omits the floor/ceiling hits, which state no number — counted
+ * separately rather than folded into a guessed amount.
+ */
+export interface FactionStanding {
+  faction: string;
+  net: number;
+  raises: number;
+  lowers: number;
+  floors: number;
+  ceilings: number;
+  firstAt: string;
+  lastAt: string;
+}
+
 /** A parsed "You have entered <zone>" line — tracks the player's current zone. */
 export interface ZoneEvent extends LogEventBase {
   kind: "zone";
@@ -281,7 +321,8 @@ export type LogEvent =
   | LoginEvent
   | SightingEvent
   | PartyEvent
-  | GameTimeEvent;
+  | GameTimeEvent
+  | FactionEvent;
 
 /** One "tell me at this time of day" alarm against the running Norrath clock. */
 export interface GameTimeAlarm {
@@ -2860,6 +2901,8 @@ export interface LogImportResult {
   sessions: number;
   /** Drops added to the loot feed (and so to the prices derived from it). */
   loot: number;
+  /** Faction-standing changes added to the faction ledger — a stated delta, or a floor/ceiling hit. */
+  factionHits: number;
   /**
    * Drops the ledger **already held** and can now say the zone of. Counted apart from `loot` because
    * nothing was added: the same line is merely better described than it was
@@ -3108,6 +3151,17 @@ export interface EqlApi {
     onEvent(cb: (event: LootRecord) => void): Unsubscribe;
     /** Loot lines that matched a shopping-list entry. */
     onMatched(cb: (payload: { event: LootEvent; entry: ShoppingListEntry }) => void): Unsubscribe;
+  };
+  faction: {
+    /**
+     * The most recent faction-standing changes (newest first), tracked in the main process so the
+     * feed is complete even when the Faction tab wasn't open. Pair with `onEvent` for live appends.
+     */
+    recent(limit?: number): Promise<FactionEvent[]>;
+    /** Every faction the ledger has seen a change for, folded to one row each. */
+    standings(): Promise<FactionStanding[]>;
+    /** Every parsed faction-standing line, whether or not anything is watching that faction. */
+    onEvent(cb: (event: FactionEvent) => void): Unsubscribe;
   };
   alerts: {
     /** Fires when a watched spell begins casting (gated by Settings.castAlerts). */

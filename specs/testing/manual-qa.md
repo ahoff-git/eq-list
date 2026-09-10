@@ -91,6 +91,19 @@ features for later in [../ideas.md](../ideas.md).
   and confirm the count drops back to the recent-200 view. Then, if you can rack up more than 300
   matches on one filter (a common trash name is the way to try), confirm the "showing the first 300
   of N" line appears and the fate tallies above it still count all N, not just the 300 drawn.
+- **Faction tab, live.** ([ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md).)
+  The parser is pinned against a real captured line (both the adjusted wording and the floor case;
+  the ceiling wording is the one `achievement-library.ts`'s Ally criteria already match), but nothing
+  has watched a live hit land. Raise or lower a faction in game (a quest turn-in, or killing something
+  that matters to one) and confirm: the **Hits** view shows the new row immediately with the right
+  faction name and signed amount; switching to **Standings** shows that faction with the matching
+  **Net**, and **Raised**/**Lowered** counts moving by one; the faction name opens its wiki page
+  (raise/lower quests and mobs, ADR 0192) the same way an item name does elsewhere. Then restart the
+  app and confirm both the hit and the standing are still there. If you can find or force a floor/
+  ceiling hit ("could not possibly get any worse/better"), confirm it shows as **at floor**/**at
+  ceiling** in Hits rather than a signed number, and bumps the standing's Floor/Ceiling count without
+  moving Net. Also worth digesting an old log with faction lines in it (Settings → Digest a past log)
+  and confirming the hits and standings appear the same as if they'd been watched live.
 - **Money, live — the one to check line-by-line.** Coin is now counted in two ledgers
   ([ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)) and the grammar came from a real
   log this sandbox can't re-read, so the first real session is the verification. Confirm, in order:

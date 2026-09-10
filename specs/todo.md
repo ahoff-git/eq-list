@@ -166,26 +166,20 @@ everything else, so this list can stay short enough to read:
   contribution payload — the machinery from
   [ADR 0132](./decisions/0132-a-contribution-is-keyed-by-who-made-it.md) carries it unchanged.
 
-- **Faction standing changes are unread — the real line has now turned up, second-hand.** The
-  alerting half shipped ahead of it ([ADR 0193](./decisions/0193-a-faction-alert-rides-the-existing-line-watch.md)):
-  a faction page's "🔔 Alert me" button adds a raw-line watch (`spell: "faction standing"`) scoped to
-  that faction's name, which is a reasonable bet (it's EQ's near-universal system-message opener) but
-  — like ADR 0121's consider-level gap — not one built from a real captured line the way every parser
-  in `log-parser.ts` was. Found while researching achievement content (ADR 0214), in a real 52,000-line
-  log: `"Your faction standing with Agents of Mistmoore has been adjusted by -3."` (and the floor case,
-  `"Your faction standing with Agents of Mistmoore could not possibly get any worse."`) — confirming
-  `buildFactionWatch`'s bet on "faction standing" was already right, and giving the actual sentence
-  shape (`with <faction> has been adjusted by <±N>`) `parseFactionChange` would read. Not yet wired into
-  a parser or tested against — this is one line copied out, not the extraction built from it.
-
-  With the line in hand: extend `log-parser.ts` with a `parseFactionChange` → `FactionEvent
-  {faction, delta?, direction}`, correct `buildFactionWatch`'s trigger word if it turns out wrong, and
-  build a pooled `FactionObservation` store mirroring `mob-knowledge.ts`/`contributions.ts` exactly
-  (own `sanitize`/merge, same five rules) so a tracked faction-mob's kill or a tracked quest's turn-in
-  credits an observed delta — real evidence of what raises/lowers a faction, alongside (and able to
-  contradict) whatever the wiki's own faction page says. No existing pipeline credits a `kind: "mob"`
-  shopping-list entry today (`store.applyLoot` explicitly excludes them), so this correlator is new
-  work, modeled on the kill-log → mob-knowledge derivation rather than on loot crediting.
+- **A faction hit is unattributed — nothing yet says which mob or quest caused it.**
+  [ADR 0218](./decisions/0218-a-faction-hit-is-parsed-not-only-watched.md) built the parser
+  (`parseFactionChange` → `FactionEvent`) and a personal ledger (`electron/faction-log.ts`, a Faction
+  tab) the real captured line unblocked — every hit you've seen, folded to a net standing per
+  faction, the same shape loot tracking has. What it deliberately left for later is the *pooled,
+  correlated* half ADR 0193 originally named: a `FactionObservation` store mirroring
+  `mob-knowledge.ts`/`contributions.ts` exactly (own `sanitize`/merge, same five rules — keyed by
+  contributor id, a report replaces that contributor's whole set, untrusted on arrival, bounded per
+  peer) so that killing a tracked faction-mob or turning in a tracked quest **credits that specific
+  hit** to the thing that caused it — real evidence of what raises/lowers a faction, alongside (and
+  able to contradict) whatever the wiki's own faction page says. No existing pipeline credits a
+  `kind: "mob"` shopping-list entry today (`store.applyLoot` explicitly excludes them), so this
+  correlator is new work, modeled on the kill-log → mob-knowledge derivation rather than on loot
+  crediting — and it builds on `faction-log.ts`'s feed rather than reading the log a second time.
 
 - **Nothing yet shows the pooled provenance it now carries.** `src/shared/pooling.ts` can say whose a
   figure mostly is, split a pooled drop rate back into your evidence and each contributor's, and name

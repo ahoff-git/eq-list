@@ -53,7 +53,9 @@ import type {
   SpawnKind,
   SpawnView,
 } from "../src/shared/types";
-import { createSaver, readJson } from "./json-store";
+import { raiseIfEnabled } from "./alert-gate";
+import { createChangeNotifier, createSaver, readJson } from "./json-store";
+import { realClearInterval, realInterval } from "./ticker";
 
 const log = createLogger("spawn-tracker");
 
@@ -380,18 +382,13 @@ export function createSpawnTracker({
   getSettings,
   raise,
   now = Date.now,
-  setInterval: setEvery = (fn, ms) => {
-    const t = setInterval(fn, ms);
-    // A countdown must never be the reason the process is still up after a quit.
-    t.unref?.();
-    return t;
-  },
-  clearInterval: clearEvery = (h) => clearInterval(h as NodeJS.Timeout),
+  setInterval: setEvery = realInterval,
+  clearInterval: clearEvery = realClearInterval,
 }: SpawnTrackerDeps): SpawnTracker {
   const file = path.join(userDataDir, "spawn-timers.json");
   const state = load(file);
   const saver = createSaver(file, "spawn timers", () => state, WRITE_DEBOUNCE_MS, { concern: "spawn-timers" });
-  let listener: (() => void) | null = null;
+  const notifier = createChangeNotifier(saver);
 
   /**
    * Countdowns already fired, **by id** — a camp may be running several at once (ADR 0135), and a
@@ -445,10 +442,7 @@ export function createSpawnTracker({
     return true;
   }
 
-  const changed = () => {
-    saver.save();
-    listener?.();
-  };
+  const changed = notifier.changed;
 
   /** When a timer was last told to start over, as milliseconds — unreadable text means never. */
   function relearnedAt(key: string): number | undefined {
@@ -504,44 +498,43 @@ export function createSpawnTracker({
    * otherwise be wrong.
    */
   function announce(timer: SpawnTimer, at: number): void {
-    // Two gates, and they mean different things. `notify` is *this mob* — off unless the player
-    // asked, because every named they kill is tracked and most are not being camped. `enabled` is
-    // the overlay itself: an app the player has silenced stays silent, with no second "but not
-    // these" for them to hunt for.
+    // `notify` is *this mob* — off unless the player asked, because every named they kill is tracked
+    // and most are not being camped. `raiseIfEnabled` covers the other gate, the overlay itself: an
+    // app the player has silenced stays silent, with no second "but not these" for them to hunt for.
     if (!state.notify[timer.key]) return;
-    const settings = getSettings();
-    if (!settings.enabled) return;
-    // A clock the player made is **not** a spawn and must not word itself as one: "💀 Boat to
-    // Butcherblock is up" is a claim about a mob that does not exist (ADR 0135). It keeps the spawn
-    // *look* — the same green, corner and lingering banner suit news either way — and only the
-    // sentence and the icon change.
-    const custom = kindOf(timer.key) === "custom";
-    // "— somewhere", only when there is a somewhere. A timer needn't be anywhere and a hand-added
-    // mob needn't either, and both used to end the sentence on a dash with nothing after it.
-    const where = timer.place ? ` — ${timer.place}` : "";
-    // Worded from **this moment**, not from the fact that padding exists: a padded timer whose first
-    // word comes at or after its by-time is not "due soon", it is up. That is the ordinary case for a
-    // window that opened before we were watching, and now also for the by-time a lead deferred.
-    const early = remainingMs(timer, at) > 0;
-    raise({
-      caster: "",
-      spell: timer.mob,
-      at: new Date(at).toISOString(),
-      event: custom ? "timer" : "spawn",
-      // The place, because the same named in two zones is two timers and the banner has to say which.
-      target: timer.place,
-      message: custom
-        ? `${timer.mob} — ${early ? "nearly up" : "time's up"}${where}`
-        : early
-          ? `${timer.mob} due soon${where}`
-          : undefined,
-      // A saved style if this timer wears one, the defaults otherwise. Resolved here, at the moment
-      // of the alert, and sent *with* it — the overlay only knows the defaults, so a per-timer look
-      // could reach the screen no other way.
-      // Falling back to the shipped **Spawn timer** look rather than the alert defaults: a pop is
-      // news, and arriving in the same red as "dispel now" is exactly what the built-in exists to
-      // avoid. If the player has deleted that style, `alertStyle` drops through to the defaults.
-      style: alertStyle(settings, { styleId: state.styleId[timer.key] ?? SPAWN_STYLE_ID }),
+    raiseIfEnabled(getSettings, raise, (settings) => {
+      // A clock the player made is **not** a spawn and must not word itself as one: "💀 Boat to
+      // Butcherblock is up" is a claim about a mob that does not exist (ADR 0135). It keeps the spawn
+      // *look* — the same green, corner and lingering banner suit news either way — and only the
+      // sentence and the icon change.
+      const custom = kindOf(timer.key) === "custom";
+      // "— somewhere", only when there is a somewhere. A timer needn't be anywhere and a hand-added
+      // mob needn't either, and both used to end the sentence on a dash with nothing after it.
+      const where = timer.place ? ` — ${timer.place}` : "";
+      // Worded from **this moment**, not from the fact that padding exists: a padded timer whose first
+      // word comes at or after its by-time is not "due soon", it is up. That is the ordinary case for a
+      // window that opened before we were watching, and now also for the by-time a lead deferred.
+      const early = remainingMs(timer, at) > 0;
+      return {
+        caster: "",
+        spell: timer.mob,
+        at: new Date(at).toISOString(),
+        event: custom ? "timer" : "spawn",
+        // The place, because the same named in two zones is two timers and the banner has to say which.
+        target: timer.place,
+        message: custom
+          ? `${timer.mob} — ${early ? "nearly up" : "time's up"}${where}`
+          : early
+            ? `${timer.mob} due soon${where}`
+            : undefined,
+        // A saved style if this timer wears one, the defaults otherwise. Resolved here, at the moment
+        // of the alert, and sent *with* it — the overlay only knows the defaults, so a per-timer look
+        // could reach the screen no other way.
+        // Falling back to the shipped **Spawn timer** look rather than the alert defaults: a pop is
+        // news, and arriving in the same red as "dispel now" is exactly what the built-in exists to
+        // avoid. If the player has deleted that style, `alertStyle` drops through to the defaults.
+        style: alertStyle(settings, { styleId: state.styleId[timer.key] ?? SPAWN_STYLE_ID }),
+      };
     });
   }
 
@@ -1152,9 +1145,7 @@ export function createSpawnTracker({
       changed();
     },
 
-    onChanged(cb) {
-      listener = cb;
-    },
+    onChanged: notifier.onChanged,
 
     flush: () => saver.flush(),
     dispose: () => clearEvery(handle),

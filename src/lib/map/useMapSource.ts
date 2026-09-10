@@ -1,12 +1,15 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { useRead } from "@/lib/hooks";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { sortZones } from "@/shared/map/zones";
-import { STOCK_SOURCE_ID, zonesFromSources, type MapSource } from "@/shared/map/map-sources";
+import { STOCK_SOURCE_ID, zonesFromSources, type MapSource, type MapSourceReport } from "@/shared/map/map-sources";
 import type { LoadedMap } from "@/shared/types";
 import type { Zone } from "@/shared/map/types";
+
+const NO_SOURCES: MapSourceReport = { sources: [] };
 
 /**
  * Which set of maps we're drawing, and the zones it offers.
@@ -30,8 +33,7 @@ export function useMapSource(): {
   /** The zones this source can show. */
   zones: Zone[];
 } {
-  const [sources, setSources] = useState<MapSource[]>([]);
-  const [mapsDir, setMapsDir] = useState<string | undefined>();
+  const { sources, mapsDir } = useRead((a) => a.map.sources(), NO_SOURCES, []);
   /**
    * Zone names read out of **this source's** own exit labels. Asked for separately because it reads
    * every file in the folder (~1s for 568 of them), so the picker is usable by file name straight
@@ -39,15 +41,6 @@ export function useMapSource(): {
    */
   const [solved, setSolved] = useState<Record<string, string>>({});
   const [chosen, setChosen] = usePersistentState<string>(STORAGE_KEYS.mapSource, "");
-
-  useEffect(() => {
-    void api()
-      ?.map.sources()
-      .then((report) => {
-        setSources(report.sources);
-        setMapsDir(report.mapsDir);
-      });
-  }, []);
 
   // A remembered source that isn't there any more (a pack uninstalled) falls back to whichever
   // folder we did find, rather than an empty window.

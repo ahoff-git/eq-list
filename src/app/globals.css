@@ -1577,12 +1577,19 @@ button {
 
 /* ── loot feed ───────────────────────────────────────────────── */
 /* Text-led tables, so the shared right-aligned 2nd/3rd columns above don't apply: a fate and a
-   corpse are words. Only the cells marked `.lt-num` are numbers. */
-.loot-table { font-size: 12px; white-space: nowrap; }
+   corpse are words. Only the cells marked `.lt-num` are numbers.
+   `.faction-table` (the Faction tab) shares this cell vocabulary — same ledger shape, so the same
+   time/number/item cell classes apply rather than a second copy of these rules. */
+.loot-table,
+.faction-table { font-size: 12px; white-space: nowrap; }
 .loot-table th,
-.loot-table td { text-align: left; width: auto; }
-.loot-table .lt-num { text-align: right; font-variant-numeric: tabular-nums; width: 68px; color: var(--accent); }
-.loot-table .lt-time { font-family: var(--mono); font-size: 11px; color: var(--text-dim); width: 64px; }
+.loot-table td,
+.faction-table th,
+.faction-table td { text-align: left; width: auto; }
+.loot-table .lt-num,
+.faction-table .lt-num { text-align: right; font-variant-numeric: tabular-nums; width: 68px; color: var(--accent); }
+.loot-table .lt-time,
+.faction-table .lt-time { font-family: var(--mono); font-size: 11px; color: var(--text-dim); width: 64px; }
 .loot-table .lt-item { font-weight: 500; }
 /* On the shopping list — the one highlight rule that can't cry wolf. */
 .loot-table tr.wanted { background: var(--flash); box-shadow: inset 2px 0 0 var(--accent); }

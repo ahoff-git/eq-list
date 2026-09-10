@@ -41,7 +41,9 @@ import type {
   LootEvent,
   RunningGoal,
 } from "../src/shared/types";
-import { createSaver, readJson } from "./json-store";
+import { raiseIfEnabled } from "./alert-gate";
+import { createChangeNotifier, createSaver, readJson } from "./json-store";
+import { realClearInterval, realInterval } from "./ticker";
 
 const log = createLogger("goal-tracker");
 
@@ -128,37 +130,28 @@ export function createGoalTracker({
   getSettings,
   raise,
   now = Date.now,
-  setInterval: setEvery = (fn, ms) => {
-    const t = setInterval(fn, ms);
-    t.unref?.();
-    return t;
-  },
-  clearInterval: clearEvery = (h) => clearInterval(h as NodeJS.Timeout),
+  setInterval: setEvery = realInterval,
+  clearInterval: clearEvery = realClearInterval,
 }: GoalTrackerDeps): GoalTracker {
   const file = path.join(userDataDir, "goals.json");
   const state = load(file);
   const saver = createSaver(file, "goals", () => state, WRITE_DEBOUNCE_MS, { concern: "goals" });
-  let listener: (() => void) | null = null;
+  const notifier = createChangeNotifier(saver);
 
-  const changed = () => {
-    saver.save();
-    listener?.();
-  };
+  const changed = notifier.changed;
 
   /** The overlay's own gate: an app the player silenced stays silent. There is no per-goal opt-out
    *  to check alongside it — starting a goal *is* the deliberate act that a spawn timer's `notify`
    *  exists to stand in for elsewhere. */
   function announce(payload: GoalAlertPayload, at: number, styleId: string | undefined): void {
-    const settings = getSettings();
-    if (!settings.enabled) return;
-    raise({
+    raiseIfEnabled(getSettings, raise, (settings) => ({
       caster: "",
       spell: payload.target.name,
       at: new Date(at).toISOString(),
       event: "goal",
       goal: payload,
       style: alertStyle(settings, { styleId: styleId ?? GOAL_STYLE_ID }),
-    });
+    }));
   }
 
   /**
@@ -457,9 +450,7 @@ export function createGoalTracker({
       return { now: new Date(at).toISOString(), goals, templates: state.templates };
     },
 
-    onChanged(cb) {
-      listener = cb;
-    },
+    onChanged: notifier.onChanged,
 
     flush: () => saver.flush(),
     dispose: () => clearEvery(handle),

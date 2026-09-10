@@ -30,6 +30,7 @@ import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";
 import { createKillLog } from "./kill-log";
 import { createLootLog } from "./loot-log";
+import { createFactionLog } from "./faction-log";
 import { lootRecord } from "../src/shared/loot-feed";
 import { createUpdateChecker } from "./update-check";
 import { createMobKnowledge } from "./mob-knowledge";
@@ -260,6 +261,7 @@ if (!app.requestSingleInstanceLock()) {
   const hp = createHpEstimate(userData);
   const killLog = createKillLog(userData);
   const lootLog = createLootLog(userData);
+  const factionLog = createFactionLog(userData);
   const updates = createUpdateChecker(userData, app.getVersion());
   const mobs = createMobKnowledge(userData, killLog);
   // Kept across sessions rather than held by whichever window happens to be open, so a room teaches
@@ -358,6 +360,7 @@ if (!app.requestSingleInstanceLock()) {
     hp,
     killLog,
     lootLog,
+    factionLog,
     updates,
     mobs,
     peerKills,
@@ -535,6 +538,12 @@ if (!app.requestSingleInstanceLock()) {
     // where a list entry counts for life — so this reads the same loot line independently rather
     // than borrowing the list's own counters (ADR 0198).
     goals.noteLoot(event);
+  });
+  // The faction ledger: a standing change, live or eaten, is always-on the same way the loot feed
+  // is (ADR 0055) — kept whether or not the Faction tab is open, so it's complete whenever it is.
+  watcher.onFaction((event) => {
+    factionLog.add(event);
+    broadcast(CH.factionEvent, event);
   });
   // Considering or hailing a mob you're timing counts as seeing it up — free evidence from what a
   // camper does anyway, through exactly the path the "It's up" button uses (ADR 0097).
@@ -823,6 +832,7 @@ if (!app.requestSingleInstanceLock()) {
       history,
       killLog,
       lootLog,
+      factionLog,
       logDir: store.getSettings().logDir,
       live: characterFromLogFile(watcher.status().file) ?? "",
     }).then((report) => {
@@ -852,6 +862,7 @@ if (!app.requestSingleInstanceLock()) {
     hp.flush();
     killLog.flush();
     lootLog.flush();
+    factionLog.flush();
     scores.flush();
     mobs.flush();
     peerKills.flush();

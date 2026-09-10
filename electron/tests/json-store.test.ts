@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createSaver, readJson, writeJson } from "../json-store";
+import { createChangeNotifier, createSaver, readJson, writeJson } from "../json-store";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "eql-json-store-"));
@@ -153,4 +153,32 @@ test("`restart` waits for the changes to stop; the default doesn't", async () =>
 
   await new Promise((r) => setTimeout(r, 60)); // let go
   assert.deepEqual(readJson(path.join(dir, "dragged.json"), null), { n: 5 }, "where it landed");
+});
+
+/**
+ * The other half of a tracker's `changed()`/`onChanged()`, five trackers used to write out by hand
+ * beside their own `Saver`. What's pinned: a change always saves, telling the listener is optional
+ * (nothing is subscribed yet on a fresh tracker), and only the most recently registered listener
+ * hears anything — the single-subscriber shape every tracker here actually needs.
+ */
+test("changed() saves even with nobody listening yet", () => {
+  const file = path.join(tempDir(), "notifier.json");
+  let state = { n: 1 };
+  const saver = createSaver(file, "notifier", () => state, 10);
+  const notifier = createChangeNotifier(saver);
+  notifier.changed();
+  assert.equal(readJson(file, null), null, "still coalescing — same debounce as any other saver");
+});
+
+test("changed() tells the listener, and a later listener replaces the earlier one", () => {
+  const saver = createSaver(path.join(tempDir(), "n2.json"), "n2", () => ({}), 10_000);
+  const notifier = createChangeNotifier(saver);
+  let heard: string[] = [];
+  notifier.onChanged(() => heard.push("first"));
+  notifier.changed();
+  assert.deepEqual(heard, ["first"]);
+
+  notifier.onChanged(() => heard.push("second"));
+  notifier.changed();
+  assert.deepEqual(heard, ["first", "second"], "only the current listener hears it, not both");
 });

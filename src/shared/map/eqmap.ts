@@ -17,6 +17,7 @@
  */
 
 import type { Loc, MapDimensions } from "./types";
+import { clamp } from "../numbers";
 
 /**
  * The two line kinds' field counts, from the format above.
@@ -79,7 +80,7 @@ function color(r: number, g: number, b: number): string | undefined {
 }
 
 function clampByte(n: number): number {
-  return Math.min(255, Math.max(0, Math.round(n)));
+  return clamp(Math.round(n), 0, 255);
 }
 
 /** Negate, keeping zero positive — `-0` is a real number in JS and reads badly everywhere. */

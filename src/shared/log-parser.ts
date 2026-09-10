@@ -29,6 +29,7 @@ import { to24Hour } from "./game-clock";
 import { parseCoins } from "./money";
 import type {
   CoinEvent,
+  FactionEvent,
   GameTimeEvent,
   LogLine,
   LootEvent,
@@ -365,6 +366,45 @@ const PARTY_PATTERNS: { re: RegExp; change: PartyEvent["change"]; whenYou: Party
   // Group chat — see above. Deliberately last: it's the loosest pattern here.
   { re: /^(?<who>.+?) tells the group, /, change: "joined", whenYou: null },
 ];
+
+/**
+ * A faction-standing change: "Your faction standing with X has been adjusted by -3." — and its two
+ * capped wordings, which state no number at all: "...could not possibly get any worse/better."
+ *
+ * Verified against a real captured line (the adjusted form, and the floor wording beside it, both
+ * from the same log) rather than guessed the way `faction-watch.ts`'s raw-line trigger word had to
+ * be: `specs/todo.md` records it. The ceiling wording is the one `achievement-library.ts`'s Ally
+ * criteria already match as a plain substring, so this parser and that criterion agree on the
+ * sentence without either having copied it from the other.
+ */
+const FACTION_ADJUST_RE = /^Your faction standing with (?<faction>.+?) has been adjusted by (?<delta>-?\d+)\.$/;
+const FACTION_FLOOR_RE = /^Your faction standing with (?<faction>.+?) could not possibly get any worse\.$/;
+const FACTION_CEILING_RE = /^Your faction standing with (?<faction>.+?) could not possibly get any better\.$/;
+
+export function parseFactionChange(line: LogLine): FactionEvent | null {
+  const adjusted = line.message.match(FACTION_ADJUST_RE);
+  if (adjusted?.groups) {
+    const delta = Number(adjusted.groups.delta);
+    return {
+      kind: "faction",
+      faction: adjusted.groups.faction.trim(),
+      delta,
+      direction: delta < 0 ? "lowered" : "raised",
+      logId: line.logId,
+      raw: line.raw,
+      at: line.at,
+    };
+  }
+  const floor = line.message.match(FACTION_FLOOR_RE);
+  if (floor?.groups?.faction) {
+    return { kind: "faction", faction: floor.groups.faction.trim(), delta: null, direction: "floor", logId: line.logId, raw: line.raw, at: line.at };
+  }
+  const ceiling = line.message.match(FACTION_CEILING_RE);
+  if (ceiling?.groups?.faction) {
+    return { kind: "faction", faction: ceiling.groups.faction.trim(), delta: null, direction: "ceiling", logId: line.logId, raw: line.raw, at: line.at };
+  }
+  return null;
+}
 
 /**
  * The **regard** half of a consider line, as a closed set.

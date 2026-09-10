@@ -28,6 +28,7 @@
  * and no room ([testing](../../specs/testing/README.md)).
  */
 import { createLogger } from "../../src/shared/logging";
+import { clamp } from "../../src/shared/numbers";
 import {
   coverageOf,
   emptyCoverage,
@@ -238,7 +239,7 @@ export interface Harvester {
   rosterExpired(): boolean;
 }
 
-const clampGap = (ms: number): number => Math.min(GAP_RANGE.max, Math.max(GAP_RANGE.min, Math.round(ms)));
+const clampGap = (ms: number): number => clamp(Math.round(ms), GAP_RANGE.min, GAP_RANGE.max);
 
 function emptyRun(roster: string[], at: string): SavedHarvest {
   return { roster, listedAt: at, fetched: 0, fromPeers: 0, failed: [], startedAt: at, updatedAt: at };

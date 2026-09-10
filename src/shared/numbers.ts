@@ -52,3 +52,15 @@ export function ratio(part: number, whole: number, places?: number): number {
 export function over(part: number, whole: number | undefined): number | undefined {
   return whole ? part / whole : undefined;
 }
+
+/**
+ * Keep `n` inside `[lo, hi]`.
+ *
+ * The other two-liner written out by hand more than once — a screen fraction, a UI scale, a colour
+ * byte, an XP percent all bottom out in `Math.min(hi, Math.max(lo, n))` with their own bounds around
+ * it. Named wrappers keep the *meaning* at each call site (`clampUnit`, `clampScale`, …); this is what
+ * they share underneath.
+ */
+export function clamp(n: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, n));
+}

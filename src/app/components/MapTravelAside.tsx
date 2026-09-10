@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { copyText } from "@/lib/clipboard";
+import { locText } from "@/shared/format";
 import type { TravelSurvey } from "@/shared/types";
 
 /**
@@ -66,7 +67,7 @@ function asText(survey: TravelSurvey): string {
   const lines = [`${survey.zone.name} (${survey.zone.zone})`];
   for (const node of survey.nodes) {
     const where = node.at.length
-      ? node.at.map((at) => `${Math.round(at.y)}, ${Math.round(at.x)}`).join(" | ")
+      ? node.at.map(locText).join(" | ")
       : "no position in this zone";
     lines.push(`  ${node.id}\t${node.beyond ? `→ ${node.beyond.name}` : node.label}\t${node.via ?? node.kind}\t${where}`);
   }

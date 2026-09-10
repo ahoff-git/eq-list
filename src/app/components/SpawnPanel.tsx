@@ -18,7 +18,7 @@ import {
 import { fuzzyRank } from "@/shared/fuzzy";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
-import { Caret, Empty } from "./ui";
+import { Caret, CheckField, Empty } from "./ui";
 import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
 import { SPAWN_STYLE_ID } from "@/shared/alert-styles";
 import SuggestField from "./SuggestField";
@@ -632,25 +632,26 @@ function KnownRow({ known }: { known: KnownSpawn }) {
       <span className="spawn-actions">
         {/* The one control that changes what the app *does* rather than what it knows, so it leads
             and is a checkbox rather than a button: it's a standing state, not an action. */}
-        <label
+        <CheckField
           className="spawn-notify"
           title={
             known.armed
               ? "Armed for you — you've killed this twice this sitting, so you're evidently camping it. Untick it and it stays off."
               : "Raise a banner when this one is due"
           }
-        >
-          <input
-            type="checkbox"
-            checked={known.notify}
-            onChange={(e) => void api()?.spawns.notify(known.key, e.target.checked)}
-          />
-          Notify
-          {/* Said on the row, not just in the tooltip: an alert that turned itself on has to account
-              for itself where it is read, or the first banner is a mystery. It disappears the moment
-              the player touches the box, because then it is their answer and needs no defence. */}
-          {known.armed && <span className="spawn-armed"> · camping</span>}
-        </label>
+          checked={known.notify}
+          onChange={(checked) => void api()?.spawns.notify(known.key, checked)}
+          label={
+            <>
+              Notify
+              {/* Said on the row, not just in the tooltip: an alert that turned itself on has to
+                  account for itself where it is read, or the first banner is a mystery. It
+                  disappears the moment the player touches the box, because then it is their answer
+                  and needs no defence. */}
+              {known.armed && <span className="spawn-armed"> · camping</span>}
+            </>
+          }
+        />
         {/* Only meaningful once something will actually be raised, so it appears with the thing it
             describes rather than sitting greyed out beside it. */}
         {known.notify && (
@@ -666,28 +667,23 @@ function KnownRow({ known }: { known: KnownSpawn }) {
         )}
         {/* A separate question from Notify, and deliberately not folded into it: one is a moment,
             the other is a dial you glance at. A camper often wants the countdown and no banner. */}
-        <label className="spawn-notify" title="Keep this countdown on screen, over the game">
-          <input
-            type="checkbox"
-            checked={known.onScreen}
-            onChange={(e) => void api()?.spawns.showOnScreen(known.key, e.target.checked)}
-          />
-          On screen
-        </label>
+        <CheckField
+          className="spawn-notify"
+          title="Keep this countdown on screen, over the game"
+          checked={known.onScreen}
+          onChange={(checked) => void api()?.spawns.showOnScreen(known.key, checked)}
+          label="On screen"
+        />
         {/* The placeholder camp, and the only control here that changes what an arriving *kill*
             does. Off by default because restarting is right for a named, and whether these three
             pops are three spawn points is knowledge only the player at the camp has (ADR 0135). */}
-        <label
+        <CheckField
           className="spawn-notify"
           title="Placeholders: each kill starts its own countdown instead of restarting the last"
-        >
-          <input
-            type="checkbox"
-            checked={known.queue}
-            onChange={(e) => void api()?.spawns.queue(known.key, e.target.checked)}
-          />
-          Several at once
-        </label>
+          checked={known.queue}
+          onChange={(checked) => void api()?.spawns.queue(known.key, checked)}
+          label="Several at once"
+        />
 
         {/* Telling the tracker what's true right now. Here as well as on a running row, because
             this is where a mob sits when nothing is counting down — which is exactly when you need
@@ -840,14 +836,13 @@ function CustomRow({ timer }: { timer: KnownSpawn }) {
       </span>
       <span className="spawn-seen">{timer.running ? "running" : ""}</span>
       <span className="spawn-actions">
-        <label className="spawn-notify" title="Raise a banner when this timer finishes">
-          <input
-            type="checkbox"
-            checked={timer.notify}
-            onChange={(e) => void api()?.spawns.notify(timer.key, e.target.checked)}
-          />
-          Notify
-        </label>
+        <CheckField
+          className="spawn-notify"
+          title="Raise a banner when this timer finishes"
+          checked={timer.notify}
+          onChange={(checked) => void api()?.spawns.notify(timer.key, checked)}
+          label="Notify"
+        />
         {timer.notify && (
           <AlertStyleField
             styleId={timer.styleId}
@@ -859,25 +854,23 @@ function CustomRow({ timer }: { timer: KnownSpawn }) {
             onOpen={() => setStyling((v) => !v)}
           />
         )}
-        <label className="spawn-notify" title="Keep this countdown on screen, over the game">
-          <input
-            type="checkbox"
-            checked={timer.onScreen}
-            onChange={(e) => void api()?.spawns.showOnScreen(timer.key, e.target.checked)}
-          />
-          On screen
-        </label>
+        <CheckField
+          className="spawn-notify"
+          title="Keep this countdown on screen, over the game"
+          checked={timer.onScreen}
+          onChange={(checked) => void api()?.spawns.showOnScreen(timer.key, checked)}
+          label="On screen"
+        />
         {/* The thing a stopwatch has and a respawn cannot: when it finishes, it goes again. Chained
             from its own end rather than restarted from the moment we noticed, so a timer left
             running all evening is still on the beat it started on. */}
-        <label className="spawn-notify" title="When it finishes, start it again">
-          <input
-            type="checkbox"
-            checked={timer.repeat}
-            onChange={(e) => void api()?.spawns.repeat(timer.key, e.target.checked)}
-          />
-          Repeat
-        </label>
+        <CheckField
+          className="spawn-notify"
+          title="When it finishes, start it again"
+          checked={timer.repeat}
+          onChange={(checked) => void api()?.spawns.repeat(timer.key, checked)}
+          label="Repeat"
+        />
 
         <button
           className="btn ghost sm"

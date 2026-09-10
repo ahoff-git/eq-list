@@ -5,7 +5,7 @@ import { useBuffs, useSettings } from "@/lib/hooks";
 import { alternativesLabel, heldMs, targetLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
-import { Empty } from "./ui";
+import { CheckField, Empty } from "./ui";
 import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
 import { BUFF_STYLE_ID } from "@/shared/alert-styles";
 import type { BuffInstance, KnownBuff } from "@/shared/types";
@@ -252,14 +252,13 @@ function KnownRow({ known }: { known: KnownBuff }) {
   const [styling, setStyling] = useState(false);
   return (
     <div className={`buff-known-row ${known.tracked ? "" : "untracked"}`}>
-      <label className="buff-check" title="Watch this spell at all. Off means it is never mentioned again — and the row stays, so you can change your mind">
-        <input
-          type="checkbox"
-          checked={known.tracked}
-          onChange={(e) => void api()?.buffs.track(known.key, e.target.checked)}
-        />
-        <b className="buff-name">{known.spell}</b>
-      </label>
+      <CheckField
+        className="buff-check"
+        title="Watch this spell at all. Off means it is never mentioned again — and the row stays, so you can change your mind"
+        checked={known.tracked}
+        onChange={(checked) => void api()?.buffs.track(known.key, checked)}
+        label={<b className="buff-name">{known.spell}</b>}
+      />
       <span className="buff-known-facts muted small">
         {known.detrimental && (
           // A Root row in a tab called Buffs needs explaining, and the label is also the explanation
@@ -281,29 +280,24 @@ function KnownRow({ known }: { known: KnownBuff }) {
           out beside an unchecked row — the same rule the spawn board's style picker follows. */}
       {known.tracked && (
         <span className="buff-actions">
-          <label
+          <CheckField
             className="buff-check"
             title={
               known.detrimental
                 ? "Raise a banner the moment it drops — immediately, since a debuff has to go back on now"
                 : "Raise a banner when it drops. Held until the fight ends, because nobody stops fighting to rebuff"
             }
-          >
-            <input
-              type="checkbox"
-              checked={known.notify}
-              onChange={(e) => void api()?.buffs.notify(known.key, e.target.checked)}
-            />
-            Notify
-          </label>
-          <label className="buff-check" title="Keep it in the on-screen list over the game until it's back up">
-            <input
-              type="checkbox"
-              checked={known.onScreen}
-              onChange={(e) => void api()?.buffs.showOnScreen(known.key, e.target.checked)}
-            />
-            On screen
-          </label>
+            checked={known.notify}
+            onChange={(checked) => void api()?.buffs.notify(known.key, checked)}
+            label="Notify"
+          />
+          <CheckField
+            className="buff-check"
+            title="Keep it in the on-screen list over the game until it's back up"
+            checked={known.onScreen}
+            onChange={(checked) => void api()?.buffs.showOnScreen(known.key, checked)}
+            label="On screen"
+          />
           {known.notify && (
             <AlertStyleField
               styleId={known.styleId}

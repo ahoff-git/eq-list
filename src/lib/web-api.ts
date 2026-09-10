@@ -23,16 +23,15 @@ import * as lucy from "@/lib/web/lucy-snapshot";
 import * as store from "@/lib/web/local-store";
 import { answerRoute, travelZone } from "@/shared/travel/route";
 import { surveyZone } from "@/shared/travel/survey";
+import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
 import type {
   AchievementView,
   BuffView,
   CombatStats,
   EqlApi,
-  FightStats,
   GameClockView,
   DamageOverlayView,
   GoalView,
-  HarvestProgress,
   HpEstimate,
   MapFocus,
   ScoreBoard,
@@ -45,29 +44,6 @@ const log = createLogger("web-api");
 const noop: Unsubscribe = () => {};
 const EMPTY_LOG_TAIL = { text: "", bytes: 0, whole: true };
 
-const EMPTY_FIGHT: FightStats = {
-  startedAt: "",
-  endedAt: "",
-  durationSec: 0,
-  totalDealt: 0,
-  yourDealt: 0,
-  yourTaken: 0,
-  spanSec: 0,
-  byCombatant: [],
-  spells: [],
-  byMob: [],
-  kills: 0,
-  xpPct: 0,
-  xpGains: 0,
-  soloXp: 0,
-  partyXp: 0,
-  copper: 0,
-  soldCopper: 0,
-  yourPerSec: [],
-  deaths: [],
-  invocations: [],
-};
-
 const EMPTY_COMBAT: CombatStats = { startedAt: new Date().toISOString(), fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
 const EMPTY_BUFFS: BuffView = { now: new Date().toISOString(), active: [], lapsed: [], known: [], lexicon: false };
 const EMPTY_SPAWNS: SpawnView = { now: new Date().toISOString(), running: [], known: [], dismissed: [] };
@@ -78,16 +54,6 @@ const EMPTY_HP: HpEstimate = { atLeast: 0, samples: 0, updatedAt: new Date().toI
 // A harvest is Electron-only (there's no wiki category walk on the web — the snapshot is this
 // build's whole catalogue), so `wiki.harvestStart`/`spellHarvestStart` etc. all report the same
 // permanent "idle, nothing to fetch" state rather than pretending a run could ever start.
-const EMPTY_HARVEST: HarvestProgress = {
-  status: "idle",
-  total: 0,
-  at: 0,
-  fetched: 0,
-  fromPeers: 0,
-  failed: 0,
-  found: 0,
-  shards: { present: 0, mine: 0, room: 0 },
-};
 
 const EMPTY_CLOCK: GameClockView = {
   minutes: null,
@@ -216,6 +182,13 @@ function createWebApi(): EqlApi {
       items: async () => [],
       onEvent: () => noop,
       onMatched: () => noop,
+    },
+
+    // Tracked against the live log, same as loot — nothing to show on the web build.
+    faction: {
+      recent: async () => [],
+      standings: async () => [],
+      onEvent: () => noop,
     },
 
     alerts: {

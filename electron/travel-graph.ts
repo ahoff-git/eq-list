@@ -27,6 +27,7 @@ import { surveyZone, type TravelSurvey } from "../src/shared/travel/survey";
 import type { TravelGraph, TravelOptions } from "../src/shared/travel/types";
 import { createZoneNamer, folderSignature, readFolderPois } from "./eq-maps";
 import { currentAppVersion, readJson, writeJson } from "./json-store";
+import { createAsyncCache } from "./async-cache";
 
 /** The app's gazetteer, passed in so a graph is built from the naming everything else already has. */
 type ZoneNamer = ReturnType<typeof createZoneNamer>;
@@ -241,10 +242,9 @@ export function createTravelRouter(deps: {
   survey: (source: MapSource, zone: string, options?: TravelOptions) => Promise<TravelSurvey | undefined>;
   clear: () => void;
 } {
-  /** One graph per folder, keyed by it — like the gazetteer, and for the same reason. */
-  const cache = new Map<string, TravelGraph>();
-  /** In-flight builds, so two routes asked for at once don't each read the folder. */
-  const building = new Map<string, Promise<TravelGraph>>();
+  /** One graph per folder, keyed by it — like the gazetteer, and for the same reason: two routes
+   *  asked for at once share one build rather than each reading the folder. */
+  const cache = createAsyncCache<TravelGraph>();
   const file = deps.cacheDir ? path.join(deps.cacheDir, GRAPH_CACHE_FILE) : undefined;
 
   const stored = (): StoredGraphs => {
@@ -299,20 +299,7 @@ export function createTravelRouter(deps: {
     return routed;
   };
 
-  const graph = (source: MapSource): Promise<TravelGraph> => {
-    const cached = cache.get(source.dir);
-    if (cached) return Promise.resolve(cached);
-    const already = building.get(source.dir);
-    if (already) return already;
-    const pending = build(source)
-      .then((built) => {
-        cache.set(source.dir, built);
-        return built;
-      })
-      .finally(() => building.delete(source.dir));
-    building.set(source.dir, pending);
-    return pending;
-  };
+  const graph = (source: MapSource): Promise<TravelGraph> => cache.get(source.dir, () => build(source));
 
   return {
     graph,
@@ -325,9 +312,6 @@ export function createTravelRouter(deps: {
       const file = travelZone(built, zone);
       return file ? surveyZone(built, file, options) : undefined;
     },
-    clear: () => {
-      cache.clear();
-      building.clear();
-    },
+    clear: () => cache.clear(),
   };
 }

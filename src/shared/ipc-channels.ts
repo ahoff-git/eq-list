@@ -25,6 +25,8 @@ export const CH = {
   lootRecent: "loot:recent",
   lootPrices: "loot:prices",
   lootItems: "loot:items",
+  factionRecent: "faction:recent",
+  factionStandings: "faction:standings",
   alertsTest: "alerts:test",
   alertsPreview: "alerts:preview", // show a sample wearing a look being edited, attached to no rule
   alertPlaceStart: "alert:placeStart", // main window → main: begin placing a custom alert spot
@@ -250,6 +252,7 @@ export const CH = {
   settingsChanged: "evt:settings",
   lootEvent: "evt:loot",
   lootMatched: "evt:lootMatched",
+  factionEvent: "evt:faction",
   castAlert: "evt:castAlert", // main → all: a watched spell began casting
   recordSet: "evt:record", // main → all: a personal best fell, so an open scoreboard refreshes
   alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode

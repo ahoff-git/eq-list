@@ -20,6 +20,7 @@ import AlertsPanel from "./components/AlertsPanel";
 import type { AwariPeer, BuffView, Settings } from "@/shared/types";
 import DamagePanel from "./components/DamagePanel";
 import LootPanel from "./components/LootPanel";
+import FactionPanel from "./components/FactionPanel";
 import StatusBar from "./components/StatusBar";
 import PinButton from "./components/PinButton";
 import OpacityButton from "./components/OpacityButton";
@@ -42,7 +43,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "search" | "items" | "spells" | "damage" | "session" | "alerts" | "peers" | "settings";
+type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "damage" | "session" | "alerts" | "peers" | "settings";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -197,6 +198,9 @@ function ControlWindow() {
     // that is the only number here anyone acts on.
     { key: "buffs", label: buffsLabel(buffs), disabled: needsLog, disabledReason: noLog },
     { key: "loot", label: "Loot", disabled: needsLog, disabledReason: noLog },
+    // Beside Loot, the same kind of thing: a log-derived ledger rather than a board of what's
+    // currently running, which is why it sits with Loot rather than up with Timers/Goals/Buffs.
+    { key: "faction", label: "Faction", disabled: needsLog, disabledReason: noLog },
     // Fourth, not last but one. `TabBar` collapses whatever doesn't fit into its » menu from the
     // **end**, and at the window's default width only six tabs fit — so putting alerts after
     // Settings would have left the feature *less* reachable than when it was a group inside
@@ -300,6 +304,7 @@ function ControlWindow() {
           {tab === "achievements" && <AchievementsPanel />}
           {tab === "buffs" && <BuffPanel />}
           {tab === "loot" && <LootPanel />}
+          {tab === "faction" && <FactionPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
           {tab === "items" && <ItemSearchPanel />}
           {tab === "spells" && <SpellSearchPanel />}

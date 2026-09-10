@@ -75,6 +75,11 @@ const api: EqlApi = {
     onEvent: (cb) => on(CH.lootEvent, cb),
     onMatched: (cb) => on(CH.lootMatched, cb),
   },
+  faction: {
+    recent: (limit) => ipcRenderer.invoke(CH.factionRecent, limit),
+    standings: () => ipcRenderer.invoke(CH.factionStandings),
+    onEvent: (cb) => on(CH.factionEvent, cb),
+  },
   alerts: {
     onCast: (cb) => on(CH.castAlert, cb),
     test: (watchId) => ipcRenderer.invoke(CH.alertsTest, watchId),

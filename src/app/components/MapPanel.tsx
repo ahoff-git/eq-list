@@ -10,6 +10,7 @@ import { pickHit } from "@/shared/map/hit-test";
 import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
 import { localPoint } from "@/lib/screen";
 import { mobKey } from "@/shared/mob-stats";
+import { locText } from "@/shared/format";
 import type { CanvasSize, Loc, MapView, Point, Zone } from "@/shared/map/types";
 import type { KillEmphasis, TravelSurvey } from "@/shared/types";
 
@@ -554,7 +555,7 @@ export default function MapPanel({
           priority: 5,
           title: node.beyond ? `to ${node.beyond.name}` : node.label,
           detail: [
-            `${Math.round(at.y)}, ${Math.round(at.x)}`,
+            locText(at),
             // A zone can offer several crossings of one border, and they are one node — worth saying
             // out loud, since two markers with one name otherwise read as a duplicate.
             many ? `crossing ${i + 1} of ${node.at.length}` : "",

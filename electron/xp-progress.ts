@@ -18,6 +18,7 @@
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
+import { clamp } from "../src/shared/numbers";
 import type { XpProgress } from "../src/shared/types";
 
 import { createSaver, readJson } from "./json-store";
@@ -45,7 +46,7 @@ export interface XpTracker {
  */
 const ALMOST_LEVELLED = 99.999;
 
-const clampPct = (n: number): number => Math.min(ALMOST_LEVELLED, Math.max(0, n));
+const clampPct = (n: number): number => clamp(n, 0, ALMOST_LEVELLED);
 
 export function createXpProgress(userDataDir: string, nowIso: () => string = () => new Date().toISOString()): XpTracker {
   const file = path.join(userDataDir, "xp-progress.json");

@@ -5,12 +5,14 @@
  * No new event kind and no parser: `CastWatch.onLine` already matches a substring against whole log
  * lines (ADR 0050), which is exactly "tell me when the game says something about this faction".
  *
- * **`TRIGGER` is a best-effort guess, not a verified one.** Every other phrase this app matches was
- * checked against a real captured log line first — `specs/log-watching/README.md` names faction hits
- * as the one deliberately deferred gap. This ships ahead of that check because "faction standing" is
- * the near-universal EQ system-message opener, and a wrong guess here only costs a missed banner,
- * never a bad parse or a wrong shopping-list entry. Correct it (or replace this with a real
- * `FactionEvent` condition) the moment a real line is in hand.
+ * **`TRIGGER` was a best-effort guess and is now a verified one.** ADR 0193 shipped this ahead of a
+ * real captured line, on the bet that "faction standing" is the near-universal EQ system-message
+ * opener; a real log has since confirmed the bet was right (`specs/log-parser.ts`'s
+ * `parseFactionChange`, [ADR 0218](../../specs/decisions/0218-a-faction-hit-is-parsed-not-only-watched.md)
+ * reads the same wording structurally). Left as a raw-line watch anyway rather than rebuilt on top
+ * of `FactionEvent`: this is a **banner**, and the structured event's own store
+ * (`electron/faction-log.ts`) already gives a faction page everything a wired-up condition would —
+ * every hit that's landed, and the net it comes to — without this alerting path needing to change.
  */
 import type { CastWatch } from "./types";
 

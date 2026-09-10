@@ -11,9 +11,10 @@ import type {
   WatcherStatus,
   LootRecord,
   ItemPrice,
+  FactionEvent,
+  FactionStanding,
   LocEvent,
   CombatStats,
-  FightStats,
   XpProgress,
   HpEstimate,
   KillRecord,
@@ -38,7 +39,9 @@ import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob-sta
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
 import type { SharedKill } from "@/shared/kill-filters";
 import { mergeLootFeed } from "@/shared/loot-feed";
+import { mergeFactionFeed } from "@/shared/faction-feed";
 import { ratio } from "@/shared/numbers";
+import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
 import {
   buildHunt,
   huntInputsFor,
@@ -253,30 +256,8 @@ export function useAppInfo(): AppInfo | null {
   return info;
 }
 
-const EMPTY_FIGHT: FightStats = {
-  startedAt: "",
-  endedAt: "",
-  durationSec: 0,
-  spanSec: 0,
-  totalDealt: 0,
-  yourDealt: 0,
-  yourTaken: 0,
-  byCombatant: [],
-  spells: [],
-  byMob: [],
-  kills: 0,
-  xpPct: 0,
-  xpGains: 0,
-  soloXp: 0,
-  partyXp: 0,
-  copper: 0,
-  soldCopper: 0,
-  yourPerSec: [],
-  deaths: [],
-  invocations: [],
-};
-
 const EMPTY_PRICES: ItemPrice[] = [];
+const EMPTY_FACTION_STANDINGS: FactionStanding[] = [];
 const NO_KILLS: KillRecord[] = [];
 const NO_MOBS: MobKnowledge[] = [];
 /**
@@ -304,16 +285,6 @@ const NO_ITEM_SOURCES: ItemSource[] = [];
 const NO_ITEM_DROPS: ItemDropSource[] = [];
 const NO_LOOTED: LootedItem[] = [];
 const NO_CATALOG: ItemRow[] = [];
-const NO_HARVEST: HarvestProgress = {
-  status: "idle",
-  total: 0,
-  at: 0,
-  fetched: 0,
-  fromPeers: 0,
-  failed: 0,
-  found: 0,
-  shards: { present: 0, mine: 0, room: 0 },
-};
 const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };
 const NO_WATCHER: WatcherStatus = { watching: false };
 const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
@@ -673,7 +644,7 @@ const NO_ERA_ZONES: string[] = [];
  * this hook only ever *watches*. Closing the tab does not stop it, which is the point.
  */
 export function useHarvest(): HarvestProgress {
-  const [progress, setProgress] = useState<HarvestProgress>(NO_HARVEST);
+  const [progress, setProgress] = useState<HarvestProgress>(EMPTY_HARVEST);
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -686,7 +657,7 @@ export function useHarvest(): HarvestProgress {
 
 /** The `spells` counterpart to `useHarvest` — same subscribe-before-read shape, over the spell harvest. */
 export function useSpellHarvest(): HarvestProgress {
-  const [progress, setProgress] = useState<HarvestProgress>(NO_HARVEST);
+  const [progress, setProgress] = useState<HarvestProgress>(EMPTY_HARVEST);
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -1212,6 +1183,30 @@ export function useLootFeed(limit = 40): LootRecord[] {
  */
 export function useItemPrices(refreshKey: unknown): ItemPrice[] {
   return useRead((a) => a.loot.prices(), EMPTY_PRICES, [refreshKey]);
+}
+
+/** Rolling feed of the most recent faction-standing changes (newest first) — same shape as `useLootFeed`. */
+export function useFactionFeed(limit = 200): FactionEvent[] {
+  const [events, setEvents] = useState<FactionEvent[]>([]);
+  /** Bumped when the ledger changes wholesale (a log eaten, a clear) — see `onDataChanged`. */
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void a.faction.recent(limit).then((hist) => setEvents((prev) => mergeFactionFeed(prev, hist, limit)));
+    return a.faction.onEvent((e) => setEvents((prev) => [e, ...prev].slice(0, limit)));
+  }, [limit, refresh]);
+  return events;
+}
+
+/**
+ * Every faction the ledger has a change for, folded to its net standing. Derived in main from the
+ * faction feed, so it covers hits from before this tab was opened; `refreshKey` re-reads it — a new
+ * hit is the only thing that can change it, and the feed already knows when one arrives.
+ */
+export function useFactionStandings(refreshKey: unknown): FactionStanding[] {
+  return useRead((a) => a.faction.standings(), EMPTY_FACTION_STANDINGS, [refreshKey]);
 }
 
 /**

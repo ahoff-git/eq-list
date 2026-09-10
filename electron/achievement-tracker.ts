@@ -49,7 +49,8 @@ import type {
   KillEvent,
   LogLine,
 } from "../src/shared/types";
-import { createSaver, readJson } from "./json-store";
+import { raiseIfEnabled } from "./alert-gate";
+import { createChangeNotifier, createSaver, readJson } from "./json-store";
 
 const log = createLogger("achievement-tracker");
 
@@ -128,16 +129,13 @@ export function createAchievementTracker({
   const file = path.join(userDataDir, "achievements.json");
   const state = load(file);
   const saver = createSaver(file, "achievements", () => state, WRITE_DEBOUNCE_MS, { concern: "achievements" });
-  let listener: (() => void) | null = null;
+  const notifier = createChangeNotifier(saver);
   // Mirrors `high-scores.ts`'s own `quiet`: on during a startup gap replay, so every criterion the
   // backlog satisfies still lands (done/tally/completedAt all update normally) but announces nothing
   // — a banner is a claim that this just happened, and a gap only ever holds the past.
   let quiet = false;
 
-  const changed = () => {
-    saver.save();
-    listener?.();
-  };
+  const changed = notifier.changed;
 
   const definitions = (): AchievementDefinition[] => [...STOCK_ACHIEVEMENTS, ...state.custom];
   const progressOf = (id: string): AchievementProgress | undefined => state.progress.find((p) => p.id === id);
@@ -155,16 +153,14 @@ export function createAchievementTracker({
   function announce(payload: CastAlertEvent["achievement"], at: number): void {
     if (!payload) return;
     if (quiet) return;
-    const settings = getSettings();
-    if (!settings.enabled) return;
-    raise({
+    raiseIfEnabled(getSettings, raise, (settings) => ({
       caster: "",
       spell: payload.title,
       at: new Date(at).toISOString(),
       event: "achievement",
       achievement: payload,
       style: alertStyle(settings, { styleId: ACHIEVEMENT_STYLE_ID }),
-    });
+    }));
   }
 
   /**
@@ -373,9 +369,7 @@ export function createAchievementTracker({
       return { achievements: runningView(definitions(), state.progress) };
     },
 
-    onChanged(cb) {
-      listener = cb;
-    },
+    onChanged: notifier.onChanged,
 
     setQuiet(next) {
       quiet = next;

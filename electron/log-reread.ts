@@ -27,7 +27,8 @@
  * placing drops rides along on the files the fights name
  * ([ADR 0137](../specs/decisions/0137-a-filed-drop-can-still-learn-where-it-was.md)). In practice those
  * are the same logs, because you looted where you fought; a log that recorded drops and no fights at all
- * is the gap, and its drops stay unplaced until somebody eats that file by hand.
+ * is the gap, and its drops stay unplaced until somebody eats that file by hand. The faction ledger
+ * shares the same bound for the same reason — a faction hit carries no file of its own either.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -35,6 +36,7 @@ import { createLogger } from "../src/shared/logging";
 import { dataReport } from "./data-health";
 import { digestLog } from "./log-import";
 import type { CombatHistory } from "./combat-history";
+import type { FactionLog } from "./faction-log";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
 
@@ -67,6 +69,7 @@ export interface ReReadDeps {
   history: CombatHistory;
   killLog: KillLog;
   lootLog?: LootLog;
+  factionLog?: FactionLog;
   /** Where logs live now, for a source recorded under a folder that has since moved. */
   logDir: string;
   /** The character being watched, so the kill log's identity is restored to it afterwards. */
@@ -130,7 +133,7 @@ export async function reReadLogs(deps: ReReadDeps): Promise<ReReadReport | null>
   for (const file of sources) {
     await breathe(); // before the work, so the first file is off the caller's tick too
     try {
-      const res = digestLog(file, deps.live, deps.killLog, deps.history, deps.lootLog);
+      const res = digestLog(file, deps.live, deps.killLog, deps.history, deps.lootLog, deps.factionLog);
       report.files.push(file);
       report.refreshed += res.refreshed;
       report.added += res.fights;
@@ -152,6 +155,7 @@ export async function reReadLogs(deps: ReReadDeps): Promise<ReReadReport | null>
   deps.history.flush();
   deps.killLog.flush();
   deps.lootLog?.flush();
+  deps.factionLog?.flush();
   log.info(
     `re-read ${report.files.length} log(s) in ${report.ms}ms: ${report.refreshed} fights redone, ` +
       `${report.added} added, ${report.placed} drops placed`,

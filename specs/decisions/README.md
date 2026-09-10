@@ -226,7 +226,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0190: The pinned clock is dragged into position directly, not placed from Settings](./0190-the-pinned-clock-is-dragged-not-placed-from-settings.md)
 - [0191: The debug comparison was reading its two sides by different conventions](./0191-the-debug-comparison-was-comparing-mismatched-conventions.md)
 - [0192: Factions ride their own wiki pages, and tracking a raise-mob reuses the shopping list](./0192-factions-ride-their-own-wiki-pages.md)
-- [0193: A faction alert rides the existing line watch, ahead of a verified log line](./0193-a-faction-alert-rides-the-existing-line-watch.md)
+- [0193: A faction alert rides the existing line watch, ahead of a verified log line](./0193-a-faction-alert-rides-the-existing-line-watch.md) — *the line arrived and the parser + personal ledger shipped as [0218](./0218-a-faction-hit-is-parsed-not-only-watched.md); the pooled/correlated half still stands*
 - [0194: The follow window fades instead of cutting off](./0194-the-follow-window-fades-instead-of-cutting-off.md)
 - [0195: A spell catalog trusts the wiki's own numbers, not the game file's](./0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)
 - [0196: Spells get their own shard-addressed mirror](./0196-spells-get-their-own-shard-addressed-mirror.md)
@@ -251,6 +251,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0215: A raceKill criterion reads the wiki's own mob card, off the log's own parsed kill](./0215-a-racekill-criterion-reads-the-wiki-s-own-mob-card.md)
 - [0216: An achievement is quiet during a replayed gap](./0216-an-achievement-is-quiet-during-a-replayed-gap.md)
 - [0217: A custom zone criterion is a zone criterion](./0217-a-custom-zone-criterion-is-a-zone-criterion.md)
+- [0218: A faction hit is parsed, not only watched](./0218-a-faction-hit-is-parsed-not-only-watched.md)
 
 ## Open Questions
 

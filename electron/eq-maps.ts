@@ -15,6 +15,7 @@ import { mergeEqMaps, parseEqMap, type EqMap, type MapPoi } from "../src/shared/
 import { STOCK_SOURCE_ID, type MapSource, type MapSourceReport } from "../src/shared/map/map-sources";
 import { solveZoneNames, zoneLinkName, type ZoneLinks } from "../src/shared/map/zone-names";
 import { readJson, writeJson } from "./json-store";
+import { createAsyncCache } from "./async-cache";
 
 const log = createLogger("eq-maps");
 
@@ -315,10 +316,9 @@ export function createZoneNamer(cacheDir?: string): {
   names: (source: { dir: string; files: string[] }) => Promise<Record<string, string>>;
   clear: () => void;
 } {
-  /** One gazetteer per folder, keyed by it — a pack is named once per run, whichever you view. */
-  const cache = new Map<string, Record<string, string>>();
-  /** Solves in flight, so two windows asking at once share one scan instead of racing two. */
-  const solving = new Map<string, Promise<Record<string, string>>>();
+  /** One gazetteer per folder, keyed by it — a pack is named once per run, whichever you view, and
+   *  two windows asking for the same folder at once share one scan instead of racing two. */
+  const cache = createAsyncCache<Record<string, string>>();
   const file = cacheDir ? path.join(cacheDir, GAZETTEER_FILE) : undefined;
 
   const stored = (): StoredGazetteers => {
@@ -367,12 +367,7 @@ export function createZoneNamer(cacheDir?: string): {
 
   return {
     names(source) {
-      const cached = cache.get(source.dir);
-      if (cached) return Promise.resolve(cached);
-      const already = solving.get(source.dir);
-      if (already) return already;
-
-      const pending = (async () => {
+      return cache.get(source.dir, async () => {
         const signature = await folderSignature(source.dir);
         const kept = stored().folders[source.dir];
         if (kept?.signature === signature) {
@@ -380,19 +375,8 @@ export function createZoneNamer(cacheDir?: string): {
           return kept.names;
         }
         return solve(source, signature);
-      })()
-        .then((names) => {
-          cache.set(source.dir, names);
-          return names;
-        })
-        .finally(() => solving.delete(source.dir));
-
-      solving.set(source.dir, pending);
-      return pending;
+      });
     },
-    clear() {
-      cache.clear();
-      solving.clear();
-    },
+    clear: () => cache.clear(),
   };
 }

@@ -82,6 +82,10 @@ export const STORAGE_KEYS = {
   lootFilters: "eqlist.main.lootFilters",
   lootSort: "eqlist.main.lootSort",
   lootPriceSort: "eqlist.main.lootPriceSort",
+  /** Main window: the Faction tab's standing answers — same reasoning as the Loot tab's, above. */
+  factionView: "eqlist.main.factionView",
+  factionHitSort: "eqlist.main.factionHitSort",
+  factionStandingSort: "eqlist.main.factionStandingSort",
   /** Map window: dropped pins. */
   mapPins: "eqlist.map.pins",
   /**
