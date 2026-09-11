@@ -244,6 +244,69 @@ test("a quest's own Start Zone reaches the item whose only source is that quest"
   }
 });
 
+// ─── A quest's giver is exposed for cross-referencing against a name (ADR 0221) ─────────────────
+
+test("a quest's Quest giver is exposed by name, folded to lowercase", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-giver-"));
+  try {
+    seed(dir, { kind: "quest", title: "Shovel of Ponz", sources: [{ kind: "quest", where: "Vira", detail: "Quest giver" }] }, CURRENT);
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    await wiki.cachedItems(); // triggers the one cache walk that gathers it
+    assert.deepEqual(wiki.questGiverSource()("Vira"), ["Shovel of Ponz"]);
+    assert.deepEqual(wiki.questGiverSource()("vira"), ["Shovel of Ponz"], "folded case-insensitively");
+    assert.deepEqual(wiki.questGiverSource()("Someone Else"), [], "no match is an empty list, not undefined");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("a giver of several quests lists all of them, never picks one", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-giver-multi-"));
+  try {
+    seed(dir, { kind: "quest", title: "Shovel of Ponz", sources: [{ kind: "quest", where: "Vira", detail: "Quest giver" }] }, CURRENT);
+    seed(dir, { kind: "quest", title: "Torch of Alna", sources: [{ kind: "quest", where: "Vira", detail: "Quest giver" }] }, CURRENT);
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    await wiki.cachedItems();
+    assert.deepEqual(wiki.questGiverSource()("Vira"), ["Shovel of Ponz", "Torch of Alna"]);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("before the catalogue has ever been walked, the giver lookup is a harmless no-op", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-giver-cold-"));
+  const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+  assert.deepEqual(wiki.questGiverSource()("Vira"), []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ─── A quest's own dialogue is exposed for narrowing which quest a guess resembles (ADR 0223) ───
+
+test("a quest's own dialogue lines are exposed by title, folded to lowercase", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-dialogue-"));
+  try {
+    seed(
+      dir,
+      { kind: "quest", title: "Shovel of Ponz", dialogue: [{ npc: "Vira", text: "Well done, adventurer." }] },
+      CURRENT,
+    );
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    await wiki.cachedItems();
+    assert.deepEqual(wiki.questDialogueSource()("Shovel of Ponz"), [{ npc: "Vira", text: "Well done, adventurer." }]);
+    assert.deepEqual(wiki.questDialogueSource()("shovel of ponz"), [{ npc: "Vira", text: "Well done, adventurer." }]);
+    assert.deepEqual(wiki.questDialogueSource()("Some Other Quest"), []);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("before the catalogue has ever been walked, the dialogue lookup is a harmless no-op too", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-dialogue-cold-"));
+  const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+  assert.deepEqual(wiki.questDialogueSource()("Shovel of Ponz"), []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a "Tests" quest with no page data at all still places its item, off the title alone', async () => {
   // The real gap this exists for: eqlwiki's per-class armor "Tests" quests have no `questTopTable`,
   // so they cache as empty pages — no card, no sources, nothing to cross-reference. Seeded here as

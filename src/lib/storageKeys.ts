@@ -86,6 +86,10 @@ export const STORAGE_KEYS = {
   factionView: "eqlist.main.factionView",
   factionHitSort: "eqlist.main.factionHitSort",
   factionStandingSort: "eqlist.main.factionStandingSort",
+  /** Main window: which races the reader wants a toast for when one of their required factions moves
+   *  (`RaceUnlockAlerts`). Opt-in and empty by default — same reasoning as `mapHuntPins`: this is a
+   *  standing "tell me about these" decision, not a per-session filter. */
+  watchedRaceUnlocks: "eqlist.main.watchedRaceUnlocks",
   /** Map window: dropped pins. */
   mapPins: "eqlist.map.pins",
   /**

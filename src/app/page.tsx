@@ -33,6 +33,7 @@ import TabBar, { type TabItem } from "./components/TabBar";
 import PeersPanel from "./components/PeersPanel";
 import PeerOfferToasts from "./components/PeerOfferToasts";
 import PeerVersionToast from "./components/PeerVersionToast";
+import RaceUnlockAlerts from "./components/RaceUnlockAlerts";
 import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -240,6 +241,8 @@ function ControlWindow() {
       {/* Says once, if ever, that this build is behind the room — and points at the tab where the
           rows say which peers it is behind. */}
       <PeerVersionToast onView={viewPeers} />
+      {/* Opt-in per race on the Faction tab's Race Unlocks view — silent until a reader asks. */}
+      <RaceUnlockAlerts />
       {/* Beep only — the banner + flash live in the dedicated click-through overlay window
           (/alert), which floats over the game. This window is the always-alive one that can
           reliably play the sound. */}

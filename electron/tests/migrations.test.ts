@@ -84,7 +84,7 @@ test("a kill the log can place gains the zone the log states", () => {
   );
   // The point of the repair: an unplaced kill counts towards nothing at all.
   assert.equal(observeMobs(stored.kills).length, 2);
-  assert.equal(stored.schema, 2, "stamped, so the logs aren't re-read every launch");
+  assert.equal(stored.schema, 3, "stamped, so the logs aren't re-read every launch");
 });
 
 test("a zone the record already has is never rewritten", () => {
@@ -96,6 +96,45 @@ test("a zone the record already has is never rewritten", () => {
 
   runMigrations(userData, logs);
   assert.equal(readStore(userData).kills[0].zone, "Blackburrow 3 (Fused)");
+});
+
+test("a zone confirmed to be a restriction notice, not a place, is corrected like a gap", () => {
+  // "You have entered an area where levitation effects do not function." matches the same sentence
+  // as a real arrival and, before `classifyZoneLine` existed, was stored as if it were one. Unlike an
+  // ordinary recorded zone, this one is fair game: it was never a place to begin with (ADR 0083 is
+  // about not overwriting one true fact with our own reading of it, not about leaving a parsing
+  // defect in place).
+  const { userData, logs } = dirs();
+  writeLog(logs);
+  writeStore(userData, [kill(21, "20:05:00", "gnoll pup", "an area where levitation effects do not function")]);
+
+  runMigrations(userData, logs);
+  assert.equal(readStore(userData).kills[0].zone, "Blackburrow", "re-derived from the log, same as a gap");
+});
+
+test("a confirmed-fake zone the log can't re-derive is cleared rather than left lying", () => {
+  const { userData, logs } = dirs();
+  writeLog(logs);
+  // Before any zone line in the log, so nothing can say where it really happened.
+  writeStore(userData, [kill(21, "20:00:30", "a bat", "an area where levitation effects do not function")]);
+
+  runMigrations(userData, logs);
+  assert.equal(readStore(userData).kills[0].zone, undefined, "silence beats confidently wrong");
+});
+
+test("a retired observation filed under a confirmed-fake zone can't be split apart, so it's dropped", () => {
+  const { userData, logs } = dirs();
+  writeLog(logs);
+  writeStore(userData, [kill(21, "20:05:00", "gnoll pup", "Blackburrow")], {
+    retired: [
+      { mob: "a bat", zone: "an area where levitation effects do not function", kills: 3, drops: {}, copper: 0, lastAt: "" },
+      { mob: "a bat", zone: "Blackburrow", kills: 2, drops: {}, copper: 0, lastAt: "" },
+    ],
+  });
+
+  runMigrations(userData, logs);
+  const retired = readStore(userData).retired;
+  assert.deepEqual(retired.map((o: { zone: string }) => o.zone), ["Blackburrow"]);
 });
 
 test("a kill the log can't speak for is left unplaced", () => {
@@ -133,13 +172,13 @@ test("two characters in two zones at the same moment means no answer", () => {
 test("the file is backed up before it's repaired, and only then", () => {
   const { userData, logs } = dirs();
   writeLog(logs);
-  const backup = path.join(userData, "kill-log.pre-schema-2.json");
+  const backup = path.join(userData, "kill-log.pre-schema-3.json");
 
   // Nothing to fix → nothing to back up, and the schema is still stamped.
   writeStore(userData, [kill(21, "20:05:00", "gnoll pup", "Blackburrow")]);
   runMigrations(userData, logs);
   assert.equal(fs.existsSync(backup), false);
-  assert.equal(readStore(userData).schema, 2);
+  assert.equal(readStore(userData).schema, 3);
 
   // Something to fix → the old file is kept beside the new one.
   writeStore(userData, [kill(21, "20:05:00", "gnoll pup")]);
@@ -191,5 +230,121 @@ test("a kill log that won't parse is left exactly as it is", () => {
   runMigrations(userData, logs);
 
   assert.equal(fs.readFileSync(file, "utf8"), corrupt, "not one byte touched");
-  assert.equal(fs.existsSync(path.join(userData, "kill-log.pre-schema-2.json")), false);
+  assert.equal(fs.existsSync(path.join(userData, "kill-log.pre-schema-3.json")), false);
+});
+
+/**
+ * `repairBadZones` — the sweep for the four stores that don't carry a `schema` of their own:
+ * loot, recorded fights, personal bests and respawn timers. One shared marker
+ * (`data-repairs.json`) gates all four, since none of their own version numbers is about zones.
+ */
+const NOT_A_ZONE = "an area where levitation effects do not function";
+
+const readJsonFile = (userData: string, name: string) => JSON.parse(fs.readFileSync(path.join(userData, name), "utf8"));
+const writeJsonFile = (userData: string, name: string, value: object) =>
+  fs.writeFileSync(path.join(userData, name), JSON.stringify(value));
+
+test("a looted drop's confirmed-fake zone is corrected the same way a gap is", () => {
+  const { userData, logs } = dirs();
+  writeLog(logs);
+  writeJsonFile(userData, "loot-log.json", {
+    loot: [{ kind: "loot", fate: "kept", item: "Bone Chips", qty: 1, source: "a gnoll", logId: 1, raw: "", at: at(21, "20:05:00"), zone: NOT_A_ZONE }],
+    retired: [],
+  });
+
+  runMigrations(userData, logs);
+  assert.equal(readJsonFile(userData, "loot-log.json").loot[0].zone, "Blackburrow");
+});
+
+test("a fight's confirmed-fake zone is corrected without disturbing its figures or its id", () => {
+  const { userData, logs } = dirs();
+  writeLog(logs);
+  writeJsonFile(userData, "combat-history.json", {
+    fights: [{ id: "f1", sessionId: "s1", label: "a minotaur", zone: NOT_A_ZONE, stats: { startedAt: at(21, "21:30:00"), endedAt: at(21, "21:31:00"), totalDealt: 500 } }],
+  });
+
+  runMigrations(userData, logs);
+  const fight = readJsonFile(userData, "combat-history.json").fights[0];
+  assert.equal(fight.zone, "Steamfont Mountains 2 (Adaptive)");
+  assert.equal(fight.id, "f1", "identity is untouched — only the zone was ever wrong");
+  assert.equal(fight.stats.totalDealt, 500, "figures are untouched — this isn't a re-derive");
+});
+
+test("a personal best's confirmed-fake zone is corrected the same way", () => {
+  const { userData, logs } = dirs();
+  writeLog(logs);
+  writeJsonFile(userData, "high-scores.json", {
+    characters: { kainos: { scores: { biggestHit: { categoryId: "biggestHit", value: 900, at: at(21, "21:30:00"), zone: NOT_A_ZONE, beaten: 1 } }, streak: 0 } },
+  });
+
+  runMigrations(userData, logs);
+  const score = readJsonFile(userData, "high-scores.json").characters.kainos.scores.biggestHit;
+  assert.equal(score.zone, "Steamfont Mountains 2 (Adaptive)");
+  assert.equal(score.value, 900, "the record itself is untouched");
+});
+
+test("a respawn timer camped at a confirmed-fake place is forgotten outright, not repaired", () => {
+  // A countdown's identity *is* its place, so there's no "unplaced timer" to fall back to the way a
+  // kill or a drop can be — the whole camp is discarded.
+  const { userData, logs } = dirs();
+  writeLog(logs);
+  const key = `a slime elemental|${NOT_A_ZONE}`;
+  writeJsonFile(userData, "spawn-timers.json", {
+    stated: { [key]: 900 },
+    notify: { [key]: true },
+    lastZone: { [NOT_A_ZONE]: NOT_A_ZONE, blackburrow: "Blackburrow" },
+    timers: [{ id: `${key}#1`, key, place: NOT_A_ZONE, killedAt: at(21, "20:05:00"), watchFrom: "", dueAt: "" }],
+  });
+
+  runMigrations(userData, logs);
+  const stored = readJsonFile(userData, "spawn-timers.json");
+  assert.deepEqual(stored.stated, {}, "the camp's own settings are gone");
+  assert.deepEqual(stored.notify, {});
+  assert.deepEqual(stored.timers, []);
+  assert.deepEqual(stored.lastZone, { blackburrow: "Blackburrow" }, "a real camp alongside it is untouched");
+});
+
+test("the zone sweep runs once, across all four stores, whether or not any of them needed it", () => {
+  const { userData, logs } = dirs();
+  writeLog(logs);
+  writeJsonFile(userData, "loot-log.json", {
+    loot: [{ kind: "loot", fate: "kept", item: "Bone Chips", qty: 1, source: "a gnoll", logId: 1, raw: "", at: at(21, "20:05:00"), zone: NOT_A_ZONE }],
+    retired: [],
+  });
+
+  runMigrations(userData, logs);
+  const fixed = readJsonFile(userData, "loot-log.json");
+  assert.equal(fixed.loot[0].zone, "Blackburrow");
+  assert.equal(readJsonFile(userData, "data-repairs.json").zoneRepair, 1);
+
+  // Hand-corrupt the already-fixed row back to the fake zone: if the sweep ran again it would put
+  // "Blackburrow" straight back, so leaving it spoiled is how the test proves it didn't.
+  fixed.loot[0].zone = NOT_A_ZONE;
+  writeJsonFile(userData, "loot-log.json", fixed);
+  runMigrations(userData, logs);
+  assert.equal(readJsonFile(userData, "loot-log.json").loot[0].zone, NOT_A_ZONE, "the marker stopped a second pass");
+});
+
+test("no log folder still clears a confirmed-fake zone — there's no upside to waiting", () => {
+  const { userData } = dirs();
+  writeJsonFile(userData, "loot-log.json", {
+    loot: [{ kind: "loot", fate: "kept", item: "Bone Chips", qty: 1, source: "a gnoll", logId: 1, raw: "", at: at(21, "20:05:00"), zone: NOT_A_ZONE }],
+    retired: [],
+  });
+
+  runMigrations(userData, undefined);
+  assert.equal(readJsonFile(userData, "loot-log.json").loot[0].zone, undefined, "cleared rather than left lying");
+  assert.equal(readJsonFile(userData, "data-repairs.json").zoneRepair, 1);
+});
+
+test("nothing to repair across any of the four stores writes nothing but the marker", () => {
+  const { userData, logs } = dirs();
+  writeLog(logs);
+
+  runMigrations(userData, logs);
+  assert.equal(readJsonFile(userData, "data-repairs.json").zoneRepair, 1);
+  assert.equal(fs.existsSync(path.join(userData, "loot-log.json")), false);
+  assert.equal(fs.existsSync(path.join(userData, "combat-history.json")), false);
+  assert.equal(fs.existsSync(path.join(userData, "high-scores.json")), false);
+  assert.equal(fs.existsSync(path.join(userData, "spawn-timers.json")), false);
 });

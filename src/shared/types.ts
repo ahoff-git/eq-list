@@ -1,4 +1,5 @@
 import type { DataReportRow } from "./data-provenance";
+import type { AdminPatchResult, AdminRecord, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { KnowledgeContributor } from "./contributors";
@@ -176,6 +177,73 @@ export interface FactionEvent extends LogEventBase {
 }
 
 /**
+ * A guess at what caused a faction hit, never from anything the faction line itself states (it names
+ * no cause at all). See `src/shared/faction-cause.ts` for both correlation rules and, importantly,
+ * their **unverified** assumptions: nothing has yet confirmed how close together EQ Legends actually
+ * logs a kill (or a conversation) and the standing change it produces. Carried as a guess everywhere
+ * it's shown, never folded into `net` as though it were certain.
+ *
+ * `"dialogue"` is the looser of the two: unlike a kill (gated on ADR 0027 — only your own admitted
+ * kills are ever noted), nothing here can tell an NPC's reply from a nearby player's chat or a
+ * private tell, so `npc` may simply be whoever last spoke near you. `text` is carried so the reader
+ * can judge that for themselves rather than trusting the name alone.
+ */
+export type FactionCause =
+  | {
+      kind: "kill";
+      /** The mob, as the kill log recorded it. */
+      mob: string;
+      /** Seconds between the kill and the faction line, whichever logged first — the reader's own
+       *  way to judge the guess. See `faction-cause.ts`'s header for why this is checked both ways. */
+      gapSec: number;
+    }
+  | {
+      kind: "dialogue";
+      /** Whoever said it — an NPC, or possibly a nearby player; see this type's own doc. */
+      npc: string;
+      /** What they said, quoted, so the reader can judge whether it reads like a quest turn-in. */
+      text: string;
+      gapSec: number;
+      /**
+       * Every quest `npc` is a known giver of, when the wiki's cache says so. Narrowed to just the
+       * quest(s) whose own dialogue resembles `text`, when that comparison found one — `questsMatched`
+       * says which case this is. More than one is still ordinary even when matched (a giver's two
+       * quests can share a line), and this never claims certainty either way; it's a second guess
+       * layered on the first, not a fact. Absent (never an empty array) whenever the name isn't a known
+       * giver at all, or the wiki's quest-page cache hasn't been walked yet.
+       */
+      quests?: string[];
+      /**
+       * `true` when `quests` came from actually comparing `text` against that giver's own cached
+       * dialogue (`WikiClient.questDialogueSource()`) and finding a resemblance; `false` when no such
+       * comparison beat the threshold (or no dialogue was cached to compare against) and `quests` is
+       * simply every quest the speaker is known to give, unnarrowed. Absent alongside `quests` when
+       * there's nothing to say either way.
+       */
+      questsMatched?: boolean;
+    };
+
+/** A faction hit plus the ledger's own best guess at what caused it (`FactionCause`). */
+export interface FactionRecord extends FactionEvent {
+  causedBy?: FactionCause;
+}
+
+/**
+ * One source's share of a faction's net standing, per the ledger's correlation guesses — a mob's
+ * kills, or an NPC's (possibly a player's) conversation.
+ */
+export interface FactionCauseTally {
+  /** Which kind of guess this is, so the same name can never be confused between a mob and an NPC. */
+  kind: FactionCause["kind"];
+  /** The mob or NPC/speaker name. */
+  source: string;
+  /** Net delta attributed to it — a subset of the standing's own `net`. */
+  net: number;
+  /** How many hits were attributed to it, including floor/ceiling hits, which carry no delta. */
+  hits: number;
+}
+
+/**
  * One faction's standing, as the ledger folds it: every stated delta summed, plus how many hits of
  * each kind produced it. `net` omits the floor/ceiling hits, which state no number — counted
  * separately rather than folded into a guessed amount.
@@ -189,6 +257,9 @@ export interface FactionStanding {
   ceilings: number;
   firstAt: string;
   lastAt: string;
+  /** What the ledger's own correlation attributes the net to, biggest `|net|` first. Empty when
+   *  nothing could be correlated to a kill or a conversation — see `FactionCause`. */
+  causes: FactionCauseTally[];
 }
 
 /** A parsed "You have entered <zone>" line — tracks the player's current zone. */
@@ -1354,6 +1425,16 @@ export interface WikiPage {
    * into, so capping a single page would only lose shape where there is most of it.
    */
   links?: string[];
+  /**
+   * For a **quest** page: every "Name says, '...'" / "Name tells you, '...'" line its Walkthrough
+   * states, read generically off whichever tag happens to hold it (`<dd>`, `<p>`, `<li>`) — best-
+   * effort, since a transcription missing its opening quote or wrapping a stray tag mid-sentence
+   * simply fails to match and is silently absent, never mangled. Used to narrow a faction hit's
+   * guessed dialogue cause down to *which* of a giver's quests it resembles
+   * ([ADR 0223](../../specs/decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md)) —
+   * never treated as a verbatim transcript of what the live log actually printed.
+   */
+  dialogue?: { npc: string; text: string }[];
   /**
    * For a **quest** page shaped like a "gear-set" bundle (one giver/zone, several independently
    * turned-in armor pieces): each piece as its own quest. `components`/`rewards` above stay the flat
@@ -2964,6 +3045,9 @@ export interface EqlCapabilities {
   update: boolean;
   /** Enumerating connected monitors. */
   display: boolean;
+  /** The hidden admin panel — inspecting and directly correcting a store's own records. Electron
+   *  only: it mutates live, file-backed state a browser tab has no access to. */
+  admin: boolean;
 }
 
 /** What a host is, and what it can do — `EqlApi.platform`. Synchronous: it never changes mid-session. */
@@ -3154,14 +3238,20 @@ export interface EqlApi {
   };
   faction: {
     /**
-     * The most recent faction-standing changes (newest first), tracked in the main process so the
-     * feed is complete even when the Faction tab wasn't open. Pair with `onEvent` for live appends.
+     * The most recent faction-standing changes (newest first), each carrying the ledger's best
+     * guess at its cause (`FactionRecord.causedBy`). Tracked in the main process so the feed is
+     * complete even when the Faction tab wasn't open. Pair with `onEvent` for live appends.
      */
-    recent(limit?: number): Promise<FactionEvent[]>;
+    recent(limit?: number): Promise<FactionRecord[]>;
     /** Every faction the ledger has seen a change for, folded to one row each. */
     standings(): Promise<FactionStanding[]>;
     /** Every parsed faction-standing line, whether or not anything is watching that faction. */
-    onEvent(cb: (event: FactionEvent) => void): Unsubscribe;
+    onEvent(cb: (event: FactionRecord) => void): Unsubscribe;
+  };
+  raceUnlocks: {
+    /** Open the community cheat-sheet summary of the Race Unlocks guide in the browser — a fixed,
+     *  single URL cited beside the wiki source, not a general external-link opener. */
+    openCheatSheet(): Promise<void>;
   };
   alerts: {
     /** Fires when a watched spell begins casting (gated by Settings.castAlerts). */
@@ -3804,6 +3894,26 @@ export interface EqlApi {
     close(): void;
     /** Forget saved positions and recenter windows (for "lost" windows). */
     resetPositions(): Promise<void>;
+    /** Open the hidden admin panel window (`platform.capabilities.admin` gates whether this does
+     *  anything real). */
+    openAdmin(): void;
+  };
+  /**
+   * The hidden admin panel — inspect and directly correct a store's own records, kept apart from
+   * the ordinary tabs (`platform.capabilities.admin`). See `src/shared/admin.ts` for what a record
+   * and a field look like, and why an edit is refused rather than clamped when it doesn't match a
+   * field's own type.
+   */
+  admin: {
+    /** Every registered store, with its size and how much of it already carries the edited flag. */
+    stores(): Promise<AdminStoreInfo[]>;
+    /** One store's records, freshly read. */
+    records(storeId: string): Promise<AdminRecord[]>;
+    /** One record by id — after a patch, say, to show its new state and its grown history. */
+    record(storeId: string, id: string): Promise<AdminRecord | undefined>;
+    /** Change one field of one record. `input` is always text — see `coerceAdminValue` for how it's
+     *  matched back to the field's own type. */
+    patch(storeId: string, id: string, field: string, input: string): Promise<AdminPatchResult>;
   };
 }
 

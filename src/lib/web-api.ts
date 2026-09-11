@@ -24,6 +24,7 @@ import * as store from "@/lib/web/local-store";
 import { answerRoute, travelZone } from "@/shared/travel/route";
 import { surveyZone } from "@/shared/travel/survey";
 import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
+import { RACE_UNLOCK_CHEAT_SHEET_URL } from "@/shared/race-unlocks";
 import type {
   AchievementView,
   BuffView,
@@ -104,6 +105,7 @@ function createWebApi(): EqlApi {
         overlayPlacement: false,
         update: false,
         display: false,
+        admin: false,
       },
     },
 
@@ -189,6 +191,12 @@ function createWebApi(): EqlApi {
       recent: async () => [],
       standings: async () => [],
       onEvent: () => noop,
+    },
+
+    raceUnlocks: {
+      openCheatSheet: async () => {
+        window.open(RACE_UNLOCK_CHEAT_SHEET_URL, "_blank");
+      },
     },
 
     alerts: {
@@ -436,6 +444,15 @@ function createWebApi(): EqlApi {
       setClickThrough: () => {},
       close: () => {},
       resetPositions: async () => {},
+      openAdmin: () => {},
+    },
+    // `capabilities.admin: false` above is what actually hides the panel; these exist only so the
+    // shape is total — nothing on the web build ever calls them.
+    admin: {
+      stores: async () => [],
+      records: async () => [],
+      record: async () => undefined,
+      patch: async () => ({ ok: false, error: "not available on the web" }),
     },
   };
 }

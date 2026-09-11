@@ -53,12 +53,13 @@ import { randomUUID } from "node:crypto";
 import { createLogger } from "../src/shared/logging";
 import { createNameRegistry } from "../src/shared/name-registry";
 import { isYours } from "../src/shared/combat-parser";
-import { observeMobs, sumObservations, type MobObservation } from "../src/shared/mob-stats";
+import { observeMobs, sumObservations, withAreas, type MobObservation } from "../src/shared/mob-stats";
 import { samePlace } from "../src/shared/zones/place";
 import type { ForgetScope, CoinEvent, KillRecord, LocEvent, LootEvent } from "../src/shared/types";
 
 import { createSaver, readJson } from "./json-store";
 import { round } from "../src/shared/numbers";
+import { createArrayAdminStore, type AdminStore } from "./admin";
 const log = createLogger("kill-log");
 
 /** A fix this fresh is treated as exact — you can't have gone far. */
@@ -157,6 +158,8 @@ export interface KillLog {
    */
   clear(scope?: ForgetScope): void;
   flush(): void;
+  /** The hidden admin panel's view of these records — see `electron/admin.ts`. */
+  admin: AdminStore;
 }
 
 /** Distance in EQ units between two points (the map's own coordinate space). */
@@ -391,7 +394,8 @@ export function createKillLog(userDataDir: string): KillLog {
       // Read only to be written back — see the saver above on why dropping it was expensive.
       schema: parsed.schema,
       kills: Array.isArray(parsed.kills) ? parsed.kills : [],
-      retired: Array.isArray(parsed.retired) ? parsed.retired : [],
+      // `withAreas`: a `retired` row written before ADR 0228 has only a single `area`, not `areas`.
+      retired: Array.isArray(parsed.retired) ? parsed.retired.map(withAreas) : [],
       // `undefined` (not `[]`) when absent, so callers can tell "no file yet" from "empty on
       // purpose" — the migration below only runs once, on the former.
       seenKillKeys: Array.isArray(parsed.seenKillKeys) ? parsed.seenKillKeys : undefined,
@@ -688,6 +692,19 @@ export function createKillLog(userDataDir: string): KillLog {
     flush() {
       saver.flush();
     },
+
+    // `id`/`key`/`dropKeys`/`drops` are absent because they're identity a patch must never touch
+    // (ADR 0033's dedup depends on them, and the last is a nested list this editor doesn't attempt)
+    // — and so, for the same reason, are `mob` and `killer`: `killKeys` (above) dedupes on exactly
+    // those two plus `at`, outside this store's view, so editing either here would leave that Set
+    // keyed to a mob/killer the record no longer says, risking a real future kill misread as a
+    // duplicate. `zone` — the field this panel exists for — carries no such key anywhere.
+    admin: createArrayAdminStore("Kills", () => kills, {
+      idOf: (k) => k.id,
+      summaryOf: (k) => `${k.mob} — ${k.zone ?? "no zone"} (${k.at})`,
+      editable: ["zone", "y", "x", "confidence", "named", "killerNamed", "mine"],
+      save,
+    }),
   };
 }
 

@@ -29,6 +29,7 @@
     "zones:expansions": "node scripts/fetch-zone-expansions.mjs",
     "zones:adjacency": "node scripts/fetch-zone-adjacency.mjs",
     "zones:levels": "node scripts/fetch-zone-levels.mjs",
+    "factions:unlocks": "node scripts/fetch-race-unlocks.mjs",
     "travel:build": "npm run build:electron && node scripts/build-travel-graph.mjs",
     "travel:manual": "node scripts/apply-travel-manual.mjs",
     "web:snapshot": "npm run build:electron && node scripts/build-web-snapshot.mjs",

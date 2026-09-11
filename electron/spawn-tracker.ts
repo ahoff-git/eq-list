@@ -56,6 +56,7 @@ import type {
 import { raiseIfEnabled } from "./alert-gate";
 import { createChangeNotifier, createSaver, readJson } from "./json-store";
 import { realClearInterval, realInterval } from "./ticker";
+import { createArrayAdminStore, type AdminStore } from "./admin";
 
 const log = createLogger("spawn-tracker");
 
@@ -374,6 +375,8 @@ export interface SpawnTracker {
   flush(): void;
   /** Stop sweeping — the app is quitting. */
   dispose(): void;
+  /** The hidden admin panel's view of the running countdowns — see `electron/admin.ts`. */
+  admin: AdminStore;
 }
 
 export function createSpawnTracker({
@@ -1149,5 +1152,18 @@ export function createSpawnTracker({
 
     flush: () => saver.flush(),
     dispose: () => clearEvery(handle),
+
+    // `id`, `key`, `mob` and `place` are absent: `key` is a fold of the last two, computed once at
+    // creation, and every other keyed setting in `state` (`notify`, `styleId`, `seen`, ...) matches a
+    // timer by that `key` rather than by re-folding `mob`/`place` on every read — so editing either
+    // here would leave the countdown pointing at settings for a camp it no longer claims to be. A
+    // camp filed under a confirmed-fake place is forgotten outright for the same reason (see the
+    // zone-repair migration); this is the narrower case of a timer that's merely a little off.
+    admin: createArrayAdminStore("Respawn timers", () => state.timers, {
+      idOf: (t) => t.id,
+      summaryOf: (t) => `${t.mob} — ${t.place} (due ${t.dueAt})`,
+      editable: ["killedAt", "watchFrom", "dueAt", "seconds", "source", "samples", "spreadSeconds", "lead", "seenAt"],
+      save: changed,
+    }),
   };
 }

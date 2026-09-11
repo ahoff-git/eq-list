@@ -50,7 +50,7 @@ import type {
   WikiPage,
   WikiPageKind,
 } from "./types";
-import type { MobObservation } from "./mob-stats";
+import { withAreas, type MobArea, type MobObservation } from "./mob-stats";
 import type { SharedKill } from "./kill-filters";
 import type { BuffInstance, BuffRiseSource } from "./buff-tracking";
 import type { RespawnLearning, SpawnTimer } from "./spawn-timers";
@@ -1199,7 +1199,7 @@ function readMobObservation(raw: unknown): MobObservation | null {
       if (item && count !== undefined && count >= 0) drops[item.slice(0, MAX_TEXT)] = count;
     }
   }
-  return {
+  return withAreas({
     mob,
     zone,
     kills,
@@ -1208,16 +1208,24 @@ function readMobObservation(raw: unknown): MobObservation | null {
     // An area with no usable centre is dropped whole rather than kept with a zeroed one: a roam
     // area at `0, 0` is a claim about a real place, and a wrong one.
     area: readArea(raw.area),
+    // A peer on a build from before ADR 0228 sends only `area`; `withAreas` reconciles either shape.
+    areas: readAreas(raw.areas),
     lastAt: str(raw.lastAt),
-  };
+  });
 }
 
-function readArea(raw: unknown): MobObservation["area"] {
+function readArea(raw: unknown): MobArea | undefined {
   if (!isRecord(raw)) return undefined;
   const y = coord(raw.y);
   const x = coord(raw.x);
   if (y === undefined || x === undefined) return undefined;
   return { y, x, spread: nonNegative(raw.spread) ?? 0, samples: int(raw.samples) ?? 0 };
+}
+
+function readAreas(raw: unknown): MobArea[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const areas = raw.map(readArea).filter((a): a is MobArea => a !== undefined);
+  return areas.length ? areas : undefined;
 }
 
 function readSharedKill(raw: unknown): SharedKill | null {

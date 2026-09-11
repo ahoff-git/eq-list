@@ -166,20 +166,60 @@ everything else, so this list can stay short enough to read:
   contribution payload — the machinery from
   [ADR 0132](./decisions/0132-a-contribution-is-keyed-by-who-made-it.md) carries it unchanged.
 
-- **A faction hit is unattributed — nothing yet says which mob or quest caused it.**
-  [ADR 0218](./decisions/0218-a-faction-hit-is-parsed-not-only-watched.md) built the parser
-  (`parseFactionChange` → `FactionEvent`) and a personal ledger (`electron/faction-log.ts`, a Faction
-  tab) the real captured line unblocked — every hit you've seen, folded to a net standing per
-  faction, the same shape loot tracking has. What it deliberately left for later is the *pooled,
-  correlated* half ADR 0193 originally named: a `FactionObservation` store mirroring
-  `mob-knowledge.ts`/`contributions.ts` exactly (own `sanitize`/merge, same five rules — keyed by
-  contributor id, a report replaces that contributor's whole set, untrusted on arrival, bounded per
-  peer) so that killing a tracked faction-mob or turning in a tracked quest **credits that specific
-  hit** to the thing that caused it — real evidence of what raises/lowers a faction, alongside (and
-  able to contradict) whatever the wiki's own faction page says. No existing pipeline credits a
-  `kind: "mob"` shopping-list entry today (`store.applyLoot` explicitly excludes them), so this
-  correlator is new work, modeled on the kill-log → mob-knowledge derivation rather than on loot
-  crediting — and it builds on `faction-log.ts`'s feed rather than reading the log a second time.
+- **A faction hit's cause is a guess, unverified, and naming a quest is still a guess on top of a guess.**
+  [ADR 0218](./decisions/0218-a-faction-hit-is-parsed-not-only-watched.md) built the parser and
+  ledger; [ADR 0219](./decisions/0219-a-faction-cause-is-a-guess-from-timing.md) added a kill-based
+  guess; [ADR 0220](./decisions/0220-a-conversation-can-be-the-guessed-cause-too.md) added a
+  dialogue-based fallback for when no kill explains a hit; [ADR 0221](./decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md)
+  matches the guessed speaker's name against the wiki's own cached "Quest giver" field; [ADR 0223](./decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md)
+  compares the observed line against each of that giver's own cached quests' dialogue
+  (`fuzzyScore`) to narrow further when it can. `src/shared/faction-cause.ts` blames the most recent
+  own-kill within 3 seconds, or the most recent "Name says/tells you, '...'" line within 15 — naming
+  the specific quest when its own dialogue matched, or every quest that speaker is known to give when
+  nothing narrowed it — shown in the Faction tab dim, italic and captioned as a guess rather than a
+  fact. Real gaps remain:
+
+  1. **The kill window's *direction* has now been checked against a real log — its *width*, and the
+     other two thresholds, still haven't.** [ADR 0224](./decisions/0224-a-kill-can-log-after-the-faction-line-it-caused.md)
+     cross-referenced a real player's `faction-log.json` against their `kill-log.json` and found this
+     server logs a kill's faction/XP/coin consequences *before* its own "You have slain" confirmation
+     about as often as after — checking only backward, as `faction-cause.ts` did before that survey,
+     missed 83% of the real kills behind an otherwise-uncaused hit. Both callers now hold a faction
+     event for `CORRELATION_WINDOW_SEC` before resolving it, and the kill check itself is symmetric.
+     Still unmeasured: whether **3 seconds** is the right width now that direction no longer hides the
+     true gap, and `DIALOGUE_MATCH_MIN_SCORE` (0.5) is still a guess about how well two
+     independently-worded transcripts of the same line should score, not a measurement — `fuzzyScore`
+     was tuned for short item-name queries, not sentence-length prose. Re-running the same
+     cross-reference against a *post*-ADR-0224 evening would answer both: how much of the remaining
+     173-of-1079 truly-uncaused hits are turn-ins the dialogue signal should be catching but isn't, and
+     whether 3 seconds is now too wide (false positives at a busy multi-mob pull) or still fine.
+  2. **The dialogue guess can't tell an NPC from a nearby player**, and never will without some kind
+     of NPC-name registry this app doesn't have (unlike a mob, which `mob-knowledge.ts` has learned
+     from kills). In principle a friend's private tell landing inside the window reads exactly like a
+     quest NPC's reply, and — doubly unlikely — could even carry a wrongly-guessed quest title if that
+     friend's name happens to collide with a real giver's *and* the wording happens to score well
+     against one of their quests. In practice this needs several independent coincidences to line up
+     at once (a faction hit with no kill nearby — already the minority — plus unrelated chat landing in
+     a narrow window, with nothing else said in it), so it's a real but low-odds edge case rather than
+     something worth narrowing the window against on its own; accepted as a known, stated limitation
+     (ADR 0220) rather than solved. Worth re-checking if a real log ever shows it actually happening.
+  3. **Coverage depends on what's already cached**, twice over now: `questGiverSource()` only knows
+     givers from quest pages this install has fetched, and `questDialogueSource()` only has lines for
+     quests whose page happened to have dialogue this app's extractor could read at all — there's no
+     proactive crawl to improve either, on purpose (ADR 0221, ADR 0223).
+
+  Once (1) is settled, the **pooled** half ADR 0193 originally asked for is still open on top of it: a
+  `FactionObservation` store mirroring `mob-knowledge.ts`/`contributions.ts` exactly (own
+  `sanitize`/merge, same five rules — keyed by contributor id, a report replaces that contributor's
+  whole set, untrusted on arrival, bounded per peer) so a *verified* cause becomes shared evidence of
+  what raises/lowers a faction, alongside (and able to contradict) whatever the wiki's own faction
+  page says. Sharing a guess before it's checked would just be spreading the guess further, so this
+  waits on (1) rather than being built alongside it.
+
+  Separately: an **unsourced coin** (`kill-log.ts`'s `noteCoin` returning `false` — a real, ordinary
+  case, ADR 0047) now gets the same guess, but only as a debug-log line (`main.ts`'s `onCoin`
+  handler) — there is no ledger that tracks *why* you got money the way `faction-log.ts` tracks a
+  faction's standing. Worth a real tab only if someone actually wants one; nothing forces it.
 
 - **Nothing yet shows the pooled provenance it now carries.** `src/shared/pooling.ts` can say whose a
   figure mostly is, split a pooled drop rate back into your evidence and each contributor's, and name
@@ -189,6 +229,21 @@ everything else, so this list can stay short enough to read:
   is what makes ADR 0132's "reported, not resolved" visible rather than merely true. `mobs.contributors()`
   is likewise wired end to end with nothing calling it — it's what a "who have I pooled with, and
   forget this one" list would be built on (`forgetPeers(id)` already takes an id).
+
+- **A mob with several known locations still only ever gets one pin on the map.** [ADR 0228](./decisions/0228-a-mob-can-have-more-than-one-known-location.md)
+  taught `mob-stats.ts` to keep every distinct camp (`MobArea[]`, clustered rather than blended) instead
+  of one bad average, and the three "where does this live" lists (the map panel, a mob's own wiki page,
+  an item's "who drops this") now show all of them. The map canvas itself doesn't yet: `MobKnowledge.tsx`'s
+  ± button still pins only the best-supported one (`onMarkMob`/`markMobArea` in `map/page.tsx`), and
+  `hunt-pins.ts`'s `huntPins()` still asks `mobPlace()` for exactly one ranked position per hunted mob.
+  Teaching either to drop several pins for one mob is a natural follow-up — deliberately deferred rather
+  than folded into ADR 0228, since it would have pulled `mob-place.ts`'s *source*-ranking logic (mine vs.
+  peers' vs. the wiki) into the same pass as *location* clustering, two different questions this app is
+  careful to keep apart.
+  Also unmeasured: `LOCATION_CLUSTER_UNITS` (600 EQ units, the distance under which two positions are
+  assumed to be the same camp) is a single global guess standing in for something that genuinely varies
+  by zone size — the one number in ADR 0228 with the least real evidence behind it, same situation
+  `CORRELATION_WINDOW_SEC` was in before a real log corrected it (ADR 0224).
 
 - **A replayed gap is read and parsed in one tick.** Startup no longer stalls on the maps
   ([ADR 0072](./decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md)), but the other thing

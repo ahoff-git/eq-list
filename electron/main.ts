@@ -31,6 +31,7 @@ import { createHpEstimate } from "./hp-estimate";
 import { createKillLog } from "./kill-log";
 import { createLootLog } from "./loot-log";
 import { createFactionLog } from "./faction-log";
+import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction-cause";
 import { lootRecord } from "../src/shared/loot-feed";
 import { createUpdateChecker } from "./update-check";
 import { createMobKnowledge } from "./mob-knowledge";
@@ -39,7 +40,7 @@ import { readIdentity } from "./identity";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
 import { registerIpc } from "./ipc";
-import { createMainWindow, createMapWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, setOverlayProvider, showInSearch } from "./windows";
+import { createMainWindow, createMapWindow, createAdminWindow, createAlertWindow, closeAlertWindow, getAlertWindow, getMainWindow, getMapWindow, neutralizeOverlays, setOverlayProvider, showInSearch } from "./windows";
 import { resetPositions, beginQuit, wasMapOpen } from "./window-state";
 import { CH } from "../src/shared/ipc-channels";
 import { OVERLAY_HOTKEY, LOOKUP_HOTKEY } from "../src/shared/constants";
@@ -54,7 +55,7 @@ import { createAchievementTracker } from "./achievement-tracker";
 import { createBuffTracker } from "./buff-tracker";
 import { createGameClockTracker } from "./game-clock-tracker";
 import { createDamageOverlayTracker } from "./damage-overlay-tracker";
-import type { Settings, AppInfo, LocEvent, CastAlertEvent } from "../src/shared/types";
+import type { Settings, AppInfo, LocEvent, CastAlertEvent, FactionEvent } from "../src/shared/types";
 
 const log = createLogger("main");
 
@@ -262,6 +263,39 @@ if (!app.requestSingleInstanceLock()) {
   const killLog = createKillLog(userData);
   const lootLog = createLootLog(userData);
   const factionLog = createFactionLog(userData);
+  // A guess at what caused a hit, from the kill the log wrote just before it, or (failing that) from
+  // NPC dialogue — narrowed, when the speaker matches a cached quest's giver, to whichever of that
+  // giver's quests the line itself resembles — see the module header for why every part of this is an
+  // inference and not a parsed fact (ADR 0219, ADR 0220, ADR 0221, ADR 0223). Both wiki lookups are
+  // asked fresh each time rather than captured once: the wiki's own cross-reference is rebuilt whenever
+  // the catalogue is, and a stale snapshot would silently stop matching anything fetched afterward.
+  const factionCause = createFactionCauseTracker({
+    questGiver: (npc) => wiki.questGiverSource()(npc),
+    questDialogue: (quest) => wiki.questDialogueSource()(quest),
+  });
+  /**
+   * Faction hits awaiting resolution, held for `CORRELATION_WINDOW_SEC` before the ledger ever sees
+   * them — a real log showed this server logs a kill's faction/XP/coin lines *before* its own "You
+   * have slain" confirmation about as often as after, so resolving the instant the line is read
+   * missed the clear majority of real kills (`faction-cause.ts`'s header, ADR 0224). Keyed by the
+   * timer itself so `flushPendingFaction` can resolve everything still waiting on a quit, rather than
+   * lose the last few seconds of hits the log position already moved past.
+   */
+  const pendingFaction = new Map<ReturnType<typeof setTimeout>, FactionEvent>();
+  function resolvePendingFaction(timer: ReturnType<typeof setTimeout>): void {
+    const event = pendingFaction.get(timer);
+    if (!event) return;
+    pendingFaction.delete(timer);
+    const record = factionCause.resolve(event);
+    factionLog.add(record);
+    broadcast(CH.factionEvent, record);
+  }
+  function flushPendingFaction(): void {
+    for (const timer of [...pendingFaction.keys()]) {
+      clearTimeout(timer);
+      resolvePendingFaction(timer);
+    }
+  }
   const updates = createUpdateChecker(userData, app.getVersion());
   const mobs = createMobKnowledge(userData, killLog);
   // Kept across sessions rather than held by whichever window happens to be open, so a room teaches
@@ -541,9 +575,10 @@ if (!app.requestSingleInstanceLock()) {
   });
   // The faction ledger: a standing change, live or eaten, is always-on the same way the loot feed
   // is (ADR 0055) — kept whether or not the Faction tab is open, so it's complete whenever it is.
+  // Held in `pendingFaction` rather than resolved on the spot: see that map's own comment for why.
   watcher.onFaction((event) => {
-    factionLog.add(event);
-    broadcast(CH.factionEvent, event);
+    const timer = setTimeout(() => resolvePendingFaction(timer), CORRELATION_WINDOW_SEC * 1000);
+    pendingFaction.set(timer, event);
   });
   // Considering or hailing a mob you're timing counts as seeing it up — free evidence from what a
   // camper does anyway, through exactly the path the "It's up" button uses (ADR 0097).
@@ -566,6 +601,9 @@ if (!app.requestSingleInstanceLock()) {
       // A mob-goal's kills go through the same "was this actually yours" gate as the streak, rather
       // than growing a second opinion about whose kill it was.
       goals.noteKill(event);
+      // Remembered as a possible cause for the *next* faction hit, on the same gate — a bystander's
+      // kill at a busy camp must not get blamed for a change that had nothing to do with it.
+      factionCause.noteKill(event.target, event.at);
     }
   });
   // Coin off a corpse goes to both ledgers it belongs in: the session's money (for a rate) and
@@ -573,7 +611,16 @@ if (!app.requestSingleInstanceLock()) {
   // by both — the loot line above already priced it, and counting it here would double it.
   watcher.onCoin((event) => {
     combat.recordCoin(event);
-    if (killLog.noteCoin(event)) killsChanged();
+    if (killLog.noteCoin(event)) {
+      killsChanged();
+    } else if (event.from === "corpse" && event.copper > 0) {
+      // Genuinely unattached coin (or a replayed duplicate) — the same kill/dialogue guess a
+      // faction hit gets (ADR 0219, ADR 0220), but with nowhere to show it: no ledger tracks *why*
+      // you got money the way `faction-log.ts` tracks a faction's standing, so this is debug-log
+      // visibility only.
+      const cause = factionCause.explainUnsourcedCoin(event.at);
+      if (cause) log.debug("unattributed coin, possible cause", cause);
+    }
   });
   // A `/time` response — live, or recovered from a catch-up tail the same way zone/loc are (ADR 0043:
   // state, not news). Either way it's just the hour the log stated and the moment it said so.
@@ -637,6 +684,10 @@ if (!app.requestSingleInstanceLock()) {
     // game's own string file. Cheap to offer every line: the lexicon's first move is a map lookup on
     // the line's last word.
     buffs.line(line);
+    // A line of NPC (or, indistinguishably, nearby player) dialogue — remembered as a possible
+    // faction cause for when no kill explains a hit (ADR 0220). Cheap: one regex test, one slot
+    // overwritten on a match, no history kept.
+    factionCause.noteLine(line);
   });
   /**
    * A fight ends in quiet, and quiet logs nothing — so without this the last pull of a camp was
@@ -755,6 +806,7 @@ if (!app.requestSingleInstanceLock()) {
           for (const w of wins) w.webContents.openDevTools({ mode: "detach" });
         },
       },
+      { label: "Admin panel...", click: () => createAdminWindow() },
       {
         label: "Reset window position",
         click: () => {
@@ -862,6 +914,7 @@ if (!app.requestSingleInstanceLock()) {
     hp.flush();
     killLog.flush();
     lootLog.flush();
+    flushPendingFaction();
     factionLog.flush();
     scores.flush();
     mobs.flush();

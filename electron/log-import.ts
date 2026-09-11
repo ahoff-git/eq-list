@@ -29,16 +29,21 @@
  * described.
  */
 import fs from "node:fs";
-import { isCombatEvent, parseLine } from "../src/shared/parse-line";
-import { characterFromLogFile } from "../src/shared/log-parser";
+import { isCombatEvent, parseSplitLine } from "../src/shared/parse-line";
+import { characterFromLogFile, splitLine } from "../src/shared/log-parser";
 import { lootRecord } from "../src/shared/loot-feed";
+import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction-cause";
+import { classifyZoneLine } from "../src/shared/zones/place";
+import { createLogger } from "../src/shared/logging";
 import { createCombatStats } from "./combat-stats";
 import { loginSession } from "./combat-history";
-import type { DerivedFight, LogImportResult as SharedImportResult } from "../src/shared/types";
+import type { DerivedFight, FactionEvent, LogImportResult as SharedImportResult } from "../src/shared/types";
 import type { CombatHistory } from "./combat-history";
 import type { FactionLog } from "./faction-log";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
+
+const log = createLogger("log-import");
 
 /**
  * What one helping came to. The **same shape the renderer reads**, minus the file name the IPC adds
@@ -119,6 +124,30 @@ export function importLog(
   // watched one — including its spells, its deaths and its per-mob rates.
   const combat = history ? createCombatStats() : null;
   /**
+   * The same kill-proximity guess `main.ts` makes live (`faction-cause.ts`), replayed here so a
+   * digested log's faction hits carry the same attribution a watched one would have gotten —
+   * without it, the Faction tab would read differently depending on whether the app happened to be
+   * running for a given evening.
+   */
+  const factionCause = createFactionCauseTracker();
+  /**
+   * Faction hits awaiting resolution, the same reason and window `main.ts` holds a live one for
+   * (`faction-cause.ts`'s header, ADR 0224) — this server logs a kill's faction/XP/coin lines
+   * before its own confirmation about as often as after, so resolving the instant the line is read
+   * missed the clear majority of real kills. Oldest first, so only the front need ever be checked:
+   * lines arrive in log order, and nothing behind it can be ready before it is.
+   */
+  const pendingFaction: FactionEvent[] = [];
+  /** Resolve and file every pending hit whose window has fully closed as of `atMs` — nothing later
+   *  can still explain it either way. */
+  function flushReadyFaction(atMs: number): void {
+    while (pendingFaction.length && atMs - Date.parse(pendingFaction[0].at) > CORRELATION_WINDOW_SEC * 1000) {
+      const event = pendingFaction.shift()!;
+      const record = factionCause.resolve(event);
+      if (factionLog?.add(record) === "added") factionHits++;
+    }
+  }
+  /**
    * The sitting each fight falls in, from the log's own login lines. Left **undefined** until one
    * turns up: a fight before the file's first login belongs to whatever sitting was already in
    * progress, and only the history knows what that was called (see `CombatHistory.rederive`).
@@ -139,18 +168,36 @@ export function importLog(
   for (const raw of lines) {
     // Negative ids mark these as imported, so a KillRecord.logId can't collide with a line
     // number from this run's live tailing.
-    const event = parseLine(raw, --logId);
+    const line = splitLine(raw, --logId);
+    if (!line) continue;
+    // Split first and offered to the dialogue watcher regardless of whether anything below claims
+    // it — a line of NPC dialogue matches no event kind at all, the same reason `main.ts`'s live
+    // watcher offers every split line to `factionCause.noteLine` on its own `onLine` channel.
+    factionCause.noteLine(line);
+    const event = parseSplitLine(line);
     if (!event) continue;
     const at = Date.parse(event.at);
     if (at) {
       if (!firstAt) firstAt = at;
       lastAt = at;
+      flushReadyFaction(at);
     }
     switch (event.kind) {
-      case "zone":
-        zone = event.zone;
-        combat?.setZone(event.zone);
+      case "zone": {
+        // Same reuse `main.ts`'s live watcher has to guard against (see `classifyZoneLine`): the
+        // client prints a restriction notice ("You have entered an area where levitation effects do
+        // not function.") in the same sentence shape as a real arrival. A digest that trusted it
+        // would file every kill, drop and fight since as happening in a place that doesn't exist —
+        // and unlike the live path, this replays whole evenings at once, so it's worth knowing about.
+        const verdict = classifyZoneLine(event.zone);
+        if (verdict === "known") {
+          zone = event.zone;
+          combat?.setZone(event.zone);
+        } else if (verdict === "unresolved") {
+          log.debug("zone line didn't resolve to a known place, staying put", { raw: event.zone, file });
+        }
         break;
+      }
       case "loc":
         killLog.noteLoc(event, zone);
         break;
@@ -173,6 +220,11 @@ export function importLog(
       case "kill":
         if (killLog.record(event.target, event.killer, zone, event.at, event.logId, event.named, event.killerNamed)) kills++;
         combat?.recordKill(event.target, event.at);
+        // The same "was this actually yours" gate `main.ts` uses before remembering a kill as a
+        // possible faction cause — a bystander's kill at a busy camp mustn't be blamed for a hit.
+        // Silently skipped when there's no `combat` to ask (no `history` was handed over): a caller
+        // that didn't want fight tracking doesn't get faction-cause guesses either.
+        if (combat?.countsKill(event.target)) factionCause.noteKill(event.target, event.at);
         break;
       case "coin":
         // Coin off a corpse belongs to the mob that paid it, and that's learned knowledge like a
@@ -181,9 +233,11 @@ export function importLog(
         combat?.recordCoin(event);
         break;
       case "faction":
-        // Keyed by its own line the same way a drop is (ADR 0033), so a log eaten twice — or eaten
-        // after being watched live — reports zero rather than doubling a faction's net standing.
-        if (factionLog?.add(event) === "added") factionHits++;
+        // Not resolved on the spot — held in `pendingFaction` until its window closes, same as the
+        // live path. Keyed by its own line the same way a drop is (ADR 0033) once it is filed, so a
+        // log eaten twice — or eaten after being watched live — reports zero rather than doubling a
+        // faction's net standing.
+        pendingFaction.push(event);
         break;
       case "xp":
         combat?.recordXp(event);
@@ -205,6 +259,12 @@ export function importLog(
     }
   }
   combat?.flush(); // the log ended mid-sitting; its last fight is still a fight
+  // The file has ended — nothing left to check a still-pending hit against either direction, so
+  // resolve every one of them now rather than lose it.
+  for (const event of pendingFaction) {
+    const record = factionCause.resolve(event);
+    if (factionLog?.add(record) === "added") factionHits++;
+  }
   // One handover, at the end: the whole file's fights, against the span the file covers.
   const outcome =
     history && firstAt

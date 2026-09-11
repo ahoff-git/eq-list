@@ -304,6 +304,23 @@ export interface WikiClient {
    */
   questZoneSource(): (questTitle: string) => string | undefined;
   /**
+   * Every quest a name is a "Quest giver" of (folded to lowercase; a giver commonly gives more than
+   * one, so this is a list, never a single arbitrary pick) — the cache walk's third cross-reference,
+   * gathered the same pass as `levelSources`/`questZoneSource` (ADR 0163). Consumed by
+   * `faction-cause.ts` to name the quests possibly behind a guessed dialogue cause, when the speaker
+   * matches a giver this install happens to have cached
+   * ([ADR 0221](../../specs/decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md)). A no-op
+   * until the catalogue has been built at least once, the same as the other two.
+   */
+  questGiverSource(): (npc: string) => string[];
+  /**
+   * A quest's own dialogue lines, by its title (folded to lowercase) — the fourth cross-reference from
+   * the same walk, used to narrow which of a giver's (possibly several) quests a guessed dialogue
+   * cause actually resembles ([ADR 0223](../../specs/decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md)).
+   * A no-op until the catalogue has been built at least once, the same as the other three.
+   */
+  questDialogueSource(): (questTitle: string) => { npc: string; text: string }[];
+  /**
    * The item catalogue as **rows a window can search**, which is the shape the Items tab wants and
    * the only shape it wants.
    *
@@ -1455,6 +1472,10 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   let levelEvidence: LevelSources = { mob: () => undefined, quest: () => undefined };
   /** The counterpart to `levelEvidence` — see `questZoneSource`. */
   let questZoneEvidence: (questTitle: string) => string | undefined = () => undefined;
+  /** The counterpart to `levelEvidence`/`questZoneEvidence` — see `questGiverSource`. */
+  let questGiverEvidence: (npc: string) => string[] = () => [];
+  /** The counterpart to `questGiverEvidence` — see `questDialogueSource`. */
+  let questDialogueEvidence: (questTitle: string) => { npc: string; text: string }[] = () => [];
   /** The built catalogue **as JSON text** — see `readPack` for why text rather than objects. */
   let rowCache: string | null = null;
   let rowBuilding: Promise<string> | null = null;
@@ -1585,6 +1606,11 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     const mobLevels = new Map<string, { min: number; max: number }>();
     const questLevels = new Map<string, { min: number; max: number }>();
     const questZones = new Map<string, string>();
+    /** Giver name (folded) → every quest title seen naming them as giver — see `questGiverSource`
+     *  (ADR 0221). A list because one giver commonly hands out several quests. */
+    const questGivers = new Map<string, string[]>();
+    /** Quest title (folded) → that quest's own dialogue lines — see `questDialogueSource` (ADR 0223). */
+    const questDialogue = new Map<string, { npc: string; text: string }[]>();
     // 256 bucket reads rather than 11,523, and the store breathes between them so main is never
     // blocked for more than a couple of milliseconds at a time (see `page-store.ts`).
     await store.each((hit) => {
@@ -1626,6 +1652,19 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
         // "Start zone" row (`parseQuestInfo`).
         const startZone = page.sources.find((s) => s.detail === "Start zone")?.where;
         if (startZone) questZones.set(page.title.trim().toLowerCase(), startZone);
+        // Same row's other cross-reference: a faction hit's guessed dialogue cause names a speaker,
+        // and this is what lets that speaker also name the quest(s) they give (ADR 0221).
+        const giver = page.sources.find((s) => s.detail === "Quest giver")?.where;
+        if (giver) {
+          const key = giver.trim().toLowerCase();
+          const held = questGivers.get(key);
+          if (held) held.push(page.title);
+          else questGivers.set(key, [page.title]);
+        }
+        // A giver's own dialogue, by the quest it belongs to — lets a guessed dialogue cause be
+        // narrowed to *which* of that giver's quests it resembles, not just that they're a giver at
+        // all (ADR 0223).
+        if (page.dialogue?.length) questDialogue.set(page.title.trim().toLowerCase(), page.dialogue);
         // The shape, gathered on the walk that was happening anyway — the links of a zone or quest
         // page are how a title no category files as an item is found at all (ADR 0180).
         for (const link of page.links ?? []) shapeLinks.add(link);
@@ -1701,6 +1740,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     };
     levelEvidence = lookup;
     questZoneEvidence = (name: string) => questZones.get(name.trim().toLowerCase());
+    questGiverEvidence = (name: string) => questGivers.get(name.trim().toLowerCase()) ?? [];
+    questDialogueEvidence = (name: string) => questDialogue.get(name.trim().toLowerCase()) ?? [];
     let placed = 0;
     for (const item of items) {
       // Levels are worked out by `itemRows`, where the card is already parsed — see `ItemRow.level`.
@@ -1709,7 +1750,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     }
     log.debug(
       "catalogue:", items.length, "items;",
-      mobLevels.size, "mob levels,", questLevels.size, "quest levels,", questZones.size, "quest zones;",
+      mobLevels.size, "mob levels,", questLevels.size, "quest levels,", questZones.size, "quest zones,",
+      questGivers.size, "quest givers,", questDialogue.size, "quests with dialogue;",
       placed, "items placed", `in ${Date.now() - startedAt}ms`,
     );
     spells.sort((a, b) => a.title.localeCompare(b.title));
@@ -2093,6 +2135,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     },
     levelSources: () => levelEvidence,
     questZoneSource: () => questZoneEvidence,
+    questGiverSource: () => questGiverEvidence,
+    questDialogueSource: () => questDialogueEvidence,
 
     catalogueJson,
     spellCatalogueJson,

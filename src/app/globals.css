@@ -1596,6 +1596,53 @@ button {
 /* The camp is the readable half; the column clips rather than pushing the item name out of the row. */
 .loot-table .lt-zone { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; }
 
+/* A faction hit's guessed cause (ADR 0219) — dim and italic on purpose, so it never reads with the
+   same confidence as a fact the game actually stated. `.fc-guess` is just the ≈ glyph, quieter
+   still, the same "this mark is not the value" role `.mk-loc`'s ± plays for a roam centre. */
+.fc-cause { font-style: italic; color: var(--text-dim); cursor: help; }
+.fc-guess { color: var(--text-dim); }
+
+/* A Standings row opens to its full cause breakdown — same drill-down shape as `.spell-table`'s. */
+.faction-table .standing-row.expandable { cursor: pointer; }
+.faction-table .standing-row.expandable:hover { background: var(--bg-raised); }
+.faction-table .standing-row .caret { color: var(--text-dim); font-size: 10px; }
+.faction-table .standing-detail td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.cause-breakdown { display: flex; flex-direction: column; gap: 6px; }
+/* Kills and quests are two different kinds of guess (ADR 0219 vs. 0220/0221) — kept in their own
+   independently-openable group rather than one merged list, closed by default for the same reason
+   `.ru-race` is: a standing built up over months could otherwise open to a wall of one-off names. */
+.cause-group summary { cursor: pointer; font-size: 12px; color: var(--text-dim); list-style: none; }
+.cause-group summary::-webkit-details-marker { display: none; }
+.cause-list { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; font-size: 12px; }
+.cause-item { white-space: nowrap; }
+/* A repeated cause is a corroborated one (`causeConfidence`) — same ladder and same colors as
+   `.md-rate`'s sample-size ladder: a single hit stays plain `.muted`, and only `fair`/`solid` step up
+   to `--accent` as the same name keeps landing beside the same faction. */
+.cause-item.fair .muted.small { color: var(--accent); }
+.cause-item.solid .muted.small { color: var(--accent); font-weight: 600; }
+
+/* ── Race Unlocks (`RaceUnlocksView`) ──────────────────────────── */
+/* One `<details>` per race — no state of its own to manage, and closed by default since the guide's
+   full method for all sixteen races at once is a wall of text nobody wants on first open. */
+.ru-list { display: flex; flex-direction: column; gap: 4px; }
+.ru-race { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+.ru-summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.ru-summary::-webkit-details-marker { display: none; }
+.ru-race-name { flex: none; }
+.ru-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.ru-factions { display: flex; flex-direction: column; gap: 4px; }
+/* Same bar shape as `.goal-row`'s `.gr-bar`/`.gr-fill` — a standing progress-toward-a-target, one
+   level up from a goal's own. */
+.ru-faction { display: grid; grid-template-columns: 14ch 1fr 9ch; align-items: center; gap: 8px; font-size: 12px; }
+.ru-faction-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ru-bar { height: 5px; border-radius: 2px; background: var(--bg-input); overflow: hidden; }
+.ru-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+.ru-progress { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-dim); text-align: right; }
+.ru-method { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.ru-steps { margin: 0; padding-left: 20px; }
+.ru-group { display: flex; flex-direction: column; gap: 2px; }
+.ru-hits { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
 /* ── where a logged thing happened (`ZoneTag`) ────────────────── */
 /* One appearance everywhere: the place in the running text colour, the difficulty trailing it as a
    quieter token. Inline-flex so the pair never breaks across a line mid-tag (ADR 0136). */
@@ -2517,6 +2564,13 @@ kbd {
 /* A roam centre, read as a coordinate: tabular so a column of them lines up, and the ± sits quieter
    than the numbers you'd actually type into the game. */
 .mk-loc { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* A mob with more than one known location (`RoamLinks`, ADR 0228) colors each one's ± by
+   `areaConfidence` — the same `.md-rate` palette a drop rate uses, minus the table-cell alignment
+   that only makes sense beside a percentage, since this sits inline after a coordinate instead. */
+.mk-loc .md-rate.fair { color: var(--accent); }
+.mk-loc .md-rate.solid { color: var(--accent); font-weight: 600; }
+.roam-links { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; }
+.mob-locations { margin-top: 4px; }
 
 /* kills panel: the heatmap's filters and the rows behind it */
 .kill-list {

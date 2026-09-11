@@ -680,6 +680,66 @@ test("the migration's schema survives a save, so the logs aren't re-read every l
   assert.equal(stored.kills?.length, 1);
 });
 
+test("a `retired` observation written before ADR 0228 (only `area`, no `areas`) still reads fine", () => {
+  const dir = tempDir();
+  const file = path.join(dir, "kill-log.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      schema: 2,
+      kills: [],
+      retired: [
+        {
+          mob: "a gnoll",
+          zone: ZONE,
+          kills: 5,
+          drops: {},
+          area: { y: 10, x: 20, spread: 3, samples: 5 },
+          lastAt: "2026-07-29T00:00:00.000Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const k = createKillLog(dir);
+  const obs = k.observations().find((o) => o.mob === "a gnoll");
+  assert.equal(obs?.kills, 5, "the retired tally itself is untouched");
+  assert.deepEqual(obs?.areas, [{ y: 10, x: 20, spread: 3, samples: 5 }], "normalized up to today's shape");
+  assert.deepEqual(obs?.area, { y: 10, x: 20, spread: 3, samples: 5 }, "and `area` still reads the same as before");
+});
+
+test("an old blended average is kept as-is, and a genuinely new camp shows up beside it — no reset needed", () => {
+  // The realistic case: months of play retired long ago under the old single-average algorithm,
+  // sitting at some centroid that may or may not still mean anything. A `retired` observation like
+  // this can never be re-split — the raw positions behind it are gone (ADR 0228) — but it doesn't
+  // have to be: `observations()` folds it together with whatever's freshly recorded *live*, and a
+  // fresh kill far enough away simply becomes its own row on the very next read.
+  const dir = tempDir();
+  const file = path.join(dir, "kill-log.json");
+  const oldAverage = { y: 0, x: 0, spread: 40, samples: 60 };
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      schema: 2,
+      kills: [],
+      retired: [{ mob: "a gnoll", zone: ZONE, kills: 60, drops: {}, area: oldAverage, lastAt: stamp(0) }],
+    }),
+    "utf8",
+  );
+
+  const k = createKillLog(dir);
+  // A fresh kill, today, at a spot well past the old average's own spread and past the clustering
+  // threshold — a real second camp this mob apparently also has.
+  k.noteLoc(loc(2000, 2000, 0), ZONE);
+  kill(k, "a gnoll", 5);
+
+  const obs = k.observations().find((o) => o.mob === "a gnoll")!;
+  assert.equal(obs.areas?.length, 2, "the stale average and the fresh camp both show, immediately");
+  assert.deepEqual(obs.areas?.[0], oldAverage, "the old, larger sample still leads");
+  assert.equal(obs.areas?.[1].samples, 1, "the fresh kill is its own small, honestly-thin second row");
+});
+
 /**
  * The cap's other half: **which** records leave.
  *

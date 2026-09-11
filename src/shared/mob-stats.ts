@@ -7,9 +7,10 @@
  * partly answers:
  *
  *   - **how often it drops what** — an observed rate, from your own kills;
- *   - **where it is** — the middle of where you've killed it, and how far that spreads;
- *   - **how much to believe both** — every figure carries its sample count, because "1 for 1"
- *     and "40 for 120" are not the same claim.
+ *   - **where it is** — every distinct spot you've killed it, not blended into one average;
+ *   - **how much to believe each** — every figure carries its sample count, because "1 for 1"
+ *     and "40 for 120" are not the same claim, and a location seen once is not the same claim as
+ *     one seen a dozen times either.
  *
  * The unit of sharing is the **observation** (`MobObservation`): counts, not raw kills. Counts
  * merge by addition, which is what makes a pooled rate across a group meaningful — six players'
@@ -23,9 +24,23 @@
  * ([ADR 0083](../../specs/decisions/0083-a-zone-name-is-stored-raw-and-grouped-on-read.md)). That's
  * what keeps a drop rate re-derivable: fix the table and every rate ever computed follows.
  *
+ * **A mob can spawn in more than one spot, so "where it is" is a list, not a point**
+ * ([ADR 0228](../../specs/decisions/0228-a-mob-can-have-more-than-one-known-location.md)). Every kill
+ * position trusted enough to use (`AREA_MIN_CONFIDENCE`) is folded into one of possibly several
+ * `MobArea` clusters via `clusterAreas` — two positions close enough to plausibly be the same camp
+ * combine into one, weighted-average centroid the way a single roam area always worked; two far
+ * enough apart stay their own rows instead of being blended into a centroid that sits between two
+ * real camps and belongs to neither. `areaConfidence` grades each cluster the same way
+ * [faction-cause.ts](./faction-cause.ts)'s `causeConfidence` grades a repeated faction cause — the
+ * same `estimates.ts` sample-size ladder, just aimed at "how many kills corroborate *this* spot"
+ * instead of "how many hits corroborate *this* NPC." `area` (singular) is kept, still populated, as
+ * the single most-corroborated cluster (`areas[0]`) — every reader written before this existed keeps
+ * working unchanged, and gets a real camp's centroid instead of a blend of two for free.
+ *
  * Pure and DOM-free: main derives observations from the kill log, the renderer merges them for
  * display, and both use exactly this code.
  */
+import { confidenceOf, type Confidence, type SampleScale } from "./estimates";
 import { stripArticle } from "./log-parser";
 import { placeKey, placeName } from "./zones/place";
 import type { KillRecord } from "./types";
@@ -74,6 +89,111 @@ export function roamWhy(area: MobArea): string {
   }`;
 }
 
+/**
+ * How far apart two clusters' centres may sit and still plausibly be the same camp, rather than two
+ * separate ones — see the module header. **The one number in this file with the least real evidence
+ * behind it**: EQ zones range from a small dungeon room to a sprawling outdoor tract, and this is a
+ * single global guess standing in for what genuinely varies zone to zone. Too small and one mob's
+ * ordinary wandering fragments into noise; too large and two real, separately-camped spawns never
+ * split. Unverified, the same way `CORRELATION_WINDOW_SEC` was before a real log corrected it (ADR
+ * 0224) — revisit the moment a real zone's camp spacing says otherwise.
+ */
+export const LOCATION_CLUSTER_UNITS = 600;
+
+/** Straight-line distance between two clusters' centres, EQ units. */
+function centroidDistance(a: Pick<MobArea, "y" | "x">, b: Pick<MobArea, "y" | "x">): number {
+  return Math.hypot(a.y - b.y, a.x - b.x);
+}
+
+/**
+ * Fold two clusters worth of evidence into one — the same weighted-centroid, widened-spread math a
+ * single roam area always used, just applied to a candidate **pair** rather than an entire list, so
+ * clustering is a series of small, explainable merges rather than one big blend. Weighted toward
+ * whichever side has more samples; `spread` widens to cover both original centres, never shrinks
+ * toward their average, for the same reason merging observers' areas never used to either (ADR 0024).
+ */
+function combineAreas(a: MobArea, b: MobArea): MobArea {
+  const samples = a.samples + b.samples;
+  const y = (a.y * a.samples + b.y * b.samples) / samples;
+  const x = (a.x * a.samples + b.x * b.samples) / samples;
+  const spread = Math.max(a.spread + centroidDistance(a, { y, x }), b.spread + centroidDistance(b, { y, x }));
+  return { y: Math.round(y), x: Math.round(x), spread: Math.round(spread), samples };
+}
+
+/**
+ * Group positions into distinct locations rather than blending everything into one average.
+ *
+ * Greedy agglomeration: repeatedly combine whichever two clusters sit closest together, stopping the
+ * moment nothing left is within `thresholdUnits` of anything else. Two real camps a zone apart stay
+ * two rows; kills scattered around one camp still fold into one, exactly as a single roam area always
+ * did — this only adds the case a flat average couldn't tell apart from a mistake. Zero-sample
+ * clusters (nothing left after `AREA_MIN_CONFIDENCE` filtering) are dropped rather than kept as an
+ * empty row. Sorted biggest-first, the same "most-corroborated leads" convention
+ * `FactionCauseTally`/`causes` already use.
+ */
+export function clusterAreas(areas: readonly MobArea[], thresholdUnits: number = LOCATION_CLUSTER_UNITS): MobArea[] {
+  let clusters = areas.filter((a) => a.samples > 0).map((a) => ({ ...a }));
+  while (clusters.length > 1) {
+    let bestI = -1;
+    let bestJ = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < clusters.length; i++) {
+      for (let j = i + 1; j < clusters.length; j++) {
+        const d = centroidDistance(clusters[i], clusters[j]);
+        if (d < bestDist) {
+          bestDist = d;
+          bestI = i;
+          bestJ = j;
+        }
+      }
+    }
+    if (bestDist > thresholdUnits) break;
+    const merged = combineAreas(clusters[bestI], clusters[bestJ]);
+    clusters = clusters.filter((_, idx) => idx !== bestI && idx !== bestJ);
+    clusters.push(merged);
+  }
+  return clusters.sort((a, b) => b.samples - a.samples);
+}
+
+/**
+ * Where a location's own sample count stops reading as a single, possibly-fluky kill and starts
+ * reading as a real, repeatedly-confirmed camp — [estimates.ts](./estimates.ts)'s generic ladder, the
+ * same one [faction-cause.ts](./faction-cause.ts)'s `causeConfidence` applies to a repeated faction
+ * cause. Unverified, like `LOCATION_CLUSTER_UNITS` above — a starting guess about *how much* evidence
+ * a spot needs before it reads as more than a one-off.
+ */
+export const AREA_SAMPLES: SampleScale = { fair: 3, solid: 10 };
+
+/** How much to trust one entry of `MobObservation.areas`/`MobKnowledge.areas`. */
+export function areaConfidence(area: Pick<MobArea, "samples">): Confidence {
+  return confidenceOf(area.samples, AREA_SAMPLES);
+}
+
+/** The tooltip behind `areaConfidence` — names the actual sample count so "solid" reads as "seen
+ *  here repeatedly", never as certainty a single average could never have earned either. */
+export function areaConfidenceWhy(area: MobArea): string {
+  const seen = area.samples === 1 ? "just 1 positioned kill" : `${area.samples} positioned kills`;
+  switch (areaConfidence(area)) {
+    case "solid":
+      return `Confirmed by ${seen} — this is a real, repeatedly-visited spot, not a one-off.`;
+    case "fair":
+      return `Backed by ${seen} — more than a single coincidence, though still a small sample.`;
+    default:
+      return `Backed by only ${seen} so far — could be a stray kill rather than a real camp. More kills would say more.`;
+  }
+}
+
+/**
+ * Bring an older single-`area` shape up to today's `areas` list — every persisted row written before
+ * this feature existed, and every peer running a build from before it, looks like this. An object
+ * that already carries `areas` is trusted as-is; `area` beside it is recomputed from `areas[0]` rather
+ * than kept, so a stale duplicate from an older write can never outrank a fresher clustering.
+ */
+export function withAreas<T extends { area?: MobArea; areas?: MobArea[] }>(obs: T): T & { areas: MobArea[]; area?: MobArea } {
+  const areas = obs.areas ?? (obs.area ? [obs.area] : []);
+  return { ...obs, areas, area: areas[0] };
+}
+
 /** A mob's tally in one zone — the shareable unit. Counts, never raw kills. */
 export interface MobObservation {
   mob: string;
@@ -88,8 +208,21 @@ export interface MobObservation {
    * pooled coin-per-kill is one bigger sample rather than an average of averages.
    */
   copper?: number;
-  /** The middle of where it was killed, and how far that spreads (EQ units). */
+  /**
+   * The single most-corroborated spot it's been killed, and how far that spreads (EQ units) —
+   * `areas[0]`, kept (rather than only `areas`) so every reader written before ADR 0228 keeps working
+   * unchanged. Absent exactly when `areas` is empty.
+   */
   area?: MobArea;
+  /**
+   * Every distinct spot it's been killed, most-corroborated first (`clusterAreas`) — a mob with one
+   * real camp still has exactly one entry here, same as `area` always implied. Always populated
+   * (even to `[]`) by this module's own `observeMobs`/`sumObservations`/`mergeObservations`; **may be
+   * absent** on a persisted row or a peer's payload written before ADR 0228 existed — `withAreas`
+   * normalizes those on the way in, so nothing outside this module should read `areas` without going
+   * through it first (or trusting one of this module's own constructors).
+   */
+  areas?: MobArea[];
   /** Most recent kill, so stale knowledge can be told from fresh. */
   lastAt: string;
   /** Who observed it, as a name to show. Absent means "you". */
@@ -138,7 +271,16 @@ export interface MobKnowledge {
   /** Kills you saw yourself, of the total — provenance for the rate. */
   myKills: number;
   drops: MobDrop[];
+  /** The single most-corroborated spot — `areas[0]`. See `MobObservation.area`'s own doc. */
   area?: MobArea;
+  /**
+   * Every distinct spot, pooled across every contributor, most-corroborated first. Populated (even
+   * to `[]`) by `mergeObservations` — a derived, always-fresh read, never stored, so there's no wire
+   * shape to migrate the way `MobObservation.areas` sometimes needs. Optional only so a hand-built
+   * test fixture that predates this field needn't grow one; real callers get it from `area` if it's
+   * ever missing (`area ? [area] : []`), the same fallback `withAreas` gives `MobObservation`.
+   */
+  areas?: MobArea[];
   lastAt: string;
   /** Names of everyone whose observations are in here (you are not listed). */
   contributors: string[];
@@ -220,22 +362,16 @@ export function observeMobs(kills: KillRecord[]): MobObservation[] {
     // a corpse that yielded two of an item is still one kill that dropped it. Otherwise a
     // generous corpse pushes the rate over 100%, which is not a probability.
     for (const item of new Set(kill.drops ?? [])) obs.drops[item] = (obs.drops[item] ?? 0) + 1;
-    // Only positions worth believing shape the roam area — see AREA_MIN_CONFIDENCE.
+    // Only positions worth believing shape a location — see AREA_MIN_CONFIDENCE.
     if (kill.y !== undefined && kill.x !== undefined && kill.confidence >= AREA_MIN_CONFIDENCE) {
       obs.points.push({ y: kill.y, x: kill.x });
     }
   }
 
-  return [...byKey.values()].map(({ points, ...obs }) => ({ ...obs, area: areaOf(points) }));
-}
-
-/** The centre of a set of positions and how far they spread from it. */
-function areaOf(points: { y: number; x: number }[]): MobObservation["area"] {
-  if (!points.length) return undefined;
-  const y = points.reduce((n, p) => n + p.y, 0) / points.length;
-  const x = points.reduce((n, p) => n + p.x, 0) / points.length;
-  const spread = points.reduce((worst, p) => Math.max(worst, Math.hypot(p.y - y, p.x - x)), 0);
-  return { y: Math.round(y), x: Math.round(x), spread: Math.round(spread), samples: points.length };
+  return [...byKey.values()].map(({ points, ...obs }) => {
+    const areas = clusterAreas(points.map((p) => ({ ...p, spread: 0, samples: 1 })));
+    return { ...obs, areas, area: areas[0] };
+  });
 }
 
 /**
@@ -248,7 +384,7 @@ function areaOf(points: { y: number; x: number }[]): MobObservation["area"] {
  * not `mergeObservations`: that answers "yours versus theirs", and both sides of this are yours.
  */
 export function sumObservations(...groups: MobObservation[][]): MobObservation[] {
-  const byKey = new Map<string, MobObservation & { areas: NonNullable<MobObservation["area"]>[] }>();
+  const byKey = new Map<string, MobObservation & { seenAreas: MobArea[] }>();
   for (const group of groups) {
     for (const obs of group) {
       // Verbatim, like `observeMobs`: the result of this is what gets *written*, so a tally retired
@@ -256,17 +392,21 @@ export function sumObservations(...groups: MobObservation[][]): MobObservation[]
       const key = keyOf(obs.mob, obs.zone);
       let sum = byKey.get(key);
       if (!sum) {
-        sum = { mob: obs.mob, zone: obs.zone.trim(), kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, byId: obs.byId, areas: [] };
+        sum = { mob: obs.mob, zone: obs.zone.trim(), kills: 0, drops: {}, copper: 0, lastAt: obs.lastAt, by: obs.by, byId: obs.byId, seenAreas: [] };
         byKey.set(key, sum);
       }
       sum.kills += obs.kills;
       sum.copper = (sum.copper ?? 0) + (obs.copper ?? 0);
       if (obs.lastAt > sum.lastAt) sum.lastAt = obs.lastAt;
-      if (obs.area) sum.areas.push(obs.area);
+      // `withAreas` covers a `retired` row folded before this feature existed, which has only `area`.
+      sum.seenAreas.push(...withAreas(obs).areas);
       for (const [item, count] of Object.entries(obs.drops)) sum.drops[item] = (sum.drops[item] ?? 0) + count;
     }
   }
-  return [...byKey.values()].map(({ areas, ...obs }) => ({ ...obs, area: mergeAreas(areas) }));
+  return [...byKey.values()].map(({ seenAreas, ...obs }) => {
+    const areas = clusterAreas(seenAreas);
+    return { ...obs, areas, area: areas[0] };
+  });
 }
 
 /**
@@ -281,7 +421,7 @@ export function sumObservations(...groups: MobObservation[][]): MobObservation[]
  * rows arrive in.
  */
 export function mergeObservations(mine: MobObservation[], theirs: MobObservation[]): MobKnowledge[] {
-  const byKey = new Map<string, MobKnowledge & { areas: NonNullable<MobObservation["area"]>[] }>();
+  const byKey = new Map<string, MobKnowledge & { seenAreas: MobArea[] }>();
   /** Contributor ids already counted, per mob — the merge dedupes on the id, never on the name. */
   const seenBy = new Map<string, Set<string>>();
 
@@ -302,6 +442,7 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
         copper: 0,
         copperPerKill: 0,
         areas: [],
+        seenAreas: [],
       };
       byKey.set(key, known);
     }
@@ -321,7 +462,8 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
       seenBy.set(key, ids);
     }
     if (obs.lastAt > known.lastAt) known.lastAt = obs.lastAt;
-    if (obs.area) known.areas.push(obs.area);
+    // `withAreas` covers a peer still on a build from before ADR 0228, which only ever sends `area`.
+    known.seenAreas.push(...withAreas(obs).areas);
 
     for (const [item, count] of Object.entries(obs.drops)) {
       const drop = known.drops.find((d) => d.item === item);
@@ -336,31 +478,19 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
   for (const obs of theirs) fold(obs, false);
 
   return [...byKey.values()]
-    .map(({ areas, ...known }) => ({
-      ...known,
-      // Rates are computed once, at the end, from the pooled totals.
-      drops: known.drops
-        .map((d) => ({ ...d, rate: ratio(d.count, known.kills, 3) }))
-        .sort((a, b) => b.rate - a.rate || a.item.localeCompare(b.item)),
-      copperPerKill: ratio(known.copper, known.kills, 1),
-      area: mergeAreas(areas),
-      contributors: known.contributors.sort(),
-    }))
+    .map(({ seenAreas, ...known }) => {
+      const areas = clusterAreas(seenAreas);
+      return {
+        ...known,
+        // Rates are computed once, at the end, from the pooled totals.
+        drops: known.drops
+          .map((d) => ({ ...d, rate: ratio(d.count, known.kills, 3) }))
+          .sort((a, b) => b.rate - a.rate || a.item.localeCompare(b.item)),
+        copperPerKill: ratio(known.copper, known.kills, 1),
+        areas,
+        area: areas[0],
+        contributors: known.contributors.sort(),
+      };
+    })
     .sort((a, b) => b.kills - a.kills || a.mob.localeCompare(b.mob));
-}
-
-/**
- * Combine several observers' areas, weighting each by how many positions it came from — a
- * player who killed it forty times knows where it lives better than one who killed it once.
- */
-function mergeAreas(areas: NonNullable<MobObservation["area"]>[]): MobObservation["area"] {
-  if (!areas.length) return undefined;
-  const samples = areas.reduce((n, a) => n + a.samples, 0);
-  if (!samples) return undefined;
-  const y = areas.reduce((n, a) => n + a.y * a.samples, 0) / samples;
-  const x = areas.reduce((n, a) => n + a.x * a.samples, 0) / samples;
-  // Spread has to cover every observer's spread *plus* how far their centres sit apart,
-  // otherwise pooling would shrink the area rather than widen it.
-  const spread = areas.reduce((worst, a) => Math.max(worst, a.spread + Math.hypot(a.y - y, a.x - x)), 0);
-  return { y: Math.round(y), x: Math.round(x), spread: Math.round(spread), samples };
 }

@@ -252,6 +252,16 @@ finished, so a number is claimed before a second author can reach for it.
 - [0216: An achievement is quiet during a replayed gap](./0216-an-achievement-is-quiet-during-a-replayed-gap.md)
 - [0217: A custom zone criterion is a zone criterion](./0217-a-custom-zone-criterion-is-a-zone-criterion.md)
 - [0218: A faction hit is parsed, not only watched](./0218-a-faction-hit-is-parsed-not-only-watched.md)
+- [0219: A faction cause is a guess from timing](./0219-a-faction-cause-is-a-guess-from-timing.md)
+- [0220: A conversation can be the guessed cause too](./0220-a-conversation-can-be-the-guessed-cause-too.md)
+- [0221: A guessed speaker can name a quest giver](./0221-a-guessed-speaker-can-name-a-quest-giver.md)
+- [0222: A race unlock guide is generated static data](./0222-a-race-unlock-guide-is-generated-static-data.md)
+- [0223: A guessed line can match a quest's own dialogue](./0223-a-guessed-line-can-match-a-quests-own-dialogue.md)
+- [0224: A kill can log after the faction line it caused](./0224-a-kill-can-log-after-the-faction-line-it-caused.md)
+- [0225: A repeated guess earns more trust than a lone one](./0225-a-repeated-guess-earns-more-trust-than-a-lone-one.md)
+- [0226: A restriction notice is not a zone, wherever it landed](./0226-a-restriction-notice-is-not-a-zone-wherever-it-landed.md)
+- [0227: An admin edit is a flagged exception to stored history](./0227-an-admin-edit-is-a-flagged-exception-to-stored-history.md)
+- [0228: A mob can have more than one known location](./0228-a-mob-can-have-more-than-one-known-location.md)
 
 ## Open Questions
 

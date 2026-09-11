@@ -9,6 +9,7 @@ import { filterMobKnowledge, matchesDrop, mobChoices, type KillFilters } from "@
 import { count, countOf } from "@/shared/format";
 import type { KillEmphasis } from "@/shared/types";
 import KillFilterBar from "./KillFilterBar";
+import { RoamLinks } from "./MapLink";
 import { Caret } from "./ui";
 
 /**
@@ -212,6 +213,14 @@ export default function MobKnowledgePanel({
                 )}
                 {mob.contributors.length > 0 && (
                   <span className="muted small">pooled with {mob.contributors.join(", ")}</span>
+                )}
+                {/* Only past one location: a single spot is already the ± button above, and repeating
+                    it here would just say the same thing twice (ADR 0228). */}
+                {mob.areas && mob.areas.length > 1 && (
+                  <div className="mob-locations">
+                    <span className="muted small">{count(mob.areas.length, "known location")}:</span>{" "}
+                    <RoamLinks zone={mob.zone} areas={mob.areas} mob={mob.mob} />
+                  </div>
                 )}
               </div>
             )}

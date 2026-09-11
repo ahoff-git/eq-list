@@ -3,7 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sortFactionHits, sortFactionStandings } from "../../src/shared/faction-sort";
+import { ratePerHour, sortFactionHits, sortFactionStandings } from "../../src/shared/faction-sort";
 import type { FactionEvent, FactionStanding } from "../../src/shared/types";
 
 function hit(p: Partial<FactionEvent> & { faction: string }): FactionEvent {
@@ -38,8 +38,8 @@ test("hits sort by time, faction, or the stated delta — a floor/ceiling hit so
 });
 
 const standings: FactionStanding[] = [
-  { faction: "Agents of Mistmoore", net: -8, raises: 1, lowers: 2, floors: 1, ceilings: 0, firstAt: "a", lastAt: "2026-07-17T18:00:00" },
-  { faction: "Priests of Marr", net: 10, raises: 1, lowers: 0, floors: 0, ceilings: 1, firstAt: "a", lastAt: "2026-07-18T09:00:00" },
+  { faction: "Agents of Mistmoore", net: -8, raises: 1, lowers: 2, floors: 1, ceilings: 0, firstAt: "a", lastAt: "2026-07-17T18:00:00", causes: [] },
+  { faction: "Priests of Marr", net: 10, raises: 1, lowers: 0, floors: 0, ceilings: 1, firstAt: "a", lastAt: "2026-07-18T09:00:00", causes: [] },
 ];
 
 test("standings sort by any column, biggest net gain first by default", () => {
@@ -55,4 +55,11 @@ test("standings sort by any column, biggest net gain first by default", () => {
     "Agents of Mistmoore",
     "Priests of Marr",
   ]);
+});
+
+test("standings sort by net/hour, derived rather than stored", () => {
+  const fast: FactionStanding = { ...standings[1], faction: "Fast", net: 100, firstAt: "2026-07-18T08:00:00", lastAt: "2026-07-18T09:00:00" };
+  const slow: FactionStanding = { ...standings[1], faction: "Slow", net: 100, firstAt: "2026-07-18T00:00:00", lastAt: "2026-07-18T09:00:00" };
+  assert.deepEqual(sortFactionStandings([slow, fast], { key: "rate", desc: true }).map((s) => s.faction), ["Fast", "Slow"]);
+  assert.ok(ratePerHour(fast) > ratePerHour(slow));
 });

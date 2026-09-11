@@ -39,6 +39,14 @@ test("a kill has to name something, and a name has to be more than spaces", () =
   }
 });
 
+test("a zone confirmed to be a restriction notice, not a place, is refused like a malformed shape", () => {
+  // A peer on an older build can still send "an area where levitation effects do not function" —
+  // the client's own reuse of the zone-arrival sentence for a notice, mistaken for one before
+  // `classifyZoneLine` existed — as if it were where they killed something.
+  assert.deepEqual(sanitizeKills([kill({ zone: "an area where levitation effects do not function" })]), []);
+  assert.equal(sanitizeKills([kill({ zone: "Greater Faydark" })]).length, 1, "an ordinary zone still survives");
+});
+
 test("a confidence outside 0–1 is malformed, not weak, and is refused rather than clamped", () => {
   // `estimates.ts` rule 2: a figure that cannot mean what it says is not evidence of anything, and
   // clamping it would turn a broken sender into a confident one.
@@ -59,4 +67,16 @@ test("one bad row costs its own row and nothing else", () => {
 
 test("nothing at all is an empty list, not a throw", () => {
   assert.deepEqual(sanitizeKills([]), []);
+});
+
+test("a well-formed admin audit flag survives re-vetting; a fabricated one is dropped", () => {
+  const admin = (row: unknown) => (row as { __admin?: unknown }).__admin;
+  const audit = { edited: true, history: [{ field: "zone", from: "bad", to: "Greater Faydark", at: "2026-01-01T00:00:00Z" }] };
+  const [kept] = sanitizeKills([kill({ __admin: audit })]);
+  assert.deepEqual(admin(kept), audit, "a real edit made through the panel isn't stripped on reload");
+
+  for (const fake of [{ edited: true, history: "not a list" }, { edited: false, history: [] }, { history: [{ field: "x" }] }, "edited"]) {
+    const [row] = sanitizeKills([kill({ __admin: fake })]);
+    assert.equal(admin(row), undefined, JSON.stringify(fake));
+  }
 });

@@ -68,6 +68,35 @@ test("quest page → quantity-less turn-ins are caught by the \"loot\" cue", () 
   assert.ok(!p.components.some((c) => /Lord Elgnub|Lteth Val Scribe|one eyed gnoll/i.test(c.name)));
 });
 
+test("quest page → dialogue lines read off a clean <dl><dd> Walkthrough (ADR 0223)", () => {
+  const p = parseFixture("quest-shovel-of-ponz", "Shovel of Ponz");
+  assert.equal(p.kind, "quest");
+  assert.ok(p.dialogue && p.dialogue.length > 0, "should find at least one dialogue line");
+  assert.ok(p.dialogue!.every((d) => d.npc === "Vira"), "every line on this page is Vira's");
+  assert.ok(
+    p.dialogue!.some((d) => d.text.includes("Each of the four items needed to construct the famed Shovel of Ponz")),
+    "the quest's own completion line should be captured",
+  );
+});
+
+test("quest page → dialogue survives a page that mixes <p> and <dl><dd> for the same speaker", () => {
+  // A real page with both shapes for one NPC's lines (see ADR 0223's survey) — a tag-shape-specific
+  // extractor would catch only one; reading plain text off every block-level element catches both.
+  const p = parseFixture("quest-rogue-redemption", "Rogue Redemption");
+  assert.equal(p.kind, "quest");
+  assert.ok(p.dialogue && p.dialogue.some((d) => d.npc === "Lon the Redeemed"), "the <p>-shaped line");
+  assert.ok(
+    p.dialogue!.filter((d) => d.npc === "Lon the Redeemed").length >= 2,
+    "the <dl><dd>-shaped line right after it should be caught too",
+  );
+  // A malformed line missing its opening quote must be silently skipped, not mangled into a wrong
+  // extraction — this page has one from "Falyn Farreach".
+  assert.ok(
+    !p.dialogue!.some((d) => d.npc === "Falyn Farreach" && d.text.includes("Never stop chopping")),
+    "a transcription with no opening quote fails the pattern rather than being misread",
+  );
+});
+
 test("quest page → a split \"TLDR / Full\" walkthrough is read as one, not just the first half", () => {
   const p = parseFixture("quest-exotic-drinks", "Exotic Drinks");
   assert.equal(p.kind, "quest");

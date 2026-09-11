@@ -9,7 +9,7 @@ import type { MobKnowledge } from "@/shared/mob-stats";
 import type { WikiComponent } from "@/shared/types";
 import { buildWikiContribution } from "@/shared/wiki-contribution";
 import ItemLink from "./ItemLink";
-import { RoamLink, ZoneLink } from "./MapLink";
+import { RoamLinks, ZoneLink } from "./MapLink";
 
 /**
  * What **your** kills say about the mob whose page you're reading — one block per zone you've killed
@@ -79,7 +79,7 @@ export default function MobKills({ mob, components }: { mob: string; components:
               )}
               <span className="spacer" />
               {/* Readable as well as clickable: the numbers are what you type into the game. */}
-              {z.area && <RoamLink zone={z.zone} area={z.area} mob={mob} />}
+              <RoamLinks zone={z.zone} areas={z.areas ?? (z.area ? [z.area] : [])} mob={mob} />
             </div>
             <div className="mob-drops">
               {z.drops.length === 0 ? (

@@ -17,7 +17,7 @@ function on<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
 const api: EqlApi = {
   platform: {
     kind: "electron",
-    capabilities: { log: true, windowing: true, shortcuts: true, lookup: true, overlayPlacement: true, update: true, display: true },
+    capabilities: { log: true, windowing: true, shortcuts: true, lookup: true, overlayPlacement: true, update: true, display: true, admin: true },
   },
   list: {
     get: () => ipcRenderer.invoke(CH.listGet),
@@ -79,6 +79,9 @@ const api: EqlApi = {
     recent: (limit) => ipcRenderer.invoke(CH.factionRecent, limit),
     standings: () => ipcRenderer.invoke(CH.factionStandings),
     onEvent: (cb) => on(CH.factionEvent, cb),
+  },
+  raceUnlocks: {
+    openCheatSheet: () => ipcRenderer.invoke(CH.raceUnlocksOpenCheatSheet),
   },
   alerts: {
     onCast: (cb) => on(CH.castAlert, cb),
@@ -301,6 +304,13 @@ const api: EqlApi = {
     setClickThrough: (enabled) => ipcRenderer.send(CH.winSetClickThrough, enabled),
     close: () => ipcRenderer.send(CH.winClose),
     resetPositions: () => ipcRenderer.invoke(CH.winResetPositions),
+    openAdmin: () => ipcRenderer.send(CH.winOpenAdmin),
+  },
+  admin: {
+    stores: () => ipcRenderer.invoke(CH.adminStores),
+    records: (storeId) => ipcRenderer.invoke(CH.adminRecords, storeId),
+    record: (storeId, id) => ipcRenderer.invoke(CH.adminRecord, storeId, id),
+    patch: (storeId, id, field, input) => ipcRenderer.invoke(CH.adminPatch, storeId, id, field, input),
   },
 };
 

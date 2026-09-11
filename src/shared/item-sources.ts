@@ -39,8 +39,10 @@ export interface ItemDropPlace {
   /** Kills here that produced the item. */
   seen: number;
   rate: number;
-  /** The middle of where those kills happened, and how far they spread — "where-ish". */
+  /** The single most-corroborated spot those kills happened, and how far that spreads — "where-ish". */
   area?: MobKnowledge["area"];
+  /** Every distinct spot, most-corroborated first (ADR 0228) — `area` is `areas[0]`. */
+  areas?: MobKnowledge["areas"];
   lastAt: string;
 }
 
@@ -136,6 +138,7 @@ export function itemDropSources(
       seen,
       rate: ratio(seen, k.kills, 3),
       area: k.area,
+      areas: k.areas,
       lastAt: k.lastAt,
     });
   }

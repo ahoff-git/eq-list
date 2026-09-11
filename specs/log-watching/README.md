@@ -56,6 +56,29 @@ as they drop and the damage meter can show how the fight went.
   puts the caster back before anything downstream reads it — without which every tick of your own
   DoTs, nearly all of a DoT's damage, is filed to a combatant that doesn't exist
   ([ADR 0071](../decisions/0071-a-dot-tick-belongs-to-whoever-cast-it.md)).
+- `src/shared/faction-cause.ts` — modeled directly on `dot-attribution.ts`'s note/resolve shape, but
+  for **two guesses** rather than a fact: nothing in the faction line names what caused it, so
+  `noteKill()` remembers the most recent own-kill (gated the same way a kill streak is, ADR 0027) and
+  `noteLine()` remembers the most recent line of NPC (or, indistinguishably, nearby player) dialogue —
+  `"Name says/tells you, '...'"`, read off every raw line the same way a buff-fade is. `resolve()`
+  checks the kill first, falling back to the dialogue guess (a wider window — a turn-in is a slower
+  interaction than a kill's instant update) only when no kill explains the hit. The **speaker's name**
+  is matched against the wiki's already-parsed, already-cached "Quest giver" field
+  (`WikiClient.questGiverSource()`, gathered on the same cache walk `levelSources`/`questZoneSource`
+  already run) — a proper noun against a clean table cell, not prose against prose. When a giver has
+  more than one quest, the observed line is compared against each candidate's own cached dialogue
+  (`WikiClient.questDialogueSource()`, `electron/wiki/parse.ts`'s `parseQuestDialogue` — read generically
+  off every `<dd>`/`<p>`/`<li>` on the whole page rather than any one heading, since real pages file
+  dialogue under "Walkthrough", "Checklist", a plain "Dialogue" heading, or a per-step `<h3>` a
+  heading-name filter would miss) using `fuzzyScore` (`src/shared/fuzzy.ts`), narrowing to whichever
+  quest(s) it resembles or falling back to the giver's full list when nothing matches well enough. Both
+  wiki lookups are injected dependencies so the module stays pure and wiki-agnostic. Unlike every
+  parser here, none of this is checked against a real log showing the true gap — every guess is
+  reasoned, not verified, labeled as such everywhere carried (`FactionEvent.causedBy`) and shown to the
+  reader the same way ([ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md),
+  [ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md),
+  [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md),
+  [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md)).
 - `src/shared/combat-parser.ts` — the same idea for combat, and the bulk of a real log:
   melee swings, spell/proc damage, damage shields, DoT ticks, misses and heals, plus the
   `(Critical)`/`(Riposte)` qualifier that trails *after* the sentence. It also follows the
@@ -193,11 +216,17 @@ as they drop and the damage meter can show how the fight went.
   it, and a sale that leaves the feed leaves its price behind
   ([ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)).
 - `electron/faction-log.ts` — the same shape as `loot-log.ts`, for faction-standing changes: an
-  always-on, log-line-keyed feed, folded to a net standing per faction. A hit aging out of the
-  capped feed is folded into a retained standing first, so the cap trims detail, never a faction's
-  net ([ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)). No pooling with
-  peers and no correlation to the mob or quest that produced a hit — that's real future work, not
-  yet built. See [ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md).
+  always-on, log-line-keyed feed, folded to a net standing per faction, plus (via `faction-cause.ts`)
+  a rollup of which mob's kill, or which NPC's conversation, each faction's hits are *guessed* to have
+  come from. A hit aging out of the capped feed is folded into a retained standing first, cause
+  rollup included, so the cap trims detail, never a faction's net or its cause tally
+  ([ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)). No pooling with peers —
+  that's real, deliberately-not-attempted work. See
+  [ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md),
+  [ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md),
+  [ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md),
+  [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md) and
+  [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md).
 - `src/shared/name-registry.ts` — one spelling per creature. EQ capitalizes a name at the start
   of a sentence, so the damage meter and the kill log would otherwise disagree about what a mob
   is called; both take their names from here.
@@ -306,4 +335,8 @@ Two invocations do more than scale numbers, and both are now accounted for
 [ADR 0043](../decisions/0043-state-is-not-news-either.md) ·
 [ADR 0044](../decisions/0044-the-log-position-outlives-the-app.md) ·
 [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md) ·
-[ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md)
+[ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md) ·
+[ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md) ·
+[ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md) ·
+[ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md) ·
+[ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md)

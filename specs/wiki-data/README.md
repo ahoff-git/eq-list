@@ -400,13 +400,21 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
 ## Non-responsibilities
 - No build-time generation of **item, quest or recipe** data — that is fetched at runtime and cached
   (see [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md)); contrast the
-  `eql-buff-calc` sample which bakes JSON at build. The exceptions are all *facts about zones*, which
-  change about never and are wanted before anything is on screen: the supplied gazetteer above, plus
-  the generated tables under `src/shared/zones/` — which expansion a zone came with
+  `eql-buff-calc` sample which bakes JSON at build. The exceptions are all *facts that change about
+  never and are wanted before anything is on screen*: the supplied gazetteer above, plus the generated
+  tables under `src/shared/zones/` — which expansion a zone came with
   ([ADR 0065](../decisions/0065-a-zone-belongs-to-an-expansion.md)), which zones it touches
   ([ADR 0117](../decisions/0117-the-wiki-says-which-zones-touch.md)) and what level its monsters are
   ([ADR 0122](../decisions/0122-a-zone-wears-its-levels.md)). The last two are read off the same zone
   infobox by the same crawl (`scripts/lib/eqlwiki.mjs`), so a fourth row is a parser and a banner.
+- **A second, narrower exception: a hand-authored guide page, not a template.** `src/shared/race-unlocks.generated.ts`
+  (`scripts/fetch-race-unlocks.mjs`) ships Alanna's Race Unlock Guide's race→faction requirements and
+  per-quest faction-point deltas as committed data too — but for the opposite reason the zone facts
+  are generated. The zone facts come off a *uniform* infobox template shared by every zone page; this
+  guide is one person's prose, the only page on the wiki stating faction point values at all, and has
+  no template behind it for a runtime parser to trust. See
+  [ADR 0222](../decisions/0222-a-race-unlock-guide-is-generated-static-data.md) — this does not widen
+  the item/quest/recipe exception above, it's a one-off for a source that is itself irregular.
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
 - The **wiki's** drop rates live on the mob page (per loot line — a `(X%)` chance or a rarity

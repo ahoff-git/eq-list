@@ -14,6 +14,14 @@ import { createFactionLog } from "../faction-log";
 import type { KillLog } from "../kill-log";
 import type { CoinEvent, LocEvent, LootEvent } from "../../src/shared/types";
 
+/** This file is about the import, not the admin panel — every mock kill log wears the same stub. */
+const NO_ADMIN: KillLog["admin"] = {
+  label: "kills",
+  list: () => [],
+  get: () => undefined,
+  patch: () => ({ ok: false, error: "not wired in this test" }),
+};
+
 test("importLog digests kills, drops, positions and zones from a file", () => {
   const text = [
     "[Fri Jul 17 18:00:00 2026] You have entered Blackburrow.",
@@ -51,6 +59,7 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
     version: () => 0,
     clear() {},
     flush() {},
+    admin: NO_ADMIN,
   };
 
   try {
@@ -63,6 +72,35 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
     assert.deepEqual(recorded, [{ mob: "gnoll", killer: "You", zone: "Blackburrow" }]);
     assert.deepEqual(loot, ["Gnoll Fang"]);
     assert.deepEqual(locs, [100]); // EQ reports the triple y-first
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+});
+
+test("a restriction notice reusing the zone-arrival sentence doesn't move a digested kill's zone", () => {
+  // "You have entered an area where levitation effects do not function." matches the same sentence
+  // shape as a real arrival but names no zone the gazetteer knows — a full re-digest of the log must
+  // not file the kill under it, the same rule the live watcher and the startup catch-up already keep.
+  const text = [
+    "[Fri Jul 17 18:00:00 2026] You have entered Blackburrow.",
+    "[Fri Jul 17 18:00:05 2026] You have entered an area where levitation effects do not function.",
+    "[Fri Jul 17 18:00:10 2026] You have slain a gnoll!",
+  ].join("\n");
+  const file = path.join(os.tmpdir(), `eql-import-notice-${process.pid}.txt`);
+  fs.writeFileSync(file, text);
+
+  const recorded: { mob: string; zone: string | null }[] = [];
+  const killLog: KillLog = {
+    ...stubKillLog(),
+    record: (mob, _killer, zone) => {
+      recorded.push({ mob, zone });
+      return true;
+    },
+  };
+
+  try {
+    importLog(file, killLog);
+    assert.deepEqual(recorded, [{ mob: "gnoll", zone: "Blackburrow" }]);
   } finally {
     fs.rmSync(file, { force: true });
   }
@@ -82,6 +120,7 @@ function stubKillLog(): KillLog {
     version: () => 0,
     clear() {},
     flush() {},
+    admin: NO_ADMIN,
   };
 }
 
@@ -297,6 +336,94 @@ test("eating a log fills the faction ledger, once", () => {
     // A second helping adds nothing: the ledger is keyed by the log line (ADR 0033).
     assert.equal(importLog(file, stubKillLog(), undefined, undefined, factionLog).factionHits, 0);
     assert.equal(factionLog.recent().length, 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("eating a log guesses a faction hit's cause from the kill just before it, the same as watching it live would", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-cause-"));
+  const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(
+    file,
+    [
+      // A swing before the kill is what makes the mob count as "fought" (`fight-scope.ts`), which is
+      // what `combat.countsKill` gates on — the same admission a live kill would need.
+      "[Fri Jul 17 18:00:09 2026] You slash a gnoll for 5 points of damage.",
+      "[Fri Jul 17 18:00:10 2026] You have slain a gnoll!",
+      "[Fri Jul 17 18:00:11 2026] Your faction standing with Agents of Mistmoore has been adjusted by -3.",
+      // Far enough after that nothing should be blamed — the correlator's own window is 3s.
+      "[Fri Jul 17 18:00:30 2026] Your faction standing with Priests of Marr has been adjusted by 5.",
+    ].join("\n"),
+  );
+  const factionLog = createFactionLog(dir);
+  // `combat` only exists (and so only gates which kills are noted) when a history is passed — the
+  // same reason the correlation is skipped without one, documented in log-import.ts.
+  const history = createCombatHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-cause-hist-")), "run:a");
+
+  try {
+    importLog(file, stubKillLog(), history, undefined, factionLog);
+    const [priests, mistmoore] = factionLog.recent();
+    assert.equal(priests.faction, "Priests of Marr");
+    assert.equal(priests.causedBy, undefined, "nothing landed close enough beforehand");
+    assert.equal(mistmoore.faction, "Agents of Mistmoore");
+    assert.deepEqual(mistmoore.causedBy, { kind: "kill", mob: "gnoll", gapSec: 1 });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a kill logged after its faction line is still caught — this server's own real order (ADR 0224)", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-order-"));
+  const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(
+    file,
+    [
+      "[Fri Jul 17 18:00:09 2026] You slash a gnoll for 5 points of damage.",
+      // The faction line logs *before* the kill's own confirmation — verified against a real
+      // player's log (see faction-cause.ts's header) as this server's ordinary order, not an edge
+      // case. Resolving the instant this line is read (the pre-ADR-0224 behavior) would miss it.
+      "[Fri Jul 17 18:00:10 2026] Your faction standing with Agents of Mistmoore has been adjusted by -3.",
+      "[Fri Jul 17 18:00:10 2026] You have slain a gnoll!",
+      // Past the window on the far side too — the fix widens which side counts, not how wide.
+      "[Fri Jul 17 18:00:30 2026] Your faction standing with Priests of Marr has been adjusted by 5.",
+      "[Fri Jul 17 18:00:34 2026] You have slain a gnoll!",
+    ].join("\n"),
+  );
+  const factionLog = createFactionLog(dir);
+  const history = createCombatHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-order-hist-")), "run:a");
+
+  try {
+    importLog(file, stubKillLog(), history, undefined, factionLog);
+    const [priests, mistmoore] = factionLog.recent();
+    assert.deepEqual(mistmoore.causedBy, { kind: "kill", mob: "gnoll", gapSec: 0 });
+    assert.equal(priests.causedBy, undefined, "4 seconds apart, either direction, is past the window");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("eating a log guesses a faction hit's cause from nearby NPC dialogue when no kill explains it", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-dialogue-"));
+  const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(
+    file,
+    [
+      // No kill anywhere in this file — a quest turn-in, not a kill, is what this stands in for.
+      "[Fri Jul 17 18:00:08 2026] Vira says, 'Well done, adventurer.'",
+      "[Fri Jul 17 18:00:11 2026] Your faction standing with Agents of Mistmoore has been adjusted by 5.",
+    ].join("\n"),
+  );
+  const factionLog = createFactionLog(dir);
+
+  try {
+    importLog(file, stubKillLog(), undefined, undefined, factionLog);
+    assert.deepEqual(factionLog.recent()[0].causedBy, {
+      kind: "dialogue",
+      npc: "Vira",
+      text: "Well done, adventurer.",
+      gapSec: 3,
+    });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

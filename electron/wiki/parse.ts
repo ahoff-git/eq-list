@@ -314,6 +314,42 @@ function parseFactionTierNote(section: Section | undefined): string | undefined 
 }
 
 /**
+ * "Name says, '...'" / "Name tells you, '...'" — the same grammar
+ * [src/shared/faction-cause.ts](../../src/shared/faction-cause.ts)'s `DIALOGUE_RE` reads off a live
+ * log line, applied here to a wiki paragraph's plain text instead. Kept as its own copy rather than
+ * a shared import: one reads a raw log line, the other an already-tag-stripped DOM text node, and the
+ * two sources are allowed to drift without either module noticing.
+ */
+const WIKI_DIALOGUE_RE = /^(?<npc>.+?) (?:tells you|says),?\s+'(?<text>.+?)'\.?$/;
+
+/**
+ * A quest's own dialogue, read off the **whole page**, not any one section — real quest pages file it
+ * under "Walkthrough", under "Checklist" (`quest-rogue-redemption`), under a section named plainly
+ * "Dialogue" (`quest-acumen-mask`), or nested under a per-step `<h3>` a heading-name filter would miss
+ * entirely (`quest-rogue-redemption`'s "Gem of Stamina"/"Gem of Rightousness"). Rather than chase every
+ * heading a page might use, every `<dd>`, `<p>` and `<li>` on the page is read as plain text and tested
+ * against the same dialogue grammar a live log's own NPC replies use — the pattern itself is the
+ * filter, tight enough (a name, then "says"/"tells you", then a quoted sentence) that a table cell, a
+ * reward bullet or a checklist item simply fails to match rather than being misread as something
+ * someone said.
+ *
+ * Best-effort in the other direction too: a transcription with a missing opening quote or a stray
+ * inline tag splitting a sentence just fails to match, and that one line is silently absent rather
+ * than captured wrong. This is "some of the dialogue", not a promise of all of it — see
+ * [ADR 0223](../../specs/decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md).
+ */
+function parseQuestDialogue(content: HTMLElement): { npc: string; text: string }[] {
+  const out: { npc: string; text: string }[] = [];
+  const blocks = [...content.querySelectorAll("dd"), ...content.querySelectorAll("p"), ...content.querySelectorAll("li")];
+  for (const block of blocks) {
+    const text = block.text.replace(/\s+/g, " ").trim();
+    const m = text.match(WIKI_DIALOGUE_RE);
+    if (m?.groups) out.push({ npc: m.groups.npc.trim(), text: m.groups.text.trim() });
+  }
+  return out;
+}
+
+/**
  * Parse the vertical questTopTable once (th→td key/value rows) into both the giver/zone
  * **sources** and an info **card** (level / classes / related NPCs & zones). One walk so
  * the label handling lives in a single place.
@@ -977,6 +1013,7 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
     // `components`/`rewards` stay the union, so the plain single-quest shape below is unaffected
     // for every page that isn't one (`parseGearSetBundle` returns `[]` unless it found 2+ of them).
     const subQuests = parseGearSetBundle(content, sections, wikiPath, sources);
+    const dialogue = parseQuestDialogue(content);
     return {
       kind: "quest",
       title,
@@ -987,6 +1024,7 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       subQuests: subQuests.length ? subQuests : undefined,
       card: cardWithTier,
       links: parseContentLinks(content),
+      dialogue: dialogue.length ? dialogue : undefined,
       fetchedAt,
     };
   }

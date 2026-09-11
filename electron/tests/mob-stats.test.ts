@@ -6,6 +6,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  AREA_SAMPLES,
+  LOCATION_CLUSTER_UNITS,
+  areaConfidence,
+  areaConfidenceWhy,
+  clusterAreas,
   dropKey,
   dropSources,
   mergeObservations,
@@ -13,6 +18,8 @@ import {
   observeMobs,
   roamWhy,
   sumObservations,
+  withAreas,
+  type MobArea,
   type MobKnowledge,
   type MobObservation,
 } from "../../src/shared/mob-stats";
@@ -399,4 +406,138 @@ test("a roam area says how rough it is and what it rests on", () => {
     "Killed within about 30 units of 120, -41, averaged over 12 positioned kills",
   );
   assert.match(roamWhy({ y: 1, x: 2, spread: 0, samples: 1 }), /over 1 positioned kill$/);
+});
+
+// ─── A mob can spawn in more than one spot (ADR 0228) ──────────────────────────────────────────
+
+function area(p: Partial<MobArea> & Pick<MobArea, "y" | "x">): MobArea {
+  return { spread: 0, samples: 1, ...p };
+}
+
+test("clusterAreas merges positions close enough to be the same camp", () => {
+  const clusters = clusterAreas([area({ y: 0, x: 0 }), area({ y: 10, x: 0 }), area({ y: -5, x: 5 })]);
+  assert.equal(clusters.length, 1, "all three sit well inside the clustering threshold");
+  assert.equal(clusters[0].samples, 3);
+});
+
+test("clusterAreas keeps positions far enough apart as two distinct locations", () => {
+  const near = area({ y: 0, x: 0 });
+  const far = area({ y: 0, x: LOCATION_CLUSTER_UNITS + 50 });
+  const clusters = clusterAreas([near, far]);
+  assert.equal(clusters.length, 2, "farther apart than the clustering threshold — two real camps, not one bad average");
+  // The old behavior (one blended centroid sitting between two real camps, belonging to neither)
+  // is exactly what this must not do.
+  assert.ok(
+    clusters.every((c) => c.x === near.x || c.x === far.x),
+    "neither cluster's centre should land at the meaningless midpoint",
+  );
+});
+
+test("clusterAreas is right at the edge of its own threshold", () => {
+  const atEdge = clusterAreas([area({ y: 0, x: 0 }), area({ y: 0, x: LOCATION_CLUSTER_UNITS })]);
+  assert.equal(atEdge.length, 1, "exactly the threshold's width still counts as the same camp");
+
+  const pastEdge = clusterAreas([area({ y: 0, x: 0 }), area({ y: 0, x: LOCATION_CLUSTER_UNITS + 1 })]);
+  assert.equal(pastEdge.length, 2, "one unit past it is too far");
+});
+
+test("clusterAreas sorts the most-corroborated location first", () => {
+  const clusters = clusterAreas([
+    area({ y: 0, x: 0, samples: 2 }),
+    area({ y: 0, x: LOCATION_CLUSTER_UNITS * 5, samples: 9 }),
+  ]);
+  assert.equal(clusters.length, 2);
+  assert.equal(clusters[0].samples, 9, "the better-confirmed spot leads");
+});
+
+test("clusterAreas drops a zero-sample entry rather than keeping an empty row", () => {
+  assert.deepEqual(clusterAreas([area({ y: 0, x: 0, samples: 0 })]), []);
+});
+
+test("observeMobs finds two real camps instead of blending them into one bad average", () => {
+  const kills = [
+    kill({ mob: "a gnoll", y: 0, x: 0 }),
+    kill({ mob: "a gnoll", y: 10, x: -10 }),
+    kill({ mob: "a gnoll", y: 0, x: LOCATION_CLUSTER_UNITS + 200 }),
+  ];
+  const [obs] = observeMobs(kills);
+  assert.equal(obs.areas?.length, 2);
+  // The most-corroborated camp (two kills) leads, and is kept as `area` for every reader that
+  // predates ADR 0228 — a real camp's own centre, not a blend of both.
+  assert.equal(obs.area?.samples, 2);
+  assert.equal(obs.areas?.[0], obs.area);
+});
+
+test("sumObservations re-clusters across a retirement fold rather than losing the split", () => {
+  const campA = observeMobs([kill({ mob: "a gnoll", y: 0, x: 0 }), kill({ mob: "a gnoll", y: 5, x: 5 })]);
+  const campB = observeMobs([kill({ mob: "a gnoll", y: 0, x: LOCATION_CLUSTER_UNITS + 200 })]);
+  const [summed] = sumObservations(campA, campB);
+  assert.equal(summed.areas?.length, 2, "folding two already-clustered batches together must not blend them back into one");
+});
+
+test("mergeObservations pools contributors' distinct camps rather than blending them", () => {
+  const mine = observeMobs([kill({ mob: "a gnoll", y: 0, x: 0 })]);
+  const theirs: MobObservation[] = [
+    {
+      mob: "a gnoll",
+      zone: "Steamfont Mountains",
+      kills: 1,
+      drops: {},
+      areas: [{ y: 0, x: LOCATION_CLUSTER_UNITS + 200, spread: 0, samples: 1 }],
+      lastAt: "2026-07-29T01:00:00.000Z",
+      by: "Bunnyslayer",
+    },
+  ];
+  const [known] = mergeObservations(mine, theirs);
+  assert.equal(known.areas?.length, 2);
+});
+
+test("mergeObservations still understands a peer sending only the old, singular `area`", () => {
+  const mine = observeMobs([kill({ mob: "a gnoll", y: 0, x: 0 })]);
+  const theirs: MobObservation[] = [
+    {
+      mob: "a gnoll",
+      zone: "Steamfont Mountains",
+      kills: 1,
+      drops: {},
+      area: { y: 3, x: 3, spread: 0, samples: 1 }, // no `areas` at all — a pre-ADR-0228 peer
+      lastAt: "2026-07-29T01:00:00.000Z",
+      by: "Bunnyslayer",
+    },
+  ];
+  const [known] = mergeObservations(mine, theirs);
+  assert.equal(known.areas?.length, 1, "close enough to fold into the one camp, same as always");
+  assert.equal(known.area?.samples, 2);
+});
+
+test("areaConfidence follows the same sample-size ladder as a respawn or a drop rate", () => {
+  assert.equal(areaConfidence(area({ y: 0, x: 0, samples: 1 })), "thin");
+  assert.equal(areaConfidence(area({ y: 0, x: 0, samples: AREA_SAMPLES.fair })), "fair");
+  assert.equal(areaConfidence(area({ y: 0, x: 0, samples: AREA_SAMPLES.solid })), "solid");
+});
+
+test("areaConfidenceWhy names the actual sample count behind every tier", () => {
+  assert.match(areaConfidenceWhy(area({ y: 0, x: 0, samples: 1 })), /only just 1 positioned kill/);
+  assert.match(
+    areaConfidenceWhy(area({ y: 0, x: 0, samples: AREA_SAMPLES.solid })),
+    new RegExp(`${AREA_SAMPLES.solid} positioned kills`),
+  );
+});
+
+test("withAreas normalizes an older single-`area` shape up to today's `areas` list", () => {
+  const legacy = withAreas({ area: { y: 1, x: 2, spread: 0, samples: 1 } });
+  assert.deepEqual(legacy.areas, [{ y: 1, x: 2, spread: 0, samples: 1 }]);
+  assert.deepEqual(legacy.area, { y: 1, x: 2, spread: 0, samples: 1 });
+});
+
+test("withAreas trusts an already-`areas` shape as-is, and recomputes `area` from its first entry", () => {
+  const already = withAreas({ areas: [area({ y: 9, x: 9, samples: 4 }), area({ y: 1, x: 1 })] });
+  assert.equal(already.areas.length, 2);
+  assert.deepEqual(already.area, already.areas[0]);
+});
+
+test("withAreas on nothing at all is an empty list and no area", () => {
+  const empty = withAreas({});
+  assert.deepEqual(empty.areas, []);
+  assert.equal(empty.area, undefined);
 });

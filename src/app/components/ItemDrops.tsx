@@ -6,7 +6,7 @@ import { count } from "@/shared/format";
 import { itemDropTotals, priceOfItem, type ItemDropSource } from "@/shared/item-sources";
 import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
-import { RoamLink, ZoneLink } from "./MapLink";
+import { RoamLinks, ZoneLink } from "./MapLink";
 import type { ItemSource } from "@/shared/types";
 
 /**
@@ -109,7 +109,12 @@ export default function ItemDrops({ item, sources }: { item: string; sources: It
                   </span>
                   {/* The coordinate itself is the control: a rough y,x is worth reading — it goes
                       straight into the game — as well as clicking. */}
-                  {place.area && <RoamLink zone={place.zone} area={place.area} mob={row.mob} drop={item} />}
+                  <RoamLinks
+                    zone={place.zone}
+                    areas={place.areas ?? (place.area ? [place.area] : [])}
+                    mob={row.mob}
+                    drop={item}
+                  />
                 </div>
               ))}
             </div>

@@ -682,6 +682,33 @@ test("every kind's key survives the crossing — the sender's key and the receiv
   }
 });
 
+// ─── A mob observation's locations, on the wire (ADR 0228) ─────────────────────────────────────
+
+test("a mob observation's several known locations survive the wire, each vetted", () => {
+  const areas = [
+    { y: 10, x: 20, spread: 3, samples: 5 },
+    { y: 400, x: 400, spread: 1, samples: 2 },
+  ];
+  const give = readGive(
+    { what: "mobs", rev: 1, rows: [{ mob: "a gnoll", zone: "Blackburrow", kills: 7, drops: {}, lastAt: iso(0), areas }] },
+    ids(),
+  );
+  const [row] = wholeRows(give) as { areas?: typeof areas; area?: (typeof areas)[number] }[];
+  assert.deepEqual(row.areas, areas);
+  assert.deepEqual(row.area, areas[0], "recomputed from `areas[0]`, not trusted as sent");
+});
+
+test("a peer still on a build from before ADR 0228 — only `area`, no `areas` — still places it", () => {
+  const area = { y: 10, x: 20, spread: 3, samples: 5 };
+  const give = readGive(
+    { what: "mobs", rev: 1, rows: [{ mob: "a gnoll", zone: "Blackburrow", kills: 7, drops: {}, lastAt: iso(0), area }] },
+    ids(),
+  );
+  const [row] = wholeRows(give) as { areas?: unknown[]; area?: unknown }[];
+  assert.deepEqual(row.areas, [area]);
+  assert.deepEqual(row.area, area);
+});
+
 test("a delta's rows are checked exactly as hard as a whole set's", () => {
   const give = readGive(
     {

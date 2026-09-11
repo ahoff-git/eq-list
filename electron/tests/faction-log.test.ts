@@ -9,26 +9,35 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createFactionLog } from "../faction-log";
-import type { FactionEvent } from "../../src/shared/types";
+import type { FactionRecord } from "../../src/shared/types";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "eql-faction-"));
 }
 
-function hit(faction: string, sec: number, delta: number | null, direction: FactionEvent["direction"]): FactionEvent {
+function hit(
+  faction: string,
+  sec: number,
+  delta: number | null,
+  direction: FactionRecord["direction"],
+  causedBy?: FactionRecord["causedBy"],
+): FactionRecord {
   return {
     kind: "faction",
     faction,
     delta,
     direction,
+    causedBy,
     logId: sec,
     raw: `faction hit ${faction}`,
     at: `2026-07-29T00:00:${String(sec).padStart(2, "0")}`,
   };
 }
 
-const raised = (faction: string, sec: number, delta: number) => hit(faction, sec, delta, "raised");
-const lowered = (faction: string, sec: number, delta: number) => hit(faction, sec, delta, "lowered");
+const raised = (faction: string, sec: number, delta: number, mob?: string) =>
+  hit(faction, sec, delta, "raised", mob ? { kind: "kill", mob, gapSec: 1 } : undefined);
+const lowered = (faction: string, sec: number, delta: number, mob?: string) =>
+  hit(faction, sec, delta, "lowered", mob ? { kind: "kill", mob, gapSec: 1 } : undefined);
 
 test("the same faction line twice is one hit — a replayed gap isn't a second adjustment", () => {
   const l = createFactionLog(tempDir());
@@ -121,4 +130,59 @@ test("standings are ordered most-recently-touched first", () => {
   l.add(lowered("Agents of Mistmoore", 1, -3));
   l.add(raised("Priests of Marr", 2, 5));
   assert.deepEqual(l.standings().map((s) => s.faction), ["Priests of Marr", "Agents of Mistmoore"]);
+});
+
+test("a standing rolls up which mobs' kills its hits were guessed to come from", () => {
+  const l = createFactionLog(tempDir());
+  l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));
+  l.add(lowered("Agents of Mistmoore", 2, -5, "a gnoll pup"));
+  l.add(raised("Agents of Mistmoore", 3, 1, "a gnoll"));
+  l.add(lowered("Agents of Mistmoore", 4, -1)); // nothing landed close enough to guess a cause
+
+  const [standing] = l.standings();
+  assert.deepEqual(
+    standing.causes,
+    [
+      { kind: "kill", source: "a gnoll pup", net: -8, hits: 2 },
+      { kind: "kill", source: "a gnoll", net: 1, hits: 1 },
+    ],
+    "biggest |net| leads, and an uncorrelated hit adds no row",
+  );
+});
+
+test("a floor/ceiling hit's cause counts as a hit but contributes no net", () => {
+  const l = createFactionLog(tempDir());
+  l.add(hit("Priests of Marr", 1, null, "ceiling", { kind: "kill", mob: "a gnoll pup", gapSec: 2 }));
+  assert.deepEqual(l.standings()[0].causes, [{ kind: "kill", source: "a gnoll pup", net: 0, hits: 1 }]);
+});
+
+test("a cause rollup outlives the hits that built it, the same as the net itself", () => {
+  const l = createFactionLog(tempDir());
+  l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));
+  for (let i = 0; i < 5_001; i++) l.add(lowered("filler", 1000 + i, -1));
+  assert.equal(l.recent(10_000).some((e) => e.faction === "Agents of Mistmoore"), false, "the hit aged out");
+  assert.deepEqual(l.standings().find((s) => s.faction === "Agents of Mistmoore")?.causes, [
+    { kind: "kill", source: "a gnoll pup", net: -3, hits: 1 },
+  ]);
+});
+
+test("a plain clear keeps the cause rollup along with the net; 'everything' drops both", () => {
+  const l = createFactionLog(tempDir());
+  l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));
+  l.clear();
+  assert.deepEqual(l.standings()[0].causes, [{ kind: "kill", source: "a gnoll pup", net: -3, hits: 1 }]);
+  l.clear("everything");
+  assert.deepEqual(l.standings(), []);
+});
+
+test("a standing rolls up mobs and dialogue causes separately, even if they share a name", () => {
+  const l = createFactionLog(tempDir());
+  l.add(lowered("Agents of Mistmoore", 1, -3, "Bob"));
+  l.add(hit("Agents of Mistmoore", 2, 5, "raised", { kind: "dialogue", npc: "Bob", text: "Thank you!", gapSec: 4 }));
+
+  const [standing] = l.standings();
+  assert.deepEqual(standing.causes, [
+    { kind: "dialogue", source: "Bob", net: 5, hits: 1 },
+    { kind: "kill", source: "Bob", net: -3, hits: 1 },
+  ]);
 });

@@ -440,6 +440,7 @@ export function setOverlayProvider(get: () => OverlaySettings | undefined): void
 
 let mainWindow: BrowserWindow | null = null;
 let mapWindow: BrowserWindow | null = null;
+let adminWindow: BrowserWindow | null = null;
 let alertWindow: BrowserWindow | null = null;
 /** The display the overlay was asked for, so a rebuild after a crash lands on the same monitor. */
 let alertDisplayId: number | undefined;
@@ -574,6 +575,47 @@ export function createMapWindow(overlay?: OverlaySettings): BrowserWindow {
   load(mapWindow, "map");
   if (process.env.EQL_DEVTOOLS) mapWindow.webContents.openDevTools({ mode: "detach" });
   return mapWindow;
+}
+
+/**
+ * The hidden admin panel — an ordinary framed window, deliberately unlike every other window this
+ * app opens: not an overlay, not always-on-top, not translucent. It exists to inspect and correct a
+ * store's own records (`electron/admin.ts`), which is a desk-tool task, not something meant to float
+ * over the game — so it gets none of the overlay machinery (no `revealWhenReady`/`reviveOnce`
+ * resilience either: a crash here just closes the window, which is the right amount of ceremony for
+ * a surface most players will never open). Reached from the tray, never from the tab bar.
+ */
+export function createAdminWindow(): BrowserWindow {
+  if (adminWindow && !adminWindow.isDestroyed()) {
+    adminWindow.show();
+    adminWindow.focus();
+    return adminWindow;
+  }
+  adminWindow = new BrowserWindow({
+    width: 900,
+    height: 640,
+    minWidth: 560,
+    minHeight: 360,
+    show: false,
+    title: "EQ List — Admin",
+    icon: windowIcon(),
+    backgroundColor: FLOAT_BG,
+    webPreferences: {
+      preload: PRELOAD,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      additionalArguments: ["--eql-role=admin"],
+    },
+  });
+  pipeRendererConsole(adminWindow, "admin");
+  adminWindow.once("ready-to-show", () => adminWindow?.show());
+  adminWindow.on("closed", () => {
+    adminWindow = null;
+  });
+  load(adminWindow, "admin");
+  if (process.env.EQL_DEVTOOLS) adminWindow.webContents.openDevTools({ mode: "detach" });
+  return adminWindow;
 }
 
 /**

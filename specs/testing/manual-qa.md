@@ -104,6 +104,121 @@ features for later in [../ideas.md](../ideas.md).
   ceiling** in Hits rather than a signed number, and bumps the standing's Floor/Ceiling count without
   moving Net. Also worth digesting an old log with faction lines in it (Settings → Digest a past log)
   and confirming the hits and standings appear the same as if they'd been watched live.
+- **Standings — the row drill-down, and Net/hour sorting.** With a faction that has more than 3 causes
+  attributed to it, confirm clicking anywhere on its row (not the faction name itself, which still
+  opens the wiki page) expands a breakdown below it — a caret should flip to show it's open — with
+  **Kills** and **Quests** as separate, independently-openable groups (only the ones that actually
+  have entries appear), each listing every cause rather than the row's own capped "top 3, +N more".
+  Confirm only one row's breakdown is open at a time, and that clicking the open row's caret again
+  closes it. Then confirm **Net / hour** sorts like any other column (click to sort descending, again
+  to flip) rather than sitting inert.
+- **Faction cause — the guessed "why", and the one number in this feature nothing has verified.**
+  ([ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md).) `faction-cause.ts` blames
+  the most recent own-kill within 3 seconds of a hit, and this is the actual gap to measure: kill
+  something known to move a faction (a raise/lower mob off that faction's wiki page), and — with Debug
+  logging on if you need the exact log timestamps — read how many seconds actually separate "You have
+  slain X!" from "Your faction standing with Y has been adjusted by...". If it's routinely more than a
+  couple of seconds, `CORRELATION_WINDOW_SEC` is too tight and hits are being missed; if kills at a busy
+  camp are showing the *wrong* mob as the cause, it's too loose. Confirm in the app: the Hits table's
+  **Likely cause** column shows the mob with a dim, italic "guess" mark and a tooltip that says outright
+  this is a guess, not a fact; the Standings table's **Likely causes** column rolls up the same guesses
+  per faction, biggest contributor first, with the same caveat in its tooltip. Kill something unrelated
+  to any faction and confirm no hit anywhere gets blamed on it. Then the case that matters most: a kill
+  more than 3 seconds before a hit (a slow log flush, a laggy connection) should show no cause rather
+  than a wrong one — the app would rather say nothing than guess past its own window.
+- **Faction cause from dialogue, and the "no source at all" fallback.**
+  ([ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md).) Turn in a quest
+  that's known to move a faction (no kill involved) and confirm the resulting hit's **Likely cause**
+  names the NPC and, on hover, quotes what they actually said — read the real gap the same way as
+  above, this time between the NPC's line and the faction adjustment, and check it against
+  `DIALOGUE_WINDOW_SEC` (15s). Then the harder thing to catch, and the one signal that's *expected*
+  to sometimes be wrong (ADR 0220 states the limitation outright: nothing here can tell an NPC's
+  reply from a nearby player's chat): have someone tell you something (or chat publicly near you) in
+  the same window as an unrelated faction hit, and see whether it gets wrongly credited. Misfiring at
+  all here needs two rare things to land at once — a faction hit with no kill nearby, *and* unrelated
+  chat inside the same narrow window — so don't go in expecting to reproduce it on the first try; the
+  point of the check is confirming it stays that rare, not hunting for a "real bug" every time. Also
+  confirm a kill still wins when both a kill *and* dialogue happen close together — the kill guess
+  should show, not the dialogue one. Finally, with Debug logging on, loot a corpse **more than two
+  minutes** after your last kill (or one that wasn't yours) and check the debug log for
+  `unattributed coin, possible cause` — it should only appear when a line of dialogue actually landed
+  beforehand, and never anywhere in the UI (there is no tab for it yet, on purpose).
+- **Faction cause naming the quest giver.** ([ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md).)
+  Open the wiki page for a quest before turning it in (so its "Quest giver" row gets cached — the Items
+  tab or Search both trigger the cache walk that reads it), then complete the turn-in and confirm the
+  Hits table's dialogue-caused row shows the quest title in parentheses beside the NPC's name, and that
+  the tooltip states it's a name-match, not proof of which quest. Then the honest-limit case: turn in a
+  quest whose giver's page was **never** opened this session and confirm no quest name appears — just
+  the NPC, same as before ADR 0221 — rather than a blank crash or a stale guess. Finally, confirm this
+  reaches only the live Faction tab — digesting an old log (Settings → Digest a past log) should still
+  name the NPC for a dialogue-caused hit in that log, but never a quest, since the import path doesn't
+  have wiki access wired in (a known, accepted gap, not a bug).
+- **Faction cause narrowed to a specific quest by matching the dialogue itself.**
+  ([ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md).) Find a real giver
+  who hands out **two or more** quests, cache all of those quest pages (so `questDialogueSource()` has
+  something to compare against), then turn one of them in. Confirm the row shows that **one** quest
+  plainly (not "+N more") and the tooltip says the wording matched that quest's own text specifically.
+  Then turn in the *other* quest from the same giver and confirm it narrows to the other one — proof
+  it's actually comparing text, not just always picking the first candidate. Try a giver whose quests'
+  dialogue is very similar in wording (if you know one) to see whether the match is confident or shaky;
+  report the actual match if it's ever visibly wrong, since `DIALOGUE_MATCH_MIN_SCORE` is an unverified
+  guess and this is exactly the evidence that would let it be tuned. Finally, the fallback case: turn in
+  a quest whose page was cached but whose *dialogue extraction* found nothing usable (a page whose
+  lines are all malformed transcriptions, if you can find one) — confirm the row falls back to
+  "possibly: Quest A, Quest B" (the giver's full list) rather than silently picking one or showing
+  nothing.
+- **A live faction hit now appears a few seconds late — on purpose.**
+  ([ADR 0224](../decisions/0224-a-kill-can-log-after-the-faction-line-it-caused.md).) Verified against
+  a real player's `faction-log.json`/`kill-log.json`/`eqlog_*.txt` (this server logs a kill's
+  faction/XP/coin lines *before* its own "You have slain" confirmation about as often as after — the
+  correlator now holds a hit for `CORRELATION_WINDOW_SEC` before deciding its cause, to give a
+  same-tick-or-shortly-after kill a chance to be noted). Raise or lower a faction in game and confirm
+  the Hits row appears within a few seconds rather than instantly — and, the thing this exists for,
+  that it now carries a **kill** cause noticeably more often than it used to, including cases where the
+  kill's own "You have slain" line would have logged after the faction line (a fast multi-kill pull is
+  the easiest place to see this). Confirm the tooltip's wording doesn't claim the kill landed "earlier"
+  — it should read as "logged N seconds apart" without asserting which came first. Then the one that
+  matters for data safety: quit the app **within a couple of seconds** of a faction hit landing and, on
+  the next launch, confirm that hit is actually in the ledger (Settings → the debug log, or just the
+  Hits tab) rather than silently lost — `before-quit` is supposed to resolve and file anything still
+  pending rather than dropping it. Digesting a past log (Settings → Digest a past log) should show the
+  same improved coverage, since it holds hits the same way while reading a whole file at once.
+- **A repeated cause reads as more trustworthy than a lone one.**
+  ([ADR 0225](../decisions/0225-a-repeated-guess-earns-more-trust-than-a-lone-one.md).) Open a
+  Standings row's breakdown for a faction with exactly one dialogue-caused hit on record and confirm
+  its count is plain, dim text — same as always. Then get a **second**, independent hit attributed to
+  that same NPC and the same faction (a different quest from the same giver is the easiest way — or
+  turn in the same quest on an alt) and confirm the count visibly steps up in color once it reaches
+  `FACTION_CAUSE_SAMPLES.fair` (2), and again at `.solid` (4); hover it and confirm the tooltip states
+  the actual hit count plainly rather than just asserting a confidence word. A kill cause should get the
+  same coloring from repeated kills of the same mob. This is a **display-only** change — confirm
+  nothing about `net`, `hits` itself, or which cause gets shown on the Hits tab changes because of it. ([ADR 0222](../decisions/0222-a-race-unlock-guide-is-generated-static-data.md).)
+  The parser is validated against the live guide page (dry-run matched a hand trace of every race), and
+  the join/diff logic is unit-tested, but nothing has watched the panel itself or a real alert fire.
+  Open the Faction tab's **Race Unlocks** segment on a **fresh install with zero hits recorded** first —
+  it should still list all sixteen races with every faction reading `0 / 2000`, since this is reference
+  data, not a ledger (the one view the tab's empty state doesn't gate). Expand a race with required
+  factions (Barbarian) and confirm: the required factions list with a progress bar, the recommended
+  method's numbered steps read sensibly, the quest/item names in them open their wiki pages
+  (`ItemLink`), and the faction-point breakdown groups match what the guide's page actually says under
+  each heading (spot-check one against `eqlwiki.com/User:Alanna/Alanna's_Race_Unlock_Guide` directly).
+  Then the two special cases: **Half Elf** should show "Requires: Human or Wood Elf" with no faction
+  bars, and **Kerran** should show "Task: Aid the Kerrans of Kerra Isle" with no faction bars but its
+  sub-quest links intact. Raise or lower one of Barbarian's required factions in game (or digest an old
+  log that does) and confirm the bar and the raw `net / target` figure move — **never** phrased as
+  "unlocked" or a percentage claiming to be your total standing, since `net` is only what this app has
+  watched change (the module header's caveat; this is the thing most worth getting a second pair of
+  eyes on, since it's easy to misread a bar as a completion state). Toggle the 🔔 on that race, cause
+  another hit to it, and confirm a toast appears saying the faction moved (not that the race unlocked);
+  toggle it back off and confirm the same hit produces no toast. Finally, re-run
+  `npm run factions:unlocks -- --dry-run` against the live page occasionally — if Alanna edits the
+  guide's structure, this is how you'd find out before a player does.
+- **Race Unlocks' two source links.** The "Source:" line above the race list should show
+  **Alanna's Race Unlock Guide** as an `ItemLink` — clicking it opens the wiki page **in-app**, the
+  same as any other faction/quest name in this app. Beside it, **↗ Cheat sheet** should open
+  `necrotalk.com`'s community summary in the **system browser** (a real external window, not in-app) —
+  confirm it actually launches one, since a failed `shell.openExternal` fails silently by design
+  (`electron/ipc.ts`'s handler doesn't surface an error either way).
 - **Money, live — the one to check line-by-line.** Coin is now counted in two ledgers
   ([ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)) and the grammar came from a real
   log this sandbox can't re-read, so the first real session is the verification. Confirm, in order:
@@ -132,6 +247,21 @@ features for later in [../ideas.md](../ideas.md).
   actually near it. The coordinate is someone else's game and the app says so, but *how wrong* it
   tends to be is the thing no test can tell us — and it decides whether the wiki deserves to stay a
   source or should only ever be a hint in the hover.
+- **A mob with more than one real camp, not one bad average between them.**
+  ([ADR 0228](../decisions/0228-a-mob-can-have-more-than-one-known-location.md).) Find (or fake, via a
+  digested log) a mob you've killed in two genuinely separate spots in the same zone — far enough apart
+  that the old single-average behavior would have put its roam centre somewhere between them, nowhere
+  either camp actually is. Open the 📖 panel's row for it and confirm the expanded body now lists **two**
+  locations rather than the ± button's usual one, each with its own coordinate and confidence coloring
+  (dim for a spot backed by only a kill or two, stepping toward `--accent` past `AREA_SAMPLES.fair`/
+  `.solid`); hover one and confirm the tooltip states the actual kill count behind it. Then the
+  ordinary case, which must look **exactly as it did before this**: a mob camped in only one spot shows
+  no such list, just the plain ± button — this is a display-only addition, not a UI change for the
+  common case. Check the same two-location split shows up on that mob's own wiki page ("Your kills")
+  and, if it drops something, on that item's page ("who drops this"). Finally, kill it a third time
+  partway between the two known camps — closer to `LOCATION_CLUSTER_UNITS` (600 units) than either — and
+  see which way it falls; report if that split ever looks wrong, since 600 is an explicitly unverified
+  starting guess and this is exactly the evidence that would let it be tuned.
 - **Screengrab lookup, end-to-end.** Verify the `Ctrl/Cmd+Shift+L` flow: region select → capture →
   Tesseract OCR accuracy → fuzzy match. First OCR downloads the English model (needs network); tune
   the crop / text cleanup if accuracy is poor. Since

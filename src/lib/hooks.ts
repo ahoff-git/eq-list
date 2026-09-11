@@ -11,7 +11,7 @@ import type {
   WatcherStatus,
   LootRecord,
   ItemPrice,
-  FactionEvent,
+  FactionRecord,
   FactionStanding,
   LocEvent,
   CombatStats,
@@ -1125,6 +1125,7 @@ const ALL_CAPABILITIES_OFF: EqlCapabilities = {
   overlayPlacement: false,
   update: false,
   display: false,
+  admin: false,
 };
 
 /**
@@ -1186,8 +1187,8 @@ export function useItemPrices(refreshKey: unknown): ItemPrice[] {
 }
 
 /** Rolling feed of the most recent faction-standing changes (newest first) — same shape as `useLootFeed`. */
-export function useFactionFeed(limit = 200): FactionEvent[] {
-  const [events, setEvents] = useState<FactionEvent[]>([]);
+export function useFactionFeed(limit = 200): FactionRecord[] {
+  const [events, setEvents] = useState<FactionRecord[]>([]);
   /** Bumped when the ledger changes wholesale (a log eaten, a clear) — see `onDataChanged`. */
   const [refresh, setRefresh] = useState(0);
   useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);

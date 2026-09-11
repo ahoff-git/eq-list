@@ -1,7 +1,8 @@
 "use client";
 import { showOnMap } from "@/lib/showOnMap";
+import type { Confidence } from "@/shared/estimates";
 import { locText } from "@/shared/format";
-import { roamWhy, type MobArea } from "@/shared/mob-stats";
+import { areaConfidence, areaConfidenceWhy, roamWhy, type MobArea } from "@/shared/mob-stats";
 import type { MapFocus, MapTarget } from "@/shared/types";
 
 /**
@@ -96,6 +97,7 @@ export function RoamLink({
   mob,
   drop,
   label,
+  confidence,
 }: {
   zone: string;
   area: MobArea;
@@ -105,12 +107,20 @@ export function RoamLink({
   drop?: string;
   /** What to write on the marker (defaults to the mob, or "item · mob" when a drop is named). */
   label?: string;
+  /**
+   * Colors the spread figure by how many kills back this specific spot
+   * ([ADR 0228](../../../specs/decisions/0228-a-mob-can-have-more-than-one-known-location.md)) —
+   * only ever passed by `RoamLinks`, for a mob with more than one known location. Omitted (the
+   * ordinary case) leaves the figure exactly as it always looked: there's nothing to weigh a single
+   * reading against.
+   */
+  confidence?: Confidence;
 }) {
   return (
     <MapLink
       as="button"
       className="mk-loc"
-      title={`${roamWhy(area)} — click to open the map there, with these kills picked out`}
+      title={`${roamWhy(area)}${confidence ? ` — ${areaConfidenceWhy(area)}` : ""} — click to open the map there, with these kills picked out`}
       target={{
         zone,
         loc: { y: area.y, x: area.x },
@@ -118,7 +128,46 @@ export function RoamLink({
         focus: { mob, drop },
       }}
     >
-      {locText(area)} <span className="muted">±{area.spread}</span>
+      {locText(area)} <span className={confidence ? `muted md-rate ${confidence}` : "muted"}>±{area.spread}</span>
     </MapLink>
+  );
+}
+
+/** How many known locations to show before folding the rest into "+N more" — mirrors
+ *  `FactionPanel.tsx`'s `MAX_CAUSES_SHOWN`, the same reasoning: a mob camped for months could
+ *  otherwise list a dozen one-kill stragglers ahead of the two or three that actually matter. */
+const MAX_AREAS_SHOWN = 3;
+
+/**
+ * Every distinct spot a mob's been killed, most-corroborated first — `RoamLink`'s plural sibling for
+ * a mob with more than one known camp
+ * ([ADR 0228](../../../specs/decisions/0228-a-mob-can-have-more-than-one-known-location.md)). A mob
+ * with exactly one known spot renders as a plain, unstyled `RoamLink` — behavior identical to before
+ * this existed. More than one gets each spot's spread colored by `areaConfidence`, reusing `.md-rate`'s
+ * existing thin/fair/solid palette (the same one a drop rate already uses) rather than inventing new
+ * colors, so a spot backed by a single stray kill reads differently from one confirmed repeatedly.
+ */
+export function RoamLinks({
+  zone,
+  areas,
+  mob,
+  drop,
+}: {
+  zone: string;
+  areas: readonly MobArea[];
+  mob: string;
+  drop?: string;
+}) {
+  if (areas.length === 0) return null;
+  if (areas.length === 1) return <RoamLink zone={zone} area={areas[0]} mob={mob} drop={drop} />;
+  const shown = areas.slice(0, MAX_AREAS_SHOWN);
+  const hidden = areas.length - shown.length;
+  return (
+    <span className="roam-links">
+      {shown.map((area, i) => (
+        <RoamLink key={i} zone={zone} area={area} mob={mob} drop={drop} confidence={areaConfidence(area)} />
+      ))}
+      {hidden > 0 && <span className="muted small"> +{hidden} more</span>}
+    </span>
   );
 }

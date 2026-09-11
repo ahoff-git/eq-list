@@ -16,7 +16,8 @@ import { createTravelRouter } from "./travel-graph";
 import { sampleAlert, sampleRecord } from "./alert-router";
 import { dataReport } from "./data-health";
 import { selfCheck } from "./self-check";
-import { createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, setAlertInteractive, showInSearch } from "./windows";
+import { createAdminWindow, createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, setAlertInteractive, showInSearch } from "./windows";
+import { createAdminRegistry } from "./admin";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
 import type { Store } from "./store";
 import type { WikiClient } from "./wiki";
@@ -50,6 +51,7 @@ import type { ShareKind } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
 import { forTransfer, itemRows } from "../src/shared/item-search";
 import { normalizeItemName } from "../src/shared/grouping";
+import { RACE_UNLOCK_CHEAT_SHEET_URL } from "../src/shared/race-unlocks";
 
 const log = createLogger("ipc");
 
@@ -132,6 +134,7 @@ export function registerIpc(context: IpcContext): void {
   registerAppIpc(context);
   registerWindowIpc(context, shared);
   registerPeerIpc(context);
+  registerAdminIpc(context);
 }
 
 /**
@@ -698,6 +701,9 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.factionRecent, (_e, limit?: number) => factionLog.recent(limit));
   // Every faction touched, folded to its net standing.
   ipcMain.handle(CH.factionStandings, () => factionLog.standings());
+  // A fixed, single URL — not a general external-link opener — so there's nothing here for a caller
+  // to supply and no host to validate against; the ↗ button in `RaceUnlocksView` is its only caller.
+  ipcMain.handle(CH.raceUnlocksOpenCheatSheet, () => shell.openExternal(RACE_UNLOCK_CHEAT_SHEET_URL));
   ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
   ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
   // Who has told us what. Reporting is **not** here: contributions are filed by `registerPeerIpc`
@@ -1091,6 +1097,37 @@ function registerPeerIpc(context: IpcContext): void {
   ipcMain.handle(CH.winResetPositions, () => {
     resetPositions();
     getMainWindow()?.center();
+  });
+  ipcMain.on(CH.winOpenAdmin, () => createAdminWindow());
+}
+
+/**
+ * The hidden admin panel's own data: every registered store, listing its records and patching one
+ * field of one at a time. Each store built its own `AdminStore` (`electron/admin.ts`); this only
+ * collects them under one registry and puts that registry behind IPC.
+ */
+function registerAdminIpc(context: IpcContext): void {
+  const admin = createAdminRegistry({
+    kills: context.killLog.admin,
+    loot: context.lootLog.admin,
+    fights: context.history.admin,
+    highScores: context.scores.admin,
+    factionHits: context.factionLog.admin,
+    respawnTimers: context.spawns.admin,
+    peerKills: context.peerKills.admin,
+    pooledMobKnowledge: context.mobs.admin,
+  });
+
+  ipcMain.handle(CH.adminStores, () => admin.stores());
+  ipcMain.handle(CH.adminRecords, (_e, storeId: string) => admin.records(storeId));
+  ipcMain.handle(CH.adminRecord, (_e, storeId: string, id: string) => admin.record(storeId, id));
+  ipcMain.handle(CH.adminPatch, (_e, storeId: string, id: string, field: string, input: string) => {
+    const result = admin.patch(storeId, id, field, input);
+    // Every window's list is stale the instant one patch lands, and re-fetching is cheap next to
+    // getting this wrong silently — there is no narrower "just this row changed" event worth adding
+    // for a panel nobody has open most of the time.
+    if (result.ok) context.broadcast(CH.dataChanged, undefined);
+    return result;
   });
 }
 

@@ -21,8 +21,9 @@
  * same source the watcher read, replayed.
  *
  * Deliberately narrow:
- *   - a record that **has** a zone is never touched (nothing to fix, and overwriting the log's own
- *     wording with our reading of it is precisely what ADR 0083 forbids);
+ *   - a record that has an **ordinary** zone is never touched (nothing to fix, and overwriting the
+ *     log's own wording with our reading of it is precisely what ADR 0083 forbids) — the one
+ *     exception is a zone `classifyZoneLine` has confirmed isn't one at all, covered below;
  *   - only the `zone` is filled — never a position, a confidence or a count;
  *   - where two logs (two characters) disagree about where you were, the record is **left alone**;
  *   - it is idempotent, and versioned in the file so it doesn't re-read the logs every launch.
@@ -31,6 +32,16 @@
  * ([ADR 0084](../specs/decisions/0084-a-watch-is-a-rule-not-a-substring.md)) — see
  * `upgradeAlertRules` below. It is a different file with its own schema, and unlike the first it is
  * not repairing anything: an un-migrated settings file works exactly as it always did.
+ *
+ * **A later migration corrects a zone that was never a zone.** The client reuses "You have
+ * entered …" for a restriction notice — "You have entered an area where levitation effects do not
+ * function." — which read, before `classifyZoneLine` (`zones/place.ts`) existed, exactly like an
+ * arrival. That is not the disagreement ADR 0083 protects against: the rule there is about *never
+ * overwriting one true fact with our own reading of it*, and a restriction notice was never a zone
+ * name to begin with — it is a parsing defect, not an interpretation. `zones/place.ts`'s
+ * `NOT_A_ZONE` names the confirmed cases; everything below that touches a zone checks a record
+ * against it before touching anything, and only ever replaces a *confirmed-wrong* value — an
+ * ordinary recorded zone, agreed or disputed, is still never touched.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -39,9 +50,11 @@ import { splitLine } from "../src/shared/log-parser";
 import { parseSplitLine } from "../src/shared/parse-line";
 import { upgradeWatches } from "../src/shared/watch-upgrade";
 import { BUILT_IN_STYLES } from "../src/shared/alert-styles";
-import type { CastAlertSettings, KillRecord } from "../src/shared/types";
+import { classifyZoneLine } from "../src/shared/zones/place";
+import { timerInPlace } from "../src/shared/spawn-timers";
+import type { CastAlertSettings, HighScore, KillRecord, LootRecord, StoredFight } from "../src/shared/types";
 import type { MobObservation } from "../src/shared/mob-stats";
-import { writeJson } from "./json-store";
+import { readJson, writeJson } from "./json-store";
 import { contributorName, legacyContributorId } from "../src/shared/contributors";
 
 const log = createLogger("migrations");
@@ -50,7 +63,7 @@ const log = createLogger("migrations");
  * The schema the stored kill log is at. Bump when a new migration needs to run once; the number is
  * written into the file, so a store already at this version is left completely alone.
  */
-const KILL_LOG_SCHEMA = 2;
+const KILL_LOG_SCHEMA = 3;
 
 /** Only files shaped like an EverQuest log — one per character, as the game names them. */
 const LOG_FILE = /^eqlog_.*\.txt$/i;
@@ -66,6 +79,21 @@ interface StoredKillLog {
   schema?: number;
   kills?: KillRecord[];
   retired?: MobObservation[];
+}
+
+/**
+ * Version for `repairBadZones` below, which sweeps the four stores that don't already carry a
+ * `schema` field of their own — `loot-log.json`, `combat-history.json`, `high-scores.json` and
+ * `spawn-timers.json`. Kept in a small file of its own (`data-repairs.json`) rather than inside one
+ * of the four: none of their own schema numbers are about zones, so borrowing one would misdate
+ * what that store actually tracks, and a marker split across four files could disagree about
+ * whether the sweep had run. Bump it again if `NOT_A_ZONE` (`zones/place.ts`) grows and the sweep
+ * is worth re-running against what it's since learned.
+ */
+const ZONE_REPAIR_VERSION = 1;
+
+interface StoredRepairs {
+  zoneRepair?: number;
 }
 
 /** Where the log says you were, as a list of "from this moment, this zone" in log order. */
@@ -104,6 +132,11 @@ export function runMigrations(userDataDir: string, logDir: string | undefined): 
     keyKnowledgeByContributor(userDataDir);
   } catch (err) {
     log.error("contributor re-keying failed; pooled knowledge left untouched", err);
+  }
+  try {
+    repairBadZones(userDataDir, logDir);
+  } catch (err) {
+    log.error("zone repair failed; data left untouched", err);
   }
 }
 
@@ -245,56 +278,90 @@ function upgradeAlertRules(userDataDir: string): void {
   log.debug("upgraded alert rules", { ...report, rules: settings.watches.length });
 }
 
+/** Missing, or confirmed to name an effect rather than a place — either way worth a second look. */
+function needsZoneRepair(zone: string | undefined): boolean {
+  return !zone || classifyZoneLine(zone) === "blacklisted";
+}
+
+/**
+ * Re-derive one timestamp's zone from the logs — the rule every repair in this file follows: only
+ * when exactly one character's log can say, and only ever filling in a fact the log states.
+ * `undefined` when it can't be placed, which a caller treats as "leave unplaced" for a gap and
+ * "can no longer say" for a confirmed-wrong value — better than confidently wrong either way.
+ */
+function repairedZone(timelines: ZoneTimeline[], at: string): string | undefined {
+  const answers = [...new Set(timelines.map((t) => zoneAt(t, at)).filter((z): z is string => !!z))];
+  return answers.length === 1 ? answers[0] : undefined;
+}
+
+/**
+ * Repair or clear `.zone` across a batch already filtered by `needsZoneRepair` — the one loop kills,
+ * loot, fights and scores all want: resolve it from the logs where they can, and clear a *confirmed*
+ * wrong value where they can't (a merely-missing one is left as it was — there was nothing to lose).
+ * `wasBad` is exactly `needsZoneRepair`'s blacklisted case, since a missing zone is already falsy.
+ */
+function repairZoneField<T extends { zone?: string }>(
+  items: T[],
+  at: (item: T) => string,
+  timelines: ZoneTimeline[],
+): { filled: number; cleared: number } {
+  let filled = 0;
+  let cleared = 0;
+  for (const item of items) {
+    const wasBad = !!item.zone;
+    const fixed = repairedZone(timelines, at(item));
+    if (fixed) {
+      item.zone = fixed;
+      filled++;
+    } else if (wasBad) {
+      item.zone = undefined;
+      cleared++;
+    }
+  }
+  return { filled, cleared };
+}
+
 function fillMissingKillZones(userDataDir: string, logDir: string | undefined): void {
   const file = path.join(userDataDir, "kill-log.json");
   const stored = readStore(file);
   if (!stored) return; // nothing there, or something we must not write over — see `readStore`
   if ((stored.schema ?? 1) >= KILL_LOG_SCHEMA) return;
   const kills = stored.kills ?? [];
-  const unplaced = kills.filter((k) => !k.zone && k.at);
+  const candidates = kills.filter((k) => needsZoneRepair(k.zone) && k.at);
+  // Retired kills survive only as a per-mob-per-zone tally (ADR 0056) — there's no instant left to
+  // re-derive, so a bucket filed under a confirmed-wrong zone can't be split back to a real one. It
+  // is discarded rather than kept lying under a place that never existed.
+  const retired = stored.retired ?? [];
+  const badRetired = retired.filter((o) => classifyZoneLine(o.zone) === "blacklisted");
 
   // Nothing to repair: stamp the schema so the logs are never read for this again.
-  if (!unplaced.length) {
-    stamp(file, stored, { filled: 0, left: 0 });
+  if (!candidates.length && !badRetired.length) {
+    stamp(file, stored, { filled: 0, cleared: 0, left: 0, forgotten: 0 });
     return;
   }
   if (!logDir) {
-    log.debug("migration deferred: no log folder set", { unplaced: unplaced.length });
+    log.debug("migration deferred: no log folder set", { candidates: candidates.length });
     return; // no stamp — try again once the user points us at their logs
   }
 
   const timelines = readZoneTimelines(logDir);
   if (!timelines.length) {
-    log.debug("migration deferred: no logs found", { logDir, unplaced: unplaced.length });
+    log.debug("migration deferred: no logs found", { logDir, candidates: candidates.length });
     return;
   }
 
-  let filled = 0;
-  const byZone = new Map<string, number>();
-  for (const kill of unplaced) {
-    // Every log that can speak for this moment. More than one answer means two characters were
-    // logged in and we can't tell which log this kill came from — so we don't choose.
-    const answers = [...new Set(timelines.map((t) => zoneAt(t, kill.at)).filter((z): z is string => !!z))];
-    if (answers.length !== 1) continue;
-    kill.zone = answers[0];
-    filled++;
-    byZone.set(answers[0], (byZone.get(answers[0]) ?? 0) + 1);
-  }
+  const { filled, cleared } = repairZoneField(candidates, (k) => k.at, timelines);
 
-  const left = unplaced.length - filled;
-  if (filled) {
+  const left = candidates.length - filled - cleared;
+  if (filled || cleared || badRetired.length) {
     // Kept beside the live file rather than overwritten in place: space is cheap, and a repair that
     // turns out to be wrong should cost a file copy to undo, not an evening's kills.
     backUp(file, userDataDir);
     stored.kills = kills;
+    if (badRetired.length) stored.retired = retired.filter((o) => classifyZoneLine(o.zone) !== "blacklisted");
   }
-  stamp(file, stored, { filled, left });
-  log.debug("filled in zones the log stated", {
-    filled,
-    left,
-    records: kills.length,
-    zones: Object.fromEntries(byZone),
-  });
+  stamp(file, stored, { filled, cleared, left, forgotten: badRetired.length });
+  log.debug("corrected kill-log zones", { filled, cleared, left, forgotten: badRetired.length, records: kills.length });
 }
 
 /**
@@ -323,7 +390,7 @@ function readStore(file: string): StoredKillLog | undefined {
 }
 
 /** Write the schema (and the repair, if there was one) atomically — `writeJson` renames into place. */
-function stamp(file: string, stored: StoredKillLog, counts: { filled: number; left: number }): void {
+function stamp(file: string, stored: StoredKillLog, counts: Record<string, number>): void {
   stored.schema = KILL_LOG_SCHEMA;
   if (stamped(file, stored, "kill log")) log.debug("kill log at schema", KILL_LOG_SCHEMA, counts);
 }
@@ -402,4 +469,149 @@ function zoneAt(timeline: ZoneTimeline, at: string): string | undefined {
     zone = entry.zone;
   }
   return zone;
+}
+
+/**
+ * The fields of `spawn-timers.json` this sweep touches — see `electron/spawn-tracker.ts`'s own
+ * `Stored` for the file's full shape. Every other field (`provenance`, anything a newer build
+ * added) rides along untouched: this reads the file once, mutates it in place and writes the same
+ * object back, so a field this interface doesn't name is simply never looked at.
+ */
+interface StoredSpawnZones {
+  lastZone?: Record<string, string>;
+  stated?: Record<string, unknown>;
+  relearned?: Record<string, unknown>;
+  lead?: Record<string, unknown>;
+  notify?: Record<string, unknown>;
+  armed?: Record<string, unknown>;
+  seen?: Record<string, unknown>;
+  floor?: Record<string, unknown>;
+  droppedGaps?: Record<string, unknown>;
+  added?: Record<string, unknown>;
+  queue?: Record<string, unknown>;
+  repeat?: Record<string, unknown>;
+  styleId?: Record<string, unknown>;
+  onScreen?: Record<string, unknown>;
+  timers?: { key: string }[];
+}
+
+/**
+ * Every field keyed `mobKey|placeKey` (`timerKey`, `src/shared/spawn-timers.ts`) rather than by mob
+ * alone — `said` is deliberately absent, since it's keyed by mob only and names no place at all.
+ */
+const TIMER_KEYED_FIELDS = [
+  "stated", "relearned", "lead", "notify", "armed", "seen", "floor", "droppedGaps",
+  "added", "queue", "repeat", "styleId", "onScreen",
+] as const satisfies readonly (keyof StoredSpawnZones)[];
+
+/**
+ * Forget one confirmed-fake camp. A countdown's identity **is** its place — there's no "unplaced
+ * timer" the way a kill or a drop can be unplaced — so where the migrations above repair or clear a
+ * field, this can only ever discard: every row keyed to `place`, and the place itself out of
+ * `lastZone`. Returns how many rows went, for the log line.
+ */
+function purgePlace(spawn: StoredSpawnZones, place: string): number {
+  let removed = 0;
+  for (const field of TIMER_KEYED_FIELDS) {
+    const record = spawn[field];
+    if (!record) continue;
+    for (const key of Object.keys(record)) {
+      if (timerInPlace(key, place)) {
+        delete record[key];
+        removed++;
+      }
+    }
+  }
+  if (spawn.timers) {
+    const before = spawn.timers.length;
+    spawn.timers = spawn.timers.filter((t) => !timerInPlace(t.key, place));
+    removed += before - spawn.timers.length;
+  }
+  if (spawn.lastZone) delete spawn.lastZone[place];
+  return removed;
+}
+
+/**
+ * The one-time sweep for the four stores that don't carry a `schema` of their own — see
+ * `ZONE_REPAIR_VERSION`. Loot, fights and personal bests get the same repair-or-clear treatment as
+ * `fillMissingKillZones` gives kills; a spawn timer, which has no "unplaced" state to fall back to,
+ * is simply forgotten (`purgePlace`).
+ *
+ * A missing `logDir` still runs the sweep — unlike `fillMissingKillZones`, which defers so a
+ * *missing* zone can wait for logs to become resolvable. A confirmed-wrong zone has no such upside
+ * to waiting for: without logs every candidate below simply clears or is forgotten outright, which
+ * is strictly better than leaving a sentence that was never a place sitting in the data.
+ */
+function repairBadZones(userDataDir: string, logDir: string | undefined): void {
+  const stateFile = path.join(userDataDir, "data-repairs.json");
+  const state = readJson<StoredRepairs>(stateFile, {});
+  if ((state.zoneRepair ?? 0) >= ZONE_REPAIR_VERSION) return;
+
+  const lootFile = path.join(userDataDir, "loot-log.json");
+  const loot = readJson<{ loot?: LootRecord[] }>(lootFile, {});
+  const lootCandidates = (loot.loot ?? []).filter((r) => needsZoneRepair(r.zone) && r.at);
+
+  const historyFile = path.join(userDataDir, "combat-history.json");
+  const history = readJson<{ fights?: StoredFight[] }>(historyFile, {});
+  const fightCandidates = (history.fights ?? []).filter((f) => needsZoneRepair(f.zone) && f.stats?.startedAt);
+
+  const scoresFile = path.join(userDataDir, "high-scores.json");
+  const scores = readJson<{ characters?: Record<string, { scores?: Record<string, HighScore> }> }>(scoresFile, {});
+  const scoreCandidates = Object.values(scores.characters ?? {}).flatMap((board) =>
+    Object.values(board.scores ?? {}).filter((hs) => needsZoneRepair(hs.zone) && hs.at),
+  );
+
+  const spawnFile = path.join(userDataDir, "spawn-timers.json");
+  const spawn = readJson<StoredSpawnZones>(spawnFile, {});
+  const badPlaces = Object.entries(spawn.lastZone ?? {})
+    .filter(([, zone]) => classifyZoneLine(zone) === "blacklisted")
+    .map(([place]) => place);
+
+  if (!lootCandidates.length && !fightCandidates.length && !scoreCandidates.length && !badPlaces.length) {
+    stamped(stateFile, { zoneRepair: ZONE_REPAIR_VERSION }, "zone repair state");
+    return;
+  }
+
+  const timelines = logDir ? readZoneTimelines(logDir) : [];
+  const { filled: lootFilled, cleared: lootCleared } = repairZoneField(lootCandidates, (r) => r.at, timelines);
+  const { filled: fightsFilled, cleared: fightsCleared } = repairZoneField(fightCandidates, (f) => f.stats.startedAt, timelines);
+  const { filled: scoresFilled, cleared: scoresCleared } = repairZoneField(scoreCandidates, (hs) => hs.at, timelines);
+
+  let timersForgotten = 0;
+  for (const place of badPlaces) timersForgotten += purgePlace(spawn, place);
+
+  if (lootCandidates.length) {
+    backUpFile(lootFile, userDataDir, "loot-log");
+    writeJson(lootFile, loot, { what: "loot log (migration)" });
+  }
+  if (fightCandidates.length) {
+    backUpFile(historyFile, userDataDir, "combat-history");
+    writeJson(historyFile, history, { what: "combat history (migration)" });
+  }
+  if (scoreCandidates.length) {
+    backUpFile(scoresFile, userDataDir, "high-scores");
+    writeJson(scoresFile, scores, { what: "high scores (migration)" });
+  }
+  if (badPlaces.length) {
+    backUpFile(spawnFile, userDataDir, "spawn-timers");
+    writeJson(spawnFile, spawn, { what: "spawn timers (migration)" });
+  }
+  stamped(stateFile, { zoneRepair: ZONE_REPAIR_VERSION }, "zone repair state");
+  log.debug("corrected zones a restriction notice had faked", {
+    loot: { filled: lootFilled, cleared: lootCleared },
+    fights: { filled: fightsFilled, cleared: fightsCleared },
+    highScores: { filled: scoresFilled, cleared: scoresCleared },
+    timersForgotten,
+    badPlaces,
+  });
+}
+
+/** A copy of one migrated file as it was, once — the same promise `backUp` makes for the kill log. */
+function backUpFile(file: string, userDataDir: string, label: string): void {
+  const backup = path.join(userDataDir, `${label}.pre-zone-repair-${ZONE_REPAIR_VERSION}.json`);
+  try {
+    if (fs.existsSync(file) && !fs.existsSync(backup)) fs.copyFileSync(file, backup);
+  } catch (err) {
+    log.error(`could not back up ${label}`, err);
+  }
 }

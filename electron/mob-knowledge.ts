@@ -23,11 +23,13 @@
  */
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { mergeObservations, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
-import { samePlace } from "../src/shared/zones/place";
+import { mergeObservations, withAreas, type MobArea, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
+import { classifyZoneLine, samePlace } from "../src/shared/zones/place";
 import { plausible } from "../src/shared/estimates";
+import { isAdminAudit, type AdminAudit } from "../src/shared/admin";
 import type { Contributor, KnowledgeContributor } from "../src/shared/contributors";
 import { createContributions, type Contributed } from "./contributions";
+import { createArrayAdminStore, type AdminStore } from "./admin";
 import type { KillLog } from "./kill-log";
 
 const log = createLogger("mob-knowledge");
@@ -68,6 +70,10 @@ export function sanitizeObservations(input: unknown[]): MobObservation[] {
     const r = o as Record<string, unknown>;
     if (typeof r.mob !== "string" || !r.mob.trim()) continue;
     if (typeof r.zone !== "string" || !r.zone.trim()) continue;
+    // Same guard as `peer-kills.ts`: a peer on an older build can still report the client's
+    // zone-restriction notice as if it were the place they were standing in. Refused here, and
+    // re-vetted on every load (`contributions.ts`), so an already-pooled one is shed automatically.
+    if (classifyZoneLine(r.zone) === "blacklisted") continue;
     if (!isFinNum(r.kills) || !plausible(r.kills, KILLS_PLAUSIBLE)) continue;
     const kills = r.kills;
 
@@ -95,7 +101,22 @@ export function sanitizeObservations(input: unknown[]): MobObservation[] {
     if (a && typeof a === "object" && isFinNum(a.y) && isFinNum(a.x) && isFinNum(a.spread) && isFinNum(a.samples)) {
       clean.area = { y: a.y, x: a.x, spread: a.spread, samples: a.samples };
     }
-    out.push(clean);
+    // A peer on a build from before ADR 0228 sends only `area`; a newer one sends `areas` too —
+    // vetted the same element-by-element way, then `withAreas` reconciles whichever arrived.
+    if (Array.isArray(r.areas)) {
+      const areas: MobArea[] = [];
+      for (const entry of r.areas as unknown[]) {
+        const e = entry as Record<string, unknown> | null;
+        if (e && typeof e === "object" && isFinNum(e.y) && isFinNum(e.x) && isFinNum(e.spread) && isFinNum(e.samples)) {
+          areas.push({ y: e.y, x: e.x, spread: e.spread, samples: e.samples });
+        }
+      }
+      clean.areas = areas;
+    }
+    // Carried through re-vetting the same way `peer-kills.ts` does — the one field here that isn't a
+    // claim about the mob, so it's a shape-checked pass-through rather than one of "the named fields".
+    if (isAdminAudit(r.__admin)) (clean as MobObservation & { __admin?: AdminAudit }).__admin = r.__admin;
+    out.push(withAreas(clean));
   }
   return out;
 }
@@ -112,6 +133,12 @@ export interface MobKnowledgeStore {
   /** Forget one contributor's contributions, or everybody's. Your own are derived and unaffected. */
   forgetPeers(id?: string): void;
   flush(): void;
+  /**
+   * The hidden admin panel's view of what *peers* have told us — see `electron/admin.ts`. Your own
+   * observations aren't a separate store to register: they're derived from `killLog.observations()`,
+   * so correcting them means editing the kill log itself, which already has its own admin view.
+   */
+  admin: AdminStore;
 }
 
 export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKnowledgeStore {
@@ -156,5 +183,22 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
     forgetPeers: (id) => store.forget(id),
 
     flush: () => store.flush(),
+
+    // Same reasoning as `peer-kills.ts`'s admin view: no per-item key exists here either, since a
+    // report replaces a contributor's whole array (contributions.ts's rule 2) — `__row` is a position
+    // within that array, decorated on read only so the panel has something to address a row by.
+    admin: createArrayAdminStore(
+      "Pooled mob knowledge",
+      () =>
+        store.all().flatMap(({ by, data }) =>
+          data.map((o, row) => Object.assign(o, { contributorId: by.id, contributorName: by.name, __row: row })),
+        ),
+      {
+        idOf: (o) => `${o.contributorId}:${o.__row}`,
+        summaryOf: (o) => `${o.mob} — ${o.zone} (${o.kills} kills, from ${o.contributorName})`,
+        editable: ["mob", "zone", "kills", "copper", "lastAt"],
+        save: () => store.flush(),
+      },
+    ),
   };
 }

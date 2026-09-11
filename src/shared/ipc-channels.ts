@@ -27,6 +27,9 @@ export const CH = {
   lootItems: "loot:items",
   factionRecent: "faction:recent",
   factionStandings: "faction:standings",
+  /** Open the community cheat-sheet summary of the Race Unlocks guide — a fixed, single URL, not a
+   *  general external-link opener (see `electron/ipc.ts`'s handler). */
+  raceUnlocksOpenCheatSheet: "raceUnlocks:openCheatSheet",
   alertsTest: "alerts:test",
   alertsPreview: "alerts:preview", // show a sample wearing a look being edited, attached to no rule
   alertPlaceStart: "alert:placeStart", // main window → main: begin placing a custom alert spot
@@ -155,6 +158,12 @@ export const CH = {
   appOpenLog: "app:openLog",
   dataHealth: "data:health", // which stored data the rules have moved on from
   selfCheck: "app:selfCheck", // run the setup chain and report which step broke
+  // Hidden admin panel (ADR 0227) — inspect and directly correct a store's records.
+  adminStores: "admin:stores", // every registered store, with its size and how much of it is flagged
+  adminRecords: "admin:records", // one store's records
+  adminRecord: "admin:record", // one record, freshly re-read (after a patch, say)
+  adminPatch: "admin:patch", // change one field of one record
+  winOpenAdmin: "win:openAdmin",
   displaysList: "displays:list",
   // update notification (rolling "latest" build; see ADR 0013)
   updateCurrent: "update:current",

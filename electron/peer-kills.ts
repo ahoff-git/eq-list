@@ -23,10 +23,12 @@
  */
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { samePlace } from "../src/shared/zones/place";
+import { classifyZoneLine, samePlace } from "../src/shared/zones/place";
+import { isAdminAudit, type AdminAudit } from "../src/shared/admin";
 import type { SharedKill } from "../src/shared/kill-filters";
 import type { Contributor } from "../src/shared/contributors";
 import { createContributions } from "./contributions";
+import { createArrayAdminStore, type AdminStore } from "./admin";
 
 const log = createLogger("peer-kills");
 
@@ -57,9 +59,20 @@ export function sanitizeKills(input: unknown[]): SharedKill[] {
     const r = k as Record<string, unknown>;
     if (typeof r.mob !== "string" || !r.mob.trim()) continue;
     if (typeof r.zone !== "string" || !r.zone.trim()) continue;
+    // A peer on an older build can still send the client's zone-restriction notice mistaken for an
+    // arrival ("You have entered an area where levitation effects do not function.") — confirmed
+    // fake, so refused here the same as a malformed shape rather than pooled as somewhere to plot a
+    // marker. Re-vetted on every load (`contributions.ts`), so a build already carrying one of these
+    // sheds it the next time it reads its own pooled file, without anybody having to forget peers.
+    if (classifyZoneLine(r.zone) === "blacklisted") continue;
     if (!isFinNum(r.y) || !isFinNum(r.x)) continue;
     if (!isFinNum(r.confidence) || r.confidence < MIN_CONFIDENCE || r.confidence > 1) continue;
-    out.push({ mob: r.mob, zone: r.zone, y: r.y, x: r.x, confidence: r.confidence });
+    const clean: SharedKill & { __admin?: AdminAudit } = { mob: r.mob, zone: r.zone, y: r.y, x: r.x, confidence: r.confidence };
+    // Carried through re-vetting rather than rebuilt away with everything else `r` might carry: the
+    // one field here that isn't a claim about the kill, so it gets its own, shape-checked pass-through
+    // instead of being swept up by "only the five named fields survive".
+    if (isAdminAudit(r.__admin)) clean.__admin = r.__admin;
+    out.push(clean);
   }
   return out;
 }
@@ -72,6 +85,8 @@ export interface PeerKillStore {
   /** Forget one contributor's kills, or everybody's. */
   forget(id?: string): void;
   flush(): void;
+  /** The hidden admin panel's view of every contributor's shared kills — see `electron/admin.ts`. */
+  admin: AdminStore;
 }
 
 export function createPeerKills(userDataDir: string): PeerKillStore {
@@ -100,5 +115,23 @@ export function createPeerKills(userDataDir: string): PeerKillStore {
     forget: (id) => store.forget(id),
 
     flush: () => store.flush(),
+
+    // Unlike the app's own records, a shared kill has no per-item key at all — a report replaces a
+    // contributor's whole array (contributions.ts's rule 2), so there is nothing an edit here could
+    // desync. `__row` is a position within that contributor's own array, decorated on read purely so
+    // the panel has something stable to address a row by; it is never itself shown as a field.
+    admin: createArrayAdminStore(
+      "Peer kills",
+      () =>
+        store.all().flatMap(({ by, data }) =>
+          data.map((k, row) => Object.assign(k, { contributorId: by.id, contributorName: by.name, __row: row })),
+        ),
+      {
+        idOf: (k) => `${k.contributorId}:${k.__row}`,
+        summaryOf: (k) => `${k.mob} — ${k.zone} (from ${k.contributorName})`,
+        editable: ["mob", "zone", "y", "x", "confidence"],
+        save: () => store.flush(),
+      },
+    ),
   };
 }

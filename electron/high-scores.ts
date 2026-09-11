@@ -34,6 +34,7 @@ import { characterFromLogFile } from "../src/shared/log-parser";
 import { beats, fightCandidates, scoreOrder } from "../src/shared/high-scores";
 import type { HighScore, ScoreBoard, ScoreCandidate, StoredFight } from "../src/shared/types";
 import { createSaver, readJson } from "./json-store";
+import { createArrayAdminStore, type AdminStore } from "./admin";
 
 const log = createLogger("high-scores");
 
@@ -89,6 +90,8 @@ export interface HighScoreKeeper {
   /** Forget the current character's board. Everyone else's is untouched. */
   clear(): ScoreBoard;
   flush(): void;
+  /** The hidden admin panel's view of every character's board — see `electron/admin.ts`. */
+  admin: AdminStore;
 }
 
 export function createHighScores(userDataDir: string): HighScoreKeeper {
@@ -281,5 +284,24 @@ export function createHighScores(userDataDir: string): HighScoreKeeper {
     flush() {
       saver.flush();
     },
+
+    // Boards are nested by character, so each live `HighScore` is decorated with which one it's
+    // under (`Object.assign`, not a copy — the same object `board()` reads) rather than invented an
+    // id from scratch. That field then rides along into the saved file like any other, which is
+    // harmless: it's redundant with the key it's already nested under, never read back by anything
+    // but this admin view.
+    admin: createArrayAdminStore(
+      "High scores",
+      () =>
+        Object.entries(data.characters).flatMap(([who, board]) =>
+          Object.values(board.scores).map((hs) => Object.assign(hs, { character: who })),
+        ),
+      {
+        idOf: (hs) => `${hs.character}:${hs.categoryId}`,
+        summaryOf: (hs) => `${hs.character} — ${hs.categoryId}: ${hs.value} (${hs.zone ?? "no zone"})`,
+        editable: ["zone", "value", "detail", "previous", "beaten", "unsettled"],
+        save: () => saver.save(),
+      },
+    ),
   };
 }
