@@ -17,7 +17,8 @@
  *      own aged-out records, and the reason is identical: what a report *taught* is the expensive
  *      part and cannot be recovered from a log we never had. `seenAt` still moves, so a reader can
  *      always tell live pooling from a tally nobody has refreshed in a month, and
- *      `forget` is the deliberate, asked-for retraction.
+ *      `forget` is the deliberate, asked-for retraction — and so, at the single-row grain, is
+ *      `removeItem`: the admin panel's own correction, not a path a peer's report can reach.
  *   4. **Untrusted on arrival.** Every payload passes the caller's `sanitize` before it is stored:
  *      the shape is checked, and so is whether the numbers are *possible* — an implausible
  *      observation is discarded rather than clamped, per `estimates.ts` rule 2.
@@ -48,8 +49,13 @@ export interface ContributionStore<T> {
   all(): Contributed<T>[];
   /** Just the data, with each item's contributor already attached by `credit`. */
   pooled(): T[];
-  /** Forget one contributor, or everybody. The only way anything leaves this store. */
+  /** Forget one contributor, or everybody. */
   forget(id?: string): void;
+  /** Remove one item from one contributor's data, by the position `pooled()`/`all()` stamped it with
+   *  (the admin panel's `__row`). Unlike `forget`, the contributor keeps everything else they told us —
+   *  this corrects a single bad row, not a retraction. Together with `forget`, the only ways anything
+   *  leaves this store. */
+  removeItem(contributorId: string, row: number): void;
   /** How many contributors, and how many items between them — for a status line. */
   size(): { contributors: number; items: number };
   flush(): void;
@@ -131,6 +137,13 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
     forget(id) {
       if (id === undefined) contributors = {};
       else delete contributors[id];
+      saver.flush();
+    },
+
+    removeItem(contributorId, row) {
+      const entry = contributors[contributorId];
+      if (!entry || row < 0 || row >= entry.data.length) return;
+      entry.data.splice(row, 1);
       saver.flush();
     },
 

@@ -79,6 +79,7 @@ const api: EqlApi = {
     recent: (limit) => ipcRenderer.invoke(CH.factionRecent, limit),
     standings: () => ipcRenderer.invoke(CH.factionStandings),
     onEvent: (cb) => on(CH.factionEvent, cb),
+    setCorrection: (faction, statedNet) => ipcRenderer.invoke(CH.factionSetCorrection, faction, statedNet),
   },
   raceUnlocks: {
     openCheatSheet: () => ipcRenderer.invoke(CH.raceUnlocksOpenCheatSheet),
@@ -311,6 +312,8 @@ const api: EqlApi = {
     records: (storeId) => ipcRenderer.invoke(CH.adminRecords, storeId),
     record: (storeId, id) => ipcRenderer.invoke(CH.adminRecord, storeId, id),
     patch: (storeId, id, field, input) => ipcRenderer.invoke(CH.adminPatch, storeId, id, field, input),
+    remove: (storeId, id) => ipcRenderer.invoke(CH.adminRemove, storeId, id),
+    search: (term) => ipcRenderer.invoke(CH.adminSearch, term),
   },
 };
 

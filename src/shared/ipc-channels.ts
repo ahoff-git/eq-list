@@ -27,6 +27,8 @@ export const CH = {
   lootItems: "loot:items",
   factionRecent: "faction:recent",
   factionStandings: "faction:standings",
+  /** The player states a faction's real current total — see `electron/faction-corrections.ts`. */
+  factionSetCorrection: "faction:setCorrection",
   /** Open the community cheat-sheet summary of the Race Unlocks guide — a fixed, single URL, not a
    *  general external-link opener (see `electron/ipc.ts`'s handler). */
   raceUnlocksOpenCheatSheet: "raceUnlocks:openCheatSheet",
@@ -163,6 +165,8 @@ export const CH = {
   adminRecords: "admin:records", // one store's records
   adminRecord: "admin:record", // one record, freshly re-read (after a patch, say)
   adminPatch: "admin:patch", // change one field of one record
+  adminRemove: "admin:remove", // delete one record outright
+  adminSearch: "admin:search", // find a term across every store's records, not just one
   winOpenAdmin: "win:openAdmin",
   displaysList: "displays:list",
   // update notification (rolling "latest" build; see ADR 0013)

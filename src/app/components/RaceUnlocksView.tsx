@@ -6,7 +6,12 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { computeRaceUnlockProgress, type RaceUnlockProgress } from "@/shared/faction-unlock-progress";
 import { RACE_UNLOCK_SOURCE, wikiLinksIn, type RaceUnlockMethod, type RaceUnlockRequirement } from "@/shared/race-unlocks";
 import type { FactionStanding } from "@/shared/types";
+import AskValue from "./AskValue";
 import ItemLink from "./ItemLink";
+
+/** Bounds a stated faction total is clamped to — generous enough for any real EQ faction range,
+ *  which never approaches this on either side; just enough to catch a typo. */
+const FACTION_CORRECTION_BOUNDS = 20_000;
 
 /**
  * Which factions each race's unlock needs maxed, joined against what the ledger has actually seen —
@@ -22,6 +27,13 @@ import ItemLink from "./ItemLink";
  * do"; it means "40% of the target has been *observed* moving since tracking started". The bar and
  * the raw `net / target` beside it both say the same thing on purpose, so neither reads as more exact
  * than the other.
+ *
+ * **The `net / target` figure is also the fix for that gap — click it to state the real total.**
+ * `f.net` already includes any correction the player has stated (`faction.setCorrection`,
+ * `src/shared/faction-correction.ts`), so a character who had standing before this app ever watched
+ * isn't stuck reading a permanently-low bar. `AskValue` is the same ask-once, self-correcting control
+ * `xp`/`hp` use ([ADR 0017](../../../specs/decisions/0017-camp-efficiency-and-asking-the-player.md)),
+ * except a faction has no "level up" to reset it at — so it's offered every time, not just once.
  *
  * The 🔔 toggle is a per-race opt-in for `RaceUnlockAlerts`, persisted the same way a spawn timer's
  * `notify` is — silent until asked, and it only ever reports a faction moving, never a threshold
@@ -104,7 +116,14 @@ function RaceRow({
                   <div className="ru-fill" style={{ width: `${Math.max(0, Math.min(100, (f.net / f.target) * 100))}%` }} />
                 </div>
                 <span className="ru-progress">
-                  {f.net} / {f.target}
+                  <AskValue
+                    prompt={`${f.net} / ${f.target}`}
+                    why={`This app can only count what it has watched change since it started tracking — if you know ${f.faction}'s real current standing (a GM told you, a guildmate checked, or you tracked it before this app existed), state it here and every view of it, this bar included, updates from there.`}
+                    initial={f.net}
+                    min={-FACTION_CORRECTION_BOUNDS}
+                    max={FACTION_CORRECTION_BOUNDS}
+                    onSubmit={(value) => void api()?.faction.setCorrection(f.faction, value)}
+                  />
                 </span>
               </div>
             ))}

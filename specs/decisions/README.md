@@ -262,6 +262,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0226: A restriction notice is not a zone, wherever it landed](./0226-a-restriction-notice-is-not-a-zone-wherever-it-landed.md)
 - [0227: An admin edit is a flagged exception to stored history](./0227-an-admin-edit-is-a-flagged-exception-to-stored-history.md)
 - [0228: A mob can have more than one known location](./0228-a-mob-can-have-more-than-one-known-location.md)
+- [0229: A faction correction is a stated offset, not a replacement](./0229-a-faction-correction-is-a-stated-offset.md)
 
 ## Open Questions
 

@@ -20,6 +20,7 @@ const NO_ADMIN: KillLog["admin"] = {
   list: () => [],
   get: () => undefined,
   patch: () => ({ ok: false, error: "not wired in this test" }),
+  remove: () => ({ ok: false, error: "not wired in this test" }),
 };
 
 test("importLog digests kills, drops, positions and zones from a file", () => {

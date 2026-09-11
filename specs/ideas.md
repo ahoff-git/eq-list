@@ -186,6 +186,8 @@ And four the same sweep says to **refuse**, recorded so they aren't proposed aga
   showing no countdown; nothing changes that until the level does.
 - **Ask-the-user, applied elsewhere.** `AskValue` +
   [ADR 0017](./decisions/0017-camp-efficiency-and-asking-the-player.md) established the pattern (hover
-  for why, click to fill in) and it now backs two figures: experience into the level, and maximum
-  health. Worth a look for other gaps — resist-rate targets? gear goals? — rather than inventing new
-  one-off inputs for each.
+  for why, click to fill in) and it now backs three figures: experience into the level, maximum
+  health, and — kept as a standing offset rather than a replacement, since a faction has no level-up to
+  reset it at ([ADR 0229](./decisions/0229-a-faction-correction-is-a-stated-offset.md)) — a faction's
+  real total. Worth a look for other gaps — resist-rate targets? gear goals? — rather than inventing
+  new one-off inputs for each.

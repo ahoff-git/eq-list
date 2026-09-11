@@ -207,6 +207,12 @@ export function createFactionLog(userDataDir: string): FactionLog {
       idOf: factionKey,
       summaryOf: (e) => `${e.faction} ${e.direction}${e.delta !== null ? ` ${e.delta > 0 ? "+" : ""}${e.delta}` : ""} (${e.at})`,
       editable: [],
+      // `byKey` is left alone, same reasoning as `kill-log.ts`'s own `remove`: a deleted row staying
+      // deduped means replaying the same log can't quietly bring it back.
+      remove: (e) => {
+        const i = events.indexOf(e);
+        if (i >= 0) events.splice(i, 1);
+      },
       save,
     }),
   };

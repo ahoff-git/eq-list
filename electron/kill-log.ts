@@ -703,6 +703,14 @@ export function createKillLog(userDataDir: string): KillLog {
       idOf: (k) => k.id,
       summaryOf: (k) => `${k.mob} — ${k.zone ?? "no zone"} (${k.at})`,
       editable: ["zone", "y", "x", "confidence", "named", "killerNamed", "mine"],
+      // Removed outright, not just uneditable: unlike a bad `zone`, a whole misrecorded kill has
+      // nothing worth keeping. `killKeys` is left alone on purpose (same reasoning as `clear`'s own
+      // comment above) — a deleted row staying deduped means replaying the same log can't quietly
+      // bring it back.
+      remove: (k) => {
+        const i = kills.indexOf(k);
+        if (i >= 0) kills.splice(i, 1);
+      },
       save,
     }),
   };

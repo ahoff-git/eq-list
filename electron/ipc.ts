@@ -31,6 +31,8 @@ import type { HpTracker } from "./hp-estimate";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
 import type { FactionLog } from "./faction-log";
+import type { FactionCorrections } from "./faction-corrections";
+import { applyFactionCorrections } from "../src/shared/faction-correction";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { PeerKillStore } from "./peer-kills";
@@ -70,6 +72,8 @@ export interface IpcContext {
   lootLog: LootLog;
   /** What has raised or lowered your faction standing (`faction-log.ts`). */
   factionLog: FactionLog;
+  /** The player's own stated faction totals, layered onto `factionLog`'s standings on read (`faction-corrections.ts`). */
+  factionCorrections: FactionCorrections;
   updates: UpdateChecker;
   mobs: MobKnowledgeStore;
   /** Kill positions other players have shared, kept across sessions (`peer-kills.ts`). */
@@ -457,7 +461,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot, faction standing and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, mobs, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, factionCorrections, mobs, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
@@ -488,6 +492,7 @@ function registerStatsIpc(context: IpcContext): void {
     killLog.clear(scope);
     lootLog.clear(scope);
     factionLog.clear(scope);
+    factionCorrections.clear(scope);
     broadcast(CH.killsChanged, undefined);
     broadcast(CH.dataChanged, undefined);
   });
@@ -699,8 +704,19 @@ function registerStatsIpc(context: IpcContext): void {
   // The faction feed's history, the same shape as the loot feed's — tracked in the main process, so
   // the tab shows hits from before it was opened, then follows live ones over CH.factionEvent.
   ipcMain.handle(CH.factionRecent, (_e, limit?: number) => factionLog.recent(limit));
-  // Every faction touched, folded to its net standing.
-  ipcMain.handle(CH.factionStandings, () => factionLog.standings());
+  // Every faction touched, folded to its net standing — with any stated correction folded in on top
+  // (`faction-correction.ts`), so every reader of this one channel sees it without knowing corrections
+  // exist.
+  ipcMain.handle(CH.factionStandings, () => applyFactionCorrections(factionLog.standings(), factionCorrections.all()));
+  // The one figure the ledger can't give us for a faction touched before this app ever watched it —
+  // supplied by the player (see faction-corrections.ts). Offset against the *uncorrected* net, so
+  // restating it doesn't compound whatever was stated last time.
+  ipcMain.handle(CH.factionSetCorrection, (_e, faction: string, statedNet: number) => {
+    const observedNet = factionLog.standings().find((s) => s.faction === faction)?.net ?? 0;
+    const correction = factionCorrections.set(faction, statedNet, observedNet);
+    broadcast(CH.dataChanged, undefined);
+    return correction;
+  });
   // A fixed, single URL — not a general external-link opener — so there's nothing here for a caller
   // to supply and no host to validate against; the ↗ button in `RaceUnlocksView` is its only caller.
   ipcMain.handle(CH.raceUnlocksOpenCheatSheet, () => shell.openExternal(RACE_UNLOCK_CHEAT_SHEET_URL));
@@ -1129,6 +1145,12 @@ function registerAdminIpc(context: IpcContext): void {
     if (result.ok) context.broadcast(CH.dataChanged, undefined);
     return result;
   });
+  ipcMain.handle(CH.adminRemove, (_e, storeId: string, id: string) => {
+    const result = admin.remove(storeId, id);
+    if (result.ok) context.broadcast(CH.dataChanged, undefined);
+    return result;
+  });
+  ipcMain.handle(CH.adminSearch, (_e, term: string) => admin.search(term));
 }
 
 /** Only ever open a github.com https link — the release URL comes from the API, so pin the host. */

@@ -62,6 +62,14 @@ export interface AdminStoreInfo {
   editedCount: number;
 }
 
+/** One hit from a search across every registered store — which store it came from, since a
+ *  cross-store result can't be shown the way a single store's list is. */
+export interface AdminSearchHit {
+  storeId: string;
+  storeLabel: string;
+  record: AdminRecord;
+}
+
 export type AdminPatchResult = { ok: true } | { ok: false; error: string };
 
 /** `coerceAdminValue`'s success case also carries the value it settled on. */
@@ -91,6 +99,17 @@ export function coerceAdminValue(current: AdminScalar, input: string): AdminCoer
   }
   // A string field, or one that was null — either way, free text; empty text clears it.
   return { ok: true, value: input === "" ? null : input };
+}
+
+/**
+ * Whether a record is worth surfacing for this term (already trimmed and lowercased) — its summary,
+ * or any field's own value, containing it. Widened past `summary` alone so a term sitting in a
+ * `detail` or `zone` the summary doesn't happen to quote is still found; this is what makes "search
+ * every store" mean more than "search every store's one-line label".
+ */
+export function adminRecordMatches(record: AdminRecord, term: string): boolean {
+  if (record.summary.toLowerCase().includes(term)) return true;
+  return record.fields.some((f) => f.value !== null && String(f.value).toLowerCase().includes(term));
 }
 
 /** A field's declared type, from whatever its value happens to be right now. */

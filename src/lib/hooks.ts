@@ -1204,10 +1204,14 @@ export function useFactionFeed(limit = 200): FactionRecord[] {
 /**
  * Every faction the ledger has a change for, folded to its net standing. Derived in main from the
  * faction feed, so it covers hits from before this tab was opened; `refreshKey` re-reads it — a new
- * hit is the only thing that can change it, and the feed already knows when one arrives.
+ * hit is the only thing that usually changes it, and the feed already knows when one arrives. Also
+ * re-reads on `onDataChanged`, since stating a correction (`faction.setCorrection`) changes a
+ * standing's `net` without a new hit ever landing.
  */
 export function useFactionStandings(refreshKey: unknown): FactionStanding[] {
-  return useRead((a) => a.faction.standings(), EMPTY_FACTION_STANDINGS, [refreshKey]);
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);
+  return useRead((a) => a.faction.standings(), EMPTY_FACTION_STANDINGS, [refreshKey, refresh]);
 }
 
 /**

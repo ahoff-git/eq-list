@@ -227,6 +227,13 @@ as they drop and the damage meter can show how the fight went.
   [ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md),
   [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md) and
   [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md).
+- `electron/faction-corrections.ts` — the player's own stated total for a faction, for the history the
+  ledger couldn't have seen (a character who already had standing before this app existed). Kept as an
+  **offset** against the ledger's own net, in its own file beside (never inside) `faction-log.ts`, and
+  merged onto `FactionStanding.net` on read by `src/shared/faction-correction.ts`'s pure
+  `applyFactionCorrections` — so every reader of `faction.standings()`, the Standings table and the
+  Race Unlocks bars alike, sees the corrected figure without knowing corrections exist. See
+  [ADR 0229](../decisions/0229-a-faction-correction-is-a-stated-offset.md).
 - `src/shared/name-registry.ts` — one spelling per creature. EQ capitalizes a name at the start
   of a sentence, so the damage meter and the kill log would otherwise disagree about what a mob
   is called; both take their names from here.
@@ -339,4 +346,5 @@ Two invocations do more than scale numbers, and both are now accounted for
 [ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md) ·
 [ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md) ·
 [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md) ·
-[ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md)
+[ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md) ·
+[ADR 0229](../decisions/0229-a-faction-correction-is-a-stated-offset.md)

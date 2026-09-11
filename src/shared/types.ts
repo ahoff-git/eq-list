@@ -1,5 +1,5 @@
 import type { DataReportRow } from "./data-provenance";
-import type { AdminPatchResult, AdminRecord, AdminStoreInfo } from "./admin";
+import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { KnowledgeContributor } from "./contributors";
@@ -260,6 +260,25 @@ export interface FactionStanding {
   /** What the ledger's own correlation attributes the net to, biggest `|net|` first. Empty when
    *  nothing could be correlated to a kill or a conversation — see `FactionCause`. */
   causes: FactionCauseTally[];
+  /**
+   * Present only when the player has stated this faction's real total (`electron/faction-corrections.ts`,
+   * `src/shared/faction-correction.ts`). `net` above already has it folded in — `observedNet` and
+   * `correctedAt` are kept alongside so the UI can say the figure is corrected rather than silently
+   * redefining what `net` has always meant everywhere else, the same reason a guessed `cause` is never
+   * folded into `net` as though it were certain.
+   */
+  correction?: { observedNet: number; correctedAt: string };
+}
+
+/**
+ * The player's own read of a faction's true total, carried as an **offset** rather than a
+ * replacement — see `src/shared/faction-correction.ts`'s header for why. `offset` is `statedNet`
+ * (what the player typed) minus whatever the ledger's own `net` was for that faction at the moment
+ * of stating it.
+ */
+export interface FactionCorrection {
+  offset: number;
+  statedAt: string;
 }
 
 /** A parsed "You have entered <zone>" line — tracks the player's current zone. */
@@ -3243,10 +3262,18 @@ export interface EqlApi {
      * complete even when the Faction tab wasn't open. Pair with `onEvent` for live appends.
      */
     recent(limit?: number): Promise<FactionRecord[]>;
-    /** Every faction the ledger has seen a change for, folded to one row each. */
+    /** Every faction the ledger has seen a change for, folded to one row each, with any stated
+     *  correction already folded into `net` (`electron/faction-corrections.ts`). */
     standings(): Promise<FactionStanding[]>;
     /** Every parsed faction-standing line, whether or not anything is watching that faction. */
     onEvent(cb: (event: FactionRecord) => void): Unsubscribe;
+    /**
+     * State a faction's real current total — for the history the ledger couldn't have seen (a
+     * character who already had faction before this app existed), or simply to correct a figure
+     * against a source the player trusts more. Kept as an offset against the ledger's own net, so it
+     * stays right as new hits fold in underneath it (`FactionCorrection`).
+     */
+    setCorrection(faction: string, statedNet: number): Promise<FactionCorrection>;
   };
   raceUnlocks: {
     /** Open the community cheat-sheet summary of the Race Unlocks guide in the browser — a fixed,
@@ -3914,6 +3941,12 @@ export interface EqlApi {
     /** Change one field of one record. `input` is always text — see `coerceAdminValue` for how it's
      *  matched back to the field's own type. */
     patch(storeId: string, id: string, field: string, input: string): Promise<AdminPatchResult>;
+    /** Delete one record outright. Unlike a refused patch there's no value to reject — only whether
+     *  the record still existed to remove. */
+    remove(storeId: string, id: string): Promise<AdminPatchResult>;
+    /** Every record, from any store, whose summary or fields contain this term — the "search
+     *  anywhere" the per-store filter can't do, since picking a store first is no longer required. */
+    search(term: string): Promise<AdminSearchHit[]>;
   };
 }
 

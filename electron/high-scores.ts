@@ -300,6 +300,11 @@ export function createHighScores(userDataDir: string): HighScoreKeeper {
         idOf: (hs) => `${hs.character}:${hs.categoryId}`,
         summaryOf: (hs) => `${hs.character} — ${hs.categoryId}: ${hs.value} (${hs.zone ?? "no zone"})`,
         editable: ["zone", "value", "detail", "previous", "beaten", "unsettled"],
+        // `hs.character` is already the lowercased key `data.characters` is filed under (stamped by
+        // the `getItems` above), so this reaches the exact record `board()` would.
+        remove: (hs) => {
+          delete data.characters[hs.character]?.scores[hs.categoryId];
+        },
         save: () => saver.save(),
       },
     ),

@@ -23,6 +23,7 @@
  */
 import {
   adminFieldType,
+  adminRecordMatches,
   coerceAdminValue,
   foldAdminEdit,
   type AdminAudit,
@@ -30,6 +31,7 @@ import {
   type AdminPatchResult,
   type AdminRecord,
   type AdminScalar,
+  type AdminSearchHit,
   type AdminStoreInfo,
 } from "../src/shared/admin";
 
@@ -41,6 +43,7 @@ export interface AdminStore {
   list(): AdminRecord[];
   get(id: string): AdminRecord | undefined;
   patch(id: string, field: string, input: string): AdminPatchResult;
+  remove(id: string): AdminPatchResult;
 }
 
 function scalarField(key: string, value: unknown): AdminField {
@@ -62,6 +65,11 @@ export interface ArrayAdminOptions<T extends object> {
   summaryOf: (item: T) => string;
   /** Which fields may be changed. Anything else is visible on the record but not through `patch`. */
   editable: readonly string[];
+  /** Take this record out of whatever backing structure holds it — a splice for a flat array, a
+   *  `delete` for one nested under a key. `getItems()` may rebuild its returned array fresh on every
+   *  call (a nested store's flatMap), so removal can't be done generically by index into that array —
+   *  each store says how its own record actually leaves. */
+  remove: (item: T) => void;
   /** Persist the store — its own existing save, debounced or not; this never invents a new one. */
   save: () => void;
   /** Tell the rest of the running app something changed, if the store has a broadcast for that. */
@@ -115,6 +123,14 @@ export function createArrayAdminStore<T extends object>(
       opts.onChanged?.();
       return { ok: true };
     },
+    remove(id) {
+      const item = find(id);
+      if (!item) return { ok: false, error: "no such record" };
+      opts.remove(item);
+      opts.save();
+      opts.onChanged?.();
+      return { ok: true };
+    },
   };
 }
 
@@ -128,6 +144,10 @@ export interface AdminRegistry {
   records(storeId: string): AdminRecord[];
   record(storeId: string, id: string): AdminRecord | undefined;
   patch(storeId: string, id: string, field: string, input: string): AdminPatchResult;
+  remove(storeId: string, id: string): AdminPatchResult;
+  /** Every record, from any store, whose summary or fields contain this term — the "search anywhere"
+   *  the panel's per-store filter can't do, since picking a store first is no longer a precondition. */
+  search(term: string): AdminSearchHit[];
 }
 
 export function createAdminRegistry(stores: Record<string, AdminStore>): AdminRegistry {
@@ -140,5 +160,17 @@ export function createAdminRegistry(stores: Record<string, AdminStore>): AdminRe
     records: (storeId) => stores[storeId]?.list() ?? [],
     record: (storeId, id) => stores[storeId]?.get(id),
     patch: (storeId, id, field, input) => stores[storeId]?.patch(id, field, input) ?? { ok: false, error: "no such store" },
+    remove: (storeId, id) => stores[storeId]?.remove(id) ?? { ok: false, error: "no such store" },
+    search: (term) => {
+      const q = term.trim().toLowerCase();
+      if (!q) return [];
+      const hits: AdminSearchHit[] = [];
+      for (const [storeId, store] of Object.entries(stores)) {
+        for (const record of store.list()) {
+          if (adminRecordMatches(record, q)) hits.push({ storeId, storeLabel: store.label, record });
+        }
+      }
+      return hits;
+    },
   };
 }

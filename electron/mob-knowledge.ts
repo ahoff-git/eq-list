@@ -197,6 +197,7 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
         idOf: (o) => `${o.contributorId}:${o.__row}`,
         summaryOf: (o) => `${o.mob} — ${o.zone} (${o.kills} kills, from ${o.contributorName})`,
         editable: ["mob", "zone", "kills", "copper", "lastAt"],
+        remove: (o) => store.removeItem(o.contributorId, o.__row),
         save: () => store.flush(),
       },
     ),

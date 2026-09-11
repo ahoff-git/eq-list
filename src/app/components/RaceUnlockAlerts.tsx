@@ -17,6 +17,12 @@ import { computeRaceUnlockProgress, diffRaceUnlockProgress, type RaceUnlockProgr
  * `faction-unlock-progress.ts`'s header) — so this only ever reports *movement*, the same honest
  * scope the ledger itself keeps. Mounted by the shell like `PeerVersionToast`, since a notice about a
  * tab you aren't on has to come from something that is always mounted.
+ *
+ * **A stated correction (`faction.setCorrection`) is not movement.** `standings` also re-reads
+ * whenever one lands (`useFactionStandings`'s own `onDataChanged` follow), which can move a watched
+ * faction's `net` by however far off the ledger's guess was — a jump that would otherwise read as an
+ * alarming single "moved" toast. Only a *new hit* is ever diffed; any other reason `standings` just
+ * changed re-seeds `prior` silently, the same way the first snapshot after mount does.
  */
 export default function RaceUnlockAlerts() {
   const [watchedRaces] = usePersistentState<string[]>(STORAGE_KEYS.watchedRaceUnlocks, []);
@@ -25,10 +31,13 @@ export default function RaceUnlockAlerts() {
   // Holds the last snapshot so only a *change* is ever reported — the first computed snapshot after
   // mount is a starting point, not news, even though its nets are already real history.
   const prior = useRef<RaceUnlockProgress[] | null>(null);
+  const lastHitKey = useRef<string | null>(null);
 
   useEffect(() => {
     const progress = computeRaceUnlockProgress(standings);
-    if (prior.current) {
+    const hitKey = hits[0] ? factionKey(hits[0]) : null;
+    const isNewHit = hitKey !== null && hitKey !== lastHitKey.current;
+    if (prior.current && isNewHit) {
       for (const alert of diffRaceUnlockProgress(prior.current, progress, new Set(watchedRaces))) {
         showToast({
           title: `${alert.race}: ${alert.faction}`,
@@ -39,8 +48,9 @@ export default function RaceUnlockAlerts() {
         });
       }
     }
+    lastHitKey.current = hitKey;
     prior.current = progress;
-  }, [standings, watchedRaces]);
+  }, [standings, hits, watchedRaces]);
 
   return null;
 }

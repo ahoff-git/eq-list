@@ -213,6 +213,18 @@ features for later in [../ideas.md](../ideas.md).
   toggle it back off and confirm the same hit produces no toast. Finally, re-run
   `npm run factions:unlocks -- --dry-run` against the live page occasionally — if Alanna edits the
   guide's structure, this is how you'd find out before a player does.
+- **Stating a faction's real total.** ([ADR 0229](../decisions/0229-a-faction-correction-is-a-stated-offset.md).)
+  The merge is unit-tested but nothing has clicked the actual control. On a faction with some observed
+  `net`, open Race Unlocks, click its `net / target` figure, type a bigger number, and confirm: the
+  figure and the bar both jump to the stated total immediately, the Faction tab's Standings row for
+  that same faction shows the same corrected **Net** without reopening the tab, and a hit that lands
+  afterward moves the corrected total by the hit's own delta rather than snapping back to the old
+  observed figure. Then the gap this exists for: pick a faction with **no** hits recorded at all,
+  state a total for it, and confirm a row appears for it in Standings that wasn't there before. Toggle
+  🔔 on that race first and confirm stating the correction does **not** pop a "faction moved" toast —
+  only an actual subsequent hit should ever produce one. Finally, restart the app and confirm the
+  stated total is still there, and run Settings → Forget → records-only, confirming the correction
+  survives (only the "everything" wipe should clear it).
 - **Race Unlocks' two source links.** The "Source:" line above the race list should show
   **Alanna's Race Unlock Guide** as an `ItemLink` — clicking it opens the wiki page **in-app**, the
   same as any other faction/quest name in this app. Beside it, **↗ Cheat sheet** should open

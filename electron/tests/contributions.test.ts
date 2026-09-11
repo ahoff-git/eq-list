@@ -130,6 +130,26 @@ test("un-sharing keeps what it taught us, and forgetting is the retraction", () 
   assert.deepEqual(s.size(), { contributors: 0, items: 0 });
 });
 
+test("removeItem corrects one bad row without touching what else the contributor taught", () => {
+  const dir = tempDir();
+  const s = store(dir);
+  s.report(ALICE, [{ n: 1 }, { n: 2 }, { n: 3 }]);
+  s.report(BOB, [{ n: 9 }]);
+
+  s.removeItem(ALICE.id, 1); // the "2"
+  assert.deepEqual(
+    s.all().find((c) => c.by.id === ALICE.id)?.data.map((r) => r.n),
+    [1, 3],
+  );
+  // Bob is untouched, and this isn't a retraction — Alice is still a contributor.
+  assert.deepEqual(s.size(), { contributors: 2, items: 3 });
+
+  // An out-of-range row, or an unknown contributor, is simply a no-op.
+  s.removeItem(ALICE.id, 99);
+  s.removeItem(contributorId("00000000-0000-0000-0000-000000000000"), 0);
+  assert.deepEqual(s.size(), { contributors: 2, items: 3 });
+});
+
 test("a malformed row is dropped, and takes nothing else with it", () => {
   const dir = tempDir();
   const s = store(dir);

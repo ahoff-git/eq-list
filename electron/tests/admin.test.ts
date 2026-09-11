@@ -24,6 +24,10 @@ function store(kills: FakeKill[]) {
     idOf: (k) => k.id,
     summaryOf: (k) => `${k.mob} in ${k.zone ?? "?"}`,
     editable: ["mob", "zone", "confidence"],
+    remove: (k) => {
+      const i = kills.indexOf(k);
+      if (i >= 0) kills.splice(i, 1);
+    },
     save: () => saves++,
     onChanged: () => changes++,
   });
@@ -95,12 +99,34 @@ test("save and onChanged fire exactly once per successful patch, never on a refu
   assert.equal(saves(), 1, "still 1 — the bad patch changed nothing");
 });
 
+test("removing a record takes it out of the exact array every other reader holds", () => {
+  const original: FakeKill = { id: "k1", mob: "a gnoll", confidence: 0.8 };
+  const { admin, kills, saves, changes } = store([original, { id: "k2", mob: "a bat", confidence: 0.4 }]);
+
+  const result = admin.remove("k1");
+  assert.deepEqual(result, { ok: true });
+  assert.equal(saves(), 1);
+  assert.equal(changes(), 1);
+
+  // Not a copy the admin layer swapped in — the very array this test already held.
+  assert.deepEqual(kills, [{ id: "k2", mob: "a bat", confidence: 0.4 }]);
+  assert.equal(admin.get("k1"), undefined);
+});
+
+test("removing an id that doesn't exist is refused, and nothing is written", () => {
+  const { admin, saves } = store([{ id: "k1", mob: "a gnoll", confidence: 0.8 }]);
+  const result = admin.remove("nope");
+  assert.deepEqual(result, { ok: false, error: "no such record" });
+  assert.equal(saves(), 0);
+});
+
 test("a store that replaces its whole array is picked up without re-registering", () => {
   let kills: FakeKill[] = [{ id: "k1", mob: "a gnoll", confidence: 0.8 }];
   const admin = createArrayAdminStore("Kills", () => kills, {
     idOf: (k) => k.id,
     summaryOf: (k) => k.mob,
     editable: ["mob"],
+    remove: () => {},
     save: () => {},
   });
   kills = [{ id: "k2", mob: "a bat", confidence: 0.4 }]; // a `clear` + re-import, say
@@ -119,12 +145,20 @@ test("createAdminRegistry reports every store's size and how much of it is alrea
     idOf: (k: FakeKill) => k.id,
     summaryOf: (k: FakeKill) => k.mob,
     editable: ["mob"],
+    remove: (k) => {
+      const i = killRows.indexOf(k);
+      if (i >= 0) killRows.splice(i, 1);
+    },
     save: () => {},
   });
   const loot = createArrayAdminStore("Loot", () => lootRows, {
     idOf: (l: { id: string }) => l.id,
     summaryOf: (l: { item: string }) => l.item,
     editable: ["item"],
+    remove: (l) => {
+      const i = lootRows.indexOf(l);
+      if (i >= 0) lootRows.splice(i, 1);
+    },
     save: () => {},
   });
   const registry = createAdminRegistry({ kills, loot });
@@ -141,4 +175,8 @@ test("createAdminRegistry reports every store's size and how much of it is alrea
   assert.equal(registry.records("loot").length, 1);
   assert.equal(registry.record("kills", "k1")?.edited, true);
   assert.deepEqual(registry.patch("nope", "k1", "mob", "x"), { ok: false, error: "no such store" });
+
+  assert.deepEqual(registry.remove("nope", "k1"), { ok: false, error: "no such store" });
+  assert.deepEqual(registry.remove("loot", "l1"), { ok: true });
+  assert.equal(registry.records("loot").length, 0);
 });

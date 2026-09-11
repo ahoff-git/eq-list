@@ -31,6 +31,7 @@ import { createHpEstimate } from "./hp-estimate";
 import { createKillLog } from "./kill-log";
 import { createLootLog } from "./loot-log";
 import { createFactionLog } from "./faction-log";
+import { createFactionCorrections } from "./faction-corrections";
 import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction-cause";
 import { lootRecord } from "../src/shared/loot-feed";
 import { createUpdateChecker } from "./update-check";
@@ -263,6 +264,7 @@ if (!app.requestSingleInstanceLock()) {
   const killLog = createKillLog(userData);
   const lootLog = createLootLog(userData);
   const factionLog = createFactionLog(userData);
+  const factionCorrections = createFactionCorrections(userData);
   // A guess at what caused a hit, from the kill the log wrote just before it, or (failing that) from
   // NPC dialogue — narrowed, when the speaker matches a cached quest's giver, to whichever of that
   // giver's quests the line itself resembles — see the module header for why every part of this is an
@@ -395,6 +397,7 @@ if (!app.requestSingleInstanceLock()) {
     killLog,
     lootLog,
     factionLog,
+    factionCorrections,
     updates,
     mobs,
     peerKills,
@@ -916,6 +919,7 @@ if (!app.requestSingleInstanceLock()) {
     lootLog.flush();
     flushPendingFaction();
     factionLog.flush();
+    factionCorrections.flush();
     scores.flush();
     mobs.flush();
     peerKills.flush();

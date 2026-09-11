@@ -130,6 +130,7 @@ export function createPeerKills(userDataDir: string): PeerKillStore {
         idOf: (k) => `${k.contributorId}:${k.__row}`,
         summaryOf: (k) => `${k.mob} — ${k.zone} (from ${k.contributorName})`,
         editable: ["mob", "zone", "y", "x", "confidence"],
+        remove: (k) => store.removeItem(k.contributorId, k.__row),
         save: () => store.flush(),
       },
     ),

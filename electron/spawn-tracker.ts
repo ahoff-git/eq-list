@@ -1163,6 +1163,10 @@ export function createSpawnTracker({
       idOf: (t) => t.id,
       summaryOf: (t) => `${t.mob} — ${t.place} (due ${t.dueAt})`,
       editable: ["killedAt", "watchFrom", "dueAt", "seconds", "source", "samples", "spreadSeconds", "lead", "seenAt"],
+      remove: (t) => {
+        const i = state.timers.indexOf(t);
+        if (i >= 0) state.timers.splice(i, 1);
+      },
       save: changed,
     }),
   };

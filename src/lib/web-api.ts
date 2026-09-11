@@ -191,6 +191,7 @@ function createWebApi(): EqlApi {
       recent: async () => [],
       standings: async () => [],
       onEvent: () => noop,
+      setCorrection: async () => ({ offset: 0, statedAt: new Date().toISOString() }),
     },
 
     raceUnlocks: {
@@ -453,6 +454,8 @@ function createWebApi(): EqlApi {
       records: async () => [],
       record: async () => undefined,
       patch: async () => ({ ok: false, error: "not available on the web" }),
+      remove: async () => ({ ok: false, error: "not available on the web" }),
+      search: async () => [],
     },
   };
 }
