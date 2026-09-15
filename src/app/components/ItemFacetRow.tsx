@@ -1,6 +1,12 @@
 "use client";
 import FacetPicker from "./FacetPicker";
 import { NO_FACET_VALUE, type FacetCounts, type FacetMeta, type ItemCriteria } from "@/shared/item-search";
+import { CLASS_SEARCH_ALIASES } from "@/shared/class-names";
+
+/** Which facets get a search alias beyond their own label — only the class picker, so far
+ *  (`CLASS_SEARCH_ALIASES`): its options are the full class names, but the wiki's cards (and a lot
+ *  of players) still think in the three-letter code, so the filter box answers to both. */
+const FACET_ALIASES: Partial<Record<string, ReadonlyMap<string, string>>> = { class: CLASS_SEARCH_ALIASES };
 
 /**
  * A row of facet dropdowns, wired to one criteria object.
@@ -33,6 +39,7 @@ export default function ItemFacetRow({
           // The `(none)` row's own count, which is a value of the facet like any other.
           missing={counts[facet.key]?.get(NO_FACET_VALUE) ?? 0}
           counts={counts[facet.key]}
+          aliases={FACET_ALIASES[facet.key]}
           chosen={criteria.facets[facet.key]}
           onChange={(values) => onChange(facet.key, values)}
         />

@@ -7,6 +7,51 @@ features for later in [../ideas.md](../ideas.md).
 
 ## In-game — one client
 
+- **Every table's column menu — sort and filter, for real, in the running app.**
+  ([ADR 0230](../decisions/0230-every-table-gets-a-column-menu.md).) No game needs to be running for
+  this one — typecheck, `next build`, and this session's own smoke-test attempt all passed, but the
+  in-app pass itself hasn't (this sandbox can't reliably launch the packaged app to look: it runs
+  with `ELECTRON_RUN_AS_NODE` set, and the single-instance lock makes a second launch fail silent).
+  Open each of Items, Spells, Loot's **Drops** and
+  **Sells for**, Faction's **Hits** and **Standings**, Session's per-mob and per-zone tables, and
+  Peers' scoreboard, and for a handful of columns on each: hover the header for the column menu and
+  confirm it offers **Sort** and a type-appropriate **Filter** (text "contains" for a name column,
+  numeric operators for a number one), and that clicking the header's body itself still opens
+  ascending or descending exactly the way it always did per column (a name starts A→Z, a number
+  starts biggest-first) and flips on a second click — the grid's own default three-state cycle
+  (asc → desc → unsorted) was deliberately overridden to keep this, so a column landing on
+  "unsorted" anywhere would be that override failing quietly. For the three searched catalogues
+  (Items, Spells, Loot Drops), confirm a column filter only narrows what's already on screen — typing
+  something you know is further down the *full* catalogue than what's currently shown should not
+  find it via the grid filter (that's what the criteria bar / `LootFilterBar` above the table are
+  still for, per [ADR 0211](../decisions/0211-a-loot-filter-searches-the-ledger-not-the-window.md)).
+  Also confirm the grid reads as part of this app rather than a foreign widget — dark background,
+  the app's own border/hover colors, no light-mode flash on open.
+- **SpellTable and FactionPanel's Standings — the row breakdown moved below the grid, not inline.**
+  ([ADR 0230](../decisions/0230-every-table-gets-a-column-menu.md).) Click a spell row in the Damage
+  tab's Spells view and confirm its breakdown opens in a panel **under** the table rather than as a
+  second row spliced in under the one you clicked, and that clicking the same row again closes it,
+  same as before. With **"Split by invocation mode"** on (Settings) and a spell cast under more than
+  one stance/invocation, confirm that panel also shows each invocation's own Casts/Damage/Healed/
+  Cast/Dmg-per-second-cast numbers — the same figures the old sub-rows carried, now inside the panel
+  instead of spliced into the grid. Then the same check on Faction → **Standings**: click a row with
+  more than 3 causes attributed and confirm its Kills/Quests breakdown opens below the table, closes
+  on a second click, and only one row's breakdown is open at a time.
+- **Faction Hits pages through the whole ledger, and its footer doesn't reopen the popover bug.**
+  ([ADR 0230](../decisions/0230-every-table-gets-a-column-menu.md).) The Hits feed no longer caps at
+  200, so with more than 50 hits recorded confirm a real page count shows at the bottom (not one long
+  scroll) and the ▶/◀ arrows move between pages. There is **no** "Rows per page" selector beside it —
+  that's deliberate (a single fixed page size), so its absence is correct, not a bug. Then the control
+  it's standing in for: on every *other* table (which show no footer at all), confirm there's still no
+  "rows per page" anywhere — if one appears, something re-enabled the footer without the single-option
+  guard, and clicking it is exactly the popover-position bug this was built to avoid.
+- **Row coloring survived the move to `DataGrid`.** Spot-check that `LootPanel`'s **Drops** table
+  still gold-highlights a row that's on your shopping list, `ItemTable`'s out-of-era rows are dimmed
+  and a row's Level cell is colored by how confident the source is (mob vs. zone), and the
+  accent/red (`num-accent`/`num-bad`) coloring on Faction's Change/Net columns and Spells' Resist
+  column still shows — these are applied via the grid's `cellClassName`/`getRowClassName` rather
+  than a plain `<tr>`/`<td>` class now, so a CSS selector change elsewhere in `globals.css` could
+  silently stop reaching them without a build error to say so.
 - **Damage meter, live.** The parser was validated against a whole real log (0 unmatched combat
   lines) and the tracker against that log's numbers, but confirm in-game: the Damage tab fills while
   fighting, your and your pet's rows are the highlighted ones, and DPS looks sane for a long fight.
@@ -1910,6 +1955,28 @@ which is what the fuzzy search exists for. Not yet clicked.
 - **It helps the other pickers too.** In Zone, type `Feerot` — The Feerrott should still come up.
 - **Kinds are not interchangeable.** Tick a Worn effect and confirm the results are items that have it
   *worn*; the same name under Click should give a different set.
+
+## The class picker shows names, not codes
+
+The card parser now translates a `Class:` line's own three-letter codes to the full class name
+before anything downstream sees them (`class-names.ts`), and the search box learned the reverse
+(`FacetPicker`'s new `aliases` prop). Unit-tested (`item-stats.test.ts`), not yet clicked.
+
+**This needs one relaunch to take** — the pack signature moved to `rows9` (same reason `rows7`/
+`rows8` did: computed *content* changed, not the row shape), so the first launch after this rebuilds
+the catalogue rather than reading an old pack still full of `WAR`/`BST` codes.
+
+- **The dropdown reads in full.** Items tab → the Class picker: every row should be a full name —
+  Warrior, Cleric, Paladin, Ranger, **Shadow Knight**, Druid, Monk, Bard, Rogue, Shaman, Necromancer,
+  Wizard, Magician, Enchanter, Beastlord, Berserker — never a three-letter code.
+- **The code still finds it.** Type `bst` in the picker's filter box: **Beastlord** should be the
+  (or among the) results, same as typing `beast` would. Try `shd` for **Shadow Knight** too — that's
+  the one whose code shares no prefix with its name, so it's the case most likely to have slipped.
+- **The chosen chip and the summary read in full too.** Tick Beastlord via either search; the button
+  and the "×N" summary should never fall back to showing `BST`.
+- **Nothing else regressed.** The other five plain pickers (slot, weapon, race, source, zone) still
+  filter by their own label only — typing a code-like fragment into, say, the Slot picker shouldn't
+  suddenly match on some unrelated alias.
 
 ## The newest copy in the room (ADR 0164)
 

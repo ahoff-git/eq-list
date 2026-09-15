@@ -1376,8 +1376,11 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
    * gone on offering them in the Zone picker with nothing in the code to say why. `rows8`: a quest
    * source's zone is now hoisted from the quest's own "Start zone" (or, for a "Tests" quest with no
    * such page, from its title) — a pack written before that has quest-only items with no zone at all.
+   * `rows9`: a `Class:` line's codes are now translated to full names (`class-names.ts`) — a pack
+   * written before that still has `classes` full of `WAR`/`BST`/etc., which is exactly the stale
+   * content this signature exists to catch.
    */
-  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows8`;
+  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows9`;
   /**
    * Set when a write invalidates the pack — so a harvest doesn't unlink a file per page, and so
    * `readPack` stops trusting it **at once**.

@@ -1,38 +1,28 @@
 "use client";
-import { memo } from "react";
+import { useMemo } from "react";
+import { DataGrid, type GridColDef, type GridSortModel } from "@mui/x-data-grid";
 import ItemLink from "./ItemLink";
-import SortHeader from "./SortHeader";
+import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
 import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spell-search";
-import type { Sort } from "@/shared/sorting";
+import { nextSort, type Sort } from "@/shared/sorting";
 
-/**
- * Columns whose "unknown" case sorts to the bottom of their own default direction — see
- * `spellSortValue`. Kept as a table, the same reason `ItemTable`'s `CORE_COLUMNS` is one: each
- * column differs only in three strings and a direction, and writing that out five times is five
- * places to get the direction wrong.
- */
-const COLUMNS: { label: string; column: SpellSortKey; title: string; startDesc: boolean }[] = [
-  { label: "Spell", column: "name", title: "The spell's name", startDesc: false },
-  { label: "Level", column: "level", title: "Lowest level any class can cast it at", startDesc: false },
-  { label: "Mana", column: "mana", title: "Mana per cast, from the wiki's own card", startDesc: false },
-  { label: "Cast", column: "castSec", title: "Casting time, seconds", startDesc: false },
-  { label: "Recast", column: "recastSec", title: "This spell's own reuse timer, seconds", startDesc: false },
-  { label: "Range", column: "range", title: "How far away it reaches", startDesc: false },
-  {
-    label: "Damage",
-    column: "damage",
-    title: "Best-effort, read from the wiki's own text — approximate, for ranking only",
-    startDesc: true,
-  },
-  {
-    label: "Mana/dmg",
-    column: "manaPerDamage",
-    title: "Mana spent per point of damage — lower is more efficient. Same caveat as Damage.",
-    startDesc: false,
-  },
-];
+/** Which way each column opens on its first click — the same rule the old `SortHeader` calls
+ *  encoded per column, kept here since the grid's own click cycle is overridden to match it. */
+const START_DESC: Record<SpellSortKey, boolean> = {
+  name: false,
+  level: false,
+  mana: false,
+  castSec: false,
+  recastSec: false,
+  range: false,
+  damage: true,
+  manaPerDamage: false,
+};
 
-/** The spell catalogue, as a sortable table. Holds no state: the sort lives with the panel. */
+type Row = SpellRow & { id: string };
+
+/** The spell catalogue, as a `DataGrid` (ADR 0230) — sortable and filterable on every column.
+ *  Holds no state: the sort lives with the panel. */
 export default function SpellCatalogTable({
   rows,
   sort,
@@ -42,58 +32,126 @@ export default function SpellCatalogTable({
   sort: Sort<SpellSortKey>;
   onSort: (next: Sort<SpellSortKey>) => void;
 }) {
+  const gridRows = useMemo<Row[]>(() => rows.map((row) => ({ ...row, id: row.spell.title })), [rows]);
+
+  const columns = useMemo<GridColDef<Row>[]>(
+    () => [
+      {
+        field: "name",
+        headerName: "Spell",
+        description: "The spell's name",
+        flex: 2,
+        minWidth: 180,
+        valueGetter: (_v, row) => row.spell.title,
+        renderCell: (p) => (
+          <>
+            <ItemLink title={p.row.spell.title} />
+            {p.row.spell.outOfEra && <span className="badge era-out">out of era</span>}
+          </>
+        ),
+      },
+      {
+        field: "level",
+        headerName: "Level",
+        description: "Lowest level any class can cast it at",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => minLevel(row.stats.levels),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "mana",
+        headerName: "Mana",
+        description: "Mana per cast, from the wiki's own card",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => row.stats.mana,
+        cellClassName: (p) => (p.row.stats.mana !== undefined ? "num-accent" : "muted"),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "castSec",
+        headerName: "Cast",
+        description: "Casting time, seconds",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => row.stats.castSec,
+        renderCell: (p) => (p.value !== undefined ? `${p.value}s` : "—"),
+      },
+      {
+        field: "recastSec",
+        headerName: "Recast",
+        description: "This spell's own reuse timer, seconds",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => row.stats.recastSec,
+        renderCell: (p) => (p.value ? `${p.value}s` : "—"),
+      },
+      {
+        field: "range",
+        headerName: "Range",
+        description: "How far away it reaches",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => row.stats.range,
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "damage",
+        headerName: "Damage",
+        description: "Best-effort, read from the wiki's own text — approximate, for ranking only",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => row.stats.damage,
+        cellClassName: (p) => (p.row.stats.damage !== undefined ? "num-accent" : "muted"),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "manaPerDamage",
+        headerName: "Mana/dmg",
+        description: "Mana spent per point of damage — lower is more efficient. Same caveat as Damage.",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => manaPerDamage(row.stats),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "classes",
+        headerName: "Classes",
+        flex: 2,
+        // No `SpellSortKey` names this combined line, so it isn't sortable — it wasn't before either
+        // (a plain, unsortable `<th>Classes</th>`).
+        sortable: false,
+        cellClassName: "muted small",
+        valueGetter: (_v, row) => classesOf(row) || "—",
+      },
+    ],
+    [],
+  );
+
+  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
+
   return (
-    <table className="stat-table spell-catalog-table">
-      <thead>
-        <tr>
-          {COLUMNS.map((col) => (
-            <SortHeader
-              key={col.column}
-              label={col.label}
-              column={col.column}
-              sort={sort}
-              onSort={onSort}
-              startDesc={col.startDesc}
-              className={col.column === "name" ? undefined : "num"}
-              title={col.title}
-            />
-          ))}
-          <th>Classes</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <SpellRowView key={row.spell.title} row={row} />
-        ))}
-      </tbody>
-    </table>
+    <DataGrid
+      {...GRID_DEFAULTS}
+      sx={GRID_SX}
+      rows={gridRows}
+      columns={columns}
+      // Already sorted (and truncated to `MAX_ROWS`) upstream by `useSpellQuery` before the cut, so
+      // the grid must reflect that order rather than re-derive it — see ItemTable for the same shape.
+      sortingMode="server"
+      sortModel={sortModel}
+      onSortModelChange={(model) => {
+        const key = (model[0]?.field ?? sort.key) as SpellSortKey;
+        onSort(nextSort(sort, key, START_DESC[key]));
+      }}
+    />
   );
 }
 
-/** One result. `memo`'d for the same reason `ItemTable`'s row is: nothing here changes per render. */
-const SpellRowView = memo(function SpellRowView({ row }: { row: SpellRow }) {
-  const { stats } = row;
-  const classes = Object.entries(stats.levels)
+function classesOf(row: SpellRow): string {
+  return Object.entries(row.stats.levels)
     .sort(([, a], [, b]) => (a ?? 0) - (b ?? 0))
     .map(([cls, level]) => `${cls} ${level}`)
     .join(", ");
-
-  return (
-    <tr className={row.spell.outOfEra ? "out-of-era" : undefined}>
-      <td>
-        <ItemLink title={row.spell.title} />
-        {row.spell.outOfEra && <span className="badge era-out">out of era</span>}
-      </td>
-      <td className="num">{minLevel(stats.levels) ?? "—"}</td>
-      <td className={`num ${stats.mana !== undefined ? "num-accent" : "muted"}`}>{stats.mana ?? "—"}</td>
-      <td className="num">{stats.castSec !== undefined ? `${stats.castSec}s` : "—"}</td>
-      <td className="num">{stats.recastSec ? `${stats.recastSec}s` : "—"}</td>
-      <td className="num">{stats.range ?? "—"}</td>
-      <td className={`num ${stats.damage !== undefined ? "num-accent" : "muted"}`}>{stats.damage ?? "—"}</td>
-      <td className="num">{manaPerDamage(stats) ?? "—"}</td>
-      <td className="muted small" title={classes || undefined}>
-        {classes || "—"}
-      </td>
-    </tr>
-  );
-});
+}

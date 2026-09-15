@@ -1012,7 +1012,14 @@ export function useCurrentZone(): string | null {
 }
 
 /**
- * Scale this window's whole interface, as a CSS `zoom` on the document root.
+ * The marker `useUiScale` leaves on whichever element it zooms, so `rootZoom` (`lib/screen.ts`) can
+ * find it without either file having to know the other's shell class name (`.app`, `.map-win`).
+ */
+export const UI_SCALE_ROOT_ATTR = "data-ui-scale-root";
+
+/**
+ * Scale this window's whole interface, as a CSS `zoom` on its own shell element — **not** the
+ * document root, even though the two looked interchangeable when there was nothing to portal.
  *
  * **Not** `webContents.setZoomFactor`, which was the obvious choice and cannot work: Chromium's
  * zoom is per *origin*, and every window here is served from one (`app://local` packaged,
@@ -1020,15 +1027,34 @@ export function useCurrentZone(): string | null {
  * the main window's fought over a single number instead of holding their own. Measured, not
  * assumed. CSS `zoom` is per document, so each window keeps its own.
  *
- * The shells must use `height: 100%` rather than `100vh` for this: a `vh` length gets scaled by
- * the zoom (leaving a gap), while `zoom` expands the containing block so percentages fill the
- * window exactly. See `.app` in globals.css.
+ * **Why the shell, not `documentElement`:** a library popover (`@mui/material`'s `Popover` — the
+ * DataGrid's own "rows per page" control) portals to `document.body` and positions itself by
+ * reading `getBoundingClientRect()` (already in post-zoom, "visual" pixels) and writing that number
+ * straight back as `style.top`/`left`. If `document.body` sits *inside* the zoomed element, the
+ * ambient zoom scales that already-scaled number a second time, and the menu lands further from its
+ * anchor the further the scale sits from 100%. Zooming the window's own shell div instead — a child
+ * of `body`, not `body` itself — leaves `body` and everything a library portals onto it outside the
+ * zoomed subtree, so a popover's math (real pixels in, real pixels out) is never touched.
+ *
+ * `ref` must point at that shell (`.app`/`.map-win`), and everything *inside* it must use
+ * `height: 100%` rather than `100vh`, exactly as when the zoom lived one level up: a `vh` length is
+ * always measured against the true viewport regardless of which element carries the zoom, so it
+ * would get scaled down and leave a gap, while `zoom` expands its own element's containing block for
+ * percentages to fill exactly. See `.app` in globals.css and
+ * [ADR 0231](../../specs/decisions/0231-the-zoom-root-moves-inside-the-shell.md).
  */
-export function useUiScale(scale: number | undefined, range: ScaleRange = UI_SCALE): void {
+export function useUiScale(
+  ref: RefObject<HTMLElement | null>,
+  scale: number | undefined,
+  range: ScaleRange = UI_SCALE,
+): void {
   useEffect(() => {
     if (scale === undefined) return; // settings not loaded yet — leave it alone
-    document.documentElement.style.zoom = String(clampScale(scale, range));
-  }, [scale, range]);
+    const el = ref.current;
+    if (!el) return;
+    el.style.zoom = String(clampScale(scale, range));
+    el.setAttribute(UI_SCALE_ROOT_ATTR, "");
+  }, [ref, scale, range]);
 }
 
 /**

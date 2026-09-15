@@ -38,6 +38,7 @@
  *    "Level 50 with all classes" — no reliable log signal exists for *which* class a character is
  *    playing across a session, so every criterion here is `"manual"` by design, not a shortcut.
  */
+import { CLASS_NAMES } from "./class-names";
 import { CURATED_ZONES } from "./zones/gazetteer";
 import type { AchievementCriterion, AchievementDefinition } from "./types";
 
@@ -73,11 +74,6 @@ function raceUnlockAchievement(id: string, title: string, race: string, factions
     criteria: factions.map((f) => allyCriterion(`ally:${f}`, f)),
   };
 }
-
-const CLASSES = [
-  "Warrior", "Cleric", "Paladin", "Ranger", "Shadow Knight", "Druid", "Monk", "Bard",
-  "Rogue", "Shaman", "Necromancer", "Wizard", "Magician", "Enchanter", "Beastlord", "Berserker",
-] as const;
 
 /** `"You have slain <name>!"` — the player's own kill credit, never `"<name> has been slain by
  *  <killer>!"`, which the log uses for a kill it's telling a bystander about (ADR 0214: an
@@ -365,7 +361,7 @@ export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
       "here is on the honor system.",
     category: "Progression",
     isOfficial: true,
-    criteria: CLASSES.map((cls) => ({ id: `class:${cls}`, label: `${cls} to level 50`, kind: "manual" })),
+    criteria: CLASS_NAMES.map((cls) => ({ id: `class:${cls}`, label: `${cls} to level 50`, kind: "manual" })),
   },
 
   // ── race-kill counts (ADR 0215) ──────────────────────────────────────────────

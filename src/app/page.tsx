@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { openMapWindow } from "@/lib/showOnMap";
 import SearchPanel from "./components/SearchPanel";
@@ -141,9 +141,10 @@ function ControlWindow() {
   // nudges it, so the Settings slider and these buttons are the same one value. The map window
   // has its own, stepped by its own copy of these buttons.
   const uiScale = settings?.overlay.fontScale ?? UI_SCALE.max;
-  // This window scales itself: the scale is a CSS zoom per document, because Chromium's own zoom
-  // is per-origin and every window here shares one (see `useUiScale`).
-  useUiScale(settings?.overlay.fontScale);
+  // This window scales itself: the scale is a CSS zoom on its own shell div, because Chromium's
+  // own zoom is per-origin and every window here shares one (see `useUiScale`).
+  const appShellRef = useRef<HTMLDivElement>(null);
+  useUiScale(appShellRef, settings?.overlay.fontScale);
   // The ◐ override: this window at 100% rather than the settings slider. The map window has its own
   // over the same saved value, so flipping one window solid leaves the other as it was.
   const { opaque, toggle: toggleOpaque } = useWindowOpacity(settings ? sliderOpacity : undefined);
@@ -248,7 +249,7 @@ function ControlWindow() {
           reliably play the sound. */}
       <CastAlerts showVisual={false} />
 
-      <div className={`app glass ${maximized ? "maximized" : ""}`}>
+      <div ref={appShellRef} className={`app glass ${maximized ? "maximized" : ""}`}>
         <Titlebar>
           <h1>
             <span className="mark">EQ</span> List

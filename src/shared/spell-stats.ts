@@ -54,13 +54,33 @@ function labelText(lines: readonly string[], label: string): string | undefined 
   return line ? line.slice(line.indexOf(":") + 1).trim() : undefined;
 }
 
+/**
+ * Class names the wiki spells more than one way on its own `Classes:` line — checked against the
+ * cached spell cards: 282 read `Shadow Knight`, 59 read `Shadowknight`, same class, two spellings.
+ * Split across a class picker and a table column, that reads as two classes instead of one, so a
+ * card's class name is folded to the spelling the rest of the app already uses
+ * (`achievement-library.ts`'s `CLASSES`) rather than kept verbatim — no card's levels are dropped,
+ * only relabelled to match.
+ */
+const CLASS_ALIASES: readonly (readonly [string, readonly string[]])[] = [["Shadow Knight", ["Shadowknight"]]];
+
+const ALIAS_TO_CLASS = new Map<string, string>();
+for (const [canonical, aliases] of CLASS_ALIASES) {
+  for (const alias of aliases) ALIAS_TO_CLASS.set(alias.toLowerCase(), canonical);
+}
+
+/** A class name as one card happened to spell it, folded to the one spelling every other card uses. */
+function canonicalClassName(name: string): string {
+  return ALIAS_TO_CLASS.get(name.toLowerCase()) ?? name;
+}
+
 /** `"Druid - Level 3, Ranger - Level 14"` → `{ Druid: 3, Ranger: 14 }`. */
 function parseLevels(text: string | undefined): Partial<Record<string, number>> {
   if (!text) return {};
   const levels: Partial<Record<string, number>> = {};
   for (const entry of text.split(",")) {
     const m = /^\s*(.+?)\s*-\s*Level\s*(\d+)/i.exec(entry);
-    if (m) levels[m[1]] = Number(m[2]);
+    if (m) levels[canonicalClassName(m[1])] = Number(m[2]);
   }
   return levels;
 }

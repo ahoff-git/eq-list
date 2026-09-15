@@ -1,9 +1,9 @@
 "use client";
-import { Fragment, useState } from "react";
+import { useMemo, useState } from "react";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useSettings, useSpellFacts, type SpellFacts } from "@/lib/hooks";
-import { sortRows, type Sort } from "@/shared/sorting";
-import SortHeader from "./SortHeader";
-import { Caret, Empty } from "./ui";
+import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
+import { Empty } from "./ui";
 import type { FightStats, SpellStat } from "@/shared/types";
 
 import { count, figure, percent } from "@/shared/format";
@@ -14,8 +14,19 @@ import { ratio } from "@/shared/numbers";
  */
 const HIGH_RESIST_RATE = 0.25;
 
-/** Columns in the table, so an opened breakdown spans the whole width. Keep in step with `<thead>`. */
-const COLUMNS = 10;
+/** The synthetic "everything that wasn't a named spell" row's id — excluded from the detail panel,
+ *  the same way it was never clickable as a `<tr>`. */
+const MELEE_ID = "__melee__";
+
+type SpellRow = SpellStat & { id: string; kind: "spell" };
+type MeleeRow = { id: string; kind: "melee"; spell: string; damage: number };
+type Row = SpellRow | MeleeRow;
+
+/** Read a spell-only field, `undefined` on the melee row — same as that row showing "—" for
+ *  everything it has no figure for. */
+function spellOnly<T>(row: Row, pick: (s: SpellRow) => T): T | undefined {
+  return row.kind === "spell" ? pick(row) : undefined;
+}
 
 /**
  * Where your damage came from, spell by spell — and whether each spell earns its cast
@@ -26,34 +37,129 @@ const COLUMNS = 10;
  *   column that says so. Only measured casts count (see `combat-stats.ts`).
  *   **Resist %** — share of completed casts the target shrugged off.
  *
- * Every row is the **blend across invocations**, which is what you want at a glance and
- * misleading if you stop there — an invocation changes damage *and* cast time, so the
- * breakdown splits the row by the invocation that was active (ADR 0020).
- *
  * A row's `Damage` is everything that spell did, a DoT's ticks included
  * ([ADR 0071](../../../specs/decisions/0071-a-dot-tick-belongs-to-whoever-cast-it.md)) — which
  * is the honest total and, on a DoT, hides where it came from. **Clicking a row opens the
- * breakdown**: the hit against the ticks, how many there were, how big they got, and what the
- * casts that never landed cost. Too many figures for a hover, which is what they used to be.
+ * breakdown** in a panel below the grid (ADR 0230): the hit against the ticks, how many there
+ * were, how big they got, and what the casts that never landed cost. Too many figures for a
+ * hover, which is what they used to be.
  *
  * Melee gets a synthetic row: it's the rest of your damage, and "where did my damage
  * come from" is a question about the whole pie, not just the spells.
+ *
+ * A `DataGrid` (ADR 0230) — sortable and filterable on every column, not just the five the old
+ * hand-rolled header supported.
  */
-type SortKey = "damage" | "dpc" | "resistRate" | "casts" | "avgCastSec";
-
 export default function SpellTable({ window }: { window: FightStats }) {
-  const [sort, setSort] = useState<Sort<SortKey>>({ key: "damage", desc: true });
   /** One breakdown open at a time — two of them side by side is a table, not a drill-down. */
   const [open, setOpen] = useState<string | null>(null);
   const facts = useSpellFacts(window.spells);
-  // With the setting on, each invocation gets its own row under the spell's blended one.
+  // With the setting on, the open breakdown also shows each invocation's own numbers.
   const split = useSettings()?.overlay.splitByMode ?? false;
 
-  // Biggest first by default; clicking the sorted column flips it (`sorting.ts`). Rows the column
-  // can't separate keep the order the tracker filed them in, which is damage-descending.
-  const spells = sortRows(window.spells, sort, (s, key) => s[key] ?? 0);
   const spellDamage = window.spells.reduce((n, s) => n + s.damage, 0);
   const melee = window.yourDealt - spellDamage;
+
+  const rows = useMemo<Row[]>(() => {
+    const spellRows: Row[] = window.spells.map((s) => ({ ...s, id: s.spell, kind: "spell" }));
+    if (melee > 0) spellRows.push({ id: MELEE_ID, kind: "melee", spell: "Melee swings", damage: melee });
+    return spellRows;
+  }, [window.spells, melee]);
+
+  const columns = useMemo<GridColDef<Row>[]>(
+    () => [
+      {
+        field: "spell",
+        headerName: "Spell",
+        flex: 2,
+        minWidth: 160,
+        cellClassName: (p) => (p.row.kind === "melee" ? "muted" : ""),
+      },
+      {
+        field: "casts",
+        headerName: "Casts",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.casts),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "damage",
+        headerName: "Damage",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => row.damage,
+        renderCell: (p) => figure(p.value ?? 0),
+      },
+      {
+        field: "healed",
+        headerName: "Healed",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.healed),
+        renderCell: (p) => (p.value ? figure(p.value) : "—"),
+      },
+      {
+        field: "avgCastSec",
+        headerName: "Cast",
+        description: "Average measured cast time",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.avgCastSec),
+        renderCell: (p) => (p.value ? `${p.value.toFixed(1)}s` : "—"),
+      },
+      {
+        field: "dpc",
+        headerName: "Dmg/s cast",
+        description: "Damage per second spent casting",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: "num-accent",
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.dpc),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "mana",
+        headerName: "Mana",
+        description: "Mana per cast — from the game's own spell file where we can read it, otherwise the wiki's figure",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => manaCost(s, facts[s.spell])),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "perMana",
+        headerName: "Per mana",
+        description: "What a point of mana bought: damage, plus any healing the invocation granted off it",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: "num-accent",
+        valueGetter: (_v, row) => spellOnly(row, (s) => perMana(s, facts[s.spell])),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "resistRate",
+        headerName: "Resist",
+        description: "Share of completed casts resisted",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: (p) =>
+          p.row.kind === "spell" && p.row.resistRate >= HIGH_RESIST_RATE ? "num-bad" : "",
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.resistRate),
+        renderCell: (p) => (p.row.kind === "spell" && p.row.resists ? percent(p.value ?? 0) : "—"),
+      },
+      {
+        field: "failed",
+        headerName: "Failed",
+        description: "Fizzles + interrupts",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.fizzles + s.interrupts),
+        renderCell: (p) => p.value || "—",
+      },
+    ],
+    [facts],
+  );
 
   if (!window.spells.length && melee <= 0) {
     return (
@@ -64,91 +170,67 @@ export default function SpellTable({ window }: { window: FightStats }) {
     );
   }
 
+  const openStat = open ? window.spells.find((s) => s.spell === open) : undefined;
+
   return (
     <div className="table-scroll">
-      <table className="stat-table spell-table">
-        <thead>
-          <tr>
-            <th>Spell</th>
-            <SortHeader label="Casts" column="casts" sort={sort} onSort={setSort} />
-            <SortHeader label="Damage" column="damage" sort={sort} onSort={setSort} />
-            <th>Healed</th>
-            <SortHeader label="Cast" column="avgCastSec" sort={sort} onSort={setSort} title="Average measured cast time" />
-            <SortHeader label="Dmg/s cast" column="dpc" sort={sort} onSort={setSort} title="Damage per second spent casting" />
-            <th title="Mana per cast — from the game's own spell file where we can read it, otherwise the wiki's figure">Mana</th>
-            <th title="What a point of mana bought: damage, plus any healing the invocation granted off it">
-              Per mana
-            </th>
-            <SortHeader label="Resist" column="resistRate" sort={sort} onSort={setSort} title="Share of completed casts resisted" />
-            <th title="Fizzles + interrupts">Failed</th>
-          </tr>
-        </thead>
-        <tbody>
-          {spells.map((s) => (
-            <Fragment key={s.spell}>
-              <tr
-                className="spell-row expandable"
-                title={`Click for ${s.spell}'s breakdown`}
-                onClick={() => setOpen(open === s.spell ? null : s.spell)}
-              >
-                <td>
-                  <Caret open={open === s.spell} /> {s.spell}
-                </td>
-                <td>{s.casts || "—"}</td>
-                <td>{figure(s.damage)}</td>
-                <td>{figure(s.healed)}</td>
-                <td>{s.avgCastSec ? `${s.avgCastSec.toFixed(1)}s` : "—"}</td>
-                <td className="num-accent">{s.dpc || "—"}</td>
-                <td>{manaCost(s, facts[s.spell]) ?? "—"}</td>
-                <td className="num-accent">{perMana(s, facts[s.spell]) ?? "—"}</td>
-                <td className={s.resistRate >= HIGH_RESIST_RATE ? "num-bad" : undefined}>
-                  {s.resists ? percent(s.resistRate) : "—"}
-                </td>
-                <td>{s.fizzles + s.interrupts || "—"}</td>
-              </tr>
-              {open === s.spell && (
-                <tr className="spell-detail">
-                  <td colSpan={COLUMNS}>
-                    <Breakdown spell={s} facts={facts[s.spell]} />
-                  </td>
-                </tr>
-              )}
-              {split &&
-                s.byInvocation.length > 1 &&
-                s.byInvocation.map((m) => (
-                  <tr className="spell-mode" key={`${s.spell}-${m.mode}`}>
-                    <td>↳ {m.mode}</td>
-                    <td>{m.casts || "—"}</td>
-                    <td>{figure(m.damage)}</td>
-                    <td>{figure(m.healed)}</td>
-                    <td>{m.avgCastSec ? `${m.avgCastSec.toFixed(1)}s` : "—"}</td>
-                    <td className="num-accent">{m.dpc || "—"}</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>—</td>
-                  </tr>
-                ))}
-            </Fragment>
-          ))}
-          {melee > 0 && (
-            <tr className="spell-melee" title="Everything you and your pet dealt that wasn't a named spell">
-              <td>Melee swings</td>
-              <td>—</td>
-              <td>{melee.toLocaleString()}</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <DataGrid
+        {...GRID_DEFAULTS}
+        sx={GRID_SX}
+        rows={rows}
+        columns={columns}
+        getRowClassName={(p) => (p.id === MELEE_ID ? "spell-melee" : "")}
+        disableRowSelectionOnClick
+        rowSelectionModel={{ type: "include", ids: new Set(open ? [open] : []) }}
+        onRowClick={(params) => {
+          if (params.id === MELEE_ID) return;
+          setOpen((prev) => (prev === params.id ? null : (params.id as string)));
+        }}
+        initialState={{ sorting: { sortModel: [{ field: "damage", sort: "desc" }] } }}
+      />
+      {openStat && (
+        <div className="spell-breakdown-panel">
+          <Breakdown spell={openStat} facts={facts[openStat.spell]} />
+          {split && openStat.byInvocation.length > 1 && <InvocationRows spell={openStat} />}
+        </div>
+      )}
       <InvocationNotes window={window} />
     </div>
+  );
+}
+
+/**
+ * Every invocation's own numbers, for when the setting asks for more than the breakdown's
+ * one-line "by invocation" summary — the same figures the old per-invocation sub-rows carried,
+ * now beside the breakdown they belong next to instead of spliced into the grid (ADR 0230:
+ * `DataGrid` has no row this table's Community tier can nest one under).
+ */
+function InvocationRows({ spell }: { spell: SpellStat }) {
+  return (
+    <table className="stat-table spell-table spell-invocation-table">
+      <thead>
+        <tr>
+          <th>Invocation</th>
+          <th>Casts</th>
+          <th>Damage</th>
+          <th>Healed</th>
+          <th>Cast</th>
+          <th>Dmg/s cast</th>
+        </tr>
+      </thead>
+      <tbody>
+        {spell.byInvocation.map((m) => (
+          <tr className="spell-mode" key={m.mode}>
+            <td>↳ {m.mode}</td>
+            <td>{m.casts || "—"}</td>
+            <td>{figure(m.damage)}</td>
+            <td>{figure(m.healed)}</td>
+            <td>{m.avgCastSec ? `${m.avgCastSec.toFixed(1)}s` : "—"}</td>
+            <td className="num-accent">{m.dpc || "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

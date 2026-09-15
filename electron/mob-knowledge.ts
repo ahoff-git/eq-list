@@ -62,8 +62,12 @@ const isFinNum = (v: unknown): v is number => typeof v === "number" && Number.is
  * 100%.
  *
  * Both are checked at the one point everything a peer sends passes through, and bad ones dropped.
+ *
+ * `trustAdmin` is true only when re-reading our own saved file, never for a report a peer just sent —
+ * see `contributions.ts`'s `sanitize` doc. Without it, a peer could attach a shape-valid `__admin` to
+ * their own observation and have it read, in our admin panel, as a correction we ourselves made.
  */
-export function sanitizeObservations(input: unknown[]): MobObservation[] {
+export function sanitizeObservations(input: unknown[], trustAdmin: boolean): MobObservation[] {
   const out: MobObservation[] = [];
   for (const o of input) {
     if (!o || typeof o !== "object") continue;
@@ -115,7 +119,7 @@ export function sanitizeObservations(input: unknown[]): MobObservation[] {
     }
     // Carried through re-vetting the same way `peer-kills.ts` does — the one field here that isn't a
     // claim about the mob, so it's a shape-checked pass-through rather than one of "the named fields".
-    if (isAdminAudit(r.__admin)) (clean as MobObservation & { __admin?: AdminAudit }).__admin = r.__admin;
+    if (trustAdmin && isAdminAudit(r.__admin)) (clean as MobObservation & { __admin?: AdminAudit }).__admin = r.__admin;
     out.push(withAreas(clean));
   }
   return out;

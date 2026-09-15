@@ -1,5 +1,6 @@
 "use client";
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { DataGrid, type GridColDef, type GridSortModel } from "@mui/x-data-grid";
 import { useFactionFeed, useFactionStandings } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -16,12 +17,12 @@ import {
   type FactionStandingSortKey,
 } from "@/shared/faction-sort";
 import { clock, count, when } from "@/shared/format";
-import type { Sort } from "@/shared/sorting";
+import { nextSort, type Sort } from "@/shared/sorting";
 import type { FactionCauseTally, FactionRecord, FactionStanding } from "@/shared/types";
 import ItemLink, { NameList } from "./ItemLink";
 import RaceUnlocksView from "./RaceUnlocksView";
-import SortHeader from "./SortHeader";
-import { Caret, Empty, segCls } from "./ui";
+import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
+import { Empty, segCls } from "./ui";
 
 /**
  * Everything the log has said raised or lowered a faction, and what it comes to for each one.
@@ -54,17 +55,30 @@ import { Caret, Empty, segCls } from "./ui";
  * ([ADR 0192](../../../specs/decisions/0192-factions-ride-their-own-wiki-pages.md)) sit one click away
  * from what your own log says actually moved it.
  *
- * **A Standings row opens to its full likely-cause breakdown.** The row itself still shows a capped
- * "top 3, +N more" summary for a glance, but "+N more" used to be a dead end — clicking the row
- * (`StandingTable`'s `open`/`Caret`, the same drill-down `SpellTable` uses) reveals every cause the
- * ledger has, with kills and quests kept in their own independently-openable group
- * (`CauseBreakdown`/`CauseGroup`) rather than one merged list — a kill and a guessed conversation are
- * different kinds of guess, and mixing them together would make the weaker one borrow the stronger
- * one's credibility. Each row there is also colored by `causeConfidence` — dim for a name seen once,
- * stepping up toward `--accent` as the *same* mob or NPC keeps landing beside the same faction, since
- * a repeat is what turns a lone guess into a pattern worth trusting more (`faction-cause.ts`'s "a
- * guess repeated is a guess corroborated"); the tooltip on it always names the raw hit count behind
- * the color, never just the color alone.
+ * **A Standings row opens its full likely-cause breakdown in a panel below the grid** (ADR 0230 —
+ * `DataGrid`'s Community tier has no row to nest one under, so it moved from a second `<tr>` under
+ * the clicked row to underneath the table, the same drill-down `SpellTable` uses). The row itself
+ * still shows a capped "top 3, +N more" summary for a glance, but "+N more" used to be a dead end —
+ * clicking the row reveals every cause the ledger has, with kills and quests kept in their own
+ * independently-openable group (`CauseBreakdown`/`CauseGroup`) rather than one merged list — a kill
+ * and a guessed conversation are different kinds of guess, and mixing them together would make the
+ * weaker one borrow the stronger one's credibility. Each row there is also colored by
+ * `causeConfidence` — dim for a name seen once, stepping up toward `--accent` as the *same* mob or
+ * NPC keeps landing beside the same faction, since a repeat is what turns a lone guess into a pattern
+ * worth trusting more (`faction-cause.ts`'s "a guess repeated is a guess corroborated"); the tooltip
+ * on it always names the raw hit count behind the color, never just the color alone.
+ *
+ * Both tables are `DataGrid`s — sortable and filterable on every column.
+ *
+ * **Hits pages back through the whole ledger, not just the most recent 200.** The feed used to be
+ * fetched once at a flat 200-row cap with nowhere further to go; it's now fetched with no cut-off of
+ * its own (`HITS_FETCH_LIMIT` — the ledger's own retention, `MAX_FACTION` in `electron/faction-log.ts`,
+ * is the real limit), and `HitTable` turns its grid's footer back on with a real "rows per page"
+ * choice and page arrows. `dataGridDefaults.ts`'s `GRID_DEFAULTS` still hides the footer on every
+ * other table — none of them were designed to page, `autoHeight` already draws every row — but the
+ * footer itself is no longer something to avoid: its "rows per page" `Select` used to misposition
+ * under this app's CSS-`zoom` scaling, fixed at the root by moving the zoom onto the window's own
+ * shell instead of the document root ([ADR 0231](../../../specs/decisions/0231-the-zoom-root-moves-inside-the-shell.md)).
  *
  * **A third view, Race Unlocks** (`RaceUnlocksView`), folds the live Standings onto Alanna's Race
  * Unlock Guide ([ADR 0222](../../../specs/decisions/0222-a-race-unlock-guide-is-generated-static-data.md))
@@ -73,6 +87,11 @@ import { Caret, Empty, segCls } from "./ui";
  * ledger), so it's the one view the empty state below doesn't gate.
  */
 type View = "hits" | "standings" | "unlocks";
+
+/** Ask the ledger for everything it's holding rather than an arbitrary cut-off — `HitTable` pages
+ *  through it, so unlike a flat list there's no cap worth guessing at here; the feed's own retention
+ *  (`MAX_FACTION`, `electron/faction-log.ts`) is the real limit, whatever it happens to be. */
+const HITS_FETCH_LIMIT = Number.MAX_SAFE_INTEGER;
 
 export default function FactionPanel() {
   const [view, setView] = usePersistentState<View>(STORAGE_KEYS.factionView, "hits");
@@ -85,7 +104,7 @@ export default function FactionPanel() {
     DEFAULT_FACTION_STANDING_SORT,
   );
 
-  const hits = useFactionFeed(200);
+  const hits = useFactionFeed(HITS_FETCH_LIMIT);
   // Only a hit can change a standing, and the newest one is the cheapest signal that one landed —
   // the same trick `LootPanel` uses to key `useItemPrices`'s refetch off the newest drop.
   const standings = useFactionStandings(hits[0] ? factionKey(hits[0]) : "");
@@ -154,10 +173,10 @@ function changeLabel(e: FactionRecord): string {
 }
 
 /** Green for a raise, red for a drop — a cap is neither, since it states no amount. */
-function changeClass(e: FactionRecord): string | undefined {
+function changeClass(e: FactionRecord): string {
   if (e.direction === "raised") return "num-accent";
   if (e.direction === "lowered") return "num-bad";
-  return undefined;
+  return "";
 }
 
 /** Why the ≈ prefix and the caveat: this cell is never a fact, only ever a guess from timing. */
@@ -185,6 +204,12 @@ function questHint(quests: string[], matched: boolean): string {
   return matched ? label : `possibly ${label}`;
 }
 
+type HitRow = FactionRecord & { id: string };
+
+/** Rows-per-page choices for the Hits grid's footer, and which one it opens on. */
+const HITS_PAGE_SIZES = [25, 50, 100];
+const HITS_DEFAULT_PAGE_SIZE = 50;
+
 function HitTable({
   hits,
   sort,
@@ -194,54 +219,81 @@ function HitTable({
   sort: Sort<FactionHitSortKey>;
   onSort: (next: Sort<FactionHitSortKey>) => void;
 }) {
+  const rows = useMemo<HitRow[]>(() => hits.map((hit) => ({ ...hit, id: factionKey(hit) })), [hits]);
+
+  const columns = useMemo<GridColDef<HitRow>[]>(
+    () => [
+      {
+        field: "at",
+        headerName: "Time",
+        description: "When the log recorded it",
+        flex: 1,
+        valueGetter: (_v, row) => row.at,
+        renderCell: (p) => <span className="lt-time">{clock(p.row.at)}</span>,
+      },
+      {
+        field: "faction",
+        headerName: "Faction",
+        flex: 2,
+        minWidth: 160,
+        renderCell: (p) => <ItemLink title={p.row.faction} />,
+      },
+      {
+        field: "delta",
+        headerName: "Change",
+        description: "What the line stated — a signed amount, or a floor/ceiling hit, which states none",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: (p) => changeClass(p.row),
+        renderCell: (p) => changeLabel(p.row),
+      },
+      {
+        field: "cause",
+        headerName: "Likely cause",
+        description: "A guess from timing, not a fact the game states — see the ≈ on each row",
+        flex: 3,
+        minWidth: 220,
+        valueGetter: (_v, row) => (row.causedBy ? causeSource(row) : ""),
+        renderCell: (p) => {
+          const hit = p.row;
+          if (!hit.causedBy) return <span className="muted">—</span>;
+          return (
+            <span className="fc-cause" title={causeTitle(hit)}>
+              <span className="fc-guess">≈</span> <ItemLink title={causeSource(hit)!} />
+              {hit.causedBy.kind === "dialogue" && hit.causedBy.quests?.length ? (
+                <span className="muted"> ({questHint(hit.causedBy.quests, hit.causedBy.questsMatched ?? false)})</span>
+              ) : null}
+            </span>
+          );
+        },
+      },
+    ],
+    [],
+  );
+
+  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
+
   return (
     <div className="table-scroll">
-      <table className="stat-table faction-table">
-        <thead>
-          <tr>
-            <SortHeader label="Time" column="at" sort={sort} onSort={onSort} title="When the log recorded it" />
-            <SortHeader label="Faction" column="faction" sort={sort} onSort={onSort} startDesc={false} />
-            <SortHeader
-              label="Change"
-              column="delta"
-              sort={sort}
-              onSort={onSort}
-              title="What the line stated — a signed amount, or a floor/ceiling hit, which states none"
-            />
-            <SortHeader
-              label="Likely cause"
-              column="cause"
-              sort={sort}
-              onSort={onSort}
-              startDesc={false}
-              title="A guess from timing, not a fact the game states — see the ≈ on each row"
-            />
-          </tr>
-        </thead>
-        <tbody>
-          {hits.map((hit) => (
-            <tr key={factionKey(hit)}>
-              <td className="lt-time">{clock(hit.at)}</td>
-              <td>
-                <ItemLink title={hit.faction} />
-              </td>
-              <td className={changeClass(hit)}>{changeLabel(hit)}</td>
-              <td className="fc-cause" title={causeTitle(hit)}>
-                {hit.causedBy ? (
-                  <>
-                    <span className="fc-guess">≈</span> <ItemLink title={causeSource(hit)!} />
-                    {hit.causedBy.kind === "dialogue" && hit.causedBy.quests?.length ? (
-                      <span className="muted"> ({questHint(hit.causedBy.quests, hit.causedBy.questsMatched ?? false)})</span>
-                    ) : null}
-                  </>
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataGrid
+        {...GRID_DEFAULTS}
+        sx={GRID_SX}
+        rows={rows}
+        columns={columns}
+        sortingMode="server"
+        sortModel={sortModel}
+        onSortModelChange={(model) => {
+          const key = (model[0]?.field ?? sort.key) as FactionHitSortKey;
+          onSort(nextSort(sort, key, key !== "faction" && key !== "cause"));
+        }}
+        // A real "next page" instead of one long scroll, now that `hits` reaches back through the
+        // whole ledger rather than a flat 200-row cut-off (see the module header) — with a genuine
+        // choice of page size, now that the "rows per page" `Select`'s popover-position bug is fixed
+        // at its root (ADR 0231) rather than sidestepped.
+        hideFooter={false}
+        pageSizeOptions={HITS_PAGE_SIZES}
+        initialState={{ pagination: { paginationModel: { pageSize: HITS_DEFAULT_PAGE_SIZE, page: 0 } } }}
+      />
     </div>
   );
 }
@@ -263,8 +315,7 @@ function causeExtra(c: FactionCauseTally): string {
   return sign ? ` (${sign})` : ` (${count(c.hits, "hit")})`;
 }
 
-/** Columns in the table, so an opened breakdown spans the whole width. Keep in step with `<thead>`. */
-const STANDING_COLUMNS = 7;
+type StandingRow = FactionStanding & { id: string };
 
 function StandingTable({
   standings,
@@ -277,83 +328,112 @@ function StandingTable({
 }) {
   /** One breakdown open at a time — two of them side by side is a table, not a drill-down. */
   const [open, setOpen] = useState<string | null>(null);
+  const rows = useMemo<StandingRow[]>(() => standings.map((s) => ({ ...s, id: s.faction })), [standings]);
+
+  const columns = useMemo<GridColDef<StandingRow>[]>(
+    () => [
+      {
+        field: "faction",
+        headerName: "Faction",
+        flex: 2,
+        minWidth: 160,
+        renderCell: (p) => <ItemLink title={p.row.faction} />,
+      },
+      {
+        field: "net",
+        headerName: "Net",
+        description: "Every stated delta, summed",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: (p) => (p.row.net > 0 ? "num-accent" : p.row.net < 0 ? "num-bad" : ""),
+        renderCell: (p) => (
+          <span title={standingTitle(p.row)}>{p.row.net > 0 ? `+${p.row.net}` : p.row.net}</span>
+        ),
+      },
+      {
+        field: "raises",
+        headerName: "Raised",
+        description: "Hits that stated a positive amount",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: "lt-num",
+      },
+      {
+        field: "lowers",
+        headerName: "Lowered",
+        description: "Hits that stated a negative amount",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: "lt-num",
+      },
+      {
+        field: "rate",
+        headerName: "Net / hour",
+        description: "Net change per hour between the first and last hit on record",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: "lt-num muted",
+        valueGetter: (_v, row) => ratePerHour(row),
+        renderCell: (p) => (p.value ? (p.value > 0 ? `+${p.value}` : p.value) : "—"),
+      },
+      {
+        field: "causes",
+        headerName: "Likely causes",
+        description:
+          "A guess from timing, not a fact the game states — a mob's kill or a nearby conversation that landed shortly before one or more hits (ADR 0219, ADR 0220). Click a row for the full breakdown, kills and quests apart.",
+        flex: 3,
+        minWidth: 220,
+        sortable: false,
+        valueGetter: (_v, row) => row.causes.map((c) => c.source).join(" "),
+        renderCell: (p) => {
+          const shown = p.row.causes.slice(0, MAX_CAUSES_SHOWN);
+          const hidden = p.row.causes.length - shown.length;
+          if (!shown.length) return <span className="muted">—</span>;
+          return (
+            <span className="fc-cause">
+              <span className="fc-guess">≈</span>{" "}
+              <NameList names={shown.map((c) => c.source)} extra={(_, i) => causeExtra(shown[i])} />
+              {hidden > 0 && <span className="muted"> +{hidden} more</span>}
+            </span>
+          );
+        },
+      },
+      {
+        field: "lastAt",
+        headerName: "Last hit",
+        flex: 1,
+        cellClassName: "lt-time",
+        renderCell: (p) => <span title={when(p.row.lastAt)}>{clock(p.row.lastAt)}</span>,
+      },
+    ],
+    [],
+  );
+
   if (standings.length === 0) {
     return <Empty title="No standings yet." hint="Folded from the hits on the other view." />;
   }
+
+  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
+  const openStanding = open ? standings.find((s) => s.faction === open) : undefined;
+
   return (
     <div className="table-scroll">
-      <table className="stat-table faction-table">
-        <thead>
-          <tr>
-            <SortHeader label="Faction" column="faction" sort={sort} onSort={onSort} startDesc={false} />
-            <SortHeader label="Net" column="net" sort={sort} onSort={onSort} title="Every stated delta, summed" />
-            <SortHeader label="Raised" column="raises" sort={sort} onSort={onSort} title="Hits that stated a positive amount" />
-            <SortHeader label="Lowered" column="lowers" sort={sort} onSort={onSort} title="Hits that stated a negative amount" />
-            <SortHeader
-              label="Net / hour"
-              column="rate"
-              sort={sort}
-              onSort={onSort}
-              title="Net change per hour between the first and last hit on record"
-            />
-            <th title="A guess from timing, not a fact the game states — see the ≈ on the Hits view. Click a row for the full breakdown, kills and quests apart.">
-              Likely causes
-            </th>
-            <SortHeader label="Last hit" column="lastAt" sort={sort} onSort={onSort} />
-          </tr>
-        </thead>
-        <tbody>
-          {standings.map((s) => {
-            const rate = ratePerHour(s);
-            const shown = s.causes.slice(0, MAX_CAUSES_SHOWN);
-            const hidden = s.causes.length - shown.length;
-            const isOpen = open === s.faction;
-            return (
-              <Fragment key={s.faction}>
-                <tr
-                  className="standing-row expandable"
-                  title={`Click for ${s.faction}'s full likely-cause breakdown`}
-                  onClick={() => setOpen(isOpen ? null : s.faction)}
-                >
-                  <td>
-                    <Caret open={isOpen} /> <ItemLink title={s.faction} />
-                  </td>
-                  <td className={s.net > 0 ? "num-accent" : s.net < 0 ? "num-bad" : undefined} title={standingTitle(s)}>
-                    {s.net > 0 ? `+${s.net}` : s.net}
-                  </td>
-                  <td className="lt-num">{s.raises}</td>
-                  <td className="lt-num">{s.lowers}</td>
-                  <td className="lt-num muted">{rate ? (rate > 0 ? `+${rate}` : rate) : "—"}</td>
-                  <td
-                    className="fc-cause"
-                    title="A guess from timing, not a fact the game states — a mob's kill or a nearby conversation that landed shortly before one or more hits (ADR 0219, ADR 0220)"
-                  >
-                    {shown.length ? (
-                      <>
-                        <span className="fc-guess">≈</span>{" "}
-                        <NameList names={shown.map((c) => c.source)} extra={(_, i) => causeExtra(shown[i])} />
-                        {hidden > 0 && <span className="muted"> +{hidden} more</span>}
-                      </>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td className="lt-time" title={when(s.lastAt)}>
-                    {clock(s.lastAt)}
-                  </td>
-                </tr>
-                {isOpen && (
-                  <tr className="standing-detail">
-                    <td colSpan={STANDING_COLUMNS}>
-                      <CauseBreakdown causes={s.causes} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+      <DataGrid
+        {...GRID_DEFAULTS}
+        sx={GRID_SX}
+        rows={rows}
+        columns={columns}
+        sortingMode="server"
+        sortModel={sortModel}
+        onSortModelChange={(model) => {
+          const key = (model[0]?.field ?? sort.key) as FactionStandingSortKey;
+          onSort(nextSort(sort, key, key !== "faction"));
+        }}
+        disableRowSelectionOnClick
+        rowSelectionModel={{ type: "include", ids: new Set(open ? [open] : []) }}
+        onRowClick={(params) => setOpen((prev) => (prev === params.id ? null : (params.id as string)))}
+      />
+      {openStanding && <CauseBreakdown causes={openStanding.causes} />}
     </div>
   );
 }

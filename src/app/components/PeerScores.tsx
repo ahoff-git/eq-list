@@ -1,15 +1,19 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { api } from "@/lib/api";
 import { useRead, useWatcherStatus } from "@/lib/hooks";
 import { rowsOf } from "@/lib/usePeerShare";
-import { compareScores } from "@/shared/peer-share";
+import { compareScores, type ScoreRow } from "@/shared/peer-share";
 import { categoryOf, formatScore, scoreOrder } from "@/shared/high-scores";
+import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
 import { Empty } from "./ui";
 import type { HighScore, ReceivedShare, ScoreBoard } from "@/shared/types";
 
 /** Stable empty, so a board that hasn't arrived doesn't restart the comparison memo each render. */
 const NO_BOARD: ScoreBoard = { character: "", scores: [], streak: 0, seeded: false };
+
+type Row = ScoreRow & { id: string };
 
 /**
  * Everybody's personal bests, side by side.
@@ -23,6 +27,11 @@ const NO_BOARD: ScoreBoard = { character: "", scores: [], streak: 0, seeded: fal
  * A `?` on a figure is [ADR 0130](../../../specs/decisions/0130-data-in-doubt-says-so.md)'s
  * provisional flag surviving the wire, and such a figure is **excluded from leading** — a number
  * that says it might be wrong should not take a crown it may not be owed.
+ *
+ * A `DataGrid` (ADR 0230), one column per peer — sortable and filterable like any other table here,
+ * a capability this board never had before: ranking categories by how one peer's column stacks up,
+ * or narrowing to categories where someone's figure clears a floor, are both a column filter away.
+ * The default row order is still `scoreOrder`'s, since nothing sorted it until you ask.
  */
 export default function PeerScores({ received }: { received: ReceivedShare[] }) {
   const status = useWatcherStatus();
@@ -47,6 +56,60 @@ export default function PeerScores({ received }: { received: ReceivedShare[] }) 
     [board, theirs],
   );
 
+  const gridRows = useMemo<Row[]>(() => rows.map((row) => ({ ...row, id: row.categoryId })), [rows]);
+  const characters = useMemo(() => rows[0]?.columns ?? [], [rows]);
+
+  const columns = useMemo<GridColDef<Row>[]>(
+    () => [
+      {
+        field: "category",
+        headerName: "Category",
+        flex: 2,
+        minWidth: 160,
+        valueGetter: (_v, row) => categoryOf(row.categoryId).label,
+        renderCell: (p) => {
+          const category = categoryOf(p.row.categoryId);
+          return <span title={category.blurb}>{category.label}</span>;
+        },
+      },
+      ...characters.map(
+        (c): GridColDef<Row> => ({
+          field: c.character,
+          headerName: c.character,
+          renderHeader: () => (
+            <span className={c.mine ? "mine" : undefined}>
+              {c.character}
+              {c.mine ? <span className="muted small"> (you)</span> : null}
+            </span>
+          ),
+          ...NUM_COL,
+          flex: 1,
+          valueGetter: (_v, row) => row.columns.find((col) => col.character === c.character)?.score?.value,
+          cellClassName: (p) => {
+            const col = p.row.columns.find((x) => x.character === c.character);
+            return [col?.mine ? "mine" : "", p.row.leader === c.character ? "leader" : ""].filter(Boolean).join(" ");
+          },
+          renderCell: (p) => {
+            const col = p.row.columns.find((x) => x.character === c.character);
+            const category = categoryOf(p.row.categoryId);
+            if (!col?.score) {
+              // A blank, not a zero: "never done it" and "did it, scored nothing" are different
+              // claims and a 0 would assert the second.
+              return <span className="muted">—</span>;
+            }
+            return (
+              <span title={detail(col.score)}>
+                {formatScore(category.unit, col.score.value)}
+                {col.score.unsettled ? <span className="muted"> ?</span> : null}
+              </span>
+            );
+          },
+        }),
+      ),
+    ],
+    [characters],
+  );
+
   if (!theirs.length) {
     return (
       <section className="peers-block">
@@ -59,56 +122,11 @@ export default function PeerScores({ received }: { received: ReceivedShare[] }) 
     );
   }
 
-  const columns = rows[0]?.columns ?? [];
-
   return (
     <section className="peers-block">
       <h3>High scores</h3>
       <div className="peers-scores-wrap">
-        <table className="peers-scores">
-          <thead>
-            <tr>
-              <th />
-              {columns.map((c) => (
-                <th key={c.character} className={c.mine ? "mine" : undefined}>
-                  {c.character}
-                  {c.mine ? <span className="muted small"> (you)</span> : null}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const category = categoryOf(row.categoryId);
-              return (
-                <tr key={row.categoryId}>
-                  <th scope="row" title={category.blurb}>
-                    {category.label}
-                  </th>
-                  {row.columns.map((c) => (
-                    <td
-                      key={c.character}
-                      className={[c.mine ? "mine" : "", row.leader === c.character ? "leader" : ""]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                      {c.score ? (
-                        <span title={detail(c.score)}>
-                          {formatScore(category.unit, c.score.value)}
-                          {c.score.unsettled ? <span className="muted"> ?</span> : null}
-                        </span>
-                      ) : (
-                        // A blank, not a zero: "never done it" and "did it, scored nothing" are
-                        // different claims and a 0 would assert the second.
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <DataGrid {...GRID_DEFAULTS} sx={GRID_SX} rows={gridRows} columns={columns} />
       </div>
       <span className="hint">
         Nobody else&rsquo;s figure can change your board — these sit beside it and nothing more. A{" "}

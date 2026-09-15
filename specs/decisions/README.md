@@ -87,7 +87,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0055: Eating a log is a catch-up — it fills every bucket it can](./0055-eating-a-log-fills-history.md)
 - [0056: A dropped record keeps what it taught](./0056-a-dropped-record-keeps-what-it-taught.md)
 - [0057: A grade is not an identity, and neither is a difficulty](./0057-a-grade-is-not-an-identity.md)
-- [0058: A ledger needs filters and a column to sort by](./0058-a-ledger-needs-filters-and-a-column-to-sort-by.md)
+- [0058: A ledger needs filters and a column to sort by](./0058-a-ledger-needs-filters-and-a-column-to-sort-by.md) — superseded by [0230](./0230-every-table-gets-a-column-menu.md); the segmented Drops/Sells split, the "on my list" fold and the fate/highlight rules stand
 - [0059: A zone's variants are one zone](./0059-a-zone-s-variants-are-one-zone.md) — *its `keyOf` fold superseded by 0083*
 - [0060: A position belongs to the zone it was taken in](./0060-a-position-belongs-to-the-zone-it-was-taken-in.md)
 - [0061: A map pack names its own zones](./0061-a-map-pack-names-its-own-zones.md)
@@ -263,6 +263,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0227: An admin edit is a flagged exception to stored history](./0227-an-admin-edit-is-a-flagged-exception-to-stored-history.md)
 - [0228: A mob can have more than one known location](./0228-a-mob-can-have-more-than-one-known-location.md)
 - [0229: A faction correction is a stated offset, not a replacement](./0229-a-faction-correction-is-a-stated-offset.md)
+- [0230: Every table gets a column menu — MUI X Data Grid replaces the hand-rolled tables](./0230-every-table-gets-a-column-menu.md)
 
 ## Open Questions
 
@@ -499,6 +500,17 @@ and degrading to blank facts when the file isn't there.*
   with no `prev` to corroborate it, or none at all; neither has a real measured raid log behind it to
   size the discount from, which is why nothing has been changed here yet rather than guessing a
   number.
+
+- **Now that a UI library is in, should anything besides a table use it?**
+  [ADR 0230](./0230-every-table-gets-a-column-menu.md) deliberately scoped `@mui/material`/
+  `@mui/x-data-grid` to tables only — every button, input, dropdown and panel elsewhere is still the
+  app's own bespoke CSS. That's a clean boundary today (a table's column-menu problem is what the
+  library actually solves), but it also means the app now renders two different design systems side
+  by side wherever a MUI table sits next to a hand-styled control bar (`ItemSearchPanel`'s criteria
+  row above `ItemTable`, `LootFilterBar` above `DropTable`). Worth revisiting if that seam ever reads
+  as a visible inconsistency rather than an implementation detail nobody but a contributor would
+  notice — not before, since widening MUI's footprint "while we're at it" is exactly the kind of
+  scope creep ADR 0230 was careful not to take on.
 
 - **Should achievements ever bridge to the companion web app's shared library?**
   [ADR 0212](./0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md) builds

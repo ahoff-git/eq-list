@@ -112,7 +112,7 @@ test("two ticks in one facet are an `or`, two facets are an `and`", () => {
 
 test("a class filter reads `ALL` as including that class", () => {
   const all = rows();
-  const warrior = with_({ facets: { ...NO_CRITERIA.facets, class: ["WAR"] } });
+  const warrior = with_({ facets: { ...NO_CRITERIA.facets, class: ["Warrior"] } });
   // The circlet is caster-only; the other two say `Class: ALL` and so are a warrior's.
   assert.deepEqual(titles(all.filter((r) => matchesItem(r, warrior))), ["Cloak of Wisdom", "Aviak Talon"]);
 });

@@ -200,9 +200,10 @@ button {
 .app {
   display: flex;
   flex-direction: column;
-  /* 100%, not 100vh: the interface scale is a CSS `zoom` on the root (see `useUiScale`), and a
-     `vh` length is scaled by it — the shell would cover only `scale` of the window and leave a
-     gap. `zoom` expands the containing block instead, so a percentage fills the window exactly. */
+  /* 100%, not 100vh: the interface scale is a CSS `zoom` on this element itself, not the document
+     root (see `useUiScale`) — a library popover portals to `body`, which has to stay outside the
+     zoomed subtree, ADR 0231 — and a `vh` length is scaled by it either way, leaving a gap. `zoom`
+     expands its own containing block instead, so a percentage fills the window exactly. */
   height: 100%;
   background: var(--bg);
 }
@@ -398,9 +399,9 @@ button {
    A panel that opens over another view — the map's five, so far — is bounded, because the view
    underneath is usually the point. How *tightly* bounded is a judgement only its reader can make, so
    the box is sized here and the seam under it is a drag handle. Sizes are a **share of the window**
-   rather than a pixel height: a window's interface scale is a CSS `zoom` on the root (see `.app`),
-   which multiplies px and leaves a ratio alone, and `%` resolves against the window's own definite
-   height — so 40% means 40% of the map at any scale. See `src/shared/panel-size.ts`. */
+   rather than a pixel height: a window's interface scale is a CSS `zoom` on its own shell (see
+   `.app`), which multiplies px and leaves a ratio alone, and `%` resolves against the window's own
+   definite height — so 40% means 40% of the map at any scale. See `src/shared/panel-size.ts`. */
 .panel-resize {
   position: relative;
   display: flex;
@@ -2261,7 +2262,7 @@ kbd {
 .map-win {
   display: flex;
   flex-direction: column;
-  height: 100%; /* see .app — percentages survive the root `zoom`, `vh` doesn't */
+  height: 100%; /* see .app — percentages survive this shell's own `zoom`, `vh` doesn't */
   background: var(--bg);
   border: 1px solid var(--border);
   overflow: hidden; /* and no radius — same reason as `.app.glass` */

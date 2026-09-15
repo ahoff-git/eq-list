@@ -1,5 +1,6 @@
 "use client";
 import { useMemo } from "react";
+import { DataGrid, type GridColDef, type GridSortModel } from "@mui/x-data-grid";
 import { useItemPrices, useLootFeed, useShoppingList } from "@/lib/hooks";
 import { usePersistentShape, usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -22,10 +23,10 @@ import {
 } from "@/shared/loot-filters";
 import { normalizeItemName } from "@/shared/grouping";
 import { describeCoins, formatCoins } from "@/shared/money";
-import type { Sort } from "@/shared/sorting";
+import { nextSort, type Sort } from "@/shared/sorting";
 import ItemLink from "./ItemLink";
-import SortHeader from "./SortHeader";
 import ZoneTag from "./ZoneTag";
+import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
 import type { ItemPrice, LootFate, LootRecord } from "@/shared/types";
 
 import { clock, count, countOf, when } from "@/shared/format";
@@ -56,6 +57,12 @@ import { CheckField, Empty, PickField, segCls } from "./ui";
  * The prices view is the item half of the money question (ADR 0047): an auto-sell is the only line
  * that ever prices an item, and a price holds wherever the item dropped — so it's worth keeping per
  * item, apart from what any one mob's corpses paid.
+ *
+ * Both tables are `DataGrid`s (ADR 0230), which adds a per-column filter menu on top of
+ * `LootFilterBar` — two different questions sharing a screen rather than a mechanism, matching
+ * [ADR 0211](../../../specs/decisions/0211-a-loot-filter-searches-the-ledger-not-the-window.md)'s
+ * distinction: `LootFilterBar` reaches the whole fetched ledger (`SEARCH_FETCH`/`DEFAULT_FETCH`
+ * below), and a grid column filter only ever narrows what's already on screen.
  */
 const FATE_LABEL: Record<LootFate, string> = {
   kept: "kept",
@@ -270,7 +277,34 @@ const FATE_HINT: Record<LootFate, string> = {
   combined: "Consumed to make something else",
 };
 
-/** The ledger as a table, so the columns line up and any of them can do the sorting. */
+/** Which way each column opens on its first click — the rule the old `SortHeader` calls encoded
+ *  per column, kept here since the grid's own click cycle is overridden to match it. */
+const LOOT_START_DESC: Record<LootSortKey, boolean> = {
+  at: true,
+  fate: false,
+  qty: true,
+  item: false,
+  source: false,
+  zone: false,
+};
+
+/** Phrase the fate's particulars the way the log means them. */
+function detailLabel(drop: LootRecord): string {
+  switch (drop.fate) {
+    case "sold":
+      return `for ${drop.detail}`;
+    case "stored":
+      return `into ${drop.detail}`;
+    case "combined":
+      return `→ ${drop.detail}`;
+    default:
+      return drop.detail ?? "";
+  }
+}
+
+type DropRow = LootRecord & { id: string };
+
+/** The ledger, as a `DataGrid` (ADR 0230) — sortable and filterable on every column. */
 function DropTable({
   drops,
   wanted,
@@ -282,67 +316,106 @@ function DropTable({
   sort: Sort<LootSortKey>;
   onSort: (next: Sort<LootSortKey>) => void;
 }) {
+  // Keyed by the drop's identity, not `logId-item`. The ledger outlives a run while `logId`
+  // restarts at zero each launch, so that pair repeats across runs — two rows claiming one key.
+  // `lootKey` is the same identity the feed merges on, so the grid and the merge agree on what one
+  // drop is.
+  const rows = useMemo<DropRow[]>(() => drops.map((d) => ({ ...d, id: lootKey(d) })), [drops]);
+
+  const columns = useMemo<GridColDef<DropRow>[]>(
+    () => [
+      {
+        field: "at",
+        headerName: "Time",
+        description: "When the log recorded it",
+        flex: 1,
+        renderCell: (p) => <span className="lt-time">{clock(p.row.at)}</span>,
+      },
+      {
+        field: "fate",
+        headerName: "Fate",
+        description: "What became of it",
+        flex: 1,
+        renderCell: (p) => <span className={`src-kind f-${p.row.fate}`}>{FATE_LABEL[p.row.fate]}</span>,
+      },
+      {
+        field: "qty",
+        headerName: "Qty",
+        description: "How many the line reported",
+        ...NUM_COL,
+        flex: 1,
+        renderCell: (p) => (p.row.qty > 1 ? `${p.row.qty}×` : ""),
+      },
+      {
+        field: "item",
+        headerName: "Item",
+        flex: 2,
+        minWidth: 160,
+        renderCell: (p) => <ItemLink title={p.row.item} className="lt-item" />,
+      },
+      {
+        field: "source",
+        headerName: "From",
+        description: "Whose corpse",
+        flex: 2,
+        minWidth: 140,
+        cellClassName: "muted",
+        // Whose corpse it came off is a mob name like any other — worth a look-up, since "what else
+        // does this thing drop" is the next question a ledger raises.
+        renderCell: (p) => (p.row.source ? <ItemLink title={p.row.source} /> : ""),
+      },
+      {
+        field: "zone",
+        headerName: "Zone",
+        description:
+          "Where you were standing when it dropped, with how hard the zone was beside it. Sorts by camp, so every difficulty of one zone groups together.",
+        flex: 2,
+        minWidth: 140,
+        // Where it came from, the one way every logged row says it (`ZoneTag`, ADR 0136) — clicking
+        // the camp opens its map, like any other place name in the app.
+        renderCell: (p) => <ZoneTag zone={p.row.zone} />,
+      },
+      {
+        field: "detail",
+        headerName: "Where it went",
+        flex: 2,
+        minWidth: 140,
+        sortable: false,
+        cellClassName: "muted",
+        valueGetter: (_v, row) => (row.detail ? detailLabel(row) : ""),
+      },
+    ],
+    [],
+  );
+
   if (drops.length === 0) {
     return <Empty title="No drops match these filters." hint="Widen them — the whole ledger is still there." />;
   }
 
+  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
+
   return (
     <div className="table-scroll">
-      <table className="stat-table loot-table">
-        <thead>
-          <tr>
-            <SortHeader label="Time" column="at" sort={sort} onSort={onSort} title="When the log recorded it" />
-            <SortHeader label="Fate" column="fate" sort={sort} onSort={onSort} startDesc={false} title="What became of it" />
-            <SortHeader label="Qty" column="qty" sort={sort} onSort={onSort} title="How many the line reported" />
-            <SortHeader label="Item" column="item" sort={sort} onSort={onSort} startDesc={false} />
-            <SortHeader label="From" column="source" sort={sort} onSort={onSort} startDesc={false} title="Whose corpse" />
-            <SortHeader
-              label="Zone"
-              column="zone"
-              sort={sort}
-              onSort={onSort}
-              startDesc={false}
-              title="Where you were standing when it dropped, with how hard the zone was beside it. Sorts by camp, so every difficulty of one zone groups together."
-            />
-            <th>Where it went</th>
-          </tr>
-        </thead>
-        <tbody>
-          {/* Keyed by the drop's identity, not `logId-item`. The ledger outlives a run while `logId`
-              restarts at zero each launch, so that pair repeats across runs — two rows claiming one
-              key, which React resolves by reusing the wrong node (and warns about). `lootKey` is the
-              same identity the feed merges on, so the list and the merge agree on what one drop is. */}
-          {drops.map((drop) => {
-            const onList = wanted.has(normalizeItemName(drop.item));
-            return (
-              <tr
-                key={lootKey(drop)}
-                className={onList ? "wanted" : undefined}
-                title={onList ? "On your shopping list" : undefined}
-              >
-                <td className="lt-time">{clock(drop.at)}</td>
-                <td className={`src-kind f-${drop.fate}`}>{FATE_LABEL[drop.fate]}</td>
-                <td className="lt-num">{drop.qty > 1 ? `${drop.qty}×` : ""}</td>
-                <td>
-                  <ItemLink title={drop.item} className="lt-item" />
-                </td>
-                {/* Whose corpse it came off is a mob name like any other — worth a look-up, since
-                    "what else does this thing drop" is the next question a ledger raises. */}
-                <td className="muted">{drop.source ? <ItemLink title={drop.source} /> : ""}</td>
-                {/* Where it came from, the one way every logged row says it (`ZoneTag`, ADR 0136) —
-                    clicking the camp opens its map, like any other place name in the app. */}
-                <td className="lt-zone">
-                  <ZoneTag zone={drop.zone} />
-                </td>
-                <td className="muted">{drop.detail ? detailLabel(drop) : ""}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <DataGrid
+        {...GRID_DEFAULTS}
+        sx={GRID_SX}
+        rows={rows}
+        columns={columns}
+        getRowClassName={(p) => (wanted.has(normalizeItemName(p.row.item)) ? "row-wanted" : "")}
+        // Already sorted (and truncated to `MAX_ROWS`) upstream by `LootPanel`, before the cut — the
+        // grid must reflect that order, not re-derive it. See ItemTable for the same shape.
+        sortingMode="server"
+        sortModel={sortModel}
+        onSortModelChange={(model) => {
+          const key = (model[0]?.field ?? sort.key) as LootSortKey;
+          onSort(nextSort(sort, key, LOOT_START_DESC[key]));
+        }}
+      />
     </div>
   );
 }
+
+type PriceRow = ItemPrice & { id: string };
 
 /**
  * What your trash is worth, learned from your own auto-sells. Only what you've actually sold
@@ -357,6 +430,51 @@ function PriceTable({
   sort: Sort<PriceSortKey>;
   onSort: (next: Sort<PriceSortKey>) => void;
 }) {
+  const rows = useMemo<PriceRow[]>(() => prices.map((p) => ({ ...p, id: p.item })), [prices]);
+
+  const columns = useMemo<GridColDef<PriceRow>[]>(
+    () => [
+      { field: "item", headerName: "Item", flex: 2, minWidth: 160, renderCell: (p) => <ItemLink title={p.row.item} /> },
+      {
+        field: "unitCopper",
+        headerName: "Each",
+        description: "Price for one — a stack's line price divided by the stack",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: "lt-num",
+        renderCell: (p) => formatCoins(p.row.unitCopper),
+      },
+      {
+        field: "qty",
+        headerName: "Sold",
+        description: "How many you've auto-sold",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: "lt-num",
+      },
+      {
+        field: "copper",
+        headerName: "Earned",
+        description: "What they came to in total",
+        ...NUM_COL,
+        flex: 1,
+        cellClassName: "lt-num num-accent",
+        renderCell: (p) => <span title={describeCoins(p.row.copper)}>{formatCoins(p.row.copper)}</span>,
+      },
+      {
+        field: "lastAt",
+        headerName: "Last sold",
+        description: "When you last sold one",
+        flex: 1,
+        cellClassName: "lt-time",
+        renderCell: (p) => (
+          <span title={`${count(p.row.sales, "sale")}, last ${when(p.row.lastAt)}`}>{clock(p.row.lastAt)}</span>
+        ),
+      },
+    ],
+    [],
+  );
+
   if (prices.length === 0) {
     return (
       <Empty
@@ -366,58 +484,25 @@ function PriceTable({
     );
   }
   const earned = prices.reduce((n, p) => n + p.copper, 0);
+  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
 
   return (
     <>
       <div className="table-scroll">
-        <table className="stat-table loot-table">
-          <thead>
-            <tr>
-              <SortHeader label="Item" column="item" sort={sort} onSort={onSort} startDesc={false} />
-              <SortHeader
-                label="Each"
-                column="unitCopper"
-                sort={sort}
-                onSort={onSort}
-                title="Price for one — a stack's line price divided by the stack"
-              />
-              <SortHeader label="Sold" column="qty" sort={sort} onSort={onSort} title="How many you've auto-sold" />
-              <SortHeader label="Earned" column="copper" sort={sort} onSort={onSort} title="What they came to in total" />
-              <SortHeader label="Last sold" column="lastAt" sort={sort} onSort={onSort} title="When you last sold one" />
-            </tr>
-          </thead>
-          <tbody>
-            {prices.map((p) => (
-              <tr key={p.item} title={`${count(p.sales, "sale")}, last ${when(p.lastAt)}`}>
-                <td>
-                  <ItemLink title={p.item} />
-                </td>
-                <td className="lt-num">{formatCoins(p.unitCopper)}</td>
-                <td className="lt-num">{p.qty}</td>
-                <td className="lt-num num-accent" title={describeCoins(p.copper)}>
-                  {formatCoins(p.copper)}
-                </td>
-                <td className="lt-time">{clock(p.lastAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataGrid
+          {...GRID_DEFAULTS}
+          sx={GRID_SX}
+          rows={rows}
+          columns={columns}
+          sortingMode="server"
+          sortModel={sortModel}
+          onSortModelChange={(model) => {
+            const key = (model[0]?.field ?? sort.key) as PriceSortKey;
+            onSort(nextSort(sort, key, key !== "item"));
+          }}
+        />
       </div>
       <p className="muted small">Auto-sales in the ledger have earned {describeCoins(earned)}.</p>
     </>
   );
-}
-
-/** Phrase the fate's particulars the way the log means them. */
-function detailLabel(drop: LootRecord): string {
-  switch (drop.fate) {
-    case "sold":
-      return `for ${drop.detail}`;
-    case "stored":
-      return `into ${drop.detail}`;
-    case "combined":
-      return `→ ${drop.detail}`;
-    default:
-      return drop.detail ?? "";
-  }
 }

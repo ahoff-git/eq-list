@@ -46,6 +46,7 @@ export default function FacetPicker({
   onChange,
   missing = 0,
   counts,
+  aliases,
 }: {
   label: string;
   /** What "not narrowing by this" reads as — "any slot", "any zone". */
@@ -58,6 +59,12 @@ export default function FacetPicker({
    * A value missing from the map counts zero. Omit the map entirely and nothing is dimmed.
    */
   counts?: ReadonlyMap<string, number>;
+  /**
+   * Extra text an option also answers to in the filter box, beyond its own label — the class
+   * picker's wiki abbreviation ("BST" for "Beastlord"), so typing the code still finds the class
+   * even though the option itself only ever shows the full name. Search-only: never displayed.
+   */
+  aliases?: ReadonlyMap<string, string>;
   /**
    * How many items have **no value at all** for this facet, under the rest of the criteria — the
    * `(none)` entry of `counts`. It is both the count beside the *(none)* row and the reason that row
@@ -93,11 +100,19 @@ export default function FacetPicker({
    *
    * The same two-pass shape the Lucy mirror uses, and it improves the other pickers for free: "Feerot"
    * still finds The Feerrott.
+   *
+   * An option's alias (if it has one) is folded into the same literal pass rather than searched on
+   * its own: "bst" and "beast" both just need to be *in there somewhere*, and appending the code to
+   * the label before the substring check gets that for free without a second matching rule.
    */
   const shown = useMemo(() => {
+    const haystack = (o: string) => {
+      const alias = aliases?.get(o);
+      return alias ? `${o.toLowerCase()} ${alias.toLowerCase()}` : o.toLowerCase();
+    };
     const matching = (): string[] => {
       if (!needle) return all;
-      const literal = all.filter((o) => o.toLowerCase().includes(needle));
+      const literal = all.filter((o) => haystack(o).includes(needle));
       if (literal.length >= FUZZY_BELOW) return literal;
       const seen = new Set(literal);
       const near = fuzzyRank(filter.trim(), all, (o) => o, { limit: FUZZY_BELOW, minScore: FUZZY_SCORE })
@@ -112,7 +127,7 @@ export default function FacetPicker({
     const leadsSomewhere = (value: string) => (counts.get(value) ?? 0) > 0;
     const live = list.filter(leadsSomewhere);
     return live.length === list.length ? list : [...live, ...list.filter((o) => !leadsSomewhere(o))];
-  }, [all, needle, filter, counts]);
+  }, [all, needle, filter, counts, aliases]);
 
   const toggle = (value: string, on: boolean) =>
     onChange(on ? [...chosen, value] : chosen.filter((c) => c !== value));

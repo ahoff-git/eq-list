@@ -47,8 +47,8 @@ test("a negative stat keeps its sign", () => {
 
 test("`ALL except` becomes the classes that can actually use it", () => {
   const { classes } = parseItemStats(["Class: ALL except NEC WIZ MAG ENC"]);
-  assert.equal(classes.includes("WAR"), true);
-  assert.equal(classes.includes("NEC"), false);
+  assert.equal(classes.includes("Warrior"), true);
+  assert.equal(classes.includes("Necromancer"), false);
   assert.equal(classes.length, EQ_CLASSES.length - 4);
 });
 
@@ -56,7 +56,12 @@ test("`Class: NONE` is nobody, and a bare list is itself", () => {
   assert.deepEqual(parseItemStats(["Class: NONE", "Race: None"]).classes, []);
   assert.deepEqual(parseItemStats(["Class: NONE", "Race: None"]).races, []);
   // No space after the colon — one live page writes it this way.
-  assert.deepEqual(parseItemStats(["Class:CLR DRU SHM"]).classes, ["CLR", "DRU", "SHM"]);
+  assert.deepEqual(parseItemStats(["Class:CLR DRU SHM"]).classes, ["Cleric", "Druid", "Shaman"]);
+});
+
+test("a class code the card writes is shown by its full name, never the code", () => {
+  assert.deepEqual(parseItemStats(["Class: SHD"]).classes, ["Shadow Knight"]);
+  assert.deepEqual(parseItemStats(["Class: BST"]).classes, ["Beastlord"]);
 });
 
 test("the spellings of one flag fold into one flag", () => {
@@ -172,7 +177,7 @@ test("a whole real card reads as its numbers", () => {
   ];
   const read = parseItemStats(card);
   assert.deepEqual(read.slots, ["FINGER"]);
-  assert.deepEqual(read.classes, ["NEC", "WIZ", "MAG", "ENC"]);
+  assert.deepEqual(read.classes, ["Necromancer", "Wizard", "Magician", "Enchanter"]);
   assert.equal(read.races.length, 16);
   assert.deepEqual(read.flags, ["LORE", "ATTUNABLE"]);
   assert.deepEqual(read.effects, []);

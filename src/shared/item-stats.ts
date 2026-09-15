@@ -26,6 +26,8 @@
  * for what this is read *for*.
  */
 
+import { CLASS_ABBREVIATIONS, CLASS_NAMES, classFullName } from "./class-names";
+
 /** One number an item can carry. The union is closed so a criteria/weight key can't be a typo. */
 export type StatKey =
   | "ac"
@@ -153,10 +155,9 @@ const STAT_LINE = new RegExp(
   "gi",
 );
 
-/** The classes EQ has, in the order a card lists them — what `Class: ALL` expands to. */
-export const EQ_CLASSES: readonly string[] = [
-  "WAR", "CLR", "PAL", "RNG", "SHD", "DRU", "MNK", "BRD", "ROG", "SHM", "NEC", "WIZ", "MAG", "ENC", "BST", "BER",
-];
+/** The classes EQ has, in the order a card lists them — what `Class: ALL` expands to, in the
+ *  abbreviated form the card itself is written in (`class-names.ts` holds the full spelling). */
+export const EQ_CLASSES: readonly string[] = CLASS_ABBREVIATIONS;
 
 /**
  * Where an item can be worn.
@@ -176,8 +177,9 @@ export const EQ_RACES: readonly string[] = [
   "HUM", "BAR", "ERU", "ELF", "HIE", "DEF", "HFE", "DWF", "TRL", "OGR", "HFL", "GNM", "IKS", "VAH", "FRG", "DRK",
 ];
 
-/** The "everyone" answers, shared rather than copied per item — see `parseItemStats`. */
-const ALL_CLASSES: string[] = Object.freeze([...EQ_CLASSES]) as unknown as string[];
+/** The "everyone" answers, shared rather than copied per item — see `parseItemStats`. Classes are
+ *  held (and compared) by their full name, same as every other class a card names. */
+const ALL_CLASSES: string[] = Object.freeze([...CLASS_NAMES]) as unknown as string[];
 const ALL_RACES: string[] = Object.freeze([...EQ_RACES]) as unknown as string[];
 
 /**
@@ -253,7 +255,8 @@ export interface ItemStats {
   stats: Partial<Record<StatKey, number>>;
   /** Where it's worn, uppercase (`["PRIMARY", "SECONDARY"]`). Empty for something you can't equip. */
   slots: string[];
-  /** Who can use it, `ALL`/`ALL except …` already expanded. Empty means the card said `NONE`. */
+  /** Who can use it, `ALL`/`ALL except …` already expanded and each class spelled in full
+   *  (`class-names.ts`) rather than the card's own three-letter code. Empty means the card said `NONE`. */
   classes: string[];
   /** Likewise for race. */
   races: string[];
@@ -430,8 +433,10 @@ export function parseItemStats(lines: readonly string[] | undefined): ItemStats 
     const named = slot ? tokens(slot[1]).map((s) => SLOT_TYPOS[s] ?? s) : bareSlots(line);
     if (named.length) addAll(out.slots, named);
 
+    // `expandWhoList` answers in the card's own abbreviations (`EQ_CLASSES`); translated to full
+    // names here so a filter or a rendered list never shows the code, only the class.
     const klass = /^Class\s*:\s*(.+)$/i.exec(line);
-    if (klass) addAll(out.classes, expandWhoList(klass[1], EQ_CLASSES));
+    if (klass) addAll(out.classes, expandWhoList(klass[1], EQ_CLASSES).map(classFullName));
 
     const race = /^Race\s*:\s*(.+)$/i.exec(line);
     if (race) addAll(out.races, expandWhoList(race[1], EQ_RACES));

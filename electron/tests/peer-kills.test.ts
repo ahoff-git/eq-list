@@ -20,7 +20,7 @@ test("a well-formed kill survives with nothing added and nothing carried over", 
   // Reduced to the five fields a dot needs. Anything else the sender attached — a time, a loot list,
   // a claim about who they are — is not copied, which is what makes storing a stranger's claim safe:
   // the worst a bad one can do is draw a marker in the wrong place.
-  const out = sanitizeKills([kill({ at: "2024-01-01T00:00:00Z", loot: ["Fungi Tunic"], by: "someone else" })]);
+  const out = sanitizeKills([kill({ at: "2024-01-01T00:00:00Z", loot: ["Fungi Tunic"], by: "someone else" })], false);
   assert.deepEqual(out, [{ mob: "a bat", zone: "gfaydark", y: 100, x: -200, confidence: 0.8 }]);
 });
 
@@ -28,14 +28,14 @@ test("a kill with nothing to draw is dropped rather than defaulted to nowhere", 
   // Position zero is a real coordinate in EverQuest, so "missing" cannot be represented by a zero —
   // it has to be represented by refusing the row.
   for (const spoiled of [{ y: undefined }, { x: undefined }, { y: "100" }, { x: null }, { y: NaN }, { x: Infinity }]) {
-    assert.deepEqual(sanitizeKills([kill(spoiled)]), [], JSON.stringify(spoiled));
+    assert.deepEqual(sanitizeKills([kill(spoiled)], false), [], JSON.stringify(spoiled));
   }
-  assert.deepEqual(sanitizeKills([kill({ y: 0, x: 0 })]).length, 1, "the origin is a place like any other");
+  assert.deepEqual(sanitizeKills([kill({ y: 0, x: 0 })], false).length, 1, "the origin is a place like any other");
 });
 
 test("a kill has to name something, and a name has to be more than spaces", () => {
   for (const spoiled of [{ mob: "" }, { mob: "   " }, { mob: 42 }, { mob: undefined }, { zone: "" }, { zone: "  " }, { zone: null }]) {
-    assert.deepEqual(sanitizeKills([kill(spoiled)]), [], JSON.stringify(spoiled));
+    assert.deepEqual(sanitizeKills([kill(spoiled)], false), [], JSON.stringify(spoiled));
   }
 });
 
@@ -43,40 +43,46 @@ test("a zone confirmed to be a restriction notice, not a place, is refused like 
   // A peer on an older build can still send "an area where levitation effects do not function" —
   // the client's own reuse of the zone-arrival sentence for a notice, mistaken for one before
   // `classifyZoneLine` existed — as if it were where they killed something.
-  assert.deepEqual(sanitizeKills([kill({ zone: "an area where levitation effects do not function" })]), []);
-  assert.equal(sanitizeKills([kill({ zone: "Greater Faydark" })]).length, 1, "an ordinary zone still survives");
+  assert.deepEqual(sanitizeKills([kill({ zone: "an area where levitation effects do not function" })], false), []);
+  assert.equal(sanitizeKills([kill({ zone: "Greater Faydark" })], false).length, 1, "an ordinary zone still survives");
 });
 
 test("a confidence outside 0–1 is malformed, not weak, and is refused rather than clamped", () => {
   // `estimates.ts` rule 2: a figure that cannot mean what it says is not evidence of anything, and
   // clamping it would turn a broken sender into a confident one.
   for (const c of [-0.5, 1.5, 2, "0.9", undefined, null, NaN]) {
-    assert.deepEqual(sanitizeKills([kill({ confidence: c })]), [], String(c));
+    assert.deepEqual(sanitizeKills([kill({ confidence: c })], false), [], String(c));
   }
   // And the honest-but-weak end: below the floor a position is a guess about a guess.
-  assert.deepEqual(sanitizeKills([kill({ confidence: 0.19 })]), []);
-  assert.equal(sanitizeKills([kill({ confidence: 0.2 })]).length, 1, "the floor itself is included");
-  assert.equal(sanitizeKills([kill({ confidence: 1 })]).length, 1);
+  assert.deepEqual(sanitizeKills([kill({ confidence: 0.19 })], false), []);
+  assert.equal(sanitizeKills([kill({ confidence: 0.2 })], false).length, 1, "the floor itself is included");
+  assert.equal(sanitizeKills([kill({ confidence: 1 })], false).length, 1);
 });
 
 test("one bad row costs its own row and nothing else", () => {
   // A peer sending four hundred kills with one malformed among them must not lose the other 399.
-  const out = sanitizeKills([kill({ mob: "a bat" }), null, "nonsense", 7, [], kill({ mob: "a rat" }), { }]);
+  const out = sanitizeKills([kill({ mob: "a bat" }), null, "nonsense", 7, [], kill({ mob: "a rat" }), { }], false);
   assert.deepEqual(out.map((k) => k.mob), ["a bat", "a rat"]);
 });
 
 test("nothing at all is an empty list, not a throw", () => {
-  assert.deepEqual(sanitizeKills([]), []);
+  assert.deepEqual(sanitizeKills([], false), []);
 });
 
-test("a well-formed admin audit flag survives re-vetting; a fabricated one is dropped", () => {
+test("a well-formed admin audit flag survives re-vetting our own file, but never a fresh peer report", () => {
   const admin = (row: unknown) => (row as { __admin?: unknown }).__admin;
   const audit = { edited: true, history: [{ field: "zone", from: "bad", to: "Greater Faydark", at: "2026-01-01T00:00:00Z" }] };
-  const [kept] = sanitizeKills([kill({ __admin: audit })]);
-  assert.deepEqual(admin(kept), audit, "a real edit made through the panel isn't stripped on reload");
+
+  const [keptOnReload] = sanitizeKills([kill({ __admin: audit })], true);
+  assert.deepEqual(admin(keptOnReload), audit, "a real edit made through the panel isn't stripped on reload");
+
+  // The same, well-formed audit trail, but arriving as a live report — a peer cannot hand us this
+  // shape and have it read, in our own admin panel, as a correction we ourselves made.
+  const [fromPeer] = sanitizeKills([kill({ __admin: audit })], false);
+  assert.equal(admin(fromPeer), undefined, "a peer's own report never carries our audit trail forward");
 
   for (const fake of [{ edited: true, history: "not a list" }, { edited: false, history: [] }, { history: [{ field: "x" }] }, "edited"]) {
-    const [row] = sanitizeKills([kill({ __admin: fake })]);
+    const [row] = sanitizeKills([kill({ __admin: fake })], true);
     assert.equal(admin(row), undefined, JSON.stringify(fake));
   }
 });

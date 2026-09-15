@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import ErrorReporter from "./components/ErrorReporter";
+import ThemeRegistry from "./ThemeRegistry";
 
 // System font stack (see globals.css) instead of next/font — the renderer is
 // bundled into a desktop app and shouldn't depend on fetching web fonts.
@@ -14,7 +15,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         <ErrorReporter />
-        {children}
+        <ThemeRegistry>{children}</ThemeRegistry>
       </body>
     </html>
   );

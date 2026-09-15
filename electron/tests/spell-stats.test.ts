@@ -76,3 +76,8 @@ test("a spell naming no class at all has an empty levels map, not a throw", () =
   assert.deepEqual(stats.levels, {});
   assert.equal(stats.mana, 0);
 });
+
+test("Shadowknight folds to Shadow Knight, the spelling the rest of the app uses", () => {
+  const stats = parseSpellStats(["Classes: Shadowknight - Level 10, Paladin - Level 12"]);
+  assert.deepEqual(stats.levels, { "Shadow Knight": 10, Paladin: 12 });
+});

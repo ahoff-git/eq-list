@@ -10,7 +10,7 @@ import { sanitizeObservations } from "../mob-knowledge";
 const obs = (over: Record<string, unknown> = {}) => ({ mob: "a bat", zone: "gfaydark", kills: 4, drops: { "Bat Fang": 2 }, ...over });
 
 test("a well-formed observation survives", () => {
-  const out = sanitizeObservations([obs()]);
+  const out = sanitizeObservations([obs()], false);
   assert.equal(out.length, 1);
   assert.equal(out[0].zone, "gfaydark");
 });
@@ -19,17 +19,23 @@ test("a zone confirmed to be a restriction notice, not a place, is refused like 
   // The client reuses the zone-arrival sentence for a restriction notice ("You have entered an area
   // where levitation effects do not function.") — a peer on an older build, before `classifyZoneLine`
   // existed, could still report it as the zone an observation happened in.
-  assert.deepEqual(sanitizeObservations([obs({ zone: "an area where levitation effects do not function" })]), []);
-  assert.equal(sanitizeObservations([obs({ zone: "Greater Faydark" })]).length, 1, "an ordinary zone still survives");
+  assert.deepEqual(sanitizeObservations([obs({ zone: "an area where levitation effects do not function" })], false), []);
+  assert.equal(sanitizeObservations([obs({ zone: "Greater Faydark" })], false).length, 1, "an ordinary zone still survives");
 });
 
-test("a well-formed admin audit flag survives re-vetting; a fabricated one is dropped", () => {
+test("a well-formed admin audit flag survives re-vetting our own file, but never a fresh peer report", () => {
   const admin = (row: unknown) => (row as { __admin?: unknown }).__admin;
   const audit = { edited: true, history: [{ field: "kills", from: 3, to: 5, at: "2026-01-01T00:00:00Z" }] };
-  const [kept] = sanitizeObservations([obs({ __admin: audit })]);
-  assert.deepEqual(admin(kept), audit);
 
-  const [row] = sanitizeObservations([obs({ __admin: { edited: true, history: "nope" } })]);
+  const [keptOnReload] = sanitizeObservations([obs({ __admin: audit })], true);
+  assert.deepEqual(admin(keptOnReload), audit);
+
+  // The same, well-formed audit trail, but arriving as a live report — a peer cannot hand us this
+  // shape and have it read, in our own admin panel, as a correction we ourselves made.
+  const [fromPeer] = sanitizeObservations([obs({ __admin: audit })], false);
+  assert.equal(admin(fromPeer), undefined, "a peer's own report never carries our audit trail forward");
+
+  const [row] = sanitizeObservations([obs({ __admin: { edited: true, history: "nope" } })], true);
   assert.equal(admin(row), undefined);
 });
 
@@ -40,7 +46,7 @@ test("a peer's several known locations survive vetting, element by element", () 
     { y: 10, x: 20, spread: 3, samples: 5 },
     { y: 400, x: 400, spread: 1, samples: 2 },
   ];
-  const [row] = sanitizeObservations([obs({ areas })]);
+  const [row] = sanitizeObservations([obs({ areas })], false);
   assert.deepEqual(row.areas, areas);
   assert.deepEqual(row.area, areas[0], "recomputed from `areas[0]`, not trusted as sent");
 });
@@ -48,12 +54,12 @@ test("a peer's several known locations survive vetting, element by element", () 
 test("a malformed entry in a peer's `areas` array is dropped, not the whole observation", () => {
   const [row] = sanitizeObservations([
     obs({ areas: [{ y: 10, x: 20, spread: 3, samples: 5 }, { y: "nope", x: 1, spread: 1, samples: 1 }, "garbage"] }),
-  ]);
+  ], false);
   assert.deepEqual(row.areas, [{ y: 10, x: 20, spread: 3, samples: 5 }]);
 });
 
 test("a peer still on a build from before ADR 0228 — only `area`, no `areas` at all — still places it", () => {
-  const [row] = sanitizeObservations([obs({ area: { y: 10, x: 20, spread: 3, samples: 5 } })]);
+  const [row] = sanitizeObservations([obs({ area: { y: 10, x: 20, spread: 3, samples: 5 } })], false);
   assert.deepEqual(row.areas, [{ y: 10, x: 20, spread: 3, samples: 5 }]);
   assert.deepEqual(row.area, { y: 10, x: 20, spread: 3, samples: 5 });
 });

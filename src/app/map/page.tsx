@@ -164,7 +164,8 @@ export default function MapWindow() {
 
   const settings = useSettings();
   // The map's own scale, separate from the main window's (see `useUiScale`).
-  useUiScale(settings?.overlay.mapFontScale, MAP_UI_SCALE);
+  const mapShellRef = useRef<HTMLDivElement>(null);
+  useUiScale(mapShellRef, settings?.overlay.mapFontScale, MAP_UI_SCALE);
   // Translucency, on the other hand, is one value for the whole app — but the ◐ that flips *this*
   // window to solid is its own, so the map can be read without clearing the list.
   const sliderOpacity = settings?.overlay.opacity ?? 1;
@@ -610,7 +611,7 @@ export default function MapWindow() {
   }
 
   return (
-    <div className={`map-win ${maximized ? "maximized" : ""}`}>
+    <div ref={mapShellRef} className={`map-win ${maximized ? "maximized" : ""}`}>
       <MapTitlebar
         zone={zone}
         zoneName={mapZone}

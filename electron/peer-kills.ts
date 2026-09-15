@@ -51,8 +51,14 @@ const MIN_CONFIDENCE = 0.2;
 
 const isFinNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-/** Keep only kills that could be drawn: named, placed, in a zone, and honest about how sure they are. */
-export function sanitizeKills(input: unknown[]): SharedKill[] {
+/**
+ * Keep only kills that could be drawn: named, placed, in a zone, and honest about how sure they are.
+ *
+ * `trustAdmin` is true only when re-reading our own saved file, never for a report a peer just sent —
+ * see `contributions.ts`'s `sanitize` doc. Without it, a peer could attach a shape-valid `__admin` to
+ * their own kill and have it read, in our admin panel, as a correction we ourselves made.
+ */
+export function sanitizeKills(input: unknown[], trustAdmin: boolean): SharedKill[] {
   const out: SharedKill[] = [];
   for (const k of input) {
     if (!k || typeof k !== "object") continue;
@@ -71,7 +77,7 @@ export function sanitizeKills(input: unknown[]): SharedKill[] {
     // Carried through re-vetting rather than rebuilt away with everything else `r` might carry: the
     // one field here that isn't a claim about the kill, so it gets its own, shape-checked pass-through
     // instead of being swept up by "only the five named fields survive".
-    if (isAdminAudit(r.__admin)) clean.__admin = r.__admin;
+    if (trustAdmin && isAdminAudit(r.__admin)) clean.__admin = r.__admin;
     out.push(clean);
   }
   return out;

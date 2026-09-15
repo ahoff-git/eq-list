@@ -17,6 +17,7 @@
  * minimum widths — is already in the units of the CSS it becomes. Nothing after this has to know
  * the scale exists.
  */
+import { UI_SCALE_ROOT_ATTR } from "@/lib/hooks";
 import type { AnchorBox, Size } from "@/shared/tooltip";
 
 /** A point in either space — a mouse event's `clientX/clientY`, or that same point converted. */
@@ -26,14 +27,18 @@ export interface ScreenPoint {
 }
 
 /**
- * The `zoom` this window's interface scale has set on the root (`useUiScale`).
+ * The `zoom` this window's interface scale has set (`useUiScale`).
  *
  * Read from the computed style rather than from settings: it's the number actually in force, so a
  * window that never applied a scale (the alert overlay, a test page) reads 1 without needing to
- * know that about itself.
+ * know that about itself. Found by `useUiScale`'s own marker attribute rather than assumed to be on
+ * `documentElement` — the zoom lives on the window's shell div (`.app`/`.map-win`), one level inside
+ * `body`, so a library's portal (appended to `body` itself) sits outside it
+ * ([ADR 0231](../../specs/decisions/0231-the-zoom-root-moves-inside-the-shell.md)).
  */
 export function rootZoom(): number {
-  const z = Number.parseFloat(getComputedStyle(document.documentElement).zoom);
+  const el = document.querySelector<HTMLElement>(`[${UI_SCALE_ROOT_ATTR}]`);
+  const z = el ? Number.parseFloat(getComputedStyle(el).zoom) : NaN;
   return Number.isFinite(z) && z > 0 ? z : 1;
 }
 

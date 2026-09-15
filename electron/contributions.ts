@@ -70,8 +70,15 @@ export interface ContributionOptions<T> {
   concern: string;
   /** Most items to keep per contributor. */
   cap: number;
-  /** Vet an untrusted payload: drop what is malformed or impossible, never repair it. */
-  sanitize: (raw: unknown[]) => T[];
+  /**
+   * Vet an untrusted payload: drop what is malformed or impossible, never repair it.
+   *
+   * `trustAdmin` is true only when this is *our own* file being re-read back off disk, never for a
+   * report a peer just sent — see the `__admin` pass-through rule (`isAdminAudit`, `src/shared/admin.ts`)
+   * this exists for. A peer's live payload can look exactly like our own saved shape, and without this
+   * flag a sanitizer has no way to tell "reloading an edit we made" from "a peer claiming they're us".
+   */
+  sanitize: (raw: unknown[], trustAdmin: boolean) => T[];
   /** Stamp each item with who said it, so provenance survives being pooled into a list. */
   credit: (item: T, by: Contributor) => T;
 }
@@ -101,7 +108,8 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
       clean[id] = {
         name: contributorName(entry.name),
         seenAt: typeof entry.seenAt === "string" ? entry.seenAt : "",
-        data: opts.sanitize(entry.data).slice(0, opts.cap),
+        // Our own file, written by us — an `__admin` flag in it is a real edit surviving a restart.
+        data: opts.sanitize(entry.data, true).slice(0, opts.cap),
       };
     }
     return clean;
@@ -110,7 +118,8 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
   return {
     report(by, items) {
       if (!by?.id) return;
-      const data = Array.isArray(items) ? opts.sanitize(items).slice(0, opts.cap) : [];
+      // A live report, fresh off the wire — an `__admin` flag in it is only ever a peer's own claim.
+      const data = Array.isArray(items) ? opts.sanitize(items, false).slice(0, opts.cap) : [];
       const held = contributors[by.id];
       contributors[by.id] = {
         name: by.name,

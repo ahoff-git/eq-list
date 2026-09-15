@@ -1,10 +1,12 @@
 "use client";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { describeCoins, formatCoins } from "@/shared/money";
 import type { MobKillStat, ZoneReport } from "@/shared/types";
 
 import { duration, when } from "@/shared/format";
 import { useRead } from "@/lib/hooks";
 import ItemLink from "./ItemLink";
+import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
 /** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_ZONES: ZoneReport[] = [];
 
@@ -20,10 +22,11 @@ const NO_ZONES: ZoneReport[] = [];
  * carried and what its drops vendored for behave differently and are gathered differently
  * (ADR 0047) — a hover breaks the split out where the table shows the sum.
  * `refreshKey` re-reads the zone table — history only changes when a fight ends.
+ *
+ * Both tables are `DataGrid`s (ADR 0230) — sortable and filterable on every column, which neither
+ * had before, since nothing here previously asked a question narrower than "show me everything".
  */
 export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]; refreshKey: string }) {
-
-
   const zones = useRead((a) => a.combat.zones(), NO_ZONES, [refreshKey]);
 
   return (
@@ -34,44 +37,12 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
       {byMob.length === 0 ? (
         <p className="muted small">Nothing killed yet this session.</p>
       ) : (
-        <div className="table-scroll">
-          <table className="stat-table">
-            <thead>
-              <tr>
-                <th>Mob</th>
-                <th>Kills</th>
-                <th title="Average time from the previous kill in the fight">Kill time</th>
-                <th title="Experience credited to it, in percent of a level">XP</th>
-                <th title="Percent of a level per minute spent fighting it — downtime excluded, so it ranks mobs rather than forecasting an evening">
-                  XP/min fighting
-                </th>
-                <th title="Coin off its corpses plus what its drops auto-sold for — hover a figure for the split">
-                  Coin
-                </th>
-                <th title="That coin per minute spent fighting it — same caveat as XP/min: it ranks mobs, it doesn't forecast an evening">
-                  Coin/min fighting
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {byMob.map((m) => (
-                <tr key={m.mob}>
-                  {/* "Is this camp worth it?" is usually followed by "what does it drop?" — so the
-                      mob's name is the same link it is in every other list. */}
-                  <td>
-                    <ItemLink title={m.mob} />
-                  </td>
-                  <td>{m.kills}</td>
-                  <td>{m.avgKillSec ? `${m.avgKillSec}s` : "—"}</td>
-                  <td>{m.xpPct ? `${m.xpPct}%` : "—"}</td>
-                  <td className="num-accent">{m.xpPerMin ? `${m.xpPerMin}%` : "—"}</td>
-                  <td title={coinSplit(m)}>{coinTotal(m) ? formatCoins(coinTotal(m)) : "—"}</td>
-                  <td className="num-accent">{m.copperPerMin ? formatCoins(m.copperPerMin) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataGrid
+          {...GRID_DEFAULTS}
+          sx={GRID_SX}
+          columns={MOB_COLUMNS}
+          rows={byMob.map((m) => ({ id: m.mob, ...m }))}
+        />
       )}
 
       <h3 className="section-head" title="Every fight ever recorded, grouped by zone">
@@ -82,49 +53,126 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
           No zoned history yet — fights are filed against whatever zone the log last reported.
         </p>
       ) : (
-        <div className="table-scroll">
-          <table className="stat-table">
-            <thead>
-              <tr>
-                <th>Zone</th>
-                <th>Fights</th>
-                <th>Kills</th>
-                <th title="Time in combat, downtime excluded">Combat</th>
-                <th title="Per minute of combat in the zone, downtime excluded">XP/min fighting</th>
-                <th title="Coin and sales per minute of combat. Fights recorded before coin was parsed contribute none, so a long history reads low until it turns over">
-                  Coin/min fighting
-                </th>
-                <th>DPS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {zones.map((z) => (
-                <tr key={z.zone} title={`Last fought ${when(z.lastAt)}`}>
-                  <td>
-                    <ItemLink title={z.zone} />
-                  </td>
-                  <td>{z.fights}</td>
-                  <td>{z.kills}</td>
-                  <td>{duration(z.combatSec)}</td>
-                  <td className="num-accent">{z.xpPerMin ? `${z.xpPerMin}%` : "—"}</td>
-                  <td
-                    className="num-accent"
-                    title={`${describeCoins(z.copper ?? 0)} off corpses · ${describeCoins(z.soldCopper ?? 0)} from auto-sold drops`}
-                  >
-                    {z.copperPerMin ? formatCoins(z.copperPerMin) : "—"}
-                  </td>
-                  <td>{z.dps || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataGrid
+          {...GRID_DEFAULTS}
+          sx={GRID_SX}
+          columns={ZONE_COLUMNS}
+          rows={zones.map((z) => ({ id: z.zone, ...z }))}
+        />
       )}
     </>
   );
 }
 
+type MobRow = MobKillStat & { id: string };
 
+const MOB_COLUMNS: GridColDef<MobRow>[] = [
+  {
+    field: "mob",
+    headerName: "Mob",
+    flex: 2,
+    minWidth: 160,
+    // "Is this camp worth it?" is usually followed by "what does it drop?" — so the mob's name is
+    // the same link it is in every other list.
+    renderCell: (p) => <ItemLink title={p.row.mob} />,
+  },
+  { field: "kills", headerName: "Kills", ...NUM_COL, flex: 1 },
+  {
+    field: "avgKillSec",
+    headerName: "Kill time",
+    description: "Average time from the previous kill in the fight",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => (v ? `${v}s` : "—"),
+  },
+  {
+    field: "xpPct",
+    headerName: "XP",
+    description: "Experience credited to it, in percent of a level",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => (v ? `${v}%` : "—"),
+  },
+  {
+    field: "xpPerMin",
+    headerName: "XP/min fighting",
+    description:
+      "Percent of a level per minute spent fighting it — downtime excluded, so it ranks mobs rather than forecasting an evening",
+    ...NUM_COL,
+    flex: 1,
+    cellClassName: "num-accent",
+    valueFormatter: (v: number) => (v ? `${v}%` : "—"),
+  },
+  {
+    field: "coinTotal",
+    headerName: "Coin",
+    description: "Coin off its corpses plus what its drops auto-sold for — hover a figure for the split",
+    ...NUM_COL,
+    flex: 1,
+    valueGetter: (_v, row) => coinTotal(row),
+    renderCell: (p) => <span title={coinSplit(p.row)}>{p.value ? formatCoins(p.value) : "—"}</span>,
+  },
+  {
+    field: "copperPerMin",
+    headerName: "Coin/min fighting",
+    description:
+      "That coin per minute spent fighting it — same caveat as XP/min: it ranks mobs, it doesn't forecast an evening",
+    ...NUM_COL,
+    flex: 1,
+    cellClassName: "num-accent",
+    valueFormatter: (v: number) => (v ? formatCoins(v) : "—"),
+  },
+];
+
+type ZoneRow = ZoneReport & { id: string };
+
+const ZONE_COLUMNS: GridColDef<ZoneRow>[] = [
+  {
+    field: "zone",
+    headerName: "Zone",
+    flex: 2,
+    minWidth: 160,
+    renderCell: (p) => (
+      <span title={`Last fought ${when(p.row.lastAt)}`}>
+        <ItemLink title={p.row.zone} />
+      </span>
+    ),
+  },
+  { field: "fights", headerName: "Fights", ...NUM_COL, flex: 1 },
+  { field: "kills", headerName: "Kills", ...NUM_COL, flex: 1 },
+  {
+    field: "combatSec",
+    headerName: "Combat",
+    description: "Time in combat, downtime excluded",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => duration(v),
+  },
+  {
+    field: "xpPerMin",
+    headerName: "XP/min fighting",
+    description: "Per minute of combat in the zone, downtime excluded",
+    ...NUM_COL,
+    flex: 1,
+    cellClassName: "num-accent",
+    valueFormatter: (v: number) => (v ? `${v}%` : "—"),
+  },
+  {
+    field: "copperPerMin",
+    headerName: "Coin/min fighting",
+    description:
+      "Coin and sales per minute of combat. Fights recorded before coin was parsed contribute none, so a long history reads low until it turns over",
+    ...NUM_COL,
+    flex: 1,
+    cellClassName: "num-accent",
+    renderCell: (p) => (
+      <span title={`${describeCoins(p.row.copper ?? 0)} off corpses · ${describeCoins(p.row.soldCopper ?? 0)} from auto-sold drops`}>
+        {p.value ? formatCoins(p.value) : "—"}
+      </span>
+    ),
+  },
+  { field: "dps", headerName: "DPS", ...NUM_COL, flex: 1, valueFormatter: (v: number) => v || "—" },
+];
 
 /** Everything the mob was worth, in copper. */
 function coinTotal(m: MobKillStat): number {
