@@ -1272,11 +1272,13 @@ button {
 .buff-known { margin-top: 16px; }
 .buff-row,
 .buff-known-row {
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+.buff-row {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding: 6px 8px;
-  border-top: 1px solid var(--border);
   flex-wrap: wrap;
 }
 /* The mark is a fixed column so the two lists' names line up with each other — a ⚠ and a ● are
@@ -1286,6 +1288,29 @@ button {
   text-align: center;
   color: var(--text-dim);
 }
+/* A lapsed/active row's name, target, note and fade-caveat all vary in length, and wrap in here on
+   their own line(s), so they can never push Dismiss out of the column every other row's button sits
+   in. Without this, a row whose text happened to be short left its button snug against the text
+   (reading as "inline with the buff text"), while a longer row pushed it flush right — two different
+   positions for the same button, depending on nothing the player did. `min-width: 0` is what lets it
+   actually shrink below its content's natural width instead of forcing the row to wrap around it.
+   (The Spells list has the same problem worse — Notify, On screen and the style picker, not just one
+   button — so it gets a real grid instead: `.buff-known-list`/`.buff-known-row` below.) */
+.buff-row-body {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  /* Basis 0, not `auto` — `auto` sizes the line-breaking pass off this box's *unwrapped*
+     max-content width, which for a long buff sentence is wider than the row itself and pushes the
+     action button onto a line of its own. A 0 basis plus `min-width: 0` lets it start from nothing
+     and grow to fill whatever `flex-grow` leaves it, so the row itself never wraps around it. */
+  flex: 1 1 0%;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+/* The button itself: fixed width, never stretched or shrunk, so its column is the same width on every
+   row regardless of what `.buff-row-body` is doing next to it. */
+.buff-row-action { flex: 0 0 auto; }
 .buff-row.active .buff-mark { color: var(--good); font-size: 10px; }
 .buff-row.lapsed .buff-mark { color: var(--bad); }
 /* A lapse is the one row here that is a call to action, so it gets the edge. A death-stripped one is
@@ -1329,13 +1354,49 @@ button {
   cursor: pointer;
 }
 .buff-check input { cursor: pointer; }
-.buff-known-facts { margin-left: 4px; }
 .buff-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* `.select-sm`'s `max-width: 55%` assumes a container with room to spare; this one is a capped grid
+   column (`.buff-known-list`), and 55% of that is narrower than "Buff lapsed (default)" — so it wraps
+   onto its own line inside `.buff-actions` instead of relying on staying short. */
+.buff-actions .select-sm { max-width: none; }
 /* An unchecked spell is still listed — that is the whole point of unchecking rather than clearing —
    so it has to look switched off without becoming unreadable. */
 .buff-known-row.untracked { opacity: 0.55; }
 .buff-known-row.untracked .buff-name { font-weight: 400; text-decoration: line-through; }
-.buff-forget { margin-left: auto; }
+
+/* The Spells list is a real table — name, facts, Notify/On screen/style picker, forget — so it's one
+   grid rather than a pile of independently-flexing rows. A flex row put the controls right after
+   whatever facts text a given spell happened to have, so "Notify" sat mid-row for a plain buff
+   ("cast on you") and jumped to a wrapped line's left edge for a debuff ("debuff · permanent · yours
+   · seen up 37× · last dropped 3h ago") — nothing to do with what the player did, just how long that
+   one row's facts were. A shared grid fixes each column's width once, across every row, so a
+   control's x only ever depends on which column it's in. */
+.buff-known-list {
+  display: grid;
+  /* Name and the Notify/On-screen/style cluster are both capped — an `auto` column claims however
+     much its widest row's *unwrapped* content wants, and an uncapped actions cluster (checkbox,
+     checkbox, a style picker) wants more than this panel is wide. Capping both is what leaves facts
+     an actual `1fr` to grow into instead of whatever the other two didn't claim. Each still wraps
+     internally (`.buff-known-facts`'s own text, `.buff-actions`'s `flex-wrap`) if its column is
+     narrower than its content wants. */
+  grid-template-columns: minmax(60px, 140px) minmax(70px, 1fr) minmax(150px, 200px) auto;
+  column-gap: 10px;
+}
+.buff-known-row {
+  display: grid;
+  /* Shares the list's own column tracks (`subgrid`) instead of sizing its own — sizing its own is
+     what would put every row's columns back to independently-guessed widths. */
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: baseline;
+}
+.buff-known-row > .buff-check { grid-column: 1; }
+.buff-known-row > .buff-known-facts { grid-column: 2; }
+.buff-known-row > .buff-actions { grid-column: 3; }
+.buff-known-row > .buff-row-action { grid-column: 4; }
+/* The drawer spans every column, and columns 1–4 are already taken on this row, so it lands on an
+   implicit row of its own underneath — the grid equivalent of the old `flex-basis: 100%` trick. */
+.buff-known-row > .style-editor { grid-column: 1 / -1; }
 
 /* ── buffs you are missing, drawn over the game ───────────────── */
 /* Same anchoring as the pinned countdowns, and for the same reason: a standing reminder belongs in

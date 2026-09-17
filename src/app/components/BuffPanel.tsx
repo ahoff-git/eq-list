@@ -2,11 +2,13 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useBuffs, useSettings } from "@/lib/hooks";
+import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
 import { alternativesLabel, heldMs, targetLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
 import { CheckField, Empty, PickField } from "./ui";
 import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
+import SearchField from "./SearchField";
 import { BUFF_STYLE_ID } from "@/shared/alert-styles";
 import { SPELL_CLASSES } from "@/shared/spell-file";
 import type { BuffInstance, KnownBuff } from "@/shared/types";
@@ -73,6 +75,9 @@ export default function BuffPanel() {
   const knownShown = classFilter
     ? view.known.filter((k) => !k.classes || k.classes.includes(classFilter))
     : view.known;
+  // Fuzzy on top of the class filter — the two narrow the same list for different reasons, so both
+  // apply at once rather than one resetting the other.
+  const { query: spellQuery, setQuery: setSpellQuery, filtered: knownVisible } = useFuzzyFilter(knownShown, (k) => k.spell);
 
   const bare = !view.known.length && !view.active.length && !view.lapsed.length;
   // A mob whose name is shared by another currently-listed instance gets a `#slot` suffix — only
@@ -195,11 +200,27 @@ export default function BuffPanel() {
               Disable all
             </button>
           </h2>
-          {knownShown.map((known) => (
-            <KnownRow key={known.key} known={known} />
-          ))}
-          {!knownShown.length && (
-            <p className="buff-how small muted">No {classFilter} spells seen yet.</p>
+          <SearchField
+            value={spellQuery}
+            onChange={setSpellQuery}
+            placeholder="Search spells…"
+            title="Matches a spell's name — spelling need not be exact"
+            style={{ marginBottom: 8 }}
+          />
+          {/* A real table (`globals.css`'s `.buff-known-list`/`.buff-known-row` subgrid), so Notify,
+              On screen and the style picker start at the same x on every row — a plain flex row put
+              them right after whatever facts text happened to be on that particular spell, which is
+              nothing like a fixed column when one row says "cast on you" and the next says "debuff ·
+              permanent · yours · seen up 37× · last dropped 3h ago". */}
+          <div className="buff-known-list">
+            {knownVisible.map((known) => (
+              <KnownRow key={known.key} known={known} />
+            ))}
+          </div>
+          {!knownVisible.length && (
+            <p className="buff-how small muted">
+              {spellQuery ? `No spells match “${spellQuery}”.` : `No ${classFilter} spells seen yet.`}
+            </p>
           )}
         </section>
       )}
@@ -221,37 +242,41 @@ function LapsedRow({ buff, now, several }: { buff: BuffInstance; now: number; se
       <span className="buff-mark" aria-hidden>
         ⚠
       </span>
-      <span className="buff-name">
-        {buff.spell}
-        {several && <em className="spawn-slot"> #{buff.slot}</em>}
-        {buff.permanent && (
-          // Worth saying here rather than only on the settings row: a permanent buff that has gone is
-          // never a timer running out, so "it was dispelled, or you died" is the whole meaning of the
-          // row and changes what you do about it.
-          <em className="buff-tag" title="This one never expires on a timer — so it was dispelled, lost on death, or you zoned">
-            permanent
-          </em>
-        )}
-      </span>
-      <span className="buff-target">{targetSentence(buff)}</span>
-      <span className="buff-note muted small">
-        {buff.reason === "died" ? "you died" : `held ${formatDuration(Math.round(heldMs(buff, now) / 1000))}`}
-        {" · "}
-        {when(buff.at)}
-        {/* Said on the row because it changes how long the row will be there: an enemy row goes by
-            itself when the fight ends, so it is not something to go and dismiss. */}
-        {buff.onEnemy && <em title="On something you were fighting — this clears itself when the fight ends"> · until the fight ends</em>}
-      </span>
-      {buff.alsoCouldBe?.length ? (
-        // The shared-sentence case, named rather than hidden. 358 obtainable fade sentences belong to
-        // more than one spell, so this is a routine state and not an edge — and the player can tell
-        // which of two ranks they had up far more easily than we can.
-        <span className="buff-maybe small" title="The game words these spells' fades identically, so we can't tell which one ended">
-          {alternativesLabel(buff.alsoCouldBe)}
+      {/* Everything that varies in length lives in this one flex child, so it can wrap on its own
+          without dragging Dismiss out of the fixed column every other row's button sits in. */}
+      <div className="buff-row-body">
+        <span className="buff-name">
+          {buff.spell}
+          {several && <em className="spawn-slot"> #{buff.slot}</em>}
+          {buff.permanent && (
+            // Worth saying here rather than only on the settings row: a permanent buff that has gone is
+            // never a timer running out, so "it was dispelled, or you died" is the whole meaning of the
+            // row and changes what you do about it.
+            <em className="buff-tag" title="This one never expires on a timer — so it was dispelled, lost on death, or you zoned">
+              permanent
+            </em>
+          )}
         </span>
-      ) : null}
+        <span className="buff-target">{targetSentence(buff)}</span>
+        <span className="buff-note muted small">
+          {buff.reason === "died" ? "you died" : `held ${formatDuration(Math.round(heldMs(buff, now) / 1000))}`}
+          {" · "}
+          {when(buff.at)}
+          {/* Said on the row because it changes how long the row will be there: an enemy row goes by
+              itself when the fight ends, so it is not something to go and dismiss. */}
+          {buff.onEnemy && <em title="On something you were fighting — this clears itself when the fight ends"> · until the fight ends</em>}
+        </span>
+        {buff.alsoCouldBe?.length ? (
+          // The shared-sentence case, named rather than hidden. 358 obtainable fade sentences belong to
+          // more than one spell, so this is a routine state and not an edge — and the player can tell
+          // which of two ranks they had up far more easily than we can.
+          <span className="buff-maybe small" title="The game words these spells' fades identically, so we can't tell which one ended">
+            {alternativesLabel(buff.alsoCouldBe)}
+          </span>
+        ) : null}
+      </div>
       <button
-        className="btn ghost sm"
+        className="btn ghost sm buff-row-action"
         title="Stand this one down — it stays tracked, so you'll be told next time"
         onClick={() => void api()?.buffs.dismiss(buff.key, buff.target, buff.onEnemy ? buff.slot : undefined)}
       >
@@ -268,22 +293,24 @@ function ActiveRow({ buff, now, several }: { buff: BuffInstance; now: number; se
       <span className="buff-mark" aria-hidden>
         ●
       </span>
-      <span className="buff-name">
-        {buff.spell}
-        {several && <em className="spawn-slot"> #{buff.slot}</em>}
-      </span>
-      <span className="buff-target">{targetSentence(buff)}</span>
-      <span className="buff-note muted small">
-        {/* How long, not how long *left*: the log knows when it went up and nothing honest knows when
-            it will end. Stating the first is useful and stating the second would be a guess. */}
-        up {formatDuration(Math.round(heldMs(buff, now) / 1000))}
-        {buff.source === "cast" && (
-          <em title="Seen as you cast it. The game printed no landing line for this spell, so we don't know who got it">
-            {" "}
-            · from your cast
-          </em>
-        )}
-      </span>
+      <div className="buff-row-body">
+        <span className="buff-name">
+          {buff.spell}
+          {several && <em className="spawn-slot"> #{buff.slot}</em>}
+        </span>
+        <span className="buff-target">{targetSentence(buff)}</span>
+        <span className="buff-note muted small">
+          {/* How long, not how long *left*: the log knows when it went up and nothing honest knows when
+              it will end. Stating the first is useful and stating the second would be a guess. */}
+          up {formatDuration(Math.round(heldMs(buff, now) / 1000))}
+          {buff.source === "cast" && (
+            <em title="Seen as you cast it. The game printed no landing line for this spell, so we don't know who got it">
+              {" "}
+              · from your cast
+            </em>
+          )}
+        </span>
+      </div>
     </div>
   );
 }
@@ -320,7 +347,9 @@ function KnownRow({ known }: { known: KnownBuff }) {
         {known.lastLapse ? ` · last dropped ${when(known.lastLapse)}` : ""}
       </span>
       {/* Both only matter while the spell is tracked, so they go with it rather than sitting greyed
-          out beside an unchecked row — the same rule the spawn board's style picker follows. */}
+          out beside an unchecked row — the same rule the spawn board's style picker follows. Its own
+          grid column stays reserved either way (`.buff-known-row > .buff-actions`), so a row without
+          it doesn't shift the forget button over. */}
       {known.tracked && (
         <span className="buff-actions">
           <CheckField
@@ -355,7 +384,7 @@ function KnownRow({ known }: { known: KnownBuff }) {
         </span>
       )}
       <button
-        className="btn ghost sm buff-forget"
+        className="btn ghost sm buff-forget buff-row-action"
         title="Forget this spell. It comes back if you cast it again — to silence it for good, untick it instead"
         onClick={() => void api()?.buffs.forget(known.key)}
       >

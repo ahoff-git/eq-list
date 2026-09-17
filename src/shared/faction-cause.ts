@@ -11,8 +11,11 @@
  *     kill at a busy camp must not be blamed) is ever a candidate.
  *   - **A conversation.** A quest turn-in has no kill behind it at all, but it does have an NPC
  *     talking to you — "Bob says, '...'" or "Bob tells you, '...'". When no kill explains a hit, the
- *     most recent such line within `DIALOGUE_WINDOW_SEC` *before* it is offered instead, quoting what
- *     was actually said so the reader can judge it rather than trusting a name alone.
+ *     most recent such line within `DIALOGUE_WINDOW_SEC` *before* it is offered instead — but only
+ *     once it's actually matched to a quest that speaker is known to give (ADR 0261): the same shape
+ *     of line is also just as plainly how EQ writes a hostile mob's own combat social ("A goblin
+ *     lookout says, 'To arms!'") or a fresh corpse's own flavor text, neither of which is a
+ *     conversation at all.
  *
  * **The kill signal is checked both ways because a real log showed it has to be.** A survey of the
  * author's own 52 MB log found that this server logs a kill's faction/XP/coin consequences *before*
@@ -58,6 +61,18 @@
  * than trying to tell speakers apart with data this app doesn't have. Exposed as a clearly-labeled
  * guess regardless, since rare is not the same as never.
  *
+ * **A second confusable turned out not to be rare at all: a hostile mob talking about killing you.**
+ * `unmatched-lines.ts` already treats a bare `(?:\w+) says,` as ordinary noise elsewhere in this app
+ * — chat and social lines are "noise by the thousand," in that file's own words — and EQ's NPCs use
+ * exactly that shape for their own combat social ("call for help," an aggro taunt) and even a fresh
+ * corpse's own flavor line, not only for a quest-giver's reply. Real Clan Runnyeye data showed this
+ * plainly: two dozen ordinary camp mobs — goblins no wiki page ever calls a quest giver, and even a
+ * few of their own corpses — turned up as "conversation" causes for hits that were surely just kills,
+ * because the mob's own social line happened to fall inside `DIALOGUE_WINDOW_SEC` of a hit its actual
+ * kill missed the tighter `CORRELATION_WINDOW_SEC` for. This wasn't the rare, compounding coincidence
+ * the paragraph above describes for a nearby player's chat — it was routine, for any camp whose mobs
+ * talk at all. See ADR 0261 for the fix: `questsForSpeaker` below.
+ *
  * The **speaker's name** is a much narrower claim than the quoted sentence, and one already-cached,
  * already-tested data answers cleanly: a quest's wiki page states its "Quest giver" in a structured
  * table row (`electron/wiki/parse.ts`'s `parseQuestInfo`), gathered on the same cache walk the Items
@@ -72,9 +87,9 @@
  * all: the "tells you"/"says" line this module keys on is a mob talking, so a giver that isn't one
  * could never be the thing the log just quoted. `deps.isMob` answers that, reusing the same mob-level
  * lookup the Items tab already trusts (`WikiClient.levelSources().mob`, ADR 0163) rather than a second
- * registry — a giver it doesn't recognize as a mob names no quest at all, same as an unrecognized
- * giver today. Optional and best-effort like the two lookups above: no dependency given leaves the
- * guess exactly as it read before this check existed (ADR 0257).
+ * registry — a giver it doesn't recognize as a mob names no quest at all (and, since ADR 0261, that
+ * means no *cause* at all — see below). Optional and best-effort like the two lookups above: no
+ * dependency given leaves the guess exactly as it read before this check existed (ADR 0257).
  *
  * **Narrowing further, from the quoted text itself, only within that giver's own small handful of
  * quests.** A survey of real eqlwiki quest pages found dialogue scattered across `<dl><dd>`, plain
@@ -272,20 +287,23 @@ export interface FactionCauseTracker {
  * Every quest a speaker might be the cause of, given what they said — the mob-gated `questGiver`
  * lookup narrowed by `narrowByDialogue`, exposed on its own so a stored hit can be re-checked against
  * today's wiki cache with **exactly** the logic a live guess would use, not a second copy of it
- * (ADR 0257). `{}` (neither field set) means "names no quest", the same as an unrecognized giver.
+ * (ADR 0257). `undefined` means "names no quest at all" — since ADR 0261, that is no longer a weaker
+ * dialogue cause, it is **no cause at all**: a "says"/"tells you" line with no matched quest behind it
+ * is exactly as likely to be a hostile mob's own combat social or a corpse's flavor text as a real,
+ * not-yet-cached quest giver, and real data showed the former is not the rare case.
  */
 export function questsForSpeaker(
   npc: string,
   text: string,
   deps: Pick<FactionCauseTrackerDeps, "questGiver" | "questDialogue" | "isMob">,
-): Pick<Extract<FactionCause, { kind: "dialogue" }>, "quests" | "questsMatched"> {
+): Pick<Extract<FactionCause, { kind: "dialogue" }>, "quests" | "questsMatched"> | undefined {
   // A giver only names a quest when the speaker is a confirmed mob (ADR 0257) — with no `isMob`
   // dependency at all, nothing is known either way, so every candidate is trusted the way this
   // looked before that check existed.
   const knownMob = deps.isMob?.(npc) ?? true;
   const givenBy = knownMob ? deps.questGiver?.(npc) ?? [] : [];
   const { quests, matched } = narrowByDialogue(givenBy, text, deps.questDialogue);
-  return quests.length ? { quests, questsMatched: matched } : {};
+  return quests.length ? { quests, questsMatched: matched } : undefined;
 }
 
 export function createFactionCauseTracker(deps: FactionCauseTrackerDeps = {}): FactionCauseTracker {
@@ -305,13 +323,11 @@ export function createFactionCauseTracker(deps: FactionCauseTrackerDeps = {}): F
     if (lastDialogue) {
       const gapSec = (at - lastDialogue.at) / 1000;
       if (gapSec >= 0 && gapSec <= DIALOGUE_WINDOW_SEC) {
-        return {
-          kind: "dialogue",
-          npc: lastDialogue.npc,
-          text: lastDialogue.text,
-          gapSec,
-          ...questsForSpeaker(lastDialogue.npc, lastDialogue.text, deps),
-        };
+        // No matched quest means no cause at all, not a weaker one (ADR 0261) — see the module
+        // header and `questsForSpeaker`'s own doc for why an unmatched speaker is now treated as
+        // silence rather than evidence.
+        const named = questsForSpeaker(lastDialogue.npc, lastDialogue.text, deps);
+        if (named) return { kind: "dialogue", npc: lastDialogue.npc, text: lastDialogue.text, gapSec, ...named };
       }
     }
     return undefined;

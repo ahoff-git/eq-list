@@ -906,18 +906,24 @@ if (!app.requestSingleInstanceLock()) {
           /* a cache we couldn't read is the Items tab's problem to report, not a launch failure */
         })
         .then(() => {
-          // A hit recorded before ADR 0257 may still carry a quest guessed from a "Quest giver" that
-          // isn't actually a mob — wrong then, and still wrong sitting on disk until something
-          // re-checks it. Nothing about this needs a log re-read: the ledger already has the guessed
-          // speaker and quote, and the only thing that changed is what today's wiki cache says about
-          // them, which is exactly what just got warmed above. Cheap (only dialogue-caused hits are
-          // scanned) and self-limiting (a hit whose fresh answer matches what's stored is left alone).
-          const { checked, changed } = factionLog.recheckDialogueQuests({
+          // A hit recorded before ADR 0257/0261 may still carry a wrong or stale dialogue guess — a
+          // quest named from a "Quest giver" that isn't a mob, or a whole "conversation" cause that
+          // was really just a hostile mob's own combat social or a corpse's flavor line. Nothing
+          // about this needs a log re-read: the ledger already has the guessed speaker and quote, and
+          // the only thing that changed is what today's wiki cache says about them, which is exactly
+          // what just got warmed above. Cheap (only dialogue-caused hits are scanned) and
+          // self-limiting (a hit whose fresh answer matches what's stored is left alone).
+          const { checked, changed } = factionLog.recheckDialogueCauses({
             questGiver: (npc) => wiki.questGiverSource()(npc),
             questDialogue: (quest) => wiki.questDialogueSource()(quest),
             isMob: (npc) => !!wiki.levelSources().mob(npc),
           });
-          if (changed) log.debug("faction ledger: rechecked dialogue-guessed quests", { checked, changed });
+          if (changed) {
+            log.debug("faction ledger: rechecked dialogue-guessed causes", { checked, changed });
+            // Without this, a Faction tab already open when the fix lands keeps showing whatever it
+            // fetched at mount — `useFactionStandings`/`useFactionHitsPage` only re-read on this event.
+            broadcast(CH.dataChanged, undefined);
+          }
         });
     }, CATALOGUE_WARM_MS);
     // A release that changed how a log is read asked for the logs to be read again, and this is the

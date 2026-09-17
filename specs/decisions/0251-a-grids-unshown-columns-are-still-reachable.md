@@ -4,6 +4,11 @@
 
 Accepted
 
+The `hiddenByDefault` helper and every column it applies to stand. Its `causeKind`/`raw`
+`filterable: false` call, specifically, is superseded by [0260](./0260-a-paged-grids-filter-allow-list-can-widen-past-its-sort.md):
+both turned out to be backed by a real column or expression `hitsPage` can filter on after all — only
+`sortable: false` was actually load-bearing for either.
+
 ## Context
 
 Every row `DataGrid` draws (ADR 0230) carries more than its columns show. `ItemRow` alone has

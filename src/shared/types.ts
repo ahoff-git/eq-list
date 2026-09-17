@@ -334,6 +334,12 @@ export interface FactionStanding {
 /** Columns `FactionHitsGrid` may sort a page of the ledger by (`electron/faction-log.ts`). */
 export type FactionHitSortField = "at" | "faction" | "delta" | "cause";
 
+/** Fields `FactionHitsGrid`'s column filter may target — every sortable field, plus `causeKind` and
+ *  `raw` (ADR 0260), which `hitsPage` can filter against a real SQL column/expression but doesn't
+ *  offer as a sort: neither is one of `HIT_SORT_COLUMNS`' fixed keys, and `causeKind` in particular
+ *  has no single column to sort by (it's a `CASE` over `caused_by_kind`, chosen for filtering only). */
+export type FactionHitFilterField = FactionHitSortField | "causeKind" | "raw";
+
 /** Operators `FactionHitsGrid`'s column filter menu may send — the subset of `GridFilterItem["operator"]`
  *  (`@mui/x-data-grid`) that `faction-log.ts`'s `hitsPage` knows how to turn into SQL. */
 export type FactionHitFilterOperator =
@@ -356,7 +362,7 @@ export type FactionHitFilterOperator =
 /** One column-menu filter: a field, the operator to apply, and whatever value it needs — none for
  *  `isEmpty`/`isNotEmpty`, an array for `isAnyOf`, a single value otherwise. */
 export interface FactionHitFilterItem {
-  field: FactionHitSortField;
+  field: FactionHitFilterField;
   operator: FactionHitFilterOperator;
   value?: string | number | (string | number)[];
 }

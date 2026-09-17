@@ -284,22 +284,32 @@ features for later in [../ideas.md](../ideas.md).
   ([ADR 0257](../decisions/0257-a-guessed-giver-must-be-a-mob-to-name-a-quest.md).) Find a quest whose
   wiki "Quest giver" row names something that isn't a creature — an item, a book, a sign — and whose
   page (or its zone's own roster) has never given that name a level. Turn the quest in and confirm the
-  Hits row still names the NPC that actually spoke, but shows **no** quest in parentheses — same as an
-  unrecognized giver, not a crash or a stale name. Then, for contrast, turn in an ordinary quest from a
-  real mob whose page (or zone roster) *is* cached and confirm the quest name still appears exactly as
-  it did before this change — this is a narrowing of when a quest is named, not a new way of naming one.
-- **An already-recorded hit's quest guess gets rechecked, not just a fresh one.**
-  ([ADR 0259](../decisions/0259-a-stored-quest-guess-can-be-rechecked-in-place.md).) On a build from
-  before ADR 0257, turn in a quest whose "Quest giver" isn't a mob so the Hits table shows a wrong
-  quest name next to the NPC, then update to a build with this fix and relaunch. Within a few seconds
-  of the window painting (the same delay the Items tab's background warm-up uses), reopen the Faction
-  tab and confirm that row's quest name is gone — nothing needed pressing, and no log had to be
-  digested again. Then the opposite direction: a hit with **no** quest name because its giver's page
-  hadn't been cached yet at the time — open that giver's wiki page (so the cache learns it), relaunch,
-  and confirm the quest name now appears on the old row too. With Debug logging on, confirm the debug
-  log shows `rechecked dialogue-guessed quests` with a non-zero `changed` count on the launch that
-  fixed something, and no such line at all on the next one (silent when nothing changed) — it isn't
-  supposed to find anything left to do twice.
+  hit gets **no cause at all** (per ADR 0261, below) rather than the NPC's name with no quest attached.
+  Then, for contrast, turn in an ordinary quest from a real mob whose page (or zone roster) *is* cached
+  and confirm the quest name still appears exactly as it did before this change.
+- **A "says"/"tells you" line with no matching quest is no cause at all, not a nameless conversation.**
+  ([ADR 0261](../decisions/0261-an-unmatched-speaker-is-no-cause-at-all.md) — the fix for the Clan
+  Runnyeye report: two dozen ordinary camp mobs, and even a few of their own corpses, turning up as
+  "Quest" causes on real data.) Kill an ordinary trash mob that is confirmed as a mob but is never
+  listed as a "Quest giver" for anything, close enough after a faction hit that no kill explains it
+  (or in a zone/camp known for mobs that "say" something on aggro or death). Confirm the resulting hit
+  gets **no likely cause at all** — a plain "—" in both the **Source** and **Likely cause** columns —
+  rather than a "Quest"-sourced row naming that mob. Then confirm a real quest turn-in from a genuine,
+  wiki-known quest giver still gets its "Quest" row exactly as before; this narrows *which* speakers
+  can ever produce a conversation cause, not whether one can at all.
+- **An already-recorded hit's cause gets rechecked, not just a fresh one.**
+  ([ADR 0259](../decisions/0259-a-stored-quest-guess-can-be-rechecked-in-place.md), broadened by ADR
+  0261.) On a build from before these fixes, get a Hits row wrongly showing a "Quest" cause — either a
+  quest named from a non-mob giver, or an ordinary mob's combat social mistaken for a conversation —
+  then update to a build with the fix and relaunch. Within a few seconds of the window painting (the
+  same delay the Items tab's background warm-up uses), reopen the Faction tab and confirm that row now
+  shows **no cause at all** — nothing needed pressing, and no log had to be digested again. Then the
+  opposite direction: a hit with no cause at all because its (real) giver's page hadn't been cached yet
+  at the time — open that giver's wiki page (so the cache learns it), relaunch, and confirm the quest
+  name now appears on the old row. With Debug logging on, confirm the debug log shows `rechecked
+  dialogue-guessed causes` with a non-zero `changed` count on the launch that fixed something, and no
+  such line at all on the next one (silent when nothing changed) — it isn't supposed to find anything
+  left to do twice.
 - **A live faction hit now appears a few seconds late — on purpose.**
   ([ADR 0224](../decisions/0224-a-kill-can-log-after-the-faction-line-it-caused.md).) Verified against
   a real player's `faction-log.json`/`kill-log.json`/`eqlog_*.txt` (this server logs a kill's

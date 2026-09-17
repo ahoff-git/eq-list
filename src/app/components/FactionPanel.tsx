@@ -27,6 +27,7 @@ import { count, dayTime, when } from "@/shared/format";
 import type { Sort } from "@/shared/sorting";
 import type {
   FactionCauseTally,
+  FactionHitFilterField,
   FactionHitFilterItem,
   FactionHitsFilter,
   FactionHitsQuery,
@@ -278,8 +279,9 @@ const STANDING_HITS_DEFAULT_PAGE_SIZE = 10;
 /** The only fields the main Hits tab's columns declare — a filter item naming anything else
  *  (shouldn't happen; the grid only ever offers a column it was given) is dropped rather than
  *  forwarded. Moot for the Standings drill-down's own `FactionHitsGrid`, which skips the filter panel
- *  entirely (see `FactionHitsGrid` itself). */
-const HIT_FILTER_FIELDS = new Set<FactionHitSortKey>(["at", "faction", "delta", "cause"]);
+ *  entirely (see `FactionHitsGrid` itself). Wider than `FactionHitSortKey` since `causeKind` and `raw`
+ *  are filterable but not sortable (ADR 0260) — see `hitColumns`. */
+const HIT_FILTER_FIELDS = new Set<FactionHitFilterField>(["at", "faction", "delta", "cause", "causeKind", "raw"]);
 
 /** Converts the grid's own filter model into what `hitsPage` takes (ADR 0234) — same field names and
  *  operator strings, so this is a pass-through, not a translation. `faction-log.ts`'s own allow-list
@@ -287,9 +289,9 @@ const HIT_FILTER_FIELDS = new Set<FactionHitSortKey>(["at", "faction", "delta", 
  *  duplicates that validation — it only drops a field the grid could never actually send. */
 function toHitsFilter(model: GridFilterModel): FactionHitsFilter | undefined {
   const items: FactionHitFilterItem[] = model.items
-    .filter((i) => HIT_FILTER_FIELDS.has(i.field as FactionHitSortKey))
+    .filter((i) => HIT_FILTER_FIELDS.has(i.field as FactionHitFilterField))
     .map((i) => ({
-      field: i.field as FactionHitSortKey,
+      field: i.field as FactionHitFilterField,
       operator: i.operator as FactionHitFilterItem["operator"],
       value: i.value,
     }));
@@ -304,8 +306,9 @@ function toHitsFilter(model: GridFilterModel): FactionHitsFilter | undefined {
  *  drill-down's fixed, newest-first order instead of the main tab's interactive, persisted one —
  *  the one difference `hitsPage`'s query shape doesn't currently let this collapse away too (its
  *  scope filter and a column's own filter aren't composable yet; see `FactionHitsGrid`). Source and
- *  Raw line stay unsortable/unfilterable either way — neither is a field `hitsPage`'s server
- *  sort/filter allow-lists know. */
+ *  Raw line stay unsortable either way — neither is a `FactionHitSortField` `hitsPage` knows how to
+ *  order by — but both are filterable (ADR 0260): `hitsPage` filters `causeKind` against the same
+ *  "Kill"/"Quest" label the Source column shows, and `raw` by plain substring match. */
 function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
   return [
     {
@@ -343,7 +346,6 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
       flex: 1,
       minWidth: 90,
       sortable: false,
-      filterable: false,
       valueGetter: (_v, row) => causeKindLabel(row) ?? "",
       renderCell: (p) => {
         const hit = p.row;
@@ -382,9 +384,8 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
       field: "raw",
       headerName: "Raw line",
       description: "The original log line this hit was read from",
-      // `hitsPage`'s sort/filter allow-lists don't know this field — neither can reach the server.
+      // `hitsPage`'s sort allow-list doesn't know this field, but its filter one does (ADR 0260).
       sortable: false,
-      filterable: false,
       flex: 3,
       minWidth: 220,
       cellClassName: "muted small",

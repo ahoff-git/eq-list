@@ -206,6 +206,36 @@ test("hitsPage's filter reaches a guessed cause by the mob or NPC it names", () 
   assert.deepEqual(page.rows.map((e) => e.faction), ["Agents of Mistmoore"]);
 });
 
+test("hitsPage's filter reaches causeKind, by the same Kill/Quest label the Source column shows", () => {
+  const l = freshLog();
+  l.add(raised("Circle of Unseen Hands", 1, 2, "a shady goblin"));
+  l.add(hit("Agents of Mistmoore", 2, -3, "lowered", { kind: "dialogue", npc: "a hooded figure", text: "...", gapSec: 1 }));
+
+  const page = l.hitsPage({
+    offset: 0,
+    limit: 10,
+    sortField: "at",
+    sortDesc: true,
+    filter: { items: [{ field: "causeKind", operator: "equals", value: "Quest" }] },
+  });
+  assert.deepEqual(page.rows.map((e) => e.faction), ["Agents of Mistmoore"]);
+});
+
+test("hitsPage's filter reaches the raw log line", () => {
+  const l = freshLog();
+  l.add(raised("Circle of Unseen Hands", 1, 2));
+  l.add(lowered("Agents of Mistmoore", 2, -3));
+
+  const page = l.hitsPage({
+    offset: 0,
+    limit: 10,
+    sortField: "at",
+    sortDesc: true,
+    filter: { items: [{ field: "raw", operator: "contains", value: "Mistmoore" }] },
+  });
+  assert.deepEqual(page.rows.map((e) => e.faction), ["Agents of Mistmoore"]);
+});
+
 test("hitsPage's filter treats a literal % or _ as text, not a SQL wildcard", () => {
   const l = freshLog();
   l.add(raised("100% Zek", 1, 2));
@@ -434,7 +464,7 @@ test("a standing rolls up mobs and dialogue causes separately, even if they shar
   ]);
 });
 
-test("recheckDialogueQuests strips a quest whose giver isn't a confirmed mob", () => {
+test("recheckDialogueCauses clears a whole cause once its giver isn't a confirmed mob, per ADR 0257/0261", () => {
   const l = freshLog();
   l.add(
     hit("Agents of Mistmoore", 1, 5, "raised", {
@@ -446,23 +476,41 @@ test("recheckDialogueQuests strips a quest whose giver isn't a confirmed mob", (
       questsMatched: false,
     }),
   );
-  const result = l.recheckDialogueQuests({
+  const result = l.recheckDialogueCauses({
     questGiver: () => ["Shovel of Ponz"],
     isMob: () => false, // the wiki cache says "A Dusty Tome" is not a mob
   });
   assert.deepEqual(result, { checked: 1, changed: 1 });
-  const [record] = l.recent();
-  assert.equal(record.causedBy?.kind, "dialogue");
-  assert.equal("quests" in (record.causedBy ?? {}), false, "stripped, not left as an empty list");
+  // Not just the quest — an unmatched speaker is no cause at all any more (ADR 0261), so the whole
+  // guess reverts to uncorrelated rather than keeping "conversation with a non-mob" around.
+  assert.equal(l.recent()[0].causedBy, undefined);
 
   // Calling it again against the same, unchanged wiki state is a no-op — nothing left to fix.
-  assert.deepEqual(l.recheckDialogueQuests({ questGiver: () => ["Shovel of Ponz"], isMob: () => false }), {
-    checked: 1,
+  assert.deepEqual(l.recheckDialogueCauses({ questGiver: () => ["Shovel of Ponz"], isMob: () => false }), {
+    checked: 0,
     changed: 0,
   });
 });
 
-test("recheckDialogueQuests leaves a quest given by a confirmed mob untouched", () => {
+test("recheckDialogueCauses clears a whole cause once no quest matches at all, even for a real mob", () => {
+  // The Clan Runnyeye case: "A goblin lookout" is a perfectly real, confirmed mob, but it is not a
+  // "Quest giver" for anything — its own combat social line matched the dialogue shape, and this hit
+  // was almost certainly just a kill, not a conversation at all (ADR 0261).
+  const l = freshLog();
+  l.add(
+    hit("Clan Runnyeye", 1, 5, "raised", {
+      kind: "dialogue",
+      npc: "A goblin lookout",
+      text: "To arms!",
+      gapSec: 2,
+    }),
+  );
+  const result = l.recheckDialogueCauses({ questGiver: () => [], isMob: () => true });
+  assert.deepEqual(result, { checked: 1, changed: 1 });
+  assert.equal(l.recent()[0].causedBy, undefined);
+});
+
+test("recheckDialogueCauses leaves a quest given by a confirmed mob untouched", () => {
   const l = freshLog();
   l.add(
     hit("Agents of Mistmoore", 1, 5, "raised", {
@@ -474,13 +522,16 @@ test("recheckDialogueQuests leaves a quest given by a confirmed mob untouched", 
       questsMatched: false,
     }),
   );
-  const result = l.recheckDialogueQuests({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
+  const result = l.recheckDialogueCauses({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
   assert.deepEqual(result, { checked: 1, changed: 0 });
   const [record] = l.recent();
   assert.deepEqual(record.causedBy?.kind === "dialogue" ? record.causedBy.quests : undefined, ["Shovel of Ponz"]);
 });
 
-test("recheckDialogueQuests can add a quest to a hit that had none, once the cache catches up", () => {
+test("recheckDialogueCauses can add a quest to a hit that had none, once the cache catches up", () => {
+  // A hit stored with no quest at all — the shape every dialogue cause used to be able to take before
+  // ADR 0261, and still can as legacy data on disk even though a *fresh* guess can no longer produce
+  // one (see `createFactionCauseTracker`'s tests for that half).
   const l = freshLog();
   l.add(
     hit("Agents of Mistmoore", 1, 5, "raised", {
@@ -491,16 +542,16 @@ test("recheckDialogueQuests can add a quest to a hit that had none, once the cac
     }),
   );
   // The giver wasn't cached yet when this hit first happened; it is now.
-  const result = l.recheckDialogueQuests({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
+  const result = l.recheckDialogueCauses({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
   assert.deepEqual(result, { checked: 1, changed: 1 });
   const [record] = l.recent();
   assert.deepEqual(record.causedBy?.kind === "dialogue" ? record.causedBy.quests : undefined, ["Shovel of Ponz"]);
 });
 
-test("recheckDialogueQuests never touches a kill-caused hit", () => {
+test("recheckDialogueCauses never touches a kill-caused hit", () => {
   const l = freshLog();
   l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));
-  assert.deepEqual(l.recheckDialogueQuests({ questGiver: () => ["Shovel of Ponz"], isMob: () => false }), {
+  assert.deepEqual(l.recheckDialogueCauses({ questGiver: () => ["Shovel of Ponz"], isMob: () => false }), {
     checked: 0,
     changed: 0,
   });

@@ -91,45 +91,52 @@ test("one kill can be blamed for several faction hits in a row — a mob can mov
   assert.deepEqual(b.causedBy, { kind: "kill", mob: "a gnoll pup", gapSec: 1 });
 });
 
-test("NPC dialogue is offered as the cause when no kill explains the hit", () => {
-  const tracker = createFactionCauseTracker();
+test("NPC dialogue is offered as the cause when no kill explains the hit, once matched to a quest", () => {
+  // A bare "says"/"tells you" line is no longer enough on its own (ADR 0261, below) — a real quest
+  // match is what makes this a dialogue cause rather than silence.
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Proving Your Worth"] });
   tracker.noteLine(line(8, "Bumle Reminjar tells you, 'You have proven yourself worthy.'"));
   assert.deepEqual(tracker.resolve(hit(10)).causedBy, {
     kind: "dialogue",
     npc: "Bumle Reminjar",
     text: "You have proven yourself worthy.",
     gapSec: 2,
+    quests: ["Proving Your Worth"],
+    questsMatched: false,
   });
 });
 
 test("both dialogue grammars match — 'says' with or without a comma, and 'tells you'", () => {
-  const withComma = createFactionCauseTracker();
+  const deps = { questGiver: () => ["Any Quest"] };
+  const withComma = createFactionCauseTracker(deps);
   withComma.noteLine(line(9, "Vira says, 'Well done.'"));
   assert.equal(withComma.resolve(hit(10)).causedBy?.kind, "dialogue");
 
-  const noComma = createFactionCauseTracker();
+  const noComma = createFactionCauseTracker(deps);
   noComma.noteLine(line(9, "Vira says 'Well done.'"));
   assert.equal(noComma.resolve(hit(10)).causedBy?.kind, "dialogue");
 
-  const tellsYou = createFactionCauseTracker();
+  const tellsYou = createFactionCauseTracker(deps);
   tellsYou.noteLine(line(9, "Bristlebane tells you, 'The trickster smiles upon you.'"));
   assert.deepEqual(tellsYou.resolve(hit(10)).causedBy, {
     kind: "dialogue",
     npc: "Bristlebane",
     text: "The trickster smiles upon you.",
     gapSec: 1,
+    quests: ["Any Quest"],
+    questsMatched: false,
   });
 });
 
 test("a kill explains a hit before dialogue is even considered", () => {
-  const tracker = createFactionCauseTracker();
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
   tracker.noteLine(line(8, "Vira says, 'Well done.'"));
   tracker.noteKill("a gnoll pup", "2026-07-29T00:00:09");
   assert.deepEqual(tracker.resolve(hit(10)).causedBy, { kind: "kill", mob: "a gnoll pup", gapSec: 1 });
 });
 
 test("dialogue still explains a hit the kill window missed, since its own window is wider", () => {
-  const tracker = createFactionCauseTracker();
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
   // Well outside CORRELATION_WINDOW_SEC (a kill this old would never be blamed) but inside
   // DIALOGUE_WINDOW_SEC — a turn-in is a slower, multi-step interaction than a kill's instant update.
   const dialogueSec = 10 - (CORRELATION_WINDOW_SEC + 1);
@@ -151,13 +158,15 @@ test("an ordinary line that isn't shaped like dialogue teaches nothing", () => {
 });
 
 test("explainUnsourcedCoin makes the same guess, for a coin line instead of a faction hit", () => {
-  const tracker = createFactionCauseTracker();
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
   tracker.noteLine(line(8, "Vira says, 'Here is your reward.'"));
   assert.deepEqual(tracker.explainUnsourcedCoin("2026-07-29T00:00:10"), {
     kind: "dialogue",
     npc: "Vira",
     text: "Here is your reward.",
     gapSec: 2,
+    quests: ["Any Quest"],
+    questsMatched: false,
   });
   assert.equal(
     createFactionCauseTracker().explainUnsourcedCoin("2026-07-29T00:00:10"),
@@ -181,18 +190,19 @@ test("with no questDialogue dependency, a dialogue cause lists every quest the g
   });
 });
 
-test("a speaker the lookup doesn't recognize gets no `quests` field at all — not an empty list", () => {
+test("a speaker the lookup doesn't recognize is no cause at all, not a dialogue cause with no quest (ADR 0261)", () => {
+  // Before ADR 0261 this fell back to a dialogue cause naming no quest; real data showed that fallback
+  // was, more often than not, a hostile mob's own combat social rather than an uncached quest giver —
+  // see the module header and `questsForSpeaker`.
   const tracker = createFactionCauseTracker({ questGiver: () => [] });
   tracker.noteLine(line(8, "Some Rando says, 'hey'"));
-  const causedBy = tracker.resolve(hit(10)).causedBy;
-  assert.equal(causedBy?.kind, "dialogue");
-  assert.equal("quests" in (causedBy ?? {}), false);
+  assert.equal(tracker.resolve(hit(10)).causedBy, undefined);
 });
 
-test("with no questGiver dependency at all, a dialogue cause is unchanged from before ADR 0221", () => {
+test("with no questGiver dependency at all, a dialogue line produces no cause at all (ADR 0261)", () => {
   const tracker = createFactionCauseTracker();
   tracker.noteLine(line(8, "Vira says, 'Well done.'"));
-  assert.deepEqual(tracker.resolve(hit(10)).causedBy, { kind: "dialogue", npc: "Vira", text: "Well done.", gapSec: 2 });
+  assert.equal(tracker.resolve(hit(10)).causedBy, undefined);
 });
 
 test("the giver lookup is never asked about a kill cause", () => {
@@ -210,15 +220,17 @@ test("the giver lookup is never asked about a kill cause", () => {
 
 // ─── A giver only names a quest once it's a confirmed mob (ADR 0257) ───────────────────────────
 
-test("a giver isMob says isn't a mob gets no quest attached, even though questGiver would name one", () => {
+test("a giver isMob says isn't a mob gets no cause at all, even though questGiver would name a quest", () => {
   const tracker = createFactionCauseTracker({
     questGiver: (npc) => (npc === "A Dusty Tome" ? ["Shovel of Ponz"] : []),
     isMob: () => false,
   });
   tracker.noteLine(line(8, "A Dusty Tome says, 'You have proven yourself worthy.'"));
-  const causedBy = tracker.resolve(hit(10)).causedBy;
-  assert.equal(causedBy?.kind, "dialogue");
-  assert.equal("quests" in (causedBy ?? {}), false, "an unconfirmed giver names no quest, not an empty list");
+  assert.equal(
+    tracker.resolve(hit(10)).causedBy,
+    undefined,
+    "an unconfirmed giver is no cause at all, not a dialogue cause naming no quest",
+  );
 });
 
 test("a giver isMob confirms is a mob still gets its quest, same as without the check", () => {

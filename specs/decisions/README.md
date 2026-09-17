@@ -285,7 +285,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0248: A paged grid fills the window instead of a fixed height](./0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md)
 - [0249: Every grid gets a real pager](./0249-every-grid-gets-a-real-pager.md)
 - [0250: Loot Drops reaches the whole ledger unconditionally, paginated client-side](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md) — *superseded by [0254](./0254-loot-drops-pages-server-side-for-the-common-case.md) for the unfiltered/wantedOnly-off, non-zone-sort case; the `wantedOnly` and zone-sort limits stand*
-- [0251: A grid's unshown columns are still reachable, hidden rather than absent](./0251-a-grids-unshown-columns-are-still-reachable.md)
+- [0251: A grid's unshown columns are still reachable, hidden rather than absent](./0251-a-grids-unshown-columns-are-still-reachable.md) — its `causeKind`/`raw` `filterable: false` call superseded by [0260](./0260-a-paged-grids-filter-allow-list-can-widen-past-its-sort.md); `hiddenByDefault` and the rest stand
 - [0252: Combat search joins the shared background cache](./0252-combat-search-joins-the-shared-background-cache.md)
 - [0253: The map window patches in only touched kills](./0253-the-map-window-patches-in-only-touched-kills.md)
 - [0254: Loot Drops pages server-side for the common case](./0254-loot-drops-pages-server-side-for-the-common-case.md) — supersedes [0250](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md) for the unfiltered/wantedOnly-off, non-zone-sort case
@@ -294,6 +294,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0257: A guessed giver must be a mob to name a quest](./0257-a-guessed-giver-must-be-a-mob-to-name-a-quest.md)
 - [0258: A spell's class is read from the file, not the player](./0258-a-spells-class-is-read-from-the-file-not-the-player.md)
 - [0259: A stored quest guess can be rechecked in place](./0259-a-stored-quest-guess-can-be-rechecked-in-place.md)
+- [0260: A paged grid's filter allow-list can widen past its sort one](./0260-a-paged-grids-filter-allow-list-can-widen-past-its-sort.md)
+- [0261: An unmatched speaker is no cause at all](./0261-an-unmatched-speaker-is-no-cause-at-all.md)
 
 ## Open Questions
 

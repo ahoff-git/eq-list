@@ -48,6 +48,7 @@ import type {
   FactionCause,
   FactionCauseTally,
   FactionDirection,
+  FactionHitFilterField,
   FactionHitFilterItem,
   FactionHitSortField,
   FactionHitsFilter,
@@ -214,16 +215,22 @@ const HIT_SORT_COLUMNS: Record<FactionHitSortField, string> = {
   cause: "LOWER(caused_by_source)",
 };
 
-/** Which SQL column backs each filterable field, and whether it's compared as text or a number — the
- *  same allow-list discipline as `HIT_SORT_COLUMNS`, so a filter's `field` can never become anything
- *  but one of these fixed expressions. `cause` filters by `caused_by_source` directly: that's the same
- *  column `causeSource` (`faction-sort.ts`) reads to produce the grid's `cause` value in the first
- *  place, just not yet lowercased/joined with the kill-vs-dialogue label the cell renders. */
-const HIT_FILTER_COLUMNS: Record<FactionHitSortField, { column: string; kind: "text" | "number" }> = {
+/** Which SQL column (or fixed expression) backs each filterable field, and whether it's compared as
+ *  text or a number — the same allow-list discipline as `HIT_SORT_COLUMNS`, so a filter's `field` can
+ *  never become anything but one of these fixed expressions. `cause` filters by `caused_by_source`
+ *  directly: that's the same column `causeSource` (`faction-sort.ts`) reads to produce the grid's
+ *  `cause` value in the first place, just not yet lowercased/joined with the kill-vs-dialogue label
+ *  the cell renders. `causeKind` has no column of its own — `caused_by_kind` stores `"kill"`/
+ *  `"dialogue"`, not the "Kill"/"Quest" label `causeKindLabel` (`faction-sort.ts`) renders — so it
+ *  filters against a `CASE` that reproduces that label in SQL instead (ADR 0260), matching what the
+ *  Source column actually shows rather than the raw stored kind. */
+const HIT_FILTER_COLUMNS: Record<FactionHitFilterField, { column: string; kind: "text" | "number" }> = {
   at: { column: "at", kind: "text" },
   faction: { column: "faction", kind: "text" },
   delta: { column: "delta", kind: "number" },
   cause: { column: "caused_by_source", kind: "text" },
+  causeKind: { column: "(CASE caused_by_kind WHEN 'kill' THEN 'Kill' WHEN 'dialogue' THEN 'Quest' ELSE NULL END)", kind: "text" },
+  raw: { column: "raw", kind: "text" },
 };
 
 /** One filter item's SQL fragment plus its bound params, or `null` if it can't produce a clause yet —
@@ -323,16 +330,23 @@ export interface FactionLog {
    */
   clear(scope?: ForgetScope): void;
   /**
-   * Re-derive every stored dialogue cause's `quests`/`questsMatched` against **today's** wiki cache,
-   * fixing a hit recorded before a rule change without needing its own log line back (ADR 0257: a
-   * "Quest giver" naming something that isn't a mob never should have named a quest at all). Uses
-   * `questsForSpeaker` — the exact function a live guess calls — against each hit's already-stored
-   * `npc`/`text`, so a re-check produces precisely what a fresh guess would say right now, not a
-   * second implementation of the same rule. A hit whose fresh answer matches what's already stored is
-   * left untouched; only `changed` rows are written. Idempotent and cheap to call repeatedly — as the
-   * wiki cache grows, a later call can still improve a row an earlier one couldn't.
+   * Re-derive every stored dialogue cause against **today's** wiki cache, fixing a hit recorded before
+   * a rule change without needing its own log line back. Uses `questsForSpeaker` — the exact function
+   * a live guess calls — against each hit's already-stored `npc`/`text`, so a re-check produces
+   * precisely what a fresh guess would say right now, not a second implementation of the same rule.
+   * Two rules it can now correct:
+   *
+   *   - **ADR 0257**: a "Quest giver" naming something that isn't a mob never should have named a
+   *     quest at all — `quests`/`questsMatched` are cleared, the raw `npc`/`text` stay.
+   *   - **ADR 0261**: a speaker matched to no quest at all is no cause at all any more, not a weaker
+   *     one (it's just as likely a hostile mob's own combat social or a corpse's flavor line) — the
+   *     whole `causedBy` is cleared, reverting the hit to uncorrelated.
+   *
+   * A hit whose fresh answer matches what's already stored is left untouched; only `changed` rows are
+   * written. Idempotent and cheap to call repeatedly — as the wiki cache grows, a later call can still
+   * improve (or, per ADR 0261, correct) a row an earlier one couldn't.
    */
-  recheckDialogueQuests(deps: Pick<FactionCauseTrackerDeps, "questGiver" | "questDialogue" | "isMob">): {
+  recheckDialogueCauses(deps: Pick<FactionCauseTrackerDeps, "questGiver" | "questDialogue" | "isMob">): {
     checked: number;
     changed: number;
   };
@@ -418,6 +432,16 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
   `);
   const updateDialogueQuests = db.prepare(`
     UPDATE faction_hits SET caused_by_quests = ?, caused_by_quests_matched = ? WHERE key = ?
+  `);
+  // ADR 0261: an unmatched speaker no longer names a weaker dialogue cause, it names none at all — a
+  // hostile mob's own combat social or a corpse's flavor line reads exactly like a quest giver's
+  // reply, so a hit like this reverts to uncorrelated rather than keeping a guess now known to be
+  // more often wrong than right.
+  const clearCause = db.prepare(`
+    UPDATE faction_hits SET
+      caused_by_kind = NULL, caused_by_source = NULL, caused_by_gap_sec = NULL,
+      caused_by_text = NULL, caused_by_quests = NULL, caused_by_quests_matched = NULL
+    WHERE key = ?
   `);
 
   function paramsOf(event: FactionRecord) {
@@ -547,7 +571,7 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
       log.debug("cleared", { scope });
     },
 
-    recheckDialogueQuests(deps) {
+    recheckDialogueCauses(deps) {
       const rows = selectDialogueCauses.all() as {
         key: string;
         source: string;
@@ -559,8 +583,15 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
       const run = db.transaction(() => {
         for (const r of rows) {
           const fresh = questsForSpeaker(r.source, r.text, deps);
-          const quests = fresh.quests ? JSON.stringify(fresh.quests) : null;
-          const questsMatched = fresh.questsMatched === undefined ? null : fresh.questsMatched ? 1 : 0;
+          if (!fresh) {
+            // Not a known quest-giver at all under today's cache — the whole cause goes, not just
+            // its quest, since ADR 0261 no longer treats an unmatched speaker as weaker evidence.
+            clearCause.run(r.key);
+            changed++;
+            continue;
+          }
+          const quests = JSON.stringify(fresh.quests);
+          const questsMatched = fresh.questsMatched ? 1 : 0;
           if (quests === r.quests && questsMatched === r.questsMatched) continue;
           updateDialogueQuests.run(quests, questsMatched, r.key);
           changed++;
