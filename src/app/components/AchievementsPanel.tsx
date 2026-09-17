@@ -2,11 +2,18 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useAchievements, useLogVocabulary } from "@/lib/hooks";
+import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
 import { countOf } from "@/shared/format";
 import { CheckField, Empty, segCls } from "./ui";
+import SearchField from "./SearchField";
 import SuggestField from "./SuggestField";
 import type { VocabularyKind } from "@/shared/log-vocabulary";
 import type { AchievementCriterion, AchievementCriterionInput, RunningAchievement } from "@/shared/types";
+
+/** Search reaches the title and the category badge, so "kunark" finds every achievement tagged
+ *  with it even when the word never appears in a single title. */
+const achievementSearchText = (a: RunningAchievement): string =>
+  `${a.definition.title} ${a.definition.category ?? ""}`;
 
 /** How many criteria before a row grows its own filter box — a handful read fine as a plain list;
  *  "Grand Tour"'s couple hundred zones don't. */
@@ -26,14 +33,26 @@ export default function AchievementsPanel() {
     if (aDone !== bDone) return aDone ? 1 : -1;
     return a.definition.title.localeCompare(b.definition.title);
   });
+  const { query, setQuery, filtered } = useFuzzyFilter(achievements, achievementSearchText);
 
   return (
     <div className="achievements">
       <AchievementWizard />
+      {achievements.length > 0 && (
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          placeholder="Search achievements…"
+          title="Matches the title and category — spelling need not be exact"
+          style={{ marginBottom: 10 }}
+        />
+      )}
       {achievements.length === 0 ? (
         <Empty title="No achievements yet." hint="Add one above." />
+      ) : query.trim() && filtered.length === 0 ? (
+        <Empty title="No achievement matches that." hint="Search checks the title and category — try a shorter or different spelling." />
       ) : (
-        achievements.map((a) => <AchievementRow key={a.definition.id} achievement={a} />)
+        filtered.map((a) => <AchievementRow key={a.definition.id} achievement={a} />)
       )}
     </div>
   );
@@ -42,12 +61,9 @@ export default function AchievementsPanel() {
 function AchievementRow({ achievement }: { achievement: RunningAchievement }) {
   const { definition, done, tally, total, completedAt } = achievement;
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState("");
+  const { query: filter, setQuery: setFilter, filtered: visible } = useFuzzyFilter(definition.criteria, (c) => c.label);
   const doneSet = new Set(done);
   const complete = total > 0 && done.length >= total;
-  const visible = filter.trim()
-    ? definition.criteria.filter((c) => c.label.toLowerCase().includes(filter.trim().toLowerCase()))
-    : definition.criteria;
 
   return (
     <div className={`achv-row ${complete ? "completed" : ""}`}>
@@ -64,12 +80,7 @@ function AchievementRow({ achievement }: { achievement: RunningAchievement }) {
           {definition.description && <p className="small muted">{definition.description}</p>}
           {completedAt && <p className="small muted">Completed {new Date(completedAt).toLocaleString()}</p>}
           {definition.criteria.length > FILTER_ABOVE && (
-            <input
-              className="field"
-              placeholder="Filter…"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            />
+            <SearchField value={filter} onChange={setFilter} placeholder="Filter…" />
           )}
           <div className="achv-criteria">
             {visible.map((c) => (

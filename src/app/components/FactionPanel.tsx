@@ -8,6 +8,7 @@ import {
 } from "@mui/x-data-grid";
 import { useFactionHitsPage, useFactionStandings } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
+import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
 import { useGridSort } from "@/lib/useGridSort";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { causeConfidence, causeConfidenceWhy } from "@/shared/faction-cause";
@@ -33,6 +34,7 @@ import type {
 } from "@/shared/types";
 import ItemLink, { NameList } from "./ItemLink";
 import RaceUnlocksView from "./RaceUnlocksView";
+import SearchField from "./SearchField";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
 import { Empty, segCls } from "./ui";
 
@@ -127,6 +129,10 @@ export default function FactionPanel() {
   const standings = useFactionStandings(hitsProbe.rows[0] ? factionKey(hitsProbe.rows[0]) : "");
 
   const sortedStandings = useMemo(() => sortFactionStandings(standings, standingSort), [standings, standingSort]);
+  const { query: standingQuery, setQuery: setStandingQuery, filtered: shownStandings } = useFuzzyFilter(
+    sortedStandings,
+    (s) => s.faction,
+  );
 
   return (
     <div className="tab-fill">
@@ -155,6 +161,14 @@ export default function FactionPanel() {
           </button>
         </div>
         <span className="spacer" />
+        {view === "standings" && standings.length > 0 && (
+          <SearchField
+            value={standingQuery}
+            onChange={setStandingQuery}
+            placeholder="Search factions…"
+            title="Matches a faction's name — spelling need not be exact"
+          />
+        )}
         {view === "hits" && hitsProbe.total > 0 && <span className="muted small">{count(hitsProbe.total, "hit")}</span>}
       </div>
 
@@ -172,8 +186,13 @@ export default function FactionPanel() {
           />
         ) : view === "hits" ? (
           <HitTable sort={hitSort} onSort={setHitSort} />
+        ) : standingQuery.trim() && shownStandings.length === 0 ? (
+          <Empty
+            title="No faction matches that."
+            hint="Every faction the ledger has a change for is searched by name — try a shorter or different spelling."
+          />
         ) : (
-          <StandingTable standings={sortedStandings} sort={standingSort} onSort={setStandingSort} />
+          <StandingTable standings={shownStandings} sort={standingSort} onSort={setStandingSort} />
         )}
       </div>
     </div>
