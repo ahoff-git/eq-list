@@ -327,6 +327,20 @@ everything else, so this list can stay short enough to read:
   never drew) is in [ADR 0111](./decisions/0111-one-zone-one-map-file.md)'s neighbourhood and returns
   four real places among its 44, so it can only ever be a worklist.
 
+- **Five ring/spire zone files this Brewall pack draws don't resolve to a recognised zone at all.**
+  Found while cross-referencing the travel graph's druid/wizard hub members against the wiki's own
+  spell cards for [ADR 0255](./decisions/0255-the-spell-list-can-call-a-ring-dead-too.md): `commonlands`,
+  `lavastorm_original`, `nektulos_1_original`, `eastkorlach` and `frontiermtnsb` each carry a druid ring
+  or wizard spire, and none of them resolves against the app's own zone catalogue — `zoneNames` falls
+  back to prettifying the raw file (`"Eastkorlach"`, `"Frontiermtnsb"`) instead of naming a real place.
+  `commonlands` and `lavastorm_original`/`nektulos_1_original` look like the same shape as
+  `STALE_DRAWINGS`' existing entries — a second, older drawing of a zone this pack already covers under
+  its real name (`ecommons`/`commons`, `lavastorm`, `nektulos`) — but that needs checking against the
+  game's own map file the way [ADR 0174](./decisions/0174-the-era-decides-which-drawing-is-the-zone.md)
+  did for `toxxulia` and `northro`, not assuming. `eastkorlach` and `frontiermtnsb` don't obviously match
+  anything at all and may be a real Kunark zone this app's catalogue simply lacks a name for. Deliberately
+  not guessed at or dropped here — ADR 0255 only touched zones it could positively identify.
+
 - **102 borders are still one-sided.** 161 before the far side started naming what this side couldn't
   ([ADR 0115](./decisions/0115-a-border-one-side-could-not-name.md)), then up as the wiki added borders
   nobody drew ([ADR 0117](./decisions/0117-the-wiki-says-which-zones-touch.md)) and down again as the

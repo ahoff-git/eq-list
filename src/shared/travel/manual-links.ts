@@ -115,9 +115,36 @@ export const MANUAL_TRAVEL: TravelManual = {
     },
   ],
 
-  // A ring or spire the maps label that doesn't actually work — the node stays on the map, it just
-  // stops being a free ride. Nothing known to need this yet.
-  drop: [],
+  // A ring or spire the map draws — and doesn't call dead — that no spell in the game actually
+  // reaches. The node stays on the map (it's a real place), it just stops being a free ride.
+  //
+  // Different evidence from `deadConveyance` (ADR 0114): that reads the map's own words
+  // ("Abandoned Druid Ring"); this reads the game's own spell corpus, already harvested from
+  // eqlwiki for the Spells tab (ADR 0195). Checked against **every** family that ports to a named
+  // zone, not just the obvious two — a druid's is four deep (Circle, Ring, Succor, Zephyr, each a
+  // different level/cast-time/target-type rank of the same "get to X" spell) and a wizard's is four
+  // deep too (Portal, Gate, Translocate, Evacuate) — because trusting only "Circle of X" and
+  // "X Portal"/"Translocate: X" is exactly what missed Succor: East Karana and Evacuate: South Ro
+  // the first time this list was written. Each card states its destination in plain English, so
+  // which zones a network actually reaches is a fact, not a guess from the marker's presence.
+  // See [ADR 0255](../../../specs/decisions/0255-the-spell-list-can-call-a-ring-dead-too.md).
+  drop: [
+    {
+      network: "druid",
+      zone: "southkarana",
+      why: 'No druid spell of any rank — Circle, Ring, Succor or Zephyr — names South Karana anywhere in the corpus; the only Karana one reaches is North Karana (Circle/Ring/Succor/Zephyr of North Karana) and the only other one East Karana (Succor: East Karana). South Karana\'s druid ring is drawn but uncastable.',
+    },
+    {
+      network: "wizard",
+      zone: "southkarana",
+      why: "No wizard spell of any rank — Portal, Gate, Translocate or Evacuate — names South Karana; North Karana and West Karana each have all four, South Karana has none. South Karana's wizard spire is drawn but uncastable.",
+    },
+    {
+      network: "druid",
+      zone: "nektulos",
+      why: 'No druid spell of any rank — Circle, Ring, Succor or Zephyr — names Nektulos Forest; only wizards reach it (Nektulos Portal/Gate, Translocate: Nektulos, Evacuate: Nektulos), which is why the spire here stays live and only the ring drops.',
+    },
+  ],
 
   // Two places in one zone you can't walk between, which is the one thing the "every pair of a zone's
   // nodes is a walk" rule can't express. Nothing known to need this yet.

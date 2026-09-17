@@ -60,6 +60,14 @@ rule, and a new rule has to say what it replaces.**
    every ruled-out place is a chip with an undo, every guessed figure wears its `?`, and the survey says
    where the graph is thin. A correction nobody can see is one nobody can argue with.
 
+8. **A marker the label calls healthy can still be dead, and that correction is a fact about the game,
+   found by hand.** ([0255](../decisions/0255-the-spell-list-can-call-a-ring-dead-too.md)) Rule 1 refuses
+   what a label's own words admit; this is for the ring or spire that admits nothing and is uncastable
+   anyway — South Karana's are drawn exactly like North Karana's, and only North Karana has a spell for
+   either network. Checked once against the wiki's own spell cards and written into `manual-links.ts`'s
+   `drop`, never derived from a spell's name, because no naming pattern joins one to its target zone
+   reliably enough to trust (`Circle of the Combines` lands in the Dreadlands).
+
 **What follows from them, and is worth stating because it keeps being tempting:** a rule that
 duplicates another belongs to whichever layer is nearer the cause. The reader used to drop a border the
 route had walked past; once the router refused to walk through a node at all, that reader rule could
@@ -399,6 +407,16 @@ as insurance.
     can't actually walk between these two") *removes* the walk rather than being remembered beside it,
     and is applied **last**, so a recomputed zone can't put back a walk a person said isn't one.
     Applying never mutates its input.
+
+    **A `drop` takes a zone out of a network without touching the map.** The node stays — it's a real
+    place — only its free ride to the rest of the hub goes. `deadConveyance` (ADR 0114) already refuses
+    a marker whose own words say it doesn't work; `drop` is for the marker that says nothing is wrong
+    and is uncastable anyway, found by reading the game's own spell list rather than the label: South
+    Karana draws a `Druid Ring` and a `Wizard Spire`, and no `Circle of South Karana` or wizard Portal
+    ever named it, only North Karana's versions do. Hand-checked against the wiki's own spell cards, the
+    same bar `manual-links.ts` holds everything else to, because no naming pattern is reliable enough to
+    join a spell to a zone automatically — `Circle of the Combines` lands in the Dreadlands
+    ([ADR 0255](../decisions/0255-the-spell-list-can-call-a-ring-dead-too.md)).
   - `route.ts` — `findRoute(graph, from, to, options)`, Dijkstra over a binary heap and the stored
     edges. Both ends are a **zone** (long name or map file name) with an optional `at` — you're
     somewhere in a zone and want to be somewhere in another, so each end attaches through a virtual
@@ -664,7 +682,11 @@ as insurance.
   inference: the spell file is read ([ADR 0080](../decisions/0080-the-game-s-own-spell-file.md)) but
   nothing joins a *Circle of X* to the ring node X, and even a perfect join couldn't know that the
   druid porting you is not you. The manual switch is honest about not knowing
-  ([ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md)).
+  ([ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md)). **A narrower, different question
+  is answered**, by hand: not "can you cast it" but "does it exist at all" — `manual-links.ts`'s `drop`
+  removes a ring or spire the map draws where no spell in the game targets that zone, checked against
+  the wiki's own spell cards rather than a name-to-zone guess
+  ([ADR 0255](../decisions/0255-the-spell-list-can-call-a-ring-dead-too.md)).
 - **A ruled-out place is not remembered across map packs.** A border's id is `zoneA|zoneB` and stable;
   a place's is `<zone>#<slug of that pack's own label>` and is not
   ([ADR 0061](../decisions/0061-a-map-pack-names-its-own-zones.md)), so switching source can leave an
@@ -682,4 +704,5 @@ as insurance.
 [ADR 0069](../decisions/0069-a-succor-is-a-port-inside-one-zone.md) ·
 [ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md) ·
 [ADR 0169](../decisions/0169-the-travel-graph-is-built-once-and-remembered.md) ·
+[ADR 0255](../decisions/0255-the-spell-list-can-call-a-ring-dead-too.md) ·
 [testing](../testing/README.md)

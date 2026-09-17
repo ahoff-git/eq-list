@@ -289,6 +289,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0252: Combat search joins the shared background cache](./0252-combat-search-joins-the-shared-background-cache.md)
 - [0253: The map window patches in only touched kills](./0253-the-map-window-patches-in-only-touched-kills.md)
 - [0254: Loot Drops pages server-side for the common case](./0254-loot-drops-pages-server-side-for-the-common-case.md) — supersedes [0250](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md) for the unfiltered/wantedOnly-off, non-zone-sort case
+- [0255: The spell list can call a ring dead too](./0255-the-spell-list-can-call-a-ring-dead-too.md)
 
 ## Open Questions
 
@@ -542,6 +543,18 @@ and degrading to blank facts when the file isn't there.*
   as a visible inconsistency rather than an implementation detail nobody but a contributor would
   notice — not before, since widening MUI's footprint "while we're at it" is exactly the kind of
   scope creep ADR 0230 was careful not to take on.
+
+- **Should a ring or spire's network membership be checked against the spell file automatically?**
+  [ADR 0255](./0255-the-spell-list-can-call-a-ring-dead-too.md) hand-checked every zone against all
+  eight port-spell families (four druid ranks, four wizard ranks) against the wiki's own spell cards
+  rather than pattern-matching a spell's name to a zone, which isn't reliable (`Circle of the Combines`
+  targets the Dreadlands, and the bare `Ro` spells go to different zones depending on the caster's
+  class). Its own first pass checked only two of the eight families and got two zones wrong as a
+  result — the risk of hand-checking at all.
+  [ADR 0080](./0080-the-game-s-own-spell-file.md)'s
+  spell file likely states a teleport's target zone and coordinates as scalar columns rather than a
+  damage formula, which would make this checkable for every ring and spire without a person reading
+  each wiki card by hand — not attempted here, and worth doing the day someone confirms those columns.
 
 - **Should achievements ever bridge to the companion web app's shared library?**
   [ADR 0212](./0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md) builds

@@ -340,6 +340,10 @@ reading like a measurement, and they are shared code
   contributes a coordinate and never a connection. ([0115](./0115-a-border-one-side-could-not-name.md), [0117](./0117-the-wiki-says-which-zones-touch.md))
 - **A label that says its own conveyance is dead is not a travel point**, on four measured words that
   must sit adjacent to the conveyance. ([0114](./0114-a-conveyance-the-map-calls-dead-is-not-one.md))
+- **A ring or spire the label never calls dead can still be dead**, when no spell in the game targets
+  that zone — checked by hand against the wiki's own spell cards and dropped from the network, the node
+  left in place. Different from not knowing which port spells *you* have: this is whether one exists at
+  all. ([0255](./0255-the-spell-list-can-call-a-ring-dead-too.md))
 - **A pile of five or more distinct destinations in one spot is a destination board, refused
   wholesale.** Measured over ~1,200 files; a label that can't be believed is refused. ([0119](./0119-a-pile-of-destinations-is-a-sign.md))
 - **Within one zone you never walk through a node**, checked against the walks the search has rather
