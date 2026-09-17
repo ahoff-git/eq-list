@@ -2,7 +2,7 @@
 import { useMemo } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import ItemLink from "./ItemLink";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "./dataGridDefaults";
 import { useGridSort } from "@/lib/useGridSort";
 import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spell-search";
 import type { Sort } from "@/shared/sorting";
@@ -126,6 +126,33 @@ export default function SpellCatalogTable({
         cellClassName: "muted small",
         valueGetter: (_v, row) => classesOf(row) || "—",
       },
+      {
+        field: "outOfEra",
+        headerName: "Out of era",
+        description: "The server hasn't opened this one yet — already shown as a badge beside the name",
+        flex: 1,
+        sortable: false,
+        cellClassName: "muted",
+        valueGetter: (_v, row) => (row.spell.outOfEra ? "Yes" : "No"),
+      },
+      {
+        field: "beneficial",
+        headerName: "Beneficial",
+        description: "A buff or heal rather than something you throw at a mob",
+        flex: 1,
+        sortable: false,
+        cellClassName: "muted",
+        valueGetter: (_v, row) => (row.stats.beneficial === undefined ? "—" : row.stats.beneficial ? "Yes" : "No"),
+      },
+      {
+        field: "instant",
+        headerName: "Instant",
+        description: "No duration at all — a direct heal, a gate, a bind: something that happens and is over",
+        flex: 1,
+        sortable: false,
+        cellClassName: "muted",
+        valueGetter: (_v, row) => (row.stats.instant === undefined ? "—" : row.stats.instant ? "Yes" : "No"),
+      },
     ],
     [],
   );
@@ -144,7 +171,10 @@ export default function SpellCatalogTable({
       sortModel={sortModel}
       onSortModelChange={onSortModelChange}
       pageSizeOptions={PAGE_SIZE_OPTIONS}
-      initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+      initialState={{
+        pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+        columns: { columnVisibilityModel: hiddenByDefault("outOfEra", "beneficial", "instant") },
+      }}
     />
   );
 }

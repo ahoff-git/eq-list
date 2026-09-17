@@ -450,14 +450,12 @@ export function createCombatHistory(db: Database, userDataDir: string, sessionId
     fights: (id) =>
       (selectBySession.all(id) as FightRow[]).map(rowToFight).map(labelled).sort(byNewest),
 
+    // Filters `reportsCache`'s own `searchIndex` (ADR NNNN, extending ADR 0247) instead of running a
+    // fresh full-table scan + JSON-parse + relabel on every keystroke — `DamageHistory.tsx` asks
+    // this on every one, with no debounce. `searchIndex` already carries the recomputed-on-read
+    // label `labelled()` used to apply here, and is already sorted newest-first.
     search(term, limit = SEARCH_LIMIT) {
-      // Labelled first, then matched: the search has to look at the name the list *shows*, which is
-      // recomputed on read (see `labelled`) rather than whatever was filed.
-      const matches = (selectAll.all() as FightRow[])
-        .map(rowToFight)
-        .map(labelled)
-        .filter((f) => fightMatches(f, term))
-        .sort(byNewest);
+      const matches = reportsCache.get().searchIndex.filter((f) => fightMatches(f, term));
       return { fights: matches.slice(0, limit), total: matches.length };
     },
 

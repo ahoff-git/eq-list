@@ -16,6 +16,7 @@ import { factionKey } from "@/shared/faction-feed";
 import {
   DEFAULT_FACTION_HIT_SORT,
   DEFAULT_FACTION_STANDING_SORT,
+  causeKindLabel,
   causeSource,
   ratePerHour,
   sortFactionStandings,
@@ -35,7 +36,15 @@ import type {
 import ItemLink, { NameList } from "./ItemLink";
 import RaceUnlocksView from "./RaceUnlocksView";
 import SearchField from "./SearchField";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
+import {
+  DEFAULT_PAGE_SIZE,
+  GRID_DEFAULTS,
+  GRID_SX,
+  GRID_SX_FILL,
+  NUM_COL,
+  PAGE_SIZE_OPTIONS,
+  hiddenByDefault,
+} from "./dataGridDefaults";
 import { Empty, segCls } from "./ui";
 
 /**
@@ -82,23 +91,33 @@ import { Empty, segCls } from "./ui";
  * worth trusting more (`faction-cause.ts`'s "a guess repeated is a guess corroborated"); the tooltip
  * on it always names the raw hit count behind the color, never just the color alone.
  *
- * Both tables are `DataGrid`s — sortable and filterable on every column.
+ * **That same panel leads with the raw hits behind the net** — every ledger row the game actually
+ * logged for this faction, embedded directly rather than behind a further click, with the guessed
+ * likely-cause tally underneath it. `FactionHitsGrid`, the same grid component the Hits tab itself
+ * renders, just handed a `faction` prop instead of left open — no second copy of its columns or its
+ * query for what is, underneath, the same question the Hits tab already answers. Only queried once a
+ * row is actually opened, same as the cause tally beside it.
+ *
+ * Both tables are `DataGrid`s — sortable and filterable on every column, save the few `sortable: false`
+ * ones a closed sort/filter contract with `hitsPage` (or main-process aggregation) can't reach.
  *
  * **Hits pages through the whole ledger, server-side, not just the most recent 200.** The feed used
  * to be a flat 200-row cap fetched once with nowhere further to go, then (briefly) the *entire*
  * ledger fetched in one IPC call and paginated over an already-fully-fetched array. Neither survives
  * a ledger with no cap at all: `faction-log.ts` now keeps every hit forever
  * ([ADR 0232](../../../specs/decisions/0232-a-ledger-that-outlives-its-cap-is-a-database.md)), so
- * `HitTable` asks main for one page at a time (`faction.hitsPage`) as the player turns pages or
+ * `FactionHitsGrid` asks main for one page at a time (`faction.hitsPage`) as the player turns pages or
  * re-sorts a column, instead of holding the whole history in the renderer. Every grid in the app now
  * pages (ADR 0249) — `dataGridDefaults.ts`'s `GRID_SX_FILL` is the variant for a table that's the
  * whole of its tab (both of this panel's, and `LootPanel`'s two): it fills whatever height its flex
  * container hands it rather than a fixed box, so it uses a tall window rather than stopping partway
  * down it ([ADR 0248](../../../specs/decisions/0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md),
  * superseding [ADR 0234](../../../specs/decisions/0234-a-paged-grid-gets-a-fixed-height-and-a-real-filter.md)'s
- * fixed `height: 560`). `HitTable`'s column filter also reaches the whole ledger, not just the
+ * fixed `height: 560`). The Hits tab's own column filter also reaches the whole ledger, not just the
  * fetched page, via `hitsPage`'s own `filter` parameter (ADR 0234's other half, which still stands) —
- * the one table in the app where ADR 0230's "filter narrows what's on screen" rule doesn't hold.
+ * the one table in the app where ADR 0230's "filter narrows what's on screen" rule doesn't hold (the
+ * Standings drill-down's own `FactionHitsGrid` skips the filter panel entirely — it's already scoped
+ * to one faction, so there's nothing left to narrow).
  *
  * **A third view, Race Unlocks** (`RaceUnlocksView`), folds the live Standings onto Alanna's Race
  * Unlock Guide ([ADR 0222](../../../specs/decisions/0222-a-race-unlock-guide-is-generated-static-data.md))
@@ -109,8 +128,8 @@ import { Empty, segCls } from "./ui";
 type View = "hits" | "standings" | "unlocks";
 
 /** A single newest-hit probe — cheap (one row, one `COUNT(*)`), and enough to answer "is the ledger
- *  empty" and "how many hits total" for the header without fetching a page `HitTable` owns fetching
- *  for itself. Also the standings refresh key: only a hit can change a standing, and the newest one
+ *  empty" and "how many hits total" for the header without fetching a page `FactionHitsGrid` owns
+ *  fetching for itself. Also the standings refresh key: only a hit can change a standing, and the newest one
  *  is the cheapest signal that one landed, the same trick `LootPanel` uses for `useItemPrices`. */
 const HITS_PROBE_QUERY: FactionHitsQuery = { offset: 0, limit: 1, sortField: "at", sortDesc: true };
 
@@ -173,8 +192,8 @@ export default function FactionPanel() {
       </div>
 
       {/* `flex: 1; min-height: 0` so whichever view is open can fill whatever's left of the window
-       *  instead of a fixed pixel height (ADR 0248/0249) — both `HitTable` and `StandingTable` use
-       *  it (`GRID_SX_FILL`); Race Unlocks and the empty state aren't `flex` children of their own,
+       *  instead of a fixed pixel height (ADR 0248/0249) — both `FactionHitsGrid` (unscoped) and
+       *  `StandingTable` use it (`GRID_SX_FILL`); Race Unlocks and the empty state aren't `flex` children of their own,
        *  so they keep sizing to their own content and cost nothing here. */}
       <div className="tab-fill-body">
         {view === "unlocks" ? (
@@ -185,7 +204,7 @@ export default function FactionPanel() {
             hint="A hit appears here the moment the game says so — a quest turn-in, a kill that mattered to one side. The list is kept, so it will still be here next time you open the app."
           />
         ) : view === "hits" ? (
-          <HitTable sort={hitSort} onSort={setHitSort} />
+          <FactionHitsGrid sort={hitSort} onSort={setHitSort} />
         ) : standingQuery.trim() && shownStandings.length === 0 ? (
           <Empty
             title="No faction matches that."
@@ -247,12 +266,19 @@ function questHint(quests: string[], matched: boolean): string {
 
 type HitRow = FactionRecord & { id: string };
 
-/** Rows-per-page choices for the Hits grid's footer, and which one it opens on. */
+/** Rows-per-page choices for the main Hits tab's footer, and which one it opens on. */
 const HITS_PAGE_SIZES = [25, 50, 100];
 const HITS_DEFAULT_PAGE_SIZE = 50;
 
-/** The only fields `HitTable`'s columns declare — a filter item naming anything else (shouldn't
- *  happen; the grid only ever offers a column it was given) is dropped rather than forwarded. */
+/** Rows-per-page choices for the Standings drill-down's own Hits grid — smaller than the main Hits
+ *  tab's, since one faction's slice of the ledger is a fraction of the whole thing. */
+const STANDING_HITS_PAGE_SIZES = [10, 25, 50];
+const STANDING_HITS_DEFAULT_PAGE_SIZE = 10;
+
+/** The only fields the main Hits tab's columns declare — a filter item naming anything else
+ *  (shouldn't happen; the grid only ever offers a column it was given) is dropped rather than
+ *  forwarded. Moot for the Standings drill-down's own `FactionHitsGrid`, which skips the filter panel
+ *  entirely (see `FactionHitsGrid` itself). */
 const HIT_FILTER_FIELDS = new Set<FactionHitSortKey>(["at", "faction", "delta", "cause"]);
 
 /** Converts the grid's own filter model into what `hitsPage` takes (ADR 0234) — same field names and
@@ -271,16 +297,130 @@ function toHitsFilter(model: GridFilterModel): FactionHitsFilter | undefined {
   return { items, logicOperator: model.logicOperator === "or" ? "or" : "and" };
 }
 
-function HitTable({
-  sort,
+/** The Hits grid's columns — identical in every place it's shown, the open ledger and the Standings
+ *  drill-down's one-faction slice alike, right down to the Faction column that's redundant once
+ *  scoped to a single faction: showing it anyway is the price of it actually being the same grid
+ *  rather than one that merely looks similar. `sortable` turns off column sorting for the
+ *  drill-down's fixed, newest-first order instead of the main tab's interactive, persisted one —
+ *  the one difference `hitsPage`'s query shape doesn't currently let this collapse away too (its
+ *  scope filter and a column's own filter aren't composable yet; see `FactionHitsGrid`). Source and
+ *  Raw line stay unsortable/unfilterable either way — neither is a field `hitsPage`'s server
+ *  sort/filter allow-lists know. */
+function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
+  return [
+    {
+      field: "at",
+      headerName: "Time",
+      description: "When the log recorded it",
+      sortable,
+      flex: 1,
+      minWidth: 130,
+      valueGetter: (_v, row) => row.at,
+      renderCell: (p) => <span className="lt-time">{dayTime(p.row.at)}</span>,
+    },
+    {
+      field: "faction",
+      headerName: "Faction",
+      sortable,
+      flex: 2,
+      minWidth: 160,
+      renderCell: (p) => <ItemLink title={p.row.faction} />,
+    },
+    {
+      field: "delta",
+      headerName: "Change",
+      description: "What the line stated — a signed amount, or a floor/ceiling hit, which states none",
+      sortable,
+      ...NUM_COL,
+      flex: 1,
+      cellClassName: (p) => changeClass(p.row),
+      renderCell: (p) => changeLabel(p.row),
+    },
+    {
+      field: "causeKind",
+      headerName: "Source",
+      description: "Which kind of guessed cause this is — a kill, or a conversation that might be a quest turn-in",
+      flex: 1,
+      minWidth: 90,
+      sortable: false,
+      filterable: false,
+      valueGetter: (_v, row) => causeKindLabel(row) ?? "",
+      renderCell: (p) => {
+        const hit = p.row;
+        const label = causeKindLabel(hit);
+        return label ? (
+          <span className="fc-cause" title={causeTitle(hit)}>
+            {label}
+          </span>
+        ) : (
+          <span className="muted">—</span>
+        );
+      },
+    },
+    {
+      field: "cause",
+      headerName: "Likely cause",
+      description: "A guess from timing, not a fact the game states — see the ≈ on each row",
+      sortable,
+      flex: 3,
+      minWidth: 220,
+      valueGetter: (_v, row) => (row.causedBy ? causeSource(row) : ""),
+      renderCell: (p) => {
+        const hit = p.row;
+        if (!hit.causedBy) return <span className="muted">—</span>;
+        return (
+          <span className="fc-cause" title={causeTitle(hit)}>
+            <span className="fc-guess">≈</span> <ItemLink title={causeSource(hit)!} />
+            {hit.causedBy.kind === "dialogue" && hit.causedBy.quests?.length ? (
+              <span className="muted"> ({questHint(hit.causedBy.quests, hit.causedBy.questsMatched ?? false)})</span>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
+      field: "raw",
+      headerName: "Raw line",
+      description: "The original log line this hit was read from",
+      // `hitsPage`'s sort/filter allow-lists don't know this field — neither can reach the server.
+      sortable: false,
+      filterable: false,
+      flex: 3,
+      minWidth: 220,
+      cellClassName: "muted small",
+    },
+  ];
+}
+
+/**
+ * Every faction-standing hit the ledger has, one page at a time (`hitsPage`, ADR 0234) — the main
+ * Hits tab's open ledger when `faction` is left unset, or one faction's own slice when a Standings
+ * row is expanded (`faction` set, `CauseBreakdown`'s caller). One component instead of the two
+ * near-identical ones this used to be (`HitTable`, `FactionHitsForStanding`): same columns
+ * (`hitColumns`, Faction included) and same row shape everywhere — just a narrower filter, smaller
+ * pages, and a simpler, fixed sort once scoped to a single faction.
+ */
+function FactionHitsGrid({
+  faction,
+  sort = DEFAULT_FACTION_HIT_SORT,
   onSort,
 }: {
-  sort: Sort<FactionHitSortKey>;
-  onSort: (next: Sort<FactionHitSortKey>) => void;
+  /** Scopes the grid to one faction — no interactive sort/filter (`sort`/`onSort` are ignored), the
+   *  drill-down's smaller page sizes, and a "Hits (N)" label above it. Columns stay the same as the
+   *  main Hits tab's, Faction included, even though every row here shares one. Left unset for the
+   *  main Hits tab, which shows every faction with interactive, persisted sort and a real filter
+   *  panel. */
+  faction?: string;
+  /** Ignored when `faction` is set — the drill-down's sort is always newest-first, which happens to
+   *  be this prop's own default (`DEFAULT_FACTION_HIT_SORT`), so its caller doesn't pass one at all. */
+  sort?: Sort<FactionHitSortKey>;
+  /** Ignored (and safe to leave unset) when `faction` is set — nothing ever re-sorts a fixed grid. */
+  onSort?: (next: Sort<FactionHitSortKey>) => void;
 }) {
+  const scoped = faction !== undefined;
   const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
     page: 0,
-    pageSize: HITS_DEFAULT_PAGE_SIZE,
+    pageSize: scoped ? STANDING_HITS_DEFAULT_PAGE_SIZE : HITS_DEFAULT_PAGE_SIZE,
   });
   const [filterModel, setFilterModel] = useState<GridFilterModel>({ items: [] });
 
@@ -290,79 +430,38 @@ function HitTable({
       limit: paginationModel.pageSize,
       sortField: sort.key,
       sortDesc: sort.desc,
-      filter: toHitsFilter(filterModel),
+      filter:
+        faction !== undefined
+          ? { items: [{ field: "faction", operator: "equals", value: faction }], logicOperator: "and" }
+          : toHitsFilter(filterModel),
     }),
-    [paginationModel, sort, filterModel],
+    [faction, paginationModel, sort, filterModel],
   );
   const { page, loading } = useFactionHitsPage(query);
   const rows = useMemo<HitRow[]>(() => page.rows.map((hit) => ({ ...hit, id: factionKey(hit) })), [page.rows]);
 
-  const columns = useMemo<GridColDef<HitRow>[]>(
-    () => [
-      {
-        field: "at",
-        headerName: "Time",
-        description: "When the log recorded it",
-        flex: 1,
-        minWidth: 130,
-        valueGetter: (_v, row) => row.at,
-        renderCell: (p) => <span className="lt-time">{dayTime(p.row.at)}</span>,
-      },
-      {
-        field: "faction",
-        headerName: "Faction",
-        flex: 2,
-        minWidth: 160,
-        renderCell: (p) => <ItemLink title={p.row.faction} />,
-      },
-      {
-        field: "delta",
-        headerName: "Change",
-        description: "What the line stated — a signed amount, or a floor/ceiling hit, which states none",
-        ...NUM_COL,
-        flex: 1,
-        cellClassName: (p) => changeClass(p.row),
-        renderCell: (p) => changeLabel(p.row),
-      },
-      {
-        field: "cause",
-        headerName: "Likely cause",
-        description: "A guess from timing, not a fact the game states — see the ≈ on each row",
-        flex: 3,
-        minWidth: 220,
-        valueGetter: (_v, row) => (row.causedBy ? causeSource(row) : ""),
-        renderCell: (p) => {
-          const hit = p.row;
-          if (!hit.causedBy) return <span className="muted">—</span>;
-          return (
-            <span className="fc-cause" title={causeTitle(hit)}>
-              <span className="fc-guess">≈</span> <ItemLink title={causeSource(hit)!} />
-              {hit.causedBy.kind === "dialogue" && hit.causedBy.quests?.length ? (
-                <span className="muted"> ({questHint(hit.causedBy.quests, hit.causedBy.questsMatched ?? false)})</span>
-              ) : null}
-            </span>
-          );
-        },
-      },
-    ],
-    [],
-  );
+  const columns = useMemo<GridColDef<HitRow>[]>(() => hitColumns(!scoped), [scoped]);
 
   // A re-sort changes what belongs on every page, including this one — the row that opened page 3
   // under the old order has no claim to still be there under the new one, so re-sorting also resets
-  // pagination back to page 0.
+  // pagination back to page 0. Never actually fires when scoped: every column is unsortable there.
   const { sortModel, onSortModelChange } = useGridSort(
     sort,
-    onSort,
+    onSort ?? (() => {}),
     (key) => key !== "faction" && key !== "cause",
     () => setPaginationModel((p) => ({ ...p, page: 0 })),
   );
 
   return (
-    <div className="table-scroll grid-fill">
+    <div className={scoped ? "table-scroll" : "table-scroll grid-fill"}>
+      {scoped && (
+        <div className="muted small" style={{ marginBottom: 4 }}>
+          Hits{page.total ? ` (${page.total})` : ""}
+        </div>
+      )}
       <DataGrid
         {...GRID_DEFAULTS}
-        sx={GRID_SX_FILL}
+        sx={scoped ? GRID_SX : GRID_SX_FILL}
         rows={rows}
         columns={columns}
         loading={loading}
@@ -374,18 +473,24 @@ function HitTable({
         paginationModel={paginationModel}
         onPaginationModelChange={setPaginationModel}
         rowCount={page.total}
-        sortingMode="server"
-        sortModel={sortModel}
-        onSortModelChange={onSortModelChange}
-        // Reaches every hit the ledger holds, not just this page — ADR 0234. Same reason a re-sort
-        // resets to page 0: a new filter changes what belongs on every page, including this one.
-        filterMode="server"
-        filterModel={filterModel}
-        onFilterModelChange={(model) => {
-          setFilterModel(model);
-          setPaginationModel((p) => ({ ...p, page: 0 }));
-        }}
-        pageSizeOptions={HITS_PAGE_SIZES}
+        {...(scoped
+          ? {}
+          : {
+              sortingMode: "server" as const,
+              sortModel,
+              onSortModelChange,
+              // Reaches every hit the ledger holds, not just this page — ADR 0234. Same reason a
+              // re-sort resets to page 0: a new filter changes what belongs on every page, including
+              // this one.
+              filterMode: "server" as const,
+              filterModel,
+              onFilterModelChange: (model: GridFilterModel) => {
+                setFilterModel(model);
+                setPaginationModel((p) => ({ ...p, page: 0 }));
+              },
+            })}
+        pageSizeOptions={scoped ? STANDING_HITS_PAGE_SIZES : HITS_PAGE_SIZES}
+        initialState={{ columns: { columnVisibilityModel: hiddenByDefault("raw") } }}
       />
     </div>
   );
@@ -460,6 +565,53 @@ function StandingTable({
         cellClassName: "lt-num",
       },
       {
+        field: "floors",
+        headerName: "Floor hits",
+        description: "Hits at the bottom, which states no amount",
+        ...NUM_COL,
+        flex: 1,
+        sortable: false,
+        cellClassName: "lt-num",
+      },
+      {
+        field: "ceilings",
+        headerName: "Ceiling hits",
+        description: "Hits at the top, which states no amount",
+        ...NUM_COL,
+        flex: 1,
+        sortable: false,
+        cellClassName: "lt-num",
+      },
+      {
+        field: "firstAt",
+        headerName: "First hit",
+        flex: 1,
+        minWidth: 130,
+        sortable: false,
+        cellClassName: "lt-time",
+        renderCell: (p) => <span title={when(p.row.firstAt)}>{dayTime(p.row.firstAt)}</span>,
+      },
+      {
+        field: "observedNet",
+        headerName: "Corrected total",
+        description: "Present only once you've stated this faction's real total — net above already has it folded in",
+        ...NUM_COL,
+        flex: 1,
+        sortable: false,
+        valueGetter: (_v, row) => row.correction?.observedNet,
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "correctedAt",
+        headerName: "Corrected at",
+        flex: 1,
+        minWidth: 130,
+        sortable: false,
+        cellClassName: "lt-time",
+        valueGetter: (_v, row) => row.correction?.correctedAt,
+        renderCell: (p) => (p.value ? <span title={when(p.value)}>{dayTime(p.value)}</span> : "—"),
+      },
+      {
         field: "rate",
         headerName: "Net / hour",
         description: "Net change per hour between the first and last hit on record",
@@ -526,26 +678,35 @@ function StandingTable({
         rowSelectionModel={{ type: "include", ids: new Set(open ? [open] : []) }}
         onRowClick={(params) => setOpen((prev) => (prev === params.id ? null : (params.id as string)))}
         pageSizeOptions={PAGE_SIZE_OPTIONS}
-        initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+        initialState={{
+          pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+          columns: {
+            columnVisibilityModel: hiddenByDefault("floors", "ceilings", "firstAt", "observedNet", "correctedAt"),
+          },
+        }}
       />
-      {openStanding && <CauseBreakdown causes={openStanding.causes} />}
+      {openStanding && <CauseBreakdown standing={openStanding} />}
     </div>
   );
 }
 
-/** The full likely-cause breakdown behind a standing's `net` — every kill and every conversation the
- *  ledger has correlated to it, kills and quests kept apart (they're different kinds of guess, ADR
- *  0219 vs. ADR 0220/0221) rather than folded into one capped "+N more" line with nowhere to go. */
-function CauseBreakdown({ causes }: { causes: FactionCauseTally[] }) {
+/** The full breakdown behind a standing's `net` — the actual hits first (`FactionHitsGrid`, scoped to
+ *  this faction, the real ledger rows front and center rather than another click away), the guessed
+ *  likely-cause tally underneath it (`CauseGroup`s — kills and conversations are different kinds of
+ *  guess, ADR 0219 vs. ADR 0220/0221, so they stay apart rather than folding into one capped "+N more"
+ *  line). */
+function CauseBreakdown({ standing }: { standing: FactionStanding }) {
+  const { causes, faction } = standing;
   const kills = causes.filter((c) => c.kind === "kill");
   const quests = causes.filter((c) => c.kind === "dialogue");
-  if (!kills.length && !quests.length) {
-    return <div className="muted small">Nothing has been correlated to a kill or a conversation yet.</div>;
-  }
   return (
     <div className="cause-breakdown">
+      <FactionHitsGrid faction={faction} />
       {kills.length > 0 && <CauseGroup label="Kills" causes={kills} />}
       {quests.length > 0 && <CauseGroup label="Quests" causes={quests} />}
+      {!kills.length && !quests.length && (
+        <div className="muted small">Nothing has been correlated to a kill or a conversation yet.</div>
+      )}
     </div>
   );
 }

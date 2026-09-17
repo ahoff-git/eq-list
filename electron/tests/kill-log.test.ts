@@ -152,6 +152,51 @@ test("kills can be read back per zone, newest first", () => {
   assert.equal(k.kills().length, 3);
 });
 
+// The map window's incremental refresh (ADR 0253) asks for exactly what changed instead of
+// refetching a whole camp's history — `drainTouched`/`byIds` are its two halves.
+test("record/noteLoot/noteCoin each touch an id, drained once and then forgotten", () => {
+  const k = freshKillLog();
+  assert.deepEqual(k.drainTouched(), []); // nothing touched yet
+
+  kill(k, "a coyote", 1);
+  const afterKill = k.drainTouched();
+  assert.equal(afterKill.length, 1);
+  const killedId = k.kills(ZONE)[0].id;
+  assert.deepEqual(afterKill, [killedId]);
+  assert.deepEqual(k.drainTouched(), []); // draining empties it
+
+  k.noteLoot(looted("a shiny bauble", "a coyote", 2));
+  assert.deepEqual(k.drainTouched(), [killedId]); // the same kill's row was updated with a drop
+
+  k.noteCoin(coin(5, 3));
+  assert.deepEqual(k.drainTouched(), [killedId]); // and again for coin
+
+  // A recorded kill that never gets a drop/coin only ever touches its own id, once.
+  kill(k, "a second coyote", 10);
+  assert.equal(k.drainTouched().length, 1);
+});
+
+test("byIds answers with exactly the requested records, in no particular zone-filtered order", () => {
+  const k = freshKillLog();
+  kill(k, "first", 1, ZONE);
+  kill(k, "second", 2, "Ak'Anon");
+  const [a, b] = k.kills();
+  const ids = [a.id, b.id];
+
+  const byIds = k.byIds(ids);
+  assert.equal(byIds.length, 2);
+  assert.deepEqual(
+    byIds.map((r) => r.mob).sort(),
+    ["first", "second"],
+  );
+  // Zone-agnostic on purpose: filtering by zone is `useKills`' own job on the client, matching
+  // `samePlace` the same way `kills(zone)` resolves it server-side (ADR 0253).
+  assert.equal(byIds.find((r) => r.mob === "second")?.zone, "Ak'Anon");
+
+  assert.deepEqual(k.byIds([]), []);
+  assert.deepEqual(k.byIds(["not-a-real-id"]), []);
+});
+
 // The zone a map draws is one place, however hard the door was set (ADR 0059). Asking the map's
 // name for it — no article, no number, no ruleset — has to reach every variant's kills.
 test("a zone's difficulty variants read back as one zone", () => {

@@ -663,4 +663,19 @@ test("a background refresh eventually confirms the same reports the synchronous 
   assert.equal(h.zones()[0]?.fights, 20, "the background-confirmed zones() agrees with the synchronous one");
   assert.equal(h.bests()[0]?.yourDealt, 10, "and so does bests(), sharing the same cache");
   assert.equal(h.sessions()[0]?.fights, 20, "and sessions()");
+  // search() (ADR 0252) joined the same shared cache as zones()/bests()/sessions() — it should agree
+  // with them, not run its own separate scan.
+  assert.equal(h.search("coyote").total, 20, "and search(), now reading the same cache");
+});
+
+test("search() reflects a fight's label as it reads today, not as it was stored", () => {
+  const h = freshHistory(tempDir(), "s");
+  h.add(fight(1, 10, 1, "a coyote"), "Steamfont Mountains");
+  const stored = h.search("").fights[0];
+  assert.equal(stored.label, "a coyote");
+  // Same property `search()` always had (`labelFor` recomputed on read, never trusted from the
+  // stored column) — now answered from `computeCombatReports`'s `searchIndex` instead of a fresh
+  // per-call scan, and it still has to agree.
+  assert.equal(h.search("coyote").fights[0].label, "a coyote");
+  assert.equal(h.search("nonexistent mob name").total, 0);
 });

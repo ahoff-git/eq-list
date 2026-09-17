@@ -27,6 +27,21 @@ features for later in [../ideas.md](../ideas.md).
   still for, per [ADR 0211](../decisions/0211-a-loot-filter-searches-the-ledger-not-the-window.md)).
   Also confirm the grid reads as part of this app rather than a foreign widget — dark background,
   the app's own border/hover colors, no light-mode flash on open.
+- **A grid's "Manage columns" panel offers columns the default view doesn't show.**
+  ([ADR 0251](../decisions/0251-a-grids-unshown-columns-are-still-reachable.md).) Open the column
+  menu on any column of Items, Spells, Loot's **Drops** and **Sells for**, Faction's **Hits** and
+  **Standings**, and Session's per-mob and per-zone tables, and confirm **Manage columns** lists a
+  handful of unchecked entries beyond what's already on screen (Items: the stats you haven't picked in
+  the weight editor, plus Classes/Races/Flags/Effects/Quests/Origin/Req. level/Skill/Size; Faction
+  Hits: Raw line; Faction Standings: Floor hits/Ceiling hits/First hit/Corrected total/Corrected at;
+  Loot Drops: Sold for/Raw line; Loot Sells for: Sales; Session's per-mob and per-zone tables: the raw
+  Coin off corpses/Coin from sold drops split, and per-zone also XP/Damage dealt/Unsettled). Tick a
+  few on and confirm real data fills in rather than a blank column, that the default view is unchanged
+  for a fresh session (nothing here was ever meant to be on by default), and that the choice is
+  otherwise an ordinary grid preference — it isn't expected to survive a storage wipe, and it isn't
+  supposed to reach a peer. On Items specifically, tick a stat on, then change which stats the weight
+  editor itself has picked, and confirm the panel doesn't end up hiding a stat the editor now shows by
+  default (the grid remounts on that change for exactly this reason).
 - **SpellTable and FactionPanel's Standings — the row breakdown moved below the grid, not inline.**
   ([ADR 0230](../decisions/0230-every-table-gets-a-column-menu.md).) Click a spell row in the Damage
   tab's Spells view and confirm its breakdown opens in a panel **under** the table rather than as a
@@ -192,6 +207,20 @@ features for later in [../ideas.md](../ideas.md).
   Confirm only one row's breakdown is open at a time, and that clicking the open row's caret again
   closes it. Then confirm **Net / hour** sorts like any other column (click to sort descending, again
   to flip) rather than sitting inert.
+- **Standings — the embedded Hits sub-grid.** (`FactionHitsGrid`, the same grid component the Hits
+  tab itself renders, just scoped to one faction — ADR 0234.) Expand a standing and confirm a **Hits**
+  grid appears immediately at the top of the breakdown — no further click needed — showing that
+  faction's own hits, newest first, with a working page picker if it has more than the default page
+  size's worth (10). Confirm the rows are genuinely scoped to that faction only (spot-check a couple
+  of factions) and that its total matches the standing's own raise+lower+floor+ceiling count. The
+  Kills/Quests likely-cause tally still sits below it, each still independently collapsible as before.
+  A standing with hits but no guessable cause at all (a floor/ceiling-only faction) should still show
+  a non-empty Hits grid even though Kills/Quests both say "nothing correlated." Confirm its columns
+  are the exact same set as the main Hits tab's (Time/Faction/Change/Source/Likely cause, Raw line
+  hidden by default too) — including **Faction**, even though every row here is the same one; it's
+  the same grid component, not a second one that merely resembles it, so it isn't missing a column
+  the main tab has. The one real difference is that this one's columns aren't clickable to sort —
+  it's always newest-first, and there's no filter panel, since it's already scoped to one faction.
 - **Faction cause — the guessed "why", and the one number in this feature nothing has verified.**
   ([ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md).) `faction-cause.ts` blames
   the most recent own-kill within 3 seconds of a hit, and this is the actual gap to measure: kill
@@ -205,11 +234,15 @@ features for later in [../ideas.md](../ideas.md).
   per faction, biggest contributor first, with the same caveat in its tooltip. Kill something unrelated
   to any faction and confirm no hit anywhere gets blamed on it. Then the case that matters most: a kill
   more than 3 seconds before a hit (a slow log flush, a laggy connection) should show no cause rather
-  than a wrong one — the app would rather say nothing than guess past its own window.
+  than a wrong one — the app would rather say nothing than guess past its own window. Also confirm the
+  Hits table's **Source** column, just left of **Likely cause**, reads **Kill** for this hit — same
+  dim italic styling and the same tooltip as **Likely cause** itself, since it's the same guess, just
+  its kind called out on its own — and "—" for a hit with no guessed cause at all.
 - **Faction cause from dialogue, and the "no source at all" fallback.**
   ([ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md).) Turn in a quest
   that's known to move a faction (no kill involved) and confirm the resulting hit's **Likely cause**
-  names the NPC and, on hover, quotes what they actually said — read the real gap the same way as
+  names the NPC and, on hover, quotes what they actually said, and that its **Source** column reads
+  **Quest** rather than **Kill** — read the real gap the same way as
   above, this time between the NPC's line and the faction adjustment, and check it against
   `DIALOGUE_WINDOW_SEC` (15s). Then the harder thing to catch, and the one signal that's *expected*
   to sometimes be wrong (ADR 0220 states the limitation outright: nothing here can tell an NPC's

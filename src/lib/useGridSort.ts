@@ -14,7 +14,7 @@ import { nextSort, type Sort } from "@/shared/sorting";
  * publishes that event whenever the `sortModel` *reference* changes, even to an array describing the
  * exact same field and direction (confirmed by reading `@mui/x-data-grid`'s own
  * `useGridSorting`/`useGridPaginationModel` source, not guessed at). Every controlled-sort table in
- * this app hit that bug — first `FactionPanel`'s `HitTable`, then the other five once
+ * this app hit that bug — first `FactionPanel`'s `FactionHitsGrid`, then the other five once
  * [ADR 0249](../../specs/decisions/0249-every-grid-gets-a-real-pager.md) gave each of them a footer
  * too. This hook makes the fix structural rather than a rule to remember on the next one.
  */
@@ -25,8 +25,9 @@ export function useGridSort<K extends string>(
    *  or a function, for the handful whose rule is "everything but this one column" rather than a
    *  fixed table. */
   startDesc: Record<K, boolean> | ((key: K) => boolean),
-  /** Anything else a re-sort should do besides updating the sort itself — `HitTable`'s own re-sort
-   *  also resets its pagination back to page 0, since a re-sort changes what belongs on every page. */
+  /** Anything else a re-sort should do besides updating the sort itself — `FactionHitsGrid`'s own
+   *  re-sort also resets its pagination back to page 0, since a re-sort changes what belongs on every
+   *  page. */
   onChange?: () => void,
 ): { sortModel: GridSortModel; onSortModelChange: (model: GridSortModel) => void } {
   const sortModel = useMemo<GridSortModel>(

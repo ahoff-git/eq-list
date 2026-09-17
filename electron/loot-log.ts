@@ -36,6 +36,9 @@ import type { DataStamp } from "../src/shared/data-provenance";
 import type {
   ForgetScope,
   ItemPrice,
+  LootDropSortField,
+  LootDropsPage,
+  LootDropsQuery,
   LootedItem,
   LootEvent,
   LootFate,
@@ -187,6 +190,15 @@ export interface LootLog {
    */
   search(filter: LootSearchFilter): LootRecord[];
   /**
+   * One page of the whole ledger, filtered and sorted server-side — what `DropTable` asks for as
+   * the player pages, sorts (by anything but `zone`) or filters it, instead of paging client-side
+   * over an already-fetched `search()` array
+   * ([ADR 0254](../specs/decisions/0254-loot-drops-pages-server-side-for-the-common-case.md),
+   * superseding [ADR 0250](../specs/decisions/0250-loot-drops-reaches-the-whole-ledger-unconditionally.md)
+   * for this case). Mirrors `faction-log.ts`'s `hitsPage` exactly.
+   */
+  dropsPage(query: LootDropsQuery): LootDropsPage;
+  /**
    * Every corpse and zone the ledger has ever recorded a drop from — see `LootVocabulary`'s own
    * doc on why this reaches the whole ledger rather than whatever's currently fetched.
    */
@@ -242,6 +254,21 @@ function rowToRecord(r: LootRow): LootRecord {
   };
 }
 
+/** Columns `dropsPage` may sort by — an allow-list, so a caller's sort field is never interpolated
+ *  into SQL as anything but one of these fixed expressions. No `zone` entry: see `LootDropSortField`'s
+ *  own doc for why. */
+const DROP_SORT_COLUMNS: Record<LootDropSortField, string> = {
+  at: "at",
+  item: "LOWER(item)",
+  source: "LOWER(source)",
+  qty: "qty",
+  fate: "fate",
+};
+
+/** Every fate present at zero, the same shape `loot-filters.ts`'s `tallyFates` starts from — so a
+ *  fate with nothing matching still has a key `LootPanel`'s header can read rather than `undefined`. */
+const EMPTY_TALLIES: Record<LootFate, number> = { kept: 0, sold: 0, stored: 0, combined: 0 };
+
 export function createLootLog(db: Database, userDataDir: string): LootLog {
   const file = path.join(userDataDir, "loot-log.json");
   migrateFromLegacyJson(db, userDataDir, file);
@@ -280,6 +307,42 @@ export function createLootLog(db: Database, userDataDir: string): LootLog {
   const deleteFrozenPrices = db.prepare(`DELETE FROM loot_prices_frozen`);
   const deleteRecord = db.prepare(`DELETE FROM loot_records WHERE key = ?`);
   const updateAudit = db.prepare(`UPDATE loot_records SET adminAudit = ? WHERE key = ?`);
+
+  /**
+   * `search()`/`dropsPage()`'s shared `WHERE`/params builder. `null` means the filter resolves to
+   * no rows at all (a `zone` that folds to nothing on record) — both callers treat that as an empty
+   * answer without running a query, the same short-circuit `search()` always took.
+   */
+  function buildDropWhere(filter: LootSearchFilter): { where: string; params: unknown[] } | null {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (filter.fate) {
+      clauses.push("fate = ?");
+      params.push(filter.fate);
+    }
+    const item = filter.item?.trim();
+    if (item) {
+      clauses.push("LOWER(item) LIKE LOWER(?) ESCAPE '\\'");
+      params.push(`%${likeEscape(item)}%`);
+    }
+    if (filter.source) {
+      clauses.push("source = ?");
+      params.push(filter.source);
+    }
+    if (filter.zone) {
+      // `zone` is a *place* — resolved here to every raw spelling on record that folds to it
+      // (difficulty variants, a map pack's own letter-out wording — ADR 0083/0075), the same fold
+      // `filterLoot`'s own zone matching already did against whatever had been fetched.
+      const place = placeKey(filter.zone);
+      const rawZones = (selectDistinctZones.all() as { zone: string }[])
+        .map((r) => r.zone)
+        .filter((z) => placeKey(z) === place);
+      if (!rawZones.length) return null; // nothing recorded ever folds to this place
+      clauses.push(`zone IN (${rawZones.map(() => "?").join(", ")})`);
+      params.push(...rawZones);
+    }
+    return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
+  }
 
   function paramsOf(event: LootRecord) {
     return {
@@ -345,37 +408,43 @@ export function createLootLog(db: Database, userDataDir: string): LootLog {
         .sort((a, b) => b.count - a.count || a.item.localeCompare(b.item)),
 
     search(filter) {
-      const clauses: string[] = [];
-      const params: unknown[] = [];
-      if (filter.fate) {
-        clauses.push("fate = ?");
-        params.push(filter.fate);
-      }
-      const item = filter.item?.trim();
-      if (item) {
-        clauses.push("LOWER(item) LIKE LOWER(?) ESCAPE '\\'");
-        params.push(`%${likeEscape(item)}%`);
-      }
-      if (filter.source) {
-        clauses.push("source = ?");
-        params.push(filter.source);
-      }
-      if (filter.zone) {
-        // `zone` is a *place* — resolved here to every raw spelling on record that folds to it
-        // (difficulty variants, a map pack's own letter-out wording — ADR 0083/0075), the same fold
-        // `filterLoot`'s own zone matching already did against whatever had been fetched.
-        const place = placeKey(filter.zone);
-        const rawZones = (selectDistinctZones.all() as { zone: string }[])
-          .map((r) => r.zone)
-          .filter((z) => placeKey(z) === place);
-        if (!rawZones.length) return []; // nothing recorded ever folds to this place
-        clauses.push(`zone IN (${rawZones.map(() => "?").join(", ")})`);
-        params.push(...rawZones);
-      }
-      const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+      const built = buildDropWhere(filter);
+      if (!built) return [];
+      const { where, params } = built;
       return (
         db.prepare(`SELECT * FROM loot_records ${where} ORDER BY at DESC, rowid DESC`).all(...params) as LootRow[]
       ).map(rowToRecord);
+    },
+
+    dropsPage({ offset, limit, sortField, sortDesc, filter = {} }) {
+      const built = buildDropWhere(filter);
+      if (!built) return { rows: [], total: 0, tallies: { ...EMPTY_TALLIES } };
+      const { where, params } = built;
+      const col = DROP_SORT_COLUMNS[sortField] ?? DROP_SORT_COLUMNS.at;
+      const dir = sortDesc ? "DESC" : "ASC";
+      // Same clamp `faction-log.ts`'s `hitsPage` applies, and for the same reason: a negative
+      // `LIMIT` means "no limit at all" to SQLite, which is exactly the whole-ledger cost this
+      // query exists to avoid.
+      const safeLimit = Math.max(0, limit);
+      const safeOffset = Math.max(0, offset);
+      const rows = db
+        .prepare(
+          `SELECT * FROM loot_records ${where} ORDER BY ${col} ${dir}, rowid DESC LIMIT ? OFFSET ?`,
+        )
+        .all(...params, safeLimit, safeOffset) as LootRow[];
+      const total = where
+        ? (db.prepare(`SELECT COUNT(*) as n FROM loot_records ${where}`).get(...params) as { n: number }).n
+        : (countAll.get() as { n: number }).n;
+      // Qty by fate, across every matching row, not just this page — `LootPanel`'s header tally
+      // always meant the whole match set. `fate` is indexed (ADR 0247), so this is a cheap grouped
+      // scan of just the matching rows, not the whole table.
+      const tallies = { ...EMPTY_TALLIES };
+      for (const r of db
+        .prepare(`SELECT fate, SUM(qty) as qty FROM loot_records ${where} GROUP BY fate`)
+        .all(...params) as { fate: LootFate; qty: number }[]) {
+        tallies[r.fate] = r.qty;
+      }
+      return { rows: rows.map(rowToRecord), total, tallies };
     },
 
     vocabulary: () => ({

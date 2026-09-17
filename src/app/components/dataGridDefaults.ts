@@ -14,13 +14,13 @@ import type { SxProps, Theme } from "@mui/material/styles";
  * for six of the seven tables). `autoHeight` and a real footer don't mix: it sizes the grid's
  * container to fit however many rows it was handed, so a multi-row-per-page footer ends up wherever
  * that page's *last* row happens to end rather than staying put — which is why `FactionPanel`'s
- * `HitTable` needed a whole second, non-`autoHeight` export (`GRID_DEFAULTS_PAGED`) to page at all.
- * ADR 0230 hid the footer everywhere else specifically because a *multi-option* "rows per page"
+ * `FactionHitsGrid` needed a whole second, non-`autoHeight` export (`GRID_DEFAULTS_PAGED`) to page at
+ * all. ADR 0230 hid the footer everywhere else specifically because a *multi-option* "rows per page"
  * `Select` misplaced its popover under this app's CSS-`zoom` scaling — a bug fixed at its root by
  * [ADR 0231](../../../specs/decisions/0231-the-zoom-root-moves-inside-the-shell.md) (moving the zoom
- * onto the window's own shell), which `HitTable`'s own three-option picker has been proving safe ever
- * since. With that bug gone, hiding the footer everywhere else was a leftover workaround outliving
- * the thing it worked around.
+ * onto the window's own shell), which `FactionHitsGrid`'s own three-option picker has been proving
+ * safe ever since. With that bug gone, hiding the footer everywhere else was a leftover workaround
+ * outliving the thing it worked around.
  */
 export const GRID_DEFAULTS = {
   density: "compact" as const,
@@ -29,7 +29,7 @@ export const GRID_DEFAULTS = {
 
 /** How many rows a page shows, and the choices offered — one shared list rather than each table
  *  guessing its own, so switching from a 25-row table to a 300-row one doesn't also mean relearning
- *  what the picker offers. `FactionPanel`'s `HitTable` and `LootPanel`'s `DropTable` keep their own
+ *  what the picker offers. `FactionPanel`'s `FactionHitsGrid` and `LootPanel`'s `DropTable` keep their own
  *  larger `[25, 50, 100]` (`HITS_PAGE_SIZES`) — a ledger with no cap wants bigger pages than a
  *  bounded catalogue does. */
 export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
@@ -104,3 +104,17 @@ export const ACTION_COL: Pick<GridColDef, "sortable" | "filterable" | "disableCo
     align: "right",
     headerAlign: "right",
   };
+
+/**
+ * Starts a set of columns hidden, so they show up unchecked in the grid's own "Manage columns" panel
+ * (already on every column's menu — ADR 0230 — nothing to enable) rather than in the default view.
+ *
+ * For a field the row carries but the table's default view doesn't show — a raw log line, a rarer
+ * stat, a split that's usually only in a hover — declaring it as an ordinary, filterable/sortable
+ * `GridColDef` and listing its `field` here makes it reachable without changing what anyone sees by
+ * default. Turning one of these *on* for everyone is a separate, human call (the person reading the
+ * data decides that, not this file) — this only makes the data visible enough to inform it.
+ */
+export function hiddenByDefault(...fields: string[]): Record<string, boolean> {
+  return Object.fromEntries(fields.map((field) => [field, false]));
+}

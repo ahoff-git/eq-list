@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Superseded by [0254](./0254-loot-drops-pages-server-side-for-the-common-case.md) for the case where
+`wantedOnly` is off and the sort isn't by `zone` — that case now pages server-side. The
+`wantedOnly`/zone-sort fallback described here stands unchanged.
 
 ## Context
 

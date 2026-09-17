@@ -26,9 +26,12 @@ export const CH = {
   lootPrices: "loot:prices",
   lootItems: "loot:items",
   lootSearch: "loot:search",
+  /** One page of the whole ledger, filtered and sorted server-side — what `DropTable` asks for
+   *  instead of paging client-side over an already-fetched `loot:search` array (ADR 0254). */
+  lootDropsPage: "loot:dropsPage",
   lootVocabulary: "loot:vocabulary",
   factionRecent: "faction:recent",
-  /** One page of the whole ledger, sorted server-side — what `HitTable`'s grid asks for instead of
+  /** One page of the whole ledger, sorted server-side — what `FactionHitsGrid` asks for instead of
    *  fetching every hit, now that there's no flat cap to fetch up to (ADR 0232). */
   factionHitsPage: "faction:hitsPage",
   factionStandings: "faction:standings",
@@ -92,6 +95,8 @@ export const CH = {
   hpSet: "hp:set",
   hpSetRegen: "hp:setRegen",
   killsAll: "kills:all",
+  /** Point lookup for `useKills`' incremental patch path — full records for exactly these ids. */
+  killsByIds: "kills:byIds",
   mobsAll: "mobs:all",
   mobsMine: "mobs:mine",
   /** Who has pooled with us, and how much each of them has told us. */
@@ -275,7 +280,7 @@ export const CH = {
   castAlert: "evt:castAlert", // main → all: a watched spell began casting
   recordSet: "evt:record", // main → all: a personal best fell, so an open scoreboard refreshes
   alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode
-  killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
+  killsChanged: "evt:killsChanged", // main → all: the kill log changed — live kills carry the touched ids (ADR 0253), a bulk change (import/clear/admin edit) carries none
   combatHistoryChanged: "evt:combatHistoryChanged", // main → all: zones()/bests()/sessions()'s shared background cache landed a fresher answer
   spawnsChanged: "evt:spawnsChanged", // main → all: a timer started, came due, or aged out
   goalsChanged: "evt:goalsChanged", // main → all: a goal started, progressed, finished, or was cleared

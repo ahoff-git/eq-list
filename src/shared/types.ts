@@ -173,6 +173,35 @@ export interface LootSearchFilter {
 }
 
 /**
+ * Which column `loot.dropsPage` may sort by — deliberately excludes `zone`: grouping by **place**
+ * needs the same raw-spelling fold `placeName`/`placeKey` apply for display and for `search`'s own
+ * zone filter, which is a JS-side fold rather than a SQL-native one, so a zone-sorted view keeps
+ * using the whole-ledger client-side path instead
+ * ([ADR 0254](../../specs/decisions/0254-loot-drops-pages-server-side-for-the-common-case.md)).
+ */
+export type LootDropSortField = "at" | "item" | "source" | "qty" | "fate";
+
+/** What `loot.dropsPage` asks for — offset/limit/sort pushed into SQL, mirroring `FactionHitsQuery`. */
+export interface LootDropsQuery {
+  offset: number;
+  limit: number;
+  sortField: LootDropSortField;
+  sortDesc: boolean;
+  /** Undefined, or every field unset — no filtering; the page comes from the whole ledger. */
+  filter?: LootSearchFilter;
+}
+
+export interface LootDropsPage {
+  rows: LootRecord[];
+  /** Every drop matching the filter, not just this page — what the grid's own page count is built from. */
+  total: number;
+  /** Qty summed by fate, across every matching drop — not just this page, the same "every match, not
+   *  a page's worth" figure `LootPanel`'s header tallies always showed, computed in SQL instead of
+   *  folded over an array the caller no longer fetches whole. */
+  tallies: Record<LootFate, number>;
+}
+
+/**
  * Every corpse and zone the ledger has ever recorded a drop from — not just whatever a filter bar
  * happens to have fetched, so an old camp's option doesn't require some *other* filter to have
  * already widened the fetch first (a gap ADR 0211 flagged and left open, now that there's no ledger
@@ -302,10 +331,10 @@ export interface FactionStanding {
   correction?: { observedNet: number; correctedAt: string };
 }
 
-/** Columns `HitTable`'s grid may sort a page of the ledger by (`electron/faction-log.ts`). */
+/** Columns `FactionHitsGrid` may sort a page of the ledger by (`electron/faction-log.ts`). */
 export type FactionHitSortField = "at" | "faction" | "delta" | "cause";
 
-/** Operators `HitTable`'s column filter menu may send — the subset of `GridFilterItem["operator"]`
+/** Operators `FactionHitsGrid`'s column filter menu may send — the subset of `GridFilterItem["operator"]`
  *  (`@mui/x-data-grid`) that `faction-log.ts`'s `hitsPage` knows how to turn into SQL. */
 export type FactionHitFilterOperator =
   | "contains"
@@ -333,7 +362,7 @@ export interface FactionHitFilterItem {
 }
 
 /** A page's whole filter — plural items folded by one logic operator, mirroring `GridFilterModel` so
- *  `HitTable` can pass its grid's own filter model straight through with no translation layer. */
+ *  `FactionHitsGrid` can pass its own filter model straight through with no translation layer. */
 export interface FactionHitsFilter {
   items: FactionHitFilterItem[];
   logicOperator?: "and" | "or";
@@ -3345,6 +3374,12 @@ export interface EqlApi {
      * fetch "everything" up to (ADR 0232/0240).
      */
     search(filter: LootSearchFilter): Promise<LootRecord[]>;
+    /**
+     * One page of the whole ledger, filtered and sorted server-side — what `DropTable` asks for as
+     * the player pages, sorts (by anything but `zone`) or filters it, instead of paging client-side
+     * over an already-fetched `search()` array (ADR 0254, superseding ADR 0250 for this case).
+     */
+    dropsPage(query: LootDropsQuery): Promise<LootDropsPage>;
     /** Every corpse and zone the ledger has ever recorded — the filter bar's own picker options,
      *  reaching the whole ledger the same reason `search` does. */
     vocabulary(): Promise<LootVocabulary>;
@@ -3361,7 +3396,7 @@ export interface EqlApi {
      */
     recent(limit?: number): Promise<FactionRecord[]>;
     /**
-     * One page of the whole ledger, sorted server-side — what `HitTable`'s grid calls as the player
+     * One page of the whole ledger, sorted server-side — what `FactionHitsGrid` calls as the player
      * pages or re-sorts it, now that the ledger has no cap to fetch "everything" up to (ADR 0232).
      */
     hitsPage(query: FactionHitsQuery): Promise<FactionHitsPage>;
@@ -3553,17 +3588,23 @@ export interface EqlApi {
     /** Every kill recorded (optionally for one zone), newest first. */
     all(zone?: string): Promise<KillRecord[]>;
     /**
+     * Full records for exactly these ids — the point-lookup half of `useKills`' incremental patch
+     * path (ADR 0253), for the ids an `onChanged` notice named.
+     */
+    byIds(ids: string[]): Promise<KillRecord[]>;
+    /**
      * Forget the recorded kills and the loot feed. **Observations survive** — drop rates, roam
      * areas and vendor prices — unless the scope is `"everything"`, which the UI only sends after
      * asking a second time (ADR 0056).
      */
     clear(scope?: ForgetScope): Promise<void>;
     /**
-     * Fires when the kill log changes in bulk — an import ("eat a log") or a clear.
-     * Live kills don't push this (the panels refetch off their own refresh keys); it
-     * exists so out-of-band changes land in already-open windows without a reopen.
+     * Fires whenever the kill log changes. A live kill/drop/coin names exactly which ids changed
+     * (coalesced over ~500ms), so `useKills` can fetch just those via `byIds` instead of refetching
+     * a whole camp's history (ADR 0253). A bulk change — an import ("eat a log"), a clear, or an
+     * admin edit — fires with no ids, which stays "assume everything changed, refetch fully".
      */
-    onChanged(cb: () => void): Unsubscribe;
+    onChanged(cb: (touchedIds?: string[]) => void): Unsubscribe;
   };
   /**
    * Respawn timers for the nameds you kill, learned from the gaps between your own kills

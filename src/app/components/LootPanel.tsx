@@ -1,7 +1,14 @@
 "use client";
-import { useMemo } from "react";
-import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { useItemPrices, useLootFeed, useLootSearch, useLootVocabulary, useShoppingList } from "@/lib/hooks";
+import { useEffect, useMemo, useState } from "react";
+import { DataGrid, type GridColDef, type GridPaginationModel } from "@mui/x-data-grid";
+import {
+  useItemPrices,
+  useLootDropsPage,
+  useLootFeed,
+  useLootSearch,
+  useLootVocabulary,
+  useShoppingList,
+} from "@/lib/hooks";
 import { usePersistentShape, usePersistentState } from "@/lib/usePersistentState";
 import { useGridSort } from "@/lib/useGridSort";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -27,7 +34,7 @@ import { describeCoins, formatCoins } from "@/shared/money";
 import type { Sort } from "@/shared/sorting";
 import ItemLink from "./ItemLink";
 import ZoneTag from "./ZoneTag";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "./dataGridDefaults";
 import type { ItemPrice, LootFate, LootRecord, LootSearchFilter } from "@/shared/types";
 
 import { count, countOf, dayTime, when } from "@/shared/format";
@@ -65,17 +72,13 @@ import { CheckField, Empty, PickField, segCls } from "./ui";
  * distinction: a grid column filter only ever narrows what's already on screen, never the ledger
  * itself.
  *
- * **Drops reaches the whole ledger unconditionally now, and pages through it** (ADR 0249, extending
- * ADR 0211/0240). The "small window unless a filter engages" split used to exist so the common case
- * stayed cheap, but with nowhere left for the grid to draw more than `MAX_ROWS` at once, the payoff
- * was a fetch that was still capped in every practical sense — just a fetch you couldn't see past.
- * `DropTable` now always reads from `loot.search`, and an empty filter is simply a query with no
- * `WHERE` clause (every row, same as `recent`'s own order). A real footer pages through however much
- * that comes to, the same picker `FactionPanel`'s `HitTable` proved out — see that ADR for why
- * client-side pagination over an already-fetched array is the right scope here rather than a
- * `hitsPage`-style paged IPC surface: nothing has shown the whole-ledger fetch itself costs enough to
- * be worth a second bespoke query shape, and `loot.search`'s own index (ADR 0241) already makes it
- * cheap to ask for.
+ * **Drops pages server-side for the common case** (ADR 0254, superseding ADR 0250 for it).
+ * `filters.wantedOnly` off and sorting by anything but `zone` — true for most of the tab's life —
+ * reads from `loot.dropsPage`: offset/limit/sort/filter all pushed into one SQL query, the same
+ * shape `FactionPanel`'s `hitsPage` proved out, so a long-lived ledger's whole history is never
+ * fetched just to draw one page of it. The two things ADR 0250 flagged as not worth building a SQL
+ * bridge for — `wantedOnly`'s shopping-list join, and a `zone` sort's `placeName` fold — still fall
+ * back to `loot.search` (the whole matching set) paginated client-side, exactly as before this ADR.
  */
 const FATE_LABEL: Record<LootFate, string> = {
   kept: "kept",
@@ -91,6 +94,10 @@ type View = "drops" | "prices";
  *  same trick `FactionPanel`'s `HITS_PROBE_QUERY` uses). */
 const PROBE_FETCH = 1;
 
+/** Stable empty reference for the server-paged branch, where `source`/`matches` are never actually
+ *  computed from a fetch. */
+const EMPTY_LOOT_ROWS: LootRecord[] = [];
+
 export default function LootPanel() {
   // All four persist: this is a panel you set up the way you read it, and every one of them was
   // resetting the moment you looked at another tab.
@@ -103,9 +110,10 @@ export default function LootPanel() {
   );
 
   const probe = useLootFeed(PROBE_FETCH);
-  // Always a real query, even with nothing filtered — an empty filter is just no `WHERE` clause, so
-  // this reaches the whole ledger unconditionally rather than switching between a small fetched
-  // window and a full search depending on whether a filter happens to be engaged.
+  // The filter bar's own state, translated into what either fetch below actually asks the ledger —
+  // an empty filter is just no `WHERE` clause, so this reaches the whole ledger unconditionally
+  // rather than switching between a small fetched window and a full search depending on whether a
+  // filter happens to be engaged.
   const searchFilter = useMemo<LootSearchFilter>(
     () => ({
       fate: filters.fate === "all" ? undefined : filters.fate,
@@ -115,7 +123,38 @@ export default function LootPanel() {
     }),
     [filters.fate, filters.item, filters.source, filters.zone],
   );
-  const { matches: source } = useLootSearch(searchFilter);
+
+  // Which grade of Drops this render is: server-paged (ADR 0254) for the common case, or the whole-
+  // ledger-fetch-plus-client-pagination path ADR 0250 built, for the two things 0254 didn't attempt —
+  // `wantedOnly` (needs the shopping-list join) and a `zone` sort (needs `placeName`'s JS-side fold).
+  const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
+    page: 0,
+    pageSize: DROP_DEFAULT_PAGE_SIZE,
+  });
+  // A re-filter or re-sort changes what belongs on every page — stranding the view on whatever page
+  // number it already had (now describing something else entirely) is the same bug `useGridSort`'s
+  // own doc calls out for a re-sort, just reachable from the filter bar too.
+  useEffect(() => {
+    setPaginationModel((m) => (m.page === 0 ? m : { ...m, page: 0 }));
+  }, [searchFilter.fate, searchFilter.item, searchFilter.source, searchFilter.zone]);
+
+  const dropsQuery = useMemo(() => {
+    const sortField = lootSort.key;
+    if (filters.wantedOnly || sortField === "zone") return null;
+    return {
+      offset: paginationModel.page * paginationModel.pageSize,
+      limit: paginationModel.pageSize,
+      sortField,
+      sortDesc: lootSort.desc,
+      filter: searchFilter,
+    };
+  }, [filters.wantedOnly, lootSort, paginationModel, searchFilter]);
+  const serverPaged = dropsQuery !== null;
+  const { page } = useLootDropsPage(dropsQuery);
+
+  // Only reached (a real IPC call, not the `null` short-circuit) for the fallback path above —
+  // server-paged Drops never needs the whole matching set in the renderer's hands at once.
+  const { matches: source } = useLootSearch(serverPaged ? null : searchFilter);
 
   const list = useShoppingList();
   // Only a sale can change a price, and the newest drop is the cheapest signal that one landed.
@@ -132,12 +171,17 @@ export default function LootPanel() {
   );
 
   const matches = useMemo(
-    () => sortLoot(filterLoot(source, filters, wanted), lootSort),
-    [source, filters, wanted, lootSort],
+    () => (serverPaged ? EMPTY_LOOT_ROWS : sortLoot(filterLoot(source, filters, wanted), lootSort)),
+    [serverPaged, source, filters, wanted, lootSort],
   );
-  // Tallied over every match — the grid pages through all of them now, but the tally by the header
-  // always meant every match, not just a page's worth.
-  const totals = useMemo(() => tallyFates(matches), [matches]);
+  // Tallied over every match, not just a page's worth — server-paged reads that straight off the
+  // query (`SUM(qty) ... GROUP BY fate`, the same ledger-wide answer `tallyFates` gives the
+  // fallback path, just computed in SQL instead of folded over an array already in hand). Computed
+  // unconditionally (a hook can't be called conditionally) — cheap to fold over `EMPTY_LOOT_ROWS`
+  // and discard when server-paged owns the answer instead.
+  const clientTotals = useMemo(() => tallyFates(matches), [matches]);
+  const totals = serverPaged ? page.tallies : clientTotals;
+  const totalCount = serverPaged ? page.total : matches.length;
   // Every corpse and camp the ledger has ever recorded, not just what's currently fetched — so
   // choosing a filter can't remove an option you'd need to choose a different one (ADR 0240).
   const vocabulary = useLootVocabulary();
@@ -177,7 +221,7 @@ export default function LootPanel() {
         {view === "drops" && (
           <>
             <span className="muted small" title="Drops matching the filters, reached across the whole ledger">
-              {countOf(matches.length, source.length, "drop")}
+              {countOf(totalCount, serverPaged ? page.total : source.length, "drop")}
             </span>
             {LOOT_FATES.filter((fate) => totals[fate] > 0).map((fate) => (
               <span key={fate} className={`fate-tally f-${fate}`}>
@@ -192,7 +236,20 @@ export default function LootPanel() {
         {view === "drops" ? (
           <>
             <LootFilterBar filters={filters} onFilters={setFilters} sources={sources} zones={zones} />
-            <DropTable drops={matches} wanted={wanted} sort={lootSort} onSort={setLootSort} />
+            <DropTable
+              drops={serverPaged ? page.rows : matches}
+              wanted={wanted}
+              sort={lootSort}
+              onSort={(next) => {
+                setLootSort(next);
+                // What belongs on every page just changed — same reasoning `useGridSort`'s own doc
+                // gives for `HitTable`'s identical reset.
+                setPaginationModel((m) => (m.page === 0 ? m : { ...m, page: 0 }));
+              }}
+              serverPaging={
+                serverPaged ? { total: page.total, paginationModel, onPaginationModelChange: setPaginationModel } : undefined
+              }
+            />
           </>
         ) : (
           <PriceTable prices={sortedPrices} sort={priceSort} onSort={setPriceSort} />
@@ -314,7 +371,7 @@ function detailLabel(drop: LootRecord): string {
 
 /** Rows-per-page choices for the Drops grid's footer, and which one it opens on — a ledger with no
  *  cap wants bigger pages than the bounded catalogues `dataGridDefaults.ts`'s shared
- *  `PAGE_SIZE_OPTIONS` sizes for, the same reason `FactionPanel`'s `HitTable` keeps its own. */
+ *  `PAGE_SIZE_OPTIONS` sizes for, the same reason `FactionPanel`'s `FactionHitsGrid` keeps its own. */
 const DROP_PAGE_SIZES = [25, 50, 100];
 const DROP_DEFAULT_PAGE_SIZE = 50;
 
@@ -326,11 +383,23 @@ function DropTable({
   wanted,
   sort,
   onSort,
+  serverPaging,
 }: {
   drops: LootRecord[];
   wanted: ReadonlySet<string>;
   sort: Sort<LootSortKey>;
   onSort: (next: Sort<LootSortKey>) => void;
+  /**
+   * Present exactly when `drops` came from `loot.dropsPage` (ADR 0254): the grid pages itself over
+   * IPC instead of MUI slicing an already-fetched array. Absent for the `wantedOnly`/zone-sort
+   * fallback, where `drops` is already the whole matching set and MUI's own client pagination (as
+   * before this ADR) is correct.
+   */
+  serverPaging?: {
+    total: number;
+    paginationModel: GridPaginationModel;
+    onPaginationModelChange: (model: GridPaginationModel) => void;
+  };
 }) {
   // Keyed by the drop's identity, not `logId-item`. The ledger outlives a run while `logId`
   // restarts at zero each launch, so that pair repeats across runs — two rows claiming one key.
@@ -401,6 +470,25 @@ function DropTable({
         cellClassName: "muted",
         valueGetter: (_v, row) => (row.detail ? detailLabel(row) : ""),
       },
+      {
+        field: "soldFor",
+        headerName: "Sold for",
+        description: "What the vendor paid, in total — set only on an auto-sell, where the log states it",
+        ...NUM_COL,
+        flex: 1,
+        sortable: false,
+        cellClassName: "lt-num",
+        renderCell: (p) => (p.row.soldFor ? formatCoins(p.row.soldFor) : "—"),
+      },
+      {
+        field: "raw",
+        headerName: "Raw line",
+        description: "The original log line this drop was read from",
+        flex: 3,
+        minWidth: 220,
+        sortable: false,
+        cellClassName: "muted small",
+      },
     ],
     [],
   );
@@ -427,7 +515,18 @@ function DropTable({
         sortModel={sortModel}
         onSortModelChange={onSortModelChange}
         pageSizeOptions={DROP_PAGE_SIZES}
-        initialState={{ pagination: { paginationModel: { pageSize: DROP_DEFAULT_PAGE_SIZE, page: 0 } } }}
+        {...(serverPaging
+          ? {
+              paginationMode: "server" as const,
+              rowCount: serverPaging.total,
+              paginationModel: serverPaging.paginationModel,
+              onPaginationModelChange: serverPaging.onPaginationModelChange,
+            }
+          : {})}
+        initialState={{
+          pagination: { paginationModel: { pageSize: DROP_DEFAULT_PAGE_SIZE, page: 0 } },
+          columns: { columnVisibilityModel: hiddenByDefault("soldFor", "raw") },
+        }}
       />
     </div>
   );
@@ -490,6 +589,15 @@ function PriceTable({
           <span title={`${count(p.row.sales, "sale")}, last ${when(p.row.lastAt)}`}>{dayTime(p.row.lastAt)}</span>
         ),
       },
+      {
+        field: "sales",
+        headerName: "Sales",
+        description: "How many auto-sell lines are behind this price — already in the Last sold hover",
+        ...NUM_COL,
+        flex: 1,
+        sortable: false,
+        cellClassName: "lt-num",
+      },
     ],
     [],
   );
@@ -519,7 +627,10 @@ function PriceTable({
           sortModel={sortModel}
           onSortModelChange={onSortModelChange}
           pageSizeOptions={PAGE_SIZE_OPTIONS}
-          initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+          initialState={{
+            pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+            columns: { columnVisibilityModel: hiddenByDefault("sales") },
+          }}
         />
       </div>
       <p className="muted small">Auto-sales in the ledger have earned {describeCoins(earned)}.</p>

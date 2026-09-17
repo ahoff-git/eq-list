@@ -254,6 +254,22 @@ export interface KillLog {
    */
   kills(zone?: string): KillRecord[];
   /**
+   * Full records for exactly these ids — a `SELECT ... WHERE id IN (...)` against `kill_records`'
+   * own primary key. The point-lookup half of `kills(zone)`'s incremental refresh path
+   * ([ADR 0253](../specs/decisions/0253-the-map-window-patches-in-only-touched-kills.md)):
+   * `useKills` calls this with whatever `drainTouched()` last handed back, instead of refetching a
+   * whole camp's history for a handful of changed rows.
+   */
+  byIds(ids: string[]): KillRecord[];
+  /**
+   * Ids `record`/`noteLoot`/`noteCoin` touched since the last call, then forgotten. `main.ts`'s
+   * coalesced `killsChanged` broadcast drains this once per notice and sends the ids along; every
+   * *other* `killsChanged` broadcast (an admin edit, `clear`, a log re-read) still sends none, which
+   * stays the existing "assume everything changed, refetch fully" signal those bulk operations
+   * already relied on — this only names what changed for the high-frequency live path.
+   */
+  drainTouched(): string[];
+  /**
    * Everything your kills have taught, per mob and zone: every record `kill_records` still holds
    * **plus** whatever a past `clear("records")` already folded into permanent knowledge before
    * forgetting the detail behind it
@@ -408,6 +424,7 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
   const selectAll = db.prepare(`SELECT * FROM kill_records ORDER BY rowid DESC`);
   const selectRecentKills = db.prepare(`SELECT * FROM kill_records ORDER BY rowid DESC LIMIT ?`);
   const selectDistinctKillZones = db.prepare(`SELECT DISTINCT zone FROM kill_records WHERE zone IS NOT NULL`);
+  const selectDistinctMobs = db.prepare(`SELECT DISTINCT mob FROM kill_records`);
   const countKills = db.prepare(`SELECT COUNT(*) as n FROM kill_records`);
   const countEditedKills = db.prepare(`SELECT COUNT(*) as n FROM kill_records WHERE adminAudit IS NOT NULL`);
   const deleteKillById = db.prepare(`DELETE FROM kill_records WHERE id = ?`);
@@ -506,6 +523,18 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
     observationsCache.markChanged();
   }
 
+  /** Ids `record`/`noteLoot`/`noteCoin` touched since the last `drainTouched()` call — what lets
+   *  `main.ts`'s coalesced `killsChanged` broadcast name exactly what changed instead of "something
+   *  did", so `useKills` can patch those rows in rather than refetch a whole camp's history (ADR
+   *  0253). `drainTouched()` runs on the same coalesce `main.ts` already had, so this never grows
+   *  past one notice's worth of activity regardless of whether a renderer is listening. */
+  let touched: string[] = [];
+
+  function touch(id: string): void {
+    touched.push(id);
+    bump();
+  }
+
   let player = "";
   /** The last two position fixes, newest first, each tagged with the zone it was taken in —
    *  a fix from the zone you just left says nothing about where you are now. */
@@ -519,7 +548,7 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
   /** One spelling per mob. Seeded from what's already stored so the canonical name survives
    *  a restart — otherwise the spelling the file uses and the spelling this session picks
    *  could differ, and the same mob would show up twice. */
-  const { canon } = createNameRegistry((selectAll.all() as KillRow[]).map((r) => r.mob));
+  const { canon } = createNameRegistry((selectDistinctMobs.all() as { mob: string }[]).map((r) => r.mob));
   /** `null` outside a replay — see `startReplay` and `ordinalFor`. */
   let replayKills: Map<string, number> | null = null;
   let replayLoot: Map<string, number> | null = null;
@@ -560,13 +589,13 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
     drops.push(item);
     updateDrops.run(JSON.stringify(drops), row.id);
     lastLooted = { killId: row.id, at };
-    bump();
+    touch(row.id);
   }
 
   /** The same for coin: added to whatever this corpse has already paid out. */
   function attachCoin(killId: string, prevCoin: number | null, copper: number): void {
     updateCoin.run((prevCoin ?? 0) + copper, killId);
-    bump();
+    touch(killId);
   }
 
   return {
@@ -695,7 +724,7 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
         insertKillSeen.run(key, base);
       });
       insert();
-      bump();
+      touch(record.id);
       return true;
     },
 
@@ -809,6 +838,20 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
       return (
         db.prepare(`SELECT * FROM kill_records WHERE zone IN (${where}) ORDER BY rowid DESC`).all(...rawZones) as KillRow[]
       ).map(rowToRecord);
+    },
+
+    byIds(ids) {
+      if (!ids.length) return [];
+      const where = ids.map(() => "?").join(", ");
+      return (db.prepare(`SELECT * FROM kill_records WHERE id IN (${where})`).all(...ids) as KillRow[]).map(
+        rowToRecord,
+      );
+    },
+
+    drainTouched() {
+      const ids = touched;
+      touched = [];
+      return ids;
     },
 
     observations: () => observationsCache.get(),

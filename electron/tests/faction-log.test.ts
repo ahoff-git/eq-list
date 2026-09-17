@@ -94,7 +94,7 @@ test("hitsPage sorts and pages server-side, and reports the true total", () => {
 });
 
 test("hitsPage clamps a negative limit or offset instead of handing back the whole ledger", () => {
-  // SQLite treats a negative `LIMIT` as "no limit at all" — nothing in `HitTable`'s own pagination
+  // SQLite treats a negative `LIMIT` as "no limit at all" — nothing in `FactionHitsGrid`'s own pagination
   // state can go negative today, but nothing at the IPC boundary stopped it either, and a page-sized
   // request for a negative limit fetching the entire table is exactly what server-side paging exists
   // to avoid.

@@ -553,14 +553,19 @@ if (!app.requestSingleInstanceLock()) {
   });
   /**
    * The kill log changed, so whatever draws it — the map's heatmap and kill list, mob knowledge —
-   * should re-read. Coalesced, because each notice costs a renderer the *whole* log: kills arrive
-   * in bursts (a camp pull, or an entire replayed gap inside one poll), and 600 round trips of
-   * 5000 records say nothing that one round trip doesn't.
+   * should re-read. Coalesced: kills arrive in bursts (a camp pull, or an entire replayed gap inside
+   * one poll), and firing on every single one would mean a burst of separate notices where one
+   * would do.
    *
    * Fired only when something was actually newly recorded — the record/note calls return that —
-   * so a re-read log is silent rather than making every window refetch for no change.
+   * so a re-read log is silent rather than making every window refetch for no change. The payload
+   * is `killLog.drainTouched()` — exactly which kills changed during this coalesce window — so
+   * `useKills` can patch those rows in rather than refetch a whole camp's whole history on every
+   * notice (ADR 0253). Every *other* `CH.killsChanged` broadcast in this app (an admin edit, a
+   * `kills.clear`, a log re-read — see `ipc.ts`) still sends `undefined`, which stays the "assume
+   * everything changed, refetch fully" signal those bulk operations already relied on.
    */
-  const killsChanged = coalesce(KILLS_NOTICE_MS, () => broadcast(CH.killsChanged, undefined));
+  const killsChanged = coalesce(KILLS_NOTICE_MS, () => broadcast(CH.killsChanged, killLog.drainTouched()));
   watcher.onLoc((event) => {
     currentLoc = event;
     killLog.noteLoc(event, currentZone); // the fix a later kill will be placed against

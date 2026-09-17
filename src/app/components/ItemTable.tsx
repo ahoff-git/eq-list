@@ -2,14 +2,22 @@
 import { useMemo } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import ItemLink from "./ItemLink";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, ACTION_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
+import {
+  DEFAULT_PAGE_SIZE,
+  GRID_DEFAULTS,
+  GRID_SX,
+  NUM_COL,
+  ACTION_COL,
+  PAGE_SIZE_OPTIONS,
+  hiddenByDefault,
+} from "./dataGridDefaults";
 import { AddButton } from "./ui";
 import { addByTitle } from "@/lib/addToList";
 import { api } from "@/lib/api";
 import { useGridSort } from "@/lib/useGridSort";
 import { sourceKindLabel } from "@/shared/sources";
 import { LEVEL_CONFIDENCE, levelText } from "@/shared/item-levels";
-import { statLine, statMeta, type StatKey } from "@/shared/item-stats";
+import { STATS, statLine, statMeta, type StatKey } from "@/shared/item-stats";
 import { zonesInFilterOrder, type ItemSortKey, type ValuedItem } from "@/shared/item-search";
 import type { Sort } from "@/shared/sorting";
 
@@ -177,6 +185,21 @@ export default function ItemTable({
               valueGetter: (_v, row) => statLine(row.stats) || "—",
             } satisfies GridColDef<Row>,
           ]),
+      // Every stat the card carries, not just the ones the weight editor currently asks for — the
+      // rest of `STATS` sorts exactly as well (they're already part of `ItemSortKey`), it's just
+      // never been a column. Hidden by default (`hiddenStatVisibility` below); turning one on for
+      // everyone is a call for whoever reads what's actually there, not this file.
+      ...STATS.filter((s) => !columns.includes(s.key)).map(
+        (s): GridColDef<Row> => ({
+          field: s.key,
+          headerName: s.label,
+          description: `${s.label} — not one of the currently chosen stat columns`,
+          ...NUM_COL,
+          flex: 1,
+          valueGetter: (_v, row) => row.stats.stats[s.key],
+          renderCell: (p) => p.value ?? "—",
+        }),
+      ),
       {
         field: "value",
         headerName: "Value",
@@ -186,6 +209,89 @@ export default function ItemTable({
         valueGetter: (_v, row) => row.value,
         cellClassName: (p) => (scored && p.row.value ? "num-accent" : "muted"),
         renderCell: (p) => (scored ? p.row.value : "—"),
+      },
+      {
+        field: "origin",
+        headerName: "Origin",
+        description: "Which cache this row came from — the wiki, or Lucy's database",
+        flex: 1,
+        sortable: false,
+        cellClassName: "muted",
+        valueGetter: (_v, row) => (row.item.origin === "lucy" ? "Lucy" : "Wiki"),
+      },
+      {
+        field: "classes",
+        headerName: "Classes",
+        description: "Who can use it",
+        flex: 2,
+        sortable: false,
+        cellClassName: "muted small",
+        valueGetter: (_v, row) => row.stats.classes.join(", ") || "None",
+      },
+      {
+        field: "races",
+        headerName: "Races",
+        description: "Which races can use it",
+        flex: 2,
+        sortable: false,
+        cellClassName: "muted small",
+        valueGetter: (_v, row) => row.stats.races.join(", ") || "None",
+      },
+      {
+        field: "flags",
+        headerName: "Flags",
+        description: "MAGIC, LORE, NO DROP, and the like",
+        flex: 1,
+        sortable: false,
+        cellClassName: "muted small",
+        valueGetter: (_v, row) => row.stats.flags.join(", ") || "—",
+      },
+      {
+        field: "requiredLevel",
+        headerName: "Req. level",
+        description: "A level the card states outright — rare, and outranks anything derived from where it came from",
+        ...NUM_COL,
+        flex: 1,
+        sortable: false,
+        valueGetter: (_v, row) => row.stats.requiredLevel,
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "skill",
+        headerName: "Skill",
+        description: "The weapon skill, as the card writes it",
+        flex: 1,
+        sortable: false,
+        cellClassName: "muted",
+        valueGetter: (_v, row) => row.stats.skill ?? "—",
+      },
+      {
+        field: "size",
+        headerName: "Size",
+        flex: 1,
+        sortable: false,
+        cellClassName: "muted",
+        valueGetter: (_v, row) => row.stats.size ?? "—",
+      },
+      {
+        field: "effects",
+        headerName: "Effects",
+        description: "What it does beyond its numbers, and how you reach it — worn, click, proc or focus",
+        flex: 3,
+        minWidth: 200,
+        sortable: false,
+        cellClassName: "muted small",
+        valueGetter: (_v, row) => row.stats.effects.map((e) => `${e.name} (${e.kind})`).join(", ") || "—",
+      },
+      {
+        field: "quests",
+        headerName: "Quests",
+        description: "Every quest it's related to, in source order",
+        flex: 2,
+        minWidth: 160,
+        sortable: false,
+        cellClassName: "muted small",
+        valueGetter: (_v, row) => row.quests.join(", ") || "—",
       },
       {
         field: "actions",
@@ -223,6 +329,11 @@ export default function ItemTable({
   return (
     <DataGrid
       {...GRID_DEFAULTS}
+      // `initialState.columns.columnVisibilityModel` below is seeded once, from the stat columns
+      // chosen *right now* — it can't react to `columns` changing later on its own (that's what
+      // "initial" means to the grid). Remounting on the one prop that decides it is simpler than
+      // hand-rolling a controlled visibility model just to keep a rarely-changed picker in sync.
+      key={columns.join(",")}
       sx={GRID_SX}
       rows={gridRows}
       columns={gridColumns}
@@ -233,7 +344,23 @@ export default function ItemTable({
       sortModel={sortModel}
       onSortModelChange={onSortModelChange}
       pageSizeOptions={PAGE_SIZE_OPTIONS}
-      initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+      initialState={{
+        pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+        columns: {
+          columnVisibilityModel: hiddenByDefault(
+            ...STATS.filter((s) => !columns.includes(s.key)).map((s) => s.key),
+            "origin",
+            "classes",
+            "races",
+            "flags",
+            "requiredLevel",
+            "skill",
+            "size",
+            "effects",
+            "quests",
+          ),
+        },
+      }}
     />
   );
 }

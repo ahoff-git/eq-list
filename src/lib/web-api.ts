@@ -184,6 +184,7 @@ function createWebApi(): EqlApi {
       onPricesChanged: () => noop,
       items: async () => [],
       search: async () => [],
+      dropsPage: async () => ({ rows: [], total: 0, tallies: { kept: 0, sold: 0, stored: 0, combined: 0 } }),
       vocabulary: async () => ({ sources: [], zones: [] }),
       onEvent: () => noop,
       onMatched: () => noop,
@@ -292,6 +293,7 @@ function createWebApi(): EqlApi {
 
     kills: {
       all: async () => [],
+      byIds: async () => [],
       clear: async () => {},
       onChanged: () => noop,
     },

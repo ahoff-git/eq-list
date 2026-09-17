@@ -31,7 +31,8 @@
  * quietly disable the self-healing re-read for this concern the moment it upgraded.
  *
  * **`hitsPage`'s filter reaches the whole ledger, not just the page already fetched** (ADR 0234) —
- * `HitTable`'s grid hands its `GridFilterModel` straight through as a `FactionHitsFilter`, and
+ * the main Hits tab's `FactionHitsGrid` (the Standings drill-down skips its filter panel, already
+ * scoped to one faction) hands its `GridFilterModel` straight through as a `FactionHitsFilter`, and
  * `buildFilterSql` turns it into one parameterized `WHERE` fragment: every value travels as a bound
  * `?` parameter, and only a fixed column name (`HIT_FILTER_COLUMNS`) or operator keyword is ever
  * written into the SQL text. A million-hit ledger with 1% "Mistmoore" in it can otherwise never
@@ -282,8 +283,8 @@ function filterItemSql(item: FactionHitFilterItem): { sql: string; params: unkno
   }
 }
 
-/** Folds `HitTable`'s whole filter model into one parameterized `WHERE` fragment — empty string (no
- *  filtering at all) when the filter is absent or every item is incomplete. */
+/** Folds `FactionHitsGrid`'s whole filter model into one parameterized `WHERE` fragment — empty
+ *  string (no filtering at all) when the filter is absent or every item is incomplete. */
 function buildFilterSql(filter: FactionHitsFilter | undefined): { where: string; params: unknown[] } {
   const items = (filter?.items ?? [])
     .map(filterItemSql)
@@ -303,7 +304,7 @@ export interface FactionLog {
   recent(limit?: number): FactionRecord[];
   /**
    * One page of the whole ledger, in the order asked for and narrowed by whatever column filter is
-   * active — what `HitTable`'s server-paginated grid calls instead of `recent`, now that there's no
+   * active — what `FactionHitsGrid` calls instead of `recent`, now that there's no
    * flat cap to fetch "everything" up to. A filter reaches every hit the ledger holds, not just the
    * page already on screen (unlike ADR 0230's per-column-filter rule for the other six tables) —
    * `total` above already reflects it, so the grid's own page count stays honest.
@@ -472,7 +473,7 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
       // SQLite treats a negative `LIMIT` as "no limit at all" — every other value this query
       // interpolates is allow-listed (`col`, `dir`) or bound (`params`, and now these two), but
       // `offset`/`limit` arrive from the renderer's own pagination state with nothing at the IPC
-      // boundary clamping them. Not reachable through `HitTable` today (a grid's own page size is
+      // boundary clamping them. Not reachable through `FactionHitsGrid` today (a grid's own page size is
       // always positive), but a page of the *whole* ledger handed back for a negative `limit` is
       // exactly the "fetch everything" cost this store's paging exists to avoid.
       const safeLimit = Math.max(0, limit);

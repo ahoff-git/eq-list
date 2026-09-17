@@ -89,6 +89,8 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
       return true;
     },
     kills: () => [],
+    byIds: () => [],
+    drainTouched: () => [],
     observations: () => [],
     onObservationsChanged() {},
     version: () => 0,
@@ -151,6 +153,8 @@ function stubKillLog(): KillLog {
     noteLoot: () => true,
     noteCoin: () => true,
     kills: () => [],
+    byIds: () => [],
+    drainTouched: () => [],
     observations: () => [],
     onObservationsChanged() {},
     version: () => 0,

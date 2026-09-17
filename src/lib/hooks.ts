@@ -12,6 +12,8 @@ import type {
   LootRecord,
   ItemPrice,
   LootSearchFilter,
+  LootDropsPage,
+  LootDropsQuery,
   LootVocabulary,
   FactionRecord,
   FactionStanding,
@@ -68,6 +70,7 @@ import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
 import { outOfEraSet } from "@/shared/zones/expansions";
+import { samePlace } from "@/shared/zones/place";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -714,20 +717,79 @@ function mergeDropLists(a: MobKnowledge, b: MobKnowledge): MobKnowledge["drops"]
  * Recorded kills, newest first. Re-read whenever the main process says the log changed — a kill,
  * a drop landing on a corpse, or a bulk edit (import / clear).
  *
- * That notice is the *only* trigger, which is the point. This used to take a `refreshKey` and the
- * map passed it the length of the `/loc` trail, on the reasoning that the kill count moves with
- * play — but a `/loc` is not a kill, and each one refetched all 5000 records over IPC (~10ms per
- * hop) and redrew the heatmap. A replayed gap types dozens of them in one burst, right while the
- * map window is loading its geometry, which is exactly the lag spike that made this worth fixing.
+ * That notice used to be the *only* trigger, full-refetch-and-replace every time. This used to take
+ * a `refreshKey` and the map passed it the length of the `/loc` trail, on the reasoning that the
+ * kill count moves with play — but a `/loc` is not a kill, and each one refetched all 5000 records
+ * over IPC (~10ms per hop) and redrew the heatmap. A replayed gap types dozens of them in one burst,
+ * right while the map window is loading its geometry, which is exactly the lag spike that made a
+ * coalesced `onChanged` worth building in the first place.
+ *
+ * **Patches in touched ids instead, for a zone-scoped view, when the notice names them**
+ * ([ADR 0253](../../specs/decisions/0253-the-map-window-patches-in-only-touched-kills.md)). Given a
+ * zone, `kills(zone)` reaches that camp's *whole* history by design (ADR 0243/0245) — a fine
+ * one-time cost, not one worth repeating in full on every coalesced kill/loot/coin notice for as
+ * long as the camp has been farmed. `onChanged`'s payload names exactly which ids changed during
+ * that coalesce window; this fetches just those (`kills.byIds`) and folds them into what's already
+ * held rather than replacing the whole set. A notice with no ids (an import, a clear, an admin
+ * edit) — or no zone at all, since `SpawnPanel`'s unscoped "recent camps" call already gets a small,
+ * bounded, cheap-to-refetch window (`DEFAULT_LIMIT`) that a full reload answers correctly on its
+ * own — still falls back to a full reload, same as before this ADR.
+ *
+ * A touched kill from a *different* place than `zone` (the player killed something at a second camp
+ * while this window still shows the first one) is dropped rather than merged in — `samePlace` is
+ * the same raw-spelling fold `kills(zone)` itself resolves server-side, and `usePeerKills`'s own
+ * `zoneMatch` already runs the identical check for the heatmap's other half.
+ *
+ * Held as an id-keyed map internally (patching needs upsert-by-id) and materialized newest-first by
+ * `at` on read — the kill's own logged time, not insertion order, since a patched-in row arrives out
+ * of whatever order the map's `Map` happened to hold it in.
  */
 export function useKills(zone: string | undefined): KillRecord[] {
-  return useFollowedRead<KillRecord[]>(
-    (a) => a.kills.all(zone),
-    (a, reload) => a.kills.onChanged(reload),
-    NO_KILLS,
-    [zone],
+  const [byId, setById] = useState<ReadonlyMap<string, KillRecord>>(EMPTY_KILLS_MAP);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    // Counted, the same reason `useFollowedRead` counts rather than flags: within one effect, a
+    // later read has to be able to supersede an earlier one still in flight, whichever kind of
+    // read either turns out to be.
+    let latest = 0;
+    const fullReload = () => {
+      const mine = ++latest;
+      void a.kills.all(zone).then((rows) => {
+        if (mine !== latest) return;
+        setById(new Map(rows.map((r) => [r.id, r])));
+      });
+    };
+    const stop = a.kills.onChanged((ids) => {
+      if (!zone || !ids?.length) {
+        fullReload();
+        return;
+      }
+      const mine = ++latest;
+      void a.kills.byIds(ids).then((rows) => {
+        if (mine !== latest) return;
+        setById((prev) => {
+          const next = new Map(prev);
+          for (const r of rows) {
+            if (samePlace(r.zone, zone)) next.set(r.id, r);
+          }
+          return next;
+        });
+      });
+    });
+    fullReload();
+    return () => {
+      latest += 1; // nothing in flight may land after we've gone
+      stop();
+    };
+  }, [zone]);
+  return useMemo(
+    () => (byId.size === 0 ? NO_KILLS : [...byId.values()].sort((a, b) => b.at.localeCompare(a.at))),
+    [byId],
   );
 }
+
+const EMPTY_KILLS_MAP: ReadonlyMap<string, KillRecord> = new Map();
 
 /**
  * Kill positions peers have shared for a place — the other half of the heatmap.
@@ -1277,6 +1339,40 @@ export function useLootSearch(filter: LootSearchFilter | null): { matches: LootR
   return { matches: value, loading };
 }
 
+const EMPTY_LOOT_DROPS_PAGE: LootDropsPage = { rows: [], total: 0, tallies: { kept: 0, sold: 0, stored: 0, combined: 0 } };
+
+/**
+ * One page of the whole loot ledger, sorted server-side — what `DropTable` asks for as the player
+ * pages, sorts (by anything but `zone`) or filters it, mirroring `useFactionHitsPage` exactly
+ * ([ADR 0254](../../specs/decisions/0254-loot-drops-pages-server-side-for-the-common-case.md)).
+ * Re-reads the same page whenever a new drop lands or the ledger changes wholesale.
+ *
+ * `query: null` means "don't ask" — the same short-circuit `useLootSearch`'s `filter: null` is, for
+ * the fallback (`wantedOnly`/zone-sort) path, which reads the whole matching set some other way and
+ * has no use for a page it would just discard.
+ */
+export function useLootDropsPage(query: LootDropsQuery | null): { page: LootDropsPage; loading: boolean } {
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const offEvent = a.loot.onEvent(() => setRefresh((n) => n + 1));
+    const offChanged = a.app.onDataChanged(() => setRefresh((n) => n + 1));
+    return () => {
+      offEvent();
+      offChanged();
+    };
+  }, []);
+  const { value, loading } = useReading(
+    (a) => (query ? a.loot.dropsPage(query) : Promise.resolve(EMPTY_LOOT_DROPS_PAGE)),
+    EMPTY_LOOT_DROPS_PAGE,
+    // Same reason `useFactionHitsPage` stringifies `query.filter`: a fresh object every render
+    // shouldn't re-fire the effect unless what it actually says changed.
+    [query?.offset, query?.limit, query?.sortField, query?.sortDesc, JSON.stringify(query?.filter), refresh],
+  );
+  return { page: value, loading };
+}
+
 const EMPTY_LOOT_VOCABULARY: LootVocabulary = { sources: [], zones: [] };
 
 /**
@@ -1328,7 +1424,7 @@ export function useFactionStandings(refreshKey: unknown): FactionStanding[] {
 }
 
 /**
- * One page of the whole faction ledger, sorted server-side — what `HitTable`'s grid asks for as the
+ * One page of the whole faction ledger, sorted server-side — what `FactionHitsGrid` asks for as the
  * player pages or re-sorts it, now that the feed has no cap to fetch "everything" up to (ADR 0232).
  * Re-reads the same page whenever a new hit lands or the ledger changes wholesale (a log eaten, a
  * clear), so paging and following live hits both fall out of the one query rather than a second,
@@ -1349,7 +1445,7 @@ export function useFactionHitsPage(query: FactionHitsQuery): { page: FactionHits
   const { value, loading } = useReading(
     (a) => a.faction.hitsPage(query),
     EMPTY_FACTION_HITS_PAGE,
-    // `query.filter` is a fresh object every render (`HitTable` rebuilds it in a `useMemo`, but a new
+    // `query.filter` is a fresh object every render (`FactionHitsGrid` rebuilds it in a `useMemo`, but a new
     // `GridFilterModel` reference still arrives on every keystroke) — stringified so the effect only
     // re-fires when what it actually says changes, the same reason `deps` elsewhere here stay primitives.
     [query.offset, query.limit, query.sortField, query.sortDesc, JSON.stringify(query.filter), refresh],

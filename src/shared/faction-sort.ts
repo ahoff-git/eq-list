@@ -18,6 +18,13 @@ export const DEFAULT_FACTION_HIT_SORT: Sort<FactionHitSortKey> = { key: "at", de
 export const causeSource = (e: FactionRecord): string | undefined =>
   e.causedBy ? (e.causedBy.kind === "kill" ? e.causedBy.mob : e.causedBy.npc) : undefined;
 
+/** "Kill" or "Quest" — which kind of guess `causeSource` came from, worded to match
+ *  `CauseBreakdown`'s own grouping (a `"dialogue"` cause reads as "Quest" there too, despite being
+ *  only a conversation that might be one — see `FactionCause`'s own doc for why it's still a guess,
+ *  not a fact, either way). */
+export const causeKindLabel = (e: FactionRecord): string | undefined =>
+  e.causedBy ? (e.causedBy.kind === "kill" ? "Kill" : "Quest") : undefined;
+
 /**
  * `at` is the log's own timestamp string, which sorts chronologically as text — the same trick
  * `loot-filters.ts`'s `lootValue` relies on. `delta` is `undefined` for a floor/ceiling hit, which

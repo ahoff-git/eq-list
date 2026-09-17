@@ -301,6 +301,57 @@ test("search with no filter at all still reaches the whole ledger", () => {
   assert.equal(l.search({}).length, 5);
 });
 
+// `dropsPage` (ADR 0254) is `search`'s server-paged sibling — same filter, plus offset/limit/sort
+// and a `total`/`tallies` pair so the caller never has to fetch the whole matching set to page or
+// tally it.
+test("dropsPage pages through the whole ledger, newest first by default", () => {
+  const l = freshLog();
+  for (let i = 1; i <= 5; i++) l.add(drop(`Item ${i}`, i));
+  const first = l.dropsPage({ offset: 0, limit: 2, sortField: "at", sortDesc: true, filter: {} });
+  assert.deepEqual(first.rows.map((r) => r.item), ["Item 5", "Item 4"]);
+  assert.equal(first.total, 5);
+  const second = l.dropsPage({ offset: 2, limit: 2, sortField: "at", sortDesc: true, filter: {} });
+  assert.deepEqual(second.rows.map((r) => r.item), ["Item 3", "Item 2"]);
+});
+
+test("dropsPage sorts by any allow-listed column, ascending or descending", () => {
+  const l = freshLog();
+  l.add(drop("Zebra Fang", 1));
+  l.add(drop("Bone Chips", 2));
+  const asc = l.dropsPage({ offset: 0, limit: 10, sortField: "item", sortDesc: false, filter: {} });
+  assert.deepEqual(asc.rows.map((r) => r.item), ["Bone Chips", "Zebra Fang"]);
+  const desc = l.dropsPage({ offset: 0, limit: 10, sortField: "item", sortDesc: true, filter: {} });
+  assert.deepEqual(desc.rows.map((r) => r.item), ["Zebra Fang", "Bone Chips"]);
+});
+
+test("dropsPage applies the same filter search does, and total/tallies cover every match, not just the page", () => {
+  const l = freshLog();
+  l.add(drop("Bone Chips", 1));
+  l.add(sold("Bone Chips", 2, 4));
+  l.add(sold("Snake Egg", 3, 6, 2));
+  const page = l.dropsPage({ offset: 0, limit: 1, sortField: "at", sortDesc: true, filter: { fate: "sold" } });
+  assert.equal(page.rows.length, 1, "the page itself is bounded by limit");
+  assert.equal(page.total, 2, "but total counts every sold row, not just this page");
+  assert.deepEqual(page.tallies, { kept: 0, sold: 3, stored: 0, combined: 0 }, "qty summed across every sold row");
+});
+
+test("dropsPage's zone filter folds every difficulty into one place, same as search's", () => {
+  const l = freshLog();
+  l.add({ ...drop("Bone Chips", 1), zone: "Blackburrow" });
+  l.add({ ...drop("Rusty Dagger", 2), zone: "Blackburrow 3 (Fused)" });
+  l.add({ ...drop("Spider Silk", 3), zone: "The Feerrott 2" });
+  const page = l.dropsPage({ offset: 0, limit: 10, sortField: "at", sortDesc: true, filter: { zone: "Blackburrow" } });
+  assert.deepEqual(page.rows.map((r) => r.item).sort(), ["Bone Chips", "Rusty Dagger"]);
+  assert.equal(page.total, 2);
+});
+
+test("dropsPage answers empty, not an error, when the filter matches nothing", () => {
+  const l = freshLog();
+  l.add(drop("Bone Chips", 1));
+  const page = l.dropsPage({ offset: 0, limit: 10, sortField: "at", sortDesc: true, filter: { zone: "The Feerrott" } });
+  assert.deepEqual(page, { rows: [], total: 0, tallies: { kept: 0, sold: 0, stored: 0, combined: 0 } });
+});
+
 test("vocabulary lists every corpse and raw zone spelling the ledger has ever recorded", () => {
   const l = freshLog();
   l.add({ ...drop("Bone Chips", 1), source: "a kobold", zone: "Blackburrow" });

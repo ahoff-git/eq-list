@@ -6,7 +6,7 @@ import type { MobKillStat, ZoneReport } from "@/shared/types";
 import { duration, when } from "@/shared/format";
 import { useCombatReportsRefresh, useRead } from "@/lib/hooks";
 import ItemLink from "./ItemLink";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "./dataGridDefaults";
 /** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_ZONES: ZoneReport[] = [];
 
@@ -47,7 +47,10 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
             columns={MOB_COLUMNS}
             rows={byMob.map((m) => ({ id: m.mob, ...m }))}
             pageSizeOptions={PAGE_SIZE_OPTIONS}
-            initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+            initialState={{
+              pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+              columns: { columnVisibilityModel: hiddenByDefault("copper", "soldCopper") },
+            }}
           />
         </div>
       )}
@@ -67,7 +70,12 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
             columns={ZONE_COLUMNS}
             rows={zones.map((z) => ({ id: z.zone, ...z }))}
             pageSizeOptions={PAGE_SIZE_OPTIONS}
-            initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+            initialState={{
+              pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+              columns: {
+                columnVisibilityModel: hiddenByDefault("xpPct", "copper", "soldCopper", "yourDealt", "unsettled"),
+              },
+            }}
           />
         </div>
       )}
@@ -133,6 +141,22 @@ const MOB_COLUMNS: GridColDef<MobRow>[] = [
     cellClassName: "num-accent",
     valueFormatter: (v: number) => (v ? formatCoins(v) : "—"),
   },
+  {
+    field: "copper",
+    headerName: "Coin off corpses",
+    description: "The half of Coin that came straight off its corpses — already in the hover on that column",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => (v ? formatCoins(v) : "—"),
+  },
+  {
+    field: "soldCopper",
+    headerName: "Coin from sold drops",
+    description: "The half of Coin that came from auto-selling its drops — already in the hover on that column",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => (v ? formatCoins(v) : "—"),
+  },
 ];
 
 type ZoneRow = ZoneReport & { id: string };
@@ -160,6 +184,14 @@ const ZONE_COLUMNS: GridColDef<ZoneRow>[] = [
     valueFormatter: (v: number) => duration(v),
   },
   {
+    field: "xpPct",
+    headerName: "XP",
+    description: "Experience earned across the zone's fights, in percent of a level",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => (v ? `${v}%` : "—"),
+  },
+  {
     field: "xpPerMin",
     headerName: "XP/min fighting",
     description: "Per minute of combat in the zone, downtime excluded",
@@ -183,6 +215,37 @@ const ZONE_COLUMNS: GridColDef<ZoneRow>[] = [
     ),
   },
   { field: "dps", headerName: "DPS", ...NUM_COL, flex: 1, valueFormatter: (v: number) => v || "—" },
+  {
+    field: "copper",
+    headerName: "Coin off corpses",
+    description: "The half of Coin/min that came straight off corpses — already in that column's hover",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => (v ? formatCoins(v) : "—"),
+  },
+  {
+    field: "soldCopper",
+    headerName: "Coin from sold drops",
+    description: "The half of Coin/min that came from auto-selling drops — already in that column's hover",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => (v ? formatCoins(v) : "—"),
+  },
+  {
+    field: "yourDealt",
+    headerName: "Damage dealt",
+    description: "Your own damage across the zone's fights — what DPS is computed from",
+    ...NUM_COL,
+    flex: 1,
+    valueFormatter: (v: number) => (v ? v.toLocaleString() : "—"),
+  },
+  {
+    field: "unsettled",
+    headerName: "Unsettled",
+    description: "A fight here had somebody nothing could place, so these figures inherit that doubt",
+    flex: 1,
+    valueGetter: (_v, row) => (row.unsettled ? "Yes" : "No"),
+  },
 ];
 
 /** Everything the mob was worth, in copper. */

@@ -284,7 +284,11 @@ finished, so a number is claimed before a second author can reach for it.
 - [0247: A background cache any SQL-derived value can share](./0247-a-background-cache-any-sql-derived-value-can-share.md)
 - [0248: A paged grid fills the window instead of a fixed height](./0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md)
 - [0249: Every grid gets a real pager](./0249-every-grid-gets-a-real-pager.md)
-- [0250: Loot Drops reaches the whole ledger unconditionally, paginated client-side](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md)
+- [0250: Loot Drops reaches the whole ledger unconditionally, paginated client-side](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md) — *superseded by [0254](./0254-loot-drops-pages-server-side-for-the-common-case.md) for the unfiltered/wantedOnly-off, non-zone-sort case; the `wantedOnly` and zone-sort limits stand*
+- [0251: A grid's unshown columns are still reachable, hidden rather than absent](./0251-a-grids-unshown-columns-are-still-reachable.md)
+- [0252: Combat search joins the shared background cache](./0252-combat-search-joins-the-shared-background-cache.md)
+- [0253: The map window patches in only touched kills](./0253-the-map-window-patches-in-only-touched-kills.md)
+- [0254: Loot Drops pages server-side for the common case](./0254-loot-drops-pages-server-side-for-the-common-case.md) — supersedes [0250](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md) for the unfiltered/wantedOnly-off, non-zone-sort case
 
 ## Open Questions
 

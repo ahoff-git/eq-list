@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useSettings, useSpellFacts, type SpellFacts } from "@/lib/hooks";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "./dataGridDefaults";
 import { Empty } from "./ui";
 import type { FightStats, SpellStat } from "@/shared/types";
 
@@ -157,6 +157,126 @@ export default function SpellTable({ window }: { window: FightStats }) {
         valueGetter: (_v, row) => spellOnly(row, (s) => s.fizzles + s.interrupts),
         renderCell: (p) => p.value || "—",
       },
+      {
+        field: "rank",
+        headerName: "Rank",
+        description: "The last rank seen cast",
+        flex: 1,
+        cellClassName: "muted",
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.rank) ?? "—",
+      },
+      {
+        field: "lands",
+        headerName: "Lands",
+        description: "Casts that landed damage or a heal — a DoT counts once, at first landing",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.lands),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "maxHit",
+        headerName: "Biggest hit",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.maxHit),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "ticks",
+        headerName: "Ticks",
+        description: "Damage-over-time ticks logged after the spell landed",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.ticks),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "tickDamage",
+        headerName: "Tick damage",
+        description: "Of this spell's total damage, what its ticks did — absent on fights stored before it was recorded",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.tickDamage),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "maxTick",
+        headerName: "Biggest tick",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.maxTick),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "resists",
+        headerName: "Resisted",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.resists),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "blocked",
+        headerName: "Blocked",
+        description: "Landed on a target already holding a better version",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.blocked),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "fizzles",
+        headerName: "Fizzled",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.fizzles),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "interrupts",
+        headerName: "Interrupted",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.interrupts),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "overhealed",
+        headerName: "Overhealed",
+        description: "Hit points a heal would have restored but didn't",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.overhealed),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "invocationHealed",
+        headerName: "Healed by invocation",
+        description: "Healing the invocation granted off this spell's damage, kept apart from Healed",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.invocationHealed),
+        renderCell: (p) => p.value || "—",
+      },
+      {
+        field: "manaSpent",
+        headerName: "Mana spent",
+        description: "Casts × mana cost — assumes every cast begun spends its mana, fizzle or not",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.manaSpent),
+        renderCell: (p) => p.value ?? "—",
+      },
+      {
+        field: "healPerMana",
+        headerName: "Heal/mana",
+        description: "Healing per point of mana",
+        ...NUM_COL,
+        flex: 1,
+        valueGetter: (_v, row) => spellOnly(row, (s) => s.healPerMana),
+        renderCell: (p) => p.value ?? "—",
+      },
     ],
     [facts],
   );
@@ -190,6 +310,24 @@ export default function SpellTable({ window }: { window: FightStats }) {
         initialState={{
           sorting: { sortModel: [{ field: "damage", sort: "desc" }] },
           pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+          columns: {
+            columnVisibilityModel: hiddenByDefault(
+              "rank",
+              "lands",
+              "maxHit",
+              "ticks",
+              "tickDamage",
+              "maxTick",
+              "resists",
+              "blocked",
+              "fizzles",
+              "interrupts",
+              "overhealed",
+              "invocationHealed",
+              "manaSpent",
+              "healPerMana",
+            ),
+          },
         }}
       />
       {openStat && (

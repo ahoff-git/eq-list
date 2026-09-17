@@ -46,7 +46,7 @@ import type { GameClockTracker } from "./game-clock-tracker";
 import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery } from "../src/shared/types";
 import { AWARI_MSG } from "../src/shared/types";
 import { groupByOrigin, readContributor } from "../src/shared/contributors";
 import { createPeerShareHub, shareSources } from "../src/shared/peer-share-hub";
@@ -490,6 +490,7 @@ function registerStatsIpc(context: IpcContext): void {
   ipcMain.handle(CH.hpSet, (_e, max: number) => hp.set(max));
   ipcMain.handle(CH.hpSetRegen, (_e, perTick: number) => hp.setRegen(perTick));
   ipcMain.handle(CH.killsAll, (_e, zone?: string) => killLog.kills(zone));
+  ipcMain.handle(CH.killsByIds, (_e, ids: string[]) => killLog.byIds(ids));
   // Forget recorded kills, the loot feed, and the faction ledger. `scope` defaults to the records
   // only — the observed drop rates, roam areas and vendor prices they taught are kept unless the
   // caller says "everything", which the UI only sends after asking a second time (ADR 0056). A
@@ -710,13 +711,16 @@ function registerStatsIpc(context: IpcContext): void {
   // Reaches the whole ledger, not just whatever's been fetched — what `LootFilterBar` calls the
   // moment any filter engages, now that there's no cap to fetch "everything" up to (ADR 0232/0240).
   ipcMain.handle(CH.lootSearch, (_e, filter: LootSearchFilter) => lootLog.search(filter));
+  // One page of the whole ledger, filtered and sorted server-side — what `DropTable` asks for
+  // instead of paging client-side over an already-fetched `lootSearch` array (ADR 0254).
+  ipcMain.handle(CH.lootDropsPage, (_e, query: LootDropsQuery) => lootLog.dropsPage(query));
   // Every corpse/zone the ledger has ever recorded, for the filter bar's own picker options —
   // reaches the whole ledger for the same reason `lootSearch` does.
   ipcMain.handle(CH.lootVocabulary, () => lootLog.vocabulary());
   // The faction feed's history, the same shape as the loot feed's — tracked in the main process, so
   // the tab shows hits from before it was opened, then follows live ones over CH.factionEvent.
   ipcMain.handle(CH.factionRecent, (_e, limit?: number) => factionLog.recent(limit));
-  // One page of the whole ledger, sorted server-side — what `HitTable`'s grid asks for as the player
+  // One page of the whole ledger, sorted server-side — what `FactionHitsGrid` asks for as the player
   // pages or re-sorts it, now that the feed has no cap to fetch "everything" up to (ADR 0232).
   ipcMain.handle(CH.factionHitsPage, (_e, query: FactionHitsQuery) => factionLog.hitsPage(query));
   // Every faction touched, folded to its net standing — with any stated correction folded in on top

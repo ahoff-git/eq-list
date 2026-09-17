@@ -74,6 +74,7 @@ const api: EqlApi = {
     onPricesChanged: (cb) => on(CH.lootPricesChanged, cb),
     items: () => ipcRenderer.invoke(CH.lootItems),
     search: (filter) => ipcRenderer.invoke(CH.lootSearch, filter),
+    dropsPage: (query) => ipcRenderer.invoke(CH.lootDropsPage, query),
     vocabulary: () => ipcRenderer.invoke(CH.lootVocabulary),
     onEvent: (cb) => on(CH.lootEvent, cb),
     onMatched: (cb) => on(CH.lootMatched, cb),
@@ -151,6 +152,7 @@ const api: EqlApi = {
   },
   kills: {
     all: (zone) => ipcRenderer.invoke(CH.killsAll, zone),
+    byIds: (ids) => ipcRenderer.invoke(CH.killsByIds, ids),
     clear: (scope) => ipcRenderer.invoke(CH.killsClear, scope),
     onChanged: (cb) => on(CH.killsChanged, cb),
   },

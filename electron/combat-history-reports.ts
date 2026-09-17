@@ -62,6 +62,12 @@ export interface CombatReports {
   zones: ZoneReport[];
   bests: FightBest[];
   sessions: SessionSummary[];
+  /**
+   * Every fight, label recomputed fresh (`labelFor`) rather than trusted from the stored column —
+   * same as `zones`/`bests`/`sessions`, so `combat-history.ts`'s `search()` can filter this instead
+   * of running its own full table scan + JSON parse on every keystroke.
+   */
+  searchIndex: StoredFight[];
 }
 
 export function computeCombatReports(db: Database): CombatReports {
@@ -73,6 +79,8 @@ export function computeCombatReports(db: Database): CombatReports {
   const best = new Map<string, FightBest>();
   // -- sessions: one row per sitting, bounded by its first and last fight --
   const bySession = new Map<string, SessionSummary>();
+  // -- searchIndex: same fights, label refreshed once here rather than trusted from the row --
+  const searchIndex: StoredFight[] = [];
 
   for (const f of fights) {
     if (f.zone) {
@@ -110,6 +118,9 @@ export function computeCombatReports(db: Database): CombatReports {
     const label = labelFor(f.stats);
     const cur = best.get(label);
     if (!cur || dps > cur.dps) best.set(label, { label, yourDealt: f.stats.yourDealt, dps, at: f.stats.endedAt });
+    // The label just computed for `best`, reused rather than a second `labelFor` call — only a new
+    // object when the fresh label actually differs from the stored one.
+    searchIndex.push(label === f.label ? f : { ...f, label });
 
     const session = bySession.get(f.sessionId) ?? {
       sessionId: f.sessionId,
@@ -146,5 +157,9 @@ export function computeCombatReports(db: Database): CombatReports {
     zones: [...byZone.values()].sort((a, b) => b.xpPerMin - a.xpPerMin || b.kills - a.kills),
     bests: [...best.values()].sort((a, b) => b.dps - a.dps),
     sessions: [...bySession.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
+    // Newest first, by the log's own clock — the same order `combat-history.ts`'s `byNewest` sorts
+    // `fights()`/the old `search()` in, duplicated here rather than imported to avoid a dependency
+    // back onto that file (see this module's own header on why the direction only ever runs one way).
+    searchIndex: searchIndex.sort((a, b) => b.stats.startedAt.localeCompare(a.stats.startedAt)),
   };
 }
