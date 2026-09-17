@@ -682,6 +682,49 @@ test("every kind's key survives the crossing — the sender's key and the receiv
   }
 });
 
+// ─── A pooled row keeps its own origin, across a relay (ADR 0242) ──────────────────────────────
+
+test("a mob observation, a kill and a respawn all carry a relayed origin across the wire", () => {
+  const cases: { kind: ShareKind; row: Record<string, unknown> }[] = [
+    { kind: "mobs", row: { mob: "a gnoll", zone: "Blackburrow", kills: 3, drops: {}, lastAt: iso(0), by: "Bran", byId: "c-1" } },
+    { kind: "kills", row: { zone: "Blackburrow", mob: "a gnoll", y: 1, x: 2, confidence: 0.9, by: "Bran", byId: "c-1" } },
+    { kind: "respawns", row: { key: "camp", mob: "a named", place: "Blackburrow", samples: 2, by: "Bran", byId: "c-1" } },
+  ];
+  for (const { kind, row } of cases) {
+    const give = readGive({ what: kind, rev: 1, rows: [row] }, ids());
+    const [received] = wholeRows(give) as { by?: string; byId?: string }[];
+    assert.equal(received.byId, "c-1", `${kind} keeps byId`);
+    assert.equal(received.by, "Bran", `${kind} keeps by`);
+  }
+});
+
+test("a row nobody claimed an origin for carries none — no `by: undefined` left behind", () => {
+  const give = readGive(
+    { what: "kills", rev: 1, rows: [{ zone: "Blackburrow", mob: "a gnoll", y: 1, x: 2, confidence: 0.9 }] },
+    ids(),
+  );
+  const [received] = wholeRows(give) as { by?: string; byId?: string }[];
+  assert.equal("by" in received, false);
+  assert.equal("byId" in received, false);
+});
+
+test("two contributors' rows for the same mob, kill or camp key differently — neither is dropped", () => {
+  const mine = { mob: "a gnoll", zone: "Blackburrow", kills: 3, drops: {}, lastAt: iso(0) };
+  const theirs = { ...mine, by: "Bran", byId: "c-1" };
+  const spec = shareKind("mobs")!;
+  assert.notEqual(spec.rowKey?.(mine), spec.rowKey?.(theirs), "same mob and zone, different origin");
+
+  const mineKill = { zone: "Blackburrow", mob: "a gnoll", y: 1, x: 2, confidence: 0.9 };
+  const theirsKill = { ...mineKill, by: "Bran", byId: "c-1" };
+  const killSpec = shareKind("kills")!;
+  assert.notEqual(killSpec.rowKey?.(mineKill), killSpec.rowKey?.(theirsKill));
+
+  const mineRespawn = { key: "camp", mob: "a named", place: "Blackburrow", samples: 2 };
+  const theirsRespawn = { ...mineRespawn, by: "Bran", byId: "c-1" };
+  const respawnSpec = shareKind("respawns")!;
+  assert.notEqual(respawnSpec.rowKey?.(mineRespawn), respawnSpec.rowKey?.(theirsRespawn));
+});
+
 // ─── A mob observation's locations, on the wire (ADR 0228) ─────────────────────────────────────
 
 test("a mob observation's several known locations survive the wire, each vetted", () => {

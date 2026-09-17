@@ -109,6 +109,12 @@ export function createAwariWeb(deps: { getSettings: () => Settings; getName: () 
       for (const p of pages) rememberPage(p as WikiPage);
       return pages.length;
     },
+    // Same as items/spells — `rememberPage` is kind-agnostic, so a faction page a peer hands this
+    // tab is kept exactly the same way (ADR 0244).
+    acceptFactions: (pages) => {
+      for (const p of pages) rememberPage(p as WikiPage);
+      return pages.length;
+    },
     // Not wired to a displayed clock yet (the web build has no `gameClock` view) — a follow-up, not a
     // silent drop: the reading simply isn't kept anywhere for now.
     acceptGameTime: () => {},
@@ -128,6 +134,9 @@ export function createAwariWeb(deps: { getSettings: () => Settings; getName: () 
       // Addressed by shard, never as a whole kind — present so the table has no hole in it.
       items: { rows: () => [] },
       spells: { rows: () => [] },
+      // A web tab has no wiki crawl of its own, so nothing to *offer* — but still accepts what a
+      // peer hands it, above (ADR 0244).
+      factions: { rows: () => [] },
       gameTime: { rows: () => [] },
     },
     items: proxySource(() => items),

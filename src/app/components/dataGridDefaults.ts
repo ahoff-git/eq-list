@@ -2,35 +2,45 @@ import type { GridColDef } from "@mui/x-data-grid";
 import type { SxProps, Theme } from "@mui/material/styles";
 
 /**
- * dataGridDefaults.ts — the styling and column shorthand every table's grid wants, so seven tables
- * don't each reinvent "dense rows in this app's own colors" (ADR 0230).
+ * dataGridDefaults.ts — the styling and pagination shorthand every table's grid wants, so ten grids
+ * across seven files don't each reinvent "dense rows in this app's own colors, with a real pager"
+ * (ADR 0230, ADR 0249).
  *
  * Config and data, not a component or a behavior — same reasoning `sorting.ts` and `SortHeader` were
  * built on: sharing the *look*, not the table. Each file still declares its own `columns` and owns
  * its own rows.
- */
-
-/**
- * Grown to fit its rows rather than scrolling internally — every panel here already scrolls at the
- * page level, and a second, inner scrollbar would be a new kind of control nothing else in the app
- * has. `autoHeight` already draws every row, so the footer's pagination has nothing to page through
- * — `hideFooter` drops it, which also drops its "rows per page" `Select`, whose popover menu
- * mispositions under this app's per-window CSS-`zoom` scaling
- * ([ADR 0041](../../../specs/decisions/0041-interface-scale-is-a-css-zoom-per-window.md)): MUI's
- * `Popover` computes its position from `getBoundingClientRect()`, in zoomed/visual pixels, then
- * writes it back as unzoomed `style.top`/`left` on an element portaled to `document.body` — which
- * the ambient `zoom` scales a second time, so the further the scale sits from 100% the further the
- * menu lands from its anchor. A column's own filter/sort menu is `@mui/x-data-grid`'s own popper,
- * not `@mui/material`'s `Popover`, and wasn't reported broken — this removes the one control that was.
+ *
+ * **Every grid pages now** (ADR 0249, superseding ADR 0230's `autoHeight`/`hideFooter: true` default
+ * for six of the seven tables). `autoHeight` and a real footer don't mix: it sizes the grid's
+ * container to fit however many rows it was handed, so a multi-row-per-page footer ends up wherever
+ * that page's *last* row happens to end rather than staying put — which is why `FactionPanel`'s
+ * `HitTable` needed a whole second, non-`autoHeight` export (`GRID_DEFAULTS_PAGED`) to page at all.
+ * ADR 0230 hid the footer everywhere else specifically because a *multi-option* "rows per page"
+ * `Select` misplaced its popover under this app's CSS-`zoom` scaling — a bug fixed at its root by
+ * [ADR 0231](../../../specs/decisions/0231-the-zoom-root-moves-inside-the-shell.md) (moving the zoom
+ * onto the window's own shell), which `HitTable`'s own three-option picker has been proving safe ever
+ * since. With that bug gone, hiding the footer everywhere else was a leftover workaround outliving
+ * the thing it worked around.
  */
 export const GRID_DEFAULTS = {
-  autoHeight: true,
   density: "compact" as const,
   disableRowSelectionOnClick: false,
-  hideFooter: true,
 };
 
-export const GRID_SX: SxProps<Theme> = {
+/** How many rows a page shows, and the choices offered — one shared list rather than each table
+ *  guessing its own, so switching from a 25-row table to a 300-row one doesn't also mean relearning
+ *  what the picker offers. `FactionPanel`'s `HitTable` and `LootPanel`'s `DropTable` keep their own
+ *  larger `[25, 50, 100]` (`HITS_PAGE_SIZES`) — a ledger with no cap wants bigger pages than a
+ *  bounded catalogue does. */
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
+/** The page size a table opens on, absent a reason to pick a different one. */
+export const DEFAULT_PAGE_SIZE = 25;
+
+/** The look every grid shares — colors, borders, row highlights — independent of how each one is
+ *  sized (`GRID_SX`'s fixed height vs `GRID_SX_FILL`'s flex fill). Not exported: nothing outside
+ *  this file has ever needed the look apart from a height. */
+const GRID_LOOK_SX: SxProps<Theme> = {
   border: "none",
   fontSize: 13,
   "--DataGrid-rowBorderColor": "#2a2f38",
@@ -63,6 +73,20 @@ export const GRID_SX: SxProps<Theme> = {
   },
   "& .MuiDataGrid-row.row-out-of-era": { opacity: 0.55 },
 };
+
+/** A fixed box for a table that shares its page with other content (Items, Spells, Camp Report,
+ *  Peer Scores, the fight breakdown's Spells view, Faction's Standings, Loot's Sells-for) — tall
+ *  enough for a handful of rows plus its footer, with its own internal scrollbar for the rest, the
+ *  same "bounded box, own scrollbar" shape `ResizablePanel`'s `.panel-resize` gives a map overlay. */
+const GRID_HEIGHT = 420;
+export const GRID_SX: SxProps<Theme> = { ...GRID_LOOK_SX, height: GRID_HEIGHT };
+
+/** For a table that *is* the whole of its tab (`FactionPanel`'s Hits/Standings, `LootPanel`'s
+ *  Drops/Sells-for) — fills whatever height its flex container hands it instead of a fixed box, so
+ *  it uses a tall window rather than stopping partway down it (ADR 0248). The caller supplies that
+ *  container: something up the ancestor chain needs a real height for `flex: 1` to fill, the same
+ *  `flex: 1; min-height: 0` relay `.map-body`/`.panel-resize` already use elsewhere in this app. */
+export const GRID_SX_FILL: SxProps<Theme> = { ...GRID_LOOK_SX, flex: 1, minHeight: 0 };
 
 /** A numeric column's shorthand: right-aligned, numeric filter operators instead of text ones. */
 export const NUM_COL: Pick<GridColDef, "type" | "align" | "headerAlign"> = {

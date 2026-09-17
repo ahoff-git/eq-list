@@ -22,21 +22,24 @@ import { createCombatStats } from "./combat-stats";
 import { createLogClock } from "../src/shared/log-clock";
 import { reReadLogs } from "./log-reread";
 import { createSpellCatalog } from "./spells";
-import { createCombatHistory } from "./combat-history";
+import { createCombatHistory, COMBAT_HISTORY_MIGRATIONS } from "./combat-history";
 import { createHighScores } from "./high-scores";
 import { eventCandidates, fightCandidates } from "../src/shared/high-scores";
 import { effectiveNeeded, runsFor } from "../src/shared/grouping";
 import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";
-import { createKillLog } from "./kill-log";
-import { createLootLog } from "./loot-log";
-import { createFactionLog } from "./faction-log";
+import { createKillLog, KILL_LOG_MIGRATIONS } from "./kill-log";
+import { createLootLog, LOOT_LOG_MIGRATIONS } from "./loot-log";
+import { openAppDatabase } from "./sqlite-store";
+import { createFactionLog, FACTION_LOG_MIGRATIONS } from "./faction-log";
 import { createFactionCorrections } from "./faction-corrections";
 import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction-cause";
 import { lootRecord } from "../src/shared/loot-feed";
 import { createUpdateChecker } from "./update-check";
 import { createMobKnowledge } from "./mob-knowledge";
 import { createPeerKills } from "./peer-kills";
+import { createPeerRespawns } from "./peer-respawns";
+import { createPeerArchive } from "./peer-archive";
 import { readIdentity } from "./identity";
 import { createOcr } from "./ocr";
 import { createLookup } from "./lookup";
@@ -56,6 +59,7 @@ import { createAchievementTracker } from "./achievement-tracker";
 import { createBuffTracker } from "./buff-tracker";
 import { createGameClockTracker } from "./game-clock-tracker";
 import { createDamageOverlayTracker } from "./damage-overlay-tracker";
+import { coalesce } from "./coalesce";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent, FactionEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -70,24 +74,6 @@ function broadcast(channel: string, payload: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(channel, payload);
   }
-}
-
-/**
- * Wrap `fn` so a burst of calls delivers only the newest value, once, after `ms`.
- * Combat lines arrive in floods (a whole appended chunk per poll — or an entire log
- * read from the top when it first appears), and no UI can use 2000 snapshots; this
- * keeps the renderers fed without making the IPC channel the bottleneck.
- */
-/** Run `fn` at most once per `ms` (it pulls whatever state it needs when it fires). */
-function coalesce(ms: number, fn: () => void): () => void {
-  let timer: NodeJS.Timeout | null = null;
-  return () => {
-    if (timer) return;
-    timer = setTimeout(() => {
-      timer = null;
-      fn();
-    }, ms);
-  };
 }
 
 /**
@@ -251,7 +237,19 @@ if (!app.requestSingleInstanceLock()) {
   // entirely optional: no install, no file, no mana figures, and nothing else changes.
   const spells = createSpellCatalog();
   const combat = createCombatStats(undefined, (spell, rank) => spells.find(spell, rank)?.mana);
-  const history = createCombatHistory(userData);
+  // The one SQLite database every ledger that outgrows a JSON array shares (ADR 0232) — each store
+  // adds its own migrations to the combined list rather than opening a database of its own.
+  const db = openAppDatabase(userData, [
+    ...FACTION_LOG_MIGRATIONS,
+    ...LOOT_LOG_MIGRATIONS,
+    ...KILL_LOG_MIGRATIONS,
+    ...COMBAT_HISTORY_MIGRATIONS,
+  ]);
+  const history = createCombatHistory(db, userData);
+  // A background recompute of zones()/bests()/sessions()'s shared cache landed a fresher answer
+  // (ADR 0247) — the same shape as `killLog.onObservationsChanged`, just its own channel since
+  // nothing already broadcasts "combat history changed" the way `killsChanged` does for kills.
+  history.onCombatReportsChanged(() => broadcast(CH.combatHistoryChanged, undefined));
   /**
    * Personal bests. Silent until the log has been caught up, because everything logged while the app
    * was shut is replayed through the live path — those records are real and belong on the board, but
@@ -261,9 +259,18 @@ if (!app.requestSingleInstanceLock()) {
   scores.setQuiet(true);
   const xp = createXpProgress(userData);
   const hp = createHpEstimate(userData);
-  const killLog = createKillLog(userData);
-  const lootLog = createLootLog(userData);
-  const factionLog = createFactionLog(userData);
+  const killLog = createKillLog(db, userData);
+  // A background recompute of `observations()` landed a fresher answer than whatever a window's
+  // last read fell back to (ADR 0246) — the same notice a live kill gets, so mob knowledge/item
+  // pages catch up to it a moment later without needing a reopen. Not routed through the
+  // `killsChanged` coalesce below: `killLog` already debounces its own background refreshes, so
+  // there's nothing left here to burst-collapse.
+  killLog.onObservationsChanged(() => broadcast(CH.killsChanged, undefined));
+  const lootLog = createLootLog(db, userData);
+  // A background recompute of `prices()`'s shared cache landed a fresher answer (ADR 0247) — the
+  // same shape as `killLog.onObservationsChanged`.
+  lootLog.onPricesChanged(() => broadcast(CH.lootPricesChanged, undefined));
+  const factionLog = createFactionLog(db, userData);
   const factionCorrections = createFactionCorrections(userData);
   // A guess at what caused a hit, from the kill the log wrote just before it, or (failing that) from
   // NPC dialogue — narrowed, when the speaker matches a cached quest's giver, to whichever of that
@@ -303,6 +310,11 @@ if (!app.requestSingleInstanceLock()) {
   // Kept across sessions rather than held by whichever window happens to be open, so a room teaches
   // this install whether or not the map is up (see `peer-kills.ts`).
   const peerKills = createPeerKills(userData);
+  // The `respawns` counterpart — same reasoning as `peerKills`.
+  const peerRespawns = createPeerRespawns(userData);
+  // What an authored share (watches/styles/lists/pins) still says once the tray's half-hour has
+  // passed or the app restarts — never applied, never relayed onward (ADR 0242).
+  const peerArchive = createPeerArchive(userData);
   // Minted once and then ours for good: what everything we contribute is filed under on other
   // people's machines, and what theirs is filed under here (`identity.ts`).
   const contributorId = readIdentity(userData);
@@ -325,6 +337,7 @@ if (!app.requestSingleInstanceLock()) {
   const spawns = createSpawnTracker({
     userDataDir: userData,
     kills: () => killLog.kills(),
+    peerRespawns: () => peerRespawns.all(),
     getSettings: () => store.getSettings().castAlerts,
     raise: raiseAlert,
   });
@@ -401,6 +414,8 @@ if (!app.requestSingleInstanceLock()) {
     updates,
     mobs,
     peerKills,
+    peerRespawns,
+    peerArchive,
     contributorId,
     spawns,
     goals,
@@ -923,6 +938,8 @@ if (!app.requestSingleInstanceLock()) {
     scores.flush();
     mobs.flush();
     peerKills.flush();
+    peerRespawns.flush();
+    peerArchive.flush();
     spawns.flush();
     spawns.dispose();
     goals.flush();

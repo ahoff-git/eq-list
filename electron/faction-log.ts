@@ -4,44 +4,67 @@
  *
  * Mirrors [loot-log.ts](./loot-log.ts): the watcher hands every parsed hit here (as a `FactionRecord`
  * — the event plus the ledger's own guess at what caused it, from `faction-cause.ts`), the tab reads
- * the history on open and follows live ones after, and it's persisted (capped) so the ledger
- * survives a restart. Eating a past log feeds this too, for the same reason loot does (ADR 0055) —
- * every hit is keyed by its log line, which is what makes that safe to do twice (ADR 0033).
+ * the history on open and follows live ones after. Eating a past log feeds this too, for the same
+ * reason loot does (ADR 0055) — every hit is keyed by its log line, which is what makes that safe to
+ * do twice (ADR 0033).
  *
- * Deliberately its own file rather than a branch of loot-log.ts: a faction hit is not a drop, needs
+ * Deliberately its own store rather than a branch of loot-log.ts: a faction hit is not a drop, needs
  * no zone (a standing is a fact about your character, not about where you were standing when the
  * game told you about it — ADR 0136 has nothing to attach to here), and folds to a **net delta** per
  * faction rather than a count.
  *
- * A standing outlives the hits that built it, the same way a vendor price outlives the drop that
- * proved it (ADR 0056): the feed is capped, but a hit aging out of it must not silently erase part
- * of a faction's net — that would make the number depend on how many other hits happened to log
- * after it, which is not something the game itself ever undoes. `retired` is the running fold of
- * every hit that has left the feed, kept forever; `standings()` folds it together with whatever is
- * still in the feed — its `causes` rollup included, so a mob's share of a faction's net survives the
- * cap exactly the way the net itself does.
+ * **Backed by SQLite, not a capped JSON array (ADR 0232).** The ledger keeps every hit forever —
+ * there is no cap to evict past — and `standings()` is one `GROUP BY faction` query rather than an
+ * incrementally-maintained fold. The one place the old `retired` idea survives is `clear("records")`:
+ * asked to forget the hits but keep what they taught, it freezes the current merged standings into
+ * `faction_standings_frozen` (a snapshot, not an eviction side effect) and only then deletes the
+ * hits — the same "a standing outlives the hits that built it" rule (ADR 0056), just triggered by
+ * the player asking rather than by a feed filling up.
+ *
+ * **`faction-log.json` still exists, but only as a provenance stamp.** `data-health.ts` and
+ * `log-reread.ts`'s unattended-re-read mechanism (ADR 0129) read this file's `provenance` field
+ * directly off disk, independent of this store — that contract belongs to `DATA_CONCERNS`, not to
+ * how the hits themselves are kept, so moving them into SQL doesn't touch it. The file goes on
+ * existing as a tiny stub carrying nothing but the stamp, rewritten (still debounced, still through
+ * `json-store.ts`) on every mutation exactly as before a migrated-away file would read as
+ * `state: "absent"` forever — not stale, not current, just silently un-checked — which would
+ * quietly disable the self-healing re-read for this concern the moment it upgraded.
+ *
+ * **`hitsPage`'s filter reaches the whole ledger, not just the page already fetched** (ADR 0234) —
+ * `HitTable`'s grid hands its `GridFilterModel` straight through as a `FactionHitsFilter`, and
+ * `buildFilterSql` turns it into one parameterized `WHERE` fragment: every value travels as a bound
+ * `?` parameter, and only a fixed column name (`HIT_FILTER_COLUMNS`) or operator keyword is ever
+ * written into the SQL text. A million-hit ledger with 1% "Mistmoore" in it can otherwise never
+ * surface the other 999,000 by scrolling through whatever page happens to be open.
  */
+import fs from "node:fs";
 import path from "node:path";
+import type { Database } from "better-sqlite3";
 import { createLogger } from "../src/shared/logging";
-import type { FactionCauseTally, FactionRecord, FactionStanding, ForgetScope } from "../src/shared/types";
-import { createSaver, readJson } from "./json-store";
-import { createArrayAdminStore, type AdminStore } from "./admin";
+import type { AdminAudit, AdminScalar } from "../src/shared/admin";
+import type { DataStamp } from "../src/shared/data-provenance";
+import type {
+  FactionCause,
+  FactionCauseTally,
+  FactionDirection,
+  FactionHitFilterItem,
+  FactionHitSortField,
+  FactionHitsFilter,
+  FactionHitsPage,
+  FactionHitsQuery,
+  FactionRecord,
+  FactionStanding,
+  ForgetScope,
+} from "../src/shared/types";
+import { createSaver, readJson, writeJson } from "./json-store";
+import { DEFAULT_LIMIT, likeEscape, type Migration } from "./sqlite-store";
+import { createSqlAdminStore, type AdminStore } from "./admin";
 
 const log = createLogger("faction-log");
 
-/** Hits arrive one at a time, or a handful together off a replayed gap; coalesce the writes. */
+/** Hits arrive in bursts; coalesce the provenance-stamp writes the same way the old full-file saver
+ *  did. */
 const WRITE_DEBOUNCE_MS = 3000;
-
-/**
- * How many hits the feed keeps. A faction hit is rarer than a drop by an order of magnitude — a
- * quest turn-in or a kill that happens to matter to one faction, not every corpse — so this needs
- * nowhere near loot's 20,000 to cover months of play. Whatever ages out is folded into `retired`
- * first, so the cap only ever trims detail, never a faction's net standing.
- */
-const MAX_FACTION = 5_000;
-
-/** How many hits the feed returns when the caller doesn't say. */
-const DEFAULT_LIMIT = 200;
 
 export type FactionAdded = "added" | "known";
 
@@ -54,54 +77,220 @@ export type FactionAdded = "added" | "known";
  */
 const factionKey = (e: FactionRecord): string => `${e.at} ${e.faction.toLowerCase()} ${e.direction} ${e.delta ?? ""}`;
 
-/** A faction touched for the first time: every tally starts at zero, both timestamps are this hit's. */
-function blankStanding(faction: string, at: string): FactionStanding {
-  return { faction, net: 0, raises: 0, lowers: 0, floors: 0, ceilings: 0, firstAt: at, lastAt: at, causes: [] };
+export const FACTION_LOG_MIGRATIONS: readonly Migration[] = [
+  {
+    version: 1,
+    label: "faction_hits",
+    up(db) {
+      db.exec(`
+        CREATE TABLE faction_hits (
+          key TEXT PRIMARY KEY,
+          at TEXT NOT NULL,
+          faction TEXT NOT NULL,
+          direction TEXT NOT NULL,
+          delta INTEGER,
+          caused_by_kind TEXT,
+          caused_by_source TEXT,
+          caused_by_gap_sec REAL,
+          caused_by_text TEXT,
+          caused_by_quests TEXT,
+          caused_by_quests_matched INTEGER,
+          raw TEXT NOT NULL,
+          log_id INTEGER NOT NULL,
+          admin_audit TEXT
+        );
+        CREATE INDEX faction_hits_faction_idx ON faction_hits(faction);
+        CREATE INDEX faction_hits_at_idx ON faction_hits(at);
+
+        CREATE TABLE faction_standings_frozen (
+          faction TEXT PRIMARY KEY,
+          net INTEGER NOT NULL,
+          raises INTEGER NOT NULL,
+          lowers INTEGER NOT NULL,
+          floors INTEGER NOT NULL,
+          ceilings INTEGER NOT NULL,
+          first_at TEXT NOT NULL,
+          last_at TEXT NOT NULL,
+          causes_json TEXT NOT NULL
+        );
+      `);
+    },
+  },
+];
+
+/** A `FactionCause` flattened to the columns `faction_hits` stores it in. */
+interface CauseRow {
+  kind: string | null;
+  source: string | null;
+  gapSec: number | null;
+  text: string | null;
+  quests: string | null;
+  questsMatched: number | null;
 }
 
-/**
- * Fold one hit's cause into a standing's own rollup, biggest `|net|` first — a mob or NPC nobody has
- * bothered to check twice about still sorts sensibly against one with a single, large hit. Keyed by
- * kind **and** name, so a mob and an NPC that happen to share a name are never folded into one row.
- */
-function foldCause(causes: readonly FactionCauseTally[], e: FactionRecord): FactionCauseTally[] {
-  if (!e.causedBy) return causes as FactionCauseTally[];
-  const source = e.causedBy.kind === "kill" ? e.causedBy.mob : e.causedBy.npc;
-  const byKey = new Map(causes.map((c) => [`${c.kind}:${c.source}`, { ...c }]));
-  const key = `${e.causedBy.kind}:${source}`;
-  const cur = byKey.get(key) ?? { kind: e.causedBy.kind, source, net: 0, hits: 0 };
-  cur.net += e.delta ?? 0;
-  cur.hits += 1;
-  byKey.set(key, cur);
+function causeToRow(c: FactionCause | undefined): CauseRow {
+  if (!c) return { kind: null, source: null, gapSec: null, text: null, quests: null, questsMatched: null };
+  if (c.kind === "kill") {
+    return { kind: "kill", source: c.mob, gapSec: c.gapSec, text: null, quests: null, questsMatched: null };
+  }
+  return {
+    kind: "dialogue",
+    source: c.npc,
+    gapSec: c.gapSec,
+    text: c.text,
+    quests: c.quests ? JSON.stringify(c.quests) : null,
+    questsMatched: c.questsMatched === undefined ? null : c.questsMatched ? 1 : 0,
+  };
+}
+
+interface HitRow {
+  key: string;
+  at: string;
+  faction: string;
+  direction: FactionDirection;
+  delta: number | null;
+  caused_by_kind: string | null;
+  caused_by_source: string | null;
+  caused_by_gap_sec: number | null;
+  caused_by_text: string | null;
+  caused_by_quests: string | null;
+  caused_by_quests_matched: number | null;
+  raw: string;
+  log_id: number;
+  admin_audit: string | null;
+}
+
+function rowToCause(r: HitRow): FactionCause | undefined {
+  if (!r.caused_by_kind) return undefined;
+  if (r.caused_by_kind === "kill") return { kind: "kill", mob: r.caused_by_source!, gapSec: r.caused_by_gap_sec! };
+  return {
+    kind: "dialogue",
+    npc: r.caused_by_source!,
+    text: r.caused_by_text!,
+    gapSec: r.caused_by_gap_sec!,
+    ...(r.caused_by_quests ? { quests: JSON.parse(r.caused_by_quests) as string[] } : {}),
+    ...(r.caused_by_quests_matched !== null ? { questsMatched: !!r.caused_by_quests_matched } : {}),
+  };
+}
+
+function rowToRecord(r: HitRow): FactionRecord {
+  const causedBy = rowToCause(r);
+  return {
+    kind: "faction",
+    logId: r.log_id,
+    raw: r.raw,
+    at: r.at,
+    faction: r.faction,
+    delta: r.delta,
+    direction: r.direction,
+    ...(causedBy ? { causedBy } : {}),
+  };
+}
+
+/** Fold two (already-aggregated) sets of per-cause tallies into one, biggest `|net|` first — the
+ *  same rule `foldCause` folded one event at a time, now combining two small pre-summed arrays (the
+ *  live hits' own rollup and whatever a past `clear("records")` already froze) instead of scanning
+ *  every hit on every read. */
+function mergeCauseTallies(a: readonly FactionCauseTally[], b: readonly FactionCauseTally[]): FactionCauseTally[] {
+  const byKey = new Map<string, FactionCauseTally>();
+  for (const c of [...a, ...b]) {
+    const key = `${c.kind}:${c.source}`;
+    const cur = byKey.get(key) ?? { kind: c.kind, source: c.source, net: 0, hits: 0 };
+    cur.net += c.net;
+    cur.hits += c.hits;
+    byKey.set(key, cur);
+  }
   return [...byKey.values()].sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.hits - a.hits);
 }
 
-/** Fold one hit into a standing — a new object, so a caller holding the old one is unaffected. */
-function foldHit(row: FactionStanding, e: FactionRecord): FactionStanding {
-  const next = { ...row };
-  if (e.delta !== null) {
-    next.net += e.delta;
-    if (e.delta >= 0) next.raises += 1;
-    else next.lowers += 1;
-  } else if (e.direction === "floor") {
-    next.floors += 1;
-  } else if (e.direction === "ceiling") {
-    next.ceilings += 1;
+/** Columns/expressions `hitsPage` may sort by — an allow-list, so a caller's sort field is never
+ *  interpolated into SQL as anything but one of these fixed strings. */
+const HIT_SORT_COLUMNS: Record<FactionHitSortField, string> = {
+  at: "at",
+  faction: "LOWER(faction)",
+  delta: "delta",
+  cause: "LOWER(caused_by_source)",
+};
+
+/** Which SQL column backs each filterable field, and whether it's compared as text or a number — the
+ *  same allow-list discipline as `HIT_SORT_COLUMNS`, so a filter's `field` can never become anything
+ *  but one of these fixed expressions. `cause` filters by `caused_by_source` directly: that's the same
+ *  column `causeSource` (`faction-sort.ts`) reads to produce the grid's `cause` value in the first
+ *  place, just not yet lowercased/joined with the kill-vs-dialogue label the cell renders. */
+const HIT_FILTER_COLUMNS: Record<FactionHitSortField, { column: string; kind: "text" | "number" }> = {
+  at: { column: "at", kind: "text" },
+  faction: { column: "faction", kind: "text" },
+  delta: { column: "delta", kind: "number" },
+  cause: { column: "caused_by_source", kind: "text" },
+};
+
+/** One filter item's SQL fragment plus its bound params, or `null` if it can't produce a clause yet —
+ *  no value typed, an empty `isAnyOf` list, or an operator that doesn't apply to the field's kind (the
+ *  grid can hand any of these through mid-edit, so skipping quietly is correct, not an error). Every
+ *  value travels as a bound parameter; only the column name (from the allow-list above) and a fixed
+ *  operator keyword are ever concatenated into the SQL text itself. */
+function filterItemSql(item: FactionHitFilterItem): { sql: string; params: unknown[] } | null {
+  const col = HIT_FILTER_COLUMNS[item.field];
+  if (!col) return null;
+
+  if (item.operator === "isEmpty") return { sql: `${col.column} IS NULL`, params: [] };
+  if (item.operator === "isNotEmpty") return { sql: `${col.column} IS NOT NULL`, params: [] };
+
+  if (item.operator === "isAnyOf") {
+    const values = Array.isArray(item.value) ? item.value : [];
+    if (!values.length) return null;
+    if (col.kind === "number") {
+      const nums = values.map(Number).filter(Number.isFinite);
+      if (!nums.length) return null;
+      return { sql: `${col.column} IN (${nums.map(() => "?").join(", ")})`, params: nums };
+    }
+    return {
+      sql: `LOWER(${col.column}) IN (${values.map(() => "LOWER(?)").join(", ")})`,
+      params: values.map(String),
+    };
   }
-  if (e.at < next.firstAt) next.firstAt = e.at;
-  if (e.at > next.lastAt) next.lastAt = e.at;
-  next.causes = foldCause(row.causes, e);
-  return next;
+
+  if (item.value === undefined || item.value === null || item.value === "") return null;
+
+  if (col.kind === "number") {
+    const n = Number(item.value);
+    if (!Number.isFinite(n)) return null;
+    const numOps: Partial<Record<string, string>> = { "=": "=", "!=": "!=", ">": ">", ">=": ">=", "<": "<", "<=": "<=" };
+    const op = numOps[item.operator];
+    return op ? { sql: `${col.column} ${op} ?`, params: [n] } : null;
+  }
+
+  const v = String(item.value);
+  switch (item.operator) {
+    case "contains":
+      return { sql: `LOWER(${col.column}) LIKE LOWER(?) ESCAPE '\\'`, params: [`%${likeEscape(v)}%`] };
+    case "doesNotContain":
+      return {
+        sql: `(${col.column} IS NULL OR LOWER(${col.column}) NOT LIKE LOWER(?) ESCAPE '\\')`,
+        params: [`%${likeEscape(v)}%`],
+      };
+    case "startsWith":
+      return { sql: `LOWER(${col.column}) LIKE LOWER(?) ESCAPE '\\'`, params: [`${likeEscape(v)}%`] };
+    case "endsWith":
+      return { sql: `LOWER(${col.column}) LIKE LOWER(?) ESCAPE '\\'`, params: [`%${likeEscape(v)}`] };
+    case "equals":
+      return { sql: `LOWER(${col.column}) = LOWER(?)`, params: [v] };
+    case "doesNotEqual":
+      return { sql: `(${col.column} IS NULL OR LOWER(${col.column}) != LOWER(?))`, params: [v] };
+    default:
+      return null;
+  }
 }
 
-/** Fold a batch of hits onto a starting set of standings — `retired` plus whatever's still live. */
-function foldAll(base: readonly FactionStanding[], hits: readonly FactionRecord[]): FactionStanding[] {
-  const byFaction = new Map(base.map((s) => [s.faction, s]));
-  for (const e of hits) {
-    const row = byFaction.get(e.faction) ?? blankStanding(e.faction, e.at);
-    byFaction.set(e.faction, foldHit(row, e));
-  }
-  return [...byFaction.values()];
+/** Folds `HitTable`'s whole filter model into one parameterized `WHERE` fragment — empty string (no
+ *  filtering at all) when the filter is absent or every item is incomplete. */
+function buildFilterSql(filter: FactionHitsFilter | undefined): { where: string; params: unknown[] } {
+  const items = (filter?.items ?? [])
+    .map(filterItemSql)
+    .filter((x): x is { sql: string; params: unknown[] } => x !== null);
+  if (!items.length) return { where: "", params: [] };
+  const joiner = filter?.logicOperator === "or" ? " OR " : " AND ";
+  return { where: `WHERE ${items.map((i) => i.sql).join(joiner)}`, params: items.flatMap((i) => i.params) };
 }
 
 export interface FactionLog {
@@ -113,9 +302,17 @@ export interface FactionLog {
   /** The most recent hits, newest first (at most `limit`). */
   recent(limit?: number): FactionRecord[];
   /**
+   * One page of the whole ledger, in the order asked for and narrowed by whatever column filter is
+   * active — what `HitTable`'s server-paginated grid calls instead of `recent`, now that there's no
+   * flat cap to fetch "everything" up to. A filter reaches every hit the ledger holds, not just the
+   * page already on screen (unlike ADR 0230's per-column-filter rule for the other six tables) —
+   * `total` above already reflects it, so the grid's own page count stays honest.
+   */
+  hitsPage(query: FactionHitsQuery): FactionHitsPage;
+  /**
    * Every faction the ledger has seen a change for, folded to one row each — `net` summing every
-   * stated delta, plus how many hits of each kind produced it. Covers hits that have aged out of
-   * the feed as well as what's still in it (see the header).
+   * stated delta, plus how many hits of each kind produced it. Covers hits a past `clear("records")`
+   * has frozen as well as whatever's still live.
    */
   standings(): FactionStanding[];
   /**
@@ -123,97 +320,325 @@ export interface FactionLog {
    * as a loot price (ADR 0056). `"everything"` is the deliberate, asked-for wipe.
    */
   clear(scope?: ForgetScope): void;
+  /** No pending write ever outlives this call — kept for callers that flushed the old debounced JSON
+   *  writer at the same moments (quitting, right after a log import), even though every write here is
+   *  already synchronous the instant it's made. */
   flush(): void;
   /** The hidden admin panel's view of these hits — see `electron/admin.ts`. */
   admin: AdminStore;
 }
 
-export function createFactionLog(userDataDir: string): FactionLog {
+export function createFactionLog(db: Database, userDataDir: string): FactionLog {
   const file = path.join(userDataDir, "faction-log.json");
-  const stored = read();
-  let events: FactionRecord[] = stored.hits;
-  /** Standings folded from hits that have aged out of the feed — kept forever (ADR 0056). */
-  let retired: FactionStanding[] = stored.retired;
-  /** Every hit in the feed, by its log line — see `add`. Rebuilt from what's on disk. */
-  const byKey = new Map(events.map((e) => [factionKey(e), e]));
-  const saver = createSaver(file, "faction log", () => ({ hits: events, retired }), WRITE_DEBOUNCE_MS, {
-    concern: "faction-log",
-  });
+  migrateFromLegacyJson(db, userDataDir, file);
+  // Carries **only** the provenance stamp now — see the module doc.
+  const saver = createSaver(file, "faction log", () => ({}), WRITE_DEBOUNCE_MS, { concern: "faction-log" });
 
-  function read(): { hits: FactionRecord[]; retired: FactionStanding[] } {
-    // Absent or unreadable is an empty ledger — the feed is a nicety, never a hard failure. A
-    // ledger written before causation existed simply has no `causedBy` on its older rows and no
-    // `causes` on its retired standings, both of which read as "nothing correlated" — never a crash.
-    const parsed = readJson<{
-      hits?: FactionRecord[];
-      retired?: (Omit<FactionStanding, "causes"> & { causes?: FactionCauseTally[] })[];
-    }>(file, {});
+  const insertHit = db.prepare(`
+    INSERT OR IGNORE INTO faction_hits
+      (key, at, faction, direction, delta, caused_by_kind, caused_by_source, caused_by_gap_sec,
+       caused_by_text, caused_by_quests, caused_by_quests_matched, raw, log_id)
+    VALUES
+      (@key, @at, @faction, @direction, @delta, @causedByKind, @causedBySource, @causedByGapSec,
+       @causedByText, @causedByQuests, @causedByQuestsMatched, @raw, @logId)
+  `);
+  const selectRecent = db.prepare(`SELECT * FROM faction_hits ORDER BY at DESC, rowid DESC LIMIT ?`);
+  const selectAll = db.prepare(`SELECT * FROM faction_hits ORDER BY at DESC, rowid DESC`);
+  const countHits = db.prepare(`SELECT COUNT(*) as n FROM faction_hits`);
+  const countEditedHits = db.prepare(`SELECT COUNT(*) as n FROM faction_hits WHERE admin_audit IS NOT NULL`);
+  // `COALESCE(..., 0)` on `net`/`raises`/`lowers` only: SQLite's `SUM` returns SQL `NULL`, not `0`,
+  // when every row it's summing is `NULL` — which happens here for any faction whose hits are *all*
+  // floor/ceiling caps (a `delta`-less direction), never a single raised/lowered hit with a real
+  // number. Without this, such a faction's standing carries `net: null` instead of `net: 0` — a type
+  // the rest of the app never expects (`FactionStanding.net` is a plain `number`), and one the
+  // Standings table renders as a blank cell instead of "0". `floors`/`ceilings` need no such guard:
+  // `direction = 'floor'`/`'ceiling'` is always `0` or `1`, never `NULL`, for any row.
+  const selectStandingsAgg = db.prepare(`
+    SELECT faction,
+           COALESCE(SUM(net), 0) as net, COALESCE(SUM(raises), 0) as raises, COALESCE(SUM(lowers), 0) as lowers,
+           SUM(floors) as floors, SUM(ceilings) as ceilings,
+           MIN(firstAt) as firstAt, MAX(lastAt) as lastAt
+    FROM (
+      SELECT faction,
+             SUM(delta) as net,
+             SUM(delta >= 0) as raises,
+             SUM(delta < 0) as lowers,
+             SUM(direction = 'floor') as floors,
+             SUM(direction = 'ceiling') as ceilings,
+             MIN(at) as firstAt, MAX(at) as lastAt
+      FROM faction_hits
+      GROUP BY faction
+      UNION ALL
+      SELECT faction, net, raises, lowers, floors, ceilings, first_at as firstAt, last_at as lastAt
+      FROM faction_standings_frozen
+    )
+    GROUP BY faction
+  `);
+  const selectLiveCauses = db.prepare(`
+    SELECT faction, caused_by_kind as kind, caused_by_source as source,
+           SUM(delta) as net, COUNT(*) as hits
+    FROM faction_hits
+    WHERE caused_by_kind IS NOT NULL
+    GROUP BY faction, caused_by_kind, caused_by_source
+  `);
+  const selectFrozen = db.prepare(`SELECT * FROM faction_standings_frozen`);
+  const upsertFrozen = db.prepare(`
+    INSERT INTO faction_standings_frozen (faction, net, raises, lowers, floors, ceilings, first_at, last_at, causes_json)
+    VALUES (@faction, @net, @raises, @lowers, @floors, @ceilings, @firstAt, @lastAt, @causesJson)
+    ON CONFLICT(faction) DO UPDATE SET
+      net = excluded.net, raises = excluded.raises, lowers = excluded.lowers,
+      floors = excluded.floors, ceilings = excluded.ceilings,
+      first_at = excluded.first_at, last_at = excluded.last_at, causes_json = excluded.causes_json
+  `);
+  const deleteHits = db.prepare(`DELETE FROM faction_hits`);
+  const deleteFrozen = db.prepare(`DELETE FROM faction_standings_frozen`);
+  const deleteHit = db.prepare(`DELETE FROM faction_hits WHERE key = ?`);
+  const updateAudit = db.prepare(`UPDATE faction_hits SET admin_audit = ? WHERE key = ?`);
+
+  function paramsOf(event: FactionRecord) {
+    const c = causeToRow(event.causedBy);
     return {
-      hits: Array.isArray(parsed.hits) ? parsed.hits : [],
-      retired: (Array.isArray(parsed.retired) ? parsed.retired : []).map((s) => ({ causes: [], ...s })),
+      key: factionKey(event),
+      at: event.at,
+      faction: event.faction,
+      direction: event.direction,
+      delta: event.delta,
+      causedByKind: c.kind,
+      causedBySource: c.source,
+      causedByGapSec: c.gapSec,
+      causedByText: c.text,
+      causedByQuests: c.quests,
+      causedByQuestsMatched: c.questsMatched,
+      raw: event.raw,
+      logId: event.logId,
     };
   }
 
-  function save(): void {
-    saver.save();
+  /** Every faction the ledger holds a change for, folded from live hits and whatever's frozen —
+   *  `standings()`'s own body, pulled out so `clear("records")` can call it to build the snapshot it
+   *  freezes without duplicating the merge. */
+  function computeStandings(): FactionStanding[] {
+    const rows = selectStandingsAgg.all() as {
+      faction: string;
+      net: number;
+      raises: number;
+      lowers: number;
+      floors: number;
+      ceilings: number;
+      firstAt: string;
+      lastAt: string;
+    }[];
+
+    const liveCauses = new Map<string, FactionCauseTally[]>();
+    for (const c of selectLiveCauses.all() as { faction: string; kind: string; source: string; net: number; hits: number }[]) {
+      const list = liveCauses.get(c.faction) ?? [];
+      list.push({ kind: c.kind as FactionCauseTally["kind"], source: c.source, net: c.net, hits: c.hits });
+      liveCauses.set(c.faction, list);
+    }
+
+    const frozenCauses = new Map<string, FactionCauseTally[]>();
+    for (const f of selectFrozen.all() as { faction: string; causes_json: string }[]) {
+      frozenCauses.set(f.faction, JSON.parse(f.causes_json) as FactionCauseTally[]);
+    }
+
+    return rows
+      .map((r) => ({
+        faction: r.faction,
+        net: r.net,
+        raises: r.raises,
+        lowers: r.lowers,
+        floors: r.floors,
+        ceilings: r.ceilings,
+        firstAt: r.firstAt,
+        lastAt: r.lastAt,
+        causes: mergeCauseTallies(liveCauses.get(r.faction) ?? [], frozenCauses.get(r.faction) ?? []),
+      }))
+      .sort((a, b) => b.lastAt.localeCompare(a.lastAt));
   }
 
   return {
     add(event) {
-      const key = factionKey(event);
-      if (byKey.has(key)) return "known";
-      byKey.set(key, event);
-      events.push(event);
-      if (events.length > MAX_FACTION) {
-        // The oldest hits leave the feed, but what they taught about the faction is kept — otherwise
-        // a standing built up over months would silently shrink the moment the feed filled up.
-        const leaving = events.slice(0, events.length - MAX_FACTION);
-        events = events.slice(-MAX_FACTION);
-        for (const e of leaving) byKey.delete(factionKey(e));
-        retired = foldAll(retired, leaving);
-      }
-      save();
-      return "added";
+      const info = insertHit.run(paramsOf(event));
+      if (info.changes > 0) saver.save();
+      return info.changes === 0 ? "known" : "added";
     },
 
-    recent: (limit = DEFAULT_LIMIT) => events.slice(-limit).reverse(),
+    recent: (limit = DEFAULT_LIMIT) => (selectRecent.all(limit) as HitRow[]).map(rowToRecord),
 
-    standings() {
-      // Most recently touched first — the faction you're actively working belongs at the top, the
-      // same "what's fresh" ordering the spawn and buff boards use.
-      return foldAll(retired, events).sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+    hitsPage({ offset, limit, sortField, sortDesc, filter }) {
+      const col = HIT_SORT_COLUMNS[sortField] ?? HIT_SORT_COLUMNS.at;
+      const dir = sortDesc ? "DESC" : "ASC";
+      const { where, params } = buildFilterSql(filter);
+      // SQLite treats a negative `LIMIT` as "no limit at all" — every other value this query
+      // interpolates is allow-listed (`col`, `dir`) or bound (`params`, and now these two), but
+      // `offset`/`limit` arrive from the renderer's own pagination state with nothing at the IPC
+      // boundary clamping them. Not reachable through `HitTable` today (a grid's own page size is
+      // always positive), but a page of the *whole* ledger handed back for a negative `limit` is
+      // exactly the "fetch everything" cost this store's paging exists to avoid.
+      const safeLimit = Math.max(0, limit);
+      const safeOffset = Math.max(0, offset);
+      // NULLs always last, in either direction — the same rule `sortRows` documents for `delta`
+      // (a floor/ceiling hit) and `cause` (nothing correlated), just expressed as SQL here instead
+      // of a comparator, since SQLite's own default NULL ordering flips with the sort direction.
+      const rows = db
+        .prepare(
+          `SELECT * FROM faction_hits ${where} ORDER BY (${col} IS NULL) ASC, ${col} ${dir}, rowid DESC LIMIT ? OFFSET ?`,
+        )
+        .all(...params, safeLimit, safeOffset) as HitRow[];
+      const total = where
+        ? (db.prepare(`SELECT COUNT(*) as n FROM faction_hits ${where}`).get(...params) as { n: number }).n
+        : (countHits.get() as { n: number }).n;
+      return { rows: rows.map(rowToRecord), total };
     },
+
+    standings: computeStandings,
 
     clear(scope = "records") {
-      // The hits still in the feed are retired on the way out, the same as when they age out of it —
-      // "keep the standings" has to mean *all* of them, not just the ones already folded.
-      if (scope === "records") retired = foldAll(retired, events);
-      else retired = [];
-      events = [];
-      byKey.clear();
+      if (scope === "records") {
+        const freeze = db.transaction(() => {
+          for (const s of computeStandings()) {
+            upsertFrozen.run({
+              faction: s.faction,
+              net: s.net,
+              raises: s.raises,
+              lowers: s.lowers,
+              floors: s.floors,
+              ceilings: s.ceilings,
+              firstAt: s.firstAt,
+              lastAt: s.lastAt,
+              causesJson: JSON.stringify(s.causes),
+            });
+          }
+          deleteHits.run();
+        });
+        freeze();
+      } else {
+        db.transaction(() => {
+          deleteHits.run();
+          deleteFrozen.run();
+        })();
+      }
       saver.flush();
       log.debug("cleared", { scope });
     },
+
     flush() {
       saver.flush();
     },
 
-    // Browsable, nothing patchable: every scalar field here (`faction`, `delta`, `direction`, plus
-    // `at` from `LogEventBase`) is exactly what `factionKey` dedupes by, outside this store's view —
-    // editing any of them would leave `byKey` pointing at a key the record no longer matches, the
-    // same hazard `kill-log.ts` excludes `mob`/`killer` for. `causedBy` is a nested guess, not a
-    // scalar. Still worth listing: finding a bad hit is half of what an audit trail is for.
-    admin: createArrayAdminStore("Faction hits", () => events, {
-      idOf: factionKey,
-      summaryOf: (e) => `${e.faction} ${e.direction}${e.delta !== null ? ` ${e.delta > 0 ? "+" : ""}${e.delta}` : ""} (${e.at})`,
+    // `editable: []`, same as the array-backed store this replaces: every scalar field here is
+    // exactly what `factionKey` dedupes by, so editing one would leave a row the ledger can no
+    // longer recognize as itself if the same line were ever replayed. `causedBy` is a nested guess,
+    // not a scalar. Still worth listing: finding a bad hit is half of what an audit trail is for.
+    admin: createSqlAdminStore<HitRow>("Faction hits", {
+      list: () => selectAll.all() as HitRow[],
+      idOf: (r) => r.key,
+      summaryOf: (r) => `${r.faction} ${r.direction}${r.delta !== null ? ` ${r.delta > 0 ? "+" : ""}${r.delta}` : ""} (${r.at})`,
       editable: [],
-      // `byKey` is left alone, same reasoning as `kill-log.ts`'s own `remove`: a deleted row staying
-      // deduped means replaying the same log can't quietly bring it back.
-      remove: (e) => {
-        const i = events.indexOf(e);
-        if (i >= 0) events.splice(i, 1);
+      auditOf: (r) => (r.admin_audit ? (JSON.parse(r.admin_audit) as AdminAudit) : undefined),
+      applyPatch: (id, field, value, audit) => {
+        // `field` is always a member of `editable` by the time `createSqlAdminStore.patch` calls this
+        // — safe to interpolate since it can only ever be one of this store's own fixed column names,
+        // never arbitrary input. `editable` is empty here, so this never actually runs for this store.
+        db.prepare(`UPDATE faction_hits SET ${field} = ? WHERE key = ?`).run(value as AdminScalar, id);
+        updateAudit.run(JSON.stringify(audit), id);
       },
-      save,
+      // Left deduped forever, same reasoning as `kill-log.ts`'s own `remove`: a deleted row staying
+      // out of the table means replaying the same log can't quietly bring it back — `INSERT OR
+      // IGNORE` only ever ignores a key that's still present.
+      removeRow: (id) => deleteHit.run(id),
+      onChanged: () => saver.save(),
+      // `stores()` (`electron/admin.ts`) calls this on every admin-panel open *and* every
+      // `app.onDataChanged` broadcast the admin window is listening for while it's open — a `list()`
+      // fallback would mean a full `faction_hits` scan-and-map on every faction hit logged while the
+      // panel sits open in the background, exactly the cost ADR 0232 removed the row cap to avoid
+      // paying anywhere else.
+      counts: () => ({
+        total: (countHits.get() as { n: number }).n,
+        edited: (countEditedHits.get() as { n: number }).n,
+      }),
     }),
   };
+}
+
+/**
+ * Fold a pre-ADR-0232 `faction-log.json` into the new tables, once. Unlike a re-fetchable cache
+ * (ADR 0165's wiki pages), the file isn't renamed away afterward — it goes on existing as a
+ * provenance-only stub, because `data-health.ts` still reads its `provenance` field directly off
+ * disk (see the module doc). Guarded by whether the file still carries a `hits` array at all, not by
+ * whether the new tables are empty: a stub (already migrated) has no such array, so this can't
+ * re-run on it, and a player who has since cleared the ledger for real doesn't get it silently
+ * repopulated. `INSERT OR IGNORE` and the frozen table's upsert both make a second run — say, a
+ * crash partway through — safe to simply retry.
+ */
+function migrateFromLegacyJson(db: Database, userDataDir: string, file: string): void {
+  if (!fs.existsSync(file)) return;
+  const legacy = readJson<{
+    hits?: FactionRecord[];
+    retired?: (Omit<FactionStanding, "causes"> & { causes?: FactionCauseTally[] })[];
+    provenance?: DataStamp;
+  }>(file, {});
+  if (!Array.isArray(legacy.hits)) return; // already a stub, or nothing was ever stored
+  const hits = legacy.hits;
+  const retired = Array.isArray(legacy.retired) ? legacy.retired : [];
+
+  const insertHit = db.prepare(`
+    INSERT OR IGNORE INTO faction_hits
+      (key, at, faction, direction, delta, caused_by_kind, caused_by_source, caused_by_gap_sec,
+       caused_by_text, caused_by_quests, caused_by_quests_matched, raw, log_id)
+    VALUES
+      (@key, @at, @faction, @direction, @delta, @causedByKind, @causedBySource, @causedByGapSec,
+       @causedByText, @causedByQuests, @causedByQuestsMatched, @raw, @logId)
+  `);
+  const upsertFrozen = db.prepare(`
+    INSERT INTO faction_standings_frozen (faction, net, raises, lowers, floors, ceilings, first_at, last_at, causes_json)
+    VALUES (@faction, @net, @raises, @lowers, @floors, @ceilings, @firstAt, @lastAt, @causesJson)
+    ON CONFLICT(faction) DO UPDATE SET
+      net = excluded.net, raises = excluded.raises, lowers = excluded.lowers,
+      floors = excluded.floors, ceilings = excluded.ceilings,
+      first_at = excluded.first_at, last_at = excluded.last_at, causes_json = excluded.causes_json
+  `);
+
+  const run = db.transaction(() => {
+    for (const e of hits) {
+      const c = causeToRow(e.causedBy);
+      insertHit.run({
+        key: factionKey(e),
+        at: e.at,
+        faction: e.faction,
+        direction: e.direction,
+        delta: e.delta,
+        causedByKind: c.kind,
+        causedBySource: c.source,
+        causedByGapSec: c.gapSec,
+        causedByText: c.text,
+        causedByQuests: c.quests,
+        causedByQuestsMatched: c.questsMatched,
+        raw: e.raw,
+        logId: e.logId,
+      });
+    }
+    for (const s of retired) {
+      upsertFrozen.run({
+        faction: s.faction,
+        net: s.net,
+        raises: s.raises,
+        lowers: s.lowers,
+        floors: s.floors,
+        ceilings: s.ceilings,
+        firstAt: s.firstAt,
+        lastAt: s.lastAt,
+        causesJson: JSON.stringify(s.causes ?? []),
+      });
+    }
+  });
+  run();
+
+  // Carry the legacy stamp forward exactly as it was, rather than re-stamping at the current
+  // revision: moving storage engines doesn't re-derive anything through today's rules, so a stamp
+  // that was stale before migrating must stay stale, or an unattended re-read still owed would
+  // silently stop happening.
+  if (legacy.provenance) fs.writeFileSync(file, JSON.stringify({ provenance: legacy.provenance }));
+  else writeJson(file, {}, { concern: "faction-log" });
+  log.info("migrated faction-log.json into eqlist.db", { hits: hits.length, retired: retired.length });
 }

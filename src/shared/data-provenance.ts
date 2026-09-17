@@ -177,7 +177,10 @@ export const DATA_CONCERNS: DataConcern[] = [
     // 3: a fight is filed when it ends rather than when the next one starts (ADR 0126), so what
     //    falls inside one moved — and, for the first time, the remedy below actually does something
     //    (ADR 0128: eating a log re-derives the fights it already holds instead of refusing them).
-    revision: 3,
+    // 4: MAX_FIGHTS (1,000) is gone (ADR 0243) — a fight that aged past the old cap didn't survive as
+    //    a folded aggregate the way a kill or a drop does; it was simply gone, so zones()/bests()/
+    //    sessions() silently forgot it. The log itself is the only place it still exists.
+    revision: 4,
     // Stamping shipped *with* the bump to 2, so an unstamped file is revision 1 — genuinely out of
     // date, and the only concern here for which that's true.
     unstamped: 1,
@@ -188,7 +191,7 @@ export const DATA_CONCERNS: DataConcern[] = [
     blurb:
       "Every fight the meter has banked — damage, DPS, spells, and the cells every drill-down is rolled up from. A stale one under-reports rather than looking wrong, so nothing about it draws the eye.",
     changed:
-      "Your own damage-over-time ticks are now read (ADR 0095), and a fight now closes when it ends rather than when the next pull starts (ADR 0126) — so an older fight both misses your DoT damage and sweeps up experience and coin from the pull after it.",
+      "Your own damage-over-time ticks are now read (ADR 0095), and a fight now closes when it ends rather than when the next pull starts (ADR 0126) — so an older fight both misses your DoT damage and sweeps up experience and coin from the pull after it. The 1,000-fight cap is also gone (ADR 0243): a fight that had aged past it was gone for good, not just under-reporting, and digesting your logs again is the only way to get it back.",
   },
   {
     id: "high-scores",
@@ -214,7 +217,10 @@ export const DATA_CONCERNS: DataConcern[] = [
     file: "kill-log.json",
     // 2: a kill line's **articles** are now read, and they are destroyed a line later by
     // `stripArticle` — so they exist on a record only if that record was written by this rule.
-    revision: 2,
+    // 3: MAX_KILLS (5,000) is gone (ADR 0243) — a kill that aged past the old cap kept what it
+    //    taught (its tally, its drop rate, its roam area) but lost its own record: no exact position,
+    //    no per-kill timing, nothing the heatmap or `kills()` can plot individually.
+    revision: 3,
     // Stamping shipped at revision 1, so an unstamped file predates even that. Both are stale
     // against this bump, and both are fixed by the same re-read.
     unstamped: 1,
@@ -222,7 +228,7 @@ export const DATA_CONCERNS: DataConcern[] = [
     blurb:
       "Where each mob died, what it dropped, and what it carried — the heatmap, the observed drop rates, and the mob knowledge pooled from them.",
     changed:
-      "A kill now records whether the mob and its killer were written with an article (ADR 0092) — the log's only signal for what kind of thing died. Kills recorded before that can't say, so a named you have camped for months teaches its respawn nothing until you kill it once more. Digesting the log fills it in for every kill you still have.",
+      "A kill now records whether the mob and its killer were written with an article (ADR 0092) — the log's only signal for what kind of thing died. Kills recorded before that can't say, so a named you have camped for months teaches its respawn nothing until you kill it once more. The 5,000-kill cap is also gone (ADR 0243): a kill that had aged past it kept its tally but lost its own plottable record, and digesting the log again is the only way to get that detail back. Digesting the log fills in everything still covered by a file on disk.",
   },
   {
     id: "loot-log",
@@ -231,7 +237,9 @@ export const DATA_CONCERNS: DataConcern[] = [
     // 2: a drop records the zone it was looted in (ADR 0136). Every drop already on disk has none,
     //    and a re-read is the only thing that can place them — which it now genuinely does, because
     //    the ledger fills the gap in on a line it already holds instead of skipping it (ADR 0137).
-    revision: 2,
+    // 3: MAX_LOOT (20,000) is gone (ADR 0232) — a drop that aged past the old cap kept its tally (how
+    //    many, what it sold for) but lost its own record: no per-drop timing, source, or zone.
+    revision: 3,
     // Stamping shipped long before this bump, so an unstamped ledger predates it too — and has no
     // zones for exactly the same reason. Both are stale, and one re-read fixes both.
     unstamped: 1,
@@ -243,18 +251,22 @@ export const DATA_CONCERNS: DataConcern[] = [
     unattended: true,
     blurb: "Every drop the log has shown, and what the auto-sold ones fetched — the Loot tab and its vendor prices.",
     changed:
-      "A drop now records the zone it was looted in, so the Loot tab can say which camp gave you what (ADR 0136). Drops recorded before that have no zone; re-reading a log fills it in for every one still covered by a log file on disk — which is why the column starts partly blank and fills in from the back.",
+      "A drop now records the zone it was looted in, so the Loot tab can say which camp gave you what (ADR 0136). Drops recorded before that have no zone. The 20,000-drop cap is also gone (ADR 0232): a drop that had aged past it kept its tally but lost its own record — when, from what, where — and digesting a log again is the only way to get that detail back. Re-reading a log fills in everything still covered by a file on disk — which is why the column starts partly blank and fills in from the back.",
   },
   {
     id: "faction-log",
     label: "Faction ledger",
     file: "faction-log.json",
-    revision: 1,
+    // 2: MAX_FACTION (5,000) is gone (ADR 0232) — a hit that aged past the old cap still counted
+    //    toward the standing total, but lost its own record: no likely-cause guess, no timing.
+    revision: 2,
     remedy: "re-eat",
     // Same argument as loot-log: the logs are on this machine, and extracting a faction hit from a
     // line needs no judgement from anybody — so a future rule fix can put this right on its own.
     unattended: true,
     blurb: "Every faction-standing change the log has shown — what raised or lowered it, and by how much.",
+    changed:
+      "The 5,000-hit cap is gone (ADR 0232): a hit that had aged past it still counted toward your standing, but its own record — when it happened, and the kill or conversation guessed to have caused it — was gone. Digesting your logs again recovers the full hit-by-hit ledger for anything still covered by a file on disk.",
   },
   {
     id: "spawn-timers",

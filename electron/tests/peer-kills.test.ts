@@ -11,7 +11,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeKills } from "../peer-kills";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createPeerKills, sanitizeKills } from "../peer-kills";
+import { contributorId } from "../../src/shared/contributors";
 
 /** A well-formed shared kill, which every case below spoils in exactly one way. */
 const kill = (over: Record<string, unknown> = {}) => ({ mob: "a bat", zone: "gfaydark", y: 100, x: -200, confidence: 0.8, ...over });
@@ -85,4 +89,18 @@ test("a well-formed admin audit flag survives re-vetting our own file, but never
     const [row] = sanitizeKills([kill({ __admin: fake })], true);
     assert.equal(admin(row), undefined, JSON.stringify(fake));
   }
+});
+
+// ─── `version()` — what `shareSources` sums to know the pool moved (ADR 0242) ─────────────────
+
+test("version moves on a report, and stays put for a read", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-peer-kills-"));
+  const store = createPeerKills(dir);
+  const bob = { id: contributorId("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), name: "Bob" };
+  const v0 = store.version();
+  store.report(bob, [kill()]);
+  assert.notEqual(store.version(), v0);
+  const v1 = store.version();
+  store.all();
+  assert.equal(store.version(), v1);
 });

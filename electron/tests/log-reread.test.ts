@@ -8,12 +8,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pendingReReads, reReadLogs } from "../log-reread";
-import { createCombatHistory } from "../combat-history";
+import { createCombatHistory, COMBAT_HISTORY_MIGRATIONS, type CombatHistory } from "../combat-history";
+import { openAppDatabase } from "../sqlite-store";
 import { concernById } from "../../src/shared/data-provenance";
 import type { KillLog } from "../kill-log";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "eql-reread-"));
+}
+
+/** A history over a real file — `stored()` below writes one, then this file reopens the same `dir`
+ *  to read it back, which an in-memory database can't demonstrate. */
+function freshHistory(dir: string, sessionId?: string): CombatHistory {
+  const db = openAppDatabase(dir, COMBAT_HISTORY_MIGRATIONS);
+  return createCombatHistory(db, dir, sessionId);
 }
 
 /** A kill log that records nothing — this is about fights, and the real one is tested next door. */
@@ -62,7 +70,7 @@ function logIso(line: string): string {
 function stored(revision: number | undefined, logPath: string) {
   const dir = tempDir();
   // Written by hand rather than through the store, so the stamp is exactly what the test says.
-  const history = createCombatHistory(dir, "run:old");
+  const history = freshHistory(dir, "run:old");
   const stats = {
     startedAt: logIso(LOG[2]), // the fight's own boundaries: its first damage line...
     endedAt: logIso(LOG[3]), // ...and its last, which is what its key is made of
@@ -121,7 +129,7 @@ test("a stale history is re-read and its figures put right, with nothing asked o
   fs.writeFileSync(logPath, LOG_LINES);
   const dir = stored(concernById("combat-history")!.revision - 1, logPath);
 
-  const history = createCombatHistory(dir, "run:new");
+  const history = freshHistory(dir, "run:new");
   assert.equal(history.search("").fights[0].stats.yourDealt, 12); // as the old build left it
 
   const killLog = stubKillLog();
@@ -143,7 +151,7 @@ test("re-reading re-stamps the file, so the next start finds nothing to do", asy
   const dir = stored(concernById("combat-history")!.revision - 1, logPath);
   assert.deepEqual(pendingReReads(dir), ["combat-history"]);
 
-  const history = createCombatHistory(dir, "run:new");
+  const history = freshHistory(dir, "run:new");
   await reReadLogs({ userDataDir: dir, history, killLog: stubKillLog(), logDir, live: "Live" });
 
   // Self-limiting: the data itself is the record that the work was done.
@@ -156,7 +164,7 @@ test("nothing stale means no work and no files read", async () => {
   const logPath = path.join(logDir, "eqlog_Kainos_qeynos.txt");
   fs.writeFileSync(logPath, LOG_LINES);
   const dir = stored(concernById("combat-history")!.revision, logPath);
-  const history = createCombatHistory(dir, "run:new");
+  const history = freshHistory(dir, "run:new");
   assert.equal(await reReadLogs({ userDataDir: dir, history, killLog: stubKillLog(), logDir, live: "L" }), null);
 });
 
@@ -167,7 +175,7 @@ test("a source whose folder has moved is found by name in the folder we watch no
   fs.writeFileSync(logPath, LOG_LINES);
   const dir = stored(concernById("combat-history")!.revision - 1, "D:/old-install/Logs/eqlog_Kainos_qeynos.txt");
 
-  const history = createCombatHistory(dir, "run:new");
+  const history = freshHistory(dir, "run:new");
   const report = await reReadLogs({ userDataDir: dir, history, killLog: stubKillLog(), logDir, live: "Live" });
   assert.deepEqual(report?.files, [logPath]);
   assert.equal(report?.refreshed, 1);
@@ -177,7 +185,7 @@ test("a source that has gone leaves the data alone and stays stale, rather than 
   const logDir = tempDir(); // empty: no logs at all
   const dir = stored(concernById("combat-history")!.revision - 1, "D:/gone/eqlog_Kainos_qeynos.txt");
 
-  const history = createCombatHistory(dir, "run:new");
+  const history = freshHistory(dir, "run:new");
   assert.equal(await reReadLogs({ userDataDir: dir, history, killLog: stubKillLog(), logDir, live: "L" }), null);
   assert.equal(history.search("").fights[0].stats.yourDealt, 12); // untouched
   // Still stale, so the Settings panel goes on naming the remedy for a person who can help.
@@ -193,7 +201,7 @@ test("an unreadable log is skipped rather than taking the repair down with it", 
   fs.mkdirSync(bad);
 
   const dir = stored(concernById("combat-history")!.revision - 1, good);
-  const history = createCombatHistory(dir, "run:new");
+  const history = freshHistory(dir, "run:new");
   history.add(
     { ...history.search("").fights[0].stats, startedAt: logIso("[Fri Jul 17 19:00:00 2026]"), endedAt: logIso("[Fri Jul 17 19:00:01 2026]") },
     null,

@@ -1,8 +1,9 @@
 "use client";
 import { useMemo } from "react";
-import { DataGrid, type GridColDef, type GridSortModel } from "@mui/x-data-grid";
-import { useItemPrices, useLootFeed, useShoppingList } from "@/lib/hooks";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import { useItemPrices, useLootFeed, useLootSearch, useLootVocabulary, useShoppingList } from "@/lib/hooks";
 import { usePersistentShape, usePersistentState } from "@/lib/usePersistentState";
+import { useGridSort } from "@/lib/useGridSort";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { lootKey } from "@/shared/loot-feed";
 import {
@@ -11,9 +12,9 @@ import {
   DEFAULT_PRICE_SORT,
   LOOT_FATES,
   filterLoot,
+  foldSources,
+  foldZones,
   isFiltered,
-  lootSources,
-  lootZones,
   sortLoot,
   sortPrices,
   tallyFates,
@@ -23,13 +24,13 @@ import {
 } from "@/shared/loot-filters";
 import { normalizeItemName } from "@/shared/grouping";
 import { describeCoins, formatCoins } from "@/shared/money";
-import { nextSort, type Sort } from "@/shared/sorting";
+import type { Sort } from "@/shared/sorting";
 import ItemLink from "./ItemLink";
 import ZoneTag from "./ZoneTag";
-import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
-import type { ItemPrice, LootFate, LootRecord } from "@/shared/types";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
+import type { ItemPrice, LootFate, LootRecord, LootSearchFilter } from "@/shared/types";
 
-import { clock, count, countOf, when } from "@/shared/format";
+import { count, countOf, dayTime, when } from "@/shared/format";
 import { CheckField, Empty, PickField, segCls } from "./ui";
 /**
  * Everything that has dropped and what became of it — kept, sold, stored in a depot, or consumed
@@ -61,8 +62,20 @@ import { CheckField, Empty, PickField, segCls } from "./ui";
  * Both tables are `DataGrid`s (ADR 0230), which adds a per-column filter menu on top of
  * `LootFilterBar` — two different questions sharing a screen rather than a mechanism, matching
  * [ADR 0211](../../../specs/decisions/0211-a-loot-filter-searches-the-ledger-not-the-window.md)'s
- * distinction: `LootFilterBar` reaches the whole fetched ledger (`SEARCH_FETCH`/`DEFAULT_FETCH`
- * below), and a grid column filter only ever narrows what's already on screen.
+ * distinction: a grid column filter only ever narrows what's already on screen, never the ledger
+ * itself.
+ *
+ * **Drops reaches the whole ledger unconditionally now, and pages through it** (ADR 0249, extending
+ * ADR 0211/0240). The "small window unless a filter engages" split used to exist so the common case
+ * stayed cheap, but with nowhere left for the grid to draw more than `MAX_ROWS` at once, the payoff
+ * was a fetch that was still capped in every practical sense — just a fetch you couldn't see past.
+ * `DropTable` now always reads from `loot.search`, and an empty filter is simply a query with no
+ * `WHERE` clause (every row, same as `recent`'s own order). A real footer pages through however much
+ * that comes to, the same picker `FactionPanel`'s `HitTable` proved out — see that ADR for why
+ * client-side pagination over an already-fetched array is the right scope here rather than a
+ * `hitsPage`-style paged IPC surface: nothing has shown the whole-ledger fetch itself costs enough to
+ * be worth a second bespoke query shape, and `loot.search`'s own index (ADR 0241) already makes it
+ * cheap to ask for.
  */
 const FATE_LABEL: Record<LootFate, string> = {
   kept: "kept",
@@ -73,22 +86,10 @@ const FATE_LABEL: Record<LootFate, string> = {
 
 type View = "drops" | "prices";
 
-/** Fetched by default — enough for a typical evening without pulling the ledger over IPC on every mount. */
-const DEFAULT_FETCH = 200;
-
-/**
- * Fetched once a filter is actively narrowing things, so a search reaches the whole ledger
- * (`MAX_LOOT`, electron/loot-log.ts) rather than silently answering "not found" for anything
- * older than whatever the default fetch happened to hold.
- */
-const SEARCH_FETCH = 20_000;
-
-/**
- * How many matching rows `DropTable` draws. It has no virtualization, so a filter that matches
- * more than this says so instead of handing it thousands of rows — the same cap `ItemSearchPanel`
- * and `SpellSearchPanel` use over their own catalogues.
- */
-const MAX_ROWS = 300;
+/** A single newest-drop probe — cheap (one row), and enough to answer "is the ledger empty" and to
+ *  key the prices refetch, without fetching the window `DropTable` now owns fetching for itself (the
+ *  same trick `FactionPanel`'s `HITS_PROBE_QUERY` uses). */
+const PROBE_FETCH = 1;
 
 export default function LootPanel() {
   // All four persist: this is a panel you set up the way you read it, and every one of them was
@@ -101,12 +102,28 @@ export default function LootPanel() {
     DEFAULT_PRICE_SORT,
   );
 
-  const drops = useLootFeed(isFiltered(filters) ? SEARCH_FETCH : DEFAULT_FETCH);
+  const probe = useLootFeed(PROBE_FETCH);
+  // Always a real query, even with nothing filtered — an empty filter is just no `WHERE` clause, so
+  // this reaches the whole ledger unconditionally rather than switching between a small fetched
+  // window and a full search depending on whether a filter happens to be engaged.
+  const searchFilter = useMemo<LootSearchFilter>(
+    () => ({
+      fate: filters.fate === "all" ? undefined : filters.fate,
+      item: filters.item.trim() || undefined,
+      source: filters.source || undefined,
+      zone: filters.zone || undefined,
+    }),
+    [filters.fate, filters.item, filters.source, filters.zone],
+  );
+  const { matches: source } = useLootSearch(searchFilter);
+
   const list = useShoppingList();
   // Only a sale can change a price, and the newest drop is the cheapest signal that one landed.
   // Keyed by the drop's whole identity rather than its `logId`: that counter restarts at zero
   // every launch, so on its own it can repeat the value it already held and the refetch is skipped.
-  const prices = useItemPrices(drops[0] ? lootKey(drops[0]) : "");
+  // The probe, not `source` — a filter narrowing what matches shouldn't also narrow which drop
+  // counts as "the newest one" for this.
+  const prices = useItemPrices(probe[0] ? lootKey(probe[0]) : "");
 
   // Names on the shopping list, normalized the same way the store matches them.
   const wanted = useMemo(
@@ -115,20 +132,20 @@ export default function LootPanel() {
   );
 
   const matches = useMemo(
-    () => sortLoot(filterLoot(drops, filters, wanted), lootSort),
-    [drops, filters, wanted, lootSort],
+    () => sortLoot(filterLoot(source, filters, wanted), lootSort),
+    [source, filters, wanted, lootSort],
   );
-  // Capped for the table the way ItemSearchPanel/SpellSearchPanel cap theirs — see MAX_ROWS.
-  const shown = useMemo(() => matches.slice(0, MAX_ROWS), [matches]);
-  // Tallied over every match, not just the rows drawn, so a truncated table doesn't under-count.
+  // Tallied over every match — the grid pages through all of them now, but the tally by the header
+  // always meant every match, not just a page's worth.
   const totals = useMemo(() => tallyFates(matches), [matches]);
-  const sources = useMemo(() => lootSources(drops), [drops]);
-  // The camps the ledger covers, folded — see `lootZones`. From the whole ledger rather than the
-  // filtered rows, so choosing a zone can't remove the option you'd need to choose a different one.
-  const zones = useMemo(() => lootZones(drops), [drops]);
+  // Every corpse and camp the ledger has ever recorded, not just what's currently fetched — so
+  // choosing a filter can't remove an option you'd need to choose a different one (ADR 0240).
+  const vocabulary = useLootVocabulary();
+  const sources = useMemo(() => foldSources(vocabulary.sources), [vocabulary.sources]);
+  const zones = useMemo(() => foldZones(vocabulary.zones), [vocabulary.zones]);
   const sortedPrices = useMemo(() => sortPrices(prices, priceSort), [prices, priceSort]);
 
-  if (drops.length === 0) {
+  if (probe.length === 0) {
     return (
       <Empty
         title="Nothing has dropped yet."
@@ -138,7 +155,7 @@ export default function LootPanel() {
   }
 
   return (
-    <div>
+    <div className="tab-fill">
       <div className="row wrap" style={{ marginBottom: 12 }}>
         <div className="segmented">
           <button
@@ -159,11 +176,8 @@ export default function LootPanel() {
         <span className="spacer" />
         {view === "drops" && (
           <>
-            <span
-              className="muted small"
-              title={isFiltered(filters) ? "Drops matching the filters, of the whole ledger" : "Drops shown, of what's loaded"}
-            >
-              {countOf(matches.length, drops.length, "drop")}
+            <span className="muted small" title="Drops matching the filters, reached across the whole ledger">
+              {countOf(matches.length, source.length, "drop")}
             </span>
             {LOOT_FATES.filter((fate) => totals[fate] > 0).map((fate) => (
               <span key={fate} className={`fate-tally f-${fate}`}>
@@ -174,20 +188,16 @@ export default function LootPanel() {
         )}
       </div>
 
-      {view === "drops" ? (
-        <>
-          <LootFilterBar filters={filters} onFilters={setFilters} sources={sources} zones={zones} />
-          <DropTable drops={shown} wanted={wanted} sort={lootSort} onSort={setLootSort} />
-          {matches.length > shown.length && (
-            <p className="muted small">
-              Showing the first {MAX_ROWS} of {matches.length} matching drops. Narrow the filters and the rest come
-              into view.
-            </p>
-          )}
-        </>
-      ) : (
-        <PriceTable prices={sortedPrices} sort={priceSort} onSort={setPriceSort} />
-      )}
+      <div className="tab-fill-body">
+        {view === "drops" ? (
+          <>
+            <LootFilterBar filters={filters} onFilters={setFilters} sources={sources} zones={zones} />
+            <DropTable drops={matches} wanted={wanted} sort={lootSort} onSort={setLootSort} />
+          </>
+        ) : (
+          <PriceTable prices={sortedPrices} sort={priceSort} onSort={setPriceSort} />
+        )}
+      </div>
     </div>
   );
 }
@@ -302,6 +312,12 @@ function detailLabel(drop: LootRecord): string {
   }
 }
 
+/** Rows-per-page choices for the Drops grid's footer, and which one it opens on — a ledger with no
+ *  cap wants bigger pages than the bounded catalogues `dataGridDefaults.ts`'s shared
+ *  `PAGE_SIZE_OPTIONS` sizes for, the same reason `FactionPanel`'s `HitTable` keeps its own. */
+const DROP_PAGE_SIZES = [25, 50, 100];
+const DROP_DEFAULT_PAGE_SIZE = 50;
+
 type DropRow = LootRecord & { id: string };
 
 /** The ledger, as a `DataGrid` (ADR 0230) — sortable and filterable on every column. */
@@ -329,7 +345,8 @@ function DropTable({
         headerName: "Time",
         description: "When the log recorded it",
         flex: 1,
-        renderCell: (p) => <span className="lt-time">{clock(p.row.at)}</span>,
+        minWidth: 130,
+        renderCell: (p) => <span className="lt-time">{dayTime(p.row.at)}</span>,
       },
       {
         field: "fate",
@@ -388,28 +405,29 @@ function DropTable({
     [],
   );
 
+  // Computed before the early return below: a hook can't be called conditionally.
+  const { sortModel, onSortModelChange } = useGridSort(sort, onSort, LOOT_START_DESC);
+
   if (drops.length === 0) {
     return <Empty title="No drops match these filters." hint="Widen them — the whole ledger is still there." />;
   }
 
-  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
-
   return (
-    <div className="table-scroll">
+    <div className="table-scroll grid-fill">
       <DataGrid
         {...GRID_DEFAULTS}
-        sx={GRID_SX}
+        sx={GRID_SX_FILL}
         rows={rows}
         columns={columns}
         getRowClassName={(p) => (wanted.has(normalizeItemName(p.row.item)) ? "row-wanted" : "")}
-        // Already sorted (and truncated to `MAX_ROWS`) upstream by `LootPanel`, before the cut — the
-        // grid must reflect that order, not re-derive it. See ItemTable for the same shape.
+        // Already sorted upstream by `LootPanel` (`sortLoot`, which folds `zone` by place rather
+        // than by raw string) — the grid must reflect that order, not re-derive it. See ItemTable
+        // for the same shape.
         sortingMode="server"
         sortModel={sortModel}
-        onSortModelChange={(model) => {
-          const key = (model[0]?.field ?? sort.key) as LootSortKey;
-          onSort(nextSort(sort, key, LOOT_START_DESC[key]));
-        }}
+        onSortModelChange={onSortModelChange}
+        pageSizeOptions={DROP_PAGE_SIZES}
+        initialState={{ pagination: { paginationModel: { pageSize: DROP_DEFAULT_PAGE_SIZE, page: 0 } } }}
       />
     </div>
   );
@@ -466,14 +484,18 @@ function PriceTable({
         headerName: "Last sold",
         description: "When you last sold one",
         flex: 1,
+        minWidth: 130,
         cellClassName: "lt-time",
         renderCell: (p) => (
-          <span title={`${count(p.row.sales, "sale")}, last ${when(p.row.lastAt)}`}>{clock(p.row.lastAt)}</span>
+          <span title={`${count(p.row.sales, "sale")}, last ${when(p.row.lastAt)}`}>{dayTime(p.row.lastAt)}</span>
         ),
       },
     ],
     [],
   );
+
+  // Computed before the early return below: a hook can't be called conditionally.
+  const { sortModel, onSortModelChange } = useGridSort(sort, onSort, (key) => key !== "item");
 
   if (prices.length === 0) {
     return (
@@ -484,22 +506,20 @@ function PriceTable({
     );
   }
   const earned = prices.reduce((n, p) => n + p.copper, 0);
-  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
 
   return (
     <>
-      <div className="table-scroll">
+      <div className="table-scroll grid-fill">
         <DataGrid
           {...GRID_DEFAULTS}
-          sx={GRID_SX}
+          sx={GRID_SX_FILL}
           rows={rows}
           columns={columns}
           sortingMode="server"
           sortModel={sortModel}
-          onSortModelChange={(model) => {
-            const key = (model[0]?.field ?? sort.key) as PriceSortKey;
-            onSort(nextSort(sort, key, key !== "item"));
-          }}
+          onSortModelChange={onSortModelChange}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
         />
       </div>
       <p className="muted small">Auto-sales in the ledger have earned {describeCoins(earned)}.</p>

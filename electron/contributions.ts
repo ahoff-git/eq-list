@@ -58,6 +58,14 @@ export interface ContributionStore<T> {
   removeItem(contributorId: string, row: number): void;
   /** How many contributors, and how many items between them — for a status line. */
   size(): { contributors: number; items: number };
+  /**
+   * A counter that moves whenever a `report`/`forget`/`removeItem` changes what `pooled()` would
+   * answer — cheap enough to check on a tick without reading the store, the same contract
+   * `ShareSource.version` states. Meant to be **added** to another such counter (a kill log's, say)
+   * rather than compared alone: two monotonically-non-decreasing counters can only sum to something
+   * new when at least one of them moved, so combining them this way never misses a change.
+   */
+  version(): number;
   flush(): void;
 }
 
@@ -95,6 +103,10 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
   const saver: Saver = createSaver(opts.file, opts.what, () => ({ contributors }), WRITE_DEBOUNCE_MS, {
     concern: opts.concern,
   });
+  // Bumped by every write. Starts at zero every launch, which is fine: `measure()`'s own cache
+  // (`peer-share-hub.ts`) is just as short-lived, so there is no earlier number for a fresh one to
+  // disagree with.
+  let rev = 0;
 
   function read(): Contributions<T> {
     const parsed = readJson<{ contributors?: Contributions<T> }>(opts.file, {});
@@ -127,6 +139,7 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
         // Rule 3: an empty report is a peer going quiet, not a retraction.
         data: data.length ? data : (held?.data ?? []),
       };
+      rev++;
       log.debug("contribution filed", { by: by.id, name: by.name, items: contributors[by.id].data.length });
       saver.save();
     },
@@ -146,6 +159,7 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
     forget(id) {
       if (id === undefined) contributors = {};
       else delete contributors[id];
+      rev++;
       saver.flush();
     },
 
@@ -153,6 +167,7 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
       const entry = contributors[contributorId];
       if (!entry || row < 0 || row >= entry.data.length) return;
       entry.data.splice(row, 1);
+      rev++;
       saver.flush();
     },
 
@@ -160,6 +175,8 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
       const entries = Object.values(contributors);
       return { contributors: entries.length, items: entries.reduce((n, e) => n + e.data.length, 0) };
     },
+
+    version: () => rev,
 
     flush: () => saver.flush(),
   };

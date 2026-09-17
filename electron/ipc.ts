@@ -36,6 +36,8 @@ import { applyFactionCorrections } from "../src/shared/faction-correction";
 import type { UpdateChecker } from "./update-check";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { PeerKillStore } from "./peer-kills";
+import type { PeerRespawnStore } from "./peer-respawns";
+import type { PeerArchive } from "./peer-archive";
 import type { SpawnTracker } from "./spawn-tracker";
 import type { GoalTracker } from "./goal-tracker";
 import type { AchievementTracker } from "./achievement-tracker";
@@ -44,9 +46,9 @@ import type { GameClockTracker } from "./game-clock-tracker";
 import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter } from "../src/shared/types";
 import { AWARI_MSG } from "../src/shared/types";
-import { readContributor } from "../src/shared/contributors";
+import { groupByOrigin, readContributor } from "../src/shared/contributors";
 import { createPeerShareHub, shareSources } from "../src/shared/peer-share-hub";
 import { createUiState } from "./ui-state";
 import type { ShareKind } from "../src/shared/peer-share";
@@ -78,6 +80,10 @@ export interface IpcContext {
   mobs: MobKnowledgeStore;
   /** Kill positions other players have shared, kept across sessions (`peer-kills.ts`). */
   peerKills: PeerKillStore;
+  /** Respawn intervals other players have learned, kept across sessions (`peer-respawns.ts`). */
+  peerRespawns: PeerRespawnStore;
+  /** The last authored share (watches/styles/lists/pins) each name has handed over (`peer-archive.ts`). */
+  peerArchive: PeerArchive;
   /** This install's contributor id, stamped onto everything we contribute (`identity.ts`). */
   contributorId: string;
   /** Respawn countdowns for the nameds you kill (ADR 0092). */
@@ -701,9 +707,18 @@ function registerStatsIpc(context: IpcContext): void {
   // Every item the ledger has ever held — what search falls back on when the wiki's index has
   // never heard of the thing you looted (ADR 0103).
   ipcMain.handle(CH.lootItems, () => lootLog.items());
+  // Reaches the whole ledger, not just whatever's been fetched — what `LootFilterBar` calls the
+  // moment any filter engages, now that there's no cap to fetch "everything" up to (ADR 0232/0240).
+  ipcMain.handle(CH.lootSearch, (_e, filter: LootSearchFilter) => lootLog.search(filter));
+  // Every corpse/zone the ledger has ever recorded, for the filter bar's own picker options —
+  // reaches the whole ledger for the same reason `lootSearch` does.
+  ipcMain.handle(CH.lootVocabulary, () => lootLog.vocabulary());
   // The faction feed's history, the same shape as the loot feed's — tracked in the main process, so
   // the tab shows hits from before it was opened, then follows live ones over CH.factionEvent.
   ipcMain.handle(CH.factionRecent, (_e, limit?: number) => factionLog.recent(limit));
+  // One page of the whole ledger, sorted server-side — what `HitTable`'s grid asks for as the player
+  // pages or re-sorts it, now that the feed has no cap to fetch "everything" up to (ADR 0232).
+  ipcMain.handle(CH.factionHitsPage, (_e, query: FactionHitsQuery) => factionLog.hitsPage(query));
   // Every faction touched, folded to its net standing — with any stated correction folded in on top
   // (`faction-correction.ts`), so every reader of this one channel sees it without knowing corrections
   // exist.
@@ -943,17 +958,54 @@ const CONTRIBUTED_KINDS = new Set<string>([AWARI_MSG.mobs, AWARI_MSG.kills]);
  *     sharing and nothing stable about you goes out at all (`electron/identity.ts`).
  */
 function registerPeerIpc(context: IpcContext): void {
-  const { broadcast, mobs, peerKills, contributorId, store, killLog, spawns, buffs, scores, watcher, wiki, gameClock } = context;
+  const {
+    broadcast,
+    mobs,
+    peerKills,
+    peerRespawns,
+    peerArchive,
+    contributorId,
+    store,
+    killLog,
+    spawns,
+    buffs,
+    scores,
+    watcher,
+    wiki,
+    gameClock,
+  } = context;
 
-  /** File what a peer just told us, and let every open window know the pool moved. */
+  /**
+   * File what a peer just told us, and let every open window know the pool moved.
+   *
+   * `by` is who **sent** this — the direct peer we're connected to — but is not necessarily who a
+   * row is *about* any more: a row relayed from somebody else's own pool names its true origin in
+   * `byId`/`by` (ADR 0242), and `groupByOrigin` splits the batch on exactly that, falling back to
+   * the sender for a row with no such claim (which is every row before this existed, and every row
+   * a peer genuinely observed themself). Each origin's rows are filed as their own `report`, so
+   * `contributions.ts` rule 2 ("a report replaces that contributor's set") stays true *per origin*
+   * rather than per peer we happen to be talking to.
+   */
   const fileContribution = (payload: AwariPayload): void => {
     // Fails closed (`readContributor`): a peer who announces no id is not filed under their display
     // name as they used to be — see `contributors.ts` for why a name cannot be a key.
     const by = readContributor(payload as { id?: unknown; name?: unknown });
     if (!by) return void log.debug("contribution ignored - no contributor id", { kind: payload.kind });
-    if (payload.kind === AWARI_MSG.mobs && Array.isArray(payload.mobs)) mobs.report(by, payload.mobs);
-    else if (payload.kind === AWARI_MSG.kills && Array.isArray(payload.kills)) peerKills.report(by, payload.kills);
-    else return;
+    if (payload.kind === AWARI_MSG.mobs && Array.isArray(payload.mobs)) {
+      for (const { by: origin, rows } of groupByOrigin(payload.mobs, by).values()) mobs.report(origin, rows);
+    } else if (payload.kind === AWARI_MSG.kills && Array.isArray(payload.kills)) {
+      for (const { by: origin, rows } of groupByOrigin(payload.kills, by).values()) peerKills.report(origin, rows);
+      // `respawns` has no `AWARI_MSG` entry of its own, unlike `mobs`/`kills`: those two reuse a
+      // constant that also named a genuine top-level broadcast in the pre-ADR-0141 era, and
+      // `respawns` never had one — it has only ever arrived as `keep()`'s synthesized payload.
+    } else if (payload.kind === "respawns" && Array.isArray(payload.respawns)) {
+      for (const { by: origin, rows } of groupByOrigin(payload.respawns, by).values()) peerRespawns.report(origin, rows);
+      // Unlike `mobs`/`kills`, a pooled respawn is folded straight into `spawns.view()`
+      // (`spawn-tracker.ts`, ADR 0242) rather than only read back out through `shareSources` — so the
+      // Timers tab needs telling the same way a kill or a player edit already tells it, or a fresh
+      // pooled interval would sit unseen until something else happened to trigger a refetch.
+      broadcast(CH.spawnsChanged, undefined);
+    } else return;
     broadcast(CH.peerDataChanged, undefined);
   };
 
@@ -981,10 +1033,17 @@ function registerPeerIpc(context: IpcContext): void {
     changed: () => broadcast(CH.peerShareChanged, undefined),
     offered: (notice) => broadcast(CH.peerOffered, notice),
     outdated: (notice) => broadcast(CH.peerOutdated, notice),
+    archiveReceived: (kind, name, rows) => peerArchive.record(kind, name, rows),
+    archived: (kind) => peerArchive.entries(kind),
+    archiveClear: (name, kind) => peerArchive.clear(name, kind),
     sources: shareSources({
       getList: () => store.getList(),
       getSettings: () => store.getSettings(),
       killLog,
+      mobKnowledge: mobs,
+      peerKills,
+      peerRespawns,
+      factions: wiki.factions,
       spawns,
       buffs,
       scores,
@@ -996,6 +1055,8 @@ function registerPeerIpc(context: IpcContext): void {
     // The spell catalogue, addressed by shard on the same terms (ADR 0196).
     spells: wiki.spells,
     acceptSpells: (pages, shard) => wiki.spells.accept(pages, shard),
+    // The faction catalogue, mirrored whole rather than by shard (ADR 0244).
+    acceptFactions: (pages) => wiki.factions.accept(pages),
     // A peer's `/time` reading — kept only if it's newer than what we already have (ADR 0189).
     acceptGameTime: (reading) => gameClock.notePeerReading(reading.hour, reading.at ? Date.parse(reading.at) : Date.now()),
   });
@@ -1131,6 +1192,7 @@ function registerAdminIpc(context: IpcContext): void {
     factionHits: context.factionLog.admin,
     respawnTimers: context.spawns.admin,
     peerKills: context.peerKills.admin,
+    peerRespawns: context.peerRespawns.admin,
     pooledMobKnowledge: context.mobs.admin,
   });
 

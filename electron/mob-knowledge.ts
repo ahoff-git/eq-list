@@ -130,12 +130,21 @@ export interface MobKnowledgeStore {
   mine(zone?: string): MobObservation[];
   /** Yours pooled with everything peers have told us. */
   all(zone?: string): MobKnowledge[];
+  /**
+   * Everyone's observations, flat and still credited (`by`/`byId`) — the shape a `give` sends, not
+   * the shape a panel draws. What lets this install re-share what a since-departed peer once taught
+   * it, without losing whose sample it originally was
+   * ([ADR 0242](../specs/decisions/0242-a-pooled-row-keeps-its-own-origin.md)).
+   */
+  pooled(): MobObservation[];
   /** File a contributor's observations, replacing whatever they told us before. */
   report(by: Contributor, observations: unknown[]): void;
   /** Who has told us what, newest report first. */
   contributors(): KnowledgeContributor[];
   /** Forget one contributor's contributions, or everybody's. Your own are derived and unaffected. */
   forgetPeers(id?: string): void;
+  /** Moves whenever a peer's report would change what `pooled()` answers (`ShareSource.version`). */
+  version(): number;
   flush(): void;
   /**
    * The hidden admin panel's view of what *peers* have told us — see `electron/admin.ts`. Your own
@@ -169,10 +178,14 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
 
     all: (zone) => mergeObservations(forZone(killLog.observations(), zone), forZone(store.pooled(), zone)),
 
+    pooled: () => store.pooled(),
+
     report(by, observations) {
       store.report(by, observations);
       log.debug("peer observations filed", { by: by.id, name: by.name });
     },
+
+    version: () => store.version(),
 
     contributors: () =>
       store.all().map(

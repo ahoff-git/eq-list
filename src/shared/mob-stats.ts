@@ -100,6 +100,14 @@ export function roamWhy(area: MobArea): string {
  */
 export const LOCATION_CLUSTER_UNITS = 600;
 
+/**
+ * How finely `bucketPoints` groups raw kill positions before `clusterAreas` ever sees them — well
+ * under `LOCATION_CLUSTER_UNITS`, so nothing sharing a bucket could ever have been split into two
+ * real camps by the clustering that follows; it only ever merges points a person would already call
+ * "the same spot." See `bucketPoints`' own doc for why this exists at all.
+ */
+const AREA_GRID_UNITS = 100;
+
 /** Straight-line distance between two clusters' centres, EQ units. */
 function centroidDistance(a: Pick<MobArea, "y" | "x">, b: Pick<MobArea, "y" | "x">): number {
   return Math.hypot(a.y - b.y, a.x - b.x);
@@ -153,6 +161,45 @@ export function clusterAreas(areas: readonly MobArea[], thresholdUnits: number =
     clusters.push(merged);
   }
   return clusters.sort((a, b) => b.samples - a.samples);
+}
+
+/**
+ * Fold raw kill positions down to one weighted point per `AREA_GRID_UNITS`-sized cell, before
+ * `clusterAreas` ever sees them.
+ *
+ * `clusterAreas`'s nearest-pair search re-scans every remaining cluster on every merge — cheap for
+ * the handful of distinct camps a mob actually has, but its input used to be bounded by
+ * `kill-log.ts`'s own record cap, not by anything about positions. Once that cap was removed (ADR
+ * 0243), a single mob camped for thousands of kills fed thousands of raw points straight in, one
+ * per kill — and a spot visited enough times to be worth calling a "camp" is, almost by definition,
+ * visited from nearly the same handful of coordinates over and over. Bucketing first means the
+ * *number of kills there* stops being what the clustering pass has to chew through; the number of
+ * genuinely distinct 100-unit patches a mob was actually killed across — which stays small for the
+ * exact same spot camped forever, and only grows with real spatial spread — is what does.
+ *
+ * Not lossy in any clustering decision: `AREA_GRID_UNITS` is a sixth of `LOCATION_CLUSTER_UNITS`, so
+ * two points landing in the same bucket were always going to end up in the same final cluster
+ * anyway. `samples` still sums to the same total `clusterAreas` would have seen one point at a time;
+ * only `spread` differs in one respect worth naming: a bucket's spread is computed directly from its
+ * own points (the exact farthest one from their shared centroid), where feeding the same points to
+ * `clusterAreas` one at a time would have built the figure up through a chain of pairwise merges,
+ * each adding its own distance rather than measuring the true one — a strictly looser bound. Bucketing
+ * reports the tighter, more accurate number for whatever already reads as "the same spot."
+ */
+function bucketPoints(points: readonly { y: number; x: number }[]): MobArea[] {
+  const cells = new Map<string, { y: number; x: number }[]>();
+  for (const p of points) {
+    const key = `${Math.round(p.y / AREA_GRID_UNITS)},${Math.round(p.x / AREA_GRID_UNITS)}`;
+    const cell = cells.get(key);
+    if (cell) cell.push(p);
+    else cells.set(key, [p]);
+  }
+  return [...cells.values()].map((pts) => {
+    const y = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+    const x = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+    const spread = Math.max(0, ...pts.map((p) => Math.hypot(p.y - y, p.x - x)));
+    return { y: Math.round(y), x: Math.round(x), spread: Math.round(spread), samples: pts.length };
+  });
 }
 
 /**
@@ -369,7 +416,7 @@ export function observeMobs(kills: KillRecord[]): MobObservation[] {
   }
 
   return [...byKey.values()].map(({ points, ...obs }) => {
-    const areas = clusterAreas(points.map((p) => ({ ...p, spread: 0, samples: 1 })));
+    const areas = clusterAreas(bucketPoints(points));
     return { ...obs, areas, area: areas[0] };
   });
 }

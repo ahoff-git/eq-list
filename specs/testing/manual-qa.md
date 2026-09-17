@@ -37,14 +37,49 @@ features for later in [../ideas.md](../ideas.md).
   instead of spliced into the grid. Then the same check on Faction → **Standings**: click a row with
   more than 3 causes attributed and confirm its Kills/Quests breakdown opens below the table, closes
   on a second click, and only one row's breakdown is open at a time.
-- **Faction Hits pages through the whole ledger, and its footer doesn't reopen the popover bug.**
-  ([ADR 0230](../decisions/0230-every-table-gets-a-column-menu.md).) The Hits feed no longer caps at
-  200, so with more than 50 hits recorded confirm a real page count shows at the bottom (not one long
-  scroll) and the ▶/◀ arrows move between pages. There is **no** "Rows per page" selector beside it —
-  that's deliberate (a single fixed page size), so its absence is correct, not a bug. Then the control
-  it's standing in for: on every *other* table (which show no footer at all), confirm there's still no
-  "rows per page" anywhere — if one appears, something re-enabled the footer without the single-option
-  guard, and clicking it is exactly the popover-position bug this was built to avoid.
+- **Faction Hits pages through the whole ledger, server-side, and the ▶ arrow actually moves.**
+  ([ADR 0232](../decisions/0232-a-ledger-that-outlives-its-cap-is-a-database.md),
+  [ADR 0234](../decisions/0234-a-paged-grid-gets-a-fixed-height-and-a-real-filter.md).) The Hits feed
+  has no cap of its own, so with more than 50 hits recorded confirm a real page count shows at the
+  bottom (not one long scroll), the ▶/◀ arrows move to a genuinely different set of rows each time —
+  **this regressed once already**: an unmemoized `sortModel` array recreated on every render made the
+  grid quietly republish a `sortModelChange` on every page click, which MUI's own pagination hook
+  reads as a real re-sort and resets `page` back to 0, so the arrow looked broken (always the same
+  page) even though the fetch underneath was correct — and the **rows per page** selector (25/50/100)
+  changes the count shown per page. Sorting or filtering a column resets back to page 1 (a re-sort or
+  a new filter changes what belongs on every page, including the one you're on).
+- **Faction Hits grid fills the window instead of stopping at a fixed height.**
+  ([ADR 0248](../decisions/0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md).) Open
+  Faction → **Hits** on a tall/maximized window and confirm the grid (and its footer) extend down to
+  fill the panel rather than stopping partway down with blank space below — then shrink the window and
+  confirm the grid shrinks with it, falling back to its own internal scrollbar rather than pushing the
+  footer off-screen. Toggling the interface-scale zoom (Settings) should track the same way at any
+  scale, since a percentage/flex height (unlike the old fixed pixel figure) moves with the zoomed
+  window rather than against it.
+- **Every grid now shows a real "rows per page" footer, not just Faction Hits.**
+  ([ADR 0249](../decisions/0249-every-grid-gets-a-real-pager.md).) Open Items, Spells, Loot's **Drops**
+  and **Sells for**, Faction's **Standings**, Session's per-mob and per-zone tables, and Peers'
+  scoreboard, and confirm each one now has a footer with page arrows and a rows-per-page choice
+  (10/25/50/100 on most; Loot Drops keeps 25/50/100, the same larger set Faction Hits uses) — these
+  used to hide the footer entirely (ADR 0230). Where a table's sort is persisted (Items, Spell
+  Catalog, both Loot tables, both Faction tables): **exercise the exact regression Faction Hits hit
+  first** — sort by a column, then click to the next page, and confirm the page actually advances
+  rather than silently resetting to page 1 (an unmemoized `sortModel` would do exactly that once a
+  footer exists to expose it, even though it was invisible while the footer was hidden). Tables whose
+  sort was never persisted (Session's two tables, Peers' scoreboard, the fight breakdown's Spells
+  view) have no such controlled `sortModel` and aren't at risk of this specific bug, but still confirm
+  their footer works. A table sharing its page with other content (all of the above except Faction's
+  two and Loot's two) should show a fixed-height box with its own internal scrollbar past ~8-9 rows,
+  not grow to swallow the rest of the page the way it used to.
+- **Loot Drops reaches the whole ledger unconditionally now, and pages through it.**
+  ([ADR 0250](../decisions/0250-loot-drops-reaches-the-whole-ledger-unconditionally.md).) The
+  "showing the first 300 of N" message and its hard cutoff are gone — with more than 300 drops
+  recorded (filtered or not), confirm the page count at the bottom reflects every matching drop, not
+  just the first 300, and that paging all the way to the last page actually reaches the oldest matches
+  rather than dead-ending. Clearing every filter should still show the same total the header count
+  already claimed (`countOf`), now genuinely reachable via the pager rather than truncated first.
+  "On my list" should still narrow correctly since it's applied client-side after the full ledger is
+  fetched, same as before.
 - **Row coloring survived the move to `DataGrid`.** Spot-check that `LootPanel`'s **Drops** table
   still gold-highlights a row that's on your shopping list, `ItemTable`'s out-of-era rows are dimmed
   and a row's Level cell is colored by how confident the source is (mob vs. zone), and the
@@ -1072,6 +1107,50 @@ features for later in [../ideas.md](../ideas.md).
     better-evidenced clock. And a buff board should name *people* — if you see your own name on
     somebody else's Spirit of Wolf, the target resolution has failed and that is the bug the unit
     tests exist to catch early.
+- **A relayed pool survives its source leaving — never run with real clients.**
+  ([ADR 0242](../decisions/0242-a-pooled-row-keeps-its-own-origin.md).) Needs **three** clients (A, B,
+  C) with `mobs`/`kills`/`respawns` on. Connect A and B only; kill a few of the same named on A so it
+  reports a `mobs` tally, and let B pool it (watch B's debug log for `contribution filed`). Quit A
+  entirely. Connect C to B (A still offline) and confirm C ends up with that named's tally too — check
+  the hidden admin panel's **Pooled mob knowledge** on C and confirm the row is credited to **A's**
+  name, not B's (the whole point: B relayed it, B didn't adopt it). Then the collision case this ADR
+  exists to prevent: with A back online and connected to both B and C, kill the *same* named on A a
+  few more times and confirm C's rate moves by that many kills **once**, not twice (B and C both
+  holding a path to A's data must not double A's sample). Repeat the tally-survives-departure check for
+  `kills` (the map's peer heatmap on C should still show B's relayed dot after A quits) and for
+  `respawns` (previously a total no-op — confirm the hidden admin panel now lists a **Peer respawns**
+  store at all, and that a learned interval from A reaches C the same way).
+- **An authored share outlives the tray — never run with real clients.**
+  ([ADR 0242](../decisions/0242-a-pooled-row-keeps-its-own-origin.md).) Two clients: on A, ask B for
+  its watch rules and confirm they land in A's tray as always. Wait past `TRAY_TTL_MS` (30 minutes) —
+  or just quit and relaunch A — and confirm **What's arrived** still shows B's watches, now under a
+  row that reads as "not currently reachable" (B's live roster row is what that check is against, so
+  reconnect B and confirm the row does *not* duplicate — one entry, now live again). Then the boundary
+  this feature deliberately doesn't cross: confirm the recovered watches are still not applied to A's
+  own rules on their own, and confirm B never received anything back — this is a memory, not a sync.
+- **A pooled respawn interval shows up on your own Timers tab, not just a peer's — never run with
+  real clients.** ([ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md).) Two
+  clients, `respawns` on. On A, camp a named enough times to learn its interval; confirm it appears on
+  A's own Timers tab as always. On **B, who has never camped that named**, confirm the same camp
+  appears in B's Timers tab too, with a usable estimate — not just in the hidden admin panel's **Peer
+  respawns** store, which is where it lived before this ADR. Then confirm the merge, not a
+  replacement: if B *has* also camped the same named itself, B's own tighter-or-wider bound should
+  survive rather than being overwritten by A's, and killing it once more on B should still move B's
+  own figure. Finally, camp it further on A after B has already pooled it, and confirm B's Timers row
+  updates within about a minute (the reconciliation tick) without B doing anything.
+- **A room fills its faction pages once between everyone — never run with real clients.**
+  ([ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md).) Two clients, *Faction
+  pages* on (it's on by default — confirm it's listed under **What you share** → mirror, beside *Item
+  pages*). On A, view or search a faction neither client has looked up before (Debug logging on, watch
+  for `took N of M faction pages`-style lines). Confirm B picks the same page up automatically within
+  the minute tick, with **no click on B** — the same automatic-fetch treatment `gameTime` gets, not
+  the click-to-ask authored behaviour. Then the newest-wins half: refresh that faction page on
+  whichever client is behind and confirm it's the one that jumps forward, never the fresher copy
+  regressing to a stale peer message (same rule ADR 0164 already established for items). Quit and
+  relaunch the client that never looked the page up itself and confirm it's still there after
+  reconnecting. Finally, confirm this in the hidden admin panel isn't needed to see it working — a
+  faction page taken from a peer should read back through the ordinary Search/Faction UI exactly like
+  one this install fetched itself.
 - **The offer notice, and its one action.** Never run. With two clients, switch a share kind on
   from a peer and confirm the other side raises **one** toast naming them (not "Someone (3f9a)" —
   if you see that, the `hello`/offer race beat `NOTICE_DEBOUNCE_MS`), that switching six on is still

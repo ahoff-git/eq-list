@@ -5,7 +5,12 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeObservations } from "../mob-knowledge";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createMobKnowledge, sanitizeObservations } from "../mob-knowledge";
+import { contributorId } from "../../src/shared/contributors";
+import type { KillLog } from "../kill-log";
 
 const obs = (over: Record<string, unknown> = {}) => ({ mob: "a bat", zone: "gfaydark", kills: 4, drops: { "Bat Fang": 2 }, ...over });
 
@@ -62,4 +67,30 @@ test("a peer still on a build from before ADR 0228 — only `area`, no `areas` a
   const [row] = sanitizeObservations([obs({ area: { y: 10, x: 20, spread: 3, samples: 5 } })], false);
   assert.deepEqual(row.areas, [{ y: 10, x: 20, spread: 3, samples: 5 }]);
   assert.deepEqual(row.area, { y: 10, x: 20, spread: 3, samples: 5 });
+});
+
+// ─── `pooled()` and `version()` — the two the share hub reads (ADR 0242) ───────────────────────
+
+const BOB = { id: contributorId("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), name: "Bob" };
+
+function tempDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "eql-mob-knowledge-"));
+}
+
+const noKills: KillLog = { observations: () => [] } as unknown as KillLog;
+
+test("pooled() is everyone's, flat and credited — the shape a `give` sends, not a merged rate", () => {
+  const knowledge = createMobKnowledge(tempDir(), noKills);
+  knowledge.report(BOB, [obs()]);
+  const [row] = knowledge.pooled();
+  assert.equal(row.mob, "a bat");
+  assert.equal(row.by, "Bob");
+  assert.equal(row.byId, BOB.id);
+});
+
+test("version moves when a peer's report changes what pooled() answers, and nothing else moves it", () => {
+  const knowledge = createMobKnowledge(tempDir(), noKills);
+  const v0 = knowledge.version();
+  knowledge.report(BOB, [obs()]);
+  assert.notEqual(knowledge.version(), v0);
 });

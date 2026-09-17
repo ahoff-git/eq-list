@@ -1,8 +1,9 @@
 "use client";
 import { api } from "@/lib/api";
-import { useKnownItems, useLucyCard, useSettings } from "@/lib/hooks";
+import { useLucyCard, useSettings } from "@/lib/hooks";
 import { count, dayTime } from "@/shared/format";
 import { normalizeItemName } from "@/shared/grouping";
+import type { KnownItem } from "@/shared/known-items";
 import ItemDrops from "./ItemDrops";
 import LucySays, { LucyLink } from "./LucySays";
 import { AddButton } from "./ui";
@@ -21,10 +22,16 @@ import { addItem } from "@/lib/addToList";
  * dropped them and where (`ItemDrops`), and a button to put it on the list — which is the whole
  * reason you searched. Where we know nothing either, it says so and offers the wiki, because
  * "we've never seen this and neither has the wiki" is a real answer and a blank page is not.
+ *
+ * `known` comes from the caller rather than its own `useKnownItems()` call: `SearchPanel` already
+ * reads it for its own "what you've held" results, and a second live instance here would mean two
+ * copies of the same `loot.items()` SQL aggregate — a scan of the whole loot ledger, which
+ * [ADR 0232](../../../specs/decisions/0232-a-ledger-that-outlives-its-cap-is-a-database.md) left
+ * with no cap to bound it — re-running in step on every kill, for as long as this page stays open.
  */
-export default function ObservedItemView({ title }: { title: string }) {
+export default function ObservedItemView({ title, known }: { title: string; known: readonly KnownItem[] }) {
   const key = normalizeItemName(title);
-  const mine = useKnownItems().find((i) => normalizeItemName(i.item) === key);
+  const mine = known.find((i) => normalizeItemName(i.item) === key);
   const lucy = useLucyCard(title);
   const askLucy = useSettings()?.askLucy ?? true;
 

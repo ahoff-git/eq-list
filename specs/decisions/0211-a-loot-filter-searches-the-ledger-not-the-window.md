@@ -4,6 +4,11 @@
 
 Accepted
 
+Its "recent window unless a filter engages" split and its `MAX_ROWS`-drawn cap are superseded by
+[0250](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md), now that a real pager (ADR
+0249) has somewhere to page *to*. The core distinction this record drew — a filter reaches the
+ledger, a grid column filter only narrows the screen — stands.
+
 ## Context
 
 The Loot tab (`LootPanel.tsx`) fetched a flat `useLootFeed(200)` regardless of what the filters

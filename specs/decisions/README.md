@@ -18,7 +18,7 @@ retired: [0062](./0062-a-travel-graph-of-zone-lines.md) routes between zones ove
 **exit labels**, which is different data with a different provenance, and still does no routing
 inside one.
 
-**0105 and 0120 were each issued twice**, by two pieces of work landing the same afternoon. The
+**0105, 0120 and 0243 were each issued twice**, by two pieces of work landing the same day. The
 earlier record of each pair keeps its number; the later one moved to the end of the sequence, which
 is the only resolution that leaves every citation in the code still pointing at what it meant:
 
@@ -26,6 +26,7 @@ is the only resolution that leaves every citation in the code still pointing at 
 | --- | --- | --- |
 | 0105 | **0131** | [An overlay that cannot be operated does not keep the screen](./0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) |
 | 0120 | **0132** | [A contribution is keyed by who made it, and kept](./0132-a-contribution-is-keyed-by-who-made-it.md) |
+| 0243 | **0244** | [A pooled fact answers your own queries too, and the wiki gets a third mirror](./0244-a-pooled-fact-answers-your-own-queries-too.md) |
 
 The lesson is cheap to apply: **take the next number when the file is created**, not when the work is
 finished, so a number is claimed before a second author can reach for it.
@@ -244,7 +245,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0208: An observed drop rate is a lower bound, and says so](./0208-an-observed-drop-rate-is-a-lower-bound-and-says-so.md)
 - [0209: A swing's verb is a skill only when the log names one](./0209-a-swings-verb-is-a-skill-only-when-the-log-names-one.md)
 - [0210: Out-of-era flagging reaches the spells tab, the shopping list and Lucy's live verdict](./0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)
-- [0211: A loot filter searches the ledger, not the window](./0211-a-loot-filter-searches-the-ledger-not-the-window.md)
+- [0211: A loot filter searches the ledger, not the window](./0211-a-loot-filter-searches-the-ledger-not-the-window.md) — *its recent-window split and `MAX_ROWS` cap superseded by [0250](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md); the ledger-vs-window distinction stands*
 - [0212: An achievement criterion can watch the log or wait to be told](./0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)
 - [0213: Every stock alert claims its own corner](./0213-every-stock-alert-claims-its-own-corner.md)
 - [0214: A counted criterion tallies, and a cast criterion is always yours](./0214-a-counted-criterion-tallies-and-a-cast-criterion-is-always-yours.md)
@@ -263,9 +264,35 @@ finished, so a number is claimed before a second author can reach for it.
 - [0227: An admin edit is a flagged exception to stored history](./0227-an-admin-edit-is-a-flagged-exception-to-stored-history.md)
 - [0228: A mob can have more than one known location](./0228-a-mob-can-have-more-than-one-known-location.md)
 - [0229: A faction correction is a stated offset, not a replacement](./0229-a-faction-correction-is-a-stated-offset.md)
-- [0230: Every table gets a column menu — MUI X Data Grid replaces the hand-rolled tables](./0230-every-table-gets-a-column-menu.md)
+- [0230: Every table gets a column menu — MUI X Data Grid replaces the hand-rolled tables](./0230-every-table-gets-a-column-menu.md) — *its `hideFooter`-by-default rule superseded by [0249](./0249-every-grid-gets-a-real-pager.md); the library adoption and column-menu split stand*
+- [0231: The zoom root moves inside the shell](./0231-the-zoom-root-moves-inside-the-shell.md)
+- [0232: A ledger that outlives its cap is a database](./0232-a-ledger-that-outlives-its-cap-is-a-database.md)
+- [0233: A migrated ledger keeps its provenance file](./0233-a-migrated-ledger-keeps-its-provenance-file.md)
+- [0234: A paged grid gets a fixed height, and its filter reaches the whole ledger](./0234-a-paged-grid-gets-a-fixed-height-and-a-real-filter.md) — *its fixed height superseded by [0248](./0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md); the filter stands*
+- [0235: A migrated ledger's permanent keys migrate too](./0235-a-migrated-ledgers-permanent-keys-migrate-too.md)
+- [0236: A cached snapshot goes stale; a live reference doesn't](./0236-a-cached-snapshot-goes-stale-a-live-reference-doesnt.md)
+- [0237: An empty SUM is SQL NULL, not zero](./0237-an-empty-sum-is-sql-null-not-zero.md)
+- [0238: A null-typed field loses its own type](./0238-a-null-typed-field-loses-its-own-type.md)
+- [0239: A store with no cap needs a cheap count](./0239-a-store-with-no-cap-needs-a-cheap-count.md)
+- [0240: A loot search outgrew its own fetch cap](./0240-a-loot-search-outgrew-its-own-fetch-cap.md) — *its own flagged follow-up built as [0250](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md)*
+- [0241: An uncapped scan wants an index, and one reader](./0241-an-uncapped-scan-wants-an-index-and-one-reader.md)
+- [0242: A pooled row keeps its own origin, so it can be handed on](./0242-a-pooled-row-keeps-its-own-origin.md)
+- [0243: Remove the remaining storage caps](./0243-remove-the-remaining-storage-caps.md)
+- [0244: A pooled fact answers your own queries too, and the wiki gets a third mirror](./0244-a-pooled-fact-answers-your-own-queries-too.md) — *issued as 0243 and renumbered — see Retired and reused numbers*
+- [0245: A camp's cost is its footprint, not its kill count](./0245-a-camps-cost-is-its-footprint-not-its-kill-count.md)
+- [0246: Kill observations recompute on a worker thread](./0246-kill-observations-recompute-on-a-worker-thread.md)
+- [0247: A background cache any SQL-derived value can share](./0247-a-background-cache-any-sql-derived-value-can-share.md)
+- [0248: A paged grid fills the window instead of a fixed height](./0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md)
+- [0249: Every grid gets a real pager](./0249-every-grid-gets-a-real-pager.md)
+- [0250: Loot Drops reaches the whole ledger unconditionally, paginated client-side](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md)
 
 ## Open Questions
+
+- **The admin panel's cross-store `search()` still does a full table scan per store, per search.**
+  [ADR 0239](./0239-a-store-with-no-cap-needs-a-cheap-count.md) fixed `stores()`'s equivalent cost
+  (an automatic, background-triggered call) but left `search()` (a user-initiated, already-debounced
+  one) as a known gap — a real SQL `WHERE`/`LIKE`-based search per store, matching `faction-log.ts`'s
+  `hitsPage` filter as a template, is real design work that ADR deliberately didn't fold in.
 
 - **Should a verdict expire?** ADR 0180 writes down "checked, not an item" and clears it only on a
   `CACHE_VERSION` bump, so a red link the wiki turns into a real item page next month stays skipped

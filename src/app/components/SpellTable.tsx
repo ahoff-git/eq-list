@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useSettings, useSpellFacts, type SpellFacts } from "@/lib/hooks";
-import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
 import { Empty } from "./ui";
 import type { FightStats, SpellStat } from "@/shared/types";
 
@@ -186,7 +186,11 @@ export default function SpellTable({ window }: { window: FightStats }) {
           if (params.id === MELEE_ID) return;
           setOpen((prev) => (prev === params.id ? null : (params.id as string)));
         }}
-        initialState={{ sorting: { sortModel: [{ field: "damage", sort: "desc" }] } }}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        initialState={{
+          sorting: { sortModel: [{ field: "damage", sort: "desc" }] },
+          pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+        }}
       />
       {openStat && (
         <div className="spell-breakdown-panel">

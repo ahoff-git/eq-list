@@ -180,3 +180,41 @@ test("createAdminRegistry reports every store's size and how much of it is alrea
   assert.deepEqual(registry.remove("loot", "l1"), { ok: true });
   assert.equal(registry.records("loot").length, 0);
 });
+
+test("stores() prefers a store's own counts() over scanning list(), when one is offered", () => {
+  // `faction-log.ts`/`loot-log.ts` keep every row forever (ADR 0232) — `stores()` runs on every
+  // admin-panel open and every `app.onDataChanged` broadcast the admin window is listening for while
+  // it's open, so a `list()`-based count there would mean a full table scan-and-map on every hit or
+  // drop logged while the panel just happens to be sitting open. A fake `AdminStore` whose `list()`
+  // throws proves `stores()` never calls it when `counts()` is offered.
+  let listCalls = 0;
+  const withCounts = {
+    label: "Faction hits",
+    list: () => {
+      listCalls++;
+      return [];
+    },
+    get: () => undefined,
+    patch: () => ({ ok: false as const, error: "unused" }),
+    remove: () => ({ ok: false as const, error: "unused" }),
+    counts: () => ({ total: 300_000, edited: 12 }),
+  };
+  // No `counts` at all — the array-backed path, which must still fall back to `list()`.
+  const withoutCounts = {
+    label: "Kills",
+    list: () => [{ id: "k1", summary: "a gnoll", edited: false, history: [], fields: [] }],
+    get: () => undefined,
+    patch: () => ({ ok: false as const, error: "unused" }),
+    remove: () => ({ ok: false as const, error: "unused" }),
+  };
+  const registry = createAdminRegistry({ withCounts, withoutCounts });
+
+  assert.deepEqual(
+    registry.stores().sort((a, b) => a.id.localeCompare(b.id)),
+    [
+      { id: "withCounts", label: "Faction hits", count: 300_000, editedCount: 12 },
+      { id: "withoutCounts", label: "Kills", count: 1, editedCount: 0 },
+    ],
+  );
+  assert.equal(listCalls, 0, "counts() alone answered it — list() was never touched");
+});

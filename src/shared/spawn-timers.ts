@@ -343,6 +343,74 @@ export interface RespawnLearning {
   crossedDifficulty: number;
 }
 
+/**
+ * What a peer's respawn share carries — the same conclusion `SharedRespawn` (`peer-share.ts`) is,
+ * named locally so this module doesn't have to import the wire type to describe it (this module is
+ * imported *by* `peer-share.ts`, so the reverse would be circular).
+ */
+export interface RespawnFacts {
+  key: string;
+  mob: string;
+  place: string;
+  shortestSeconds?: number;
+  longestSeconds?: number;
+  samples: number;
+  lastKillAt?: string;
+}
+
+/** The tighter of two upper bounds — the smaller one, undefined meaning "no bound yet". */
+function tighterOf(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return Math.min(a, b);
+}
+
+/** The wider of two — the same reasoning as `tighterOf`, the other direction. */
+function widerOf(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return Math.max(a, b);
+}
+
+/**
+ * Fold what the room has learned about a camp into your own — the `respawns` counterpart to
+ * `mob-stats.ts`'s `mergeObservations`, and why `respawnFor` (below) is never the only source
+ * `SpawnTracker.view()` reads.
+ *
+ * The two bounds merge the way a single observer's own gaps already do inside `learnRespawns`: the
+ * shortest usable gap **anyone** has seen is the tightest honest upper bound anybody has, and the
+ * longest is the other end of the same evidence. `samples` sums, since it counts *how much
+ * evidence exists*, and a room's total evidence about a camp is more than any one player's alone.
+ * `mine` wins the `mob`/`place` labelling where it has a row at all — the peer-only fallback exists
+ * for a camp you have never personally camped, which is the case this whole merge is for.
+ */
+export function mergeRespawns(mine: readonly RespawnLearning[], theirs: readonly RespawnFacts[]): RespawnLearning[] {
+  const byKey = new Map<string, RespawnLearning>();
+  for (const m of mine) byKey.set(m.key, { ...m });
+  for (const t of theirs) {
+    const held = byKey.get(t.key);
+    if (!held) {
+      byKey.set(t.key, {
+        key: t.key,
+        mob: t.mob,
+        place: t.place,
+        shortestSeconds: t.shortestSeconds,
+        longestSeconds: t.longestSeconds,
+        samples: t.samples,
+        lastKillAt: t.lastKillAt,
+        gaps: [],
+        crossedDifficulty: 0,
+      });
+      continue;
+    }
+    held.shortestSeconds = tighterOf(held.shortestSeconds, t.shortestSeconds);
+    held.longestSeconds = widerOf(held.longestSeconds, t.longestSeconds);
+    held.samples += t.samples;
+    if (t.lastKillAt && (!held.lastKillAt || t.lastKillAt > held.lastKillAt)) held.lastKillAt = t.lastKillAt;
+  }
+  return [...byKey.values()];
+}
+
 /** How the caller narrows what counts as evidence. Both are the player's own corrections. */
 export interface LearnOptions {
   /** Ignore every gap *beginning* before this moment, per timer — the relearn cutoff. */

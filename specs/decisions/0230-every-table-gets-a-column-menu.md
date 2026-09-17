@@ -4,6 +4,11 @@
 
 Accepted
 
+Its `hideFooter`-by-default rule (six of seven tables get no pager, `HitTable` gets one fixed page
+size) is superseded by [0249](./0249-every-grid-gets-a-real-pager.md), once the popover-position bug
+that rule existed to avoid was fixed at its root. Everything else here — the library adoption, the
+column-menu/filter split, the Community-tier boundary — stands.
+
 ## Context
 
 Every table in the app could be sorted — `sorting.ts`'s `nextSort`/`sortRows` and `SortHeader.tsx`

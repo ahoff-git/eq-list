@@ -468,6 +468,66 @@ test("observeMobs finds two real camps instead of blending them into one bad ave
   assert.equal(obs.areas?.[0], obs.area);
 });
 
+/**
+ * The bug this guards: `clusterAreas`'s greedy nearest-pair search is roughly cubic in how many
+ * points it's handed, and every kill at a camp used to hand it one raw point. That cost was hidden
+ * by `kill-log.ts`'s old `MAX_KILLS` cap (nothing could ever accumulate past it); removing the cap
+ * (ADR 0243) turned "camp one mob for a few thousand kills" — the exact thing removing the cap was
+ * for — into a multi-second-or-worse freeze on every `observations()` read. `observeMobs` now
+ * pre-buckets same-ish positions (`bucketPoints`) before they ever reach `clusterAreas`, so the cost
+ * tracks genuine spatial spread, not raw kill count.
+ *
+ * Timing-bounded rather than call-counted, since what actually matters here is wall-clock cost — a
+ * generous ceiling (a couple of seconds) that a correct implementation clears in milliseconds but the
+ * old unbucketed path could not have cleared at all at this size (2,000 raw points alone measured
+ * over 20 seconds before this fix).
+ */
+test("observeMobs stays fast when one camp accounts for thousands of kills", () => {
+  const kills: KillRecord[] = [];
+  for (let i = 0; i < 5000; i++) {
+    kills.push(
+      kill({
+        mob: "a farmed mob",
+        at: `2026-07-29T${String(1 + Math.floor(i / 3600)).padStart(2, "0")}:${String(Math.floor(i / 60) % 60).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}.000Z`,
+        // A real camp isn't a single exact point — /loc has some spread even standing still.
+        y: Math.round(Math.random() * 40),
+        x: Math.round(Math.random() * 40),
+      }),
+    );
+  }
+
+  const start = Date.now();
+  const [obs] = observeMobs(kills);
+  const elapsedMs = Date.now() - start;
+
+  assert.ok(elapsedMs < 2000, `expected well under 2s, took ${elapsedMs}ms`);
+  assert.equal(obs.kills, 5000);
+  assert.equal(obs.areas?.length, 1, "one tight camp is one area, not thousands of them");
+  assert.equal(obs.area?.samples, 5000, "every positioned kill still counts toward the sample size");
+});
+
+test("observeMobs keeps two real, heavily-farmed camps apart rather than merging or losing one", () => {
+  const kills: KillRecord[] = [];
+  const at = (i: number) => `2026-07-29T00:${String(Math.floor(i / 60) % 60).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}.000Z`;
+  for (let i = 0; i < 3000; i++) {
+    kills.push(kill({ mob: "a farmed mob", at: at(i), y: Math.round(Math.random() * 50), x: Math.round(Math.random() * 50) }));
+  }
+  // A second, much rarer camp well outside the clustering threshold.
+  const farY = LOCATION_CLUSTER_UNITS * 3;
+  for (let i = 0; i < 30; i++) {
+    kills.push(kill({ mob: "a farmed mob", at: at(3000 + i), y: farY + Math.round(Math.random() * 20), x: Math.round(Math.random() * 20) }));
+  }
+
+  const [obs] = observeMobs(kills);
+  assert.equal(obs.areas?.length, 2, "the rare second camp isn't blended into the busy one, or dropped");
+  assert.equal(
+    obs.areas!.reduce((n, a) => n + a.samples, 0),
+    3030,
+    "every positioned kill is accounted for across both camps",
+  );
+  assert.equal(obs.area?.samples, 3000, "the busier camp still leads");
+});
+
 test("sumObservations re-clusters across a retirement fold rather than losing the split", () => {
   const campA = observeMobs([kill({ mob: "a gnoll", y: 0, x: 0 }), kill({ mob: "a gnoll", y: 5, x: 5 })]);
   const campB = observeMobs([kill({ mob: "a gnoll", y: 0, x: LOCATION_CLUSTER_UNITS + 200 })]);

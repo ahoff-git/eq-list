@@ -367,6 +367,17 @@ export interface WikiClient {
     fill(): void;
   };
   /**
+   * Faction pages, mirrored whole rather than by shard — `Category:Factions` is 258 pages, small
+   * enough that the generic whole/delta protocol every other pooled kind already uses is enough on
+   * its own, with none of `items`'/`spells`' shard/coverage/harvest machinery
+   * ([ADR 0244](../../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)).
+   * `rows()` is everything we currently hold; `accept` takes what a peer handed us.
+   */
+  factions: {
+    rows(): SharedItemPage[];
+    accept(pages: SharedItemPage[]): number;
+  };
+  /**
    * Hand the client its half of the room, once main has built both.
    *
    * Late-bound because the share hub needs the wiki client (to answer an ask) and the wiki client
@@ -540,6 +551,29 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
   zoneIndex.ensureFresh();
   outEraZoneIndex.ensureFresh();
   factionIndex.ensureFresh();
+
+  /**
+   * Every faction page we hold, kept whole in memory rather than tracked by title-and-shard the way
+   * `items`/`spells` are. `Category:Factions` is 258 pages — small enough that holding every page
+   * (not just knowing which shard it's in) costs nothing and needs none of the shard/coverage
+   * bookkeeping those two carry
+   * ([ADR 0244](../../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)).
+   */
+  const factionsHeld = new Map<string, WikiPage>();
+  /**
+   * Warmed **lazily**, on the first ask, never at launch — the same "no request, no index warm, no
+   * crawl" rule `cachedItems()` already holds itself to, and for the identical reason: a walk over
+   * every bucket is exactly the whole-cache-open [ADR 0165](../../specs/decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)
+   * exists to prevent, and most launches never connect to a room at all. Idempotent — a second call
+   * while the first is still walking returns the same promise rather than starting a second walk.
+   */
+  let factionsWarm: Promise<void> | null = null;
+  function factionRows(): SharedItemPage[] {
+    factionsWarm ??= store.each((hit) => {
+      if (hit.page.kind === "faction") factionsHeld.set(hit.page.title, hit.page);
+    });
+    return [...factionsHeld.values()];
+  }
 
   /** A page we hold, with the one thing the store doesn't know: how old it is by our clock. */
   function readCache(title: string): { page: WikiPage; ageMs: number; version: number } | null {
@@ -1335,6 +1369,39 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     return taken;
   }
 
+  /**
+   * The `factions` counterpart to `acceptItems` — same "newest copy wins, age travels" rule, minus
+   * both the item-pack invalidation (factions have no derived catalogue of their own) and the shard
+   * recheck (factions aren't shard-addressed at all, ADR 0244). `factionsHeld` is updated directly
+   * rather than through `pageWritten`, since that hook only runs on the fetch path.
+   */
+  function acceptFactions(pages: SharedItemPage[]): number {
+    let taken = 0;
+    const now = Date.now();
+    for (const page of pages) {
+      // Fails closed: a row that arrived under `factions` but doesn't actually say `kind: "faction"`
+      // teaches this cache nothing, however `readSharedPage` came to accept it onto the wire.
+      if (page.kind !== "faction") continue;
+      const stamped = page.fetchedAt ? Date.parse(page.fetchedAt) : NaN;
+      const fetchedAt = Number.isFinite(stamped) ? Math.min(stamped, now) : now;
+      if (now - fetchedAt >= ttlMs()) continue;
+      const held = readCache(page.title);
+      if (held && parsedCurrently(held.page.kind, held.version)) {
+        const ours = Date.parse(held.page.fetchedAt);
+        if (Number.isFinite(ours) && ours >= fetchedAt) continue;
+      }
+      const full: WikiPage = { ...page, fetchedAt: new Date(fetchedAt).toISOString() };
+      try {
+        store.put(page.title, CACHE_VERSION, full);
+        factionsHeld.set(page.title, full);
+        taken++;
+      } catch (e) {
+        log.warn("could not keep a shared faction page:", (e as Error).message);
+      }
+    }
+    return taken;
+  }
+
   /** How the harvester reaches the room. Late-bound: main wires it once both halves exist. */
   let room: PeerLink = { peers: () => [], myId: () => "solo", askPeer: () => {}, claim: () => {} };
   /** The `spells` counterpart — a separate room link, since coverage is per-kind. */
@@ -1594,6 +1661,10 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
     const shard = shardOf(title);
     if (indexed && byShard.has(shard)) recheckShard(shard);
     if (spellIndexed && spellByShard.has(shard)) recheckSpellShard(shard);
+    // `factionsHeld` has no shard/coverage bookkeeping to recheck — just the page itself, kept
+    // current for whichever install fetched it, on-demand fetch and peer `accept` alike.
+    const written = store.get(title);
+    if (written?.page.kind === "faction") factionsHeld.set(title, written.page);
   }
 
   async function buildCatalogue(): Promise<CachedItem[]> {
@@ -2135,6 +2206,10 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number 
       accept: acceptSpells,
       learnTitles: learnSpellTitles,
       fill: fillSpellsFromRoom,
+    },
+    factions: {
+      rows: factionRows,
+      accept: acceptFactions,
     },
     levelSources: () => levelEvidence,
     questZoneSource: () => questZoneEvidence,

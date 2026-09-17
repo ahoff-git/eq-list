@@ -689,3 +689,80 @@ test("a zone page we took from a peer is handed on with its links intact", async
   assert.ok(zone, "the zone page is ours to give");
   assert.deepEqual(zone?.links, ["Gnoll Hide Lariat", "A Gnoll"], "and it still carries its shape");
 });
+
+// ─── Faction pages, mirrored whole rather than by shard (ADR 0244) ─────────────────────────────
+
+const factionPage = (title: string, fetchedAt: string): SharedItemPage => ({
+  kind: "faction",
+  title,
+  wikiPath: `/${title.replace(/ /g, "_")}`,
+  sources: [],
+  components: [],
+  rewards: [],
+  fetchedAt,
+});
+
+test("a faction page a peer hands us is kept, and reads back through getPage like any other", async () => {
+  const r = rig();
+  try {
+    assert.equal(r.wiki.factions.accept([factionPage("Wharf Rats", daysAgo(1))]), 1);
+    const page = await r.wiki.getPage("Wharf Rats");
+    assert.equal(page?.kind, "faction");
+    assert.equal(r.wiki.factions.rows().length, 1);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("the newest-copy-wins rule applies to factions exactly as it does to items", async () => {
+  const r = rig();
+  try {
+    r.wiki.factions.accept([factionPage("Wharf Rats", daysAgo(10))]);
+    assert.equal(r.wiki.factions.accept([factionPage("Wharf Rats", daysAgo(12))]), 0, "an older copy is refused");
+    assert.equal(r.wiki.factions.accept([factionPage("Wharf Rats", daysAgo(1))]), 1, "a newer one replaces ours");
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("a row claiming a kind other than faction teaches the faction cache nothing", async () => {
+  const r = rig();
+  try {
+    assert.equal(r.wiki.factions.accept([page("Not Actually A Faction", daysAgo(1), 1)]), 0);
+    assert.equal(r.wiki.factions.rows().length, 0);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("factions.rows() is warmed lazily — a fresh client that never asks never walks its cache", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-faction-lazy-"));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (() => Promise.reject(new Error("network disabled for this test"))) as typeof fetch;
+  try {
+    const first = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    first.factions.accept([factionPage("Wharf Rats", daysAgo(1))]);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const real = fs.readFileSync;
+    let opens = 0;
+    (fs as { readFileSync: typeof fs.readFileSync }).readFileSync = ((...args: Parameters<typeof fs.readFileSync>) => {
+      opens++;
+      return real(...args);
+    }) as typeof fs.readFileSync;
+    try {
+      // A relaunch that never asks for faction data at all — same shape as "a launch opens a
+      // handful of files, not the whole cache" above, but pinned to this one accessor rather than
+      // inferred from the total. Construction alone still reads the mirrored indexes and harvest
+      // checkpoints (a handful of small files), so the bound is "still small", not "zero".
+      createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } finally {
+      (fs as { readFileSync: typeof fs.readFileSync }).readFileSync = real;
+    }
+    assert.ok(opens < 11, `nothing asked about factions, but the relaunch still opened ${opens} files`);
+  } finally {
+    globalThis.fetch = realFetch;
+    await cleanup(dir);
+  }
+});

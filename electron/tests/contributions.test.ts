@@ -18,6 +18,7 @@ import path from "node:path";
 import {
   contributorId,
   contributorName,
+  groupByOrigin,
   isContributorId,
   isLegacyContributorId,
   legacyContributorId,
@@ -197,4 +198,77 @@ test("a name change follows the contributor rather than splitting them", () => {
   s.report({ id: ALICE.id, name: "Alicia" }, [{ n: 1 }, { n: 2 }]);
   assert.equal(s.size().contributors, 1);
   assert.equal(s.all()[0].by.name, "Alicia"); // the label is refreshed; the key never moved
+});
+
+// ── version ───────────────────────────────────────────────────────────────────
+
+test("version moves on report, forget and removeItem — never on a read", () => {
+  const dir = tempDir();
+  const s = store(dir);
+  const v0 = s.version();
+  s.report(ALICE, [{ n: 1 }]);
+  const v1 = s.version();
+  assert.notEqual(v1, v0);
+  s.pooled();
+  s.all();
+  s.size();
+  assert.equal(s.version(), v1, "reading never moves it");
+  s.removeItem(ALICE.id, 0);
+  assert.notEqual(s.version(), v1);
+  const v2 = s.version();
+  s.report(BOB, [{ n: 9 }]);
+  assert.notEqual(s.version(), v2);
+  const v3 = s.version();
+  s.forget();
+  assert.notEqual(s.version(), v3);
+});
+
+// ── grouping by true origin (ADR 0242) ──────────────────────────────────────────
+
+test("a row naming no origin is filed under whoever sent it", () => {
+  const groups = groupByOrigin([{ n: 1 }, { n: 2 }], ALICE);
+  assert.equal(groups.size, 1);
+  assert.deepEqual(groups.get(ALICE.id), { by: ALICE, rows: [{ n: 1 }, { n: 2 }] });
+});
+
+test("a row naming a real origin is filed under that origin, not the sender relaying it", () => {
+  // Alice relays a row Bob originally taught her — Bob left the room, but Alice still has it.
+  const relayed = { n: 5, byId: BOB.id, by: "Bob" };
+  const own = { n: 1 };
+  const groups = groupByOrigin([own, relayed], ALICE);
+  assert.equal(groups.size, 2);
+  assert.deepEqual(groups.get(ALICE.id), { by: ALICE, rows: [own] });
+  assert.deepEqual(groups.get(BOB.id), { by: { id: BOB.id, name: "Bob" }, rows: [relayed] });
+});
+
+test("a byId that isn't a shape we'd mint ourselves is not trusted as somebody's identity", () => {
+  // Failing closed the same way `readContributor` does: an untrusted claim falls back to the
+  // sender rather than filing under a stranger's made-up id.
+  for (const byId of ["Bob", "not-an-id", ""]) {
+    const groups = groupByOrigin([{ n: 1, byId, by: "Bob" }], ALICE);
+    assert.equal(groups.size, 1);
+    assert.deepEqual(groups.get(ALICE.id)?.rows, [{ n: 1, byId, by: "Bob" }]);
+  }
+});
+
+test("a relayed origin with no stated name falls back to the unknown label, never the sender's", () => {
+  const groups = groupByOrigin([{ n: 1, byId: BOB.id }], ALICE);
+  assert.equal(groups.get(BOB.id)?.by.name, UNKNOWN_CONTRIBUTOR);
+});
+
+test("several relayed origins in one batch each get their own group", () => {
+  const carol = contributorId("cccccccc-1111-2222-3333-444444444444");
+  const groups = groupByOrigin(
+    [{ n: 1, byId: BOB.id, by: "Bob" }, { n: 2, byId: carol, by: "Carol" }, { n: 3, byId: BOB.id, by: "Bob" }],
+    ALICE,
+  );
+  assert.equal(groups.size, 2);
+  assert.deepEqual(
+    groups.get(BOB.id)?.rows.map((r) => r.n),
+    [1, 3],
+  );
+  assert.deepEqual(
+    groups.get(carol)?.rows.map((r) => r.n),
+    [2],
+  );
 });

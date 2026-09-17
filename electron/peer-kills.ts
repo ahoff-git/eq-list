@@ -90,6 +90,8 @@ export interface PeerKillStore {
   report(by: Contributor, kills: unknown[]): void;
   /** Forget one contributor's kills, or everybody's. */
   forget(id?: string): void;
+  /** Moves whenever a peer's report would change what `all()` answers (`ShareSource.version`). */
+  version(): number;
   flush(): void;
   /** The hidden admin panel's view of every contributor's shared kills — see `electron/admin.ts`. */
   admin: AdminStore;
@@ -119,6 +121,8 @@ export function createPeerKills(userDataDir: string): PeerKillStore {
     },
 
     forget: (id) => store.forget(id),
+
+    version: () => store.version(),
 
     flush: () => store.flush(),
 

@@ -38,12 +38,51 @@ import {
 /** What every record gains once the panel has touched it — present on any plain object. */
 type Administrable = { __admin?: AdminAudit };
 
+/**
+ * A nullable SQLite integer column (0/1/NULL) restored to a real tri-state boolean, for a row a SQL
+ * store hands to `createSqlAdminStore`. `adminFieldType` infers a field's type from its live JS
+ * value, so an un-widened integer column would show in the admin panel as a plain number box rather
+ * than the `true`/`false` toggle a genuinely boolean field gets everywhere else in the app — the
+ * same reasoning `coerceBooleanAdminPatch` handles on the way back in. Shared rather than redeclared
+ * per store: `kill-log.ts` and `combat-history.ts` both had their own copy of exactly this.
+ */
+export const triNull = (v: number | null): boolean | null => (v === null ? null : !!v);
+
+/**
+ * The other half of `triNull`: re-coerce a typed `"true"`/`"false"` **string** back to a real
+ * boolean before it's bound into an `UPDATE`. `adminFieldType`/`coerceAdminValue`
+ * (`src/shared/admin.ts`) infer a field's type from its row's *current* value — so a column that's
+ * genuinely boolean but still holds SQL `NULL` (never yet determined) reads as `"null"` type, not
+ * `"boolean"`, and a patch typed through the toggle arrives here as the literal string instead of a
+ * boolean. `fields` names every column on this row that's boolean regardless of what it currently
+ * holds — left uncorrected, the string `"false"` would bind into an `INTEGER` column and read back
+ * as `true` (`!!"false"`). Returns a value ready to bind: a real `0`/`1` for a boolean column, the
+ * input unchanged for anything else.
+ */
+export function coerceBooleanAdminPatch(fields: ReadonlySet<string>, field: string, value: AdminScalar): AdminScalar {
+  const asBool = fields.has(field) && (value === "true" || value === "false") ? value === "true" : value;
+  return typeof asBool === "boolean" ? (asBool ? 1 : 0) : asBool;
+}
+
 export interface AdminStore {
   label: string;
   list(): AdminRecord[];
   get(id: string): AdminRecord | undefined;
   patch(id: string, field: string, input: string): AdminPatchResult;
   remove(id: string): AdminPatchResult;
+  /**
+   * How many records this store holds, and how many are edited — without materializing every one of
+   * them the way `list()` does. Optional: an array-backed store's `list()` is already a cheap
+   * in-memory read (and every one of them is still cap-bounded), so counting via `list().length` costs
+   * it nothing extra. A SQL-backed store with no cap (ADR 0232 — `faction_hits`/`loot_records` keep
+   * every row forever) is a different story: `createAdminRegistry.stores()` calls this for every
+   * registered store on every admin-panel open *and* on every `app.onDataChanged` broadcast the admin
+   * window happens to be listening for while it's open, so a `list()`-based count there would mean a
+   * multi-hundred-millisecond full-table scan — blocking the single-threaded main process for every
+   * window, not just the admin one — on every kill or hit logged while the panel sits open in the
+   * background.
+   */
+  counts?(): { total: number; edited: number };
 }
 
 function scalarField(key: string, value: unknown): AdminField {
@@ -134,6 +173,84 @@ export function createArrayAdminStore<T extends object>(
   };
 }
 
+export interface SqlAdminOptions<Row extends object> {
+  /** Every row, freshest read each call — never cached, the same contract `createArrayAdminStore`'s
+   *  `getItems()` makes, just satisfied by a query instead of a reference to a live array. */
+  list: () => Row[];
+  /** This record's id — stable across a save, since the panel opens one by it. */
+  idOf: (row: Row) => string;
+  /** The one-line label a list row shows before anything is expanded. */
+  summaryOf: (row: Row) => string;
+  /** Which fields may be changed. Anything else is visible on the record but not through `patch`. */
+  editable: readonly string[];
+  /** This row's own audit trail, already parsed from wherever the store keeps it. */
+  auditOf: (row: Row) => AdminAudit | undefined;
+  /** Write one field's coerced value and the folded audit trail back to this row. `field` is always
+   *  a member of `editable` by the time this is called — `patch` below checks that first — so it is
+   *  safe for a store to interpolate directly into an `UPDATE ... SET <field> = ?`. */
+  applyPatch: (id: string, field: string, value: AdminScalar, audit: AdminAudit) => void;
+  /** Delete this row from wherever it lives. */
+  removeRow: (id: string) => void;
+  /** Tell the rest of the running app something changed, if the store has a broadcast for that. */
+  onChanged?: () => void;
+  /** Cheap `COUNT(*)`-shaped totals, so `AdminStore.counts()` doesn't have to fall back to scanning
+   *  and mapping every row through `list()` just to report how many there are — see `AdminStore`'s
+   *  own doc on why that matters for a store with no cap. Optional only because a store that hasn't
+   *  gotten around to it yet still works, falling back to `list()`. */
+  counts?: () => { total: number; edited: number };
+}
+
+/**
+ * The SQL-backed twin of `createArrayAdminStore`, for a store whose rows live in a database table
+ * instead of an in-memory array (ADR 0232). Same field-typing and audit-folding rules, care of the
+ * same `fieldsOf`/`coerceAdminValue`/`foldAdminEdit` helpers — only how a row is found, changed and
+ * removed differs, which is exactly what `list`/`auditOf`/`applyPatch`/`removeRow` let a store say
+ * for itself.
+ */
+export function createSqlAdminStore<Row extends object>(label: string, opts: SqlAdminOptions<Row>): AdminStore {
+  const find = (id: string): Row | undefined => opts.list().find((row) => opts.idOf(row) === id);
+  const toRecord = (row: Row): AdminRecord => {
+    const audit = opts.auditOf(row);
+    return {
+      id: opts.idOf(row),
+      summary: opts.summaryOf(row),
+      edited: !!audit?.edited,
+      history: audit?.history ?? [],
+      fields: fieldsOf(row, opts.editable),
+    };
+  };
+
+  return {
+    label,
+    list: () => opts.list().map(toRecord),
+    get: (id) => {
+      const row = find(id);
+      return row ? toRecord(row) : undefined;
+    },
+    patch(id, field, input) {
+      if (!opts.editable.includes(field)) return { ok: false, error: `"${field}" is not editable` };
+      const row = find(id);
+      if (!row) return { ok: false, error: "no such record" };
+      const current = (row as Record<string, unknown>)[field] as AdminScalar;
+      const coerced = coerceAdminValue(current, input);
+      if (!coerced.ok) return coerced;
+      const at = new Date().toISOString();
+      const value = coerced.value ?? null;
+      const audit = foldAdminEdit(opts.auditOf(row), { field, from: current, to: value, at });
+      opts.applyPatch(id, field, value, audit);
+      opts.onChanged?.();
+      return { ok: true };
+    },
+    remove(id) {
+      if (!find(id)) return { ok: false, error: "no such record" };
+      opts.removeRow(id);
+      opts.onChanged?.();
+      return { ok: true };
+    },
+    counts: opts.counts,
+  };
+}
+
 /**
  * Every registered store, addressed by id. The panel never sees a store object directly — only this
  * — so adding one is always the same shape: build it with `createArrayAdminStore`, add it to the
@@ -154,6 +271,10 @@ export function createAdminRegistry(stores: Record<string, AdminStore>): AdminRe
   return {
     stores: () =>
       Object.entries(stores).map(([id, store]) => {
+        if (store.counts) {
+          const { total, edited } = store.counts();
+          return { id, label: store.label, count: total, editedCount: edited };
+        }
         const list = store.list();
         return { id, label: store.label, count: list.length, editedCount: list.filter((r) => r.edited).length };
       }),

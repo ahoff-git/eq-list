@@ -124,3 +124,30 @@ export function contributorName(name: unknown): string {
 export function readContributor(payload: { id?: unknown; name?: unknown }): Contributor | null {
   return isContributorId(payload.id) ? { id: payload.id, name: contributorName(payload.name) } : null;
 }
+
+/**
+ * Split a batch of contributed rows by who **originally** made each one, not who happens to be
+ * handing it to us right now.
+ *
+ * Pooled data can now reach an install at second hand — P1 relays what P2 once told it, after P2
+ * has gone — and `report`'s "replace this contributor's whole set" rule (`contributions.ts`) only
+ * stays correct if the set it replaces is keyed by the *origin*, not the messenger. A row that names
+ * its own origin (`byId`/`by`, stamped by `mob-knowledge.ts`/`peer-kills.ts`'s `credit` and carried
+ * across the wire — [ADR 0242](../../specs/decisions/0242-a-pooled-row-keeps-its-own-origin.md))
+ * is filed under that origin; a row with none is the sender's own, exactly as before.
+ *
+ * `byId` **fails closed** the same way `readContributor` does: a value that isn't a shape we mint
+ * ourselves is not trusted as somebody else's identity, and falls back to the sender rather than
+ * filing an untrusted claim under a stranger's id.
+ */
+export function groupByOrigin<T>(rows: readonly T[], sender: Contributor): Map<string, { by: Contributor; rows: T[] }> {
+  const groups = new Map<string, { by: Contributor; rows: T[] }>();
+  for (const row of rows) {
+    const r = row as { byId?: unknown; by?: unknown } | null;
+    const origin: Contributor = isContributorId(r?.byId) ? { id: r.byId, name: contributorName(r?.by) } : sender;
+    const group = groups.get(origin.id);
+    if (group) group.rows.push(row);
+    else groups.set(origin.id, { by: origin, rows: [row] });
+  }
+  return groups;
+}

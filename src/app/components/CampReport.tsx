@@ -4,9 +4,9 @@ import { describeCoins, formatCoins } from "@/shared/money";
 import type { MobKillStat, ZoneReport } from "@/shared/types";
 
 import { duration, when } from "@/shared/format";
-import { useRead } from "@/lib/hooks";
+import { useCombatReportsRefresh, useRead } from "@/lib/hooks";
 import ItemLink from "./ItemLink";
-import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
 /** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_ZONES: ZoneReport[] = [];
 
@@ -21,13 +21,16 @@ const NO_ZONES: ZoneReport[] = [];
  * the other half of the answer, and comes in two columns rather than one total: coin the mob
  * carried and what its drops vendored for behave differently and are gathered differently
  * (ADR 0047) — a hover breaks the split out where the table shows the sum.
- * `refreshKey` re-reads the zone table — history only changes when a fight ends.
+ * `refreshKey` re-reads the zone table — history only changes when a fight ends. `useCombatReportsRefresh`
+ * covers the rest: `zones()` answers from a shared background cache (ADR 0247) that can still be
+ * catching up the instant a fight ends, so this re-reads again once it actually has.
  *
  * Both tables are `DataGrid`s (ADR 0230) — sortable and filterable on every column, which neither
  * had before, since nothing here previously asked a question narrower than "show me everything".
  */
 export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]; refreshKey: string }) {
-  const zones = useRead((a) => a.combat.zones(), NO_ZONES, [refreshKey]);
+  const reportsRefresh = useCombatReportsRefresh();
+  const zones = useRead((a) => a.combat.zones(), NO_ZONES, [refreshKey, reportsRefresh]);
 
   return (
     <>
@@ -37,12 +40,16 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
       {byMob.length === 0 ? (
         <p className="muted small">Nothing killed yet this session.</p>
       ) : (
-        <DataGrid
-          {...GRID_DEFAULTS}
-          sx={GRID_SX}
-          columns={MOB_COLUMNS}
-          rows={byMob.map((m) => ({ id: m.mob, ...m }))}
-        />
+        <div className="table-scroll">
+          <DataGrid
+            {...GRID_DEFAULTS}
+            sx={GRID_SX}
+            columns={MOB_COLUMNS}
+            rows={byMob.map((m) => ({ id: m.mob, ...m }))}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+          />
+        </div>
       )}
 
       <h3 className="section-head" title="Every fight ever recorded, grouped by zone">
@@ -53,12 +60,16 @@ export default function CampReport({ byMob, refreshKey }: { byMob: MobKillStat[]
           No zoned history yet — fights are filed against whatever zone the log last reported.
         </p>
       ) : (
-        <DataGrid
-          {...GRID_DEFAULTS}
-          sx={GRID_SX}
-          columns={ZONE_COLUMNS}
-          rows={zones.map((z) => ({ id: z.zone, ...z }))}
-        />
+        <div className="table-scroll">
+          <DataGrid
+            {...GRID_DEFAULTS}
+            sx={GRID_SX}
+            columns={ZONE_COLUMNS}
+            rows={zones.map((z) => ({ id: z.zone, ...z }))}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+          />
+        </div>
       )}
     </>
   );

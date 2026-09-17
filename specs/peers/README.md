@@ -57,14 +57,31 @@ travels peer-to-peer, on request, over that peer's own connection.
   - **authored** (`watches`, `styles`, `lists`, `pins`) — somebody made it. Asked for by a person,
     landed in a tray, **never applied on arrival**. `pins` are the one kind that *also* still
     broadcasts, because the [map](../map/README.md)'s read-only overlay of somebody's live markers is
-    a different request from taking a copy home; the same toggle gates both.
+    a different request from taking a copy home; the same toggle gates both. What lands also goes to
+    a small per-name archive on disk (`electron/peer-archive.ts`), so it survives the tray's
+    half-hour sweep and a restart — still never applied, and never handed to a third peer
+    ([ADR 0242](../decisions/0242-a-pooled-row-keeps-its-own-origin.md)). A name with no *live* entry
+    for that exact kind falls back to its archived one, shown under a pseudo id (`archived:<name>`)
+    the "not currently reachable" row treatment already covers.
   - **observation** (`mobs`, `kills`, `respawns`) — pooled, filed by
     [`contributions.ts`](../../electron/contributions.ts)'s five rules, **tagged by contributor id**
     ([ADR 0132](../decisions/0132-a-contribution-is-keyed-by-who-made-it.md)) so any of it can be
-    filtered out later. Fetched automatically when a peer's `rev` moves.
+    filtered out later. Fetched automatically when a peer's `rev` moves. **What we offer is our own
+    plus everyone we've ever pooled from**, not only what we saw ourselves
+    ([ADR 0242](../decisions/0242-a-pooled-row-keeps-its-own-origin.md)) — a peer who taught us
+    something and then left is still taught to the next person who asks. A row's origin travels with
+    it (`by`/`byId`) so a receiver files it under whoever actually observed it rather than whoever
+    happened to relay it, which is what keeps the same sample from being counted twice through two
+    different paths to the same source. **`respawns` also answers your own questions**, not only a
+    peer's: the Timers tab's `known` list folds a camp's pooled interval in alongside your own
+    learning (`mergeRespawns`), so a camp you have never personally sat at can still show a usable
+    estimate the moment someone else in the room has
+    ([ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)) — `mobs` and `kills`
+    already had this property (a mob's card and the map's heatmap both read the pooled figure), so
+    this closes the one remaining gap between the three.
   - **live** (`timers`, `buffs`, `scores`) — true on somebody else's machine right now. Held in
     memory, dropped when they go, never written to disk.
-  - **mirror** (`items`) — neither made nor observed: a copy of a **third party's public page**, the
+  - **mirror** (`items`, `factions`) — neither made nor observed: a copy of a **third party's public page**, the
     same for everyone, which anyone could fetch for themselves
     ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). The **one family applied
     silently on arrival**, and it may be: there is nothing personal in it, it changes nothing about
@@ -126,6 +143,14 @@ travels peer-to-peer, on request, over that peer's own connection.
     mechanism here (or anywhere else in this table) for blending several installs' independent
     estimates of one number, so each install keeps deriving its own pace from whichever readings —
     its own or a peer's — turn out to be the newest it has seen.
+
+    A third mirror kind, `factions`, is a simpler cousin again — `Category:Factions` is 258 pages,
+    small enough to mirror **whole**, on the same generic whole/delta protocol every `observation`
+    kind already uses, rather than inventing shard/coverage/harvest machinery this small a roster
+    doesn't need. It reuses `items`' own page reader verbatim (a faction page is validated exactly
+    the way any other page is) and shares `gameTime`'s carve-out for automatic fetching, since it too
+    is a fact about the wiki rather than about the peer
+    ([ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)).
 - **The hub** (`electron/peer-share.ts`) — in main, because main is the only participant always
   running: a hub that answered only while a window was open would drop every ask the moment you
   changed tab. It measures the catalogue on a slow tick (a digest moving *is* the change, so no
@@ -280,4 +305,6 @@ travels peer-to-peer, on request, over that peer's own connection.
 [ADR 0145](../decisions/0145-a-room-checks-itself-and-needs-no-game.md) ·
 [ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) ·
 [ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md) ·
-[ADR 0176](../decisions/0176-a-room-fills-itself.md)
+[ADR 0176](../decisions/0176-a-room-fills-itself.md) ·
+[ADR 0242](../decisions/0242-a-pooled-row-keeps-its-own-origin.md) ·
+[ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)

@@ -7,12 +7,45 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { importLog } from "../log-import";
-import { createCombatHistory } from "../combat-history";
-import { createLootLog } from "../loot-log";
-import { createFactionLog } from "../faction-log";
+import { createCombatHistory, COMBAT_HISTORY_MIGRATIONS, type CombatHistory } from "../combat-history";
+import { createLootLog, LOOT_LOG_MIGRATIONS, type LootLog } from "../loot-log";
+import { createFactionLog, FACTION_LOG_MIGRATIONS, type FactionLog } from "../faction-log";
+import { openAppDatabase } from "../sqlite-store";
 import type { KillLog } from "../kill-log";
 import type { CoinEvent, LocEvent, LootEvent } from "../../src/shared/types";
+
+/** A faction ledger with a fresh in-memory database — these tests are about the import, not the
+ *  database file itself (that's `sqlite-store.test.ts`'s job), so `:memory:` keeps them fast. */
+function freshFactionLog(dir: string): FactionLog {
+  const db = new Database(":memory:");
+  for (const m of FACTION_LOG_MIGRATIONS) m.up(db);
+  return createFactionLog(db, dir);
+}
+
+/** Same idea for combat history — none of these tests reopen the same `dir` twice, so `:memory:`
+ *  is safe and avoids the Windows file-lock cleanup `freshLootLog` needs below. */
+function freshHistory(dir: string, sessionId?: string): CombatHistory {
+  const db = new Database(":memory:");
+  for (const m of COMBAT_HISTORY_MIGRATIONS) m.up(db);
+  return createCombatHistory(db, dir, sessionId);
+}
+
+/** A loot ledger backed by a real file under `dir` — unlike `freshFactionLog`, several tests below
+ *  reopen the *same* `dir` more than once to simulate a re-read across a restart, which an
+ *  in-memory database can't demonstrate. Every handle opened this way is tracked so a test's
+ *  `finally` block can close them before `rmSync`ing the directory — Windows refuses to delete a
+ *  folder holding a database file some process still has open. */
+const openLootDbs: ReturnType<typeof openAppDatabase>[] = [];
+function freshLootLog(dir: string): LootLog {
+  const db = openAppDatabase(dir, LOOT_LOG_MIGRATIONS);
+  openLootDbs.push(db);
+  return createLootLog(db, dir);
+}
+function closeLootDbs(): void {
+  while (openLootDbs.length) openLootDbs.pop()!.close();
+}
 
 /** This file is about the import, not the admin panel — every mock kill log wears the same stub. */
 const NO_ADMIN: KillLog["admin"] = {
@@ -57,6 +90,7 @@ test("importLog digests kills, drops, positions and zones from a file", () => {
     },
     kills: () => [],
     observations: () => [],
+    onObservationsChanged() {},
     version: () => 0,
     clear() {},
     flush() {},
@@ -118,6 +152,7 @@ function stubKillLog(): KillLog {
     noteCoin: () => true,
     kills: () => [],
     observations: () => [],
+    onObservationsChanged() {},
     version: () => 0,
     clear() {},
     flush() {},
@@ -144,7 +179,7 @@ test("eating a log fills the history tab: a session per login, and the fights in
   // Named as EQ names a log, since that's where the importer reads the character from.
   const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
   fs.writeFileSync(file, TWO_SITTINGS);
-  const history = createCombatHistory(dir, "run:live");
+  const history = freshHistory(dir, "run:live");
 
   try {
     const res = importLog(file, stubKillLog(), history);
@@ -204,13 +239,13 @@ test("digesting a log again puts a stale stored fight right — the remedy the a
 
   try {
     // What today's parser makes of the first pull, so the stale copy can be keyed identically.
-    const reference = createCombatHistory(dir, "run:a");
+    const reference = freshHistory(dir, "run:a");
     importLog(file, stubKillLog(), reference);
     const real = reference.search("a gnoll").fights[0].stats;
     assert.equal(real.yourDealt, 30);
 
     // A history holding that fight as an older build read it: same fight, low figures.
-    const stale = createCombatHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-stale2-")), "run:b");
+    const stale = freshHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-stale2-")), "run:b");
     stale.add({ ...real, yourDealt: 12, totalDealt: 16 }, "Blackburrow", file, "login:2026-07-17T18:00:00");
     assert.equal(stale.search("a gnoll").fights[0].stats.yourDealt, 12);
 
@@ -237,7 +272,7 @@ test("eating a log fills the loot feed and the prices it teaches, once", () => {
       "[Fri Jul 17 18:00:20 2026] You looted a Snake Egg from an asp's corpse and sold it for 4 copper.",
     ].join("\n"),
   );
-  const lootLog = createLootLog(dir);
+  const lootLog = freshLootLog(dir);
 
   try {
     const res = importLog(file, stubKillLog(), undefined, lootLog);
@@ -250,6 +285,7 @@ test("eating a log fills the loot feed and the prices it teaches, once", () => {
     assert.equal(importLog(file, stubKillLog(), undefined, lootLog).loot, 0);
     assert.equal(lootLog.recent().length, 2);
   } finally {
+    closeLootDbs();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -278,7 +314,7 @@ test("a second helping places the drops it already holds", () => {
   try {
     // Pass one, into a ledger that keeps the drops and throws the zones away — the state on disk for
     // anybody who played before the column existed.
-    const old = createLootLog(dir);
+    const old = freshLootLog(dir);
     const seeded = importLog(file, stubKillLog(), undefined, {
       ...old,
       add: (event) => old.add({ ...event, zone: undefined }),
@@ -293,7 +329,7 @@ test("a second helping places the drops it already holds", () => {
     old.flush();
 
     // Pass two: the re-read. Two of the three can be placed, and the ledger does not grow.
-    const reread = createLootLog(dir);
+    const reread = freshLootLog(dir);
     const res = importLog(file, stubKillLog(), undefined, reread);
     assert.equal(res.loot, 0, "a placed drop is not an added one");
     assert.equal(res.placed, 2);
@@ -301,7 +337,7 @@ test("a second helping places the drops it already holds", () => {
     // sitting in memory when the next start reads the file didn't happen.
     reread.flush();
 
-    const ledger = createLootLog(dir);
+    const ledger = freshLootLog(dir);
     assert.equal(ledger.recent().length, 3);
     const zones = new Map(ledger.recent().map((e) => [e.item, e.zone]));
     // Verbatim, difficulty and ruleset included — the reader folds it (ADR 0083).
@@ -310,8 +346,9 @@ test("a second helping places the drops it already holds", () => {
     assert.equal(zones.get("Rusty Dagger"), undefined, "looted before the log said where you were");
 
     // A third helping has nothing left to do, which is what makes the remedy self-limiting.
-    assert.equal(importLog(file, stubKillLog(), undefined, createLootLog(dir)).placed, 0);
+    assert.equal(importLog(file, stubKillLog(), undefined, freshLootLog(dir)).placed, 0);
   } finally {
+    closeLootDbs();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -326,7 +363,7 @@ test("eating a log fills the faction ledger, once", () => {
       "[Fri Jul 17 18:00:20 2026] Your faction standing with Agents of Mistmoore could not possibly get any worse.",
     ].join("\n"),
   );
-  const factionLog = createFactionLog(dir);
+  const factionLog = freshFactionLog(dir);
 
   try {
     const res = importLog(file, stubKillLog(), undefined, undefined, factionLog);
@@ -357,10 +394,10 @@ test("eating a log guesses a faction hit's cause from the kill just before it, t
       "[Fri Jul 17 18:00:30 2026] Your faction standing with Priests of Marr has been adjusted by 5.",
     ].join("\n"),
   );
-  const factionLog = createFactionLog(dir);
+  const factionLog = freshFactionLog(dir);
   // `combat` only exists (and so only gates which kills are noted) when a history is passed — the
   // same reason the correlation is skipped without one, documented in log-import.ts.
-  const history = createCombatHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-cause-hist-")), "run:a");
+  const history = freshHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-cause-hist-")), "run:a");
 
   try {
     importLog(file, stubKillLog(), history, undefined, factionLog);
@@ -391,8 +428,8 @@ test("a kill logged after its faction line is still caught — this server's own
       "[Fri Jul 17 18:00:34 2026] You have slain a gnoll!",
     ].join("\n"),
   );
-  const factionLog = createFactionLog(dir);
-  const history = createCombatHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-order-hist-")), "run:a");
+  const factionLog = freshFactionLog(dir);
+  const history = freshHistory(fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-order-hist-")), "run:a");
 
   try {
     importLog(file, stubKillLog(), history, undefined, factionLog);
@@ -415,7 +452,7 @@ test("eating a log guesses a faction hit's cause from nearby NPC dialogue when n
       "[Fri Jul 17 18:00:11 2026] Your faction standing with Agents of Mistmoore has been adjusted by 5.",
     ].join("\n"),
   );
-  const factionLog = createFactionLog(dir);
+  const factionLog = freshFactionLog(dir);
 
   try {
     importLog(file, stubKillLog(), undefined, undefined, factionLog);

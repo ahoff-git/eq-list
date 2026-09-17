@@ -1765,6 +1765,19 @@ button {
 
 /* Spell breakdown: a wide table in a narrow window, so it scrolls on its own. */
 .table-scroll { overflow-x: auto; }
+
+/* A tab whose body is basically one table at a time — a segmented switch between views, each one a
+   grid that should use the window's own remaining height instead of stopping at a fixed size (ADR
+   0248/0249). `FactionPanel` (Hits/Standings/Race Unlocks) and `LootPanel` (Drops/Sells for) share
+   this shape. The same `flex: 1; min-height: 0` relay `.map-body`/`.panel-resize` already use to fill
+   a window rather than stop at a fixed size, generalized here: `.tab-fill` on the panel's own root,
+   `.tab-fill-body` on the region holding whichever view is currently open, and `.grid-fill` beside
+   `.table-scroll` on a paged table's own wrapper. A view with nothing to fill (Race Unlocks, an empty
+   state) isn't a `flex` child of its own, so it keeps sizing to its own content and `.panel`'s
+   page-level scroll still reaches it exactly as before. */
+.tab-fill { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.tab-fill-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.grid-fill { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .spell-table { font-size: 12px; white-space: nowrap; }
 .spell-table td:not(:first-child),
 .spell-table th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }

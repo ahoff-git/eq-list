@@ -1,16 +1,17 @@
 "use client";
 import { useMemo } from "react";
-import { DataGrid, type GridColDef, type GridSortModel } from "@mui/x-data-grid";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import ItemLink from "./ItemLink";
-import { GRID_DEFAULTS, GRID_SX, NUM_COL, ACTION_COL } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, ACTION_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
 import { AddButton } from "./ui";
 import { addByTitle } from "@/lib/addToList";
 import { api } from "@/lib/api";
+import { useGridSort } from "@/lib/useGridSort";
 import { sourceKindLabel } from "@/shared/sources";
 import { LEVEL_CONFIDENCE, levelText } from "@/shared/item-levels";
 import { statLine, statMeta, type StatKey } from "@/shared/item-stats";
 import { zonesInFilterOrder, type ItemSortKey, type ValuedItem } from "@/shared/item-search";
-import { nextSort, type Sort } from "@/shared/sorting";
+import type { Sort } from "@/shared/sorting";
 
 /**
  * Which way a column opens on its first click — descending for a number ("show me the most"),
@@ -217,7 +218,7 @@ export default function ItemTable({
     [columns, pickedZones, scored],
   );
 
-  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
+  const { sortModel, onSortModelChange } = useGridSort(sort, onSort, startDescFor);
 
   return (
     <DataGrid
@@ -230,10 +231,9 @@ export default function ItemTable({
       // same `Sort<ItemSortKey>` state that produced this order (`sortingMode="server"`).
       sortingMode="server"
       sortModel={sortModel}
-      onSortModelChange={(model) => {
-        const key = (model[0]?.field ?? sort.key) as ItemSortKey;
-        onSort(nextSort(sort, key, startDescFor(key)));
-      }}
+      onSortModelChange={onSortModelChange}
+      pageSizeOptions={PAGE_SIZE_OPTIONS}
+      initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
     />
   );
 }

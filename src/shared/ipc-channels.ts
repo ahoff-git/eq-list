@@ -25,7 +25,12 @@ export const CH = {
   lootRecent: "loot:recent",
   lootPrices: "loot:prices",
   lootItems: "loot:items",
+  lootSearch: "loot:search",
+  lootVocabulary: "loot:vocabulary",
   factionRecent: "faction:recent",
+  /** One page of the whole ledger, sorted server-side — what `HitTable`'s grid asks for instead of
+   *  fetching every hit, now that there's no flat cap to fetch up to (ADR 0232). */
+  factionHitsPage: "faction:hitsPage",
   factionStandings: "faction:standings",
   /** The player states a faction's real current total — see `electron/faction-corrections.ts`. */
   factionSetCorrection: "faction:setCorrection",
@@ -265,11 +270,13 @@ export const CH = {
   settingsChanged: "evt:settings",
   lootEvent: "evt:loot",
   lootMatched: "evt:lootMatched",
+  lootPricesChanged: "evt:lootPricesChanged", // main → all: prices()'s shared background cache landed a fresher answer
   factionEvent: "evt:faction",
   castAlert: "evt:castAlert", // main → all: a watched spell began casting
   recordSet: "evt:record", // main → all: a personal best fell, so an open scoreboard refreshes
   alertPlaceBegin: "evt:alertPlaceBegin", // main → overlay: enter custom-spot placement mode
   killsChanged: "evt:killsChanged", // main → all: the kill log changed in bulk (import / clear)
+  combatHistoryChanged: "evt:combatHistoryChanged", // main → all: zones()/bests()/sessions()'s shared background cache landed a fresher answer
   spawnsChanged: "evt:spawnsChanged", // main → all: a timer started, came due, or aged out
   goalsChanged: "evt:goalsChanged", // main → all: a goal started, progressed, finished, or was cleared
   achievementsChanged: "evt:achievementsChanged", // main → all: a criterion, an achievement, or the custom list changed

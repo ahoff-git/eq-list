@@ -25,9 +25,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { splitLine } from "../../src/shared/log-parser";
 import { parseSplitLine } from "../../src/shared/parse-line";
-import { createKillLog } from "../kill-log";
+import { createKillLog, KILL_LOG_MIGRATIONS } from "../kill-log";
 import { createSpawnTracker, type SpawnTracker } from "../spawn-tracker";
 import { timerKey } from "../../src/shared/spawn-timers";
 import type { CastAlertEvent, CastAlertSettings, SpawnView } from "../../src/shared/types";
@@ -54,7 +55,9 @@ function stamp(atMs: number): string {
  */
 function app(startMs: number) {
   const dir = tempDir();
-  const killLog = createKillLog(dir);
+  const db = new Database(":memory:");
+  for (const m of KILL_LOG_MIGRATIONS) m.up(db);
+  const killLog = createKillLog(db, dir);
   const raised: CastAlertEvent[] = [];
   let nowMs = startMs;
   let sweep: (() => void) | null = null;

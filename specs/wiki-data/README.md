@@ -68,6 +68,12 @@ shopping list.
   page (`Template:Factionpage`, `.eql-factionpage`) states, in two columns, the zones/quests/mobs
   that raise and lower it — **direction only, never an amount**: the wiki names no point values here
   at all. See [ADR 0192](../decisions/0192-factions-ride-their-own-wiki-pages.md).
+  The **name roster** above is a mirror of the wiki's own category listing; the **pages themselves**
+  are peer-mirrored separately, the same as an item/mob/quest/zone page — a room converges on holding
+  every faction page once between everyone rather than each install independently fetching and
+  re-fetching the same 258 pages on its own TTL
+  ([ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md), see also
+  [peers](../peers/README.md)).
 - `electron/wiki/parse.ts` — a **pure** black box: page HTML → normalized `WikiPage`
   (`kind`, `sources`, `components`, `rewards`). Encodes the real wiki DOM:
   - **Page kind** is decided by a signature container class so NPCs/zones/spells
@@ -433,6 +439,8 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
 
 ## See also
 [architecture](../architecture/README.md) · [lucy-data](../lucy-data/README.md) ·
+[peers](../peers/README.md) ·
 [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md) ·
 [ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md) ·
-[ADR 0192](../decisions/0192-factions-ride-their-own-wiki-pages.md)
+[ADR 0192](../decisions/0192-factions-ride-their-own-wiki-pages.md) ·
+[ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)

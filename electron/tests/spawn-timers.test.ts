@@ -16,6 +16,7 @@ import {
   killStillCounts,
   learnRespawns,
   MAX_LEARNED_GAP_SECONDS,
+  mergeRespawns,
   recentCamps,
   respawnCaveat,
   untimedReason,
@@ -37,6 +38,7 @@ import {
   timerKey,
   timerSlot,
   MAX_TIMER_SECONDS,
+  type RespawnFacts,
   type RespawnLearning,
 } from "../../src/shared/spawn-timers";
 import type { KillRecord } from "../../src/shared/types";
@@ -833,6 +835,79 @@ test("the pet's owner is still a named in its own right", () => {
   // Killing "Lord Sviir pet" must not blacklist "Lord Sviir".
   const proven = provenNamed([kill("Lord Sviir pet", 0), kill("Lord Sviir", 100), kill("Lord Sviir", 700)]);
   assert.deepEqual([...proven], ["lord sviir"]);
+});
+
+// ── pooling what the room has learned (ADR 0244) ────────────────────────────────
+
+const facts = (over: Partial<RespawnFacts> = {}): RespawnFacts => ({
+  key: "gnoll@blackburrow",
+  mob: "a gnoll",
+  place: "Blackburrow",
+  samples: 3,
+  shortestSeconds: 300,
+  longestSeconds: 900,
+  ...over,
+});
+
+const learning = (over: Partial<RespawnLearning> = {}): RespawnLearning => ({
+  key: "gnoll@blackburrow",
+  mob: "a gnoll",
+  place: "Blackburrow",
+  samples: 2,
+  shortestSeconds: 400,
+  longestSeconds: 800,
+  gaps: [],
+  crossedDifficulty: 0,
+  ...over,
+});
+
+test("a camp with no local learning at all is supplied outright from the pool", () => {
+  const [merged] = mergeRespawns([], [facts()]);
+  assert.equal(merged.mob, "a gnoll");
+  assert.equal(merged.shortestSeconds, 300);
+  assert.equal(merged.longestSeconds, 900);
+  assert.equal(merged.samples, 3);
+});
+
+test("pooling tightens the shortest bound and widens the longest, whichever side is tighter", () => {
+  const [merged] = mergeRespawns([learning()], [facts({ shortestSeconds: 250, longestSeconds: 1200 })]);
+  assert.equal(merged.shortestSeconds, 250, "the room's tighter bound wins");
+  assert.equal(merged.longestSeconds, 1200, "the room's wider bound wins");
+
+  const [held] = mergeRespawns([learning()], [facts({ shortestSeconds: 500, longestSeconds: 600 })]);
+  assert.equal(held.shortestSeconds, 400, "your own tighter bound is not loosened by a looser peer");
+  assert.equal(held.longestSeconds, 800, "your own wider bound is not narrowed by a tighter peer");
+});
+
+test("samples sum — the room's total evidence, not whichever side has more", () => {
+  const [merged] = mergeRespawns([learning({ samples: 2 })], [facts({ samples: 3 })]);
+  assert.equal(merged.samples, 5);
+});
+
+test("a bound only one side has is kept, not treated as zero", () => {
+  const [merged] = mergeRespawns([learning({ shortestSeconds: undefined, longestSeconds: undefined })], [facts()]);
+  assert.equal(merged.shortestSeconds, 300);
+  assert.equal(merged.longestSeconds, 900);
+});
+
+test("your own row keeps its labelling and its evidence — gaps and crossedDifficulty never come from the pool", () => {
+  const gaps = [{ id: gapId(0, 400), seconds: 400, endedAt: iso(400), dropped: false }];
+  const [merged] = mergeRespawns([learning({ mob: "a Gnoll", gaps, crossedDifficulty: 1 })], [facts()]);
+  assert.equal(merged.mob, "a Gnoll", "yours wins the label where you have a row at all");
+  assert.deepEqual(merged.gaps, gaps);
+  assert.equal(merged.crossedDifficulty, 1);
+});
+
+test("a camp with nothing pooled is untouched", () => {
+  const mine = [learning()];
+  assert.deepEqual(mergeRespawns(mine, []), mine);
+});
+
+test("the most recent lastKillAt wins, from either side", () => {
+  const [fromPeer] = mergeRespawns([learning({ lastKillAt: iso(0) })], [facts({ lastKillAt: iso(500) })]);
+  assert.equal(fromPeer.lastKillAt, iso(500));
+  const [fromMine] = mergeRespawns([learning({ lastKillAt: iso(900) })], [facts({ lastKillAt: iso(200) })]);
+  assert.equal(fromMine.lastKillAt, iso(900));
 });
 
 test("a camp nobody has killed says so, rather than claiming one kill", () => {

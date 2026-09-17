@@ -121,6 +121,7 @@ export type ShareKind =
   | "scores"
   | "items"
   | "spells"
+  | "factions"
   | "gameTime";
 
 /**
@@ -220,6 +221,9 @@ const MAX_ROWS: Record<ShareKind, number> = {
   // The spell catalogue reuses the same 1024 shards over a much smaller (~2,054-page) roster, so a
   // shard holds far fewer pages on average — the item cap is still a harmless ceiling, not a tight one.
   spells: 64,
+  // `Category:Factions` is 258 pages — small enough to mirror whole, never by shard (ADR 0244).
+  // Generous headroom over the real count, same reasoning as `items`'/`spells`' caps.
+  factions: 300,
   // There is only ever one clock — a second row would just be a lie somebody sent.
   gameTime: 1,
 };
@@ -304,10 +308,14 @@ export function shareableKills(kills: readonly KillRecord[]): SharedKill[] {
  *
  * Distinct from `RespawnLearning` on purpose: the two fields it lacks are `gaps` (the evidence, which
  * stays on the machine that saw it) and `crossedDifficulty` (a count of what *our* rule threw out,
- * which would be a sentence about a night the receiver never sat through). `readRespawn` fills both
- * with empties on arrival rather than letting a peer state them.
+ * which would be a sentence about a night the receiver never sat through). `readRespawn` never fills
+ * them, unlike either field it *does* carry.
+ *
+ * `by`/`byId` are the two fields `RespawnLearning` itself has no use for: who taught us this camp,
+ * the same pair `MobObservation` and `SharedKill` already carry. Absent means "you" — your own
+ * install's learning, not a peer's.
  */
-export type SharedRespawn = Omit<RespawnLearning, "gaps" | "crossedDifficulty">;
+export type SharedRespawn = Omit<RespawnLearning, "gaps" | "crossedDifficulty"> & { by?: string; byId?: string };
 
 /**
  * A learned respawn, reduced to the **conclusion**.
@@ -388,10 +396,13 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Drop counts, coin and roam areas — tallies, never your kills or your movements.",
     noun: "tally",
     read: (rows) => readList(rows, MAX_ROWS.mobs, readMobObservation),
-    // Mob and zone **verbatim**, which is what `observeMobs` tallies by — the fold to a place is
-    // `mergeObservations`' job on read, and keying a delta by the folded name would make two
-    // spellings of a camp overwrite each other on the wire (ADR 0083).
-    rowKey: (row) => (isRecord(row) ? rowKeyOf(str(row.mob), str(row.zone)) : undefined),
+    // Mob, zone and **whoever taught us it** — the fold to a place is `mergeObservations`' job on
+    // read, and keying a delta by the folded name would make two spellings of a camp overwrite each
+    // other on the wire (ADR 0083). The origin has to be in the key too, and not only for a delta's
+    // sake: `measure()` keys every row it holds the same way, and without it a relayed peer's tally
+    // for a mob we've also killed ourselves would collide with ours and one would silently vanish
+    // from what we offer (ADR 0242).
+    rowKey: (row) => (isRecord(row) ? rowKeyOf(str(row.mob), str(row.zone), str(row.byId) || "self") : undefined),
   },
   {
     key: "kills",
@@ -400,10 +411,18 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "Where things died, for a pooled heatmap. Carries no time and no loot.",
     noun: "position",
     read: (rows) => readList(rows, MAX_ROWS.kills, readSharedKill),
-    project: (rows) => shareableKills(rows as readonly KillRecord[]),
-    // A shared kill carries no time and no id, so its place *is* its identity.
+    // No `project` here any more: reducing `KillRecord[]` to `SharedKill[]` (`shareableKills`) now
+    // happens once, in `shareSources`, over **our own** kills only — a pooled `SharedKill` a peer
+    // handed us has already been through that reduction on the machine that saw it, and running it
+    // again would silently drop the `byId` this row is being carried for (ADR 0242).
+    //
+    // A shared kill carries no time and no id, so its place plus its origin *is* its identity — the
+    // origin for the same reason `mobs`' key needs one (two peers can both have killed the same
+    // thing in the same spot).
     rowKey: (row) =>
-      isRecord(row) ? rowKeyOf(str(row.zone), str(row.mob), num(row.y) ?? "", num(row.x) ?? "") : undefined,
+      isRecord(row)
+        ? rowKeyOf(str(row.zone), str(row.mob), num(row.y) ?? "", num(row.x) ?? "", str(row.byId) || "self")
+        : undefined,
   },
   {
     key: "respawns",
@@ -412,10 +431,12 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     blurb: "How long a named took to come back, measured at your camp — the shortest gap you saw.",
     noun: "interval",
     read: (rows) => readList(rows, MAX_ROWS.respawns, readRespawn),
-    project: (rows) => shareableRespawns(rows as readonly KnownSpawn[]),
-    // `key` is the camp — one mob, one place — and is already the identity everything learned about
-    // a respawn is filed under.
-    rowKey: (row) => fieldKey(row, "key"),
+    // Same reasoning as `kills`: the reduction (`shareableRespawns`) now runs once, in
+    // `shareSources`, over our own learning only — a pooled row already arrived reduced.
+    //
+    // `key` is the camp — one mob, one place — which two different observers can equally have
+    // learned about, so the origin joins it for the reason `mobs`' key states at length.
+    rowKey: (row) => (isRecord(row) ? rowKeyOf(str(row.key), str(row.byId) || "self") : undefined),
   },
   {
     key: "timers",
@@ -477,6 +498,24 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     defaultOn: true,
     read: (rows) => readList(rows, MAX_ROWS.spells, readSharedSpellPage),
     // Same reasoning as `items`: addressed by shard, never as a whole, so a delta never runs over it.
+    rowKey: (row) => fieldKey(row, "title"),
+  },
+  {
+    key: "factions",
+    family: "mirror",
+    label: "Faction pages",
+    blurb:
+      "Your cached eqlwiki faction pages, so a room fills the 258-page catalogue once between everyone instead of each of you fetching them one at a time.",
+    noun: "page",
+    defaultOn: true,
+    // Reuses `items`' own reader verbatim — a faction page is validated exactly the way any other
+    // page is, and `CATALOGUE_KINDS` names `"faction"` for exactly this
+    // ([ADR 0244](../../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)).
+    read: (rows) => readList(rows, MAX_ROWS.factions, readSharedPage),
+    // Unlike `items`/`spells`, this one **is** addressed as a whole (and by delta) — 258 pages is
+    // small enough for the generic whole/delta protocol every other pooled kind already uses, so
+    // this is the one field on this entry that actually does something rather than existing "for
+    // completeness".
     rowKey: (row) => fieldKey(row, "title"),
   },
   {
@@ -1120,10 +1159,15 @@ function readStyle(raw: unknown, newId: () => string): NamedAlertStyle | null {
 const PAGE_KINDS = new Set(["item", "quest", "recipe", "mob", "zone", "spell", "faction", "page"]);
 
 /**
- * The page kinds the item catalogue is made of, and therefore the only ones that may cross under the
- * `items` share. Deliberately narrower than `PAGE_KINDS`.
+ * The page kinds the item catalogue is made of, and therefore the only ones that may cross under
+ * the `items` share — **plus `faction`**, which crosses under its own `factions` share instead
+ * (mirrored whole, never by shard) but reuses this same reader (`readSharedPage`) rather than a
+ * near-identical copy of it, since a faction page is validated exactly the way any other page is
+ * ([ADR 0244](../../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)). Spells are
+ * deliberately still absent: they travel through their own `spells` kind and reader instead
+ * (ADR 0196). Otherwise deliberately narrower than `PAGE_KINDS`.
  */
-const CATALOGUE_KINDS = new Set(["item", "recipe", "mob", "quest", "zone"]);
+const CATALOGUE_KINDS = new Set(["item", "recipe", "mob", "quest", "zone", "faction"]);
 
 /** The source kinds an inbound page may claim. Anything else becomes `unknown` rather than itself. */
 const SOURCE_KINDS = new Set(["drop", "quest", "recipe", "vendor", "forage", "ground", "unknown"]);
@@ -1182,6 +1226,22 @@ function readPin(raw: unknown, newId: () => string): MapPin | null {
 }
 
 /**
+ * Who a pooled row is really from, when it's being relayed rather than freshly observed
+ * (ADR 0242) — `undefined` for both fields rather than present-and-empty, so a row a sender
+ * genuinely observed themself round-trips with no `by`/`byId` at all, exactly as it always did.
+ *
+ * Shared by `readMobObservation`/`readSharedKill`/`readRespawn`, the three kinds a relayed row can
+ * arrive as. Trusting the *shape* of a claim here costs nothing new: `contributions.ts`'s own
+ * vetting decides what actually gets stored under whichever id this names, the same as it always
+ * has for a peer's claim about their own data.
+ */
+function readOrigin(raw: Record<string, unknown>): { by?: string; byId?: string } {
+  const by = str(raw.by);
+  const byId = str(raw.byId);
+  return { ...(by ? { by } : {}), ...(byId ? { byId } : {}) };
+}
+
+/**
  * A mob tally. Counts only, and every one of them checked to be a non-negative number — the vetting
  * that decides whether a tally is *possible* (a drop counted more often than the mob was killed)
  * belongs to `electron/contributions.ts` and is deliberately not repeated here.
@@ -1211,6 +1271,7 @@ function readMobObservation(raw: unknown): MobObservation | null {
     // A peer on a build from before ADR 0228 sends only `area`; `withAreas` reconciles either shape.
     areas: readAreas(raw.areas),
     lastAt: str(raw.lastAt),
+    ...readOrigin(raw),
   });
 }
 
@@ -1235,7 +1296,7 @@ function readSharedKill(raw: unknown): SharedKill | null {
   const y = coord(raw.y);
   const x = coord(raw.x);
   if (!zone || !mob || y === undefined || x === undefined) return null;
-  return { zone, mob, y, x, confidence: clamp(num(raw.confidence) ?? 0, 0, 1) };
+  return { zone, mob, y, x, confidence: clamp(num(raw.confidence) ?? 0, 0, 1), ...readOrigin(raw) };
 }
 
 /** A day is longer than any respawn in the game; a gap past it measured something else. */
@@ -1247,7 +1308,7 @@ const MAX_RESPAWN_SEC = 86_400;
  * `spawn-timers.ts` is explicit that one invented short value is permanent against a bound that
  * only ever falls.
  */
-function readRespawn(raw: unknown): RespawnLearning | null {
+function readRespawn(raw: unknown): SharedRespawn | null {
   if (!isRecord(raw)) return null;
   const key = str(raw.key);
   const mob = str(raw.mob);
@@ -1263,11 +1324,7 @@ function readRespawn(raw: unknown): RespawnLearning | null {
     longestSeconds: longest,
     samples: clamp(int(raw.samples) ?? 0, 0, 100_000),
     lastKillAt: str(raw.lastKillAt) || undefined,
-    gaps: [],
-    // A peer sends a figure, not the workings behind it — so nothing here was thrown out by *our*
-    // difficulty rule, and claiming otherwise would put a sentence on the row about a night we
-    // never sat through.
-    crossedDifficulty: 0,
+    ...readOrigin(raw),
   };
 }
 
@@ -1620,7 +1677,9 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
   // [ADR 0195](../../specs/decisions/0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)), but
   // because they now travel through their own dedicated `spells` kind and reader
   // (`readSharedSpellPage`) instead of being smuggled in under `items`
-  // ([ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md)).
+  // ([ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md)). Faction
+  // pages, unlike spells, *do* reuse this reader — they travel under their own `factions` kind, but
+  // nothing about validating one differs from any other page here (ADR 0244).
   if (!title || !kind || !CATALOGUE_KINDS.has(kind)) return null;
 
   const card = isRecord(raw.card)

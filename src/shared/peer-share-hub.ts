@@ -63,6 +63,8 @@ import {
   readGive,
   readOffer,
   readProtocol,
+  shareableKills,
+  shareableRespawns,
   SHARE_PROTOCOL,
   shareKind,
   sharing,
@@ -75,9 +77,11 @@ import {
   type ShareOffer,
 } from "./peer-share";
 import { decodeCoverage, type PeerCoverage } from "./item-shards";
-import type { SharedGameTime, SharedItemPage, SharedSpellPage } from "./peer-share";
+import type { SharedGameTime, SharedItemPage, SharedRespawn, SharedSpellPage } from "./peer-share";
 import type { MapPin } from "./map/pins";
 import type { KillRecord, KnownSpawn } from "./types";
+import type { MobObservation } from "./mob-stats";
+import type { SharedKill } from "./kill-filters";
 
 const log = createLogger("peer-share");
 
@@ -245,10 +249,28 @@ export interface PeerShareDeps {
   /** Take spell pages a peer handed us into the page cache. Returns how many were new. */
   acceptSpells?: (pages: SharedSpellPage[], shard?: number) => number;
   /**
+   * Take faction pages a peer handed us. Unlike `acceptItems`/`acceptSpells`, this isn't
+   * shard-addressed — `Category:Factions` is small enough (258 pages) to mirror whole, on the
+   * generic whole/delta protocol every other pooled kind uses
+   * ([ADR 0244](../../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)).
+   */
+  acceptFactions?: (pages: SharedItemPage[]) => number;
+  /**
    * Take a peer's `/time` reading — applied only if it teaches the local clock anything (the game
    * clock's own tracker decides whether it's newer than what it already has).
    */
   acceptGameTime?: (reading: SharedGameTime) => void;
+  /**
+   * Remember an `authored` give past the tray's half-hour, so it survives the peer leaving and a
+   * restart either way — never applied, never handed to anyone else
+   * ([ADR 0242](../../specs/decisions/0242-a-pooled-row-keeps-its-own-origin.md), `peer-archive.ts`).
+   * Absent means what it always meant: gone with the tray.
+   */
+  archiveReceived?: (kind: ShareKind, name: string, rows: unknown[]) => void;
+  /** What `archiveReceived` has kept for a kind, newest first — folded into `received()`. */
+  archived?: (kind: ShareKind) => { name: string; rows: unknown[]; seenAt: string }[];
+  /** The archive's half of `clear()` — a name's memory of a kind, a whole kind, or everything. */
+  archiveClear?: (name?: string, kind?: ShareKind) => void;
   /** What we'd share, per kind — the app's own data, read only when asked for. */
   sources: Record<ShareKind, ShareSource>;
   /**
@@ -390,6 +412,12 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   let debounce: unknown = null;
 
   const trayKey = (peerId: string, kind: ShareKind) => `${peerId}:${kind}`;
+
+  /** The pseudo peer id an archived, no-longer-live authored share is filed under in `received()`. */
+  const ARCHIVE_PEER_PREFIX = "archived:";
+  const archivedPeerId = (name: string) => ARCHIVE_PEER_PREFIX + name.trim().toLowerCase();
+  /** The kinds `deps.archived` might have something for — the whole `authored` family. */
+  const authoredKinds = SHARE_KINDS.filter((s) => s.family === "authored").map((s) => s.key);
 
   /**
    * The revision we hold from a peer for a kind, or `undefined` for nothing held.
@@ -826,6 +854,16 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
         const [reading] = give.mode === "whole" ? (give.rows as SharedGameTime[]) : [];
         if (reading) deps.acceptGameTime?.(reading);
         log.debug("game time from", peerId, reading ? `hour ${reading.hour}` : "(nothing to take)");
+      } else if (give.what === "factions") {
+        // Unlike `items`/`spells`/`gameTime`, `factions` *does* run through `absorb` — it is mirrored
+        // whole-or-delta on the generic protocol (ADR 0244), not addressed by shard or pinned to one
+        // row, so the delta has to be undone against what we hold from this peer before it means
+        // anything. `absorb` returning `null` (an unusable delta) already re-asks on its own.
+        const rows = absorb(peerId, give);
+        if (rows) {
+          const taken = deps.acceptFactions?.(rows as SharedItemPage[]) ?? 0;
+          log.debug("took", taken, "of", rows.length, "faction pages from", peerId);
+        }
       }
       return;
     }
@@ -848,6 +886,9 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       rev: give.rev,
       at: now(),
     });
+    // Authored only — `live` stays exactly as ephemeral as it always was (ADR 0242 doesn't touch
+    // it), and a name is required: nothing to remember a nameless give under.
+    if (spec?.family === "authored" && give.from) deps.archiveReceived?.(give.what, give.from, rows);
     log.debug("kept", rows.length, give.what, "from", peerId);
     deps.changed();
   }
@@ -940,17 +981,19 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
 
   /**
    * A peer's catalogue arrived: fetch the **observations** they're offering that have moved on —
-   * plus `gameTime`, the one exception.
+   * plus `gameTime` and `factions`, the two exceptions.
    *
    * Observations are the pooled family — wanted by default, filed without anybody looking, and the
    * whole reason for a shared body of knowledge. Everything else waits for a person to click, because
    * an authored artifact fetched behind your back is a tray filling up with other people's work you
-   * never asked to see. `gameTime` is `mirror`, not `observation`, but earns the same automatic ask
-   * for the same reason `items` earns being applied on arrival: it is a fact about the server, not
-   * about the peer, and there is nothing here for "wait to be asked" to protect
-   * ([ADR 0189](../specs/decisions/0189-the-clock-reading-is-shared-like-a-mirrored-page.md)). `items`
-   * itself is fetched by its own shard walk rather than through here, which is why it needs no
-   * carve-out of its own.
+   * never asked to see. `gameTime` and `factions` are `mirror`, not `observation`, but earn the same
+   * automatic ask for the same reason `items` earns being applied on arrival: each is a fact about
+   * the server (or the wiki), not about the peer, and there is nothing here for "wait to be asked" to
+   * protect ([ADR 0189](../specs/decisions/0189-the-clock-reading-is-shared-like-a-mirrored-page.md),
+   * [ADR 0244](../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)). `items`/
+   * `spells` are instead fetched by their own shard walk rather than through here, which is why
+   * *they* need no carve-out of their own — `factions` has no such walk (`Category:Factions` is
+   * small enough to need none), so it takes `gameTime`'s path instead.
    */
   function sawOffer(peerId: string, payload: AwariPayload): void {
     // Through the shared reader, which checks the shape of every line — the same one the renderer's
@@ -966,7 +1009,7 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     if (!deps.getSettings().connectPeers) return;
     noteWorthTelling(peerId, newlyOffered(catalogue, before));
     for (const spec of SHARE_KINDS) {
-      if (spec.family !== "observation" && spec.key !== "gameTime") continue;
+      if (spec.family !== "observation" && spec.key !== "gameTime" && spec.key !== "factions") continue;
       const entry = catalogue[spec.key];
       if (!entry || entry.n <= 0) continue;
       askFor(peerId, spec.key, false);
@@ -1220,7 +1263,27 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
       touch();
     },
     received(peerId, kind) {
-      return [...tray.values()].filter((e) => (!peerId || e.peerId === peerId) && (!kind || e.kind === kind));
+      const live = [...tray.values()].filter((e) => (!peerId || e.peerId === peerId) && (!kind || e.kind === kind));
+      // A real, live peer id has nothing archived under this shape of key — the archive is keyed by
+      // name, and only ever surfaces through the pseudo id below.
+      if (peerId && !peerId.startsWith(ARCHIVE_PEER_PREFIX)) return live;
+
+      const archivedRows: ReceivedShare[] = [];
+      for (const k of kind ? [kind] : authoredKinds) {
+        // A name **live right now for this exact kind** already answers the question — the archive
+        // is only for a peer this session hasn't heard from, kind by kind, since a name can be
+        // live for one authored kind and stale for another.
+        const liveNames = new Set(
+          [...tray.values()].filter((e) => e.kind === k).map((e) => e.from.trim().toLowerCase()),
+        );
+        for (const a of deps.archived?.(k) ?? []) {
+          const archived = archivedPeerId(a.name);
+          if (peerId && peerId !== archived) continue;
+          if (liveNames.has(a.name.trim().toLowerCase())) continue;
+          archivedRows.push({ peerId: archived, kind: k, from: a.name, rows: a.rows, rev: 0, at: Date.parse(a.seenAt) || 0 });
+        }
+      }
+      return [...live, ...archivedRows];
     },
     clear(peerId, kind) {
       for (const [key, entry] of tray) {
@@ -1235,6 +1298,11 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
         if (kind && key.slice(cut + 1) !== kind) continue;
         heldFrom.delete(key);
       }
+      // The archive's half: no peer named clears every name (for the kind, or for everything); an
+      // archived pseudo id clears just that one name. A **live** peer id clears only the tray above —
+      // nothing calls `clear` with one today, and a name still connected has nothing archived to lose.
+      if (!peerId) deps.archiveClear?.(undefined, kind);
+      else if (peerId.startsWith(ARCHIVE_PEER_PREFIX)) deps.archiveClear?.(peerId.slice(ARCHIVE_PEER_PREFIX.length), kind);
       deps.changed();
     },
     setPins(next) {
@@ -1266,10 +1334,17 @@ function randomId(): string {
  *
  * **What is no longer here is the point.** These used to shape rows for the wire as well as fetch
  * them: the kill filter, the respawn reduction. Both were rules about *what a kind is when it
- * travels*, and both now live on that kind's row in `SHARE_KINDS` beside the reader that checks them
- * coming the other way — which is what stopped the kill rule being written twice (the map window
- * plots by the same one now). What is left is genuinely just the fetch, plus the one thing only a
- * store can answer: whether anything has written to it.
+ * travels*, and both now live here rather than on `SHARE_KINDS`' `project` (moved there in
+ * [ADR 0242](../../specs/decisions/0242-a-pooled-row-keeps-its-own-origin.md)) — a pooled row a peer
+ * already reduced would otherwise be reduced a second time, on a shape that reduction knows nothing
+ * about, and silently lose the `byId` it is carrying.
+ *
+ * **Why `mobs`/`kills`/`respawns` read two stores.** Each now offers what we saw *and* what every
+ * peer who ever taught us something taught us — `mobKnowledge.pooled()` / `peerKills.all()` /
+ * `peerRespawns.all()`, already credited to whoever it actually came from — so the room keeps
+ * teaching a newcomer things its original source stopped being here to say. `SHARE_KINDS`' `rowKey`
+ * for these three keys on that origin as well as on the place, which is what stops our own tally for
+ * a mob and a relayed one for the same mob colliding into one row.
  */
 export function shareSources(context: {
   getList: () => { entries: unknown[] };
@@ -1280,6 +1355,17 @@ export function shareSources(context: {
     /** Moves when a kill, a drop or a coin line is recorded. */
     version: () => number;
   };
+  /** Pooled mob observations — the peer half of `mobs` (`electron/mob-knowledge.ts`). */
+  mobKnowledge: { pooled: () => MobObservation[]; version: () => number };
+  /** Pooled kill positions — the peer half of `kills` (`electron/peer-kills.ts`). */
+  peerKills: { all: () => SharedKill[]; version: () => number };
+  /** Pooled respawn learning — the peer half of `respawns` (`electron/peer-respawns.ts`). */
+  peerRespawns: { all: () => SharedRespawn[] };
+  /**
+   * Faction pages we hold — everyone's, not shard-addressed the way `items`/`spells` are
+   * (`electron/wiki/index.ts`'s `factions`, [ADR 0244](../../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)).
+   */
+  factions: { rows: () => unknown[] };
   spawns: { view: () => { running: unknown[]; known: KnownSpawn[] } };
   buffs: { view: () => { active: unknown[] } };
   scores: { board: () => { scores: unknown[] } };
@@ -1293,17 +1379,25 @@ export function shareSources(context: {
     // Held by the map window, pushed in through `setPins` — this never runs (see `measure`), and is
     // here so the table has no hole in it for a reader to wonder about.
     pins: { rows: () => [] },
-    // **The two that were worth a version.** `observations()` folds the whole kill log and `kills()`
-    // scans five thousand records, and until now both were paid for once a minute whether or not a
-    // single kill had happened. Nothing else here is expensive enough to be worth the risk described
-    // below: a list is a few hundred entries and a scoreboard is a dozen rows.
-    mobs: { rows: () => context.killLog.observations(), version: context.killLog.version },
-    kills: { rows: () => context.killLog.kills(), version: context.killLog.version },
+    // **Two of the three that were worth a version.** `observations()` folds the whole kill log and
+    // `kills()` scans five thousand records, and both were paid for once a minute whether or not a
+    // single mob had died — a cost the pooled half doesn't add to, since `ContributionStore.version`
+    // is exactly as cheap and the two sums stay correct by construction (`contributions.ts`).
+    mobs: {
+      rows: () => [...context.killLog.observations(), ...context.mobKnowledge.pooled()],
+      version: () => context.killLog.version() + context.mobKnowledge.version(),
+    },
+    kills: {
+      rows: () => [...shareableKills(context.killLog.kills()), ...context.peerKills.all()],
+      version: () => context.killLog.version() + context.peerKills.version(),
+    },
     // Read off the Timers tab's own rows rather than re-derived, so there is one rule for what a
     // gap is worth and a peer is handed the figure we actually act on — the player's dismissals,
     // relearn cutoffs and dropped gaps included, since those are corrections and not noise. What
-    // travels is the conclusion only (`shareableRespawns`).
-    respawns: { rows: () => context.spawns.view().known },
+    // travels is the conclusion only (`shareableRespawns`), plus whatever the room has taught us
+    // about camps we haven't necessarily sat at ourselves. Unversioned, like the three below: nothing
+    // here is expensive enough yet to be worth the risk of a `respawns`-shaped store answering wrong.
+    respawns: { rows: () => [...shareableRespawns(context.spawns.view().known), ...context.peerRespawns.all()] },
     // **Deliberately unversioned**, all three. The obvious counter to hook is the store's own save,
     // and for these it would be a *lie*: a running countdown and a buff that is counting down are
     // views over a clock, so their rows differ from one second to the next while nothing has been
@@ -1317,6 +1411,9 @@ export function shareSources(context: {
     items: { rows: () => [] },
     // The `spells` counterpart — same reasoning, never called.
     spells: { rows: () => [] },
+    // Unlike `items`/`spells`, this one is genuinely read here — 258 pages is small enough to
+    // mirror on the generic whole/delta protocol rather than by shard (ADR 0244).
+    factions: { rows: () => context.factions.rows() },
     // Exactly one row, or none while this run has never read a `/time` line of its own — a peer with
     // nothing to say offers nothing, rather than a hollow reading nobody typed.
     gameTime: {

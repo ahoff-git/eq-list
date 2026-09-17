@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useCombatStats, useCurrentZone, useDamageOverlay, useHpEstimate, useRead } from "@/lib/hooks";
+import { useCombatReportsRefresh, useCombatStats, useCurrentZone, useDamageOverlay, useHpEstimate, useRead } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import DamageMeter, { type DamageView } from "./DamageMeter";
@@ -400,9 +400,14 @@ function summaryLine(window: FightStats, opponent?: string): string {
     .join(" · ");
 }
 
-/** Personal bests, re-read when a fight ends — the only time they can change. */
+/**
+ * Personal bests, re-read when a fight ends — the only time they can change. `bests()` answers
+ * from a shared background cache (ADR 0247) that can still be catching up the instant a fight
+ * ends, so `useCombatReportsRefresh` re-reads again once it actually has.
+ */
 function useBests(refreshKey: string): FightBest[] {
-  return useRead((a) => a.combat.bests(), NO_BESTS, [refreshKey]);
+  const reportsRefresh = useCombatReportsRefresh();
+  return useRead((a) => a.combat.bests(), NO_BESTS, [refreshKey, reportsRefresh]);
 }
 
 /** Your side's DPS over the window (you + pet), which is what people compare. */

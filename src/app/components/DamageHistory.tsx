@@ -61,6 +61,9 @@ export default function DamageHistory({
   // Eating a log files whole evenings at once, and it happens on another tab — without this the
   // new sittings only appear on a reopen.
   useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);
+  // `sessions()` answers from a shared background cache (ADR 0247) that can still be catching up
+  // right after `onDataChanged` fires — this is the notice that it actually has.
+  useEffect(() => api()?.combat.onHistoryChanged(() => setRefresh((n) => n + 1)), []);
 
   async function clearAll() {
     await api()?.combat.clearHistory();

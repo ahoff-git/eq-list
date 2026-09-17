@@ -152,6 +152,38 @@ export interface LootedItem {
   lastAt: string;
 }
 
+/**
+ * What `loot.search` asks the whole ledger for — every field optional, since an unset one matches
+ * everything. Reaches past whatever's already been fetched, the same reason `FactionHitsFilter`
+ * does (ADR 0211/0240): `loot-log.ts` keeps every drop forever, so there is no cap left to fetch
+ * "everything" up to.
+ */
+export interface LootSearchFilter {
+  fate?: LootFate;
+  /** Substring, case-insensitive. */
+  item?: string;
+  /** Exact match on the corpse it came off. */
+  source?: string;
+  /**
+   * A **place** name (`placeName`'s own output, the same thing `LootFilters.zone` already holds) —
+   * `loot-log.ts` resolves it to every raw zone spelling that folds to it, so the caller never needs
+   * to know how a name becomes a place.
+   */
+  zone?: string;
+}
+
+/**
+ * Every corpse and zone the ledger has ever recorded a drop from — not just whatever a filter bar
+ * happens to have fetched, so an old camp's option doesn't require some *other* filter to have
+ * already widened the fetch first (a gap ADR 0211 flagged and left open, now that there's no ledger
+ * cap left to make "fetch it all" a bounded ask). `zones` is raw, log-wording spellings — the
+ * caller folds them through `placeName` the same way it already folds a drop's own `zone` field.
+ */
+export interface LootVocabulary {
+  sources: string[];
+  zones: string[];
+}
+
 /** Which way a faction-standing change went — from the log's own wording. */
 export type FactionDirection = "raised" | "lowered" | "floor" | "ceiling";
 
@@ -268,6 +300,58 @@ export interface FactionStanding {
    * folded into `net` as though it were certain.
    */
   correction?: { observedNet: number; correctedAt: string };
+}
+
+/** Columns `HitTable`'s grid may sort a page of the ledger by (`electron/faction-log.ts`). */
+export type FactionHitSortField = "at" | "faction" | "delta" | "cause";
+
+/** Operators `HitTable`'s column filter menu may send — the subset of `GridFilterItem["operator"]`
+ *  (`@mui/x-data-grid`) that `faction-log.ts`'s `hitsPage` knows how to turn into SQL. */
+export type FactionHitFilterOperator =
+  | "contains"
+  | "doesNotContain"
+  | "equals"
+  | "doesNotEqual"
+  | "startsWith"
+  | "endsWith"
+  | "="
+  | "!="
+  | ">"
+  | ">="
+  | "<"
+  | "<="
+  | "isEmpty"
+  | "isNotEmpty"
+  | "isAnyOf";
+
+/** One column-menu filter: a field, the operator to apply, and whatever value it needs — none for
+ *  `isEmpty`/`isNotEmpty`, an array for `isAnyOf`, a single value otherwise. */
+export interface FactionHitFilterItem {
+  field: FactionHitSortField;
+  operator: FactionHitFilterOperator;
+  value?: string | number | (string | number)[];
+}
+
+/** A page's whole filter — plural items folded by one logic operator, mirroring `GridFilterModel` so
+ *  `HitTable` can pass its grid's own filter model straight through with no translation layer. */
+export interface FactionHitsFilter {
+  items: FactionHitFilterItem[];
+  logicOperator?: "and" | "or";
+}
+
+export interface FactionHitsQuery {
+  offset: number;
+  limit: number;
+  sortField: FactionHitSortField;
+  sortDesc: boolean;
+  /** Undefined, or no items — no filtering; the page comes from the whole ledger. */
+  filter?: FactionHitsFilter;
+}
+
+export interface FactionHitsPage {
+  rows: FactionRecord[];
+  /** Every hit the ledger holds, not just this page — what a grid's own page count is built from. */
+  total: number;
 }
 
 /**
@@ -3246,10 +3330,24 @@ export interface EqlApi {
     /** What each item has auto-sold for, biggest earner first. */
     prices(): Promise<ItemPrice[]>;
     /**
+     * Fires once a *background* refresh of `prices()`'s shared cache actually lands a fresher
+     * answer (ADR 0247) — never on every call, and never for a merely-synchronous one.
+     */
+    onPricesChanged(cb: () => void): Unsubscribe;
+    /**
      * Every distinct item the ledger holds, most-looted first. Search reads it so a name the wiki
      * has never heard of can still be found by the player who has looted forty of them (ADR 0103).
      */
     items(): Promise<LootedItem[]>;
+    /**
+     * Every drop matching every given filter, reached across the whole ledger — what
+     * `LootFilterBar` asks for the moment any filter engages, now that there's no ledger cap to
+     * fetch "everything" up to (ADR 0232/0240).
+     */
+    search(filter: LootSearchFilter): Promise<LootRecord[]>;
+    /** Every corpse and zone the ledger has ever recorded — the filter bar's own picker options,
+     *  reaching the whole ledger the same reason `search` does. */
+    vocabulary(): Promise<LootVocabulary>;
     /** Every parsed loot line, whether or not it's on the list — as recorded, so it names its zone. */
     onEvent(cb: (event: LootRecord) => void): Unsubscribe;
     /** Loot lines that matched a shopping-list entry. */
@@ -3262,6 +3360,11 @@ export interface EqlApi {
      * complete even when the Faction tab wasn't open. Pair with `onEvent` for live appends.
      */
     recent(limit?: number): Promise<FactionRecord[]>;
+    /**
+     * One page of the whole ledger, sorted server-side — what `HitTable`'s grid calls as the player
+     * pages or re-sorts it, now that the ledger has no cap to fetch "everything" up to (ADR 0232).
+     */
+    hitsPage(query: FactionHitsQuery): Promise<FactionHitsPage>;
     /** Every faction the ledger has seen a change for, folded to one row each, with any stated
      *  correction already folded into `net` (`electron/faction-corrections.ts`). */
     standings(): Promise<FactionStanding[]>;
@@ -3376,6 +3479,13 @@ export interface EqlApi {
     get(): Promise<CombatStats>;
     reset(): Promise<CombatStats>;
     onChanged(cb: (stats: CombatStats) => void): Unsubscribe;
+    /**
+     * Fires once `zones()`/`bests()`/`sessions()`'s shared background cache lands a fresher answer
+     * than whatever a prior read fell back to (ADR 0247) — the same kind of notice `kills.onChanged`
+     * already gives those three's kill-log counterparts. Fold into a re-read's own dependency list
+     * alongside whatever already triggers the first attempt (a just-ended fight, a log import).
+     */
+    onHistoryChanged(cb: () => void): Unsubscribe;
     /** Past play sessions, newest first. */
     sessions(): Promise<SessionSummary[]>;
     /** Per-zone totals across all recorded fights, best experience rate first. */

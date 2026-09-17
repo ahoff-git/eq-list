@@ -466,7 +466,7 @@ export default function SearchPanel({
 
       {/* No wiki page is not the end of the answer: the item may be one your log knows and the wiki
           doesn't, in which case this is its page (ADR 0103). */}
-      {nav.current && !loadingPage && !page && <ObservedItemView title={nav.current} />}
+      {nav.current && !loadingPage && !page && <ObservedItemView title={nav.current} known={known} />}
 
       {page && <WikiPageView page={page} onRefreshed={() => setPageNonce((n) => n + 1)} />}
     </div>

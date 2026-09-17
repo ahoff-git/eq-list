@@ -51,6 +51,13 @@ jobs:
         shell: bash
         run: echo "version=$(node scripts/stamp-version.mjs "$GITHUB_RUN_NUMBER")" >> "$GITHUB_OUTPUT"
 
+      # `npm test` just left better-sqlite3 built for plain Node (its own `pretest` hook, since the
+      # compiled test suite runs under `node --test`) — packaging it as-is would ship a binary that
+      # segfaults the moment the app tries to load it (ADR 0232). `npm run dist`'s own `predist` hook
+      # would normally catch this, but CI calls electron-builder directly (for `--publish never`), so
+      # the fetch has to happen here instead, right before packaging.
+      - run: npm run rebuild:electron
+
       - run: npx electron-builder --publish never
 
       # Point the rolling tag at this commit so the published release isn't stale.

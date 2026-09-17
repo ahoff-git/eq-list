@@ -24,6 +24,7 @@ import { mobKey } from "../src/shared/mob-stats";
 import { placeKey, placeName } from "../src/shared/zones/place";
 import {
   learnRespawns,
+  mergeRespawns,
   provenNamed,
   remainingMs,
   respawnFor,
@@ -41,6 +42,7 @@ import {
   timerInPlace,
   timerKey,
   timerSlot,
+  type RespawnFacts,
   type RespawnLearning,
   type Floor,
   type Sighting,
@@ -236,6 +238,15 @@ export interface SpawnTrackerDeps {
   userDataDir: string;
   /** The kill log, read on demand — the learned figures are derived, never a second copy. */
   kills: () => KillRecord[];
+  /**
+   * What the room has pooled about camps — the peer half of a respawn interval
+   * (`electron/peer-respawns.ts`, [ADR 0244](../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)).
+   * Folded into `view()`'s `known` alongside your own learning, so a camp a peer taught the room
+   * about shows an estimate even before you have ever camped it yourself. Optional so a test that
+   * isn't about this can ignore it — absent reads as "the room has taught us nothing", same as it
+   * always did before this existed.
+   */
+  peerRespawns?: () => RespawnFacts[];
   /** Current alert settings, so a pop wears whatever the alerts wear. */
   getSettings: () => CastAlertSettings;
   /** Put a banner on the overlay, the same way every other alert reaches it. */
@@ -382,6 +393,7 @@ export interface SpawnTracker {
 export function createSpawnTracker({
   userDataDir,
   kills,
+  peerRespawns = () => [],
   getSettings,
   raise,
   now = Date.now,
@@ -830,7 +842,12 @@ export function createSpawnTracker({
         if (isNamed(mobKey(l.mob))) rows.set(key, l);
       }
 
-      const known = [...rows.values()]
+      // What the room has pooled, folded in last: tightens/widens the bounds of a camp you've also
+      // learned yourself, and supplies one outright for a camp you've never camped at all
+      // (`mergeRespawns`, ADR 0244). Everything below still reads `state.*` by key regardless of
+      // where a row came from, which is what gives a peer-only camp the same blank, unconfigured
+      // defaults a freshly-learned local one already gets.
+      const known = mergeRespawns([...rows.values()], peerRespawns())
         .sort((a, b) => a.mob.localeCompare(b.mob) || a.place.localeCompare(b.place))
         .map((l) => ({
           ...l,

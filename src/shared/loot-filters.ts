@@ -83,6 +83,24 @@ export function lootZones(drops: readonly LootRecord[]): string[] {
   return distinctSorted(drops.map((d) => (d.zone ? placeName(d.zone) : "")).filter(Boolean));
 }
 
+/**
+ * Same fold as `lootSources`, over a `LootVocabulary`'s raw source strings instead of a fetched
+ * window of records — `distinctSorted`'s locale ordering, not SQL's byte ordering, is what a picker
+ * should show either way.
+ */
+export function foldSources(sources: readonly string[]): string[] {
+  return distinctSorted(sources.filter(Boolean));
+}
+
+/**
+ * Same fold as `lootZones`, over a `LootVocabulary`'s raw zone strings instead of a fetched window
+ * of records — for a picker fed by `useLootVocabulary`, which reaches the whole ledger rather than
+ * whatever's currently loaded (ADR 0240).
+ */
+export function foldZones(zones: readonly string[]): string[] {
+  return distinctSorted(zones.map(placeName).filter(Boolean));
+}
+
 /** How many of each fate, counting stacks — the tallies beside the header. */
 export function tallyFates(drops: readonly LootRecord[]): Record<LootFate, number> {
   const counts: Record<LootFate, number> = { kept: 0, sold: 0, stored: 0, combined: 0 };

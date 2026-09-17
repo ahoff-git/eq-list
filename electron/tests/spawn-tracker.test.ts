@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { createSpawnTracker, type SpawnTracker } from "../spawn-tracker";
 import { CAMPING_KILLS, contradicted, MAX_CAMP_TIMERS, respawnCaveat, timerKey } from "../../src/shared/spawn-timers";
+import type { RespawnFacts } from "../../src/shared/spawn-timers";
 import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
 import type { CastAlertEvent, CastAlertSettings, KillRecord } from "../../src/shared/types";
 
@@ -63,7 +64,13 @@ interface Harness {
 }
 
 function harness(
-  options: { kills?: KillRecord[]; settings?: CastAlertSettings; dir?: string; startSec?: number } = {},
+  options: {
+    kills?: KillRecord[];
+    settings?: CastAlertSettings;
+    dir?: string;
+    startSec?: number;
+    peerRespawns?: RespawnFacts[];
+  } = {},
 ): Harness {
   const kills = options.kills ?? [];
   const raised: CastAlertEvent[] = [];
@@ -74,6 +81,7 @@ function harness(
   const tracker = createSpawnTracker({
     userDataDir: options.dir ?? tempDir(),
     kills: () => kills,
+    peerRespawns: () => options.peerRespawns ?? [],
     getSettings: () => options.settings ?? settings(),
     raise: (a) => raised.push(a),
     now: () => T0 + nowSec * 1000,
@@ -1633,4 +1641,38 @@ test("a timer the player made survives a repop; a mob's does not", () => {
   const left = h.tracker.view().running;
   assert.equal(left.length, 1);
   assert.equal(left[0].mob, "Boat to Butcherblock");
+});
+
+// ── what the room has pooled (ADR 0244) ─────────────────────────────────────
+
+test("a camp you've never camped shows up from the pool alone, blank of any setting of your own", () => {
+  const h = harness({
+    peerRespawns: [{ key: "an unseen@Feerrott", mob: "an unseen", place: "The Feerrott", samples: 4, shortestSeconds: 600, longestSeconds: 1200 }],
+  });
+  const known = h.tracker.view().known.find((k) => k.mob === "an unseen");
+  assert.ok(known, "a pooled-only camp appears in `known` even though we've never killed it");
+  assert.equal(known!.kind, "mob");
+  assert.equal(known!.added, false);
+  assert.equal(known!.queue, false);
+  assert.equal(known!.running, false, "we have no clock of our own for it");
+  assert.equal(known!.respawn?.seconds, 600, "a usable estimate, from the pool alone");
+});
+
+test("a camp you've also learned yourself is tightened by the pool, not replaced by it", () => {
+  const h = harness({ kills: [record(MOB, 0), record(MOB, 900)] });
+  const withoutPool = h.tracker.view().known.find((k) => k.key === KEY)!;
+  assert.equal(withoutPool.shortestSeconds, 900);
+
+  const h2 = harness({
+    kills: [record(MOB, 0), record(MOB, 900)],
+    peerRespawns: [{ key: KEY, mob: MOB, place: ZONE, samples: 2, shortestSeconds: 300, longestSeconds: 950 }],
+  });
+  const withPool = h2.tracker.view().known.find((k) => k.key === KEY)!;
+  assert.equal(withPool.shortestSeconds, 300, "the room's tighter bound wins");
+  assert.equal(withPool.mob, MOB, "your own row keeps its label");
+});
+
+test("nothing pooled behaves exactly as it always did", () => {
+  const h = harness({ kills: [record(MOB, 0), record(MOB, 900)] });
+  assert.equal(h.tracker.view().known.length, 1);
 });

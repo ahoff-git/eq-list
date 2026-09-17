@@ -1,8 +1,14 @@
 "use client";
 import { useMemo, useState } from "react";
-import { DataGrid, type GridColDef, type GridSortModel } from "@mui/x-data-grid";
-import { useFactionFeed, useFactionStandings } from "@/lib/hooks";
+import {
+  DataGrid,
+  type GridColDef,
+  type GridFilterModel,
+  type GridPaginationModel,
+} from "@mui/x-data-grid";
+import { useFactionHitsPage, useFactionStandings } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
+import { useGridSort } from "@/lib/useGridSort";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { causeConfidence, causeConfidenceWhy } from "@/shared/faction-cause";
 import { factionKey } from "@/shared/faction-feed";
@@ -11,17 +17,23 @@ import {
   DEFAULT_FACTION_STANDING_SORT,
   causeSource,
   ratePerHour,
-  sortFactionHits,
   sortFactionStandings,
   type FactionHitSortKey,
   type FactionStandingSortKey,
 } from "@/shared/faction-sort";
-import { clock, count, when } from "@/shared/format";
-import { nextSort, type Sort } from "@/shared/sorting";
-import type { FactionCauseTally, FactionRecord, FactionStanding } from "@/shared/types";
+import { count, dayTime, when } from "@/shared/format";
+import type { Sort } from "@/shared/sorting";
+import type {
+  FactionCauseTally,
+  FactionHitFilterItem,
+  FactionHitsFilter,
+  FactionHitsQuery,
+  FactionRecord,
+  FactionStanding,
+} from "@/shared/types";
 import ItemLink, { NameList } from "./ItemLink";
 import RaceUnlocksView from "./RaceUnlocksView";
-import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
 import { Empty, segCls } from "./ui";
 
 /**
@@ -70,15 +82,21 @@ import { Empty, segCls } from "./ui";
  *
  * Both tables are `DataGrid`s — sortable and filterable on every column.
  *
- * **Hits pages back through the whole ledger, not just the most recent 200.** The feed used to be
- * fetched once at a flat 200-row cap with nowhere further to go; it's now fetched with no cut-off of
- * its own (`HITS_FETCH_LIMIT` — the ledger's own retention, `MAX_FACTION` in `electron/faction-log.ts`,
- * is the real limit), and `HitTable` turns its grid's footer back on with a real "rows per page"
- * choice and page arrows. `dataGridDefaults.ts`'s `GRID_DEFAULTS` still hides the footer on every
- * other table — none of them were designed to page, `autoHeight` already draws every row — but the
- * footer itself is no longer something to avoid: its "rows per page" `Select` used to misposition
- * under this app's CSS-`zoom` scaling, fixed at the root by moving the zoom onto the window's own
- * shell instead of the document root ([ADR 0231](../../../specs/decisions/0231-the-zoom-root-moves-inside-the-shell.md)).
+ * **Hits pages through the whole ledger, server-side, not just the most recent 200.** The feed used
+ * to be a flat 200-row cap fetched once with nowhere further to go, then (briefly) the *entire*
+ * ledger fetched in one IPC call and paginated over an already-fully-fetched array. Neither survives
+ * a ledger with no cap at all: `faction-log.ts` now keeps every hit forever
+ * ([ADR 0232](../../../specs/decisions/0232-a-ledger-that-outlives-its-cap-is-a-database.md)), so
+ * `HitTable` asks main for one page at a time (`faction.hitsPage`) as the player turns pages or
+ * re-sorts a column, instead of holding the whole history in the renderer. Every grid in the app now
+ * pages (ADR 0249) — `dataGridDefaults.ts`'s `GRID_SX_FILL` is the variant for a table that's the
+ * whole of its tab (both of this panel's, and `LootPanel`'s two): it fills whatever height its flex
+ * container hands it rather than a fixed box, so it uses a tall window rather than stopping partway
+ * down it ([ADR 0248](../../../specs/decisions/0248-a-paged-grid-fills-the-window-instead-of-a-fixed-height.md),
+ * superseding [ADR 0234](../../../specs/decisions/0234-a-paged-grid-gets-a-fixed-height-and-a-real-filter.md)'s
+ * fixed `height: 560`). `HitTable`'s column filter also reaches the whole ledger, not just the
+ * fetched page, via `hitsPage`'s own `filter` parameter (ADR 0234's other half, which still stands) —
+ * the one table in the app where ADR 0230's "filter narrows what's on screen" rule doesn't hold.
  *
  * **A third view, Race Unlocks** (`RaceUnlocksView`), folds the live Standings onto Alanna's Race
  * Unlock Guide ([ADR 0222](../../../specs/decisions/0222-a-race-unlock-guide-is-generated-static-data.md))
@@ -88,10 +106,11 @@ import { Empty, segCls } from "./ui";
  */
 type View = "hits" | "standings" | "unlocks";
 
-/** Ask the ledger for everything it's holding rather than an arbitrary cut-off — `HitTable` pages
- *  through it, so unlike a flat list there's no cap worth guessing at here; the feed's own retention
- *  (`MAX_FACTION`, `electron/faction-log.ts`) is the real limit, whatever it happens to be. */
-const HITS_FETCH_LIMIT = Number.MAX_SAFE_INTEGER;
+/** A single newest-hit probe — cheap (one row, one `COUNT(*)`), and enough to answer "is the ledger
+ *  empty" and "how many hits total" for the header without fetching a page `HitTable` owns fetching
+ *  for itself. Also the standings refresh key: only a hit can change a standing, and the newest one
+ *  is the cheapest signal that one landed, the same trick `LootPanel` uses for `useItemPrices`. */
+const HITS_PROBE_QUERY: FactionHitsQuery = { offset: 0, limit: 1, sortField: "at", sortDesc: true };
 
 export default function FactionPanel() {
   const [view, setView] = usePersistentState<View>(STORAGE_KEYS.factionView, "hits");
@@ -104,16 +123,13 @@ export default function FactionPanel() {
     DEFAULT_FACTION_STANDING_SORT,
   );
 
-  const hits = useFactionFeed(HITS_FETCH_LIMIT);
-  // Only a hit can change a standing, and the newest one is the cheapest signal that one landed —
-  // the same trick `LootPanel` uses to key `useItemPrices`'s refetch off the newest drop.
-  const standings = useFactionStandings(hits[0] ? factionKey(hits[0]) : "");
+  const { page: hitsProbe } = useFactionHitsPage(HITS_PROBE_QUERY);
+  const standings = useFactionStandings(hitsProbe.rows[0] ? factionKey(hitsProbe.rows[0]) : "");
 
-  const sortedHits = useMemo(() => sortFactionHits(hits, hitSort), [hits, hitSort]);
   const sortedStandings = useMemo(() => sortFactionStandings(standings, standingSort), [standings, standingSort]);
 
   return (
-    <div>
+    <div className="tab-fill">
       <div className="row wrap" style={{ marginBottom: 12 }}>
         <div className="segmented">
           <button
@@ -139,21 +155,27 @@ export default function FactionPanel() {
           </button>
         </div>
         <span className="spacer" />
-        {view === "hits" && hits.length > 0 && <span className="muted small">{count(hits.length, "hit")}</span>}
+        {view === "hits" && hitsProbe.total > 0 && <span className="muted small">{count(hitsProbe.total, "hit")}</span>}
       </div>
 
-      {view === "unlocks" ? (
-        <RaceUnlocksView standings={standings} />
-      ) : hits.length === 0 ? (
-        <Empty
-          title="Nothing has raised or lowered a faction yet."
-          hint="A hit appears here the moment the game says so — a quest turn-in, a kill that mattered to one side. The list is kept, so it will still be here next time you open the app."
-        />
-      ) : view === "hits" ? (
-        <HitTable hits={sortedHits} sort={hitSort} onSort={setHitSort} />
-      ) : (
-        <StandingTable standings={sortedStandings} sort={standingSort} onSort={setStandingSort} />
-      )}
+      {/* `flex: 1; min-height: 0` so whichever view is open can fill whatever's left of the window
+       *  instead of a fixed pixel height (ADR 0248/0249) — both `HitTable` and `StandingTable` use
+       *  it (`GRID_SX_FILL`); Race Unlocks and the empty state aren't `flex` children of their own,
+       *  so they keep sizing to their own content and cost nothing here. */}
+      <div className="tab-fill-body">
+        {view === "unlocks" ? (
+          <RaceUnlocksView standings={standings} />
+        ) : hitsProbe.total === 0 ? (
+          <Empty
+            title="Nothing has raised or lowered a faction yet."
+            hint="A hit appears here the moment the game says so — a quest turn-in, a kill that mattered to one side. The list is kept, so it will still be here next time you open the app."
+          />
+        ) : view === "hits" ? (
+          <HitTable sort={hitSort} onSort={setHitSort} />
+        ) : (
+          <StandingTable standings={sortedStandings} sort={standingSort} onSort={setStandingSort} />
+        )}
+      </div>
     </div>
   );
 }
@@ -210,16 +232,51 @@ type HitRow = FactionRecord & { id: string };
 const HITS_PAGE_SIZES = [25, 50, 100];
 const HITS_DEFAULT_PAGE_SIZE = 50;
 
+/** The only fields `HitTable`'s columns declare — a filter item naming anything else (shouldn't
+ *  happen; the grid only ever offers a column it was given) is dropped rather than forwarded. */
+const HIT_FILTER_FIELDS = new Set<FactionHitSortKey>(["at", "faction", "delta", "cause"]);
+
+/** Converts the grid's own filter model into what `hitsPage` takes (ADR 0234) — same field names and
+ *  operator strings, so this is a pass-through, not a translation. `faction-log.ts`'s own allow-list
+ *  quietly skips any operator it doesn't implement or any item still missing a value, so nothing here
+ *  duplicates that validation — it only drops a field the grid could never actually send. */
+function toHitsFilter(model: GridFilterModel): FactionHitsFilter | undefined {
+  const items: FactionHitFilterItem[] = model.items
+    .filter((i) => HIT_FILTER_FIELDS.has(i.field as FactionHitSortKey))
+    .map((i) => ({
+      field: i.field as FactionHitSortKey,
+      operator: i.operator as FactionHitFilterItem["operator"],
+      value: i.value,
+    }));
+  if (!items.length) return undefined;
+  return { items, logicOperator: model.logicOperator === "or" ? "or" : "and" };
+}
+
 function HitTable({
-  hits,
   sort,
   onSort,
 }: {
-  hits: FactionRecord[];
   sort: Sort<FactionHitSortKey>;
   onSort: (next: Sort<FactionHitSortKey>) => void;
 }) {
-  const rows = useMemo<HitRow[]>(() => hits.map((hit) => ({ ...hit, id: factionKey(hit) })), [hits]);
+  const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
+    page: 0,
+    pageSize: HITS_DEFAULT_PAGE_SIZE,
+  });
+  const [filterModel, setFilterModel] = useState<GridFilterModel>({ items: [] });
+
+  const query = useMemo<FactionHitsQuery>(
+    () => ({
+      offset: paginationModel.page * paginationModel.pageSize,
+      limit: paginationModel.pageSize,
+      sortField: sort.key,
+      sortDesc: sort.desc,
+      filter: toHitsFilter(filterModel),
+    }),
+    [paginationModel, sort, filterModel],
+  );
+  const { page, loading } = useFactionHitsPage(query);
+  const rows = useMemo<HitRow[]>(() => page.rows.map((hit) => ({ ...hit, id: factionKey(hit) })), [page.rows]);
 
   const columns = useMemo<GridColDef<HitRow>[]>(
     () => [
@@ -228,8 +285,9 @@ function HitTable({
         headerName: "Time",
         description: "When the log recorded it",
         flex: 1,
+        minWidth: 130,
         valueGetter: (_v, row) => row.at,
-        renderCell: (p) => <span className="lt-time">{clock(p.row.at)}</span>,
+        renderCell: (p) => <span className="lt-time">{dayTime(p.row.at)}</span>,
       },
       {
         field: "faction",
@@ -271,28 +329,44 @@ function HitTable({
     [],
   );
 
-  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
+  // A re-sort changes what belongs on every page, including this one — the row that opened page 3
+  // under the old order has no claim to still be there under the new one, so re-sorting also resets
+  // pagination back to page 0.
+  const { sortModel, onSortModelChange } = useGridSort(
+    sort,
+    onSort,
+    (key) => key !== "faction" && key !== "cause",
+    () => setPaginationModel((p) => ({ ...p, page: 0 })),
+  );
 
   return (
-    <div className="table-scroll">
+    <div className="table-scroll grid-fill">
       <DataGrid
         {...GRID_DEFAULTS}
-        sx={GRID_SX}
+        sx={GRID_SX_FILL}
         rows={rows}
         columns={columns}
+        loading={loading}
+        // A real "next page" instead of one long scroll, or fetching the whole ledger to page over
+        // client-side — `faction-log.ts` keeps every hit forever (ADR 0232), so `hitsPage` is asked
+        // for one page at a time instead. The "rows per page" choice is safe to offer for real (not
+        // just a single fixed size) now that its popover-position bug is fixed at the root (ADR 0231).
+        paginationMode="server"
+        paginationModel={paginationModel}
+        onPaginationModelChange={setPaginationModel}
+        rowCount={page.total}
         sortingMode="server"
         sortModel={sortModel}
-        onSortModelChange={(model) => {
-          const key = (model[0]?.field ?? sort.key) as FactionHitSortKey;
-          onSort(nextSort(sort, key, key !== "faction" && key !== "cause"));
+        onSortModelChange={onSortModelChange}
+        // Reaches every hit the ledger holds, not just this page — ADR 0234. Same reason a re-sort
+        // resets to page 0: a new filter changes what belongs on every page, including this one.
+        filterMode="server"
+        filterModel={filterModel}
+        onFilterModelChange={(model) => {
+          setFilterModel(model);
+          setPaginationModel((p) => ({ ...p, page: 0 }));
         }}
-        // A real "next page" instead of one long scroll, now that `hits` reaches back through the
-        // whole ledger rather than a flat 200-row cut-off (see the module header) — with a genuine
-        // choice of page size, now that the "rows per page" `Select`'s popover-position bug is fixed
-        // at its root (ADR 0231) rather than sidestepped.
-        hideFooter={false}
         pageSizeOptions={HITS_PAGE_SIZES}
-        initialState={{ pagination: { paginationModel: { pageSize: HITS_DEFAULT_PAGE_SIZE, page: 0 } } }}
       />
     </div>
   );
@@ -402,36 +476,38 @@ function StandingTable({
         field: "lastAt",
         headerName: "Last hit",
         flex: 1,
+        minWidth: 130,
         cellClassName: "lt-time",
-        renderCell: (p) => <span title={when(p.row.lastAt)}>{clock(p.row.lastAt)}</span>,
+        renderCell: (p) => <span title={when(p.row.lastAt)}>{dayTime(p.row.lastAt)}</span>,
       },
     ],
     [],
   );
 
+  // Computed before the early return below: a hook can't be called conditionally.
+  const { sortModel, onSortModelChange } = useGridSort(sort, onSort, (key) => key !== "faction");
+
   if (standings.length === 0) {
     return <Empty title="No standings yet." hint="Folded from the hits on the other view." />;
   }
 
-  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
   const openStanding = open ? standings.find((s) => s.faction === open) : undefined;
 
   return (
-    <div className="table-scroll">
+    <div className="table-scroll grid-fill">
       <DataGrid
         {...GRID_DEFAULTS}
-        sx={GRID_SX}
+        sx={GRID_SX_FILL}
         rows={rows}
         columns={columns}
         sortingMode="server"
         sortModel={sortModel}
-        onSortModelChange={(model) => {
-          const key = (model[0]?.field ?? sort.key) as FactionStandingSortKey;
-          onSort(nextSort(sort, key, key !== "faction"));
-        }}
+        onSortModelChange={onSortModelChange}
         disableRowSelectionOnClick
         rowSelectionModel={{ type: "include", ids: new Set(open ? [open] : []) }}
         onRowClick={(params) => setOpen((prev) => (prev === params.id ? null : (params.id as string)))}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
       />
       {openStanding && <CauseBreakdown causes={openStanding.causes} />}
     </div>

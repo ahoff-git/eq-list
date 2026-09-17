@@ -181,7 +181,10 @@ function createWebApi(): EqlApi {
     loot: {
       recent: async () => [],
       prices: async () => [],
+      onPricesChanged: () => noop,
       items: async () => [],
+      search: async () => [],
+      vocabulary: async () => ({ sources: [], zones: [] }),
       onEvent: () => noop,
       onMatched: () => noop,
     },
@@ -189,6 +192,7 @@ function createWebApi(): EqlApi {
     // Tracked against the live log, same as loot — nothing to show on the web build.
     faction: {
       recent: async () => [],
+      hitsPage: async () => ({ rows: [], total: 0 }),
       standings: async () => [],
       onEvent: () => noop,
       setCorrection: async () => ({ offset: 0, statedAt: new Date().toISOString() }),
@@ -258,6 +262,7 @@ function createWebApi(): EqlApi {
       get: async () => EMPTY_COMBAT,
       reset: async () => EMPTY_COMBAT,
       onChanged: () => noop,
+      onHistoryChanged: () => noop,
       sessions: async () => [],
       zones: async () => [],
       bests: async () => [],

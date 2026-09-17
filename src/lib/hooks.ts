@@ -11,8 +11,12 @@ import type {
   WatcherStatus,
   LootRecord,
   ItemPrice,
+  LootSearchFilter,
+  LootVocabulary,
   FactionRecord,
   FactionStanding,
+  FactionHitsPage,
+  FactionHitsQuery,
   LocEvent,
   CombatStats,
   XpProgress,
@@ -258,6 +262,7 @@ export function useAppInfo(): AppInfo | null {
 
 const EMPTY_PRICES: ItemPrice[] = [];
 const EMPTY_FACTION_STANDINGS: FactionStanding[] = [];
+const EMPTY_FACTION_HITS_PAGE: FactionHitsPage = { rows: [], total: 0 };
 const NO_KILLS: KillRecord[] = [];
 const NO_MOBS: MobKnowledge[] = [];
 /**
@@ -292,6 +297,22 @@ const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: 
 /** Live damage-meter state from the log (current fight + session). */
 export function useCombatStats(): CombatStats {
   return useLive(LIVE.combat, EMPTY_COMBAT);
+}
+
+/**
+ * Ticks whenever `combat.zones()`/`bests()`/`sessions()`'s shared background cache lands a fresher
+ * answer than a prior read fell back to (ADR 0247). Fold into a `useRead` dependency list alongside
+ * whatever already triggers the first attempt (a just-ended fight's `startedAt`, a log import) — this
+ * is what lets a read that already happened catch the fresher one landing a moment later.
+ */
+export function useCombatReportsRefresh(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    return a.combat.onHistoryChanged(() => setTick((n) => n + 1));
+  }, []);
+  return tick;
 }
 
 /**
@@ -1206,10 +1227,76 @@ export function useLootFeed(limit = 40): LootRecord[] {
 /**
  * What each item has auto-sold for. Derived in main from the loot ledger, so it covers sales
  * from before this tab was opened; `refreshKey` re-reads it — a new sale is the only thing that
- * can change it, and the loot feed already knows when one arrives.
+ * can change it, and the loot feed already knows when one arrives. `prices()` itself answers from
+ * a shared background cache (ADR 0247) that can still be catching up the instant a sale lands, so
+ * `usePricesRefresh` re-reads again once it actually has.
  */
 export function useItemPrices(refreshKey: unknown): ItemPrice[] {
-  return useRead((a) => a.loot.prices(), EMPTY_PRICES, [refreshKey]);
+  const pricesRefresh = usePricesRefresh();
+  return useRead((a) => a.loot.prices(), EMPTY_PRICES, [refreshKey, pricesRefresh]);
+}
+
+/** Ticks whenever `loot.prices()`'s shared background cache lands a fresher answer (ADR 0247). */
+function usePricesRefresh(): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    return a.loot.onPricesChanged(() => setTick((n) => n + 1));
+  }, []);
+  return tick;
+}
+
+const EMPTY_LOOT_MATCHES: LootRecord[] = [];
+
+/**
+ * Every drop matching `filter`, reached across the **whole** ledger — not just whatever
+ * `useLootFeed`'s own small window holds. `filter: null` means "don't search at all" — the common,
+ * nothing-filtered case, where `LootPanel.tsx` reads from `useLootFeed` instead — and resolves to
+ * empty without ever calling `loot.search`, so the caller doesn't pay for a query it doesn't need
+ * ([ADR 0211](../../specs/decisions/0211-a-loot-filter-searches-the-ledger-not-the-window.md)/
+ * [ADR 0240](../../specs/decisions/0240-a-loot-search-outgrew-its-own-fetch-cap.md)).
+ */
+export function useLootSearch(filter: LootSearchFilter | null): { matches: LootRecord[]; loading: boolean } {
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const offEvent = a.loot.onEvent(() => setRefresh((n) => n + 1));
+    const offChanged = a.app.onDataChanged(() => setRefresh((n) => n + 1));
+    return () => {
+      offEvent();
+      offChanged();
+    };
+  }, []);
+  const { value, loading } = useReading(
+    (a) => (filter ? a.loot.search(filter) : Promise.resolve(EMPTY_LOOT_MATCHES)),
+    EMPTY_LOOT_MATCHES,
+    [filter?.fate, filter?.item, filter?.source, filter?.zone, refresh],
+  );
+  return { matches: value, loading };
+}
+
+const EMPTY_LOOT_VOCABULARY: LootVocabulary = { sources: [], zones: [] };
+
+/**
+ * Every corpse and zone the ledger has ever recorded a drop from — the filter bar's own picker
+ * options, reaching the whole ledger for the same reason `useLootSearch` does. Refreshed on a new
+ * drop (a fresh corpse or zone could be one of the options now) or a wholesale ledger change.
+ */
+export function useLootVocabulary(): LootVocabulary {
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const offEvent = a.loot.onEvent(() => setRefresh((n) => n + 1));
+    const offChanged = a.app.onDataChanged(() => setRefresh((n) => n + 1));
+    return () => {
+      offEvent();
+      offChanged();
+    };
+  }, []);
+  return useRead((a) => a.loot.vocabulary(), EMPTY_LOOT_VOCABULARY, [refresh]);
 }
 
 /** Rolling feed of the most recent faction-standing changes (newest first) — same shape as `useLootFeed`. */
@@ -1238,6 +1325,36 @@ export function useFactionStandings(refreshKey: unknown): FactionStanding[] {
   const [refresh, setRefresh] = useState(0);
   useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);
   return useRead((a) => a.faction.standings(), EMPTY_FACTION_STANDINGS, [refreshKey, refresh]);
+}
+
+/**
+ * One page of the whole faction ledger, sorted server-side — what `HitTable`'s grid asks for as the
+ * player pages or re-sorts it, now that the feed has no cap to fetch "everything" up to (ADR 0232).
+ * Re-reads the same page whenever a new hit lands or the ledger changes wholesale (a log eaten, a
+ * clear), so paging and following live hits both fall out of the one query rather than a second,
+ * separate "live tail" path.
+ */
+export function useFactionHitsPage(query: FactionHitsQuery): { page: FactionHitsPage; loading: boolean } {
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const offEvent = a.faction.onEvent(() => setRefresh((n) => n + 1));
+    const offChanged = a.app.onDataChanged(() => setRefresh((n) => n + 1));
+    return () => {
+      offEvent();
+      offChanged();
+    };
+  }, []);
+  const { value, loading } = useReading(
+    (a) => a.faction.hitsPage(query),
+    EMPTY_FACTION_HITS_PAGE,
+    // `query.filter` is a fresh object every render (`HitTable` rebuilds it in a `useMemo`, but a new
+    // `GridFilterModel` reference still arrives on every keystroke) — stringified so the effect only
+    // re-fires when what it actually says changes, the same reason `deps` elsewhere here stay primitives.
+    [query.offset, query.limit, query.sortField, query.sortDesc, JSON.stringify(query.filter), refresh],
+  );
+  return { page: value, loading };
 }
 
 /**

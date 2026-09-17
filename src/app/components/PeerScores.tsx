@@ -6,7 +6,7 @@ import { useRead, useWatcherStatus } from "@/lib/hooks";
 import { rowsOf } from "@/lib/usePeerShare";
 import { compareScores, type ScoreRow } from "@/shared/peer-share";
 import { categoryOf, formatScore, scoreOrder } from "@/shared/high-scores";
-import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
 import { Empty } from "./ui";
 import type { HighScore, ReceivedShare, ScoreBoard } from "@/shared/types";
 
@@ -126,7 +126,14 @@ export default function PeerScores({ received }: { received: ReceivedShare[] }) 
     <section className="peers-block">
       <h3>High scores</h3>
       <div className="peers-scores-wrap">
-        <DataGrid {...GRID_DEFAULTS} sx={GRID_SX} rows={gridRows} columns={columns} />
+        <DataGrid
+          {...GRID_DEFAULTS}
+          sx={GRID_SX}
+          rows={gridRows}
+          columns={columns}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+        />
       </div>
       <span className="hint">
         Nobody else&rsquo;s figure can change your board — these sit beside it and nothing more. A{" "}

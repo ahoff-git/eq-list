@@ -44,10 +44,16 @@ interface Rig {
   accepted: { pages: unknown[]; shard?: number }[];
   /** Game-time readings accepted straight into the clock — `gameTime`'s own version of `accepted`. */
   acceptedGameTime: unknown[];
+  /** Faction pages accepted straight into the cache — `factions`' own version of `accepted`. */
+  acceptedFactions: unknown[][];
   notices: { peerId: string; name: string; kinds: ShareKind[] }[];
   /** "The room speaks a protocol we haven't got" — raised at most once a session. */
   outdated: PeerVersionNotice[];
   changes: number;
+  /** What `archiveReceived` was told to remember, in order — the authored family's disk half. */
+  archivedCalls: { kind: ShareKind; name: string; rows: unknown[] }[];
+  /** What `archiveClear` was told to forget, in order. */
+  archiveClears: { name?: string; kind?: ShareKind }[];
   /** Run the minute tick by hand. */
   tick: () => void;
   /** Run whatever debounce is pending — a catalogue re-publish, or a notice. */
@@ -62,7 +68,7 @@ interface Rig {
   last: (kind: string, peerId?: string) => AwariPayload | undefined;
 }
 
-const ALL_KINDS: ShareKind[] = ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "items", "gameTime"];
+const ALL_KINDS: ShareKind[] = ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "items", "factions", "gameTime"];
 
 /**
  * The roster half of `ItemShardSource`, for the tests that are about something else.
@@ -87,18 +93,23 @@ function rig(
     name?: string;
     /** Replace a kind's whole source — for a test about *how* a kind is read rather than what it holds. */
     source?: Partial<Record<ShareKind, PeerShareDeps["sources"][ShareKind]>>;
+    /** What the archive already remembers, per kind — the seed a restart would have loaded. */
+    archived?: Partial<Record<ShareKind, { name: string; rows: unknown[]; seenAt: string }[]>>;
   } = {},
 ): Rig {
   const share: ShareSettings = over.share ?? Object.fromEntries(ALL_KINDS.map((k) => [k, true]));
   const settings = { connectPeers: over.connectPeers ?? true, share } as unknown as Settings;
-  const rows: Record<string, unknown[]> = { watches: [], styles: [], lists: [], pins: [], mobs: [], kills: [], respawns: [], timers: [], buffs: [], scores: [], items: [], gameTime: [], ...over.rows };
+  const rows: Record<string, unknown[]> = { watches: [], styles: [], lists: [], pins: [], mobs: [], kills: [], respawns: [], timers: [], buffs: [], scores: [], items: [], factions: [], gameTime: [], ...over.rows };
 
   const sent: Rig["sent"] = [];
   const filed: AwariPayload[] = [];
   const accepted: Rig["accepted"] = [];
   const acceptedGameTime: Rig["acceptedGameTime"] = [];
+  const acceptedFactions: Rig["acceptedFactions"] = [];
   const notices: Rig["notices"] = [];
   const outdated: Rig["outdated"] = [];
+  const archivedCalls: Rig["archivedCalls"] = [];
+  const archiveClears: Rig["archiveClears"] = [];
   let changes = 0;
   let clock = 1_000_000;
   let ticker: (() => void) | null = null;
@@ -122,6 +133,10 @@ function rig(
     outdated: (n) => void outdated.push(n),
     acceptItems: (pages, shard) => (accepted.push({ pages, shard }), pages.length),
     acceptGameTime: (reading) => void acceptedGameTime.push(reading),
+    acceptFactions: (pages) => (acceptedFactions.push(pages), pages.length),
+    archiveReceived: (kind, name, rows) => void archivedCalls.push({ kind, name, rows }),
+    archived: (kind) => over.archived?.[kind] ?? [],
+    archiveClear: (name, kind) => void archiveClears.push({ name, kind }),
     sources,
     items: over.items,
     now: () => clock,
@@ -140,8 +155,11 @@ function rig(
     filed,
     accepted,
     acceptedGameTime,
+    acceptedFactions,
     notices,
     outdated,
+    archivedCalls,
+    archiveClears,
     get changes() {
       return changes;
     },
@@ -330,6 +348,88 @@ test("an observation goes into the pipeline, tagged with who sent it — never i
   assert.equal(r.hub.received().length, 0, "an observation is pooled, not trayed");
 });
 
+test("an authored give is also remembered past the tray, credited to the name that sent it", () => {
+  const r = rig();
+  r.hub.handle("bran-session", {
+    kind: AWARI_MSG.give,
+    what: "pins",
+    rev: 1,
+    from: "Bran",
+    rows: [{ zone: "Blackburrow", y: 10, x: 20, title: "Camp" }],
+  } as unknown as AwariPayload);
+  assert.equal(r.archivedCalls.length, 1);
+  assert.equal(r.archivedCalls[0].kind, "pins");
+  assert.equal(r.archivedCalls[0].name, "Bran");
+  assert.equal(r.archivedCalls[0].rows.length, 1);
+});
+
+test("a live give with no name isn't archived — nothing to remember it under", () => {
+  const r = rig();
+  r.hub.handle("bran-session", {
+    kind: AWARI_MSG.give,
+    what: "pins",
+    rev: 1,
+    rows: [{ zone: "Blackburrow", y: 10, x: 20 }],
+  } as unknown as AwariPayload);
+  assert.equal(r.archivedCalls.length, 0);
+});
+
+test("received() folds in what the archive remembers, for a name not currently live", () => {
+  const r = rig({ archived: { pins: [{ name: "Kainos", rows: [{ id: "p1" }], seenAt: "2026-01-01T00:00:00Z" }] } });
+  const received = r.hub.received();
+  assert.equal(received.length, 1);
+  assert.equal(received[0].from, "Kainos");
+  assert.equal(received[0].kind, "pins");
+  assert.equal(received[0].peerId, "archived:kainos");
+});
+
+test("a name live right now for a kind hides that kind's archived copy, but not another kind's", () => {
+  const r = rig({
+    archived: {
+      pins: [{ name: "Bran", rows: [{ id: "stale-pin" }], seenAt: "2026-01-01T00:00:00Z" }],
+      styles: [{ name: "Bran", rows: [{ id: "stale-style" }], seenAt: "2026-01-01T00:00:00Z" }],
+    },
+  });
+  r.hub.handle("bran-session", {
+    kind: AWARI_MSG.give,
+    what: "pins",
+    rev: 1,
+    from: "Bran",
+    rows: [{ zone: "Blackburrow", y: 1, x: 2 }],
+  } as unknown as AwariPayload);
+
+  const received = r.hub.received();
+  const pins = received.filter((e) => e.kind === "pins");
+  const styles = received.filter((e) => e.kind === "styles");
+  assert.equal(pins.length, 1, "the live one wins; the archived pins copy is hidden");
+  assert.equal(pins[0].peerId, "bran-session");
+  assert.equal(styles.length, 1, "styles has no live entry for Bran, so the archive still shows");
+  assert.equal(styles[0].peerId, "archived:bran");
+});
+
+test("a specific live peer id's received() never pulls in the archive", () => {
+  const r = rig({ archived: { pins: [{ name: "Kainos", rows: [{ id: "p1" }], seenAt: "2026-01-01T00:00:00Z" }] } });
+  assert.deepEqual(r.hub.received("some-live-session-id", "pins"), []);
+});
+
+test("clearing a kind with no peer named clears the tray and the whole archive for it", () => {
+  const r = rig();
+  r.hub.clear(undefined, "pins");
+  assert.deepEqual(r.archiveClears, [{ name: undefined, kind: "pins" }]);
+});
+
+test("clearing an archived pseudo-peer forgets just that one name", () => {
+  const r = rig();
+  r.hub.clear("archived:bran", "pins");
+  assert.deepEqual(r.archiveClears, [{ name: "bran", kind: "pins" }]);
+});
+
+test("clearing a real, live peer id never touches the archive", () => {
+  const r = rig();
+  r.hub.clear("some-live-session-id", "pins");
+  assert.deepEqual(r.archiveClears, []);
+});
+
 test("an item page applies itself; nothing authored ever does", () => {
   const r = rig();
   r.hub.handle("bran", {
@@ -358,6 +458,46 @@ test("a game-time reading applies itself too, the same as an item page", () => {
   assert.equal(r.acceptedGameTime.length, 1);
   assert.deepEqual(r.acceptedGameTime[0], { hour: 18, at: "2026-09-03T18:00:00.000Z" });
   assert.equal(r.hub.received("bran", "gameTime").length, 0, "never trayed — it's applied, not held");
+});
+
+// ── factions — mirrored whole, on the generic protocol (ADR 0244) ──────────
+
+test("a faction give applies itself too, whole rather than by shard", () => {
+  const r = rig();
+  r.hub.handle("bran", {
+    kind: AWARI_MSG.give,
+    what: "factions",
+    rev: 1,
+    from: "Bran",
+    rows: [{ kind: "faction", title: "Wharf Rats", wikiPath: "/Wharf_Rats", sources: [], components: [], rewards: [] }],
+  } as unknown as AwariPayload);
+  assert.equal(r.acceptedFactions.length, 1);
+  assert.equal(r.acceptedFactions[0].length, 1);
+  assert.equal(r.hub.received("bran", "factions").length, 0, "never trayed — it's applied, not held");
+});
+
+test("factions is fetched automatically too, mirror family though it is — same carve-out as gameTime", () => {
+  const r = rig();
+  r.hub.roster([peer("bran", "Bran")]);
+  r.hub.handle("bran", offerOf({ watches: { n: 3, rev: 1 }, factions: { n: 5, rev: 1 } }));
+  const asks = r.to("bran").filter((p) => p.kind === AWARI_MSG.ask).map((p) => p.what);
+  assert.deepEqual(asks, ["factions"], "the same auto-fetch a watch rule deliberately does not get");
+});
+
+test("a delta narrows a faction re-ask exactly as it would for any other pooled kind", () => {
+  const r = rig({ rows: { factions: [{ kind: "faction", title: "Wharf Rats", wikiPath: "/w", sources: [], components: [], rewards: [] }] } });
+  r.hub.roster([peer("bran", "Bran")]);
+  r.hub.handle("bran", { kind: AWARI_MSG.ask, what: "factions" } as unknown as AwariPayload);
+  const whole = r.last(AWARI_MSG.give, "bran");
+  assert.ok(Array.isArray(whole?.rows) && whole.rows.length === 1);
+
+  r.rows.factions = [
+    ...(r.rows.factions as unknown[]),
+    { kind: "faction", title: "Coalition of Tradefolk", wikiPath: "/c", sources: [], components: [], rewards: [] },
+  ];
+  r.hub.handle("bran", { kind: AWARI_MSG.ask, what: "factions", since: whole!.rev, epoch: whole!.epoch } as unknown as AwariPayload);
+  const delta = r.last(AWARI_MSG.give, "bran");
+  assert.equal((delta?.changes as unknown[])?.length, 1, "only the new page travels");
 });
 
 test("an unchanged answer leaves the tray exactly as it was", () => {

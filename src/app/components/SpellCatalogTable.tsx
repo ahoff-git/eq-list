@@ -1,10 +1,11 @@
 "use client";
 import { useMemo } from "react";
-import { DataGrid, type GridColDef, type GridSortModel } from "@mui/x-data-grid";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import ItemLink from "./ItemLink";
-import { GRID_DEFAULTS, GRID_SX, NUM_COL } from "./dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
+import { useGridSort } from "@/lib/useGridSort";
 import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spell-search";
-import { nextSort, type Sort } from "@/shared/sorting";
+import type { Sort } from "@/shared/sorting";
 
 /** Which way each column opens on its first click — the same rule the old `SortHeader` calls
  *  encoded per column, kept here since the grid's own click cycle is overridden to match it. */
@@ -129,7 +130,7 @@ export default function SpellCatalogTable({
     [],
   );
 
-  const sortModel: GridSortModel = [{ field: sort.key, sort: sort.desc ? "desc" : "asc" }];
+  const { sortModel, onSortModelChange } = useGridSort(sort, onSort, START_DESC);
 
   return (
     <DataGrid
@@ -141,10 +142,9 @@ export default function SpellCatalogTable({
       // the grid must reflect that order rather than re-derive it — see ItemTable for the same shape.
       sortingMode="server"
       sortModel={sortModel}
-      onSortModelChange={(model) => {
-        const key = (model[0]?.field ?? sort.key) as SpellSortKey;
-        onSort(nextSort(sort, key, START_DESC[key]));
-      }}
+      onSortModelChange={onSortModelChange}
+      pageSizeOptions={PAGE_SIZE_OPTIONS}
+      initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
     />
   );
 }
