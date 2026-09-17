@@ -450,7 +450,7 @@ export function createCombatHistory(db: Database, userDataDir: string, sessionId
     fights: (id) =>
       (selectBySession.all(id) as FightRow[]).map(rowToFight).map(labelled).sort(byNewest),
 
-    // Filters `reportsCache`'s own `searchIndex` (ADR NNNN, extending ADR 0247) instead of running a
+    // Filters `reportsCache`'s own `searchIndex` (ADR 0252, extending ADR 0247) instead of running a
     // fresh full-table scan + JSON-parse + relabel on every keystroke — `DamageHistory.tsx` asks
     // this on every one, with no debounce. `searchIndex` already carries the recomputed-on-read
     // label `labelled()` used to apply here, and is already sorted newest-first.

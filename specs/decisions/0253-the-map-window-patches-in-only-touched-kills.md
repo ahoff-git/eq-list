@@ -50,6 +50,28 @@ was worth removing a cap for, and the same completeness is worth not re-paying f
 - Materialized newest-first by the kill's own `at` timestamp, not insertion order, since a patched
   row's position in the map reflects when it arrived at this client, not when it happened.
 
+**Two correctness edges found by deliberately trying to break this, both fixed before this landed:**
+
+- **A reload racing a patch.** Opening the map window mid-fight can have a kill's `onChanged`
+  notice — and its faster `byIds` round trip — resolve *before* the window's own initial `kills.all`
+  history fetch does. A plain "replace on resolve" reload would then overwrite the just-applied
+  patch with an older snapshot queried before that kill existed, silently erasing it. Reloads and
+  patches are now sequenced independently: reloads still supersede an older reload the same way
+  `useFollowedRead` always has, but only the *first* reload (mount/zone-change, where `byId` starts
+  empty anyway) merges onto whatever's already there instead of replacing it; every later,
+  bulk-triggered reload (an import, a clear, an admin edit) keeps doing a true replace, since those
+  really can delete rows and a merge would never reflect that.
+- **An undrained import backlog.** `log-import.ts`'s bulk import calls `record`/`noteLoot`/
+  `noteCoin` per line too — touching ids the same way live play does — but its own completion
+  broadcasts `CH.killsChanged` with no ids directly, bypassing `main.ts`'s coalesce and never
+  draining the backlog. A large import followed, possibly much later, by one live kill could then
+  hand `drainTouched()` a years-old, import-sized list — and `byIds`'s `WHERE id IN (...)` would be
+  the one to feel SQLite's own bound on how many `?` a query may bind. `drainTouched()` now dedupes
+  (a busy corpse touches its own id several times over) and caps at `TOUCHED_CAP` (500, well clear of
+  ordinary live combat and well under SQLite's limit): past it, it returns `[]`, which every existing
+  caller already reads as "reload everything" — the correct answer for a backlog that size regardless
+  of where it came from.
+
 ## Consequences
 
 - A live-combat notice at a heavily-farmed camp now transfers and re-parses however many kills/

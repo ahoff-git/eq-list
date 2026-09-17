@@ -131,12 +131,15 @@ export default function LootPanel() {
     page: 0,
     pageSize: DROP_DEFAULT_PAGE_SIZE,
   });
-  // A re-filter or re-sort changes what belongs on every page — stranding the view on whatever page
-  // number it already had (now describing something else entirely) is the same bug `useGridSort`'s
-  // own doc calls out for a re-sort, just reachable from the filter bar too.
+  // A re-filter, or toggling `wantedOnly`, changes what belongs on every page — stranding the view
+  // on whatever page number it already had (now describing something else entirely, possibly past
+  // the end of a client-paged array that's smaller than the server-paged one was) is the same bug
+  // `useGridSort`'s own doc calls out for a re-sort, just reachable from the filter bar too. The
+  // sort-change half of this is handled where `onSort` is wired below, since only that call site
+  // knows a re-sort happened as opposed to a re-render with the same sort.
   useEffect(() => {
     setPaginationModel((m) => (m.page === 0 ? m : { ...m, page: 0 }));
-  }, [searchFilter.fate, searchFilter.item, searchFilter.source, searchFilter.zone]);
+  }, [searchFilter.fate, searchFilter.item, searchFilter.source, searchFilter.zone, filters.wantedOnly]);
 
   const dropsQuery = useMemo(() => {
     const sortField = lootSort.key;
@@ -246,9 +249,9 @@ export default function LootPanel() {
                 // gives for `HitTable`'s identical reset.
                 setPaginationModel((m) => (m.page === 0 ? m : { ...m, page: 0 }));
               }}
-              serverPaging={
-                serverPaged ? { total: page.total, paginationModel, onPaginationModelChange: setPaginationModel } : undefined
-              }
+              paginationModel={paginationModel}
+              onPaginationModelChange={setPaginationModel}
+              serverTotal={serverPaged ? page.total : undefined}
             />
           </>
         ) : (
@@ -383,23 +386,29 @@ function DropTable({
   wanted,
   sort,
   onSort,
-  serverPaging,
+  paginationModel,
+  onPaginationModelChange,
+  serverTotal,
 }: {
   drops: LootRecord[];
   wanted: ReadonlySet<string>;
   sort: Sort<LootSortKey>;
   onSort: (next: Sort<LootSortKey>) => void;
   /**
+   * Pagination is **always** controlled, in both modes below — MUI's `DataGrid` does not reliably
+   * support a live toggle between a controlled and an uncontrolled `paginationModel` on one mounted
+   * instance, and `wantedOnly`/a zone sort switch modes on exactly that: the same grid, not a remount.
+   * Only `paginationMode`/`rowCount` (below) change to match where `drops` came from.
+   */
+  paginationModel: GridPaginationModel;
+  onPaginationModelChange: (model: GridPaginationModel) => void;
+  /**
    * Present exactly when `drops` came from `loot.dropsPage` (ADR 0254): the grid pages itself over
    * IPC instead of MUI slicing an already-fetched array. Absent for the `wantedOnly`/zone-sort
    * fallback, where `drops` is already the whole matching set and MUI's own client pagination (as
    * before this ADR) is correct.
    */
-  serverPaging?: {
-    total: number;
-    paginationModel: GridPaginationModel;
-    onPaginationModelChange: (model: GridPaginationModel) => void;
-  };
+  serverTotal?: number;
 }) {
   // Keyed by the drop's identity, not `logId-item`. The ledger outlives a run while `logId`
   // restarts at zero each launch, so that pair repeats across runs — two rows claiming one key.
@@ -515,16 +524,13 @@ function DropTable({
         sortModel={sortModel}
         onSortModelChange={onSortModelChange}
         pageSizeOptions={DROP_PAGE_SIZES}
-        {...(serverPaging
-          ? {
-              paginationMode: "server" as const,
-              rowCount: serverPaging.total,
-              paginationModel: serverPaging.paginationModel,
-              onPaginationModelChange: serverPaging.onPaginationModelChange,
-            }
-          : {})}
+        // Controlled in both modes — see this prop's own doc on why toggling controlled/uncontrolled
+        // live isn't the axis that changes here.
+        paginationMode={serverTotal !== undefined ? "server" : "client"}
+        paginationModel={paginationModel}
+        onPaginationModelChange={onPaginationModelChange}
+        rowCount={serverTotal}
         initialState={{
-          pagination: { paginationModel: { pageSize: DROP_DEFAULT_PAGE_SIZE, page: 0 } },
           columns: { columnVisibilityModel: hiddenByDefault("soldFor", "raw") },
         }}
       />

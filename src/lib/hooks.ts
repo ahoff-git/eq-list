@@ -743,31 +743,51 @@ function mergeDropLists(a: MobKnowledge, b: MobKnowledge): MobKnowledge["drops"]
  * Held as an id-keyed map internally (patching needs upsert-by-id) and materialized newest-first by
  * `at` on read — the kill's own logged time, not insertion order, since a patched-in row arrives out
  * of whatever order the map's `Map` happened to hold it in.
+ *
+ * **A reload and a patch never race each other into a wrong answer.** A patch is always an upsert
+ * onto whatever `byId` currently holds — safe in any order, since two patches for different ids
+ * don't conflict and the same id patched twice just leaves whichever fetch happened to resolve last
+ * (both are genuine reads of the row, so neither is "wrong"). A reload is different: it's a
+ * wholesale replace, which is exactly what a bulk change (an import, a clear, an admin edit) needs
+ * — those really can delete rows the current map still holds, and only a replace reflects that. The
+ * one place this collides is the *very first* reload, racing a live patch: opening the map window
+ * mid-fight can have a kill's `onChanged` notice — and its faster `byIds` round trip — resolve
+ * before the window's own history fetch does. A plain replace there would silently erase exactly
+ * the row the patch just taught us about, with an older snapshot that was queried before that row
+ * existed. So the *first* reload merges instead of replacing (harmless — `byId` starts empty, so
+ * merge and replace agree unless a patch got there first) and only every later, bulk-triggered
+ * reload keeps doing a true replace, where the tiny remaining race (a live kill's patch landing in
+ * the same instant as a manually-triggered clear/import) is both far rarer and far lower-stakes.
  */
 export function useKills(zone: string | undefined): KillRecord[] {
   const [byId, setById] = useState<ReadonlyMap<string, KillRecord>>(EMPTY_KILLS_MAP);
   useEffect(() => {
     const a = api();
     if (!a) return;
-    // Counted, the same reason `useFollowedRead` counts rather than flags: within one effect, a
-    // later read has to be able to supersede an earlier one still in flight, whichever kind of
-    // read either turns out to be.
-    let latest = 0;
-    const fullReload = () => {
-      const mine = ++latest;
+    let cancelled = false;
+    // Reload-only: two overlapping reloads (two bulk-change notices close together) still need the
+    // older one's answer discarded, the same reason `useFollowedRead` counts rather than flags. A
+    // patch never touches this — it isn't in the business of superseding a reload or another patch.
+    let reloadSeq = 0;
+    const fullReload = (merge: boolean) => {
+      const mine = ++reloadSeq;
       void a.kills.all(zone).then((rows) => {
-        if (mine !== latest) return;
-        setById(new Map(rows.map((r) => [r.id, r])));
+        if (cancelled || mine !== reloadSeq) return;
+        setById((prev) => {
+          if (!merge) return new Map(rows.map((r) => [r.id, r]));
+          const next = new Map(prev);
+          for (const r of rows) next.set(r.id, r);
+          return next;
+        });
       });
     };
     const stop = a.kills.onChanged((ids) => {
       if (!zone || !ids?.length) {
-        fullReload();
+        fullReload(false);
         return;
       }
-      const mine = ++latest;
       void a.kills.byIds(ids).then((rows) => {
-        if (mine !== latest) return;
+        if (cancelled) return;
         setById((prev) => {
           const next = new Map(prev);
           for (const r of rows) {
@@ -777,9 +797,9 @@ export function useKills(zone: string | undefined): KillRecord[] {
         });
       });
     });
-    fullReload();
+    fullReload(true);
     return () => {
-      latest += 1; // nothing in flight may land after we've gone
+      cancelled = true; // nothing in flight, reload or patch, may land after we've gone
       stop();
     };
   }, [zone]);

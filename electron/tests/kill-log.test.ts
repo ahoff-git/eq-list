@@ -176,6 +176,33 @@ test("record/noteLoot/noteCoin each touch an id, drained once and then forgotten
   assert.equal(k.drainTouched().length, 1);
 });
 
+test("touching the same corpse repeatedly before a drain names it once, not once per touch", () => {
+  const k = freshKillLog();
+  kill(k, "a coyote", 1);
+  const killedId = k.kills(ZONE)[0].id;
+  k.drainTouched(); // discard the kill's own touch — only the repeats below are under test
+
+  k.noteLoot(looted("first item", "a coyote", 2));
+  k.noteLoot(looted("second item", "a coyote", 3));
+  k.noteCoin(coin(5, 4));
+  assert.deepEqual(k.drainTouched(), [killedId], "one corpse touched three times drains as one id");
+});
+
+// A bulk import calls `record`/`noteLoot`/`noteCoin` per line too, and its own broadcast never
+// drains this (see `touched`'s own doc) — so an ungrained backlog is a real, reachable shape, not
+// just a live-combat hypothetical, and `byIds` would be the one to feel a query with an unbounded
+// `IN (...)` list.
+test("drainTouched caps out well under a query's own limits, reloading everything instead of naming a giant list", () => {
+  const CAP = 500; // kept in sync with kill-log.ts's own TOUCHED_CAP — this test fails if they drift apart
+  const overCap = freshKillLog();
+  for (let i = 0; i <= CAP; i++) kill(overCap, `mob ${i}`, i, ZONE);
+  assert.deepEqual(overCap.drainTouched(), [], "over the cap: told to reload everything, not handed 501 ids");
+
+  const atCap = freshKillLog();
+  for (let i = 0; i < CAP; i++) kill(atCap, `mob ${i}`, i, ZONE);
+  assert.equal(atCap.drainTouched().length, CAP, "exactly at the cap: still the real list, not yet forced empty");
+});
+
 test("byIds answers with exactly the requested records, in no particular zone-filtered order", () => {
   const k = freshKillLog();
   kill(k, "first", 1, ZONE);

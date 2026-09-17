@@ -41,8 +41,14 @@ entirely) whenever `wantedOnly` is on or the sort key is `zone`, in which case `
 instead (skipped itself, via the same `filter: null` short-circuit `useLootSearch` already
 supported, whenever the server-paged path is active) — so only one of the two ever actually queries
 the ledger on a given render, never both. Toggling `wantedOnly` or re-sorting by zone switches
-`DropTable` between MUI's server (`paginationMode="server"`, controlled `paginationModel`/
-`rowCount`) and client (uncontrolled, `initialState`-seeded) pagination modes live.
+`DropTable`'s `paginationMode` between `"server"` and `"client"` live, on the same mounted grid —
+but `paginationModel`/`onPaginationModelChange` stay controlled in **both** modes, always. Letting
+the mode switch also toggle controlled vs. uncontrolled (`rowCount`+controlled `paginationModel` for
+server, `initialState`-seeded uncontrolled for client) was the first shape tried; found, while
+deliberately trying to break this, to be exactly the pattern React's own controlled/uncontrolled
+warning exists for, and one MUI's `DataGrid` does not document supporting live either — so pagination
+state now lives in `LootPanel` unconditionally, and only `paginationMode`/`rowCount` (undefined in
+client mode, letting MUI derive the count from `rows.length` itself) vary with the branch.
 
 The header's total count and per-fate tallies — always "every match, not just a page's worth" —
 now come from `dropsPage`'s own `total`/`tallies` fields (`SUM(qty) ... GROUP BY fate`, `fate`
@@ -58,9 +64,11 @@ caller no longer fetches whole.
 - `wantedOnly` and a zone sort are unchanged in cost and behavior from before this ADR: still a
   whole-matching-set fetch, paginated client-side. This is an explicit, named scope limit, not
   something this ADR claims to have fixed.
-- A re-filter or re-sort resets the grid's page back to 0 — otherwise the view could strand itself
-  on a page number that described something else entirely under the old query, the same reasoning
-  `useGridSort`'s own doc already gives for `HitTable`'s identical reset on re-sort.
+- A re-filter, a re-sort, or toggling `wantedOnly` all reset the grid's page back to 0 — otherwise
+  the view could strand itself on a page number that described something else entirely under the old
+  query (or, crossing the server/client boundary, one that's out of range for a differently-sized
+  array), the same reasoning `useGridSort`'s own doc already gives for `HitTable`'s identical reset
+  on re-sort.
 - `LootLog.search`'s behavior, signature and the whole-ledger-fetch code path itself are unchanged —
   `dropsPage` is additive, built by factoring `search`'s existing filter-building logic into a
   shared `buildDropWhere` both now call.

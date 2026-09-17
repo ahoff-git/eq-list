@@ -137,6 +137,13 @@ const LOOT_WINDOW_MS = 120_000;
  */
 const COIN_FOLLOWS_LOOT_MS = 10_000;
 
+/**
+ * `drainTouched`'s own cap — see its call site. Well clear of ordinary live combat (a coalesce
+ * window would need hundreds of kills/loots/coins inside ~500ms to reach it) and well under
+ * SQLite's own bound on how many `?` a query may bind, so `byIds` never gets asked to.
+ */
+const TOUCHED_CAP = 500;
+
 
 export const KILL_LOG_MIGRATIONS: readonly Migration[] = [
   {
@@ -526,8 +533,11 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
   /** Ids `record`/`noteLoot`/`noteCoin` touched since the last `drainTouched()` call — what lets
    *  `main.ts`'s coalesced `killsChanged` broadcast name exactly what changed instead of "something
    *  did", so `useKills` can patch those rows in rather than refetch a whole camp's history (ADR
-   *  0253). `drainTouched()` runs on the same coalesce `main.ts` already had, so this never grows
-   *  past one notice's worth of activity regardless of whether a renderer is listening. */
+   *  0253). Bounded by live combat during ordinary play — but `log-import.ts`'s bulk import calls
+   *  `record`/`noteLoot`/`noteCoin` per line too, and its own broadcast (`CH.killsChanged` sent
+   *  directly with no ids, bypassing `main.ts`'s coalesce) never drains this, so a big import
+   *  followed much later by one live kill could otherwise hand `drainTouched()` a years-old backlog.
+   *  `TOUCHED_CAP` is `drainTouched`'s own answer to that — see it there. */
   let touched: string[] = [];
 
   function touch(id: string): void {
@@ -851,7 +861,17 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
     drainTouched() {
       const ids = touched;
       touched = [];
-      return ids;
+      // A busy corpse touches its own kill row several times over (the kill itself, then a drop or
+      // two, then coin) — deduped before the cap so a loot-heavy pull's repeat touches of the same
+      // few ids can't spuriously trip it.
+      const unique = [...new Set(ids)];
+      // Past this many, naming them individually has stopped being the cheap option: SQLite's own
+      // bound on how many `?` a single query may bind is finite, and `byIds` would be the one to
+      // hit it. `[]` reads to every existing caller (`useKills`'s `!ids?.length`) as "reload
+      // everything" — the correct answer for a backlog this size regardless of where it came from
+      // (a big import that never got drained, in practice, since ordinary live combat never
+      // approaches this in one coalesce window).
+      return unique.length > TOUCHED_CAP ? [] : unique;
     },
 
     observations: () => observationsCache.get(),
