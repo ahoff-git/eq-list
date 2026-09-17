@@ -11,8 +11,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createWikiClient } from "../wiki";
-import { createPageStore } from "../wiki/page-store";
+import type { Database } from "better-sqlite3";
+import { createWikiClient, closeOwnedDatabases } from "../wiki";
+import { createPageStore, WIKI_PAGE_MIGRATIONS, type PageStore } from "../wiki/page-store";
+import { openAppDatabase } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
 import type { ItemRow } from "../../src/shared/item-search";
 import type { SpellRow } from "../../src/shared/spell-search";
@@ -20,16 +22,38 @@ import type { SpellRow } from "../../src/shared/spell-search";
 const DAY = 24 * 60 * 60 * 1000;
 const TTL_DAYS = 14;
 
-/** Writes straight into the page store, bypassing the client's own fetch/write path — same trick
- *  `wiki-cache-share.test.ts` uses to seed a cache without a network. */
+const seeders = new Map<string, PageStore>();
+/** The database each entry in `seeders` opened for itself — closed by `cleanup` before its rmdir. */
+const seededDbs = new Map<string, Database>();
+
+/**
+ * Writes straight into the page store, bypassing the client's own fetch/write path — same trick
+ * `wiki-cache-share.test.ts` uses to seed a cache without a network.
+ *
+ * Opens the same `eqlist.db` a later `createWikiClient(dir, ...)` call falls back to when given no
+ * explicit `db` (see `createWikiClient`'s own doc), so the two see the same rows — and, one store per
+ * directory, so seeding twice doesn't open a second connection to the same file.
+ */
 function seed(dir: string, page: Record<string, unknown> & { kind: string; title: string }) {
-  const store = createPageStore(dir);
+  let store = seeders.get(dir);
+  if (!store) {
+    const db = openAppDatabase(dir, WIKI_PAGE_MIGRATIONS);
+    seededDbs.set(dir, db);
+    store = createPageStore(db, dir);
+    seeders.set(dir, store);
+  }
   const full = { sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString(), ...page };
   // A version well above every kind's floor — this test isn't about version gating.
   store.put(page.title, 99, full as unknown as WikiPage);
 }
 
 async function cleanup(dir: string): Promise<void> {
+  // Release whatever database `seed()` or a self-opened `createWikiClient` holds open for `dir` —
+  // Windows refuses to remove a directory containing a file some process still has open.
+  seededDbs.get(dir)?.close();
+  seededDbs.delete(dir);
+  seeders.delete(dir);
+  closeOwnedDatabases(dir);
   for (let attempt = 0; ; attempt++) {
     try {
       await fs.promises.rm(dir, { recursive: true, force: true });

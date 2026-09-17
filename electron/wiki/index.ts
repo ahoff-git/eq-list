@@ -12,6 +12,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import v8 from "node:v8";
+import type { Database } from "better-sqlite3";
+import { openAppDatabase } from "../sqlite-store";
 import {
   opensearch,
   fullTextSearch,
@@ -29,7 +31,7 @@ import {
 import { exploreCategories, EXPLORE_SEEDS } from "./explore";
 import { belongsToRoster, planChanges, trackingCurrent } from "./changes";
 import { parseWikiPage } from "./parse";
-import { createPageStore } from "./page-store";
+import { createPageStore, WIKI_PAGE_MIGRATIONS } from "./page-store";
 import { createHarvester, type HarvestProgress, type SavedHarvest } from "./harvest";
 import {
   countShards,
@@ -455,19 +457,66 @@ function createCachedIndex(file: string, fetcher: () => Promise<string[]>, label
 const isOutEraCategory = (set: Set<string>, cat: string) =>
   set.has(cat.replace(/^Category:\s*/i, "").replace(/_/g, " ").toLowerCase().trim());
 
-/** Create a wiki client that caches parsed pages + search indexes under `cacheDir`. */
-export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number } = {}): WikiClient {
+/**
+ * Databases this module opened for itself — `createWikiClient` called with no `opts.db` — keyed by
+ * cache directory, so a test can get its temp directory back.
+ *
+ * Production never touches this: `main.ts` always hands `createWikiClient` the shared `eqlist.db`
+ * (ADR 0232), which belongs to main alone to close. It exists only because Windows won't remove a
+ * directory containing a file some process still has open, and a test that opens its own database
+ * here (every test in this codebase that constructs one client per temp directory) needs a way to
+ * release that handle before deleting the directory it lives in — see `closeOwnedDatabases`.
+ */
+const ownedDatabases = new Map<string, Database[]>();
+
+/**
+ * Close every database this module self-opened for `cacheDir`, so its directory can be removed.
+ *
+ * Test-only in practice (see `ownedDatabases`): a client constructed with an explicit `opts.db` never
+ * registers here, so calling this for a directory whose client was handed the shared `eqlist.db` is a
+ * harmless no-op.
+ */
+export function closeOwnedDatabases(cacheDir: string): void {
+  const dbs = ownedDatabases.get(cacheDir);
+  if (!dbs) return;
+  ownedDatabases.delete(cacheDir);
+  for (const db of dbs) {
+    try {
+      db.close();
+    } catch {
+      /* already closed, or never fully opened — nothing left to release either way */
+    }
+  }
+}
+
+/**
+ * Create a wiki client that caches parsed pages + search indexes under `cacheDir`.
+ *
+ * `opts.db` is the shared `eqlist.db` (ADR 0232) main opens once and threads through every store —
+ * pass it so the wiki cache lands in the one shared file rather than a second database of its own.
+ * Left unset, a standalone database is opened inside `cacheDir` instead (`eqlist.db` there), which
+ * is what every test in this codebase that only ever constructs one client per directory wants —
+ * see `closeOwnedDatabases` for how such a test gets its directory back afterward.
+ */
+export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number; db?: Database } = {}): WikiClient {
   fs.mkdirSync(cacheDir, { recursive: true });
   /**
    * Read on every freshness test rather than captured, so changing the setting takes effect at once
    * — including for a harvest that is already running.
    */
   const ttlMs = opts.ttlMs ?? (() => DEFAULT_TTL_MS);
+  let db = opts.db;
+  if (!db) {
+    db = openAppDatabase(cacheDir, WIKI_PAGE_MIGRATIONS);
+    const owned = ownedDatabases.get(cacheDir) ?? [];
+    owned.push(db);
+    ownedDatabases.set(cacheDir, owned);
+  }
   /**
-   * Where pages live. 256 append-only bucket files rather than one file per page — see
-   * [page-store](./page-store.ts) for why, and for the migration off the old layout.
+   * Where pages live: the `wiki_pages` table (ADR 0256) — see [page-store](./page-store.ts) for the
+   * schema and the migration off the older bucket-file/loose-file layouts.
    */
-  const store = createPageStore(cacheDir);
+  const store = createPageStore(db, cacheDir);
 
   const titleIndex = createCachedIndex(path.join(cacheDir, "title-index.json"), fetchAllTitles, "title");
   const zoneIndex = createCachedIndex(

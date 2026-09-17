@@ -57,7 +57,13 @@ function refresh() {
     return;
   }
   console.log("[dev-snapshot] refreshing public/data …");
-  child = spawn(process.execPath, ["scripts/build-web-snapshot.mjs"], { cwd: ROOT, stdio: "inherit" });
+  // Through run-under-electron.mjs, not plain `node`: build-web-snapshot.mjs (ADR 0256) opens
+  // eqlist.db via better-sqlite3, and `predev` has already left the Electron-ABI binary in place for
+  // the `dev-electron` process this loop runs alongside — plain Node can't load that same binary.
+  child = spawn(process.execPath, ["scripts/run-under-electron.mjs", "scripts/build-web-snapshot.mjs"], {
+    cwd: ROOT,
+    stdio: "inherit",
+  });
   child.on("exit", (code, signal) => {
     child = null;
     if (shuttingDown) return; // we asked for this — nothing to report, nothing to reschedule

@@ -840,6 +840,42 @@ test("dismiss all clears the standing list and touches nothing that is up", () =
   assert.equal(h.buffs.view().active.length, 1);
 });
 
+test("a known row remembers which classes can cast it, from the game's own file", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.");
+  assert.deepEqual(h.buffs.view().known[0].classes, ["Druid"]);
+});
+
+test("disable all untracks every spell at once, and clears what each was saying", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you.", 0);
+  h.fade({ spell: "Thorns", target: "Bloop", offsetSec: 10 });
+  assert.equal(h.buffs.view().active.length, 1);
+  assert.equal(h.buffs.view().lapsed.length, 1);
+
+  h.buffs.disableAll();
+  const view = h.buffs.view();
+  assert.ok(view.known.every((k) => k.tracked === false));
+  assert.equal(view.active.length, 0);
+  assert.equal(view.lapsed.length, 0);
+});
+
+test("enable all by class only turns on spells that class can cast, leaving unclassified rows alone", () => {
+  const h = harness();
+  h.line("You feel the spirit of wolf enter you."); // the spell file says Druid
+  h.fade({ spell: "Thorns", target: "Bloop", offsetSec: 5 }); // never in the spell file: no class to go by
+  h.buffs.disableAll();
+  assert.deepEqual(
+    h.buffs.view().known.map((k) => k.tracked),
+    [false, false],
+  );
+
+  h.buffs.enableAllByClass("Druid");
+  const tracked = new Map(h.buffs.view().known.map((k) => [k.key, k.tracked]));
+  assert.equal(tracked.get("spirit of wolf"), true, "the spell file says Druid can cast this one");
+  assert.equal(tracked.get("thorns"), false, "never classified, so it isn't swept in by a guess");
+});
+
 // ── persistence, and what deliberately isn't persisted ────────────────────────
 
 test("the choices survive a restart and the board does not", () => {

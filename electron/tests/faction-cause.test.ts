@@ -208,6 +208,59 @@ test("the giver lookup is never asked about a kill cause", () => {
   assert.equal(asked, false, "a kill cause never needs the giver lookup at all");
 });
 
+// ─── A giver only names a quest once it's a confirmed mob (ADR 0257) ───────────────────────────
+
+test("a giver isMob says isn't a mob gets no quest attached, even though questGiver would name one", () => {
+  const tracker = createFactionCauseTracker({
+    questGiver: (npc) => (npc === "A Dusty Tome" ? ["Shovel of Ponz"] : []),
+    isMob: () => false,
+  });
+  tracker.noteLine(line(8, "A Dusty Tome says, 'You have proven yourself worthy.'"));
+  const causedBy = tracker.resolve(hit(10)).causedBy;
+  assert.equal(causedBy?.kind, "dialogue");
+  assert.equal("quests" in (causedBy ?? {}), false, "an unconfirmed giver names no quest, not an empty list");
+});
+
+test("a giver isMob confirms is a mob still gets its quest, same as without the check", () => {
+  const tracker = createFactionCauseTracker({
+    questGiver: () => ["Shovel of Ponz", "Torch of Alna"],
+    isMob: (npc) => npc === "Vira",
+  });
+  tracker.noteLine(line(8, "Vira says, 'Well done.'"));
+  assert.deepEqual(tracker.resolve(hit(10)).causedBy, {
+    kind: "dialogue",
+    npc: "Vira",
+    text: "Well done.",
+    gapSec: 2,
+    quests: ["Shovel of Ponz", "Torch of Alna"],
+    questsMatched: false,
+  });
+});
+
+test("with no isMob dependency at all, a giver still names its quests, unchanged from before ADR 0257", () => {
+  const tracker = createFactionCauseTracker({
+    questGiver: () => ["Shovel of Ponz"],
+  });
+  tracker.noteLine(line(8, "Vira says, 'Well done.'"));
+  const causedBy = tracker.resolve(hit(10)).causedBy;
+  assert.deepEqual(causedBy?.kind === "dialogue" ? causedBy.quests : undefined, ["Shovel of Ponz"]);
+});
+
+test("questDialogue is never consulted once isMob has already ruled the giver out", () => {
+  let asked = false;
+  const tracker = createFactionCauseTracker({
+    questGiver: () => ["Shovel of Ponz", "Torch of Alna"],
+    questDialogue: (quest) => {
+      asked = true;
+      return [{ npc: "A Dusty Tome", text: quest }];
+    },
+    isMob: () => false,
+  });
+  tracker.noteLine(line(8, "A Dusty Tome says, 'Anything at all.'"));
+  tracker.resolve(hit(10));
+  assert.equal(asked, false, "nothing left to narrow once the giver isn't even a candidate");
+});
+
 // ─── Narrowing a giver's quests by matching the observed line (ADR 0223) ────────────────────────
 
 const QUEST_DIALOGUE: Record<string, { npc: string; text: string }[]> = {

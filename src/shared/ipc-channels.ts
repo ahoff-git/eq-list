@@ -160,6 +160,8 @@ export const CH = {
   buffsForget: "buffs:forget", // drop the row entirely; it returns if the spell is cast again
   buffsDismiss: "buffs:dismiss", // stand down one lapse without recasting it
   buffsDismissAll: "buffs:dismissAll",
+  buffsDisableAll: "buffs:disableAll", // untrack every spell at once
+  buffsEnableAllByClass: "buffs:enableAllByClass", // track every spell one class can cast
   buffsClearInstance: "buffs:clearInstance", // forget one onEnemy instance outright, up or lapsed — a wrong slot guess
   lookupCapture: "lookup:capture",
   lookupOpen: "lookup:open",

@@ -214,6 +214,16 @@ export interface KnownBuff {
    */
   detrimental: boolean;
   /**
+   * Which classes the game's own file says can even cast this spell — `SPELL_CLASSES` order, absent
+   * when there was no install to ask. Read alongside `permanent`/`detrimental` and re-asserted the
+   * same way (a row written before the spell file was findable gets it the next time the spell is
+   * seen), because it answers the same kind of question they do: not what the player chose, but what
+   * the spell *is*. It exists so the Buffs tab can filter its catalogue, and so "enable every Cleric
+   * spell" is a question the tracker can actually answer — the player's own class is never asked,
+   * for the same reason `worthWatching` gives for not asking it of a debuff.
+   */
+  classes?: string[];
+  /**
    * We have seen *you* cast it, as opposed to only ever receiving it.
    *
    * For a buff this is colour on the row. For a **debuff** it is the whole of why the row exists.
@@ -694,7 +704,7 @@ export function shouldHold(known: KnownBuff | undefined, reason: BuffLapseReason
 export function newKnownBuff(
   spell: string,
   at: string,
-  opts: { mine: boolean; permanent: boolean; detrimental: boolean },
+  opts: { mine: boolean; permanent: boolean; detrimental: boolean; classes?: string[] },
 ): KnownBuff {
   return {
     key: buffKey(spell),
@@ -704,6 +714,7 @@ export function newKnownBuff(
     onScreen: true,
     permanent: opts.permanent,
     detrimental: opts.detrimental,
+    classes: opts.classes,
     mine: opts.mine,
     rises: 0,
     lastUp: at,

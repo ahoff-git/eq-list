@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createWikiClient } from "../wiki";
+import { createWikiClient, closeOwnedDatabases } from "../wiki";
 import { shardOf } from "../../src/shared/item-shards";
 import type { SharedSpellPage } from "../../src/shared/peer-share";
 import type { SpellRow } from "../../src/shared/spell-search";
@@ -35,7 +35,10 @@ function rig(opts: { roster?: string[] } = {}) {
       const rows = JSON.parse(await wiki.spellCatalogueJson()) as SpellRow[];
       return rows.find((s) => s.spell.title === title)?.stats.mana;
     },
-    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
+    cleanup: () => {
+      closeOwnedDatabases(dir);
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
   };
 }
 
@@ -151,6 +154,7 @@ test("a fresh client walks the spell-harvest checkpoint fresh, same as items", a
     const rows = JSON.parse(await next.spellCatalogueJson()) as SpellRow[];
     assert.deepEqual(rows.map((s) => s.spell.title), ["Chant of Battle"]);
   } finally {
+    closeOwnedDatabases(dir);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

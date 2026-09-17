@@ -696,6 +696,14 @@ function registerStatsIpc(context: IpcContext): void {
     buffs.dismissAll();
     return buffs.view();
   });
+  ipcMain.handle(CH.buffsDisableAll, () => {
+    buffs.disableAll();
+    return buffs.view();
+  });
+  ipcMain.handle(CH.buffsEnableAllByClass, (_e, cls: string) => {
+    buffs.enableAllByClass(cls);
+    return buffs.view();
+  });
   ipcMain.handle(CH.buffsClearInstance, (_e, key: string, target: string, slot: number) => {
     buffs.clearInstance(key, target, slot);
     return buffs.view();

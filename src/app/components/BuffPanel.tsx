@@ -5,9 +5,10 @@ import { useBuffs, useSettings } from "@/lib/hooks";
 import { alternativesLabel, heldMs, targetLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
-import { CheckField, Empty } from "./ui";
+import { CheckField, Empty, PickField } from "./ui";
 import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
 import { BUFF_STYLE_ID } from "@/shared/alert-styles";
+import { SPELL_CLASSES } from "@/shared/spell-file";
 import type { BuffInstance, KnownBuff } from "@/shared/types";
 
 /**
@@ -52,11 +53,26 @@ import type { BuffInstance, KnownBuff } from "@/shared/types";
  * *formula*, not a duration, and applying one needs a caster level EQL's log will not give us (its
  * levels are per class and the level line names none). A clock we can't stand behind would make every
  * other figure here look like a guess too, so the board reports what the log said and nothing more.
+ *
+ * **Spells filters by class, never by yours.** The picker asks the game's own file which classes
+ * *can* cast a spell — the same fact `permanent` and `detrimental` already come from — and never asks
+ * which one the player *is*, for the reason `worthWatching` gives for a debuff: that would be a claim
+ * about a character rather than about what happened, and this app doesn't know it. **Disable all** is
+ * the panic button beside it; **Enable all** is its narrow opposite, so "start from just my class"
+ * is one click each instead of unchecking (or re-checking) a catalogue by hand.
  */
 export default function BuffPanel() {
   const view = useBuffs();
   const alerts = useSettings()?.castAlerts;
   const now = Date.parse(view.now) || Date.now();
+  // Blank is "every class" — the same convention `PickField` uses everywhere else it filters a list.
+  const [classFilter, setClassFilter] = useState("");
+  // A spell the game file couldn't classify (no install, or a name it never matched) always shows:
+  // the filter narrows what we're *sure* isn't the picked class, and is never sure enough to hide
+  // what it doesn't know. `enableAllByClass` makes the same promise on the tracker side.
+  const knownShown = classFilter
+    ? view.known.filter((k) => !k.classes || k.classes.includes(classFilter))
+    : view.known;
 
   const bare = !view.known.length && !view.active.length && !view.lapsed.length;
   // A mob whose name is shared by another currently-listed instance gets a `#slot` suffix — only
@@ -154,10 +170,37 @@ export default function BuffPanel() {
 
       {view.known.length > 0 && (
         <section className="buff-known">
-          <h2>Spells</h2>
-          {view.known.map((known) => (
+          <h2>
+            Spells
+            <PickField
+              value={classFilter}
+              onChange={setClassFilter}
+              blank="all classes"
+              options={SPELL_CLASSES.map((c) => ({ value: c, label: c }))}
+              title="Show only spells this class can cast. One the game file couldn't classify always stays visible"
+            />
+            <button
+              className="btn ghost sm"
+              disabled={!classFilter}
+              title={classFilter ? `Watch every spell ${classFilter} can cast, whatever it was set to` : "Pick a class first"}
+              onClick={() => void api()?.buffs.enableAllByClass(classFilter)}
+            >
+              Enable all
+            </button>
+            <button
+              className="btn ghost sm"
+              title="Stop watching every spell below — each row stays, so any of them can be switched back on"
+              onClick={() => void api()?.buffs.disableAll()}
+            >
+              Disable all
+            </button>
+          </h2>
+          {knownShown.map((known) => (
             <KnownRow key={known.key} known={known} />
           ))}
+          {!knownShown.length && (
+            <p className="buff-how small muted">No {classFilter} spells seen yet.</p>
+          )}
         </section>
       )}
     </div>

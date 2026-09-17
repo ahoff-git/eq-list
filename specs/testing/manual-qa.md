@@ -280,6 +280,26 @@ features for later in [../ideas.md](../ideas.md).
   lines are all malformed transcriptions, if you can find one) — confirm the row falls back to
   "possibly: Quest A, Quest B" (the giver's full list) rather than silently picking one or showing
   nothing.
+- **A conversation only names a quest whose giver is a confirmed mob.**
+  ([ADR 0257](../decisions/0257-a-guessed-giver-must-be-a-mob-to-name-a-quest.md).) Find a quest whose
+  wiki "Quest giver" row names something that isn't a creature — an item, a book, a sign — and whose
+  page (or its zone's own roster) has never given that name a level. Turn the quest in and confirm the
+  Hits row still names the NPC that actually spoke, but shows **no** quest in parentheses — same as an
+  unrecognized giver, not a crash or a stale name. Then, for contrast, turn in an ordinary quest from a
+  real mob whose page (or zone roster) *is* cached and confirm the quest name still appears exactly as
+  it did before this change — this is a narrowing of when a quest is named, not a new way of naming one.
+- **An already-recorded hit's quest guess gets rechecked, not just a fresh one.**
+  ([ADR 0259](../decisions/0259-a-stored-quest-guess-can-be-rechecked-in-place.md).) On a build from
+  before ADR 0257, turn in a quest whose "Quest giver" isn't a mob so the Hits table shows a wrong
+  quest name next to the NPC, then update to a build with this fix and relaunch. Within a few seconds
+  of the window painting (the same delay the Items tab's background warm-up uses), reopen the Faction
+  tab and confirm that row's quest name is gone — nothing needed pressing, and no log had to be
+  digested again. Then the opposite direction: a hit with **no** quest name because its giver's page
+  hadn't been cached yet at the time — open that giver's wiki page (so the cache learns it), relaunch,
+  and confirm the quest name now appears on the old row too. With Debug logging on, confirm the debug
+  log shows `rechecked dialogue-guessed quests` with a non-zero `changed` count on the launch that
+  fixed something, and no such line at all on the next one (silent when nothing changed) — it isn't
+  supposed to find anything left to do twice.
 - **A live faction hit now appears a few seconds late — on purpose.**
   ([ADR 0224](../decisions/0224-a-kill-can-log-after-the-faction-line-it-caused.md).) Verified against
   a real player's `faction-log.json`/`kill-log.json`/`eqlog_*.txt` (this server logs a kill's
@@ -2301,3 +2321,27 @@ real cache behave over days.
   carry on (the log says *could not read recent changes*) rather than erroring out.
 - **The setting still means what it says.** Set `wikiPageTtlDays` to 1 and confirm pages re-fetch daily
   regardless of what the wiki reports — tracking makes pages younger than the ceiling, never older.
+
+## A spell's class, and two bulk actions on the Buffs tab (ADR 0258)
+
+The class list is unit-tested against synthetic spell facts; whether the game's real
+`spells_us.txt` classifies a familiar spell the way a player expects is not.
+
+- **Filtering narrows, never hides a guess.** With an EverQuest install configured, cast a few spells
+  from different classes (or wait for buffs already up), then pick one class in the Spells list's
+  dropdown. Only that class's spells — and any row the game file never resolved — should remain.
+- **No install, no surprises.** Without Logs pointed at a real install, every row's class is unknown,
+  so picking a class from the dropdown should leave the list exactly as it was — never empty.
+- **Disable all silences everything at once.** With several tracked spells and at least one lapsed
+  reminder on screen, press *Disable all*: every row's checkbox goes off, the standing lapse list and
+  the alert-overlay HUD both clear, and a fresh lapse of any of them raises nothing.
+- **Enable all by class is scoped.** After *Disable all*, pick a class you actually played and press
+  *Enable all*: only that class's rows come back on. A spell the game file couldn't classify stays off
+  — it isn't swept in by a guess.
+- **🔕 on the HUD silences without leaving the game.** Let a tracked buff lapse so its reminder is
+  drawn over the game, click 🔕 (not the ✕): the row stays exactly where it was, but re-lapsing that
+  spell later should raise no banner. Confirm the Buffs tab's own Notify checkbox for that spell is
+  now unticked, and that 🔕 has disappeared from the row (there's nothing left for it to turn off).
+- **🔕 works the same on a debuff, up or lapsed.** Root or snare something you're fighting, click 🔕 on
+  either state's row in the crowd-control HUD, and confirm the same thing: no future banner, row
+  unaffected, control gone once notify is already off.

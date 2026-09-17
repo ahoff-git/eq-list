@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-09-17T15:39:08.130Z",
+  "generatedAt": "2026-09-17T22:35:56.793Z",
   "sections": {
     "wikiCache": {
-      "bytes": 43977152,
+      "bytes": 30851176,
       "files": 265
     },
     "lucyCache": {
@@ -10,7 +10,7 @@
       "files": 6
     },
     "travel": {
-      "bytes": 435158,
+      "bytes": 434930,
       "files": 2
     },
     "maps": {

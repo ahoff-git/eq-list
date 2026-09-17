@@ -4,7 +4,10 @@
  *
  * Copies exactly what is safe to publish, and nothing else:
  *   - `wiki-cache/` and `lucy-cache/` — parsed pages from eqlwiki.com / lucy.allakhazam.com. Public
- *     wiki content, cached under your userData the same as the app already reads it.
+ *     wiki content, published in the same bucket-file wire format this snapshot always has —
+ *     `lucy-cache/` still literally is that on disk, but the wiki pages themselves now live as rows
+ *     in the app's own shared `eqlist.db` (ADR 0256), so this script exports them into that shape
+ *     (`exportAsBuckets`) rather than copying files that no longer exist.
  *   - `travel-graphs.json`, `map-zone-names.json` — derived purely from map files + the wiki's own
  *     era data (see ADR 0061: a graph belongs to the map pack it was read from).
  *   - Your own EverQuest install's map files (`<EQ>/maps`), copied **raw** — the browser already
@@ -49,6 +52,8 @@ import { ROOT, appDataDirs, dirOpt, few, flag, helpIfAsked, load, opt } from "./
 helpIfAsked(import.meta.url);
 
 const { listSources } = load("electron/eq-maps.js");
+const { openAppDatabase } = load("electron/sqlite-store.js");
+const { exportAsBuckets, WIKI_PAGE_MIGRATIONS } = load("electron/wiki/page-store.js");
 
 const outDir = dirOpt("out", "public/data");
 
@@ -114,7 +119,16 @@ if (!dataDir) {
   ]) {
     const src = path.join(dataDir, folder);
     const dest = path.join(outDir, folder);
-    const copied = copyIfExists(src, dest);
+    let copied = copyIfExists(src, dest);
+    if (name === "wikiCache") {
+      // The pages themselves no longer live under `wiki-cache/pages` on disk (ADR 0256) — they're
+      // rows in the shared `eqlist.db` now. Exported here into the same bucket-file wire format this
+      // snapshot has always published, since that's what src/lib/web/snapshot.ts's browser-side
+      // reader expects and nothing about the hosted site's format should have to change.
+      const pagesDest = path.join(dest, "pages");
+      exportAsBuckets(openAppDatabase(dataDir, WIKI_PAGE_MIGRATIONS), pagesDest);
+      copied = copied || fs.readdirSync(pagesDest).length > 0;
+    }
     const { bytes, files } = copied ? tally(dest) : { bytes: 0, files: 0 };
     manifest.sections[name] = { bytes, files };
     console.log(copied ? `${folder}: ${files} files, ${fmtMB(bytes)}` : `${folder}: none on disk yet`);

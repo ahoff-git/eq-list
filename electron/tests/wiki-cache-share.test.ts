@@ -16,8 +16,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createWikiClient } from "../wiki";
-import { createPageStore, type PageStore } from "../wiki/page-store";
+import type { Database } from "better-sqlite3";
+import { createWikiClient, closeOwnedDatabases } from "../wiki";
+import { createPageStore, WIKI_PAGE_MIGRATIONS, type PageStore } from "../wiki/page-store";
+import { openAppDatabase } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
 import { itemRows, type ItemRow } from "../../src/shared/item-search";
 import { shardOf } from "../../src/shared/item-shards";
@@ -52,7 +54,13 @@ function rig(opts: { roster?: string[] } = {}) {
     async stamp(title: string) {
       return (await wiki.cachedItems()).find((i) => i.title === title)?.fetchedAt;
     },
-    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
+    cleanup: () => {
+      // `wiki` self-opened its own `eqlist.db` inside `dir` (no `opts.db` was given) — Windows won't
+      // remove a directory containing a file some process still has open, so that handle has to be
+      // released before `rmSync` can succeed.
+      closeOwnedDatabases(dir);
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
   };
 }
 
@@ -153,10 +161,14 @@ test("a sender's stamp from the future cannot pin a page in our cache", async ()
  * Write a page straight into the cache at a chosen parse version, as an older build would have.
  *
  * Through the store rather than by hand, because the store owns the on-disk shape — a test that
- * wrote bucket lines itself would be pinning the format instead of the rule. One store per directory,
- * so a second seed supersedes the first the way a re-parse does.
+ * wrote SQL rows itself would be pinning the format instead of the rule. One store per directory,
+ * opened against the same `eqlist.db` a later `createWikiClient(dir, ...)` call falls back to when
+ * given no explicit `db` (see `createWikiClient`'s own doc), so a second seed supersedes the first
+ * the way a re-parse does.
  */
 const seeders = new Map<string, PageStore>();
+/** The database each entry in `seeders` opened for itself — closed by `closeSeeded` before cleanup. */
+const seededDbs = new Map<string, Database>();
 function seed(
   dir: string,
   page: Record<string, unknown> & { kind: string; title: string },
@@ -164,10 +176,22 @@ function seed(
   /** The name it is cached *under*, when that differs from the page's own — see the alias test. */
   as?: string,
 ) {
-  const store = seeders.get(dir) ?? createPageStore(dir);
-  seeders.set(dir, store);
+  let store = seeders.get(dir);
+  if (!store) {
+    const db = openAppDatabase(dir, WIKI_PAGE_MIGRATIONS);
+    seededDbs.set(dir, db);
+    store = createPageStore(db, dir);
+    seeders.set(dir, store);
+  }
   const full = { sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString(), ...page };
   store.put(as ?? page.title, version, full as unknown as WikiPage);
+}
+
+/** Release `seed`'s own database for `dir`, alongside `closeOwnedDatabases` — see both docs. */
+function closeSeeded(dir: string): void {
+  seededDbs.get(dir)?.close();
+  seededDbs.delete(dir);
+  seeders.delete(dir);
 }
 
 test("an item page from the previous parse version is still good", async () => {
@@ -277,6 +301,7 @@ test("before the catalogue has ever been walked, the giver lookup is a harmless 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-giver-cold-"));
   const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
   assert.deepEqual(wiki.questGiverSource()("Vira"), []);
+  closeOwnedDatabases(dir);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -304,6 +329,7 @@ test("before the catalogue has ever been walked, the dialogue lookup is a harmle
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-quest-dialogue-cold-"));
   const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
   assert.deepEqual(wiki.questDialogueSource()("Shovel of Ponz"), []);
+  closeOwnedDatabases(dir);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -384,6 +410,10 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
  * and Windows answers ENOTEMPTY. Retrying is the test's problem, not the client's.
  */
 async function cleanup(dir: string): Promise<void> {
+  // Release whatever database `seed()` or a self-opened `createWikiClient` holds open for `dir` —
+  // Windows refuses to remove a directory containing a file some process still has open.
+  closeSeeded(dir);
+  closeOwnedDatabases(dir);
   for (let attempt = 0; ; attempt++) {
     try {
       await fs.promises.rm(dir, { recursive: true, force: true });
@@ -528,15 +558,15 @@ test("a page cached under two names is one item, not two", async () => {
   }
 });
 
-// ─── The old one-file-per-page cache ────────────────────────────────────────
+// ─── The old caches: one file per page, then 256 append-only buckets (ADR 0165) ─────
 
-test("a cache of loose page files is folded into buckets and the files go", async () => {
+test("a cache of loose page files is folded into the table and the files go", async () => {
   /**
-   * The upgrade path off one file per page ([ADR 0165](../../specs/decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)).
-   * Every existing install has thousands of these, so getting this wrong loses somebody's whole
-   * catalogue and costs them a three-hour re-crawl.
+   * The upgrade path off the oldest layout, one file per page (pre-ADR-0165). Every install that
+   * predates that ADR has thousands of these, so getting this wrong loses somebody's whole catalogue
+   * and costs them a three-hour re-crawl.
    *
-   * Also pins what migration does with the **graded aliases**: keyed by the page's own title, so
+   * Also pins what folding does with the **graded aliases**: keyed by the page's own title, so
    * `Cloth_Cape_2.json` folds into the one entry rather than carrying the duplicate forward.
    */
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-migrate-"));
@@ -566,15 +596,66 @@ test("a cache of loose page files is folded into buckets and the files go", asyn
       assert.equal(left.has(gone), false, `${gone} should have been folded in and deleted`);
     }
     assert.equal(left.has("title-index.json"), true, "and nothing that isn't a page was touched");
-    assert.ok(fs.readdirSync(path.join(dir, "pages")).length > 0, "the buckets hold them now");
+
+    // The table holds them now — asked of a *second*, independent store over the same database
+    // rather than the client's own (already-warm) view, so this proves the fold actually landed.
+    const db = openAppDatabase(dir, WIKI_PAGE_MIGRATIONS);
+    const table = createPageStore(db, dir);
+    assert.equal(table.get("Rusty Sword")?.page.wikiPath, "/Rusty_Sword");
+    db.close();
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("a cache of bucket files is folded into the table and the files go", async () => {
+  /**
+   * The upgrade path off ADR 0165's own 256-file layout — the immediately-prior format, and the one
+   * a real existing install actually has on disk today.
+   *
+   * Also pins that folding preserves a bucket line's own **key**, which is not always `page.title` —
+   * a graded alias (`Cloth Cape +2`) is stored under its own asked-for key with the base page's title
+   * still embedded in its JSON, and the *bucket* fold (unlike the loose-file fold above) must keep
+   * both keys distinct, the same as the running store already does before any upgrade.
+   */
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-migrate-buckets-"));
+  try {
+    const pagesDir = path.join(dir, "pages");
+    fs.mkdirSync(pagesDir, { recursive: true });
+    const bucketLine = (key: string, page: Record<string, unknown>, version = 25) =>
+      `${key}\t${version}\t${JSON.stringify({ sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString(), ...page })}\n`;
+    const cape = { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", card: { title: "Cloth Cape", lines: ["AC: 2"] } };
+    // Folding reads every `.jsonl` file under `pages/` regardless of what number its name claims, so
+    // a single arbitrarily-named file covers this without reproducing the real shard hash.
+    fs.writeFileSync(
+      path.join(pagesDir, "00.jsonl"),
+      bucketLine("Cloth Cape", cape) +
+        bucketLine("Cloth Cape +2", cape) + // the graded alias, same page under a second key
+        bucketLine("Rusty Sword", { kind: "item", title: "Rusty Sword", wikiPath: "/Rusty_Sword", card: { title: "Rusty Sword", lines: ["AC: 1"] } }),
+      "utf8",
+    );
+    fs.writeFileSync(path.join(dir, "title-index.json"), JSON.stringify({ fetchedAt: new Date().toISOString(), titles: ["Cloth Cape"] }), "utf8");
+
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
+    const titles = (await wiki.cachedItems()).map((i) => i.title);
+    assert.deepEqual(titles, ["Cloth Cape", "Rusty Sword"], "every page survived the fold, alias folded into one row");
+
+    assert.equal(fs.existsSync(pagesDir), false, "the bucket files are gone");
+    assert.equal(fs.existsSync(path.join(dir, "title-index.json")), true, "and nothing that isn't a page was touched");
+
+    const db = openAppDatabase(dir, WIKI_PAGE_MIGRATIONS);
+    const table = createPageStore(db, dir);
+    assert.equal(table.get("Cloth Cape +2")?.page.title, "Cloth Cape", "the alias key survived, distinct from the base page");
+    db.close();
   } finally {
     await cleanup(dir);
   }
 });
 
 test("a page is readable while the old cache is still being folded in", async () => {
-  // Migration walks thousands of files, and the app is live throughout. A lookup that missed until it
-  // finished would mean an upgrade launch re-fetching pages it already has.
+  // Folding walks thousands of files, and the app is live throughout. A lookup that missed until it
+  // finished would mean an upgrade launch re-fetching pages it already has. Covers both legacy
+  // generations `readLegacy` falls through to: the bucket file (ADR 0165) and the older loose file.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-migrate-live-"));
   try {
     fs.writeFileSync(
@@ -582,23 +663,37 @@ test("a page is readable while the old cache is still being folded in", async ()
       JSON.stringify({ version: 13, page: { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString() } }),
       "utf8",
     );
-    const store = createPageStore(dir);
-    // Synchronously, before the migration this construction started can possibly have run.
-    assert.equal(store.get("Cloth Cape")?.page.title, "Cloth Cape", "read through to the old file");
+    const pagesDir = path.join(dir, "pages");
+    fs.mkdirSync(pagesDir, { recursive: true });
+    const bucketPage = { kind: "item", title: "Rusty Sword", wikiPath: "/Rusty_Sword", sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString() };
+    fs.writeFileSync(
+      path.join(pagesDir, `${(shardOf("Rusty Sword") % 256).toString(16).padStart(2, "0")}.jsonl`),
+      `Rusty Sword\t13\t${JSON.stringify(bucketPage)}\n`,
+      "utf8",
+    );
+
+    const db = openAppDatabase(dir, WIKI_PAGE_MIGRATIONS);
+    const store = createPageStore(db, dir);
+    // Synchronously, before the fold this construction started can possibly have run.
+    assert.equal(store.get("Cloth Cape")?.page.title, "Cloth Cape", "read through to the loose file");
+    assert.equal(store.get("Rusty Sword")?.page.title, "Rusty Sword", "read through to the bucket file");
     await store.ready();
     assert.equal(store.get("Cloth Cape")?.page.title, "Cloth Cape", "and still there afterwards");
+    assert.equal(store.get("Rusty Sword")?.page.title, "Rusty Sword", "same for the bucket-file page");
+    db.close();
   } finally {
     await cleanup(dir);
   }
 });
 
-test("a cache that never had the old layout stops looking for it", async () => {
-  // The flag that says "read through to the loose files" has to clear even when there are none, or
-  // every lookup that misses the buckets opens a file that has never existed — one wasted open per
-  // cache miss, for the life of the process, on every install that started here.
+test("a cache that never had an old layout stops looking for one", async () => {
+  // The flag that says "read through to a legacy file" has to clear even when there is nothing to
+  // fold, or every lookup that misses the table goes looking for files that never existed — wasted
+  // work on every install that started here, forever.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-fresh-"));
   try {
-    const store = createPageStore(dir);
+    const db = openAppDatabase(dir, WIKI_PAGE_MIGRATIONS);
+    const store = createPageStore(db, dir);
     await store.ready();
     const real = fs.readFileSync;
     let opens = 0;
@@ -611,23 +706,27 @@ test("a cache that never had the old layout stops looking for it", async () => {
     } finally {
       (fs as { readFileSync: typeof fs.readFileSync }).readFileSync = real;
     }
-    assert.equal(opens, 1, "the bucket, and nothing else");
+    // A lookup is a SQL query, not a file read, once nothing is left to fall back to.
+    assert.equal(opens, 0, "no legacy file was ever opened looking for something that isn't there");
+    db.close();
   } finally {
     await cleanup(dir);
   }
 });
 
-test("a torn line costs one page, not the bucket", async () => {
-  // An append can be cut short by a power cut. The rest of the bucket has to survive it.
+test("a torn line in a legacy bucket file costs one page, not the rest of the bucket", async () => {
+  // An old install's append could be cut short by a power cut before it ever upgraded. Folding a
+  // bucket with a torn trailing line must still bring in everything that came before it.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-torn-"));
   try {
-    seed(dir, { kind: "item", title: "Whole Thing", wikiPath: "/Whole_Thing" }, 25);
-    const bucket = fs
-      .readdirSync(path.join(dir, "pages"))
-      .map((n) => path.join(dir, "pages", n))
-      .find((f) => fs.readFileSync(f, "utf8").includes("Whole Thing"));
-    assert.ok(bucket, "the page landed in a bucket");
-    fs.appendFileSync(bucket, 'Half A Page	25	{"kind":"item","ti', "utf8");
+    const pagesDir = path.join(dir, "pages");
+    fs.mkdirSync(pagesDir, { recursive: true });
+    const whole = { kind: "item", title: "Whole Thing", wikiPath: "/Whole_Thing", sources: [], components: [], rewards: [], fetchedAt: new Date().toISOString() };
+    fs.writeFileSync(
+      path.join(pagesDir, "00.jsonl"),
+      `Whole Thing\t25\t${JSON.stringify(whole)}\n` + 'Half A Page\t25\t{"kind":"item","ti',
+      "utf8",
+    );
 
     const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     assert.deepEqual((await wiki.cachedItems()).map((i) => i.title), ["Whole Thing"]);
@@ -709,6 +808,10 @@ test("a faction page a peer hands us is kept, and reads back through getPage lik
     const page = await r.wiki.getPage("Wharf Rats");
     assert.equal(page?.kind, "faction");
     assert.equal(r.wiki.factions.rows().length, 1);
+    // `rows()` also kicked off its own lazy, fire-and-forget warm walk over the store
+    // (`factionsWarm`) — let it land before closing the database cleanup is about to do, or it tries
+    // to keep reading from a connection that's no longer open.
+    for (let i = 0; i < 50; i++) await new Promise((resolve) => setImmediate(resolve));
   } finally {
     r.cleanup();
   }
@@ -730,6 +833,8 @@ test("a row claiming a kind other than faction teaches the faction cache nothing
   try {
     assert.equal(r.wiki.factions.accept([page("Not Actually A Faction", daysAgo(1), 1)]), 0);
     assert.equal(r.wiki.factions.rows().length, 0);
+    // Same fire-and-forget warm walk as above — let it settle before cleanup closes the database.
+    for (let i = 0; i < 50; i++) await new Promise((resolve) => setImmediate(resolve));
   } finally {
     r.cleanup();
   }

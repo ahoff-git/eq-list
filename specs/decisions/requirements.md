@@ -564,6 +564,17 @@ reading like a measurement, and they are shared code
 - **The board is not persisted; the choices are.** Which buffs are up is a fact about a login, and
   nothing in the log restates it. Claiming otherwise would invent state the first fade line contradicts.
   ([0140](./0140-a-buff-is-watched-until-it-lapses.md), [0043](./0043-state-is-not-news-either.md))
+- **A spell's class comes from the game's file, never the player's.** The Spells list's class filter,
+  and the `enableAllByClass`/`disableAll` bulk actions beside it, read the same `spells_us.txt` that
+  already states `permanent`/`detrimental` — never who the player is playing, which stays exactly as
+  unknowable as it was for a debuff's ownership. A spell the file never classified always stays visible,
+  since the filter can only narrow what it's sure isn't the picked class.
+  ([0258](./0258-a-spells-class-is-read-from-the-file-not-the-player.md),
+  [0149](./0149-a-debuff-is-only-tracked-if-it-is-yours.md), [0080](./0080-the-game-s-own-spell-file.md))
+- **The standing HUD reminder can silence a spell's alerts without a trip to the Buffs tab.** A second
+  control beside the ✕ throws the same `notify` switch the tab's own checkbox does — only ever off,
+  and only shown while notify is still on — and leaves the row itself alone, since that promise is
+  `onScreen`'s. ([0258](./0258-a-spells-class-is-read-from-the-file-not-the-player.md))
 
 ## Windows and the interface
 

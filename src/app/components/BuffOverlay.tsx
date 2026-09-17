@@ -4,7 +4,7 @@ import { SOLID } from "@/lib/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { alertPlacement, alertStyle, BUFF_STYLE_ID } from "@/shared/alert-styles";
 import { ON_PET, ON_YOU } from "@/shared/buff-tracking";
-import type { AlertPositionValue, BuffInstance } from "@/shared/types";
+import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types";
 
 /**
  * The buffs you are missing, drawn over the game and **left there**.
@@ -57,7 +57,7 @@ export default function BuffOverlay() {
         return (
           <div className={`overlay-at buff-hud no-drag ${place.className}`} style={place.style} key={position}>
             {stack.map(({ buff, style }) => (
-              <HudRow key={`${buff.key} ${buff.target}`} buff={buff} color={style.color} />
+              <HudRow key={`${buff.key} ${buff.target}`} buff={buff} known={wanted.get(buff.key)} color={style.color} />
             ))}
           </div>
         );
@@ -74,8 +74,8 @@ export default function BuffOverlay() {
  * a glance — which is the row you were least likely to notice on your own.
  *
  * The dismiss control is deliberately here as well as in the panel: standing a stale reminder down
- * shouldn't cost a trip to another window. It is the one part of a reminder that takes a click —
- * `SOLID` makes the overlay hand itself back for as long as the cursor is on the ✕ and glass again
+ * shouldn't cost a trip to another window. It is one of two parts of a reminder that take a click —
+ * `SOLID` makes the overlay hand itself back for as long as the cursor is on either, and glass again
  * the moment it leaves, so the row you are reading never comes between you and the mob behind it.
  *
  * **The ✕ leads the row** so that a stack of them is a column at one x, whatever the spells are
@@ -85,8 +85,15 @@ export default function BuffOverlay() {
  * journeys to a ragged right edge. It also replaces the row's ⚠, rather than sitting beside it:
  * every row here is a warning, the colour bar already says which look it wears, and two glyphs where
  * only one is clickable is a thing to work out mid-fight.
+ *
+ * **🔕 trails the row**, for the opposite reason ✕ leads it: it is the one control here you would
+ * reach for rarely and never in a hurry, so it earns the quiet corner rather than the one under the
+ * cursor. It is `notify` off, the same switch the Buffs tab's own "Notify" box throws — a lapse of
+ * this spell stops raising a banner, but the row itself keeps showing here until the buff is back,
+ * because that promise belongs to `onScreen` and nobody asked to end it. Absent once notify is
+ * already off: a control that does nothing is a thing to work out mid-fight too.
  */
-function HudRow({ buff, color }: { buff: BuffInstance; color: string }) {
+function HudRow({ buff, known, color }: { buff: BuffInstance; known: KnownBuff | undefined; color: string }) {
   const who = buff.target === ON_YOU ? "" : buff.target === ON_PET ? "pet" : buff.target;
   return (
     <div className="buff-hud-row" style={{ borderLeftColor: color }}>
@@ -100,6 +107,16 @@ function HudRow({ buff, color }: { buff: BuffInstance; color: string }) {
       </button>
       <span className="bhr-name">{buff.spell}</span>
       {who && <span className="bhr-who">{who}</span>}
+      {known?.notify !== false && (
+        <button
+          {...SOLID}
+          className="bhr-mute"
+          title={`Stop raising a banner for ${buff.spell} — this list still shows it until you turn Notify back on in the Buffs tab`}
+          onClick={() => void api()?.buffs.notify(buff.key, false)}
+        >
+          🔕
+        </button>
+      )}
     </div>
   );
 }

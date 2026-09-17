@@ -34,6 +34,11 @@ import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types
  * that can guess wrong — a recast on the same mob read as a second one — so this is "that isn't
  * real, forget it", removing the instance outright rather than merely acknowledging it.
  *
+ * **Both states also carry a 🔕**, meaning the same thing in both: turn `notify` off for this spell,
+ * the switch the Buffs tab's own "Notify" box throws, so a future rise or fade stops raising a
+ * banner. The row itself keeps showing here either way — that promise is `onScreen`'s, not
+ * `notify`'s — so this is purely "stop telling me", never "stop watching".
+ *
  * Rides the existing alert window, like every other piece drawn over the game.
  */
 /**
@@ -163,6 +168,16 @@ function HudRow({
         {targetLabel(buff.target)}
         {several && <em className="spawn-slot"> #{buff.slot}</em>}
       </span>
+      {known?.notify !== false && (
+        <button
+          {...SOLID}
+          className="dhr-mute"
+          title={`Stop raising a banner for ${buff.spell} — this list still shows it until you turn Notify back on in the Buffs tab`}
+          onClick={() => void api()?.buffs.notify(buff.key, false)}
+        >
+          🔕
+        </button>
+      )}
     </div>
   );
 }

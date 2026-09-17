@@ -1,66 +1,86 @@
 /**
- * page-store.ts — where parsed wiki pages live on disk.
+ * page-store.ts — where parsed wiki pages live: one row per page in the shared `eqlist.db`
+ * ([ADR 0256](../../specs/decisions/0256-the-wiki-page-cache-moves-onto-sqlite.md), superseding
+ * [ADR 0165](../../specs/decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)'s 256
+ * append-only bucket files — see that ADR for why the native-dependency objection to SQLite it
+ * raised no longer holds, now that `better-sqlite3` is already in this Electron build for the
+ * ledgers, ADR 0232).
  *
- * ## Why not a file per page
+ * ## What this is
  *
- * One file per page is the obvious store, and it is what this was until the catalogue grew: **11,523
- * files** holding 19.4 MB of data and occupying 53.5 MB, since every one of them is rounded up to a
- * 4 KB cluster. The size is not really the problem. Reading them all is **11,523 separate opens**,
- * and on Windows every open is a real-time antimalware scan — which is why a catalogue build
- * presented as the whole machine seizing rather than as a slow read.
+ * One table, `wiki_pages`, keyed by the page's own title. `kind` and `fetched_at` are promoted to
+ * real columns because they're what callers actually filter on outside a full parse (`each` walks
+ * every kind and the caller sorts by kind; `factionRows()` wants only `kind = 'faction'`; TTL/age
+ * checks read `fetched_at` directly) — the rest of the page is one opaque `page_json` blob, the
+ * same "promote what's queried, blob the rest" shape `faction_hits` already uses for its own
+ * JSON-ish columns.
  *
- * The catalogue pack hides that on a warm launch, but the pack is dropped whenever a page changes,
- * and pages change constantly: a peer hands you a shard, you open an item, the harvest ticks. So the
- * full walk was never as rare as the pack made it look, and every one of them cost the burst again.
+ * `put` is `INSERT OR REPLACE` — "the last write for a title wins" is now the database's own job
+ * rather than something this file has to implement by hand: no bucket hash, no append-then-
+ * compact, no torn-line recovery. A write is one row, durably, or it didn't happen.
  *
- * ## What this is instead
+ * ## Upgrading an existing install
  *
- * **256 append-only files, about forty-five pages each.**
+ * Two older generations of this cache can still be sitting in `userData/wiki-cache`:
+ * - **256 `.jsonl` bucket files** (`pages/*.jsonl`, ADR 0165) — the immediately-prior format.
+ * - **One loose file per page** (pre-ADR-0165) — shouldn't exist on any install that has launched
+ *   since 0165 shipped, kept only because reading through to it costs nothing extra.
  *
- * - A page is one line: `title \t parse-version \t page-json`. A wiki title contains no tab and no
- *   newline, so the split is exact and needs no escaping — and the JSON is parsed only when somebody
- *   asks for *that* page, so loading a bucket to answer one lookup does not parse the other forty.
- * - A write **appends a line** rather than rewriting the bucket. A write therefore costs what it
- *   cost before: the harvest writes a page a second for three hours without ever rewriting 75 KB to
- *   do it. The last line for a title wins, and the file is rewritten only once the dead weight is
- *   worth more than the rewrite (`COMPACT_RATIO`).
- * - Reading everything is **256 opens instead of 11,523**.
+ * Both fold into the table on first launch, in the background, keyed by the page's **own title**
+ * (so the graded-alias fold — `Cloth Cape +2` landing under `Cloth Cape` — survives exactly as it
+ * did before). `get()` reads through to whichever legacy file still holds an unfolded title while
+ * this runs, exactly as the bucket store used to read through to loose files.
  *
- * The bucket is `shardOf(title) % BUCKETS`, reusing the peer-sharding hash
- * ([item-shards](../../src/shared/item-shards.ts)) rather than inventing a second one. Because 1024
- * shards divide evenly by 256 buckets, every page of a given peer shard lands in the same file.
+ * ## Exporting for the web snapshot
  *
- * ## Crash safety
- *
- * A torn append leaves half a line. A line that does not split into three parts, or whose JSON does
- * not parse, is skipped when the bucket loads — costing a re-fetch of that one page, which is
- * exactly what a truncated file cost before. Nothing else in the bucket is affected, because a line
- * is self-contained.
+ * `scripts/build-web-snapshot.mjs` publishes a static mirror of the wiki cache for the hosted site
+ * (`src/lib/web/snapshot.ts` reads it with a plain `fetch()`), and that published format is still
+ * the 256-bucket `.jsonl` layout — a public wire format with a browser-side reader on the other
+ * end, not something to break just because the *live app's* internal storage changed underneath
+ * it. `exportAsBuckets` writes the table back out in that exact shape on demand.
  */
 import fs from "node:fs";
 import path from "node:path";
+import type { Database } from "better-sqlite3";
 import { shardOf } from "../../src/shared/item-shards";
 import { createLogger } from "../../src/shared/logging";
+import type { Migration } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
 
 const log = createLogger("page-store");
 
 /**
- * How many files the page cache is spread across.
- *
- * The two costs pull opposite ways: reading everything is one open per bucket, and reading a single
- * page loads the whole bucket it is in. 256 puts a full read at 256 opens (45× cheaper than a file
- * each) while keeping a bucket around 75 KB, which is a few milliseconds to load and parse.
+ * How many buckets the *legacy import* and *web-snapshot export* wire formats are spread across.
+ * No longer a storage concern of the live table — only the shape two things outside this app's own
+ * runtime still expect: an old bucket-format install being folded in, and the export new installs'
+ * data is published as. `shardOf(title) % BUCKETS` is the same hash the peer-sharding and the old
+ * bucket store both already used, reused rather than reinvented a third time.
  */
 export const BUCKETS = 256;
 
-/** Rewrite a bucket once superseded lines are worth more than the live ones. */
-const COMPACT_RATIO = 2;
-/** …but never for a file small enough that the rewrite costs more than the waste. */
-const COMPACT_MIN_BYTES = 64 * 1024;
+export const WIKI_PAGE_MIGRATIONS: readonly Migration[] = [
+  {
+    version: 9,
+    label: "wiki_pages",
+    up(db) {
+      db.exec(`
+        CREATE TABLE wiki_pages (
+          title TEXT PRIMARY KEY,
+          kind TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          page_json TEXT NOT NULL,
+          fetched_at TEXT NOT NULL
+        );
+        CREATE INDEX wiki_pages_kind_idx ON wiki_pages(kind);
+      `);
+    },
+  },
+];
 
-/** How many legacy files are folded in before letting the event loop breathe. */
-const MIGRATE_CHUNK = 200;
+/** How many legacy files (or export rows) are handled before letting the event loop breathe. */
+const FOLD_CHUNK = 200;
+/** Same idea for `each()`'s row-at-a-time walk — smaller, since a row is parsed here, not just read. */
+const EACH_CHUNK = 100;
 
 const breathe = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -72,30 +92,27 @@ export interface StoredPage {
 export interface PageStore {
   /** The page held under `title`, or null. */
   get(title: string): StoredPage | null;
-  /** Keep a page. Appends; the caller's copy is authoritative from here. */
+  /** Keep a page. Replaces whatever was held under this title before. */
   put(title: string, version: number, page: WikiPage): void;
   /**
-   * Visit every page held, letting the event loop breathe between buckets — main is the process
-   * every window's IPC goes through, so a walk that blocks it freezes the app.
+   * Visit every page held, letting the event loop breathe periodically — main is the process every
+   * window's IPC goes through, so a walk that blocks it freezes the app.
    */
   each(visit: (entry: StoredPage) => void): Promise<void>;
-  /** Resolves once any legacy one-file-per-page cache has been folded in. */
+  /** Resolves once any legacy on-disk cache has been folded in. */
   ready(): Promise<void>;
 }
 
-/**
- * Longest legacy cache file name we ever wrote — see `legacyKey`. Only migration needs it now.
- */
+/** Longest legacy cache file name ever written — see `legacyKey`. Only migration needs it now. */
 const MAX_CACHE_KEY = 120;
-
-/** How a title became a file name, back when a page was a file. */
+/** How a title became a file name, back when a page was a loose file (pre-ADR-0165). */
 const legacyKey = (title: string): string => title.replace(/[^a-z0-9]+/gi, "_").slice(0, MAX_CACHE_KEY);
 
 /**
- * Decode what a cache file or a bucket line holds.
+ * Decode what a legacy cache file, or a bucket line's own payload, holds.
  *
- * v2+ writes an envelope `{version, page}`; entries older than that were the bare `WikiPage`, and
- * some of those are still on disk in caches that have been carried forward.
+ * v2+ wrote an envelope `{version, page}`; entries from before that were the bare `WikiPage`, and
+ * some of those can still be on disk in a cache that's been carried a long way forward.
  */
 function decodePage(json: string): StoredPage | null {
   try {
@@ -109,205 +126,249 @@ function decodePage(json: string): StoredPage | null {
   }
 }
 
-/** One bucket file, and what we know about it without re-reading it. */
-interface Bucket {
-  /** title → the whole line, newline included. The last write for a title wins. */
-  lines: Map<string, string>;
-  /** Bytes the file holds, live and superseded together. */
-  bytes: number;
-  /** Bytes the live lines are worth — what a rewrite would leave. */
-  live: number;
-  loaded: boolean;
+const bucketOf = (title: string) => shardOf(title) % BUCKETS;
+/** `pagesDir` is the bucket folder itself (a legacy install's `wiki-cache/pages`, or an export target). */
+const fileFor = (pagesDir: string, n: number) => path.join(pagesDir, `${n.toString(16).padStart(2, "0")}.jsonl`);
+
+/** Split one bucket-file line back into its parts, without parsing the page unless it's wanted. */
+function readBucketLine(line: string): StoredPage | null {
+  const tab = line.indexOf("\t");
+  const second = line.indexOf("\t", tab + 1);
+  if (tab < 1 || second < 0) return null;
+  const version = Number(line.slice(tab + 1, second));
+  const entry = decodePage(line.slice(second + 1));
+  if (!entry) return null;
+  return Number.isFinite(version) ? { page: entry.page, version } : entry;
 }
 
-export function createPageStore(dir: string): PageStore {
-  const pagesDir = path.join(dir, "pages");
-  fs.mkdirSync(pagesDir, { recursive: true });
-
-  const buckets: (Bucket | undefined)[] = new Array(BUCKETS);
-  const fileFor = (n: number) => path.join(pagesDir, `${n.toString(16).padStart(2, "0")}.jsonl`);
-  const bucketOf = (title: string) => shardOf(title) % BUCKETS;
-
+export function createPageStore(db: Database, legacyDir: string): PageStore {
+  const getStmt = db.prepare(`SELECT version, page_json FROM wiki_pages WHERE title = ?`);
+  const putStmt = db.prepare(`
+    INSERT OR REPLACE INTO wiki_pages (title, kind, version, page_json, fetched_at)
+    VALUES (@title, @kind, @version, @page_json, @fetched_at)
+  `);
+  const eachStmt = db.prepare(`SELECT version, page_json FROM wiki_pages`);
+  const hasStmt = db.prepare(`SELECT 1 FROM wiki_pages WHERE title = ?`);
   /**
-   * True until the legacy files are folded in and gone.
+   * One transaction per bucket file folded, rather than one per row — the fsync cost of a page-a-
+   * second harvest replayed as a fold would otherwise be paid a second time.
    *
-   * While it is set, a lookup that misses the buckets falls back to reading the old single file —
-   * so an upgrade keeps working from the first millisecond rather than waiting on a migration of
-   * eleven thousand files. Buckets are checked *first*, so a page written during the migration is
-   * never shadowed by the older copy the migration is still holding.
+   * Keyed by `title` (the bucket line's own leading field), **not** `page.title` — a bucket line can
+   * be an alias (`Cloth Cape +2`, page title `Cloth Cape`, ADR 0057), and folding by the embedded
+   * title instead would silently drop every alias the running store had been correctly keeping apart.
    */
-  let migrating = true;
+  const putMany = db.transaction((entries: { title: string; version: number; page: WikiPage }[]) => {
+    for (const e of entries) putRow(e.title, e.version, e.page);
+  });
 
-  function load(n: number): Bucket {
-    const held = buckets[n];
-    if (held?.loaded) return held;
-    const bucket: Bucket = held ?? { lines: new Map(), bytes: 0, live: 0, loaded: false };
-    buckets[n] = bucket;
-    bucket.loaded = true;
-    let text: string;
-    try {
-      text = fs.readFileSync(fileFor(n), "utf8");
-    } catch {
-      return bucket; // no file yet, which is simply an empty bucket
-    }
-    bucket.bytes = text.length;
-    let live = 0;
-    // A line ends in "\n", so the split's last element is the empty tail — or a torn write, which
-    // fails to split into three and is dropped below either way.
-    for (const raw of text.split("\n")) {
-      if (!raw) continue;
-      const tab = raw.indexOf("\t");
-      if (tab < 1) continue;
-      const line = `${raw}\n`;
-      const prev = bucket.lines.get(raw.slice(0, tab));
-      if (prev) live -= prev.length;
-      bucket.lines.set(raw.slice(0, tab), line);
-      live += line.length;
-    }
-    bucket.live = live;
-    return bucket;
-  }
-
-  /** Split a stored line back into its parts, without parsing the page unless it is wanted. */
-  function readLine(line: string): StoredPage | null {
-    const tab = line.indexOf("\t");
-    const second = line.indexOf("\t", tab + 1);
-    if (tab < 1 || second < 0) return null;
-    const version = Number(line.slice(tab + 1, second));
-    const entry = decodePage(line.slice(second + 1));
-    if (!entry) return null;
-    // The line's version is the authority: `decodePage` only sees the page, which no longer carries
-    // the envelope it was written with.
-    return Number.isFinite(version) ? { page: entry.page, version } : entry;
-  }
-
-  function compact(n: number, bucket: Bucket): void {
-    const file = fileFor(n);
-    const temp = `${file}.tmp`;
-    try {
-      fs.writeFileSync(temp, [...bucket.lines.values()].join(""), "utf8");
-      fs.renameSync(temp, file);
-      bucket.bytes = bucket.live;
-      log.debug("compacted bucket", n.toString(16), "to", bucket.live, "bytes");
-    } catch (e) {
-      log.warn("couldn't compact a page bucket:", (e as Error).message);
-      try {
-        fs.rmSync(temp, { force: true });
-      } catch {
-        /* a leftover .tmp is harmless: the next compaction overwrites it */
-      }
-    }
+  function putRow(title: string, version: number, page: WikiPage): void {
+    putStmt.run({ title, kind: page.kind, version, page_json: JSON.stringify(page), fetched_at: page.fetchedAt });
   }
 
   function put(title: string, version: number, page: WikiPage): void {
-    const n = bucketOf(title);
-    const bucket = load(n);
-    const line = `${title}\t${version}\t${JSON.stringify(page)}\n`;
-    const prev = bucket.lines.get(title);
-    bucket.lines.set(title, line);
-    bucket.live += line.length - (prev?.length ?? 0);
     try {
-      fs.appendFileSync(fileFor(n), line, "utf8");
-      bucket.bytes += line.length;
+      putRow(title, version, page);
     } catch (e) {
       log.warn("cache write failed:", (e as Error).message);
-      return;
-    }
-    if (bucket.bytes > COMPACT_MIN_BYTES && bucket.bytes > COMPACT_RATIO * bucket.live) {
-      compact(n, bucket);
     }
   }
 
-  function get(title: string): StoredPage | null {
-    const line = load(bucketOf(title)).lines.get(title);
-    if (line) return readLine(line);
-    if (!migrating) return null;
-    // Not folded in yet. One open, which is what this lookup cost before the store existed.
+  function decodeRow(row: { version: number; page_json: string } | undefined): StoredPage | null {
+    if (!row) return null;
     try {
-      return decodePage(fs.readFileSync(path.join(dir, `${legacyKey(title)}.json`), "utf8"));
+      return { version: row.version, page: JSON.parse(row.page_json) as WikiPage };
     } catch {
       return null;
     }
   }
 
   /**
-   * Fold a one-file-per-page cache into buckets, then delete it.
+   * True until the legacy caches on disk are folded in.
+   *
+   * While set, a lookup that misses the table falls back to reading whichever legacy file still
+   * holds it — so an upgrade keeps working from the first millisecond rather than waiting on a fold
+   * of a whole cache. The table is checked *first*, so a page written during the fold is never
+   * shadowed by an older legacy copy.
+   */
+  let migrating = true;
+
+  /** Has a page under this title already landed in the table — a live write that beat the fold to it? */
+  const alreadyHeld = (title: string): boolean => !!hasStmt.get(title);
+
+  /** Read through to whichever legacy file still holds `title`, while the fold hasn't reached it. */
+  function readLegacy(title: string): StoredPage | null {
+    // The bucket a pre-migration install would have kept this title's page in (ADR 0165).
+    try {
+      const text = fs.readFileSync(fileFor(path.join(legacyDir, "pages"), bucketOf(title)), "utf8");
+      let found: StoredPage | null = null;
+      for (const raw of text.split("\n")) {
+        if (!raw.startsWith(`${title}\t`)) continue;
+        const entry = readBucketLine(`${raw}\n`);
+        if (entry) found = entry; // the last matching line in the file wins, same as it always did
+      }
+      if (found) return found;
+    } catch {
+      /* no bucket file for this shard */
+    }
+    // Older still: one loose file per page, named by a sanitized title (pre-ADR-0165).
+    try {
+      return decodePage(fs.readFileSync(path.join(legacyDir, `${legacyKey(title)}.json`), "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  function get(title: string): StoredPage | null {
+    const found = decodeRow(getStmt.get(title) as { version: number; page_json: string } | undefined);
+    if (found) return found;
+    return migrating ? readLegacy(title) : null;
+  }
+
+  async function each(visit: (entry: StoredPage) => void): Promise<void> {
+    await migration;
+    let n = 0;
+    for (const row of eachStmt.iterate() as IterableIterator<{ version: number; page_json: string }>) {
+      const entry = decodeRow(row);
+      if (entry) visit(entry);
+      if (++n % EACH_CHUNK === 0) await breathe();
+    }
+  }
+
+  /**
+   * Fold a one-file-per-page cache into the table, then delete it (pre-ADR-0165).
    *
    * Keyed by the page's **own title** rather than the file name, which quietly drops the graded
-   * aliases: asking for `Cloth Cape +2` cached the base page under the asked-for name
-   * ([ADR 0057](../../specs/decisions/0057-a-grade-is-not-an-identity.md)), so 36 pages were on disk
-   * twice. There is no way to recover `+2` from `Cloth_Cape_2`, and no reason to want to — the copies
-   * are identical, and the next graded lookup re-caches one for the cost of a single fetch.
+   * aliases the same way the bucket-store migration did: asking for `Cloth Cape +2` cached the base
+   * page under the asked-for name (ADR 0057), so some pages were on disk twice. There is no way to
+   * recover `+2` from `Cloth_Cape_2`, and no reason to want to.
    *
-   * Files that do not decode to a page are left alone: the title/zone indexes, the harvest state and
+   * Files that don't decode to a page are left alone: the title/zone indexes, the harvest state and
    * the catalogue pack all live in the same directory and none of them is a page.
    */
-  async function migrate(): Promise<void> {
+  async function foldLooseFiles(): Promise<void> {
     let names: string[] = [];
     try {
-      names = await fs.promises.readdir(dir);
+      names = await fs.promises.readdir(legacyDir);
     } catch {
-      /* no directory yet, which is the same as nothing to fold */
+      return; // no directory at all yet
     }
     const legacy = names.filter((n) => n.endsWith(".json"));
-    if (!legacy.length) {
-      // Nothing to fold — but this **must** still clear the flag. Left set, every lookup that missed
-      // the buckets would go on trying to open a file that has never existed: one wasted open per
-      // cache miss, for ever, on every install that never had the old layout.
-      migrating = false;
-      return;
-    }
-    const startedAt = Date.now();
     const done: string[] = [];
     let n = 0;
     for (const name of legacy) {
-      if (++n % MIGRATE_CHUNK === 0) await breathe();
+      if (++n % FOLD_CHUNK === 0) await breathe();
       let entry: StoredPage | null;
       try {
-        entry = decodePage(fs.readFileSync(path.join(dir, name), "utf8"));
+        entry = decodePage(await fs.promises.readFile(path.join(legacyDir, name), "utf8"));
       } catch {
         continue;
       }
       if (!entry || !entry.page.kind) continue; // an index or the pack, not a page
       done.push(name);
-      // Anything already in the bucket was written since this process started, so it is newer than
+      // Anything already in the table was written since this process started, so it is newer than
       // whatever the old file holds. Leave it.
-      if (load(bucketOf(entry.page.title)).lines.has(entry.page.title)) continue;
+      if (alreadyHeld(entry.page.title)) continue;
       put(entry.page.title, entry.version, entry.page);
     }
-    // Only now, with every page safely in a bucket, does the old cache go. A crash before this point
-    // simply leaves files for the next launch to fold in again — `put` is idempotent and the bucket
-    // check above stops a second copy landing.
-    migrating = false;
+    // Only now, with every page safely in the table, does the old cache go. A crash before this
+    // point simply leaves files for the next launch to fold in again — `put` is idempotent and the
+    // `alreadyHeld` check above stops a second copy landing.
     for (const [i, name] of done.entries()) {
-      if (i % MIGRATE_CHUNK === 0) await breathe();
+      if (i % FOLD_CHUNK === 0) await breathe();
       try {
-        await fs.promises.rm(path.join(dir, name), { force: true });
+        await fs.promises.rm(path.join(legacyDir, name), { force: true });
       } catch {
         /* a file we couldn't delete is re-folded next launch and skipped as already held */
       }
     }
-    log.debug("folded", done.length, "page files into", BUCKETS, "buckets in", `${Date.now() - startedAt}ms`);
   }
 
-  const migration = migrate().catch((e: unknown) => {
-    log.warn("page cache migration failed:", (e as Error).message);
-    migrating = false;
-  });
-
-  async function each(visit: (entry: StoredPage) => void): Promise<void> {
-    await migration;
-    for (let n = 0; n < BUCKETS; n++) {
-      const bucket = load(n);
-      for (const line of bucket.lines.values()) {
-        const entry = readLine(line);
-        if (entry) visit(entry);
+  /**
+   * Fold the 256 append-only bucket files into the table, then delete them (ADR 0165, superseded by
+   * this file). One transaction per bucket, so a harvest's worth of individually-appended lines
+   * doesn't cost a fsync each on the way in.
+   */
+  async function foldBuckets(): Promise<void> {
+    const pagesDir = path.join(legacyDir, "pages");
+    let names: string[] = [];
+    try {
+      names = await fs.promises.readdir(pagesDir);
+    } catch {
+      return; // no bucket cache at all
+    }
+    for (const name of names.filter((n) => n.endsWith(".jsonl"))) {
+      let text: string;
+      try {
+        text = await fs.promises.readFile(path.join(pagesDir, name), "utf8");
+      } catch {
+        continue;
       }
-      // Between buckets rather than every hundred pages: a bucket is one read and forty-odd small
-      // parses, so the longest uninterrupted block is a couple of milliseconds.
+      const rows: { title: string; version: number; page: WikiPage }[] = [];
+      for (const raw of text.split("\n")) {
+        if (!raw) continue;
+        // The line's own leading field is the key it was `put` under, which is what a lookup by
+        // title matches against — and is not always `page.title` (an alias, ADR 0057). A torn
+        // trailing line (no tab at all) has no key to recover and is dropped here, same as before.
+        const tab = raw.indexOf("\t");
+        if (tab < 1) continue;
+        const key = raw.slice(0, tab);
+        const entry = readBucketLine(`${raw}\n`);
+        // Same "a live write already beat the fold to it" guard as the loose-file fold. Duplicate
+        // keys within one bucket (an append log can hold several lines for the same key) are
+        // harmless here: they land in file order and the last one, as always, wins.
+        if (!entry || alreadyHeld(key)) continue;
+        rows.push({ title: key, version: entry.version, page: entry.page });
+      }
+      if (rows.length) putMany(rows);
       await breathe();
+    }
+    try {
+      await fs.promises.rm(pagesDir, { recursive: true, force: true });
+    } catch {
+      /* re-folded next launch; put/INSERT OR REPLACE is idempotent either way */
     }
   }
 
+  const migration = (async () => {
+    const startedAt = Date.now();
+    await foldLooseFiles();
+    await foldBuckets();
+    migrating = false;
+    log.debug("page cache: legacy fold settled in", `${Date.now() - startedAt}ms`);
+  })().catch((e: unknown) => {
+    log.warn("page cache legacy fold failed:", (e as Error).message);
+    migrating = false;
+  });
+
   return { get, put, each, ready: () => migration };
+}
+
+/**
+ * Export every page as the 256-bucket `.jsonl` wire format `scripts/build-web-snapshot.mjs`
+ * publishes for the hosted site's static reader (`src/lib/web/snapshot.ts`) — see the module
+ * header. `pagesDestDir` is the bucket folder itself (e.g. `.../public/data/wiki-cache/pages`).
+ *
+ * Synchronous and stand-alone (no `PageStore` needed): a script calling this wants a finished
+ * directory, not a running client, and it always runs against a database nothing else is writing
+ * to at the same time.
+ */
+export function exportAsBuckets(db: Database, pagesDestDir: string): void {
+  fs.mkdirSync(pagesDestDir, { recursive: true });
+  const byBucket = new Map<number, string[]>();
+  const rows = db.prepare(`SELECT title, version, page_json FROM wiki_pages`).iterate() as IterableIterator<{
+    title: string;
+    version: number;
+    page_json: string;
+  }>;
+  for (const row of rows) {
+    const n = bucketOf(row.title);
+    const lines = byBucket.get(n);
+    const line = `${row.title}\t${row.version}\t${row.page_json}\n`;
+    if (lines) lines.push(line);
+    else byBucket.set(n, [line]);
+  }
+  for (let n = 0; n < BUCKETS; n++) {
+    const lines = byBucket.get(n);
+    if (lines?.length) fs.writeFileSync(fileFor(pagesDestDir, n), lines.join(""), "utf8");
+  }
 }

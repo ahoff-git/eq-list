@@ -65,20 +65,25 @@ as they drop and the damage meter can show how the fight went.
   interaction than a kill's instant update) only when no kill explains the hit. The **speaker's name**
   is matched against the wiki's already-parsed, already-cached "Quest giver" field
   (`WikiClient.questGiverSource()`, gathered on the same cache walk `levelSources`/`questZoneSource`
-  already run) — a proper noun against a clean table cell, not prose against prose. When a giver has
-  more than one quest, the observed line is compared against each candidate's own cached dialogue
+  already run) — a proper noun against a clean table cell, not prose against prose — but only once the
+  speaker is confirmed a **mob** (`WikiClient.levelSources().mob()`, the same ADR 0163 lookup the
+  Items tab trusts): a "Quest giver" cell can just as easily name an item or a book, and neither of
+  those can hold the conversation this whole guess is keyed on, so an unconfirmed giver names no
+  quest at all. When a giver has more than one quest, the observed line is compared against each
+  candidate's own cached dialogue
   (`WikiClient.questDialogueSource()`, `electron/wiki/parse.ts`'s `parseQuestDialogue` — read generically
   off every `<dd>`/`<p>`/`<li>` on the whole page rather than any one heading, since real pages file
   dialogue under "Walkthrough", "Checklist", a plain "Dialogue" heading, or a per-step `<h3>` a
   heading-name filter would miss) using `fuzzyScore` (`src/shared/fuzzy.ts`), narrowing to whichever
-  quest(s) it resembles or falling back to the giver's full list when nothing matches well enough. Both
-  wiki lookups are injected dependencies so the module stays pure and wiki-agnostic. Unlike every
+  quest(s) it resembles or falling back to the giver's full list when nothing matches well enough. All
+  three wiki lookups are injected dependencies so the module stays pure and wiki-agnostic. Unlike every
   parser here, none of this is checked against a real log showing the true gap — every guess is
   reasoned, not verified, labeled as such everywhere carried (`FactionEvent.causedBy`) and shown to the
   reader the same way ([ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md),
   [ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md),
   [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md),
-  [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md)).
+  [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md),
+  [ADR 0257](../decisions/0257-a-guessed-giver-must-be-a-mob-to-name-a-quest.md)).
 - `src/shared/combat-parser.ts` — the same idea for combat, and the bulk of a real log:
   melee swings, spell/proc damage, damage shields, DoT ticks, misses and heals, plus the
   `(Critical)`/`(Riposte)` qualifier that trails *after* the sentence. It also follows the
@@ -220,13 +225,19 @@ as they drop and the damage meter can show how the fight went.
   a rollup of which mob's kill, or which NPC's conversation, each faction's hits are *guessed* to have
   come from. A hit aging out of the capped feed is folded into a retained standing first, cause
   rollup included, so the cap trims detail, never a faction's net or its cause tally
-  ([ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)). No pooling with peers —
+  ([ADR 0056](../decisions/0056-a-dropped-record-keeps-what-it-taught.md)). `recheckDialogueQuests`
+  re-derives a stored dialogue hit's `quests`/`questsMatched` against **today's** wiki cache, using the
+  exact same `questsForSpeaker` a live guess calls — run once per launch, chained onto the background
+  catalogue warm-up, so a hit recorded before ADR 0257 (or before its giver's page was ever cached)
+  gets fixed without a log re-read (ADR 0259). No pooling with peers —
   that's real, deliberately-not-attempted work. See
   [ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md),
   [ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md),
   [ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md),
-  [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md) and
-  [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md).
+  [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md),
+  [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md),
+  [ADR 0257](../decisions/0257-a-guessed-giver-must-be-a-mob-to-name-a-quest.md) and
+  [ADR 0259](../decisions/0259-a-stored-quest-guess-can-be-rechecked-in-place.md).
 - `electron/faction-corrections.ts` — the player's own stated total for a faction, for the history the
   ledger couldn't have seen (a character who already had standing before this app existed). Kept as an
   **offset** against the ledger's own net, in its own file beside (never inside) `faction-log.ts`, and
@@ -347,4 +358,6 @@ Two invocations do more than scale numbers, and both are now accounted for
 [ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md) ·
 [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md) ·
 [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md) ·
-[ADR 0229](../decisions/0229-a-faction-correction-is-a-stated-offset.md)
+[ADR 0229](../decisions/0229-a-faction-correction-is-a-stated-offset.md) ·
+[ADR 0257](../decisions/0257-a-guessed-giver-must-be-a-mob-to-name-a-quest.md) ·
+[ADR 0259](../decisions/0259-a-stored-quest-guess-can-be-rechecked-in-place.md)

@@ -121,6 +121,8 @@ interface StoredBuff {
   permanent?: boolean;
   /** Likewise: something you throw *at* things. Absent means we never had the file to ask. */
   detrimental?: boolean;
+  /** Likewise again: which classes can cast it — see `KnownBuff.classes`. */
+  classes?: string[];
   /** We've seen you cast it, rather than only ever receiving it. */
   mine?: boolean;
   rises?: number;
@@ -220,6 +222,15 @@ export interface BuffTracker {
   dismiss(key: string, target: string, slot?: number): void;
   /** Stand every lapse down. */
   dismissAll(): void;
+  /** Untrack every spell at once — the panic-button opposite of picking through them one at a time. */
+  disableAll(): void;
+  /**
+   * Track every spell a class can cast, whatever it was set to — the counterpart to `disableAll`
+   * for a player who wants to start from "just mine": clear the board, then bring back one class's
+   * set in a single click. Spells the game file never classified (no install, or an unmatched name)
+   * are left alone; there's nothing to say they belong to this class.
+   */
+  enableAllByClass(cls: string): void;
   /**
    * Remove one `onEnemy` instance outright, up or lapsed — for when the order-based slot guessed
    * wrong (ADR 0202). Unlike `dismiss`, this also works on a row that is currently **up**: the two
@@ -362,6 +373,11 @@ export function createBuffTracker({
     return !!stored.known[key]?.detrimental;
   }
 
+  /** Which classes can even cast this spell, from the game's own file — absent without one. */
+  function spellClasses(about: SpellFacts | undefined): string[] | undefined {
+    return about ? Object.keys(about.levels) : undefined;
+  }
+
   /**
    * Should this spell get a row, given what the game file says about it and who cast it?
    *
@@ -377,7 +393,7 @@ export function createBuffTracker({
   /** The row for a spell, creating it the first time the spell is seen. */
   function knownFor(
     spell: string,
-    opts: { mine?: boolean; permanent?: boolean; detrimental?: boolean } = {},
+    opts: { mine?: boolean; permanent?: boolean; detrimental?: boolean; classes?: string[] } = {},
   ): KnownBuff {
     const key = buffKey(spell);
     const row = stored.known[key];
@@ -387,6 +403,7 @@ export function createBuffTracker({
       // when the next sighting can simply put it right.
       if (opts.permanent !== undefined) row.permanent = opts.permanent;
       if (opts.detrimental !== undefined) row.detrimental = opts.detrimental;
+      if (opts.classes !== undefined) row.classes = opts.classes;
       if (opts.mine) row.mine = true;
       return hydrate(key, row);
     }
@@ -394,6 +411,7 @@ export function createBuffTracker({
       mine: !!opts.mine,
       permanent: !!opts.permanent,
       detrimental: !!opts.detrimental,
+      classes: opts.classes,
     });
     // Bounded, and only rows nobody has touched may go — see `evictable`.
     const rows = Object.values(stored.known);
@@ -411,6 +429,7 @@ export function createBuffTracker({
       onScreen: fresh.onScreen,
       permanent: fresh.permanent,
       detrimental: fresh.detrimental,
+      classes: fresh.classes,
       mine: fresh.mine,
       rises: 0,
       lastUp: fresh.lastUp,
@@ -430,6 +449,7 @@ export function createBuffTracker({
       styleId: row.styleId,
       permanent: !!row.permanent,
       detrimental: !!row.detrimental,
+      classes: row.classes,
       mine: !!row.mine,
       rises: row.rises ?? 0,
       lastUp: row.lastUp,
@@ -540,6 +560,7 @@ export function createBuffTracker({
       mine: opts.byYou,
       permanent: spellFacts?.permanent,
       detrimental,
+      classes: spellClasses(spellFacts),
     });
     if (!known.tracked) return; // unchecked means the app is not watching this one at all
     const key = known.key;
@@ -622,6 +643,7 @@ export function createBuffTracker({
       knownFor(spell, {
         permanent: spellFacts?.permanent,
         detrimental,
+        classes: spellClasses(spellFacts),
         // We only reached here because the spell is ours — a debuff by the gate above, a buff by
         // having been on you. Saying so is what stops a row you cast reading "cast on you".
         mine: detrimental || undefined,
@@ -831,7 +853,11 @@ export function createBuffTracker({
           // *is* the rise. One that has one waits: the landing names the target, and a target is
           // worth the second or two.
           if (!lexicon().landsQuietly(event.spell)) {
-            knownFor(event.spell, { mine: true, permanent: spellFacts.permanent });
+            knownFor(event.spell, {
+              mine: true,
+              permanent: spellFacts.permanent,
+              classes: spellClasses(spellFacts),
+            });
             changed();
             return;
           }
@@ -1099,6 +1125,35 @@ export function createBuffTracker({
         any = true;
       }
       if (any) changed();
+    },
+    disableAll() {
+      let any = false;
+      for (const [key, row] of Object.entries(stored.known)) {
+        if (row.tracked === false) continue;
+        row.tracked = false;
+        any = true;
+        // Same cleanup `track(key, false)` does per-spell: an untracked row must not leave a standing
+        // message on screen with nothing left to explain it.
+        for (const [id, buff] of [...board]) if (buff.key === key) board.delete(id);
+        for (const [id, buff] of [...held]) if (buff.key === key) held.delete(id);
+      }
+      if (any) {
+        save();
+        changed();
+      }
+    },
+    enableAllByClass(cls) {
+      let any = false;
+      for (const row of Object.values(stored.known)) {
+        if (row.tracked !== false) continue;
+        if (!row.classes?.includes(cls)) continue;
+        row.tracked = true;
+        any = true;
+      }
+      if (any) {
+        save();
+        changed();
+      }
     },
     onChanged(cb) {
       listeners.push(cb);

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [0256](./0256-the-wiki-page-cache-moves-onto-sqlite.md).
 
 Replaces the on-disk shape the wiki cache has had since it existed. Sits under
 [ADR 0153](./0153-the-catalogue-is-filled-by-a-gentle-trickle.md) (what fills it) and

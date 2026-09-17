@@ -66,6 +66,16 @@
  * quest they're known to give rides along as `FactionCause.quests` — one proper noun against a clean
  * table cell, not prose against prose (ADR 0221).
  *
+ * **A "Quest giver" cell only ever means something when it names a mob.** The table cell is a bare
+ * string — sometimes an NPC, sometimes an item, a book, or some other non-mob source a quest is
+ * started from — and the game has no way to hold a "conversation" with the ones that aren't an NPC at
+ * all: the "tells you"/"says" line this module keys on is a mob talking, so a giver that isn't one
+ * could never be the thing the log just quoted. `deps.isMob` answers that, reusing the same mob-level
+ * lookup the Items tab already trusts (`WikiClient.levelSources().mob`, ADR 0163) rather than a second
+ * registry — a giver it doesn't recognize as a mob names no quest at all, same as an unrecognized
+ * giver today. Optional and best-effort like the two lookups above: no dependency given leaves the
+ * guess exactly as it read before this check existed (ADR 0257).
+ *
  * **Narrowing further, from the quoted text itself, only within that giver's own small handful of
  * quests.** A survey of real eqlwiki quest pages found dialogue scattered across `<dl><dd>`, plain
  * `<p>`, `<ul><li>` and `<blockquote>` inconsistently, with hand-transcription errors here and there —
@@ -193,6 +203,14 @@ export interface FactionCauseTrackerDeps {
    * nothing cached for every candidate), `quests` stays every quest the giver is known for, unnarrowed.
    */
   questDialogue?: (questTitle: string) => { npc: string; text: string }[] | undefined;
+  /**
+   * Whether the wiki's cache knows `npc` as an actual mob — see the module header's "a 'Quest giver'
+   * cell only ever means something when it names a mob" (ADR 0257). Gates `questGiver` itself: a
+   * speaker this says isn't a mob names no quest, regardless of what the "Quest giver" table cell
+   * says. Left unset, every candidate `questGiver` names is trusted unchecked, same as before this
+   * dependency existed.
+   */
+  isMob?: (npc: string) => boolean;
 }
 
 /**
@@ -250,6 +268,26 @@ export interface FactionCauseTracker {
   explainUnsourcedCoin(at: string): FactionCause | undefined;
 }
 
+/**
+ * Every quest a speaker might be the cause of, given what they said — the mob-gated `questGiver`
+ * lookup narrowed by `narrowByDialogue`, exposed on its own so a stored hit can be re-checked against
+ * today's wiki cache with **exactly** the logic a live guess would use, not a second copy of it
+ * (ADR 0257). `{}` (neither field set) means "names no quest", the same as an unrecognized giver.
+ */
+export function questsForSpeaker(
+  npc: string,
+  text: string,
+  deps: Pick<FactionCauseTrackerDeps, "questGiver" | "questDialogue" | "isMob">,
+): Pick<Extract<FactionCause, { kind: "dialogue" }>, "quests" | "questsMatched"> {
+  // A giver only names a quest when the speaker is a confirmed mob (ADR 0257) — with no `isMob`
+  // dependency at all, nothing is known either way, so every candidate is trusted the way this
+  // looked before that check existed.
+  const knownMob = deps.isMob?.(npc) ?? true;
+  const givenBy = knownMob ? deps.questGiver?.(npc) ?? [] : [];
+  const { quests, matched } = narrowByDialogue(givenBy, text, deps.questDialogue);
+  return quests.length ? { quests, questsMatched: matched } : {};
+}
+
 export function createFactionCauseTracker(deps: FactionCauseTrackerDeps = {}): FactionCauseTracker {
   let lastKill: { mob: string; at: number } | null = null;
   let lastDialogue: { npc: string; text: string; at: number } | null = null;
@@ -267,14 +305,12 @@ export function createFactionCauseTracker(deps: FactionCauseTrackerDeps = {}): F
     if (lastDialogue) {
       const gapSec = (at - lastDialogue.at) / 1000;
       if (gapSec >= 0 && gapSec <= DIALOGUE_WINDOW_SEC) {
-        const givenBy = deps.questGiver?.(lastDialogue.npc) ?? [];
-        const { quests, matched } = narrowByDialogue(givenBy, lastDialogue.text, deps.questDialogue);
         return {
           kind: "dialogue",
           npc: lastDialogue.npc,
           text: lastDialogue.text,
           gapSec,
-          ...(quests.length ? { quests, questsMatched: matched } : {}),
+          ...questsForSpeaker(lastDialogue.npc, lastDialogue.text, deps),
         };
       }
     }

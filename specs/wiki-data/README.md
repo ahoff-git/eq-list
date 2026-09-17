@@ -290,25 +290,30 @@ shopping list.
   aliases, which had been showing as **37 duplicate rows** in the Items tab. Migration to the bucket
   store dropped the 36 duplicate *files* — it keys by the page's own title — but the fold stays,
   because the next graded lookup writes one again.
-- **Pages live in 256 append-only bucket files** ([page-store.ts](../../electron/wiki/page-store.ts),
-  [ADR 0165](../decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)). One file per
-  page was the obvious store and it stopped scaling at eleven thousand: **11,523 files** holding
-  19.4 MB but occupying 53.5 MB of 4 KB clusters, a full read costing 11,523 separate opens — each one
-  a real-time antimalware scan — and a harvest *creating* a file a second for three hours, which is
-  the shape a ransomware heuristic watches for. A page is now one line (`title 	 version 	 json`) in
-  a bucket chosen by `shardOf(title) % 256`; a write **appends**, so it costs what it always did, and
-  a bucket is rewritten only when the superseded lines outweigh the live ones. A full read is **261
-  opens and 345ms** against 11,523 and 706ms, and the cache is 9.0 MB against 53.5 MB. Buckets stay
-  resident once loaded, so a rebuild after a page is written is **253ms and zero disk reads**. The old loose
-  files are folded in on first launch and deleted, with lookups reading through to them meanwhile; a
-  torn append costs one page, because a line is self-contained.
-- **A launch opens ~20 files, not 11,519.** The peer room's coverage is built on the share hub's
-  first catalogue tick, so it runs on *every launch* whether or not anybody opens the Items tab — and
-  it used to get the titles it needs by walking every page in the cache. That burst of file opens is
-  also a burst of **real-time antimalware scans**, which is enough to make a whole machine crawl for
-  the first seconds of every run; it is the sort of cost that never shows up in a timing measurement
-  because the time is spent in somebody else's process. The pack carries the titles list beside the
-  rows, so coverage costs one read. Pinned by a test that counts `readFileSync` calls.
+- **Pages live in one SQLite table, `wiki_pages`, in the shared `eqlist.db`**
+  ([page-store.ts](../../electron/wiki/page-store.ts),
+  [ADR 0256](../decisions/0256-the-wiki-page-cache-moves-onto-sqlite.md), superseding
+  [ADR 0165](../decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)'s 256
+  append-only bucket files). `kind` and `fetched_at` are indexed columns; the rest of the page is one
+  opaque `page_json` blob. `put` is `INSERT OR REPLACE`, so "the last write for a title wins" is the
+  database's own job rather than a bucket-hash/append/compact scheme this file has to run itself. Two
+  older on-disk generations — ADR 0165's own bucket files, and the one-loose-file-per-page layout it
+  replaced — are folded in on first launch and deleted, with lookups reading through to whichever one
+  still holds an unfolded title meanwhile.
+- **A launch touches a handful of files, not thousands.** The peer room's coverage is built on the
+  share hub's first catalogue tick, so it runs on *every launch* whether or not anybody opens the
+  Items tab — and reading the cache now means one SQL query rather than opening a page's own file, so
+  the antimalware-scan-per-open cost ADR 0165 measured at eleven thousand-plus files doesn't apply to
+  the page cache at all any more. The catalogue pack (below) still carries the titles list beside the
+  rows, so coverage costs one read rather than a walk over every page. Pinned by a test that counts
+  `readFileSync` calls.
+- **The web snapshot still publishes the bucket-file format.** `scripts/build-web-snapshot.mjs`
+  builds the static mirror the hosted site reads with a plain `fetch()`
+  (`src/lib/web/snapshot.ts`), and that published shape is the same 256-`.jsonl`-bucket layout ADR
+  0165 introduced — a public wire format with a browser-side reader on the other end, unaffected by
+  how the *live app* stores pages internally. `exportAsBuckets(db, pagesDestDir)` in
+  `page-store.ts` writes the table back out in that exact shape on demand; the script calls it
+  instead of raw-copying `userData/wiki-cache`.
 - **The catalogue crosses to a window as *text*, and is stored as text** (`catalogue.json`,
   `catalogueJson()`). This is the single biggest thing about the Items tab's speed, and it is not
   about the data at all: `contextIsolation` is on, so everything a window receives is deep-copied by
@@ -330,10 +335,11 @@ shopping list.
 - **The catalogue is built once and held.** Building it is hundreds of milliseconds of *synchronous*
   work, and main serves every window's IPC — paying it per Items tab mount froze the whole app for a
   third of a second each time. `cachedItems()` keeps its answer and drops it only when *we* write a
-  page (`pageWritten`), which is sound because nothing else writes this directory. The walk **yields
-  between buckets**, so the longest stall it causes is a couple of milliseconds rather than one long
-  block, and two callers arriving together share one walk. It is **sorted by title always** — the
-  store visits pages in bucket order, which is a hash. The shard index rides the same walk instead of doing a
+  page (`pageWritten`), which is sound because nothing else writes this table. The walk **yields
+  periodically**, so the longest stall it causes is a couple of milliseconds rather than one long
+  block, and two callers arriving together share one walk. It is **sorted by title always** —
+  `buildCatalogue()` sorts explicitly rather than trusting the store's own row order, which a plain
+  `SELECT *` makes no promise about. The shard index rides the same walk instead of doing a
   second one, and is patched per written page rather than torn down — a harvest writes a page a
   second, and rebuilding on each would be a full walk every tick for three hours. Main warms it a few
   seconds after the window paints, so even the first open is instant.
@@ -352,8 +358,8 @@ shopping list.
   changes — this is how a classification/parse fix reaches already-visited pages
   without hard-coding per-page exceptions.
 - `electron/wiki/index.ts` — combines these behind `search()` / `searchZones()` /
-  `questsByZone()` / `getPage()`, with a 7-day on-disk JSON cache under
-  `userData/wiki-cache` and stale-on-error fallback.
+  `questsByZone()` / `getPage()`, with an on-disk cache (the `wiki_pages` table in `eqlist.db`, plus
+  the sidecar index/harvest files still under `userData/wiki-cache`) and stale-on-error fallback.
 - **Out-of-era flagging** — `fetchOutEraCategorySet` reads `Template:PageEra` (with a
   fallback era list) to learn which era categories aren't live. `getPage` flags the
   opened page (`WikiPage.outOfEra`), and search/quest results are flagged too:

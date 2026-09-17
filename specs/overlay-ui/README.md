@@ -285,7 +285,11 @@ list, hunt, search, damage, session, peers, settings.
     reaches the pointer while the player has taken the window's clicks back with 👻. That ✕ **leads
     the row**, so a death strip's worth of reminders is one column to click down and each row closing
     brings the next control under the cursor
-    ([ADR 0175](../decisions/0175-a-lapse-is-read-at-a-glance-and-cleared-in-a-column.md)).
+    ([ADR 0175](../decisions/0175-a-lapse-is-read-at-a-glance-and-cleared-in-a-column.md)). A second
+    control, **🔕, trails the row** instead of leading it: it throws the same `notify` switch the
+    Buffs tab's own checkbox does, so a spell stops raising a banner without a trip to that tab, while
+    the row itself keeps showing here — that's `onScreen`'s promise, not `notify`'s
+    ([ADR 0258](../decisions/0258-a-spells-class-is-read-from-the-file-not-the-player.md)).
   - `DebuffOverlay` — the debuffs you're keeping on something you're fighting, **up and missing
     both**, on the same `/alert` window
     ([ADR 0202](../decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)). `BuffOverlay`
@@ -300,7 +304,8 @@ list, hunt, search, damage, session, peers, settings.
     and it only ever tightens toward "sooner", the safe direction for a reminder that exists because
     letting the thing lapse is bad. Both states carry a ✕: on a lapsed row it's `BuffOverlay`'s "I
     know, stop reminding me"; on an up row it's new — "that isn't real, forget it" — for correcting
-    a slot the heuristic guessed wrong.
+    a slot the heuristic guessed wrong. Both states also carry the same 🔕 `BuffOverlay` does, meaning
+    the same thing in both: turn `notify` off, leave the row alone.
   - `BuffPanel` — the **Buffs tab**: what you are keeping up, what has dropped, and which spells the
     app should mention. Three lists, answering different questions — **Not active** is why the tab
     exists, **Up now** is the reassuring half, **Spells** holds the checkboxes and nothing urgent.
@@ -329,7 +334,11 @@ list, hunt, search, damage, session, peers, settings.
     ([ADR 0202](../decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)). The rules are `src/shared/buff-tracking.ts` and `src/shared/spell-strings.ts` (both pure
     + tested); the board itself is `electron/buff-tracker.ts`, which — unlike the spawn tracker —
     persists only the *choices*, because which buffs are up is a fact about a login rather than about
-    the world.
+    the world. **Spells** carries a class filter and two bulk actions —
+    **Disable all** and, scoped to whichever class is picked, **Enable all** — reading the same
+    spell file `permanent`/`detrimental` already come from, never the player's own class
+    ([ADR 0258](../decisions/0258-a-spells-class-is-read-from-the-file-not-the-player.md)). A spell
+    the file never classified always stays visible, whatever the filter says.
   - `SpawnPanel` — the **Timers tab**: respawn countdowns for the nameds you kill, learned
     from the gaps between your own kills ([ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md)).
     Three lists, answering different questions: **Coming up** is what's running, soonest-first, read

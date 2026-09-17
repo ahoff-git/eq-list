@@ -224,13 +224,19 @@ test("a spell with no row says nothing", () => {
 // ── the rest ──────────────────────────────────────────────────────────────────
 
 test("a fresh row arrives switched on", () => {
-  const fresh = newKnownBuff("Spirit of Wolf II", AT, { mine: true, permanent: true, detrimental: false });
+  const fresh = newKnownBuff("Spirit of Wolf II", AT, {
+    mine: true,
+    permanent: true,
+    detrimental: false,
+    classes: ["Druid", "Shaman"],
+  });
   assert.equal(fresh.key, "spirit of wolf");
   assert.equal(fresh.spell, "Spirit of Wolf");
   assert.equal(fresh.tracked, true);
   assert.equal(fresh.notify, true);
   assert.equal(fresh.onScreen, true);
   assert.equal(fresh.permanent, true);
+  assert.deepEqual(fresh.classes, ["Druid", "Shaman"]);
   assert.equal(fresh.rises, 0);
 });
 

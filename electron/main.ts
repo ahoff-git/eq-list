@@ -12,6 +12,7 @@ import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
 import { createStore } from "./store";
 import { setAppVersion } from "./json-store";
 import { createWikiClient } from "./wiki";
+import { WIKI_PAGE_MIGRATIONS } from "./wiki/page-store";
 import { createLucyClient } from "./lucy";
 import { createLogWatcher } from "./log-watcher";
 import { createLogCursor } from "./log-cursor";
@@ -216,9 +217,20 @@ if (!app.requestSingleInstanceLock()) {
   // build number changes on every push and would mark everything stale for ever.
   setAppVersion(app.getVersion());
   const store = createStore(userData);
+  // The one SQLite database every store that outgrows a JSON array shares (ADR 0232) — each adds
+  // its own migrations to the combined list rather than opening a database of its own. Built before
+  // the wiki client, which now lands its page cache in this same file (ADR 0256) rather than its own.
+  const db = openAppDatabase(userData, [
+    ...FACTION_LOG_MIGRATIONS,
+    ...LOOT_LOG_MIGRATIONS,
+    ...KILL_LOG_MIGRATIONS,
+    ...COMBAT_HISTORY_MIGRATIONS,
+    ...WIKI_PAGE_MIGRATIONS,
+  ]);
   // The page TTL is a setting, read per check rather than captured, so changing it takes effect at
   // once — including for a harvest already running (ADR 0161).
   const wiki = createWikiClient(path.join(userData, "wiki-cache"), {
+    db,
     ttlMs: () => Math.max(1, store.getSettings().wikiPageTtlDays) * 24 * 60 * 60 * 1000,
   });
   // The supplementary item source, in its own cache directory so its month-long TTL and the wiki's
@@ -237,14 +249,6 @@ if (!app.requestSingleInstanceLock()) {
   // entirely optional: no install, no file, no mana figures, and nothing else changes.
   const spells = createSpellCatalog();
   const combat = createCombatStats(undefined, (spell, rank) => spells.find(spell, rank)?.mana);
-  // The one SQLite database every ledger that outgrows a JSON array shares (ADR 0232) — each store
-  // adds its own migrations to the combined list rather than opening a database of its own.
-  const db = openAppDatabase(userData, [
-    ...FACTION_LOG_MIGRATIONS,
-    ...LOOT_LOG_MIGRATIONS,
-    ...KILL_LOG_MIGRATIONS,
-    ...COMBAT_HISTORY_MIGRATIONS,
-  ]);
   const history = createCombatHistory(db, userData);
   // A background recompute of zones()/bests()/sessions()'s shared cache landed a fresher answer
   // (ADR 0247) — the same shape as `killLog.onObservationsChanged`, just its own channel since
@@ -274,13 +278,16 @@ if (!app.requestSingleInstanceLock()) {
   const factionCorrections = createFactionCorrections(userData);
   // A guess at what caused a hit, from the kill the log wrote just before it, or (failing that) from
   // NPC dialogue — narrowed, when the speaker matches a cached quest's giver, to whichever of that
-  // giver's quests the line itself resembles — see the module header for why every part of this is an
-  // inference and not a parsed fact (ADR 0219, ADR 0220, ADR 0221, ADR 0223). Both wiki lookups are
-  // asked fresh each time rather than captured once: the wiki's own cross-reference is rebuilt whenever
-  // the catalogue is, and a stale snapshot would silently stop matching anything fetched afterward.
+  // giver's quests the line itself resembles, but only once the speaker is confirmed as a mob (a
+  // "Quest giver" cell can name an item or a book, and neither can hold the conversation this is
+  // keyed on) — see the module header for why every part of this is an inference and not a parsed
+  // fact (ADR 0219, ADR 0220, ADR 0221, ADR 0223, ADR 0257). All three wiki lookups are asked fresh
+  // each time rather than captured once: the wiki's own cross-reference is rebuilt whenever the
+  // catalogue is, and a stale snapshot would silently stop matching anything fetched afterward.
   const factionCause = createFactionCauseTracker({
     questGiver: (npc) => wiki.questGiverSource()(npc),
     questDialogue: (quest) => wiki.questDialogueSource()(quest),
+    isMob: (npc) => !!wiki.levelSources().mob(npc),
   });
   /**
    * Faction hits awaiting resolution, held for `CORRELATION_WINDOW_SEC` before the ledger ever sees
@@ -893,9 +900,25 @@ if (!app.requestSingleInstanceLock()) {
     // Here rather than at launch for the same reason the log repair is: after the window has painted,
     // a background job nobody has to know about.
     setTimeout(() => {
-      void wiki.catalogueJson().catch(() => {
-        /* a cache we couldn't read is the Items tab's problem to report, not a launch failure */
-      });
+      void wiki
+        .catalogueJson()
+        .catch(() => {
+          /* a cache we couldn't read is the Items tab's problem to report, not a launch failure */
+        })
+        .then(() => {
+          // A hit recorded before ADR 0257 may still carry a quest guessed from a "Quest giver" that
+          // isn't actually a mob — wrong then, and still wrong sitting on disk until something
+          // re-checks it. Nothing about this needs a log re-read: the ledger already has the guessed
+          // speaker and quote, and the only thing that changed is what today's wiki cache says about
+          // them, which is exactly what just got warmed above. Cheap (only dialogue-caused hits are
+          // scanned) and self-limiting (a hit whose fresh answer matches what's stored is left alone).
+          const { checked, changed } = factionLog.recheckDialogueQuests({
+            questGiver: (npc) => wiki.questGiverSource()(npc),
+            questDialogue: (quest) => wiki.questDialogueSource()(quest),
+            isMob: (npc) => !!wiki.levelSources().mob(npc),
+          });
+          if (changed) log.debug("faction ledger: rechecked dialogue-guessed quests", { checked, changed });
+        });
     }, CATALOGUE_WARM_MS);
     // A release that changed how a log is read asked for the logs to be read again, and this is the
     // start that does it (ADR 0129). Here rather than earlier because it is seconds of synchronous

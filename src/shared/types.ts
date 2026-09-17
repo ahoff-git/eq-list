@@ -3784,6 +3784,13 @@ export interface EqlApi {
     dismiss(key: string, target: string, slot?: number): Promise<BuffView>;
     /** Clear every standing lapse at once — the "I have re-buffed, be quiet" button. */
     dismissAll(): Promise<BuffView>;
+    /** Untrack every spell at once. */
+    disableAll(): Promise<BuffView>;
+    /**
+     * Track every spell a class can cast, whatever it was set to. Spells the game file never
+     * classified (no install, or an unmatched name) are left alone.
+     */
+    enableAllByClass(cls: string): Promise<BuffView>;
     /**
      * Forget one `onEnemy` instance outright, up or lapsed — for when the order-based slot numbering
      * guessed wrong ([ADR 0202](../../specs/decisions/0202-two-mobs-sharing-a-name-get-two-debuff-rows.md)).

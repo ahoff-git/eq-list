@@ -225,6 +225,8 @@ const api: EqlApi = {
     forget: (key) => ipcRenderer.invoke(CH.buffsForget, key),
     dismiss: (key, target, slot) => ipcRenderer.invoke(CH.buffsDismiss, key, target, slot),
     dismissAll: () => ipcRenderer.invoke(CH.buffsDismissAll),
+    disableAll: () => ipcRenderer.invoke(CH.buffsDisableAll),
+    enableAllByClass: (cls) => ipcRenderer.invoke(CH.buffsEnableAllByClass, cls),
     clearInstance: (key, target, slot) => ipcRenderer.invoke(CH.buffsClearInstance, key, target, slot),
     onChanged: (cb) => on(CH.buffsChanged, cb),
   },

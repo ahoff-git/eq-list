@@ -434,6 +434,79 @@ test("a standing rolls up mobs and dialogue causes separately, even if they shar
   ]);
 });
 
+test("recheckDialogueQuests strips a quest whose giver isn't a confirmed mob", () => {
+  const l = freshLog();
+  l.add(
+    hit("Agents of Mistmoore", 1, 5, "raised", {
+      kind: "dialogue",
+      npc: "A Dusty Tome",
+      text: "Well done.",
+      gapSec: 2,
+      quests: ["Shovel of Ponz"],
+      questsMatched: false,
+    }),
+  );
+  const result = l.recheckDialogueQuests({
+    questGiver: () => ["Shovel of Ponz"],
+    isMob: () => false, // the wiki cache says "A Dusty Tome" is not a mob
+  });
+  assert.deepEqual(result, { checked: 1, changed: 1 });
+  const [record] = l.recent();
+  assert.equal(record.causedBy?.kind, "dialogue");
+  assert.equal("quests" in (record.causedBy ?? {}), false, "stripped, not left as an empty list");
+
+  // Calling it again against the same, unchanged wiki state is a no-op — nothing left to fix.
+  assert.deepEqual(l.recheckDialogueQuests({ questGiver: () => ["Shovel of Ponz"], isMob: () => false }), {
+    checked: 1,
+    changed: 0,
+  });
+});
+
+test("recheckDialogueQuests leaves a quest given by a confirmed mob untouched", () => {
+  const l = freshLog();
+  l.add(
+    hit("Agents of Mistmoore", 1, 5, "raised", {
+      kind: "dialogue",
+      npc: "Vira",
+      text: "Well done.",
+      gapSec: 2,
+      quests: ["Shovel of Ponz"],
+      questsMatched: false,
+    }),
+  );
+  const result = l.recheckDialogueQuests({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
+  assert.deepEqual(result, { checked: 1, changed: 0 });
+  const [record] = l.recent();
+  assert.deepEqual(record.causedBy?.kind === "dialogue" ? record.causedBy.quests : undefined, ["Shovel of Ponz"]);
+});
+
+test("recheckDialogueQuests can add a quest to a hit that had none, once the cache catches up", () => {
+  const l = freshLog();
+  l.add(
+    hit("Agents of Mistmoore", 1, 5, "raised", {
+      kind: "dialogue",
+      npc: "Vira",
+      text: "Well done.",
+      gapSec: 2,
+    }),
+  );
+  // The giver wasn't cached yet when this hit first happened; it is now.
+  const result = l.recheckDialogueQuests({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
+  assert.deepEqual(result, { checked: 1, changed: 1 });
+  const [record] = l.recent();
+  assert.deepEqual(record.causedBy?.kind === "dialogue" ? record.causedBy.quests : undefined, ["Shovel of Ponz"]);
+});
+
+test("recheckDialogueQuests never touches a kill-caused hit", () => {
+  const l = freshLog();
+  l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));
+  assert.deepEqual(l.recheckDialogueQuests({ questGiver: () => ["Shovel of Ponz"], isMob: () => false }), {
+    checked: 0,
+    changed: 0,
+  });
+  assert.equal(l.recent()[0].causedBy?.kind, "kill");
+});
+
 test("the admin panel can browse and remove a hit, but nothing is patchable", () => {
   const l = freshLog();
   l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));

@@ -621,9 +621,12 @@ Four of the six are **done** and have left this list: rank-aware spell costs
   payload of this size today; the next one to appear should be text from the start rather than
   discovered the same way.
 - **A page write still drops the whole pack**, so the catalogue is rebuilt the first time anything
-  asks afterwards. Much cheaper since [ADR 0165](./decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)
-  — 360ms cold and no disk at all once the buckets are resident — but still work for one changed page.
-  Patching the rows for that page, as the shard index already does, would remove it.
+  asks afterwards — still work for one changed page, now against the SQL-backed store
+  [ADR 0256](./decisions/0256-the-wiki-page-cache-moves-onto-sqlite.md) moved onto (superseding
+  [0165](./decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)'s bucket files,
+  which this note's old timing was measured against — worth re-measuring the cold-rebuild cost
+  against the table before assuming the old number still applies). Patching the rows for that page,
+  as the shard index already does, would remove it.
 
 ## Build hygiene
 

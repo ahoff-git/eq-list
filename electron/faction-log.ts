@@ -57,6 +57,7 @@ import type {
   FactionStanding,
   ForgetScope,
 } from "../src/shared/types";
+import { questsForSpeaker, type FactionCauseTrackerDeps } from "../src/shared/faction-cause";
 import { createSaver, readJson, writeJson } from "./json-store";
 import { DEFAULT_LIMIT, likeEscape, type Migration } from "./sqlite-store";
 import { createSqlAdminStore, type AdminStore } from "./admin";
@@ -321,6 +322,20 @@ export interface FactionLog {
    * as a loot price (ADR 0056). `"everything"` is the deliberate, asked-for wipe.
    */
   clear(scope?: ForgetScope): void;
+  /**
+   * Re-derive every stored dialogue cause's `quests`/`questsMatched` against **today's** wiki cache,
+   * fixing a hit recorded before a rule change without needing its own log line back (ADR 0257: a
+   * "Quest giver" naming something that isn't a mob never should have named a quest at all). Uses
+   * `questsForSpeaker` — the exact function a live guess calls — against each hit's already-stored
+   * `npc`/`text`, so a re-check produces precisely what a fresh guess would say right now, not a
+   * second implementation of the same rule. A hit whose fresh answer matches what's already stored is
+   * left untouched; only `changed` rows are written. Idempotent and cheap to call repeatedly — as the
+   * wiki cache grows, a later call can still improve a row an earlier one couldn't.
+   */
+  recheckDialogueQuests(deps: Pick<FactionCauseTrackerDeps, "questGiver" | "questDialogue" | "isMob">): {
+    checked: number;
+    changed: number;
+  };
   /** No pending write ever outlives this call — kept for callers that flushed the old debounced JSON
    *  writer at the same moments (quitting, right after a log import), even though every write here is
    *  already synchronous the instant it's made. */
@@ -395,6 +410,15 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
   const deleteFrozen = db.prepare(`DELETE FROM faction_standings_frozen`);
   const deleteHit = db.prepare(`DELETE FROM faction_hits WHERE key = ?`);
   const updateAudit = db.prepare(`UPDATE faction_hits SET admin_audit = ? WHERE key = ?`);
+  const selectDialogueCauses = db.prepare(`
+    SELECT key, caused_by_source as source, caused_by_text as text,
+           caused_by_quests as quests, caused_by_quests_matched as questsMatched
+    FROM faction_hits
+    WHERE caused_by_kind = 'dialogue'
+  `);
+  const updateDialogueQuests = db.prepare(`
+    UPDATE faction_hits SET caused_by_quests = ?, caused_by_quests_matched = ? WHERE key = ?
+  `);
 
   function paramsOf(event: FactionRecord) {
     const c = causeToRow(event.causedBy);
@@ -521,6 +545,30 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
       }
       saver.flush();
       log.debug("cleared", { scope });
+    },
+
+    recheckDialogueQuests(deps) {
+      const rows = selectDialogueCauses.all() as {
+        key: string;
+        source: string;
+        text: string;
+        quests: string | null;
+        questsMatched: number | null;
+      }[];
+      let changed = 0;
+      const run = db.transaction(() => {
+        for (const r of rows) {
+          const fresh = questsForSpeaker(r.source, r.text, deps);
+          const quests = fresh.quests ? JSON.stringify(fresh.quests) : null;
+          const questsMatched = fresh.questsMatched === undefined ? null : fresh.questsMatched ? 1 : 0;
+          if (quests === r.quests && questsMatched === r.questsMatched) continue;
+          updateDialogueQuests.run(quests, questsMatched, r.key);
+          changed++;
+        }
+      });
+      run();
+      if (changed) saver.save();
+      return { checked: rows.length, changed };
     },
 
     flush() {
