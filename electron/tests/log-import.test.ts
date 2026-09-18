@@ -445,13 +445,16 @@ test("a kill logged after its faction line is still caught — this server's own
   }
 });
 
-test("eating a log guesses a faction hit's cause from nearby NPC dialogue when no kill explains it", () => {
+test("eating a log finds no dialogue cause without a wiki to match the speaker against (ADR 0261)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-import-faction-dialogue-"));
   const file = path.join(dir, "eqlog_Kainos_qeynos.txt");
   fs.writeFileSync(
     file,
     [
-      // No kill anywhere in this file — a quest turn-in, not a kill, is what this stands in for.
+      // No kill anywhere in this file — a quest turn-in, not a kill, is what this stands in for. But
+      // `importLog`'s replay tracker (unlike `main.ts`'s live one) wires no `questGiver`/`isMob`
+      // dependency in, so a speaker can never be matched to a quest here — and since ADR 0261, an
+      // unmatched speaker is no cause at all, not a weaker dialogue one.
       "[Fri Jul 17 18:00:08 2026] Vira says, 'Well done, adventurer.'",
       "[Fri Jul 17 18:00:11 2026] Your faction standing with Agents of Mistmoore has been adjusted by 5.",
     ].join("\n"),
@@ -460,12 +463,7 @@ test("eating a log guesses a faction hit's cause from nearby NPC dialogue when n
 
   try {
     importLog(file, stubKillLog(), undefined, undefined, factionLog);
-    assert.deepEqual(factionLog.recent()[0].causedBy, {
-      kind: "dialogue",
-      npc: "Vira",
-      text: "Well done, adventurer.",
-      gapSec: 3,
-    });
+    assert.equal(factionLog.recent()[0].causedBy, undefined);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
