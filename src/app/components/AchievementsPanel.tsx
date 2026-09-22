@@ -35,6 +35,16 @@ export default function AchievementsPanel({ focusId }: { focusId?: string | null
   });
   const { query, setQuery, filtered } = useFuzzyFilter(achievements, achievementSearchText);
 
+  // Arriving here from a completion toast (`focusId`) has to actually show the row it's pointing
+  // at — a search box still holding leftover text from earlier could otherwise filter the just-
+  // completed achievement straight out of `filtered`, and the toast's "View" click would appear to
+  // do nothing.
+  useEffect(() => {
+    if (focusId) setQuery("");
+    // Only when a new focus arrives — clearing on every `query` change would fight the user's typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
+
   return (
     <div className="achievements">
       <AchievementWizard />

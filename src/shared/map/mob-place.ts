@@ -19,7 +19,7 @@
  *
  * Pure and DOM-free; tested in `electron/tests/mob-place.test.ts`.
  */
-import { roamWhy, type MobArea } from "../mob-stats";
+import { mobKey, roamWhy, type MobArea } from "../mob-stats";
 import type { ItemCard } from "../types";
 
 /** What a mob's wiki page states about where it stands. Either half may be missing. */
@@ -155,6 +155,18 @@ export function mobPlace(evidence: PlaceEvidence): MobPlace | undefined {
     };
   }
   return undefined;
+}
+
+/**
+ * The row with the most positions behind it, of however many share a mob's folded name — shared by
+ * `hunt-pins.ts` and `named-pins.ts`, which both place a mob the same way and must agree on which of
+ * two spellings in one zone (ADR 0083 keeps both as separate stored rows on purpose) to trust: the
+ * one that placed it forty times knows better than the one that placed it once.
+ */
+export function bestPlaced<T extends { mob: string; area?: { samples: number } }>(rows: T[], key: string): T | undefined {
+  return rows
+    .filter((r) => mobKey(r.mob) === key)
+    .sort((a, b) => (b.area?.samples ?? 0) - (a.area?.samples ?? 0))[0];
 }
 
 /** Whose kills a measured position rests on, when that isn't simply yours. */

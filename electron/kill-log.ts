@@ -431,7 +431,11 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
   const selectAll = db.prepare(`SELECT * FROM kill_records ORDER BY rowid DESC`);
   const selectRecentKills = db.prepare(`SELECT * FROM kill_records ORDER BY rowid DESC LIMIT ?`);
   const selectDistinctKillZones = db.prepare(`SELECT DISTINCT zone FROM kill_records WHERE zone IS NOT NULL`);
-  const selectDistinctMobs = db.prepare(`SELECT DISTINCT mob FROM kill_records`);
+  // ORDER BY matters here (see `createNameRegistry`'s first-seen-wins rule below): without it,
+  // SQLite's own DISTINCT row order is implementation-defined rather than newest-first, and which
+  // spelling of a mob wins as canonical after a restart would drift with the query plan instead of
+  // staying pinned to the most recent kill record, same as before this store moved to SQLite.
+  const selectDistinctMobs = db.prepare(`SELECT DISTINCT mob FROM kill_records ORDER BY rowid DESC`);
   const countKills = db.prepare(`SELECT COUNT(*) as n FROM kill_records`);
   const countEditedKills = db.prepare(`SELECT COUNT(*) as n FROM kill_records WHERE adminAudit IS NOT NULL`);
   const deleteKillById = db.prepare(`DELETE FROM kill_records WHERE id = ?`);

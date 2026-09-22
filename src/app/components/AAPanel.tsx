@@ -1,6 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
-import { usePersistentState } from "@/lib/usePersistentState";
+import { usePersistentShape } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { countOf } from "@/shared/format";
 import { SPELL_CLASSES } from "@/shared/spell-file";
@@ -31,7 +31,11 @@ const CLASS_ORDER = distinctSorted(SPELL_CLASSES);
  * it literally rather than fuzzily, for the same reason `stances-invocations.ts` does.
  */
 export default function AAPanel() {
-  const [criteria, setCriteria] = usePersistentState(STORAGE_KEYS.aaCriteria, NO_AA_CRITERIA);
+  // `usePersistentShape`, not the plain `usePersistentState` StancesPanel's own criteria started
+  // from: a stored value written before a field existed (the way `class` arrived after `text`) would
+  // otherwise spread the gap straight back into `criteria`, and `conditions` below calling `.trim()`
+  // on a missing `text` would throw instead of just reading as "not set".
+  const [criteria, setCriteria] = usePersistentShape(STORAGE_KEYS.aaCriteria, NO_AA_CRITERIA);
   const shown = filterAA(AA_LIST, criteria);
   const conditions = (criteria.text.trim() ? 1 : 0) + (criteria.class ? 1 : 0);
 

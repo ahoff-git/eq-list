@@ -145,7 +145,14 @@ export function buildHunt(items: HuntInput[], targets: HuntTarget[] = []): HuntZ
       const mob = s.where?.trim();
       if (!mob) continue;
       const hm = rowFor(display, mob);
-      if (!hm.items.some((r) => r.item === it.name)) {
+      // Dedup by the underlying entry (`id`), not the display name alone: two different list
+      // entries sharing a name (the same item wanted by two different quests, `grouping.ts`'s "the
+      // same item can appear under more than one group") almost always share this same drop source
+      // too, since it comes from the item's own wiki page rather than from either entry — matching
+      // on name alone would have kept only the first one's id/needed/obtained and silently dropped
+      // the second entry's row here, before `huntByItem` ever got a chance to tell them apart.
+      const key = it.id ?? it.name;
+      if (!hm.items.some((r) => (r.id ?? r.item) === key)) {
         hm.items.push({ item: it.name, needed: it.needed, obtained: it.obtained, id: it.id });
       }
     }
@@ -257,20 +264,25 @@ export interface HuntItemGroup {
  * item, among its places — which is exactly where the panel puts it.
  */
 export function huntByItem(zones: HuntZone[]): HuntItemGroup[] {
-  const byItem = new Map<string, HuntItemGroup>();
+  // Keyed by the underlying list entry, not the display name alone: `grouping.ts` already treats
+  // two entries sharing a name (the same item wanted by two different quests, say) as two separate
+  // claims with their own needed/obtained/id, and collapsing them here by name would silently keep
+  // only the first one's id — the one `ObtainedStepper`'s +/- writes to — and drop the other's count.
+  const byKey = new Map<string, HuntItemGroup>();
   for (const zone of zones) {
     for (const mob of zone.mobs) {
       for (const it of mob.items) {
-        let group = byItem.get(it.item);
+        const key = it.id ?? it.item;
+        let group = byKey.get(key);
         if (!group)
-          byItem.set(it.item, (group = { item: it.item, needed: it.needed, obtained: it.obtained, id: it.id, places: [] }));
+          byKey.set(key, (group = { item: it.item, needed: it.needed, obtained: it.obtained, id: it.id, places: [] }));
         // One mob can't drop the same item twice, but two zones can hold the same mob name — and
         // those are two camps, so both are worth listing.
         group.places.push({ mob: mob.mob, zone: zone.zone, ...(mob.target ? { target: true } : {}) });
       }
     }
   }
-  return [...byItem.values()].sort((a, b) => a.item.localeCompare(b.item));
+  return [...byKey.values()].sort((a, b) => a.item.localeCompare(b.item));
 }
 
 /**

@@ -331,8 +331,13 @@ export function createPageStore(db: Database, legacyDir: string): PageStore {
 
   const migration = (async () => {
     const startedAt = Date.now();
-    await foldLooseFiles();
+    // Buckets before loose files — the same priority `readLegacy` already reads through in (bucket
+    // checked first, loose file only as the older fallback). Both folds skip a title `alreadyHeld`
+    // rather than compare freshness, so whichever runs first permanently wins a title held by both
+    // generations; folding loose files first would let a stale pre-ADR-0165 copy shadow a newer
+    // ADR-0165 bucket copy of the same page for good, the instant migration settles.
     await foldBuckets();
+    await foldLooseFiles();
     migrating = false;
     log.debug("page cache: legacy fold settled in", `${Date.now() - startedAt}ms`);
   })().catch((e: unknown) => {

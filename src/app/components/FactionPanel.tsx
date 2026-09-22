@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DataGrid,
   type GridColDef,
@@ -424,6 +424,13 @@ function FactionHitsGrid({
     pageSize: scoped ? STANDING_HITS_DEFAULT_PAGE_SIZE : HITS_DEFAULT_PAGE_SIZE,
   });
   const [filterModel, setFilterModel] = useState<GridFilterModel>({ items: [] });
+
+  // The component instance is reused across different Standings drill-downs (no `key` on it), so a
+  // switch from one scoped faction to another has to reset the page itself — otherwise page 3 of a
+  // faction with fewer hits than that renders blank instead of the new faction's first page.
+  useEffect(() => {
+    setPaginationModel((p) => ({ ...p, page: 0 }));
+  }, [faction]);
 
   const query = useMemo<FactionHitsQuery>(
     () => ({

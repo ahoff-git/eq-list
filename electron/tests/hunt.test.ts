@@ -248,6 +248,25 @@ test("by item: one mob name in two zones is two camps, both worth listing", () =
   assert.deepEqual(group.places.map((p) => p.zone).sort(), ["Crushbone", "Runnyeye"]);
 });
 
+test("by item: two different list entries sharing a name stay two rows, each with its own id/counts", () => {
+  // The same item name wanted by two separate quests (`grouping.ts`'s "the same item can appear
+  // under more than one group") — each entry keeps its own id, needed and obtained, the same way
+  // the List tab shows them as two rows rather than folding one's count into the other's.
+  const zones = buildHunt([
+    { name: "Bone Chips", needed: 2, obtained: 0, sources: [drop("a skeleton", "Runnyeye")], id: "quest-a" },
+    { name: "Bone Chips", needed: 5, obtained: 3, sources: [drop("a skeleton", "Runnyeye")], id: "quest-b" },
+  ]);
+  const groups = huntByItem(zones);
+  assert.equal(groups.length, 2, "two distinct entries, not one merged row");
+  assert.deepEqual(
+    groups.map((g) => ({ id: g.id, needed: g.needed, obtained: g.obtained })).sort((a, b) => a.id!.localeCompare(b.id!)),
+    [
+      { id: "quest-a", needed: 2, obtained: 0 },
+      { id: "quest-b", needed: 5, obtained: 3 },
+    ],
+  );
+});
+
 test("by item: a mob you named carries its flag, and keeps a section of its own", () => {
   const zones = buildHunt(
     [item("Fire Emerald", [drop("a goblin", "Runnyeye")])],

@@ -652,6 +652,39 @@ test("a cache of bucket files is folded into the table and the files go", async 
   }
 });
 
+test("a title held by both legacy generations keeps the newer bucket copy, not the older loose one", async () => {
+  // Both folds only ever check `alreadyHeld` — first writer wins, no freshness comparison — so which
+  // generation runs first decides which copy survives for a title present in both. Buckets are the
+  // newer, ADR-0165 format and loose files the older, pre-ADR-0165 one (the same priority `readLegacy`
+  // already reads through in, bucket before loose file), so folding buckets first is what has to keep
+  // this from silently downgrading a page the instant migration settles.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-migrate-both-"));
+  try {
+    fs.writeFileSync(
+      path.join(dir, "Cloth_Cape.json"),
+      JSON.stringify({
+        version: 5,
+        page: { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", sources: [], components: [], rewards: [], fetchedAt: "2020-01-01T00:00:00.000Z", card: { title: "Cloth Cape", lines: ["STALE"] } },
+      }),
+      "utf8",
+    );
+    const pagesDir = path.join(dir, "pages");
+    fs.mkdirSync(pagesDir, { recursive: true });
+    const freshPage = { kind: "item", title: "Cloth Cape", wikiPath: "/Cloth_Cape", sources: [], components: [], rewards: [], fetchedAt: "2026-09-01T00:00:00.000Z", card: { title: "Cloth Cape", lines: ["FRESH"] } };
+    fs.writeFileSync(path.join(pagesDir, "00.jsonl"), `Cloth Cape\t25\t${JSON.stringify(freshPage)}\n`, "utf8");
+
+    const db = openAppDatabase(dir, WIKI_PAGE_MIGRATIONS);
+    const store = createPageStore(db, dir);
+    await store.ready();
+    const settled = store.get("Cloth Cape");
+    assert.equal(settled?.version, 25, "the newer bucket copy's version survives migration");
+    assert.deepEqual(settled?.page.card?.lines, ["FRESH"], "not the older loose file's stale card");
+    db.close();
+  } finally {
+    await cleanup(dir);
+  }
+});
+
 test("a page is readable while the old cache is still being folded in", async () => {
   // Folding walks thousands of files, and the app is live throughout. A lookup that missed until it
   // finished would mean an upgrade launch re-fetching pages it already has. Covers both legacy

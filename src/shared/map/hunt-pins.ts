@@ -21,7 +21,7 @@
 import type { HuntZone } from "../hunt";
 import { mobKey, type MobKnowledge, type MobObservation } from "../mob-stats";
 import { zoneMatches } from "../sources";
-import { mobPlace, type MobPlace, type PlaceSource, type WikiPlace } from "./mob-place";
+import { bestPlaced, mobPlace, type MobPlace, type PlaceSource, type WikiPlace } from "./mob-place";
 
 /** A mob the hunt wants, placed by whichever source can. */
 export interface HuntPin {
@@ -103,18 +103,6 @@ function wantWhy(want: Wanted): string {
   return [want.target ? "On your list" : "", want.items.length ? `drops ${want.items.join(", ")}` : ""]
     .filter(Boolean)
     .join(", ");
-}
-
-/**
- * The row with the most positions behind it, of however many share a mob's folded name.
- *
- * Two spellings of one mob in one zone are two stored rows on purpose (ADR 0083), and the one that
- * placed it forty times knows better than the one that placed it once.
- */
-function bestPlaced<T extends { mob: string; area?: { samples: number } }>(rows: T[], key: string): T | undefined {
-  return rows
-    .filter((r) => mobKey(r.mob) === key)
-    .sort((a, b) => (b.area?.samples ?? 0) - (a.area?.samples ?? 0))[0];
 }
 
 /**

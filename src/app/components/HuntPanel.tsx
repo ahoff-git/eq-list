@@ -426,7 +426,10 @@ function ZoneGroups({
                   {m.items.map((it) => {
                     const truth = truthFor(m.mob, it.item);
                     return (
-                      <span key={it.item} className="hunt-item-wrap">
+                      // Two different list entries can share a display name under one mob now that
+                      // `buildHunt` keeps them as separate rows (see its own dedup-by-id comment) —
+                      // `it.item` alone would hand React the same key twice.
+                      <span key={it.id ?? it.item} className="hunt-item-wrap">
                         <ItemLink
                           title={it.item}
                           className="hunt-item"
@@ -477,7 +480,9 @@ function ItemGroups({
   return (
     <>
       {groups.map((g) => (
-        <div className="hunt-item-group" key={g.item}>
+        // Keyed like `huntByItem` groups its rows: two entries can share a display name (the same
+        // item wanted by two different quests), and `g.item` alone would hand React the same key twice.
+        <div className="hunt-item-group" key={g.id ?? g.item}>
           <div className="hunt-item-head">
             <ItemLink title={g.item} className="hi-name" />
             <ObtainedStepper id={g.id} obtained={g.obtained} needed={g.needed} onAdjust={onAdjust} />

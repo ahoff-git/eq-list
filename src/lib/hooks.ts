@@ -765,6 +765,11 @@ export function useKills(zone: string | undefined): KillRecord[] {
     const a = api();
     if (!a) return;
     let cancelled = false;
+    // A fresh zone starts from nothing — `byId` otherwise still holds the *previous* zone's rows
+    // (React state outlives this effect re-running), which would make the "first reload merges into
+    // empty" invariant below false on every zone change but the very first, and leave the old zone's
+    // kills polluting the new one's until an unrelated bulk-change reload happened to replace them.
+    setById(EMPTY_KILLS_MAP);
     // Reload-only: two overlapping reloads (two bulk-change notices close together) still need the
     // older one's answer discarded, the same reason `useFollowedRead` counts rather than flags. A
     // patch never touches this — it isn't in the business of superseding a reload or another patch.
