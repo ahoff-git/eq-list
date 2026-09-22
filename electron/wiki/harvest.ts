@@ -64,6 +64,14 @@ export const GAP_RANGE = { min: 250, max: 10_000 } as const;
  */
 const ASK_TIMEOUT_MS = 8_000;
 
+/**
+ * How often `askShard` checks whether the answer has landed yet.
+ *
+ * Well under how long a real answer takes, so a peer that responds in a beat is not held to the
+ * full `ASK_TIMEOUT_MS` ceiling — that ceiling exists for the peer who never answers at all.
+ */
+const ASK_POLL_MS = 250;
+
 /** Don't ask the same peer for the same shard again inside this — see `askedRecently`. */
 const ASK_COOLDOWN_MS = 60_000;
 
@@ -427,7 +435,7 @@ export function createHarvester(deps: HarvestDeps): Harvester {
     deps.claim(undefined);
   }
 
-  /** Ask a peer for a shard and give the answer a moment to land. */
+  /** Ask a peer for a shard and poll for the answer, giving up after `ASK_TIMEOUT_MS`. */
   async function askShard(shard: number, peerId: string): Promise<void> {
     if (!state) return;
     asks.set(`${shard}:${peerId}`, deps.now());
@@ -436,10 +444,16 @@ export function createHarvester(deps: HarvestDeps): Harvester {
     const before = held.size;
     deps.askPeer(peerId, shard);
     // No callback and no promise from the transport: the pages arrive through the share hub and land
-    // in the same cache `held` reads. Waiting a beat and looking again is both simpler and more
-    // honest than a delivery receipt that could still be a lie.
-    await deps.wait(ASK_TIMEOUT_MS);
-    recheck(shard);
+    // in the same cache `held` reads. A single flat sleep of the whole timeout used to cost every
+    // shard the full 8 seconds even when the answer was already there — which made the "one message,
+    // about a second" peer path actually the slowest way to fill a catalogue. Polling stops the wait
+    // the moment the shard is complete, and still gives up at the same ceiling for a peer that never
+    // answers.
+    const deadline = deps.now() + ASK_TIMEOUT_MS;
+    do {
+      await deps.wait(ASK_POLL_MS);
+      recheck(shard);
+    } while (!hasShard(mine, shard) && deps.now() < deadline);
     state.fromPeers += Math.max(0, held.size - before);
     title = undefined;
     checkpoint();
