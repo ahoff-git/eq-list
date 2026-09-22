@@ -38,6 +38,16 @@ export const MAP_UI_SCALE = { min: 0.6, max: 2, step: 0.05 } as const;
 export const OVERLAY_OPACITY = { min: 0.2, max: 1, step: 0.05 } as const;
 
 /**
+ * How visible the map's `/loc` trail (the line drawn between your logged positions) may be made.
+ * No floor above 0: unlike the overlay, a trail slid all the way down is meant to disappear — that's
+ * what leaving it on but wanting it out of the way looks like, since the toolbar's clear button
+ * already exists for "throw it away".
+ */
+export const TRAIL_OPACITY = { min: 0, max: 1, step: 0.05 } as const;
+/** Half of the trail's old, fixed-opacity look — the slider's starting point. */
+export const TRAIL_OPACITY_DEFAULT = 0.5;
+
+/**
  * Keep an opacity inside the range above — the floor exists so a window can always be *seen*, and a
  * number that arrived from somewhere other than the slider has no obligation to respect it.
  *

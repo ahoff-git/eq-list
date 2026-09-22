@@ -391,6 +391,8 @@ function createWebApi(): EqlApi {
     search: {
       onPrefill: () => noop,
       show: async () => {},
+      onOpenPage: () => noop,
+      openPage: async () => {},
     },
 
     nav: {

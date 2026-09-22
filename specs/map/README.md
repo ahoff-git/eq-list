@@ -463,6 +463,33 @@ world coordinates, so a map knows where it is. See
   panel narrowed to that mob with its kills ringed, the same answer arriving from another window
   gives (ADR 0104). The 👁 panel switches them off — and switching off stops the wiki lookups too,
   not just the drawing — and that choice persists.
+- **Named spawns** (`src/shared/map/named-pins.ts`, pure — `electron/tests/named-pins.test.ts`) —
+  the map's other self-placed marker: every mob eqlwiki's own `Category:Named Mobs` knows about in
+  the zone on screen, whether or not it's on the hunt list
+  ([ADR 0265](../decisions/0265-named-spawns-mark-themselves-on-the-map.md)). `isNamedMob`
+  (`src/shared/named-mobs.ts`) checks a generated transcription of that category
+  (`scripts/fetch-named-mobs.mjs` → `named-mobs.generated.ts`, the same generated-static-data shape
+  ADR 0262-0264 use); the category is a *spawn-mechanics* tag, not a promise of a unique name — it
+  includes ordinary camp mobs like `A bandit (Eastern Karana)` — and the panel's hover says so.
+
+  Candidates come from the zone's **own wiki page roster** (`WikiPage.npcs`, ADR 0163 — one more
+  `getPage` call, not a new kind of fetch) plus anything named in your own or pooled kills that
+  roster is missing or hasn't caught up to. Each is ranked the same way a hunt pin is — your kills >
+  peers' > the wiki's stated `Location:` (`mobPlace()`) — **without** the hunt pin's zone-match gate
+  on the wiki fallback, since a roster name is already known to be about this zone by construction;
+  the accepted cost is a multi-instance named mob's page occasionally stating a different instance's
+  coordinate. A spot already drawn, by hand or by a hunt pin, isn't drawn twice. Drawn through the
+  same generic pin shape hunt pins proved out, with its own color/glyph and, since the category can
+  put far more of these on one zone than a hunt list ever does, its own **smaller** size
+  (`RenderPin.kind`, `loudStyle` in `MapPanel.tsx`) so a busy camp doesn't disappear under them.
+  Clicking one opens straight to the mob's **wiki page** in the control window, one click — rather
+  than the 📖 panel a hunt pin's click opens, since a named spawn is usually a "what is this"
+  question first. The name is already exact (the wiki's own roster, or the kill log's spelling), so
+  this goes through `api().search.openPage`, not `ItemLink`'s map-window fallback
+  (`api().search.show`, which hands an arbitrary name to a results list to be picked out of — the
+  right answer when a name might need correcting, the wrong one when it's already known). The
+  panel's own **Named spawns** toggle (`showNamedPins`) is on by default and persists, same
+  reasoning as the Hunt toggle beside it.
 - **Peer networking** (opt-in) — the awari **connection lives in the main window**
   (`src/lib/awari/host.tsx`), not here; the main process brokers messages to every
   window (see [ADR 0012](../decisions/0012-awari-connection-owned-by-main-window.md)).

@@ -42,6 +42,8 @@ interface RatedItemGroup {
   item: string;
   needed: number;
   obtained: number;
+  /** The entry behind this count — see `HuntItemRef.id`. */
+  id?: string;
   places: RatedPlace[];
 }
 
@@ -150,6 +152,13 @@ export default function HuntPanel({
     },
     [known, mobLoot],
   );
+
+  // +/- adjusts the same `obtained` the List tab's stepper does — see `HuntItemRef.id` for why it
+  // can be missing (a test-built ref with no entry behind it), in which case there is nothing to
+  // adjust and `ObtainedStepper` renders no buttons.
+  const setObtained = useCallback((id: string, obtained: number, delta: number) => {
+    void api()?.list.update(id, { obtained: Math.max(0, obtained + delta) });
+  }, []);
 
   /** Ask the map to ring this mob's kills (null takes the ask back). */
   /** Ring a mob's kills on an already-open map — the shared gesture (`showOnMap.ts`). */
@@ -346,6 +355,7 @@ export default function HuntPanel({
           truthFor={truthFor}
           emphasize={emphasize}
           matchMob={focus.active && !hiding ? goalMatchMob : undefined}
+          onAdjust={setObtained}
         />
       ) : (
         <ItemGroups
@@ -355,6 +365,7 @@ export default function HuntPanel({
           here={zone}
           emphasize={emphasize}
           matchMob={focus.active && !hiding ? goalMatchMob : undefined}
+          onAdjust={setObtained}
         />
       )}
 
@@ -378,6 +389,7 @@ function ZoneGroups({
   truthFor,
   emphasize,
   matchMob,
+  onAdjust,
 }: {
   zones: HuntZone[];
   here: string | null;
@@ -385,6 +397,8 @@ function ZoneGroups({
   emphasize: (mob: string | null) => void;
   /** Set only in emphasize-only focus mode (ADR 0198) — a row outlines or dims by its answer. */
   matchMob?: (mob: string, items: { item: string }[]) => boolean;
+  /** +/- on an item's obtained count — see `HuntPanel`'s `setObtained`. */
+  onAdjust: (id: string, obtained: number, delta: number) => void;
 }) {
   return (
     <>
@@ -412,17 +426,19 @@ function ZoneGroups({
                   {m.items.map((it) => {
                     const truth = truthFor(m.mob, it.item);
                     return (
-                      <ItemLink
-                        key={it.item}
-                        title={it.item}
-                        className="hunt-item"
-                        label={
-                          <>
-                            {it.item} <span className="muted">{it.obtained}/{it.needed}</span>
-                            <Rate truth={truth} />
-                          </>
-                        }
-                      />
+                      <span key={it.item} className="hunt-item-wrap">
+                        <ItemLink
+                          title={it.item}
+                          className="hunt-item"
+                          label={
+                            <>
+                              {it.item}
+                              <Rate truth={truth} />
+                            </>
+                          }
+                        />
+                        <ObtainedStepper id={it.id} obtained={it.obtained} needed={it.needed} onAdjust={onAdjust} />
+                      </span>
                     );
                   })}
                 </span>
@@ -447,6 +463,7 @@ function ItemGroups({
   here,
   emphasize,
   matchMob,
+  onAdjust,
 }: {
   groups: RatedItemGroup[];
   targets: HuntPlace[];
@@ -454,6 +471,8 @@ function ItemGroups({
   emphasize: (mob: string | null) => void;
   /** Set only in emphasize-only focus mode (ADR 0198) — a row outlines or dims by its answer. */
   matchMob?: (mob: string, items: { item: string }[]) => boolean;
+  /** +/- on an item's obtained count — see `HuntPanel`'s `setObtained`. */
+  onAdjust: (id: string, obtained: number, delta: number) => void;
 }) {
   return (
     <>
@@ -461,9 +480,7 @@ function ItemGroups({
         <div className="hunt-item-group" key={g.item}>
           <div className="hunt-item-head">
             <ItemLink title={g.item} className="hi-name" />
-            <span className="muted small">
-              {g.obtained}/{g.needed}
-            </span>
+            <ObtainedStepper id={g.id} obtained={g.obtained} needed={g.needed} onAdjust={onAdjust} />
           </div>
           {g.places.map((p) => (
             <PlaceRow key={`${p.zone}|${p.mob}`} place={p} here={here} emphasize={emphasize} matchMob={matchMob} matchItems={[{ item: g.item }]}>
@@ -541,6 +558,46 @@ function ZoneName({ zone, here }: { zone: string; here: boolean }) {
       )}
       {here && <span className="badge kind-drop">you are here</span>}
     </>
+  );
+}
+
+/**
+ * The count, and the same +/- the List tab's row wears — one `obtained` however you're reading it.
+ * No entry behind `id` (a test-built `HuntItemRef`) draws the count with no buttons rather than ones
+ * that would silently do nothing.
+ */
+function ObtainedStepper({
+  id,
+  obtained,
+  needed,
+  onAdjust,
+}: {
+  id?: string;
+  obtained: number;
+  needed: number;
+  onAdjust: (id: string, obtained: number, delta: number) => void;
+}) {
+  return (
+    <span className="hunt-obtained">
+      {id && (
+        <button
+          className="btn ghost sm"
+          title="Got one fewer"
+          onClick={() => onAdjust(id, obtained, -1)}
+          disabled={obtained <= 0}
+        >
+          −
+        </button>
+      )}
+      <span className="muted small">
+        {obtained}/{needed}
+      </span>
+      {id && (
+        <button className="btn ghost sm" title="Got one more" onClick={() => onAdjust(id, obtained, +1)}>
+          +
+        </button>
+      )}
+    </span>
   );
 }
 

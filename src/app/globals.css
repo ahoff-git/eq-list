@@ -736,6 +736,10 @@ button {
   color: var(--text-dim);
 }
 .hunt-item { color: var(--text); }
+/* One item within a mob's row: its name, then the same +/- the List tab wears. */
+.hunt-item-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.hunt-obtained { display: inline-flex; align-items: center; gap: 2px; }
+.hunt-obtained .muted { font-variant-numeric: tabular-nums; }
 /* A target is here because you named it, not because it drops something — say so, quietly. */
 .hm-target {
   font-size: 11px;
@@ -1085,6 +1089,10 @@ button {
   background: var(--bg-raised);
 }
 .achv-row.completed { border-color: var(--good); }
+/* Arrived here from a completion toast: mark the row it was about (ADR 0143), the same left stripe
+   `.peer-row.focused` uses rather than a background, so it reads as "this one" and not a different
+   kind of row. */
+.achv-row.focused { box-shadow: inset 2px 0 0 var(--accent); }
 .achv-head {
   display: flex;
   align-items: center;
@@ -1345,6 +1353,9 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* "won't stack" — unlike "permanent", this *is* a state worth noticing (the tracker believes two
+   mutually-exclusive buffs are both up), so it earns the same warn colour `.chk-state.warn` uses. */
+.buff-tag.conflict { color: var(--accent); border-color: var(--accent-dim); }
 .buff-check {
   display: flex;
   align-items: center;
@@ -1397,6 +1408,26 @@ button {
 /* The drawer spans every column, and columns 1–4 are already taken on this row, so it lands on an
    implicit row of its own underneath — the grid equivalent of the old `flex-basis: 100%` trick. */
 .buff-known-row > .style-editor { grid-column: 1 / -1; }
+
+/* ── AAs (AAPanel) ─────────────────────────────────────────────── */
+/* Modeled on .buff-row/.buff-row-body above, not .buff-known-list's grid/subgrid: that grid exists to
+   line up several short, similar-length facts and controls across uniform rows. An AA row is a short
+   name+Ranks+Cost line plus one long, wildly variable-length Description paragraph — nothing to align
+   into columns — so it just needs the same flex-wrap-and-let-one-line-take-100%-width trick .buff-maybe
+   already uses for a fade's alternatives line. */
+.aa-category { margin-top: 16px; }
+.aa-row {
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+.aa-row-body {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.aa-name { font-weight: 600; }
+.aa-description { flex-basis: 100%; }
 
 /* ── buffs you are missing, drawn over the game ───────────────── */
 /* Same anchoring as the pinned countdowns, and for the same reason: a standing reminder belongs in
@@ -1742,6 +1773,22 @@ button {
 .ru-steps { margin: 0; padding-left: 20px; }
 .ru-group { display: flex; flex-direction: column; gap: 2px; }
 .ru-hits { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+/* ── Stances & Invocations (`StancesPanel`) ────────────────────── */
+/* One row per ability — plain rows, not a 16-column matrix: the class chips *are* the matrix's
+   columns, just written out per row instead of laid across a table too wide for the panel. */
+.stance-list { display: flex; flex-direction: column; gap: 4px; }
+.stance-row { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+.stance-row-head { align-items: center; gap: 8px; }
+.stance-name { flex: none; }
+.stance-classes { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Dim until it matches the class filter, the same "this is here, but not what you asked for" the
+   Items tab's dead facet options use — a class picked in the filter lights up its own chip on every
+   row still shown, so a combination reads at a glance without cross-checking the picker above. */
+.badge.stance-class { opacity: 0.5; }
+.badge.stance-class.on { opacity: 1; color: var(--accent); border-color: var(--accent-dim); }
+.stance-desc { margin: 4px 0 0; }
+.stance-desc + .stance-desc { margin-top: 6px; }
 
 /* ── where a logged thing happened (`ZoneTag`) ────────────────── */
 /* One appearance everywhere: the place in the running text colour, the difficulty trailing it as a

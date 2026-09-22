@@ -175,14 +175,14 @@ export function createAchievementTracker({
       if (isComplete(definition, progress)) {
         progress.resultAnnounced = true;
         progress.completedAt = new Date(at).toISOString();
-        announce({ kind: "completed", title: definition.title, done: progress.done.length, total: definition.criteria.length }, at);
+        announce({ kind: "completed", id: definition.id, title: definition.title, done: progress.done.length, total: definition.criteria.length }, at);
         break;
       }
       const criterion = nextUnannouncedCriterion(definition, progress);
       if (!criterion) break;
       progress.announcedCriteria = [...progress.announcedCriteria, criterion.id];
       announce(
-        { kind: "criterion", title: definition.title, criterionLabel: criterion.label, done: progress.done.length, total: definition.criteria.length },
+        { kind: "criterion", id: definition.id, title: definition.title, criterionLabel: criterion.label, done: progress.done.length, total: definition.criteria.length },
         at,
       );
     }
@@ -204,6 +204,7 @@ export function createAchievementTracker({
     announce(
       {
         kind: "criterion",
+        id: definition.id,
         title: definition.title,
         criterionLabel: criterion.label,
         done: progress?.done.length ?? 0,

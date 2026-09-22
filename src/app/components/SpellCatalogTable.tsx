@@ -4,6 +4,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import ItemLink from "./ItemLink";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "./dataGridDefaults";
 import { useGridSort } from "@/lib/useGridSort";
+import { buffLinesFor } from "@/shared/buff-lines";
 import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spell-search";
 import type { Sort } from "@/shared/sorting";
 
@@ -125,6 +126,15 @@ export default function SpellCatalogTable({
         sortable: false,
         cellClassName: "muted small",
         valueGetter: (_v, row) => classesOf(row) || "—",
+      },
+      {
+        field: "buffLine",
+        headerName: "Buff Line",
+        description: "Spells sharing a line can't be up at once — eqlwiki's own Buff Lines guide, ADR 0264",
+        flex: 2,
+        sortable: false,
+        cellClassName: "muted small",
+        valueGetter: (_v, row) => buffLinesFor(row.spell.title).map((l) => l.label).join(", ") || "—",
       },
       {
         field: "outOfEra",

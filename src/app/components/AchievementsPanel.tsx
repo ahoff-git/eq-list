@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAchievements, useLogVocabulary } from "@/lib/hooks";
 import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
@@ -25,7 +25,7 @@ const FILTER_ABOVE = 15;
  * tick by hand. Every row's checkbox works regardless of how a criterion is satisfied — nothing here
  * is verification, only an optional shortcut for the ones that can check themselves.
  */
-export default function AchievementsPanel() {
+export default function AchievementsPanel({ focusId }: { focusId?: string | null }) {
   const view = useAchievements();
   const achievements = [...view.achievements].sort((a, b) => {
     const aDone = a.total > 0 && a.done.length >= a.total;
@@ -52,21 +52,32 @@ export default function AchievementsPanel() {
       ) : query.trim() && filtered.length === 0 ? (
         <Empty title="No achievement matches that." hint="Search checks the title and category — try a shorter or different spelling." />
       ) : (
-        filtered.map((a) => <AchievementRow key={a.definition.id} achievement={a} />)
+        filtered.map((a) => (
+          <AchievementRow key={a.definition.id} achievement={a} focused={a.definition.id === focusId} />
+        ))
       )}
     </div>
   );
 }
 
-function AchievementRow({ achievement }: { achievement: RunningAchievement }) {
+function AchievementRow({ achievement, focused }: { achievement: RunningAchievement; focused?: boolean }) {
   const { definition, done, tally, total, completedAt } = achievement;
   const [open, setOpen] = useState(false);
   const { query: filter, setQuery: setFilter, filtered: visible } = useFuzzyFilter(definition.criteria, (c) => c.label);
   const doneSet = new Set(done);
   const complete = total > 0 && done.length >= total;
+  const row = useRef<HTMLDivElement>(null);
+
+  // Arrived here from a completion toast: bring the row into view and open it, the same way a
+  // notice-picked peer row does (ADR 0143) — "which one was it?" wants the criteria on screen too.
+  useEffect(() => {
+    if (!focused) return;
+    row.current?.scrollIntoView({ block: "nearest" });
+    setOpen(true);
+  }, [focused]);
 
   return (
-    <div className={`achv-row ${complete ? "completed" : ""}`}>
+    <div className={`achv-row ${complete ? "completed" : ""}${focused ? " focused" : ""}`} ref={row}>
       <button className="achv-head" onClick={() => setOpen((o) => !o)} title={definition.description}>
         <span className="achv-icon">{complete ? "🏆" : "▸"}</span>
         <span className="achv-title">{definition.title}</span>

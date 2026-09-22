@@ -61,6 +61,16 @@ export function pinType(kind: string): PinType {
  */
 export const HUNT_PIN: Omit<PinType, "key"> = { label: "Hunt", color: "#ff8c42", glyph: "◎" };
 
+/**
+ * How a **named pin** is drawn — the map's other self-placed marker, for every mob eqlwiki's own
+ * `Category:Named Mobs` knows about here, whether or not it's on the hunt list (`named-pins.ts`).
+ *
+ * Not a `PinKind` for the same reason `HUNT_PIN` isn't, and a different glyph/color from it: the
+ * two can appear on the same map for different mobs, and a reader should tell at a glance which
+ * kind of mark they're looking at without opening the hover.
+ */
+export const NAMED_PIN: Omit<PinType, "key"> = { label: "Named", color: "#ffd54a", glyph: "☆" };
+
 /** The first two numbers in the text, comma-separated — everything `parsePastedLoc` needs. */
 const PASTED_LOC_RE = /(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/;
 

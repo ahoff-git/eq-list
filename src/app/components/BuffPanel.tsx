@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
 import { alternativesLabel, heldMs, targetLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
+import { buffLinesFor, shareBuffLine } from "@/shared/buff-lines";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
 import { CheckField, Empty, PickField } from "./ui";
@@ -11,7 +12,13 @@ import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
 import SearchField from "./SearchField";
 import { BUFF_STYLE_ID } from "@/shared/alert-styles";
 import { SPELL_CLASSES } from "@/shared/spell-file";
+import { distinctSorted } from "@/shared/sorting";
 import type { BuffInstance, KnownBuff } from "@/shared/types";
+
+/** The class picker's options, alphabetical rather than `SPELL_CLASSES`'s file-column order (that
+ *  order matters for parsing the spell file and must stay put there) — the same order every other
+ *  class picker in the app offers. Computed once, at module load. */
+const CLASS_PICKER_OPTIONS = distinctSorted(SPELL_CLASSES);
 
 /**
  * Buffs — what you're keeping up, what has dropped off, and which ones you want to hear about.
@@ -88,6 +95,18 @@ export default function BuffPanel() {
   const several = new Set(
     rows.filter((b, i) => rows.some((o, j) => j !== i && o.key === b.key && o.target === b.target)).map((b) => `${b.key} ${b.target}`),
   );
+  // Two *different* buffs up on the same target at once, sharing a line eqlwiki's Buff Lines guide
+  // says can't stack — the tracker only reports what the log said went up, never what actually won,
+  // so this is the same kind of doubt `alsoCouldBe` already admits: one of these two rows is almost
+  // certainly stale. `view.active` is small (a buff limit's worth), so the pairwise check costs
+  // nothing worth avoiding.
+  const conflicts = new Map<string, string[]>();
+  for (const buff of view.active) {
+    const others = view.active
+      .filter((o) => o.target === buff.target && o.key !== buff.key && shareBuffLine(buff.spell, o.spell))
+      .map((o) => o.spell);
+    if (others.length) conflicts.set(`${buff.key} ${buff.target}#${buff.slot}`, others);
+  }
   // Both the banner and the on-screen list ride the alert overlay window, which only exists while
   // alerts are on — so tracking can be working perfectly and produce nothing over the game. Saying
   // so is the same courtesy the scoreboard's celebration pays (ADR 0120's note on `HighScoreSettings`):
@@ -168,6 +187,7 @@ export default function BuffPanel() {
               buff={buff}
               now={now}
               several={several.has(`${buff.key} ${buff.target}`)}
+              conflictsWith={conflicts.get(`${buff.key} ${buff.target}#${buff.slot}`)}
             />
           ))}
         </section>
@@ -181,7 +201,7 @@ export default function BuffPanel() {
               value={classFilter}
               onChange={setClassFilter}
               blank="all classes"
-              options={SPELL_CLASSES.map((c) => ({ value: c, label: c }))}
+              options={CLASS_PICKER_OPTIONS.map((c) => ({ value: c, label: c }))}
               title="Show only spells this class can cast. One the game file couldn't classify always stays visible"
             />
             <button
@@ -286,8 +306,10 @@ function LapsedRow({ buff, now, several }: { buff: BuffInstance; now: number; se
   );
 }
 
-/** One buff that is up. Quiet by design: it is here to be scanned, not read. */
-function ActiveRow({ buff, now, several }: { buff: BuffInstance; now: number; several: boolean }) {
+/** One buff that is up. Quiet by design: it is here to be scanned, not read — except when it
+ *  shares a buff line with another row also up on the same target, which is worth interrupting
+ *  for since it means one of the two is doing nothing. */
+function ActiveRow({ buff, now, several, conflictsWith }: { buff: BuffInstance; now: number; several: boolean; conflictsWith?: string[] }) {
   return (
     <div className="buff-row active">
       <span className="buff-mark" aria-hidden>
@@ -297,6 +319,14 @@ function ActiveRow({ buff, now, several }: { buff: BuffInstance; now: number; se
         <span className="buff-name">
           {buff.spell}
           {several && <em className="spawn-slot"> #{buff.slot}</em>}
+          {conflictsWith?.length ? (
+            <em
+              className="buff-tag conflict"
+              title={`Shares a buff line with ${conflictsWith.join(", ")} — the game only keeps the strongest, so one of these is likely stale`}
+            >
+              won&rsquo;t stack
+            </em>
+          ) : null}
         </span>
         <span className="buff-target">{targetSentence(buff)}</span>
         <span className="buff-note muted small">
@@ -320,6 +350,11 @@ function KnownRow({ known }: { known: KnownBuff }) {
   // Which look its banner wears is a *standing* choice like the two checkboxes beside it, so the
   // editor opens under the row rather than sending the player to another tab to make it.
   const [styling, setStyling] = useState(false);
+  // Reference fact, not a state of the row — same footing as `permanent`/`detrimental` below,
+  // shown whether or not this spell is currently up.
+  const buffLine = buffLinesFor(known.spell)
+    .map((l) => l.label)
+    .join(", ");
   return (
     <div className={`buff-known-row ${known.tracked ? "" : "untracked"}`}>
       <CheckField
@@ -340,6 +375,11 @@ function KnownRow({ known }: { known: KnownBuff }) {
         {known.permanent && (
           <em className="buff-tag" title="The game's own spell file says this one has no duration — it only ends if it's dispelled or you die">
             permanent
+          </em>
+        )}
+        {buffLine && (
+          <em className="buff-tag" title="eqlwiki's Buff Lines guide: spells sharing this line can't be up at once — only the strongest applies">
+            {buffLine}
           </em>
         )}
         {known.mine ? "yours" : "cast on you"}

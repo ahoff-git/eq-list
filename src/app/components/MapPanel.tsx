@@ -11,6 +11,7 @@ import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
 import { localPoint } from "@/lib/screen";
 import { mobKey } from "@/shared/mob-stats";
 import { locText } from "@/shared/format";
+import { TRAIL_OPACITY_DEFAULT } from "@/shared/constants";
 import type { CanvasSize, Loc, MapView, Point, Zone } from "@/shared/map/types";
 import type { KillEmphasis, TravelSurvey } from "@/shared/types";
 
@@ -77,6 +78,13 @@ export interface RenderPin {
    * kill landed on one point. Ignored on a pin that isn't `loud`.
    */
   spread?: number;
+  /**
+   * Which self-placed marker this is, when it's one of those — unset for a hand-placed or peer pin,
+   * which draw and click exactly as they always have. `"named"` draws smaller than `"hunt"`
+   * (`loudStyle`, ADR 0265's markers can be far more numerous than a hunt list ever is) and clicks
+   * to the mob's wiki page rather than the 📖 panel.
+   */
+  kind?: "hunt" | "named";
 }
 
 /**
@@ -231,6 +239,29 @@ const MAP_COLORS = {
  */
 const LOUD_PIN = { halo: 11, ring: 11, ringWidth: 2, glyph: "17px sans-serif", title: "bold 12px sans-serif", minRing: 5, statedRing: 15 } as const;
 
+/**
+ * The same shape as `LOUD_PIN`, sized down for a named spawn (`RenderPin.kind === "named"`).
+ * eqlwiki's Named Mobs category is broad — thousands of entries, and a busy zone can carry far
+ * more of these markers than a hunt list ever puts on screen — so full hunt-pin size would swamp
+ * the map. Same visual language, smaller footprint.
+ */
+const NAMED_PIN_STYLE = { halo: 7, ring: 7, ringWidth: 1.5, glyph: "13px sans-serif", title: "10px sans-serif", minRing: 4, statedRing: 10 } as const;
+
+interface LoudPinStyle {
+  halo: number;
+  ring: number;
+  ringWidth: number;
+  glyph: string;
+  title: string;
+  minRing: number;
+  statedRing: number;
+}
+
+/** Which size a loud pin draws at — every `LOUD_PIN.*` read in the draw functions goes through this. */
+function loudStyle(pin: RenderPin): LoudPinStyle {
+  return pin.kind === "named" ? NAMED_PIN_STYLE : LOUD_PIN;
+}
+
 /** How big a travel node is drawn. Bigger than a POI dot: while navigating, this is the subject. */
 const GRAPH_NODE = { border: 6, place: 5 } as const;
 
@@ -240,6 +271,7 @@ export default function MapPanel({
   kills = [],
   showKillConfidence = true,
   trail = [],
+  trailOpacity = TRAIL_OPACITY_DEFAULT,
   peers = [],
   pings = [],
   pins = [],
@@ -268,6 +300,8 @@ export default function MapPanel({
   showKillConfidence?: boolean;
   /** The `/loc` trail, oldest→newest (owned by the parent so it can be cleared). */
   trail?: { y: number; x: number; z: number }[];
+  /** How visible the trail is drawn (`TRAIL_OPACITY`) — defaults to half strength. */
+  trailOpacity?: number;
   /** Peers' live locations. `name` is theirs, for the hover label. */
   peers?: { y: number; x: number; name?: string }[];
   /** Peer pings; `at` (ms) is when it arrived, which drives the drop-in animation. */
@@ -928,6 +962,9 @@ export default function MapPanel({
      */
     function drawTrail(ctx: CanvasRenderingContext2D, projection: MapProjection): void {
       const farDist = Math.hypot(projection.image.width, projection.image.height) * FAR_TRAIL_FRACTION;
+      // The slider scales both looks alike, so a far hop stays the fainter of the two
+      // whatever the trail as a whole is set to.
+      ctx.globalAlpha = trailOpacity;
       for (let i = 1; i < trail.length; i++) {
         const prev = trail[i - 1];
         const here = trail[i];
@@ -943,6 +980,7 @@ export default function MapPanel({
           drawLine(a.x, a.y, b.x, b.y, MAP_COLORS.trail, 2, ctx);
         }
     }
+      ctx.globalAlpha = 1;
     }
 
     /** Everyone else sharing a position, then you on top of them. */
@@ -1010,8 +1048,9 @@ export default function MapPanel({
         const p = toScreen(pin);
         if (!p) continue;
         const measured = pin.spread !== undefined;
-        const r = measured ? ringRadius(pin, p) : LOUD_PIN.statedRing;
-        if (measured && r < LOUD_PIN.minRing) continue; // tighter than the marker: nothing to say
+        const style = loudStyle(pin);
+        const r = measured ? ringRadius(pin, p) : style.statedRing;
+        if (measured && r < style.minRing) continue; // tighter than the marker: nothing to say
         ctx.save();
         ctx.globalAlpha = 0.35;
         ctx.strokeStyle = pin.color;
@@ -1030,25 +1069,26 @@ export default function MapPanel({
       for (const pin of pins) {
         const p = toScreen(pin);
         if (!p) continue;
+        const style = loudStyle(pin);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, pin.loud ? LOUD_PIN.halo : 8, 0, 2 * Math.PI);
+        ctx.arc(p.x, p.y, pin.loud ? style.halo : 8, 0, 2 * Math.PI);
         ctx.fillStyle = MAP_COLORS.pinHalo;
         ctx.fill();
         if (pin.loud) {
           ctx.strokeStyle = pin.color;
-          ctx.lineWidth = LOUD_PIN.ringWidth;
+          ctx.lineWidth = style.ringWidth;
           ctx.beginPath();
-          ctx.arc(p.x, p.y, LOUD_PIN.ring, 0, 2 * Math.PI);
+          ctx.arc(p.x, p.y, style.ring, 0, 2 * Math.PI);
           ctx.stroke();
         }
         ctx.textBaseline = "middle";
-        ctx.font = pin.loud ? LOUD_PIN.glyph : "14px sans-serif";
+        ctx.font = pin.loud ? style.glyph : "14px sans-serif";
         ctx.fillStyle = pin.color;
         ctx.fillText(pin.glyph, p.x, p.y);
         if (pin.title) {
-          const below = p.y + (pin.loud ? LOUD_PIN.ring + 3 : 9);
+          const below = p.y + (pin.loud ? style.ring + 3 : 9);
           ctx.textBaseline = "top";
-          ctx.font = pin.loud ? LOUD_PIN.title : "11px sans-serif";
+          ctx.font = pin.loud ? style.title : "11px sans-serif";
           ctx.lineWidth = 3;
           ctx.strokeStyle = MAP_COLORS.pinTitleOutline;
           ctx.strokeText(pin.title, p.x, below);
@@ -1062,7 +1102,7 @@ export default function MapPanel({
     ctx.textBaseline = "alphabetic";
     }
   }, [
-    loc, trail, peers, pings, pins, kills, showKillConfidence, canvasSize, redrawKey,
+    loc, trail, trailOpacity, peers, pings, pins, kills, showKillConfidence, canvasSize, redrawKey,
     showGrid, toScreen, frame, view, applyView, vector, visiblePois, picking, emphasized, projection, survey,
     routeLegs, highlight,
   ]);

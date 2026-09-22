@@ -16,6 +16,7 @@ import {
   useWatcherStatus,
   useWindowOpacity,
   useZoneMobs,
+  useZoneNpcRoster,
 } from "@/lib/hooks";
 import { usePersistentShape, usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -34,8 +35,9 @@ import { findZone, mapZoneName, onLayer, sortZones } from "@/shared/map/zones";
 import { samePlace } from "@/shared/zones/place";
 import { zoneDifficultyLabel } from "@/shared/names";
 import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
-import { HUNT_PIN, PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
+import { HUNT_PIN, NAMED_PIN, PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import { huntPins, unplacedHuntMobs } from "@/shared/map/hunt-pins";
+import { namedPins, unplacedNamedMobs } from "@/shared/map/named-pins";
 import MapFilters from "../components/MapFilters";
 import MapTitlebar from "../components/MapTitlebar";
 import MapToolbar from "../components/MapToolbar";
@@ -48,7 +50,7 @@ import MapTravelAside from "../components/MapTravelAside";
 import { useTravelSurvey } from "@/lib/map/useTravelSurvey";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, isPlottable } from "@/shared/kill-confidence";
-import { MAP_UI_SCALE } from "@/shared/constants";
+import { MAP_UI_SCALE, TRAIL_OPACITY_DEFAULT } from "@/shared/constants";
 import type { KillEmphasis, MapFocus } from "@/shared/types";
 
 import { clock } from "@/shared/format";
@@ -194,6 +196,9 @@ export default function MapWindow() {
   // The `/loc` trail (the line drawn between your logged positions), owned here so the
   // toolbar can clear it; it also resets itself when you zone.
   const trail = usePlayerTrail(200);
+  // How visible that trail is drawn — a standing preference like the rest of the 👁 panel's
+  // knobs, not a per-session filter, so it's persisted rather than reset on reopen.
+  const [trailOpacity, setTrailOpacity] = usePersistentState(STORAGE_KEYS.mapTrailOpacity, TRAIL_OPACITY_DEFAULT);
 
   // A clickable location elsewhere (e.g. a mob's zone or coordinate) asks us to view
   // a zone — and, when a coordinate came along, drop a marker pin there (deduped).
@@ -295,6 +300,12 @@ export default function MapWindow() {
    * standing answer rather than a filter you set to look at one thing.
    */
   const [showHuntPins, setShowHuntPins] = usePersistentState(STORAGE_KEYS.mapHuntPins, true);
+  /**
+   * Whether the map marks every mob eqlwiki's own Named Mobs category knows about here, whether or
+   * not it's on the hunt list (ADR 0265). Same default and same persistence reasoning as
+   * `showHuntPins`, just for the map's other self-placed marker.
+   */
+  const [showNamedPins, setShowNamedPins] = usePersistentState(STORAGE_KEYS.mapNamedPins, true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   const [killsOpen, setKillsOpen] = usePersistentState(STORAGE_KEYS.mapKillsOpen, false);
@@ -487,6 +498,36 @@ export default function MapWindow() {
     [showHuntPins, huntZones, zoneKey, zoneMobs, wikiPlaces, pins, zoneMatch],
   );
 
+  /**
+   * **Every named mob eqlwiki knows about here, whether or not it's on the hunt list** (ADR 0265).
+   *
+   * The zone's own wiki page states its NPC roster (ADR 0163) — the same page a "View on Project
+   * 1999" reader would open — so this is one more `getPage` alongside every other title this window
+   * already asks for, not a new kind of fetch.
+   */
+  const roster = useZoneNpcRoster(showNamedPins ? zoneKey : undefined);
+  const unplacedNamed = useMemo(
+    () => (showNamedPins ? unplacedNamedMobs({ npcs: roster, ...zoneMobs }) : []),
+    [showNamedPins, roster, zoneMobs],
+  );
+  const namedWikiPlaces = useMobWikiPlaces(unplacedNamed);
+  /**
+   * A spot already drawn — by hand, or by a hunt pin above — isn't marked twice: a mob that's both
+   * hunted and named is one mob, and should read as one mark.
+   */
+  const namedMarks = useMemo(
+    () =>
+      showNamedPins
+        ? namedPins({
+            npcs: roster,
+            ...zoneMobs,
+            wiki: namedWikiPlaces,
+            placed: [...pins.filter((p) => zoneMatch(p.zone)), ...huntMarks],
+          })
+        : [],
+    [showNamedPins, roster, zoneMobs, namedWikiPlaces, pins, zoneMatch, huntMarks],
+  );
+
   // Peers/pings/pins filtered to the viewed zone (and pins to the visible kinds).
   // Peers are zone-wide on purpose: a `/loc` doesn't say which floor they're on, so
   // hiding them per layer would just lose people. A ping carries the layer its sender
@@ -558,11 +599,31 @@ export default function MapWindow() {
         // how rough the position is drawn around it (ADR 0142).
         loud: true,
         spread: h.spread,
+        kind: "hunt",
       }),
     );
-    return [...local, ...peer, ...hunt];
+    // Every named mob eqlwiki knows about here — its own color/glyph/size, and its own click
+    // behavior (opens the mob's wiki page, not the 📖 panel), are what `kind: "named"` drives.
+    const named = namedMarks.map(
+      (n): RenderPin => ({
+        id: n.id,
+        y: n.y,
+        x: n.x,
+        color: NAMED_PIN.color,
+        glyph: NAMED_PIN.glyph,
+        label: NAMED_PIN.label,
+        title: n.title,
+        note: n.note,
+        mine: false,
+        mob: n.mob,
+        loud: true,
+        spread: n.spread,
+        kind: "named",
+      }),
+    );
+    return [...local, ...peer, ...hunt, ...named];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden, huntMarks]);
+  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden, huntMarks, namedMarks]);
 
   function placePin(eq: { y: number; x: number }, clientX: number, clientY: number) {
     if (!heldPin || !zoneKey) return;
@@ -736,9 +797,14 @@ export default function MapWindow() {
             onHeightFollowRange={setHeightFollowRange}
             hiddenPinKinds={pinKinds.hidden}
             onPinKind={pinKinds.setVisible}
+            trailOpacity={trailOpacity}
+            onTrailOpacity={setTrailOpacity}
             huntPins={huntMarks.length}
             showHuntPins={showHuntPins}
             onHuntPins={setShowHuntPins}
+            namedPins={namedMarks.length}
+            showNamedPins={showNamedPins}
+            onNamedPins={setShowNamedPins}
             poiGroups={poiGroups}
             hiddenPoiKinds={poiKinds.hidden}
             onPoiKinds={poiKinds.setVisible}
@@ -764,6 +830,7 @@ export default function MapWindow() {
             kills={renderKills}
             showKillConfidence={showKillConfidence}
             trail={trail.points}
+            trailOpacity={trailOpacity}
             peers={peers}
             pings={pings}
             pins={renderPins}
@@ -772,10 +839,15 @@ export default function MapWindow() {
             onPing={connected && zoneKey ? (eq) => room.sendPing(eq, zoneKey, viewLayer) : undefined}
             onPinClick={(pin, x, y) => {
               if (pin.mine) return setSelected({ id: pin.id, x, y });
+              if (!pin.mob) return;
+              // A named spawn is usually "what is this" rather than "what do I know about camping
+              // it" — so it opens straight to the mob's wiki page, one click. The name is already
+              // exact (the wiki's own roster, or the kill log's spelling), so unlike `ItemLink`'s
+              // map-window fallback there's no results list it needs picking out of.
+              if (pin.kind === "named") return void api()?.search.openPage(pin.mob);
               // A hunt pin isn't editable, but it is *about* something: it answers with the evidence
               // behind it, exactly as arriving from another window does (ADR 0104) — the 📖 panel
               // narrowed to that mob, and its kills ringed on the map.
-              if (!pin.mob) return;
               setKillFilters((f) => ({ ...f, mob: pin.mob! }));
               setMobsOpen(true);
               setEmphasis({ mobs: [pin.mob] });

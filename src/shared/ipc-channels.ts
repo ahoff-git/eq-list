@@ -167,6 +167,7 @@ export const CH = {
   lookupOpen: "lookup:open",
   lookupReady: "lookup:ready", // the selector reporting it has mounted and is listening for a drag
   searchShow: "search:show",
+  searchOpenPage: "search:openPage", // a caller that already knows the exact title — skip the results list
   lookupCancel: "lookup:cancel",
   appInfo: "app:info",
   appOpenLog: "app:openLog",
@@ -300,6 +301,7 @@ export const CH = {
   xpChanged: "evt:xp",
   hpChanged: "evt:hp",
   searchPrefill: "evt:searchPrefill",
+  searchOpenPageRequest: "evt:searchOpenPage",
   navCommand: "evt:navCommand",
   mapViewZone: "evt:mapViewZone",
   mapEmphasis: "evt:mapEmphasis",

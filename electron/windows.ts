@@ -27,7 +27,7 @@ import {
   windowToggles,
   type Bounds,
 } from "./window-state";
-import { CH } from "../src/shared/ipc-channels";
+import { CH, type Channel } from "../src/shared/ipc-channels";
 import { windowOpacity } from "../src/shared/constants";
 import { once } from "../src/shared/once";
 import { createLogger } from "../src/shared/logging";
@@ -891,19 +891,38 @@ export function createLookupWindow(bounds: { x: number; y: number; width: number
 }
 
 /**
- * Surface `text` in the control window's Search box, creating/showing that window first.
- * The one path anything outside the control window uses to hand it something to look up —
- * the screengrab OCR result, and a clicked name in the map window (which has no search of
- * its own). Waits for the load when the window was only just created, since a send to a
- * loading frame is dropped.
+ * Bring the control window up front and hand it a payload over `channel`, waiting for the load
+ * when the window was only just created — a send to a loading frame is dropped. The shared half of
+ * `showInSearch`/`openPageInSearch`, which differ only in which channel and what a search-less
+ * caller means by the text it's handing over.
  */
-export function showInSearch(text: string): void {
+function sendToControlWindow(channel: Channel, text: string): void {
   const win = getMainWindow() ?? createMainWindow();
   win.show();
   win.focus();
-  const send = () => win.webContents.send(CH.searchPrefill, text);
+  const send = () => win.webContents.send(channel, text);
   if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
   else send();
+}
+
+/**
+ * Surface `text` in the control window's Search box, creating/showing that window first.
+ * The one path anything outside the control window uses to hand it something to look up —
+ * the screengrab OCR result, and a name whose exact page isn't known (a search's answer might
+ * need correcting or picking from a few, per ADR 0081).
+ */
+export function showInSearch(text: string): void {
+  sendToControlWindow(CH.searchPrefill, text);
+}
+
+/**
+ * Open `title`'s wiki page directly in the control window — no results list in between. For a
+ * caller that already holds the exact title a page is filed under (a mob eqlwiki itself named, a
+ * kill log's own spelling of one) and asking it to go through Search first would just be a second
+ * click to reach the one result it was always going to be.
+ */
+export function openPageInSearch(title: string): void {
+  sendToControlWindow(CH.searchOpenPageRequest, title);
 }
 
 /**

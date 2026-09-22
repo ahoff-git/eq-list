@@ -296,6 +296,10 @@ finished, so a number is claimed before a second author can reach for it.
 - [0259: A stored quest guess can be rechecked in place](./0259-a-stored-quest-guess-can-be-rechecked-in-place.md)
 - [0260: A paged grid's filter allow-list can widen past its sort one](./0260-a-paged-grids-filter-allow-list-can-widen-past-its-sort.md)
 - [0261: An unmatched speaker is no cause at all](./0261-an-unmatched-speaker-is-no-cause-at-all.md)
+- [0262: Stances and invocations are generated static data](./0262-stances-and-invocations-are-generated-static-data.md)
+- [0263: The Alternate Advancement page is generated static data](./0263-the-alternate-advancement-page-is-generated-static-data.md)
+- [0264: Buff-line data is generated static data](./0264-buff-line-data-is-generated-static-data.md)
+- [0265: Named spawns mark themselves on the map](./0265-named-spawns-mark-themselves-on-the-map.md)
 
 ## Open Questions
 

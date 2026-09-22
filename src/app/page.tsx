@@ -5,6 +5,8 @@ import { openMapWindow } from "@/lib/showOnMap";
 import SearchPanel from "./components/SearchPanel";
 import ItemSearchPanel from "./components/ItemSearchPanel";
 import SpellSearchPanel from "./components/SpellSearchPanel";
+import StancesPanel from "./components/StancesPanel";
+import AAPanel from "./components/AAPanel";
 import WindowButtons from "./components/WindowButtons";
 import Titlebar from "./components/Titlebar";
 import ScaleButtons from "./components/ScaleButtons";
@@ -32,6 +34,7 @@ import Toasts from "./components/Toasts";
 import TabBar, { type TabItem } from "./components/TabBar";
 import PeersPanel from "./components/PeersPanel";
 import PeerOfferToasts from "./components/PeerOfferToasts";
+import AchievementAlertToasts from "./components/AchievementAlertToasts";
 import PeerVersionToast from "./components/PeerVersionToast";
 import RaceUnlockAlerts from "./components/RaceUnlockAlerts";
 import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
@@ -44,7 +47,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "damage" | "session" | "alerts" | "peers" | "settings";
+type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "damage" | "session" | "alerts" | "peers" | "settings";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -114,6 +117,19 @@ function ControlWindow() {
   useEffect(() => {
     if (nav.tab !== "peers") setFocusPeer(null);
   }, [nav.tab]);
+  /** The achievement a completion toast sent us to look at — the same pattern as `focusPeer`
+   *  (ADR 0143), on its third tab. */
+  const [focusAchievement, setFocusAchievement] = useState<string | null>(null);
+  const viewAchievement = useCallback(
+    (achievementId: string) => {
+      setFocusAchievement(achievementId);
+      openTab("achievements");
+    },
+    [openTab],
+  );
+  useEffect(() => {
+    if (nav.tab !== "achievements") setFocusAchievement(null);
+  }, [nav.tab]);
   useEffect(() => {
     const a = api();
     if (!a) return;
@@ -172,6 +188,16 @@ function ControlWindow() {
     });
   }, [openTab]);
 
+  // A caller elsewhere already knows the exact title (a map marker naming a mob eqlwiki or the
+  // kill log itself named) — open straight to its page rather than a results list with one match
+  // sitting in it. `openPage` alone already puts the search tab under it (`PAGE_TAB`), the same as
+  // any other in-app link click.
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    return a.search.onOpenPage((title) => nav.openPage(title));
+  }, [nav]);
+
   // Every one of these reads a live EverQuest log — no log on this host, nothing for the tab to show.
   const needsLog = !capabilities.log;
   const noLog = "Needs the desktop app — no EverQuest log to read here.";
@@ -217,6 +243,13 @@ function ControlWindow() {
     // Beside Items, the same drawer as Items opened on a different shelf — one browses what you
     // could wear, this browses what you could cast. Same "not needed mid-fight" grouping.
     { key: "spells", label: "Spells" },
+    // Beside Spells, the third shelf of the same cabinet — what you could *do* (melee stance /
+    // casting invocation) rather than wear or cast. Static reference data like its two neighbours,
+    // so it gets no log gate either.
+    { key: "stances", label: "Stances" },
+    // Beside Stances, the fourth shelf — what you could *train* (Alternate Advancement) rather than
+    // wear, cast or do right now. Same static-reference grouping, same reason it carries no log gate.
+    { key: "aa", label: "AAs" },
     { key: "damage", label: "Damage", disabled: needsLog, disabledReason: noLog },
     { key: "session", label: "Session", disabled: needsLog, disabledReason: noLog },
     // Before Settings, and after everything you look at while playing. It is the same kind of thing
@@ -239,6 +272,9 @@ function ControlWindow() {
       {/* Mounted by the shell, not by the Peers tab: a notice about a tab you aren't on has to come
           from something that is always mounted. */}
       <PeerOfferToasts onView={viewPeer} />
+      {/* Same reasoning, third tab: the 🎉 completion banner lives on the click-through overlay,
+          which can't catch a click — this is the interactive echo of that same event. */}
+      <AchievementAlertToasts onView={viewAchievement} />
       {/* Says once, if ever, that this build is behind the room — and points at the tab where the
           rows say which peers it is behind. */}
       <PeerVersionToast onView={viewPeers} />
@@ -305,13 +341,15 @@ function ControlWindow() {
           )}
           {tab === "timers" && <SpawnPanel />}
           {tab === "goals" && <GoalsPanel />}
-          {tab === "achievements" && <AchievementsPanel />}
+          {tab === "achievements" && <AchievementsPanel focusId={focusAchievement} />}
           {tab === "buffs" && <BuffPanel />}
           {tab === "loot" && <LootPanel />}
           {tab === "faction" && <FactionPanel />}
           {tab === "search" && <SearchPanel prefill={prefill} onPrefillUsed={prefillUsed} />}
           {tab === "items" && <ItemSearchPanel />}
           {tab === "spells" && <SpellSearchPanel />}
+          {tab === "stances" && <StancesPanel />}
+          {tab === "aa" && <AAPanel />}
           {tab === "damage" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "alerts" && <AlertsPanel />}

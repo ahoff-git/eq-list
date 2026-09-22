@@ -402,6 +402,21 @@ features for later in [../ideas.md](../ideas.md).
   actually near it. The coordinate is someone else's game and the app says so, but *how wrong* it
   tends to be is the thing no test can tell us — and it decides whether the wiki deserves to stay a
   source or should only ever be a hint in the hover.
+- **Named spawns, in a zone with real mobs in it**
+  ([ADR 0265](../decisions/0265-named-spawns-mark-themselves-on-the-map.md)). The join is
+  unit-tested; what isn't is whether the zone-title guess actually resolves against eqlwiki, and
+  whether the result reads sensibly with real data behind it. Open the map on a real zone and
+  confirm the marks appear for mobs you know are notable there, and that hovering the toggle
+  explains the category's own broad scope (so a thoroughly ordinary mob showing up isn't a
+  surprise). Then the part nothing before this has ever checked: confirm `a.wiki.getPage(<zone
+  name>)` (the map's resolved zone name, handed to the same call every other title already uses)
+  actually resolves to that zone's own page with a non-empty NPC roster, for a few real zones
+  (Debug logging, or DevTools on the map window). Where it doesn't, confirm named mobs you've
+  actually killed there still show (the fallback path) rather than the layer going silently empty.
+  Finally, put a mob that's both hunted and eqlwiki-named in the same zone and confirm it gets
+  exactly one mark, not a hunt pin and a named pin stacked on the same spot; and confirm the Named
+  spawns toggle behaves like the Hunt one beside it (off means off, and still off after
+  reopening the window).
 - **A mob with more than one real camp, not one bad average between them.**
   ([ADR 0228](../decisions/0228-a-mob-can-have-more-than-one-known-location.md).) Find (or fake, via a
   digested log) a mob you've killed in two genuinely separate spots in the same zone — far enough apart
@@ -559,6 +574,11 @@ features for later in [../ideas.md](../ideas.md).
   grey and dashed rather than the regular solid blue — confirm ordinary walked segments (even a
   fairly long one, if you don't `/loc` often) stay solid, and only the genuinely teleported hop
   changes style.
+- **Trail opacity slider (👁 panel → Trail).** Build up a `/loc` trail, then drag the slider: both
+  the solid walked line and the faint dashed far-hop hint should dim together, all the way down to
+  invisible at 0% and back up at 100% — the trail's own points should still be there under it
+  (dragging back up redraws the same line rather than a shorter one). It should default to 50%,
+  and the choice should survive closing and reopening the map window.
 - **Cast-alert overlay, over the game.** With cast alerts on, confirm the banner + flash appear
   in the **click-through overlay on top of the game** (not just the app window), that clicking where
   the banner is still clicks the game beneath it, that the **beep** fires (even as the first alert
@@ -1120,6 +1140,18 @@ features for later in [../ideas.md](../ideas.md).
       `"watch"` some other way) and confirm it still ticks. Before ADR 0217 this step quietly built a
       raw-text watch instead of a real zone criterion — the common case still worked by luck of
       sentence structure, but it never got the alias/typo folding a stock zone criterion gets for free.
+  17. **Clicking a completion is a shortcut to the row, not just a banner.** The 🎉 banner still lives
+      on the click-through overlay and can't be clicked itself (`CastAlerts.tsx`'s own comment says
+      why); what's new is a **toast** on the control window, following ADR 0143's peer-offer pattern
+      onto a third tab. Finish any achievement (the manual "Say Hello" tick is the fastest way) and
+      confirm a "\<title\> — complete!" toast appears in the corner *of the main window*, separate from
+      the game-overlay banner. Click its **View** button and confirm it switches to the **Achievements**
+      tab, scrolls that achievement's row into view, expands it (criteria visible without a second
+      click), and left-marks it the same way a notice-picked peer row is marked. Switch to another tab
+      and back and confirm the mark is gone — it answers "which one was it" only for as long as you're
+      still looking. Then the noise check this is scoped against: tick a **tallying** ("count") criterion
+      partway (not yet at its goal) and confirm **no** toast fires for that progress ping, even though
+      the 🏅 banner still does — only a whole achievement finishing earns the click-through toast.
 
 ## Peer networking — two clients
 
@@ -2355,3 +2387,71 @@ The class list is unit-tested against synthetic spell facts; whether the game's 
 - **🔕 works the same on a debuff, up or lapsed.** Root or snare something you're fighting, click 🔕 on
   either state's row in the crowd-control HUD, and confirm the same thing: no future banner, row
   unaffected, control gone once notify is already off.
+
+## The Stances tab (ADR 0262)
+
+Static reference data, so nothing here needs a game running at all — the whole check is whether the
+new tab renders and reads right, which this sandbox's own smoke-test attempt couldn't confirm (it runs
+with `ELECTRON_RUN_AS_NODE` set, and the single-instance lock makes a second launch fail silent — see
+the "Launching the app" entry above). Typecheck, lint, `next build` and the generated-data/filter unit
+tests all passed.
+
+- **Open the tab cold.** Click **Stances** (beside Spells) with no criteria set: nine rows under
+  **Stances**, each with a name, its class chips, and its wiki description — spot-check **Balanced**
+  shows nine chips (BER/BRD/BST/MNK/PAL/RNG/ROG/SHD/WAR) and **Berserker** shows exactly one (BER).
+  Switch to **Invocations** and confirm nine rows there too, **Empower**'s chips reading CLR/DRU/ENC/
+  MAG/NEC/SHM/WIZ.
+- **The class filter narrows to a combination.** Tick two or three classes in the **Class** picker
+  (try Ranger + Shadow Knight + Paladin — three of the hybrid classes) and confirm the list narrows to
+  abilities at least one of them has, and that each surviving row's matching chip(s) light up (accent
+  color) while the rest of that row's chips stay dim — that's the "what's available to this
+  combination" chart the tab exists for. Untick back to none and confirm the full list returns.
+- **The search box is the reverse lookup.** Clear the class filter, type `endurance` into the search
+  box, and confirm it matches by *effect text* — several stances should survive even though none is
+  named "Endurance". Then type a word that only appears in one description (`evade`) and confirm just
+  **Evasive** remains. Clear it and confirm the list returns to nine.
+- **Both filters narrow together.** With a class ticked and text typed, confirm the count reflects
+  both (fewer than either alone would leave), and that **Clear (N)** removes both at once and the
+  count badge on it matches how many criteria were actually active (1 or 2).
+- **No match is worded, not blank.** Type something no description contains (`asdfasdf`) and confirm
+  the empty state reads "No stance matches all of that." (or "No invocation…" on that segment) rather
+  than a silent blank panel.
+- **↗ eqlwiki opens the real page.** Click it and confirm the system browser opens
+  `eqlwiki.com/Stances_&_Invocations` — the actual source, so a description here can be checked
+  against the live page if one ever looks wrong.
+- **Criteria and the segment both persist.** Set a class filter, switch to Invocations, switch tabs
+  away and back, and confirm both the segment and the filter are exactly as left — same "workbench"
+  persistence the Spells tab's own criteria get.
+
+## The AAs tab (ADR 0263)
+
+Static reference data, so nothing here needs a game running at all — the whole check is whether the
+new tab renders and reads right, which this sandbox's own smoke-test attempt couldn't confirm (it runs
+with `ELECTRON_RUN_AS_NODE` set, and the single-instance lock makes a second launch fail silent — see
+the "Launching the app" entry above). Typecheck, lint, `next build`, and the generated-data/lookup unit
+tests all passed (144 AAs parsed from a live fetch; every category and all 16 classes represented).
+
+- **Open the tab cold.** Click **AAs** (beside Stances) with no criteria set: grouped sections in
+  order — General AAs, Archetype AAs, one section per class in the app's own class order, Special AAs
+  — each row showing a name, `Ranks: … · Cost: …`, and the full effect text. The count line at the top
+  reads "144 AAs". Spot-check **Adamant Will** under General AAs and confirm its description mentions
+  both charm and mesmerization resist ranks.
+- **The class filter narrows to one class, but never hides the class-less sections.** Pick a class
+  (e.g. Bard) and confirm General AAs, Archetype AAs and Special AAs are all still showing in full,
+  and the only Class AAs section left is Bard's own. Clear the filter (blank/"all classes") and
+  confirm every class section returns.
+- **The search box is the reverse lookup this feature exists for.** Clear the class filter, type
+  `direct damage`, and confirm every surviving row's description actually contains both words (e.g.
+  "Fury of Magic", "Destructive Fury") — this is the exact case the feature was built for. Clear it and
+  confirm the full grouped list returns.
+- **Both filters narrow together.** Pick a class and type a word that only some of that class's AAs
+  mention; confirm the surviving rows are the intersection, that **Clear (N)** removes both criteria at
+  once, and that the count badge matches how many were actually active (1 or 2).
+- **No match is worded, not blank.** Type something no AA's name or description contains
+  (`asdfasdfasdf`) and confirm the empty state reads "No AA matches all of that." rather than a silent
+  blank panel.
+- **↗ eqlwiki opens the real page.** Click it and confirm the system browser opens
+  `eqlwiki.com/Alternate_Advancement` — the actual source, so a description here can be checked against
+  the live page if one ever looks wrong.
+- **Criteria persist.** Set a class filter and a search, switch tabs away and back, and confirm both
+  are exactly as left — same "workbench" persistence the Stances/Spells tabs' own criteria get.

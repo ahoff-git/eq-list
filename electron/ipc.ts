@@ -16,7 +16,7 @@ import { createTravelRouter } from "./travel-graph";
 import { sampleAlert, sampleRecord } from "./alert-router";
 import { dataReport } from "./data-health";
 import { selfCheck } from "./self-check";
-import { createAdminWindow, createMapWindow, getAlertWindow, getMainWindow, getMapWindow, roleOf, setAlertInteractive, showInSearch } from "./windows";
+import { createAdminWindow, createMapWindow, getAlertWindow, getMainWindow, getMapWindow, openPageInSearch, roleOf, setAlertInteractive, showInSearch } from "./windows";
 import { createAdminRegistry } from "./admin";
 import { resetPositions, setWindowToggles, windowToggles } from "./window-state";
 import type { Store } from "./store";
@@ -794,6 +794,7 @@ function registerAppIpc(context: IpcContext): void {
   ipcMain.handle(CH.lookupOpen, () => lookup.open());
   ipcMain.handle(CH.lookupReady, (e) => lookup.ready(e.sender));
   ipcMain.handle(CH.searchShow, (_e, text: string) => showInSearch(text));
+  ipcMain.handle(CH.searchOpenPage, (_e, title: string) => openPageInSearch(title));
   ipcMain.handle(CH.lookupCancel, () => lookup.cancel());
   ipcMain.handle(CH.appInfo, () => getAppInfo());
   // Which stored data the rules have moved on from. Read from disk per call rather than cached: a

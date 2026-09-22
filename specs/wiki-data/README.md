@@ -427,6 +427,41 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
   no template behind it for a runtime parser to trust. See
   [ADR 0222](../decisions/0222-a-race-unlock-guide-is-generated-static-data.md) — this does not widen
   the item/quest/recipe exception above, it's a one-off for a source that is itself irregular.
+- **A third, page-specific exception: a uniform table with no signature container `parse.ts` knows.**
+  `src/shared/stances-invocations.generated.ts` (`scripts/fetch-stances-invocations.mjs`) ships eqlwiki's
+  "Stances & Invocations" page — which classes can use which melee stance or casting invocation — as
+  committed, generated data too. Unlike Alanna's guide, this page *is* a uniform wikitable
+  (`Name | Description | Classes`, one row per ability), closer in kind to the zone facts; unlike the
+  zone facts, it's one single page rather than the same infobox read off every page in a category, and
+  it also carries a second, derived "by class" matrix that has already drifted from the row table it
+  was generated from (checked against a real fetch — see the parser's own header), which is why only
+  the row table is read. It ships as data for the same two reasons the zone facts do: it's wanted as a
+  standalone reference chart before anything else is on screen, and it states a fact about EQL's class
+  design that changes essentially never. See
+  [ADR 0262](../decisions/0262-stances-and-invocations-are-generated-static-data.md).
+- **A fourth, page-specific exception: the most uniform of the four, still with no signature
+  container.** `src/shared/aa-list.generated.ts` (`scripts/fetch-aa-list.mjs`) ships eqlwiki's
+  "Alternate Advancement" page — every AA's ranks, cost and description, by category and class — as
+  committed data too. Unlike "Stances & Invocations", this page carries no second, derived table to
+  drift out of sync: 19 tables, one identical header row (`Name | Ranks | Cost | Description`) each.
+  The reason it's still generated rather than fetched live is unchanged from the other three — nothing
+  re-checks it at runtime, so a reformat has to fail loudly at generation time rather than silently
+  inside a shipped app, and a generic page view would render it as a useless bare `item` page anyway.
+  See [ADR 0263](../decisions/0263-the-alternate-advancement-page-is-generated-static-data.md) — a
+  fourth instance of the same narrow rule, not a widening of it.
+- **A fifth exception, back on the hand-authored-prose side: eqlwiki's "Buff Lines" guide.**
+  `src/shared/buff-lines.generated.ts` (`scripts/fetch-buff-lines.mjs`) ships which spells/items
+  buff which statistic and which of them can't be up on the same target at once, as committed data
+  for the same reason Alanna's guide is: it's one large, hand-maintained page — nested headings,
+  bullet lists, real row-to-row formatting drift — not a uniform template. See
+  [ADR 0264](../decisions/0264-buff-line-data-is-generated-static-data.md).
+- **A sixth exception, and the odd one out: not a page at all, a bare category listing.**
+  `src/shared/named-mobs.generated.ts` (`scripts/fetch-named-mobs.mjs`) ships the membership of
+  eqlwiki's `Category:Named Mobs` — no wikitext to parse, just a title list `categoryMembers`
+  already knows how to walk, sorted and stamped like the rest. Generated for the usual reason (a
+  category someone edited should show up as a diff to review, not silently at runtime), and read by
+  the map's [named spawns](../map/README.md) layer. See
+  [ADR 0265](../decisions/0265-named-spawns-mark-themselves-on-the-map.md).
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
 - The **wiki's** drop rates live on the mob page (per loot line — a `(X%)` chance or a rarity

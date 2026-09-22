@@ -285,3 +285,25 @@ export function AddButton({
     </button>
   );
 }
+
+/**
+ * The row a static, wiki-sourced reference tab ends its filter bar with: how many of the catalogue
+ * survived the current criteria, and a button out to the page it was generated from. `StancesPanel`
+ * and `AAPanel` both wrote this exact row by hand — same markup, same wording, only the count and the
+ * click differing — so a third reference tab (or a fourth) gets it once rather than retyping it.
+ *
+ * Takes a callback rather than a source title directly, the same way every other control here stays
+ * ignorant of `api()` — the caller already knows `wiki.openInBrowser` and its own generated data's
+ * `SOURCE.title`; this only ever owns the row's markup.
+ */
+export function SourceCountRow({ count, onOpenSource }: { count: ReactNode; onOpenSource: () => void }) {
+  return (
+    <div className="row wrap" style={{ marginBottom: 8 }}>
+      <span className="muted small">{count}</span>
+      <span className="spacer" />
+      <button className="btn ghost sm" title="Open the source page on eqlwiki" onClick={onOpenSource}>
+        ↗ eqlwiki
+      </button>
+    </div>
+  );
+}

@@ -1,8 +1,10 @@
 "use client";
 import type { PoiGroupSummary, PoiKind } from "@/shared/map/poi-kinds";
-import { HUNT_PIN, PIN_TYPES, type PinKind } from "@/shared/map/pins";
+import { HUNT_PIN, NAMED_PIN, PIN_TYPES, type PinKind } from "@/shared/map/pins";
 import { CheckField } from "./ui";
 import type { MapFloor, ZBand } from "@/shared/map/eqmap";
+import { TRAIL_OPACITY } from "@/shared/constants";
+import { percent } from "@/shared/format";
 
 /** A hand-set height window, in EQ `/loc` z — what a map with no labelled storeys gets instead. */
 export interface HeightPick {
@@ -38,9 +40,14 @@ export default function MapFilters({
   onHeightFollowRange,
   hiddenPinKinds,
   onPinKind,
+  trailOpacity,
+  onTrailOpacity,
   huntPins,
   showHuntPins,
   onHuntPins,
+  namedPins,
+  showNamedPins,
+  onNamedPins,
   poiGroups,
   hiddenPoiKinds,
   onPoiKinds,
@@ -70,10 +77,17 @@ export default function MapFilters({
   onHeightFollowRange: (range: number) => void;
   hiddenPinKinds: ReadonlySet<PinKind>;
   onPinKind: (kind: PinKind, visible: boolean) => void;
+  /** How visible the `/loc` trail is drawn (`TRAIL_OPACITY`). */
+  trailOpacity: number;
+  onTrailOpacity: (opacity: number) => void;
   /** How many of the hunt's mobs this zone can place — the row says so, since zero explains itself. */
   huntPins: number;
   showHuntPins: boolean;
   onHuntPins: (show: boolean) => void;
+  /** How many named spawns this zone can place — see `huntPins` above for the same reasoning. */
+  namedPins: number;
+  showNamedPins: boolean;
+  onNamedPins: (show: boolean) => void;
   /** The label kinds this map actually has, in sections (see `poiGroupSummary`). */
   poiGroups: PoiGroupSummary[];
   hiddenPoiKinds: ReadonlySet<PoiKind>;
@@ -223,6 +237,23 @@ export default function MapFilters({
         ))}
       </section>
 
+      <section>
+        <header>
+          <span className="muted small">Trail</span>
+          <span className="muted small">{percent(trailOpacity)}</span>
+        </header>
+        <label className="row height-row" title="How visible the line drawn between your /loc positions is. All the way down still leaves it there to bring back — the toolbar's ∿ button is what throws it away.">
+          <input
+            type="range"
+            min={TRAIL_OPACITY.min}
+            max={TRAIL_OPACITY.max}
+            step={TRAIL_OPACITY.step}
+            value={trailOpacity}
+            onChange={(e) => onTrailOpacity(Number(e.target.value))}
+          />
+        </label>
+      </section>
+
       {/* The one set of markers the map places by itself, so it gets a switch of its own rather than
           a sixth row under "My pins" — nothing here was dropped by you, and none of it can be. */}
       <section>
@@ -237,6 +268,25 @@ export default function MapFilters({
           label={
             <>
               <span style={{ color: HUNT_PIN.color }}>{HUNT_PIN.glyph}</span> Where your hunt&apos;s mobs live
+            </>
+          }
+        />
+      </section>
+
+      {/* Every mob eqlwiki's own Named Mobs category knows about here, whether or not it's on your
+          hunt list — the map's other self-placed marker, so it gets the same kind of switch. */}
+      <section>
+        <header>
+          <span className="muted small">Named spawns</span>
+          <span className="muted small">{namedPins}</span>
+        </header>
+        <CheckField
+          checked={showNamedPins}
+          onChange={onNamedPins}
+          title="Mark every mob eqlwiki's own Named Mobs category knows about in this zone, whether or not it's on your hunt list — ranked the same way: your own kills, kills pooled with peers', or the coordinate the wiki states. eqlwiki's category is broader than 'has a unique name' (it also covers ordinary spawns that cycle with a placeholder), so expect some familiar faces alongside the rare ones."
+          label={
+            <>
+              <span style={{ color: NAMED_PIN.color }}>{NAMED_PIN.glyph}</span> Named spawns eqlwiki knows about
             </>
           }
         />

@@ -70,6 +70,14 @@ export const STORAGE_KEYS = {
   spellSort: "eqlist.main.spellSort",
   /** Main window: how gently the Spells tab fills the catalogue from the wiki (ADR 0196). */
   spellHarvestPace: "eqlist.main.spellHarvestPace",
+  /** Main window: the Stances tab's standing answers — which half you're reading (stances vs
+   *  invocations) and what you've narrowed it to. Same workbench reasoning as the Spells tab: this is
+   *  reference data you come back to, not a search you ran a moment ago. */
+  stanceView: "eqlist.main.stanceView",
+  stanceCriteria: "eqlist.main.stanceCriteria",
+  /** Main window: the AAs tab's standing answers — same workbench reasoning as the Spells/Stances
+   *  tabs: this is reference data you come back to, not a search you ran a moment ago. */
+  aaCriteria: "eqlist.main.aaCriteria",
   /**
    * Main window: the Loot tab's standing answers — which half you're reading, what you've narrowed
    * the feed to, and the order of each table.
@@ -121,6 +129,8 @@ export const STORAGE_KEYS = {
   mapHeightFollow: "eqlist.map.heightFollow",
   /** Map window: the ± half-width of that follow window, in raw `/loc` z. */
   mapHeightFollowRange: "eqlist.map.heightFollowRange",
+  /** Map window: how visible the `/loc` trail is drawn — see `TRAIL_OPACITY`. */
+  mapTrailOpacity: "eqlist.map.trailOpacity",
   /**
    * Map window: whether the map marks your hunt's mobs where your kills place them (ADR 0142).
    *
@@ -129,6 +139,12 @@ export const STORAGE_KEYS = {
    * app put things on my map at all", and asking again every session is not what "no" means.
    */
   mapHuntPins: "eqlist.map.huntPins",
+  /**
+   * Map window: whether the map marks every mob eqlwiki's own Named Mobs category knows about
+   * here, whether or not it's on the hunt list (ADR 0265). Persisted for the same reason as
+   * `mapHuntPins`, beside it.
+   */
+  mapNamedPins: "eqlist.map.namedPins",
   /** Map window: the kills panel's visibility. */
   mapKillsOpen: "eqlist.map.killsOpen",
   /** Map window: the mob-knowledge panel's visibility. */

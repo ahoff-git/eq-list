@@ -2330,6 +2330,9 @@ export interface AchievementCriterionInput {
  */
 export interface AchievementAlertPayload {
   kind: "criterion" | "completed";
+  /** The achievement definition's own id — how a click on the alert finds its row again
+   *  (ADR 0143's pattern, extended to a third tab: see `AchievementAlertToasts`). */
+  id: string;
   title: string;
   /** `"criterion"` only — which one was just satisfied, or (with `tally` set) which one is
    *  progressing. */
@@ -3879,9 +3882,19 @@ export interface EqlApi {
     onPrefill(cb: (text: string) => void): Unsubscribe;
     /**
      * Surface `text` in the control window's Search box, focusing that window. For
-     * secondary windows (the map) that have no search of their own.
+     * secondary windows (the map) that have no search of their own, when what's being asked
+     * about might need correcting or picking from a few results rather than being one exact page.
      */
     show(text: string): Promise<void>;
+    /** Fires when a caller elsewhere already knows the exact title to open — see `openPage`. */
+    onOpenPage(cb: (title: string) => void): Unsubscribe;
+    /**
+     * Open `title`'s wiki page directly in the control window, focusing it — no results list in
+     * between. For a caller that already holds the exact title (a map marker naming a mob eqlwiki
+     * or the kill log itself named), where going through Search first would only be a second click
+     * to reach the one result it was always going to be.
+     */
+    openPage(title: string): Promise<void>;
   };
   nav: {
     /**

@@ -16,6 +16,12 @@ export interface HuntItemRef {
   item: string;
   needed: number;
   obtained: number;
+  /**
+   * The shopping-list entry this count comes from, so the Hunt tab's +/- can adjust the same
+   * `obtained` the List tab shows. Optional only because a few tests build a `HuntItemRef` by hand
+   * with no entry behind it; every real hunt goes through `huntInputsFor`, which always has one.
+   */
+  id?: string;
 }
 export interface HuntMob {
   mob: string;
@@ -37,6 +43,8 @@ export interface HuntInput {
   needed: number;
   obtained: number;
   sources: ItemSource[];
+  /** The entry this came from — carried through to `HuntItemRef.id`. See its doc for why optional. */
+  id?: string;
 }
 
 /**
@@ -94,6 +102,7 @@ export function huntInputsFor(
     needed: effectiveNeeded(e, runsForEntry(e, questRuns)),
     obtained: e.obtained,
     sources: sources[e.name] ?? [],
+    id: e.id,
   }));
 }
 
@@ -137,7 +146,7 @@ export function buildHunt(items: HuntInput[], targets: HuntTarget[] = []): HuntZ
       if (!mob) continue;
       const hm = rowFor(display, mob);
       if (!hm.items.some((r) => r.item === it.name)) {
-        hm.items.push({ item: it.name, needed: it.needed, obtained: it.obtained });
+        hm.items.push({ item: it.name, needed: it.needed, obtained: it.obtained, id: it.id });
       }
     }
   }
@@ -224,6 +233,8 @@ export interface HuntItemGroup {
   item: string;
   needed: number;
   obtained: number;
+  /** The entry behind this count — see `HuntItemRef.id`. */
+  id?: string;
   /** Everywhere it drops. Ordering is the caller's, because it turns on rates the panel holds. */
   places: HuntPlace[];
 }
@@ -251,7 +262,8 @@ export function huntByItem(zones: HuntZone[]): HuntItemGroup[] {
     for (const mob of zone.mobs) {
       for (const it of mob.items) {
         let group = byItem.get(it.item);
-        if (!group) byItem.set(it.item, (group = { item: it.item, needed: it.needed, obtained: it.obtained, places: [] }));
+        if (!group)
+          byItem.set(it.item, (group = { item: it.item, needed: it.needed, obtained: it.obtained, id: it.id, places: [] }));
         // One mob can't drop the same item twice, but two zones can hold the same mob name — and
         // those are two camps, so both are worth listing.
         group.places.push({ mob: mob.mob, zone: zone.zone, ...(mob.target ? { target: true } : {}) });

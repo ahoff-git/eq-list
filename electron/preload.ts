@@ -257,6 +257,8 @@ const api: EqlApi = {
   search: {
     onPrefill: (cb) => on(CH.searchPrefill, cb),
     show: (text) => ipcRenderer.invoke(CH.searchShow, text),
+    onOpenPage: (cb) => on(CH.searchOpenPageRequest, cb),
+    openPage: (title) => ipcRenderer.invoke(CH.searchOpenPage, title),
   },
   nav: {
     onCommand: (cb) => on(CH.navCommand, cb),

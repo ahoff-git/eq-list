@@ -1600,6 +1600,17 @@ export function useMobWikiPlaces(mobNames: string[]): Record<string, WikiPlace |
   );
 }
 
+const NO_NPCS: { name: string; level: string }[] = [];
+
+/**
+ * The zone on screen's own wiki page roster — a zone page states every NPC in it, name and level
+ * (ADR 0163), read through the same `getPage` every other page uses. Empty when the title hasn't
+ * been fetched, isn't a zone page, or states no roster; `named-pins.ts` is what asks.
+ */
+export function useZoneNpcRoster(zone?: string): { name: string; level: string }[] {
+  return useRead(async (a) => (zone ? ((await a.wiki.getPage(zone))?.npcs ?? NO_NPCS) : NO_NPCS), NO_NPCS, [zone]);
+}
+
 // The item stat card, memoized per title across the session — a name can appear in
 // many rows, and hovering should hit the (already cached) page at most once.
 const cardCache = new Map<string, ItemCard | null>();
