@@ -156,7 +156,7 @@ test("flow: the camper gets a timer for free, and a banner without asking for on
   assert.equal(view.running.length, 1, "and it's already counting down");
   assert.equal(view.running[0].dueAt, new Date(T0 + 42 * MIN).toISOString());
 
-  // Two kills of one camp in one sitting *is* the camper asking (ADR 0152): they are visibly sitting
+  // Two kills of one camp in one sitting *is* the camper asking (ADR 0268): they are visibly sitting
   // there, and making them tick a box for it is the app being obtuse. It says who armed it, because
   // an alert that turns itself on without accounting for itself is a banner out of nowhere.
   assert.equal(row?.notify, true);
@@ -202,7 +202,7 @@ test("flow: the camper's trash kills never reach the board", () => {
   assert.deepEqual(a.view().running, []);
 });
 
-// ── The game's own decorations on a considered name (ADR 0153) ────────────────
+// ── The game's own decorations on a considered name (ADR 0269) ────────────────
 
 /** A consider line, as EQ writes one. */
 const considered = (atMs: number, name: string) =>

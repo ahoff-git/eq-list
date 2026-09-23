@@ -811,7 +811,7 @@ test("a kill seconds old still counts, however short the gap", () => {
   assert.equal(killStillCounts(iso(0), 600, T0 + 20_000), true);
 });
 
-// ── five defects found by replaying a real 31,000-line log (ADR 0153) ─────────
+// ── five defects found by replaying a real 31,000-line log (ADR 0269) ─────────
 
 test("a pet is not a named, whichever way the log names it", () => {
   // EQ writes an owned creature two ways. `<Owner>`s warder` was already caught; the plain

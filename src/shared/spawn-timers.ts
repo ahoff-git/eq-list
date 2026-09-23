@@ -455,7 +455,7 @@ export function provenNamed(kills: KillRecord[]): Set<string> {
     // A pet says so in its own name, whoever killed it, so this needs no registry and works for a
     // stranger's pet too. **Both** ways the log says it: the possessive `<Owner>`s warder`, and the
     // plain `<Owner> pet`, which has no punctuation to give it away and was letting six pets onto the
-    // board of a real log (ADR 0153).
+    // board of a real log (ADR 0269).
     if (isPetName(k.mob)) continue;
     if (people.has(mobKey(k.mob))) continue;
     // **The victim's name is only half the answer.** The log reports every death in earshot, and a
@@ -1162,7 +1162,7 @@ export function untimedReason(
   if (known.samples > 0) return null;
   // **Never killed at all** — a row somebody typed in for a camp they mean to sit at, which is the
   // whole point of being able to add one. Asked first, because every sentence below is about kills
-  // that happened and telling this player they "killed it once" is simply untrue (ADR 0153).
+  // that happened and telling this player they "killed it once" is simply untrue (ADR 0269).
   if (!known.lastKillAt) return "Not killed yet — set a timer for it, or kill it twice and it learns its own.";
   // The difficulty leads when it cost anything at all: it is the only one of the three the player
   // could not have worked out from the row, and the only one with a *stated* cause.

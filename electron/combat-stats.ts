@@ -204,6 +204,8 @@ interface Tally {
   dealt: number;
   taken: number;
   healed: number;
+  /** Healing received from any healer, self-heals included. */
+  healReceived: number;
   hits: number;
   misses: number;
   crits: number;
@@ -232,7 +234,7 @@ function ms(at: string): number {
 
 function emptyTally(): Tally {
   return {
-    dealt: 0, taken: 0, healed: 0, hits: 0, misses: 0, crits: 0, maxHit: 0,
+    dealt: 0, taken: 0, healed: 0, healReceived: 0, hits: 0, misses: 0, crits: 0, maxHit: 0,
     firstAt: 0, lastAt: 0, activeMs: 0,
     byStance: new Map(), bySpecial: new Map(),
   };
@@ -596,6 +598,7 @@ export function createCombatStats(
       dealt: t.dealt,
       taken: t.taken,
       healed: t.healed,
+      healReceived: t.healReceived,
       hits: t.hits,
       misses: t.misses,
       crits: t.crits,
@@ -761,6 +764,9 @@ export function createCombatStats(
       totalDealt: byCombatant.reduce((n, c) => n + c.dealt, 0),
       yourDealt: byCombatant.filter((c) => c.mine).reduce((n, c) => n + c.dealt, 0),
       yourTaken: byCombatant.filter((c) => c.mine).reduce((n, c) => n + c.taken, 0),
+      totalHealed: byCombatant.reduce((n, c) => n + c.healed, 0),
+      yourHealed: byCombatant.filter((c) => c.mine).reduce((n, c) => n + c.healed, 0),
+      yourHealReceived: byCombatant.filter((c) => c.mine).reduce((n, c) => n + (c.healReceived ?? 0), 0),
       byCombatant,
       damageCells: cells,
       spanSec: w.span.firstAt ? Math.max(1, Math.round((w.span.lastAt - w.span.firstAt) / 1000)) : 0,
@@ -903,6 +909,9 @@ export function createCombatStats(
       }
       case "heal": {
         w.tally(canon(event.healer)).healed += event.amount;
+        // The recipient's own figure — a self-heal lands on the same tally as the line above and
+        // both go up, which is correct: healing yourself is healing you received.
+        w.tally(canon(event.target)).healReceived += event.amount;
         if (event.spell && isMine(event.healer)) {
           const sp = w.spell(event.spell);
           const mode = modeTally(sp.byInvocation, invocation);

@@ -330,7 +330,7 @@ export function roomCoverage(opts: {
  * Normally `present` comes from our own roster: a shard with no title of ours in it is not a gap. A
  * **new install has no roster**, so that test says "no gaps" about a catalogue it holds none of, and
  * the honest substitute is what the room says exists
- * ([ADR 0181](../../specs/decisions/0181-a-new-install-asks-before-it-crawls.md)). It is a weaker
+ * ([ADR 0266](../../specs/decisions/0266-a-new-install-asks-before-it-crawls.md)). It is a weaker
  * statement — the room's coverage is not the wiki's — but it is the only one available before
  * anybody has walked anything, and it is replaced by the real thing as soon as a walk happens.
  */

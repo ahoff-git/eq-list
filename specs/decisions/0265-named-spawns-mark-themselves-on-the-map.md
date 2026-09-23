@@ -22,7 +22,7 @@ We looked for a cleaner source of truth and found eqlwiki.com has no `Category:R
 spawn slot that competes with an ordinary placeholder), not a promise that every member has a
 unique proper name. `A bandit (Eastern Karana)` is a member. The player asked for this anyway,
 told of that caveat, over a narrower own-observation-only design (waiting for the log's own
-`- a rare creature -` consider annotation, which [ADR 0153](./0153-a-pet-is-not-a-named-and-a-rare-creature-says-so.md)
+`- a rare creature -` consider annotation, which [ADR 0269](./0269-a-pet-is-not-a-named-and-a-rare-creature-says-so.md)
 already parses but deliberately never acted on) — coverage from day one won out over precision.
 
 ## Decision
@@ -77,13 +77,13 @@ than erroring: the same graceful-empty behavior every other wiki-backed panel al
 
 Because the source category is broad, the layer will show some thoroughly ordinary camp mobs
 alongside genuine rares — a known, named tradeoff, not a bug. Narrowing it further (the log's own
-`- a rare creature -` annotation, still sitting unused since ADR 0153) is a real follow-up if the
+`- a rare creature -` annotation, still sitting unused since ADR 0269) is a real follow-up if the
 noise turns out to matter in practice, but it's a different, additive decision, not one this ADR
 needs to make now.
 
 ## See also
 [ADR 0142](./0142-a-hunted-mob-marks-itself.md) ·
-[ADR 0153](./0153-a-pet-is-not-a-named-and-a-rare-creature-says-so.md) ·
+[ADR 0269](./0269-a-pet-is-not-a-named-and-a-rare-creature-says-so.md) ·
 [ADR 0163](./0163-an-item-wears-the-level-of-what-drops-it.md) ·
 [ADR 0025](./0025-observation-over-the-wiki.md) ·
 [ADR 0262](./0262-stances-and-invocations-are-generated-static-data.md) ·

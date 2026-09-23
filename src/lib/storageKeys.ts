@@ -145,6 +145,12 @@ export const STORAGE_KEYS = {
    * `mapHuntPins`, beside it.
    */
   mapNamedPins: "eqlist.map.namedPins",
+  /**
+   * Map window: whether named-spawn pins draw their uncertainty ring (ADR 0265's markers, unlike a
+   * hunt's short list, can carpet a busy zone in rings). Independent of `mapNamedPins` — this keeps
+   * the markers while dropping just the rings — and of `mapHuntPins`, whose rings are unaffected.
+   */
+  mapNamedRings: "eqlist.map.namedRings",
   /** Map window: the kills panel's visibility. */
   mapKillsOpen: "eqlist.map.killsOpen",
   /** Map window: the mob-knowledge panel's visibility. */

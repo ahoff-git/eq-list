@@ -280,7 +280,7 @@ list, hunt, search, damage, session, peers, settings.
     **death strip** shows up, since a dozen banners at once is not a dozen pieces of news and the
     tracker deliberately doesn't raise them. Nothing here ever waits, which is what makes holding a
     *banner* until the fight ends free: the quiet half is already saying it
-    ([ADR 0141](../decisions/0141-a-debuff-is-the-mirror-image-of-a-buff.md)). Anchored and styled exactly like `SpawnOverlay`, with
+    ([ADR 0267](../decisions/0267-a-debuff-is-the-mirror-image-of-a-buff.md)). Anchored and styled exactly like `SpawnOverlay`, with
     one difference: it takes clicks (`pointer-events: auto`) because it carries a ✕, which only
     reaches the pointer while the player has taken the window's clicks back with 👻. That ✕ **leads
     the row**, so a death strip's worth of reminders is one column to click down and each row closing
@@ -317,7 +317,7 @@ list, hunt, search, damage, session, peers, settings.
     the spell is cast again (deleting-to-silence is the trap
     [ADR 0092](../decisions/0092-a-named-s-respawn-is-learned-from-your-own-kills.md) had to fix for
     dismissed mobs). **Two kinds of row behave oppositely**, and both are labelled so which is which is
-    legible ([ADR 0141](../decisions/0141-a-debuff-is-the-mirror-image-of-a-buff.md)): a **debuff** on
+    legible ([ADR 0267](../decisions/0267-a-debuff-is-the-mirror-image-of-a-buff.md)): a **debuff** on
     something you were fighting is announced the instant it drops and clears itself when the fight ends,
     while **your own buffs** wait for the fight to end before interrupting you — nobody stops swinging to
     rebuff — and stay listed until the buff is back. Rows **admit what they don't know**: where the game
@@ -367,7 +367,7 @@ list, hunt, search, damage, session, peers, settings.
     spent, which sets the figure and says so instead of filing a timer the sweep prunes on sight. And
     a row with no figure now says *which* blank it is — killed once, gaps you dropped, or gaps the
     difficulty rule ate — since all three used to read as the app being broken.
-    **An alert arms itself once you are visibly camping** ([ADR 0152](../decisions/0152-a-camp-arms-its-own-alert.md)):
+    **An alert arms itself once you are visibly camping** ([ADR 0268](../decisions/0268-a-camp-arms-its-own-alert.md)):
     two kills of one camp in one sitting, after which the row says `· camping` for as long as the app
     is the one answering. Off stays off — `notify(key, false)` is stored, and only a camp nobody has
     decided about may arm itself. And a **gap** stops teaching past three hours
@@ -375,7 +375,7 @@ list, hunt, search, damage, session, peers, settings.
     mob; a *deliberate* observation — "it's up", "not up yet" — keeps the twelve-hour ceiling, and a
     figure you type keeps none, which is how a genuinely long timer is reached.
     Five defects found by replaying a real 372,000-line log are fixed in
-    [ADR 0153](../decisions/0153-a-pet-is-not-a-named-and-a-rare-creature-says-so.md): a **pet** is
+    [ADR 0269](../decisions/0269-a-pet-is-not-a-named-and-a-rare-creature-says-so.md): a **pet** is
     refused under both spellings the game uses (`<Owner>`s warder` *and* the plain `<Owner> pet`,
     which had six pets on the board); a consider is stripped of `- a rare creature -` before the name
     is taken, which had been costing every sighting of exactly the mobs worth timing; a **difficulty
@@ -643,20 +643,22 @@ list, hunt, search, damage, session, peers, settings.
       each row carries the same **+ Add** the search results do.
     - Criteria, weights and sort all persist (`STORAGE_KEYS.item*`) — it is a workbench you come
       back to, and a weight sheet is a statement about your character rather than a passing filter.
-  - `DamagePanel` — the **damage meter** (from `combat-stats.ts` / `combat-history.ts`;
-    see [ADR 0014](../decisions/0014-damage-meter-from-the-log.md) and
-    [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md)). Two axes:
+  - `DamagePanel` — the **Combat tab** (from `combat-stats.ts` / `combat-history.ts`;
+    see [ADR 0014](../decisions/0014-damage-meter-from-the-log.md),
+    [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md) and
+    [ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md)). Two axes:
     **scope** (this/last fight · session · **history**) and **view** (**targets** · dealers ·
-    **spells**). **Targets is the default**: a fight's first question is what we damaged, not
-    which of us was in the room — opening on the dealer list showed a column of party members
-    where the enemy belongs. Tiles above are the same either way, on purpose. A stored fight
-    renders through the same views as a live one, so "dig into last night" and "how's this pull
-    going" are one screen. Everything it shows is **your party's fights** — another group's pull
-    at the same camp never reaches the tab
+    abilities · **spells** · healers). **Targets is the default**: a fight's first question is what
+    we damaged, not which of us was in the room — opening on the dealer list showed a column of
+    party members where the enemy belongs. Tiles above are the same either way, on purpose, and
+    grow two more — **Your healing** / **Healing on you** — only once there's a heal to report, the
+    same restraint `Pet share` already used. A stored fight renders through the same views as a live
+    one, so "dig into last night" and "how's this pull going" are one screen. Everything it shows is
+    **your party's fights** — another group's pull at the same camp never reaches the tab
     ([ADR 0067](../decisions/0067-the-meter-counts-your-party-s-fights.md)).
     - `DamageMeter` — bars scaled to the top row so relative contribution reads without
       arithmetic, with total, share and DPS; your rows (you + your pet) are tinted, and
-      hover gives max hit, accuracy, crits, healing, active time, and — for your own rows —
+      hover gives max hit, accuracy, crits, healing done and received, active time, and — for your own rows —
       **melee split by stance**, since stances change the multipliers. Click a row to **drill
       into it**, four levels deep, each level captioned with what it splits by and carrying its
       own total, hits, ticks, misses, crit rate, hit rate and biggest hit. Hovering a level also
@@ -687,6 +689,12 @@ list, hunt, search, damage, session, peers, settings.
       them as a fourth group is what used to make the numbers not add up. A fight stored before
       the cells existed keeps only its dealer-side kind/source split; its Dealers view falls back
       to that, and its Targets view says so rather than inventing attribution.
+    - **Healers** ranks the same rows by healing done instead — a healer with no damage of their
+      own still gets a row. Unlike the three above, it's a **flat list with no drill-down**: nothing
+      rolls a heal into a (healer, target, spell) cell the way damage does, so there's nothing to
+      open ([ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md)) — a row's damage
+      qualifiers (`specials`) are deliberately not offered here either, since they're a fact about
+      that combatant's *swings*, not their healing.
     - `SpellTable` — where your damage came from, spell by spell: casts, damage, healing,
       average **measured** cast time, **dmg/s cast** (the efficiency column — a slow nuke
       and a fast one that hit the same are not equally good), **mana** and **dmg/mana**
@@ -769,7 +777,7 @@ list, hunt, search, damage, session, peers, settings.
       future figure the log can't supply.
   - `LootPanel` — the **Loot tab**: the persisted drop ledger (`electron/loot-log.ts`), which
     reaches back through previous runs rather than describing this session. **Two segmented views**
-    like the damage tab's scopes, because stacking them meant a few hundred rows of ledger pushed
+    like the Combat tab's scopes, because stacking them meant a few hundred rows of ledger pushed
     the prices off the bottom of the screen: **Drops** (time · fate · qty · item · corpse · **zone** ·
     where it went) and **Sells for** (each · sold · earned · last sold — the item half of the money question,
     [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md)). Both are tables with
@@ -784,7 +792,7 @@ list, hunt, search, damage, session, peers, settings.
   - `ZoneTag` (`src/app/components/ZoneTag.tsx`) — **where a logged thing happened**, said one way
     everywhere: the **place** as a `ZoneLink` (so a row that says where also takes you there) and the
     **difficulty** beside it as its own chip, with the recorded wording in the hover when the fold
-    changed it. Used by the Loot ledger, the fight history and the picked fight, the Damage tab's live
+    changed it. Used by the Loot ledger, the fight history and the picked fight, the Combat tab's live
     header, the records board and the status bar; `ZoneDifficultyTag` is the difficulty alone, for the
     map's kill rows, which are already one camp. It exists because the panels that *had* a zone printed
     the log's string — `The Steamfont Mountains 2 (Adaptive)` in an 11-character column — and the one
@@ -873,7 +881,7 @@ list, hunt, search, damage, session, peers, settings.
     disk and pings the wiki and a cached verdict is worth nothing to somebody who just changed a
     setting),
     **"Eat a log file"** (a **catch-up**: digest a past log into every bucket it can fill — learned
-    mob data, the **Damage tab's history** one play session per login with the fights whole, and the
+    mob data, the **Combat tab's history** one play session per login with the fights whole, and the
     **loot feed** with the prices it teaches; see `electron/log-import.ts`,
     [ADR 0055](../decisions/0055-eating-a-log-fills-history.md). Keyed per line so re-eating or
     overlapping logs never double-count, [ADR 0033](../decisions/0033-eating-a-log-is-idempotent.md);

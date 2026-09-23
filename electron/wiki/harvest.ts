@@ -263,7 +263,7 @@ export function createHarvester(deps: HarvestDeps): Harvester {
   let probing: string[] | null = null;
   let probeAt = 0;
   /**
-   * This run has no roster of its own and is taking one from the room (ADR 0181).
+   * This run has no roster of its own and is taking one from the room (ADR 0266).
    *
    * Two things behave differently while it is set, and only while it is set: `present` comes from
    * what the room holds rather than from our roster, and `learnRoster` will seed an empty roster
@@ -512,7 +512,7 @@ export function createHarvester(deps: HarvestDeps): Harvester {
       // ADR 0177 refuses to invent a roster out of a peer's message, because that would make
       // `hasRoster` true on an install that has never listed anything and ADR 0176 depends on telling
       // that ignorance apart from emptiness. A **bootstrap** is that same act done deliberately and
-      // with its eyes open (ADR 0181): the run knows it has no roster, is asking for one, and leaves
+      // with its eyes open (ADR 0266): the run knows it has no roster, is asking for one, and leaves
       // `listedAt` unset so a real walk still happens later.
       if (!current.roster.length && !bootstrapping) return [];
       state = current;
@@ -543,7 +543,7 @@ export function createHarvester(deps: HarvestDeps): Harvester {
    * Walk the category graph and make it the roster. `false` means the walk gave nothing.
    *
    * Named because it happens in two places and must behave identically in both: at the top of a run
-   * whose roster is missing or a week old, and — after ADR 0181 — partway through a *bootstrap* whose
+   * whose roster is missing or a week old, and — after ADR 0266 — partway through a *bootstrap* whose
    * room turned out to have nothing to give.
    */
   async function walkRoster(saved: SavedHarvest | null): Promise<boolean> {
@@ -600,7 +600,7 @@ export function createHarvester(deps: HarvestDeps): Harvester {
     try {
       while (status === "running" && state) {
         // While bootstrapping, what *exists* is what the room says it holds: our own roster is empty
-        // and would claim there is nothing to do (ADR 0181). Re-read each pass, because a peer
+        // and would claim there is nothing to do (ADR 0266). Re-read each pass, because a peer
         // joining mid-run adds shards nobody had offered when it started.
         if (bootstrapping) present = roomShards(deps.peers());
         const step = planShardStep({
@@ -614,7 +614,7 @@ export function createHarvester(deps: HarvestDeps): Harvester {
         });
 
         if (step.action === "done") {
-          // **The room could not supply one, so crawl after all** (ADR 0181). Asking first is the
+          // **The room could not supply one, so crawl after all** (ADR 0266). Asking first is the
           // whole point, but a bootstrap that ends with an empty roster has produced nothing — the
           // peers were too old to send titles, dropped, or held nothing we could use — and finishing
           // there would leave a new install with no catalogue and no reason to try again. So the
@@ -705,7 +705,7 @@ export function createHarvester(deps: HarvestDeps): Harvester {
           } else if (!saved?.roster.length && room.some((p) => countShards(p.have) > 0)) {
             /**
              * **Nothing of our own, and a room that has done the work: ask before crawling**
-             * ([ADR 0181](../../specs/decisions/0181-a-new-install-asks-before-it-crawls.md)).
+             * ([ADR 0266](../../specs/decisions/0266-a-new-install-asks-before-it-crawls.md)).
              *
              * The walk is 194 requests and about three minutes before the first page, and every one
              * of them re-derives a list the room is already holding. So a first run with peers in it

@@ -735,6 +735,10 @@ function registerStatsIpc(context: IpcContext): void {
   // (`faction-correction.ts`), so every reader of this one channel sees it without knowing corrections
   // exist.
   ipcMain.handle(CH.factionStandings, () => applyFactionCorrections(factionLog.standings(), factionCorrections.all()));
+  // The Faction tab's Session view — the same fold, just scoped to hits at or after the session's own
+  // start. No correction applied: a correction states a *lifetime* total, which a bounded window can't
+  // meaningfully offset.
+  ipcMain.handle(CH.factionStandingsSince, (_e, sinceIso: string) => factionLog.standingsSince(sinceIso));
   // The one figure the ledger can't give us for a faction touched before this app ever watched it —
   // supplied by the player (see faction-corrections.ts). Offset against the *uncorrected* net, so
   // restating it doesn't compound whatever was stated last time.

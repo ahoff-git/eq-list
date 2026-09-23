@@ -6,8 +6,8 @@ import { count, percent } from "@/shared/format";
 import { Caret, caretGlyph } from "./ui";
 import { ratio } from "@/shared/numbers";
 
-/** Which number the bars are showing. */
-export type DamageView = "dealt" | "taken";
+/** Which number the bars are showing. `"healed"` has no drill-down yet — see `hasBreakdown`. */
+export type DamageView = "dealt" | "taken" | "healed";
 
 /**
  * The bar list: one row per combatant, scaled to the biggest row so relative contribution reads
@@ -42,7 +42,7 @@ export default function DamageMeter({
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const relevant = rows.filter((r) => value(r, view) > 0);
-  const sorted = view === "dealt" ? relevant : [...relevant].sort((a, b) => b.taken - a.taken);
+  const sorted = view === "dealt" ? relevant : [...relevant].sort((a, b) => value(b, view) - value(a, view));
   const top = sorted.length ? value(sorted[0], view) : 0;
   const total = sorted.reduce((n, r) => n + value(r, view), 0);
   // The tree needs to know whose rows are yours; the rows already say, so nothing here has to
@@ -53,11 +53,16 @@ export default function DamageMeter({
     <div className="meters">
       {sorted.map((row) => {
         const v = value(row, view);
-        const isOpen = open === row.name;
+        // Healing has no cells to drill into yet, and a row's `specials` are its *damage*
+        // qualifiers — irrelevant here and confusing to open under a healing total.
+        const canExpand = view !== "healed" && (hasBreakdown(row, view, cells) || row.specials?.length > 0);
+        // Tied to `canExpand`, not just the remembered name — otherwise a row left open while
+        // switching to a view it can't expand under (e.g. into Healers) would keep rendering
+        // stale breakdown content with no caret to say it was there.
+        const isOpen = canExpand && open === row.name;
         // Rolled up only for the row on show: the meter re-renders several times a second, and
         // nothing below the fold needs computing to know a caret belongs on the line.
         const nodes = isOpen ? breakdown(row, view, drill, cells, mine) : [];
-        const canExpand = hasBreakdown(row, view, cells) || row.specials?.length > 0;
         return (
           <div className="meter-group" key={row.name}>
             <div
@@ -92,10 +97,12 @@ export default function DamageMeter({
   );
 }
 
-const value = (row: CombatantStat, view: DamageView): number => (view === "dealt" ? row.dealt : row.taken);
+const value = (row: CombatantStat, view: DamageView): number =>
+  view === "dealt" ? row.dealt : view === "taken" ? row.taken : row.healed;
 
 /** Whether there's anything under the row — the cheap question, asked of every row. */
 function hasBreakdown(row: CombatantStat, view: DamageView, cells?: DamageCell[]): boolean {
+  if (view === "healed") return false; // no heal cells recorded yet
   const axis = view === "dealt" ? "attacker" : "target";
   if (cells?.length) return cells.some((c) => c[axis] === row.name);
   return view === "dealt" && ((row.byType?.length ?? 0) > 0 || (row.bySpell?.length ?? 0) > 0);
@@ -292,6 +299,7 @@ function detail(row: CombatantStat, view: DamageView, canExpand: boolean): strin
     swings > 0 ? `${percent(ratio(row.hits, swings))} of ${swings} swings landed` : "",
     row.crits > 0 ? count(row.crits, "critical") : "",
     row.healed > 0 ? `healed ${row.healed.toLocaleString()}` : "",
+    row.healReceived ? `received ${row.healReceived.toLocaleString()}` : "",
     `active ${row.activeSec}s`,
     canExpand ? (view === "dealt" ? "click for what it hit, how, and with what" : "click for who hit it, how, and with what") : "",
     stanceSplit(row),

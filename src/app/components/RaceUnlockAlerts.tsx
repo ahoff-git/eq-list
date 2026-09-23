@@ -32,12 +32,35 @@ export default function RaceUnlockAlerts() {
   // mount is a starting point, not news, even though its nets are already real history.
   const prior = useRef<RaceUnlockProgress[] | null>(null);
   const lastHitKey = useRef<string | null>(null);
+  /**
+   * A hit landed that `standings` hasn't caught up to yet.
+   *
+   * `hits` and `standings` are two independently-fetched hooks, so "a new hit arrived" and "standings
+   * now reflects it" are almost never the same render: the IPC round trip `useFactionStandings` makes
+   * lands a tick or more after `useFactionFeed`'s push does. Gating the diff on "did `hits` just
+   * change" used to mean the diff ran on the render where `standings` was still stale (finding no real
+   * movement) and was then skipped on the render where `standings` actually updated (because `hits`
+   * hadn't changed again by then) — silently dropping the toast on almost every hit. Tracking "is a
+   * hit owed a look" separately from "did standings just change" lets the diff run on whichever render
+   * actually carries the fresh numbers.
+   */
+  const pendingHit = useRef(false);
 
+  // Notices a new hit the moment the feed reports one — independent of whether `standings` has
+  // caught up yet.
+  useEffect(() => {
+    const hitKey = hits[0] ? factionKey(hits[0]) : null;
+    if (hitKey !== null && hitKey !== lastHitKey.current) {
+      lastHitKey.current = hitKey;
+      pendingHit.current = true;
+    }
+  }, [hits]);
+
+  // Diffs whenever standings actually change — a stated correction moves `standings` too (see the
+  // module header), so this only announces when a hit is the reason it's owed a look.
   useEffect(() => {
     const progress = computeRaceUnlockProgress(standings);
-    const hitKey = hits[0] ? factionKey(hits[0]) : null;
-    const isNewHit = hitKey !== null && hitKey !== lastHitKey.current;
-    if (prior.current && isNewHit) {
+    if (prior.current && pendingHit.current) {
       for (const alert of diffRaceUnlockProgress(prior.current, progress, new Set(watchedRaces))) {
         showToast({
           title: `${alert.race}: ${alert.faction}`,
@@ -48,9 +71,9 @@ export default function RaceUnlockAlerts() {
         });
       }
     }
-    lastHitKey.current = hitKey;
+    pendingHit.current = false;
     prior.current = progress;
-  }, [standings, hits, watchedRaces]);
+  }, [standings, watchedRaces]);
 
   return null;
 }

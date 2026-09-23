@@ -468,10 +468,14 @@ export function createCombatHistory(db: Database, userDataDir: string, sessionId
     // can't be looking up an opponent under a name nothing else uses any more.
     bests: () => reportsCache.get().bests,
 
+    // Reads `reportsCache`'s own `searchIndex` (already the newest-first, no-cap fight list every
+    // other reporting method here shares) instead of running its own fresh full-table scan +
+    // JSON-parse — the same fix ADR 0252 already gave `search()`, applied to the one sibling method
+    // still doing the expensive thing inline.
     sources() {
       // Newest first, so a re-reading does the log you are actually playing before the old ones.
       const seen = new Map<string, string>();
-      for (const f of (selectAll.all() as FightRow[]).map(rowToFight).sort(byNewest)) {
+      for (const f of reportsCache.get().searchIndex) {
         if (!f.logFile) continue;
         const key = path.basename(f.logFile).toLowerCase();
         if (!seen.has(key)) seen.set(key, f.logFile);

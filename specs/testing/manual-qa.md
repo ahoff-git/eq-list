@@ -43,7 +43,7 @@ features for later in [../ideas.md](../ideas.md).
   editor itself has picked, and confirm the panel doesn't end up hiding a stat the editor now shows by
   default (the grid remounts on that change for exactly this reason).
 - **SpellTable and FactionPanel's Standings — the row breakdown moved below the grid, not inline.**
-  ([ADR 0230](../decisions/0230-every-table-gets-a-column-menu.md).) Click a spell row in the Damage
+  ([ADR 0230](../decisions/0230-every-table-gets-a-column-menu.md).) Click a spell row in the Combat
   tab's Spells view and confirm its breakdown opens in a panel **under** the table rather than as a
   second row spliced in under the one you clicked, and that clicking the same row again closes it,
   same as before. With **"Split by invocation mode"** on (Settings) and a spell cast under more than
@@ -103,12 +103,20 @@ features for later in [../ideas.md](../ideas.md).
   than a plain `<tr>`/`<td>` class now, so a CSS selector change elsewhere in `globals.css` could
   silently stop reaching them without a build error to say so.
 - **Damage meter, live.** The parser was validated against a whole real log (0 unmatched combat
-  lines) and the tracker against that log's numbers, but confirm in-game: the Damage tab fills while
+  lines) and the tracker against that log's numbers, but confirm in-game: the Combat tab fills while
   fighting, your and your pet's rows are the highlighted ones, and DPS looks sane for a long fight.
   Crucially, confirm a **laggy/kited fight isn't split** — a lull with the mob still up keeps one
   fight (the "This fight" totals don't reset), and it's only the mob dying that starts the next one
   ([ADR 0036](../decisions/0036-a-fight-ends-on-death-not-a-lull.md)). See
   [ADR 0014](../decisions/0014-damage-meter-from-the-log.md).
+- **Healing figures, live.** ([ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md).) Land
+  a heal on a group-mate (or your pet) and confirm **Your healing** appears among the stat tiles;
+  confirm **Healing on you** appears when you're the one healed, self-heals included. Open the
+  **Healers** view and confirm it ranks by healing done rather than damage, that a healer with no
+  damage of their own still gets a row, and that a fight with nobody healing shows the "no healing
+  yet" empty state rather than a blank list. Confirm a healer's row is **not** expandable (no caret) —
+  there's no breakdown to open yet — even if that combatant also has a damage crit elsewhere in the
+  fight.
 - **Party scoping, live — the group lines are the unverified part.** The meter now counts only
   your party's fights ([ADR 0067](../decisions/0067-the-meter-counts-your-party-s-fights.md)),
   and the roster is read off group lines whose wording this sandbox has never seen: only
@@ -168,7 +176,7 @@ features for later in [../ideas.md](../ideas.md).
 - **Camp analytics, live.** Confirm in-game: XP/hour and **time to level** (the tile asks for your
   current XP% on first use, then keeps itself current and resets when you level), **downtime**
   looking plausible for a real session, the per-mob table ranking sensibly, and the per-zone table
-  filling in as you move camps. Also the Damage tab's additions: the per-second sparkline, the death
+  filling in as you move camps. Also the Combat tab's additions: the per-second sparkline, the death
   recap, pet share, the ★ personal-best flag, and **Copy**. See
   [ADR 0017](../decisions/0017-camp-efficiency-and-asking-the-player.md).
 - **Spell table + history, live.** Confirm the **Spells** view fills as you cast (cast times land in
@@ -643,7 +651,7 @@ features for later in [../ideas.md](../ideas.md).
   the moment it lands. Two to set up: a watch on your own mez (include-self on) with delay **25** and
   message `RECAST MEZ`, and one on a placeholder's death — a raw-text watch on its name — with **8m**.
   Confirm the banner arrives late rather than at the match, that nothing else is late with it (the
-  Damage tab counts the cast immediately, the ☠ list the kill), and that the wording is what makes the
+  Combat tab counts the cast immediately, the ☠ list the kill), and that the wording is what makes the
   late banner legible: without a `message` it reads like a live alert about something that already
   happened. Then the rule that needs dying: cast the mez, **die inside 25 s**, and confirm the recast
   cue does *not* fire — then die with the 8m cue waiting and confirm it still does. Finally, turn cast
@@ -947,7 +955,7 @@ features for later in [../ideas.md](../ideas.md).
 - **Your DoT ticks now count — check the meter, not just the parser.**
   [ADR 0095](../decisions/0095-your-own-dot-tick-is-yours.md) is pinned by tests against verbatim log
   lines and verified by replaying a real 230,000-line log (1,737 tick lines, 0 left unread), but that
-  proves the *parser*, not the meter. In game, cast a DoT and watch **Damage → Abilities**: the DoT
+  proves the *parser*, not the meter. In game, cast a DoT and watch **Combat → Abilities**: the DoT
   should appear as its own source and **keep growing after the cast lands**, which is the thing that
   used to be missing — its ticks are most of a DoT's damage. Three specific checks: the ticks land on
   **your** row and not on a phantom row named after the spell (that's ADR 0071's failure, and a
@@ -962,7 +970,7 @@ features for later in [../ideas.md](../ideas.md).
   0093](../decisions/0093-a-high-score-is-a-personal-best-with-a-floor.md) is about *when a banner
   appears*, which only a real evening exercises. Take them in order:
 
-  **Launch, before playing.** Open **Damage → 🏆 Records**. If you have recorded fights, the board
+  **Launch, before playing.** Open **Combat → 🏆 Records**. If you have recorded fights, the board
   should already be populated — that's the seeding — and its header should say so. Crucially, the
   replayed log gap at startup must produce **no banners at all**, however many records it sets: this is
   the failure that would make the feature unusable, and it's the one thing a single launch tells you.
@@ -1406,7 +1414,7 @@ whether it *reads* right in a window nobody has looked at yet:
   as a flicker, since the card remounts to restart its life.
 - **Does the button's tick fight the row it's in?** It's the same button width plus a glyph, so a
   narrow window may reflow the result row for a second. Worth a look at a long item name.
-- **The clipboard's notice, both ways.** `Copy rule` (Alerts) and `Copy` (Damage) now go through
+- **The clipboard's notice, both ways.** `Copy rule` (Alerts) and `Copy` (Combat) now go through
   `lib/clipboard.ts`. Confirm the success card, and — the half that has never run — that a **refused**
   copy says so: the failure branch is only reachable where `navigator.clipboard` is absent or rejects,
   which this sandbox can't produce.
@@ -1713,7 +1721,7 @@ Verified live: the 1.6 MB file downloads, parses to 134,079 names, and `Dragon D
 - **Turning Lucy off means off.** With `askLucy` unchecked, confirm no mirror download happens and
   no Lucy results appear.
 
-## A camp arms its own alert (ADR 0152)
+## A camp arms its own alert (ADR 0268)
 
 Unit-tested and replayed against a real store; the clicking is what's left. Wants an evening at a camp.
 
@@ -1730,7 +1738,7 @@ Unit-tested and replayed against a real store; the clicking is what's left. Want
 - **First launch after this build**: a camp you had previously switched off may arm itself once, since
   the old file couldn't tell "off" from "never asked". Turn it off again and it stays off.
 
-## A gap stops teaching after three hours (ADR 0152)
+## A gap stops teaching after three hours (ADR 0268)
 
 - **An overnight gap teaches nothing.** Kill a named, sleep, kill it in the morning: its figure must
   not move, and the sample count must not grow.
@@ -1819,7 +1827,7 @@ who never open the Peers tab end up with the same catalogue" is only true or fal
 - **And alone it still doesn't.** Same trick — a week-old `listedAt` — with **no peers**. It must
   start nothing at all. A solo install explores from the button, not from a timer.
 
-## A new install asks before it crawls (ADR 0181)
+## A new install asks before it crawls (ADR 0266)
 
 - **The three-minute walk doesn't happen.** A completely fresh install (no `harvest.json`) connected
   to a well-stocked peer. Start a fill and watch the note: it should go straight to taking shards
@@ -1899,7 +1907,7 @@ below needs a hand on the mouse.
   `transparent: true` and click-through: confirm an alert still draws over the game with no window
   box around it, and that clicks still pass through to EverQuest.
 
-## Five spawn-tracking fixes (ADR 0153)
+## Five spawn-tracking fixes (ADR 0269)
 
 All five were found by replaying a real log and are covered by tests; what wants confirming in game is
 that the log lines really do read as expected on this server.

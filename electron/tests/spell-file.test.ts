@@ -77,7 +77,9 @@ test("a shared name resolves to the row a player can actually hold", () => {
 });
 
 test("the level cap is what makes that choice, and it's the server's", () => {
-  assert.equal(MAX_LEVEL, 50);
+  // 60, not 50: Kunark and Velious are on this server (`SERVER_EXPANSIONS`), so their level-51-60
+  // spells are obtainable at all, regardless of whether either era happens to be open right now.
+  assert.equal(MAX_LEVEL, 60);
 });
 
 test("junk rows cost themselves, not the file", () => {

@@ -676,7 +676,7 @@ if (!app.requestSingleInstanceLock()) {
     history.startSession(event.at);
     // A camp arms its own alert once you have killed it twice **in one sitting**, so the tracker has
     // to know where one sitting ends. Nothing about the world is forgotten here — only the tally
-    // (ADR 0152).
+    // (ADR 0268).
     spawns.noteSitting();
   });
   watcher.onCombat((event) => {

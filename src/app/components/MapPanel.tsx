@@ -79,6 +79,13 @@ export interface RenderPin {
    */
   spread?: number;
   /**
+   * Whether a loud pin draws its uncertainty ring at all. Defaults to true — most loud pins want
+   * it — and is ignored on a pin that isn't `loud`. Named spawns can carpet a busy zone in rings
+   * that a hunt's short mob list never produced; this is how the map window lets a reader keep the
+   * markers while turning that off, independent of hunt pins.
+   */
+  ring?: boolean;
+  /**
    * Which self-placed marker this is, when it's one of those — unset for a hand-placed or peer pin,
    * which draw and click exactly as they always have. `"named"` draws smaller than `"hunt"`
    * (`loudStyle`, ADR 0265's markers can be far more numerous than a hunt list ever is) and clicks
@@ -1044,7 +1051,7 @@ export default function MapPanel({
      */
     function drawPinRings(ctx: CanvasRenderingContext2D): void {
       for (const pin of pins) {
-        if (!pin.loud) continue;
+        if (!pin.loud || pin.ring === false) continue;
         const p = toScreen(pin);
         if (!p) continue;
         const measured = pin.spread !== undefined;

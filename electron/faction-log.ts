@@ -190,6 +190,13 @@ function rowToRecord(r: HitRow): FactionRecord {
   };
 }
 
+/** Biggest `|net|` leads, ties broken by hit count — the order every cause rollup presents in,
+ *  whether merged from two pre-summed arrays (`mergeCauseTallies`) or built fresh over a time-scoped
+ *  slice of the live table (`computeStandingsSince`). */
+function byCauseImpact(a: FactionCauseTally, b: FactionCauseTally): number {
+  return Math.abs(b.net) - Math.abs(a.net) || b.hits - a.hits;
+}
+
 /** Fold two (already-aggregated) sets of per-cause tallies into one, biggest `|net|` first — the
  *  same rule `foldCause` folded one event at a time, now combining two small pre-summed arrays (the
  *  live hits' own rollup and whatever a past `clear("records")` already froze) instead of scanning
@@ -203,7 +210,7 @@ function mergeCauseTallies(a: readonly FactionCauseTally[], b: readonly FactionC
     cur.hits += c.hits;
     byKey.set(key, cur);
   }
-  return [...byKey.values()].sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.hits - a.hits);
+  return [...byKey.values()].sort(byCauseImpact);
 }
 
 /** Columns/expressions `hitsPage` may sort by — an allow-list, so a caller's sort field is never
@@ -325,6 +332,15 @@ export interface FactionLog {
    */
   standings(): FactionStanding[];
   /**
+   * Every faction touched **at or after** `sinceIso`, folded the same way `standings()` is — net
+   * summed, floor/ceiling hits counted apart, causes rolled up biggest `|net|` first — but scoped to
+   * the live table alone, with nothing a past `clear("records")` froze folded in on top (a freeze can
+   * only ever be older than whatever session is asking). What the Faction tab's Session view calls,
+   * `sinceIso` being the session's own start (`CombatStats.startedAt` — ADR 0019's one tracker owns
+   * what "session" means everywhere it's asked).
+   */
+  standingsSince(sinceIso: string): FactionStanding[];
+  /**
    * Forget the feed. **Standings survive by default** — they're what the ledger *taught*, same rule
    * as a loot price (ADR 0056). `"everything"` is the deliberate, asked-for wipe.
    */
@@ -409,6 +425,31 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
            SUM(delta) as net, COUNT(*) as hits
     FROM faction_hits
     WHERE caused_by_kind IS NOT NULL
+    GROUP BY faction, caused_by_kind, caused_by_source
+  `);
+  // `standingsSince`'s own pair, mirroring `selectStandingsAgg`/`selectLiveCauses` except for the
+  // `at >= ?` cutoff and no frozen union — a freeze is always older than any session that could be
+  // asking. `net`/`raises`/`lowers` all need their own `COALESCE` here (unlike `selectStandingsAgg`'s
+  // inner subselect, which leaves that to its outer re-aggregation over the frozen union): a faction
+  // touched only by floor/ceiling hits in the window has every `delta` — and so every `delta >= 0`/
+  // `delta < 0` too — `NULL`, and `SUM` over an all-`NULL` group is `NULL`, not `0`.
+  // `floors`/`ceilings` need no guard: `direction = 'floor'`/`'ceiling'` is always `0` or `1`, never
+  // `NULL`, for any row.
+  const selectStandingsSinceAgg = db.prepare(`
+    SELECT faction,
+           COALESCE(SUM(delta), 0) as net,
+           COALESCE(SUM(delta >= 0), 0) as raises, COALESCE(SUM(delta < 0), 0) as lowers,
+           SUM(direction = 'floor') as floors, SUM(direction = 'ceiling') as ceilings,
+           MIN(at) as firstAt, MAX(at) as lastAt
+    FROM faction_hits
+    WHERE at >= ?
+    GROUP BY faction
+  `);
+  const selectCausesSince = db.prepare(`
+    SELECT faction, caused_by_kind as kind, caused_by_source as source,
+           SUM(delta) as net, COUNT(*) as hits
+    FROM faction_hits
+    WHERE caused_by_kind IS NOT NULL AND at >= ?
     GROUP BY faction, caused_by_kind, caused_by_source
   `);
   const selectFrozen = db.prepare(`SELECT * FROM faction_standings_frozen`);
@@ -505,6 +546,48 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
       .sort((a, b) => b.lastAt.localeCompare(a.lastAt));
   }
 
+  /** `standingsSince`'s own body — same shape as `computeStandings`, just a time-scoped query and no
+   *  frozen data to fold in (see the interface doc). */
+  function computeStandingsSince(sinceIso: string): FactionStanding[] {
+    const rows = selectStandingsSinceAgg.all(sinceIso) as {
+      faction: string;
+      net: number;
+      raises: number;
+      lowers: number;
+      floors: number;
+      ceilings: number;
+      firstAt: string;
+      lastAt: string;
+    }[];
+
+    const causes = new Map<string, FactionCauseTally[]>();
+    for (const c of selectCausesSince.all(sinceIso) as {
+      faction: string;
+      kind: string;
+      source: string;
+      net: number;
+      hits: number;
+    }[]) {
+      const list = causes.get(c.faction) ?? [];
+      list.push({ kind: c.kind as FactionCauseTally["kind"], source: c.source, net: c.net, hits: c.hits });
+      causes.set(c.faction, list);
+    }
+
+    return rows
+      .map((r) => ({
+        faction: r.faction,
+        net: r.net,
+        raises: r.raises,
+        lowers: r.lowers,
+        floors: r.floors,
+        ceilings: r.ceilings,
+        firstAt: r.firstAt,
+        lastAt: r.lastAt,
+        causes: (causes.get(r.faction) ?? []).sort(byCauseImpact),
+      }))
+      .sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  }
+
   return {
     add(event) {
       const info = insertHit.run(paramsOf(event));
@@ -541,6 +624,8 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
     },
 
     standings: computeStandings,
+
+    standingsSince: computeStandingsSince,
 
     clear(scope = "records") {
       if (scope === "records") {

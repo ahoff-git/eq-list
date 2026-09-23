@@ -194,6 +194,10 @@ reading like a measurement, and they are shared code
   keep what they were written with. ([0095](./0095-your-own-dot-tick-is-yours.md))
 - **Snapshots are coalesced before broadcast.** A poll can deliver thousands of combat lines at once
   and no UI can use thousands of snapshots. ([0014](./0014-damage-meter-from-the-log.md))
+- **Healing gets the same fight/session totals damage has, and a ranked view of its own.** A combatant
+  tracks what it received as well as what it did; the tab (renamed **Combat**) shows both only when
+  there's something to report. Its Healers view is a ranked total, not a drill-down — nothing rolls a
+  heal into cells the way damage's do. ([0270](./0270-the-combat-tab-tracks-healing-too.md))
 
 ## Health and experience
 
@@ -533,26 +537,26 @@ reading like a measurement, and they are shared code
   is announced **at once** (a root you don't recast this second is a mob in your casters) and **clears
   when the fight ends** (there is nothing left to re-root). Your own buffs are the reverse: the banner
   **waits for the fight to end**, because nobody stops swinging to rebuff, and the row stays until the
-  buff is back. ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md))
+  buff is back. ([0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md))
 - **Either the spell or the target may settle which kind it is** — detrimental by the game's file, or a
   mob by its article — and **you and your pet are never enemy targets**, checked first, so a mislabelled
   spell can never sweep away the reminders the feature exists for.
-  ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md))
+  ([0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md))
 - **The standing on-screen list never waits.** Holding a banner is only free because the quiet half is
   already saying it. Interruption and information are separated, not delayed together.
-  ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md), [0099](./0099-a-countdown-can-stay-on-screen.md))
+  ([0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md), [0099](./0099-a-countdown-can-stay-on-screen.md))
 - **What counts as a fight is the meter's answer, asked not re-derived.** A second opinion built from
   damage events would be the same rule written twice.
-  ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md), [0036](./0036-a-fight-ends-on-death-not-a-lull.md))
+  ([0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md), [0036](./0036-a-fight-ends-on-death-not-a-lull.md))
 - **No duration threshold decides whether to speak.** "Don't interrupt me about long buffs" is
   implemented as "don't interrupt me about anything I can't act on now", because the first needs a figure
   this app refuses to compute and the second the log answers outright.
-  ([0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md))
+  ([0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md))
 - **Your death lapses your buffs quietly.** Recorded — "what do I need re-buffed" is the question a
   corpse has — and not announced, because a dozen banners at once is not a dozen pieces of news. Buffs
   you put on other people survive it, and the log reports those itself. A fight that ended by killing
   you says nothing either, including the banners it was holding.
-  ([0140](./0140-a-buff-is-watched-until-it-lapses.md), [0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md))
+  ([0140](./0140-a-buff-is-watched-until-it-lapses.md), [0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md))
 - **The duration formula's id is read; a duration is not computed.** Applying the formula is
   server-side logic, and the caster level it needs is one this log will not state — EQL levels are per
   class and the level line names none. So permanence is known, and **no countdown is shown**.

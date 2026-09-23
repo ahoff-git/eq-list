@@ -47,7 +47,7 @@ import { useWindowPin } from "@/lib/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "damage" | "session" | "alerts" | "peers" | "settings";
+type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "combat" | "session" | "alerts" | "peers" | "settings";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -250,7 +250,7 @@ function ControlWindow() {
     // Beside Stances, the fourth shelf — what you could *train* (Alternate Advancement) rather than
     // wear, cast or do right now. Same static-reference grouping, same reason it carries no log gate.
     { key: "aa", label: "AAs" },
-    { key: "damage", label: "Damage", disabled: needsLog, disabledReason: noLog },
+    { key: "combat", label: "Combat", disabled: needsLog, disabledReason: noLog },
     { key: "session", label: "Session", disabled: needsLog, disabledReason: noLog },
     // Before Settings, and after everything you look at while playing. It is the same kind of thing
     // as Settings — a place you go to decide something and then leave — but it also has a live half
@@ -350,7 +350,7 @@ function ControlWindow() {
           {tab === "spells" && <SpellSearchPanel />}
           {tab === "stances" && <StancesPanel />}
           {tab === "aa" && <AAPanel />}
-          {tab === "damage" && <DamagePanel />}
+          {tab === "combat" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "alerts" && <AlertsPanel />}
           {tab === "peers" && <PeersPanel focusPeer={focusPeer} onViewPeer={viewPeer} />}

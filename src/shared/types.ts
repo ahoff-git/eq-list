@@ -749,6 +749,11 @@ export interface CombatantStat {
   dealt: number;
   taken: number;
   healed: number;
+  /**
+   * Healing this combatant received, from any healer (itself included, on a self-heal). Absent on
+   * fights stored before it was recorded — see `FightStats.totalHealed`.
+   */
+  healReceived?: number;
   /** Landed and missed swings (melee + spells), for the accuracy figure. */
   hits: number;
   misses: number;
@@ -1133,6 +1138,14 @@ export interface FightStats {
   /** Damage you and your pet dealt, and took, within the window. */
   yourDealt: number;
   yourTaken: number;
+  /**
+   * Healing landed in the window, by anyone on your side or off it — the same "everybody's fights"
+   * scope `totalDealt` uses (ADR 0067). Absent on fights stored before it was recorded.
+   */
+  totalHealed?: number;
+  /** Healing you and your pet did, and received, within the window. Absent on older fights. */
+  yourHealed?: number;
+  yourHealReceived?: number;
   /**
    * Wall-clock seconds the window spans, first damage to last — as opposed to
    * `durationSec`, which counts only time in combat. The difference is downtime.
@@ -1995,7 +2008,7 @@ export interface KnownSpawn extends RespawnLearning {
   notify: boolean;
   /**
    * This camp's alert was armed by the **app**, because you killed it twice in one sitting and are
-   * visibly camping it (ADR 0152) — rather than by you ticking the box.
+   * visibly camping it (ADR 0268) — rather than by you ticking the box.
    *
    * Only so the row can say so: an alert that turns itself on without mentioning it is a banner out
    * of nowhere. Goes false the moment you touch the checkbox either way, since from then on the
@@ -3412,6 +3425,13 @@ export interface EqlApi {
     /** Every faction the ledger has seen a change for, folded to one row each, with any stated
      *  correction already folded into `net` (`electron/faction-corrections.ts`). */
     standings(): Promise<FactionStanding[]>;
+    /**
+     * The same fold as `standings()`, scoped to hits at or after `sinceIso` — what the Faction tab's
+     * Session view asks for, `sinceIso` being the current session's own start
+     * (`CombatStats.startedAt`). Carries no correction: that states a lifetime total, which a bounded
+     * window can't meaningfully offset.
+     */
+    standingsSince(sinceIso: string): Promise<FactionStanding[]>;
     /** Every parsed faction-standing line, whether or not anything is watching that faction. */
     onEvent(cb: (event: FactionRecord) => void): Unsubscribe;
     /**

@@ -195,6 +195,7 @@ function createWebApi(): EqlApi {
       recent: async () => [],
       hitsPage: async () => ({ rows: [], total: 0 }),
       standings: async () => [],
+      standingsSince: async () => [],
       onEvent: () => noop,
       setCorrection: async () => ({ offset: 0, statedAt: new Date().toISOString() }),
     },

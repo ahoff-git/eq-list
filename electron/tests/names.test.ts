@@ -188,6 +188,10 @@ test("the names a real log uses reach the zones we name", () => {
   assert.equal(zoneKey("Temple of Cazic-Thule"), zoneKey("Cazic-Thule"));
   // Still two Guks, which is the thing an alias must never undo.
   assert.notEqual(zoneKey("The City of Guk"), zoneKey("The Ruins of Old Guk"));
+  // This server's own live zone-arrival text for RunnyEye Citadel — confirmed from a real install's
+  // `kill-log.json` — which neither the supplied gazetteer nor the wiki's label states anywhere.
+  // Before this alias existed, `currentZone` never updated on actually entering the zone (specs/todo.md).
+  assert.equal(zoneKey("The Liberated Citadel of Runnyeye"), zoneKey("RunnyEye Citadel"));
 });
 
 test("an ordinary zone reports no difficulty", () => {

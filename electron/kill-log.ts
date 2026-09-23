@@ -891,21 +891,29 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
       // would still lose everything the records currently held taught, which is all of it now that
       // nothing retires automatically as it's recorded (ADR 0243).
       if (scope === "records") {
-        // `.reverse()`: same reasoning as `observations()` — `retire` folds these through
-        // `observeMobs`'s `clusterAreas`, whose greedy nearest-pair merge can pick a different pair
-        // on a genuine distance tie depending on input order, and the old array-backed store always
-        // fed this from its own oldest-first array.
-        retire((selectAll.all() as KillRow[]).reverse().map(rowToRecord));
-        // The keys stay: `mob_observations_frozen` just absorbed these records' counts, and a
-        // re-eaten log must still recognise them as already accounted for, or "clear records, keep
-        // what I've learned" would double them the moment the same log crossed this app again.
-        deleteAllKills.run();
+        // One transaction: a crash between the freeze committing and the delete running would
+        // otherwise leave `mob_observations_frozen` already holding these kills' counts *and*
+        // `kill_records` still holding the rows themselves — `computeObservations()` sums both, so
+        // every one of them would be double-counted forever, with nothing to ever notice or undo it.
+        db.transaction(() => {
+          // `.reverse()`: same reasoning as `observations()` — `retire` folds these through
+          // `observeMobs`'s `clusterAreas`, whose greedy nearest-pair merge can pick a different pair
+          // on a genuine distance tie depending on input order, and the old array-backed store always
+          // fed this from its own oldest-first array.
+          retire((selectAll.all() as KillRow[]).reverse().map(rowToRecord));
+          // The keys stay: `mob_observations_frozen` just absorbed these records' counts, and a
+          // re-eaten log must still recognise them as already accounted for, or "clear records, keep
+          // what I've learned" would double them the moment the same log crossed this app again.
+          deleteAllKills.run();
+        })();
       } else {
-        deleteAllFrozen.run();
-        deleteAllKills.run();
-        // A full wipe is the one time nothing is left to protect, so this is also the one time
-        // starting fresh means forgetting every key too.
-        deleteAllSeenKeys();
+        db.transaction(() => {
+          deleteAllFrozen.run();
+          deleteAllKills.run();
+          // A full wipe is the one time nothing is left to protect, so this is also the one time
+          // starting fresh means forgetting every key too.
+          deleteAllSeenKeys();
+        })();
       }
       // The fixes describe where the cleared kills happened; keeping them would place the
       // next kill using evidence the player just asked us to forget.

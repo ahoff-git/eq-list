@@ -6,7 +6,8 @@ import {
   type GridFilterModel,
   type GridPaginationModel,
 } from "@mui/x-data-grid";
-import { useFactionHitsPage, useFactionStandings } from "@/lib/hooks";
+import { useCombatStats, useFactionHitsPage, useFactionStandings, useFactionStandingsSince } from "@/lib/hooks";
+import { resetSession } from "@/lib/api";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
 import { useGridSort } from "@/lib/useGridSort";
@@ -23,7 +24,7 @@ import {
   type FactionHitSortKey,
   type FactionStandingSortKey,
 } from "@/shared/faction-sort";
-import { count, dayTime, when } from "@/shared/format";
+import { clock, count, dayTime, when } from "@/shared/format";
 import type { Sort } from "@/shared/sorting";
 import type {
   FactionCauseTally,
@@ -46,7 +47,7 @@ import {
   PAGE_SIZE_OPTIONS,
   hiddenByDefault,
 } from "./dataGridDefaults";
-import { Empty, segCls } from "./ui";
+import { Empty, segCls, StatTile } from "./ui";
 
 /**
  * Everything the log has said raised or lowered a faction, and what it comes to for each one.
@@ -125,8 +126,17 @@ import { Empty, segCls } from "./ui";
  * — which factions each race needs maxed, the quests that raise them, and how close the ledger has
  * seen you get. Unlike the other two, it's useful with zero hits recorded (it's reference data, not a
  * ledger), so it's the one view the empty state below doesn't gate.
+ *
+ * **A fourth view, Session, answers a narrower question than Standings: not "where do I stand" but
+ * "what changed tonight."** The ledger keeps every hit forever with nothing session-shaped about it
+ * (unlike `CombatStats`, ADR 0019's one tracker for everything else called "session") — so this folds
+ * the same way `standings` does, just scoped to hits at or after the session's own start
+ * (`useCombatStats().startedAt`, `faction.standingsSince`/`FactionLog.standingsSince`). Reuses
+ * `StandingTable` rather than a second copy of its columns, with its row drill-down turned off: the
+ * ledger has no per-session *hit* query yet, so opening one here would show a faction's whole lifetime
+ * of hits under a "this session" heading instead of honestly having nothing further to show.
  */
-type View = "hits" | "standings" | "unlocks";
+type View = "hits" | "standings" | "session" | "unlocks";
 
 /** A single newest-hit probe — cheap (one row, one `COUNT(*)`), and enough to answer "is the ledger
  *  empty" and "how many hits total" for the header without fetching a page `FactionHitsGrid` owns
@@ -148,10 +158,44 @@ export default function FactionPanel() {
   const { page: hitsProbe } = useFactionHitsPage(HITS_PROBE_QUERY);
   const standings = useFactionStandings(hitsProbe.rows[0] ? factionKey(hitsProbe.rows[0]) : "");
 
-  const sortedStandings = useMemo(() => sortFactionStandings(standings, standingSort), [standings, standingSort]);
-  const { query: standingQuery, setQuery: setStandingQuery, filtered: shownStandings } = useFuzzyFilter(
-    sortedStandings,
+  const combat = useCombatStats();
+  const sessionStandings = useFactionStandingsSince(
+    combat.startedAt,
+    hitsProbe.rows[0] ? factionKey(hitsProbe.rows[0]) : "",
+  );
+  const shownSession = useMemo(
+    () => sortFactionStandings(sessionStandings, standingSort),
+    [sessionStandings, standingSort],
+  );
+  // What the session view's stat tiles lead with — "Raised"/"Lowered" are hit counts here, the same
+  // thing those words already mean as the Standings table's own column headers, not a net delta summed
+  // across factions that share no common scale.
+  const sessionTotals = useMemo(
+    () =>
+      sessionStandings.reduce(
+        (t, s) => ({
+          raises: t.raises + s.raises,
+          lowers: t.lowers + s.lowers,
+          caps: t.caps + s.floors + s.ceilings,
+        }),
+        { raises: 0, lowers: 0, caps: 0 },
+      ),
+    [sessionStandings],
+  );
+
+  // Search narrows *which* factions show; the declared column sort still governs the order they show
+  // in. Sorting before the fuzzy filter (the old order here) let the search silently override it —
+  // `useFuzzyFilter`'s own re-ranking by match quality doesn't preserve the input order it was given,
+  // so `StandingTable`'s `sortingMode="server"` header arrow kept claiming a sort the visible rows no
+  // longer followed the moment a query was typed. Sorting the *matched* set instead keeps the arrow
+  // honest whether or not a search is active.
+  const { query: standingQuery, setQuery: setStandingQuery, filtered: matchedStandings } = useFuzzyFilter(
+    standings,
     (s) => s.faction,
+  );
+  const shownStandings = useMemo(
+    () => sortFactionStandings(matchedStandings, standingSort),
+    [matchedStandings, standingSort],
   );
 
   return (
@@ -173,6 +217,13 @@ export default function FactionPanel() {
             Standings{standings.length ? ` (${standings.length})` : ""}
           </button>
           <button
+            className={segCls(view === "session")}
+            onClick={() => setView("session")}
+            title="Every faction changed since this session began — the same 'session' Combat and XP already mean (ADR 0019)"
+          >
+            Session
+          </button>
+          <button
             className={segCls(view === "unlocks")}
             onClick={() => setView("unlocks")}
             title="Which factions each race's unlock needs maxed, and how close your own log has seen you get"
@@ -190,6 +241,18 @@ export default function FactionPanel() {
           />
         )}
         {view === "hits" && hitsProbe.total > 0 && <span className="muted small">{count(hitsProbe.total, "hit")}</span>}
+        {view === "session" && (
+          <>
+            <span className="muted small">Since {clock(combat.startedAt, { seconds: true })}</span>
+            <button
+              className="btn ghost sm"
+              onClick={resetSession}
+              title="Clear the session counters app-wide (Combat, XP, Loot, and this view) — every hit stays on the ledger"
+            >
+              Reset session
+            </button>
+          </>
+        )}
       </div>
 
       {/* `flex: 1; min-height: 0` so whichever view is open can fill whatever's left of the window
@@ -199,6 +262,29 @@ export default function FactionPanel() {
       <div className="tab-fill-body">
         {view === "unlocks" ? (
           <RaceUnlocksView standings={standings} />
+        ) : view === "session" ? (
+          <>
+            <div className="stat-row" style={{ marginBottom: 12 }}>
+              <StatTile label="Factions touched" value={sessionStandings.length} />
+              <StatTile label="Raised" value={sessionTotals.raises} hint="Hits that stated a positive amount, this session" />
+              <StatTile label="Lowered" value={sessionTotals.lowers} hint="Hits that stated a negative amount, this session" />
+              {sessionTotals.caps > 0 && (
+                <StatTile
+                  label="Floor/ceiling hits"
+                  value={sessionTotals.caps}
+                  hint="Hits that stated no amount at all — already at the cap"
+                />
+              )}
+            </div>
+            <StandingTable
+              standings={shownSession}
+              sort={standingSort}
+              onSort={setStandingSort}
+              drillDown={false}
+              emptyTitle="Nothing has changed a faction yet this session."
+              emptyHint={`Since ${clock(combat.startedAt, { seconds: true })} — a hit appears here the moment the game logs one.`}
+            />
+          </>
         ) : hitsProbe.total === 0 ? (
           <Empty
             title="Nothing has raised or lowered a faction yet."
@@ -527,10 +613,22 @@ function StandingTable({
   standings,
   sort,
   onSort,
+  drillDown = true,
+  emptyTitle = "No standings yet.",
+  emptyHint = "Folded from the hits on the other view.",
 }: {
   standings: FactionStanding[];
   sort: Sort<FactionStandingSortKey>;
   onSort: (next: Sort<FactionStandingSortKey>) => void;
+  /** Off for the Session view: the ledger has no per-session *hit* query yet (`hitsPage` filters by
+   *  faction, not by time), so a row's own drill-down would open onto that faction's whole lifetime of
+   *  hits — a lie by omission under a "this session" heading. `CauseBreakdown`'s own "Likely causes"
+   *  column still shows, already folded correctly to the session by `standingsSince`. */
+  drillDown?: boolean;
+  /** The empty state's wording — the Session view's own hits-since-session-start question isn't "the
+   *  hits on the other view" the lifetime Standings view means by that. */
+  emptyTitle?: string;
+  emptyHint?: string;
 }) {
   /** One breakdown open at a time — two of them side by side is a table, not a drill-down. */
   const [open, setOpen] = useState<string | null>(null);
@@ -601,8 +699,8 @@ function StandingTable({
       },
       {
         field: "observedNet",
-        headerName: "Corrected total",
-        description: "Present only once you've stated this faction's real total — net above already has it folded in",
+        headerName: "Ledger-observed",
+        description: "What the ledger alone has seen for this faction, live — Net above already has your stated correction folded in on top of it",
         ...NUM_COL,
         flex: 1,
         sortable: false,
@@ -632,8 +730,9 @@ function StandingTable({
       {
         field: "causes",
         headerName: "Likely causes",
-        description:
-          "A guess from timing, not a fact the game states — a mob's kill or a nearby conversation that landed shortly before one or more hits (ADR 0219, ADR 0220). Click a row for the full breakdown, kills and quests apart.",
+        description: drillDown
+          ? "A guess from timing, not a fact the game states — a mob's kill or a nearby conversation that landed shortly before one or more hits (ADR 0219, ADR 0220). Click a row for the full breakdown, kills and quests apart."
+          : "A guess from timing, not a fact the game states — a mob's kill or a nearby conversation that landed shortly before one or more hits this session (ADR 0219, ADR 0220).",
         flex: 3,
         minWidth: 220,
         sortable: false,
@@ -660,17 +759,17 @@ function StandingTable({
         renderCell: (p) => <span title={when(p.row.lastAt)}>{dayTime(p.row.lastAt)}</span>,
       },
     ],
-    [],
+    [drillDown],
   );
 
   // Computed before the early return below: a hook can't be called conditionally.
   const { sortModel, onSortModelChange } = useGridSort(sort, onSort, (key) => key !== "faction");
 
   if (standings.length === 0) {
-    return <Empty title="No standings yet." hint="Folded from the hits on the other view." />;
+    return <Empty title={emptyTitle} hint={emptyHint} />;
   }
 
-  const openStanding = open ? standings.find((s) => s.faction === open) : undefined;
+  const openStanding = drillDown && open ? standings.find((s) => s.faction === open) : undefined;
 
   return (
     <div className="table-scroll grid-fill">
@@ -683,8 +782,10 @@ function StandingTable({
         sortModel={sortModel}
         onSortModelChange={onSortModelChange}
         disableRowSelectionOnClick
-        rowSelectionModel={{ type: "include", ids: new Set(open ? [open] : []) }}
-        onRowClick={(params) => setOpen((prev) => (prev === params.id ? null : (params.id as string)))}
+        rowSelectionModel={{ type: "include", ids: new Set(openStanding ? [open as string] : []) }}
+        onRowClick={
+          drillDown ? (params) => setOpen((prev) => (prev === params.id ? null : (params.id as string))) : undefined
+        }
         pageSizeOptions={PAGE_SIZE_OPTIONS}
         initialState={{
           pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },

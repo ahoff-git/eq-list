@@ -48,6 +48,8 @@ export default function MapFilters({
   namedPins,
   showNamedPins,
   onNamedPins,
+  showNamedRings,
+  onNamedRings,
   poiGroups,
   hiddenPoiKinds,
   onPoiKinds,
@@ -88,6 +90,10 @@ export default function MapFilters({
   namedPins: number;
   showNamedPins: boolean;
   onNamedPins: (show: boolean) => void;
+  /** Whether named-spawn pins draw their uncertainty ring — independent of `showNamedPins`, so the
+   *  markers can stay while just the rings go. Meaningless (and hidden) when named pins are off. */
+  showNamedRings: boolean;
+  onNamedRings: (show: boolean) => void;
   /** The label kinds this map actually has, in sections (see `poiGroupSummary`). */
   poiGroups: PoiGroupSummary[];
   hiddenPoiKinds: ReadonlySet<PoiKind>;
@@ -290,6 +296,15 @@ export default function MapFilters({
             </>
           }
         />
+        {showNamedPins && (
+          <CheckField
+            className="indent"
+            checked={showNamedRings}
+            onChange={onNamedRings}
+            title="Draw each named spawn's uncertainty ring — solid once your own (or pooled) kills have measured it, dashed while it's still only the wiki's stated spot. A busy zone can carry far more of these than a hunt list ever puts on screen; turning this off keeps the markers but drops the rings."
+            label="Show their uncertainty rings"
+          />
+        )}
       </section>
 
       {poiGroups.map((group) => {

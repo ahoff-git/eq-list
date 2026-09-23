@@ -6,12 +6,12 @@ Accepted
 
 Narrows what the buff board enrols, set by
 [ADR 0140](./0140-a-buff-is-watched-until-it-lapses.md) and extended to debuffs by
-[ADR 0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md). How a debuff *behaves* once it has a
+[ADR 0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md). How a debuff *behaves* once it has a
 row — announced the instant it drops, swept when the fight ends — is unchanged.
 
 ## Context
 
-ADR 0141 made a debuff the mirror image of a buff: both are effects with a target, both lapse, and
+ADR 0267 made a debuff the mirror image of a buff: both are effects with a target, both lapse, and
 the board can hold either. That was right about the mechanics and silent about the direction, and
 the direction turns out to be the whole thing.
 

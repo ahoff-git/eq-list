@@ -464,6 +464,59 @@ test("a standing rolls up mobs and dialogue causes separately, even if they shar
   ]);
 });
 
+test("standingsSince folds only hits at or after the cutoff, ordered most-recently-touched first", () => {
+  const l = freshLog();
+  l.add(lowered("Agents of Mistmoore", 1, -3));
+  l.add(raised("Circle of Unseen Hands", 2, 2));
+  l.add(lowered("Agents of Mistmoore", 3, -1));
+
+  const since = l.standingsSince("2026-07-29T00:00:02");
+  assert.deepEqual(
+    since.map((s) => s.faction),
+    ["Agents of Mistmoore", "Circle of Unseen Hands"],
+    "most-recently-touched first, same as standings()",
+  );
+  const mistmoore = since.find((s) => s.faction === "Agents of Mistmoore")!;
+  assert.equal(mistmoore.net, -1, "the hit at second 1 predates the cutoff and doesn't count toward the session net");
+});
+
+test("standingsSince rolls up causes the same way standings() does, scoped to the same window", () => {
+  const l = freshLog();
+  l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));
+  l.add(lowered("Agents of Mistmoore", 2, -5, "a gnoll pup"));
+
+  const [standing] = l.standingsSince("2026-07-29T00:00:02");
+  assert.deepEqual(
+    standing.causes,
+    [{ kind: "kill", source: "a gnoll pup", net: -5, hits: 1 }],
+    "only the second hit falls inside the window",
+  );
+});
+
+test("standingsSince never folds in what a past clear() froze, even when sinceIso reaches back before it", () => {
+  const l = freshLog();
+  l.add(lowered("Agents of Mistmoore", 1, -3));
+  l.clear(); // freezes the standing at net -3, then empties the live table
+  l.add(raised("Agents of Mistmoore", 2, 1));
+
+  const [standing] = l.standingsSince("2026-07-29T00:00:01");
+  assert.equal(standing.net, 1, "a freeze can only ever be older than any session asking, so it stays out entirely");
+  // Confirmed against the lifetime view, which does fold the freeze in — the two are meant to disagree.
+  assert.equal(l.standings().find((s) => s.faction === "Agents of Mistmoore")?.net, -2);
+});
+
+test("standingsSince nets zero rather than SQL NULL for a faction touched only by floor/ceiling hits in the window", () => {
+  const l = freshLog();
+  l.add(hit("Circle of Unseen Hands", 1, null, "floor"));
+  l.add(hit("Circle of Unseen Hands", 2, null, "ceiling"));
+
+  const [standing] = l.standingsSince("2026-07-29T00:00:01");
+  assert.deepEqual(
+    [standing.net, standing.raises, standing.lowers, standing.floors, standing.ceilings],
+    [0, 0, 0, 1, 1],
+  );
+});
+
 test("recheckDialogueCauses clears a whole cause once its giver isn't a confirmed mob, per ADR 0257/0261", () => {
   const l = freshLog();
   l.add(

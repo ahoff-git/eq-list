@@ -50,6 +50,18 @@ export function createUiState(userDataDir: string): UiState {
 
   const saver = createSaver(file, "panel settings", () => held, SAVE_AFTER_MS, { restart: true });
 
+  // The JSON each key was last written as, so `set()` can tell a no-op write from a real one without
+  // re-serializing `held[key]` on every call — a value here can be up to `MAX_VALUE_BYTES`, and this is
+  // what `usePersistentState` writes through on every drag tick or keystroke.
+  const lastJson: Record<string, string> = {};
+  for (const [key, value] of Object.entries(held)) {
+    try {
+      lastJson[key] = JSON.stringify(value);
+    } catch {
+      /* an unserializable value already on disk — set() just always treats a rewrite as a change */
+    }
+  }
+
   return {
     all: () => ({ ...held }),
     get: (key) => held[key],
@@ -59,6 +71,7 @@ export function createUiState(userDataDir: string): UiState {
       if (value === undefined || value === null) {
         if (!(key in held)) return;
         delete held[key];
+        delete lastJson[key];
         saver.save();
         return;
       }
@@ -79,8 +92,9 @@ export function createUiState(userDataDir: string): UiState {
       // Store the parsed copy rather than the caller's object: it crossed IPC, so it is already a
       // plain value, and this keeps `all()` cheap to serialize.
       const next = JSON.parse(json) as unknown;
-      if (JSON.stringify(held[key]) === json) return; // no change, no write
+      if (lastJson[key] === json) return; // no change, no write
       held[key] = next;
+      lastJson[key] = json;
       saver.save();
     },
 

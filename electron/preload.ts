@@ -83,6 +83,7 @@ const api: EqlApi = {
     recent: (limit) => ipcRenderer.invoke(CH.factionRecent, limit),
     hitsPage: (query) => ipcRenderer.invoke(CH.factionHitsPage, query),
     standings: () => ipcRenderer.invoke(CH.factionStandings),
+    standingsSince: (sinceIso) => ipcRenderer.invoke(CH.factionStandingsSince, sinceIso),
     onEvent: (cb) => on(CH.factionEvent, cb),
     setCorrection: (faction, statedNet) => ipcRenderer.invoke(CH.factionSetCorrection, faction, statedNet),
   },

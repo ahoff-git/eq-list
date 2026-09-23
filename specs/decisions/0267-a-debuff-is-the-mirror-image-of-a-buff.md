@@ -1,4 +1,4 @@
-# 0141: A debuff is the mirror image of a buff, and a rebuff reminder waits for the fight
+# 0267: A debuff is the mirror image of a buff, and a rebuff reminder waits for the fight
 
 ## Status
 

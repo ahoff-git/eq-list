@@ -21,17 +21,6 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
-- **RunnyEye Citadel's live zone-arrival text doesn't resolve to its own gazetteer entry.**
-  `CURATED_ZONES` names it `"RunnyEye Citadel"`, but a real captured log's zone line reads
-  `"The Liberated Citadel of Runnyeye"` (confirmed from a live install's own `kill-log.json`, which
-  holds real kill records stamped with that exact zone string). `classifyZoneLine` calls that string
-  `"unresolved"` today, so **`currentZone` never actually updates on entering this zone live** — every
-  reader keyed on it (the kill log, mob knowledge, achievements' `"zone"` criteria, ADR 0212/0214)
-  silently never sees an arrival. Found while building the achievements feature's Grand Tour
-  criterion, not caused by it — the fix belongs to the gazetteer/alias table (ADR 0075, ADR 0076),
-  not to achievements. Likely a missing `ZONE_NAME_PAIRS` entry connecting the two spellings; worth
-  checking whether other zones with a wordier in-game name than their curated one have the same gap
-  before assuming this is the only one.
 - **Hold an unplaceable name loosely, then process it** — [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md),
   in the order the measurements set rather than the order the idea suggests. Today an unproven named
   pet is *dropped*: `pet-registry.ts` learns one only from `<Pet> told you, 'Attacking <mob> Master.'`
@@ -110,18 +99,6 @@ everything else, so this list can stay short enough to read:
   `zoneReadings()` as a fallback — is a real, separate change. Also still open: a cached Lucy verdict
   (`CachedItem.outOfEra`, `LucySearchResult.era`) can go stale until the item is refetched, since
   it's baked once in main at fetch/parse time — the harder half ADR 0170 already declined to settle.
-
-- **`spell-file.ts`'s `MAX_LEVEL` is hardcoded to 50, disconnected from `SERVER_EXPANSIONS`.**
-  `SERVER_EXPANSIONS` (`src/shared/zones/expansions.ts`) already includes Kunark and Velious, whose
-  level cap is 60 — matching `ItemLevelBand.tsx`'s own `MAX_PLAYER_LEVEL = 60` — but
-  `spell-file.ts`'s `MAX_LEVEL` is a separate, hand-set constant that still says 50. It feeds the
-  local tracker's `isObtainable()`/`parseSpellCatalog()` (a player's own `spells_us.txt`, read for
-  the damage meter's per-cast mana/cast-time lookup — a different code path from the Spells tab's
-  catalogue, and not what caused
-  [ADR 0210](./decisions/0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)'s
-  reported bug), so a level 51-60 spell may read as unobtainable there even with both expansions
-  open. Worth deriving from `SERVER_EXPANSIONS` instead of a second hardcoded number, once someone's
-  prepared to touch that tracker's tested black-box behavior for it.
 
 - **An item's era is derived where a neighbour simply states it.** [Lucy](./lucy-data/README.md) is
   in ([ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)) and its one real weakness is the era:
@@ -374,14 +351,6 @@ everything else, so this list can stay short enough to read:
   pinned black box with a corpus tally behind it
   ([ADR 0048](./decisions/0048-a-map-label-is-read-by-its-words.md)) — worth re-tallying rather than
   patching blind.
-
-- **The pin editor is placed in the wrong pixel space.** `onPinClick` / `onPlace` hand `PinEditor` a
-  click's raw `clientX/clientY`, and it writes them as a `fixed` position — so under any map scale
-  other than 100% the editor opens away from the pin it belongs to (at 200%, twice as far from the
-  corner). Exactly the defect [ADR 0123](./decisions/0123-a-popover-is-placed-in-the-units-it-is-written-in.md)
-  fixed for hover popovers, and the same one-line conversion (`localPoint`, in `src/lib/screen.ts`)
-  fixes it — left out of that change because a click-positioned editor is not a hover popover and
-  deserves its own look at where an editor *should* open.
 
 ## From the neighbours
 

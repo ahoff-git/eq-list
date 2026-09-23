@@ -530,6 +530,14 @@ function DropTable({
         paginationModel={paginationModel}
         onPaginationModelChange={onPaginationModelChange}
         rowCount={serverTotal}
+        // The column filter menu (on by default, ADR 0230) runs client-side with no `filterMode`
+        // wired to `dropsPage`'s own SQL filter the way `FactionPanel`'s `HitTable` does — so once
+        // paginated server-side, `rows` is only the current page and the filter would silently
+        // narrow just that page instead of the ledger it looks like it's searching. Disabled only in
+        // that mode: the `wantedOnly`/zone-sort fallback below already hands this grid the whole
+        // matching set, where client-side filtering is correct. ADR 0251's own rule: a menu item
+        // that silently does the wrong thing is worse than one that isn't offered.
+        disableColumnFilter={serverTotal !== undefined}
         initialState={{
           columns: { columnVisibilityModel: hiddenByDefault("soldFor", "raw") },
         }}

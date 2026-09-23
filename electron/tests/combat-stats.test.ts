@@ -182,6 +182,44 @@ test("healing during a fight belongs to that fight", () => {
   assert.equal(t.snapshot().fight.byCombatant.find((r) => r.name === "You")!.healed, 8);
 });
 
+test("a heal's target is tallied as healing received", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "A coyote bites Kainos`s warder for 4 points of damage."],
+    [2, "You healed Kainos`s warder for 8 hit points."],
+  ]);
+  const warder = t.snapshot().fight.byCombatant.find((r) => r.name === "Kainos`s warder")!;
+  assert.equal(warder.healReceived, 8);
+});
+
+test("a self-heal counts as both healing done and healing received", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "A coyote bites YOU for 4 points of damage."],
+    [2, "Hullshamancer healed himself for 10 hit points by Lifespike."],
+  ]);
+  const row = t.snapshot().fight.byCombatant.find((r) => r.name === "Hullshamancer")!;
+  assert.equal(row.healed, 10);
+  assert.equal(row.healReceived, 10);
+});
+
+test("the fight totals healing done and received, yours apart from everyone's", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  // A group-mate's self-heal only counts once the roster says they're ours (ADR 0067) — an
+  // unplaced "Hullshamancer" healing himself is somebody else's business until then.
+  t.recordParty(parseParty(splitLine("[Wed Jul 29 00:00:00 2026] Hullshamancer has joined the group.", 1)!)!);
+  feed(t, [
+    [1, "A coyote bites Kainos`s warder for 4 points of damage."],
+    [2, "You healed Kainos`s warder for 8 hit points."],
+    [3, "Hullshamancer healed himself for 10 hit points by Lifespike."],
+  ]);
+  const f = t.snapshot().fight;
+  assert.equal(f.totalHealed, 18); // your heal, plus a group-mate's self-heal
+  assert.equal(f.yourHealed, 8); // only your own healing, not Hullshamancer's
+  assert.equal(f.yourHealReceived, 8); // your pet is yours, and it's the one that got healed
+});
+
 test("your rows are flagged — you and your pet, not the mobs", () => {
   const t = tracker();
   t.setPlayer("Kainos");

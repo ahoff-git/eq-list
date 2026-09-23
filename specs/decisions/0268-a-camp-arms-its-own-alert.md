@@ -1,4 +1,4 @@
-# 0152: A camp arms its own alert, and a gap stops teaching after three hours
+# 0268: A camp arms its own alert, and a gap stops teaching after three hours
 
 ## Status
 

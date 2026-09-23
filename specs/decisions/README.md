@@ -18,14 +18,19 @@ retired: [0062](./0062-a-travel-graph-of-zone-lines.md) routes between zones ove
 **exit labels**, which is different data with a different provenance, and still does no routing
 inside one.
 
-**0105, 0120 and 0243 were each issued twice**, by two pieces of work landing the same day. The
-earlier record of each pair keeps its number; the later one moved to the end of the sequence, which
-is the only resolution that leaves every citation in the code still pointing at what it meant:
+**0105, 0120, 0141, 0152, 0153, 0181 and 0243 were each issued twice**, by two pieces of work landing
+the same day. The earlier record of each pair keeps its number; the later one moved to the end of the
+sequence, which is the only resolution that leaves every citation in the code still pointing at what
+it meant:
 
 | issued as | now | title |
 | --- | --- | --- |
 | 0105 | **0131** | [An overlay that cannot be operated does not keep the screen](./0131-an-overlay-that-cannot-be-operated-does-not-keep-the-screen.md) |
 | 0120 | **0132** | [A contribution is keyed by who made it, and kept](./0132-a-contribution-is-keyed-by-who-made-it.md) |
+| 0141 | **0267** | [A debuff is the mirror image of a buff, and a rebuff reminder waits for the fight](./0267-a-debuff-is-the-mirror-image-of-a-buff.md) |
+| 0152 | **0268** | [A camp arms its own alert, and a gap stops teaching after three hours](./0268-a-camp-arms-its-own-alert.md) |
+| 0153 | **0269** | [A pet is not a named, a decoration is not a name, and a place remembers its own difficulty](./0269-a-pet-is-not-a-named-and-a-rare-creature-says-so.md) |
+| 0181 | **0266** | [A new install asks before it crawls](./0266-a-new-install-asks-before-it-crawls.md) |
 | 0243 | **0244** | [A pooled fact answers your own queries too, and the wiki gets a third mirror](./0244-a-pooled-fact-answers-your-own-queries-too.md) |
 
 The lesson is cheap to apply: **take the next number when the file is created**, not when the work is
@@ -171,7 +176,6 @@ finished, so a number is claimed before a second author can reach for it.
 - [0138: A replayed log narrows what a kill proves, and how long a sighting holds a row](./0138-a-replayed-log-narrows-what-a-kill-proves.md)
 - [0139: A difficulty can never cost you a map](./0139-a-difficulty-can-never-cost-a-map.md)
 - [0140: A buff is watched until it lapses, and the game's own words name it](./0140-a-buff-is-watched-until-it-lapses.md) — *when a lapse speaks, and how long it stays true, refined by 0141*
-- [0141: A debuff is the mirror image of a buff, and a rebuff reminder waits for the fight](./0141-a-debuff-is-the-mirror-image-of-a-buff.md)
 - [0141: The room is a meeting place, and sharing is peer to peer](./0141-the-room-is-a-meeting-place.md)
 - [0142: A hunted mob marks itself on the map, and says who placed it](./0142-a-hunted-mob-marks-itself.md)
 - [0143: A notice may point at where to answer it](./0143-a-notice-may-point-at-where-to-answer-it.md)
@@ -183,8 +187,6 @@ finished, so a number is claimed before a second author can reach for it.
 - [0149: A debuff is only tracked if it is yours](./0149-a-debuff-is-only-tracked-if-it-is-yours.md)
 - [0150: A zone line ends a debuff](./0150-a-zone-line-ends-a-debuff.md)
 - [0151: A timer can be built from a kill, and a blank row says why it is blank](./0151-a-timer-can-be-built-from-a-kill.md)
-- [0152: A camp arms its own alert, and a gap stops teaching after three hours](./0152-a-camp-arms-its-own-alert.md)
-- [0153: A pet is not a named, a decoration is not a name, and a place remembers its own difficulty](./0153-a-pet-is-not-a-named-and-a-rare-creature-says-so.md)
 - [0152: An item search is a filter with your own yardstick](./0152-an-item-search-is-a-filter-with-your-own-yardstick.md)
 - [0153: The catalogue is filled by a gentle trickle](./0153-the-catalogue-is-filled-by-a-gentle-trickle.md)
 - [0154: Lucy's own name list is worth holding](./0154-lucy-s-own-name-list-is-worth-holding.md)
@@ -214,7 +216,6 @@ finished, so a number is claimed before a second author can reach for it.
 - [0178: A mob page is worth its own fetch — `Category:NPCs` is a second seed of the walk](./0178-a-mob-page-is-worth-its-own-fetch.md)
 - [0179: A stale roster is a reason to start, so a room's catalogue grows with the wiki](./0179-a-stale-roster-is-a-reason-to-start.md)
 - [0180: The wiki has a shape — zone and quest links reach items no category files](./0180-the-wiki-has-a-shape-and-it-moves.md)
-- [0181: A new install asks the room for a roster before it crawls for one](./0181-a-new-install-asks-before-it-crawls.md)
 - [0181: The wiki says what changed — `recentchanges` replaces polling the clock](./0181-the-wiki-says-what-changed.md)
 - [0182: Window management is Windows' job — drop `transparent: true` and the hand-rolled snap](./0182-window-management-is-windows-job.md)
 - [0183: The hand-set height window can follow your own `/loc` height](./0183-a-height-window-can-follow-you.md)
@@ -300,6 +301,12 @@ finished, so a number is claimed before a second author can reach for it.
 - [0263: The Alternate Advancement page is generated static data](./0263-the-alternate-advancement-page-is-generated-static-data.md)
 - [0264: Buff-line data is generated static data](./0264-buff-line-data-is-generated-static-data.md)
 - [0265: Named spawns mark themselves on the map](./0265-named-spawns-mark-themselves-on-the-map.md)
+- [0266: A new install asks the room for a roster before it crawls for one](./0266-a-new-install-asks-before-it-crawls.md) — *issued as 0181; see "Retired and reused numbers" above*
+- [0267: A debuff is the mirror image of a buff, and a rebuff reminder waits for the fight](./0267-a-debuff-is-the-mirror-image-of-a-buff.md) — *issued as 0141; see "Retired and reused numbers" above*
+- [0268: A camp arms its own alert, and a gap stops teaching after three hours](./0268-a-camp-arms-its-own-alert.md) — *issued as 0152; see "Retired and reused numbers" above*
+- [0269: A pet is not a named, a decoration is not a name, and a place remembers its own difficulty](./0269-a-pet-is-not-a-named-and-a-rare-creature-says-so.md) — *issued as 0153; see "Retired and reused numbers" above*
+- [0270: The Damage tab becomes the Combat tab, and healing gets its own figures](./0270-the-combat-tab-tracks-healing-too.md)
+- [0271: The Faction tab gets a Session view](./0271-the-faction-tab-gets-a-session-view.md)
 
 ## Open Questions
 
@@ -441,7 +448,7 @@ and degrading to blank facts when the file isn't there.*
   ([ADR 0068](./0068-a-zone-name-resolves-against-what-we-know.md)) — every name it could reach,
   the three tiers above it already reached. Is a last resort that has never spoken worth carrying,
   or should it wait until a source we don't yet read gives it something to do?
-- Should the Damage tab **say** whose fights it's counting — a line naming the party it
+- Should the Combat tab **say** whose fights it's counting — a line naming the party it
   believes you're in ([ADR 0067](./0067-the-meter-counts-your-party-s-fights.md))? The filter is
   always on and silent, so a group line the server words differently than we expect looks like
   a meter that's merely quiet about a group-mate. Against it: the roster is evidence, not truth,
@@ -492,6 +499,11 @@ and degrading to blank facts when the file isn't there.*
 - Should the overlay support multiple named lists / profiles per character?
 - Should the damage meter break a fight down by *phase* (adds arriving, mob enraging)?
   Today a fight is one flat window from first swing to last.
+- **Should healing get the same cell-based drill-down damage has?** [ADR 0270](./0270-the-combat-tab-tracks-healing-too.md)
+  gave the Healers view a ranked total per healer, same as Targets/Dealers, but nothing rolls a heal
+  into a (healer, target, spell) cell the way [ADR 0053](./0053-damage-is-cells-rolled-up.md) does for
+  damage — so a row can't be opened. Worth building the day someone wants "who did they heal, and with
+  what" rather than the per-healer total the view gives today.
 - Should the overlay toggle hotkey be user-configurable? (Currently a fixed
   `Ctrl/Cmd+Shift+O` via Electron's built-in `globalShortcut` — no native dep.)
 - **Should a page with several *full, independent* `questTopTable`s also split?**

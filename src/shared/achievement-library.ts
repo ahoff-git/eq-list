@@ -77,9 +77,16 @@ function raceUnlockAchievement(id: string, title: string, race: string, factions
 
 /** `"You have slain <name>!"` — the player's own kill credit, never `"<name> has been slain by
  *  <killer>!"`, which the log uses for a kill it's telling a bystander about (ADR 0214: an
- *  achievement is about what *you* did, not what happened nearby). */
-function killCriterion(id: string, name: string): AchievementCriterion {
-  return { id, label: name, kind: "watch", watch: { spell: `You have slain ${name}`, onLine: true } };
+ *  achievement is about what *you* did, not what happened nearby).
+ *
+ *  `logName` is what the kill line actually spells, when it differs from the clean `label` shown in
+ *  the achievement's checklist — a common-named mob keeps its indefinite article in the log
+ *  (`named-mobs.generated.ts`'s own "A Goblin Warlord") even though "Goblin Warlord" reads better
+ *  as a checklist entry, and the substring match below has no article-stripping of its own
+ *  (unlike `named-mobs.ts`'s `stripArticle`), so a criterion built from the bare name alone would
+ *  never see that line and could never complete. */
+function killCriterion(id: string, label: string, logName = label): AchievementCriterion {
+  return { id, label, kind: "watch", watch: { spell: `You have slain ${logName}`, onLine: true } };
 }
 
 export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
@@ -197,7 +204,7 @@ export const STOCK_ACHIEVEMENTS: AchievementDefinition[] = [
       killCriterion("sludge-dankmire", "Sludge Dankmire"),
       killCriterion("goblin-king", "The Goblin King"),
       killCriterion("goblin-elite-guard", "Goblin Elite Guard"),
-      killCriterion("goblin-warlord", "Goblin Warlord"),
+      killCriterion("goblin-warlord", "Goblin Warlord", "a Goblin Warlord"),
     ],
   },
   {

@@ -315,6 +315,14 @@ const HAND_ALIASES: Record<string, string> = {
   "city of guk": "upper guk",
   "ruins of old guk": "lower guk",
   "temple of cazic-thule": "cazic-thule",
+  // A real install's own `kill-log.json` holds kill records stamped with this exact zone string — the
+  // live "You have entered The Liberated Citadel of Runnyeye." text this server actually writes for
+  // RunnyEye Citadel. Neither the supplied gazetteer (whose own aliases for it are "Runnyeye"/"Clan
+  // Runnyeye") nor the wiki's label states this wording anywhere, so without it `classifyZoneLine`
+  // called the line unresolved and `currentZone` never updated on entering the zone live — every
+  // reader keyed on it (the kill log, mob knowledge, achievements' "zone" criteria) silently never saw
+  // an arrival (specs/todo.md).
+  "liberated citadel of runnyeye": "runnyeye citadel",
 };
 
 /**

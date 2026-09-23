@@ -103,7 +103,7 @@ export function isOwnedName(name: string): boolean {
  *
  * Measured on a 31,000-line log: 34 pet deaths written the second way, six of which the article test
  * then read as nameds and put on the spawn board — one of them with a learned respawn
- * ([ADR 0153](../../specs/decisions/0153-a-pet-is-not-a-named-and-a-rare-creature-says-so.md)).
+ * ([ADR 0269](../../specs/decisions/0269-a-pet-is-not-a-named-and-a-rare-creature-says-so.md)).
  *
  * The suffix has to be the **whole last word**: `a carpet` and `Pettr` are not pets.
  */

@@ -118,7 +118,7 @@ interface Stored {
    *
    * The only way to notice a difficulty change, since every folded view of a zone deliberately calls
    * the variants one place. Kept **per place** and **persisted**, which the single "last zone I saw"
-   * it replaces was neither, and both cost real repops (ADR 0153):
+   * it replaces was neither, and both cost real repops (ADR 0269):
    *
    *   - a variable starts empty, so the first zone line after a restart had nothing to compare with
    *     and the change went unseen — clocks measuring from a death the world had undone stayed up;
@@ -929,7 +929,7 @@ export function createSpawnTracker({
       const place = placeKey(zone);
       // What this place was called the **last time you stood in it**, which is not the same question
       // as what zone you were in a moment ago. Asked per place so an errand in between cannot hide
-      // the change, and read off disk so a restart cannot either (ADR 0153).
+      // the change, and read off disk so a restart cannot either (ADR 0269).
       const before = state.lastZone[place];
       state.lastZone[place] = zone;
       // Never been here, or here at the same difficulty: nothing has repopped. The first zone line

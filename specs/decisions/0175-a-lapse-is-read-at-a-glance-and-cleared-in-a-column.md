@@ -47,4 +47,4 @@ Reported from the app, about the two surfaces a lapsed buff appears on
 - Standing down is now the leftmost thing on a reminder rather than the last. It is still the only
   clickable part, and still only reachable while the window has taken its clicks back (ADR 0147).
 - Nothing about *which* lapses are announced, or how long they stay true, changes — 0140 and
-  [ADR 0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md) stand as written.
+  [ADR 0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md) stand as written.

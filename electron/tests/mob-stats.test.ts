@@ -601,3 +601,13 @@ test("withAreas on nothing at all is an empty list and no area", () => {
   assert.deepEqual(empty.areas, []);
   assert.equal(empty.area, undefined);
 });
+
+test("withAreas falls back to a valid `area` even when `areas` is present but empty", () => {
+  // A sanitizer that vets `areas` element-by-element (mob-knowledge.ts's sanitizeObservations) can
+  // legitimately end up with `areas: []` when every entry failed its own shape check while `area`
+  // itself was fine — `[]` is not nullish, so a plain `??` would silently drop a good position.
+  const good = area({ y: 3, x: 4 });
+  const rescued = withAreas({ area: good, areas: [] });
+  assert.deepEqual(rescued.areas, [good], "the valid `area` is recovered, not lost to an empty `areas`");
+  assert.deepEqual(rescued.area, good);
+});

@@ -55,6 +55,7 @@ import type { KillEmphasis, MapFocus } from "@/shared/types";
 
 import { clock } from "@/shared/format";
 import { distinctSorted } from "@/shared/sorting";
+import { localPoint } from "@/lib/screen";
 /**
  * How often to re-apply a moving kill window. A kill's own resolution is a second and the shortest
  * window is ten minutes, so this only has to be fine enough that a row leaves the list at roughly
@@ -306,6 +307,12 @@ export default function MapWindow() {
    * `showHuntPins`, just for the map's other self-placed marker.
    */
   const [showNamedPins, setShowNamedPins] = usePersistentState(STORAGE_KEYS.mapNamedPins, true);
+  /**
+   * Whether named-spawn pins draw their uncertainty ring. Independent of `showNamedPins`: this keeps
+   * the markers on screen while dropping just the rings, for a zone where eqlwiki's broad category
+   * puts far more of them on screen than a hunt list ever does.
+   */
+  const [showNamedRings, setShowNamedRings] = usePersistentState(STORAGE_KEYS.mapNamedRings, true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   const [killsOpen, setKillsOpen] = usePersistentState(STORAGE_KEYS.mapKillsOpen, false);
@@ -618,12 +625,13 @@ export default function MapWindow() {
         mob: n.mob,
         loud: true,
         spread: n.spread,
+        ring: showNamedRings,
         kind: "named",
       }),
     );
     return [...local, ...peer, ...hunt, ...named];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden, huntMarks, namedMarks]);
+  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden, huntMarks, namedMarks, showNamedRings]);
 
   function placePin(eq: { y: number; x: number }, clientX: number, clientY: number) {
     if (!heldPin || !zoneKey) return;
@@ -638,7 +646,11 @@ export default function MapWindow() {
       x: eq.x,
     };
     setPins((prev) => [...prev, pin]);
-    setSelected({ id: pin.id, x: clientX, y: clientY }); // open the editor to title/note it
+    // `PinEditor` writes this straight into a `position: fixed` element's `left`/`top`, which are read
+    // in the zoomed window's own CSS units — a raw `clientX/clientY` only lines up with the click at
+    // 100% interface scale (ADR 0123's popover bug, applied here to a click instead of a hover).
+    const at = localPoint({ x: clientX, y: clientY });
+    setSelected({ id: pin.id, x: at.x, y: at.y }); // open the editor to title/note it
   }
   /**
    * The toolbar's "paste a location" field: the same drop `placePin` does, but at a typed/pasted
@@ -805,6 +817,8 @@ export default function MapWindow() {
             namedPins={namedMarks.length}
             showNamedPins={showNamedPins}
             onNamedPins={setShowNamedPins}
+            showNamedRings={showNamedRings}
+            onNamedRings={setShowNamedRings}
             poiGroups={poiGroups}
             hiddenPoiKinds={poiKinds.hidden}
             onPoiKinds={poiKinds.setVisible}
@@ -838,7 +852,9 @@ export default function MapWindow() {
             onPlace={placePin}
             onPing={connected && zoneKey ? (eq) => room.sendPing(eq, zoneKey, viewLayer) : undefined}
             onPinClick={(pin, x, y) => {
-              if (pin.mine) return setSelected({ id: pin.id, x, y });
+              // Same conversion `placePin` applies: `x`/`y` arrive as the click's raw screen pixels,
+              // and the editor writes them into CSS `left`/`top` inside the zoomed window.
+              if (pin.mine) return setSelected({ id: pin.id, ...localPoint({ x, y }) });
               if (!pin.mob) return;
               // A named spawn is usually "what is this" rather than "what do I know about camping
               // it" — so it opens straight to the mob's wiki page, one click. The name is already

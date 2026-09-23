@@ -445,7 +445,7 @@ const HAIL_RE = /^You say, 'Hail, (?<target>.+?)'$/i;
  * It sits between the name and the regard, so the target capture swallows it and the sighting then
  * names a mob nothing has ever killed — `timerKey` finds no camp and the observation is dropped on
  * the floor. Measured on a real log: **34** of these, every one of them naming a mob worth timing
- * (ADR 0153).
+ * (ADR 0269).
  *
  * Stripped rather than matched as an alternative regard, because it is a property of the *creature*
  * and can only ever appear in this one position — and because the same decoration turns up on a mob

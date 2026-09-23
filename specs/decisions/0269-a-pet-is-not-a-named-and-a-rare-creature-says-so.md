@@ -1,4 +1,4 @@
-# 0153: A pet is not a named, a decoration is not a name, and a place remembers its own difficulty
+# 0269: A pet is not a named, a decoration is not a name, and a place remembers its own difficulty
 
 ## Status
 
@@ -26,7 +26,7 @@ matches no camp, and the observation was dropped. **34** lines, every one naming
 ever reached a running timer.
 
 **3 and 4. A difficulty change went unnoticed, twice over.** Each difficulty is its own instance
-([ADR 0152](./0152-a-camp-arms-its-own-alert.md)), so arriving in a different one means every clock
+([ADR 0268](./0268-a-camp-arms-its-own-alert.md)), so arriving in a different one means every clock
 for that place is counting from a death that instance never had. The rule compared the zone line
 against `lastZone` — one variable, holding the zone seen immediately before. That failed two ways:
 

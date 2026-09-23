@@ -902,6 +902,26 @@ export function useBuffs(): BuffView {
 }
 
 /**
+ * A re-render once a second, and nothing else — the shared shape `useSpawns`, `useGoals` and
+ * `useGameClock` each want for their own local countdown/clock tick.
+ *
+ * **The returned value must never be read**, only used to force the re-render: it used to be, added
+ * to a fetched view's own timestamp, and that was the bug — a counter running since mount got added
+ * to the timestamp of *every later fetch*, so the displayed clock ran ahead by however long the panel
+ * had been open. Anything that refetched (marking a mob dead, say) then measured a brand-new timer
+ * against a clock minutes in the future, and it rendered as 0:00 — a timer that looked like it had
+ * never restarted. Kept in one place so that invariant only has to be gotten right once, not
+ * re-derived correctly by hand at every call site.
+ */
+function useRenderPulse(): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+}
+
+/**
  * Running respawn countdowns and what's known about each named (ADR 0092).
  *
  * Two clocks, deliberately. The **list** is refetched only when main says it changed — a timer
@@ -921,17 +941,7 @@ export function useSpawns(): { view: SpawnView; now: number } {
     NO_SPAWNS,
     [],
   );
-  // Purely a re-render pulse so the countdowns move. The value is never read: it used to be, added
-  // to the view's timestamp, and that was the bug — a counter running since mount got added to the
-  // timestamp of *every later fetch*, so the displayed clock ran ahead by however long the panel had
-  // been open. Anything that refetched (marking a mob dead, say) then measured a brand-new timer
-  // against a clock minutes in the future, and it rendered as 0:00 — a timer that looked like it
-  // had never restarted.
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  useRenderPulse(); // so the countdowns move — see its own doc for why the value is never read
   // Captured once per **fetch** — `view` is a new object only when main sends one. Recomputing it
   // every render would pin `now` to the moment of the fetch and the clock would stop dead.
   const skew = useMemo(() => clockSkew(view.now, Date.now()), [view]);
@@ -961,11 +971,7 @@ function useGoalsBoard(): GoalView {
  */
 export function useGoals(): { view: GoalView; now: number } {
   const view = useGoalsBoard();
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  useRenderPulse();
   const skew = useMemo(() => clockSkew(view.now, Date.now()), [view]);
   return { view, now: Date.now() + skew };
 }
@@ -1067,14 +1073,10 @@ export function useGameClock(): { view: GameClockView; minutes: number | null } 
     NO_GAME_CLOCK,
     [],
   );
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  useRenderPulse();
   // Not memoized: recomputed on every render, including the ones the tick above drives, so the
   // clock actually moves. Memoizing on `view` would pin it to the moment of the last fetch, the same
-  // bug `useSpawns` warns about for its countdowns.
+  // bug `useRenderPulse`'s own doc warns about.
   const minutes = view.minutes === null ? null : advanceGameMinutes(view.minutes, Date.now() - Date.parse(view.now), view.rate);
   return { view, minutes };
 }
@@ -1367,6 +1369,39 @@ export function useLootSearch(filter: LootSearchFilter | null): { matches: LootR
 const EMPTY_LOOT_DROPS_PAGE: LootDropsPage = { rows: [], total: 0, tallies: { kept: 0, sold: 0, stored: 0, combined: 0 } };
 
 /**
+ * The shape behind every server-paged grid query: re-read on the same `deps` `useReading` already
+ * takes, plus whenever the store says something changed — one live event source, and the app-wide
+ * bulk one every store fires (an import, a clear, an admin edit). `useLootDropsPage` and
+ * `useFactionHitsPage` wrote this same six-line subscribe-and-bump effect out by hand; kept once so a
+ * fix to *how* a page re-reads (the subscribe timing, the bulk-change fallback) has one place to land
+ * instead of needing to be found and applied in both — and so a third paged grid, when one arrives,
+ * costs a `subscribe` callback rather than a fourth copy of the effect around it.
+ */
+function usePagedQuery<T>(
+  read: (a: Eql) => Promise<T>,
+  empty: T,
+  /** Wire up whatever live event means "this page might be stale now", beside the app-wide bulk one
+   *  every caller already wants; return the combined unsubscribe. */
+  subscribe: (a: Eql, onChanged: () => void) => Unsubscribe,
+  deps: DependencyList,
+): { value: T; loading: boolean } {
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    const onChanged = () => setRefresh((n) => n + 1);
+    const offOwn = subscribe(a, onChanged);
+    const offChanged = a.app.onDataChanged(onChanged);
+    return () => {
+      offOwn();
+      offChanged();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return useReading(read, empty, [...deps, refresh]);
+}
+
+/**
  * One page of the whole loot ledger, sorted server-side — what `DropTable` asks for as the player
  * pages, sorts (by anything but `zone`) or filters it, mirroring `useFactionHitsPage` exactly
  * ([ADR 0254](../../specs/decisions/0254-loot-drops-pages-server-side-for-the-common-case.md)).
@@ -1377,23 +1412,13 @@ const EMPTY_LOOT_DROPS_PAGE: LootDropsPage = { rows: [], total: 0, tallies: { ke
  * has no use for a page it would just discard.
  */
 export function useLootDropsPage(query: LootDropsQuery | null): { page: LootDropsPage; loading: boolean } {
-  const [refresh, setRefresh] = useState(0);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    const offEvent = a.loot.onEvent(() => setRefresh((n) => n + 1));
-    const offChanged = a.app.onDataChanged(() => setRefresh((n) => n + 1));
-    return () => {
-      offEvent();
-      offChanged();
-    };
-  }, []);
-  const { value, loading } = useReading(
+  const { value, loading } = usePagedQuery(
     (a) => (query ? a.loot.dropsPage(query) : Promise.resolve(EMPTY_LOOT_DROPS_PAGE)),
     EMPTY_LOOT_DROPS_PAGE,
+    (a, onChanged) => a.loot.onEvent(onChanged),
     // Same reason `useFactionHitsPage` stringifies `query.filter`: a fresh object every render
     // shouldn't re-fire the effect unless what it actually says changed.
-    [query?.offset, query?.limit, query?.sortField, query?.sortDesc, JSON.stringify(query?.filter), refresh],
+    [query?.offset, query?.limit, query?.sortField, query?.sortDesc, JSON.stringify(query?.filter)],
   );
   return { page: value, loading };
 }
@@ -1449,6 +1474,17 @@ export function useFactionStandings(refreshKey: unknown): FactionStanding[] {
 }
 
 /**
+ * Same fold as `useFactionStandings`, scoped to hits at or after `sinceIso` — the Faction tab's
+ * Session view, `sinceIso` being `useCombatStats().startedAt` so it re-reads the moment the session
+ * itself resets, not just when a new hit lands.
+ */
+export function useFactionStandingsSince(sinceIso: string, refreshKey: unknown): FactionStanding[] {
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => api()?.app.onDataChanged(() => setRefresh((n) => n + 1)), []);
+  return useRead((a) => a.faction.standingsSince(sinceIso), EMPTY_FACTION_STANDINGS, [sinceIso, refreshKey, refresh]);
+}
+
+/**
  * One page of the whole faction ledger, sorted server-side — what `FactionHitsGrid` asks for as the
  * player pages or re-sorts it, now that the feed has no cap to fetch "everything" up to (ADR 0232).
  * Re-reads the same page whenever a new hit lands or the ledger changes wholesale (a log eaten, a
@@ -1456,24 +1492,14 @@ export function useFactionStandings(refreshKey: unknown): FactionStanding[] {
  * separate "live tail" path.
  */
 export function useFactionHitsPage(query: FactionHitsQuery): { page: FactionHitsPage; loading: boolean } {
-  const [refresh, setRefresh] = useState(0);
-  useEffect(() => {
-    const a = api();
-    if (!a) return;
-    const offEvent = a.faction.onEvent(() => setRefresh((n) => n + 1));
-    const offChanged = a.app.onDataChanged(() => setRefresh((n) => n + 1));
-    return () => {
-      offEvent();
-      offChanged();
-    };
-  }, []);
-  const { value, loading } = useReading(
+  const { value, loading } = usePagedQuery(
     (a) => a.faction.hitsPage(query),
     EMPTY_FACTION_HITS_PAGE,
+    (a, onChanged) => a.faction.onEvent(onChanged),
     // `query.filter` is a fresh object every render (`FactionHitsGrid` rebuilds it in a `useMemo`, but a new
     // `GridFilterModel` reference still arrives on every keystroke) — stringified so the effect only
     // re-fires when what it actually says changes, the same reason `deps` elsewhere here stay primitives.
-    [query.offset, query.limit, query.sortField, query.sortDesc, JSON.stringify(query.filter), refresh],
+    [query.offset, query.limit, query.sortField, query.sortDesc, JSON.stringify(query.filter)],
   );
   return { page: value, loading };
 }

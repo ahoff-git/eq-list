@@ -181,7 +181,7 @@ shopping list.
   the live wiki (~90 ms and ~3 KB a page) is about a 10% duty cycle for roughly three hours
   ([ADR 0153](../decisions/0153-the-catalogue-is-filled-by-a-gentle-trickle.md)). It starts in exactly
   two ways ([ADR 0176](../decisions/0176-a-room-fills-itself.md), and a first run **asks the room for a
-  roster before it crawls for one** — [ADR 0181](../decisions/0181-a-new-install-asks-before-it-crawls.md)):
+  roster before it crawls for one** — [ADR 0266](../decisions/0266-a-new-install-asks-before-it-crawls.md)):
   the Items tab's button, or the share
   hub's minute tick finding a reason — a [peer](../peers/README.md) holding shards we lack, or **our
   own roster having expired**, which is the only way the weekly walk is reached on an install nobody

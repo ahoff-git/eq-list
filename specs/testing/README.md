@@ -370,7 +370,7 @@ unit-tested.
     this fade affect" was asked again after the answer had already been changed.
 
     Then the **fight**, which is where the feature's two halves separate
-    ([ADR 0141](../decisions/0141-a-debuff-is-the-mirror-image-of-a-buff.md)). A debuff's banner fires
+    ([ADR 0267](../decisions/0267-a-debuff-is-the-mirror-image-of-a-buff.md)). A debuff's banner fires
     mid-fight and one of your own **waits**, with the standing list asserted to appear either way — that
     pair is the whole decision as two lines. A buff rebuffed before the fight ends has nothing left to
     say; a fight that ended by killing *you* says nothing at all and still lists everything; a lapse

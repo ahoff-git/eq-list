@@ -71,8 +71,11 @@ export const UNKNOWN_CONTRIBUTOR = "Someone";
  * A display name arrives from a peer, is stored, and is drawn in a list — so it is untrusted text
  * on all three counts. Capping it here (rather than in the list that draws it) means the cap is
  * part of *filing* a contribution, and a caller can't forget it.
+ *
+ * Exported so `peer-archive.ts`'s own name-keyed lookup caps against the *same* bound rather than a
+ * second, hand-copied `40` that could silently drift from it.
  */
-const MAX_NAME = 40;
+export const MAX_NAME = 40;
 
 /** The shape a minted id has: our prefix plus a UUID, so a stray string can't pass for one. */
 const ID_RE = /^c-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

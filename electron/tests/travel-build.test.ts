@@ -436,15 +436,21 @@ test("a route asked for from the file that was folded away still lands on the zo
 });
 
 test("a border only one side could name is named by the other side", () => {
-  // The reported case. Misty Thicket labels `to The Liberated Citadel of Runnyeye`, which nothing in
-  // the catalogue answers to — the app calls the zone RunnyEye Citadel — so the label resolved to
-  // nothing and its coordinate was thrown away. RunnyEye's own map says `to Misty Thicket`, which
-  // resolves, so the border existed with one side placed and the other priced by a stand-in.
+  // The reported case, with one word changed. Misty Thicket labelled `to The Liberated Citadel of
+  // Runnyeye`, which nothing in the catalogue answered to — the app calls the zone RunnyEye Citadel —
+  // so the label resolved to nothing and its coordinate was thrown away. That *exact* wording now
+  // resolves directly, one level down (`names.ts`'s `HAND_ALIASES`, specs/todo.md fixed it), and no
+  // longer needs this pass's inference at all — see the test below for that. "Citadel" is swapped for
+  // "Stronghold" here so the label still shares the one distinctive word ("Runnyeye") the `narrow`
+  // tier matches on, without also being the exact alias phrase, keeping this pass's own fallback
+  // covered in isolation from whatever the alias table does or doesn't know. RunnyEye's own map says
+  // `to Misty Thicket`, which resolves, so the border existed with one side placed and the other
+  // priced by a stand-in.
   const names = { misty: "Misty Thicket", runnyeye: "RunnyEye Citadel" };
   const { graph, report } = buildTravelGraph(
     { id: "brewall" },
     [
-      zone("misty", [{ ...border("The Liberated Citadel of Runnyeye", 0, 1390) }]),
+      zone("misty", [{ ...border("The Old Liberated Citadel of Runnyeye", 0, 1390) }]),
       zone("runnyeye", [border("Misty Thicket", 0, 40)]),
     ],
     names,
@@ -460,8 +466,27 @@ test("a border only one side could name is named by the other side", () => {
   // Reported, because it is an inference — and no longer counted as a destination nothing could place,
   // which would be the graph disagreeing with itself about what it knows.
   assert.deepEqual(report.paired, [
-    { zone: "misty", name: "The Liberated Citadel of Runnyeye", to: "runnyeye", how: "narrower" },
+    { zone: "misty", name: "The Old Liberated Citadel of Runnyeye", to: "runnyeye", how: "narrower" },
   ]);
+  assert.deepEqual(report.unresolved, []);
+});
+
+test("the real Misty Thicket/RunnyEye label the pass above stands in for now resolves on its own", () => {
+  // The alias fix, exercised through the whole graph-building pass rather than just `zoneKey` in
+  // isolation: with no inference needed on either side, the border comes out exactly like any other
+  // named one, and `report.paired` — the "had to guess" list — has nothing to say about it at all.
+  const names = { misty: "Misty Thicket", runnyeye: "RunnyEye Citadel" };
+  const { graph, report } = buildTravelGraph(
+    { id: "brewall" },
+    [
+      zone("misty", [border("The Liberated Citadel of Runnyeye", 0, 1390)]),
+      zone("runnyeye", [border("Misty Thicket", 0, 40)]),
+    ],
+    names,
+  );
+  const [node] = graph.nodes;
+  assert.equal(node.id, "misty|runnyeye");
+  assert.deepEqual(report.paired, []);
   assert.deepEqual(report.unresolved, []);
 });
 
@@ -472,12 +497,12 @@ test("the far side's claim is what makes the loose tiers safe — with no claim,
   const names = { misty: "Misty Thicket", runnyeye: "RunnyEye Citadel" };
   const { graph, report } = buildTravelGraph(
     { id: "brewall" },
-    [zone("misty", [border("The Liberated Citadel of Runnyeye", 0, 1390)]), zone("runnyeye", [])],
+    [zone("misty", [border("The Old Liberated Citadel of Runnyeye", 0, 1390)]), zone("runnyeye", [])],
     names,
   );
   assert.deepEqual(graph.nodes, []);
   assert.deepEqual(report.paired, []);
-  assert.deepEqual(report.unresolved, [{ name: "The Liberated Citadel of Runnyeye", from: ["misty"] }]);
+  assert.deepEqual(report.unresolved, [{ name: "The Old Liberated Citadel of Runnyeye", from: ["misty"] }]);
 });
 
 test("a name is paired by every tier, and two claimants that both fit pair with neither", () => {

@@ -24,6 +24,7 @@
  */
 import path from "node:path";
 import type { ShareKind } from "../src/shared/peer-share";
+import { MAX_NAME } from "../src/shared/contributors";
 import { createContributions } from "./contributions";
 
 /** The share kinds this archive covers — the whole `authored` family, and nothing else. */
@@ -37,9 +38,10 @@ type ArchivedKind = (typeof ARCHIVED_KINDS)[number];
  */
 const MAX_ROWS = 500;
 
-/** A name, normalized to something two reports from "the same" peer will agree on. */
+/** A name, normalized to something two reports from "the same" peer will agree on — capped against
+ *  the same bound `contributors.ts`'s own `contributorName` uses, so the two can't silently drift. */
 function nameKey(name: string): string {
-  return name.trim().toLowerCase().slice(0, 40);
+  return name.trim().toLowerCase().slice(0, MAX_NAME);
 }
 
 function isArchivedKind(kind: ShareKind): kind is ArchivedKind {

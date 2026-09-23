@@ -1481,7 +1481,7 @@ test("a mob you marked up leaves the running board instead of sitting there for 
   assert.equal(h.tracker.view().known[0].seen?.seconds, 600);
 });
 
-// ── a camp you are visibly camping arms its own alert (ADR 0152) ──────────────
+// ── a camp you are visibly camping arms its own alert (ADR 0268) ──────────────
 // Every named you kill is tracked, so notify stays off by default — but making somebody tick a box
 // for the thing they are plainly already doing is the app being obtuse.
 
@@ -1561,7 +1561,7 @@ test("what the app armed survives a restart, and so does the reason", () => {
   assert.equal(row?.armed, true);
 });
 
-// ── noticing a difficulty change you were not watching for (ADR 0153) ─────────
+// ── noticing a difficulty change you were not watching for (ADR 0269) ─────────
 // Each difficulty is its own instance, so arriving in a different one means every clock for that
 // place is measuring from a death that instance never had.
 

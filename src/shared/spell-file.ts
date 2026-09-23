@@ -129,8 +129,16 @@ const NO_LEVEL_GATE = 254;
  * The server's level cap. The spell *file* ships levels through 125, inherited wholesale from
  * Live EverQuest, so a name matched without this gate can resolve to a spell no character on this
  * server can hold. eql-info hard-codes the same cap for the same reason.
+ *
+ * **60, not 50** — `SERVER_EXPANSIONS` (`zones/expansions.ts`) already runs Kunark and Velious, both
+ * of which raise the cap to 60, the same number `ItemLevelBand.tsx`'s own `MAX_PLAYER_LEVEL` uses.
+ * This is a fact about what the server *has*, not about which era is currently open — that's a live,
+ * wiki-derived question a different code path (`item-era.ts`) already answers, and answering it here
+ * too would gate a spell on/off as an era opens and closes, which is not what "obtainable at all"
+ * means. Left at 50, a level 51-60 spell read as unobtainable — filtered from suggestions and marked
+ * uncastable in the damage meter's per-cast lookup — even with both expansions open (specs/todo.md).
  */
-export const MAX_LEVEL = 50;
+export const MAX_LEVEL = 60;
 
 export interface SpellFacts {
   id: number;

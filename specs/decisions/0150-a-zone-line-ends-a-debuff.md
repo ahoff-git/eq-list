@@ -5,7 +5,7 @@
 Accepted
 
 Completes the lifetime rules in
-[ADR 0141](./0141-a-debuff-is-the-mirror-image-of-a-buff.md), which said what a fight ending does to
+[ADR 0267](./0267-a-debuff-is-the-mirror-image-of-a-buff.md), which said what a fight ending does to
 a row and nothing about what a zone line does. Which rows exist at all is
 [ADR 0149](./0149-a-debuff-is-only-tracked-if-it-is-yours.md).
 

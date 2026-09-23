@@ -113,8 +113,18 @@ interface ZoneTimeline {
  * working state — the zone-less records simply stay unplaced, as they have been all along.
  */
 export function runMigrations(userDataDir: string, logDir: string | undefined): void {
+  // Both zone-repair migrations below read the same thing — every log file's zone-line timeline —
+  // and a launch with candidates for both (the common case, since they gate on the same
+  // `classifyZoneLine`/"blacklisted" check) used to read and parse every log file twice in a row,
+  // synchronously, before a window ever shows. Shared and computed at most once, lazily: a launch
+  // with no candidates in either migration still costs nothing, same as before.
+  let timelinesCache: ZoneTimeline[] | undefined;
+  const timelines = (): ZoneTimeline[] => {
+    if (!timelinesCache) timelinesCache = logDir ? readZoneTimelines(logDir) : [];
+    return timelinesCache;
+  };
   try {
-    fillMissingKillZones(userDataDir, logDir);
+    fillMissingKillZones(userDataDir, logDir, timelines);
   } catch (err) {
     log.error("migration failed; data left untouched", err);
   }
@@ -134,7 +144,7 @@ export function runMigrations(userDataDir: string, logDir: string | undefined): 
     log.error("contributor re-keying failed; pooled knowledge left untouched", err);
   }
   try {
-    repairBadZones(userDataDir, logDir);
+    repairBadZones(userDataDir, logDir, timelines);
   } catch (err) {
     log.error("zone repair failed; data left untouched", err);
   }
@@ -321,7 +331,7 @@ function repairZoneField<T extends { zone?: string }>(
   return { filled, cleared };
 }
 
-function fillMissingKillZones(userDataDir: string, logDir: string | undefined): void {
+function fillMissingKillZones(userDataDir: string, logDir: string | undefined, getTimelines: () => ZoneTimeline[]): void {
   const file = path.join(userDataDir, "kill-log.json");
   const stored = readStore(file);
   if (!stored) return; // nothing there, or something we must not write over — see `readStore`
@@ -344,7 +354,7 @@ function fillMissingKillZones(userDataDir: string, logDir: string | undefined): 
     return; // no stamp — try again once the user points us at their logs
   }
 
-  const timelines = readZoneTimelines(logDir);
+  const timelines = getTimelines();
   if (!timelines.length) {
     log.debug("migration deferred: no logs found", { logDir, candidates: candidates.length });
     return;
@@ -542,7 +552,7 @@ function purgePlace(spawn: StoredSpawnZones, place: string): number {
  * to waiting for: without logs every candidate below simply clears or is forgotten outright, which
  * is strictly better than leaving a sentence that was never a place sitting in the data.
  */
-function repairBadZones(userDataDir: string, logDir: string | undefined): void {
+function repairBadZones(userDataDir: string, logDir: string | undefined, getTimelines: () => ZoneTimeline[]): void {
   const stateFile = path.join(userDataDir, "data-repairs.json");
   const state = readJson<StoredRepairs>(stateFile, {});
   if ((state.zoneRepair ?? 0) >= ZONE_REPAIR_VERSION) return;
@@ -572,7 +582,7 @@ function repairBadZones(userDataDir: string, logDir: string | undefined): void {
     return;
   }
 
-  const timelines = logDir ? readZoneTimelines(logDir) : [];
+  const timelines = getTimelines();
   const { filled: lootFilled, cleared: lootCleared } = repairZoneField(lootCandidates, (r) => r.at, timelines);
   const { filled: fightsFilled, cleared: fightsCleared } = repairZoneField(fightCandidates, (f) => f.stats.startedAt, timelines);
   const { filled: scoresFilled, cleared: scoresCleared } = repairZoneField(scoreCandidates, (hs) => hs.at, timelines);

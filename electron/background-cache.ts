@@ -93,6 +93,21 @@ export function createBackgroundCache<T>(opts: BackgroundCacheOptions<T>): Backg
   let worker: Worker | null = null;
   let pending: { resolve: (v: T) => void; reject: (e: Error) => void } | null = null;
   let listener: (() => void) | null = null;
+  /**
+   * Whether a `recomputeInBackground()` round trip is currently outstanding.
+   *
+   * The worker's own message protocol echoes back no request id — a reply is matched to whichever
+   * single `pending` slot happens to be set when it arrives (see `getWorker`'s `message` handler).
+   * That is only correct while at most one request is ever in flight: two overlapping ones would let
+   * a *later* request's promise settle with an *earlier* reply's (stale) result, mark the cache
+   * "confirmed fresh" at the later version while it actually holds the earlier data, and leave the
+   * earlier request's own promise dangling until `workerTimeoutMs` — needlessly discarding a healthy
+   * worker thirty seconds later, when the reply it was actually waiting for already came back for the
+   * wrong request. `refreshInBackground` uses this flag to keep requests serialized instead.
+   */
+  let inFlight = false;
+  /** A `markChanged()` arrived while a request was already in flight — run one more once it settles. */
+  let queued = false;
 
   function getWorker(): Worker {
     if (!worker) {
@@ -141,11 +156,22 @@ export function createBackgroundCache<T>(opts: BackgroundCacheOptions<T>): Backg
   /**
    * The debounced trailing edge of every `markChanged()`: recompute off the main thread, then
    * adopt the result — unless `version` has already moved on since this particular refresh started,
-   * in which case it answers a question that's no longer current, and the *next* trigger (already
-   * implied by whatever bumped `version` again) will supersede it properly.
+   * in which case it answers a question that's no longer current.
+   *
+   * Never overlaps its own request: a call that arrives while one is already outstanding just notes
+   * that another is owed (`queued`) rather than posting a second "recompute" the worker's reply-
+   * matching can't tell apart from the first (see `inFlight`'s own doc). The queued run, once the
+   * in-flight one settles, always starts from the *current* `version` — so any number of
+   * `markChanged()` calls that landed while busy are folded into that one follow-up, not lost.
    */
   function refreshInBackground(): void {
+    if (inFlight) {
+      queued = true;
+      return;
+    }
     const startVersion = version;
+    inFlight = true;
+    let failed = false;
     void withTimeout(recomputeInBackground(), workerTimeoutMs, `${opts.label} recompute`)
       .then((result) => {
         if (startVersion !== version) return; // superseded before it finished
@@ -154,8 +180,21 @@ export function createBackgroundCache<T>(opts: BackgroundCacheOptions<T>): Backg
         listener?.();
       })
       .catch((e) => {
+        // Don't chase this immediately: a database that's gone (or a wedged worker) fails the
+        // same way on every attempt, and retrying from right here — as `queued`'s own check below
+        // would, since `cacheVersion` never advances past a failure either — spins forever instead
+        // of degrading to the ordinary synchronous fallback `get()` already provides. The *next*
+        // real `markChanged()` gets a fresh try, same as any other failure recovery in this app.
+        failed = true;
         log.warn(`${opts.label}: background recompute failed:`, (e as Error).message);
         discardWorker();
+      })
+      .finally(() => {
+        inFlight = false;
+        if (!failed && queued) {
+          queued = false;
+          refreshInBackground();
+        }
       });
   }
 

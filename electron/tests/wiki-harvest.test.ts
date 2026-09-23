@@ -198,7 +198,7 @@ test("a shard a peer has is taken from them instead of from the wiki", async () 
   const { harvester, log, settle } = rig({
     roster: [...mine, ...theirs],
     // An install that has already walked: with no roster of its own it would bootstrap off the room
-    // instead, which is ADR 0181's business and is tested there.
+    // instead, which is ADR 0266's business and is tested there.
     saved: { ...savedRoster([...mine, ...theirs], 1), fetched: 0 },
     peers: [{ peerId: "them", have: setShard(emptyCoverage(), theirShard), at: 0 }],
     answers: { [theirShard]: theirs },
@@ -675,7 +675,7 @@ test("every candidate is paced like a page, and a run with none is simply done",
   assert.equal(none.harvester.status().status, "done");
 });
 
-// ─── A new install asks before it crawls (ADR 0181) ─────────────────────────
+// ─── A new install asks before it crawls (ADR 0266) ─────────────────────────
 
 test("a first run with peers in the room takes its roster from them, not from a walk", async () => {
   // The walk is 194 requests and three minutes before the first page, all of it re-deriving a list

@@ -17,9 +17,10 @@ import { Empty, segCls, StatTile } from "./ui";
 import { duration, percent, when } from "@/shared/format";
 import { ratio } from "@/shared/numbers";
 /**
- * The damage meter. Two axes of choice, because they answer different questions:
+ * The Combat tab: the damage meter, plus who healed whom. Two axes of choice, because they answer
+ * different questions:
  *   scope — this fight (what just happened) / the session / a past fight from history
- *   view  — which way the damage is fanned out (see `LAYOUTS`), or the per-spell table
+ *   view  — which way the damage is fanned out (see `LAYOUTS`), the per-spell table, or Healers
  *
  * **Targets leads**, because that's the question a fight actually poses: what did we damage,
  * and then — one click in — who hurt it and with what (ADR 0053). Opening on the dealer list
@@ -67,6 +68,17 @@ const LAYOUTS = {
     hint: "Who dealt the damage — open a row for how, with what, and then what it landed on (area spells add up here)",
     bars: "dealt",
     drill: ["kind", "source", "target"],
+  },
+  /**
+   * Healing gets a bar list, not a drill-down: the log names a heal's target and spell, but nothing
+   * here yet rolls those into cells the way damage does (ADR 0053), so there's no tree to open — the
+   * total per healer is the whole answer for now.
+   */
+  healers: {
+    label: "Healers",
+    hint: "Who healed, and how much",
+    bars: "healed",
+    drill: [],
   },
 } as const satisfies Record<string, { label: string; hint: string; bars: DamageView; drill: DamageAxis[] }>;
 
@@ -240,6 +252,18 @@ export default function DamagePanel() {
                 hint="Share of your side's damage dealt by your pet"
               />
             )}
+            {/* Absent rather than a silent zero when nobody healed — most fights have no healer at
+                all, and a tile that never moves is worse than one that isn't there. */}
+            {!!window.yourHealed && (
+              <StatTile label="Your healing" value={fmt(window.yourHealed)} hint="Healing you and your pet did" />
+            )}
+            {!!window.yourHealReceived && (
+              <StatTile
+                label="Healing on you"
+                value={fmt(window.yourHealReceived)}
+                hint="Healing you and your pet received, from any healer — a self-heal included"
+              />
+            )}
           </div>
 
           {isBest && (
@@ -266,6 +290,11 @@ export default function DamagePanel() {
             <Empty
               title={`No combat yet${scope === "fight" ? " this fight" : " this session"}.`}
               hint="Swing at something — this fills in from the log as damage lands."
+            />
+          ) : view === "healers" && !window.byCombatant.some((c) => c.healed > 0) ? (
+            <Empty
+              title={`No healing yet${scope === "fight" ? " this fight" : " this session"}.`}
+              hint="Land a heal — this fills in from the log the same way damage does."
             />
           ) : (
             <DamageMeter

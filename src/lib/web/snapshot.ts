@@ -320,13 +320,16 @@ const CREDITS_SUFFIX = "_2";
 /** One zone's merged geometry + POIs + credits — the web counterpart to `createMapReader().load`. */
 export async function loadMap(sourceId: string, zoneFile: string): Promise<(EqMap & { credits: string[] }) | undefined> {
   if (!(await hasSection("maps"))) return undefined;
-  const layers: EqMap[] = [];
-  for (const suffix of GEOMETRY_SUFFIXES) {
-    const text = await getText(`maps/${sourceId}/${zoneFile}${suffix}.txt`);
-    if (text) layers.push(parseEqMap(text));
-  }
+  // Three independent fetches — neither geometry layer depends on the other, and the credits layer
+  // depends on none of them — so they go out together rather than paying three round trips in a row.
+  // `Promise.all` keeps the geometry layers in `GEOMETRY_SUFFIXES` order regardless of which answers
+  // first, which is what `mergeEqMaps` below relies on.
+  const [geometryTexts, creditsText] = await Promise.all([
+    Promise.all(GEOMETRY_SUFFIXES.map((suffix) => getText(`maps/${sourceId}/${zoneFile}${suffix}.txt`))),
+    getText(`maps/${sourceId}/${zoneFile}${CREDITS_SUFFIX}.txt`),
+  ]);
+  const layers = geometryTexts.filter((text): text is string => !!text).map(parseEqMap);
   if (!layers.length) return undefined;
-  const creditsText = await getText(`maps/${sourceId}/${zoneFile}${CREDITS_SUFFIX}.txt`);
   const credits = creditsText ? parseEqMap(creditsText).pois.map((p) => p.label) : [];
   return { ...mergeEqMaps(layers), credits };
 }

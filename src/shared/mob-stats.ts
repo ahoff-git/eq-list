@@ -233,11 +233,17 @@ export function areaConfidenceWhy(area: MobArea): string {
 /**
  * Bring an older single-`area` shape up to today's `areas` list — every persisted row written before
  * this feature existed, and every peer running a build from before it, looks like this. An object
- * that already carries `areas` is trusted as-is; `area` beside it is recomputed from `areas[0]` rather
- * than kept, so a stale duplicate from an older write can never outrank a fresher clustering.
+ * that already carries a **non-empty** `areas` is trusted as-is; `area` beside it is recomputed from
+ * `areas[0]` rather than kept, so a stale duplicate from an older write can never outrank a fresher
+ * clustering.
+ *
+ * An *empty* `areas` still falls back to `area` rather than being trusted as "no positions" — a
+ * sanitizer that vets `areas` element-by-element (`mob-knowledge.ts`'s `sanitizeObservations`) can
+ * legitimately end up with `areas: []` when every entry failed its shape check while `area` itself
+ * was fine, and `[]` is not nullish, so a plain `??` would silently drop a perfectly good position.
  */
 export function withAreas<T extends { area?: MobArea; areas?: MobArea[] }>(obs: T): T & { areas: MobArea[]; area?: MobArea } {
-  const areas = obs.areas ?? (obs.area ? [obs.area] : []);
+  const areas = obs.areas?.length ? obs.areas : obs.area ? [obs.area] : [];
   return { ...obs, areas, area: areas[0] };
 }
 

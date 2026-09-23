@@ -35,6 +35,9 @@ export const CH = {
    *  fetching every hit, now that there's no flat cap to fetch up to (ADR 0232). */
   factionHitsPage: "faction:hitsPage",
   factionStandings: "faction:standings",
+  /** Every faction touched at or after a given time, folded the same way `faction:standings` is — what
+   *  the Faction tab's Session view asks for, scoped to the current session's own start. */
+  factionStandingsSince: "faction:standingsSince",
   /** The player states a faction's real current total — see `electron/faction-corrections.ts`. */
   factionSetCorrection: "faction:setCorrection",
   /** Open the community cheat-sheet summary of the Race Unlocks guide — a fixed, single URL, not a

@@ -86,7 +86,7 @@ export default function LogSettings({
               {" "}
               <b>
                 Digested {digested.kills} kills / {digested.drops} drops / {digested.fights} fights /{" "}
-                {digested.loot} looted
+                {digested.loot} looted / {digested.factionHits} faction hits
               </b>{" "}
               from {fileName(digested.file)}
               {digested.sessions > 0 && ` across ${count(digested.sessions, "play session")}`}.

@@ -109,7 +109,7 @@ travels peer-to-peer, on request, over that peer's own connection.
     the room — an empty one starts nothing, so nothing changes for somebody playing alone — and the
     newcomer's case goes further still: a run with **no roster at all** and a peer holding shards
     takes its roster from the room rather than walking for one
-    ([ADR 0181](../decisions/0181-a-new-install-asks-before-it-crawls.md)), so joining is worth
+    ([ADR 0266](../decisions/0266-a-new-install-asks-before-it-crawls.md)), so joining is worth
     something from the first minute rather than three minutes in. The roster rides the shard `give`
     that was already carrying pages, so nothing new crosses the wire; it is deliberately *not* written
     down as walked, so the wiki still gets asked properly once the room has given what it can. A peer
