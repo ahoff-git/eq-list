@@ -109,14 +109,18 @@ features for later in [../ideas.md](../ideas.md).
   fight (the "This fight" totals don't reset), and it's only the mob dying that starts the next one
   ([ADR 0036](../decisions/0036-a-fight-ends-on-death-not-a-lull.md)). See
   [ADR 0014](../decisions/0014-damage-meter-from-the-log.md).
-- **Healing figures, live.** ([ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md).) Land
-  a heal on a group-mate (or your pet) and confirm **Your healing** appears among the stat tiles;
-  confirm **Healing on you** appears when you're the one healed, self-heals included. Open the
+- **Healing figures, live.** ([ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md),
+  [ADR 0273](../decisions/0273-a-heal-is-a-cell-too.md).) Land a heal on a group-mate (or your pet)
+  and confirm **Your healing** and **Your HPS** appear among the stat tiles; confirm **Healing on
+  you** appears when you're the one healed, self-heals included; land an overheal (heal a full-health
+  target) and confirm **Overhealed** appears with a sensible percentage in its hover. Open the
   **Healers** view and confirm it ranks by healing done rather than damage, that a healer with no
   damage of their own still gets a row, and that a fight with nobody healing shows the "no healing
-  yet" empty state rather than a blank list. Confirm a healer's row is **not** expandable (no caret) —
-  there's no breakdown to open yet — even if that combatant also has a damage crit elsewhere in the
-  fight.
+  yet" empty state rather than a blank list. Click a healer's row and confirm it opens a breakdown of
+  **who** they healed, then **with what** spell (or "Unknown" for an unattributed self-heal) — and
+  that a healer's row is expandable **only** from actual heals, never from a damage crit the same
+  combatant happens to also have elsewhere in the fight (the caret must track heal cells, not
+  `specials`).
 - **Party scoping, live — the group lines are the unverified part.** The meter now counts only
   your party's fights ([ADR 0067](../decisions/0067-the-meter-counts-your-party-s-fights.md)),
   and the roster is read off group lines whose wording this sandbox has never seen: only
@@ -1210,6 +1214,21 @@ features for later in [../ideas.md](../ideas.md).
     better-evidenced clock. And a buff board should name *people* — if you see your own name on
     somebody else's Spirit of Wolf, the target resolution has failed and that is the bug the unit
     tests exist to catch early.
+- **Comparing a live fight with your party — never run with real clients.**
+  ([ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md).) Needs two clients in
+  the same EQ group, both with **Current fight** switched on (off by default — confirm that first:
+  with it off on both sides, the Combat tab's "Compare with your group" section shows the "nobody is
+  sharing" empty state, not a blank one). With it on both sides and both fighting the same mob:
+  confirm a table appears with both names as columns, the figures roughly track each other, and the
+  higher **Damage**/**DPS**/**Healing**/**HPS** figure is called out (not **Taken**, where higher
+  isn't a highlight). Then the cases the heuristic exists for: have one player zone away and confirm
+  they drop into "Not matched right now" naming their zone rather than staying in the table; have one
+  go quiet for two minutes (past `PEER_LIVE_MS`) and confirm the same. Confirm a **third** client, in
+  the room but not in your group, never appears here even while sharing (this stays party-scoped, not
+  room-wide — see the "more than one room" open question in
+  [decisions/README.md](../decisions/README.md), which this feature works around rather than waits
+  on). Finally, leave the group entirely on one side and confirm the section disappears rather than
+  showing an empty table.
 - **A relayed pool survives its source leaving — never run with real clients.**
   ([ADR 0242](../decisions/0242-a-pooled-row-keeps-its-own-origin.md).) Needs **three** clients (A, B,
   C) with `mobs`/`kills`/`respawns` on. Connect A and B only; kill a few of the same named on A so it

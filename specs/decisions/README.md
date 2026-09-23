@@ -18,10 +18,10 @@ retired: [0062](./0062-a-travel-graph-of-zone-lines.md) routes between zones ove
 **exit labels**, which is different data with a different provenance, and still does no routing
 inside one.
 
-**0105, 0120, 0141, 0152, 0153, 0181 and 0243 were each issued twice**, by two pieces of work landing
-the same day. The earlier record of each pair keeps its number; the later one moved to the end of the
-sequence, which is the only resolution that leaves every citation in the code still pointing at what
-it meant:
+**0105, 0120, 0141, 0152, 0153, 0181, 0243 and 0271 were each issued twice**, by two pieces of work
+landing the same day. The earlier record of each pair keeps its number; the later one moved to the
+end of the sequence, which is the only resolution that leaves every citation in the code still
+pointing at what it meant:
 
 | issued as | now | title |
 | --- | --- | --- |
@@ -32,6 +32,7 @@ it meant:
 | 0153 | **0269** | [A pet is not a named, a decoration is not a name, and a place remembers its own difficulty](./0269-a-pet-is-not-a-named-and-a-rare-creature-says-so.md) |
 | 0181 | **0266** | [A new install asks before it crawls](./0266-a-new-install-asks-before-it-crawls.md) |
 | 0243 | **0244** | [A pooled fact answers your own queries too, and the wiki gets a third mirror](./0244-a-pooled-fact-answers-your-own-queries-too.md) |
+| 0271 | **0273** | [A heal is a cell too — the Healers view gets a drill-down](./0273-a-heal-is-a-cell-too.md) |
 
 The lesson is cheap to apply: **take the next number when the file is created**, not when the work is
 finished, so a number is claimed before a second author can reach for it.
@@ -248,7 +249,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0210: Out-of-era flagging reaches the spells tab, the shopping list and Lucy's live verdict](./0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)
 - [0211: A loot filter searches the ledger, not the window](./0211-a-loot-filter-searches-the-ledger-not-the-window.md) — *its recent-window split and `MAX_ROWS` cap superseded by [0250](./0250-loot-drops-reaches-the-whole-ledger-unconditionally.md); the ledger-vs-window distinction stands*
 - [0212: An achievement criterion can watch the log or wait to be told](./0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)
-- [0213: Every stock alert claims its own corner](./0213-every-stock-alert-claims-its-own-corner.md)
+- [0213: Every stock alert claims its own corner](./0213-every-stock-alert-claims-its-own-corner.md) — *the debuff board's hardcoded fallback corner becomes a movable setting in 0272*
 - [0214: A counted criterion tallies, and a cast criterion is always yours](./0214-a-counted-criterion-tallies-and-a-cast-criterion-is-always-yours.md)
 - [0215: A raceKill criterion reads the wiki's own mob card, off the log's own parsed kill](./0215-a-racekill-criterion-reads-the-wiki-s-own-mob-card.md)
 - [0216: An achievement is quiet during a replayed gap](./0216-an-achievement-is-quiet-during-a-replayed-gap.md)
@@ -305,8 +306,11 @@ finished, so a number is claimed before a second author can reach for it.
 - [0267: A debuff is the mirror image of a buff, and a rebuff reminder waits for the fight](./0267-a-debuff-is-the-mirror-image-of-a-buff.md) — *issued as 0141; see "Retired and reused numbers" above*
 - [0268: A camp arms its own alert, and a gap stops teaching after three hours](./0268-a-camp-arms-its-own-alert.md) — *issued as 0152; see "Retired and reused numbers" above*
 - [0269: A pet is not a named, a decoration is not a name, and a place remembers its own difficulty](./0269-a-pet-is-not-a-named-and-a-rare-creature-says-so.md) — *issued as 0153; see "Retired and reused numbers" above*
-- [0270: The Damage tab becomes the Combat tab, and healing gets its own figures](./0270-the-combat-tab-tracks-healing-too.md)
+- [0270: The Damage tab becomes the Combat tab, and healing gets its own figures](./0270-the-combat-tab-tracks-healing-too.md) — *its "no drill-down yet" Consequence closed by 0273*
 - [0271: The Faction tab gets a Session view](./0271-the-faction-tab-gets-a-session-view.md)
+- [0272: The debuff board's shared default gets a setting of its own](./0272-the-debuff-boards-shared-default-gets-a-setting-of-its-own.md)
+- [0273: A heal is a cell too — the Healers view gets a drill-down](./0273-a-heal-is-a-cell-too.md) — *issued as 0271; see "Retired and reused numbers" above*
+- [0274: A fight is compared live with your party](./0274-a-fight-is-compared-live-with-your-party.md)
 
 ## Open Questions
 
@@ -346,6 +350,10 @@ finished, so a number is claimed before a second author can reach for it.
   room, a camp room and a server room are three different answers with three different join stories
   (who invites, what the id is, whether it outlives a session), and picking one is what unblocks the
   privacy defaults for every kind that is currently too loud to switch on.
+  [ADR 0274](./0274-a-fight-is-compared-live-with-your-party.md) is a data point for whoever answers
+  this: it wanted exactly a "these five people" room and settled for a client-side workaround (match
+  against your own party roster, ignore the rest of what the room offers) rather than wait on it —
+  which is one more example of the half-capability the paragraph above describes.
 
 - **Should a repop say what it took?** Changing the instance difficulty rebuilds the world, so every
   countdown measuring from a death in that place is dropped
@@ -499,11 +507,6 @@ and degrading to blank facts when the file isn't there.*
 - Should the overlay support multiple named lists / profiles per character?
 - Should the damage meter break a fight down by *phase* (adds arriving, mob enraging)?
   Today a fight is one flat window from first swing to last.
-- **Should healing get the same cell-based drill-down damage has?** [ADR 0270](./0270-the-combat-tab-tracks-healing-too.md)
-  gave the Healers view a ranked total per healer, same as Targets/Dealers, but nothing rolls a heal
-  into a (healer, target, spell) cell the way [ADR 0053](./0053-damage-is-cells-rolled-up.md) does for
-  damage — so a row can't be opened. Worth building the day someone wants "who did they heal, and with
-  what" rather than the per-healer total the view gives today.
 - Should the overlay toggle hotkey be user-configurable? (Currently a fixed
   `Ctrl/Cmd+Shift+O` via Electron's built-in `globalShortcut` — no native dep.)
 - **Should a page with several *full, independent* `questTopTable`s also split?**

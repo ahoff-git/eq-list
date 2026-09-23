@@ -50,6 +50,7 @@ function rig(over: {
     spawns: { view: () => ({ running: [], known: over.knownRespawns ?? [] }) },
     buffs: { view: () => ({ active: [] }) },
     scores: { board: () => ({ scores: [] }) },
+    fight: { current: () => undefined },
     gameClock: { reading: () => null },
   });
 }

@@ -51,7 +51,7 @@ import { AWARI_MSG } from "../src/shared/types";
 import { groupByOrigin, readContributor } from "../src/shared/contributors";
 import { createPeerShareHub, shareSources } from "../src/shared/peer-share-hub";
 import { createUiState } from "./ui-state";
-import type { ShareKind } from "../src/shared/peer-share";
+import { fightShareOf, type ShareKind } from "../src/shared/peer-share";
 import type { MapPin } from "../src/shared/map/pins";
 import { forTransfer, itemRows } from "../src/shared/item-search";
 import { normalizeItemName } from "../src/shared/grouping";
@@ -990,6 +990,8 @@ function registerPeerIpc(context: IpcContext): void {
     watcher,
     wiki,
     gameClock,
+    combat,
+    getCurrentZone,
   } = context;
 
   /**
@@ -1064,6 +1066,7 @@ function registerPeerIpc(context: IpcContext): void {
       spawns,
       buffs,
       scores,
+      fight: { current: () => fightShareOf(combat.snapshot().fight, getCurrentZone()) },
       gameClock,
     }),
     // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).

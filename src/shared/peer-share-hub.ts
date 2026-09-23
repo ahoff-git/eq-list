@@ -77,7 +77,7 @@ import {
   type ShareOffer,
 } from "./peer-share";
 import { decodeCoverage, type PeerCoverage } from "./item-shards";
-import type { SharedGameTime, SharedItemPage, SharedRespawn, SharedSpellPage } from "./peer-share";
+import type { FightShare, SharedGameTime, SharedItemPage, SharedRespawn, SharedSpellPage } from "./peer-share";
 import type { MapPin } from "./map/pins";
 import type { KillRecord, KnownSpawn } from "./types";
 import type { MobObservation } from "./mob-stats";
@@ -1369,6 +1369,14 @@ export function shareSources(context: {
   spawns: { view: () => { running: unknown[]; known: KnownSpawn[] } };
   buffs: { view: () => { active: unknown[] } };
   scores: { board: () => { scores: unknown[] } };
+  /**
+   * The live fight, already reduced to what's worth sending (`fightShareOf`) — `undefined` before
+   * anything has happened this session. Read fresh on every call rather than cached, the same
+   * unversioned treatment `timers`/`buffs` get below: a fight's numbers move mid-swing, and a
+   * version that ever answered "unchanged" while they did would be exactly the lie `ShareSource`
+   * forbids.
+   */
+  fight: { current: () => FightShare | undefined };
   /** The clock's own last `/time` reading, for sharing — see `game-clock-tracker.ts`'s `reading()`. */
   gameClock: { reading: () => { hour: number; at: string } | null };
 }): Record<ShareKind, ShareSource> {
@@ -1406,6 +1414,12 @@ export function shareSources(context: {
     timers: { rows: () => context.spawns.view().running },
     buffs: { rows: () => context.buffs.view().active },
     scores: { rows: () => context.scores.board().scores },
+    fight: {
+      rows: () => {
+        const f = context.fight.current();
+        return f ? [f] : [];
+      },
+    },
     // Addressed by shard, never as a whole (see `PeerShareDeps.items`). Present so the table has no
     // hole in it, and never called.
     items: { rows: () => [] },

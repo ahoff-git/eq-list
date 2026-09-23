@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { SOLID } from "@/lib/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
-import { alertPlacement, alertStyle, BUFF_STYLE_ID } from "@/shared/alert-styles";
+import { alertPlacement, alertStyle, BUFF_STYLE_ID, DEBUFF_DEFAULT_POSITION } from "@/shared/alert-styles";
 import { durationErratic, heldMs, targetLabel } from "@/shared/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { clockSkew } from "@/shared/spawn-timers";
@@ -41,16 +41,6 @@ import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types
  *
  * Rides the existing alert window, like every other piece drawn over the game.
  */
-/**
- * Where a debuff lands when nobody picked a look for it — `BuffOverlay`'s corner is `BUFF_STYLE_ID`'s
- * `top-left`, and both boards default there since a debuff with no style of its own falls back to
- * the very same id. Out of the box that put a crowd-control class's two *standing* boards on the
- * same pixel — a mez/root list drawn under, or over, the missing-buffs list it has nothing to do
- * with. A row that names its own saved style still goes exactly where that style says (below); this
- * only redirects the shared, unconfigured fallback.
- */
-const DEBUFF_DEFAULT_POSITION: AlertPositionValue = "bottom-left";
-
 export default function DebuffOverlay() {
   const view = useBuffs();
   const ca = useSettings()?.castAlerts;
@@ -80,8 +70,9 @@ export default function DebuffOverlay() {
     const styleId = wanted.get(buff.key)?.styleId;
     const style = alertStyle(ca, { styleId: styleId ?? BUFF_STYLE_ID });
     // Only an explicit choice earns the position that choice named — the shared fallback is
-    // redirected to this board's own corner instead (see `DEBUFF_DEFAULT_POSITION`).
-    const position = styleId ? style.position : DEBUFF_DEFAULT_POSITION;
+    // redirected to this board's own corner instead, which the player can move
+    // (`ca.debuffPosition`, ADR 0272) and which otherwise defaults to `DEBUFF_DEFAULT_POSITION`.
+    const position = styleId ? style.position : (ca.debuffPosition ?? DEBUFF_DEFAULT_POSITION);
     return { buff, known: wanted.get(buff.key), style, position };
   });
   const stacks = new Map<AlertPositionValue, typeof looks>();

@@ -7,11 +7,12 @@ import DamageMeter, { type DamageView } from "./DamageMeter";
 import SpellTable from "./SpellTable";
 import DamageHistory from "./DamageHistory";
 import HighScoreBoard from "./HighScoreBoard";
+import PeerFightCompare from "./PeerFightCompare";
 import Sparkline from "./Sparkline";
 import AskValue from "./AskValue";
 import ZoneTag from "./ZoneTag";
 import { opponentOf } from "@/shared/damage-tree";
-import type { DamageAxis, DeathRecap, FightBest, FightStats, HpEstimate, StoredFight } from "@/shared/types";
+import type { DamageAxis, DeathRecap, FightBest, FightStats, HealAxis, HpEstimate, StoredFight } from "@/shared/types";
 
 import { Empty, segCls, StatTile } from "./ui";
 import { duration, percent, when } from "@/shared/format";
@@ -70,17 +71,16 @@ const LAYOUTS = {
     drill: ["kind", "source", "target"],
   },
   /**
-   * Healing gets a bar list, not a drill-down: the log names a heal's target and spell, but nothing
-   * here yet rolls those into cells the way damage does (ADR 0053), so there's no tree to open — the
-   * total per healer is the whole answer for now.
+   * Healing's own tree (ADR 0273): a healer names one target and one spell per line, so there's no
+   * "kind" split the way damage has — just who it landed on, then what cast it.
    */
   healers: {
     label: "Healers",
-    hint: "Who healed, and how much",
+    hint: "Who healed, and how much — open a row for who they healed, and with what",
     bars: "healed",
-    drill: [],
+    drill: ["target", "spell"],
   },
-} as const satisfies Record<string, { label: string; hint: string; bars: DamageView; drill: DamageAxis[] }>;
+} as const satisfies Record<string, { label: string; hint: string; bars: DamageView; drill: (DamageAxis | HealAxis)[] }>;
 
 /** A fight is "live" while the log has shown damage within this window. */
 const LIVE_MS = 10_000;
@@ -120,6 +120,7 @@ export default function DamagePanel() {
   const window: FightStats | null =
     scope === "history" ? picked?.stats ?? null : scope === "records" ? null : stats[scope];
   const petShare = window ? petShareOfYours(window) : 0;
+  const overhealed = window ? overhealedIn(window) : 0;
   // A personal best only means something for one fight against a named opponent. `opponentOf` is
   // the same rule history labels a fight by, so the ★ flag and the list agree on who you fought.
   const opponent = scope === "history" ? picked?.label : opponentOf(stats.fight);
@@ -255,13 +256,25 @@ export default function DamagePanel() {
             {/* Absent rather than a silent zero when nobody healed — most fights have no healer at
                 all, and a tile that never moves is worse than one that isn't there. */}
             {!!window.yourHealed && (
-              <StatTile label="Your healing" value={fmt(window.yourHealed)} hint="Healing you and your pet did" />
+              <>
+                <StatTile label="Your healing" value={fmt(window.yourHealed)} hint="Healing you and your pet did" />
+                <StatTile label="Your HPS" value={yourHps(window)} />
+              </>
             )}
             {!!window.yourHealReceived && (
               <StatTile
                 label="Healing on you"
                 value={fmt(window.yourHealReceived)}
                 hint="Healing you and your pet received, from any healer — a self-heal included"
+              />
+            )}
+            {overhealed > 0 && (
+              <StatTile
+                label="Overhealed"
+                value={fmt(overhealed)}
+                hint={`Hit points every heal in the window would have restored but didn't${
+                  window.totalHealed ? ` — ${percent(ratio(overhealed, window.totalHealed + overhealed))} of all healing attempted` : ""
+                }`}
               />
             )}
           </div>
@@ -302,12 +315,17 @@ export default function DamagePanel() {
               view={LAYOUTS[view].bars}
               drill={LAYOUTS[view].drill}
               cells={window.damageCells}
+              healCells={window.healCells}
             />
           )}
         </>
       )}
 
       {window && window.deaths.length > 0 && <Deaths deaths={window.deaths} />}
+
+      {/* Live only — there's no fight id to match a *stored* fight against a peer's, so this stays
+          scoped to the window that's actually still comparable in real time (ADR 0274). */}
+      {scope === "fight" && window && <PeerFightCompare window={window} zone={currentZone} />}
 
       {scope === "history" && !picked && <p className="muted small">Pick a fight above to break it down.</p>}
     </div>
@@ -415,6 +433,11 @@ function petShareOfYours(window: FightStats): number {
   return mine.filter((c) => c.name !== "You").reduce((n, c) => n + c.dealt, 0) / total;
 }
 
+/** Hit points every heal in the window would have restored but didn't, from its own cells. */
+function overhealedIn(window: FightStats): number {
+  return (window.healCells ?? []).reduce((n, c) => n + c.overhealed, 0);
+}
+
 /** One line for guild chat — the numbers people actually paste. */
 function summaryLine(window: FightStats, opponent?: string): string {
   const spell = window.spells.find((s) => s.dpc > 0);
@@ -443,6 +466,12 @@ function useBests(refreshKey: string): FightBest[] {
 function yourDps(window: FightStats): string {
   const sec = Math.max(1, window.durationSec);
   return window.yourDealt ? `${ratio(window.yourDealt, sec, 1)}` : "—";
+}
+
+/** Your side's HPS over the window — the same rate DPS states, for healing. */
+function yourHps(window: FightStats): string {
+  const sec = Math.max(1, window.durationSec);
+  return window.yourHealed ? `${ratio(window.yourHealed, sec, 1)}` : "—";
 }
 
 const fmt = (n: number): string => n.toLocaleString();

@@ -21,6 +21,7 @@
 import { EventEmitter } from "node:events";
 import { isYours, SELF } from "../src/shared/combat-parser";
 import { createDamageCells, rollUpDamage } from "../src/shared/damage-tree";
+import { createHealCells } from "../src/shared/heal-tree";
 import { createDotAttribution } from "../src/shared/dot-attribution";
 import { createFightScope } from "../src/shared/fight-scope";
 import { hasArticle } from "../src/shared/log-parser";
@@ -361,6 +362,8 @@ function createWindow(canon: (name: string) => string) {
   const tallies = new Map<string, Tally>();
   /** Every hit as a (victim, attacker, kind, source) cell — see `damage-tree.ts`. */
   const damage = createDamageCells(canon);
+  /** Every heal as a (healer, target, spell) cell — see `heal-tree.ts`. */
+  const heals = createHealCells(canon);
   const spells = new Map<string, SpellTally>();
   const mobs = new Map<string, MobTally>();
   const invocations = new Map<string, InvocationTally>();
@@ -412,6 +415,7 @@ function createWindow(canon: (name: string) => string) {
     deaths,
     lines,
     damage,
+    heals,
     doubted,
     /** Widen the window's line range — cheap, and it's the way back to the source. */
     note(logId: number) {
@@ -769,6 +773,7 @@ export function createCombatStats(
       yourHealReceived: byCombatant.filter((c) => c.mine).reduce((n, c) => n + (c.healReceived ?? 0), 0),
       byCombatant,
       damageCells: cells,
+      healCells: w.heals.cells(),
       spanSec: w.span.firstAt ? Math.max(1, Math.round((w.span.lastAt - w.span.firstAt) / 1000)) : 0,
       spells,
       ...manaTotals(spells),
@@ -802,6 +807,7 @@ export function createCombatStats(
     startedAt,
     fight: summarize(fight),
     session: summarize(session),
+    party: party.members(),
   });
 
   // Signal-only: `snapshot()` is computed by whoever's listening, when they're ready — not
@@ -912,6 +918,9 @@ export function createCombatStats(
         // The recipient's own figure — a self-heal lands on the same tally as the line above and
         // both go up, which is correct: healing yourself is healing you received.
         w.tally(canon(event.target)).healReceived += event.amount;
+        // Who healed whom, with what — one cell, from which the Healers view's drill-down is
+        // rolled up (ADR 0273, mirroring ADR 0053's damage cells).
+        w.heals.record(event);
         if (event.spell && isMine(event.healer)) {
           const sp = w.spell(event.spell);
           const mode = modeTally(sp.byInvocation, invocation);

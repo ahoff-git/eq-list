@@ -645,14 +645,16 @@ list, hunt, search, damage, session, peers, settings.
       back to, and a weight sheet is a statement about your character rather than a passing filter.
   - `DamagePanel` — the **Combat tab** (from `combat-stats.ts` / `combat-history.ts`;
     see [ADR 0014](../decisions/0014-damage-meter-from-the-log.md),
-    [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md) and
-    [ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md)). Two axes:
+    [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md),
+    [ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md) and
+    [ADR 0273](../decisions/0273-a-heal-is-a-cell-too.md)). Two axes:
     **scope** (this/last fight · session · **history**) and **view** (**targets** · dealers ·
     abilities · **spells** · healers). **Targets is the default**: a fight's first question is what
     we damaged, not which of us was in the room — opening on the dealer list showed a column of
     party members where the enemy belongs. Tiles above are the same either way, on purpose, and
-    grow two more — **Your healing** / **Healing on you** — only once there's a heal to report, the
-    same restraint `Pet share` already used. A stored fight renders through the same views as a live
+    grow up to four more — **Your healing** / **Your HPS** / **Healing on you** / **Overhealed** —
+    only once there's a heal to report, the same restraint `Pet share` already used. A stored fight
+    renders through the same views as a live
     one, so "dig into last night" and "how's this pull going" are one screen. Everything it shows is
     **your party's fights** — another group's pull at the same camp never reaches the tab
     ([ADR 0067](../decisions/0067-the-meter-counts-your-party-s-fights.md)).
@@ -690,11 +692,13 @@ list, hunt, search, damage, session, peers, settings.
       the cells existed keeps only its dealer-side kind/source split; its Dealers view falls back
       to that, and its Targets view says so rather than inventing attribution.
     - **Healers** ranks the same rows by healing done instead — a healer with no damage of their
-      own still gets a row. Unlike the three above, it's a **flat list with no drill-down**: nothing
-      rolls a heal into a (healer, target, spell) cell the way damage does, so there's nothing to
-      open ([ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md)) — a row's damage
-      qualifiers (`specials`) are deliberately not offered here either, since they're a fact about
-      that combatant's *swings*, not their healing.
+      own still gets a row. It has its own two-level drill-down (`heal-tree.ts`,
+      [ADR 0273](../decisions/0273-a-heal-is-a-cell-too.md)): open a row for **who** they healed,
+      then **with what** spell — a smaller cousin of the (victim, attacker, kind, source) cells
+      above, since a heal has no kind split (always a cast, or nothing named at all) and no miss.
+      A row's damage qualifiers (`specials`) are deliberately not offered here, since they're a fact
+      about that combatant's *swings*, not their healing — the caret tracks heal cells only, so a
+      healer who also has a damage crit elsewhere doesn't open a breakdown of the wrong kind.
     - `SpellTable` — where your damage came from, spell by spell: casts, damage, healing,
       average **measured** cast time, **dmg/s cast** (the efficiency column — a slow nuke
       and a fast one that hit the same are not equally good), **mana** and **dmg/mana**
@@ -757,6 +761,12 @@ list, hunt, search, damage, session, peers, settings.
       of your **inferred** health (`hp-estimate.ts`, see
       [ADR 0018](../decisions/0018-inferred-max-hit-points.md)) — a range with its evidence
       on hover, correctable through the same `AskValue` control.
+    - `PeerFightCompare` — **This/Last fight only**, never History (no fight id exists to match a
+      *stored* fight against a peer's). Folds `usePeerShare()` down to your own party
+      (`useParty`) and shows a live table, one column per person, for whoever's sharing, in your
+      zone, and recently active — compared, never merged, the same rule `PeerScores` holds
+      elsewhere. Renders nothing when you aren't grouped. See
+      [ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md).
     Tiles above show your damage, your DPS, all damage, how long the window was *in
     combat*, and your pet's share when it fought. A **★ best DPS** flag appears when the
     fight beats your recorded best against that opponent, and **Copy** puts a one-line

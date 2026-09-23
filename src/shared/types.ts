@@ -938,6 +938,47 @@ export interface DamageNode {
 }
 
 /**
+ * One (healer, target, spell) bucket of healing — the leaf a heal tree rolls up from, the same
+ * shape [ADR 0053](../../specs/decisions/0053-damage-is-cells-rolled-up.md) gave damage, scaled to
+ * the axes a heal actually has: no melee/spell/other split (a heal is always a cast, or nothing the
+ * log named at all) and no misses (there's no such thing in this log as a heal that whiffs).
+ * See [ADR 0273](../../specs/decisions/0273-a-heal-is-a-cell-too.md).
+ */
+export interface HealCell {
+  healer: string;
+  target: string;
+  /** The spell that did it, or `"Unknown"` for the rare heal the log names no spell for. */
+  spell: string;
+  amount: number;
+  /** Landings — a heal has no miss, so this is also the swing count. */
+  hits: number;
+  /** Landed heals the log tagged "(Critical)". */
+  crits: number;
+  maxHit: number;
+  /** Hit points the heal would have restored but didn't (overheal). */
+  overhealed: number;
+}
+
+/** Which axis a level of a heal tree groups by. */
+export type HealAxis = "target" | "healer" | "spell";
+
+/** One level of a heal tree — a combatant or a spell — with its own metrics and the level below it. */
+export interface HealNode {
+  label: string;
+  axis: HealAxis;
+  amount: number;
+  hits: number;
+  crits: number;
+  maxHit: number;
+  overhealed: number;
+  /** Share of the level above (of the whole tree at the top), 0–1. */
+  share: number;
+  /** True when this level names you or something of yours. Only set on combatant levels. */
+  mine?: boolean;
+  children: HealNode[];
+}
+
+/**
  * One of your spells over a window. Everything here is measured from the log — EQ
  * states neither cast times nor resist rates, so both are derived: cast time from the
  * gap between "You begin casting X" and the effect landing, resist rate from how many
@@ -1160,6 +1201,12 @@ export interface FightStats {
    * disagree.
    */
   damageCells?: DamageCell[];
+  /**
+   * Every heal in the window as a (healer, target, spell) cell — what the Healers view's
+   * drill-down is rolled up from (ADR 0273). Absent on fights stored before it existed, the same
+   * way `damageCells` is absent on older fights.
+   */
+  healCells?: HealCell[];
   /** Your spells in this window, most damaging first. */
   spells: SpellStat[];
   /**
@@ -1240,6 +1287,13 @@ export interface CombatStats {
   startedAt: string;
   fight: FightStats;
   session: FightStats;
+  /**
+   * Who the tracker currently believes is grouped with you, in the order they joined — the same
+   * roster `fight-scope.ts` reads to decide whose fights count. Carried on the snapshot so a
+   * reader doesn't need a channel of its own just to ask "who's in my group right now" (see
+   * `peer-share.ts`'s `fight` kind, which uses it to find a party-mate's shared fight).
+   */
+  party: string[];
 }
 
 // ─── Combat history (past fights and sessions) ──────────────────────────────
@@ -2694,6 +2748,13 @@ export interface CastAlertSettings extends AlertStyle {
    * fallback whenever the saved id is gone, e.g. a monitor was unplugged). See `createAlertWindow`.
    */
   displayId?: number;
+  /**
+   * Where `DebuffOverlay`'s board lands when a held debuff (mez, root, charm, snare…) names no saved
+   * style of its own — a plain position, not a style, since the board has no look to configure
+   * alongside it (color and sound still come from `BUFF_STYLE_ID`). Absent = `DEBUFF_DEFAULT_POSITION`
+   * (`alert-styles.ts`). See [ADR 0272](../../specs/decisions/0272-the-debuff-boards-shared-default-gets-a-setting-of-its-own.md).
+   */
+  debuffPosition?: AlertPositionValue;
 }
 
 /**

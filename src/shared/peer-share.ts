@@ -38,6 +38,7 @@
  */
 import type {
   CastWatch,
+  FightStats,
   HighScore,
   ItemCard,
   ItemSource,
@@ -59,6 +60,7 @@ import { decodeWatches } from "./watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "./map/pins";
 import { SHARD_COUNT } from "./item-shards";
 import { isPlottable } from "./kill-confidence";
+import { opponentOf } from "./damage-tree";
 import { clamp } from "./numbers";
 
 /**
@@ -104,6 +106,40 @@ export interface SharedGameTime {
   at?: string;
 }
 
+/**
+ * A peer's live fight, as it crosses the wire — the same headline figures the Combat tab's own
+ * stat tiles show, so a party-mate's row can sit beside yours without either side inventing a
+ * translation. See [ADR 0274](../../specs/decisions/0274-a-fight-is-compared-live-with-your-party.md).
+ *
+ * **Self-reported and unverified**, same as a shared high score — there is no way to check that
+ * `yourDealt` is honest, and this doesn't try to. What makes it safe regardless is the same rule
+ * `PeerScores` already lives by: a peer's figures sit beside yours and never touch them.
+ *
+ * There is no fight id and no "still going" flag: nothing in this log names one, and `endedAt` is
+ * exactly what `FightStats.endedAt` already is — the timestamp of the sender's **last damage**,
+ * moving forward while they keep swinging rather than snapping to "now" the moment they stop. A
+ * receiver judges liveness the same way the Combat tab judges its own fight: by how recently that
+ * timestamp claims to be, against the wall clock. `zone` plus that freshness is the whole signal for
+ * "is this the fight I'm in" — reported, never resolved.
+ */
+export interface FightShare {
+  /** The zone this fight is in (or was, if it's since ended), when the sender's log has said. */
+  zone?: string;
+  /** The main thing being fought, the same rule `opponentOf` names a stored fight by. */
+  opponent?: string;
+  startedAt: string;
+  /** The sender's last damage in this fight — see the type doc for how a receiver reads this. */
+  endedAt: string;
+  durationSec: number;
+  /** Damage the sender (and their pet) dealt and took. */
+  yourDealt: number;
+  yourTaken: number;
+  /** Healing the sender (and their pet) did, and received — absent (0) for a fight with none. */
+  yourHealed: number;
+  yourHealReceived: number;
+  kills: number;
+}
+
 // ─── The catalogue ──────────────────────────────────────────────────────────
 
 export type ShareFamily = "authored" | "observation" | "live" | "mirror";
@@ -119,6 +155,7 @@ export type ShareKind =
   | "timers"
   | "buffs"
   | "scores"
+  | "fight"
   | "items"
   | "spells"
   | "factions"
@@ -215,6 +252,9 @@ const MAX_ROWS: Record<ShareKind, number> = {
   timers: 200,
   buffs: 200,
   scores: 200,
+  // There is only ever one fight you're in — a second row would just be a lie somebody sent, the
+  // same reasoning `gameTime` states below.
+  fight: 1,
   // One shard is about eleven pages (`item-shards.ts`); the cap is generous headroom for an uneven
   // hash while still bounding what a single hostile `give` can cost us.
   items: 64,
@@ -335,6 +375,29 @@ export function shareableRespawns(known: readonly KnownSpawn[]): SharedRespawn[]
     samples: k.samples,
     lastKillAt: k.lastKillAt,
   }));
+}
+
+/**
+ * The live fight, reduced to what's worth sending — or `undefined` before anything has happened
+ * this session, which is what keeps a fresh launch from offering an empty fight forever.
+ *
+ * `opponent` is worked out the same way a stored fight's own label is (`opponentOf`), so a
+ * party-mate's row names the pull the same way your own History tab would.
+ */
+export function fightShareOf(fight: FightStats, zone: string | null | undefined): FightShare | undefined {
+  if (!fight.startedAt) return undefined;
+  return {
+    zone: zone ?? undefined,
+    opponent: opponentOf(fight),
+    startedAt: fight.startedAt,
+    endedAt: fight.endedAt,
+    durationSec: fight.durationSec,
+    yourDealt: fight.yourDealt,
+    yourTaken: fight.yourTaken,
+    yourHealed: fight.yourHealed ?? 0,
+    yourHealReceived: fight.yourHealReceived ?? 0,
+    kills: fight.kills,
+  };
 }
 
 /**
@@ -473,6 +536,17 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     read: (rows) => readList(rows, MAX_ROWS.scores, readScore),
     // One record per category, which is what a board is.
     rowKey: (row) => fieldKey(row, "categoryId"),
+  },
+  {
+    key: "fight",
+    family: "live",
+    label: "Current fight",
+    blurb: "Your live fight — damage, healing and duration — so a party-mate can compare notes as it happens.",
+    noun: "fight",
+    read: (rows) => readList(rows, MAX_ROWS.fight, readFightShare),
+    // There is only ever one — your current or last fight — the same reasoning `gameTime`'s key
+    // states below.
+    rowKey: () => "fight",
   },
   {
     key: "items",
@@ -1413,6 +1487,32 @@ function readScore(raw: unknown): HighScore | null {
     zone: str(raw.zone) || undefined,
     beaten: clamp(int(raw.beaten) ?? 1, 0, 100_000),
     unsettled: raw.unsettled === true,
+  };
+}
+
+/** How long a shared fight may claim to have run — a day is generous headroom for a real one. */
+const MAX_FIGHT_SEC = 24 * 60 * 60;
+
+/**
+ * A peer's live fight. Dropped outright only when it names no `startedAt` at all — every other
+ * field falls back to a harmless default rather than losing the whole row, the same forgiveness
+ * `readSharedGameTime` gives an unreadable `at`.
+ */
+function readFightShare(raw: unknown): FightShare | null {
+  if (!isRecord(raw)) return null;
+  const startedAt = iso(raw.startedAt);
+  if (!startedAt) return null;
+  return {
+    zone: str(raw.zone) || undefined,
+    opponent: str(raw.opponent) || undefined,
+    startedAt,
+    endedAt: iso(raw.endedAt) ?? "",
+    durationSec: clamp(int(raw.durationSec) ?? 0, 0, MAX_FIGHT_SEC),
+    yourDealt: nonNegative(raw.yourDealt) ?? 0,
+    yourTaken: nonNegative(raw.yourTaken) ?? 0,
+    yourHealed: nonNegative(raw.yourHealed) ?? 0,
+    yourHealReceived: nonNegative(raw.yourHealReceived) ?? 0,
+    kills: clamp(int(raw.kills) ?? 0, 0, 100_000),
   };
 }
 

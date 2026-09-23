@@ -1,12 +1,22 @@
 "use client";
 import { useState } from "react";
 import { drillDown } from "@/shared/damage-tree";
-import type { CombatantStat, DamageAxis, DamageCell, DamageNode, SpecialHitStat } from "@/shared/types";
+import { healDrillDown } from "@/shared/heal-tree";
+import type {
+  CombatantStat,
+  DamageAxis,
+  DamageCell,
+  DamageNode,
+  HealAxis,
+  HealCell,
+  HealNode,
+  SpecialHitStat,
+} from "@/shared/types";
 import { count, percent } from "@/shared/format";
 import { Caret, caretGlyph } from "./ui";
 import { ratio } from "@/shared/numbers";
 
-/** Which number the bars are showing. `"healed"` has no drill-down yet — see `hasBreakdown`. */
+/** Which number the bars are showing. */
 export type DamageView = "dealt" | "taken" | "healed";
 
 /**
@@ -32,13 +42,19 @@ export default function DamageMeter({
   view,
   drill,
   cells,
+  healCells,
 }: {
   rows: CombatantStat[];
   view: DamageView;
-  /** Which axes the drill-down fans out along, outermost first — the caller's question (`LAYOUTS`). */
-  drill: DamageAxis[];
+  /**
+   * Which axes the drill-down fans out along, outermost first — the caller's question (`LAYOUTS`).
+   * `HealAxis[]` under the Healers view (`target`/`spell`), `DamageAxis[]` under every other one.
+   */
+  drill: (DamageAxis | HealAxis)[];
   /** The window's damage cells. Absent on fights stored before they existed. */
   cells?: DamageCell[];
+  /** The window's heal cells — only read under the Healers view. Absent on older fights. */
+  healCells?: HealCell[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const relevant = rows.filter((r) => value(r, view) > 0);
@@ -53,16 +69,23 @@ export default function DamageMeter({
     <div className="meters">
       {sorted.map((row) => {
         const v = value(row, view);
-        // Healing has no cells to drill into yet, and a row's `specials` are its *damage*
-        // qualifiers — irrelevant here and confusing to open under a healing total.
-        const canExpand = view !== "healed" && (hasBreakdown(row, view, cells) || row.specials?.length > 0);
+        // Healing's own cells, rather than a row's `specials` — those are its *damage* qualifiers,
+        // which would be irrelevant and confusing to open under a healing total.
+        const canExpand =
+          view === "healed"
+            ? !!healCells?.some((c) => c.healer === row.name)
+            : hasBreakdown(row, view, cells) || row.specials?.length > 0;
         // Tied to `canExpand`, not just the remembered name — otherwise a row left open while
-        // switching to a view it can't expand under (e.g. into Healers) would keep rendering
-        // stale breakdown content with no caret to say it was there.
+        // switching to a view it can't expand under would keep rendering stale breakdown content
+        // with no caret to say it was there.
         const isOpen = canExpand && open === row.name;
         // Rolled up only for the row on show: the meter re-renders several times a second, and
         // nothing below the fold needs computing to know a caret belongs on the line.
-        const nodes = isOpen ? breakdown(row, view, drill, cells, mine) : [];
+        const healNodes =
+          isOpen && view === "healed"
+            ? healDrillDown(healCells ?? [], "healer", row.name, drill.length ? (drill as HealAxis[]) : ["target", "spell"], mine)
+            : [];
+        const nodes = isOpen && view !== "healed" ? breakdown(row, view, drill as DamageAxis[], cells, mine) : [];
         return (
           <div className="meter-group" key={row.name}>
             <div
@@ -78,7 +101,18 @@ export default function DamageMeter({
                 {view === "dealt" && <span className="meter-dps"> {row.dps}/s</span>}
               </span>
             </div>
-            {isOpen && (
+            {isOpen && view === "healed" && (
+              <div className="meter-breakdown">
+                {healNodes.length > 0 ? (
+                  <HealLevel nodes={healNodes} />
+                ) : (
+                  <p className="muted small">
+                    This fight was recorded before the breakdown existed, so only its totals were kept.
+                  </p>
+                )}
+              </div>
+            )}
+            {isOpen && view !== "healed" && (
               <div className="meter-breakdown">
                 {nodes.length > 0 ? (
                   <Level nodes={nodes} />
@@ -100,9 +134,11 @@ export default function DamageMeter({
 const value = (row: CombatantStat, view: DamageView): number =>
   view === "dealt" ? row.dealt : view === "taken" ? row.taken : row.healed;
 
-/** Whether there's anything under the row — the cheap question, asked of every row. */
-function hasBreakdown(row: CombatantStat, view: DamageView, cells?: DamageCell[]): boolean {
-  if (view === "healed") return false; // no heal cells recorded yet
+/**
+ * Whether there's anything under the row — the cheap question, asked of every row. Only ever
+ * called for `"dealt"`/`"taken"`; the Healers view asks its own heal cells instead.
+ */
+function hasBreakdown(row: CombatantStat, view: "dealt" | "taken", cells?: DamageCell[]): boolean {
   const axis = view === "dealt" ? "attacker" : "target";
   if (cells?.length) return cells.some((c) => c[axis] === row.name);
   return view === "dealt" && ((row.byType?.length ?? 0) > 0 || (row.bySpell?.length ?? 0) > 0);
@@ -223,6 +259,82 @@ function shareLines(node: DamageNode): string[] {
 }
 
 /**
+ * One level of a heal tree: what it splits by, then its rows — the Healers view's own drill-down
+ * (ADR 0273), a smaller cousin of `Level` for the axes a heal actually has (no misses, no ticks,
+ * no fixed-denominator shares — just who, on whom, with what).
+ */
+function HealLevel({ nodes }: { nodes: HealNode[] }) {
+  return (
+    <div className="dmg-level">
+      <div className="dmg-caption">{HEAL_CAPTIONS[nodes[0].axis]}</div>
+      {nodes.map((node) => (
+        <HealBranch key={node.label} node={node} startOpen={nodes.length === 1} />
+      ))}
+    </div>
+  );
+}
+
+const HEAL_CAPTIONS: Record<HealNode["axis"], string> = {
+  target: "on",
+  healer: "from",
+  spell: "with",
+};
+
+function HealBranch({ node, startOpen }: { node: HealNode; startOpen: boolean }) {
+  const [open, setOpen] = useState(startOpen);
+  const canExpand = node.children.length > 0;
+  return (
+    <div className={`dmg-node ${node.mine ? "mine" : ""}`}>
+      <div
+        className={`dmg-head ${canExpand ? "expandable" : ""}`}
+        title={healNodeDetail(node)}
+        onClick={canExpand ? () => setOpen((o) => !o) : undefined}
+      >
+        <div className="dmg-share" style={{ width: `${Math.max(1, node.share * 100)}%` }} />
+        <span className="caret">{canExpand ? caretGlyph(open) : ""}</span>
+        <span className="dmg-label">{node.label}</span>
+        <span className="spacer" />
+        <span className="dmg-nums">
+          {node.amount.toLocaleString()} <span className="muted">({percent(node.share)})</span>
+        </span>
+        <span className="dmg-meta muted small">{healMeta(node)}</span>
+      </div>
+      {open && canExpand && <HealLevel nodes={node.children} />}
+    </div>
+  );
+}
+
+/** The metrics that fit on the line; `healNodeDetail` has the rest. */
+function healMeta(node: HealNode): string {
+  return [
+    `${node.hits}×`,
+    node.crits > 0 ? `${percent(ratio(node.crits, node.hits))} crit` : "",
+    node.maxHit > 0 ? `max ${node.maxHit.toLocaleString()}` : "",
+    node.overhealed > 0 ? `${node.overhealed.toLocaleString()} overhealed` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Every metric for the level, spelled out — the line above is the abbreviation. */
+function healNodeDetail(node: HealNode): string {
+  const avg = ratio(node.amount, node.hits, 0);
+  return [
+    `${node.label} — ${node.amount.toLocaleString()} healed`,
+    node.hits > 0 ? `${node.hits} landed · ${avg} average · ${node.maxHit.toLocaleString()} biggest` : "",
+    node.crits > 0 ? `${node.crits} critical (${percent(ratio(node.crits, node.hits))} of hits)` : "",
+    node.overhealed > 0
+      ? `${node.overhealed.toLocaleString()} overhealed — hit points this would have restored but didn't`
+      : "",
+    "",
+    `${percent(node.share)} of the level above`,
+    node.children.length > 0 ? `\nclick to split by ${HEAL_CAPTIONS[node.children[0].axis]}` : "",
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+}
+
+/**
  * Qualifiers the log tagged hits with. Kept apart from the tree and labelled as such because
  * they *overlap* it — a critical slash is already counted under Melee → Slash — so summing
  * these with the levels above would double-count. That confusion is exactly what this replaces.
@@ -301,7 +413,13 @@ function detail(row: CombatantStat, view: DamageView, canExpand: boolean): strin
     row.healed > 0 ? `healed ${row.healed.toLocaleString()}` : "",
     row.healReceived ? `received ${row.healReceived.toLocaleString()}` : "",
     `active ${row.activeSec}s`,
-    canExpand ? (view === "dealt" ? "click for what it hit, how, and with what" : "click for who hit it, how, and with what") : "",
+    canExpand
+      ? view === "dealt"
+        ? "click for what it hit, how, and with what"
+        : view === "healed"
+          ? "click for who they healed, and with what"
+          : "click for who hit it, how, and with what"
+      : "",
     stanceSplit(row),
   ]
     .filter(Boolean)

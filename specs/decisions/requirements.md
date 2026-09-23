@@ -196,8 +196,11 @@ reading like a measurement, and they are shared code
   and no UI can use thousands of snapshots. ([0014](./0014-damage-meter-from-the-log.md))
 - **Healing gets the same fight/session totals damage has, and a ranked view of its own.** A combatant
   tracks what it received as well as what it did; the tab (renamed **Combat**) shows both only when
-  there's something to report. Its Healers view is a ranked total, not a drill-down — nothing rolls a
-  heal into cells the way damage's do. ([0270](./0270-the-combat-tab-tracks-healing-too.md))
+  there's something to report. ([0270](./0270-the-combat-tab-tracks-healing-too.md))
+- **A heal is a (healer, target, spell) cell, rolled up the same way damage's (victim, attacker, kind,
+  source) cells are.** The Healers view opens a row to see who a healer healed, and with what — no
+  "kind" split and no misses, since a heal has neither. The cells also price the window's wasted
+  healing (**Overhealed**) and its rate (**Your HPS**). ([0273](./0273-a-heal-is-a-cell-too.md))
 
 ## Health and experience
 
@@ -657,6 +660,9 @@ reading like a measurement, and they are shared code
   walk reaches the room instead of everyone repeating it. A learned title is only ever added, never
   removes one, and is never evidence the page exists — completeness stays self-assessed, so the worst
   a bad title costs is one 404. ([0177](./0177-the-item-list-is-a-walk-not-a-listing.md))
+- **A live fight is shared like a score — off by default, self-reported, compared and never merged**
+  — and matched against a peer's only through your own party roster, never the whole room, since
+  nothing in the log gives two installs a fight id to agree on. ([0274](./0274-a-fight-is-compared-live-with-your-party.md))
 
 ## Stored data
 

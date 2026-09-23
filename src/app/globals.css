@@ -3793,6 +3793,18 @@ kbd {
 /* Gold, like every other "this is the figure" in the app — and never on a provisional one. */
 .peers-scores .leader { color: var(--accent); font-weight: 600; }
 
+/* Combat tab: comparing a live fight with your party (`PeerFightCompare`, ADR 0272) — the same
+   one-column-per-person shape as the scoreboard above, so the two "compare with a peer" surfaces
+   read as one idiom rather than two. */
+.peer-fight table { border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+.peer-fight th,
+.peer-fight td { padding: 3px 10px 3px 0; text-align: left; font-weight: 400; }
+.peer-fight thead th { color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.peer-fight td { font-variant-numeric: tabular-nums; }
+.peer-fight .mine { color: var(--text); }
+.peer-fight .leader { color: var(--accent); font-weight: 600; }
+.peer-fight-elsewhere { margin-top: 6px; }
+
 /* ── Items tab: the item search ─────────────────────────────────────────────
    A workbench, not a feed: criteria along the top, the yardstick behind a fold, and a table under
    both. Everything up top wraps, because the criteria row is seven controls wide and this window is

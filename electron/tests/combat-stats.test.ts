@@ -6,6 +6,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCombatStats } from "../combat-stats";
 import { drillDown, sumDamage } from "../../src/shared/damage-tree";
+import { healDrillDown, sumHealed } from "../../src/shared/heal-tree";
+import { fightShareOf } from "../../src/shared/peer-share";
 import type { DamageAxis } from "../../src/shared/types";
 import { parseCombat } from "../../src/shared/combat-parser";
 import { parseParty, splitLine } from "../../src/shared/log-parser";
@@ -1225,6 +1227,43 @@ test("the window's damage cells reconcile with its rows and its total, both ways
   );
 });
 
+test("the window's heal cells reconcile with its rows and its totals, both ways round", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "A coyote bites Kainos`s warder for 4 points of damage."],
+    [2, "You healed Kainos`s warder for 8 hit points."],
+    [3, "You healed Kainos`s warder for 1 (20) hit points by Inner Fire."],
+    [4, "Kainos`s warder healed himself for 5 hit points."],
+  ]);
+  const fight = t.snapshot().fight;
+  const cells = fight.healCells!;
+
+  assert.equal(sumHealed(cells), fight.totalHealed);
+  for (const row of fight.byCombatant) {
+    assert.equal(sumHealed(cells.filter((c) => c.healer === row.name)), row.healed, `${row.name} healed`);
+    assert.equal(
+      sumHealed(cells.filter((c) => c.target === row.name)),
+      row.healReceived ?? 0,
+      `${row.name} healReceived`,
+    );
+  }
+
+  // Drilling into "You" answers the Healers view's own question: who did they heal, with what.
+  const yours = healDrillDown(cells, "healer", "You", ["target", "spell"], (name) => name === "You");
+  assert.deepEqual(
+    yours.map((n) => [n.label, n.amount, n.mine]),
+    [["Kainos`s warder", 9, false]],
+  );
+  assert.deepEqual(
+    yours[0].children.map((n) => [n.label, n.amount]),
+    [
+      ["Unknown", 8],
+      ["Inner Fire", 1],
+    ],
+  );
+});
+
 // ── what invocations do beyond scaling: divine's healing, Spell Blade's free casts ──
 test("an unattributed self-heal after your own spell is the invocation's healing", () => {
   // Verbatim shape from a real log: the heal names no spell, and follows the landing.
@@ -1546,4 +1585,26 @@ test("the roster survives a meter reset — clearing the meter doesn't disband y
   feed(t, [[2, "Bunnyslayer slashes a gnoll for 40 points of damage."]]);
   assert.deepEqual(t.party(), ["Bunnyslayer"]);
   assert.equal(t.snapshot().session.totalDealt, 40);
+});
+
+test("the snapshot carries the same roster party() does — a peer's fight is matched against this", () => {
+  const t = yours();
+  group(t, 1, "Bunnyslayer has joined the group.");
+  assert.deepEqual(t.snapshot().party, t.party());
+  assert.deepEqual(t.snapshot().party, ["Bunnyslayer"]);
+});
+
+test("fightShareOf mirrors what History would name this fight, from the live tracker", () => {
+  const t = yours();
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "You healed Kainos`s warder for 8 hit points."],
+  ]);
+  const share = fightShareOf(t.snapshot().fight, "Blackburrow");
+  assert.equal(share?.opponent, "a coyote");
+  assert.equal(share?.zone, "Blackburrow");
+  assert.equal(share?.yourDealt, 10);
+  assert.equal(share?.yourHealed, 8);
+  // `endedAt` is the last damage seen, same as `FightStats.endedAt` — not a "fight is over" flag.
+  assert.equal(share?.endedAt, t.snapshot().fight.endedAt);
 });

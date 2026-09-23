@@ -131,6 +131,8 @@ export function createAwariWeb(deps: { getSettings: () => Settings; getName: () 
       timers: { rows: () => [] },
       buffs: { rows: () => [] },
       scores: { rows: () => [] },
+      // A web tab has no log and so no fight of its own — nothing to offer, ever.
+      fight: { rows: () => [] },
       // Addressed by shard, never as a whole kind — present so the table has no hole in it.
       items: { rows: () => [] },
       spells: { rows: () => [] },

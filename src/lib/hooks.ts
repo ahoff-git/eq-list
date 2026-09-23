@@ -295,11 +295,16 @@ const NO_LOOTED: LootedItem[] = [];
 const NO_CATALOG: ItemRow[] = [];
 const EMPTY_LIST: ShoppingList = { entries: [], questRuns: {} };
 const NO_WATCHER: WatcherStatus = { watching: false };
-const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT };
+const EMPTY_COMBAT: CombatStats = { startedAt: "", fight: EMPTY_FIGHT, session: EMPTY_FIGHT, party: [] };
 
 /** Live damage-meter state from the log (current fight + session). */
 export function useCombatStats(): CombatStats {
   return useLive(LIVE.combat, EMPTY_COMBAT);
+}
+
+/** Who the tracker currently believes is grouped with you — see `CombatStats.party`. */
+export function useParty(): string[] {
+  return useCombatStats().party;
 }
 
 /**

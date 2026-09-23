@@ -23,6 +23,7 @@ import type { KillRecord } from "../../src/shared/types";
 import {
   SAME_SPAWN_MS,
   compareScores,
+  fightShareOf,
   mergeBuffs,
   mergeTimers,
   newlyOffered,
@@ -46,6 +47,7 @@ import {
 import { ON_PET, ON_YOU, type BuffInstance } from "../../src/shared/buff-tracking";
 import type { SpawnTimer } from "../../src/shared/spawn-timers";
 import type { HighScore } from "../../src/shared/types";
+import { EMPTY_FIGHT } from "../../src/shared/empty-values";
 /**
  * The rows of a **whole** `give` — what almost every reader test is asserting on.
  *
@@ -454,7 +456,7 @@ test("public pages share by default; everything of yours does not", () => {
   assert.equal(sharing({}, "items"), true);
   assert.equal(sharing(undefined, "gameTime"), true);
   assert.equal(sharing({}, "gameTime"), true);
-  for (const key of ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores"] as const) {
+  for (const key of ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "fight"] as const) {
     assert.equal(sharing({}, key), false, `${key} must stay off by default`);
   }
 });
@@ -515,6 +517,78 @@ test("a reading claiming to be from the future is trusted no further than our ow
   const future = new Date(Date.now() + 60_000).toISOString();
   const [row] = readTimeGive({ hour: 9, at: future }) as { hour: number; at?: string }[];
   assert.equal(row.at, undefined);
+});
+
+// ── The live fight: a party-mate's numbers, shown beside yours and never merged (ADR 0274). ────────
+
+function readFightGive(raw: unknown): unknown[] {
+  return wholeRows(readGive({ what: "fight", rev: 1, rows: [raw] }, () => "id"));
+}
+
+test("fight is live, off by default, and always the same row", () => {
+  const spec = shareKind("fight");
+  assert.equal(spec?.family, "live");
+  assert.equal(spec?.defaultOn, undefined);
+  assert.equal(sharing({}, "fight"), false);
+  assert.equal(spec?.rowKey?.({} as never), "fight");
+});
+
+test("a fight with no startedAt is nothing to share", () => {
+  assert.deepEqual(readFightGive({ endedAt: "", durationSec: 10, yourDealt: 40 }), []);
+});
+
+test("a fight's own figures cross whole, zone and opponent included", () => {
+  const [row] = readFightGive({
+    startedAt: "2026-09-03T18:00:00.000Z",
+    endedAt: "2026-09-03T18:00:12.000Z",
+    durationSec: 12,
+    yourDealt: 500,
+    yourTaken: 20,
+    yourHealed: 8,
+    yourHealReceived: 0,
+    kills: 1,
+    zone: "Blackburrow",
+    opponent: "a gnoll",
+  }) as { endedAt: string; zone?: string; opponent?: string }[];
+  // `endedAt` is the sender's last-damage timestamp, not a "still going" flag — a receiver reads
+  // liveness off how recent it is, not off whether it's empty.
+  assert.equal(row.endedAt, "2026-09-03T18:00:12.000Z");
+  assert.equal(row.zone, "Blackburrow");
+  assert.equal(row.opponent, "a gnoll");
+});
+
+test("no endedAt yet is kept as empty, the same fallback FightStats itself uses", () => {
+  const [row] = readFightGive({ startedAt: "2026-09-03T18:00:00.000Z", yourDealt: 10 }) as { endedAt: string }[];
+  assert.equal(row.endedAt, "");
+});
+
+test("negative and out-of-range figures are clamped rather than believed", () => {
+  const [row] = readFightGive({
+    startedAt: "2026-09-03T18:00:00.000Z",
+    endedAt: "",
+    durationSec: -5,
+    yourDealt: -100,
+    kills: -3,
+  }) as { durationSec: number; yourDealt: number; kills: number }[];
+  assert.equal(row.durationSec, 0);
+  assert.equal(row.yourDealt, 0);
+  assert.equal(row.kills, 0);
+});
+
+test("fightShareOf is undefined before anything has happened this session", () => {
+  assert.equal(fightShareOf(EMPTY_FIGHT, "Blackburrow"), undefined);
+});
+
+test("fightShareOf carries the window's own figures and the zone it's told", () => {
+  const share = fightShareOf(
+    { ...EMPTY_FIGHT, startedAt: "2026-09-03T18:00:00.000Z", durationSec: 12, yourDealt: 500, yourHealed: 8 },
+    "Blackburrow",
+  );
+  assert.equal(share?.zone, "Blackburrow");
+  assert.equal(share?.yourDealt, 500);
+  assert.equal(share?.yourHealed, 8);
+  // No zone known yet (the log hasn't said) is a real answer, not a placeholder string.
+  assert.equal(fightShareOf({ ...EMPTY_FIGHT, startedAt: "2026-09-03T18:00:00.000Z" }, null)?.zone, undefined);
 });
 
 test("an item page a peer sent is rebuilt field by field", () => {

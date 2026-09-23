@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { percent } from "@/shared/format";
 import { useLogVocabulary, useRead, useSettings, useStyleUsage } from "@/lib/hooks";
 import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
-import AlertStyleFields from "./AlertStyleFields";
+import AlertStyleFields, { ALERT_POSITIONS } from "./AlertStyleFields";
 import { AlertStyleDrawer } from "./AlertStyleField";
 import StyleRow from "./StyleRow";
 import AlertSourceRow from "./AlertSourceRow";
@@ -16,6 +16,7 @@ import {
   ALERT_SOURCES,
   alertStyle,
   applyStyleEdit,
+  DEBUFF_DEFAULT_POSITION,
   defaultsUse,
   describeUse,
   nameOwnStyle,
@@ -31,7 +32,15 @@ import {
 } from "@/shared/alert-styles";
 import type { LibraryRule } from "@/shared/watch-library";
 import { CheckField } from "./ui";
-import type { AlertStyle, CastWatch, DeepPartial, DisplayInfo, NamedAlertStyle, Settings } from "@/shared/types";
+import type {
+  AlertPositionValue,
+  AlertStyle,
+  CastWatch,
+  DeepPartial,
+  DisplayInfo,
+  NamedAlertStyle,
+  Settings,
+} from "@/shared/types";
 
 /** A stable empty, so a render before the monitor list arrives doesn't look like a change. */
 const NO_DISPLAYS: DisplayInfo[] = [];
@@ -433,6 +442,38 @@ export default function AlertsPanel() {
               >
                 ＋ New saved style
               </button>
+
+              {/* Not a saved style — the debuff board has no look of its own to configure (its colour
+                  still comes from Buffs lapsing, above), only a shared corner it was defaulted into to
+                  keep it off that board's pixels (ADR 0213). This is that corner, made movable. */}
+              <div className="row astyle-row">
+                <span className="astyle-label">Debuff board</span>
+                <select
+                  className="field sm pick wide"
+                  value={ca.debuffPosition ?? DEBUFF_DEFAULT_POSITION}
+                  onChange={(e) => patch({ castAlerts: { debuffPosition: e.target.value as AlertPositionValue } })}
+                >
+                  {ALERT_POSITIONS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                  {ca.locations.length > 0 && (
+                    <optgroup label="Custom spots">
+                      {ca.locations.map((loc) => (
+                        <option key={loc.id} value={`loc:${loc.id}`}>
+                          {loc.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+              <span className="hint" style={{ display: "block", margin: "2px 0 10px" }}>
+                Where mez, root, charm and every other debuff you’re holding on an enemy sit by default —
+                the standing list over the mob, not a banner. A spell wearing its own saved style (Buffs
+                tab) still lands wherever that style says; this only moves the shared default.
+              </span>
 
               <div className="row astyle-row" style={{ alignItems: "flex-start" }}>
                 <span className="astyle-label">Custom spots</span>

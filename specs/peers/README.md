@@ -79,8 +79,12 @@ travels peer-to-peer, on request, over that peer's own connection.
     ([ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)) — `mobs` and `kills`
     already had this property (a mob's card and the map's heatmap both read the pooled figure), so
     this closes the one remaining gap between the three.
-  - **live** (`timers`, `buffs`, `scores`) — true on somebody else's machine right now. Held in
-    memory, dropped when they go, never written to disk.
+  - **live** (`timers`, `buffs`, `scores`, `fight`) — true on somebody else's machine right now. Held
+    in memory, dropped when they go, never written to disk. `fight` is the newest of the four: your
+    current or last fight's headline figures, unversioned like `timers`/`buffs` for the same reason —
+    a fight's numbers move mid-swing, and a version that ever answered "unchanged" while they did
+    would be exactly the lie a version is supposed to prevent
+    ([ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md)).
   - **mirror** (`items`, `factions`) — neither made nor observed: a copy of a **third party's public page**, the
     same for everyone, which anyone could fetch for themselves
     ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). The **one family applied
@@ -254,6 +258,12 @@ travels peer-to-peer, on request, over that peer's own connection.
 - **Scores compared, never merged.** A peer's figure cannot beat, seed or touch your board. It is
   laid beside it, category by category, `unsettled` flags and all
   ([ADR 0130](../decisions/0130-data-in-doubt-says-so.md)), and a provisional figure cannot lead.
+- **A fight compared the same way, and matched by the weakest signal that's actually honest.**
+  Nothing in this log names a fight, so `PeerFightCompare` (the Combat tab, not this one) narrows the
+  question to your own party (`useParty`, folded from your log's own group lines) and treats a
+  party-mate's shared fight as "the one you're in" when it's in your zone and recent — reported, not
+  proven, and named as unmatched rather than guessed at when it isn't
+  ([ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md)).
 
 ## Non-responsibilities
 
@@ -278,7 +288,9 @@ travels peer-to-peer, on request, over that peer's own connection.
   ([`identity.ts`](../../electron/identity.ts)), which rides on contributed payloads only.
 - **No room scoping.** There is one room, `eq-list`, and everything in the catalogue is offered to
   everyone in it. Group- or camp-scoped rooms are not built — see the open question in
-  [decisions/README.md](../decisions/README.md).
+  [decisions/README.md](../decisions/README.md). `PeerFightCompare` works around the gap rather than
+  closing it: it narrows to your own party client-side instead of waiting on the room to scope itself
+  ([ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md)).
 - **No bulk transfer, still.** A `give` is one message, and nothing here chunks anything. A delta
   makes the *usual* message small — what moved rather than what is held — but a first exchange is
   still the whole kind in one message, and that is what the caps are for. The item catalogue is
@@ -307,4 +319,5 @@ travels peer-to-peer, on request, over that peer's own connection.
 [ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md) ·
 [ADR 0176](../decisions/0176-a-room-fills-itself.md) ·
 [ADR 0242](../decisions/0242-a-pooled-row-keeps-its-own-origin.md) ·
-[ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)
+[ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md) ·
+[ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md)

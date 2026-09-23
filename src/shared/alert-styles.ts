@@ -367,6 +367,23 @@ export const BUFF_STYLE_ID = "built-in:buff";
 export const GOAL_STYLE_ID = "built-in:goal";
 export const ACHIEVEMENT_STYLE_ID = "built-in:achievement";
 
+/**
+ * Where `DebuffOverlay`'s board lands when nobody picked a look for the row — `BuffOverlay`'s corner
+ * is `BUFF_STYLE_ID`'s `top-left`, and both boards default there since a debuff with no style of its
+ * own falls back to the very same id for its **colour**. Out of the box that put a crowd-control
+ * class's two *standing* boards on the same pixel — a mez/root list drawn under, or over, the
+ * missing-buffs list it has nothing to do with — so this redirects only the shared, unconfigured
+ * fallback's **position** ([ADR 0213](../../specs/decisions/0213-every-stock-alert-claims-its-own-corner.md)).
+ *
+ * Not a style of its own — `DebuffOverlay` has no look to configure beyond where it sits, and giving
+ * it a full `AlertSource` would need `KnownBuff` to carry two style ids where it has one (0213's
+ * rejected alternatives). So this is the shipped **default** for a plain position setting,
+ * `CastAlertSettings.debuffPosition`, which the player can move without touching colour or sound
+ * (ADR 0272). A row that names its own saved style still goes exactly where that style says; this
+ * only moves the shared, un-set fallback.
+ */
+export const DEBUFF_DEFAULT_POSITION: AlertPositionValue = "bottom-left";
+
 export const ALERT_SOURCES: AlertSource[] = [
   {
     id: "record",
