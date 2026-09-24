@@ -110,9 +110,14 @@ const MAX_BUCKETS = 900;
  * ([ADR 0276](../specs/decisions/0276-overlapping-fights-are-pooled-not-only-proven.md)). Generous
  * rather than tight, since the second job wants the *whole* fight, not a sample — but still a cap,
  * because nothing here should grow with an endless pull any more than the sparkline does.
+ *
+ * Exported so `electron/fight-merge.ts`'s `isTruncated` can tell a *capped* `recentHits`/
+ * `recentHeals` (the tail of a longer fight, oldest dropped) from a complete one — a merge built
+ * from a truncated side would silently under-report a fight this long, which is worse than not
+ * merging at all.
  */
-const MAX_RECENT_HITS = 300;
-const MAX_RECENT_HEALS = 300;
+export const MAX_RECENT_HITS = 300;
+export const MAX_RECENT_HEALS = 300;
 
 const log = createLogger("combat-stats");
 

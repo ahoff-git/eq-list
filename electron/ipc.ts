@@ -51,7 +51,7 @@ import { AWARI_MSG } from "../src/shared/types";
 import { groupByOrigin, readContributor } from "../src/shared/contributors";
 import { createPeerShareHub, shareSources } from "../src/shared/peer-share-hub";
 import { createUiState } from "./ui-state";
-import { fightShareOf, matchedFights, type FightShare, type ShareKind } from "../src/shared/peer-share";
+import { fightShareOf, matchedFights, shareableHeals, shareableHits, type FightShare, type ShareKind } from "../src/shared/peer-share";
 import { mergeFight } from "./fight-merge";
 import type { MapPin } from "../src/shared/map/pins";
 import { forTransfer, itemRows } from "../src/shared/item-search";
@@ -1123,16 +1123,37 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
     const myName = getName();
     if (!myName) return local;
     const partyLower = new Set(combat.party().map((n) => n.toLowerCase()));
+    // Every peer row is filtered to party members below, so an empty party can never produce a
+    // match — skip resolving hits/heals and scanning `shares.received()` for it. This is the common
+    // solo case, and this runs on every 250ms `combat.onChange` tick (`main.ts`), not just once per
+    // fight, so a cheap, provably-equivalent early exit here is worth it.
+    if (!partyLower.size) return local;
+    // Cheap and peer-only — worth checking before paying for `shareableHits`'s per-event allocation
+    // below, since most ticks land here with nothing shared yet (party formed, no peer `give` in
+    // hand) or nothing from this fight in particular.
     const peerRows = shares
       .received(undefined, "fight")
       .flatMap((r) => r.rows.map((row) => ({ by: r.from, peerId: r.peerId, row: row as FightShare })))
       .filter((r) => partyLower.has(r.by.toLowerCase()));
-    const matches = matchedFights(combat.recentHits(), peerRows);
+    if (!peerRows.length) return local;
+    // `combat.recentHits()`/`recentHeals()` are the tracker's own bookkeeping copy, which still
+    // says "You" for your own swing (`FightHit`'s own doc). A peer who was in earshot of that same
+    // swing never wrote "You" for it — their log names you outright — so comparing the two
+    // unresolved would never match your own hits at all, and `mergeFight` (which trusts `name` to
+    // already be real, per `MergeSource`) would double-count every one of them as two separate
+    // events. Resolve once, here, the same way `fightShareOf` already does before sharing them.
+    const myHits = shareableHits(combat.recentHits(), myName);
+    const matches = matchedFights(myHits, peerRows);
     if (!matches.length) return local;
+    // Heals are only ever needed once a match is confirmed, so resolving them waits until here.
+    const myHeals = shareableHeals(combat.recentHeals(), myName);
     const merged = mergeFight(
-      { name: myName, hits: combat.recentHits(), heals: combat.recentHeals() },
+      { name: myName, hits: myHits, heals: myHeals },
       matches.map((m) => ({ name: m.by, hits: m.fight.recentHits, heals: m.fight.recentHeals })),
     );
+    // `null` means a source was truncated (`isTruncated`) — pooling from it can't be trusted, so
+    // this falls back to `local`'s own complete totals rather than a merge that would under-report.
+    if (!merged) return local;
     return { ...local, ...merged, mergedFrom: matches.map((m) => m.by) };
   }
 

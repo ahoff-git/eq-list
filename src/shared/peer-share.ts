@@ -423,6 +423,12 @@ export function fightShareOf(
   myName: string,
 ): FightShare | undefined {
   if (!fight.startedAt) return undefined;
+  // Without a name to resolve `SELF` to, `shareableHits`/`shareableHeals` would replace "You"
+  // with an empty string rather than your name — worse than not sharing, since a receiver can no
+  // longer tell those hits were anyone's. This window is real and already guarded the same way on
+  // the receiving side (`electron/ipc.ts`'s `mergedFight`): the name your own log reveals and the
+  // name this share hub knows can each resolve at their own pace.
+  if (!myName) return undefined;
   return {
     zone: zone ?? undefined,
     opponent: opponentOf(fight),
@@ -443,8 +449,12 @@ export function fightShareOf(
  * A hit close enough in time to count as the same logged moment. EQ logs to the second; the slack
  * beyond that is for two installs' clocks disagreeing by a beat, never for treating two genuinely
  * different swings as one.
+ *
+ * Exported so `electron/fight-merge.ts`'s dedup uses this exact same slack rather than a second,
+ * independently-drifting copy of the same number — proving overlap and pooling it must agree on
+ * what "the same moment" means.
  */
-const HIT_MATCH_TOLERANCE_MS = 1500;
+export const HIT_MATCH_TOLERANCE_MS = 1500;
 
 /** Fewest overlapping hits before a peer's fight counts as *proven*, not coincidence. One shared
  *  swing could be luck (a common small hit, a common name); two independent ones essentially can't. */
@@ -1610,18 +1620,29 @@ const MAX_FIGHT_SEC = 24 * 60 * 60;
 const MAX_SHARED_HITS = 300;
 const MAX_SHARED_HEALS = 300;
 
+/**
+ * The amount and timestamp every shared hit or heal needs, or `null` if either is missing.
+ * `amount === 0` is a real, legitimate event (a fully-absorbed hit, a fully-overhealed heal), so
+ * presence is checked explicitly rather than by truthiness — shared so `readFightHit` and
+ * `readFightHeal` can't drift apart on this the way `!amount` once did.
+ */
+function readAmountAt(rawAmount: unknown, rawAt: unknown): { amount: number; at: string } | null {
+  const amount = nonNegative(rawAmount);
+  const at = iso(rawAt);
+  return amount === undefined || !at ? null : { amount, at };
+}
+
 /** One shared hit, checked the same way any inbound record here is: drop rather than guess. */
 function readFightHit(raw: unknown): FightHit | null {
   if (!isRecord(raw)) return null;
   const attacker = str(raw.attacker);
   const target = str(raw.target);
-  const amount = nonNegative(raw.amount);
-  const at = iso(raw.at);
-  if (!attacker || !target || !amount || !at) return null;
+  const core = readAmountAt(raw.amount, raw.at);
+  if (!attacker || !target || !core) return null;
   return {
     attacker,
     target,
-    amount,
+    amount: core.amount,
     melee: raw.melee === true,
     verb: str(raw.verb) || undefined,
     spell: str(raw.spell) || undefined,
@@ -1629,7 +1650,7 @@ function readFightHit(raw: unknown): FightHit | null {
     qualifier: str(raw.qualifier) || undefined,
     tick: raw.tick === true || undefined,
     damageType: str(raw.damageType) || undefined,
-    at,
+    at: core.at,
   };
 }
 
@@ -1638,17 +1659,16 @@ function readFightHeal(raw: unknown): FightHeal | null {
   if (!isRecord(raw)) return null;
   const healer = str(raw.healer);
   const target = str(raw.target);
-  const amount = nonNegative(raw.amount);
-  const at = iso(raw.at);
-  if (!healer || !target || !amount || !at) return null;
+  const core = readAmountAt(raw.amount, raw.at);
+  if (!healer || !target || !core) return null;
   return {
     healer,
     target,
-    amount,
+    amount: core.amount,
     attempted: nonNegative(raw.attempted),
     spell: str(raw.spell) || undefined,
     qualifier: str(raw.qualifier) || undefined,
-    at,
+    at: core.at,
   };
 }
 

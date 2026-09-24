@@ -1629,3 +1629,10 @@ test("fightShareOf mirrors what History would name this fight, and resolves your
   assert.equal(share?.recentHeals[0].target, "Kainos`s warder");
   assert.equal(share?.recentHeals[0].amount, 8);
 });
+
+test("fightShareOf shares nothing before your own name is known, rather than naming your hits ''", () => {
+  const t = yours();
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  const share = fightShareOf(t.snapshot().fight, "Blackburrow", t.snapshot().recentHits, t.snapshot().recentHeals, "");
+  assert.equal(share, undefined);
+});

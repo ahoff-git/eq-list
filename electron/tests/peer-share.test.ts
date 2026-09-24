@@ -607,6 +607,19 @@ test("a fight's recent hits cross whole, and a bad one is dropped rather than gu
   ]);
 });
 
+test("a hit or heal for exactly 0 is real (fully absorbed, fully overhealed) and is kept, not dropped", () => {
+  const [row] = readFightGive({
+    startedAt: "2026-09-03T18:00:00.000Z",
+    endedAt: "",
+    recentHits: [{ attacker: "Kainos", target: "a gnoll", amount: 0, shield: true, at: "2026-09-03T18:00:05.000Z" }],
+    recentHeals: [{ healer: "Bran", target: "Kainos", amount: 0, attempted: 20, at: "2026-09-03T18:00:06.000Z" }],
+  }) as { recentHits: { amount: number }[]; recentHeals: { amount: number }[] }[];
+  assert.equal(row.recentHits.length, 1);
+  assert.equal(row.recentHits[0].amount, 0);
+  assert.equal(row.recentHeals.length, 1);
+  assert.equal(row.recentHeals[0].amount, 0);
+});
+
 test("a fight's recent heals cross whole, and a bad one is dropped rather than guessed at", () => {
   const [row] = readFightGive({
     startedAt: "2026-09-03T18:00:00.000Z",
