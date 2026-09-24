@@ -1275,6 +1275,14 @@ export interface FightStats {
    * so "we don't know" and "nothing ended it" stay tellable apart.
    */
   endReason?: FightEndReason;
+  /**
+   * Real names of party-mates whose own observations were pooled into `byCombatant`/`damageCells`/
+   * `healCells` and the totals derived from them — present only when a confirmed overlap actually
+   * merged somebody in. Absent means exactly what it always meant on a fight with nobody else's
+   * log to draw on: this window is entirely your own. See
+   * [ADR 0276](../../specs/decisions/0276-overlapping-fights-are-pooled-not-only-proven.md).
+   */
+  mergedFrom?: string[];
 }
 
 /**
@@ -1288,12 +1296,58 @@ export interface CombatStats {
   fight: FightStats;
   session: FightStats;
   /**
-   * Who the tracker currently believes is grouped with you, in the order they joined — the same
-   * roster `fight-scope.ts` reads to decide whose fights count. Carried on the snapshot so a
-   * reader doesn't need a channel of its own just to ask "who's in my group right now" (see
-   * `peer-share.ts`'s `fight` kind, which uses it to find a party-mate's shared fight).
+   * The current fight's own landed hits and heals — not for display, but the raw material two
+   * other things are built from: proving a peer's shared fight is *this* fight (the log writes the
+   * same swing to everyone in earshot, so an overlapping event is evidence, not a guess), and —
+   * once proven — actually **pooling** them into one truer picture of the fight than either side's
+   * log alone. See [ADR 0276](../../specs/decisions/0276-overlapping-fights-are-pooled-not-only-proven.md),
+   * superseding [ADR 0275](../../specs/decisions/0275-a-shared-swing-proves-the-same-fight.md).
    */
-  party: string[];
+  recentHits: FightHit[];
+  recentHeals: FightHeal[];
+}
+
+/**
+ * One landed hit, kept for as long as the current fight runs — see `CombatStats.recentHits`.
+ *
+ * Everything a receiver needs to fold it into a merged damage-cell breakdown
+ * (`damage-tree.ts`'s `damageKind`/`damageSource`), which is the whole reason this carries more
+ * than the bare (attacker, target, amount) a proof alone would need. `attacker`/`target` are
+ * exactly what the log wrote, **before** any peer-facing name resolution: this is the tracker's own
+ * bookkeeping copy, so it still says `"You"` for your own swing the same way every other internal
+ * name does. `peer-share.ts`'s `shareableHits` resolves that on the way out, the same way it
+ * already resolves a buff's `ON_YOU`.
+ */
+export interface FightHit {
+  attacker: string;
+  target: string;
+  amount: number;
+  /**
+   * Melee, or a named spell/DoT/shield — see `DamageEvent`, which this mirrors minus `logId`/`raw`.
+   * Optional (falsy = not melee) only so a test fixture that doesn't care can leave it out; the
+   * tracker itself always states it one way or the other.
+   */
+  melee?: boolean;
+  /** The attack verb ("bites", "pierce") — without it a merged melee hit can only be labeled the
+   *  generic "Melee" rather than the actual skill (`damage-tree.ts`'s `damageSource`). */
+  verb?: string;
+  spell?: string;
+  shield?: boolean;
+  qualifier?: string;
+  tick?: boolean;
+  damageType?: string;
+  at: string;
+}
+
+/** One landed heal, on the same terms `FightHit` keeps a landed hit. Mirrors `HealEvent`. */
+export interface FightHeal {
+  healer: string;
+  target: string;
+  amount: number;
+  attempted?: number;
+  spell?: string;
+  qualifier?: string;
+  at: string;
 }
 
 // ─── Combat history (past fights and sessions) ──────────────────────────────

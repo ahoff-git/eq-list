@@ -646,8 +646,9 @@ list, hunt, search, damage, session, peers, settings.
   - `DamagePanel` — the **Combat tab** (from `combat-stats.ts` / `combat-history.ts`;
     see [ADR 0014](../decisions/0014-damage-meter-from-the-log.md),
     [ADR 0016](../decisions/0016-combat-history-and-spell-analytics.md),
-    [ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md) and
-    [ADR 0273](../decisions/0273-a-heal-is-a-cell-too.md)). Two axes:
+    [ADR 0270](../decisions/0270-the-combat-tab-tracks-healing-too.md),
+    [ADR 0273](../decisions/0273-a-heal-is-a-cell-too.md) and
+    [ADR 0276](../decisions/0276-overlapping-fights-are-pooled-not-only-proven.md)). Two axes:
     **scope** (this/last fight · session · **history**) and **view** (**targets** · dealers ·
     abilities · **spells** · healers). **Targets is the default**: a fight's first question is what
     we damaged, not which of us was in the room — opening on the dealer list showed a column of
@@ -761,12 +762,17 @@ list, hunt, search, damage, session, peers, settings.
       of your **inferred** health (`hp-estimate.ts`, see
       [ADR 0018](../decisions/0018-inferred-max-hit-points.md)) — a range with its evidence
       on hover, correctable through the same `AskValue` control.
-    - `PeerFightCompare` — **This/Last fight only**, never History (no fight id exists to match a
-      *stored* fight against a peer's). Folds `usePeerShare()` down to your own party
-      (`useParty`) and shows a live table, one column per person, for whoever's sharing, in your
-      zone, and recently active — compared, never merged, the same rule `PeerScores` holds
-      elsewhere. Renders nothing when you aren't grouped. See
-      [ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md).
+    - **Pooling** — no component of its own any more (see [ADR 0276](../decisions/0276-overlapping-fights-are-pooled-not-only-proven.md),
+      which retired `PeerFightCompare`'s separate table). Once a confirmed party-mate's shared fight
+      overlaps yours (`matchedFights`), their hits and heals are de-duplicated against yours and
+      replayed through the tracker (`electron/fight-merge.ts`), so **the breakdown above is already
+      the pooled one** — a party-mate simply appears as their own row in Targets/Dealers/Abilities/
+      Healers, same as if you'd been standing close enough to log them yourself. A small note —
+      "Pooled with Bran, Galactic" — says so whenever it applies, live or on a stored fight (a merge
+      is saved to History, not only shown live). Kills, experience, loot and spell efficiency are
+      never pooled, since those are personal rewards rather than facts about the fight; `yourDealt`/
+      `yourTaken`/etc. stay correctly yours throughout — a party-mate's damage gets its own row, never
+      blended into yours.
     Tiles above show your damage, your DPS, all damage, how long the window was *in
     combat*, and your pet's share when it fought. A **★ best DPS** flag appears when the
     fight beats your recorded best against that opponent, and **Copy** puts a one-line

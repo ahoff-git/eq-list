@@ -1587,24 +1587,45 @@ test("the roster survives a meter reset — clearing the meter doesn't disband y
   assert.equal(t.snapshot().session.totalDealt, 40);
 });
 
-test("the snapshot carries the same roster party() does — a peer's fight is matched against this", () => {
+test("the snapshot's recentHits is exactly what recentHits() answers, capped and rolling", () => {
   const t = yours();
-  group(t, 1, "Bunnyslayer has joined the group.");
-  assert.deepEqual(t.snapshot().party, t.party());
-  assert.deepEqual(t.snapshot().party, ["Bunnyslayer"]);
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "You pierce a coyote for 11 points of damage."],
+  ]);
+  assert.deepEqual(t.snapshot().recentHits, t.recentHits());
+  assert.equal(t.snapshot().recentHits.length, 2);
+  assert.equal(t.snapshot().recentHits[0].amount, 10);
+  assert.equal(t.snapshot().recentHits[1].amount, 11);
 });
 
-test("fightShareOf mirrors what History would name this fight, from the live tracker", () => {
+test("fightShareOf mirrors what History would name this fight, and resolves your own hits to your name", () => {
   const t = yours();
   feed(t, [
     [1, "You pierce a coyote for 10 points of damage."],
     [2, "You healed Kainos`s warder for 8 hit points."],
   ]);
-  const share = fightShareOf(t.snapshot().fight, "Blackburrow");
+  const share = fightShareOf(
+    t.snapshot().fight,
+    "Blackburrow",
+    t.snapshot().recentHits,
+    t.snapshot().recentHeals,
+    "Kainos",
+  );
   assert.equal(share?.opponent, "a coyote");
   assert.equal(share?.zone, "Blackburrow");
   assert.equal(share?.yourDealt, 10);
   assert.equal(share?.yourHealed, 8);
   // `endedAt` is the last damage seen, same as `FightStats.endedAt` — not a "fight is over" flag.
   assert.equal(share?.endedAt, t.snapshot().fight.endedAt);
+  // "You" means nothing to a peer — a shared hit names the real character instead.
+  assert.equal(share?.recentHits.length, 1);
+  assert.equal(share?.recentHits[0].attacker, "Kainos");
+  assert.equal(share?.recentHits[0].target, "a coyote");
+  assert.equal(share?.recentHits[0].amount, 10);
+  assert.equal(share?.recentHits[0].melee, true);
+  assert.equal(share?.recentHeals.length, 1);
+  assert.equal(share?.recentHeals[0].healer, "Kainos");
+  assert.equal(share?.recentHeals[0].target, "Kainos`s warder");
+  assert.equal(share?.recentHeals[0].amount, 8);
 });

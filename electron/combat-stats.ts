@@ -42,6 +42,8 @@ import type {
   CombatantStat,
   DeathRecap,
   FightEndReason,
+  FightHeal,
+  FightHit,
   FightStats,
   MobKillStat,
   SpellStat,
@@ -101,6 +103,17 @@ const UNKNOWN_MODE = "unknown";
 /** Cap the per-second sparkline so one endless fight can't grow without bound. */
 const MAX_BUCKETS = 900;
 
+/**
+ * How many of a fight's most recent landed hits/heals are kept, per kind (`FightHit`/`FightHeal`).
+ * These do two jobs: a couple of overlapping ones prove a peer's shared fight is this one, and —
+ * once proven — the whole kept set is what gets pooled into a merged breakdown
+ * ([ADR 0276](../specs/decisions/0276-overlapping-fights-are-pooled-not-only-proven.md)). Generous
+ * rather than tight, since the second job wants the *whole* fight, not a sample — but still a cap,
+ * because nothing here should grow with an endless pull any more than the sparkline does.
+ */
+const MAX_RECENT_HITS = 300;
+const MAX_RECENT_HEALS = 300;
+
 const log = createLogger("combat-stats");
 
 export interface CombatTracker {
@@ -117,6 +130,12 @@ export interface CombatTracker {
   recordParty(event: PartyEvent): void;
   /** Who the tracker currently believes is grouped with you — for tests and diagnostics. */
   party(): string[];
+  /**
+   * The current fight's own landed hits and heals, for proving a peer's shared fight is this one
+   * and, once proven, pooling it in (`fight-merge.ts`).
+   */
+  recentHits(): FightHit[];
+  recentHeals(): FightHeal[];
   /**
    * You, or anything of yours — your pet included, named ones as well
    * ([ADR 0077](../specs/decisions/0077-a-pet-is-proven-not-guessed.md)).
@@ -379,6 +398,9 @@ function createWindow(canon: (name: string) => string) {
   const doubted = new Set<string>();
   /** Your damage per second of the window, indexed from its first damage. */
   const buckets: number[] = [];
+  /** The window's own landed hits and heals, oldest first, capped — see `MAX_RECENT_HITS`. */
+  const recentHits: FightHit[] = [];
+  const recentHeals: FightHeal[] = [];
   const deaths: DeathRecap[] = [];
   const totals = { kills: 0, xpPct: 0, xpGains: 0, soloXp: 0, partyXp: 0, copper: 0, soldCopper: 0 };
   /** The span of log lines this window was built from (see `FightStats.logIds`). */
@@ -430,6 +452,18 @@ function createWindow(canon: (name: string) => string) {
       if (i < 0 || i >= MAX_BUCKETS) return;
       while (buckets.length <= i) buckets.push(0);
       buckets[i] += amount;
+    },
+    recentHits,
+    recentHeals,
+    /** Record a landed hit — for peer matching, and later merging (`fight-merge.ts`). Oldest dropped once the cap is reached. */
+    hit(hit: Omit<FightHit, "at">, at: number) {
+      recentHits.push({ ...hit, at: new Date(at).toISOString() });
+      if (recentHits.length > MAX_RECENT_HITS) recentHits.shift();
+    },
+    /** Record a landed heal, on the same terms `hit` records a landed hit. */
+    heal(heal: Omit<FightHeal, "at">, at: number) {
+      recentHeals.push({ ...heal, at: new Date(at).toISOString() });
+      if (recentHeals.length > MAX_RECENT_HEALS) recentHeals.shift();
     },
     /** Extend the window — only damage defines when a fight runs. */
     mark(at: number) {
@@ -807,7 +841,8 @@ export function createCombatStats(
     startedAt,
     fight: summarize(fight),
     session: summarize(session),
-    party: party.members(),
+    recentHits: [...fight.recentHits],
+    recentHeals: [...fight.recentHeals],
   });
 
   // Signal-only: `snapshot()` is computed by whoever's listening, when they're ready — not
@@ -828,6 +863,24 @@ export function createCombatStats(
         // Who hit whom, how, and with what — one cell, from which every drill-down and the
         // row's own by-skill/by-spell split are rolled up (ADR 0053).
         w.damage.record(event);
+        // The same swing, kept a little longer and a little more loosely — not for the meter, but
+        // for proving a peer's shared fight is this one, and for pooling it in once proven
+        // (ADR 0276).
+        w.hit(
+          {
+            attacker: canon(event.attacker),
+            target: canon(event.target),
+            amount: event.amount,
+            melee: event.melee,
+            verb: event.verb,
+            spell: event.spell,
+            shield: event.shield,
+            qualifier: event.qualifier,
+            tick: event.tick,
+            damageType: event.damageType,
+          },
+          at,
+        );
         // Any tag the hit carried — Critical, Riposte, Flurry, … Kept for every combatant, so
         // "what's critting me" reads as easily as "what am I hitting with". This one *overlaps*
         // the split by source, which is why it isn't a cell.
@@ -921,6 +974,18 @@ export function createCombatStats(
         // Who healed whom, with what — one cell, from which the Healers view's drill-down is
         // rolled up (ADR 0273, mirroring ADR 0053's damage cells).
         w.heals.record(event);
+        // The same heal, kept a little longer — see `hit`'s own note, just above `case "damage"`.
+        w.heal(
+          {
+            healer: canon(event.healer),
+            target: canon(event.target),
+            amount: event.amount,
+            attempted: event.attempted,
+            spell: event.spell,
+            qualifier: event.qualifier,
+          },
+          at,
+        );
         if (event.spell && isMine(event.healer)) {
           const sp = w.spell(event.spell);
           const mode = modeTally(sp.byInvocation, invocation);
@@ -1231,6 +1296,8 @@ export function createCombatStats(
       // on — so there's nothing to re-summarize and no `emit()`.
     },
     party: () => party.members(),
+    recentHits: () => [...fight.recentHits],
+    recentHeals: () => [...fight.recentHeals],
     mine: (name) => isMine(name),
     countsKill: (mob) => countsKill(canon(mob)),
 

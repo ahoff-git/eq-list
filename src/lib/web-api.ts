@@ -45,7 +45,7 @@ const log = createLogger("web-api");
 const noop: Unsubscribe = () => {};
 const EMPTY_LOG_TAIL = { text: "", bytes: 0, whole: true };
 
-const EMPTY_COMBAT: CombatStats = { startedAt: new Date().toISOString(), fight: EMPTY_FIGHT, session: EMPTY_FIGHT, party: [] };
+const EMPTY_COMBAT: CombatStats = { startedAt: new Date().toISOString(), fight: EMPTY_FIGHT, session: EMPTY_FIGHT, recentHits: [], recentHeals: [] };
 const EMPTY_BUFFS: BuffView = { now: new Date().toISOString(), active: [], lapsed: [], known: [], lexicon: false };
 const EMPTY_SPAWNS: SpawnView = { now: new Date().toISOString(), running: [], known: [], dismissed: [] };
 const EMPTY_GOALS: GoalView = { now: new Date().toISOString(), goals: [], templates: [] };

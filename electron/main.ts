@@ -404,7 +404,7 @@ if (!app.requestSingleInstanceLock()) {
   const damageOverlay = createDamageOverlayTracker({ userDataDir: userData });
   damageOverlay.onChanged(() => broadcast(CH.damageOverlayChanged, undefined));
 
-  registerIpc({
+  const { mergedFight } = registerIpc({
     store,
     wiki,
     lucy,
@@ -768,8 +768,13 @@ if (!app.requestSingleInstanceLock()) {
   // running (the live line got there first and a tie doesn't win) and is what makes a fight a
   // complete record of itself for the day it seeds a board.
   combat.onFightEnd((fight) => {
-    history.add(fight, combat.zone(), watcher.status().file);
-    scores.offer(fightCandidates(fight), combat.zone());
+    // Pooled with whoever's shared fight is confirmed to be this one, before it's filed or claims a
+    // record — a merged fight is a truer one, and History/the scoreboard should get the truer figures
+    // rather than only what your own log happened to see (ADR 0276). `endReason` rides through
+    // unchanged: it's set once, here, and nowhere a merge could recover it from if lost.
+    const filed = mergedFight(fight);
+    history.add(filed, combat.zone(), watcher.status().file);
+    scores.offer(fightCandidates(filed), combat.zone());
     // The moment a rebuff reminder becomes actionable, and the moment a root reminder stops being:
     // held banners are said and enemy-targeted rows are dropped. `endReason` is what tells the two
     // apart from a fight that ended by killing *you*, where neither applies.
@@ -781,6 +786,11 @@ if (!app.requestSingleInstanceLock()) {
     coalesce(250, () => {
       // Snapshot pulled here (once per 250ms), not computed on every combat line.
       const snapshot = combat.snapshot();
+      // Pooled the same way a filed fight is (ADR 0276) — a merge that only applied at fight-end
+      // would mean the live tab shows one set of figures and History banks another the moment the
+      // fight closes, which is exactly the kind of number that "moves for no reason" a reader would
+      // distrust.
+      snapshot.fight = mergedFight(snapshot.fight);
       // Debug-gated: the one line that answers "is the meter seeing this fight?"
       log.debug("combat", {
         fight: snapshot.fight.totalDealt,

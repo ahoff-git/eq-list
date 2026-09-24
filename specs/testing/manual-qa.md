@@ -1214,21 +1214,24 @@ features for later in [../ideas.md](../ideas.md).
     better-evidenced clock. And a buff board should name *people* — if you see your own name on
     somebody else's Spirit of Wolf, the target resolution has failed and that is the bug the unit
     tests exist to catch early.
-- **Comparing a live fight with your party — never run with real clients.**
-  ([ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md).) Needs two clients in
-  the same EQ group, both with **Current fight** switched on (off by default — confirm that first:
-  with it off on both sides, the Combat tab's "Compare with your group" section shows the "nobody is
-  sharing" empty state, not a blank one). With it on both sides and both fighting the same mob:
-  confirm a table appears with both names as columns, the figures roughly track each other, and the
-  higher **Damage**/**DPS**/**Healing**/**HPS** figure is called out (not **Taken**, where higher
-  isn't a highlight). Then the cases the heuristic exists for: have one player zone away and confirm
-  they drop into "Not matched right now" naming their zone rather than staying in the table; have one
-  go quiet for two minutes (past `PEER_LIVE_MS`) and confirm the same. Confirm a **third** client, in
-  the room but not in your group, never appears here even while sharing (this stays party-scoped, not
-  room-wide — see the "more than one room" open question in
-  [decisions/README.md](../decisions/README.md), which this feature works around rather than waits
-  on). Finally, leave the group entirely on one side and confirm the section disappears rather than
-  showing an empty table.
+- **A confirmed party-mate's fight is pooled into your own breakdown — never run with real clients.**
+  ([ADR 0276](../decisions/0276-overlapping-fights-are-pooled-not-only-proven.md), supersedes
+  [ADR 0275](../decisions/0275-a-shared-swing-proves-the-same-fight.md).) Needs **two grouped**
+  clients (pooling is party-gated even though matching isn't — see below), both with **Current
+  fight** switched on (off by default). Both attack the same mob and, once a couple of swings have
+  landed on each side (this can take a few seconds — it waits on the share hub's own catalogue tick),
+  confirm: a **"Pooled with <name>"** note appears on the Combat tab, the other person now has their
+  own row in **Dealers**/**Targets** (they didn't have to be in your own earshot for their damage to
+  show, only confirmed), and your own **Your damage**/**Your DPS** tiles are unaffected by their
+  contribution — only **All damage** grows. Kill one client's log-visibility of a few of their own
+  swings (temporarily block their view, or just compare against what the *other* client's log
+  independently shows) and confirm the pooled total is the fuller of the two, not the smaller. Then
+  the boundary this ADR is careful about: **ungroup the two clients** (leave the party) and confirm
+  the pooling stops — the other person's row disappears from your breakdown, back to whatever your
+  own log alone would show — even though their swings still provably overlap yours. Finally, quit the
+  fight and confirm History now shows the **pooled** figures for that fight, not your own log's
+  smaller ones, and that a **third**, non-grouped client fighting the same public mob nearby never
+  appears in either client's pooled total even though its damage genuinely overlaps.
 - **A relayed pool survives its source leaving — never run with real clients.**
   ([ADR 0242](../decisions/0242-a-pooled-row-keeps-its-own-origin.md).) Needs **three** clients (A, B,
   C) with `mobs`/`kills`/`respawns` on. Connect A and B only; kill a few of the same named on A so it

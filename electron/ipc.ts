@@ -46,12 +46,13 @@ import type { GameClockTracker } from "./game-clock-tracker";
 import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery } from "../src/shared/types";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery, FightStats } from "../src/shared/types";
 import { AWARI_MSG } from "../src/shared/types";
 import { groupByOrigin, readContributor } from "../src/shared/contributors";
 import { createPeerShareHub, shareSources } from "../src/shared/peer-share-hub";
 import { createUiState } from "./ui-state";
-import { fightShareOf, type ShareKind } from "../src/shared/peer-share";
+import { fightShareOf, matchedFights, type FightShare, type ShareKind } from "../src/shared/peer-share";
+import { mergeFight } from "./fight-merge";
 import type { MapPin } from "../src/shared/map/pins";
 import { forTransfer, itemRows } from "../src/shared/item-search";
 import { normalizeItemName } from "../src/shared/grouping";
@@ -114,7 +115,7 @@ export interface IpcContext {
   watcher: LogWatcher;
 }
 
-export function registerIpc(context: IpcContext): void {
+export function registerIpc(context: IpcContext): PeerIpc {
   const { wiki, userData } = context;
   // Parsed map files, kept for the life of the app: they don't change under us, and a zone
   // is up to 800KB of text that several windows may ask for.
@@ -135,16 +136,19 @@ export function registerIpc(context: IpcContext): void {
 
   const shared: SharedIpc = { mapReader, zoneNamer, travel };
 
-  // One registrar per subject. The order is for reading only — nothing here depends on it.
+  // One registrar per subject, and the order was reading-only — until `registerStatsIpc` needed
+  // `registerPeerIpc`'s `mergedFight` (ADR 0276), which is why that one now runs first and the rest
+  // still don't depend on one another.
+  const peerIpc = registerPeerIpc(context);
   registerListIpc(context);
   registerSettingsIpc(context);
   registerWikiIpc(context);
   registerLucyIpc(context);
-  registerStatsIpc(context);
+  registerStatsIpc(context, peerIpc.mergedFight);
   registerAppIpc(context);
   registerWindowIpc(context, shared);
-  registerPeerIpc(context);
   registerAdminIpc(context);
+  return peerIpc;
 }
 
 /**
@@ -466,17 +470,25 @@ function registerLucyIpc(context: IpcContext): void {
  * Everything the log taught us: where you are, the damage meter, experience, health, kills,
  * loot, faction standing and pooled mob knowledge.
  */
-function registerStatsIpc(context: IpcContext): void {
+function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight"]): void {
   const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, factionCorrections, mobs, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
+
+  // Pooled the same way the live push and a filed fight both are (ADR 0276) — a reader that opens
+  // the Combat tab mid-fight gets the same merged figures `CH.combatChanged` would have pushed it,
+  // rather than the plain local ones until the next tick happens to arrive.
+  const withMergedFight = (snapshot: ReturnType<typeof combat.snapshot>): ReturnType<typeof combat.snapshot> => ({
+    ...snapshot,
+    fight: mergedFight(snapshot.fight),
+  });
 
   // ── watcher / zone / stats ──
   ipcMain.handle(CH.watcherStatus, () => watcher.status());
   ipcMain.handle(CH.zoneGet, () => getCurrentZone());
   ipcMain.handle(CH.locGet, () => getCurrentLoc());
-  ipcMain.handle(CH.combatGet, () => combat.snapshot());
+  ipcMain.handle(CH.combatGet, () => withMergedFight(combat.snapshot()));
   ipcMain.handle(CH.combatReset, () => {
     combat.reset();
-    return combat.snapshot();
+    return withMergedFight(combat.snapshot());
   });
   ipcMain.handle(CH.combatSessions, () => history.sessions());
   ipcMain.handle(CH.combatFights, (_e, sessionId: string) => history.fights(sessionId));
@@ -974,7 +986,13 @@ const CONTRIBUTED_KINDS = new Set<string>([AWARI_MSG.mobs, AWARI_MSG.kills]);
  *     having to remember, and a payload that isn't a contribution never gets one — connect without
  *     sharing and nothing stable about you goes out at all (`electron/identity.ts`).
  */
-function registerPeerIpc(context: IpcContext): void {
+/** What `registerPeerIpc` hands back to `registerIpc`, for `main.ts` to read the merged fight from. */
+interface PeerIpc {
+  /** Pools `local` with whoever's confirmed in it right now — see `mergedFight`'s own doc below. */
+  mergedFight(local?: FightStats): FightStats;
+}
+
+function registerPeerIpc(context: IpcContext): PeerIpc {
   const {
     broadcast,
     mobs,
@@ -1037,16 +1055,19 @@ function registerPeerIpc(context: IpcContext): void {
   };
 
   /**
-   * The share hub: our catalogue, who may have what, and where a peer's answer lands.
-   *
-   * Its name comes from the same rule `hello` uses — an explicit `playerName`, else the character
-   * the log file is named for — because a buff board resolves `ON_YOU` against it and two answers
-   * to "who am I" would put one player's buffs on two rows.
+   * Our display name, the same rule `hello` uses — an explicit `playerName`, else the character
+   * the log file is named for. A buff board resolves `ON_YOU` against it, and `fightShareOf`
+   * resolves `SELF` in a shared hit the same way, so a peer sees the real name a swing belongs to
+   * rather than "You" — two answers to "who am I" would put one player's buffs, or one player's
+   * hits, on two rows.
    */
+  const getName = (): string =>
+    (store.getSettings().playerName || "").trim() || characterFromLogFile(watcher.status().file) || "";
+
+  /** The share hub: our catalogue, who may have what, and where a peer's answer lands. */
   const shares = createPeerShareHub({
     getSettings: () => store.getSettings(),
-    getName: () =>
-      (store.getSettings().playerName || "").trim() || characterFromLogFile(watcher.status().file) || "",
+    getName,
     send,
     fileContribution,
     changed: () => broadcast(CH.peerShareChanged, undefined),
@@ -1066,7 +1087,10 @@ function registerPeerIpc(context: IpcContext): void {
       spawns,
       buffs,
       scores,
-      fight: { current: () => fightShareOf(combat.snapshot().fight, getCurrentZone()) },
+      fight: {
+        current: () =>
+          fightShareOf(combat.snapshot().fight, getCurrentZone(), combat.recentHits(), combat.recentHeals(), getName()),
+      },
       gameClock,
     }),
     // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).
@@ -1080,6 +1104,37 @@ function registerPeerIpc(context: IpcContext): void {
     // A peer's `/time` reading — kept only if it's newer than what we already have (ADR 0189).
     acceptGameTime: (reading) => gameClock.notePeerReading(reading.hour, reading.at ? Date.parse(reading.at) : Date.now()),
   });
+
+  /**
+   * The fight `main.ts` actually shows and files, once a party-mate's own copy of it is confirmed
+   * (`matchedFights`) and pooled in (`mergeFight`) — `local` (or a fresh `combat.snapshot().fight`
+   * when the caller has no fresher copy of their own) whenever nothing confirms, which is every
+   * fight nobody else is sharing.
+   *
+   * Takes `local` as a parameter rather than always re-deriving it, because `combat.onFightEnd`'s
+   * own payload carries `endReason` — set only at the moment a fight is filed, and gone from any
+   * snapshot taken after — which a fresh `combat.snapshot().fight` inside here could never recover.
+   *
+   * Lives here rather than in `combat-stats.ts` on purpose: the tracker knows nothing about peers,
+   * and reading `shares.received()` is exactly the one-way dependency this file already has on the
+   * hub for everything else. See [ADR 0276](../specs/decisions/0276-overlapping-fights-are-pooled-not-only-proven.md).
+   */
+  function mergedFight(local: FightStats = combat.snapshot().fight): FightStats {
+    const myName = getName();
+    if (!myName) return local;
+    const partyLower = new Set(combat.party().map((n) => n.toLowerCase()));
+    const peerRows = shares
+      .received(undefined, "fight")
+      .flatMap((r) => r.rows.map((row) => ({ by: r.from, peerId: r.peerId, row: row as FightShare })))
+      .filter((r) => partyLower.has(r.by.toLowerCase()));
+    const matches = matchedFights(combat.recentHits(), peerRows);
+    if (!matches.length) return local;
+    const merged = mergeFight(
+      { name: myName, hits: combat.recentHits(), heals: combat.recentHeals() },
+      matches.map((m) => ({ name: m.by, hits: m.fight.recentHits, heals: m.fight.recentHeals })),
+    );
+    return { ...local, ...merged, mergedFrom: matches.map((m) => m.by) };
+  }
 
   /**
    * The other half of the cycle: the harvester needs the room, and the hub needs the cache.
@@ -1196,6 +1251,8 @@ function registerPeerIpc(context: IpcContext): void {
     getMainWindow()?.center();
   });
   ipcMain.on(CH.winOpenAdmin, () => createAdminWindow());
+
+  return { mergedFight };
 }
 
 /**

@@ -18,12 +18,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { ShareDelivery, ShareKind } from "../../src/shared/peer-share";
+import type { FightShare, ShareDelivery, ShareKind } from "../../src/shared/peer-share";
 import type { KillRecord } from "../../src/shared/types";
 import {
   SAME_SPAWN_MS,
   compareScores,
   fightShareOf,
+  matchedFights,
+  matchingHits,
   mergeBuffs,
   mergeTimers,
   newlyOffered,
@@ -35,6 +37,8 @@ import {
   readAsk,
   readGive,
   readProtocol,
+  shareableHeals,
+  shareableHits,
   shareableKills,
   shareableRespawns,
   versionStanding,
@@ -519,7 +523,8 @@ test("a reading claiming to be from the future is trusted no further than our ow
   assert.equal(row.at, undefined);
 });
 
-// ── The live fight: a party-mate's numbers, shown beside yours and never merged (ADR 0274). ────────
+// ── The live fight: the wire shape and the proof a shared swing gives (ADR 0276). Pooling itself —
+// what a confirmed proof actually does with the data — is `electron/fight-merge.ts`'s own tests. ───
 
 function readFightGive(raw: unknown): unknown[] {
   return wholeRows(readGive({ what: "fight", rev: 1, rows: [raw] }, () => "id"));
@@ -575,21 +580,157 @@ test("negative and out-of-range figures are clamped rather than believed", () =>
   assert.equal(row.kills, 0);
 });
 
+test("a fight's recent hits cross whole, and a bad one is dropped rather than guessed at", () => {
+  const [row] = readFightGive({
+    startedAt: "2026-09-03T18:00:00.000Z",
+    endedAt: "",
+    recentHits: [
+      { attacker: "Kainos", target: "a gnoll", amount: 20, at: "2026-09-03T18:00:05.000Z" },
+      { attacker: "Kainos", target: "a gnoll", amount: -5, at: "2026-09-03T18:00:06.000Z" }, // dropped
+      { attacker: "", target: "a gnoll", amount: 3, at: "2026-09-03T18:00:07.000Z" }, // dropped
+    ],
+  }) as { recentHits: unknown[] }[];
+  assert.deepEqual(row.recentHits, [
+    {
+      attacker: "Kainos",
+      target: "a gnoll",
+      amount: 20,
+      melee: false,
+      verb: undefined,
+      spell: undefined,
+      shield: undefined,
+      qualifier: undefined,
+      tick: undefined,
+      damageType: undefined,
+      at: "2026-09-03T18:00:05.000Z",
+    },
+  ]);
+});
+
+test("a fight's recent heals cross whole, and a bad one is dropped rather than guessed at", () => {
+  const [row] = readFightGive({
+    startedAt: "2026-09-03T18:00:00.000Z",
+    endedAt: "",
+    recentHeals: [
+      { healer: "Kainos", target: "Kainos`s warder", amount: 8, at: "2026-09-03T18:00:05.000Z" },
+      { healer: "Kainos", target: "Kainos`s warder", amount: -5, at: "2026-09-03T18:00:06.000Z" }, // dropped
+      { healer: "", target: "Kainos`s warder", amount: 3, at: "2026-09-03T18:00:07.000Z" }, // dropped
+    ],
+  }) as { recentHeals: unknown[] }[];
+  assert.deepEqual(row.recentHeals, [
+    {
+      healer: "Kainos",
+      target: "Kainos`s warder",
+      amount: 8,
+      attempted: undefined,
+      spell: undefined,
+      qualifier: undefined,
+      at: "2026-09-03T18:00:05.000Z",
+    },
+  ]);
+});
+
+test("shareableHeals resolves your own name the same way shareableHits does", () => {
+  const heals = [{ healer: "You", target: "Kainos`s warder", amount: 8, at: "2026-09-03T18:00:05.000Z" }];
+  assert.deepEqual(shareableHeals(heals, "Kainos"), [
+    { healer: "Kainos", target: "Kainos`s warder", amount: 8, at: "2026-09-03T18:00:05.000Z" },
+  ]);
+});
+
 test("fightShareOf is undefined before anything has happened this session", () => {
-  assert.equal(fightShareOf(EMPTY_FIGHT, "Blackburrow"), undefined);
+  assert.equal(fightShareOf(EMPTY_FIGHT, "Blackburrow", [], [], "Kainos"), undefined);
 });
 
 test("fightShareOf carries the window's own figures and the zone it's told", () => {
   const share = fightShareOf(
     { ...EMPTY_FIGHT, startedAt: "2026-09-03T18:00:00.000Z", durationSec: 12, yourDealt: 500, yourHealed: 8 },
     "Blackburrow",
+    [],
+    [],
+    "Kainos",
   );
   assert.equal(share?.zone, "Blackburrow");
   assert.equal(share?.yourDealt, 500);
   assert.equal(share?.yourHealed, 8);
   // No zone known yet (the log hasn't said) is a real answer, not a placeholder string.
-  assert.equal(fightShareOf({ ...EMPTY_FIGHT, startedAt: "2026-09-03T18:00:00.000Z" }, null)?.zone, undefined);
+  assert.equal(
+    fightShareOf({ ...EMPTY_FIGHT, startedAt: "2026-09-03T18:00:00.000Z" }, null, [], [], "Kainos")?.zone,
+    undefined,
+  );
 });
+
+test("shareableHits resolves your own name into a hit, and leaves everyone else's alone", () => {
+  const hits = [
+    { attacker: "You", target: "a gnoll", amount: 20, at: "2026-09-03T18:00:05.000Z" },
+    { attacker: "a gnoll", target: "You", amount: 5, at: "2026-09-03T18:00:06.000Z" },
+    { attacker: "Kainos`s warder", target: "a gnoll", amount: 3, at: "2026-09-03T18:00:07.000Z" },
+  ];
+  assert.deepEqual(shareableHits(hits, "Kainos"), [
+    { attacker: "Kainos", target: "a gnoll", amount: 20, at: "2026-09-03T18:00:05.000Z" },
+    { attacker: "a gnoll", target: "Kainos", amount: 5, at: "2026-09-03T18:00:06.000Z" },
+    { attacker: "Kainos`s warder", target: "a gnoll", amount: 3, at: "2026-09-03T18:00:07.000Z" },
+  ]);
+});
+
+test("matchingHits counts an overlap and ignores a coincidence in amount alone", () => {
+  const mine = [
+    { attacker: "Kainos", target: "a gnoll", amount: 20, at: "2026-09-03T18:00:05.000Z" },
+    { attacker: "Kainos", target: "a gnoll", amount: 11, at: "2026-09-03T18:00:06.000Z" },
+  ];
+  const sameSwing = [{ attacker: "Kainos", target: "a gnoll", amount: 20, at: "2026-09-03T18:00:05.000Z" }];
+  assert.equal(matchingHits(mine, sameSwing), 1);
+  // Same amount, different attacker — not the same swing, and not counted.
+  const differentAttacker = [{ attacker: "Bunnyslayer", target: "a gnoll", amount: 20, at: "2026-09-03T18:00:05.000Z" }];
+  assert.equal(matchingHits(mine, differentAttacker), 0);
+  // A little clock disagreement is tolerated; a swing a minute apart is a different swing.
+  const closeEnough = [{ attacker: "Kainos", target: "a gnoll", amount: 20, at: "2026-09-03T18:00:06.000Z" }];
+  assert.equal(matchingHits(mine, closeEnough), 1);
+  const tooFar = [{ attacker: "Kainos", target: "a gnoll", amount: 20, at: "2026-09-03T18:01:05.000Z" }];
+  assert.equal(matchingHits(mine, tooFar), 0);
+});
+
+test("matchedFights needs more than one overlapping hit, and ranks by how many", () => {
+  const mine = [
+    { attacker: "Kainos", target: "a gnoll", amount: 20, at: "2026-09-03T18:00:05.000Z" },
+    { attacker: "Kainos", target: "a gnoll", amount: 11, at: "2026-09-03T18:00:06.000Z" },
+  ];
+  const peers = [
+    {
+      by: "Bran",
+      peerId: "p1",
+      row: { ...fightRow(), recentHits: [mine[0]] }, // one overlap — coincidence, not proof
+    },
+    {
+      by: "Galactic",
+      peerId: "p2",
+      row: { ...fightRow(), recentHits: mine }, // both overlap — proven
+    },
+    {
+      by: "Stranger",
+      peerId: "p3",
+      row: { ...fightRow(), recentHits: [{ attacker: "Someone", target: "a rat", amount: 4, at: "2026-09-03T18:05:00.000Z" }] },
+    },
+  ];
+  const matches = matchedFights(mine, peers);
+  assert.deepEqual(matches.map((m) => m.by), ["Galactic"]);
+  assert.equal(matches[0].matchingHits, 2);
+});
+
+/** A minimal `FightShare`, for tests that only care about `recentHits`. */
+function fightRow(): FightShare {
+  return {
+    startedAt: "2026-09-03T18:00:00.000Z",
+    endedAt: "",
+    durationSec: 10,
+    yourDealt: 0,
+    yourTaken: 0,
+    yourHealed: 0,
+    yourHealReceived: 0,
+    kills: 0,
+    recentHits: [],
+    recentHeals: [],
+  };
+}
 
 test("an item page a peer sent is rebuilt field by field", () => {
   const page = readPage({

@@ -7,7 +7,6 @@ import DamageMeter, { type DamageView } from "./DamageMeter";
 import SpellTable from "./SpellTable";
 import DamageHistory from "./DamageHistory";
 import HighScoreBoard from "./HighScoreBoard";
-import PeerFightCompare from "./PeerFightCompare";
 import Sparkline from "./Sparkline";
 import AskValue from "./AskValue";
 import ZoneTag from "./ZoneTag";
@@ -234,6 +233,12 @@ export default function DamagePanel() {
 
       {window && (
         <>
+          {/* Said out loud rather than left silent: the figures below are a truer picture than your
+              own log alone once this shows, and a reader comparing tonight against an old solo
+              fight deserves to know why the numbers moved (ADR 0276). */}
+          {!!window.mergedFrom?.length && (
+            <p className="muted small">Pooled with {window.mergedFrom.join(", ")} — their log fills in what yours missed.</p>
+          )}
           {/* Both directions, always — a tile that changes meaning with the view is a tile you
               have to re-read every time you flip. */}
           <div className="stat-row">
@@ -322,10 +327,6 @@ export default function DamagePanel() {
       )}
 
       {window && window.deaths.length > 0 && <Deaths deaths={window.deaths} />}
-
-      {/* Live only — there's no fight id to match a *stored* fight against a peer's, so this stays
-          scoped to the window that's actually still comparable in real time (ADR 0274). */}
-      {scope === "fight" && window && <PeerFightCompare window={window} zone={currentZone} />}
 
       {scope === "history" && !picked && <p className="muted small">Pick a fight above to break it down.</p>}
     </div>

@@ -38,6 +38,8 @@
  */
 import type {
   CastWatch,
+  FightHeal,
+  FightHit,
   FightStats,
   HighScore,
   ItemCard,
@@ -61,6 +63,7 @@ import { PIN_TYPES, type MapPin, type PinKind } from "./map/pins";
 import { SHARD_COUNT } from "./item-shards";
 import { isPlottable } from "./kill-confidence";
 import { opponentOf } from "./damage-tree";
+import { SELF } from "./combat-parser";
 import { clamp } from "./numbers";
 
 /**
@@ -109,18 +112,20 @@ export interface SharedGameTime {
 /**
  * A peer's live fight, as it crosses the wire — the same headline figures the Combat tab's own
  * stat tiles show, so a party-mate's row can sit beside yours without either side inventing a
- * translation. See [ADR 0274](../../specs/decisions/0274-a-fight-is-compared-live-with-your-party.md).
+ * translation. See [ADR 0276](../../specs/decisions/0276-overlapping-fights-are-pooled-not-only-proven.md).
  *
  * **Self-reported and unverified**, same as a shared high score — there is no way to check that
  * `yourDealt` is honest, and this doesn't try to. What makes it safe regardless is the same rule
- * `PeerScores` already lives by: a peer's figures sit beside yours and never touch them.
+ * `PeerScores` already lives by: a peer's figures sit beside yours and never touch them — *unless*
+ * `recentHits`/`recentHeals` prove an overlap, in which case those two arrays (and only those two)
+ * do get pooled, into a merged breakdown (`electron/fight-merge.ts`). The headline figures above
+ * stay unmerged regardless — they're what a receiver falls back to showing when nothing overlaps.
  *
- * There is no fight id and no "still going" flag: nothing in this log names one, and `endedAt` is
- * exactly what `FightStats.endedAt` already is — the timestamp of the sender's **last damage**,
- * moving forward while they keep swinging rather than snapping to "now" the moment they stop. A
- * receiver judges liveness the same way the Combat tab judges its own fight: by how recently that
- * timestamp claims to be, against the wall clock. `zone` plus that freshness is the whole signal for
- * "is this the fight I'm in" — reported, never resolved.
+ * There is no fight id and no "still going" flag: nothing in this log names one. What proves two
+ * peers are in the *same* fight is an overlap in `recentHits` (`matchingHits`): the log writes the
+ * same swing to everyone in earshot, so an overlapping (attacker, target, amount, moment) between
+ * two peers' buffers is evidence, not a guess. Once proven, `recentHits` *and* `recentHeals`
+ * together are the material the merge is built from.
  */
 export interface FightShare {
   /** The zone this fight is in (or was, if it's since ended), when the sender's log has said. */
@@ -128,7 +133,7 @@ export interface FightShare {
   /** The main thing being fought, the same rule `opponentOf` names a stored fight by. */
   opponent?: string;
   startedAt: string;
-  /** The sender's last damage in this fight — see the type doc for how a receiver reads this. */
+  /** The sender's last damage in this fight. */
   endedAt: string;
   durationSec: number;
   /** Damage the sender (and their pet) dealt and took. */
@@ -138,6 +143,14 @@ export interface FightShare {
   yourHealed: number;
   yourHealReceived: number;
   kills: number;
+  /**
+   * The sender's own landed hits and heals for this fight, oldest first — capped generously
+   * (`MAX_RECENT_HITS`/`MAX_RECENT_HEALS`, `combat-stats.ts`) rather than tightly, since these serve
+   * two jobs: a couple of overlapping ones *prove* a match, and once proven, the whole kept set is
+   * what a merge actually pools.
+   */
+  recentHits: FightHit[];
+  recentHeals: FightHeal[];
 }
 
 // ─── The catalogue ──────────────────────────────────────────────────────────
@@ -378,13 +391,37 @@ export function shareableRespawns(known: readonly KnownSpawn[]): SharedRespawn[]
 }
 
 /**
+ * Recent hits, with the sender's own name resolved in for both attacker and target — the same
+ * reasoning `shareableBuffs` already applies to a buff's `ON_YOU`, aimed at a fight instead: only
+ * the sender knows who `SELF` ("You") is, and a receiver who sees "You" hit something has no name
+ * to match it against. A pet's name is already absolute (`Kainos\`s warder`) and needs no change.
+ */
+export function shareableHits(hits: readonly FightHit[], myName: string): FightHit[] {
+  const resolve = (name: string): string => (name === SELF ? myName : name);
+  return hits.map((h) => ({ ...h, attacker: resolve(h.attacker), target: resolve(h.target) }));
+}
+
+/** The same resolution `shareableHits` does, for a heal's `healer`/`target` instead. */
+export function shareableHeals(heals: readonly FightHeal[], myName: string): FightHeal[] {
+  const resolve = (name: string): string => (name === SELF ? myName : name);
+  return heals.map((h) => ({ ...h, healer: resolve(h.healer), target: resolve(h.target) }));
+}
+
+/**
  * The live fight, reduced to what's worth sending — or `undefined` before anything has happened
  * this session, which is what keeps a fresh launch from offering an empty fight forever.
  *
  * `opponent` is worked out the same way a stored fight's own label is (`opponentOf`), so a
- * party-mate's row names the pull the same way your own History tab would.
+ * party-mate's row names the pull the same way your own History tab would. `myName` is only for
+ * `shareableHits`/`shareableHeals` — nothing else here needs a name for anything.
  */
-export function fightShareOf(fight: FightStats, zone: string | null | undefined): FightShare | undefined {
+export function fightShareOf(
+  fight: FightStats,
+  zone: string | null | undefined,
+  recentHits: readonly FightHit[],
+  recentHeals: readonly FightHeal[],
+  myName: string,
+): FightShare | undefined {
   if (!fight.startedAt) return undefined;
   return {
     zone: zone ?? undefined,
@@ -397,7 +434,76 @@ export function fightShareOf(fight: FightStats, zone: string | null | undefined)
     yourHealed: fight.yourHealed ?? 0,
     yourHealReceived: fight.yourHealReceived ?? 0,
     kills: fight.kills,
+    recentHits: shareableHits(recentHits, myName),
+    recentHeals: shareableHeals(recentHeals, myName),
   };
+}
+
+/**
+ * A hit close enough in time to count as the same logged moment. EQ logs to the second; the slack
+ * beyond that is for two installs' clocks disagreeing by a beat, never for treating two genuinely
+ * different swings as one.
+ */
+const HIT_MATCH_TOLERANCE_MS = 1500;
+
+/** Fewest overlapping hits before a peer's fight counts as *proven*, not coincidence. One shared
+ *  swing could be luck (a common small hit, a common name); two independent ones essentially can't. */
+const MIN_MATCHING_HITS = 2;
+
+/**
+ * How many of `mine` also appear in `theirs` — same attacker, same target, same amount, within
+ * `HIT_MATCH_TOLERANCE_MS`. This is the proof `matchedFights` builds on, and the gate `electron/ipc.ts`'s
+ * `mergedFight` checks before pooling a peer's fight into yours (`electron/fight-merge.ts`). The
+ * log writes an identical line to everyone in earshot of a swing, so an overlap this exact is
+ * essentially never a coincidence between two unrelated fights — a false positive would need two
+ * installs to independently claim the same attacker doing the same damage to the same target in
+ * the same second, which for a named player is impossible (character names are unique) and for a
+ * generic mob name needs it to happen twice over to clear `MIN_MATCHING_HITS`.
+ */
+export function matchingHits(mine: readonly FightHit[], theirs: readonly FightHit[]): number {
+  let matched = 0;
+  for (const a of mine) {
+    const hit = theirs.some((b) => {
+      if (a.attacker !== b.attacker || a.target !== b.target || a.amount !== b.amount) return false;
+      const dt = Date.parse(a.at) - Date.parse(b.at);
+      return !Number.isNaN(dt) && Math.abs(dt) <= HIT_MATCH_TOLERANCE_MS;
+    });
+    if (hit) matched += 1;
+  }
+  return matched;
+}
+
+/** One peer whose shared fight has been proven to be this one, by `matchingHits`. */
+export interface MatchedFight {
+  by: string;
+  peerId: string;
+  fight: FightShare;
+  /** How many hits overlapped — the confidence figure, not shown as a number but there to sort by. */
+  matchingHits: number;
+}
+
+/**
+ * Every peer whose recent hits overlap yours enough to count, ranked by how much they overlap.
+ * Deliberately **not** filtered by zone or recency — the overlap already is a stronger signal than
+ * either, and checking it directly is what would let this work for anyone in the room, not only a
+ * known roster, if a caller ever wanted that.
+ *
+ * `electron/ipc.ts`'s `mergedFight` is the one caller today, and it pre-filters `peers` to your own
+ * party before this ever runs — not because the proof needs it, but because *pooling* someone's
+ * data into yours (`electron/fight-merge.ts`) is a stronger claim than merely comparing it, and
+ * party membership is the same safe gate
+ * [ADR 0067](../../specs/decisions/0067-the-meter-counts-your-party-s-fights.md) already uses for
+ * "whose side is this" everywhere else on the tab. See
+ * [ADR 0276](../../specs/decisions/0276-overlapping-fights-are-pooled-not-only-proven.md).
+ */
+export function matchedFights(
+  mine: readonly FightHit[],
+  peers: readonly { by: string; peerId: string; row: FightShare }[],
+): MatchedFight[] {
+  return peers
+    .map((p) => ({ by: p.by, peerId: p.peerId, fight: p.row, matchingHits: matchingHits(mine, p.row.recentHits) }))
+    .filter((m) => m.matchingHits >= MIN_MATCHING_HITS)
+    .sort((a, b) => b.matchingHits - a.matchingHits);
 }
 
 /**
@@ -541,7 +647,7 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     key: "fight",
     family: "live",
     label: "Current fight",
-    blurb: "Your live fight — damage, healing and duration — so a party-mate can compare notes as it happens.",
+    blurb: "Your live fight — damage, healing, duration and a few recent hits — so anyone actually fighting alongside you can compare notes as it happens.",
     noun: "fight",
     read: (rows) => readList(rows, MAX_ROWS.fight, readFightShare),
     // There is only ever one — your current or last fight — the same reasoning `gameTime`'s key
@@ -1498,6 +1604,54 @@ const MAX_FIGHT_SEC = 24 * 60 * 60;
  * field falls back to a harmless default rather than losing the whole row, the same forgiveness
  * `readSharedGameTime` gives an unreadable `at`.
  */
+/** How many hits a `fight` give may carry — enough to prove a match without becoming a transcript. */
+// Generous, matching `combat-stats.ts`'s own `MAX_RECENT_HITS`/`MAX_RECENT_HEALS` — a merge wants
+// the whole fight, not a sample, so the cap here exists only to bound a hostile peer's `give`.
+const MAX_SHARED_HITS = 300;
+const MAX_SHARED_HEALS = 300;
+
+/** One shared hit, checked the same way any inbound record here is: drop rather than guess. */
+function readFightHit(raw: unknown): FightHit | null {
+  if (!isRecord(raw)) return null;
+  const attacker = str(raw.attacker);
+  const target = str(raw.target);
+  const amount = nonNegative(raw.amount);
+  const at = iso(raw.at);
+  if (!attacker || !target || !amount || !at) return null;
+  return {
+    attacker,
+    target,
+    amount,
+    melee: raw.melee === true,
+    verb: str(raw.verb) || undefined,
+    spell: str(raw.spell) || undefined,
+    shield: raw.shield === true || undefined,
+    qualifier: str(raw.qualifier) || undefined,
+    tick: raw.tick === true || undefined,
+    damageType: str(raw.damageType) || undefined,
+    at,
+  };
+}
+
+/** One shared heal, on the same terms `readFightHit` reads a shared hit. */
+function readFightHeal(raw: unknown): FightHeal | null {
+  if (!isRecord(raw)) return null;
+  const healer = str(raw.healer);
+  const target = str(raw.target);
+  const amount = nonNegative(raw.amount);
+  const at = iso(raw.at);
+  if (!healer || !target || !amount || !at) return null;
+  return {
+    healer,
+    target,
+    amount,
+    attempted: nonNegative(raw.attempted),
+    spell: str(raw.spell) || undefined,
+    qualifier: str(raw.qualifier) || undefined,
+    at,
+  };
+}
+
 function readFightShare(raw: unknown): FightShare | null {
   if (!isRecord(raw)) return null;
   const startedAt = iso(raw.startedAt);
@@ -1513,6 +1667,8 @@ function readFightShare(raw: unknown): FightShare | null {
     yourHealed: nonNegative(raw.yourHealed) ?? 0,
     yourHealReceived: nonNegative(raw.yourHealReceived) ?? 0,
     kills: clamp(int(raw.kills) ?? 0, 0, 100_000),
+    recentHits: readList(raw.recentHits, MAX_SHARED_HITS, readFightHit),
+    recentHeals: readList(raw.recentHeals, MAX_SHARED_HEALS, readFightHeal),
   };
 }
 

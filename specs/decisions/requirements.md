@@ -660,9 +660,21 @@ reading like a measurement, and they are shared code
   walk reaches the room instead of everyone repeating it. A learned title is only ever added, never
   removes one, and is never evidence the page exists — completeness stays self-assessed, so the worst
   a bad title costs is one 404. ([0177](./0177-the-item-list-is-a-walk-not-a-listing.md))
-- **A live fight is shared like a score — off by default, self-reported, compared and never merged**
-  — and matched against a peer's only through your own party roster, never the whole room, since
-  nothing in the log gives two installs a fight id to agree on. ([0274](./0274-a-fight-is-compared-live-with-your-party.md))
+- **A live fight is shared like a score — off by default, self-reported.** Unlike a score, a
+  confirmed one is *pooled*, not only compared. ([0274](./0274-a-fight-is-compared-live-with-your-party.md),
+  superseded by [0275](./0275-a-shared-swing-proves-the-same-fight.md), superseded by
+  [0276](./0276-overlapping-fights-are-pooled-not-only-proven.md))
+- **A match is proven by an overlapping hit, not guessed by zone and recency.** The log writes the
+  same swing to everyone in earshot, so a (attacker, target, amount, moment) two peers both report is
+  evidence, not a report — which is what lets *matching* reach the whole room instead of only your
+  own party. ([0275](./0275-a-shared-swing-proves-the-same-fight.md))
+- **A confirmed party-mate's fight is pooled into yours, not merely shown beside it.** Their hits and
+  heals are de-duplicated against your own and replayed through the same tracker, so the merged
+  breakdown is a truer picture than either log alone — the damage/healing totals and per-combatant
+  rows are pooled; kills, experience, loot and spell efficiency stay yours alone, since those are
+  personal rewards rather than facts about the fight. Pooling (unlike matching) stays party-gated: an
+  unrelated peer's real, provable overlap on a shared public mob is still excluded from your total.
+  ([0276](./0276-overlapping-fights-are-pooled-not-only-proven.md))
 
 ## Stored data
 

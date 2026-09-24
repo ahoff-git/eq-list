@@ -1,7 +1,7 @@
 # 0274: A fight is compared live with your party
 
 ## Status
-Accepted
+Superseded by [0275](./0275-a-shared-swing-proves-the-same-fight.md)
 
 ## Context
 "How did my fight compare with the rest of the group" had no answer anywhere in the app. The peer

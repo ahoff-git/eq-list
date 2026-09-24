@@ -310,7 +310,9 @@ finished, so a number is claimed before a second author can reach for it.
 - [0271: The Faction tab gets a Session view](./0271-the-faction-tab-gets-a-session-view.md)
 - [0272: The debuff board's shared default gets a setting of its own](./0272-the-debuff-boards-shared-default-gets-a-setting-of-its-own.md)
 - [0273: A heal is a cell too — the Healers view gets a drill-down](./0273-a-heal-is-a-cell-too.md) — *issued as 0271; see "Retired and reused numbers" above*
-- [0274: A fight is compared live with your party](./0274-a-fight-is-compared-live-with-your-party.md)
+- [0274: A fight is compared live with your party](./0274-a-fight-is-compared-live-with-your-party.md) — **superseded by 0275**; the zone/recency/party guess is replaced by a proven match
+- [0275: A shared swing proves the same fight](./0275-a-shared-swing-proves-the-same-fight.md) — **superseded by 0276**; a proven overlap is now pooled, not just compared
+- [0276: Overlapping fights are pooled, not only proven](./0276-overlapping-fights-are-pooled-not-only-proven.md)
 
 ## Open Questions
 
@@ -350,10 +352,20 @@ finished, so a number is claimed before a second author can reach for it.
   room, a camp room and a server room are three different answers with three different join stories
   (who invites, what the id is, whether it outlives a session), and picking one is what unblocks the
   privacy defaults for every kind that is currently too loud to switch on.
-  [ADR 0274](./0274-a-fight-is-compared-live-with-your-party.md) is a data point for whoever answers
-  this: it wanted exactly a "these five people" room and settled for a client-side workaround (match
-  against your own party roster, ignore the rest of what the room offers) rather than wait on it —
-  which is one more example of the half-capability the paragraph above describes.
+  [ADR 0274](./0274-a-fight-is-compared-live-with-your-party.md) was a data point for whoever answers
+  this — it wanted exactly a "these five people" room and settled for a client-side workaround (match
+  against your own party roster) rather than wait on it. [ADR 0275](./0275-a-shared-swing-proves-the-same-fight.md)
+  found a better answer for *matching* and dropped the party restriction: proving two peers share a
+  swing is a smaller, sharper unit than "these five people" and doesn't need the room to scope itself
+  at all. [ADR 0276](./0276-overlapping-fights-are-pooled-not-only-proven.md) then brought party
+  membership back in — not because matching needed it, but because *pooling* a peer's data into your
+  own total is a stronger claim than comparing it, and a party roster is the one thing standing
+  between "a confirmed party-mate" and "a stranger who happens to be hitting the same public mob".
+  So today's answer is layered: matching is room-wide and proof-based; merging still leans on party
+  membership for the one part proof alone can't safely decide. That's specific to fight-matching,
+  though — a buff board, a camp's countdowns or a shopping list have no equivalent "the data proves
+  who it's for" trick available, so the room question stands
+  for those.
 
 - **Should a repop say what it took?** Changing the instance difficulty rebuilds the world, so every
   countdown measuring from a death in that place is dropped
