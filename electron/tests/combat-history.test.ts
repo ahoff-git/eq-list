@@ -110,6 +110,27 @@ test("re-reading a log replaces a stored fight's figures and leaves its filing a
   assert.equal(h.search("").total, 1); // one fight, not two
 });
 
+test("re-deriving a pooled fight keeps its merged figures rather than undoing the pool", () => {
+  // A live merge (ADR 0276) pools in a party-mate's own copy, live — data a later re-derive, which
+  // only ever replays this one log file, can never recover. The ADR is explicit that a merge is
+  // "reversible in principle... but not undone automatically" — so overwriting it here with what
+  // the solo log alone produces would be exactly the automatic undo it promises won't happen.
+  const h = freshHistory(tempDir(), "run:live");
+  h.add(fight(1, 100, 20, "a coyote", { mergedFrom: ["Bran"] }), "Qeynos Hills", LOG);
+  const before = h.search("").fights[0];
+  assert.equal(before.stats.yourDealt, 100);
+
+  // The same fight, re-read solo — the raw log alone only ever saw 60 of that pooled 100.
+  const out = h.rederive(LOG, [{ stats: fight(1, 60, 20), zone: "Qeynos Hills" }], covering(1, 1));
+  assert.deepEqual(out, { refreshed: 1, added: 0, superseded: 0, unsourced: 0, trimmed: 0 });
+
+  const after = h.search("").fights[0];
+  assert.equal(after.stats.yourDealt, 100); // the pooled figure survives, not the solo recompute
+  assert.deepEqual(after.stats.mergedFrom, ["Bran"]);
+  assert.equal(after.id, before.id);
+  assert.equal(h.search("").total, 1); // one fight, not two
+});
+
 test("re-deriving twice lands the same thing — idempotent in the sense that matters", () => {
   const h = freshHistory(tempDir(), "run:live");
   h.add(fight(1, 100, 20), null, LOG);
@@ -580,6 +601,15 @@ test("bests keep your top DPS per opponent", () => {
   const lord = bests.find((b) => b.label === "Minotaur Lord")!;
   assert.equal(lord.dps, 30);
   assert.equal(lord.yourDealt, 300);
+});
+
+test("a best built off a fight with somebody unplaced is flagged provisional, like zones/sessions already are", () => {
+  // `ZoneReport`/`SessionSummary` both inherit `unsettled` from a fight that had it (ADR 0130) — a
+  // personal best skipping that flag would present a figure that might still move as settled.
+  const h = freshHistory(tempDir(), "s");
+  h.add(fight(1, 300, 5, "Minotaur Lord", { durationSec: 10, unsettled: ["a bare name"] }));
+  const lord = h.bests().find((b) => b.label === "Minotaur Lord")!;
+  assert.equal(lord.unsettled, true);
 });
 
 test("clear empties the store on disk too", () => {

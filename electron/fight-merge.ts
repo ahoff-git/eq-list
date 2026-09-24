@@ -34,7 +34,19 @@ export function isTruncated(source: MergeSource): boolean {
   return source.hits.length >= MAX_RECENT_HITS || source.heals.length >= MAX_RECENT_HEALS;
 }
 
-/** The fields a merge actually replaces — everything else on a `FightStats` stays your own. */
+/**
+ * The fields a merge actually replaces — everything else on a `FightStats` stays your own.
+ *
+ * **`startedAt`/`endedAt` deliberately stay out of this list**, even though the replay recomputes
+ * them too. `electron/combat-history.ts`'s `fightKey` — the identity a fight is deduped and
+ * re-derived by — is built from exactly those two fields plus the log file, on the assumption that
+ * reading the *same log* always reproduces the *same* boundary. A peer's earlier or later hit can
+ * genuinely shift the replay's own span past what your own log alone ever recorded — and that log
+ * is all a later re-read (ADR 0129) or re-import ever has to go on, since a peer's data is live-only
+ * and never written to it. Pooling these two fields would mean the very next re-read keys this
+ * fight differently than history already has it filed under, filing a second, duplicate row for
+ * the same real fight instead of recognizing the one already there.
+ */
 export type MergedFight = Pick<
   FightStats,
   | "byCombatant"
@@ -49,8 +61,6 @@ export type MergedFight = Pick<
   | "yourPerSec"
   | "durationSec"
   | "spanSec"
-  | "startedAt"
-  | "endedAt"
   | "unsettled"
 >;
 
@@ -184,8 +194,6 @@ export function mergeFight(mine: MergeSource, peers: readonly MergeSource[]): Me
     yourPerSec: merged.yourPerSec,
     durationSec: merged.durationSec,
     spanSec: merged.spanSec,
-    startedAt: merged.startedAt,
-    endedAt: merged.endedAt,
     // `local`'s own `unsettled` is built from names its *own* window ever doubted — but misses
     // aren't replayed here (the gap above), so a name doubted only by a miss never re-enters the
     // merge at all and would otherwise go on being flagged "provisional" for a row that no longer

@@ -266,6 +266,14 @@ function Fight({
           ?
         </span>
       )}
+      {/* Said here too, not only once the fight is opened (`DamagePanel`'s own note) — a reader
+          scanning the list for why one fight's total looks higher than a similar one deserves the
+          same "pooled" answer without having to click in first (ADR 0276). */}
+      {!!fight.stats.mergedFrom?.length && (
+        <span className="muted small" title={`Pooled with ${fight.stats.mergedFrom.join(", ")} — their log fills in what yours missed.`}>
+          ∪
+        </span>
+      )}
       <span className="muted small">{fight.stats.durationSec}s</span>
       <span className="hf-dmg">{fight.stats.yourDealt.toLocaleString()}</span>
     </button>

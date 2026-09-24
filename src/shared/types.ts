@@ -1457,6 +1457,10 @@ export interface FightBest {
   yourDealt: number;
   dps: number;
   at: string;
+  /** The fight this record came from had a combatant nothing could place, so it's provisional the
+   *  same way that fight's own figures are — see `FightStats.unsettled` and
+   *  [ADR 0130](../../specs/decisions/0130-data-in-doubt-says-so.md). */
+  unsettled?: boolean;
 }
 
 /**

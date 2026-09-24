@@ -401,6 +401,16 @@ export function createCombatHistory(db: Database, userDataDir: string, sessionId
           continue;
         }
         matched.add(prior.id);
+        if (prior.stats.mergedFrom?.length) {
+          // A pooled fight's figures came from a party-mate's own live copy of it — data this
+          // replay, built from nothing but our own log file, can never recover
+          // (ADR 0276: "reversible in principle... but not undone automatically"). Overwriting it
+          // with the solo recompute here would do exactly the automatic undo that ADR promises
+          // won't happen, so the pooled stats stay; only `unsourced` clears, since the log still
+          // demonstrably covers this span.
+          next.push({ ...prior, key, unsourced: undefined });
+          continue;
+        }
         // The figures are re-derived; **where the fight sits is not** — its id, its sitting and the
         // zone it was filed under all survive, or a re-reading would reshuffle the History tab as a
         // side effect of correcting a number. `unsourced` clears because we just read the source.

@@ -117,7 +117,13 @@ export function computeCombatReports(db: Database): CombatReports {
     const dps = ratio(f.stats.yourDealt, f.stats.durationSec, 1);
     const label = labelFor(f.stats);
     const cur = best.get(label);
-    if (!cur || dps > cur.dps) best.set(label, { label, yourDealt: f.stats.yourDealt, dps, at: f.stats.endedAt });
+    if (!cur || dps > cur.dps) {
+      // A record built off a fight with somebody unplaced is provisional the same way the fight
+      // itself is (ADR 0130) — `zones()`/`sessions()` already say so, and a personal best silently
+      // skipping that flag would present a figure that might move as though it were settled.
+      const unsettled = f.stats.unsettled?.length ? true : undefined;
+      best.set(label, { label, yourDealt: f.stats.yourDealt, dps, at: f.stats.endedAt, unsettled });
+    }
     // The label just computed for `best`, reused rather than a second `labelFor` call — only a new
     // object when the fresh label actually differs from the stored one.
     searchIndex.push(label === f.label ? f : { ...f, label });

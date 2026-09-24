@@ -11,6 +11,7 @@ import Sparkline from "./Sparkline";
 import AskValue from "./AskValue";
 import ZoneTag from "./ZoneTag";
 import { opponentOf } from "@/shared/damage-tree";
+import { isOwnedName } from "@/shared/combat-parser";
 import type { DamageAxis, DeathRecap, FightBest, FightStats, HealAxis, HpEstimate, StoredFight } from "@/shared/types";
 
 import { Empty, segCls, StatTile } from "./ui";
@@ -290,6 +291,18 @@ export default function DamagePanel() {
               title={`Previous best against ${opponent}: ${best.dps}/s on ${when(best.at)}`}
             >
               ★ Best DPS on {opponent} — {fightDps}/s
+              {/* The record being beaten came from a fight with somebody the log never placed, so
+                  it (and by extension "beating" it) is provisional the same way HighScoreBoard's
+                  own rows say theirs are (ADR 0130). */}
+              {best.unsettled && (
+                <span
+                  className="muted small"
+                  title="Provisional: the previous best came from a fight that had somebody the log never placed, so it may move. Digesting the log again applies whatever the log has since settled."
+                >
+                  {" "}
+                  ?
+                </span>
+              )}
             </p>
           )}
 
@@ -431,7 +444,13 @@ function petShareOfYours(window: FightStats): number {
   const mine = window.byCombatant.filter((c) => c.mine);
   const total = mine.reduce((n, c) => n + c.dealt, 0);
   if (!total) return 0;
-  return mine.filter((c) => c.name !== "You").reduce((n, c) => n + c.dealt, 0) / total;
+  // A merge resolves "You" into your real character name before pooling it, so a peer's own copy
+  // of your swing is recognized as the same one rather than a name they'd never independently
+  // write (ADR 0276). Once that's happened, "not literally You" no longer picks out just the pet —
+  // it picks out you too. `isOwnedName` (the log's own "<Owner>`s warder" shape) still does,
+  // regardless of which name the owner half resolved to.
+  const isPet = (name: string): boolean => (window.mergedFrom?.length ? isOwnedName(name) : name !== "You");
+  return mine.filter((c) => isPet(c.name)).reduce((n, c) => n + c.dealt, 0) / total;
 }
 
 /** Hit points every heal in the window would have restored but didn't, from its own cells. */

@@ -161,6 +161,24 @@ test("unsettled is recomputed fresh from the replay, not carried over stale from
   assert.deepEqual(merged.unsettled, ["Zeb"]);
 });
 
+test("startedAt/endedAt are never part of what a merge replaces, even when a peer's hit is earlier", () => {
+  // `combat-history.ts`'s `fightKey` identifies a stored fight by exactly these two fields plus its
+  // log file, on the assumption that re-reading the same log always reproduces the same boundary.
+  // A peer's data is live-only and never lands in that log — so if a merge could shift these, the
+  // very next re-read/re-import would key the same real fight differently than history already has
+  // it filed under, and file the same fight a second time instead of recognizing the one already there.
+  const mine: MergeSource = { name: "Kainos", hits: [hit({ amount: 20, at: at(5) })], heals: [] };
+  const bran: MergeSource = {
+    name: "Bran",
+    hits: [hit({ attacker: "Bran", amount: 30, at: at(0) })], // Bran engaged 5s before Kainos did
+    heals: [],
+  };
+  const merged = mergeFight(mine, [bran]);
+  assert.ok(merged);
+  assert.ok(!("startedAt" in merged));
+  assert.ok(!("endedAt" in merged));
+});
+
 test("a source at the recent-hits/heals cap is truncated — merging from it is refused, not risked", () => {
   // The cap (`MAX_RECENT_HITS`/`MAX_RECENT_HEALS`, `combat-stats.ts`) is a sliding window: once hit,
   // the *earliest* real hits are already gone from this array. A merge built from it would silently
