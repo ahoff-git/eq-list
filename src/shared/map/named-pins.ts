@@ -16,6 +16,14 @@
  * coordinate: it is already known to be about *this* zone, because it came from this zone's own
  * page.
  *
+ * **A mob nothing has ever been killed here needs its own page to be in era, not just placeable.**
+ * eqlwiki's `Category:Named Mobs` is unfiltered by era ([ADR 0265](../../../specs/decisions/0265-named-spawns-mark-themselves-on-the-map.md)),
+ * so it names mobs from content this server hasn't opened yet — the same class of noise the rest
+ * of the app already declines to show for items and spells
+ * ([ADR 0210](../../../specs/decisions/0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)).
+ * A kill is evidence the mob spawns here regardless of what its page says, so only the wiki-only
+ * half of a placement is what an out-of-era page declines.
+ *
  * Pure and DOM-free, like the rest of `src/shared/map` — tested in `electron/tests/named-pins.test.ts`.
  */
 import { mobKey, type MobKnowledge, type MobObservation } from "../mob-stats";
@@ -94,11 +102,17 @@ export function namedPins({ npcs = [], known = [], mine = [], wiki = {}, placed 
   for (const [key, name] of namedCandidates(npcs, known, mine)) {
     const pooled = bestPlaced(known, key);
     const yours = bestPlaced(mine, key);
+    const stated = wiki[name];
     const place: MobPlace | undefined = mobPlace({
       mine: yours?.area,
       pooled: pooled?.area,
       contributors: pooled?.contributors,
-      wiki: wiki[name],
+      // A kill outranks the page regardless, but a mob nothing has ever been observed killing here
+      // rests entirely on the page's stated coordinate — and that page can be tagged with an era
+      // this server hasn't opened, the same "out of era" the rest of the app already declines to
+      // show (ADR 0210). Filtered here rather than left for a toggle: a wiki-only mob from a closed
+      // era is exactly the noise ADR 0265 already warned the broad category would carry.
+      wiki: stated?.outOfEra ? undefined : stated,
     });
     // Nothing can place it: named, but genuinely unlocated. Say nothing rather than guess.
     if (!place) continue;

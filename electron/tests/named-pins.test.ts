@@ -126,6 +126,19 @@ test("a kill of your own outranks the page's coordinate", () => {
   assert.deepEqual([pin.y, pin.x], [100, -200]);
 });
 
+test("a named mob only the wiki can place is left off when its page is out of era", () => {
+  const wiki = { "Minotaur Lord": { zone: "Steamfont Mountains", loc: { y: 1555, x: -2410 }, outOfEra: true } };
+  assert.deepEqual(namedPins({ npcs: [{ name: "Minotaur Lord" }], wiki }), []);
+});
+
+test("a kill of your own still marks it even though the page is out of era", () => {
+  // The page could be stale or simply wrong about the era; a kill recorded here is direct evidence
+  // the mob spawns now, and outranks the page regardless (mobPlace's own ranking).
+  const wiki = { "Ghoul Lord": { zone: "Lower Guk", loc: { y: 1, x: 2 }, outOfEra: true } };
+  const [pin] = namedPins({ npcs: [{ name: "Ghoul Lord" }], known: [known("Ghoul Lord")], wiki });
+  assert.equal(pin.source, "yours");
+});
+
 test("only the named mobs this zone's kills can't place are worth asking the wiki about", () => {
   const npcs = [{ name: "Ghoul Lord" }, { name: "Zombie" }];
   assert.deepEqual(unplacedNamedMobs({ npcs, known: [known("Ghoul Lord")] }), ["Zombie"]);

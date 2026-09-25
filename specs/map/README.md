@@ -478,7 +478,10 @@ world coordinates, so a map knows where it is. See
   peers' > the wiki's stated `Location:` (`mobPlace()`) — **without** the hunt pin's zone-match gate
   on the wiki fallback, since a roster name is already known to be about this zone by construction;
   the accepted cost is a multi-instance named mob's page occasionally stating a different instance's
-  coordinate. A spot already drawn, by hand or by a hunt pin, isn't drawn twice. Drawn through the
+  coordinate. A mob placed only by the wiki declines when its own page is tagged out of era — the
+  same permanent flag the Spells and Items tabs badge by — since the category names content from
+  eras this server hasn't opened yet; a kill still outranks the tag regardless
+  ([ADR 0277](../decisions/0277-named-spawns-hide-a-wiki-only-out-of-era-page.md)). A spot already drawn, by hand or by a hunt pin, isn't drawn twice. Drawn through the
   same generic pin shape hunt pins proved out, with its own color/glyph and, since the category can
   put far more of these on one zone than a hunt list ever does, its own **smaller** size
   (`RenderPin.kind`, `loudStyle` in `MapPanel.tsx`) so a busy camp doesn't disappear under them.

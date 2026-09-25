@@ -313,6 +313,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0274: A fight is compared live with your party](./0274-a-fight-is-compared-live-with-your-party.md) — **superseded by 0275**; the zone/recency/party guess is replaced by a proven match
 - [0275: A shared swing proves the same fight](./0275-a-shared-swing-proves-the-same-fight.md) — **superseded by 0276**; a proven overlap is now pooled, not just compared
 - [0276: Overlapping fights are pooled, not only proven](./0276-overlapping-fights-are-pooled-not-only-proven.md)
+- [0277: Named spawns hide a wiki-only out-of-era page](./0277-named-spawns-hide-a-wiki-only-out-of-era-page.md)
 
 ## Open Questions
 

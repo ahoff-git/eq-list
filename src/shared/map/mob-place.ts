@@ -28,6 +28,8 @@ export interface WikiPlace {
   zone?: string;
   /** The stated coordinate, EQ y,x. */
   loc?: { y: number; x: number };
+  /** The mob's own page category flag — true if it's tagged with an era that isn't live yet. */
+  outOfEra?: boolean;
 }
 
 /** Who placed the mob. `pooled` is the first two together — your kills and theirs, as one sample. */

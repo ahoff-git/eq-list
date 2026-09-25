@@ -1610,7 +1610,9 @@ const NO_MOB_PLACES: Record<string, WikiPlace | undefined> = {};
 
 /**
  * Where each mob's **wiki page** says it stands — its stated spawn zone and coordinate
- * (`wikiPlace`), keyed by the name asked for.
+ * (`wikiPlace`), keyed by the name asked for. Carries the page's own `outOfEra` flag too, so a
+ * caller that only trusts the wiki for placement (`named-pins.ts`) can decline a mob whose sole
+ * evidence is a page tagged with an era this server hasn't opened.
  *
  * The third source a position can come from, and the only one that can place a mob you have never
  * killed ([ADR 0142](../../specs/decisions/0142-a-hunted-mob-marks-itself.md)) — which is exactly
@@ -1623,7 +1625,11 @@ export function useMobWikiPlaces(mobNames: string[]): Record<string, WikiPlace |
     async (a) =>
       Object.fromEntries(
         await Promise.all(
-          mobNames.map(async (mob) => [mob, wikiPlace((await a.wiki.getPage(mob))?.card)] as const),
+          mobNames.map(async (mob) => {
+            const page = await a.wiki.getPage(mob);
+            const place = wikiPlace(page?.card);
+            return [mob, place && page?.outOfEra ? { ...place, outOfEra: true } : place] as const;
+          }),
         ),
       ),
     NO_MOB_PLACES,
