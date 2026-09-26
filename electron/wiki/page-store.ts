@@ -33,7 +33,8 @@
  *
  * ## Exporting for the web snapshot
  *
- * `scripts/build-web-snapshot.mjs` publishes a static mirror of the wiki cache for the hosted site
+ * `scripts/build-web-snapshot.mjs` (and, on the same 6-hour cadence while the app is open,
+ * `web-snapshot-job.ts` — ADR 0278) publishes a static mirror of the wiki cache for the hosted site
  * (`src/lib/web/snapshot.ts` reads it with a plain `fetch()`), and that published format is still
  * the 256-bucket `.jsonl` layout — a public wire format with a browser-side reader on the other
  * end, not something to break just because the *live app's* internal storage changed underneath
@@ -353,9 +354,10 @@ export function createPageStore(db: Database, legacyDir: string): PageStore {
  * publishes for the hosted site's static reader (`src/lib/web/snapshot.ts`) — see the module
  * header. `pagesDestDir` is the bucket folder itself (e.g. `.../public/data/wiki-cache/pages`).
  *
- * Synchronous and stand-alone (no `PageStore` needed): a script calling this wants a finished
- * directory, not a running client, and it always runs against a database nothing else is writing
- * to at the same time.
+ * Synchronous and stand-alone (no `PageStore` needed): a caller wants a finished directory, not a
+ * running client. Originally only ever called by the CLI script against an otherwise-idle database;
+ * ADR 0278 also calls it from `web-snapshot-worker.ts`'s own read-only connection while the app (and
+ * its writable connection) is live — safe under WAL mode, same as `kill-observations.ts`'s (ADR 0246).
  */
 export function exportAsBuckets(db: Database, pagesDestDir: string): void {
   fs.mkdirSync(pagesDestDir, { recursive: true });

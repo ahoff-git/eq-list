@@ -314,6 +314,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0275: A shared swing proves the same fight](./0275-a-shared-swing-proves-the-same-fight.md) — **superseded by 0276**; a proven overlap is now pooled, not just compared
 - [0276: Overlapping fights are pooled, not only proven](./0276-overlapping-fights-are-pooled-not-only-proven.md)
 - [0277: Named spawns hide a wiki-only out-of-era page](./0277-named-spawns-hide-a-wiki-only-out-of-era-page.md)
+- [0278: The web snapshot refreshes only while the app is open](./0278-the-web-snapshot-refreshes-only-while-the-app-is-open.md)
 
 ## Open Questions
 

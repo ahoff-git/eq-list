@@ -31,7 +31,8 @@ import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";
 import { createKillLog, KILL_LOG_MIGRATIONS } from "./kill-log";
 import { createLootLog, LOOT_LOG_MIGRATIONS } from "./loot-log";
-import { openAppDatabase } from "./sqlite-store";
+import { appDatabaseFile, openAppDatabase } from "./sqlite-store";
+import { createWebSnapshotJob } from "./web-snapshot-job";
 import { createFactionLog, FACTION_LOG_MIGRATIONS } from "./faction-log";
 import { createFactionCorrections } from "./faction-corrections";
 import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction-cause";
@@ -450,6 +451,23 @@ if (!app.requestSingleInstanceLock()) {
     });
   } else {
     log.debug("update check skipped: not a packaged build");
+  }
+
+  // Keeps `public/data` refreshed for the web build (ADR 0278), on the app's own schedule instead
+  // of a Windows Scheduled Task that used to run regardless of whether the app was open. Dev-only —
+  // a packaged build has no repo checkout to publish into — and skipped under `npm run dev`, which
+  // already refreshes it on its own, much shorter cadence (`dev-snapshot-loop.mjs`).
+  let webSnapshotJob: ReturnType<typeof createWebSnapshotJob> | null = null;
+  if (!app.isPackaged && !process.env.EQL_DEV) {
+    const repoRoot = path.resolve(__dirname, "../..");
+    webSnapshotJob = createWebSnapshotJob({
+      userDataDir: userData,
+      dbFile: appDatabaseFile(userData),
+      outDir: path.join(repoRoot, "public/data"),
+      logDir: () => store.getSettings().logDir,
+      workerPath: path.join(__dirname, "web-snapshot-worker.js"),
+    });
+    webSnapshotJob.start();
   }
 
   let watchKey = "";
@@ -969,6 +987,7 @@ if (!app.requestSingleInstanceLock()) {
   // Don't lose the last pull on the way out: close the fight in progress, then get it
   // (and any debounced writes) to disk.
   app.on("before-quit", () => {
+    webSnapshotJob?.dispose();
     clearInterval(settleTimer);
     combat.flush();
     history.flush();

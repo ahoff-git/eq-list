@@ -1,11 +1,14 @@
 /**
- * ticker.ts — the default `setInterval`/`clearInterval` a sweep uses when a test hasn't supplied
- * its own.
+ * ticker.ts — the default `setInterval`/`clearInterval` (or `setTimeout`/`clearTimeout`) a sweep
+ * uses when a test hasn't supplied its own.
  *
  * Three trackers (`game-clock-tracker.ts`, `goal-tracker.ts`, `spawn-tracker.ts`) sweep on a plain
  * interval and each wrote the same pair of defaults for it — real timers, unref'd so a countdown is
  * never the reason the process stays up after a quit, with the seam left open for a test to inject
  * a fake clock instead and run an 8-hour goal or a night-long respawn in milliseconds.
+ *
+ * `realTimeout`/`realClearTimeout` are the same idea for a self-rescheduling one-shot timer
+ * (`web-snapshot-job.ts`) rather than a plain repeating sweep.
  */
 
 /** The real `setInterval`, unref'd. */
@@ -18,4 +21,16 @@ export function realInterval(fn: () => void, ms: number): unknown {
 /** The real `clearInterval`. */
 export function realClearInterval(handle: unknown): void {
   clearInterval(handle as NodeJS.Timeout);
+}
+
+/** The real `setTimeout`, unref'd. */
+export function realTimeout(fn: () => void, ms: number): unknown {
+  const t = setTimeout(fn, ms);
+  t.unref?.();
+  return t;
+}
+
+/** The real `clearTimeout`. */
+export function realClearTimeout(handle: unknown): void {
+  clearTimeout(handle as NodeJS.Timeout);
 }

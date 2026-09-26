@@ -57,12 +57,19 @@ export interface Migration {
  */
 export function openAppDatabase(userDataDir: string, migrations: readonly Migration[]): Database.Database {
   fs.mkdirSync(userDataDir, { recursive: true });
-  const file = path.join(userDataDir, "eqlist.db");
-  const db = new Database(file);
+  const db = new Database(appDatabaseFile(userDataDir));
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   migrate(db, migrations);
   return db;
+}
+
+/**
+ * Where the shared database file lives, for anything that needs to open its *own* connection to it
+ * rather than reuse `main.ts`'s (a worker thread, mainly — safe alongside it under WAL mode).
+ */
+export function appDatabaseFile(userDataDir: string): string {
+  return path.join(userDataDir, "eqlist.db");
 }
 
 /**
