@@ -618,9 +618,13 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
    */
   let factionsWarm: Promise<void> | null = null;
   function factionRows(): SharedItemPage[] {
-    factionsWarm ??= store.each((hit) => {
-      if (hit.page.kind === "faction") factionsHeld.set(hit.page.title, hit.page);
-    });
+    // Nobody awaits this walk, so a failure (e.g. the store closing mid-walk) must not become an
+    // unhandled rejection — same guard `writePack` uses for its own fire-and-forget write.
+    factionsWarm ??= store
+      .each((hit) => {
+        if (hit.page.kind === "faction") factionsHeld.set(hit.page.title, hit.page);
+      })
+      .catch((e: unknown) => log.warn("faction warm walk failed:", (e as Error).message));
     return [...factionsHeld.values()];
   }
 
