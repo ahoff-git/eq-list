@@ -185,10 +185,9 @@ export const CH = {
   adminSearch: "admin:search", // find a term across every store's records, not just one
   winOpenAdmin: "win:openAdmin",
   displaysList: "displays:list",
-  // update notification (rolling "latest" build; see ADR 0013)
-  updateCurrent: "update:current",
-  updateOpen: "update:open",
-  updateDismiss: "update:dismiss",
+  // auto-update (rolling "latest" build; see ADR 0013, ADR 0279)
+  updateStatus: "update:status",
+  updateRestart: "update:restart",
   // window control (invoke + send)
   winOpenMap: "win:openMap",
   mapOpenAt: "map:openAt",
@@ -295,7 +294,7 @@ export const CH = {
   damageOverlayChanged: "evt:damageOverlayChanged", // main → all: the damage meter was pinned, unpinned, or moved
   buffsChanged: "evt:buffsChanged", // main → all: a buff went up, lapsed, or a choice about one changed
   dataChanged: "evt:dataChanged", // main → all: stored data changed in bulk (a log was eaten, a store cleared)
-  updateAvailable: "evt:updateAvailable", // main → all: a newer build is published
+  updateStatusChanged: "evt:updateStatusChanged", // main → all: the auto-updater's state changed
 
   watcherStatusChanged: "evt:watcherStatus",
   zoneChanged: "evt:zone",

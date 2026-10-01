@@ -33,7 +33,7 @@ import type { LootLog } from "./loot-log";
 import type { FactionLog } from "./faction-log";
 import type { FactionCorrections } from "./faction-corrections";
 import { applyFactionCorrections } from "../src/shared/faction-correction";
-import type { UpdateChecker } from "./update-check";
+import type { AutoUpdater } from "./auto-update";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { PeerKillStore } from "./peer-kills";
 import type { PeerRespawnStore } from "./peer-respawns";
@@ -77,7 +77,7 @@ export interface IpcContext {
   factionLog: FactionLog;
   /** The player's own stated faction totals, layered onto `factionLog`'s standings on read (`faction-corrections.ts`). */
   factionCorrections: FactionCorrections;
-  updates: UpdateChecker;
+  updates: AutoUpdater;
   mobs: MobKnowledgeStore;
   /** Kill positions other players have shared, kept across sessions (`peer-kills.ts`). */
   peerKills: PeerKillStore;
@@ -844,19 +844,10 @@ function registerAppIpc(context: IpcContext): void {
     }));
   });
 
-  // ── update notification ──
-  // The renderer draws the banner; the URL/commit stay in the main process. `current` lets a
-  // tab that mounted after the check still catch the notice.
-  ipcMain.handle(CH.updateCurrent, () => {
-    const info = updates.latest();
-    return info ? { url: info.url, version: info.version } : null;
-  });
-  ipcMain.handle(CH.updateOpen, () => {
-    const info = updates.latest();
-    if (info && isGithubUrl(info.url)) void shell.openExternal(info.url);
-    updates.markSeen(); // acting on it counts as seen — don't nag for this build again
-  });
-  ipcMain.handle(CH.updateDismiss, () => updates.markSeen());
+  // ── auto-update ──
+  // The renderer only draws the state; electron-updater owns the download and install.
+  ipcMain.handle(CH.updateStatus, () => updates.status());
+  ipcMain.handle(CH.updateRestart, () => updates.restartAndInstall());
 
 }
 
@@ -1311,14 +1302,4 @@ function registerAdminIpc(context: IpcContext): void {
     return result;
   });
   ipcMain.handle(CH.adminSearch, (_e, term: string) => admin.search(term));
-}
-
-/** Only ever open a github.com https link — the release URL comes from the API, so pin the host. */
-function isGithubUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" && (u.hostname === "github.com" || u.hostname.endsWith(".github.com"));
-  } catch {
-    return false;
-  }
 }

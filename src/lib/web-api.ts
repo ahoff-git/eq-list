@@ -221,10 +221,9 @@ function createWebApi(): EqlApi {
     },
 
     update: {
-      current: async () => null,
-      onAvailable: () => noop,
-      open: async () => {},
-      dismiss: async () => {},
+      status: async () => ({ state: "idle" }),
+      onStatus: () => noop,
+      restart: async () => {},
     },
 
     watcher: {

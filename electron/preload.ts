@@ -103,10 +103,9 @@ const api: EqlApi = {
     recent: (bytes) => ipcRenderer.invoke(CH.logRecent, bytes),
   },
   update: {
-    current: () => ipcRenderer.invoke(CH.updateCurrent),
-    onAvailable: (cb) => on(CH.updateAvailable, cb),
-    open: () => ipcRenderer.invoke(CH.updateOpen),
-    dismiss: () => ipcRenderer.invoke(CH.updateDismiss),
+    status: () => ipcRenderer.invoke(CH.updateStatus),
+    onStatus: (cb) => on(CH.updateStatusChanged, cb),
+    restart: () => ipcRenderer.invoke(CH.updateRestart),
   },
   display: {
     list: () => ipcRenderer.invoke(CH.displaysList),

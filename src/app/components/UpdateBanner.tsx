@@ -1,48 +1,52 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { UpdateNotice } from "@/shared/types";
+import type { AutoUpdateStatus } from "@/shared/types";
 
 /**
- * A dismissible "newer build available" strip. The main process finds the update (the rolling
- * `latest` release's build number, only when it's higher than the running one) and owns the URL;
- * this just draws it. **Download** opens the release page, **✕** hides it — both tell main to stop
- * flagging this build, so the next newer one notifies but this one won't nag again.
+ * The auto-updater's own progress, when there's something worth showing. Main downloads a newer
+ * build in the background (electron-updater, ADR 0279) — this only ever surfaces the two states a
+ * person can act on or might wonder about: downloading (so a restart isn't a mystery slowdown) and
+ * ready (so they can apply it now rather than waiting for the next natural quit, when
+ * `autoInstallOnAppQuit` would install it anyway).
  */
 export default function UpdateBanner() {
-  const [notice, setNotice] = useState<UpdateNotice | null>(null);
+  const [status, setStatus] = useState<AutoUpdateStatus | null>(null);
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
 
   useEffect(() => {
     const a = api();
     if (!a) return;
-    // Catch an update found before this mounted, and any found after.
-    void a.update.current().then((n) => n && setNotice(n));
-    return a.update.onAvailable(setNotice);
+    void a.update.status().then(setStatus);
+    return a.update.onStatus(setStatus);
   }, []);
 
-  if (!notice) return null;
+  if (!status) return null;
+  if (status.state === "ready" && status.version === dismissedVersion) return null;
+
+  if (status.state === "downloading") {
+    return (
+      <div className="update-banner no-drag">
+        <span className="ub-dot" aria-hidden />
+        <span className="ub-text">Downloading EQ List update… {status.percent}%</span>
+      </div>
+    );
+  }
+
+  if (status.state !== "ready") return null;
 
   return (
     <div className="update-banner no-drag">
       <span className="ub-dot" aria-hidden />
-      <span className="ub-text">EQ List {notice.version} is available — newer than this build.</span>
+      <span className="ub-text">EQ List {status.version} is ready to install.</span>
       <span className="spacer" />
-      <button
-        className="btn sm primary"
-        onClick={() => {
-          void api()?.update.open();
-          setNotice(null);
-        }}
-      >
-        Download
+      <button className="btn sm primary" onClick={() => void api()?.update.restart()}>
+        Restart now
       </button>
       <button
         className="btn ghost sm"
-        title="Dismiss — you'll still be told about the next build"
-        onClick={() => {
-          void api()?.update.dismiss();
-          setNotice(null);
-        }}
+        title="It installs the next time you quit, either way"
+        onClick={() => setDismissedVersion(status.version)}
       >
         ✕
       </button>

@@ -1,10 +1,12 @@
 # 0034: Tell the user a newer build exists; don't install it for them
 
 ## Status
-Superseded by 0064
+Superseded by 0064, and by 0279
 
-Notify-with-a-link stands. Identity-by-commit, and the silent first baseline that went with it, do
-not — [0064](./0064-every-build-has-a-number.md) makes the identity a version and the test `>`.
+Identity-by-commit, and the silent first baseline that went with it, were replaced first —
+[0064](./0064-every-build-has-a-number.md) makes the identity a version and the test `>`.
+"Notify-with-a-link, no auto-install" stood on top of that until
+[0279](./0279-the-app-updates-itself.md) added the auto-updater this record deliberately deferred.
 
 ## Context
 

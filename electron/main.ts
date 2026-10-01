@@ -37,7 +37,8 @@ import { createFactionLog, FACTION_LOG_MIGRATIONS } from "./faction-log";
 import { createFactionCorrections } from "./faction-corrections";
 import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction-cause";
 import { lootRecord } from "../src/shared/loot-feed";
-import { createUpdateChecker } from "./update-check";
+import { autoUpdater } from "electron-updater";
+import { createAutoUpdater, type UpdaterLike } from "./auto-update";
 import { createMobKnowledge } from "./mob-knowledge";
 import { createPeerKills } from "./peer-kills";
 import { createPeerRespawns } from "./peer-respawns";
@@ -313,7 +314,10 @@ if (!app.requestSingleInstanceLock()) {
       resolvePendingFaction(timer);
     }
   }
-  const updates = createUpdateChecker(userData, app.getVersion());
+  // electron-updater's typings overload `on` per event with richer payloads than this app reads;
+  // `UpdaterLike` only needs the fields auto-update.ts actually uses, so the cast is deliberate —
+  // this is the one place real and fake `autoUpdater` meet.
+  const updates = createAutoUpdater(autoUpdater as unknown as UpdaterLike);
   const mobs = createMobKnowledge(userData, killLog);
   // Kept across sessions rather than held by whichever window happens to be open, so a room teaches
   // this install whether or not the map is up (see `peer-kills.ts`).
@@ -440,15 +444,17 @@ if (!app.requestSingleInstanceLock()) {
     broadcast,
   });
 
-  // Quietly ask whether a newer build has been published; the renderer shows a banner if so.
-  // Fire-and-forget and fail-safe — a slow or offline network never delays or breaks startup.
-  // Only a packaged build has a version CI stamped a build number into; a dev run reports the
-  // un-stamped `package.json` version, which every published build outranks, so it would always
-  // "have an update" and the banner would only ever be noise.
+  // Quietly ask whether a newer build has been published, and let electron-updater fetch and
+  // install it in the background; the renderer only shows progress once it's ready to restart.
+  // Only a packaged build has a version CI stamped a build number into and an `app-update.yml`
+  // electron-updater can read — a dev run has neither, so the check would only ever be noise.
+  let updateCheckTimer: ReturnType<typeof setInterval> | null = null;
   if (app.isPackaged) {
-    void updates.check().then((info) => {
-      if (info) broadcast(CH.updateAvailable, { url: info.url, version: info.version });
-    });
+    updates.onChange((status) => broadcast(CH.updateStatusChanged, status));
+    updates.check();
+    // The app is a long-running overlay — a launch-only check would miss a build for anyone who
+    // doesn't restart for days.
+    updateCheckTimer = setInterval(() => updates.check(), 6 * 60 * 60 * 1000);
   } else {
     log.debug("update check skipped: not a packaged build");
   }
@@ -989,6 +995,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", () => {
     webSnapshotJob?.dispose();
     clearInterval(settleTimer);
+    if (updateCheckTimer) clearInterval(updateCheckTimer);
     combat.flush();
     history.flush();
     xp.flush();

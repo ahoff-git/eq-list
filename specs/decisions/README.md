@@ -71,7 +71,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0031: An inferred bound has to be able to come back down](./0031-an-inferred-bound-must-be-able-to-fall.md)
 - [0032: Remove the retained-but-dead overlay/click-through surface](./0032-remove-dead-overlay-surface.md)
 - [0033: Eating a log is idempotent — every kill and drop is keyed by its line](./0033-eating-a-log-is-idempotent.md) — *extended to fights by 0055, narrowed by 0128*
-- [0034: Tell the user a newer build exists; don't install it for them](./0034-update-notification.md) — **superseded by 0064**; notify-with-a-link stands
+- [0034: Tell the user a newer build exists; don't install it for them](./0034-update-notification.md) — **superseded by 0064** (identity/versioning) and **0279** (notify-only)
 - [0035: Cast alerts get their own click-through overlay window, over the game](./0035-cast-alert-overlay-window.md)
 - [0036: A fight ends on a death, not on a lull](./0036-a-fight-ends-on-death-not-a-lull.md)
 - [0037: A zone is one place; its layers are a user choice, not a log fact](./0037-one-zone-many-layers.md) — **superseded by 0042**; the `layer` field survives as 0040's floors
@@ -315,6 +315,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0276: Overlapping fights are pooled, not only proven](./0276-overlapping-fights-are-pooled-not-only-proven.md)
 - [0277: Named spawns hide a wiki-only out-of-era page](./0277-named-spawns-hide-a-wiki-only-out-of-era-page.md)
 - [0278: The web snapshot refreshes only while the app is open](./0278-the-web-snapshot-refreshes-only-while-the-app-is-open.md)
+- [0279: The app updates itself](./0279-the-app-updates-itself.md)
 
 ## Open Questions
 

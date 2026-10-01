@@ -3278,13 +3278,14 @@ export interface LogImportResult {
   trimmed: number;
 }
 
-/** What the renderer needs to show "a newer build is available" (see `electron/update-check.ts`). */
-export interface UpdateNotice {
-  /** The release page to open. */
-  url: string;
-  /** The published build's version — already established as newer than the running one. */
-  version: string;
-}
+/** The auto-updater's state, as the renderer sees it (see `electron/auto-update.ts`, ADR 0279). */
+export type AutoUpdateStatus =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "available"; version: string }
+  | { state: "downloading"; percent: number }
+  | { state: "ready"; version: string }
+  | { state: "error"; message: string };
 
 // ─── Preload bridge (window.eql) ────────────────────────────────────────────
 
@@ -3606,16 +3607,14 @@ export interface EqlApi {
      */
     recent(bytes?: number): Promise<LogTail>;
   };
-  /** "A newer build is out" notification (rolling `latest` release; no auto-updater). */
+  /** Auto-update (rolling `latest` release; downloads and installs itself, ADR 0279). */
   update: {
-    /** The newer build found this session, or null — for a tab mounted after the check ran. */
-    current(): Promise<UpdateNotice | null>;
-    /** A newer build was just found (for a tab already mounted). */
-    onAvailable(cb: (notice: UpdateNotice) => void): Unsubscribe;
-    /** Open the release page in the browser and stop flagging this build. */
-    open(): Promise<void>;
-    /** Dismiss: stop flagging this build (the next newer one still notifies). */
-    dismiss(): Promise<void>;
+    /** The updater's current state — for a tab mounted after it changed. */
+    status(): Promise<AutoUpdateStatus>;
+    /** The state changed (for a tab already mounted). */
+    onStatus(cb: (status: AutoUpdateStatus) => void): Unsubscribe;
+    /** Quit and run the already-downloaded installer. */
+    restart(): Promise<void>;
   };
   watcher: {
     status(): Promise<WatcherStatus>;
