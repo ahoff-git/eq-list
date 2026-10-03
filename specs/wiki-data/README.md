@@ -360,6 +360,40 @@ shopping list.
 - `electron/wiki/index.ts` — combines these behind `search()` / `searchZones()` /
   `questsByZone()` / `getPage()`, with an on-disk cache (the `wiki_pages` table in `eqlist.db`, plus
   the sidecar index/harvest files still under `userData/wiki-cache`) and stale-on-error fallback.
+- **A second consumer, outside the app entirely** — `scripts/mcp-server.mjs` puts this same client
+  behind an MCP server for external clients (Claude Desktop, Claude Code, …), the same way
+  `build-web-snapshot.mjs`/`build-travel-graph.mjs` already construct one from a standalone script.
+  Read-only in effect: every tool it exposes maps onto one of the methods above, never `harvest`,
+  `items`/`spells`/`factions.accept`, or `joinRoom`.
+  - **Every UI filter field is a tool parameter, not a second copy of "what matches."**
+    `list_item_catalogue`/`list_spell_catalogue` call `searchItems`/`searchSpells` from
+    `item-search.ts`/`spell-search.ts` directly, over the exact rows `catalogueJson()`/
+    `spellCatalogueJson()` already built — so a facet, a level band, a stat floor, the era toggle, a
+    sort column all filter identically to the Items/Spells tab, because it's the same predicate, not
+    a reimplementation that could drift from it (facets, the level-overlap-not-containment rule, an
+    unplaced item always passing a level band, a silent card failing a stat floor — all exactly as
+    documented above). `item_facet_options`/`list_spell_classes` expose `facetOptions`/`classOptions`
+    so a caller can discover the real, exact-match values (facet matching is exact, not fuzzy) instead
+    of guessing one blind.
+  - **Paged, not dumped whole** (`limit`/`offset`, default 50 rows) — measured against a real
+    tool-calling model, the unpaginated ~7MB item catalogue simply timed out a small local model's
+    context, a risk this resolves. `total` reports the filtered count regardless of page size.
+  - **Era defaults match each real tab's own default**: `list_item_catalogue`/`list_spell_catalogue`
+    default `hideOutOfEra` **on** (`NO_CRITERIA`'s default); `search_wiki`/`search_zones`/
+    `quests_by_zone` default it **off**, since the Search tab's own `hideOutOfEra` setting defaults to
+    `false` and is applied client-side there — this just moves the same toggle server-side rather than
+    leaving a caller to post-filter on `SearchResult.outOfEra` itself. `search_factions` takes no era
+    param, matching the Search tab, which doesn't filter faction suggestions by era either.
+  - **The argument-shaping is a tested black box, not glue inside the entrypoint** —
+    `src/shared/mcp-catalogue.ts` (the `"(none)"` sentinel translation, pagination, the era filter),
+    unit-tested in `electron/tests/mcp-catalogue.test.ts`; the tool wiring itself (does a schema accept
+    what it promises, does a handler call the right function) is covered end-to-end, over a real
+    spawned process, in `electron/tests/mcp-server.test.ts` — see [testing](../testing/README.md).
+  - **`--data-dir <path>`** points the server at any profile folder instead of whichever one
+    `appDataDirs()` finds first — mainly what makes the above test hermetic (a temp fixture rather than
+    this machine's real cache), operationally useful for the same reason any of this app's other
+    multi-profile support is.
+  See [ADR 0280](../decisions/0280-an-mcp-server-exposes-the-wiki-cache-read-only.md).
 - **Out-of-era flagging** — `fetchOutEraCategorySet` reads `Template:PageEra` (with a
   fallback era list) to learn which era categories aren't live. `getPage` flags the
   opened page (`WikiPage.outOfEra`), and search/quest results are flagged too:
@@ -484,4 +518,5 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
 [ADR 0003](../decisions/0003-eqlwiki-runtime-data-source.md) ·
 [ADR 0124](../decisions/0124-lucy-is-a-second-opinion.md) ·
 [ADR 0192](../decisions/0192-factions-ride-their-own-wiki-pages.md) ·
-[ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)
+[ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md) ·
+[ADR 0280](../decisions/0280-an-mcp-server-exposes-the-wiki-cache-read-only.md)

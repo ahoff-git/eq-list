@@ -776,6 +776,28 @@ unit-tested.
   `log-watcher` against a temp eqlog: it asserts only newly-appended lines are
   emitted (backlog/chatter ignored) and that truncation/rotation resets cleanly.
   Timing-based (500ms poll), so it uses short real-time waits.
+- `src/shared/mcp-catalogue.ts` → `electron/tests/mcp-catalogue.test.ts` (the pure argument-shaping
+  `scripts/mcp-server.mjs`'s catalogue tools need — [ADR 0280](../decisions/0280-an-mcp-server-exposes-the-wiki-cache-read-only.md)).
+  Three small, easy-to-get-backwards rules: the facet picker's own `"(none)"` label is translated to
+  `item-search.ts`'s real sentinel, and only that exact label — a zone that merely contains the word
+  "none" must pass through untouched; a page's `total` always counts the filtered set, never the page
+  (including past the end, which is an empty page rather than an error); and an era filter leaves a
+  result with **no** `outOfEra` field alone rather than guessing — "never checked" isn't evidence of
+  "in era."
+- **Integration test** — `electron/tests/mcp-server.test.ts` drives the real `scripts/mcp-server.mjs`
+  through the actual MCP protocol: a spawned process, a `--data-dir` temp profile, the SDK's own
+  `Client`. What a pure unit test of `mcp-catalogue.ts` can't reach is the *wiring* — does a tool's zod
+  schema actually accept what its description promises, does the handler call the right
+  `item-search.ts`/`spell-search.ts` function with the right shape. It already caught one real bug this
+  way: `z.record(z.enum(StatKey), z.number())` demands *every* key be present, so a one-stat `mins`
+  object failed validation outright until it was rewritten as `z.partialRecord`, which is now a pinned
+  regression case. Network is cut for the whole spawned process (`--import` a preload that rejects
+  every `fetch`) — the one thing worth knowing if this suite is ever extended: the **seeding** step
+  (an in-process `createWikiClient`, built before the child is ever spawned) needs the same stub, or
+  its own construction-time index warm-up races a real fetch against the fixture files and can
+  overwrite them before the child ever reads them. `quests_by_zone` has no on-disk cache to seed
+  (`zoneQuestsCache` is in-memory only, per-client), so its test pins the *offline* contract instead:
+  an unreachable wiki is an empty list, never a hang or a throw.
 - **Runner**: Node's built-in test runner, no extra dependency. `npm test` compiles
   the Electron/shared TS (`tsconfig.electron.json`) then runs
   `node --test "dist-electron/electron/tests/**/*.test.js"`. Needs **Node 22+**

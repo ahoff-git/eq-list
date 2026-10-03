@@ -128,6 +128,13 @@ in the main process and all UI in the renderer.
   `constants.ts` (the numbers both processes have to agree on — the scale ranges, and the opacity floor
   the renderer bounds a slider with and main clamps IPC against).
 
+- **`scripts/mcp-server.mjs`** — a standalone MCP server over the wiki cache, for MCP clients
+  (Claude Desktop, Claude Code, etc.) rather than this app's own windows. Same shape as
+  `build-web-snapshot.mjs`/`build-travel-graph.mjs`: a plain Node process, no Electron dependency,
+  built on the compiled `electron/wiki/index.ts` client reading the real shared `eqlist.db`. Data
+  only — no tool it registers can reach a window, a setting, or the shopping list. See
+  [ADR 0280](../decisions/0280-an-mcp-server-exposes-the-wiki-cache-read-only.md).
+
 ## Data flow
 - Renderer → main: `window.eql.*` → `ipcRenderer.invoke` → `ipcMain.handle` → store/wiki/watcher.
 - Main → renderer (events): store/watcher emit → `main.ts` broadcasts to every window →
@@ -149,4 +156,5 @@ in the main process and all UI in the renderer.
 [log-watching](../log-watching/README.md) · [wiki-data](../wiki-data/README.md) ·
 [lucy-data](../lucy-data/README.md) ·
 [overlay-ui](../overlay-ui/README.md) · [ADR 0002](../decisions/0002-electron-shell-over-nextjs.md) ·
-[ADR 0005](../decisions/0005-renderer-static-export-and-app-protocol.md)
+[ADR 0005](../decisions/0005-renderer-static-export-and-app-protocol.md) ·
+[ADR 0280](../decisions/0280-an-mcp-server-exposes-the-wiki-cache-read-only.md)

@@ -29,6 +29,7 @@
     "dist": "npm run build && electron-builder",
     "rebuild:electron": "node scripts/rebuild-native-electron.mjs",
     "rebuild:node": "node scripts/rebuild-native-node.mjs",
+    "mcp": "node scripts/mcp-server.mjs",
     "lint": "next lint",
     "sim": "node scripts/replay-log.mjs",
     "zones:expansions": "node scripts/fetch-zone-expansions.mjs",
@@ -52,6 +53,7 @@
     "@awari/transport-peerjs": "^0.0.6",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@mui/material": "^9.4.0",
     "@mui/x-data-grid": "^9.13.0",
     "better-sqlite3": "^12.11.1",
@@ -60,7 +62,8 @@
     "node-html-parser": "^7.0.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

@@ -316,6 +316,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0277: Named spawns hide a wiki-only out-of-era page](./0277-named-spawns-hide-a-wiki-only-out-of-era-page.md)
 - [0278: The web snapshot refreshes only while the app is open](./0278-the-web-snapshot-refreshes-only-while-the-app-is-open.md)
 - [0279: The app updates itself](./0279-the-app-updates-itself.md)
+- [0280: An MCP server exposes the wiki cache, read-only](./0280-an-mcp-server-exposes-the-wiki-cache-read-only.md)
 
 ## Open Questions
 
