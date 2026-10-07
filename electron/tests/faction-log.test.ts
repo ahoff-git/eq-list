@@ -601,6 +601,59 @@ test("recheckDialogueCauses can add a quest to a hit that had none, once the cac
   assert.deepEqual(record.causedBy?.kind === "dialogue" ? record.causedBy.quests : undefined, ["Shovel of Ponz"]);
 });
 
+// ─── Promoting a hit that resolved to no cause at all, once the cache catches up (ADR 0282) ─────
+
+test("recheckDialogueCauses promotes a null hit to a dialogue cause once a matching quest giver is cached", () => {
+  // Exactly the ADR 0281 gap: the dialogue line was seen, nothing matched at the time, and the whole
+  // hit used to carry no trace that a conversation ever happened nearby. Now it does.
+  const l = freshLog();
+  l.add({
+    ...hit("Agents of Mistmoore", 1, 5, "raised"),
+    unmatchedDialogue: { npc: "Vira", text: "Well done.", gapSec: 2 },
+  });
+  assert.equal(l.recent()[0].causedBy, undefined, "starts out uncaused, same as before this feature existed");
+
+  const result = l.recheckDialogueCauses({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
+  assert.deepEqual(result, { checked: 1, changed: 1 });
+
+  const [record] = l.recent();
+  assert.deepEqual(record.causedBy, {
+    kind: "dialogue",
+    npc: "Vira",
+    text: "Well done.",
+    gapSec: 2,
+    quests: ["Shovel of Ponz"],
+    questsMatched: false,
+  });
+  // Promoted — nothing left to retry, so the unmatched context is gone, not kept alongside the cause.
+  assert.equal(record.unmatchedDialogue, undefined);
+});
+
+test("recheckDialogueCauses leaves a null hit's unmatched context in place when the cache still doesn't explain it", () => {
+  const l = freshLog();
+  l.add({
+    ...hit("Clan Runnyeye", 1, 5, "raised"),
+    unmatchedDialogue: { npc: "A goblin lookout", text: "To arms!", gapSec: 2 },
+  });
+  const result = l.recheckDialogueCauses({ questGiver: () => [], isMob: () => true });
+  assert.deepEqual(result, { checked: 1, changed: 0 }, "still nothing to find — not a change");
+
+  const [record] = l.recent();
+  assert.equal(record.causedBy, undefined);
+  // Kept, not dropped — a later launch, with a bigger cache still, gets another chance at it.
+  assert.deepEqual(record.unmatchedDialogue, { npc: "A goblin lookout", text: "To arms!", gapSec: 2 });
+});
+
+test("recheckDialogueCauses never touches a hit with no dialogue line nearby at all", () => {
+  // The real floor ADR 0281 measured (193 of 417): no kill, no dialogue, nothing to carry forward —
+  // this hit was never even a candidate, unlike the 185+39 that had a line nearby.
+  const l = freshLog();
+  l.add(lowered("Agents of Mistmoore", 1, -3)); // no causedBy, no unmatchedDialogue
+  const result = l.recheckDialogueCauses({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
+  assert.deepEqual(result, { checked: 0, changed: 0 }, "nothing was ever stored for it, so there's nothing to check");
+  assert.equal(l.recent()[0].causedBy, undefined);
+});
+
 test("recheckDialogueCauses never touches a kill-caused hit", () => {
   const l = freshLog();
   l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));

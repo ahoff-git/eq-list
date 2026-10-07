@@ -194,19 +194,19 @@ everything else, so this list can stay short enough to read:
      a narrow window, with nothing else said in it), so it's a real but low-odds edge case rather than
      something worth narrowing the window against on its own; accepted as a known, stated limitation
      (ADR 0220) rather than solved. Worth re-checking if a real log ever shows it actually happening.
-  3. **A hit that resolves to no cause never gets a second look, and ADR 0281 put a real number on
-     what that costs.** Of 417 kill-unexplained hits, 185 (44%) have a dialogue line nearby *and* a
-     quest-giver/dialogue the wiki cache holds *today* — turn-ins this app's own cache has grown enough
-     to explain, every one of them still sitting uncaused because `recheckDialogueCauses`
-     (`electron/faction-log.ts`) only ever revisits a hit that **already** carries a dialogue guess
-     (`WHERE caused_by_kind = 'dialogue'`), never one that resolved to nothing at all — and nothing
-     persists the npc/text a null hit saw, so there's nothing to recheck even if it did. Closing this
-     needs `guess()` (`src/shared/faction-cause.ts`) to carry that unmatched context forward into the
-     stored record and `recheckDialogueCauses`'s query widened to consider it — a real schema change
-     and a scope decision (every null hit, forever? bounded how?), deliberately left unbuilt by ADR 0281.
-     Only **39 (9%)** of the 417 name a giver this cache has never fetched at all (ADR 0221/0223's
-     already-known limit), and **193 (46%)** are the real floor — no kill, no dialogue, nothing nearby
-     either way.
+  3. ~~**A hit that resolves to no cause never gets a second look.**~~ **Closed** —
+     [ADR 0282](./decisions/0282-an-unmatched-dialogue-line-is-kept-to-retry.md). `guess()`
+     (`src/shared/faction-cause.ts`) now carries a dialogue line forward as `FactionRecord.unmatchedDialogue`
+     whenever one was in window but named no quest, instead of discarding it the instant nothing
+     matched; `faction_hits` gained three nullable columns to hold it (`unmatched_npc`/`unmatched_text`/
+     `unmatched_gap_sec`, migration version 10); and `recheckDialogueCauses`'s query widened to also pick
+     up a hit with `caused_by_kind IS NULL` and an unmatched line on record, promoting it to a real
+     `dialogue` cause the moment `questsForSpeaker` agrees. Deliberately scoped to only the hits that
+     actually saw a dialogue line nearby (the 185+39 of 20,571 ADR 0281 measured), never "every null hit,
+     forever" — a hit with nothing nearby at all stores nothing new and is untouched by the widened
+     query, the same floor ADR 0281 already named. **39 (9%)** of the original 417 still name a giver the
+     cache has never fetched at all (ADR 0221/0223's already-known limit) and simply keep retrying every
+     launch; **193 (46%)** remain the real floor — no kill, no dialogue, nothing nearby either way.
 
   Once (1) is settled, the **pooled** half ADR 0193 originally asked for is still open on top of it: a
   `FactionObservation` store mirroring `mob-knowledge.ts`/`contributions.ts` exactly (own

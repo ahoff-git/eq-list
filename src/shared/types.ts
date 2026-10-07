@@ -287,6 +287,17 @@ export type FactionCause =
 /** A faction hit plus the ledger's own best guess at what caused it (`FactionCause`). */
 export interface FactionRecord extends FactionEvent {
   causedBy?: FactionCause;
+  /**
+   * A line of NPC (or possibly player) dialogue was noted within `DIALOGUE_WINDOW_SEC` of this hit,
+   * but `questsForSpeaker` named no quest for it at the time — ADR 0282's answer to the gap ADR 0281
+   * measured: without this, that npc/text is simply lost, and a hit like this can never be revisited
+   * once the wiki's quest-giver cache grows enough to explain it. Carries exactly what a live guess
+   * would have needed (`questsForSpeaker(npc, text, deps)`), so `recheckDialogueCauses` can re-ask the
+   * same question later without a second implementation of the match. Only ever set when `causedBy`
+   * is absent — the moment a cause exists (promoted, or guessed some other way), there's nothing left
+   * to retry and this is cleared.
+   */
+  unmatchedDialogue?: { npc: string; text: string; gapSec: number };
 }
 
 /**
