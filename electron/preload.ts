@@ -105,6 +105,7 @@ const api: EqlApi = {
   update: {
     status: () => ipcRenderer.invoke(CH.updateStatus),
     onStatus: (cb) => on(CH.updateStatusChanged, cb),
+    check: () => ipcRenderer.invoke(CH.updateCheck),
     restart: () => ipcRenderer.invoke(CH.updateRestart),
   },
   display: {

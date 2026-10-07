@@ -67,7 +67,9 @@ export function createAutoUpdater(impl: UpdaterLike): AutoUpdater {
   impl.on("download-progress", (progress) => set({ state: "downloading", percent: Math.round(progress.percent) }));
   impl.on("update-downloaded", (info) => set({ state: "ready", version: info.version }));
   impl.on("error", (err) => {
-    log.debug("update check failed:", err.message);
+    // warn, not debug: a broken feed (bad URL, rate limit, offline) must show up in the debug
+    // log by default, or "it's just not updating" has no trail to diagnose from.
+    log.warn("update check failed:", err.message);
     set({ state: "error", message: err.message });
   });
 
@@ -80,7 +82,7 @@ export function createAutoUpdater(impl: UpdaterLike): AutoUpdater {
     check() {
       if (status.state === "checking" || status.state === "downloading") return;
       void impl.checkForUpdates().catch((err: Error) => {
-        log.debug("update check failed:", err.message);
+        log.warn("update check failed:", err.message);
         set({ state: "error", message: err.message });
       });
     },

@@ -1891,6 +1891,8 @@ export interface AppInfo {
   hotkeys: HotkeyInfo[];
   /** Path to the debug log file (see app.openLog). */
   logFile: string;
+  /** The running build's version (`app.getVersion()`), so Settings can show what's installed. */
+  version: string;
 }
 
 // ─── Shopping list ──────────────────────────────────────────────────────────
@@ -3613,6 +3615,8 @@ export interface EqlApi {
     status(): Promise<AutoUpdateStatus>;
     /** The state changed (for a tab already mounted). */
     onStatus(cb: (status: AutoUpdateStatus) => void): Unsubscribe;
+    /** Ask the feed right now, instead of waiting for the next scheduled check. */
+    check(): Promise<void>;
     /** Quit and run the already-downloaded installer. */
     restart(): Promise<void>;
   };

@@ -2307,6 +2307,7 @@ button {
 }
 .setting label { font-weight: 500; }
 .setting .hint { font-size: 12px; color: var(--text-dim); }
+.setting .hint.bad { color: var(--bad); }
 
 /* ── shortcuts / help ────────────────────────────────────────── */
 .hotkeys { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }

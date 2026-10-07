@@ -187,6 +187,7 @@ export const CH = {
   displaysList: "displays:list",
   // auto-update (rolling "latest" build; see ADR 0013, ADR 0279)
   updateStatus: "update:status",
+  updateCheck: "update:check",
   updateRestart: "update:restart",
   // window control (invoke + send)
   winOpenMap: "win:openMap",

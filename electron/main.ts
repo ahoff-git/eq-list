@@ -10,7 +10,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { registerAppProtocolScheme, handleAppProtocol } from "./protocol";
 import { createStore } from "./store";
-import { setAppVersion } from "./json-store";
+import { setAppVersion, currentAppVersion } from "./json-store";
 import { createWikiClient } from "./wiki";
 import { WIKI_PAGE_MIGRATIONS } from "./wiki/page-store";
 import { createLucyClient } from "./lucy";
@@ -336,7 +336,7 @@ if (!app.requestSingleInstanceLock()) {
 
   let currentZone: string | null = null;
   let currentLoc: LocEvent | null = null;
-  let appInfo: AppInfo = { hotkeys: [], logFile };
+  let appInfo: AppInfo = { hotkeys: [], logFile, version: currentAppVersion() };
 
   syncDebugFlag(store.getSettings());
   // So a window created from anywhere — the tray, the hotkey, a deep link, a search hand-off — opens
@@ -909,6 +909,7 @@ if (!app.requestSingleInstanceLock()) {
   if (!lookupReg) log.warn("could not register lookup hotkey:", LOOKUP_HOTKEY.accelerator);
   appInfo = {
     logFile,
+    version: currentAppVersion(),
     hotkeys: [
       { action: "Show / hide window", label: OVERLAY_HOTKEY.label, registered: overlayReg },
       { action: "Screengrab item lookup", label: LOOKUP_HOTKEY.label, registered: lookupReg },

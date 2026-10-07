@@ -223,6 +223,7 @@ function createWebApi(): EqlApi {
     update: {
       status: async () => ({ state: "idle" }),
       onStatus: () => noop,
+      check: async () => {},
       restart: async () => {},
     },
 
@@ -381,7 +382,7 @@ function createWebApi(): EqlApi {
     },
 
     app: {
-      info: async () => ({ hotkeys: [], logFile: "" }),
+      info: async () => ({ hotkeys: [], logFile: "", version: "" }),
       openLog: async () => {},
       dataHealth: async () => [],
       onDataChanged: () => noop,

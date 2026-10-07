@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppInfo, useCapabilities, useSettings } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
@@ -8,7 +8,7 @@ import SelfCheck from "./SelfCheck";
 import DataHealth from "./DataHealth";
 import { percent } from "@/shared/format";
 import { CheckField } from "./ui";
-import type { DeepPartial, Settings } from "@/shared/types";
+import type { AutoUpdateStatus, DeepPartial, Settings } from "@/shared/types";
 
 /**
  * Log location, match strictness, overlay look, and the debug toggle.
@@ -156,6 +156,8 @@ export default function SettingsPanel() {
         </span>
       </div>
 
+      {capabilities.update && <UpdateSettings version={info?.version} />}
+
       {capabilities.shortcuts && (
         <div className="setting">
           <label>Shortcuts</label>
@@ -201,6 +203,63 @@ export default function SettingsPanel() {
 
 function screengrabLabel(info: ReturnType<typeof useAppInfo>): string {
   return info?.hotkeys.find((h) => /screengrab/i.test(h.action))?.label ?? "Ctrl/Cmd+Shift+L";
+}
+
+/** Human text for each `AutoUpdateStatus` — what `UpdateBanner` doesn't say, because here nothing is too quiet to show. */
+function updateStatusText(status: AutoUpdateStatus | null): string {
+  if (!status) return "—";
+  switch (status.state) {
+    case "idle":
+      return "Up to date.";
+    case "checking":
+      return "Checking for updates…";
+    case "available":
+      return `Update ${status.version} found — downloading…`;
+    case "downloading":
+      return `Downloading ${status.percent}%…`;
+    case "ready":
+      return `${status.version} downloaded — restart to install (or it installs next time you quit).`;
+    case "error":
+      return `Update check failed: ${status.message}`;
+  }
+}
+
+/**
+ * Installed version plus the auto-updater's own state, spelled out — `UpdateBanner` stays quiet
+ * until there's something to act on, which made a broken feed look identical to "no update
+ * available" (ADR 0279). Here every state gets a line, including `error`, and a button to ask
+ * again on the spot rather than waiting for the six-hourly timer.
+ */
+function UpdateSettings({ version }: { version: string | undefined }) {
+  const [status, setStatus] = useState<AutoUpdateStatus | null>(null);
+
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    void a.update.status().then(setStatus);
+    return a.update.onStatus(setStatus);
+  }, []);
+
+  const busy = status?.state === "checking" || status?.state === "downloading";
+  // A newer build has already been downloaded — no need to wait for the next ordinary quit.
+  const ready = status?.state === "ready";
+
+  return (
+    <div className="setting">
+      <label>Version{version ? ` — ${version}` : ""}</label>
+      <span className={`hint${status?.state === "error" ? " bad" : ""}`}>{updateStatusText(status)}</span>
+      <div className="row" style={{ marginTop: 6 }}>
+        <button className="btn" disabled={busy} onClick={() => void api()?.update.check()}>
+          Check for updates
+        </button>
+        {ready && (
+          <button className="btn primary" onClick={() => void api()?.update.restart()}>
+            Update now
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**

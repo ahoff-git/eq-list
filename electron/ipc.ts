@@ -847,6 +847,7 @@ function registerAppIpc(context: IpcContext): void {
   // ── auto-update ──
   // The renderer only draws the state; electron-updater owns the download and install.
   ipcMain.handle(CH.updateStatus, () => updates.status());
+  ipcMain.handle(CH.updateCheck, () => updates.check());
   ipcMain.handle(CH.updateRestart, () => updates.restartAndInstall());
 
 }
