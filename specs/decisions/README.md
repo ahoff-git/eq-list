@@ -317,6 +317,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0278: The web snapshot refreshes only while the app is open](./0278-the-web-snapshot-refreshes-only-while-the-app-is-open.md)
 - [0279: The app updates itself](./0279-the-app-updates-itself.md)
 - [0280: An MCP server exposes the wiki cache, read-only](./0280-an-mcp-server-exposes-the-wiki-cache-read-only.md)
+- [0281: Three seconds and point five were already right](./0281-three-seconds-and-point-five-were-already-right.md)
 
 ## Open Questions
 
