@@ -368,6 +368,84 @@ function emptySpell(): SpellTally {
 }
 
 /**
+ * Everything a window would have tallied for one not-yet-placed name, so a later proof can merge
+ * it in without re-reading the log ([ADR 0127](../specs/decisions/0127-an-unknown-name-is-held-not-dropped.md)
+ * step 2). Mirrors the shape of the real structures it stands in for — a per-spell tally, a
+ * per-invocation tally, a run of sparkline samples — so merging is just adding one of these into
+ * the real thing once the name is decided. One per doubtful name, not one per name ever seen: it's
+ * created the first time a window needs it and dropped the moment `resolveHeld` settles that name,
+ * mine or not — bounded the same way `doubted` is.
+ *
+ * Not every record-time bake gets one. `castRepertoire`, `pending` and `lastLanding` are gates that
+ * interpret the *next* event, not totals `summarize` re-reads — see the note on `resolveHeld`.
+ */
+interface Held {
+  spells: Map<string, SpellTally>;
+  invocations: Map<string, InvocationTally>;
+  buckets: { at: number; amount: number }[];
+}
+
+function emptyHeld(): Held {
+  return { spells: new Map(), invocations: new Map(), buckets: [] };
+}
+
+/** Fetch-or-create a held per-spell tally inside a map keyed by spell name — the held mirror of `spell()`. */
+function heldSpellTally(spells: Map<string, SpellTally>, spell: string): SpellTally {
+  let t = spells.get(spell);
+  if (!t) spells.set(spell, (t = emptySpell()));
+  return t;
+}
+
+/** Fold `src`'s numbers into `dst` — the held mode tally's arithmetic landing in the real one. */
+function addModeTally(dst: ModeTally, src: ModeTally): void {
+  dst.casts += src.casts;
+  dst.lands += src.lands;
+  dst.damage += src.damage;
+  dst.healed += src.healed;
+  dst.castMs += src.castMs;
+  dst.timed += src.timed;
+  dst.hits += src.hits;
+  dst.misses += src.misses;
+  dst.maxHit = Math.max(dst.maxHit, src.maxHit);
+  dst.invocationHealed += src.invocationHealed;
+  dst.procs += src.procs;
+  dst.procDamage += src.procDamage;
+}
+
+/** Fold every held spell's numbers into the real spell table — additive, like everything here: a
+ * doubtful name's figures are real figures that were merely waiting on whose they were, not a
+ * second opinion that might need to replace the first. */
+function addSpellTally(dst: SpellTally, src: SpellTally): void {
+  if (src.rank && !dst.rank) dst.rank = src.rank;
+  dst.casts += src.casts;
+  dst.lands += src.lands;
+  dst.ticks += src.ticks;
+  dst.tickDamage += src.tickDamage;
+  dst.maxTick = Math.max(dst.maxTick, src.maxTick);
+  dst.fizzles += src.fizzles;
+  dst.interrupts += src.interrupts;
+  dst.resists += src.resists;
+  dst.blocked += src.blocked;
+  dst.damage += src.damage;
+  dst.healed += src.healed;
+  dst.maxHit = Math.max(dst.maxHit, src.maxHit);
+  dst.castMs += src.castMs;
+  dst.timed += src.timed;
+  dst.overhealed += src.overhealed;
+  dst.invocationHealed += src.invocationHealed;
+  for (const [target, n] of src.resistedBy) dst.resistedBy.set(target, (dst.resistedBy.get(target) ?? 0) + n);
+  for (const [mode, m] of src.byInvocation) addModeTally(modeTally(dst.byInvocation, mode), m);
+}
+
+/** Fold a held invocation tally into the real one — same additive rule as `addSpellTally`. */
+function addInvocationTally(dst: InvocationTally, src: InvocationTally): void {
+  dst.swings += src.swings;
+  dst.procs += src.procs;
+  dst.procDamage += src.procDamage;
+  dst.healed += src.healed;
+}
+
+/**
  * Add the time since the previous damage, unless the two are further apart than a
  * fight — that gap is downtime, not combat. Summing these is what keeps a session's
  * DPS meaningful: without it you'd divide a night's damage by a night's *calendar*
@@ -401,6 +479,13 @@ function createWindow(canon: (name: string) => string) {
    * Re-checked on read, so a name proven between the tally and the summary simply isn't in the answer.
    */
   const doubted = new Set<string>();
+  /**
+   * The sparkline, the spell table and the invocation tallies, held apart per doubtful name
+   * instead of being baked the moment an event is parsed — the fixing half of ADR 0130's doubt,
+   * named in [ADR 0127](../specs/decisions/0127-an-unknown-name-is-held-not-dropped.md) step 2.
+   * Drained by `resolveHeld` once the log decides whose each name's figures are.
+   */
+  const held = new Map<string, Held>();
   /** Your damage per second of the window, indexed from its first damage. */
   const buckets: number[] = [];
   /** The window's own landed hits and heals, oldest first, capped — see `MAX_RECENT_HITS`. */
@@ -435,6 +520,13 @@ function createWindow(canon: (name: string) => string) {
     return t;
   };
 
+  /** Fetch-or-create the held tally for one doubtful name. */
+  const heldFor = (name: string): Held => {
+    let h = held.get(name);
+    if (!h) held.set(name, (h = emptyHeld()));
+    return h;
+  };
+
   return {
     span,
     totals,
@@ -444,6 +536,17 @@ function createWindow(canon: (name: string) => string) {
     damage,
     heals,
     doubted,
+    held,
+    heldFor,
+    /** Fetch-or-create a held per-spell tally for one doubtful name — the held mirror of `spell`. */
+    heldSpell: (name: string, spell: string): SpellTally => heldSpellTally(heldFor(name).spells, spell),
+    /** Fetch-or-create a held per-invocation tally for one doubtful name — the held mirror of `invocationTally`. */
+    heldInvocation: (name: string, invocation: string): InvocationTally => {
+      const h = heldFor(name);
+      let t = h.invocations.get(invocation);
+      if (!t) h.invocations.set(invocation, (t = emptyInvocation()));
+      return t;
+    },
     /** Widen the window's line range — cheap, and it's the way back to the source. */
     note(logId: number) {
       if (!logId) return;
@@ -537,6 +640,13 @@ export function createCombatStats(
   /** Rolling tail of damage taken by you, for the death recap. */
   const incoming: { at: number; source: string; amount: number }[] = [];
   /**
+   * The same tail, for a target still in doubt — an unproven pet taking damage, most often. Kept
+   * apart per name rather than mixed into `incoming`, on the same terms as a window's own `held`
+   * (ADR 0127 step 2): resolved the moment a death asks for a recap, so a pet proven between the
+   * damage and the death is already counted in it.
+   */
+  const heldIncoming = new Map<string, { at: number; source: string; amount: number }[]>();
+  /**
    * The stance and invocation currently in force. They change damage multipliers and cast
    * times, so every tally is filed under whichever was active — a blended average across
    * a stance change describes a character who never existed.
@@ -605,6 +715,74 @@ export function createCombatStats(
     if (!name || placed(name)) return;
     if (!w.doubted.has(name)) log.debug("name unplaced, recorded as doubtful", name);
     w.doubted.add(name);
+  };
+
+  /**
+   * Whose a contribution is, given every name it turns on — "mine" once all of them are, "theirs"
+   * the moment any one of them is placed and isn't, and "unknown" otherwise (at least one is still
+   * in doubt and none is yet ruled out). This is `apply`'s read of the same question `doubt`/`placed`
+   * answer for rows: the difference is that a row reads it at `summarize` time off a name it already
+   * tallied under, while this decides *where* a figure derived from the event — a sparkline sample,
+   * a spell's cast, an invocation's proc — goes right now: into the real structure, into a per-name
+   * held one (`resolveHeld` drains it once the log decides), or nowhere.
+   */
+  const owns = (names: string[]): "mine" | "theirs" | "unknown" => {
+    if (names.some((n) => placed(n) && !isMine(n))) return "theirs";
+    if (names.every((n) => isMine(n))) return "mine";
+    return "unknown";
+  };
+
+  /** The spell tally a cast/landing should accumulate into right now, given who it turns on — the
+   * real one once settled mine, a held copy keyed by `key` while still in doubt, or nothing once
+   * settled somebody else's. */
+  const spellFor = (w: Window, status: ReturnType<typeof owns>, key: string, spell: string): SpellTally | null =>
+    status === "theirs" ? null : status === "mine" ? w.spell(spell) : w.heldSpell(key, spell);
+
+  /** The invocation tally a swing/proc should accumulate into right now — same rule as `spellFor`. */
+  const invocationFor = (
+    w: Window,
+    status: ReturnType<typeof owns>,
+    key: string,
+    invocation: string,
+  ): InvocationTally | null =>
+    status === "theirs" ? null : status === "mine" ? w.invocationTally(invocation) : w.heldInvocation(key, invocation);
+
+  /** The sparkline sample a landed hit should fall into right now — same rule again, inlined
+   * because a bucket is pushed to rather than fetched-and-mutated. */
+  const addBucket = (w: Window, status: ReturnType<typeof owns>, key: string, at: number, amount: number): void => {
+    if (status === "mine") w.bucket(at, amount);
+    else if (status === "unknown") w.heldFor(key).buckets.push({ at, amount });
+  };
+
+  /**
+   * Drain every name a window is still holding figures for, now that the log may have settled
+   * some of them — called at the top of `summarize`, so a read always sees the merge rather than
+   * racing it. A name ruled **mine** folds its held spell/invocation tallies and sparkline samples
+   * into the real ones (and backfills `castRepertoire` from its held casts, since a cast made while
+   * its caster was still in doubt is exactly the knowledge the repertoire exists to keep); a name
+   * ruled **somebody else's** is simply dropped, the same as if `owns` had said so from the start.
+   * Either way the name leaves `w.held` — resolved once, not re-asked on every read.
+   *
+   * What this doesn't cover: `castRepertoire`'s own *immediate* growth, `pending` and `lastLanding`
+   * are gates that interpret the event immediately *after* the one in question, not totals this
+   * re-reads. A free-cast or a cast-time measurement missed during a blind window can't be
+   * recovered by merging a sum after the fact — only by re-deriving the fight from the log once the
+   * identity is known ([ADR 0128](../specs/decisions/0128-a-fight-is-re-derived-not-refused.md)),
+   * which already exists for stored history. Live, those three simply go back to being correct
+   * for the next event, the moment the name is placed.
+   */
+  const resolveHeld = (w: Window): void => {
+    for (const [name, h] of [...w.held]) {
+      if (!placed(name)) continue; // still unknown — leave it for next time
+      w.held.delete(name);
+      if (!isMine(name)) continue; // settled, but not yours — these figures were never yours
+      for (const [spell, t] of h.spells) {
+        addSpellTally(w.spell(spell), t);
+        if (t.casts) castRepertoire.add(spell);
+      }
+      for (const [invocation, t] of h.invocations) addInvocationTally(w.invocationTally(invocation), t);
+      for (const b of h.buckets) w.bucket(b.at, b.amount);
+    }
   };
 
   /**
@@ -781,6 +959,9 @@ export function createCombatStats(
   }
 
   const summarize = (w: Window): FightStats => {
+    // Fold in anything held for a name the log has settled since it was tallied, before any of
+    // the figures below are read off the window (ADR 0127 step 2).
+    resolveHeld(w);
     const cells = w.damage.cells();
     // Each row only needs its own hits, so index the cells by attacker once rather than
     // re-scanning them per row.
@@ -861,7 +1042,9 @@ export function createCombatStats(
   function apply(w: Window, event: CombatEvent, at: number, castMs = 0): void {
     switch (event.kind) {
       case "damage": {
-        const a = w.tally(canon(event.attacker));
+        const attacker = canon(event.attacker);
+        const target = canon(event.target);
+        const a = w.tally(attacker);
         a.dealt += event.amount;
         a.hits += 1;
         if (event.qualifier === "Critical") a.crits += 1;
@@ -873,8 +1056,8 @@ export function createCombatStats(
         // (ADR 0276).
         w.hit(
           {
-            attacker: canon(event.attacker),
-            target: canon(event.target),
+            attacker,
+            target,
             amount: event.amount,
             melee: event.melee,
             verb: event.verb,
@@ -899,62 +1082,80 @@ export function createCombatStats(
         if (!a.firstAt) a.firstAt = at;
         addActive(a, at);
         a.lastAt = at;
-        w.tally(canon(event.target)).taken += event.amount;
+        w.tally(target).taken += event.amount;
         // Both ends of the exchange, because either can be the unplaceable one: a bare-named pet
         // hitting a mob, or a mob hitting a group-mate we haven't been told about yet.
-        doubt(w, canon(event.attacker));
-        doubt(w, canon(event.target));
+        doubt(w, attacker);
+        doubt(w, target);
         w.mark(at); // only damage defines when a fight ran
-        if (isMine(event.attacker)) w.bucket(at, event.amount);
+
+        // Whose this swing is may still be in question — the sparkline, the spell table and the
+        // invocation tallies used to bake the answer in right here, which is exactly the
+        // contradiction ADR 0130 names for rows and fixes for them at read time. The same fix,
+        // extended: `owns` is asked once and a doubtful attacker's share goes into a held tally
+        // under its own name instead of being decided (and thrown away if wrong) on the spot.
+        const whoseAttack = owns([attacker]);
+        addBucket(w, whoseAttack, attacker, at, event.amount);
         // A damage shield's flavour word ("flames") rides in `spell` too (see `combat-parser.ts`'s
         // `damage()`), but it is castless — no cast, no rank, no mana — so it must not join the
         // Spells table as though it were one of yours to cast. `damageKind` next door draws the
         // same line via `!event.shield` when it classifies a cell as "Spell" versus "Other".
-        if (event.spell && !event.shield && isMine(canon(event.attacker))) {
-          const sp = w.spell(event.spell);
-          const mode = modeTally(sp.byInvocation, invocation);
-          sp.damage += event.amount;
-          mode.damage += event.amount;
-          if (event.tick) {
-            sp.ticks += 1;
-            sp.tickDamage += event.amount;
-            sp.maxTick = Math.max(sp.maxTick, event.amount);
-          } else {
-            sp.lands += 1;
-            mode.lands += 1;
-            sp.maxHit = Math.max(sp.maxHit, event.amount);
-            mode.maxHit = Math.max(mode.maxHit, event.amount);
+        if (event.spell && !event.shield) {
+          const sp = spellFor(w, whoseAttack, attacker, event.spell);
+          if (sp) {
+            const mode = modeTally(sp.byInvocation, invocation);
+            sp.damage += event.amount;
+            mode.damage += event.amount;
+            if (event.tick) {
+              sp.ticks += 1;
+              sp.tickDamage += event.amount;
+              sp.maxTick = Math.max(sp.maxTick, event.amount);
+            } else {
+              sp.lands += 1;
+              mode.lands += 1;
+              sp.maxHit = Math.max(sp.maxHit, event.amount);
+              mode.maxHit = Math.max(mode.maxHit, event.amount);
+            }
+            if (castMs) {
+              sp.castMs += castMs;
+              sp.timed += 1;
+              mode.castMs += castMs;
+              mode.timed += 1;
+            }
+            // A landing with nothing in flight, from a spell you *do* cast, had no cast of
+            // its own — the signature of a free cast (Spell Blade grants them silently).
+            // Ticks are excluded upstream; castless sources are excluded by the repertoire.
+            if (unpairedLanding && !event.tick && castRepertoire.has(event.spell)) {
+              log.debug("free cast detected", { spell: event.spell, amount: event.amount, invocation });
+              mode.procs += 1;
+              mode.procDamage += event.amount;
+              const inv = invocationFor(w, whoseAttack, attacker, invocation);
+              if (inv) {
+                inv.procs += 1;
+                inv.procDamage += event.amount;
+              }
+            }
           }
-          if (castMs) {
-            sp.castMs += castMs;
-            sp.timed += 1;
-            mode.castMs += castMs;
-            mode.timed += 1;
+        } else if (event.melee) {
+          if (whoseAttack === "mine") {
+            // Melee is the stance's business — the multipliers live there. Left record-time (not
+            // part of this fix): a bare attacker's by-stance split is a smaller, separate gap —
+            // see the ADR update for why it's out of scope here.
+            const m = modeTally(a.byStance, stance);
+            m.damage += event.amount;
+            m.hits += 1;
+            m.maxHit = Math.max(m.maxHit, event.amount);
           }
-          // A landing with nothing in flight, from a spell you *do* cast, had no cast of
-          // its own — the signature of a free cast (Spell Blade grants them silently).
-          // Ticks are excluded upstream; castless sources are excluded by the repertoire.
-          if (unpairedLanding && !event.tick && castRepertoire.has(event.spell)) {
-            log.debug("free cast detected", { spell: event.spell, amount: event.amount, invocation });
-            mode.procs += 1;
-            mode.procDamage += event.amount;
-            const inv = w.invocationTally(invocation);
-            inv.procs += 1;
-            inv.procDamage += event.amount;
-          }
-        } else if (event.melee && isMine(canon(event.attacker))) {
-          // Melee is the stance's business — the multipliers live there.
-          const m = modeTally(a.byStance, stance);
-          m.damage += event.amount;
-          m.hits += 1;
-          m.maxHit = Math.max(m.maxHit, event.amount);
-          // Free casts trigger off attacks, so swings are the denominator for their rate.
-          w.invocationTally(invocation).swings += 1;
+          // Free casts trigger off attacks, so swings are the denominator for their rate — held
+          // the same way a spell's own tallies are, while the attacker is still in doubt.
+          const inv = invocationFor(w, whoseAttack, attacker, invocation);
+          if (inv) inv.swings += 1;
         }
         break;
       }
       case "miss": {
         const attacker = canon(event.attacker);
+        const target = canon(event.target);
         const t = w.tally(attacker);
         t.misses += 1;
         w.damage.record(event); // a miss is a hit-rate fact about a skill against a target
@@ -963,75 +1164,80 @@ export function createCombatStats(
         // haven't been told about yet. Skipping this left a miss-only exchange looking settled
         // when the identical exchange as a landed hit would have been flagged (ADR 0130).
         doubt(w, attacker);
-        doubt(w, canon(event.target));
+        doubt(w, target);
 
-        if (isMine(attacker)) {
-          modeTally(t.byStance, stance).misses += 1;
-          w.invocationTally(invocation).swings += 1; // a swing either way
-        }
+        const whoseAttack = owns([attacker]);
+        if (whoseAttack === "mine") modeTally(t.byStance, stance).misses += 1; // see the damage case's note
+        const inv = invocationFor(w, whoseAttack, attacker, invocation); // a swing either way
+        if (inv) inv.swings += 1;
         break;
       }
       case "heal": {
-        w.tally(canon(event.healer)).healed += event.amount;
+        const healer = canon(event.healer);
+        const target = canon(event.target);
+        w.tally(healer).healed += event.amount;
         // The recipient's own figure — a self-heal lands on the same tally as the line above and
         // both go up, which is correct: healing yourself is healing you received.
-        w.tally(canon(event.target)).healReceived += event.amount;
+        w.tally(target).healReceived += event.amount;
         // Who healed whom, with what — one cell, from which the Healers view's drill-down is
         // rolled up (ADR 0273, mirroring ADR 0053's damage cells).
         w.heals.record(event);
         // The same heal, kept a little longer — see `hit`'s own note, just above `case "damage"`.
         w.heal(
-          {
-            healer: canon(event.healer),
-            target: canon(event.target),
-            amount: event.amount,
-            attempted: event.attempted,
-            spell: event.spell,
-            qualifier: event.qualifier,
-          },
+          { healer, target, amount: event.amount, attempted: event.attempted, spell: event.spell, qualifier: event.qualifier },
           at,
         );
-        if (event.spell && isMine(event.healer)) {
-          const sp = w.spell(event.spell);
-          const mode = modeTally(sp.byInvocation, invocation);
-          sp.healed += event.amount;
-          mode.healed += event.amount;
-          sp.lands += 1;
-          mode.lands += 1;
-          if (castMs) {
-            mode.castMs += castMs;
-            mode.timed += 1;
+        if (event.spell) {
+          const sp = spellFor(w, owns([healer]), healer, event.spell);
+          if (sp) {
+            const mode = modeTally(sp.byInvocation, invocation);
+            sp.healed += event.amount;
+            mode.healed += event.amount;
+            sp.lands += 1;
+            mode.lands += 1;
+            if (castMs) {
+              mode.castMs += castMs;
+              mode.timed += 1;
+              sp.castMs += castMs;
+              sp.timed += 1;
+            }
+            if (event.attempted) sp.overhealed += Math.max(0, event.attempted - event.amount);
           }
-          if (event.attempted) sp.overhealed += Math.max(0, event.attempted - event.amount);
-          if (castMs) {
-            sp.castMs += castMs;
-            sp.timed += 1;
-          }
-        } else if (!event.spell && isMine(event.healer) && isMine(event.target) && lastLanding) {
+        } else if (lastLanding && at - lastLanding.at <= INVOCATION_HEAL_MS) {
           // No spell named, healing yourself, moments after your own spell landed: the
           // invocation converting damage into health. Credited to the spell that triggered
-          // it and to the invocation, so the mana's *whole* return is visible.
-          if (at - lastLanding.at <= INVOCATION_HEAL_MS) {
-            const sp = w.spell(lastLanding.spell);
+          // it and to the invocation, so the mana's *whole* return is visible. Both healer and
+          // target turn on this (a self-heal names the same combatant twice), so `owns` is asked
+          // of both — whichever one is still in doubt is where the held copy is kept.
+          const whoseHeal = owns([healer, target]);
+          const sp = spellFor(w, whoseHeal, healer, lastLanding.spell);
+          if (sp) {
             sp.invocationHealed += event.amount;
             modeTally(sp.byInvocation, invocation).invocationHealed += event.amount;
-            w.invocationTally(invocation).healed += event.amount;
           }
+          const inv = invocationFor(w, whoseHeal, healer, invocation);
+          if (inv) inv.healed += event.amount;
         }
         break;
       }
       case "cast": {
-        if (!isMine(event.caster)) break;
-        castRepertoire.add(event.spell);
-        const sp = w.spell(event.spell);
+        const whoseCast = owns([event.caster]);
+        if (whoseCast === "theirs") break;
+        const sp = spellFor(w, whoseCast, event.caster, event.spell);
+        if (!sp) break; // unreachable ("theirs" already broke above), but keeps spellFor's null honest
         sp.casts += 1;
         modeTally(sp.byInvocation, invocation).casts += 1;
         if (event.rank) sp.rank = event.rank;
+        // The repertoire only grows once the caster is *known* mine — a cast made while still in
+        // doubt joins it the moment `resolveHeld` merges that doubt away, off the held tally's own
+        // `casts` figure, rather than being tracked here a second time.
+        if (whoseCast === "mine") castRepertoire.add(event.spell);
         break;
       }
       case "spell-outcome": {
-        if (!isMine(event.caster)) break;
-        const sp = w.spell(event.spell);
+        const whoseCast = owns([event.caster]);
+        const sp = spellFor(w, whoseCast, event.caster, event.spell);
+        if (!sp) break;
         if (event.outcome === "fizzle") sp.fizzles += 1;
         else if (event.outcome === "interrupted") sp.interrupts += 1;
         else if (event.outcome === "resisted") {
@@ -1126,11 +1332,28 @@ export function createCombatStats(
   const openWindows = (): Window[] => (fightFiled ? [session] : [fight, session]);
 
   /**
+   * Fold any held incoming damage whose target the log has since placed into the live buffer,
+   * before a death asks it for a recap. A name ruled somebody else's is simply dropped, the same
+   * as if it had never been held.
+   */
+  function resolveHeldIncoming(at: number): void {
+    for (const [name, hits] of [...heldIncoming]) {
+      if (!placed(name)) continue;
+      heldIncoming.delete(name);
+      if (!isMine(name)) continue;
+      incoming.push(...hits);
+    }
+    const cutoff = at - DEATH_WINDOW_MS * 2;
+    while (incoming.length && incoming[0].at < cutoff) incoming.shift();
+  }
+
+  /**
    * Snapshot what was hitting you in the run-up to a death. The log doesn't say what
    * killed you beyond a name, so the useful answer is the incoming damage right before
    * it — which needs a rolling buffer, kept trimmed to the recap window.
    */
   function recordDeath(at: number, killer?: string): DeathRecap {
+    resolveHeldIncoming(at);
     const since = at - DEATH_WINDOW_MS;
     const bySource = new Map<string, number>();
     let totalTaken = 0;
@@ -1241,11 +1464,22 @@ export function createCombatStats(
         lastLanding = { spell: event.spell, at };
       }
 
-      if (event.kind === "damage" && isMine(canon(event.target))) {
-        incoming.push({ at, source: canon(event.attacker), amount: event.amount });
-        // Keep the buffer to the recap window (plus slack) — it's a tail, not a log.
-        const cutoff = at - DEATH_WINDOW_MS * 2;
-        while (incoming.length && incoming[0].at < cutoff) incoming.shift();
+      if (event.kind === "damage") {
+        const target = canon(event.target);
+        const whoseTarget = owns([target]);
+        if (whoseTarget !== "theirs") {
+          let bucket: typeof incoming;
+          if (whoseTarget === "mine") {
+            bucket = incoming;
+          } else {
+            bucket = heldIncoming.get(target) ?? [];
+            heldIncoming.set(target, bucket);
+          }
+          bucket.push({ at, source: canon(event.attacker), amount: event.amount });
+          // Keep each buffer to the recap window (plus slack) — it's a tail, not a log.
+          const cutoff = at - DEATH_WINDOW_MS * 2;
+          while (bucket.length && bucket[0].at < cutoff) bucket.shift();
+        }
       }
 
       if (event.kind === "death") {
@@ -1409,6 +1643,7 @@ export function createCombatStats(
       lastDeathAt = 0;
       lastLanding = null;
       incoming.length = 0;
+      heldIncoming.clear();
       names.clear();
       scope.reset();
       // The repertoire is knowledge about the character, not a tally, so a reset keeps it.
