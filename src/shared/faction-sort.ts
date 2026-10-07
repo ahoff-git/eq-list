@@ -5,9 +5,12 @@
  * value-picker fed to `sortRows`. No filters yet, unlike loot's — the ledger is nowhere near loot's
  * volume, so there has been nothing yet to narrow.
  */
-import type { FactionRecord, FactionStanding } from "./types";
+import type { FactionCauseTally, FactionRecord, FactionStanding } from "./types";
 import { sortRows, type Sort } from "./sorting";
 import { ratio } from "./numbers";
+import { count } from "./format";
+import { factionPoolWhy } from "./faction-pooling";
+import type { FactionCauseKnowledge } from "./faction-observation";
 
 export type FactionHitSortKey = "at" | "faction" | "delta" | "cause";
 
@@ -69,4 +72,27 @@ export function sortFactionStandings(
   sort: Sort<FactionStandingSortKey>,
 ): FactionStanding[] {
   return sortRows(standings, sort, standingValue);
+}
+
+/**
+ * The pooled-evidence badge for one `CauseGroup` row, if there's anything beyond what this install
+ * itself has already seen — pulled out of `FactionPanel.tsx` so the "does a peer agree" question is
+ * testable without a DOM, the same split `causeSource`/`causeKindLabel` above already make.
+ *
+ * `undefined` whenever nothing pooled touches this (faction, kind, source) at all — a cause nobody
+ * else has ever reported looks exactly as it did before pooling existed, which is deliberate: a
+ * badge that fires on silence would be noise, not evidence.
+ */
+export function pooledCauseBadge(
+  faction: string,
+  tally: FactionCauseTally,
+  knowledge: readonly FactionCauseKnowledge[],
+): { label: string; title: string } | undefined {
+  const row = knowledge.find(
+    (k) => k.kind === tally.kind && k.source === tally.source && k.faction.toLowerCase() === faction.toLowerCase(),
+  );
+  if (!row || row.contributors.length === 0) return undefined;
+  const extra = row.hits - row.myHits;
+  if (extra <= 0) return undefined;
+  return { label: `+${count(extra, "peer hit")}`, title: factionPoolWhy(row) };
 }

@@ -393,6 +393,13 @@ export interface FactionLog {
     checked: number;
     changed: number;
   };
+  /**
+   * Moves whenever a hit is added or a scope is cleared — what `shareSources`' `factionObservations`
+   * entry sums alongside `faction-observations.ts`'s own `version()`, the same way `mobs`/`kills`
+   * already sum `killLog.version()` with their own pooled store's. Cheap enough to check on a tick
+   * without a query; see `contributions.ts`'s own `version()` for the exact contract this mirrors.
+   */
+  version(): number;
   /** No pending write ever outlives this call — kept for callers that flushed the old debounced JSON
    *  writer at the same moments (quitting, right after a log import), even though every write here is
    *  already synchronous the instant it's made. */
@@ -406,6 +413,12 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
   migrateFromLegacyJson(db, userDataDir, file);
   // Carries **only** the provenance stamp now — see the module doc.
   const saver = createSaver(file, "faction log", () => ({}), WRITE_DEBOUNCE_MS, { concern: "faction-log" });
+  // Bumped by every hit added or scope cleared — cheap enough to check on a tick without a query,
+  // the same contract `contributions.ts`'s own `version()` states, and what `faction-observations.ts`
+  // sums alongside its own so a `give` re-offers the moment either half moves (ADR 0242's reasoning,
+  // `shareSources`' own `mobs`/`kills` entries do the same with `killLog.version()`). Starts at zero
+  // every launch, which is fine: nothing on the far side compares it against an earlier run's number.
+  let rev = 0;
 
   const insertHit = db.prepare(`
     INSERT OR IGNORE INTO faction_hits
@@ -648,7 +661,10 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
   return {
     add(event) {
       const info = insertHit.run(paramsOf(event));
-      if (info.changes > 0) saver.save();
+      if (info.changes > 0) {
+        rev++;
+        saver.save();
+      }
       return info.changes === 0 ? "known" : "added";
     },
 
@@ -709,9 +725,12 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
           deleteFrozen.run();
         })();
       }
+      rev++;
       saver.flush();
       log.debug("cleared", { scope });
     },
+
+    version: () => rev,
 
     recheckDialogueCauses(deps) {
       const rows = selectDialogueCauses.all() as {
@@ -751,7 +770,10 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
         }
       });
       run();
-      if (changed) saver.save();
+      if (changed) {
+        rev++;
+        saver.save();
+      }
       return { checked: rows.length, changed };
     },
 

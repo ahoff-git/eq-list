@@ -14,6 +14,7 @@ import type { KillRecord, KnownSpawn, Settings } from "../../src/shared/types";
 import type { SharedRespawn } from "../../src/shared/peer-share";
 import type { SharedKill } from "../../src/shared/kill-filters";
 import type { MobObservation } from "../../src/shared/mob-stats";
+import type { FactionObservation } from "../../src/shared/faction-observation";
 
 const SETTINGS = {} as Settings;
 
@@ -28,6 +29,10 @@ function rig(over: {
   knownRespawns?: KnownSpawn[];
   pooledRespawns?: SharedRespawn[];
   factionRows?: unknown[];
+  ownFactionObservations?: FactionObservation[];
+  factionLogVersion?: number;
+  pooledFactionObservations?: FactionObservation[];
+  pooledFactionObservationVersion?: number;
 } = {}) {
   return shareSources({
     getList: () => ({ entries: [] }),
@@ -40,6 +45,12 @@ function rig(over: {
     mobKnowledge: {
       pooled: () => over.pooledMobs ?? [],
       version: () => over.pooledMobVersion ?? 0,
+    },
+    factionLog: { version: () => over.factionLogVersion ?? 0 },
+    factionObservations: {
+      mine: () => over.ownFactionObservations ?? [],
+      pooled: () => over.pooledFactionObservations ?? [],
+      version: () => over.pooledFactionObservationVersion ?? 0,
     },
     peerKills: {
       all: () => over.pooledKills ?? [],
@@ -80,6 +91,33 @@ test("mobs' version moves when either half does, and only then", () => {
   assert.equal(a.mobs.version?.(), rig({ ownKillVersion: 1, pooledMobVersion: 1 }).mobs.version?.());
 });
 
+test("factionObservations offers what we've resolved ourselves and what the room once taught us, together", () => {
+  const ours: FactionObservation = { faction: "Wharf Rats", kind: "kill", source: "a dock worker", net: -4, hits: 2 };
+  const theirs: FactionObservation = {
+    faction: "Wharf Rats",
+    kind: "dialogue",
+    source: "Bob",
+    net: 2,
+    hits: 1,
+    by: "Bran",
+    byId: "c-11111111-1111-1111-1111-111111111111",
+  };
+  const sources = rig({ ownFactionObservations: [ours], pooledFactionObservations: [theirs] });
+  assert.deepEqual(sources.factionObservations.rows(), [ours, theirs]);
+});
+
+test("factionObservations' version moves when either half does, and only then", () => {
+  const a = rig({ factionLogVersion: 1, pooledFactionObservationVersion: 1 });
+  const b = rig({ factionLogVersion: 1, pooledFactionObservationVersion: 2 }); // only the pool moved
+  const c = rig({ factionLogVersion: 2, pooledFactionObservationVersion: 1 }); // only our own ledger moved
+  assert.notEqual(a.factionObservations.version?.(), b.factionObservations.version?.());
+  assert.notEqual(a.factionObservations.version?.(), c.factionObservations.version?.());
+  assert.equal(
+    a.factionObservations.version?.(),
+    rig({ factionLogVersion: 1, pooledFactionObservationVersion: 1 }).factionObservations.version?.(),
+  );
+});
+
 test("kills reduces our own to what a peer may draw, and adds the pool as-is", () => {
   const own = { id: "k1", logId: 1, at: "2026-01-01T00:00:00Z", mob: "a gnoll", zone: "Blackburrow", y: 10, x: 20, confidence: 0.9 } as KillRecord;
   const pooled: SharedKill = { zone: "Befallen", mob: "a rat", y: 1, x: 2, confidence: 0.5, by: "Bran", byId: "c-1" };
@@ -117,6 +155,7 @@ test("respawns reduces our own learning to its conclusion, and adds the pool as-
 test("a room with nothing pooled behaves exactly as it always did", () => {
   const sources = rig();
   assert.deepEqual(sources.mobs.rows(), []);
+  assert.deepEqual(sources.factionObservations.rows(), []);
   assert.deepEqual(sources.kills.rows(), []);
   assert.deepEqual(sources.respawns.rows(), []);
 });

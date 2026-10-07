@@ -81,6 +81,7 @@ import type { FightShare, SharedGameTime, SharedItemPage, SharedRespawn, SharedS
 import type { MapPin } from "./map/pins";
 import type { KillRecord, KnownSpawn } from "./types";
 import type { MobObservation } from "./mob-stats";
+import type { FactionObservation } from "./faction-observation";
 import type { SharedKill } from "./kill-filters";
 
 const log = createLogger("peer-share");
@@ -1357,6 +1358,12 @@ export function shareSources(context: {
   };
   /** Pooled mob observations — the peer half of `mobs` (`electron/mob-knowledge.ts`). */
   mobKnowledge: { pooled: () => MobObservation[]; version: () => number };
+  /** What has raised or lowered a faction, for `mine()`'s own already-resolved causes
+   *  (`electron/faction-log.ts`). */
+  factionLog: { version: () => number };
+  /** Pooled faction-cause tallies — the peer half of `factionObservations`
+   *  (`electron/faction-observations.ts`). */
+  factionObservations: { mine: () => FactionObservation[]; pooled: () => FactionObservation[]; version: () => number };
   /** Pooled kill positions — the peer half of `kills` (`electron/peer-kills.ts`). */
   peerKills: { all: () => SharedKill[]; version: () => number };
   /** Pooled respawn learning — the peer half of `respawns` (`electron/peer-respawns.ts`). */
@@ -1394,6 +1401,14 @@ export function shareSources(context: {
     mobs: {
       rows: () => [...context.killLog.observations(), ...context.mobKnowledge.pooled()],
       version: () => context.killLog.version() + context.mobKnowledge.version(),
+    },
+    // Yours (`mine()`, derived fresh from `factionLog`'s own already-resolved causes — never stored,
+    // the same split `mobs` makes above) plus whatever peers have reported. Versioned the same way:
+    // `factionLog.version()` moves when a new hit (or a recheck) could change `mine()`'s answer,
+    // `factionObservations.version()` when a peer's report changes `pooled()`'s.
+    factionObservations: {
+      rows: () => [...context.factionObservations.mine(), ...context.factionObservations.pooled()],
+      version: () => context.factionLog.version() + context.factionObservations.version(),
     },
     kills: {
       rows: () => [...shareableKills(context.killLog.kills()), ...context.peerKills.all()],

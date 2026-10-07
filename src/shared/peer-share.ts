@@ -54,6 +54,7 @@ import type {
   WikiPageKind,
 } from "./types";
 import { withAreas, type MobArea, type MobObservation } from "./mob-stats";
+import type { FactionObservation } from "./faction-observation";
 import type { SharedKill } from "./kill-filters";
 import type { BuffInstance, BuffRiseSource } from "./buff-tracking";
 import type { RespawnLearning, SpawnTimer } from "./spawn-timers";
@@ -163,6 +164,7 @@ export type ShareKind =
   | "lists"
   | "pins"
   | "mobs"
+  | "factionObservations"
   | "kills"
   | "respawns"
   | "timers"
@@ -260,6 +262,9 @@ const MAX_ROWS: Record<ShareKind, number> = {
   lists: 500,
   pins: 500,
   mobs: 5000,
+  // One row per (faction, kind, source) a career ever produces, not one per mob+zone — a far smaller
+  // space than `mobs`, so a generous cap here is still a tight one in practice.
+  factionObservations: 1000,
   kills: 5000,
   respawns: 2000,
   timers: 200,
@@ -582,6 +587,22 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     // for a mob we've also killed ourselves would collide with ours and one would silently vanish
     // from what we offer (ADR 0242).
     rowKey: (row) => (isRecord(row) ? rowKeyOf(str(row.mob), str(row.zone), str(row.byId) || "self") : undefined),
+  },
+  {
+    key: "factionObservations",
+    family: "observation",
+    label: "Faction-cause evidence",
+    blurb: "Which kills or conversations your own ledger settled on as the cause of a faction change — never the lone guess, only one it's already corroborated.",
+    noun: "tally",
+    read: (rows) => readList(rows, MAX_ROWS.factionObservations, readFactionObservation),
+    // Faction, which kind of cause, the source named, and **whoever taught us it** — the same
+    // reasoning `mobs`' key states: the fold to one pooled verdict is `mergeFactionObservations`'
+    // job on read, and the origin has to be in the key so a relayed peer's tally doesn't collide
+    // with ours or another peer's for the same (faction, cause) question (ADR 0242).
+    rowKey: (row) =>
+      isRecord(row)
+        ? rowKeyOf(str(row.faction), str(row.kind), str(row.source), str(row.byId) || "self")
+        : undefined,
   },
   {
     key: "kills",
@@ -1477,6 +1498,25 @@ function readAreas(raw: unknown): MobArea[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const areas = raw.map(readArea).filter((a): a is MobArea => a !== undefined);
   return areas.length ? areas : undefined;
+}
+
+/**
+ * A faction-cause tally. Counts and a net delta only, checked the same two ways
+ * `readMobObservation` checks a drop: well-formed, and *possible* — `net` can never be bigger than
+ * `hits` could plausibly have produced. The plausibility bound itself belongs to
+ * `electron/faction-observations.ts`'s own `sanitize` (deliberately not repeated here, per
+ * `readMobObservation`'s own doc) — this only has to survive shape-checking so a bad report can't
+ * poison the merge with `NaN`.
+ */
+function readFactionObservation(raw: unknown): FactionObservation | null {
+  if (!isRecord(raw)) return null;
+  const faction = str(raw.faction);
+  const kind = raw.kind === "kill" || raw.kind === "dialogue" ? raw.kind : undefined;
+  const source = str(raw.source);
+  const hits = int(raw.hits);
+  const net = num(raw.net);
+  if (!faction || !kind || !source || hits === undefined || hits < 1 || net === undefined) return null;
+  return { faction, kind, source, net, hits, ...readOrigin(raw) };
 }
 
 function readSharedKill(raw: unknown): SharedKill | null {

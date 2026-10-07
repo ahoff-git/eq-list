@@ -147,6 +147,10 @@ const api: EqlApi = {
     contributors: () => ipcRenderer.invoke(CH.mobsContributors),
     forgetPeers: (id) => ipcRenderer.invoke(CH.mobsForgetPeers, id),
   },
+  factionObservations: {
+    knowledge: () => ipcRenderer.invoke(CH.factionObservationsKnowledge),
+    forgetPeers: (id) => ipcRenderer.invoke(CH.factionObservationsForgetPeers, id),
+  },
   peers: {
     kills: (zone) => ipcRenderer.invoke(CH.peerKillsAll, zone),
     onChanged: (cb) => on(CH.peerDataChanged, cb),

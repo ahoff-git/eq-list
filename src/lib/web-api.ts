@@ -287,6 +287,13 @@ function createWebApi(): EqlApi {
       forgetPeers: async () => {},
     },
 
+    // No local log on the web, so there's nothing of our own for a cause to ever settle on —
+    // an honest no-op, the same reasoning `mobs` states above.
+    factionObservations: {
+      knowledge: async () => [],
+      forgetPeers: async () => {},
+    },
+
     peers: {
       kills: async () => [],
       onChanged: () => noop,

@@ -42,6 +42,7 @@ import type {
   EqlCapabilities,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob-stats";
+import type { FactionCauseKnowledge } from "@/shared/faction-observation";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
 import type { SharedKill } from "@/shared/kill-filters";
 import { mergeLootFeed } from "@/shared/loot-feed";
@@ -1491,6 +1492,25 @@ export function useFactionStandingsSince(sinceIso: string, refreshKey: unknown):
  * clear), so paging and following live hits both fall out of the one query rather than a second,
  * separate "live tail" path.
  */
+const EMPTY_FACTION_CAUSE_KNOWLEDGE: FactionCauseKnowledge[] = [];
+
+/**
+ * Pooled evidence for what's raised/lowered a faction — yours (derived from the ledger's own
+ * already-resolved causes) folded with every peer's reported tally
+ * (`electron/faction-observations.ts`). `refreshKey` is `FactionPanel`'s own newest-hit probe, the
+ * same trick `useFactionStandings` takes it from: a cause newly resolving is a new hit landing, so
+ * whatever already re-reads standings on one also re-reads this. `peers.onChanged` is the other
+ * half — a peer's report moves nothing of yours, so nothing else here would ever notice it land.
+ */
+export function useFactionCauseKnowledge(refreshKey: unknown): FactionCauseKnowledge[] {
+  return useFollowedRead<FactionCauseKnowledge[]>(
+    (a) => a.factionObservations.knowledge(),
+    (a, reload) => a.peers.onChanged(reload),
+    EMPTY_FACTION_CAUSE_KNOWLEDGE,
+    [refreshKey],
+  );
+}
+
 export function useFactionHitsPage(query: FactionHitsQuery): { page: FactionHitsPage; loading: boolean } {
   const { value, loading } = usePagedQuery(
     (a) => a.faction.hitsPage(query),

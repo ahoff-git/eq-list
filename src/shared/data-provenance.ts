@@ -345,6 +345,15 @@ export const DATA_CONCERNS: DataConcern[] = [
     blurb:
       "Where other players killed things — the pooled half of the heatmap. Somebody else's measurements, so nothing here can rebuild them; forgetting them and being shared them again is the whole remedy.",
   },
+  {
+    id: "peer-faction-observations",
+    label: "Faction causes peers shared",
+    file: "faction-observations.json",
+    revision: 1,
+    remedy: "unrecoverable",
+    blurb:
+      "Which kills or conversations other players' own ledgers settled on as a faction's cause — the pooled, *verified* half of a guess our own ledger makes too (ADR 0283). Somebody else's data, so nothing here can rebuild it; forgetting it and being shared it again is the whole remedy.",
+  },
 ];
 
 /** One concern by id, for a caller that knows which it wants. */
