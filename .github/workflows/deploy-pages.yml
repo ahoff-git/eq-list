@@ -1,0 +1,49 @@
+name: Deploy landing page
+
+# Publishes the static landing page (landing/index.html) to GitHub Pages. Kept separate
+# from build-windows.yml on purpose: publishing a web page and building the Windows
+# installer are different concerns with different triggers and failure modes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - landing/**
+      - .github/workflows/deploy-pages.yml
+  workflow_dispatch: {}
+
+# Pages deploys need to read the repo, write to the Pages environment, and mint the
+# OIDC token actions/deploy-pages uses to authenticate the deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time. Unlike build-windows.yml this does NOT cancel an
+# in-flight run on a newer push — letting a deploy finish avoids leaving Pages serving a
+# half-published artifact; GitHub queues the newer run instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      # Only the landing/ directory is published — the app source, specs, etc. never
+      # need to be part of the Pages artifact.
+      - name: Upload landing page
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: landing
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

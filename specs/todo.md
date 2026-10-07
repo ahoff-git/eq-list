@@ -12,10 +12,15 @@ everything else, so this list can stay short enough to read:
 
 ## Distribution
 
-- **Landing page — host it.** `landing/index.html`'s buttons are wired (Download → `/releases/latest`,
-  Launch → `eqlist://open`) and the Download target is populated by CI. Remaining: **host** the static
-  page somewhere (e.g. GitHub Pages). Optional: point Download straight at
-  `/releases/latest/download/<asset>` for a one-click download.
+- **Landing page — point Download straight at the asset (optional).** Hosting is done:
+  `.github/workflows/deploy-pages.yml` publishes `landing/` to GitHub Pages on push to main (repo
+  owner still needs to flip Settings → Pages → Source → GitHub Actions once). `landing/index.html`'s
+  buttons are wired (Download → `/releases/latest`, Launch → `eqlist://open`). Still open: pointing
+  Download straight at `/releases/latest/download/<asset>` needs a stable asset filename, and today's
+  isn't one — electron-builder's default NSIS name is `EQ List Setup ${version}.exe`, and
+  `scripts/stamp-version.mjs` bumps `version` to `0.1.<run-number>` on every build, so the filename
+  changes release to release. Settle on a fixed `nsis.artifactName` (dropping `${version}`) before
+  wiring this, or drop the idea.
 - **Code signing (optional).** Builds are unsigned → Windows SmartScreen warns "unknown publisher".
   Needs a cert (`CSC_LINK`/`CSC_KEY_PASSWORD` secrets) wired into the workflow.
 
