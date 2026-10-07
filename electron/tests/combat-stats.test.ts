@@ -337,6 +337,99 @@ test("a filed fight carries its doubt to whoever stores it", () => {
   assert.deepEqual(filed, [["Garn"]]);
 });
 
+// ── read-time attribution reaches the sparkline, the Spells tab and the invocation tallies too
+// (ADR 0127 step 2) — the fixing half of ADR 0130's doubt. Before this, a fight's total row moved
+// the moment a pet was proven (it was already read-time) while these derived views stayed on the
+// old numbers — the self-contradictory UI these tests pin against regressing.
+test("a doubted attacker's sparkline share is held, then lands in its own second once proven", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Garn hits a coyote for 12 points of damage."], // doubtful — rides in on the coyote, already an enemy
+  ]);
+  // Not even a zero placeholder: an undecided name's second simply isn't bucketed yet.
+  assert.deepEqual(t.snapshot().fight.yourPerSec, [10]);
+
+  feed(t, [[3, "Garn told you, 'Attacking a coyote Master.'"]]);
+  assert.deepEqual(t.snapshot().fight.yourPerSec, [10, 12], "merged into the second it actually happened in");
+});
+
+test("a doubted attacker's spell damage is held, then merges into the Spells tab once proven", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Garn hits a coyote for 30 points of cold damage by Blast of Cold."],
+  ]);
+  let f = t.snapshot().fight;
+  // The row total already moved (ADR 0127's first, cheap half) — the bug this pins is what
+  // *didn't* move alongside it.
+  assert.equal(f.yourDealt, 10, "Garn's share waits on proof, same as the row always has");
+  assert.equal(f.spells.find((s) => s.spell === "Blast of Cold"), undefined, "not yet claimed as yours to cast");
+
+  feed(t, [[3, "Garn told you, 'Attacking a coyote Master.'"]]);
+  f = t.snapshot().fight;
+  assert.equal(f.yourDealt, 40);
+  const spell = f.spells.find((s) => s.spell === "Blast of Cold");
+  assert.ok(spell, "the Spells tab now agrees with the row, instead of contradicting it");
+  assert.equal(spell!.damage, 30);
+  assert.equal(spell!.lands, 1);
+});
+
+test("a doubted attacker's swing is held out of the invocation's denominator, then joins it", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin reciting the spellblade invocation."],
+    [2, "You pierce a coyote for 10 points of damage."],
+    [3, "Garn hits a coyote for 7 points of damage."], // doubtful melee — rides in the same way
+  ]);
+  let inv = t.snapshot().fight.invocations.find((i) => i.mode === "spellblade")!;
+  assert.equal(inv.swings, 1, "only your own swing counts until Garn is settled");
+
+  feed(t, [[4, "Garn told you, 'Attacking a coyote Master.'"]]);
+  inv = t.snapshot().fight.invocations.find((i) => i.mode === "spellblade")!;
+  assert.equal(inv.swings, 2, "Garn's swing joins the denominator the same moment his row does");
+});
+
+test("a doubted target's incoming damage is held, then counts in the next death recap once proven", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."], // establishes the coyote as an enemy
+    [2, "A coyote bites Garn for 9 points of damage."], // Garn, doubtful, takes the hit
+  ]);
+  feed(t, [[3, "Garn told you, 'Attacking a coyote Master.'"]]); // the game settles who Garn is
+  feed(t, [
+    [4, "A coyote bites YOU for 5 points of damage."],
+    [5, "You have been slain by a coyote!"],
+  ]);
+
+  const [death] = t.snapshot().fight.deaths;
+  assert.equal(death.totalTaken, 14, "the pet's earlier damage counts once it was proven to be ours");
+  assert.deepEqual(death.incoming, [{ source: "a coyote", amount: 14 }]);
+});
+
+test("a doubted name settled as a group-mate's never joins the Spells tab — it was never yours", () => {
+  // The other outcome `resolveHeld` has to get right: proof doesn't always mean "mine". A
+  // group-mate's held spell damage must stay out of the Spells tab exactly as if it had never
+  // been held at all — merging indiscriminately the moment a name is merely *decided* would put
+  // somebody else's nuke in your own cast-efficiency table.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "Galactic hits a coyote for 40 points of fire damage by Fire Bolt."], // doubtful
+  ]);
+  assert.equal(t.snapshot().fight.spells.length, 0);
+
+  t.recordParty(parseParty(splitLine("[Wed Jul 29 00:00:03 2026] Galactic has joined the group.", 1)!)!);
+  const f = t.snapshot().fight;
+  assert.equal(f.spells.length, 0, "a group-mate's spell is never yours to cast, held or not");
+  assert.equal(f.yourDealt, 10);
+});
+
 test("a named pet's damage is dropped until the game says the pet is yours", () => {
   // The bug this pins: a pet with its own name is written exactly like a stranger, so with
   // neither side of the exchange recognised as ours, `fight-scope` reads the whole fight as

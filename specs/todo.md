@@ -36,19 +36,33 @@ everything else, so this list can stay short enough to read:
      [ADR 0128](./decisions/0128-a-fight-is-re-derived-not-refused.md). Eating a log now redoes the
      fights it already holds, so an identity settled after a fight was filed can reach that fight.
      Proven on the measured log: re-reading it with every pet known refreshes 1,000 stored fights and
-     puts 3,906 damage into them. **The remaining two steps are what turn that into the full 5,608.**
-  2. **Make attribution read-time everywhere.** The *saying* half is done —
-     [ADR 0130](./decisions/0130-data-in-doubt-says-so.md): a window holds the names nothing placed,
-     re-asks on read, and the doubt propagates to the sitting, the camp and any record taken off the
-     fight (measured: 20% of fights, 73 names, no false positives among the top ones). The *fixing*
-     half is not. `mine` is already read-time for rows and cells (`combat-stats.ts`'s `row()`), which
-     is why `totalDealt` is only 0.03% short, but it is baked at record time in seven places —
-     `w.bucket` (sparkline), the per-spell table, the per-invocation proc tallies, the `incoming`
-     death-recap buffer, `castRepertoire`, `pending`, `lastLanding` — so a fight filed *after* its pet
-     is proven still contradicts itself: the damage is on the row and in the drill-down and missing
-     from the Spells tab and the sparkline. Shape: tally an undecided name into a **held** side-tally
-     keyed by that name, merge it in when the name is decided. Bounded, since only ambiguous names get
-     one.
+     puts 3,906 damage into them. **The remaining step is what turns that into the full 5,608.**
+  2. ~~**Make attribution read-time everywhere.**~~ **Done for the four places that needed it.** The
+     *saying* half was already done — [ADR 0130](./decisions/0130-data-in-doubt-says-so.md): a window
+     holds the names nothing placed, re-asks on read, and the doubt propagates to the sitting, the camp
+     and any record taken off the fight (measured: 20% of fights, 73 names, no false positives among
+     the top ones). The *fixing* half is now built for `w.bucket` (sparkline), the per-spell table, the
+     per-invocation proc/swing/healed tallies, and the `incoming` death-recap buffer — the four of the
+     seven baked places that are genuinely **totals a read re-derives**. Each tallies a doubtful name's
+     share into a held side-tally keyed by that name (`combat-stats.ts`'s `Held`, `resolveHeld`,
+     `heldIncoming`) and merges it in — additively, the same arithmetic the real structure would have
+     done, nothing "replacing" anything — the moment a read finds the name settled, mine or not.
+     Pinned in `electron/tests/combat-stats.test.ts`: a doubted attacker's sparkline sample, Spells-tab
+     entry and invocation swing, and a doubted target's death-recap damage, all land correctly once
+     proof arrives without the fight being re-read — and a name settled as a group-mate's never joins
+     any of them, the same as it never joined the row.
+
+     **The other three — `castRepertoire`, `pending`, `lastLanding` — are deliberately left baked.**
+     They are gates that interpret the *next* log line, not totals a summary re-reads, so a value
+     merged in after the fact can't retroactively fix how an earlier line was already (mis)interpreted
+     — only re-deriving the whole fight from the log can, which is step 1, already built. Live, each
+     is already correct again for the very next event the moment a name is placed; `castRepertoire`
+     additionally gets backfilled for free from a resolved name's held casts, so it isn't blind to what
+     happened during its own blind window once that window closes. And in practice none of the three
+     is even reachable while a name is still doubted today: a `cast`/`spell-outcome` event only passes
+     `FightScope.admits` once its caster is already `ours` or an enemy, which a doubted name is by
+     definition neither — so the fix is in place and correct, ready for the day step 3 changes that,
+     but nothing in today's log exercises it.
   3. **`FightScope.admits` gains a third value, `hold`.** Its doc explains the boolean: it "runs live,
      once per line, with no way back". After (1) and (2) there is a way back. Expiry of a held event
      means drop, so it degrades to today's behaviour.
