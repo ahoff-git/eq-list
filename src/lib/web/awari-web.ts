@@ -126,6 +126,7 @@ export function createAwariWeb(deps: { getSettings: () => Settings; getName: () 
       lists: { rows: () => getList().entries },
       pins: { rows: () => [] },
       mobs: { rows: () => [] },
+      factionObservations: { rows: () => [] },
       kills: { rows: () => [] },
       respawns: { rows: () => [] },
       timers: { rows: () => [] },

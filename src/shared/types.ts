@@ -3,6 +3,7 @@ import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } fr
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { KnowledgeContributor } from "./contributors";
+import type { FactionCauseKnowledge } from "./faction-observation";
 import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, ShareSettings } from "./peer-share";
 // Re-exported because every consumer of the `peer` bridge reads it off the api surface, and
 // `types.ts` is where that surface is described.
@@ -3145,6 +3146,9 @@ export const AWARI_MSG = {
   kills: "kills",
   /** A peer's observations about mobs: drop counts and roam areas, pooled into rates. */
   mobs: "mobs",
+  /** A peer's *verified* faction-cause tallies — a kill or conversation their own ledger settled on,
+   *  pooled into shared evidence of what raises/lowers a faction (`electron/faction-observations.ts`). */
+  factionObservations: "factionObservations",
   /**
    * Who a peer is (name + zone). awari's roster gives us peer *ids*; this is how a
    * connected-users list learns names. Sent on join, whenever ours changes, and
@@ -3733,6 +3737,20 @@ export interface EqlApi {
      * their shared kills with it — they are one contribution in two stores. Your own observations
      * are derived from the kill log and untouched either way.
      */
+    forgetPeers(id?: string): Promise<void>;
+  };
+  /**
+   * Pooled evidence for what's raised/lowered a faction — the *verified* half of a faction hit's
+   * guessed cause (`src/shared/faction-cause.ts`), once it's settled. Yours is derived from the
+   * ledger's own already-resolved causes; peers' arrives over the room and is kept separately
+   * (`electron/faction-observations.ts`), the same split `mobs` makes above.
+   */
+  factionObservations: {
+    /** Yours folded with every peer's, one row per (faction, kind, source) — what the Faction tab
+     *  reads to show pooled evidence beside its own. */
+    knowledge(): Promise<FactionCauseKnowledge[]>;
+    /** Forget one contributor's faction-cause reports (by id), or everybody's. Your own are derived
+     *  from the ledger and untouched either way. */
     forgetPeers(id?: string): Promise<void>;
   };
   /**

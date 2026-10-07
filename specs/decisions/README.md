@@ -229,7 +229,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0190: The pinned clock is dragged into position directly, not placed from Settings](./0190-the-pinned-clock-is-dragged-not-placed-from-settings.md)
 - [0191: The debug comparison was reading its two sides by different conventions](./0191-the-debug-comparison-was-comparing-mismatched-conventions.md)
 - [0192: Factions ride their own wiki pages, and tracking a raise-mob reuses the shopping list](./0192-factions-ride-their-own-wiki-pages.md)
-- [0193: A faction alert rides the existing line watch, ahead of a verified log line](./0193-a-faction-alert-rides-the-existing-line-watch.md) — *the line arrived and the parser + personal ledger shipped as [0218](./0218-a-faction-hit-is-parsed-not-only-watched.md); the pooled/correlated half still stands*
+- [0193: A faction alert rides the existing line watch, ahead of a verified log line](./0193-a-faction-alert-rides-the-existing-line-watch.md) — *the line arrived and the parser + personal ledger shipped as [0218](./0218-a-faction-hit-is-parsed-not-only-watched.md); the correlated guess followed as [0219](./0219-a-faction-cause-is-a-guess-from-timing.md)/[0220](./0220-a-conversation-can-be-the-guessed-cause-too.md), and the pooled half as [0283](./0283-a-faction-causes-pooled-half-gets-built.md)*
 - [0194: The follow window fades instead of cutting off](./0194-the-follow-window-fades-instead-of-cutting-off.md)
 - [0195: A spell catalog trusts the wiki's own numbers, not the game file's](./0195-a-spell-catalog-trusts-the-wikis-own-numbers.md)
 - [0196: Spells get their own shard-addressed mirror](./0196-spells-get-their-own-shard-addressed-mirror.md)
@@ -319,6 +319,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0280: An MCP server exposes the wiki cache, read-only](./0280-an-mcp-server-exposes-the-wiki-cache-read-only.md)
 - [0281: Three seconds and point five were already right](./0281-three-seconds-and-point-five-were-already-right.md)
 - [0282: An unmatched dialogue line is kept to retry](./0282-an-unmatched-dialogue-line-is-kept-to-retry.md)
+- [0283: A faction cause's pooled half gets built](./0283-a-faction-causes-pooled-half-gets-built.md)
 
 ## Open Questions
 

@@ -208,13 +208,16 @@ everything else, so this list can stay short enough to read:
      cache has never fetched at all (ADR 0221/0223's already-known limit) and simply keep retrying every
      launch; **193 (46%)** remain the real floor — no kill, no dialogue, nothing nearby either way.
 
-  Once (1) is settled, the **pooled** half ADR 0193 originally asked for is still open on top of it: a
-  `FactionObservation` store mirroring `mob-knowledge.ts`/`contributions.ts` exactly (own
-  `sanitize`/merge, same five rules — keyed by contributor id, a report replaces that contributor's
-  whole set, untrusted on arrival, bounded per peer) so a *verified* cause becomes shared evidence of
-  what raises/lowers a faction, alongside (and able to contradict) whatever the wiki's own faction
-  page says. Sharing a guess before it's checked would just be spreading the guess further, so this
-  waits on (1) rather than being built alongside it.
+  ~~Once (1) is settled, the **pooled** half ADR 0193 originally asked for is still open on top of
+  it.~~ **Closed** — [ADR 0283](./decisions/0283-a-faction-causes-pooled-half-gets-built.md).
+  `electron/faction-observations.ts` is a third consumer of `contributions.ts`'s generic
+  `ContributionStore`, built exactly like `mob-knowledge.ts`: own `sanitize`/merge, the same five
+  rules, kill and dialogue causes kept apart by `kind` all the way through pooling and into the UI
+  (never blended into one undifferentiated number). Your own share is derived from
+  `faction-log.ts`'s already-resolved `causes` rollup, never stored twice; peers' reports arrive over
+  the same `mobs`/`kills` pipeline, extended rather than duplicated. The Faction tab's Standings
+  drill-down now shows a small "+N peer hits" note (`pooledCauseBadge`, `faction-sort.ts`) when
+  another install's ledger also settled on the same cause.
 
   Separately: an **unsourced coin** (`kill-log.ts`'s `noteCoin` returning `false` — a real, ordinary
   case, ADR 0047) now gets the same guess, but only as a debug-log line (`main.ts`'s `onCoin`

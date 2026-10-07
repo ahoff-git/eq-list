@@ -6,7 +6,7 @@ import {
   type GridFilterModel,
   type GridPaginationModel,
 } from "@mui/x-data-grid";
-import { useCombatStats, useFactionHitsPage, useFactionStandings, useFactionStandingsSince } from "@/lib/hooks";
+import { useCombatStats, useFactionCauseKnowledge, useFactionHitsPage, useFactionStandings, useFactionStandingsSince } from "@/lib/hooks";
 import { resetSession } from "@/lib/api";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
@@ -19,11 +19,13 @@ import {
   DEFAULT_FACTION_STANDING_SORT,
   causeKindLabel,
   causeSource,
+  pooledCauseBadge,
   ratePerHour,
   sortFactionStandings,
   type FactionHitSortKey,
   type FactionStandingSortKey,
 } from "@/shared/faction-sort";
+import type { FactionCauseKnowledge } from "@/shared/faction-observation";
 import { clock, count, dayTime, when } from "@/shared/format";
 import type { Sort } from "@/shared/sorting";
 import type {
@@ -157,6 +159,10 @@ export default function FactionPanel() {
 
   const { page: hitsProbe } = useFactionHitsPage(HITS_PROBE_QUERY);
   const standings = useFactionStandings(hitsProbe.rows[0] ? factionKey(hitsProbe.rows[0]) : "");
+  // Pooled, *verified* faction-cause evidence (ADR 0283) — yours (already folded into `standings`
+  // above) plus whatever peers' own ledgers settled on, read once here and handed down to
+  // `CauseBreakdown`'s cause rows rather than each one asking separately.
+  const causeKnowledge = useFactionCauseKnowledge(hitsProbe.rows[0] ? factionKey(hitsProbe.rows[0]) : "");
 
   const combat = useCombatStats();
   const sessionStandings = useFactionStandingsSince(
@@ -298,7 +304,12 @@ export default function FactionPanel() {
             hint="Every faction the ledger has a change for is searched by name — try a shorter or different spelling."
           />
         ) : (
-          <StandingTable standings={shownStandings} sort={standingSort} onSort={setStandingSort} />
+          <StandingTable
+            standings={shownStandings}
+            sort={standingSort}
+            onSort={setStandingSort}
+            causeKnowledge={causeKnowledge}
+          />
         )}
       </div>
     </div>
@@ -602,6 +613,10 @@ function standingTitle(s: FactionStanding): string {
  *  could otherwise list a dozen one-off mobs and crowd out the two or three that actually matter. */
 const MAX_CAUSES_SHOWN = 3;
 
+/** A stable empty default for `StandingTable`'s `causeKnowledge` prop — a fresh `[]` every render
+ *  would retrigger `CauseGroup`'s own memo-free lookups for no reason. */
+const EMPTY_CAUSE_KNOWLEDGE: FactionCauseKnowledge[] = [];
+
 function causeExtra(c: FactionCauseTally): string {
   const sign = c.net > 0 ? `+${c.net}` : c.net ? `${c.net}` : "";
   return sign ? ` (${sign})` : ` (${count(c.hits, "hit")})`;
@@ -616,6 +631,7 @@ function StandingTable({
   drillDown = true,
   emptyTitle = "No standings yet.",
   emptyHint = "Folded from the hits on the other view.",
+  causeKnowledge = EMPTY_CAUSE_KNOWLEDGE,
 }: {
   standings: FactionStanding[];
   sort: Sort<FactionStandingSortKey>;
@@ -629,6 +645,10 @@ function StandingTable({
    *  hits on the other view" the lifetime Standings view means by that. */
   emptyTitle?: string;
   emptyHint?: string;
+  /** Pooled faction-cause evidence (ADR 0283), handed down to `CauseBreakdown`'s rows so a kill or
+   *  conversation a peer's own ledger also settled on shows as more than a lone guess. Omitted
+   *  (empty) for the Session view, which turns `drillDown` off and never opens one anyway. */
+  causeKnowledge?: FactionCauseKnowledge[];
 }) {
   /** One breakdown open at a time — two of them side by side is a table, not a drill-down. */
   const [open, setOpen] = useState<string | null>(null);
@@ -794,7 +814,7 @@ function StandingTable({
           },
         }}
       />
-      {openStanding && <CauseBreakdown standing={openStanding} />}
+      {openStanding && <CauseBreakdown standing={openStanding} causeKnowledge={causeKnowledge} />}
     </div>
   );
 }
@@ -804,15 +824,22 @@ function StandingTable({
  *  likely-cause tally underneath it (`CauseGroup`s — kills and conversations are different kinds of
  *  guess, ADR 0219 vs. ADR 0220/0221, so they stay apart rather than folding into one capped "+N more"
  *  line). */
-function CauseBreakdown({ standing }: { standing: FactionStanding }) {
+function CauseBreakdown({
+  standing,
+  causeKnowledge,
+}: {
+  standing: FactionStanding;
+  /** Pooled faction-cause evidence (ADR 0283) — see `StandingTable`'s own doc on this prop. */
+  causeKnowledge: FactionCauseKnowledge[];
+}) {
   const { causes, faction } = standing;
   const kills = causes.filter((c) => c.kind === "kill");
   const quests = causes.filter((c) => c.kind === "dialogue");
   return (
     <div className="cause-breakdown">
       <FactionHitsGrid faction={faction} />
-      {kills.length > 0 && <CauseGroup label="Kills" causes={kills} />}
-      {quests.length > 0 && <CauseGroup label="Quests" causes={quests} />}
+      {kills.length > 0 && <CauseGroup label="Kills" causes={kills} faction={faction} causeKnowledge={causeKnowledge} />}
+      {quests.length > 0 && <CauseGroup label="Quests" causes={quests} faction={faction} causeKnowledge={causeKnowledge} />}
       {!kills.length && !quests.length && (
         <div className="muted small">Nothing has been correlated to a kill or a conversation yet.</div>
       )}
@@ -822,24 +849,49 @@ function CauseBreakdown({ standing }: { standing: FactionStanding }) {
 
 /** One kind's causes, independently openable — collapsed to a summary line until asked, since a
  *  standing built up over months could otherwise open with a wall of one-off mobs or NPCs. Already
- *  sorted biggest `|net|` first by the ledger itself (`FactionStanding.causes`). */
-function CauseGroup({ label, causes }: { label: string; causes: FactionCauseTally[] }) {
+ *  sorted biggest `|net|` first by the ledger itself (`FactionStanding.causes`).
+ *
+ * Each row also carries whatever pooled evidence peers have reported for it (`pooledCauseBadge`,
+ * ADR 0283) — a small "+N peer hits" note beside the row, hover-explained, when at least one other
+ * install's own ledger settled on the same cause for this faction. Silent (no badge at all) the
+ * moment nothing pooled touches a row, which is the common case today and not an error — a kill or
+ * conversation nobody else has reported yet looks exactly as it did before pooling existed. */
+function CauseGroup({
+  label,
+  causes,
+  faction,
+  causeKnowledge,
+}: {
+  label: string;
+  causes: FactionCauseTally[];
+  faction: string;
+  causeKnowledge: FactionCauseKnowledge[];
+}) {
   return (
     <details className="cause-group">
       <summary>
         {label} <span className="muted small">({count(causes.length, causes[0]?.kind === "kill" ? "mob" : "conversation")})</span>
       </summary>
       <div className="cause-list">
-        {causes.map((c) => (
-          <span
-            className={`cause-item ${causeConfidence(c)}`}
-            key={`${c.kind}-${c.source}`}
-            title={causeConfidenceWhy(c)}
-          >
-            <ItemLink title={c.source} />
-            <span className="muted small">{causeExtra(c)}</span>
-          </span>
-        ))}
+        {causes.map((c) => {
+          const pooled = pooledCauseBadge(faction, c, causeKnowledge);
+          return (
+            <span
+              className={`cause-item ${causeConfidence(c)}`}
+              key={`${c.kind}-${c.source}`}
+              title={causeConfidenceWhy(c)}
+            >
+              <ItemLink title={c.source} />
+              <span className="muted small">{causeExtra(c)}</span>
+              {pooled && (
+                <span className="muted small fc-pooled" title={pooled.title}>
+                  {" "}
+                  · {pooled.label}
+                </span>
+              )}
+            </span>
+          );
+        })}
       </div>
     </details>
   );

@@ -108,6 +108,11 @@ export const CH = {
   mobsForgetPeers: "mobs:forgetPeers",
   /** Kill positions peers have shared, kept between sessions (`electron/peer-kills.ts`). */
   peerKillsAll: "peerKills:all",
+  /** Pooled evidence for what's raised/lowered a faction — yours folded with every peer's
+   *  (`electron/faction-observations.ts`). */
+  factionObservationsKnowledge: "factionObservations:knowledge",
+  /** Forget one contributor's faction-cause reports (by id) or all of them. */
+  factionObservationsForgetPeers: "factionObservations:forgetPeers",
   killsClear: "kills:clear",
   spawnsView: "spawns:view",
   spawnsState: "spawns:state", // the player's own respawn figure, which nothing observed overwrites

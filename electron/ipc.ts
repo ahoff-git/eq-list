@@ -35,6 +35,7 @@ import type { FactionCorrections } from "./faction-corrections";
 import { applyFactionCorrections } from "../src/shared/faction-correction";
 import type { AutoUpdater } from "./auto-update";
 import type { MobKnowledgeStore } from "./mob-knowledge";
+import type { FactionObservationsStore } from "./faction-observations";
 import type { PeerKillStore } from "./peer-kills";
 import type { PeerRespawnStore } from "./peer-respawns";
 import type { PeerArchive } from "./peer-archive";
@@ -79,6 +80,9 @@ export interface IpcContext {
   factionCorrections: FactionCorrections;
   updates: AutoUpdater;
   mobs: MobKnowledgeStore;
+  /** Pooled, *verified* faction-cause evidence — the pooled half of `faction-cause.ts`'s guess, once
+   *  it's settled (`electron/faction-observations.ts`). */
+  factionObservations: FactionObservationsStore;
   /** Kill positions other players have shared, kept across sessions (`peer-kills.ts`). */
   peerKills: PeerKillStore;
   /** Respawn intervals other players have learned, kept across sessions (`peer-respawns.ts`). */
@@ -471,7 +475,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot, faction standing and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight"]): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, factionCorrections, mobs, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, factionCorrections, mobs, factionObservations, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // Pooled the same way the live push and a filed fight both are (ADR 0276) — a reader that opens
   // the Combat tab mid-fight gets the same merged figures `CH.combatChanged` would have pushed it,
@@ -768,6 +772,11 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
   // Who has told us what. Reporting is **not** here: contributions are filed by `registerPeerIpc`
   // as they arrive, so nothing depends on a particular window being open to receive them.
   ipcMain.handle(CH.mobsContributors, () => mobs.contributors());
+  // Pooled, *verified* faction-cause evidence — yours (derived from the ledger) folded with every
+  // peer's reported tally, one row per (faction, kind, source). Reporting is **not** here, same
+  // reason `mobsContributors` isn't: contributions are filed by `registerPeerIpc` as they arrive.
+  ipcMain.handle(CH.factionObservationsKnowledge, () => factionObservations.knowledge());
+  ipcMain.handle(CH.factionObservationsForgetPeers, (_e, id?: string) => factionObservations.forgetPeers(id));
   ipcMain.handle(CH.mobsForgetPeers, (_e, id?: string) => {
     mobs.forgetPeers(id);
     // Kills and observations are the same person's contribution split across two stores, so
@@ -960,7 +969,7 @@ function registerWindowIpc(context: IpcContext, shared: SharedIpc): void {
  * outlive the session, so they are stamped on the way out and filed on the way in, here, by the
  * process that is always running.
  */
-const CONTRIBUTED_KINDS = new Set<string>([AWARI_MSG.mobs, AWARI_MSG.kills]);
+const CONTRIBUTED_KINDS = new Set<string>([AWARI_MSG.mobs, AWARI_MSG.kills, AWARI_MSG.factionObservations]);
 
 /**
  * The peer-networking relay, and the one place contributed data crosses the wire in either
@@ -988,12 +997,14 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
   const {
     broadcast,
     mobs,
+    factionObservations,
     peerKills,
     peerRespawns,
     peerArchive,
     contributorId,
     store,
     killLog,
+    factionLog,
     spawns,
     buffs,
     scores,
@@ -1022,6 +1033,10 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
     if (!by) return void log.debug("contribution ignored - no contributor id", { kind: payload.kind });
     if (payload.kind === AWARI_MSG.mobs && Array.isArray(payload.mobs)) {
       for (const { by: origin, rows } of groupByOrigin(payload.mobs, by).values()) mobs.report(origin, rows);
+    } else if (payload.kind === AWARI_MSG.factionObservations && Array.isArray(payload.factionObservations)) {
+      for (const { by: origin, rows } of groupByOrigin(payload.factionObservations, by).values()) {
+        factionObservations.report(origin, rows);
+      }
     } else if (payload.kind === AWARI_MSG.kills && Array.isArray(payload.kills)) {
       for (const { by: origin, rows } of groupByOrigin(payload.kills, by).values()) peerKills.report(origin, rows);
       // `respawns` has no `AWARI_MSG` entry of its own, unlike `mobs`/`kills`: those two reuse a
@@ -1073,6 +1088,8 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
       getSettings: () => store.getSettings(),
       killLog,
       mobKnowledge: mobs,
+      factionLog,
+      factionObservations,
       peerKills,
       peerRespawns,
       factions: wiki.factions,
@@ -1284,6 +1301,7 @@ function registerAdminIpc(context: IpcContext): void {
     peerKills: context.peerKills.admin,
     peerRespawns: context.peerRespawns.admin,
     pooledMobKnowledge: context.mobs.admin,
+    pooledFactionObservations: context.factionObservations.admin,
   });
 
   ipcMain.handle(CH.adminStores, () => admin.stores());

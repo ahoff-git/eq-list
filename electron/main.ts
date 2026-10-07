@@ -40,6 +40,7 @@ import { lootRecord } from "../src/shared/loot-feed";
 import { autoUpdater } from "electron-updater";
 import { createAutoUpdater, type UpdaterLike } from "./auto-update";
 import { createMobKnowledge } from "./mob-knowledge";
+import { createFactionObservations } from "./faction-observations";
 import { createPeerKills } from "./peer-kills";
 import { createPeerRespawns } from "./peer-respawns";
 import { createPeerArchive } from "./peer-archive";
@@ -319,6 +320,10 @@ if (!app.requestSingleInstanceLock()) {
   // this is the one place real and fake `autoUpdater` meet.
   const updates = createAutoUpdater(autoUpdater as unknown as UpdaterLike);
   const mobs = createMobKnowledge(userData, killLog);
+  // The pooled half of a faction hit's guessed cause, once it's settled (ADR 0283) — your own share
+  // derived from `factionLog.standings()`'s already-resolved causes, the same "never stored twice"
+  // rule `mobs` states above for your own kills.
+  const factionObservations = createFactionObservations(userData, factionLog);
   // Kept across sessions rather than held by whichever window happens to be open, so a room teaches
   // this install whether or not the map is up (see `peer-kills.ts`).
   const peerKills = createPeerKills(userData);
@@ -425,6 +430,7 @@ if (!app.requestSingleInstanceLock()) {
     factionCorrections,
     updates,
     mobs,
+    factionObservations,
     peerKills,
     peerRespawns,
     peerArchive,
@@ -1008,6 +1014,7 @@ if (!app.requestSingleInstanceLock()) {
     factionCorrections.flush();
     scores.flush();
     mobs.flush();
+    factionObservations.flush();
     peerKills.flush();
     peerRespawns.flush();
     peerArchive.flush();
