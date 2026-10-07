@@ -83,6 +83,7 @@
   "build": {
     "appId": "com.ka1n0s.eqlist",
     "productName": "EQ List",
+    "artifactName": "EQ-List-Setup-${version}.${ext}",
     "files": [
       "dist-electron/**/*",
       "out/**/*",

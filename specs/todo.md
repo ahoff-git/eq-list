@@ -12,15 +12,15 @@ everything else, so this list can stay short enough to read:
 
 ## Distribution
 
-- **Landing page — point Download straight at the asset (optional).** Hosting is done:
-  `.github/workflows/deploy-pages.yml` publishes `landing/` to GitHub Pages on push to main (repo
-  owner still needs to flip Settings → Pages → Source → GitHub Actions once). `landing/index.html`'s
-  buttons are wired (Download → `/releases/latest`, Launch → `eqlist://open`). Still open: pointing
-  Download straight at `/releases/latest/download/<asset>` needs a stable asset filename, and today's
-  isn't one — electron-builder's default NSIS name is `EQ List Setup ${version}.exe`, and
-  `scripts/stamp-version.mjs` bumps `version` to `0.1.<run-number>` on every build, so the filename
-  changes release to release. Settle on a fixed `nsis.artifactName` (dropping `${version}`) before
-  wiring this, or drop the idea.
+- **Landing page — point Download straight at the asset (optional).** Hosting is done and live:
+  `.github/workflows/deploy-pages.yml` publishes `landing/` to GitHub Pages
+  (https://ahoff-git.github.io/eq-list/), Pages is enabled with source = GitHub Actions.
+  `landing/index.html`'s buttons are wired (Download → `/releases/latest`, Launch → `eqlist://open`).
+  Still open: pointing Download straight at `/releases/latest/download/<asset>` needs a stable,
+  *predictable* filename pattern (`${version}` still changes release to release, which is fine — the
+  link would just need to be templated by something, since nothing hardcodes the current version
+  today). Low value since `/releases/latest` already redirects correctly; only worth it to save the
+  extra hop.
 - **Code signing (optional).** Builds are unsigned → Windows SmartScreen warns "unknown publisher".
   Needs a cert (`CSC_LINK`/`CSC_KEY_PASSWORD` secrets) wired into the workflow.
 
