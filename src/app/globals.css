@@ -392,6 +392,10 @@ button {
 .panel {
   flex: 1;
   overflow-y: auto;
+  /* No window frame to anchor against: past the end of a short tab (Combat with no fight running,
+     say), an unchained wheel scroll rubber-bands/chains past this element and visibly drags the
+     whole frameless window. `contain` stops the scroll here instead of handing it up the chain. */
+  overscroll-behavior: contain;
   padding: 16px;
 }
 

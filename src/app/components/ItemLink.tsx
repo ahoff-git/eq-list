@@ -1,9 +1,10 @@
 "use client";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { useOptionalNav } from "@/lib/nav";
 import { api } from "@/lib/api";
 import { useItemCard } from "@/lib/hooks";
-import { localSize, localTextBox, localView } from "@/lib/screen";
+import { localSize, localTextBox, localView, scaleRoot } from "@/lib/screen";
 import { besideWidth, placeTooltip, type AnchorBox, type Placement } from "@/shared/tooltip";
 import type { ItemCard } from "@/shared/types";
 
@@ -16,6 +17,14 @@ import type { ItemCard } from "@/shared/types";
  * dropping onto the rows above and below — never over it. `placeTooltip` and `besideWidth` own that
  * rule; `lib/screen.ts` hands them measurements in the units the placement is written in, which is
  * not the same as the units it was measured in (the interface scale is a CSS `zoom`, ADR 0041).
+ *
+ * The card is portaled to `scaleRoot()` rather than rendered where the name sits. A name inside a
+ * `DataGrid` cell (Items, Loot, Faction's standings…) sits under the grid's own root, which carries a
+ * `transform` of its own (MUI pins its scrollbars with one) — and a transformed ancestor becomes the
+ * containing block for `position: fixed` too, so the card measured itself against the window but was
+ * placed against the grid instead, landing well off from the name. `scaleRoot()` is outside anything
+ * a table underneath it might have transformed, but still inside the zoomed shell, so the card's own
+ * already-zoom-divided math still lands correctly.
  *
  * The map window has no page view of its own, so a click there hands the name to the
  * control window's Search instead of navigating in place.
@@ -137,7 +146,7 @@ function ItemCardTip({ card, anchor }: { card: ItemCard; anchor: AnchorBox }) {
     setPlace({ ...placeTooltip(anchor, localSize(el), localView()), ready: true });
   }, [anchor, card]);
 
-  return (
+  return createPortal(
     <span
       ref={ref}
       className="item-card"
@@ -164,6 +173,7 @@ function ItemCardTip({ card, anchor }: { card: ItemCard; anchor: AnchorBox }) {
           {l}
         </span>
       ))}
-    </span>
+    </span>,
+    scaleRoot(),
   );
 }

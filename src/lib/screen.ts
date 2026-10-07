@@ -37,9 +37,24 @@ export interface ScreenPoint {
  * ([ADR 0231](../../specs/decisions/0231-the-zoom-root-moves-inside-the-shell.md)).
  */
 export function rootZoom(): number {
-  const el = document.querySelector<HTMLElement>(`[${UI_SCALE_ROOT_ATTR}]`);
-  const z = el ? Number.parseFloat(getComputedStyle(el).zoom) : NaN;
+  const z = Number.parseFloat(getComputedStyle(scaleRoot()).zoom);
   return Number.isFinite(z) && z > 0 ? z : 1;
+}
+
+/**
+ * The element `useUiScale` zoomed (`.app`/`.map-win`), found by its own marker attribute —
+ * `document.body` on a window that never applied a scale (a test page, the alert overlay).
+ *
+ * A second job besides zoom lookup: it's where a `position: fixed` popover escapes to when it would
+ * otherwise render *inside* something with its own CSS `transform` — MUI's `DataGrid` gives its root
+ * one (to pin its scrollbars below a sticky header), and a transformed ancestor becomes the
+ * containing block for `fixed` too, not just `absolute`. A card "fixed" in there is positioned
+ * against the grid's box, not the window's, which is why a hover card inside a table placed itself
+ * well off from the name it was explaining. Escaping to here keeps it inside the zoomed subtree
+ * (so its own math, already in zoom-divided units) while leaving whatever transformed it behind.
+ */
+export function scaleRoot(): HTMLElement {
+  return document.querySelector<HTMLElement>(`[${UI_SCALE_ROOT_ATTR}]`) ?? document.body;
 }
 
 /** A measured screen length, in the units a style writes. */

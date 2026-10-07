@@ -2485,3 +2485,24 @@ tests all passed (144 AAs parsed from a live fetch; every category and all 16 cl
   the live page if one ever looks wrong.
 - **Criteria persist.** Set a class filter and a search, switch tabs away and back, and confirm both
   are exactly as left — same "workbench" persistence the Stances/Spells tabs' own criteria get.
+
+## `.panel`'s overscroll chaining into the frameless window
+
+A real report: scrolling the Combat tab past its content (easiest when it's short — no fight running,
+or just the stat tiles) dragged the whole window around via a scrollbar that didn't correspond to any
+real content. No `overscroll-behavior` existed anywhere in the app, so Chromium's default rubber-band/
+scroll-chaining on `.panel` (`globals.css`) had nowhere to stop and bled into the frameless window
+shell itself — nothing anchors it the way a real OS window frame would. Fixed by adding
+`overscroll-behavior: contain` to `.panel`. Typecheck and lint both pass; this sandbox's own
+smoke-test attempt couldn't confirm it live (see the "Launching the app" entry above).
+
+- **The reported repro.** Open Combat with no fight running (or any tab whose content is shorter than
+  the window — Goals/Achievements with little recorded are good alternatives). Scroll down past the
+  end with a mouse wheel or trackpad and confirm the window itself no longer visibly shifts/rubber-
+  bands — the scroll should simply stop at `.panel`'s own bottom edge. Repeat scrolling *up* past the
+  top. Worth trying on a maximized window too, not just floating/transparent mode, since the titlebar
+  drag region (`-webkit-app-region: drag`) is the part most at risk of reading a chained scroll as a
+  window move.
+- **No regression to normal scrolling.** On a tall tab (Loot, Items, a long Combat history) confirm
+  ordinary scrolling still works exactly as before — `overscroll-behavior: contain` only changes what
+  happens *past* the ends, not ordinary scrolling within them.
