@@ -121,6 +121,23 @@
  * once — to keep producing the same row, which compounds the improbability well past a single hit.
  * Nothing here changes when a `FactionCause` is attached or what it says; it only grades how much the
  * *pattern* across every hit on record is worth believing, never the lone guess on its own.
+ *
+ * **A hit that matches nothing today may match something tomorrow, so `guess()` carries that forward
+ * too.** `recheckDialogueCauses` (`electron/faction-log.ts`) already re-asks `questsForSpeaker` for a
+ * hit that's *already* dialogue-caused, as the wiki cache grows — but before ADR 0282, a hit that
+ * matched nothing **the first time** had nothing stored to re-ask: `guess()` returned `undefined` and
+ * the npc/text it looked at were simply discarded. A real-data survey (ADR 0281) found this wasn't
+ * rare — 185 of one player's 20,571 faction hits had a dialogue line nearby that today's (grown) wiki
+ * cache could explain, every one of them still sitting uncaused because nothing survived to be
+ * rechecked. `resolve()` now carries the npc/text/gap forward as `FactionRecord.unmatchedDialogue`
+ * whenever the dialogue branch below found a line in-window but no quest for it — never when there
+ * was no dialogue nearby at all, so this stays scoped to the real population ADR 0281 measured (a
+ * hit's history is silent unless something was actually said near it), not "every uncaused hit,
+ * forever" (ADR 0232's "ledger answers forever" already covers the hit itself; this is only about
+ * what else that one hit's own row is worth holding). `recheckDialogueCauses` widens its own query to
+ * pick these up and promote them the moment `questsForSpeaker` agrees, using exactly this context — a
+ * live guess and a later recheck share one function for the same reason ADR 0259 already gives: so a
+ * promoted guess is indistinguishable from one made live.
  */
 import { confidenceOf, type Confidence, type SampleScale } from "./estimates";
 import { count } from "./format";
@@ -271,7 +288,10 @@ export interface FactionCauseTracker {
   /**
    * The event, with a likely cause attached if a noted kill or line of dialogue landed within its
    * window — a kill checked first, dialogue only when nothing was close enough to blame on a kill.
-   * Never mutates its input; hands back the same shape unchanged when nothing was close enough.
+   * Never mutates its input; hands back the same shape unchanged when nothing was close enough or
+   * nearby at all. When a dialogue line *was* in window but named no quest, the event instead gains
+   * `unmatchedDialogue` (ADR 0282) rather than a `causedBy` — see this file's header and
+   * `FactionRecord.unmatchedDialogue`'s own doc.
    */
   resolve(event: FactionEvent): FactionRecord;
   /**
@@ -310,15 +330,21 @@ export function createFactionCauseTracker(deps: FactionCauseTrackerDeps = {}): F
   let lastKill: { mob: string; at: number } | null = null;
   let lastDialogue: { npc: string; text: string; at: number } | null = null;
 
-  /** The shared guess behind both `resolve` and `explainUnsourcedCoin`: a kill first, then dialogue. */
-  function guess(atIso: string): FactionCause | undefined {
+  /**
+   * The shared guess behind both `resolve` and `explainUnsourcedCoin`: a kill first, then dialogue.
+   * `unmatchedDialogue` is set only when a dialogue line was in window but named no quest — the
+   * context `resolve` carries forward so a later `recheckDialogueCauses` can re-ask the same question
+   * (ADR 0282, this file's header). `explainUnsourcedCoin` has nowhere to put that context (there is
+   * no ledger row behind a coin line to recheck later), so it only ever reads `cause`.
+   */
+  function guess(atIso: string): { cause?: FactionCause; unmatchedDialogue?: { npc: string; text: string; gapSec: number } } {
     const at = Date.parse(atIso);
     if (lastKill) {
       // Both directions, deliberately — see the module header. `gapSec` reports how far apart the
       // two lines are, not which came first: the log's own order here is an artifact of how this
       // server flushes its output, not a fact worth asserting to the reader.
       const gapSec = Math.abs(at - lastKill.at) / 1000;
-      if (gapSec <= CORRELATION_WINDOW_SEC) return { kind: "kill", mob: lastKill.mob, gapSec };
+      if (gapSec <= CORRELATION_WINDOW_SEC) return { cause: { kind: "kill", mob: lastKill.mob, gapSec } };
     }
     if (lastDialogue) {
       const gapSec = (at - lastDialogue.at) / 1000;
@@ -327,10 +353,13 @@ export function createFactionCauseTracker(deps: FactionCauseTrackerDeps = {}): F
         // header and `questsForSpeaker`'s own doc for why an unmatched speaker is now treated as
         // silence rather than evidence.
         const named = questsForSpeaker(lastDialogue.npc, lastDialogue.text, deps);
-        if (named) return { kind: "dialogue", npc: lastDialogue.npc, text: lastDialogue.text, gapSec, ...named };
+        if (named) return { cause: { kind: "dialogue", npc: lastDialogue.npc, text: lastDialogue.text, gapSec, ...named } };
+        // Matched nothing *yet* — still worth remembering (ADR 0282), not discarding, since the wiki
+        // cache that would explain this is free to grow after this hit is already on record.
+        return { unmatchedDialogue: { npc: lastDialogue.npc, text: lastDialogue.text, gapSec } };
       }
     }
-    return undefined;
+    return {};
   }
 
   return {
@@ -345,10 +374,14 @@ export function createFactionCauseTracker(deps: FactionCauseTrackerDeps = {}): F
     },
 
     resolve(event) {
-      const causedBy = guess(event.at);
-      return causedBy ? { ...event, causedBy } : event;
+      const { cause, unmatchedDialogue } = guess(event.at);
+      return {
+        ...event,
+        ...(cause ? { causedBy: cause } : {}),
+        ...(unmatchedDialogue ? { unmatchedDialogue } : {}),
+      };
     },
 
-    explainUnsourcedCoin: (at) => guess(at),
+    explainUnsourcedCoin: (at) => guess(at).cause,
   };
 }

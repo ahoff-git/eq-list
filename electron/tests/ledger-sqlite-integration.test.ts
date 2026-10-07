@@ -91,8 +91,12 @@ test("all four ledgers share one eqlist.db, migrated together in the same combin
     // migration [ADR 0240], 6: kills' zone index, 7: combat history's sessionId index [both ADR
     // 0243], 8: loot's fate index [ADR 0247]) — sharing one `user_version` sequence is the whole
     // point (ADR 0232's header), so the combined open should land on the highest version across
-    // every store, not just one store's own.
-    assert.equal(userVersion, 8, "every store's migration landed, on one shared version counter");
+    // every store, not just one store's own. 9 belongs to `wiki/page-store.ts`, not one of the four
+    // ledgers this test combines, so it's absent from this particular list; faction's own
+    // unmatched-dialogue columns (ADR 0282) claimed 10 next, the true highest at the time it was
+    // written (re-checked by grepping every store's `version:` before claiming it, same discipline
+    // `specs/decisions/README.md` asks of an ADR number).
+    assert.equal(userVersion, 10, "every store's migration landed, on one shared version counter");
     assert.deepEqual(
       fs.readdirSync(dir).filter((f) => f.endsWith(".db")),
       ["eqlist.db"],
@@ -217,7 +221,7 @@ test("the whole shared database survives a restart, across all four stores at on
     }
 
     const { factionLog, lootLog, killLog, history, userVersion } = openAllLedgers(dir);
-    assert.equal(userVersion, 8, "re-migrating an already-current database is a no-op, not a re-run");
+    assert.equal(userVersion, 10, "re-migrating an already-current database is a no-op, not a re-run");
     assert.equal(factionLog.recent().length, 1);
     assert.equal(lootLog.recent().length, 1);
     assert.equal(killLog.kills().length, 1);

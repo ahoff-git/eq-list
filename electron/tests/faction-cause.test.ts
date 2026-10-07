@@ -205,6 +205,56 @@ test("with no questGiver dependency at all, a dialogue line produces no cause at
   assert.equal(tracker.resolve(hit(10)).causedBy, undefined);
 });
 
+// ─── Carrying an unmatched dialogue line forward, so it can be rechecked later (ADR 0282) ──────
+
+test("a dialogue line in window that matches no quest leaves unmatchedDialogue behind, not just a bare resolve", () => {
+  const tracker = createFactionCauseTracker({ questGiver: () => [] });
+  tracker.noteLine(line(8, "Some Rando says, 'hey'"));
+  const resolved = tracker.resolve(hit(10));
+  assert.equal(resolved.causedBy, undefined, "still no cause — ADR 0261 stands");
+  assert.deepEqual(resolved.unmatchedDialogue, { npc: "Some Rando", text: "hey", gapSec: 2 });
+});
+
+test("with no questGiver dependency at all, the unmatched line is still carried forward", () => {
+  const tracker = createFactionCauseTracker();
+  tracker.noteLine(line(8, "Vira says, 'Well done.'"));
+  const resolved = tracker.resolve(hit(10));
+  assert.equal(resolved.causedBy, undefined);
+  assert.deepEqual(resolved.unmatchedDialogue, { npc: "Vira", text: "Well done.", gapSec: 2 });
+});
+
+test("a matched dialogue cause carries no unmatchedDialogue alongside it — nothing left to retry", () => {
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Proving Your Worth"] });
+  tracker.noteLine(line(8, "Bumle Reminjar tells you, 'You have proven yourself worthy.'"));
+  const resolved = tracker.resolve(hit(10));
+  assert.equal(resolved.causedBy?.kind, "dialogue");
+  assert.equal(resolved.unmatchedDialogue, undefined);
+});
+
+test("a kill cause leaves no unmatchedDialogue even if an (unchecked) dialogue line was also nearby", () => {
+  const tracker = createFactionCauseTracker({ questGiver: () => [] });
+  tracker.noteLine(line(8, "Some Rando says, 'hey'"));
+  tracker.noteKill("a gnoll pup", "2026-07-29T00:00:09");
+  const resolved = tracker.resolve(hit(10));
+  assert.equal(resolved.causedBy?.kind, "kill");
+  assert.equal(resolved.unmatchedDialogue, undefined, "the kill explained it first; dialogue was never even asked");
+});
+
+test("no dialogue nearby at all leaves no unmatchedDialogue — scoped to hits that actually saw a line (ADR 0281's real population)", () => {
+  const tracker = createFactionCauseTracker();
+  assert.equal(tracker.resolve(hit(10)).unmatchedDialogue, undefined);
+
+  const outsideWindow = createFactionCauseTracker();
+  outsideWindow.noteLine(line(10 - DIALOGUE_WINDOW_SEC - 1, "Vira says, 'Well done.'"));
+  assert.equal(outsideWindow.resolve(hit(10)).unmatchedDialogue, undefined, "too far away to count as 'nearby' at all");
+});
+
+test("explainUnsourcedCoin never carries unmatchedDialogue — there's no ledger row behind a coin line to recheck later", () => {
+  const tracker = createFactionCauseTracker({ questGiver: () => [] });
+  tracker.noteLine(line(8, "Some Rando says, 'hey'"));
+  assert.equal(tracker.explainUnsourcedCoin("2026-07-29T00:00:10"), undefined);
+});
+
 test("the giver lookup is never asked about a kill cause", () => {
   let asked = false;
   const tracker = createFactionCauseTracker({

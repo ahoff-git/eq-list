@@ -119,6 +119,22 @@ export const FACTION_LOG_MIGRATIONS: readonly Migration[] = [
       `);
     },
   },
+  {
+    version: 10,
+    label: "faction_hits_unmatched_dialogue",
+    up(db) {
+      // ADR 0282: a hit that saw a line of NPC dialogue but matched no quest at the time gets
+      // somewhere to hold that npc/text/gap — nullable, and only ever populated alongside a NULL
+      // `caused_by_kind` (see `FactionRecord.unmatchedDialogue`'s own doc). Lets `recheckDialogueCauses`
+      // re-ask `questsForSpeaker` for a hit that resolved to nothing, not only one that already
+      // carries a dialogue guess, closing the gap ADR 0281 measured.
+      db.exec(`
+        ALTER TABLE faction_hits ADD COLUMN unmatched_npc TEXT;
+        ALTER TABLE faction_hits ADD COLUMN unmatched_text TEXT;
+        ALTER TABLE faction_hits ADD COLUMN unmatched_gap_sec REAL;
+      `);
+    },
+  },
 ];
 
 /** A `FactionCause` flattened to the columns `faction_hits` stores it in. */
@@ -158,6 +174,9 @@ interface HitRow {
   caused_by_text: string | null;
   caused_by_quests: string | null;
   caused_by_quests_matched: number | null;
+  unmatched_npc: string | null;
+  unmatched_text: string | null;
+  unmatched_gap_sec: number | null;
   raw: string;
   log_id: number;
   admin_audit: string | null;
@@ -187,6 +206,9 @@ function rowToRecord(r: HitRow): FactionRecord {
     delta: r.delta,
     direction: r.direction,
     ...(causedBy ? { causedBy } : {}),
+    ...(r.unmatched_npc !== null && r.unmatched_text !== null && r.unmatched_gap_sec !== null
+      ? { unmatchedDialogue: { npc: r.unmatched_npc, text: r.unmatched_text, gapSec: r.unmatched_gap_sec } }
+      : {}),
   };
 }
 
@@ -350,17 +372,22 @@ export interface FactionLog {
    * a rule change without needing its own log line back. Uses `questsForSpeaker` — the exact function
    * a live guess calls — against each hit's already-stored `npc`/`text`, so a re-check produces
    * precisely what a fresh guess would say right now, not a second implementation of the same rule.
-   * Two rules it can now correct:
+   * Three rules it can now correct or complete:
    *
    *   - **ADR 0257**: a "Quest giver" naming something that isn't a mob never should have named a
    *     quest at all — `quests`/`questsMatched` are cleared, the raw `npc`/`text` stay.
    *   - **ADR 0261**: a speaker matched to no quest at all is no cause at all any more, not a weaker
    *     one (it's just as likely a hostile mob's own combat social or a corpse's flavor line) — the
    *     whole `causedBy` is cleared, reverting the hit to uncorrelated.
+   *   - **ADR 0282**: a hit that resolved to *no cause at all* the first time, but saw a dialogue line
+   *     nearby that matched nothing then (`FactionRecord.unmatchedDialogue`), is promoted to a real
+   *     dialogue `causedBy` the moment `questsForSpeaker` agrees — the gap ADR 0281 measured, where a
+   *     hit's own npc/text used to be discarded the instant nothing matched, leaving nothing for this
+   *     function to ever revisit.
    *
    * A hit whose fresh answer matches what's already stored is left untouched; only `changed` rows are
    * written. Idempotent and cheap to call repeatedly — as the wiki cache grows, a later call can still
-   * improve (or, per ADR 0261, correct) a row an earlier one couldn't.
+   * improve (or, per ADR 0261, correct — or, per ADR 0282, promote) a row an earlier one couldn't.
    */
   recheckDialogueCauses(deps: Pick<FactionCauseTrackerDeps, "questGiver" | "questDialogue" | "isMob">): {
     checked: number;
@@ -383,10 +410,12 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
   const insertHit = db.prepare(`
     INSERT OR IGNORE INTO faction_hits
       (key, at, faction, direction, delta, caused_by_kind, caused_by_source, caused_by_gap_sec,
-       caused_by_text, caused_by_quests, caused_by_quests_matched, raw, log_id)
+       caused_by_text, caused_by_quests, caused_by_quests_matched,
+       unmatched_npc, unmatched_text, unmatched_gap_sec, raw, log_id)
     VALUES
       (@key, @at, @faction, @direction, @delta, @causedByKind, @causedBySource, @causedByGapSec,
-       @causedByText, @causedByQuests, @causedByQuestsMatched, @raw, @logId)
+       @causedByText, @causedByQuests, @causedByQuestsMatched,
+       @unmatchedNpc, @unmatchedText, @unmatchedGapSec, @raw, @logId)
   `);
   const selectRecent = db.prepare(`SELECT * FROM faction_hits ORDER BY at DESC, rowid DESC LIMIT ?`);
   const selectAll = db.prepare(`SELECT * FROM faction_hits ORDER BY at DESC, rowid DESC`);
@@ -465,11 +494,18 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
   const deleteFrozen = db.prepare(`DELETE FROM faction_standings_frozen`);
   const deleteHit = db.prepare(`DELETE FROM faction_hits WHERE key = ?`);
   const updateAudit = db.prepare(`UPDATE faction_hits SET admin_audit = ? WHERE key = ?`);
+  // Widened by ADR 0282 to pick up a hit that *never* got a dialogue cause at all, not only one that
+  // already carries one — `causedByKind` tells `recheckDialogueCauses` which of its two rows this is,
+  // since the two need different treatment below. `COALESCE` reads whichever pair of columns this row
+  // actually populated: an already-dialogue-caused row's own `caused_by_source`/`caused_by_text`, or
+  // an unmatched row's `unmatched_npc`/`unmatched_text` — never both, per the columns' own invariant.
   const selectDialogueCauses = db.prepare(`
-    SELECT key, caused_by_source as source, caused_by_text as text,
+    SELECT key, caused_by_kind as causedByKind,
+           COALESCE(caused_by_source, unmatched_npc) as source,
+           COALESCE(caused_by_text, unmatched_text) as text,
            caused_by_quests as quests, caused_by_quests_matched as questsMatched
     FROM faction_hits
-    WHERE caused_by_kind = 'dialogue'
+    WHERE caused_by_kind = 'dialogue' OR (caused_by_kind IS NULL AND unmatched_npc IS NOT NULL)
   `);
   const updateDialogueQuests = db.prepare(`
     UPDATE faction_hits SET caused_by_quests = ?, caused_by_quests_matched = ? WHERE key = ?
@@ -477,11 +513,29 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
   // ADR 0261: an unmatched speaker no longer names a weaker dialogue cause, it names none at all — a
   // hostile mob's own combat social or a corpse's flavor line reads exactly like a quest giver's
   // reply, so a hit like this reverts to uncorrelated rather than keeping a guess now known to be
-  // more often wrong than right.
+  // more often wrong than right. Also clears any `unmatched_*` payload: this row is about to be
+  // re-guessed from a live kill/dialogue line again if a future hit lands near it, not retried from
+  // stale npc/text that already proved wrong once.
   const clearCause = db.prepare(`
     UPDATE faction_hits SET
       caused_by_kind = NULL, caused_by_source = NULL, caused_by_gap_sec = NULL,
-      caused_by_text = NULL, caused_by_quests = NULL, caused_by_quests_matched = NULL
+      caused_by_text = NULL, caused_by_quests = NULL, caused_by_quests_matched = NULL,
+      unmatched_npc = NULL, unmatched_text = NULL, unmatched_gap_sec = NULL
+    WHERE key = ?
+  `);
+  // ADR 0282: promotes a hit that saw dialogue but matched nothing *at the time* into a real dialogue
+  // cause, now that `questsForSpeaker` agrees — reading `unmatched_npc`/`unmatched_gap_sec`/
+  // `unmatched_text` straight off the same row rather than round-tripping them back through params,
+  // and clearing them in the same statement: once a cause exists there's nothing left to retry.
+  const promoteUnmatchedDialogue = db.prepare(`
+    UPDATE faction_hits SET
+      caused_by_kind = 'dialogue',
+      caused_by_source = unmatched_npc,
+      caused_by_gap_sec = unmatched_gap_sec,
+      caused_by_text = unmatched_text,
+      caused_by_quests = ?,
+      caused_by_quests_matched = ?,
+      unmatched_npc = NULL, unmatched_text = NULL, unmatched_gap_sec = NULL
     WHERE key = ?
   `);
 
@@ -499,6 +553,9 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
       causedByText: c.text,
       causedByQuests: c.quests,
       causedByQuestsMatched: c.questsMatched,
+      unmatchedNpc: event.unmatchedDialogue?.npc ?? null,
+      unmatchedText: event.unmatchedDialogue?.text ?? null,
+      unmatchedGapSec: event.unmatchedDialogue?.gapSec ?? null,
       raw: event.raw,
       logId: event.logId,
     };
@@ -659,6 +716,7 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
     recheckDialogueCauses(deps) {
       const rows = selectDialogueCauses.all() as {
         key: string;
+        causedByKind: string | null;
         source: string;
         text: string;
         quests: string | null;
@@ -668,18 +726,28 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
       const run = db.transaction(() => {
         for (const r of rows) {
           const fresh = questsForSpeaker(r.source, r.text, deps);
-          if (!fresh) {
-            // Not a known quest-giver at all under today's cache — the whole cause goes, not just
-            // its quest, since ADR 0261 no longer treats an unmatched speaker as weaker evidence.
-            clearCause.run(r.key);
+          if (r.causedByKind === "dialogue") {
+            // Already carries a dialogue cause — correct or withdraw it (ADR 0257/0261), same as before.
+            if (!fresh) {
+              // Not a known quest-giver at all under today's cache — the whole cause goes, not just
+              // its quest, since ADR 0261 no longer treats an unmatched speaker as weaker evidence.
+              clearCause.run(r.key);
+              changed++;
+              continue;
+            }
+            const quests = JSON.stringify(fresh.quests);
+            const questsMatched = fresh.questsMatched ? 1 : 0;
+            if (quests === r.quests && questsMatched === r.questsMatched) continue;
+            updateDialogueQuests.run(quests, questsMatched, r.key);
             changed++;
-            continue;
+          } else {
+            // ADR 0282: this hit carried no cause at all, only an unmatched dialogue line — nothing
+            // to correct, only something to promote if the cache now agrees. Leave the unmatched
+            // context in place (to try again next launch) when it still doesn't.
+            if (!fresh) continue;
+            promoteUnmatchedDialogue.run(JSON.stringify(fresh.quests), fresh.questsMatched ? 1 : 0, r.key);
+            changed++;
           }
-          const quests = JSON.stringify(fresh.quests);
-          const questsMatched = fresh.questsMatched ? 1 : 0;
-          if (quests === r.quests && questsMatched === r.questsMatched) continue;
-          updateDialogueQuests.run(quests, questsMatched, r.key);
-          changed++;
         }
       });
       run();
