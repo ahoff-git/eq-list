@@ -156,20 +156,15 @@ everything else, so this list can stay short enough to read:
   nothing narrowed it — shown in the Faction tab dim, italic and captioned as a guess rather than a
   fact. Real gaps remain:
 
-  1. **The kill window's *direction* has now been checked against a real log — its *width*, and the
-     other two thresholds, still haven't.** [ADR 0224](./decisions/0224-a-kill-can-log-after-the-faction-line-it-caused.md)
-     cross-referenced a real player's `faction-log.json` against their `kill-log.json` and found this
-     server logs a kill's faction/XP/coin consequences *before* its own "You have slain" confirmation
-     about as often as after — checking only backward, as `faction-cause.ts` did before that survey,
-     missed 83% of the real kills behind an otherwise-uncaused hit. Both callers now hold a faction
-     event for `CORRELATION_WINDOW_SEC` before resolving it, and the kill check itself is symmetric.
-     Still unmeasured: whether **3 seconds** is the right width now that direction no longer hides the
-     true gap, and `DIALOGUE_MATCH_MIN_SCORE` (0.5) is still a guess about how well two
-     independently-worded transcripts of the same line should score, not a measurement — `fuzzyScore`
-     was tuned for short item-name queries, not sentence-length prose. Re-running the same
-     cross-reference against a *post*-ADR-0224 evening would answer both: how much of the remaining
-     173-of-1079 truly-uncaused hits are turn-ins the dialogue signal should be catching but isn't, and
-     whether 3 seconds is now too wide (false positives at a busy multi-mob pull) or still fine.
+  1. ~~**The kill window's *width*, and the dialogue threshold, were unmeasured.**~~ **Measured** —
+     [ADR 0281](./decisions/0281-three-seconds-and-point-five-were-already-right.md), against 11,292
+     real raised/lowered hits (20,571 total) spanning 2.5 months. Both constants stay: 96.3% of hits
+     already land within 3 seconds of a kill, with the gap distribution essentially empty from 3s to
+     10s — no meaningful population the window is clipping — and widening it would cost real accuracy,
+     since this player's own kills land within 5s of each other 22.5% of the time. `DIALOGUE_MATCH_MIN_SCORE`
+     likewise sits in a clean, empty gap between real-world non-matches (score ≤0.32) and real matches
+     (score ≥0.67). The bigger finding: **not one of this player's 20,571 hits has ever been recorded
+     with a dialogue cause**, and it isn't the threshold's fault — see the next item.
   2. **The dialogue guess can't tell an NPC from a nearby player**, and never will without some kind
      of NPC-name registry this app doesn't have (unlike a mob, which `mob-knowledge.ts` has learned
      from kills). In principle a friend's private tell landing inside the window reads exactly like a
@@ -180,10 +175,19 @@ everything else, so this list can stay short enough to read:
      a narrow window, with nothing else said in it), so it's a real but low-odds edge case rather than
      something worth narrowing the window against on its own; accepted as a known, stated limitation
      (ADR 0220) rather than solved. Worth re-checking if a real log ever shows it actually happening.
-  3. **Coverage depends on what's already cached**, twice over now: `questGiverSource()` only knows
-     givers from quest pages this install has fetched, and `questDialogueSource()` only has lines for
-     quests whose page happened to have dialogue this app's extractor could read at all — there's no
-     proactive crawl to improve either, on purpose (ADR 0221, ADR 0223).
+  3. **A hit that resolves to no cause never gets a second look, and ADR 0281 put a real number on
+     what that costs.** Of 417 kill-unexplained hits, 185 (44%) have a dialogue line nearby *and* a
+     quest-giver/dialogue the wiki cache holds *today* — turn-ins this app's own cache has grown enough
+     to explain, every one of them still sitting uncaused because `recheckDialogueCauses`
+     (`electron/faction-log.ts`) only ever revisits a hit that **already** carries a dialogue guess
+     (`WHERE caused_by_kind = 'dialogue'`), never one that resolved to nothing at all — and nothing
+     persists the npc/text a null hit saw, so there's nothing to recheck even if it did. Closing this
+     needs `guess()` (`src/shared/faction-cause.ts`) to carry that unmatched context forward into the
+     stored record and `recheckDialogueCauses`'s query widened to consider it — a real schema change
+     and a scope decision (every null hit, forever? bounded how?), deliberately left unbuilt by ADR 0281.
+     Only **39 (9%)** of the 417 name a giver this cache has never fetched at all (ADR 0221/0223's
+     already-known limit), and **193 (46%)** are the real floor — no kill, no dialogue, nothing nearby
+     either way.
 
   Once (1) is settled, the **pooled** half ADR 0193 originally asked for is still open on top of it: a
   `FactionObservation` store mirroring `mob-knowledge.ts`/`contributions.ts` exactly (own
