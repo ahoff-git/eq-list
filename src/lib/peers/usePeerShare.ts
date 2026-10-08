@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type { AwariPeer, AwariStatus, ReceivedShare } from "@/shared/types";
-import { SHARE_KINDS, type ShareKind, type ShareOffer } from "@/shared/peer-share";
+import { SHARE_KINDS, type ShareKind, type ShareOffer } from "@/shared/peers/peer-share";
 
 /**
  * The Peers tab's view of the share hub.

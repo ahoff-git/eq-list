@@ -23,7 +23,7 @@
  * alternative is remembering nothing at all, which is worse.
  */
 import path from "node:path";
-import type { ShareKind } from "../src/shared/peer-share";
+import type { ShareKind } from "../src/shared/peers/peer-share";
 import { MAX_NAME } from "../src/shared/contributors";
 import { createContributions } from "./contributions";
 

@@ -2,8 +2,8 @@
 import { useMemo } from "react";
 import { api } from "@/lib/api";
 import { useBuffs, useSettings, useSpawns } from "@/lib/hooks";
-import { rowsOf } from "@/lib/usePeerShare";
-import { SHARE_KINDS, mergeBuffs, mergeTimers, shareKind, type ShareKind } from "@/shared/peer-share";
+import { rowsOf } from "@/lib/peers/usePeerShare";
+import { SHARE_KINDS, mergeBuffs, mergeTimers, shareKind, type ShareKind } from "@/shared/peers/peer-share";
 import { count, duration } from "@/shared/format";
 import { targetLabel } from "@/shared/buffs/buff-tracking";
 import { Caret } from "@/app/components/ui";

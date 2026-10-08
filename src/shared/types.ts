@@ -4,10 +4,10 @@ import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { KnowledgeContributor } from "./contributors";
 import type { FactionCauseKnowledge } from "./faction-observation";
-import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, ShareSettings } from "./peer-share";
+import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, ShareSettings } from "./peers/peer-share";
 // Re-exported because every consumer of the `peer` bridge reads it off the api surface, and
 // `types.ts` is where that surface is described.
-export type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind } from "./peer-share";
+export type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind } from "./peers/peer-share";
 import type { SharedKill } from "./kills/kill-filters";
 import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { BuffInstance, BuffView, KnownBuff } from "./buffs/buff-tracking";

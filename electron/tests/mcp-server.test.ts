@@ -25,7 +25,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { openAppDatabase } from "../sqlite-store";
 import { createWikiClient, closeOwnedDatabases } from "../wiki";
 import { WIKI_PAGE_MIGRATIONS } from "../wiki/page-store";
-import type { SharedItemPage, SharedSpellPage } from "../../src/shared/peer-share";
+import type { SharedItemPage, SharedSpellPage } from "../../src/shared/peers/peer-share";
 
 const REPO_ROOT = path.join(__dirname, "../../..");
 const SERVER = path.join(REPO_ROOT, "scripts/mcp-server.mjs");

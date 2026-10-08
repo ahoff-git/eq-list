@@ -23,7 +23,7 @@ import { openAppDatabase } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
 import { itemRows, type ItemRow } from "../../src/shared/item-search";
 import { shardOf } from "../../src/shared/item-shards";
-import type { SharedItemPage } from "../../src/shared/peer-share";
+import type { SharedItemPage } from "../../src/shared/peers/peer-share";
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL_DAYS = 14;

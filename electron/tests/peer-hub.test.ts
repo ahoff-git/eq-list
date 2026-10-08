@@ -12,10 +12,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createPeerShareHub, type PeerShareDeps, type PeerShareHub } from "../../src/shared/peer-share-hub";
+import { createPeerShareHub, type PeerShareDeps, type PeerShareHub } from "../../src/shared/peers/peer-share-hub";
 import { AWARI_MSG, type AwariPayload, type AwariPeer, type Settings } from "../../src/shared/types";
-import { SHARE_PROTOCOL } from "../../src/shared/peer-share";
-import type { PeerVersionNotice, ShareEntry, ShareKind, ShareSettings } from "../../src/shared/peer-share";
+import { SHARE_PROTOCOL } from "../../src/shared/peers/peer-share";
+import type { PeerVersionNotice, ShareEntry, ShareKind, ShareSettings } from "../../src/shared/peers/peer-share";
 import { ON_YOU } from "../../src/shared/buffs/buff-tracking";
 
 /**

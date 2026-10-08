@@ -18,7 +18,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ContactHint } from "@awari/protocol";
-import { BOOTSTRAP_TIMEOUT_MS, createHttpBootstrapClient, type FetchLike } from "../../src/shared/awari-bootstrap";
+import { BOOTSTRAP_TIMEOUT_MS, createHttpBootstrapClient, type FetchLike } from "../../src/shared/peers/awari-bootstrap";
 
 const VERSION = "1.2.3";
 const REQUEST = { roomId: "eq-list", protocolVersion: VERSION, sessionId: "s-1" };

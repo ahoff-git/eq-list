@@ -43,7 +43,7 @@ import {
   type PeerCoverage,
 } from "../../src/shared/item-shards";
 import { candidatesFrom, probeOrder, type Verdict } from "../../src/shared/wiki-shape";
-import type { SharedItemPage, SharedSpellPage } from "../../src/shared/peer-share";
+import type { SharedItemPage, SharedSpellPage } from "../../src/shared/peers/peer-share";
 import { itemLevel, mobCardLevel, npcKey, parseLevelRange, questCardLevel, type LevelSources } from "../../src/shared/item-levels";
 import { fuzzyRank } from "../../src/shared/fuzzy";
 import { normalizeItemName } from "../../src/shared/grouping";

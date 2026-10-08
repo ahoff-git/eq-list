@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { api } from "@/lib/api";
 import { showToast } from "@/lib/toast";
 import { count } from "@/shared/format";
-import { offerSummary } from "@/shared/peer-share";
+import { offerSummary } from "@/shared/peers/peer-share";
 import type { PeerOfferNotice } from "@/shared/types";
 
 /**

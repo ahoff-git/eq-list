@@ -22,7 +22,7 @@
  */
 import { emptyCoverage, encodeCoverage, setShard, shardOf } from "@/shared/item-shards";
 import { allPages, itemRoster } from "./snapshot";
-import type { SharedItemPage, SharedSpellPage } from "@/shared/peer-share";
+import type { SharedItemPage, SharedSpellPage } from "@/shared/peers/peer-share";
 import type { WikiPage, WikiPageKind } from "@/shared/types";
 
 export interface ItemShardSource {

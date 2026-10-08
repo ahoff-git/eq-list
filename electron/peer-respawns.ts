@@ -17,7 +17,7 @@ import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { classifyZoneLine, samePlace } from "../src/shared/zones/place";
 import { isAdminAudit, type AdminAudit } from "../src/shared/admin";
-import type { SharedRespawn } from "../src/shared/peer-share";
+import type { SharedRespawn } from "../src/shared/peers/peer-share";
 import type { Contributor } from "../src/shared/contributors";
 import { createContributions } from "./contributions";
 import { createArrayAdminStore, type AdminStore } from "./admin";

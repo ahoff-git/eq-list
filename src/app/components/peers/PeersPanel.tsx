@@ -2,13 +2,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useSettings, useWatcherStatus } from "@/lib/hooks";
-import { hasOffered, offeredCount, offeredKinds, shortId, usePeerShare } from "@/lib/usePeerShare";
-import { SHARE_KINDS, kindsOf, sharing, versionStanding, type ShareFamily, type ShareKind } from "@/shared/peer-share";
+import { hasOffered, offeredCount, offeredKinds, shortId, usePeerShare } from "@/lib/peers/usePeerShare";
+import { SHARE_KINDS, kindsOf, sharing, versionStanding, type ShareFamily, type ShareKind } from "@/shared/peers/peer-share";
 import { count } from "@/shared/format";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { CheckField } from "@/app/components/ui";
-import PeerTray from "@/app/components/PeerTray";
-import PeerScores from "@/app/components/PeerScores";
+import PeerTray from "@/app/components/peers/PeerTray";
+import PeerScores from "@/app/components/peers/PeerScores";
 import type { AwariPeer, AwariStatus, Settings } from "@/shared/types";
 
 /**

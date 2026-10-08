@@ -9,9 +9,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shareSources } from "../../src/shared/peer-share-hub";
+import { shareSources } from "../../src/shared/peers/peer-share-hub";
 import type { KillRecord, KnownSpawn, Settings } from "../../src/shared/types";
-import type { SharedRespawn } from "../../src/shared/peer-share";
+import type { SharedRespawn } from "../../src/shared/peers/peer-share";
 import type { SharedKill } from "../../src/shared/kills/kill-filters";
 import type { MobObservation } from "../../src/shared/mob-stats";
 import type { FactionObservation } from "../../src/shared/faction-observation";

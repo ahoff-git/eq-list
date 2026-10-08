@@ -53,8 +53,8 @@
  * the panel that draws them merges with `mergeTimers` / `mergeBuffs` — so the de-dupe is one tested
  * function rather than a main-process opinion the windows have to agree with.
  */
-import { createLogger } from "./logging";
-import { AWARI_MSG, type AwariPayload, type AwariPeer, type AwariStatus, type Settings } from "./types";
+import { createLogger } from "../logging";
+import { AWARI_MSG, type AwariPayload, type AwariPeer, type AwariStatus, type Settings } from "../types";
 import {
   SHARE_KINDS,
   newlyOffered,
@@ -76,13 +76,13 @@ import {
   type ShareKind,
   type ShareOffer,
 } from "./peer-share";
-import { decodeCoverage, type PeerCoverage } from "./item-shards";
+import { decodeCoverage, type PeerCoverage } from "../item-shards";
 import type { FightShare, SharedGameTime, SharedItemPage, SharedRespawn, SharedSpellPage } from "./peer-share";
-import type { MapPin } from "./map/pins";
-import type { KillRecord, KnownSpawn } from "./types";
-import type { MobObservation } from "./mob-stats";
-import type { FactionObservation } from "./faction-observation";
-import type { SharedKill } from "./kills/kill-filters";
+import type { MapPin } from "../map/pins";
+import type { KillRecord, KnownSpawn } from "../types";
+import type { MobObservation } from "../mob-stats";
+import type { FactionObservation } from "../faction-observation";
+import type { SharedKill } from "../kills/kill-filters";
 
 const log = createLogger("peer-share");
 
