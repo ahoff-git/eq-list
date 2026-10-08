@@ -14,7 +14,7 @@ in the main process and all UI in the renderer.
     front (each at its own **native** resolution, so differing monitor resolutions
     aren't stretched/distorted), shows a per-monitor transparent selector; the crop
     is OCR'd (Tesseract.js) and the text is routed into the control window's Search box.
-    What OCR read is **corrected before it's searched** — `src/shared/ocr-variants.ts` holds
+    What OCR read is **corrected before it's searched** — `src/shared/chrome/ocr-variants.ts` holds
     the EQ-font confusion table (`rn` read as `m`, …) and the wiki's mirrored titles pick
     between the readings; see
     [ADR 0081](../decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md).
@@ -36,8 +36,8 @@ in the main process and all UI in the renderer.
     image of `spawn-tracker.ts`, and the contrast is the point of both: a respawn is a fact about the
     **world**, so it is persisted; a buff is a fact about a **login**, so only the player's choices
     are. Both raise their alerts down the same `raiseAlert` path rather than growing a notification
-    system apiece. Its rules are pure and shared (`src/shared/buff-tracking.ts`), and so is the
-    sentence lookup that makes a nameless fade attributable (`src/shared/spell-strings.ts`, reading
+    system apiece. Its rules are pure and shared (`src/shared/buffs/buff-tracking.ts`), and so is the
+    sentence lookup that makes a nameless fade attributable (`src/shared/spells/spell-strings.ts`, reading
     the game's own `spells_us_str.txt` via `spells.ts`).
   - `combat-stats.ts` — the one session tracker: experience/kill counters, per-combatant
     and per-spell tallies, per-mob rates; `combat-history.ts` — finished fights persisted
@@ -70,7 +70,7 @@ in the main process and all UI in the renderer.
     and a dev one (`http://localhost:3000`) otherwise keep separate settings
     ([ADR 0166](../decisions/0166-a-panel-setting-belongs-to-the-app-not-to-an-origin.md)).
     Main's record is fetched **once per window into a live mirror**
-    ([ui-mirror.ts](../../src/shared/ui-mirror.ts)) rather than held as the snapshot it first was: a
+    ([ui-mirror.ts](../../src/shared/chrome/ui-mirror.ts)) rather than held as the snapshot it first was: a
     snapshot is re-applied by every remount, so changing a dropdown and switching tabs away and back
     silently reverted the change — the writes were all fine, the read was answering from a
     photograph. A write updates the mirror, and main's reply fills gaps rather than overwriting, so a
@@ -92,7 +92,7 @@ in the main process and all UI in the renderer.
   - `self-check.ts` — "why isn't it doing anything?", answered as a chain of steps with the first
     broken link named and everything downstream reported as *not checked yet* rather than as further
     faults. The judging (the step table, the skip rule, the verdict) is pure and shared in
-    `src/shared/self-check.ts`; this is the looking, with the network and the alert window injected
+    `src/shared/chrome/self-check.ts`; this is the looking, with the network and the alert window injected
     by `ipc.ts` so the whole thing tests without Electron. See
     [ADR 0100](../decisions/0100-a-setup-check-is-a-chain.md).
   - `log-cursor.ts` — how far each log has been read, kept across restarts, so the app's state
@@ -153,6 +153,7 @@ in the main process and all UI in the renderer.
 - The renderer holds no durable state; it renders what the store sends.
 
 ## See also
+[file-layout](./file-layout.md) ·
 [log-watching](../log-watching/README.md) · [wiki-data](../wiki-data/README.md) ·
 [lucy-data](../lucy-data/README.md) ·
 [overlay-ui](../overlay-ui/README.md) · [ADR 0002](../decisions/0002-electron-shell-over-nextjs.md) ·
