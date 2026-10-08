@@ -320,6 +320,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0281: Three seconds and point five were already right](./0281-three-seconds-and-point-five-were-already-right.md)
 - [0282: An unmatched dialogue line is kept to retry](./0282-an-unmatched-dialogue-line-is-kept-to-retry.md)
 - [0283: A faction cause's pooled half gets built](./0283-a-faction-causes-pooled-half-gets-built.md)
+- [0284: A held event replays at its own moment](./0284-a-held-event-replays-at-its-own-moment.md)
 
 ## Open Questions
 

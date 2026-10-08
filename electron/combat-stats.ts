@@ -34,6 +34,7 @@ import type {
   CoinEvent,
   CombatEvent,
   DamageCell,
+  DamageEvent,
   DamageKind,
   LootEvent,
   PartyEvent,
@@ -48,6 +49,24 @@ import type {
   MobKillStat,
   SpellStat,
 } from "../src/shared/types";
+
+/**
+ * The event kinds `FightScope.admits` can ever answer `"hold"` for — `pet-engage`, `death`,
+ * `stance`, `invocation` and `buff-faded` are always admitted outright (see `fight-scope.ts`),
+ * so they're the only kinds a `HeldEvent` ever wraps.
+ */
+type HoldableEvent = Extract<CombatEvent, { kind: "damage" | "miss" | "heal" | "cast" | "spell-outcome" }>;
+
+/** Narrows to `HoldableEvent` — the only kinds `FightScope.admits` ever answers "hold" for. */
+function isHoldable(event: CombatEvent): event is HoldableEvent {
+  return (
+    event.kind === "damage" ||
+    event.kind === "miss" ||
+    event.kind === "heal" ||
+    event.kind === "cast" ||
+    event.kind === "spell-outcome"
+  );
+}
 
 /**
  * A gap longer than this between combat events is downtime, not fought time — it's excluded from
@@ -389,6 +408,28 @@ function emptyHeld(): Held {
   return { spells: new Map(), invocations: new Map(), buckets: [] };
 }
 
+/**
+ * One event `FightScope.admits` couldn't yet answer for, queued until a later line resolves it
+ * (ADR 0127 step 3 / [ADR 0284](../specs/decisions/0284-a-held-event-replays-at-its-own-moment.md)).
+ * This is a different thing from `Held` above: that's a doubtful *name's* figures, tallied and
+ * waiting to be claimed; this is an event nothing has tallied *at all* yet, because the scope
+ * itself hasn't let it in.
+ *
+ * `stance`, `invocation`, `pending` and `lastLanding` are snapshotted here because `apply` and
+ * the cast-pairing logic read them off the tracker's own live state rather than as parameters —
+ * by the time this event is finally admitted, all four may have moved on, and replaying against
+ * *today's* values instead of the ones this event actually had would file it under a stance it
+ * never stood in, or let it pair with a cast that hadn't happened yet when the line was logged.
+ */
+interface HeldEvent {
+  event: HoldableEvent;
+  at: number;
+  stance: string;
+  invocation: string;
+  pending: { caster: string; spell: string; at: number } | null;
+  lastLanding: { spell: string; at: number } | null;
+}
+
 /** Fetch-or-create a held per-spell tally inside a map keyed by spell name — the held mirror of `spell()`. */
 function heldSpellTally(spells: Map<string, SpellTally>, spell: string): SpellTally {
   let t = spells.get(spell);
@@ -547,11 +588,16 @@ function createWindow(canon: (name: string) => string) {
       if (!t) h.invocations.set(invocation, (t = emptyInvocation()));
       return t;
     },
-    /** Widen the window's line range — cheap, and it's the way back to the source. */
+    /**
+     * Widen the window's line range — cheap, and it's the way back to the source. A held event's
+     * replay (ADR 0284) can call this for a `logId` earlier than anything seen so far, same as
+     * `mark` — widen `from` backward to meet it, but never let `to` rewind, or a fight's own
+     * re-readable range would shrink to exclude real lines it already covered.
+     */
     note(logId: number) {
       if (!logId) return;
-      if (!lines.from) lines.from = logId;
-      lines.to = logId;
+      if (!lines.from || logId < lines.from) lines.from = logId;
+      if (logId > lines.to) lines.to = logId;
     },
     /** Add your damage into the second-bucket it landed in (for the sparkline). */
     bucket(at: number, amount: number) {
@@ -573,11 +619,18 @@ function createWindow(canon: (name: string) => string) {
       recentHeals.push({ ...heal, at: new Date(at).toISOString() });
       if (recentHeals.length > MAX_RECENT_HEALS) recentHeals.shift();
     },
-    /** Extend the window — only damage defines when a fight runs. */
+    /**
+     * Extend the window — only damage defines when a fight runs. A held event's replay
+     * (ADR 0284) can call this out of order, for an `at` earlier than anything seen so far: the
+     * start widens backward to meet it, but the end never rewinds — `addActive`'s own gap check
+     * already skips a backward call (a negative gap fails `gap > 0`), but without this guard
+     * `lastAt` itself would still jump back to the replayed `at`, corrupting the *next* real
+     * event's gap against a last-activity time that isn't actually the last activity.
+     */
     mark(at: number) {
-      if (!span.firstAt) span.firstAt = at;
+      if (!span.firstAt || at < span.firstAt) span.firstAt = at;
       addActive(span, at);
-      span.lastAt = at;
+      if (at > span.lastAt) span.lastAt = at;
     },
     tally,
     tallies,
@@ -632,6 +685,15 @@ export function createCombatStats(
   let lastCombatAt = 0;
   /** The cast in flight, waiting for its effect to land so it can be timed. */
   let pending: { caster: string; spell: string; at: number } | null = null;
+  /**
+   * Swings, heals and casts `FightScope.admits` couldn't yet place, oldest first — see
+   * `HeldEvent`. Re-asked on every subsequent line (`retryHeld`) and on a party change, which
+   * bypasses `record` entirely. Scoped to the fight in progress: cleared the moment that fight
+   * closes, by whichever of `newFight`/`endFight`/a fresh engagement gets there first, because a
+   * held event that outlives its own fight is exactly the "expiry means drop" case
+   * `fight-scope.ts` already documents.
+   */
+  let heldQueue: HeldEvent[] = [];
   /** The last mob to die, for experience attribution, and when the last kill landed. */
   let lastKill: { mob: string; at: number } | null = null;
   let lastKillAt = 0;
@@ -1301,6 +1363,10 @@ export function createCombatStats(
   function endFight(reason: FightEndReason): void {
     if (fightFiled || !fight.span.firstAt) return;
     fightFiled = true;
+    // The fight this queue belonged to just closed — a still-held event is exactly the "expiry
+    // means drop" case `fight-scope.ts` documents, whether the close came from a fresh
+    // engagement (see `handleLine`), a kill/death settling, or a plain timeout (`settle`).
+    heldQueue = [];
     const filed = { ...summarize(fight), endReason: reason };
     log.debug("fight filed", {
       reason,
@@ -1315,6 +1381,9 @@ export function createCombatStats(
   function newFight(): void {
     fight = createWindow(canon);
     fightFiled = false;
+    // Belt and braces alongside `endFight`'s own clear: covers a fight that was nothing but held
+    // events so far (so `endFight` had nothing to file and returned early) meeting a fresh pull.
+    heldQueue = [];
   }
 
   /**
@@ -1390,132 +1459,232 @@ export function createCombatStats(
     return took >= 0 && took <= CAST_PAIR_MS ? took : 0;
   }
 
-  return {
-    record(raw) {
-      // A DoT tick names no caster in this log's short form, so the caster is put back from the
-      // cast line first — before the scope, the rows, the cells or the spell table read the
-      // attacker, all of which would otherwise file your own DoT under the spell's name
-      // (ADR 0071). Noting comes first so a cast and its own first tick in the same second work.
-      dots.note(raw);
-      const event = dots.resolve(raw);
-      const at = ms(event.at);
-      // An unparseable timestamp would read as 1970 and wreck every span it touched, so
-      // the event is dropped instead. (Nothing in a real log does this — but the whole
-      // module is built on the assumption that `at` is meaningful, so it's checked once,
-      // here, rather than defended against everywhere downstream.)
-      if (!at) return;
-      const { stale, endReason } = quietBy(at);
+  /**
+   * Track damage taken toward the next death recap — held apart per name while the target is
+   * still in doubt, on the same terms as a window's own `held` (ADR 0127 step 2). Out of band
+   * from any window, since a recap spans whichever one is asking (`recordDeath`).
+   */
+  function trackIncoming(event: DamageEvent, at: number): void {
+    const target = canon(event.target);
+    const whoseTarget = owns([target]);
+    if (whoseTarget === "theirs") return;
+    const bucket = whoseTarget === "mine" ? incoming : (heldIncoming.get(target) ?? []);
+    if (whoseTarget !== "mine") heldIncoming.set(target, bucket);
+    bucket.push({ at, source: canon(event.attacker), amount: event.amount });
+    // Keep each buffer to the recap window (plus slack) — it's a tail, not a log.
+    const cutoff = at - DEATH_WINDOW_MS * 2;
+    while (bucket.length && bucket[0].at < cutoff) bucket.shift();
+  }
 
-      // A new pull is a new engagement, so the enemy set goes first — *before* this event is
-      // judged. It's what makes the first swing of a fight have to stand on its own: without
-      // it, a stranger fighting the twin of last pull's mob would open a fight of ours.
-      const swing = event.kind === "damage" || event.kind === "miss";
-      if (stale && swing) {
-        log.debug("stale swing, new engagement — enemy set reset", { endReason });
-        scope.reset();
-      }
-      // Somebody else's fight is somebody else's business (ADR 0067).
-      if (!scope.admits(event)) return;
+  /**
+   * Everything an admitted event does to the cast-in-flight state before its figures are
+   * applied — shared by the live path (`handleLine`) and a held event's replay (`replayHeld`),
+   * which calls this against a snapshot of `stance`/`invocation`/`pending`/`lastLanding` rather
+   * than today's. Returns the cast duration this event's landing completes, if any.
+   */
+  function admittedCastMs(event: CombatEvent, at: number): number {
+    if (event.kind === "cast") {
+      pending = isMine(event.caster) ? { caster: event.caster, spell: event.spell, at } : pending;
+    } else if (event.kind === "spell-outcome" && pending?.spell === event.spell) {
+      pending = null; // fizzled / interrupted / resisted — nothing will land
+    }
+    // A tick is not a fresh cast landing, so it must not consume the pending cast.
+    const hadPending = !!pending;
+    const castMs = event.kind === "damage" && event.tick ? 0 : pairCast(event, at);
+    // An area spell lands on each target separately — see `pairCast`'s own call site for why
+    // same-second, same-spell landings are one cast rather than a string of free casts.
+    const sameCast =
+      event.kind === "damage" &&
+      !!event.spell &&
+      lastLanding?.spell === event.spell &&
+      lastLanding.at === at;
+    unpairedLanding = !hadPending && !sameCast;
 
-      if (event.kind === "pet-engage") {
-        // Learned before anything else reads an attacker, so the pet's very first swing —
-        // which can share this second — already counts as yours.
-        pets.note(event.pet);
-        return;
-      }
+    if (event.kind === "damage" && !event.tick && event.spell && !event.shield && isMine(canon(event.attacker))) {
+      lastLanding = { spell: event.spell, at };
+    }
+    if (event.kind === "damage") trackIncoming(event, at);
+    return castMs;
+  }
 
-      if (event.kind === "stance") {
-        stance = event.stance;
-        return void emit();
-      }
-      if (event.kind === "invocation") {
-        invocation = event.invocation;
-        return void emit();
-      }
+  /** Snapshot of the ambient context `admittedCastMs`/`apply` read, for a `HeldEvent`. */
+  function captureHeld(event: HoldableEvent, at: number): HeldEvent {
+    return { event, at, stance, invocation, pending, lastLanding };
+  }
 
-      if (event.kind === "cast") {
-        pending = isMine(event.caster) ? { caster: event.caster, spell: event.spell, at } : pending;
-      } else if (event.kind === "spell-outcome" && pending?.spell === event.spell) {
-        pending = null; // fizzled / interrupted / resisted — nothing will land
-      }
-      // A tick is not a fresh cast landing, so it must not consume the pending cast.
-      const hadPending = !!pending;
-      const castMs = event.kind === "damage" && event.tick ? 0 : pairCast(event, at);
-      // An area spell lands on each target separately, and only the first of those landings
-      // finds the cast still in flight — so without this the rest read as free casts. Two
-      // landings of one spell in the same log second are one cast hitting two things: EQ
-      // stamps to the second and a real recast takes seconds. (A free cast of the very spell
-      // you just landed, inside the same second, would be missed — far rarer than the area
-      // spells this otherwise miscounts, which were 61 of 65 "free casts" in a real log.)
-      const sameCast =
-        event.kind === "damage" &&
-        !!event.spell &&
-        lastLanding?.spell === event.spell &&
-        lastLanding.at === at;
-      // Nothing was in flight, so this landing had no cast of its own. Distinct from "the
-      // cast was too old to pair", which `pairCast` also reports as 0.
-      unpairedLanding = !hadPending && !sameCast;
-
-      // A damage shield's flavour word ("flames") rides in `event.spell` too, but a shield never
-      // casts — crediting its firing as `lastLanding` let a self-heal moments later file the
-      // invocation's healing under "flames" as though it were a spell you cast, the exact phantom
-      // row `!event.shield` exists everywhere else in this file to prevent.
-      if (event.kind === "damage" && !event.tick && event.spell && !event.shield && isMine(canon(event.attacker))) {
-        lastLanding = { spell: event.spell, at };
-      }
-
-      if (event.kind === "damage") {
-        const target = canon(event.target);
-        const whoseTarget = owns([target]);
-        if (whoseTarget !== "theirs") {
-          let bucket: typeof incoming;
-          if (whoseTarget === "mine") {
-            bucket = incoming;
-          } else {
-            bucket = heldIncoming.get(target) ?? [];
-            heldIncoming.set(target, bucket);
-          }
-          bucket.push({ at, source: canon(event.attacker), amount: event.amount });
-          // Keep each buffer to the recap window (plus slack) — it's a tail, not a log.
-          const cutoff = at - DEATH_WINDOW_MS * 2;
-          while (bucket.length && bucket[0].at < cutoff) bucket.shift();
-        }
-      }
-
-      if (event.kind === "death") {
-        lastDeathAt = at; // resolves the fight: a short quiet now ends it (you're down, combat's over)
-        const recap = recordDeath(at, event.killer);
-        for (const w of openWindows()) {
-          w.deaths.unshift(recap);
-          if (w.deaths.length > MAX_DEATHS) w.deaths.pop();
-        }
-        emit();
-        return;
-      }
-
-      // Swings (hit or miss) are what delimit a fight; the first one after a lull
-      // starts a fresh row set. Heals and casts ride along — they belong to a fight only
-      // while one is running, so downtime healing/buffing doesn't invent a "fight".
-      if (swing) {
-        if (stale) {
-          endFight(endReason);
-          newFight();
-        }
-        lastCombatAt = at;
-        apply(fight, event, at, castMs);
-        fight.note(event.logId);
-      } else if (lastCombatAt && !stale) {
-        apply(fight, event, at, castMs);
-        // Noted only when the fight actually **took** the event. Noting unconditionally ran a
-        // fight's line range on to whatever last happened before the next pull — a night's buffing
-        // and chat, a median 122 lines against a 25-second fight — and `logIds` exists so those
-        // lines can be found again and re-read (ADR 0021), which a range full of somebody else's
-        // downtime can't do.
-        fight.note(event.logId);
-      }
+  /**
+   * Apply a held event now that the scope admits it — at the moment it actually happened, not
+   * this one. `stance`, `invocation`, `pending` and `lastLanding` are swapped in from the
+   * snapshot for the span of this one replay (`apply`/`admittedCastMs` read them off the
+   * tracker's own closure, not as parameters) and put back immediately after: the live values
+   * describe *now*, and must not be left pointing at history once this returns.
+   *
+   * Applied to both windows unconditionally — unlike the live path, which asks `stale`/
+   * `lastCombatAt` first. Those guard a *new* line against joining a fight that isn't there;
+   * this event's fight already proved it's there the moment it was first held, and `heldQueue`
+   * is cleared the instant that fight closes (`newFight`/`endFight`), so a held event only ever
+   * reaches here while its own fight is still open.
+   */
+  function replayHeld(held: HeldEvent): void {
+    const { event, at } = held;
+    const liveStance = stance;
+    const liveInvocation = invocation;
+    const livePending = pending;
+    const liveLastLanding = lastLanding;
+    stance = held.stance;
+    invocation = held.invocation;
+    pending = held.pending;
+    lastLanding = held.lastLanding;
+    try {
+      const castMs = admittedCastMs(event, at);
+      apply(fight, event, at, castMs);
+      fight.note(event.logId);
       apply(session, event, at, castMs);
       session.note(event.logId);
+      // A swing that only now proved to be ours is, from this point on, indistinguishable from
+      // one admitted live — including for staleness. Forward-only, same as `w.mark`'s own
+      // guard: a held event never *advances* past what a live swing already established, it
+      // only rescues a fight that had nothing but held swings from never timing out at all
+      // (`lastCombatAt` would otherwise stay 0 forever and `quietBy` would never see it as
+      // stale — see the ADR).
+      if (event.kind === "damage" || event.kind === "miss") lastCombatAt = Math.max(lastCombatAt, at);
+    } finally {
+      stance = liveStance;
+      invocation = liveInvocation;
+      pending = livePending;
+      lastLanding = liveLastLanding;
+    }
+  }
+
+  /**
+   * Re-ask the scope's verdict for every event it couldn't yet place, oldest first, now that
+   * one more line might have settled a name — called after every line (`record`) and after a
+   * party change (`recordParty`, which otherwise bypasses this module entirely). Cheap on
+   * purpose: `scope.admits`'s lookups are pure, so this is a plain re-ask rather than any kind
+   * of dirty-name tracking.
+   */
+  function retryHeld(): void {
+    if (!heldQueue.length) return;
+    const remaining: HeldEvent[] = [];
+    let resolved = false;
+    for (const held of heldQueue) {
+      const verdict = scope.admits(held.event);
+      if (verdict === "hold") {
+        remaining.push(held);
+        continue;
+      }
+      resolved = true;
+      if (verdict === "admit") replayHeld(held);
+    }
+    heldQueue = remaining;
+    if (resolved) emit();
+  }
+
+  /**
+   * One line's worth of work. Split out from `record` so the latter can do one more thing after
+   * *every* line unconditionally — ask `retryHeld` whether this was the line that finally
+   * placed a name something is still held on — without that call needing to be remembered at
+   * every one of this function's own early returns.
+   */
+  function handleLine(raw: CombatEvent): void {
+    // A DoT tick names no caster in this log's short form, so the caster is put back from the
+    // cast line first — before the scope, the rows, the cells or the spell table read the
+    // attacker, all of which would otherwise file your own DoT under the spell's name
+    // (ADR 0071). Noting comes first so a cast and its own first tick in the same second work.
+    dots.note(raw);
+    const event = dots.resolve(raw);
+    const at = ms(event.at);
+    // An unparseable timestamp would read as 1970 and wreck every span it touched, so
+    // the event is dropped instead. (Nothing in a real log does this — but the whole
+    // module is built on the assumption that `at` is meaningful, so it's checked once,
+    // here, rather than defended against everywhere downstream.)
+    if (!at) return;
+    const { stale, endReason } = quietBy(at);
+
+    // A new pull is a new engagement, so the enemy set goes first — *before* this event is
+    // judged. It's what makes the first swing of a fight have to stand on its own: without
+    // it, a stranger fighting the twin of last pull's mob would open a fight of ours.
+    const swing = event.kind === "damage" || event.kind === "miss";
+    if (stale && swing) {
+      log.debug("stale swing, new engagement — enemy set reset", { endReason });
+      scope.reset();
+      // The fight this queue belonged to ends here, same moment the enemy set forgets it —
+      // see `endFight`'s own clear for why a held event doesn't outlive its fight.
+      heldQueue = [];
+    }
+    // Somebody else's fight is somebody else's business (ADR 0067) — unless nothing has placed
+    // a name in it yet, in which case it isn't somebody else's *business* to decide, only to
+    // find out (ADR 0127 step 3).
+    const verdict = scope.admits(event);
+    if (verdict === "drop") return;
+    if (verdict === "hold") {
+      // Only these five kinds can ever come back "hold" (see `fight-scope.ts`) — the guard is
+      // just what lets TypeScript see that too, not a real runtime possibility.
+      if (isHoldable(event)) heldQueue.push(captureHeld(event, at));
+      return;
+    }
+
+    if (event.kind === "pet-engage") {
+      // Learned before anything else reads an attacker, so the pet's very first swing —
+      // which can share this second — already counts as yours.
+      pets.note(event.pet);
+      return;
+    }
+
+    if (event.kind === "stance") {
+      stance = event.stance;
+      return void emit();
+    }
+    if (event.kind === "invocation") {
+      invocation = event.invocation;
+      return void emit();
+    }
+
+    const castMs = admittedCastMs(event, at);
+
+    if (event.kind === "death") {
+      lastDeathAt = at; // resolves the fight: a short quiet now ends it (you're down, combat's over)
+      const recap = recordDeath(at, event.killer);
+      for (const w of openWindows()) {
+        w.deaths.unshift(recap);
+        if (w.deaths.length > MAX_DEATHS) w.deaths.pop();
+      }
       emit();
+      return;
+    }
+
+    // Swings (hit or miss) are what delimit a fight; the first one after a lull
+    // starts a fresh row set. Heals and casts ride along — they belong to a fight only
+    // while one is running, so downtime healing/buffing doesn't invent a "fight".
+    if (swing) {
+      if (stale) {
+        endFight(endReason);
+        newFight();
+      }
+      lastCombatAt = at;
+      apply(fight, event, at, castMs);
+      fight.note(event.logId);
+    } else if (lastCombatAt && !stale) {
+      apply(fight, event, at, castMs);
+      // Noted only when the fight actually **took** the event. Noting unconditionally ran a
+      // fight's line range on to whatever last happened before the next pull — a night's buffing
+      // and chat, a median 122 lines against a 25-second fight — and `logIds` exists so those
+      // lines can be found again and re-read (ADR 0021), which a range full of somebody else's
+      // downtime can't do.
+      fight.note(event.logId);
+    }
+    apply(session, event, at, castMs);
+    session.note(event.logId);
+    emit();
+  }
+
+  return {
+    record(raw) {
+      handleLine(raw);
+      // Every line is a chance some other, earlier line's name just got placed — cheap to ask
+      // again (see `retryHeld`), and the only way a held swing ever gets a second look before
+      // its fight closes.
+      retryHeld();
     },
     setPlayer(name) {
       const next = name.trim();
@@ -1531,8 +1700,9 @@ export function createCombatStats(
 
     recordParty(event) {
       party.note(event);
-      // Nothing already tallied changes — the roster only decides what's admitted from here
-      // on — so there's nothing to re-summarize and no `emit()`.
+      // A party join can be exactly the line a held event was waiting on (ADR 0127 step 3) —
+      // this bypasses `record` entirely, so it has to ask for itself.
+      retryHeld();
     },
     party: () => party.members(),
     recentHits: () => [...fight.recentHits],
@@ -1644,6 +1814,7 @@ export function createCombatStats(
       lastLanding = null;
       incoming.length = 0;
       heldIncoming.clear();
+      heldQueue = []; // belt and braces — `endFight`/`newFight`, just called above, already clear it
       names.clear();
       scope.reset();
       // The repertoire is knowledge about the character, not a tally, so a reset keeps it.

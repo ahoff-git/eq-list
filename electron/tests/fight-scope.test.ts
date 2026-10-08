@@ -20,13 +20,14 @@ function scopeFor(...mates: string[]): FightScope {
   return createFightScope({ ours });
 }
 
-/** Which of `messages` the scope let through, in order. */
+/** Which of `messages` the scope actually admitted, in order — `hold` and `drop` both count as
+ * "not yet in", which is all these particular tests care about. */
 const admitted = (scope: FightScope, messages: string[]): string[] =>
-  messages.filter((m) => scope.admits(event(m)));
+  messages.filter((m) => scope.admits(event(m)) === "admit");
 
 test("your own swings are in, and open the fight", () => {
   const scope = scopeFor();
-  assert.equal(scope.admits(event("You pierce a coyote for 6 points of damage.")), true);
+  assert.equal(scope.admits(event("You pierce a coyote for 6 points of damage.")), "admit");
   assert.equal(scope.fought("a coyote"), true);
   // The kill line strips the article and the log capitalizes mid-sentence — one creature.
   assert.equal(scope.fought("coyote"), true);
@@ -47,6 +48,32 @@ test("a fight nobody of ours is in never starts", () => {
     [],
   );
   assert.equal(scope.fought("a wolf"), false);
+});
+
+// ── the third answer (ADR 0127 step 3 / ADR 0284) ──
+test("a bare name on both sides is held, not dropped — either could still prove to be ours", () => {
+  const scope = scopeFor();
+  // Neither "Garn" nor "Galactic" is recognized yet, and neither has an article, so this isn't
+  // settled either way: one of them could still turn out to be a pet or a group-mate.
+  assert.equal(scope.admits(event("Garn hits Galactic for 9 points of damage.")), "hold");
+});
+
+test("a bare name against a creature is held the same way", () => {
+  const scope = scopeFor();
+  assert.equal(scope.admits(event("Garn hits a coyote for 12 points of damage.")), "hold");
+  assert.equal(scope.fought("a coyote"), false, "holding never engages anyone — it isn't admitted yet");
+});
+
+test("two creatures fighting each other is dropped outright, not held", () => {
+  const scope = scopeFor();
+  // Both names carry an article, so the game itself has already said both are creatures —
+  // neither will ever turn out to be ours, and there's nothing left to wait for.
+  assert.equal(scope.admits(event("A wolf bites a rabbit for 4 points of damage.")), "drop");
+});
+
+test("a bare caster with no engaged target is held; an articled one is dropped", () => {
+  const scope = scopeFor();
+  assert.equal(scope.admits(event("Garn begins casting Lifespike.")), "hold");
 });
 
 test("what your side is fighting is in, whoever the line is about", () => {
@@ -81,8 +108,9 @@ test("a new fight forgets the last one's enemies", () => {
   scope.admits(event("You pierce a coyote for 6 points of damage."));
   scope.reset();
   assert.equal(scope.fought("a coyote"), false);
-  // …so the next pull has to be ours to count, even against the same kind of mob.
-  assert.equal(scope.admits(event("Randomguy slashes a coyote for 40 points of damage.")), false);
+  // …so the next pull isn't admitted on sight — "Randomguy" is bare and unplaced, so the most
+  // this new pull gets is held, same as any other stranger's swing at a fresh mob.
+  assert.equal(scope.admits(event("Randomguy slashes a coyote for 40 points of damage.")), "hold");
 });
 
 test("a damage shield engages whatever ran into it", () => {
@@ -91,22 +119,23 @@ test("a damage shield engages whatever ran into it", () => {
   // burning a mob is your side hitting it.
   assert.equal(
     scope.admits(event("A coyote is burned by Kainos`s warder's flames for 2 points of non-melee damage.")),
-    true,
+    "admit",
   );
   assert.equal(scope.fought("a coyote"), true);
 });
 
 test("your own casts and deaths always belong to you", () => {
   const scope = scopeFor();
-  assert.equal(scope.admits(event("You begin casting Blast of Cold.")), true);
-  assert.equal(scope.admits(event("Your Blast of Cold spell fizzles!")), true);
-  assert.equal(scope.admits(event("You have been slain by a coyote!")), true);
-  assert.equal(scope.admits(event("You assume a balanced stance.")), true);
-  // Somebody else's cast is somebody else's, until their target is one we're fighting.
-  assert.equal(scope.admits(event("Randomguy begins casting Lifespike.")), false);
+  assert.equal(scope.admits(event("You begin casting Blast of Cold.")), "admit");
+  assert.equal(scope.admits(event("Your Blast of Cold spell fizzles!")), "admit");
+  assert.equal(scope.admits(event("You have been slain by a coyote!")), "admit");
+  assert.equal(scope.admits(event("You assume a balanced stance.")), "admit");
+  // Somebody else's cast is somebody else's, until their target is one we're fighting — but
+  // "Randomguy" is bare, so it isn't ruled out for good either.
+  assert.equal(scope.admits(event("Randomguy begins casting Lifespike.")), "hold");
 });
 
 test("with no idea who you are, nothing can be called somebody else's", () => {
   const blind = createFightScope({ ours: () => false, sidesKnown: () => false });
-  assert.equal(blind.admits(event("Randomguy slashes a wolf for 40 points of damage.")), true);
+  assert.equal(blind.admits(event("Randomguy slashes a wolf for 40 points of damage.")), "admit");
 });

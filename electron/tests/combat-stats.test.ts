@@ -500,6 +500,132 @@ test("switching character forgets the last one's pets", () => {
   assert.equal(t.snapshot().fight.yourDealt, 0, "the old character's pet is not this one's");
 });
 
+// ── a held event can still join its own fight, live (ADR 0127 step 3 / ADR 0284) ──
+test("a held swing resolves with the stance and invocation it actually had, not whatever is current when it's finally admitted", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [0, "You assume a defensive stance."],
+    [0, "You begin reciting the spellblade invocation."],
+    // Nothing has placed Garn yet, and nothing has engaged the coyote either — held, not dropped.
+    [1, "Garn hits a coyote for 12 points of damage."],
+    // Both change before the game ever says whose Garn is.
+    [2, "You assume an aggressive stance."],
+    [2, "You begin reciting the empowering invocation."],
+    // The game finally says whose Garn is — engages the coyote too, so the held swing now admits.
+    [3, "Garn told you, 'Attacking a coyote Master.'"],
+  ]);
+
+  const f = t.snapshot().fight;
+  const garn = f.byCombatant.find((r) => r.name === "Garn")!;
+  assert.equal(garn.dealt, 12, "the held swing's damage landed once Garn was proven");
+  assert.deepEqual(
+    Object.fromEntries(garn.byStance.map((s) => [s.stance, s.damage])),
+    { defensive: 12 },
+    "filed under the stance Garn actually swung in, not the 'aggressive' one current when he was proven",
+  );
+  const byInvocation = Object.fromEntries(f.invocations.map((i) => [i.mode, i.swings]));
+  assert.equal(byInvocation.spellblade, 1, "Garn's swing counted toward the invocation active at the time");
+  assert.equal(byInvocation.empowering ?? 0, 0, "not the one current when he was finally proven");
+});
+
+test("a held swing's own replay doesn't corrupt a cast-pairing it has nothing to do with", () => {
+  // The danger this pins: a held line sitting in the queue must not let a *later* retry steal or
+  // disturb the pairing of a real, concurrent cast that has nothing to do with it.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You begin casting Blast of Cold."],
+    // Garn and the coyote are both still unplaced — held, not dropped — but this must not
+    // touch the cast you actually have in flight.
+    [2, "Garn hits a coyote for 9 points of damage."],
+    // Your own cast lands for real, 3 seconds later, pairing against `pending` as it always
+    // would if the held line weren't sitting in the queue at all.
+    [4, "You hit a coyote for 12 points of cold damage by Blast of Cold."],
+  ]);
+
+  const f = t.snapshot().fight;
+  const blast = f.spells.find((s) => s.spell === "Blast of Cold")!;
+  assert.equal(blast.avgCastSec, 3, "3 seconds, exactly as logged — the held line never touched it");
+
+  // Garn's swing now admits too — the coyote became an enemy the moment your own cast landed —
+  // but Garn himself is still nobody we've placed, same as any other doubtful name.
+  assert.equal(f.totalDealt, 21, "both swings counted");
+  assert.equal(f.yourDealt, 12, "only your own, until Garn is proven");
+  assert.deepEqual(f.unsettled, ["Garn"]);
+});
+
+test("a held swing's late replay doesn't rewind the window's own last-activity clock", () => {
+  // The danger this pins: `w.mark(at)` runs again during a replay, for an `at` that is *earlier*
+  // than the window's current `span.lastAt` (the held line is older than everything admitted
+  // since it was queued). Unconditionally writing `span.lastAt = at` would pull the window's own
+  // last-activity time backward, inflating the *next* real swing's gap against a last-activity
+  // time that isn't actually the last activity — corrupting `activeMs`/`durationSec`, not just
+  // leaving the held swing's own figures wrong.
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You hit a coyote for 8 points of damage."], // opens the fight: firstAt=1s, lastAt=1s
+    [3, "Garn hits a rat for 7 points of damage."], // held — a different, still-unengaged mob
+    [5, "You hit a coyote for 2 points of damage."], // a real 4s gap: lastAt=5s, activeMs=4000
+    // Proves Garn *and* engages "a rat" (pet-engage) — the held swing from t=3 now admits and
+    // replays, at its own, earlier `at`.
+    [7, "Garn told you, 'Attacking a rat Master.'"],
+    [9, "You hit a coyote for 1 points of damage."], // the real gap since t=5 is 4s, not 6s
+  ]);
+  assert.equal(
+    t.snapshot().fight.durationSec,
+    8,
+    "4s (t1→t5) + 4s (t5→t9) — the replay at t=3 must not have rewound lastAt back to 3",
+  );
+});
+
+test("a held swing never resolved before the fight ends is dropped — exactly today's floor", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."], // a real fight, opened for real
+    [2, "Garn hits a rat for 7 points of damage."], // held — a different, still-unengaged mob
+  ]);
+  t.recordKill("a coyote", stamp(2));
+  t.settle(at(20)); // SETTLED_END_MS has passed since the kill — files the fight
+
+  // Only now does the game say whose Garn is — too late for the fight that already closed.
+  feed(t, [[21, "Garn told you, 'Attacking a rat Master.'"]]);
+
+  const s = t.snapshot();
+  assert.equal(s.fight.totalDealt, 10, "Garn's held swing never joined the fight it was held in");
+  assert.equal(s.fight.byCombatant.find((r) => r.name === "Garn"), undefined);
+  assert.equal(
+    s.session.byCombatant.find((r) => r.name === "Garn"),
+    undefined,
+    "nor the session — it expired with its own fight, same as a drop would have",
+  );
+});
+
+test("a stream of never-resolved held swings doesn't keep an otherwise-stale fight open", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]); // opens the fight for real
+
+  // A flood of swings against a name nothing ever places or engages — held, never admitted.
+  feed(t, [
+    [30, "Garn hits a rat for 1 points of damage."],
+    [59, "Garn hits a rat for 1 points of damage."],
+  ]);
+  assert.equal(t.inFight(), true, "still open — nothing has resolved it either way yet");
+
+  // ENGAGED_END_MS (60s) since the *real* swing at t=1 — a held line arriving as recently as
+  // t=59 must not have reset that clock, or this wouldn't be stale yet.
+  t.settle(at(62));
+  assert.deepEqual(reasons, ["timeout"], "closed on schedule — the held swings were never activity");
+
+  // Expired with the fight, so even the game finally placing Garn doesn't resurrect them.
+  feed(t, [[63, "Garn told you, 'Attacking a rat Master.'"]]);
+  assert.equal(t.snapshot().session.byCombatant.find((r) => r.name === "Garn"), undefined);
+});
+
 /** The reasons banked fights ended with, in order — what `fightEnd` carried. */
 function endReasons(t: ReturnType<typeof createCombatStats>): (string | undefined)[] {
   const seen: (string | undefined)[] = [];

@@ -160,7 +160,10 @@ reading like a measurement, and they are shared code
 - **A pet is proven, not guessed** — learned from its own attack confirmation, never from a name's
   shape. It survives a meter reset and is cleared on a character change. ([0077](./0077-a-pet-is-proven-not-guessed.md))
 - **A name we cannot yet place is held loosely, not dropped**, and is processed as whatever it turns
-  out to be. "Unproven" is a statement about what we know, not about the data. ([0127](./0127-an-unknown-name-is-held-not-dropped.md))
+  out to be. "Unproven" is a statement about what we know, not about the data. Live, a swing the scope
+  itself can't yet place is held and retried — resolved against the stance, invocation and cast-pairing
+  it actually had, not whatever is current by the time it's proven — and simply drops if its own fight
+  closes first. ([0127](./0127-an-unknown-name-is-held-not-dropped.md), [0284](./0284-a-held-event-replays-at-its-own-moment.md))
 - **A DoT tick belongs to whoever cast it** — resolved once, at the top of `record`, before any
   consumer reads the attacker, and never re-guessed where the log named a caster. ([0071](./0071-a-dot-tick-belongs-to-whoever-cast-it.md), [0095](./0095-your-own-dot-tick-is-yours.md))
 - **Your own damage shield counts, whichever way the log words the wearer** — a group-mate's or a
