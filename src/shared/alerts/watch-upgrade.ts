@@ -36,7 +36,7 @@
  */
 import { alertStyle } from "./alert-styles";
 import { wantsCast } from "./watch-conditions";
-import type { AlertStyle, CastAlertSettings, CastWatch, NamedAlertStyle } from "./types";
+import type { AlertStyle, CastAlertSettings, CastWatch, NamedAlertStyle } from "../types";
 
 /** What an upgrade did, for the log line and for the tests. All zeroes on an up-to-date file. */
 export interface UpgradeReport {

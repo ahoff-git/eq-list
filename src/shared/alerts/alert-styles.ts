@@ -39,8 +39,8 @@ import type {
   KnownBuff,
   KnownSpawn,
   NamedAlertStyle,
-} from "./types";
-import { count } from "./format";
+} from "../types";
+import { count } from "../format";
 
 /**
  * Anything that can wear a look: a saved style by id, its own layer, or neither.

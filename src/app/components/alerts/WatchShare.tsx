@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { decodeWatches, encodeWatches } from "@/shared/watch-share";
+import { decodeWatches, encodeWatches } from "@/shared/alerts/watch-share";
 import type { CastWatch } from "@/shared/types";
 
 /**

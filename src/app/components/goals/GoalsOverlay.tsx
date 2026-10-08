@@ -1,6 +1,6 @@
 "use client";
 import { useGoals, useSettings } from "@/lib/hooks";
-import { alertPlacement, alertStyle, GOAL_STYLE_ID } from "@/shared/alert-styles";
+import { alertPlacement, alertStyle, GOAL_STYLE_ID } from "@/shared/alerts/alert-styles";
 import { formatCountdown } from "@/shared/mob/spawn-timers";
 import type { AlertPositionValue, RunningGoal } from "@/shared/types";
 

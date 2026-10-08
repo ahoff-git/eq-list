@@ -19,7 +19,7 @@
  */
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { SPAWN_STYLE_ID, alertStyle } from "../src/shared/alert-styles";
+import { SPAWN_STYLE_ID, alertStyle } from "../src/shared/alerts/alert-styles";
 import { mobKey } from "../src/shared/mob/mob-stats";
 import { placeKey, placeName } from "../src/shared/zones/place";
 import {

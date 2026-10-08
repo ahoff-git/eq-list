@@ -8,9 +8,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isAdded, WATCH_LIBRARY, type LibraryRule } from "../../src/shared/watch-library";
-import { checkWatch } from "../../src/shared/watch-check";
-import { alertCue } from "../../src/shared/alert-schedule";
+import { isAdded, WATCH_LIBRARY, type LibraryRule } from "../../src/shared/alerts/watch-library";
+import { checkWatch } from "../../src/shared/alerts/watch-check";
+import { alertCue } from "../../src/shared/alerts/alert-schedule";
 import type { CastWatch } from "../../src/shared/types";
 
 const rules: LibraryRule[] = WATCH_LIBRARY.flatMap((g) => g.rules);

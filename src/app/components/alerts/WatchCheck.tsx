@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { TAIL_STEPS } from "@/shared/constants";
 import { clock } from "@/shared/format";
 import { parseLogText } from "@/shared/log-parser";
-import { canDryRun, dryRun, type WatchIssue } from "@/shared/watch-check";
+import { canDryRun, dryRun, type WatchIssue } from "@/shared/alerts/watch-check";
 import type { CastAlertSettings, CastWatch, LogLine } from "@/shared/types";
 
 /**

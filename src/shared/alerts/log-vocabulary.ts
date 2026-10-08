@@ -20,10 +20,10 @@
  * Terms are keyed lowercase and stored in the casing the log used, because "Mesmerization" is what
  * belongs in the box even when you typed "mesm".
  */
-import { parseSplitLine } from "./parse-line";
-import { fuzzyRank } from "./fuzzy";
-import { SELF } from "./combat/combat-parser";
-import type { LogLine } from "./types";
+import { parseSplitLine } from "../parse-line";
+import { fuzzyRank } from "../fuzzy";
+import { SELF } from "../combat/combat-parser";
+import type { LogLine } from "../types";
 
 /** Which vocabulary a completion should come from — the field the text is going into. */
 export type VocabularyKind = "spell" | "caster" | "target" | "zone";

@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createGoalTracker, type GoalTracker } from "../goal-tracker";
-import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
+import { BUILT_IN_STYLES } from "../../src/shared/alerts/alert-styles";
 import type { CastAlertEvent, CastAlertSettings, KillEvent, LootEvent } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-17T12:00:00.000Z");

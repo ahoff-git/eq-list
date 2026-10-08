@@ -20,7 +20,7 @@
  *
  * Pure data plus one function, so the panel that draws it and the test that pins it share a source.
  */
-import type { CastWatch } from "./types";
+import type { CastWatch } from "../types";
 
 /** A rule as the library holds it: everything but the id and the enabled flag, which are the adder's. */
 export type LibraryWatch = Omit<CastWatch, "id" | "enabled">;

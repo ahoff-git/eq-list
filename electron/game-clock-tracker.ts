@@ -28,7 +28,7 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "../src/shared/logging";
-import { alertStyle } from "../src/shared/alert-styles";
+import { alertStyle } from "../src/shared/alerts/alert-styles";
 import {
   clampPinAt,
   crossedMinute,

@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createAlertRouter, sampleAlert } from "../alert-router";
-import { BUILT_IN_STYLES, LOOT_STYLE_ID } from "../../src/shared/alert-styles";
+import { BUILT_IN_STYLES, LOOT_STYLE_ID } from "../../src/shared/alerts/alert-styles";
 import { parseLoot } from "../../src/shared/log-parser";
 import type { Timers } from "../alert-queue";
 import { splitLine } from "../../src/shared/log-parser";

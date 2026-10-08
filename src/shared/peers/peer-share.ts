@@ -59,7 +59,7 @@ import type { SharedKill } from "../kills/kill-filters";
 import type { BuffInstance, BuffRiseSource } from "../buffs/buff-tracking";
 import type { RespawnLearning, SpawnTimer } from "../mob/spawn-timers";
 import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "../buffs/buff-tracking";
-import { decodeWatches } from "../watch-share";
+import { decodeWatches } from "../alerts/watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "../map/pins";
 import { SHARD_COUNT } from "../items/item-shards";
 import { isPlottable } from "../kills/kill-confidence";

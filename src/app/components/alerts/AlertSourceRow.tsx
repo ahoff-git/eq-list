@@ -1,6 +1,6 @@
 "use client";
-import type { AlertSource, AlertUsage } from "@/shared/alert-styles";
-import { describeArmed } from "@/shared/alert-styles";
+import type { AlertSource, AlertUsage } from "@/shared/alerts/alert-styles";
+import { describeArmed } from "@/shared/alerts/alert-styles";
 
 import type { AlertStyle } from "@/shared/types";
 

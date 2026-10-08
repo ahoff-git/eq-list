@@ -23,7 +23,7 @@
  * `isRace`. `electron/achievement-tracker.ts` only ever offers this module a kill where
  * `event.killer === SELF`, the same self-only discipline every other criterion kind holds to.
  */
-import { matchCast, matchFade, matchLine, type MatchContext } from "../cast-alerts";
+import { matchCast, matchFade, matchLine, type MatchContext } from "../alerts/cast-alerts";
 import { isRace } from "../mob/mob-races";
 import { placeKey } from "../zones/place";
 import type {

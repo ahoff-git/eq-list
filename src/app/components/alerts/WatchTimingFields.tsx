@@ -1,8 +1,8 @@
 "use client";
-import { COMBAT_CUE_WITHIN_SECONDS, formatDelay, MAX_REPEAT, parseDelay } from "@/shared/alert-schedule";
-import WatchConditionRows from "@/app/components/WatchConditionRows";
+import { COMBAT_CUE_WITHIN_SECONDS, formatDelay, MAX_REPEAT, parseDelay } from "@/shared/alerts/alert-schedule";
+import WatchConditionRows from "@/app/components/alerts/WatchConditionRows";
 import { ConfigRow } from "@/app/components/ui";
-import type { Vocabulary } from "@/shared/log-vocabulary";
+import type { Vocabulary } from "@/shared/alerts/log-vocabulary";
 import type { CastWatch } from "@/shared/types";
 
 /**

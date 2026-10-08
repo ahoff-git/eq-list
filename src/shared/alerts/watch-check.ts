@@ -25,7 +25,7 @@
  * Pure: the lines come from the caller, so the renderer runs this over a buffer it asked main for.
  */
 import { lineSubject, matchCast, matchFade, matchLine } from "./cast-alerts";
-import { parseSplitLine } from "./parse-line";
+import { parseSplitLine } from "../parse-line";
 import { alertCue, parseDelay, usableCancels } from "./alert-schedule";
 import {
   activeConditions,
@@ -35,8 +35,8 @@ import {
   wantsCast,
   watchSpeaks,
 } from "./watch-conditions";
-import { lineShape } from "./unmatched-lines";
-import type { CastAlertSettings, CastWatch, LogLine, WatchCondition } from "./types";
+import { lineShape } from "../unmatched-lines";
+import type { CastAlertSettings, CastWatch, LogLine, WatchCondition } from "../types";
 
 /**
  * How short a raw-text trigger has to be before it's worth warning about.

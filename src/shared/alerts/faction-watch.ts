@@ -14,7 +14,7 @@
  * (`electron/faction-log.ts`) already gives a faction page everything a wired-up condition would —
  * every hit that's landed, and the net it comes to — without this alerting path needing to change.
  */
-import type { CastWatch } from "./types";
+import type { CastWatch } from "../types";
 
 const TRIGGER = "faction standing";
 

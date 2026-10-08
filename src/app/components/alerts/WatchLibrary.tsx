@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { summarizeWatch } from "@/shared/watch-summary";
-import { isAdded, WATCH_LIBRARY, type LibraryRule } from "@/shared/watch-library";
+import { summarizeWatch } from "@/shared/alerts/watch-summary";
+import { isAdded, WATCH_LIBRARY, type LibraryRule } from "@/shared/alerts/watch-library";
 import type { CastWatch } from "@/shared/types";
 
 /**

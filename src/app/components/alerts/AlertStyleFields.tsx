@@ -1,6 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
-import { ALERT_SOUNDS, playAlertSound } from "@/lib/alertSounds";
+import { ALERT_SOUNDS, playAlertSound } from "@/lib/alerts/alertSounds";
 import type { AlertAnimation, AlertLocation, AlertPosition, AlertPositionValue, AlertStyle } from "@/shared/types";
 
 /** Preset accent colors for the alert (border + flash). Any CSS color works; these are the picks. */

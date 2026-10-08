@@ -5,7 +5,7 @@ import { useRead, useSettings, useWatcherStatus } from "@/lib/hooks";
 import { SCORE_CATEGORIES, SCORE_GROUPS, categoryOf, formatScore, marginOf } from "@/shared/combat/high-scores";
 import { figure, when } from "@/shared/format";
 import { CheckField, Empty, StatTile } from "@/app/components/ui";
-import AlertStyleField, { AlertStyleDrawer } from "@/app/components/AlertStyleField";
+import AlertStyleField, { AlertStyleDrawer } from "@/app/components/alerts/AlertStyleField";
 import type { HighScore, ScoreBoard } from "@/shared/types";
 import ZoneTag from "@/app/components/ZoneTag";
 

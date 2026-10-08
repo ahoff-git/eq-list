@@ -19,8 +19,8 @@
  * read *late* is the cancelling words, which have to be, since the whole point is to notice
  * something that hasn't happened yet.
  */
-import { alertCue, formatDelayMs, usableCancels } from "../src/shared/alert-schedule";
-import { conditionMatches, type WatchSubject } from "../src/shared/watch-conditions";
+import { alertCue, formatDelayMs, usableCancels } from "../src/shared/alerts/alert-schedule";
+import { conditionMatches, type WatchSubject } from "../src/shared/alerts/watch-conditions";
 import { createLogger } from "../src/shared/logging";
 import type { CastAlertEvent, CastWatch, WatchCondition } from "../src/shared/types";
 

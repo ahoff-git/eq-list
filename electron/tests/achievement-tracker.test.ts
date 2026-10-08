@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createAchievementTracker, type AchievementTracker } from "../achievement-tracker";
-import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
+import { BUILT_IN_STYLES } from "../../src/shared/alerts/alert-styles";
 import { CURATED_ZONES } from "../../src/shared/zones/gazetteer";
 import type { CastAlertEvent, CastAlertSettings, CombatEvent, HighScore, KillEvent, LogLine } from "../../src/shared/types";
 

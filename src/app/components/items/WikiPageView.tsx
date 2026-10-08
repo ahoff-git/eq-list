@@ -13,7 +13,7 @@ import { factionRaiseNote, wikiAddAction } from "@/shared/items/wiki-add";
 import { sourcesByEra } from "@/shared/items/item-era";
 import { countOf } from "@/shared/format";
 import type { FactionSide, ItemSource, WikiPage, WikiSubQuest } from "@/shared/types";
-import { buildFactionWatch, isFactionWatched } from "@/shared/faction-watch";
+import { buildFactionWatch, isFactionWatched } from "@/shared/alerts/faction-watch";
 import { cardZone, statesNothing } from "@/shared/map/mob-place";
 
 /**

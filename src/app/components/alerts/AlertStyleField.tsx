@@ -8,8 +8,8 @@ import {
   newStyleId,
   nextStyleName,
   styleUse,
-} from "@/shared/alert-styles";
-import AlertStyleFields from "@/app/components/AlertStyleFields";
+} from "@/shared/alerts/alert-styles";
+import AlertStyleFields from "@/app/components/alerts/AlertStyleFields";
 import { PickField } from "@/app/components/ui";
 import type { AlertStyle, CastAlertSettings, NamedAlertStyle } from "@/shared/types";
 

@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
+import { BUILT_IN_STYLES } from "../../src/shared/alerts/alert-styles";
 import { matchesLine } from "../../src/shared/achievements/achievement-progress";
 import { STOCK_ACHIEVEMENTS } from "../../src/shared/achievements/achievement-library";
 import type { CastAlertSettings } from "../../src/shared/types";

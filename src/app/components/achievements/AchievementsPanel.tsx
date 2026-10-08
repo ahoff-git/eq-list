@@ -7,7 +7,7 @@ import { countOf } from "@/shared/format";
 import { CheckField, Empty, segCls } from "@/app/components/ui";
 import SearchField from "@/app/components/SearchField";
 import SuggestField from "@/app/components/SuggestField";
-import type { VocabularyKind } from "@/shared/log-vocabulary";
+import type { VocabularyKind } from "@/shared/alerts/log-vocabulary";
 import type { AchievementCriterion, AchievementCriterionInput, RunningAchievement } from "@/shared/types";
 
 /** Search reaches the title and the category badge, so "kunark" finds every achievement tagged

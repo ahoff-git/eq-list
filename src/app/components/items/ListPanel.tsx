@@ -14,8 +14,8 @@ import ItemLink, { NameList } from "@/app/components/items/ItemLink";
 import { LucyLink } from "@/app/components/items/LucySays";
 import { count } from "@/shared/format";
 import { Caret, caretGlyph, Empty } from "@/app/components/ui";
-import { AlertStyleDrawer } from "@/app/components/AlertStyleField";
-import { LOOT_STYLE_ID } from "@/shared/alert-styles";
+import { AlertStyleDrawer } from "@/app/components/alerts/AlertStyleField";
+import { LOOT_STYLE_ID } from "@/shared/alerts/alert-styles";
 import { goalWantsItem, goalWantsMob } from "@/shared/goals/goal-progress";
 import GoalFocusBanner from "@/app/components/goals/GoalFocusBanner";
 import {

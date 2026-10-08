@@ -1,17 +1,17 @@
 "use client";
 import { api } from "@/lib/api";
-import { alertStyle, OWN_STYLE as OWN, plan, styleWearers, type AlertUsage } from "@/shared/alert-styles";
-import { wantsCast } from "@/shared/watch-conditions";
-import { summarizeWatch } from "@/shared/watch-summary";
-import { encodeWatches } from "@/shared/watch-share";
+import { alertStyle, OWN_STYLE as OWN, plan, styleWearers, type AlertUsage } from "@/shared/alerts/alert-styles";
+import { wantsCast } from "@/shared/alerts/watch-conditions";
+import { summarizeWatch } from "@/shared/alerts/watch-summary";
+import { encodeWatches } from "@/shared/alerts/watch-share";
 import { copyText } from "@/lib/clipboard";
-import AlertStyleFields from "@/app/components/AlertStyleFields";
-import WatchCheck from "@/app/components/WatchCheck";
-import WatchConditionRows from "@/app/components/WatchConditionRows";
-import WatchTimingFields from "@/app/components/WatchTimingFields";
+import AlertStyleFields from "@/app/components/alerts/AlertStyleFields";
+import WatchCheck from "@/app/components/alerts/WatchCheck";
+import WatchConditionRows from "@/app/components/alerts/WatchConditionRows";
+import WatchTimingFields from "@/app/components/alerts/WatchTimingFields";
 import SuggestField from "@/app/components/SuggestField";
 import { CheckField, ConfigRow, TextField } from "@/app/components/ui";
-import { NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
+import { NO_VOCABULARY, type Vocabulary } from "@/shared/alerts/log-vocabulary";
 import type { AlertStyle, CastAlertSettings, CastWatch } from "@/shared/types";
 
 /** Which drawer of a watch is open. `null` is the ordinary state: a one-line row. */

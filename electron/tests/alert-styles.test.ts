@@ -28,8 +28,8 @@ import {
   withStyleName,
   withoutStyle,
   wornStyle,
-} from "../../src/shared/alert-styles";
-import type { AlertSource } from "../../src/shared/alert-styles";
+} from "../../src/shared/alerts/alert-styles";
+import type { AlertSource } from "../../src/shared/alerts/alert-styles";
 import type { CastAlertSettings, CastWatch, NamedAlertStyle } from "../../src/shared/types";
 
 /** A source by id, so a test names the feature it means rather than an index. */

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { SOLID } from "@/lib/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
-import { alertPlacement, alertStyle, BUFF_STYLE_ID, DEBUFF_DEFAULT_POSITION } from "@/shared/alert-styles";
+import { alertPlacement, alertStyle, BUFF_STYLE_ID, DEBUFF_DEFAULT_POSITION } from "@/shared/alerts/alert-styles";
 import { durationErratic, heldMs, targetLabel } from "@/shared/buffs/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { clockSkew } from "@/shared/mob/spawn-timers";

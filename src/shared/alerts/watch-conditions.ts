@@ -22,7 +22,7 @@
  * Pure and no I/O. What a *cast* is allowed to fire (your own casts, named casters, staleness) stays
  * in [cast-alerts.ts](./cast-alerts.ts): those are rules about the event, not about the watch.
  */
-import type { CastWatch, WatchCondition, WatchField, WatchOp } from "./types";
+import type { CastWatch, WatchCondition, WatchField, WatchOp } from "../types";
 
 /**
  * What the log said, in the one shape conditions can read.

@@ -31,8 +31,8 @@
  *
  * No I/O, no state, no timers — the scheduling itself is `electron/alert-queue.ts`.
  */
-import { formatDuration, parseDuration } from "./duration";
-import type { CastWatch, WatchCondition } from "./types";
+import { formatDuration, parseDuration } from "../duration";
+import type { CastWatch, WatchCondition } from "../types";
 
 /** Unit conversions, named so a bare `1000` never has to be recognised for what it is. */
 const MS_PER_SECOND = 1000;

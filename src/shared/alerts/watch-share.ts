@@ -22,7 +22,7 @@
  * the banner belongs. What travels is the rule — what to match, and when to say it.
  */
 import { looksUnsafe } from "./watch-conditions";
-import type { CastWatch, WatchCondition, WatchField, WatchOp } from "./types";
+import type { CastWatch, WatchCondition, WatchField, WatchOp } from "../types";
 
 /** Version-stamped, so a later format can be told apart rather than half-read. */
 export const SHARE_PREFIX = "EQLW1:";

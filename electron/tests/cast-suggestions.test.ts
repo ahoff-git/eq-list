@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CAST_SUGGESTIONS, isWatched } from "../../src/shared/cast-suggestions";
+import { CAST_SUGGESTIONS, isWatched } from "../../src/shared/alerts/cast-suggestions";
 
 test("every suggestion is a non-empty substring with a note, and none repeats", () => {
   const seen = new Set<string>();

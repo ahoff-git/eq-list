@@ -14,7 +14,7 @@ import {
   looksUnsafe,
   watchSpeaks,
   type WatchSubject,
-} from "../../src/shared/watch-conditions";
+} from "../../src/shared/alerts/watch-conditions";
 import type { CastWatch, WatchCondition } from "../../src/shared/types";
 
 const CAST: WatchSubject = {

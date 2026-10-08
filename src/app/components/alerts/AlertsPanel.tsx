@@ -3,15 +3,15 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { percent } from "@/shared/format";
 import { useLogVocabulary, useRead, useSettings, useStyleUsage } from "@/lib/hooks";
-import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
-import AlertStyleFields, { ALERT_POSITIONS } from "@/app/components/AlertStyleFields";
-import { AlertStyleDrawer } from "@/app/components/AlertStyleField";
-import StyleRow from "@/app/components/StyleRow";
-import AlertSourceRow from "@/app/components/AlertSourceRow";
-import CastWatchRow, { type WatchPane } from "@/app/components/CastWatchRow";
-import WatchLibrary from "@/app/components/WatchLibrary";
-import WatchShare from "@/app/components/WatchShare";
-import GameTimeAlarms from "@/app/components/GameTimeAlarms";
+import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/alerts/cast-suggestions";
+import AlertStyleFields, { ALERT_POSITIONS } from "@/app/components/alerts/AlertStyleFields";
+import { AlertStyleDrawer } from "@/app/components/alerts/AlertStyleField";
+import StyleRow from "@/app/components/alerts/StyleRow";
+import AlertSourceRow from "@/app/components/alerts/AlertSourceRow";
+import CastWatchRow, { type WatchPane } from "@/app/components/alerts/CastWatchRow";
+import WatchLibrary from "@/app/components/alerts/WatchLibrary";
+import WatchShare from "@/app/components/alerts/WatchShare";
+import GameTimeAlarms from "@/app/components/alerts/GameTimeAlarms";
 import {
   ALERT_SOURCES,
   alertStyle,
@@ -29,8 +29,8 @@ import {
   withStyleName,
   type AlertSource,
   type AlertUsage,
-} from "@/shared/alert-styles";
-import type { LibraryRule } from "@/shared/watch-library";
+} from "@/shared/alerts/alert-styles";
+import type { LibraryRule } from "@/shared/alerts/watch-library";
 import { CheckField } from "@/app/components/ui";
 import type {
   AlertPositionValue,

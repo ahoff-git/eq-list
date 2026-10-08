@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createAlertQueue, type CueWatch, type Timers } from "../alert-queue";
-import { lineSubject } from "../../src/shared/cast-alerts";
+import { lineSubject } from "../../src/shared/alerts/cast-alerts";
 import type { CastAlertEvent } from "../../src/shared/types";
 
 /** A hand-cranked clock: nothing fires until the test says how far to move. */

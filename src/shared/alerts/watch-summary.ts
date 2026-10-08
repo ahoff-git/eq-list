@@ -16,7 +16,7 @@
 import { alertCue, formatDelay, parseDelay } from "./alert-schedule";
 import { activeConditions, describeCondition, wantsCast } from "./watch-conditions";
 import { checkWatch, type WatchIssue } from "./watch-check";
-import type { CastWatch } from "./types";
+import type { CastWatch } from "../types";
 
 export interface WatchSummary {
   /** Which prompts it wants: "cast", "cast · fades", "raw text". Never empty — see `issues`. */

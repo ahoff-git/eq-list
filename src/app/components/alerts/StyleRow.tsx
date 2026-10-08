@@ -1,5 +1,5 @@
 "use client";
-import { ALERT_ANIMATIONS, ALERT_POSITIONS } from "@/app/components/AlertStyleFields";
+import { ALERT_ANIMATIONS, ALERT_POSITIONS } from "@/app/components/alerts/AlertStyleFields";
 
 import type { AlertStyle } from "@/shared/types";
 
