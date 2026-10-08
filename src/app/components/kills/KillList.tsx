@@ -2,11 +2,11 @@
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { clock, count, locText } from "@/shared/format";
-import { confidenceTier } from "@/shared/kill-confidence";
-import { mobChoices, type KillFilters } from "@/shared/kill-filters";
+import { confidenceTier } from "@/shared/kills/kill-confidence";
+import { mobChoices, type KillFilters } from "@/shared/kills/kill-filters";
 import ItemLink, { NameList } from "@/app/components/ItemLink";
 import { Caret } from "@/app/components/ui";
-import KillFilterBar from "@/app/components/KillFilterBar";
+import KillFilterBar from "@/app/components/kills/KillFilterBar";
 import { ZoneDifficultyTag } from "@/app/components/ZoneTag";
 import type { KillEmphasis, KillRecord } from "@/shared/types";
 

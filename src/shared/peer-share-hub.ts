@@ -82,7 +82,7 @@ import type { MapPin } from "./map/pins";
 import type { KillRecord, KnownSpawn } from "./types";
 import type { MobObservation } from "./mob-stats";
 import type { FactionObservation } from "./faction-observation";
-import type { SharedKill } from "./kill-filters";
+import type { SharedKill } from "./kills/kill-filters";
 
 const log = createLogger("peer-share");
 

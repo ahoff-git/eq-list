@@ -45,7 +45,7 @@ import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob-sta
 import type { KnowledgeContributor } from "@/shared/contributors";
 import type { FactionCauseKnowledge } from "@/shared/faction-observation";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
-import type { SharedKill } from "@/shared/kill-filters";
+import type { SharedKill } from "@/shared/kills/kill-filters";
 import { mergeLootFeed } from "@/shared/loot-feed";
 import { mergeFactionFeed } from "@/shared/faction-feed";
 import { ratio } from "@/shared/numbers";

@@ -7,10 +7,10 @@ import ItemLink from "@/app/components/ItemLink";
 import { dropKey, dropSources, roamWhy, type MobKnowledge } from "@/shared/mob-stats";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
 import { disagreeBadge, provenanceBadge } from "@/shared/mob-provenance";
-import { filterMobKnowledge, matchesDrop, mobChoices, type KillFilters } from "@/shared/kill-filters";
+import { filterMobKnowledge, matchesDrop, mobChoices, type KillFilters } from "@/shared/kills/kill-filters";
 import { count, countOf, when } from "@/shared/format";
 import type { KillEmphasis } from "@/shared/types";
-import KillFilterBar from "@/app/components/KillFilterBar";
+import KillFilterBar from "@/app/components/kills/KillFilterBar";
 import { RoamLinks } from "@/app/components/MapLink";
 import { Caret } from "@/app/components/ui";
 

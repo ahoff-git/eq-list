@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { createLogger } from "@/shared/logging";
 import type { MapPin } from "@/shared/map/pins";
-import type { SharedKill } from "@/shared/kill-filters";
+import type { SharedKill } from "@/shared/kills/kill-filters";
 import { AWARI_MSG, type AwariPayload, type AwariPeer } from "@/shared/types";
 
 const log = createLogger("awari");

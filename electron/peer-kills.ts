@@ -25,7 +25,7 @@ import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { classifyZoneLine, samePlace } from "../src/shared/zones/place";
 import { isAdminAudit, type AdminAudit } from "../src/shared/admin";
-import type { SharedKill } from "../src/shared/kill-filters";
+import type { SharedKill } from "../src/shared/kills/kill-filters";
 import type { Contributor } from "../src/shared/contributors";
 import { createContributions } from "./contributions";
 import { createArrayAdminStore, type AdminStore } from "./admin";

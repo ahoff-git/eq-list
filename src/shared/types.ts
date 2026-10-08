@@ -8,7 +8,7 @@ import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, Shar
 // Re-exported because every consumer of the `peer` bridge reads it off the api surface, and
 // `types.ts` is where that surface is described.
 export type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind } from "./peer-share";
-import type { SharedKill } from "./kill-filters";
+import type { SharedKill } from "./kills/kill-filters";
 import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
 import type { BuffInstance, BuffView, KnownBuff } from "./buffs/buff-tracking";
 import type { EqMap } from "./map/eqmap";

@@ -55,14 +55,14 @@ import type {
 } from "./types";
 import { withAreas, type MobArea, type MobObservation } from "./mob-stats";
 import type { FactionObservation } from "./faction-observation";
-import type { SharedKill } from "./kill-filters";
+import type { SharedKill } from "./kills/kill-filters";
 import type { BuffInstance, BuffRiseSource } from "./buffs/buff-tracking";
 import type { RespawnLearning, SpawnTimer } from "./spawn-timers";
 import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "./buffs/buff-tracking";
 import { decodeWatches } from "./watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "./map/pins";
 import { SHARD_COUNT } from "./item-shards";
-import { isPlottable } from "./kill-confidence";
+import { isPlottable } from "./kills/kill-confidence";
 import { opponentOf } from "./damage-tree";
 import { SELF } from "./combat-parser";
 import { clamp } from "./numbers";

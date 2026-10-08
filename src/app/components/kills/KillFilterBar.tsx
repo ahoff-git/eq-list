@@ -1,7 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
-import { CONFIDENCE_TIERS } from "@/shared/kill-confidence";
-import { withDroppedOnly, type KillFilters, type KillWindow, type MobChoice } from "@/shared/kill-filters";
+import { CONFIDENCE_TIERS } from "@/shared/kills/kill-confidence";
+import { withDroppedOnly, type KillFilters, type KillWindow, type MobChoice } from "@/shared/kills/kill-filters";
 import { CheckField, PickField, segCls } from "@/app/components/ui";
 
 /** The confidence floors the picker offers, matching `CONFIDENCE_TIERS` best-first. */

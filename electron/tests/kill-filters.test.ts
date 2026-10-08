@@ -14,8 +14,8 @@ import {
   windowMoves,
   withDroppedOnly,
   type KillFilters,
-} from "../../src/shared/kill-filters";
-import { confidenceTier, CONFIDENCE_TIERS, PLOTTABLE_CONFIDENCE } from "../../src/shared/kill-confidence";
+} from "../../src/shared/kills/kill-filters";
+import { confidenceTier, CONFIDENCE_TIERS, PLOTTABLE_CONFIDENCE } from "../../src/shared/kills/kill-confidence";
 import type { MobKnowledge } from "../../src/shared/mob-stats";
 import type { KillRecord } from "../../src/shared/types";
 
