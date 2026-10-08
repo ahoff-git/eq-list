@@ -1,5 +1,5 @@
 "use client";
-import { PickField } from "./ui";
+import { PickField } from "@/app/components/ui";
 import { STATS, statMeta, type StatKey } from "@/shared/item-stats";
 
 /**

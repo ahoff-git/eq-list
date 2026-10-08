@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
 import { searchKnownItems, unknownToTheWiki } from "@/shared/known-items";
 import { createLogger } from "@/shared/logging";
-import { TextField } from "./ui";
+import { TextField } from "@/app/components/ui";
 import type { SearchResult } from "@/shared/types";
 
 const log = createLogger("item-name-field");

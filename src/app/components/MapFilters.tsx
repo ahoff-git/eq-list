@@ -1,7 +1,7 @@
 "use client";
 import type { PoiGroupSummary, PoiKind } from "@/shared/map/poi-kinds";
 import { HUNT_PIN, NAMED_PIN, PIN_TYPES, type PinKind } from "@/shared/map/pins";
-import { CheckField } from "./ui";
+import { CheckField } from "@/app/components/ui";
 import type { MapFloor, ZBand } from "@/shared/map/eqmap";
 import { TRAIL_OPACITY } from "@/shared/constants";
 import { percent } from "@/shared/format";

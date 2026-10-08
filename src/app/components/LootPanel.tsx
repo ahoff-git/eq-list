@@ -32,13 +32,13 @@ import {
 import { normalizeItemName } from "@/shared/grouping";
 import { describeCoins, formatCoins } from "@/shared/money";
 import type { Sort } from "@/shared/sorting";
-import ItemLink from "./ItemLink";
-import ZoneTag from "./ZoneTag";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "./dataGridDefaults";
+import ItemLink from "@/app/components/ItemLink";
+import ZoneTag from "@/app/components/ZoneTag";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import type { ItemPrice, LootFate, LootRecord, LootSearchFilter } from "@/shared/types";
 
 import { count, countOf, dayTime, when } from "@/shared/format";
-import { CheckField, Empty, PickField, segCls } from "./ui";
+import { CheckField, Empty, PickField, segCls } from "@/app/components/ui";
 /**
  * Everything that has dropped and what became of it — kept, sold, stored in a depot, or consumed
  * to make something else. The log distinguishes all four and they matter differently: a sold item

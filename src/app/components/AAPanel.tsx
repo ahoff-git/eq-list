@@ -6,8 +6,8 @@ import { countOf } from "@/shared/format";
 import { SPELL_CLASSES } from "@/shared/spell-file";
 import { distinctSorted } from "@/shared/sorting";
 import { AA_LIST, AA_LIST_SOURCE, NO_AA_CRITERIA, filterAA, type AlternateAdvancement } from "@/shared/aa-list";
-import { Empty, PickField, SourceCountRow } from "./ui";
-import SearchField from "./SearchField";
+import { Empty, PickField, SourceCountRow } from "@/app/components/ui";
+import SearchField from "@/app/components/SearchField";
 
 /** The class picker's — and the browse order's — options, alphabetical rather than `SPELL_CLASSES`'s
  *  file-column order (that order matters for parsing the spell file and must stay put there; nothing

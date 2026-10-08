@@ -13,7 +13,7 @@ import type {
   SpecialHitStat,
 } from "@/shared/types";
 import { count, percent } from "@/shared/format";
-import { Caret, caretGlyph } from "./ui";
+import { Caret, caretGlyph } from "@/app/components/ui";
 import { ratio } from "@/shared/numbers";
 
 /** Which number the bars are showing. */

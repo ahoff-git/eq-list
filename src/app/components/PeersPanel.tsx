@@ -6,9 +6,9 @@ import { hasOffered, offeredCount, offeredKinds, shortId, usePeerShare } from "@
 import { SHARE_KINDS, kindsOf, sharing, versionStanding, type ShareFamily, type ShareKind } from "@/shared/peer-share";
 import { count } from "@/shared/format";
 import { characterFromLogFile } from "@/shared/log-parser";
-import { CheckField } from "./ui";
-import PeerTray from "./PeerTray";
-import PeerScores from "./PeerScores";
+import { CheckField } from "@/app/components/ui";
+import PeerTray from "@/app/components/PeerTray";
+import PeerScores from "@/app/components/PeerScores";
 import type { AwariPeer, AwariStatus, Settings } from "@/shared/types";
 
 /**

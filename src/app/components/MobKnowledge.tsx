@@ -3,16 +3,16 @@ import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useMobContributors } from "@/lib/hooks";
 import { describeCoins, formatCoins } from "@/shared/money";
-import ItemLink from "./ItemLink";
+import ItemLink from "@/app/components/ItemLink";
 import { dropKey, dropSources, roamWhy, type MobKnowledge } from "@/shared/mob-stats";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
 import { disagreeBadge, provenanceBadge } from "@/shared/mob-provenance";
 import { filterMobKnowledge, matchesDrop, mobChoices, type KillFilters } from "@/shared/kill-filters";
 import { count, countOf, when } from "@/shared/format";
 import type { KillEmphasis } from "@/shared/types";
-import KillFilterBar from "./KillFilterBar";
-import { RoamLinks } from "./MapLink";
-import { Caret } from "./ui";
+import KillFilterBar from "@/app/components/KillFilterBar";
+import { RoamLinks } from "@/app/components/MapLink";
+import { Caret } from "@/app/components/ui";
 
 /**
  * What killing things has taught us: how often each mob drops what, what it carries, and

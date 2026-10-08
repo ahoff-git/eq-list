@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useGameClock } from "@/lib/hooks";
 import { formatGameClock, parseGameClockTime } from "@/shared/game-clock";
-import { CheckField } from "./ui";
+import { CheckField } from "@/app/components/ui";
 
 /**
  * "Tell me at 8 PM" — alarms against the running Norrath clock (`GameClock.tsx`, in the status bar,

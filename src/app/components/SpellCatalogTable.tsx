@@ -1,8 +1,8 @@
 "use client";
 import { useMemo } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import ItemLink from "./ItemLink";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "./dataGridDefaults";
+import ItemLink from "@/app/components/ItemLink";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import { useGridSort } from "@/lib/useGridSort";
 import { buffLinesFor } from "@/shared/buff-lines";
 import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spell-search";

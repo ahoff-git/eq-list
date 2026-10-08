@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { CONFIDENCE_TIERS } from "@/shared/kill-confidence";
 import { withDroppedOnly, type KillFilters, type KillWindow, type MobChoice } from "@/shared/kill-filters";
-import { CheckField, PickField, segCls } from "./ui";
+import { CheckField, PickField, segCls } from "@/app/components/ui";
 
 /** The confidence floors the picker offers, matching `CONFIDENCE_TIERS` best-first. */
 const CONFIDENCE_FLOORS = [0.8, 0.5, 0.2, 0.01];

@@ -5,8 +5,8 @@ import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
 import { count } from "@/shared/format";
 import { itemDropTotals, priceOfItem, type ItemDropSource } from "@/shared/item-sources";
 import { describeCoins, formatCoins } from "@/shared/money";
-import ItemLink from "./ItemLink";
-import { RoamLinks, ZoneLink } from "./MapLink";
+import ItemLink from "@/app/components/ItemLink";
+import { RoamLinks, ZoneLink } from "@/app/components/MapLink";
 import type { ItemSource } from "@/shared/types";
 
 /**

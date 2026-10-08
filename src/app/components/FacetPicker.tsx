@@ -2,7 +2,7 @@
 import { useMemo, useRef, useState } from "react";
 import { fuzzyRank } from "@/shared/fuzzy";
 import { useDismiss } from "@/lib/hooks";
-import { CheckField } from "./ui";
+import { CheckField } from "@/app/components/ui";
 import { count, figure } from "@/shared/format";
 import { NO_FACET_VALUE } from "@/shared/item-search";
 

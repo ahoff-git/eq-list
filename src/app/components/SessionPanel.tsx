@@ -2,11 +2,11 @@
 import { useCombatStats, useXpProgress } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
 import { describeCoins, formatCoins } from "@/shared/money";
-import AskValue from "./AskValue";
-import CampReport from "./CampReport";
+import AskValue from "@/app/components/AskValue";
+import CampReport from "@/app/components/CampReport";
 import type { FightStats, XpProgress } from "@/shared/types";
 
-import { StatTile } from "./ui";
+import { StatTile } from "@/app/components/ui";
 import { over, ratio, round } from "@/shared/numbers";
 import { clock, duration, percent } from "@/shared/format";
 /**

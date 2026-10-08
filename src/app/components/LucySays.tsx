@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { count, countOf } from "@/shared/format";
 import { eraFromSourceZones, placeableReading } from "@/shared/lucy-era";
 import { groupDropsByZone, otherSources } from "@/shared/sources";
-import { ZoneLink } from "./MapLink";
+import { ZoneLink } from "@/app/components/MapLink";
 import type { LucyEra, LucyItem } from "@/shared/types";
 
 /**

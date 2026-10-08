@@ -1,6 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
-import MaximizeButton from "./MaximizeButton";
+import MaximizeButton from "@/app/components/MaximizeButton";
 
 /**
  * The three controls at the right of a frameless window's title bar: minimize, maximize, dismiss.

@@ -1,6 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
-import CatalogueHarvestPanel from "./CatalogueHarvestPanel";
+import CatalogueHarvestPanel from "@/app/components/CatalogueHarvestPanel";
 import type { HarvestProgress } from "@/shared/types";
 
 /**

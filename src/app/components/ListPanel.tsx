@@ -10,14 +10,14 @@ import {
   type GoalFocus,
 } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import ItemLink, { NameList } from "./ItemLink";
-import { LucyLink } from "./LucySays";
+import ItemLink, { NameList } from "@/app/components/ItemLink";
+import { LucyLink } from "@/app/components/LucySays";
 import { count } from "@/shared/format";
-import { Caret, caretGlyph, Empty } from "./ui";
-import { AlertStyleDrawer } from "./AlertStyleField";
+import { Caret, caretGlyph, Empty } from "@/app/components/ui";
+import { AlertStyleDrawer } from "@/app/components/AlertStyleField";
 import { LOOT_STYLE_ID } from "@/shared/alert-styles";
 import { goalWantsItem, goalWantsMob } from "@/shared/goal-progress";
-import GoalFocusBanner from "./GoalFocusBanner";
+import GoalFocusBanner from "@/app/components/GoalFocusBanner";
 import {
   countableEntries,
   effectiveNeeded,

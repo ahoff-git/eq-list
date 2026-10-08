@@ -2,8 +2,8 @@
 import { useMemo, useState } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useSettings, useSpellFacts, type SpellFacts } from "@/lib/hooks";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "./dataGridDefaults";
-import { Empty } from "./ui";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
+import { Empty } from "@/app/components/ui";
 import type { FightStats, SpellStat } from "@/shared/types";
 
 import { count, figure, percent } from "@/shared/format";

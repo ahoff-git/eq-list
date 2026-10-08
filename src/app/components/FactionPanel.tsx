@@ -37,9 +37,9 @@ import type {
   FactionRecord,
   FactionStanding,
 } from "@/shared/types";
-import ItemLink, { NameList } from "./ItemLink";
-import RaceUnlocksView from "./RaceUnlocksView";
-import SearchField from "./SearchField";
+import ItemLink, { NameList } from "@/app/components/ItemLink";
+import RaceUnlocksView from "@/app/components/RaceUnlocksView";
+import SearchField from "@/app/components/SearchField";
 import {
   DEFAULT_PAGE_SIZE,
   GRID_DEFAULTS,
@@ -48,8 +48,8 @@ import {
   NUM_COL,
   PAGE_SIZE_OPTIONS,
   hiddenByDefault,
-} from "./dataGridDefaults";
-import { Empty, segCls, StatTile } from "./ui";
+} from "@/app/components/dataGridDefaults";
+import { Empty, segCls, StatTile } from "@/app/components/ui";
 
 /**
  * Everything the log has said raised or lowered a faction, and what it comes to for each one.

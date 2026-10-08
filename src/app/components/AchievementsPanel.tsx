@@ -4,9 +4,9 @@ import { api } from "@/lib/api";
 import { useAchievements, useLogVocabulary } from "@/lib/hooks";
 import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
 import { countOf } from "@/shared/format";
-import { CheckField, Empty, segCls } from "./ui";
-import SearchField from "./SearchField";
-import SuggestField from "./SuggestField";
+import { CheckField, Empty, segCls } from "@/app/components/ui";
+import SearchField from "@/app/components/SearchField";
+import SuggestField from "@/app/components/SuggestField";
 import type { VocabularyKind } from "@/shared/log-vocabulary";
 import type { AchievementCriterion, AchievementCriterionInput, RunningAchievement } from "@/shared/types";
 

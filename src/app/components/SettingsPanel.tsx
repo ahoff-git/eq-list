@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 import { useAppInfo, useCapabilities, useSettings } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { MAP_UI_SCALE, OVERLAY_OPACITY, UI_SCALE } from "@/shared/constants";
-import LogSettings from "./LogSettings";
-import SelfCheck from "./SelfCheck";
-import DataHealth from "./DataHealth";
+import LogSettings from "@/app/components/LogSettings";
+import SelfCheck from "@/app/components/SelfCheck";
+import DataHealth from "@/app/components/DataHealth";
 import { percent } from "@/shared/format";
-import { CheckField } from "./ui";
+import { CheckField } from "@/app/components/ui";
 import type { AutoUpdateStatus, DeepPartial, Settings } from "@/shared/types";
 
 /**

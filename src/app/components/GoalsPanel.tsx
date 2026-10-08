@@ -6,9 +6,9 @@ import { formatCountdown } from "@/shared/spawn-timers";
 import { formatDuration } from "@/shared/duration";
 import { parseGoalDuration, parseStreakInterval } from "@/shared/goal-progress";
 import { count } from "@/shared/format";
-import { CheckField, Empty, segCls } from "./ui";
-import ItemNameField from "./ItemNameField";
-import SuggestField from "./SuggestField";
+import { CheckField, Empty, segCls } from "@/app/components/ui";
+import ItemNameField from "@/app/components/ItemNameField";
+import SuggestField from "@/app/components/SuggestField";
 import type { GoalTargetKind, GoalTemplate, RunningGoal } from "@/shared/types";
 
 /**

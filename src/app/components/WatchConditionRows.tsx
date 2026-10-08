@@ -1,6 +1,6 @@
 "use client";
 import { WATCH_FIELDS, WATCH_OPS } from "@/shared/watch-conditions";
-import SuggestField from "./SuggestField";
+import SuggestField from "@/app/components/SuggestField";
 import type { Vocabulary, VocabularyKind } from "@/shared/log-vocabulary";
 import type { WatchCondition, WatchField, WatchOp } from "@/shared/types";
 

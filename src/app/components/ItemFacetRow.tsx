@@ -1,5 +1,5 @@
 "use client";
-import FacetPicker from "./FacetPicker";
+import FacetPicker from "@/app/components/FacetPicker";
 import { NO_FACET_VALUE, type FacetCounts, type FacetMeta, type ItemCriteria } from "@/shared/item-search";
 import { CLASS_SEARCH_ALIASES } from "@/shared/class-names";
 

@@ -1,7 +1,7 @@
 "use client";
 import { useWatcherStatus, useLootFeed, useCurrentZone } from "@/lib/hooks";
-import ZoneTag from "./ZoneTag";
-import GameClock from "./GameClock";
+import ZoneTag from "@/app/components/ZoneTag";
+import GameClock from "@/app/components/GameClock";
 
 /**
  * Bottom bar: is the log being watched, current zone, and the most recent drop.

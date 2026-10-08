@@ -4,10 +4,10 @@ import { api } from "@/lib/api";
 import { useRead, useSettings, useWatcherStatus } from "@/lib/hooks";
 import { SCORE_CATEGORIES, SCORE_GROUPS, categoryOf, formatScore, marginOf } from "@/shared/high-scores";
 import { figure, when } from "@/shared/format";
-import { CheckField, Empty, StatTile } from "./ui";
-import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
+import { CheckField, Empty, StatTile } from "@/app/components/ui";
+import AlertStyleField, { AlertStyleDrawer } from "@/app/components/AlertStyleField";
 import type { HighScore, ScoreBoard } from "@/shared/types";
-import ZoneTag from "./ZoneTag";
+import ZoneTag from "@/app/components/ZoneTag";
 
 /** A stable empty board, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_BOARD: ScoreBoard = { character: "", scores: [], streak: 0, seeded: false };

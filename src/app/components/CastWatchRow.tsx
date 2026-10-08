@@ -5,12 +5,12 @@ import { wantsCast } from "@/shared/watch-conditions";
 import { summarizeWatch } from "@/shared/watch-summary";
 import { encodeWatches } from "@/shared/watch-share";
 import { copyText } from "@/lib/clipboard";
-import AlertStyleFields from "./AlertStyleFields";
-import WatchCheck from "./WatchCheck";
-import WatchConditionRows from "./WatchConditionRows";
-import WatchTimingFields from "./WatchTimingFields";
-import SuggestField from "./SuggestField";
-import { CheckField, ConfigRow, TextField } from "./ui";
+import AlertStyleFields from "@/app/components/AlertStyleFields";
+import WatchCheck from "@/app/components/WatchCheck";
+import WatchConditionRows from "@/app/components/WatchConditionRows";
+import WatchTimingFields from "@/app/components/WatchTimingFields";
+import SuggestField from "@/app/components/SuggestField";
+import { CheckField, ConfigRow, TextField } from "@/app/components/ui";
 import { NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import type { AlertStyle, CastAlertSettings, CastWatch } from "@/shared/types";
 

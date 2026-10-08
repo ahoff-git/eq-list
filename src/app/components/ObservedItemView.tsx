@@ -4,9 +4,9 @@ import { useLucyCard, useSettings } from "@/lib/hooks";
 import { count, dayTime } from "@/shared/format";
 import { normalizeItemName } from "@/shared/grouping";
 import type { KnownItem } from "@/shared/known-items";
-import ItemDrops from "./ItemDrops";
-import LucySays, { LucyLink } from "./LucySays";
-import { AddButton } from "./ui";
+import ItemDrops from "@/app/components/ItemDrops";
+import LucySays, { LucyLink } from "@/app/components/LucySays";
+import { AddButton } from "@/app/components/ui";
 import { addItem } from "@/lib/addToList";
 
 /**

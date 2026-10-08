@@ -1,7 +1,7 @@
 "use client";
 import { PIN_TYPES, pinType, type PinKind } from "@/shared/map/pins";
 import type { Loc } from "@/shared/map/types";
-import LocField from "./LocField";
+import LocField from "@/app/components/LocField";
 
 /** A boolean the map window owns, with the setter for it — `useState`'s pair, named. */
 export type Flag = [on: boolean, set: (next: (cur: boolean) => boolean) => void];

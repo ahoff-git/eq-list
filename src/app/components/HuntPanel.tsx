@@ -2,11 +2,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useCurrentZone, useGoalFocus, useHunt, useSettings, useMobLoot, useMobKnowledge } from "@/lib/hooks";
 import { goalWantsItem, goalWantsMob } from "@/shared/goal-progress";
-import GoalFocusBanner from "./GoalFocusBanner";
+import GoalFocusBanner from "@/app/components/GoalFocusBanner";
 import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/drop-truth";
 import { mobKey } from "@/shared/mob-stats";
-import ItemLink from "./ItemLink";
-import ZonePicker from "./ZonePicker";
+import ItemLink from "@/app/components/ItemLink";
+import ZonePicker from "@/app/components/ZonePicker";
 import { api } from "@/lib/api";
 import { ringMob } from "@/lib/showOnMap";
 import {
@@ -21,7 +21,7 @@ import {
 import { zoneMatches } from "@/shared/sources";
 import { distinct } from "@/shared/sorting";
 import { zoneLevelText, zoneLevelWhy, zoneLevels } from "@/shared/zones/levels";
-import { CheckField, Empty, segCls } from "./ui";
+import { CheckField, Empty, segCls } from "@/app/components/ui";
 import type { Zone } from "@/shared/map/types";
 
 /** How many zones the picker offers unfiltered — the hunt's list is short, so show it all. */

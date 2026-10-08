@@ -1,14 +1,14 @@
 "use client";
 import { api } from "@/lib/api";
 import { MAP_UI_SCALE } from "@/shared/constants";
-import ClickThroughButton from "./ClickThroughButton";
-import OpacityButton from "./OpacityButton";
-import PinButton from "./PinButton";
-import ScaleButtons from "./ScaleButtons";
-import Titlebar from "./Titlebar";
-import WindowButtons from "./WindowButtons";
-import ZonePicker from "./ZonePicker";
-import { CheckField } from "./ui";
+import ClickThroughButton from "@/app/components/ClickThroughButton";
+import OpacityButton from "@/app/components/OpacityButton";
+import PinButton from "@/app/components/PinButton";
+import ScaleButtons from "@/app/components/ScaleButtons";
+import Titlebar from "@/app/components/Titlebar";
+import WindowButtons from "@/app/components/WindowButtons";
+import ZonePicker from "@/app/components/ZonePicker";
+import { CheckField } from "@/app/components/ui";
 import { stockOnly, type MapSource } from "@/shared/map/map-sources";
 import type { Zone } from "@/shared/map/types";
 

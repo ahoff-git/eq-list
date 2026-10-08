@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { TextField } from "./ui";
+import { TextField } from "@/app/components/ui";
 import type { Vocabulary, VocabularyKind } from "@/shared/log-vocabulary";
 
 /**

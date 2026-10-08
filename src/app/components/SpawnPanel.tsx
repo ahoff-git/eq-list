@@ -18,11 +18,11 @@ import {
 import { fuzzyRank } from "@/shared/fuzzy";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
-import { Caret, CheckField, Empty } from "./ui";
-import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
+import { Caret, CheckField, Empty } from "@/app/components/ui";
+import AlertStyleField, { AlertStyleDrawer } from "@/app/components/AlertStyleField";
 import { SPAWN_STYLE_ID } from "@/shared/alert-styles";
-import SuggestField from "./SuggestField";
-import ZonePicker from "./ZonePicker";
+import SuggestField from "@/app/components/SuggestField";
+import ZonePicker from "@/app/components/ZonePicker";
 import { CURATED_ZONES, sortZones } from "@/shared/map/zones";
 import type { Zone } from "@/shared/map/types";
 import type { KnownSpawn, RunningSpawn, SpawnKind } from "@/shared/types";

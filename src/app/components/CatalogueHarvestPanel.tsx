@@ -1,5 +1,5 @@
 "use client";
-import { PickField } from "./ui";
+import { PickField } from "@/app/components/ui";
 import { duration, figure } from "@/shared/format";
 import type { HarvestProgress } from "@/shared/types";
 

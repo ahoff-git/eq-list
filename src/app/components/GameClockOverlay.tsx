@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { useGameClock } from "@/lib/hooks";
 import { SOLID } from "@/lib/clickThrough";
 import { clampUnit } from "@/shared/game-clock";
-import GameClockFace from "./GameClockFace";
+import GameClockFace from "@/app/components/GameClockFace";
 
 /**
  * The running clock, pinned over the game — toggled by clicking the status-bar clock

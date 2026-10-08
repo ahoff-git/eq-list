@@ -6,7 +6,7 @@ import { rowsOf } from "@/lib/usePeerShare";
 import { SHARE_KINDS, mergeBuffs, mergeTimers, shareKind, type ShareKind } from "@/shared/peer-share";
 import { count, duration } from "@/shared/format";
 import { targetLabel } from "@/shared/buff-tracking";
-import { Caret } from "./ui";
+import { Caret } from "@/app/components/ui";
 import type { BuffInstance } from "@/shared/buff-tracking";
 import type { SpawnTimer } from "@/shared/spawn-timers";
 import type { CastWatch, NamedAlertStyle, ReceivedShare, ShoppingListEntry } from "@/shared/types";

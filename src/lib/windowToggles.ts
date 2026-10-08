@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { api } from "@/lib/api";
 import type { WindowToggles } from "@/shared/types";
 
 /** A title-bar toggle: what it reads, whether that's been loaded yet, and how to flip it. */

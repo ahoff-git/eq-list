@@ -8,8 +8,8 @@ import { describeCoins, formatCoins } from "@/shared/money";
 import type { MobKnowledge } from "@/shared/mob-stats";
 import type { WikiComponent } from "@/shared/types";
 import { buildWikiContribution } from "@/shared/wiki-contribution";
-import ItemLink from "./ItemLink";
-import { RoamLinks, ZoneLink } from "./MapLink";
+import ItemLink from "@/app/components/ItemLink";
+import { RoamLinks, ZoneLink } from "@/app/components/MapLink";
 
 /**
  * What **your** kills say about the mob whose page you're reading — one block per zone you've killed

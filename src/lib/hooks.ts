@@ -1,9 +1,9 @@
 "use client";
 import { type DependencyList, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "./api";
+import { api } from "@/lib/api";
 import { createLogger, setRendererDebug } from "@/shared/logging";
 import { UI_SCALE, clampScale, windowOpacity, type ScaleRange } from "@/shared/constants";
-import { useWindowToggle } from "./windowToggles";
+import { useWindowToggle } from "@/lib/windowToggles";
 import type {
   AchievementView,
   ShoppingList,
@@ -64,8 +64,8 @@ import type { ItemRow } from "@/shared/item-search";
 import type { SpellRow } from "@/shared/spell-search";
 import { clockSkew } from "@/shared/spawn-timers";
 import { runningGoalTargets } from "@/shared/goal-progress";
-import { usePersistentState } from "./usePersistentState";
-import { STORAGE_KEYS } from "./storageKeys";
+import { usePersistentState } from "@/lib/usePersistentState";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/game-clock";
 import { DEFAULT_OVERLAY_PIN_AT } from "@/shared/damage-overlay";
 import type { AlertUsage } from "@/shared/alert-styles";

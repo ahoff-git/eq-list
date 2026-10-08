@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import ItemLink from "./ItemLink";
+import ItemLink from "@/app/components/ItemLink";
 import {
   DEFAULT_PAGE_SIZE,
   GRID_DEFAULTS,
@@ -10,8 +10,8 @@ import {
   ACTION_COL,
   PAGE_SIZE_OPTIONS,
   hiddenByDefault,
-} from "./dataGridDefaults";
-import { AddButton } from "./ui";
+} from "@/app/components/dataGridDefaults";
+import { AddButton } from "@/app/components/ui";
 import { addByTitle } from "@/lib/addToList";
 import { api } from "@/lib/api";
 import { useGridSort } from "@/lib/useGridSort";

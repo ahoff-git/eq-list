@@ -17,8 +17,8 @@ import {
   type NavPlace,
   type NavTrail,
 } from "@/shared/nav-trail";
-import { STORAGE_KEYS } from "./storageKeys";
-import { usePersistentState } from "./usePersistentState";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { usePersistentState } from "@/lib/usePersistentState";
 
 const log = createLogger("nav");
 

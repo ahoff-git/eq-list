@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { api } from "./api";
+import { api } from "@/lib/api";
 import { createUiMirror } from "@/shared/ui-mirror";
 
 /**

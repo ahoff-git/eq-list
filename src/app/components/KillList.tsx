@@ -4,10 +4,10 @@ import { api } from "@/lib/api";
 import { clock, count, locText } from "@/shared/format";
 import { confidenceTier } from "@/shared/kill-confidence";
 import { mobChoices, type KillFilters } from "@/shared/kill-filters";
-import ItemLink, { NameList } from "./ItemLink";
-import { Caret } from "./ui";
-import KillFilterBar from "./KillFilterBar";
-import { ZoneDifficultyTag } from "./ZoneTag";
+import ItemLink, { NameList } from "@/app/components/ItemLink";
+import { Caret } from "@/app/components/ui";
+import KillFilterBar from "@/app/components/KillFilterBar";
+import { ZoneDifficultyTag } from "@/app/components/ZoneTag";
 import type { KillEmphasis, KillRecord } from "@/shared/types";
 
 /** How many mob groups to show before the "show more" fold. Distinct mobs per zone are few. */

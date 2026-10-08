@@ -5,8 +5,8 @@ import { useRead, useReading } from "@/lib/hooks";
 import type { FightSearch, SessionSummary, StoredFight } from "@/shared/types";
 
 import { clock, count, dayTime, duration } from "@/shared/format";
-import { Caret, Empty } from "./ui";
-import ZoneTag from "./ZoneTag";
+import { Caret, Empty } from "@/app/components/ui";
+import ZoneTag from "@/app/components/ZoneTag";
 /** A stable empty, so a render before the answer lands doesn't look like a change. */
 const NO_FIGHTS: StoredFight[] = [];
 

@@ -1,5 +1,5 @@
 "use client";
-import { showToast } from "./toast";
+import { showToast } from "@/lib/toast";
 import { createLogger } from "@/shared/logging";
 
 /**

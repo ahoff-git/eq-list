@@ -7,9 +7,9 @@ import { alternativesLabel, heldMs, targetLabel, ON_PET, ON_UNKNOWN, ON_YOU } fr
 import { buffLinesFor, shareBuffLine } from "@/shared/buff-lines";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";
-import { CheckField, Empty, PickField } from "./ui";
-import AlertStyleField, { AlertStyleDrawer } from "./AlertStyleField";
-import SearchField from "./SearchField";
+import { CheckField, Empty, PickField } from "@/app/components/ui";
+import AlertStyleField, { AlertStyleDrawer } from "@/app/components/AlertStyleField";
+import SearchField from "@/app/components/SearchField";
 import { BUFF_STYLE_ID } from "@/shared/alert-styles";
 import { SPELL_CLASSES } from "@/shared/spell-file";
 import { distinctSorted } from "@/shared/sorting";

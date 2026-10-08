@@ -3,18 +3,18 @@ import { useEffect, useState } from "react";
 import { useCombatReportsRefresh, useCombatStats, useCurrentZone, useDamageOverlay, useHpEstimate, useRead } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
-import DamageMeter, { type DamageView } from "./DamageMeter";
-import SpellTable from "./SpellTable";
-import DamageHistory from "./DamageHistory";
-import HighScoreBoard from "./HighScoreBoard";
-import Sparkline from "./Sparkline";
-import AskValue from "./AskValue";
-import ZoneTag from "./ZoneTag";
+import DamageMeter, { type DamageView } from "@/app/components/DamageMeter";
+import SpellTable from "@/app/components/SpellTable";
+import DamageHistory from "@/app/components/DamageHistory";
+import HighScoreBoard from "@/app/components/HighScoreBoard";
+import Sparkline from "@/app/components/Sparkline";
+import AskValue from "@/app/components/AskValue";
+import ZoneTag from "@/app/components/ZoneTag";
 import { opponentOf } from "@/shared/damage-tree";
 import { isOwnedName } from "@/shared/combat-parser";
 import type { DamageAxis, DeathRecap, FightBest, FightStats, HealAxis, HpEstimate, StoredFight } from "@/shared/types";
 
-import { Empty, segCls, StatTile } from "./ui";
+import { Empty, segCls, StatTile } from "@/app/components/ui";
 import { duration, percent, when } from "@/shared/format";
 import { ratio } from "@/shared/numbers";
 /**

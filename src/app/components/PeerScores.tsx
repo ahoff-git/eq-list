@@ -6,8 +6,8 @@ import { useRead, useWatcherStatus } from "@/lib/hooks";
 import { rowsOf } from "@/lib/usePeerShare";
 import { compareScores, type ScoreRow } from "@/shared/peer-share";
 import { categoryOf, formatScore, scoreOrder } from "@/shared/high-scores";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "./dataGridDefaults";
-import { Empty } from "./ui";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "@/app/components/dataGridDefaults";
+import { Empty } from "@/app/components/ui";
 import type { HighScore, ReceivedShare, ScoreBoard } from "@/shared/types";
 
 /** Stable empty, so a board that hasn't arrived doesn't restart the comparison memo each render. */

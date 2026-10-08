@@ -1,5 +1,5 @@
 "use client";
-import { api } from "./api";
+import { api } from "@/lib/api";
 import type { KillEmphasis, MapTarget } from "@/shared/types";
 
 /**

@@ -15,9 +15,9 @@ import {
   type Ability,
   type AbilityCriteria,
 } from "@/shared/stances-invocations";
-import FacetPicker from "./FacetPicker";
-import SearchField from "./SearchField";
-import { Empty, SourceCountRow, segCls } from "./ui";
+import FacetPicker from "@/app/components/FacetPicker";
+import SearchField from "@/app/components/SearchField";
+import { Empty, SourceCountRow, segCls } from "@/app/components/ui";
 
 type View = "stances" | "invocations";
 

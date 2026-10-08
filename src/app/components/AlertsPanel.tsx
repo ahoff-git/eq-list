@@ -4,14 +4,14 @@ import { api } from "@/lib/api";
 import { percent } from "@/shared/format";
 import { useLogVocabulary, useRead, useSettings, useStyleUsage } from "@/lib/hooks";
 import { CAST_SUGGESTIONS, isWatched, type CastSuggestion } from "@/shared/cast-suggestions";
-import AlertStyleFields, { ALERT_POSITIONS } from "./AlertStyleFields";
-import { AlertStyleDrawer } from "./AlertStyleField";
-import StyleRow from "./StyleRow";
-import AlertSourceRow from "./AlertSourceRow";
-import CastWatchRow, { type WatchPane } from "./CastWatchRow";
-import WatchLibrary from "./WatchLibrary";
-import WatchShare from "./WatchShare";
-import GameTimeAlarms from "./GameTimeAlarms";
+import AlertStyleFields, { ALERT_POSITIONS } from "@/app/components/AlertStyleFields";
+import { AlertStyleDrawer } from "@/app/components/AlertStyleField";
+import StyleRow from "@/app/components/StyleRow";
+import AlertSourceRow from "@/app/components/AlertSourceRow";
+import CastWatchRow, { type WatchPane } from "@/app/components/CastWatchRow";
+import WatchLibrary from "@/app/components/WatchLibrary";
+import WatchShare from "@/app/components/WatchShare";
+import GameTimeAlarms from "@/app/components/GameTimeAlarms";
 import {
   ALERT_SOURCES,
   alertStyle,
@@ -31,7 +31,7 @@ import {
   type AlertUsage,
 } from "@/shared/alert-styles";
 import type { LibraryRule } from "@/shared/watch-library";
-import { CheckField } from "./ui";
+import { CheckField } from "@/app/components/ui";
 import type {
   AlertPositionValue,
   AlertStyle,
