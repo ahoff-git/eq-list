@@ -6,7 +6,7 @@ import type { FightSearch, SessionSummary, StoredFight } from "@/shared/types";
 
 import { clock, count, dayTime, duration } from "@/shared/format";
 import { Caret, Empty } from "@/app/components/ui";
-import ZoneTag from "@/app/components/ZoneTag";
+import ZoneTag from "@/app/components/map/ZoneTag";
 /** A stable empty, so a render before the answer lands doesn't look like a change. */
 const NO_FIGHTS: StoredFight[] = [];
 

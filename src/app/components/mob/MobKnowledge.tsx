@@ -11,7 +11,7 @@ import { filterMobKnowledge, matchesDrop, mobChoices, type KillFilters } from "@
 import { count, countOf, when } from "@/shared/format";
 import type { KillEmphasis } from "@/shared/types";
 import KillFilterBar from "@/app/components/kills/KillFilterBar";
-import { RoamLinks } from "@/app/components/MapLink";
+import { RoamLinks } from "@/app/components/map/MapLink";
 import { Caret } from "@/app/components/ui";
 
 /**

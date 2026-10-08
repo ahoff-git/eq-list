@@ -1,6 +1,6 @@
 "use client";
 import { PIN_TYPES, pinType, type MapPin } from "@/shared/map/pins";
-import LocField from "@/app/components/LocField";
+import LocField from "@/app/components/map/LocField";
 
 /**
  * The little editor that opens over a pin you clicked: what kind it is, where it sits, what to

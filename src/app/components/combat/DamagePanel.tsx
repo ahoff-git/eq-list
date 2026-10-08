@@ -9,7 +9,7 @@ import DamageHistory from "@/app/components/combat/DamageHistory";
 import HighScoreBoard from "@/app/components/combat/HighScoreBoard";
 import Sparkline from "@/app/components/combat/Sparkline";
 import AskValue from "@/app/components/AskValue";
-import ZoneTag from "@/app/components/ZoneTag";
+import ZoneTag from "@/app/components/map/ZoneTag";
 import { opponentOf } from "@/shared/combat/damage-tree";
 import { isOwnedName } from "@/shared/combat/combat-parser";
 import type { DamageAxis, DeathRecap, FightBest, FightStats, HealAxis, HpEstimate, StoredFight } from "@/shared/types";

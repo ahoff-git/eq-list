@@ -7,7 +7,7 @@ import { figure, when } from "@/shared/format";
 import { CheckField, Empty, StatTile } from "@/app/components/ui";
 import AlertStyleField, { AlertStyleDrawer } from "@/app/components/alerts/AlertStyleField";
 import type { HighScore, ScoreBoard } from "@/shared/types";
-import ZoneTag from "@/app/components/ZoneTag";
+import ZoneTag from "@/app/components/map/ZoneTag";
 
 /** A stable empty board, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_BOARD: ScoreBoard = { character: "", scores: [], streak: 0, seeded: false };

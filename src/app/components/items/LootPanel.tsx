@@ -33,7 +33,7 @@ import { normalizeItemName } from "@/shared/items/grouping";
 import { describeCoins, formatCoins } from "@/shared/money";
 import type { Sort } from "@/shared/sorting";
 import ItemLink from "@/app/components/items/ItemLink";
-import ZoneTag from "@/app/components/ZoneTag";
+import ZoneTag from "@/app/components/map/ZoneTag";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import type { ItemPrice, LootFate, LootRecord, LootSearchFilter } from "@/shared/types";
 

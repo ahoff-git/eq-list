@@ -1,5 +1,5 @@
 "use client";
-import { showOnMap } from "@/lib/showOnMap";
+import { showOnMap } from "@/lib/map/showOnMap";
 import type { Confidence } from "@/shared/estimates";
 import { locText } from "@/shared/format";
 import { areaConfidence, areaConfidenceWhy, roamWhy, type MobArea } from "@/shared/mob/mob-stats";

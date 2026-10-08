@@ -22,7 +22,7 @@ import { Caret, CheckField, Empty } from "@/app/components/ui";
 import AlertStyleField, { AlertStyleDrawer } from "@/app/components/alerts/AlertStyleField";
 import { SPAWN_STYLE_ID } from "@/shared/alerts/alert-styles";
 import SuggestField from "@/app/components/SuggestField";
-import ZonePicker from "@/app/components/ZonePicker";
+import ZonePicker from "@/app/components/map/ZonePicker";
 import { CURATED_ZONES, sortZones } from "@/shared/map/zones";
 import type { Zone } from "@/shared/map/types";
 import type { KnownSpawn, RunningSpawn, SpawnKind } from "@/shared/types";

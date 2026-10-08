@@ -5,7 +5,7 @@ import ItemDrops from "@/app/components/items/ItemDrops";
 import ItemLink from "@/app/components/items/ItemLink";
 import LucySays, { LucyLink } from "@/app/components/items/LucySays";
 import RefreshPage from "@/app/components/items/RefreshPage";
-import MapLink, { ZoneLink } from "@/app/components/MapLink";
+import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
 import MobKills from "@/app/components/mob/MobKills";
 import { AddButton } from "@/app/components/ui";
 import { addItem, addPage, addPageItself } from "@/lib/items/addToList";

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import ZonePicker from "@/app/components/ZonePicker";
+import ZonePicker from "@/app/components/map/ZonePicker";
 import { CheckField } from "@/app/components/ui";
 import { count } from "@/shared/format";
 import type { Zone } from "@/shared/map/types";

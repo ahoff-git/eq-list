@@ -1,12 +1,12 @@
 "use client";
 import { useItemDrops, useItemPrices } from "@/lib/hooks";
-import { ringMob, ringOnHover } from "@/lib/showOnMap";
+import { ringMob, ringOnHover } from "@/lib/map/showOnMap";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/mob/drop-truth";
 import { count } from "@/shared/format";
 import { itemDropTotals, priceOfItem, type ItemDropSource } from "@/shared/items/item-sources";
 import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "@/app/components/items/ItemLink";
-import { RoamLinks, ZoneLink } from "@/app/components/MapLink";
+import { RoamLinks, ZoneLink } from "@/app/components/map/MapLink";
 import type { ItemSource } from "@/shared/types";
 
 /**

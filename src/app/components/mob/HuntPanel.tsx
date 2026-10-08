@@ -6,9 +6,9 @@ import GoalFocusBanner from "@/app/components/goals/GoalFocusBanner";
 import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/mob/drop-truth";
 import { mobKey } from "@/shared/mob/mob-stats";
 import ItemLink from "@/app/components/items/ItemLink";
-import ZonePicker from "@/app/components/ZonePicker";
+import ZonePicker from "@/app/components/map/ZonePicker";
 import { api } from "@/lib/api";
-import { ringMob } from "@/lib/showOnMap";
+import { ringMob } from "@/lib/map/showOnMap";
 import {
   bestPlacesFirst,
   huntByItem,

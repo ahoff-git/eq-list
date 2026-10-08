@@ -1,6 +1,6 @@
 "use client";
 import { useWatcherStatus, useLootFeed, useCurrentZone } from "@/lib/hooks";
-import ZoneTag from "@/app/components/ZoneTag";
+import ZoneTag from "@/app/components/map/ZoneTag";
 import GameClock from "@/app/components/gameclock/GameClock";
 
 /**

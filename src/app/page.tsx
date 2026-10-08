@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { openMapWindow } from "@/lib/showOnMap";
+import { openMapWindow } from "@/lib/map/showOnMap";
 import SearchPanel from "@/app/components/items/SearchPanel";
 import ItemSearchPanel from "@/app/components/items/ItemSearchPanel";
 import SpellSearchPanel from "@/app/components/spells/SpellSearchPanel";

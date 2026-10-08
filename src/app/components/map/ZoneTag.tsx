@@ -1,7 +1,7 @@
 "use client";
 import { placeName } from "@/shared/zones/place";
 import { zoneDifficultyLabel } from "@/shared/names";
-import { ZoneLink } from "@/app/components/MapLink";
+import { ZoneLink } from "@/app/components/map/MapLink";
 
 /**
  * ZoneTag — **where a logged thing happened**, said one way everywhere.

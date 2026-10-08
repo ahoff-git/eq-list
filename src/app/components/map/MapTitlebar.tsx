@@ -7,7 +7,7 @@ import PinButton from "@/app/components/chrome/PinButton";
 import ScaleButtons from "@/app/components/chrome/ScaleButtons";
 import Titlebar from "@/app/components/chrome/Titlebar";
 import WindowButtons from "@/app/components/chrome/WindowButtons";
-import ZonePicker from "@/app/components/ZonePicker";
+import ZonePicker from "@/app/components/map/ZonePicker";
 import { CheckField } from "@/app/components/ui";
 import { stockOnly, type MapSource } from "@/shared/map/map-sources";
 import type { Zone } from "@/shared/map/types";

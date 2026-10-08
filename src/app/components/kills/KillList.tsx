@@ -7,7 +7,7 @@ import { mobChoices, type KillFilters } from "@/shared/kills/kill-filters";
 import ItemLink, { NameList } from "@/app/components/items/ItemLink";
 import { Caret } from "@/app/components/ui";
 import KillFilterBar from "@/app/components/kills/KillFilterBar";
-import { ZoneDifficultyTag } from "@/app/components/ZoneTag";
+import { ZoneDifficultyTag } from "@/app/components/map/ZoneTag";
 import type { KillEmphasis, KillRecord } from "@/shared/types";
 
 /** How many mob groups to show before the "show more" fold. Distinct mobs per zone are few. */
