@@ -10,7 +10,7 @@ import {
   panelPct,
   PANEL_PCT,
   storedPanelPct,
-} from "../../src/shared/panel-size";
+} from "../../src/shared/chrome/panel-size";
 
 test("a height is reported as its share of the window", () => {
   assert.equal(panelPct(300, 1000), 30);

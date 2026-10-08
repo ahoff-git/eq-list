@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { besideWidth, placeTooltip, type AnchorBox } from "../../src/shared/tooltip";
+import { besideWidth, placeTooltip, type AnchorBox } from "../../src/shared/chrome/tooltip";
 
 const view = { width: 800, height: 600 };
 const card = { width: 300, height: 120 };

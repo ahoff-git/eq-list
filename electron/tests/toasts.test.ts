@@ -11,7 +11,7 @@ import {
   queueToast,
   toastTiming,
   type Toast,
-} from "../../src/shared/toasts";
+} from "../../src/shared/chrome/toasts";
 
 const toast = (id: number, title: string, key?: string): Toast => ({ id, title, key });
 

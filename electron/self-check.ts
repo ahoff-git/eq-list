@@ -24,7 +24,7 @@ import path from "node:path";
 import { characterFromLogFile, parseLogText } from "../src/shared/log-parser";
 import { parseSplitLine } from "../src/shared/parse-line";
 import { count } from "../src/shared/format";
-import { runChecks, type CheckOutcome, type CheckProbe, type CheckResult } from "../src/shared/self-check";
+import { runChecks, type CheckOutcome, type CheckProbe, type CheckResult } from "../src/shared/chrome/self-check";
 import { createLogger } from "../src/shared/logging";
 import { findMapsDir } from "./eq-maps";
 import { readLogTail } from "./log-tail";

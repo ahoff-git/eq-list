@@ -2,7 +2,7 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { usePersistentState } from "@/lib/usePersistentState";
-import { clampPanelPct, nudgePanelPct, panelPct, PANEL_PCT, storedPanelPct } from "@/shared/panel-size";
+import { clampPanelPct, nudgePanelPct, panelPct, PANEL_PCT, storedPanelPct } from "@/shared/chrome/panel-size";
 
 /**
  * A panel that opens over another view, with the seam under it as a drag handle.

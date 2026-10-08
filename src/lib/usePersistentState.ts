@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "@/lib/api";
-import { createUiMirror } from "@/shared/ui-mirror";
+import { createUiMirror } from "@/shared/chrome/ui-mirror";
 
 /**
  * This window's live view of main's store — one for the whole window, since a dozen of these hooks

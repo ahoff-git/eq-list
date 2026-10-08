@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { SOLID } from "@/lib/clickThrough";
+import { SOLID } from "@/lib/chrome/clickThrough";
 
 /**
  * The custom-spot placement layer, shown only in the alert overlay window while the user is

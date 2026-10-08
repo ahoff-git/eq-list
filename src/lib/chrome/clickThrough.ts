@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { api } from "@/lib/api";
-import { useWindowToggle } from "@/lib/windowToggles";
+import { useWindowToggle } from "@/lib/chrome/windowToggles";
 import { createLogger } from "@/shared/logging";
 
 const log = createLogger("click-through");

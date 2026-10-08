@@ -9,7 +9,7 @@ import {
   worstStatus,
   type CheckResult,
   type CheckStatus,
-} from "@/shared/self-check";
+} from "@/shared/chrome/self-check";
 
 /**
  * "Check my setup" — one button that walks everything the app needs and says which step broke.

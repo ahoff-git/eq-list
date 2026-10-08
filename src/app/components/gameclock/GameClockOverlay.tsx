@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useGameClock } from "@/lib/hooks";
-import { SOLID } from "@/lib/clickThrough";
+import { SOLID } from "@/lib/chrome/clickThrough";
 import { clampUnit } from "@/shared/gameclock/game-clock";
 import GameClockFace from "@/app/components/gameclock/GameClockFace";
 

@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createUiMirror } from "../../src/shared/ui-mirror";
+import { createUiMirror } from "../../src/shared/chrome/ui-mirror";
 
 test("a value written is the value read back", () => {
   // The whole bug in one line: this is what a remount asks, and it used to get launch-time state.

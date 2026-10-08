@@ -1,6 +1,6 @@
 "use client";
 import { Fragment } from "react";
-import { placeLabel, useNav } from "@/lib/nav";
+import { placeLabel, useNav } from "@/lib/chrome/nav";
 
 /**
  * Back, forward, and the way in to where you are.

@@ -21,7 +21,7 @@ import {
   trailOf,
   TRAIL_LIMIT,
   type NavTrail,
-} from "../../src/shared/nav-trail";
+} from "../../src/shared/chrome/nav-trail";
 
 /** Walk a trail through a list of places, as a reader clicking through the window would. */
 function walk(start: string, ...places: { tab: string; page?: string }[]): NavTrail {

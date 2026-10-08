@@ -47,7 +47,7 @@ import type { SharedItemPage, SharedSpellPage } from "../../src/shared/peers/pee
 import { itemLevel, mobCardLevel, npcKey, parseLevelRange, questCardLevel, type LevelSources } from "../../src/shared/items/item-levels";
 import { fuzzyRank } from "../../src/shared/fuzzy";
 import { normalizeItemName } from "../../src/shared/items/grouping";
-import { bestReading } from "../../src/shared/ocr-variants";
+import { bestReading } from "../../src/shared/chrome/ocr-variants";
 import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";

@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ocrReadings, bestReading } from "../../src/shared/ocr-variants";
+import { ocrReadings, bestReading } from "../../src/shared/chrome/ocr-variants";
 
 /** A few real EQ names, standing in for the mirrored wiki title index. */
 const KNOWN = ["Morning Star", "Rusty Long Sword", "Crushbone Belt", "Flowing Black Silk Sash", "Quill"];

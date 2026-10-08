@@ -19,8 +19,8 @@
  * See [ADR 0081](../../specs/decisions/0081-an-ocr-grab-is-corrected-before-it-is-searched.md).
  */
 
-import { fuzzyScore } from "./fuzzy";
-import { itemBaseName } from "./names";
+import { fuzzyScore } from "../fuzzy";
+import { itemBaseName } from "../names";
 
 /** One misreading: what OCR *wrote*, and what may really have been on screen. */
 interface Confusion {

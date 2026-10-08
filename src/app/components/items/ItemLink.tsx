@@ -1,11 +1,11 @@
 "use client";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { useOptionalNav } from "@/lib/nav";
+import { useOptionalNav } from "@/lib/chrome/nav";
 import { api } from "@/lib/api";
 import { useItemCard } from "@/lib/hooks";
 import { localSize, localTextBox, localView, scaleRoot } from "@/lib/screen";
-import { besideWidth, placeTooltip, type AnchorBox, type Placement } from "@/shared/tooltip";
+import { besideWidth, placeTooltip, type AnchorBox, type Placement } from "@/shared/chrome/tooltip";
 import type { ItemCard } from "@/shared/types";
 
 /**

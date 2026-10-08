@@ -1,6 +1,6 @@
 "use client";
 import { api } from "@/lib/api";
-import { SOLID } from "@/lib/clickThrough";
+import { SOLID } from "@/lib/chrome/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { alertPlacement, alertStyle, BUFF_STYLE_ID } from "@/shared/alerts/alert-styles";
 import { ON_PET, ON_YOU } from "@/shared/buffs/buff-tracking";

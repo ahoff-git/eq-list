@@ -7,7 +7,7 @@ import BuffOverlay from "@/app/components/buffs/BuffOverlay";
 import DebuffOverlay from "@/app/components/buffs/DebuffOverlay";
 import GameClockOverlay from "@/app/components/gameclock/GameClockOverlay";
 import DamageMeterOverlay from "@/app/components/combat/DamageMeterOverlay";
-import { useSolidIslands } from "@/lib/clickThrough";
+import { useSolidIslands } from "@/lib/chrome/clickThrough";
 
 /**
  * The cast-alert overlay window's page: the alert visuals on a transparent body, so it can float

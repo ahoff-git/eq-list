@@ -1,6 +1,6 @@
 import type { DataReportRow } from "./data-provenance";
 import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
-import type { CheckResult } from "./self-check";
+import type { CheckResult } from "./chrome/self-check";
 import type { MobKnowledge, MobObservation } from "./mob/mob-stats";
 import type { KnowledgeContributor } from "./contributors";
 import type { FactionCauseKnowledge } from "./faction/faction-observation";

@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useCapabilities, useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
-import { useNav } from "@/lib/nav";
+import { useNav } from "@/lib/chrome/nav";
 import ItemLink from "@/app/components/items/ItemLink";
 import { EraBadge } from "@/app/components/items/LucySays";
 import ObservedItemView from "@/app/components/items/ObservedItemView";

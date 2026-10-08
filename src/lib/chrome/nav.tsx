@@ -16,7 +16,7 @@ import {
   type NavCrumb,
   type NavPlace,
   type NavTrail,
-} from "@/shared/nav-trail";
+} from "@/shared/chrome/nav-trail";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { usePersistentState } from "@/lib/usePersistentState";
 

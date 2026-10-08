@@ -3,7 +3,7 @@ import { type DependencyList, type RefObject, useCallback, useEffect, useMemo, u
 import { api } from "@/lib/api";
 import { createLogger, setRendererDebug } from "@/shared/logging";
 import { UI_SCALE, clampScale, windowOpacity, type ScaleRange } from "@/shared/constants";
-import { useWindowToggle } from "@/lib/windowToggles";
+import { useWindowToggle } from "@/lib/chrome/windowToggles";
 import type {
   AchievementView,
   ShoppingList,

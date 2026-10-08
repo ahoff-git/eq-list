@@ -14,7 +14,7 @@
  * two lengths a drag divides may both be read off the screen: the scale cancels out.
  */
 
-import { clamp } from "./numbers";
+import { clamp } from "../numbers";
 
 /** The bounds a panel is held inside, as a % of its window. */
 export const PANEL_PCT = {
