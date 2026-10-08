@@ -175,7 +175,7 @@ travels peer-to-peer, on request, over that peer's own connection.
   - **Countdowns** merge by `key` (one mob, one place — a `SpawnTimer`'s `id` is `key#slot` and the
     slot is local bookkeeping). Within a key, two clocks are the same spawn when their `dueAt` are
     within `SAME_SPAWN_MS`. Which survives follows the evidence order
-    [`spawn-timers.ts`](../../src/shared/spawn-timers.ts) already argues for: a `seenAt` (an
+    [`spawn-timers.ts`](../../src/shared/mob/spawn-timers.ts) already argues for: a `seenAt` (an
     observation outranks any countdown), then more `samples`, then the earlier `dueAt` (the bound
     only falls, so the tightest honest one wins). Ties stay ours, so a row can't flicker with packet
     order.
@@ -205,7 +205,7 @@ travels peer-to-peer, on request, over that peer's own connection.
   people running the app who cannot see each other until, at some point, they can". Two clients that
   start together each become the genesis leader of their own room under the one id, and from the
   inside a room you made and a room nobody has joined yet look identical. So after a rung of
-  [`room-watch.ts`](../../src/shared/room-watch.ts)'s ladder (20s / 45s / 90s / 3m / 5m, jittered,
+  [`room-watch.ts`](../../src/shared/peers/room-watch.ts)'s ladder (20s / 45s / 90s / 3m / 5m, jittered,
   holding at five minutes) elapses alone, the client **probes**: awari's read-only `pingRoomStatus`
   asks the directory who leads this room and asks them who is in it. **Somebody answered** means the
   room the world can find is not ours — proven, not suspected — and we re-join into it. **Nobody
