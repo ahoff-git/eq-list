@@ -5,7 +5,7 @@ import type { MobKillStat, ZoneReport } from "@/shared/types";
 
 import { duration, when } from "@/shared/format";
 import { useCombatReportsRefresh, useRead } from "@/lib/hooks";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 /** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_ZONES: ZoneReport[] = [];

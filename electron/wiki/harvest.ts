@@ -41,7 +41,7 @@ import {
   shardOf,
   type Coverage,
   type PeerCoverage,
-} from "../../src/shared/item-shards";
+} from "../../src/shared/items/item-shards";
 
 const log = createLogger("wiki-harvest");
 

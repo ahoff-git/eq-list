@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { wikiAddAction, wikiAddKind } from "../../src/shared/wiki-add";
+import { wikiAddAction, wikiAddKind } from "../../src/shared/items/wiki-add";
 import type { WikiPage, WikiPageKind } from "../../src/shared/types";
 
 const page = (kind: WikiPageKind, components: string[] = []): Pick<WikiPage, "kind" | "components"> => ({

@@ -8,7 +8,7 @@ import { describeCoins, formatCoins } from "@/shared/money";
 import type { MobKnowledge } from "@/shared/mob/mob-stats";
 import type { WikiComponent } from "@/shared/types";
 import { buildWikiContribution } from "@/shared/mob/wiki-contribution";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 import { RoamLinks, ZoneLink } from "@/app/components/MapLink";
 
 /**

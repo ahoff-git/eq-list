@@ -3,8 +3,8 @@
  * "drop" sources by zone so the overlay can answer "who drops this, and where?".
  * Pure + testable.
  */
-import type { ItemSource, SourceKind } from "./types";
-import { zoneKey } from "./names";
+import type { ItemSource, SourceKind } from "../types";
+import { zoneKey } from "../names";
 
 export interface ZoneDrops {
   zone: string;

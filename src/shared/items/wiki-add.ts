@@ -14,7 +14,7 @@
  * — never as an item that might drop, which was the confusion, and never as its whole loot table,
  * which is what "+ Add" on one named used to dump onto the list.
  */
-import type { ShoppingListEntry, WikiPage } from "./types";
+import type { ShoppingListEntry, WikiPage } from "../types";
 
 /** `self` — the page is the item. `components` — the page lists them. `none` — neither. */
 export type WikiAddAction = "self" | "components" | "none";

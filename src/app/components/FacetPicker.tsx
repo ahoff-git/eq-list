@@ -4,7 +4,7 @@ import { fuzzyRank } from "@/shared/fuzzy";
 import { useDismiss } from "@/lib/hooks";
 import { CheckField } from "@/app/components/ui";
 import { count, figure } from "@/shared/format";
-import { NO_FACET_VALUE } from "@/shared/item-search";
+import { NO_FACET_VALUE } from "@/shared/items/item-search";
 
 /** Above this many options a menu stops being scannable and wants a box to type into. */
 const FILTER_ABOVE = 12;

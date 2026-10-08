@@ -76,7 +76,7 @@ import {
   type ShareKind,
   type ShareOffer,
 } from "./peer-share";
-import { decodeCoverage, type PeerCoverage } from "../item-shards";
+import { decodeCoverage, type PeerCoverage } from "../items/item-shards";
 import type { FightShare, SharedGameTime, SharedItemPage, SharedRespawn, SharedSpellPage } from "./peer-share";
 import type { MapPin } from "../map/pins";
 import type { KillRecord, KnownSpawn } from "../types";

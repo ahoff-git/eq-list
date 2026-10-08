@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeLootFeed, lootKey } from "../../src/shared/loot-feed";
+import { mergeLootFeed, lootKey } from "../../src/shared/items/loot-feed";
 import type { LootEvent } from "../../src/shared/types";
 
 function drop(item: string, sec: number, logId = sec): LootEvent {

@@ -36,12 +36,12 @@ import { itemLevel, type ItemLevel, type LevelSources } from "./item-levels";
 
 /** Nothing known about any mob or quest — the zone rung still answers, from the shipped tables. */
 const NO_LEVEL_SOURCES: LevelSources = { mob: () => undefined, quest: () => undefined };
-import { itemBaseName } from "./names";
+import { itemBaseName } from "../names";
 import { normalizeItemName } from "./grouping";
 import { normalizeZone } from "./sources";
-import { distinctSorted, sortRows, type Sort } from "./sorting";
-import { zoneFromTestsQuestTitle } from "./zones/quest-zone";
-import type { CachedItem, SourceKind } from "./types";
+import { distinctSorted, sortRows, type Sort } from "../sorting";
+import { zoneFromTestsQuestTitle } from "../zones/quest-zone";
+import type { CachedItem, SourceKind } from "../types";
 
 /** One item in the searchable catalogue: what the cache holds, plus what it means. */
 export interface ItemRow {

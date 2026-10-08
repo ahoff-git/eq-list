@@ -1,6 +1,6 @@
 "use client";
 import { PickField } from "@/app/components/ui";
-import { STATS, statMeta, type StatKey } from "@/shared/item-stats";
+import { STATS, statMeta, type StatKey } from "@/shared/items/item-stats";
 
 /**
  * The stat floors: "at least this much INT".

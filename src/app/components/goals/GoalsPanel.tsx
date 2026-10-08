@@ -7,7 +7,7 @@ import { formatDuration } from "@/shared/duration";
 import { parseGoalDuration, parseStreakInterval } from "@/shared/goals/goal-progress";
 import { count } from "@/shared/format";
 import { CheckField, Empty, segCls } from "@/app/components/ui";
-import ItemNameField from "@/app/components/ItemNameField";
+import ItemNameField from "@/app/components/items/ItemNameField";
 import SuggestField from "@/app/components/SuggestField";
 import type { GoalTargetKind, GoalTemplate, RunningGoal } from "@/shared/types";
 

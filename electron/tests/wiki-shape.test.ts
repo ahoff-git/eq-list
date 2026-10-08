@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { candidatesFrom, probeOrder } from "../../src/shared/wiki-shape";
+import { candidatesFrom, probeOrder } from "../../src/shared/items/wiki-shape";
 
 test("a link nothing knows about is a candidate", () => {
   const out = candidatesFrom({

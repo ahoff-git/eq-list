@@ -25,8 +25,8 @@
  * Pure, so the whole judgement is testable against real wiki source rows.
  */
 import { namesAPlace, type ItemRow } from "./item-search";
-import type { ItemSource } from "./types";
-import { unavailableReason, zoneExpansion, zoneUnavailable, type ZoneUnavailable } from "./zones/expansions";
+import type { ItemSource } from "../types";
+import { unavailableReason, zoneExpansion, zoneUnavailable, type ZoneUnavailable } from "../zones/expansions";
 
 /**
  * Why an item's source can't be reached this era, or `undefined` when it can.

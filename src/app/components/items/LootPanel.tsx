@@ -12,7 +12,7 @@ import {
 import { usePersistentShape, usePersistentState } from "@/lib/usePersistentState";
 import { useGridSort } from "@/lib/useGridSort";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { lootKey } from "@/shared/loot-feed";
+import { lootKey } from "@/shared/items/loot-feed";
 import {
   DEFAULT_LOOT_FILTERS,
   DEFAULT_LOOT_SORT,
@@ -28,11 +28,11 @@ import {
   type LootFilters,
   type LootSortKey,
   type PriceSortKey,
-} from "@/shared/loot-filters";
-import { normalizeItemName } from "@/shared/grouping";
+} from "@/shared/items/loot-filters";
+import { normalizeItemName } from "@/shared/items/grouping";
 import { describeCoins, formatCoins } from "@/shared/money";
 import type { Sort } from "@/shared/sorting";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 import ZoneTag from "@/app/components/ZoneTag";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import type { ItemPrice, LootFate, LootRecord, LootSearchFilter } from "@/shared/types";

@@ -8,7 +8,7 @@
  * miss, exactly as an empty wiki cache is in Electron.
  */
 import { createLogger } from "@/shared/logging";
-import { shardOf } from "@/shared/item-shards";
+import { shardOf } from "@/shared/items/item-shards";
 import { fuzzyRank } from "@/shared/fuzzy";
 import { parseEqMap, mergeEqMaps, type EqMap } from "@/shared/map/eqmap";
 import { spellRows } from "@/shared/spells/spell-search";

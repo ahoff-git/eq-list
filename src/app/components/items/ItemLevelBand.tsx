@@ -1,6 +1,6 @@
 "use client";
 import { figure } from "@/shared/format";
-import type { ItemCriteria } from "@/shared/item-search";
+import type { ItemCriteria } from "@/shared/items/item-search";
 
 /** The level cap in this era. At the slider's far right it means "no cap", which is also the truth. */
 const MAX_PLAYER_LEVEL = 60;

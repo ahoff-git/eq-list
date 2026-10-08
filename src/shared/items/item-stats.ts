@@ -26,7 +26,7 @@
  * for what this is read *for*.
  */
 
-import { CLASS_ABBREVIATIONS, CLASS_NAMES, classFullName } from "./class-names";
+import { CLASS_ABBREVIATIONS, CLASS_NAMES, classFullName } from "../class-names";
 
 /** One number an item can carry. The union is closed so a criteria/weight key can't be a typo. */
 export type StatKey =

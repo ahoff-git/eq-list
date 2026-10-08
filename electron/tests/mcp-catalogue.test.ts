@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eraFiltered, NONE_FACET_LABEL, page, toItemCriteria, withNoneSentinel } from "../../src/shared/mcp-catalogue";
+import { eraFiltered, NONE_FACET_LABEL, page, toItemCriteria, withNoneSentinel } from "../../src/shared/items/mcp-catalogue";
 
 const SENTINEL = "\u0000none";
 

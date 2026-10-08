@@ -1,15 +1,15 @@
 "use client";
 import { useCallback, useMemo } from "react";
 import { useClosedZones, useHarvest, useItemCatalog } from "@/lib/hooks";
-import { useItemQuery } from "@/lib/useItemQuery";
+import { useItemQuery } from "@/lib/items/useItemQuery";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import CatalogueHarvest from "@/app/components/CatalogueHarvest";
-import ItemFacetRow from "@/app/components/ItemFacetRow";
-import ItemLevelBand from "@/app/components/ItemLevelBand";
-import ItemTable from "@/app/components/ItemTable";
-import ItemWeights from "@/app/components/ItemWeights";
-import StatFloors from "@/app/components/StatFloors";
+import CatalogueHarvest from "@/app/components/items/CatalogueHarvest";
+import ItemFacetRow from "@/app/components/items/ItemFacetRow";
+import ItemLevelBand from "@/app/components/items/ItemLevelBand";
+import ItemTable from "@/app/components/items/ItemTable";
+import ItemWeights from "@/app/components/items/ItemWeights";
+import StatFloors from "@/app/components/items/StatFloors";
 import { CheckField, Empty, TextField, caretGlyph } from "@/app/components/ui";
 import { countOf } from "@/shared/format";
 import type { Sort } from "@/shared/sorting";
@@ -21,7 +21,7 @@ import {
   type ItemCriteria,
   type ItemSortKey,
   type StatWeights,
-} from "@/shared/item-search";
+} from "@/shared/items/item-search";
 
 /** How many rows to draw. Sorted, so these are the best ones — and a filter is one keystroke away. */
 const MAX_ROWS = 300;

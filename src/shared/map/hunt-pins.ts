@@ -20,7 +20,7 @@
  */
 import type { HuntZone } from "../mob/hunt";
 import { mobKey, type MobKnowledge, type MobObservation } from "../mob/mob-stats";
-import { zoneMatches } from "../sources";
+import { zoneMatches } from "../items/sources";
 import { bestPlaced, mobPlace, type MobPlace, type PlaceSource, type WikiPlace } from "./mob-place";
 
 /** A mob the hunt wants, placed by whichever source can. */

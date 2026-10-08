@@ -2,12 +2,12 @@
 import { api } from "@/lib/api";
 import { useLucyCard, useSettings } from "@/lib/hooks";
 import { count, dayTime } from "@/shared/format";
-import { normalizeItemName } from "@/shared/grouping";
-import type { KnownItem } from "@/shared/known-items";
-import ItemDrops from "@/app/components/ItemDrops";
-import LucySays, { LucyLink } from "@/app/components/LucySays";
+import { normalizeItemName } from "@/shared/items/grouping";
+import type { KnownItem } from "@/shared/items/known-items";
+import ItemDrops from "@/app/components/items/ItemDrops";
+import LucySays, { LucyLink } from "@/app/components/items/LucySays";
 import { AddButton } from "@/app/components/ui";
-import { addItem } from "@/lib/addToList";
+import { addItem } from "@/lib/items/addToList";
 
 /**
  * The page for an item **the wiki has never heard of** — built from your own log.

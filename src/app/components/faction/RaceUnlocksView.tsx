@@ -7,7 +7,7 @@ import { computeRaceUnlockProgress, type RaceUnlockProgress } from "@/shared/fac
 import { RACE_UNLOCK_SOURCE, wikiLinksIn, type RaceUnlockMethod, type RaceUnlockRequirement } from "@/shared/faction/race-unlocks";
 import type { FactionStanding } from "@/shared/types";
 import AskValue from "@/app/components/AskValue";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 
 /** Bounds a stated faction total is clamped to — generous enough for any real EQ faction range,
  *  which never approaches this on either side; just enough to catch a typo. */

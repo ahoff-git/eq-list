@@ -1,6 +1,6 @@
 "use client";
-import { STATS, statMeta, type StatGroup, type StatKey } from "@/shared/item-stats";
-import { weightedStats, type StatWeights } from "@/shared/item-search";
+import { STATS, statMeta, type StatGroup, type StatKey } from "@/shared/items/item-stats";
+import { weightedStats, type StatWeights } from "@/shared/items/item-search";
 import { count } from "@/shared/format";
 
 /** The sections a card's numbers fall into, in the order a card prints them. */

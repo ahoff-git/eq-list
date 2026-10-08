@@ -5,7 +5,7 @@ import { goalWantsItem, goalWantsMob } from "@/shared/goals/goal-progress";
 import GoalFocusBanner from "@/app/components/goals/GoalFocusBanner";
 import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/mob/drop-truth";
 import { mobKey } from "@/shared/mob/mob-stats";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 import ZonePicker from "@/app/components/ZonePicker";
 import { api } from "@/lib/api";
 import { ringMob } from "@/lib/showOnMap";
@@ -18,7 +18,7 @@ import {
   type HuntPlace,
   type HuntZone,
 } from "@/shared/mob/hunt";
-import { zoneMatches } from "@/shared/sources";
+import { zoneMatches } from "@/shared/items/sources";
 import { distinct } from "@/shared/sorting";
 import { zoneLevelText, zoneLevelWhy, zoneLevels } from "@/shared/zones/levels";
 import { CheckField, Empty, segCls } from "@/app/components/ui";

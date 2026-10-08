@@ -2,9 +2,9 @@
 import { api } from "@/lib/api";
 import { showToast } from "@/lib/toast";
 import { createLogger } from "@/shared/logging";
-import { describeAdd, summarizeAdd } from "@/shared/list-add";
-import { normalizeItemName } from "@/shared/grouping";
-import { wikiAddAction, wikiAddKind } from "@/shared/wiki-add";
+import { describeAdd, summarizeAdd } from "@/shared/items/list-add";
+import { normalizeItemName } from "@/shared/items/grouping";
+import { wikiAddAction, wikiAddKind } from "@/shared/items/wiki-add";
 import type { EqlApi, ShoppingList, WikiPage } from "@/shared/types";
 
 /**

@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eraFromSourceZones, placeableZone, zoneReadings } from "../../src/shared/lucy-era";
+import { eraFromSourceZones, placeableZone, zoneReadings } from "../../src/shared/items/lucy-era";
 import { outOfEraSet } from "../../src/shared/zones/expansions";
 
 // ── reading one of Lucy's zone strings ────────────────────────────────────────

@@ -8,10 +8,10 @@
  * Same shape as [`kill-filters.ts`](./kill-filters.ts) — one filter object, one function, so the
  * counts in the header and the rows underneath can't describe different sets. Pure and DOM-free.
  */
-import type { ItemPrice, LootFate, LootRecord } from "./types";
+import type { ItemPrice, LootFate, LootRecord } from "../types";
 import { normalizeItemName } from "./grouping";
-import { placeKey, placeName } from "./zones/place";
-import { distinctSorted, sortRows, type Sort } from "./sorting";
+import { placeKey, placeName } from "../zones/place";
+import { distinctSorted, sortRows, type Sort } from "../sorting";
 
 /** Every fate, in the order the tab lists them — also the option list for the filter. */
 export const LOOT_FATES: LootFate[] = ["kept", "sold", "stored", "combined"];

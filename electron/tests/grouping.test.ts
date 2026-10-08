@@ -12,7 +12,7 @@ import {
   itemDemands,
   itemTotals,
   normalizeItemName,
-} from "../../src/shared/grouping";
+} from "../../src/shared/items/grouping";
 import type { ShoppingListEntry } from "../../src/shared/types";
 
 function entry(p: Partial<ShoppingListEntry> & { name: string }): ShoppingListEntry {

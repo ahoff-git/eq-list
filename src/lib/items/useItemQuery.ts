@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
-import { STATS, type StatKey } from "@/shared/item-stats";
-import { eraCorpus } from "@/shared/item-era";
+import { STATS, type StatKey } from "@/shared/items/item-stats";
+import { eraCorpus } from "@/shared/items/item-era";
 import type { Sort } from "@/shared/sorting";
 import {
   FACETS,
@@ -15,7 +15,7 @@ import {
   type ItemSortKey,
   type StatWeights,
   type ValuedItem,
-} from "@/shared/item-search";
+} from "@/shared/items/item-search";
 
 /** Everything the Items tab draws that is *computed* rather than typed. */
 export interface ItemQuery {

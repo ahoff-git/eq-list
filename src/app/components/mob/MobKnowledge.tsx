@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useMobContributors } from "@/lib/hooks";
 import { describeCoins, formatCoins } from "@/shared/money";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 import { dropKey, dropSources, roamWhy, type MobKnowledge } from "@/shared/mob/mob-stats";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/mob/drop-truth";
 import { disagreeBadge, provenanceBadge } from "@/shared/mob/mob-provenance";

@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import { useGridSort } from "@/lib/useGridSort";
 import { buffLinesFor } from "@/shared/buffs/buff-lines";

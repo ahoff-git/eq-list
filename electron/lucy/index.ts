@@ -32,7 +32,7 @@ import { fetchItemNameList, itemList, itemPage, itemUrlFor } from "./api";
 import { parseItemNameList, parseLucyItem, parseLucyItemList } from "./parse";
 import { fuzzyRank } from "../../src/shared/fuzzy";
 import { itemBaseName } from "../../src/shared/names";
-import { normalizeItemName } from "../../src/shared/grouping";
+import { normalizeItemName } from "../../src/shared/items/grouping";
 import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, LucyItem, LucySearchResult } from "../../src/shared/types";
 

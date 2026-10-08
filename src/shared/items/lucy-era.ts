@@ -24,12 +24,12 @@
  *
  * Pure, so the whole judgement is testable against real Lucy zone strings.
  */
-import { count } from "./format";
-import { createLogger } from "./logging";
-import { zoneBaseName } from "./names";
-import { zoneAvailable } from "./zones/expansions";
-import { isKnownPlace } from "./zones/place";
-import type { LucyEra } from "./types";
+import { count } from "../format";
+import { createLogger } from "../logging";
+import { zoneBaseName } from "../names";
+import { zoneAvailable } from "../zones/expansions";
+import { isKnownPlace } from "../zones/place";
+import type { LucyEra } from "../types";
 
 const log = createLogger("lucy-era");
 

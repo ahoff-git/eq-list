@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 import {
   DEFAULT_PAGE_SIZE,
   GRID_DEFAULTS,
@@ -12,13 +12,13 @@ import {
   hiddenByDefault,
 } from "@/app/components/dataGridDefaults";
 import { AddButton } from "@/app/components/ui";
-import { addByTitle } from "@/lib/addToList";
+import { addByTitle } from "@/lib/items/addToList";
 import { api } from "@/lib/api";
 import { useGridSort } from "@/lib/useGridSort";
-import { sourceKindLabel } from "@/shared/sources";
-import { LEVEL_CONFIDENCE, levelText } from "@/shared/item-levels";
-import { STATS, statLine, statMeta, type StatKey } from "@/shared/item-stats";
-import { zonesInFilterOrder, type ItemSortKey, type ValuedItem } from "@/shared/item-search";
+import { sourceKindLabel } from "@/shared/items/sources";
+import { LEVEL_CONFIDENCE, levelText } from "@/shared/items/item-levels";
+import { STATS, statLine, statMeta, type StatKey } from "@/shared/items/item-stats";
+import { zonesInFilterOrder, type ItemSortKey, type ValuedItem } from "@/shared/items/item-search";
 import type { Sort } from "@/shared/sorting";
 
 /**

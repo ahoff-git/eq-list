@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { knownItems, searchKnownItems, unknownToTheWiki } from "../../src/shared/known-items";
+import { knownItems, searchKnownItems, unknownToTheWiki } from "../../src/shared/items/known-items";
 import type { MobKnowledge } from "../../src/shared/mob/mob-stats";
 import type { LootedItem, SearchResult } from "../../src/shared/types";
 

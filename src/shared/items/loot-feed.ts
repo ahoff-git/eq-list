@@ -15,7 +15,7 @@
  * Pure and DOM-free so the ordering and the de-duplication can be pinned by tests rather than
  * reasoned about in a hook.
  */
-import type { LootEvent, LootRecord } from "./types";
+import type { LootEvent, LootRecord } from "../types";
 
 /**
  * **A drop as the ledger keeps it**: the line, plus where the log last said you were.

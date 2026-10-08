@@ -20,7 +20,7 @@
  * `mirror`-family rule (ADR 0164, "the newest copy wins") still protects everyone else's cache from a
  * stale one, so the worst this costs is a page nobody needed re-fetched sooner than strictly required.
  */
-import { emptyCoverage, encodeCoverage, setShard, shardOf } from "@/shared/item-shards";
+import { emptyCoverage, encodeCoverage, setShard, shardOf } from "@/shared/items/item-shards";
 import { allPages, itemRoster } from "./snapshot";
 import type { SharedItemPage, SharedSpellPage } from "@/shared/peers/peer-share";
 import type { WikiPage, WikiPageKind } from "@/shared/types";

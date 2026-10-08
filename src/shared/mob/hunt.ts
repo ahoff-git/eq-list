@@ -7,10 +7,10 @@
  * overlay's current zone can float to the top.
  */
 import type { ItemSource, ShoppingListEntry } from "../types";
-import { effectiveNeeded, isMobEntry, originKey } from "../grouping";
+import { effectiveNeeded, isMobEntry, originKey } from "../items/grouping";
 import { mobKey, type MobKnowledge } from "./mob-stats";
 import { distinct } from "../sorting";
-import { normalizeZone, sourceZones } from "../sources";
+import { normalizeZone, sourceZones } from "../items/sources";
 
 export interface HuntItemRef {
   item: string;

@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createWikiClient, closeOwnedDatabases } from "../wiki";
-import { shardOf } from "../../src/shared/item-shards";
+import { shardOf } from "../../src/shared/items/item-shards";
 import type { SharedSpellPage } from "../../src/shared/peers/peer-share";
 import type { SpellRow } from "../../src/shared/spells/spell-search";
 

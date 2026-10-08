@@ -3,9 +3,9 @@ import { useItemDrops, useItemPrices } from "@/lib/hooks";
 import { ringMob, ringOnHover } from "@/lib/showOnMap";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/mob/drop-truth";
 import { count } from "@/shared/format";
-import { itemDropTotals, priceOfItem, type ItemDropSource } from "@/shared/item-sources";
+import { itemDropTotals, priceOfItem, type ItemDropSource } from "@/shared/items/item-sources";
 import { describeCoins, formatCoins } from "@/shared/money";
-import ItemLink from "@/app/components/ItemLink";
+import ItemLink from "@/app/components/items/ItemLink";
 import { RoamLinks, ZoneLink } from "@/app/components/MapLink";
 import type { ItemSource } from "@/shared/types";
 

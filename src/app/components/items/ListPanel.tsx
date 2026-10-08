@@ -10,8 +10,8 @@ import {
   type GoalFocus,
 } from "@/lib/hooks";
 import { api } from "@/lib/api";
-import ItemLink, { NameList } from "@/app/components/ItemLink";
-import { LucyLink } from "@/app/components/LucySays";
+import ItemLink, { NameList } from "@/app/components/items/ItemLink";
+import { LucyLink } from "@/app/components/items/LucySays";
 import { count } from "@/shared/format";
 import { Caret, caretGlyph, Empty } from "@/app/components/ui";
 import { AlertStyleDrawer } from "@/app/components/AlertStyleField";
@@ -29,15 +29,15 @@ import {
   totalNeed,
   type ItemDemand,
   type ListGroup,
-} from "@/shared/grouping";
+} from "@/shared/items/grouping";
 import {
   groupDropsByZone,
   splitDropsByCurrentZone,
   otherSources,
   sourceKindLabel,
   type ZoneDrops,
-} from "@/shared/sources";
-import { zoneShut } from "@/shared/item-era";
+} from "@/shared/items/sources";
+import { zoneShut } from "@/shared/items/item-era";
 import { unavailableReason, zoneExpansion } from "@/shared/zones/expansions";
 import { createLogger } from "@/shared/logging";
 import type { ItemSource, ShoppingListEntry } from "@/shared/types";

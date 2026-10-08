@@ -27,8 +27,8 @@
  *
  * Pure and DOM-free: it is handed the cards it needs and returns a number and a reason.
  */
-import { zoneLevels, zoneLevelText } from "./zones/levels";
-import type { ItemSource } from "./types";
+import { zoneLevels, zoneLevelText } from "../zones/levels";
+import type { ItemSource } from "../types";
 
 /** A level, and how much to believe it. */
 export interface ItemLevel {

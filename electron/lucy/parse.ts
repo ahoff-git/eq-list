@@ -18,7 +18,7 @@
  */
 import { parse, type HTMLElement } from "node-html-parser";
 import { htmlToLines } from "../html-text";
-import { eraFromSourceZones, placeableZone, zoneReadings } from "../../src/shared/lucy-era";
+import { eraFromSourceZones, placeableZone, zoneReadings } from "../../src/shared/items/lucy-era";
 import { zoneKey } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
 import type { ItemSource, LucyItem, LucySearchResult, SourceKind } from "../../src/shared/types";

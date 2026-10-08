@@ -37,7 +37,7 @@ import type {
   FactionRecord,
   FactionStanding,
 } from "@/shared/types";
-import ItemLink, { NameList } from "@/app/components/ItemLink";
+import ItemLink, { NameList } from "@/app/components/items/ItemLink";
 import RaceUnlocksView from "@/app/components/faction/RaceUnlocksView";
 import SearchField from "@/app/components/SearchField";
 import {

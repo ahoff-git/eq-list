@@ -55,8 +55,8 @@ import { createUiState } from "./ui-state";
 import { fightShareOf, matchedFights, shareableHeals, shareableHits, type FightShare, type ShareKind } from "../src/shared/peers/peer-share";
 import { mergeFight } from "./fight-merge";
 import type { MapPin } from "../src/shared/map/pins";
-import { forTransfer, itemRows } from "../src/shared/item-search";
-import { normalizeItemName } from "../src/shared/grouping";
+import { forTransfer, itemRows } from "../src/shared/items/item-search";
+import { normalizeItemName } from "../src/shared/items/grouping";
 import { RACE_UNLOCK_CHEAT_SHEET_URL } from "../src/shared/faction/race-unlocks";
 
 const log = createLogger("ipc");

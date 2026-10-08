@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
-import { searchKnownItems, unknownToTheWiki } from "@/shared/known-items";
+import { searchKnownItems, unknownToTheWiki } from "@/shared/items/known-items";
 import { createLogger } from "@/shared/logging";
 import { TextField } from "@/app/components/ui";
 import type { SearchResult } from "@/shared/types";

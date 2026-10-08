@@ -28,7 +28,7 @@ import {
   setShard,
   shardOf,
   type PeerCoverage,
-} from "../../src/shared/item-shards";
+} from "../../src/shared/items/item-shards";
 
 const NAMES = ["Rusty Short Sword", "Cloak of Wisdom", "Dragoon Dirk", "Aviak Talon", "Water Flask"];
 

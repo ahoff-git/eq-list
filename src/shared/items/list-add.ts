@@ -15,8 +15,8 @@
  * Pure, so the phrasing can be tested without a window.
  */
 import { groupByOrigin, itemTotals, normalizeItemName } from "./grouping";
-import { count } from "./format";
-import type { ShoppingList, ShoppingListEntry } from "./types";
+import { count } from "../format";
+import type { ShoppingList, ShoppingListEntry } from "../types";
 
 /** One item an add put on (or added to) the list. */
 export interface AddedItem {

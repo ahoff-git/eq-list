@@ -8,7 +8,7 @@
  */
 import { parseDuration } from "../duration";
 import { stripArticle } from "../log-parser";
-import { normalizeItemName } from "../grouping";
+import { normalizeItemName } from "../items/grouping";
 import { mobKey } from "../mob/mob-stats";
 import type { Goal, GoalMode, GoalState, GoalTarget, RunningGoal } from "../types";
 

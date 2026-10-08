@@ -25,11 +25,11 @@
  *
  * Pure and DOM-free: it takes the pooled knowledge and the page's own sources and returns rows.
  */
-import { SUSPICIOUS_AFTER_KILLS, TRUST_OBSERVED_AFTER_KILLS, type DropVerdict } from "./mob/drop-truth";
+import { SUSPICIOUS_AFTER_KILLS, TRUST_OBSERVED_AFTER_KILLS, type DropVerdict } from "../mob/drop-truth";
 import { normalizeItemName } from "./grouping";
-import { mobKey, type MobKnowledge } from "./mob/mob-stats";
-import { ratio } from "./numbers";
-import type { ItemSource } from "./types";
+import { mobKey, type MobKnowledge } from "../mob/mob-stats";
+import { ratio } from "../numbers";
+import type { ItemSource } from "../types";
 
 /** One place a mob has been killed, and what those kills produced. */
 export interface ItemDropPlace {

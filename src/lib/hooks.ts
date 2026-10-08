@@ -46,7 +46,7 @@ import type { KnowledgeContributor } from "@/shared/contributors";
 import type { FactionCauseKnowledge } from "@/shared/faction/faction-observation";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
 import type { SharedKill } from "@/shared/kills/kill-filters";
-import { mergeLootFeed } from "@/shared/loot-feed";
+import { mergeLootFeed } from "@/shared/items/loot-feed";
 import { mergeFactionFeed } from "@/shared/faction/faction-feed";
 import { ratio } from "@/shared/numbers";
 import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
@@ -58,9 +58,9 @@ import {
   type HuntTarget,
   type HuntZone,
 } from "@/shared/mob/hunt";
-import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
-import { knownItems, type KnownItem } from "@/shared/known-items";
-import type { ItemRow } from "@/shared/item-search";
+import { itemDropSources, type ItemDropSource } from "@/shared/items/item-sources";
+import { knownItems, type KnownItem } from "@/shared/items/known-items";
+import type { ItemRow } from "@/shared/items/item-search";
 import type { SpellRow } from "@/shared/spells/spell-search";
 import { clockSkew } from "@/shared/mob/spawn-timers";
 import { runningGoalTargets } from "@/shared/goals/goal-progress";

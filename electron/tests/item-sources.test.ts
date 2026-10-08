@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { itemDropSources, itemDropTotals, priceOfItem } from "../../src/shared/item-sources";
+import { itemDropSources, itemDropTotals, priceOfItem } from "../../src/shared/items/item-sources";
 import { SUSPICIOUS_AFTER_KILLS } from "../../src/shared/mob/drop-truth";
 import type { MobKnowledge } from "../../src/shared/mob/mob-stats";
 import type { ItemSource } from "../../src/shared/types";

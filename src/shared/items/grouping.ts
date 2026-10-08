@@ -15,8 +15,8 @@
  * and within a group, still-needed entries before satisfied ones (A-Z within each). One sort, so
  * the control window and the overlay can't land on two different orders for the same list.
  */
-import type { ShoppingList, ShoppingListEntry, WikiPageKind } from "./types";
-import { itemBaseName } from "./names";
+import type { ShoppingList, ShoppingListEntry, WikiPageKind } from "../types";
+import { itemBaseName } from "../names";
 
 export interface ListGroup {
   key: string;
