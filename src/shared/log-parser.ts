@@ -25,7 +25,7 @@
  */
 
 import { SELF } from "./combat-parser";
-import { to24Hour } from "./game-clock";
+import { to24Hour } from "./gameclock/game-clock";
 import { parseCoins } from "./money";
 import type {
   CoinEvent,

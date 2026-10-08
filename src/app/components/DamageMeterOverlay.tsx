@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useCombatStats, useDamageOverlay } from "@/lib/hooks";
 import { SOLID } from "@/lib/clickThrough";
-import { clampUnit } from "@/shared/game-clock";
+import { clampUnit } from "@/shared/gameclock/game-clock";
 import { overlayDealers, CATEGORY_COLOR, sourceColor, type OverlayDealer, type OverlaySegment } from "@/shared/damage-overlay";
 import { figure } from "@/shared/format";
 

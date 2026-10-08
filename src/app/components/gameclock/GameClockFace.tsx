@@ -1,5 +1,5 @@
 "use client";
-import { formatGameClock, isDaytime, minuteDelta, GAME_DAY_MINUTES } from "@/shared/game-clock";
+import { formatGameClock, isDaytime, minuteDelta, GAME_DAY_MINUTES } from "@/shared/gameclock/game-clock";
 
 /**
  * The clock's face — icon, reading, day/night progress and label. Shared by the status-bar widget

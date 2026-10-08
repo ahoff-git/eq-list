@@ -1,7 +1,7 @@
 "use client";
 import { api } from "@/lib/api";
 import { useGameClock } from "@/lib/hooks";
-import GameClockFace from "@/app/components/GameClockFace";
+import GameClockFace from "@/app/components/gameclock/GameClockFace";
 
 /**
  * The running Norrath clock, for the status bar: what time it is, whether it's day or night, and

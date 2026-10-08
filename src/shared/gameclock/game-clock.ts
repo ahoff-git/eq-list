@@ -13,7 +13,7 @@
  * Pure and stateless, like `log-clock.ts`: a test moves the "now" that drives it, and a caller (the
  * tracker) is the only thing that remembers the last reading and the currently learned rate.
  */
-import { clamp } from "./numbers";
+import { clamp } from "../numbers";
 
 /** Game minutes per real millisecond — the documented 20-per-real-minute pace, and nothing more
  *  than a fresh install's starting guess (see the file header, and `learnRate`). */

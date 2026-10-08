@@ -43,7 +43,7 @@ import {
   readingMinutes,
   type GameClockAnchor,
   type PinFields,
-} from "../src/shared/game-clock";
+} from "../src/shared/gameclock/game-clock";
 import type { CastAlertEvent, CastAlertSettings, GameClockView, GameTimeAlarm } from "../src/shared/types";
 import { raiseIfEnabled } from "./alert-gate";
 import { createChangeNotifier, createSaver, readJson } from "./json-store";

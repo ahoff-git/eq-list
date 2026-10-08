@@ -66,7 +66,7 @@ import { clockSkew } from "@/shared/spawn-timers";
 import { runningGoalTargets } from "@/shared/goal-progress";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/game-clock";
+import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/gameclock/game-clock";
 import { DEFAULT_OVERLAY_PIN_AT } from "@/shared/damage-overlay";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";

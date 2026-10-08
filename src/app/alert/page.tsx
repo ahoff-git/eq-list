@@ -5,7 +5,7 @@ import SpawnOverlay from "@/app/components/SpawnOverlay";
 import GoalsOverlay from "@/app/components/GoalsOverlay";
 import BuffOverlay from "@/app/components/BuffOverlay";
 import DebuffOverlay from "@/app/components/DebuffOverlay";
-import GameClockOverlay from "@/app/components/GameClockOverlay";
+import GameClockOverlay from "@/app/components/gameclock/GameClockOverlay";
 import DamageMeterOverlay from "@/app/components/DamageMeterOverlay";
 import { useSolidIslands } from "@/lib/clickThrough";
 

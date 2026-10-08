@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useGameClock } from "@/lib/hooks";
-import { formatGameClock, parseGameClockTime } from "@/shared/game-clock";
+import { formatGameClock, parseGameClockTime } from "@/shared/gameclock/game-clock";
 import { CheckField } from "@/app/components/ui";
 
 /**
