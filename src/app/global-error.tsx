@@ -1,6 +1,6 @@
 "use client";
 import "./globals.css";
-import { crashBoundary } from "./components/CrashBoundary";
+import { crashBoundary } from "@/app/components/CrashBoundary";
 
 /**
  * The last-resort boundary: a crash in the root layout itself, which replaces the whole

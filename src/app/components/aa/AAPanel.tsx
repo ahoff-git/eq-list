@@ -5,7 +5,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { countOf } from "@/shared/format";
 import { SPELL_CLASSES } from "@/shared/spell-file";
 import { distinctSorted } from "@/shared/sorting";
-import { AA_LIST, AA_LIST_SOURCE, NO_AA_CRITERIA, filterAA, type AlternateAdvancement } from "@/shared/aa-list";
+import { AA_LIST, AA_LIST_SOURCE, NO_AA_CRITERIA, filterAA, type AlternateAdvancement } from "@/shared/aa/aa-list";
 import { Empty, PickField, SourceCountRow } from "@/app/components/ui";
 import SearchField from "@/app/components/SearchField";
 

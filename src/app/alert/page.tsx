@@ -1,12 +1,12 @@
 "use client";
-import CastAlerts from "../components/CastAlerts";
-import AlertPlacement from "../components/AlertPlacement";
-import SpawnOverlay from "../components/SpawnOverlay";
-import GoalsOverlay from "../components/GoalsOverlay";
-import BuffOverlay from "../components/BuffOverlay";
-import DebuffOverlay from "../components/DebuffOverlay";
-import GameClockOverlay from "../components/GameClockOverlay";
-import DamageMeterOverlay from "../components/DamageMeterOverlay";
+import CastAlerts from "@/app/components/CastAlerts";
+import AlertPlacement from "@/app/components/AlertPlacement";
+import SpawnOverlay from "@/app/components/SpawnOverlay";
+import GoalsOverlay from "@/app/components/GoalsOverlay";
+import BuffOverlay from "@/app/components/BuffOverlay";
+import DebuffOverlay from "@/app/components/DebuffOverlay";
+import GameClockOverlay from "@/app/components/GameClockOverlay";
+import DamageMeterOverlay from "@/app/components/DamageMeterOverlay";
 import { useSolidIslands } from "@/lib/clickThrough";
 
 /**

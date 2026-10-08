@@ -19,7 +19,7 @@
  * 144 AAs.
  */
 
-import type { SPELL_CLASSES } from "./spell-file";
+import type { SPELL_CLASSES } from "../spell-file";
 
 export interface AlternateAdvancementFacts {
   name: string;
