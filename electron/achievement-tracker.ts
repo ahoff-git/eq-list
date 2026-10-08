@@ -20,7 +20,7 @@ import { randomUUID } from "node:crypto";
 import { createLogger } from "../src/shared/logging";
 import { alertStyle, ACHIEVEMENT_STYLE_ID } from "../src/shared/alert-styles";
 import { SELF } from "../src/shared/combat-parser";
-import { STOCK_ACHIEVEMENTS } from "../src/shared/achievement-library";
+import { STOCK_ACHIEVEMENTS } from "../src/shared/achievements/achievement-library";
 import {
   freshProgress,
   isComplete,
@@ -33,7 +33,7 @@ import {
   nextUnannouncedCriterion,
   runningView,
   tallyOf,
-} from "../src/shared/achievement-progress";
+} from "../src/shared/achievements/achievement-progress";
 import type {
   AchievementCriterion,
   AchievementCriterionInput,

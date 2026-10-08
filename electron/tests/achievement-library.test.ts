@@ -6,8 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
-import { matchesLine } from "../../src/shared/achievement-progress";
-import { STOCK_ACHIEVEMENTS } from "../../src/shared/achievement-library";
+import { matchesLine } from "../../src/shared/achievements/achievement-progress";
+import { STOCK_ACHIEVEMENTS } from "../../src/shared/achievements/achievement-library";
 import type { CastAlertSettings } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-17T12:00:00.000Z");

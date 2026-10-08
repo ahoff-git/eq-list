@@ -38,9 +38,9 @@
  *    "Level 50 with all classes" — no reliable log signal exists for *which* class a character is
  *    playing across a session, so every criterion here is `"manual"` by design, not a shortcut.
  */
-import { CLASS_NAMES } from "./class-names";
-import { CURATED_ZONES } from "./zones/gazetteer";
-import type { AchievementCriterion, AchievementDefinition } from "./types";
+import { CLASS_NAMES } from "../class-names";
+import { CURATED_ZONES } from "../zones/gazetteer";
+import type { AchievementCriterion, AchievementDefinition } from "../types";
 
 function zoneCriteria(): AchievementCriterion[] {
   return CURATED_ZONES.map((z) => ({ id: `zone:${z.name}`, label: z.name, kind: "zone", zone: z.name }));

@@ -23,9 +23,9 @@
  * `isRace`. `electron/achievement-tracker.ts` only ever offers this module a kill where
  * `event.killer === SELF`, the same self-only discipline every other criterion kind holds to.
  */
-import { matchCast, matchFade, matchLine, type MatchContext } from "./cast-alerts";
-import { isRace } from "./mob-races";
-import { placeKey } from "./zones/place";
+import { matchCast, matchFade, matchLine, type MatchContext } from "../cast-alerts";
+import { isRace } from "../mob-races";
+import { placeKey } from "../zones/place";
 import type {
   AchievementCriterion,
   AchievementDefinition,
@@ -39,7 +39,7 @@ import type {
   KillEvent,
   LogLine,
   RunningAchievement,
-} from "./types";
+} from "../types";
 
 /** `"watch"` and `"count"` share every matching rule — only what the tracker does with a match
  *  differs (mark done outright, vs. tally toward a threshold). */

@@ -20,7 +20,7 @@ import {
   nextUnannouncedCriterion,
   runningView,
   tallyOf,
-} from "../../src/shared/achievement-progress";
+} from "../../src/shared/achievements/achievement-progress";
 import type { AchievementCriterion, AchievementDefinition, CastAlertSettings } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-17T12:00:00.000Z");
