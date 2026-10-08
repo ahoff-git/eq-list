@@ -664,6 +664,80 @@ test("recheckDialogueCauses never touches a kill-caused hit", () => {
   assert.equal(l.recent()[0].causedBy?.kind, "kill");
 });
 
+// ─── A promoted row stays a dialogue cause for every purpose afterward (ADR 0282 × ADR 0283) ────
+
+test("a promoted hit is picked up by standings()'s causes rollup the moment it's promoted — no staleness in between", () => {
+  // `FactionObservationsStore.mine()` (electron/faction-observations.ts) is a thin wrapper over
+  // `standings()`'s own `causes`, so this is the one place that staleness could actually hide: if
+  // `causes` lagged a promotion by even one read, `mine()` would too.
+  const l = freshLog();
+  l.add({ ...hit("Agents of Mistmoore", 1, 5, "raised"), unmatchedDialogue: { npc: "Vira", text: "Well done.", gapSec: 2 } });
+  assert.deepEqual(l.standings()[0].causes, [], "unresolved — never pooled, same rule `faction-observations.ts` states");
+
+  l.recheckDialogueCauses({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
+  assert.deepEqual(
+    l.standings()[0].causes,
+    [{ kind: "dialogue", source: "Vira", net: 5, hits: 1 }],
+    "picked up on the very next call — computeStandings() re-queries live, nothing cached it stale",
+  );
+});
+
+test("a promoted row is, from then on, an ordinary dialogue cause — a later quest-giver regression corrects it the same way", () => {
+  // Answers the open question directly: once ADR 0282 promotes a hit, does a *further* cache change
+  // (the giver's known quests shrinking or changing) get picked up, or does the promotion branch only
+  // ever run once? `recheckDialogueCauses`'s query widens by `caused_by_kind = 'dialogue' OR
+  // (caused_by_kind IS NULL AND unmatched_npc IS NOT NULL)` — after promotion the row's own
+  // `caused_by_kind` is 'dialogue', so it falls into the *first*, ordinary correct/withdraw branch on
+  // every subsequent call, not a dead end. No special-casing needed; this pins that it actually works.
+  const l = freshLog();
+  l.add({ ...hit("Agents of Mistmoore", 1, 5, "raised"), unmatchedDialogue: { npc: "Vira", text: "Well done.", gapSec: 2 } });
+
+  const promoted = l.recheckDialogueCauses({ questGiver: () => ["Shovel of Ponz"], isMob: () => true });
+  assert.deepEqual(promoted, { checked: 1, changed: 1 });
+  const afterPromotion = l.recent()[0].causedBy;
+  assert.deepEqual(afterPromotion?.kind === "dialogue" ? afterPromotion.quests : undefined, ["Shovel of Ponz"]);
+
+  // The wiki cache now disagrees with itself — the giver's quest list changed entirely.
+  const regressed = l.recheckDialogueCauses({ questGiver: () => ["Torch of Alna"], isMob: () => true });
+  assert.deepEqual(regressed, { checked: 1, changed: 1 }, "the already-promoted row is still reachable, not a dead end");
+  const record = l.recent()[0];
+  assert.deepEqual(record.causedBy?.kind === "dialogue" ? record.causedBy.quests : undefined, ["Torch of Alna"]);
+  assert.equal(record.unmatchedDialogue, undefined, "nothing left to retry — this is an ordinary dialogue cause now");
+});
+
+test("recheckDialogueCauses is fully idempotent across both branches at once — a second call with no cache change writes nothing", () => {
+  const l = freshLog();
+  // One of each shape `recheckDialogueCauses` can see: an already-correct dialogue cause, a hit
+  // promotable from unmatchedDialogue, and a dialogue cause about to be withdrawn entirely.
+  l.add(
+    hit("Agents of Mistmoore", 1, 5, "raised", {
+      kind: "dialogue",
+      npc: "Vira",
+      text: "Well done.",
+      gapSec: 2,
+      quests: ["Shovel of Ponz"],
+      questsMatched: false,
+    }),
+  );
+  l.add({ ...hit("Agents of Mistmoore", 2, 5, "raised"), unmatchedDialogue: { npc: "Vira", text: "Thanks.", gapSec: 1 } });
+  l.add(
+    hit("Clan Runnyeye", 3, 5, "raised", { kind: "dialogue", npc: "A goblin lookout", text: "To arms!", gapSec: 2 }),
+  );
+
+  const deps = { questGiver: (npc: string) => (npc === "Vira" ? ["Shovel of Ponz"] : []), isMob: () => true };
+  const first = l.recheckDialogueCauses(deps);
+  assert.deepEqual(first, { checked: 3, changed: 2 }, "the already-correct row needs no write; the other two do");
+
+  // The withdrawn row (ADR 0261) is cleared of its `unmatched_*` payload along with everything else —
+  // it drops out of `recheckDialogueCauses`'s own query entirely from here on, the same as any other
+  // hit that was never a dialogue candidate at all, so `checked` itself drops to 2.
+  const second = l.recheckDialogueCauses(deps);
+  assert.deepEqual(second, { checked: 2, changed: 0 }, "same cache, same rows — nothing left to change, nothing written");
+
+  // And a third call, for good measure — no drift ever creeps in from repeated, unchanged rechecks.
+  assert.deepEqual(l.recheckDialogueCauses(deps), { checked: 2, changed: 0 });
+});
+
 test("the admin panel can browse and remove a hit, but nothing is patchable", () => {
   const l = freshLog();
   l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));

@@ -145,10 +145,110 @@ test("dialogue still explains a hit the kill window missed, since its own window
   assert.equal(tracker.resolve(hit(10)).causedBy?.kind, "dialogue");
 });
 
+// A base second of 50 (not 10) for every test below that reaches DIALOGUE_WINDOW_SEC (15) seconds
+// backward: `10 - DIALOGUE_WINDOW_SEC - 1` is -6, and `line()`/`hit()` format a negative second as the
+// literal string "-6" — `Date.parse("...T00:00:-6")` is `NaN`, not a real moment in the past. A `NaN`
+// gap fails every window check trivially, so a test built on it "passes" whether or not the window
+// logic is even correct. 50 keeps every offset non-negative and genuinely inside this minute.
+test("a dialogue line right at the edge of its window still counts; one second past it doesn't (exact boundary)", () => {
+  const base = 50;
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
+  tracker.noteLine(line(base - DIALOGUE_WINDOW_SEC, "Vira says, 'Well done.'"));
+  assert.equal(tracker.resolve(hit(base)).causedBy?.kind, "dialogue", "exactly the window's width is still in range");
+
+  const tooLate = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
+  tooLate.noteLine(line(base - DIALOGUE_WINDOW_SEC - 1, "Vira says, 'Well done.'"));
+  assert.equal(tooLate.resolve(hit(base)).causedBy, undefined, "one second past the window is too far to blame");
+});
+
 test("dialogue outside its own, wider window is not offered either", () => {
+  // A real `questGiver` dependency this time: without one, `causedBy` is `undefined` no matter what
+  // the window says (ADR 0261), which would make this assertion pass even if the window check were
+  // broken. With one wired in, `causedBy` only stays `undefined` because the gap genuinely exceeds
+  // DIALOGUE_WINDOW_SEC.
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
+  const base = 50;
+  tracker.noteLine(line(base - DIALOGUE_WINDOW_SEC - 1, "Vira says, 'Well done.'"));
+  const resolved = tracker.resolve(hit(base));
+  assert.equal(resolved.causedBy, undefined, "one second past the window is too far to blame");
+  assert.equal(resolved.unmatchedDialogue, undefined, "too far away to even carry forward as unmatched (ADR 0282)");
+});
+
+test("a fuzzy match scoring exactly DIALOGUE_MATCH_MIN_SCORE still narrows the quest — the threshold is inclusive", () => {
+  // fuzzyScore("Abcd.", "Abxy") is exactly 0.5 against the real scorer (two of four letters
+  // substituted) — checked directly against `fuzzyScore`, not asserted blind, since the matching
+  // threshold is itself a tuned constant this task must not re-litigate.
+  const tracker = createFactionCauseTracker({
+    questGiver: () => ["Quest A", "Quest B"],
+    questDialogue: (q) =>
+      q === "Quest A" ? [{ npc: "Vira", text: "Abxy" }] : [{ npc: "Vira", text: "Completely unrelated line of dialogue text" }],
+  });
+  tracker.noteLine(line(8, "Vira says, 'Abcd.'"));
+  const causedBy = tracker.resolve(hit(10)).causedBy;
+  assert.deepEqual(
+    causedBy?.kind === "dialogue" ? { quests: causedBy.quests, questsMatched: causedBy.questsMatched } : undefined,
+    { quests: ["Quest A"], questsMatched: true },
+    "a score of exactly 0.5 is still >= DIALOGUE_MATCH_MIN_SCORE, so this narrows rather than falling back unnarrowed",
+  );
+});
+
+// ─── Competing candidates and state across several events (ADR 0224's own concern, generalized) ─
+
+test("a kill barely inside its window still wins over a dialogue line that is numerically much closer", () => {
+  // The module header claims the kill always wins when in-window, regardless of how much closer the
+  // dialogue line is — not just when the kill also happens to be the nearer of the two.
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
+  tracker.noteLine(line(9, "Vira says, 'Well done.'")); // gapSec 1 if it were ever asked
+  tracker.noteKill("a gnoll pup", `2026-07-29T00:00:${String(10 - CORRELATION_WINDOW_SEC).padStart(2, "0")}`); // gapSec exactly 3, the edge
+  assert.deepEqual(
+    tracker.resolve(hit(10)).causedBy,
+    { kind: "kill", mob: "a gnoll pup", gapSec: CORRELATION_WINDOW_SEC },
+    "the kill is barely in range, but still wins outright over the far closer dialogue line",
+  );
+});
+
+test("a kill just past its window no longer blocks a dialogue line that is in range from being used", () => {
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
+  tracker.noteLine(line(8, "Vira says, 'Well done.'"));
+  tracker.noteKill("a gnoll pup", `2026-07-29T00:00:${String(10 - CORRELATION_WINDOW_SEC - 1).padStart(2, "0")}`);
+  assert.deepEqual(
+    tracker.resolve(hit(10)).causedBy,
+    { kind: "dialogue", npc: "Vira", text: "Well done.", gapSec: 2, quests: ["Any Quest"], questsMatched: false },
+    "the kill missed its own window by one second, so dialogue is consulted and wins, not silence",
+  );
+});
+
+test("an ordinary line between two dialogue lines doesn't clear the last real one — only another match overwrites it", () => {
+  const tracker = createFactionCauseTracker({ questGiver: () => ["Any Quest"] });
+  tracker.noteLine(line(7, "Vira says, 'Well done.'"));
+  tracker.noteLine(line(8, "You have entered Blackburrow.")); // not shaped like dialogue at all
+  assert.deepEqual(tracker.resolve(hit(10)).causedBy, {
+    kind: "dialogue",
+    npc: "Vira",
+    text: "Well done.",
+    gapSec: 3,
+    quests: ["Any Quest"],
+    questsMatched: false,
+  });
+});
+
+test("an ordinary line doesn't clear a noted kill either — only a later kill ever displaces one", () => {
   const tracker = createFactionCauseTracker();
-  tracker.noteLine(line(10 - DIALOGUE_WINDOW_SEC - 1, "Vira says, 'Well done.'"));
-  assert.equal(tracker.resolve(hit(10)).causedBy, undefined);
+  tracker.noteKill("a gnoll pup", "2026-07-29T00:00:08");
+  tracker.noteLine(line(9, "You have entered Blackburrow."));
+  assert.deepEqual(tracker.resolve(hit(10)).causedBy, { kind: "kill", mob: "a gnoll pup", gapSec: 2 });
+});
+
+test("only the most recent dialogue line is remembered — a later, unmatched one displaces an earlier matched one", () => {
+  // Mirrors "only the most recent kill is remembered": `lastDialogue` holds exactly one slot, so a
+  // second real line of dialogue overwrites the first even when the first would have resolved to a
+  // cause and the second doesn't.
+  const tracker = createFactionCauseTracker({ questGiver: (npc) => (npc === "Vira" ? ["Any Quest"] : []) });
+  tracker.noteLine(line(7, "Vira says, 'Well done.'"));
+  tracker.noteLine(line(9, "Some Rando says, 'hey'"));
+  const resolved = tracker.resolve(hit(10));
+  assert.equal(resolved.causedBy, undefined, "the second, unmatched line is all that's remembered now");
+  assert.deepEqual(resolved.unmatchedDialogue, { npc: "Some Rando", text: "hey", gapSec: 1 });
 });
 
 test("an ordinary line that isn't shaped like dialogue teaches nothing", () => {
@@ -244,9 +344,13 @@ test("no dialogue nearby at all leaves no unmatchedDialogue — scoped to hits t
   const tracker = createFactionCauseTracker();
   assert.equal(tracker.resolve(hit(10)).unmatchedDialogue, undefined);
 
+  // Base second 50, not 10: `10 - DIALOGUE_WINDOW_SEC - 1` is negative, and a negative second formats
+  // as e.g. "-6", which `Date.parse` reads as `NaN` rather than a real moment — the assertion below
+  // would then pass on a `NaN` gap failing the window check for free, not because the gap is
+  // genuinely too wide. 50 keeps the gap a real, computable number.
   const outsideWindow = createFactionCauseTracker();
-  outsideWindow.noteLine(line(10 - DIALOGUE_WINDOW_SEC - 1, "Vira says, 'Well done.'"));
-  assert.equal(outsideWindow.resolve(hit(10)).unmatchedDialogue, undefined, "too far away to count as 'nearby' at all");
+  outsideWindow.noteLine(line(50 - DIALOGUE_WINDOW_SEC - 1, "Vira says, 'Well done.'"));
+  assert.equal(outsideWindow.resolve(hit(50)).unmatchedDialogue, undefined, "too far away to count as 'nearby' at all");
 });
 
 test("explainUnsourcedCoin never carries unmatchedDialogue — there's no ledger row behind a coin line to recheck later", () => {
