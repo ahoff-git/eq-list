@@ -5,10 +5,10 @@
  * value-picker fed to `sortRows`. No filters yet, unlike loot's — the ledger is nowhere near loot's
  * volume, so there has been nothing yet to narrow.
  */
-import type { FactionCauseTally, FactionRecord, FactionStanding } from "./types";
-import { sortRows, type Sort } from "./sorting";
-import { ratio } from "./numbers";
-import { count } from "./format";
+import type { FactionCauseTally, FactionRecord, FactionStanding } from "../types";
+import { sortRows, type Sort } from "../sorting";
+import { ratio } from "../numbers";
+import { count } from "../format";
 import { factionPoolWhy } from "./faction-pooling";
 import type { FactionCauseKnowledge } from "./faction-observation";
 

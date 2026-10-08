@@ -35,7 +35,7 @@ import { appDatabaseFile, openAppDatabase } from "./sqlite-store";
 import { createWebSnapshotJob } from "./web-snapshot-job";
 import { createFactionLog, FACTION_LOG_MIGRATIONS } from "./faction-log";
 import { createFactionCorrections } from "./faction-corrections";
-import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction-cause";
+import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction/faction-cause";
 import { lootRecord } from "../src/shared/loot-feed";
 import { autoUpdater } from "electron-updater";
 import { createAutoUpdater, type UpdaterLike } from "./auto-update";

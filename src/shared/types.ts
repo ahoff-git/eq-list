@@ -3,7 +3,7 @@ import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } fr
 import type { CheckResult } from "./self-check";
 import type { MobKnowledge, MobObservation } from "./mob-stats";
 import type { KnowledgeContributor } from "./contributors";
-import type { FactionCauseKnowledge } from "./faction-observation";
+import type { FactionCauseKnowledge } from "./faction/faction-observation";
 import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, ShareSettings } from "./peers/peer-share";
 // Re-exported because every consumer of the `peer` bridge reads it off the api surface, and
 // `types.ts` is where that surface is described.

@@ -139,10 +139,10 @@
  * live guess and a later recheck share one function for the same reason ADR 0259 already gives: so a
  * promoted guess is indistinguishable from one made live.
  */
-import { confidenceOf, type Confidence, type SampleScale } from "./estimates";
-import { count } from "./format";
-import { fuzzyRank } from "./fuzzy";
-import type { FactionCause, FactionCauseTally, FactionEvent, FactionRecord, LogLine } from "./types";
+import { confidenceOf, type Confidence, type SampleScale } from "../estimates";
+import { count } from "../format";
+import { fuzzyRank } from "../fuzzy";
+import type { FactionCause, FactionCauseTally, FactionEvent, FactionRecord, LogLine } from "../types";
 
 /**
  * How far apart a kill and the faction line it caused may be, **either direction** (see the module

@@ -21,7 +21,7 @@
  * this module only merges an already-derived one onto a standing. Pure and DOM-free, like
  * `faction-unlock-progress.ts`, so the merge can be pinned by a test independent of persistence.
  */
-import type { FactionCorrection, FactionStanding } from "./types";
+import type { FactionCorrection, FactionStanding } from "../types";
 
 /** A faction the player corrected but the ledger never saw a hit for still needs a row to correct —
  *  covering exactly the history the ledger couldn't have seen is the whole point. */

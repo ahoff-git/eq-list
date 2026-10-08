@@ -32,7 +32,7 @@ import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
 import type { FactionLog } from "./faction-log";
 import type { FactionCorrections } from "./faction-corrections";
-import { applyFactionCorrections } from "../src/shared/faction-correction";
+import { applyFactionCorrections } from "../src/shared/faction/faction-correction";
 import type { AutoUpdater } from "./auto-update";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { FactionObservationsStore } from "./faction-observations";
@@ -57,7 +57,7 @@ import { mergeFight } from "./fight-merge";
 import type { MapPin } from "../src/shared/map/pins";
 import { forTransfer, itemRows } from "../src/shared/item-search";
 import { normalizeItemName } from "../src/shared/grouping";
-import { RACE_UNLOCK_CHEAT_SHEET_URL } from "../src/shared/race-unlocks";
+import { RACE_UNLOCK_CHEAT_SHEET_URL } from "../src/shared/faction/race-unlocks";
 
 const log = createLogger("ipc");
 

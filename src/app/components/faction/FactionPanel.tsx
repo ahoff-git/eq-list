@@ -12,8 +12,8 @@ import { usePersistentState } from "@/lib/usePersistentState";
 import { useFuzzyFilter } from "@/lib/useFuzzyFilter";
 import { useGridSort } from "@/lib/useGridSort";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { causeConfidence, causeConfidenceWhy } from "@/shared/faction-cause";
-import { factionKey } from "@/shared/faction-feed";
+import { causeConfidence, causeConfidenceWhy } from "@/shared/faction/faction-cause";
+import { factionKey } from "@/shared/faction/faction-feed";
 import {
   DEFAULT_FACTION_HIT_SORT,
   DEFAULT_FACTION_STANDING_SORT,
@@ -24,8 +24,8 @@ import {
   sortFactionStandings,
   type FactionHitSortKey,
   type FactionStandingSortKey,
-} from "@/shared/faction-sort";
-import type { FactionCauseKnowledge } from "@/shared/faction-observation";
+} from "@/shared/faction/faction-sort";
+import type { FactionCauseKnowledge } from "@/shared/faction/faction-observation";
 import { clock, count, dayTime, when } from "@/shared/format";
 import type { Sort } from "@/shared/sorting";
 import type {
@@ -38,7 +38,7 @@ import type {
   FactionStanding,
 } from "@/shared/types";
 import ItemLink, { NameList } from "@/app/components/ItemLink";
-import RaceUnlocksView from "@/app/components/RaceUnlocksView";
+import RaceUnlocksView from "@/app/components/faction/RaceUnlocksView";
 import SearchField from "@/app/components/SearchField";
 import {
   DEFAULT_PAGE_SIZE,

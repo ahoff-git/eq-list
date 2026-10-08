@@ -9,10 +9,10 @@
  * corroborated" doesn't care whose hits did the repeating. The only genuinely new piece is folding
  * those two into one verdict about a `FactionCauseKnowledge` row.
  */
-import { provenanceOf, type Provenance } from "./pooling";
+import { provenanceOf, type Provenance } from "../pooling";
 import { causeConfidence, causeConfidenceWhy } from "./faction-cause";
-import type { Confidence } from "./estimates";
-import { count } from "./format";
+import type { Confidence } from "../estimates";
+import { count } from "../format";
 import type { FactionCauseKnowledge } from "./faction-observation";
 
 /** How much a pooled faction-cause figure is worth: its sample size, and how much of it is yours. */

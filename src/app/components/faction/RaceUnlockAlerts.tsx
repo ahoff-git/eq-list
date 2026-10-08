@@ -4,8 +4,8 @@ import { useFactionFeed, useFactionStandings } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { showToast } from "@/lib/toast";
-import { factionKey } from "@/shared/faction-feed";
-import { computeRaceUnlockProgress, diffRaceUnlockProgress, type RaceUnlockProgress } from "@/shared/faction-unlock-progress";
+import { factionKey } from "@/shared/faction/faction-feed";
+import { computeRaceUnlockProgress, diffRaceUnlockProgress, type RaceUnlockProgress } from "@/shared/faction/faction-unlock-progress";
 
 /**
  * "A faction you're watching for a race just moved" — an opt-in nudge, toggled per race on the

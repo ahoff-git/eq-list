@@ -3,9 +3,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pooledCauseBadge, ratePerHour, sortFactionHits, sortFactionStandings } from "../../src/shared/faction-sort";
+import { pooledCauseBadge, ratePerHour, sortFactionHits, sortFactionStandings } from "../../src/shared/faction/faction-sort";
 import type { FactionEvent, FactionStanding } from "../../src/shared/types";
-import type { FactionCauseKnowledge } from "../../src/shared/faction-observation";
+import type { FactionCauseKnowledge } from "../../src/shared/faction/faction-observation";
 
 function hit(p: Partial<FactionEvent> & { faction: string }): FactionEvent {
   return {

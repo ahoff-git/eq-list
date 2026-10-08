@@ -54,7 +54,7 @@ import type {
   WikiPageKind,
 } from "../types";
 import { withAreas, type MobArea, type MobObservation } from "../mob-stats";
-import type { FactionObservation } from "../faction-observation";
+import type { FactionObservation } from "../faction/faction-observation";
 import type { SharedKill } from "../kills/kill-filters";
 import type { BuffInstance, BuffRiseSource } from "../buffs/buff-tracking";
 import type { RespawnLearning, SpawnTimer } from "../spawn-timers";

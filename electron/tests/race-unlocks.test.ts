@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RACE_UNLOCKS, RACE_UNLOCK_SOURCE, factionsForRace, racesRequiringFaction, wikiLinksIn } from "../../src/shared/race-unlocks";
+import { RACE_UNLOCKS, RACE_UNLOCK_SOURCE, factionsForRace, racesRequiringFaction, wikiLinksIn } from "../../src/shared/faction/race-unlocks";
 
 test("at least the races the guide is known to cover are present, each named once", () => {
   assert.ok(RACE_UNLOCKS.length >= 15, `only ${RACE_UNLOCKS.length} races`);

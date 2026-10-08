@@ -17,8 +17,8 @@
  *
  * Pure and DOM-free, like `pooling.ts`: the panels word it, this decides it.
  */
-import type { Contributor } from "./contributors";
-import type { FactionCause } from "./types";
+import type { Contributor } from "../contributors";
+import type { FactionCause } from "../types";
 
 /**
  * One contributor's tally of a single (faction, cause) question — "N hits, net M, blamed on this

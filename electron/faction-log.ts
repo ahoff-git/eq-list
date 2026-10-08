@@ -58,7 +58,7 @@ import type {
   FactionStanding,
   ForgetScope,
 } from "../src/shared/types";
-import { questsForSpeaker, type FactionCauseTrackerDeps } from "../src/shared/faction-cause";
+import { questsForSpeaker, type FactionCauseTrackerDeps } from "../src/shared/faction/faction-cause";
 import { createSaver, readJson, writeJson } from "./json-store";
 import { DEFAULT_LIMIT, likeEscape, type Migration } from "./sqlite-store";
 import { createSqlAdminStore, type AdminStore } from "./admin";

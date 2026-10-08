@@ -24,7 +24,7 @@ import * as store from "@/lib/web/local-store";
 import { answerRoute, travelZone } from "@/shared/travel/route";
 import { surveyZone } from "@/shared/travel/survey";
 import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
-import { RACE_UNLOCK_CHEAT_SHEET_URL } from "@/shared/race-unlocks";
+import { RACE_UNLOCK_CHEAT_SHEET_URL } from "@/shared/faction/race-unlocks";
 import type {
   AchievementView,
   BuffView,

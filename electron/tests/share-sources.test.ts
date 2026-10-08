@@ -14,7 +14,7 @@ import type { KillRecord, KnownSpawn, Settings } from "../../src/shared/types";
 import type { SharedRespawn } from "../../src/shared/peers/peer-share";
 import type { SharedKill } from "../../src/shared/kills/kill-filters";
 import type { MobObservation } from "../../src/shared/mob-stats";
-import type { FactionObservation } from "../../src/shared/faction-observation";
+import type { FactionObservation } from "../../src/shared/faction/faction-observation";
 
 const SETTINGS = {} as Settings;
 

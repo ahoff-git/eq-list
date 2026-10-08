@@ -22,7 +22,7 @@
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { plausible } from "../src/shared/estimates";
-import { mergeFactionObservations, type FactionCauseKnowledge, type FactionObservation } from "../src/shared/faction-observation";
+import { mergeFactionObservations, type FactionCauseKnowledge, type FactionObservation } from "../src/shared/faction/faction-observation";
 import { isAdminAudit, type AdminAudit } from "../src/shared/admin";
 import type { Contributor } from "../src/shared/contributors";
 import { createContributions } from "./contributions";

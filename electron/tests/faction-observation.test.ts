@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeFactionObservations, type FactionObservation } from "../../src/shared/faction-observation";
+import { mergeFactionObservations, type FactionObservation } from "../../src/shared/faction/faction-observation";
 
 const mine = (over: Partial<FactionObservation> = {}): FactionObservation => ({
   faction: "Wharf Rats",

@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyFactionCorrections } from "../../src/shared/faction-correction";
+import { applyFactionCorrections } from "../../src/shared/faction/faction-correction";
 import type { FactionStanding } from "../../src/shared/types";
 
 function standing(p: Partial<FactionStanding> & { faction: string; net: number }): FactionStanding {

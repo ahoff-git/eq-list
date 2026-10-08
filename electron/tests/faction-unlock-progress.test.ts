@@ -10,7 +10,7 @@ import {
   computeRaceUnlockProgress,
   diffRaceUnlockProgress,
   type RaceUnlockProgress,
-} from "../../src/shared/faction-unlock-progress";
+} from "../../src/shared/faction/faction-unlock-progress";
 import type { FactionStanding } from "../../src/shared/types";
 
 function standing(p: Partial<FactionStanding> & { faction: string; net: number }): FactionStanding {

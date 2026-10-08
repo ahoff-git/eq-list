@@ -11,7 +11,7 @@
  * Pure and DOM-free so the ordering and de-duplication can be pinned by tests rather than reasoned
  * about in a hook.
  */
-import type { FactionRecord } from "./types";
+import type { FactionRecord } from "../types";
 
 /**
  * A faction hit's identity, for telling "the same hit, from both sources" from "two hits that look

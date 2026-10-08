@@ -14,7 +14,7 @@
  * Pure and DOM-free, like `faction-sort.ts` and `faction-feed.ts`, so the join and the alert-worthy
  * diff can be pinned by tests rather than reasoned about inside a hook.
  */
-import type { FactionStanding } from "./types";
+import type { FactionStanding } from "../types";
 import { RACE_UNLOCKS, type RaceUnlockRequirement } from "./race-unlocks";
 
 /** "+2000 personal faction" — the guide's own stated target, the same for every required faction. */
