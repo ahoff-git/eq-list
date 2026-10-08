@@ -26,64 +26,15 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
-- **Hold an unplaceable name loosely, then process it** — [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md),
-  in the order the measurements set rather than the order the idea suggests. Today an unproven named
-  pet is *dropped*: `pet-registry.ts` learns one only from `<Pet> told you, 'Attacking <mob> Master.'`
-  ([ADR 0077](./decisions/0077-a-pet-is-proven-not-guessed.md)) and starts every launch empty, which
-  is why this reads as a fresh-install fault. Measured on a magician's 315,601-line log — 34 pets in
-  three weeks, a fresh name per summon, each blind 15s to 5½ minutes: **646** damage short on
-  `totalDealt`, **5,608** on `yourDealt`, **2,127** on `yourTaken`, concentrated in **26 fights**,
-  with four pets doing more damage before their proof than after it (`Xebeker` 671 vs 201).
-
-  Three steps, and **the first is the gate**:
-
-  1. ~~**Re-derive a stored fight.**~~ **Done** —
-     [ADR 0128](./decisions/0128-a-fight-is-re-derived-not-refused.md). Eating a log now redoes the
-     fights it already holds, so an identity settled after a fight was filed can reach that fight.
-     Proven on the measured log: re-reading it with every pet known refreshes 1,000 stored fights and
-     puts 3,906 damage into them. **The remaining step is what turns that into the full 5,608.**
-  2. ~~**Make attribution read-time everywhere.**~~ **Done for the four places that needed it.** The
-     *saying* half was already done — [ADR 0130](./decisions/0130-data-in-doubt-says-so.md): a window
-     holds the names nothing placed, re-asks on read, and the doubt propagates to the sitting, the camp
-     and any record taken off the fight (measured: 20% of fights, 73 names, no false positives among
-     the top ones). The *fixing* half is now built for `w.bucket` (sparkline), the per-spell table, the
-     per-invocation proc/swing/healed tallies, and the `incoming` death-recap buffer — the four of the
-     seven baked places that are genuinely **totals a read re-derives**. Each tallies a doubtful name's
-     share into a held side-tally keyed by that name (`combat-stats.ts`'s `Held`, `resolveHeld`,
-     `heldIncoming`) and merges it in — additively, the same arithmetic the real structure would have
-     done, nothing "replacing" anything — the moment a read finds the name settled, mine or not.
-     Pinned in `electron/tests/combat-stats.test.ts`: a doubted attacker's sparkline sample, Spells-tab
-     entry and invocation swing, and a doubted target's death-recap damage, all land correctly once
-     proof arrives without the fight being re-read — and a name settled as a group-mate's never joins
-     any of them, the same as it never joined the row.
-
-     **The other three — `castRepertoire`, `pending`, `lastLanding` — are deliberately left baked.**
-     They are gates that interpret the *next* log line, not totals a summary re-reads, so a value
-     merged in after the fact can't retroactively fix how an earlier line was already (mis)interpreted
-     — only re-deriving the whole fight from the log can, which is step 1, already built. Live, each
-     is already correct again for the very next event the moment a name is placed; `castRepertoire`
-     additionally gets backfilled for free from a resolved name's held casts, so it isn't blind to what
-     happened during its own blind window once that window closes. And in practice none of the three
-     is even reachable while a name is still doubted today: a `cast`/`spell-outcome` event only passes
-     `FightScope.admits` once its caster is already `ours` or an enemy, which a doubted name is by
-     definition neither — so the fix is in place and correct, ready for the day step 3 changes that,
-     but nothing in today's log exercises it.
-  3. **`FightScope.admits` gains a third value, `hold`.** Its doc explains the boolean: it "runs live,
-     once per line, with no way back". After (1) and (2) there is a way back. Expiry of a held event
-     means drop, so it degrades to today's behaviour.
-
-  Deciders, all checked against the log (full workings in ADR 0127): the attack confirmation (242
-  lines); `<Pet> says, 'Sorry, Master... calming down.'` (138, no false positives, worth adding once
-  there is somewhere to put it); party joins and group chat, which `party.ts` already reads but only
-  forwards; an article meaning mob; and the **negative** deciders a pen needs as badly — a name that
-  talks in a chat channel is a player, and a pet cannot, which is what lets the pen discard instead of
-  holding to expiry. Not proof: `was partially successful in capturing` (442 of its 1,242 lines name a
-  player in the group). Proof but nameless: `Captured <mob>'s attention, Master!` (1,635 lines).
-
-  Three more deciders from **eql-meter** v0.1.28 (see [neighbours.md](./neighbours.md)), and the
-  honest state of all three is that **none is counted on a log of ours** — `fixtures/` holds no
-  instance of any of them, so the line count and false-positive rate every decider above carries is
-  missing, and getting it is the gate on adopting these rather than a follow-up to it:
+- **Three more pet/group-mate deciders from eql-meter v0.1.28** (see [neighbours.md](./neighbours.md)),
+  on top of the ones [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md)'s three-step
+  plan already built against — all three now done: a stored fight re-derives
+  ([ADR 0128](./decisions/0128-a-fight-is-re-derived-not-refused.md)), attribution is read-time
+  everywhere it needed to be, and `FightScope.admits` holds and replays a swing that was waiting on a
+  name ([ADR 0284](./decisions/0284-a-held-event-replays-at-its-own-moment.md)). The honest state of
+  these three is that **none is counted on a log of ours** — `fixtures/` holds no instance of any of
+  them, so the line count and false-positive rate every decider ADR 0127 checked carries is missing,
+  and getting it is the gate on adopting these rather than a follow-up to it:
 
   - `<Pet> says, 'My leader is <Player>.'` — the `/pet who leader` answer, and the odd one out twice
     over. It is **asked for** rather than waited on, which makes it the `AskValue` nag
@@ -96,7 +47,7 @@ everything else, so this list can stay short enough to read:
   - `<Pet> told you, 'I am unable to wake <mob>, Master.'` — the same private-tell proof as the attack
     confirmation and structurally as safe (a tell addressed to you cannot be about someone else's
     pet), but it fires on an order that **failed**, so it can land inside the blind window before
-    anything has been attacked — which is where the damage measured above is lost.
+    anything has been attacked — which is where ADR 0127's measured damage is lost.
   - `You begin casting Burnout.` followed by `<Pet> goes berserk.` — a pet-only buff, so its landing
     names a pet; eql-meter reads Augment Death and Focus Death the same way. Worth noting for the
     order of work rather than for the evidence: this is the **same two-correlated-lines trick** as

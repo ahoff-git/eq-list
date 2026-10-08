@@ -22,18 +22,29 @@
  * **Why not [ADR 0053](../../specs/decisions/0053-damage-is-cells-rolled-up.md)'s rule.**
  * `damage-tree.ts` settles sides too, but it does it *over a finished set of cells*, in
  * passes, and it can afford to lean ("an enemy hit it, so it's probably an ally"). This runs
- * live, once per line, with no way back: an event admitted is tallied for good. So only the
- * near-certain direction is used — an ally swung at it, therefore it's an enemy — and the
- * weak one is left out. The two are the same idea at different confidences, on purpose.
+ * live, once per line — but, since [ADR 0127](../../specs/decisions/0127-an-unknown-name-is-held-not-dropped.md)
+ * and [ADR 0128](../../specs/decisions/0128-a-fight-is-re-derived-not-refused.md) gave it somewhere
+ * to put a second thought, no longer with *no* way back. `admits` answers one of three ways:
  *
- * "No way back" is the load-bearing half of that, and
- * [ADR 0127](../../specs/decisions/0127-an-unknown-name-is-held-not-dropped.md) has decided to build
- * one: `admits` grows a third answer, `hold`, for an event turning on a name nothing has yet placed —
- * kept until the log says who that name is, then admitted or discarded as it turns out. A held event
- * that expires is dropped, so the floor stays exactly where it is today. Not yet built — but no longer
- * gated: a stored fight can now be re-derived
- * ([ADR 0128](../../specs/decisions/0128-a-fight-is-re-derived-not-refused.md)), which is what a held
- * event admitted late needs somewhere to land. The ordering is in ADR 0127.
+ * - **admit** — the near-certain direction: an ally swung at it, therefore it's an enemy; or
+ *   both names are already settled (one's ours or already fought, sides aren't even known yet).
+ * - **drop** — both names are already settled *the other way*: each carries an article, so the
+ *   game itself says both are creatures, and a creature never turns out to be ours. Nothing could
+ *   still change this answer, so there's nothing to wait for.
+ * - **hold** — neither of the above: at least one name is bare (no article) and unplaced, so it
+ *   could yet prove to be ours — a pet, a group-mate — or an enemy's, and admit the rest of the
+ *   fight the way a proven one always has. Not a guess in either direction, just not yet an answer.
+ *
+ * A held event is kept, not tallied, until the log says who that name is —
+ * [combat-stats.ts](../../electron/combat-stats.ts)'s `retryHeld` is what asks again, on every
+ * subsequent line (and on a party change, which bypasses this module entirely), because
+ * `admits`/`fought` are cheap, pure lookups and there's nothing smarter worth building for "did
+ * anything change". The moment one finally admits, `replayHeld` applies it — against the
+ * stance, invocation and cast-pairing state it actually had when the line was logged, not
+ * whatever is current by the time it's retried, which is the correctness the whole mechanism
+ * turns on ([ADR 0284](../../specs/decisions/0284-a-held-event-replays-at-its-own-moment.md)). A
+ * held event still unresolved when the fight ends is simply dropped, so the floor stays exactly
+ * where it was before any of this.
  *
  * The enemy set is per **fight**, not per session: who we were fighting last pull says
  * nothing about this one, and left to accumulate, a night's mob names would admit half the
@@ -41,17 +52,26 @@
  * conflation the meter's rows have always made ([ADR 0027](../../specs/decisions/0027-only-your-kills-count.md)'s
  * registry), and the reason someone else killing *your* mob's twin mid-fight still counts.
  *
- * Pure and stateless apart from that set — a black box the tracker asks and resets.
+ * Pure and stateless apart from that set — a black box the tracker asks and resets. The held
+ * queue this now feeds is a different kind of state (the events themselves, waiting, not just
+ * who they're against) and deliberately lives beside `doubted`/`held`/`heldIncoming` in
+ * `combat-stats.ts` instead of here: this module only ever has to answer "in, out, or not yet"
+ * for one event at a time, and what a caller does with "not yet" is its business, not this one's.
  */
+import { hasArticle } from "./log-parser";
 import { mobKey } from "./mob-stats";
 import type { CombatEvent } from "./types";
+
+/** `admits`'s answer — see the module doc for what each one means and who acts on it. */
+export type ScopeVerdict = "admit" | "hold" | "drop";
 
 export interface FightScope {
   /**
    * Does this event belong to a fight your side is in? Folds it in as it answers: a swing
    * that involves your side names an enemy, which is what admits the rest of that fight.
+   * `"hold"` means neither yet — see the module doc.
    */
-  admits(event: CombatEvent): boolean;
+  admits(event: CombatEvent): ScopeVerdict;
   /** Has your side traded blows with this creature in the fight so far? Any spelling. */
   fought(name: string): boolean;
   /** A new fight — forget who the last one was against. */
@@ -98,28 +118,34 @@ export function createFightScope({ ours, sidesKnown = () => true }: FightScopeOp
         case "damage":
         case "miss": {
           const engaged = engage(event.attacker, event.target);
-          return !sidesKnown() || engaged || inFight(event.attacker, event.target);
+          if (!sidesKnown() || engaged || inFight(event.attacker, event.target)) return "admit";
+          // Neither side is in the fight yet. An article forecloses a name for good — the game
+          // never writes a player, a pet or a group-mate with one — so hold only while at least
+          // one side is still a bare name that could yet prove to be ours.
+          return hasArticle(event.attacker) && hasArticle(event.target) ? "drop" : "hold";
         }
         case "heal":
           // A heal is not a statement of opposition, so it never engages anyone — it only
           // rides along with a fight already recognized (yours, or one an enemy is in).
-          return !sidesKnown() || inFight(event.healer, event.target);
+          if (!sidesKnown() || inFight(event.healer, event.target)) return "admit";
+          return hasArticle(event.healer) && hasArticle(event.target) ? "drop" : "hold";
         case "cast":
         case "spell-outcome":
-          return !sidesKnown() || inFight(event.caster);
+          if (!sidesKnown() || inFight(event.caster)) return "admit";
+          return hasArticle(event.caster) ? "drop" : "hold";
         case "pet-engage":
           // Addressed to you by your own pet, so it's yours by construction — and it names
           // what the pet was sent at, which is an enemy on the same "our side swung at it"
           // grounds a swing would be. Engaging here is what lets the pet's *first* hit land
           // inside the fight rather than having to open one on its own.
           enemies.add(mobKey(event.target));
-          return true;
+          return "admit";
         case "death":
         case "stance":
         case "invocation":
         case "buff-faded":
           // The log only ever writes these about you, so there's nobody else they could belong to.
-          return true;
+          return "admit";
       }
     },
     fought: (name) => enemies.has(mobKey(name)),
