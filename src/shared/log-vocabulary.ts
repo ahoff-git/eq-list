@@ -22,7 +22,7 @@
  */
 import { parseSplitLine } from "./parse-line";
 import { fuzzyRank } from "./fuzzy";
-import { SELF } from "./combat-parser";
+import { SELF } from "./combat/combat-parser";
 import type { LogLine } from "./types";
 
 /** Which vocabulary a completion should come from — the field the text is going into. */

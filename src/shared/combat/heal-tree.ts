@@ -5,8 +5,8 @@
  * ([ADR 0053](../../specs/decisions/0053-damage-is-cells-rolled-up.md)), scaled to the axes a heal
  * actually has. See [ADR 0273](../../specs/decisions/0273-a-heal-is-a-cell-too.md).
  */
-import type { HealAxis, HealCell, HealEvent, HealNode } from "./types";
-import { ratio } from "./numbers";
+import type { HealAxis, HealCell, HealEvent, HealNode } from "../types";
+import { ratio } from "../numbers";
 
 /** A heal names no spell only for the rare line the log gives no attribution at all. */
 const UNKNOWN_SPELL = "Unknown";

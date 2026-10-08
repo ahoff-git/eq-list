@@ -26,7 +26,7 @@ import {
   formatScore,
   meleeCategory,
   qualCategory,
-} from "../../src/shared/high-scores";
+} from "../../src/shared/combat/high-scores";
 import type {
   CombatantStat,
   DamageCell,

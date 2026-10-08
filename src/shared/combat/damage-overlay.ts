@@ -10,7 +10,7 @@
  * (`enemiesIn`) rather than a second guess at what a name looks like.
  */
 import { drillDown, enemiesIn } from "./damage-tree";
-import type { DamageCell, DamageNode, FightStats } from "./types";
+import type { DamageCell, DamageNode, FightStats } from "../types";
 
 /** Where the meter sits before it's ever been dragged — clear of the status bar and the map corner. */
 export const DEFAULT_OVERLAY_PIN_AT = { fx: 0.82, fy: 0.24 };

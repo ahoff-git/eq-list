@@ -4,8 +4,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCombat } from "../../src/shared/combat-parser";
-import { createDotAttribution } from "../../src/shared/dot-attribution";
+import { parseCombat } from "../../src/shared/combat/combat-parser";
+import { createDotAttribution } from "../../src/shared/combat/dot-attribution";
 import { splitLine } from "../../src/shared/log-parser";
 import type { CombatEvent, DamageEvent } from "../../src/shared/types";
 

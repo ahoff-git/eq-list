@@ -52,7 +52,7 @@
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { BUFF_STYLE_ID, alertStyle } from "../src/shared/alert-styles";
-import { SELF, spellName, spellRank } from "../src/shared/combat-parser";
+import { SELF, spellName, spellRank } from "../src/shared/combat/combat-parser";
 import {
   announceWhen,
   buffKey,

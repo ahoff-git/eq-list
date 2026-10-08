@@ -10,7 +10,7 @@
  * and timestamps are deliberately not searchable: they're what the list already sorts and
  * shows, and matching digits against damage totals would turn "10" into noise.
  */
-import type { StoredFight } from "./types";
+import type { StoredFight } from "../types";
 
 /**
  * Every whitespace-separated word must appear somewhere in the fight's name or zone, in any

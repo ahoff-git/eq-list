@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { drillDown } from "@/shared/damage-tree";
-import { healDrillDown } from "@/shared/heal-tree";
+import { drillDown } from "@/shared/combat/damage-tree";
+import { healDrillDown } from "@/shared/combat/heal-tree";
 import type {
   CombatantStat,
   DamageAxis,

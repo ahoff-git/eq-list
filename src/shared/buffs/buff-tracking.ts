@@ -71,7 +71,7 @@
  * [electron/buff-tracker.ts](../../electron/buff-tracker.ts) is the holder that watches the log,
  * persists the choices and raises the alerts.
  */
-import { SELF, isOwnedName, isYours, spellName } from "../combat-parser";
+import { SELF, isOwnedName, isYours, spellName } from "../combat/combat-parser";
 import { hasArticle } from "../log-parser";
 import { disagrees, plausible, tighten } from "../estimates";
 

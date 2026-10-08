@@ -85,7 +85,7 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import { createLogger } from "../src/shared/logging";
 import { createNameRegistry } from "../src/shared/name-registry";
-import { isYours } from "../src/shared/combat-parser";
+import { isYours } from "../src/shared/combat/combat-parser";
 import { observeMobs, sumObservations, withAreas, type MobObservation } from "../src/shared/mob/mob-stats";
 import { samePlace } from "../src/shared/zones/place";
 import type { AdminAudit, AdminScalar } from "../src/shared/admin";

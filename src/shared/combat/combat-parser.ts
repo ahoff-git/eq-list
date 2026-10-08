@@ -55,7 +55,7 @@ import type {
   SpellOutcome,
   SpellOutcomeEvent,
   LogLine,
-} from "./types";
+} from "../types";
 
 /** Canonical name for the logging player, whichever case the log used. */
 export const SELF = "You";

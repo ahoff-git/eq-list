@@ -31,10 +31,10 @@
  */
 import { meleeSkill } from "./combat-parser";
 import { opponentOf } from "./damage-tree";
-import { duration, figure } from "./format";
-import { formatCoins } from "./money";
-import { ratio } from "./numbers";
-import type { CombatEvent, FightStats, HighScore, ScoreCandidate } from "./types";
+import { duration, figure } from "../format";
+import { formatCoins } from "../money";
+import { ratio } from "../numbers";
+import type { CombatEvent, FightStats, HighScore, ScoreCandidate } from "../types";
 
 /** What a score is counted in — which is what says how to write it down. */
 export type ScoreUnit = "damage" | "hp" | "sec" | "dps" | "count" | "pct" | "copper";

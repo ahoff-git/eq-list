@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseParty, splitLine } from "../../src/shared/log-parser";
-import { createParty } from "../../src/shared/party";
+import { createParty } from "../../src/shared/combat/party";
 import type { PartyEvent } from "../../src/shared/types";
 
 /** A raw log line in, a party event (or null) out — the way the watcher asks. */

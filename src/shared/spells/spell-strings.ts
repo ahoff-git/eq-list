@@ -83,7 +83,7 @@
  * the file and holds the result.
  */
 import { isObtainable, type SpellFacts } from "./spell-file";
-import { spellName } from "../combat-parser";
+import { spellName } from "../combat/combat-parser";
 
 /**
  * Column indices, named after the header row's own words so the two can be read side by side.

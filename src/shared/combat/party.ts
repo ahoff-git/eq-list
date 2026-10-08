@@ -15,7 +15,7 @@
  * box the tracker feeds and reads.
  */
 import { isTheirs } from "./combat-parser";
-import type { PartyEvent } from "./types";
+import type { PartyEvent } from "../types";
 
 export interface Party {
   /** Fold in one party line. */

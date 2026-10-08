@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useRead, useWatcherStatus } from "@/lib/hooks";
 import { rowsOf } from "@/lib/peers/usePeerShare";
 import { compareScores, type ScoreRow } from "@/shared/peers/peer-share";
-import { categoryOf, formatScore, scoreOrder } from "@/shared/high-scores";
+import { categoryOf, formatScore, scoreOrder } from "@/shared/combat/high-scores";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "@/app/components/dataGridDefaults";
 import { Empty } from "@/app/components/ui";
 import type { HighScore, ReceivedShare, ScoreBoard } from "@/shared/types";

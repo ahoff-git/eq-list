@@ -63,8 +63,8 @@ import { decodeWatches } from "../watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "../map/pins";
 import { SHARD_COUNT } from "../item-shards";
 import { isPlottable } from "../kills/kill-confidence";
-import { opponentOf } from "../damage-tree";
-import { SELF } from "../combat-parser";
+import { opponentOf } from "../combat/damage-tree";
+import { SELF } from "../combat/combat-parser";
 import { clamp } from "../numbers";
 
 /**

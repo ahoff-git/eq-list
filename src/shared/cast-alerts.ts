@@ -36,7 +36,7 @@
  * No I/O, no state: a black box the main process feeds and tests pin down. (Note it can
  * only match casts the log *names*; generic "begins to cast a spell" lines carry no name.)
  */
-import { SELF } from "./combat-parser";
+import { SELF } from "./combat/combat-parser";
 import { hasArticle } from "./log-parser";
 import { conditionsHold, watchSpeaks, type WatchSubject } from "./watch-conditions";
 import type { BuffFadedEvent, CastEvent, CastAlertSettings, CastWatch, LogLine } from "./types";

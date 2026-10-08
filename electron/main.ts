@@ -25,7 +25,7 @@ import { reReadLogs } from "./log-reread";
 import { createSpellCatalog } from "./spells";
 import { createCombatHistory, COMBAT_HISTORY_MIGRATIONS } from "./combat-history";
 import { createHighScores } from "./high-scores";
-import { eventCandidates, fightCandidates } from "../src/shared/high-scores";
+import { eventCandidates, fightCandidates } from "../src/shared/combat/high-scores";
 import { effectiveNeeded, runsFor } from "../src/shared/grouping";
 import { createXpProgress } from "./xp-progress";
 import { createHpEstimate } from "./hp-estimate";

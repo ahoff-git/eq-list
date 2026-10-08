@@ -23,8 +23,8 @@
  * left exactly as the log wrote it, phantom attacker and all: a guess would be worse than the
  * log's own limit.
  */
-import { createLogger } from "./logging";
-import type { CombatEvent, DamageEvent } from "./types";
+import { createLogger } from "../logging";
+import type { CombatEvent, DamageEvent } from "../types";
 
 const log = createLogger("dot-attribution");
 

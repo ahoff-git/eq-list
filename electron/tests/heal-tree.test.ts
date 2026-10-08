@@ -5,8 +5,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHealCells, healDrillDown, rollUpHeals, sumHealed } from "../../src/shared/heal-tree";
-import { parseCombat } from "../../src/shared/combat-parser";
+import { createHealCells, healDrillDown, rollUpHeals, sumHealed } from "../../src/shared/combat/heal-tree";
+import { parseCombat } from "../../src/shared/combat/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type { HealEvent, HealNode } from "../../src/shared/types";
 

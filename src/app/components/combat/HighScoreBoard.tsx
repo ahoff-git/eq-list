@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useRead, useSettings, useWatcherStatus } from "@/lib/hooks";
-import { SCORE_CATEGORIES, SCORE_GROUPS, categoryOf, formatScore, marginOf } from "@/shared/high-scores";
+import { SCORE_CATEGORIES, SCORE_GROUPS, categoryOf, formatScore, marginOf } from "@/shared/combat/high-scores";
 import { figure, when } from "@/shared/format";
 import { CheckField, Empty, StatTile } from "@/app/components/ui";
 import AlertStyleField, { AlertStyleDrawer } from "@/app/components/AlertStyleField";

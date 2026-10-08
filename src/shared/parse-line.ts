@@ -14,7 +14,7 @@
  * first and the rest never see those lines. Every matcher returns null for lines it
  * doesn't own, so the order only affects cost — never the outcome.
  */
-import { parseCombat } from "./combat-parser";
+import { parseCombat } from "./combat/combat-parser";
 import { parseCoin, parseFactionChange, parseGameTime, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseParty, parseSighting, parseXp, parseZone, splitLine } from "./log-parser";
 import type { CombatEvent, LogEvent, LogLine } from "./types";
 

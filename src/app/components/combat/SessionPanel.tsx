@@ -3,7 +3,7 @@ import { useCombatStats, useXpProgress } from "@/lib/hooks";
 import { api, resetSession } from "@/lib/api";
 import { describeCoins, formatCoins } from "@/shared/money";
 import AskValue from "@/app/components/AskValue";
-import CampReport from "@/app/components/CampReport";
+import CampReport from "@/app/components/combat/CampReport";
 import type { FightStats, XpProgress } from "@/shared/types";
 
 import { StatTile } from "@/app/components/ui";

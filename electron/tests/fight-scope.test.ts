@@ -5,8 +5,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createFightScope, type FightScope } from "../../src/shared/fight-scope";
-import { isYours, parseCombat } from "../../src/shared/combat-parser";
+import { createFightScope, type FightScope } from "../../src/shared/combat/fight-scope";
+import { isYours, parseCombat } from "../../src/shared/combat/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type { CombatEvent } from "../../src/shared/types";
 

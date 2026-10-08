@@ -67,7 +67,7 @@ import { runningGoalTargets } from "@/shared/goals/goal-progress";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/gameclock/game-clock";
-import { DEFAULT_OVERLAY_PIN_AT } from "@/shared/damage-overlay";
+import { DEFAULT_OVERLAY_PIN_AT } from "@/shared/combat/damage-overlay";
 import type { AlertUsage } from "@/shared/alert-styles";
 import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";

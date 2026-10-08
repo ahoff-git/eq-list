@@ -58,9 +58,9 @@
  * `combat-stats.ts` instead of here: this module only ever has to answer "in, out, or not yet"
  * for one event at a time, and what a caller does with "not yet" is its business, not this one's.
  */
-import { hasArticle } from "./log-parser";
-import { mobKey } from "./mob/mob-stats";
-import type { CombatEvent } from "./types";
+import { hasArticle } from "../log-parser";
+import { mobKey } from "../mob/mob-stats";
+import type { CombatEvent } from "../types";
 
 /** `admits`'s answer — see the module doc for what each one means and who acts on it. */
 export type ScopeVerdict = "admit" | "hold" | "drop";

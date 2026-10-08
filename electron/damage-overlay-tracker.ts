@@ -10,7 +10,7 @@
  */
 import path from "node:path";
 import type { DamageOverlayView } from "../src/shared/types";
-import { DEFAULT_OVERLAY_PIN_AT } from "../src/shared/damage-overlay";
+import { DEFAULT_OVERLAY_PIN_AT } from "../src/shared/combat/damage-overlay";
 import { clampPinAt, loadPinFields, type PinFields } from "../src/shared/gameclock/game-clock";
 import { createChangeNotifier, createSaver, readJson } from "./json-store";
 

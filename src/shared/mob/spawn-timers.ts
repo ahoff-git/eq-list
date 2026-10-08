@@ -61,7 +61,7 @@ import {
   type Confidence,
   type SampleScale,
 } from "../estimates";
-import { isPetName } from "../combat-parser";
+import { isPetName } from "../combat/combat-parser";
 import { formatDuration, parseDuration, UNIT_SECONDS } from "../duration";
 import { placeKey, placeName } from "../zones/place";
 import type { KillRecord } from "../types";

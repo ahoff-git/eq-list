@@ -19,7 +19,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "../src/shared/logging";
 import { alertStyle, ACHIEVEMENT_STYLE_ID } from "../src/shared/alert-styles";
-import { SELF } from "../src/shared/combat-parser";
+import { SELF } from "../src/shared/combat/combat-parser";
 import { STOCK_ACHIEVEMENTS } from "../src/shared/achievements/achievement-library";
 import {
   freshProgress,
