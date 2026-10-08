@@ -13,10 +13,10 @@
  *
  * Pure and DOM-free — the panel renders these decisions, this module makes them.
  */
-import { createLogger } from "./logging";
+import { createLogger } from "../logging";
 import { parseSpellStats, type SpellStats } from "./spell-stats";
-import { distinctSorted, sortRows, type Sort } from "./sorting";
-import type { CachedSpell } from "./types";
+import { distinctSorted, sortRows, type Sort } from "../sorting";
+import type { CachedSpell } from "../types";
 
 const log = createLogger("spell-search");
 

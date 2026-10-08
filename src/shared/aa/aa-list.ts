@@ -9,7 +9,7 @@
  * what's shown, cutting the list is what's needed, not scoring it.
  */
 import { AA_LIST, AA_LIST_SOURCE, type AACategory, type AlternateAdvancement } from "./aa-list.generated";
-import type { SPELL_CLASSES } from "../spell-file";
+import type { SPELL_CLASSES } from "../spells/spell-file";
 import { matchesWords } from "../word-match";
 
 export { AA_LIST, AA_LIST_SOURCE };

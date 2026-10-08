@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { usePersistentShape } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { countOf } from "@/shared/format";
-import { SPELL_CLASSES } from "@/shared/spell-file";
+import { SPELL_CLASSES } from "@/shared/spells/spell-file";
 import { distinctSorted } from "@/shared/sorting";
 import { AA_LIST, AA_LIST_SOURCE, NO_AA_CRITERIA, filterAA, type AlternateAdvancement } from "@/shared/aa/aa-list";
 import { Empty, PickField, SourceCountRow } from "@/app/components/ui";

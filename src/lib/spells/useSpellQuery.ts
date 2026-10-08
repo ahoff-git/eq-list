@@ -7,7 +7,7 @@ import {
   type SpellCriteria,
   type SpellRow,
   type SpellSortKey,
-} from "@/shared/spell-search";
+} from "@/shared/spells/spell-search";
 
 /** Everything the Spells tab draws that is *computed* rather than typed. */
 export interface SpellQuery {

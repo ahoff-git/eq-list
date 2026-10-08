@@ -11,7 +11,7 @@ import { CheckField, Empty, PickField } from "@/app/components/ui";
 import AlertStyleField, { AlertStyleDrawer } from "@/app/components/AlertStyleField";
 import SearchField from "@/app/components/SearchField";
 import { BUFF_STYLE_ID } from "@/shared/alert-styles";
-import { SPELL_CLASSES } from "@/shared/spell-file";
+import { SPELL_CLASSES } from "@/shared/spells/spell-file";
 import { distinctSorted } from "@/shared/sorting";
 import type { BuffInstance, KnownBuff } from "@/shared/types";
 

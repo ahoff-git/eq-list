@@ -61,7 +61,7 @@ import {
 import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
 import { knownItems, type KnownItem } from "@/shared/known-items";
 import type { ItemRow } from "@/shared/item-search";
-import type { SpellRow } from "@/shared/spell-search";
+import type { SpellRow } from "@/shared/spells/spell-search";
 import { clockSkew } from "@/shared/mob/spawn-timers";
 import { runningGoalTargets } from "@/shared/goals/goal-progress";
 import { usePersistentState } from "@/lib/usePersistentState";

@@ -52,7 +52,7 @@ import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
 import { forTransfer, itemRows, type ItemRow } from "../../src/shared/item-search";
-import { spellRows } from "../../src/shared/spell-search";
+import { spellRows } from "../../src/shared/spells/spell-search";
 
 const log = createLogger("wiki");
 /**

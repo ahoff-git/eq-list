@@ -1,16 +1,16 @@
 "use client";
 import { useCallback, useMemo } from "react";
 import { useSpellCatalog, useSpellHarvest } from "@/lib/hooks";
-import { useSpellQuery } from "@/lib/useSpellQuery";
+import { useSpellQuery } from "@/lib/spells/useSpellQuery";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import FacetPicker from "@/app/components/FacetPicker";
-import SpellCatalogTable from "@/app/components/SpellCatalogTable";
-import SpellCatalogueHarvest from "@/app/components/SpellCatalogueHarvest";
+import SpellCatalogTable from "@/app/components/spells/SpellCatalogTable";
+import SpellCatalogueHarvest from "@/app/components/spells/SpellCatalogueHarvest";
 import { CheckField, Empty, TextField } from "@/app/components/ui";
 import { countOf } from "@/shared/format";
 import type { Sort } from "@/shared/sorting";
-import { activeCriteria, NO_CRITERIA, type SpellCriteria, type SpellSortKey } from "@/shared/spell-search";
+import { activeCriteria, NO_CRITERIA, type SpellCriteria, type SpellSortKey } from "@/shared/spells/spell-search";
 
 /** How many rows to draw — same cap and the same "narrow it" nudge as the Items tab. */
 const MAX_ROWS = 300;

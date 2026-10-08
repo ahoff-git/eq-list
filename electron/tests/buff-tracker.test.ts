@@ -12,9 +12,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createBuffTracker, type BuffTracker } from "../buff-tracker";
-import { buildBuffLexicon, parseSpellStringFile } from "../../src/shared/spell-strings";
+import { buildBuffLexicon, parseSpellStringFile } from "../../src/shared/spells/spell-strings";
 import { ON_PET, ON_UNKNOWN, ON_YOU } from "../../src/shared/buffs/buff-tracking";
-import type { SpellFacts } from "../../src/shared/spell-file";
+import type { SpellFacts } from "../../src/shared/spells/spell-file";
 import type {
   CastAlertEvent,
   CastAlertSettings,

@@ -15,8 +15,8 @@ import {
   parseSpellStringFile,
   parseSpellStringLine,
   NO_LEXICON,
-} from "../../src/shared/spell-strings";
-import type { SpellFacts } from "../../src/shared/spell-file";
+} from "../../src/shared/spells/spell-strings";
+import type { SpellFacts } from "../../src/shared/spells/spell-file";
 
 /** A spell as the facts file yields one. Obtainable and beneficial unless a test says otherwise. */
 function spell(id: number, name: string, over: Partial<SpellFacts> = {}): SpellFacts {

@@ -5,7 +5,7 @@ import ItemLink from "@/app/components/ItemLink";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import { useGridSort } from "@/lib/useGridSort";
 import { buffLinesFor } from "@/shared/buffs/buff-lines";
-import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spell-search";
+import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spells/spell-search";
 import type { Sort } from "@/shared/sorting";
 
 /** Which way each column opens on its first click — the same rule the old `SortHeader` calls

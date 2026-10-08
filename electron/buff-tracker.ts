@@ -81,8 +81,8 @@ import {
   type EnemyEpisodeContext,
   type KnownBuff,
 } from "../src/shared/buffs/buff-tracking";
-import type { BuffLexicon } from "../src/shared/spell-strings";
-import type { SpellFacts } from "../src/shared/spell-file";
+import type { BuffLexicon } from "../src/shared/spells/spell-strings";
+import type { SpellFacts } from "../src/shared/spells/spell-file";
 import type {
   CastAlertEvent,
   CastAlertSettings,

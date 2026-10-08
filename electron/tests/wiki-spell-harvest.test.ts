@@ -13,7 +13,7 @@ import path from "node:path";
 import { createWikiClient, closeOwnedDatabases } from "../wiki";
 import { shardOf } from "../../src/shared/item-shards";
 import type { SharedSpellPage } from "../../src/shared/peers/peer-share";
-import type { SpellRow } from "../../src/shared/spell-search";
+import type { SpellRow } from "../../src/shared/spells/spell-search";
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL_DAYS = 14;

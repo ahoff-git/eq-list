@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NO_SPELL_STATS, parseSpellStats } from "../../src/shared/spell-stats";
+import { NO_SPELL_STATS, parseSpellStats } from "../../src/shared/spells/spell-stats";
 
 /** The lines `parseSpellCard` builds for a scaling nuke — shaped like the `spell-burst-of-fire` fixture. */
 const NUKE_LINES = [

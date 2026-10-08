@@ -17,7 +17,7 @@ import { createPageStore, WIKI_PAGE_MIGRATIONS, type PageStore } from "../wiki/p
 import { openAppDatabase } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
 import type { ItemRow } from "../../src/shared/item-search";
-import type { SpellRow } from "../../src/shared/spell-search";
+import type { SpellRow } from "../../src/shared/spells/spell-search";
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL_DAYS = 14;

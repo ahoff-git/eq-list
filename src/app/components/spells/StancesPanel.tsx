@@ -14,7 +14,7 @@ import {
   filterAbilities,
   type Ability,
   type AbilityCriteria,
-} from "@/shared/stances-invocations";
+} from "@/shared/spells/stances-invocations";
 import FacetPicker from "@/app/components/FacetPicker";
 import SearchField from "@/app/components/SearchField";
 import { Empty, SourceCountRow, segCls } from "@/app/components/ui";

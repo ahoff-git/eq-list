@@ -13,9 +13,9 @@
  * this module makes them. Text matching is literal, not fuzzy (`word-match.ts`, shared with
  * `aa-list.ts`) — see either module's header for why.
  */
-import { classFullName, type ClassName } from "./class-names";
+import { classFullName, type ClassName } from "../class-names";
 import { INVOCATIONS, STANCES, STANCES_INVOCATIONS_SOURCE } from "./stances-invocations.generated";
-import { matchesWords } from "./word-match";
+import { matchesWords } from "../word-match";
 
 export { STANCES_INVOCATIONS_SOURCE };
 
