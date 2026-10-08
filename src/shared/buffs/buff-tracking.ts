@@ -71,9 +71,9 @@
  * [electron/buff-tracker.ts](../../electron/buff-tracker.ts) is the holder that watches the log,
  * persists the choices and raises the alerts.
  */
-import { SELF, isOwnedName, isYours, spellName } from "./combat-parser";
-import { hasArticle } from "./log-parser";
-import { disagrees, plausible, tighten } from "./estimates";
+import { SELF, isOwnedName, isYours, spellName } from "../combat-parser";
+import { hasArticle } from "../log-parser";
+import { disagrees, plausible, tighten } from "../estimates";
 
 /** The target of a buff on you. Folded to one spelling, since the log writes "you" three ways. */
 export const ON_YOU = "you";

@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { createBuffTracker, type BuffTracker } from "../buff-tracker";
 import { buildBuffLexicon, parseSpellStringFile } from "../../src/shared/spell-strings";
-import { ON_PET, ON_UNKNOWN, ON_YOU } from "../../src/shared/buff-tracking";
+import { ON_PET, ON_UNKNOWN, ON_YOU } from "../../src/shared/buffs/buff-tracking";
 import type { SpellFacts } from "../../src/shared/spell-file";
 import type {
   CastAlertEvent,

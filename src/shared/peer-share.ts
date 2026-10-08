@@ -56,9 +56,9 @@ import type {
 import { withAreas, type MobArea, type MobObservation } from "./mob-stats";
 import type { FactionObservation } from "./faction-observation";
 import type { SharedKill } from "./kill-filters";
-import type { BuffInstance, BuffRiseSource } from "./buff-tracking";
+import type { BuffInstance, BuffRiseSource } from "./buffs/buff-tracking";
 import type { RespawnLearning, SpawnTimer } from "./spawn-timers";
-import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "./buff-tracking";
+import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "./buffs/buff-tracking";
 import { decodeWatches } from "./watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "./map/pins";
 import { SHARD_COUNT } from "./item-shards";

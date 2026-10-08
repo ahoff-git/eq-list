@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { SOLID } from "@/lib/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { alertPlacement, alertStyle, BUFF_STYLE_ID } from "@/shared/alert-styles";
-import { ON_PET, ON_YOU } from "@/shared/buff-tracking";
+import { ON_PET, ON_YOU } from "@/shared/buffs/buff-tracking";
 import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types";
 
 /**

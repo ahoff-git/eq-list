@@ -15,7 +15,7 @@ import HuntPanel, { type HuntGrouping } from "@/app/components/HuntPanel";
 import SpawnPanel from "@/app/components/SpawnPanel";
 import GoalsPanel from "@/app/components/goals/GoalsPanel";
 import AchievementsPanel from "@/app/components/AchievementsPanel";
-import BuffPanel from "@/app/components/BuffPanel";
+import BuffPanel from "@/app/components/buffs/BuffPanel";
 import SettingsPanel from "@/app/components/SettingsPanel";
 import SessionPanel from "@/app/components/SessionPanel";
 import AlertsPanel from "@/app/components/AlertsPanel";

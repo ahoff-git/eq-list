@@ -32,7 +32,7 @@ import {
   type BuffInstance,
   type EnemyEpisodeContext,
   type KnownBuff,
-} from "../../src/shared/buff-tracking";
+} from "../../src/shared/buffs/buff-tracking";
 
 const AT = "2026-08-20T20:00:00.000Z";
 

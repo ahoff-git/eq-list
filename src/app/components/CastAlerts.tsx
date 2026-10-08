@@ -5,7 +5,7 @@ import { useSettings } from "@/lib/hooks";
 import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alertSounds";
 import { categoryOf, formatScore } from "@/shared/high-scores";
 import { alertPlacement } from "@/shared/alert-styles";
-import { alternativesLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buff-tracking";
+import { alternativesLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buffs/buff-tracking";
 import type { AchievementAlertPayload, AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, GoalAlertPayload, HighScore, LootAlert } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;

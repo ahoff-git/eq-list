@@ -80,7 +80,7 @@ import {
   type BuffView,
   type EnemyEpisodeContext,
   type KnownBuff,
-} from "../src/shared/buff-tracking";
+} from "../src/shared/buffs/buff-tracking";
 import type { BuffLexicon } from "../src/shared/spell-strings";
 import type { SpellFacts } from "../src/shared/spell-file";
 import type {

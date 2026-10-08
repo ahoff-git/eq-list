@@ -10,7 +10,7 @@ import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, Shar
 export type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind } from "./peer-share";
 import type { SharedKill } from "./kill-filters";
 import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
-import type { BuffInstance, BuffView, KnownBuff } from "./buff-tracking";
+import type { BuffInstance, BuffView, KnownBuff } from "./buffs/buff-tracking";
 import type { EqMap } from "./map/eqmap";
 import type { MapPin } from "./map/pins";
 import type { MapSourceReport } from "./map/map-sources";

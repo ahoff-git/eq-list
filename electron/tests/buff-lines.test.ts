@@ -7,8 +7,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BUFF_LINES, BUFF_LINES_SOURCE } from "../../src/shared/buff-lines.generated";
-import { buffLinesFor, shareBuffLine } from "../../src/shared/buff-lines";
+import { BUFF_LINES, BUFF_LINES_SOURCE } from "../../src/shared/buffs/buff-lines.generated";
+import { buffLinesFor, shareBuffLine } from "../../src/shared/buffs/buff-lines";
 
 test("at least the lines the guide is known to cover are present, each named once", () => {
   assert.ok(BUFF_LINES.length >= 100, `only ${BUFF_LINES.length} buff lines`);
