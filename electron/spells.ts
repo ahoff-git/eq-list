@@ -36,13 +36,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { parseSpellCatalog, type SpellFacts } from "../src/shared/spell-file";
+import { parseSpellCatalog, type SpellFacts } from "../src/shared/spells/spell-file";
 import {
   buildBuffLexicon,
   parseSpellStringFile,
   NO_LEXICON,
   type BuffLexicon,
-} from "../src/shared/spell-strings";
+} from "../src/shared/spells/spell-strings";
 
 const log = createLogger("spells");
 

@@ -31,8 +31,8 @@
 import fs from "node:fs";
 import { isCombatEvent, parseSplitLine } from "../src/shared/parse-line";
 import { characterFromLogFile, splitLine } from "../src/shared/log-parser";
-import { lootRecord } from "../src/shared/loot-feed";
-import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction-cause";
+import { lootRecord } from "../src/shared/items/loot-feed";
+import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction/faction-cause";
 import { classifyZoneLine } from "../src/shared/zones/place";
 import { createLogger } from "../src/shared/logging";
 import { createCombatStats } from "./combat-stats";

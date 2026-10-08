@@ -19,17 +19,17 @@
  * Emits `change` with a fresh snapshot so main can broadcast it to every window.
  */
 import { EventEmitter } from "node:events";
-import { isYours, SELF } from "../src/shared/combat-parser";
-import { createDamageCells, rollUpDamage } from "../src/shared/damage-tree";
-import { createHealCells } from "../src/shared/heal-tree";
-import { createDotAttribution } from "../src/shared/dot-attribution";
-import { createFightScope } from "../src/shared/fight-scope";
+import { isYours, SELF } from "../src/shared/combat/combat-parser";
+import { createDamageCells, rollUpDamage } from "../src/shared/combat/damage-tree";
+import { createHealCells } from "../src/shared/combat/heal-tree";
+import { createDotAttribution } from "../src/shared/combat/dot-attribution";
+import { createFightScope } from "../src/shared/combat/fight-scope";
 import { hasArticle } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { createNameRegistry } from "../src/shared/name-registry";
 import { ratio, round } from "../src/shared/numbers";
-import { createParty } from "../src/shared/party";
-import { createPetRegistry } from "../src/shared/pet-registry";
+import { createParty } from "../src/shared/combat/party";
+import { createPetRegistry } from "../src/shared/combat/pet-registry";
 import type {
   CoinEvent,
   CombatEvent,

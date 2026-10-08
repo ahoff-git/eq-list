@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { tighten, widen } from "../../src/shared/estimates";
-import { levelText, levelWhy, levelsAgree, mergeLevels, observeLevel, parseLevelClaim } from "../../src/shared/levels";
+import { levelText, levelWhy, levelsAgree, mergeLevels, observeLevel, parseLevelClaim } from "../../src/shared/mob/levels";
 
 test("widen is tighten's mirror, and the direction is the whole difference", () => {
   // A constraint closes in on one true value…

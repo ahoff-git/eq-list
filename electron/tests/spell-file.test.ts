@@ -21,7 +21,7 @@ import {
   parseSpellFile,
   parseSpellLine,
   MAX_LEVEL,
-} from "../../src/shared/spell-file";
+} from "../../src/shared/spells/spell-file";
 
 const FIXTURE = path.join(__dirname, "../../../fixtures/spells_us_sample.txt");
 const catalog = () => parseSpellFile(fs.readFileSync(FIXTURE, "utf8"));

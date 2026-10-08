@@ -18,7 +18,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { FightShare, ShareDelivery, ShareKind } from "../../src/shared/peer-share";
+import type { FightShare, ShareDelivery, ShareKind } from "../../src/shared/peers/peer-share";
 import type { KillRecord } from "../../src/shared/types";
 import {
   SAME_SPAWN_MS,
@@ -47,9 +47,9 @@ import {
   shareableBuffs,
   sharing,
   type PeerTimer,
-} from "../../src/shared/peer-share";
-import { ON_PET, ON_YOU, type BuffInstance } from "../../src/shared/buff-tracking";
-import type { SpawnTimer } from "../../src/shared/spawn-timers";
+} from "../../src/shared/peers/peer-share";
+import { ON_PET, ON_YOU, type BuffInstance } from "../../src/shared/buffs/buff-tracking";
+import type { SpawnTimer } from "../../src/shared/mob/spawn-timers";
 import type { HighScore } from "../../src/shared/types";
 import { EMPTY_FIGHT } from "../../src/shared/empty-values";
 /**

@@ -23,8 +23,8 @@
  * means the new cue rather than the old one.
  */
 import { createAlertQueue, type AlertQueue, type Timers } from "./alert-queue";
-import { lineSubject, matchCast, matchFade, matchLine, stale, watchesLines, type MatchContext } from "../src/shared/cast-alerts";
-import { alertStyle, LOOT_STYLE_ID } from "../src/shared/alert-styles";
+import { lineSubject, matchCast, matchFade, matchLine, stale, watchesLines, type MatchContext } from "../src/shared/alerts/cast-alerts";
+import { alertStyle, LOOT_STYLE_ID } from "../src/shared/alerts/alert-styles";
 import type {
   AlertStyle,
   CastAlertEvent,

@@ -1,5 +1,5 @@
 "use client";
-import { TextField } from "./ui";
+import { TextField } from "@/app/components/ui";
 
 /**
  * SearchField.tsx — the plain text box every "type to narrow this list" filter uses. Extracted from

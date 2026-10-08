@@ -1,5 +1,5 @@
 "use client";
-import { crashBoundary } from "../components/CrashBoundary";
+import { crashBoundary } from "@/app/components/chrome/CrashBoundary";
 
 /**
  * The screengrab selector covers a whole display and a crashed one can't handle its own

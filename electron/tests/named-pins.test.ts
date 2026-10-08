@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { namedPins, unplacedNamedMobs } from "../../src/shared/map/named-pins";
-import type { MobKnowledge, MobObservation } from "../../src/shared/mob-stats";
+import type { MobKnowledge, MobObservation } from "../../src/shared/mob/mob-stats";
 
 /** A pooled knowledge row for one mob in one zone, with a roam area unless told otherwise. */
 function known(mob: string, over: Partial<MobKnowledge> = {}): MobKnowledge {

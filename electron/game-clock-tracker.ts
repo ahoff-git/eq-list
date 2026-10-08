@@ -28,7 +28,7 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "../src/shared/logging";
-import { alertStyle } from "../src/shared/alert-styles";
+import { alertStyle } from "../src/shared/alerts/alert-styles";
 import {
   clampPinAt,
   crossedMinute,
@@ -43,7 +43,7 @@ import {
   readingMinutes,
   type GameClockAnchor,
   type PinFields,
-} from "../src/shared/game-clock";
+} from "../src/shared/gameclock/game-clock";
 import type { CastAlertEvent, CastAlertSettings, GameClockView, GameTimeAlarm } from "../src/shared/types";
 import { raiseIfEnabled } from "./alert-gate";
 import { createChangeNotifier, createSaver, readJson } from "./json-store";

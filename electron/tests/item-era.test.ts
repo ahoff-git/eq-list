@@ -13,8 +13,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { eraCorpus, openZones, sourcesByEra, zoneShut } from "../../src/shared/item-era";
-import { itemRows } from "../../src/shared/item-search";
+import { eraCorpus, openZones, sourcesByEra, zoneShut } from "../../src/shared/items/item-era";
+import { itemRows } from "../../src/shared/items/item-search";
 import { outOfEraSet } from "../../src/shared/zones/expansions";
 import type { CachedItem, ItemSource } from "../../src/shared/types";
 

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import ErrorReporter from "./components/ErrorReporter";
+import ErrorReporter from "@/app/components/chrome/ErrorReporter";
 import ThemeRegistry from "./ThemeRegistry";
 
 // System font stack (see globals.css) instead of next/font — the renderer is

@@ -27,8 +27,8 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "../src/shared/logging";
-import { alertStyle, GOAL_STYLE_ID } from "../src/shared/alert-styles";
-import { goalState, goalWantsItem, goalWantsMob, nextMilestone } from "../src/shared/goal-progress";
+import { alertStyle, GOAL_STYLE_ID } from "../src/shared/alerts/alert-styles";
+import { goalState, goalWantsItem, goalWantsMob, nextMilestone } from "../src/shared/goals/goal-progress";
 import type {
   CastAlertEvent,
   CastAlertSettings,

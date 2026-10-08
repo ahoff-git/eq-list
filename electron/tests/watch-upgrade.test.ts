@@ -9,9 +9,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { upgradeWatches } from "../../src/shared/watch-upgrade";
-import { alertStyle } from "../../src/shared/alert-styles";
-import { matchCast, matchLine } from "../../src/shared/cast-alerts";
+import { upgradeWatches } from "../../src/shared/alerts/watch-upgrade";
+import { alertStyle } from "../../src/shared/alerts/alert-styles";
+import { matchCast, matchLine } from "../../src/shared/alerts/cast-alerts";
 import type { AlertStyle, CastAlertSettings, CastWatch } from "../../src/shared/types";
 
 const NOW = Date.parse("2026-07-29T21:00:00");

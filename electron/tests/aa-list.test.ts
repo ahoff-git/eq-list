@@ -8,9 +8,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AA_LIST, AA_LIST_SOURCE } from "../../src/shared/aa-list.generated";
-import { SPELL_CLASSES } from "../../src/shared/spell-file";
-import { filterAA, matchesAA, type AlternateAdvancement } from "../../src/shared/aa-list";
+import { AA_LIST, AA_LIST_SOURCE } from "../../src/shared/aa/aa-list.generated";
+import { SPELL_CLASSES } from "../../src/shared/spells/spell-file";
+import { filterAA, matchesAA, type AlternateAdvancement } from "../../src/shared/aa/aa-list";
 
 // Pinned against a real run (144, 2026-09-21) with margin for the page picking up a few new AAs —
 // not a vanity number, the floor below which something clearly broke (the same role

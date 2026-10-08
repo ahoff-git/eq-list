@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHarvester, DEFAULT_GAP_MS, GAP_RANGE, type SavedHarvest } from "../wiki/harvest";
-import { emptyCoverage, setShard, shardOf, type PeerCoverage } from "../../src/shared/item-shards";
+import { emptyCoverage, setShard, shardOf, type PeerCoverage } from "../../src/shared/items/item-shards";
 
 /**
  * Titles chosen so the fixture is readable: `shardOf` is a hash, so a test that wants "two shards"

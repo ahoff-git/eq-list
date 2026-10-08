@@ -24,8 +24,8 @@
  * captures the count into `qty` — dropping it would under-count the shopping list.
  */
 
-import { SELF } from "./combat-parser";
-import { to24Hour } from "./game-clock";
+import { SELF } from "./combat/combat-parser";
+import { to24Hour } from "./gameclock/game-clock";
 import { parseCoins } from "./money";
 import type {
   CoinEvent,

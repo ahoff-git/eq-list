@@ -1,0 +1,415 @@
+"use client";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { api } from "@/lib/api";
+import { useSettings } from "@/lib/hooks";
+import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alerts/alertSounds";
+import { categoryOf, formatScore } from "@/shared/combat/high-scores";
+import { alertPlacement } from "@/shared/alerts/alert-styles";
+import { alternativesLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buffs/buff-tracking";
+import type { AchievementAlertPayload, AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, GoalAlertPayload, HighScore, LootAlert } from "@/shared/types";
+
+const DEFAULT_DURATION_MS = 6000;
+const MIN_DURATION_MS = 1000;
+const MAX_ALERTS = 4; // cap so a caster spamming a spell can't bury the screen
+// How many of an ambiguous fade's other candidates a banner names before it counts them instead.
+// One: a banner is a glance, and the Buffs tab has the full list for when you want it.
+const BANNER_ALTERNATIVES = 1;
+
+interface ActiveAlert extends CastAlertEvent {
+  id: number;
+  /** The style it fired with — fixed at that moment, so nothing later restyles it. */
+  resolved: AlertStyle;
+}
+
+/**
+ * The dispel-prep alert surface: a banner and a colored screen-border flash when the main
+ * process reports a watched spell beginning to cast (see Settings → Cast alerts). Its whole
+ * appearance — color, on-screen position, motion, how long it lingers, and which beep — comes
+ * from `settings.castAlerts`, so the user tunes it.
+ *
+ * Split across windows so the alert lands where it's useful without beeping twice:
+ *   - the **alert overlay** window (`/alert`) draws the visuals *over the game* — `showVisual`,
+ *     `canBeep=false` (it's click-through and never focused, so it can't reliably unlock audio);
+ *   - the always-alive **main** window owns the sound — `canBeep`, `showVisual=false`.
+ *
+ * Renders nothing until an alert fires (and nothing at all when `showVisual` is false). Each
+ * banner auto-dismisses after `durationMs`.
+ */
+export default function CastAlerts({ canBeep = true, showVisual = true }: { canBeep?: boolean; showVisual?: boolean }) {
+  const settings = useSettings();
+  const ca = settings?.castAlerts;
+  const [alerts, setAlerts] = useState<ActiveAlert[]>([]);
+  const nextId = useRef(0);
+  // A changing key remounts the flash overlay so its one-shot animation replays; null hides it.
+  const [flashKey, setFlashKey] = useState<number | null>(null);
+  const flashCount = useRef(0);
+  /**
+   * The style an alert should be shown in. It arrives *with* the alert, already resolved from
+   * the defaults and the matching watch's overrides (`alertStyle`) — this window only knows the
+   * defaults, so anything per-watch could only come this way. The settings are the fallback for
+   * a payload without one.
+   */
+  const styleOf = (e: CastAlertEvent): AlertStyle => ({
+    sound: e.style?.sound ?? ca?.sound ?? false,
+    flash: e.style?.flash ?? ca?.flash ?? false,
+    color: e.style?.color ?? ca?.color ?? "#e5534b",
+    soundName: e.style?.soundName ?? ca?.soundName ?? DEFAULT_ALERT_SOUND,
+    position: e.style?.position ?? ca?.position ?? "top",
+    durationMs: e.style?.durationMs ?? ca?.durationMs ?? DEFAULT_DURATION_MS,
+    animation: e.style?.animation ?? ca?.animation ?? "pulse",
+  });
+  // Reached from a mount-once subscription, so it goes through a ref.
+  const styleRef = useRef(styleOf);
+  styleRef.current = styleOf;
+  const canBeepRef = useRef(true);
+  canBeepRef.current = canBeep;
+  const showVisualRef = useRef(true);
+  showVisualRef.current = showVisual;
+
+  useEffect(() => {
+    const a = api();
+    if (!a) return;
+    return a.alerts.onCast((e) => {
+      const style = styleRef.current(e);
+      if (canBeepRef.current && style.sound) playAlertSound(style.soundName);
+      if (!showVisualRef.current) return; // a beep-only instance (the main window)
+      const id = nextId.current++;
+      // The resolved style rides along on the active alert: one already on screen must keep the
+      // look it fired with, whatever the next alert (or a settings edit) says.
+      setAlerts((prev) => [{ ...e, id, resolved: style }, ...prev].slice(0, MAX_ALERTS));
+      if (style.flash) setFlashKey(++flashCount.current);
+      const ms = Math.max(MIN_DURATION_MS, style.durationMs);
+      window.setTimeout(() => setAlerts((prev) => prev.filter((x) => x.id !== id)), ms);
+    });
+  }, []);
+
+  if (!showVisual || (!alerts.length && flashKey === null)) return null;
+
+  // A custom property carries each alert's color into the CSS (border + flash), falling back to
+  // the app's red if it's ever unset. Per *alert*, not per window, now that a watch can have its
+  // own — the flash is one screen-wide effect, so the newest alert's color wins it.
+  const accent = (color: string) => ({ "--alert-color": color }) as CSSProperties;
+  const flashColor = alerts[0]?.resolved.color ?? ca?.color ?? "#e5534b";
+  // One stack per position: two alerts can now want different corners of the screen (or different
+  // placed spots).
+  const stacks = new Map<AlertPositionValue, ActiveAlert[]>();
+  for (const a of alerts) stacks.set(a.resolved.position, [...(stacks.get(a.resolved.position) ?? []), a]);
+  const locations = ca?.locations ?? [];
+
+  return (
+    <>
+      {flashKey !== null && (
+        <div
+          className="cast-flash"
+          key={flashKey}
+          style={accent(flashColor)}
+          aria-hidden
+          onAnimationEnd={() => setFlashKey(null)}
+        />
+      )}
+      {[...stacks].map(([position, stack]) => {
+        const place = alertPlacement(position, locations);
+        return (
+        <div className={`overlay-at cast-alerts no-drag ${place.className}`} style={place.style} key={position}>
+          {stack.map((a) => {
+            const view = banner(a);
+            return (
+              <button
+                key={a.id}
+                className={`cast-alert anim-${a.resolved.animation}`}
+                style={accent(a.resolved.color)}
+                title="Dismiss"
+                onClick={() => setAlerts((prev) => prev.filter((x) => x.id !== a.id))}
+              >
+                <span className="ca-icon">{view.icon}</span>
+                <span className="ca-text">{view.body}</span>
+                {view.hint && <span className="ca-hint">{view.hint}</span>}
+              </button>
+            );
+          })}
+        </div>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * What one banner shows. The four prompts are told apart by their icon before a word is read: a cast
+ * says stop that, a fade says do it again, a line is the game talking — so it shows the log's own
+ * sentence and offers no call to action, because there isn't one to give — and a **record** is the
+ * only one that isn't a warning at all.
+ *
+ * A watch that gave its own `message` gets that instead, and no hint: the point of writing your own
+ * wording is that it already says what to do, and "re-cast!" under "RE-CAST BREEZE" is noise. The
+ * icon stays, since which kind of prompt it is doesn't change with the words.
+ */
+function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: string } {
+  const icon =
+    a.event === "record"
+      ? "🏆"
+      : a.event === "spawn"
+        ? "💀"
+        // A clock the player made, reaching its end. A skull on an egg timer is the same false
+        // claim its old wording made (ADR 0135) — the look is the spawn one, the icon is not.
+        : a.event === "timer"
+          ? "⏰"
+        : a.event === "loot"
+          ? "💰"
+          : a.event === "line"
+            ? "💬"
+            : a.event === "fade"
+              ? "⏳"
+              // A buff you keep up having gone. Not the fade hourglass: a fade watch is a rule you
+              // wrote firing on a line, while this is the board reporting that something you were
+              // relying on is missing — and the two arrive together often enough that they have to be
+              // tellable apart without reading either.
+              : a.event === "buff"
+                ? "🛡"
+                // A timeboxed goal (ADR 0198) — a milestone or completion reads as news (🎯); running
+                // out of time unmet, or a streak (ADR 0199) breaking, reads as the opposite of a
+                // spawn's ⏰, so both earn the same glyph rather than "your camp timer is up".
+                : a.event === "goal"
+                  ? a.goal?.kind === "expired" || a.goal?.kind === "streak-broken"
+                    ? "⌛"
+                    : "🎯"
+                  // An achievement (ADR 0212) — a criterion checked off reads as ordinary news; the
+                  // whole thing completing gets the party glyph, the same split a goal draws between
+                  // a milestone and "done!".
+                  : a.event === "achievement"
+                    ? a.achievement?.kind === "completed"
+                      ? "🎉"
+                      : "🏅"
+                    : "⚠";
+  // A record before the `message` check: it has no wording to override, and it words itself from the
+  // shared catalog rather than being handed a sentence (see `recordAlert`).
+  if (a.event === "record" && a.record) return recordBanner(a.record);
+  // A drop is the same case: no watch behind it, so no wording to override, and the counts it words
+  // itself from are already in the payload (see `lootAlert`).
+  if (a.event === "loot" && a.loot) return lootBanner(a.loot);
+  // And a lapsed buff, for the same reason again: nothing wrote it a sentence, and the facts it words
+  // itself from — which spell, on whom, and whether we could narrow it — are all in the payload.
+  if (a.event === "buff" && a.buff) return buffBanner(a.buff);
+  // A goal, the same way again: nothing wrote it a sentence, and the counts it words itself from are
+  // already in the payload (see `goal-tracker.ts`'s `announce`).
+  if (a.event === "goal" && a.goal) return goalBanner(a.goal);
+  // An achievement (ADR 0212), the same way again: nothing wrote it a sentence, and the counts it
+  // words itself from are already in the payload (see `achievement-tracker.ts`'s `announce`).
+  if (a.event === "achievement" && a.achievement) return achievementBanner(a.achievement);
+  if (a.message?.trim()) return { icon, body: <b>{a.message}</b> };
+  if (a.event === "spawn") {
+    return {
+      icon: "💀",
+      body: (
+        <>
+          <b>{a.spell}</b> is up{a.target ? <> in <b>{a.target}</b></> : ""}
+        </>
+      ),
+      // News, not a warning — so it says where to go rather than what to press. The place is in the
+      // body because the same named in two zones is two timers (ADR 0092).
+      hint: "spawn timer",
+    };
+  }
+  if (a.event === "line") return { icon: "💬", body: <b>{a.text || a.spell}</b> };
+  if (a.event === "fade") {
+    return {
+      icon: "⏳",
+      body: (
+        <>
+          <b>{a.spell}</b> faded{a.target ? <> on <b>{a.target}</b></> : ""}
+        </>
+      ),
+      hint: "re-cast!",
+    };
+  }
+  return {
+    icon: "⚠",
+    body: (
+      <>
+        <b>{a.caster}</b> casting <b>{a.spell}</b>
+      </>
+    ),
+    hint: "dispel!",
+  };
+}
+
+/**
+ * A buff you keep up has gone.
+ *
+ * The **spell leads** and the target follows, because the spell is what you recognise without reading
+ * and it is what you have to press. "On you" is left off entirely: most of the list is your own set,
+ * and repeating it would push the one banner that *is* about somebody else out of a glance — which is
+ * the one you were least likely to notice yourself.
+ *
+ * The hint carries the two things that change what you do about it. A **permanent** buff cannot have
+ * run out, so a lapse of one means it was dispelled or you died, and telling you which of those it was
+ * is more use than telling you to recast. And where the game words several spells' fades identically,
+ * the alternatives are named rather than hidden: a reminder to recast the wrong rank is worse than one
+ * that says what to check.
+ */
+function buffBanner(buff: BuffInstance): { icon: string; body: ReactNode; hint?: string } {
+  // Blank for you, and blank for a target we never learned — a cast line names none, and "on someone"
+  // on a banner reads as a fault rather than as the honest limit the panel has room to explain.
+  const who =
+    buff.target === ON_YOU || buff.target === ON_UNKNOWN
+      ? ""
+      : buff.target === ON_PET
+        ? "your pet"
+        : buff.target;
+  // Capped: some spell families word half a dozen ranks' fades identically, and the whole list would
+  // run the banner off the screen (see `alternativesLabel`). The panel row names them all.
+  const also = alternativesLabel(buff.alsoCouldBe, BANNER_ALTERNATIVES);
+  return {
+    icon: "🛡",
+    body: (
+      <>
+        <b>{buff.spell}</b> down{who ? <> on <b>{who}</b></> : ""}
+      </>
+    ),
+    hint: [
+      buff.reason === "died" ? "lost on death" : buff.permanent ? "dispelled — it has no timer" : "re-cast!",
+      also,
+    ]
+      .filter(Boolean)
+      .join(" — "),
+  };
+}
+
+/**
+ * Something on your list just dropped.
+ *
+ * The **item leads** and the count follows: the name is what you recognise without reading, and
+ * "3 of 5" is the thing you were waiting to hear. A line that *finishes* the entry says so in a word
+ * instead — the point of the last one is that it was the last one, not that it was the fifth — and it
+ * is the last banner that entry raises (see `AlertRouter.loot`).
+ */
+/**
+ * The banner for a timeboxed goal (ADR 0198) reaching a milestone, being met, or running out of time
+ * unmet. The counts travel raw, like a drop's, so this words them rather than repeating a sentence
+ * the tracker already built.
+ */
+function goalBanner(goal: GoalAlertPayload): { icon: string; body: ReactNode; hint?: string } {
+  // A streak (ADR 0199) has no `qty`/`obtained` to word — only the run that just ended — so it's
+  // handled before `of` is ever built rather than being another branch that ignores it.
+  if (goal.kind === "streak-broken") {
+    return {
+      icon: "⌛",
+      body: (
+        <>
+          <b>{goal.target.name}</b> — streak broken at <b>{goal.streak}</b> (best {goal.bestStreak})
+        </>
+      ),
+    };
+  }
+  const of = (
+    <>
+      {goal.obtained} of {goal.qty}
+    </>
+  );
+  if (goal.kind === "expired") {
+    return {
+      icon: "⌛",
+      body: (
+        <>
+          <b>{goal.target.name}</b> — time&rsquo;s up, {of}
+        </>
+      ),
+    };
+  }
+  if (goal.kind === "completed") {
+    return {
+      icon: "🎯",
+      body: (
+        <>
+          <b>{goal.target.name}</b> — <b>done!</b> {of}
+        </>
+      ),
+    };
+  }
+  return {
+    icon: "🎯",
+    body: (
+      <>
+        <b>{goal.target.name}</b> — {of} ({goal.pct}%)
+      </>
+    ),
+  };
+}
+
+/**
+ * A criterion checked off, a `"count"` criterion's tally moving (ADR 0214), or a whole achievement
+ * completed (ADR 0212). The **title leads** every case, because that's what you recognise without
+ * reading; a criterion names *which one* in the hint, and completion says so in the body instead —
+ * the same split `goalBanner` draws between a milestone and "done!". A `tally` reads as "14 of 25"
+ * in place of the achievement's own `done`/`total`, which for a counted criterion is usually "0 of
+ * 1" right up until the tally itself finishes and would say nothing useful next to it.
+ */
+function achievementBanner(achievement: AchievementAlertPayload): { icon: string; body: ReactNode; hint?: string } {
+  if (achievement.kind === "completed") {
+    return {
+      icon: "🎉",
+      body: (
+        <>
+          <b>{achievement.title}</b> — <b>complete!</b>
+        </>
+      ),
+      hint: `${achievement.done} of ${achievement.total}`,
+    };
+  }
+  const progress =
+    achievement.tally !== undefined ? `${achievement.tally} of ${achievement.tallyGoal}` : `${achievement.done} of ${achievement.total}`;
+  return {
+    icon: "🏅",
+    body: <b>{achievement.title}</b>,
+    hint: `${achievement.criterionLabel} — ${progress}`,
+  };
+}
+
+function lootBanner(loot: LootAlert): { icon: string; body: ReactNode; hint?: string } {
+  const done = loot.obtained >= loot.needed;
+  return {
+    icon: "💰",
+    body: (
+      <>
+        <b>{loot.item}</b>
+        {loot.qty > 1 ? ` ×${loot.qty}` : ""} —{" "}
+        {done ? (
+          <b>done</b>
+        ) : (
+          <>
+            {loot.obtained} of {loot.needed}
+          </>
+        )}
+      </>
+    ),
+    // News rather than a warning, so it says where it came from instead of what to press — which is
+    // also the one thing the loot line knows that the list doesn't.
+    hint: loot.source ? `from ${loot.source}` : "on your list",
+  };
+}
+
+/**
+ * A new personal best. The **figure leads** and the category names it, because the number is what
+ * you want to read at a glance mid-fight and "Biggest hit" is only the label on it.
+ *
+ * The hint says what it beat, which is the whole difference between a score and a record — and
+ * `previous` being absent means it beat nothing, so it says *that* instead of pretending to a margin
+ * it doesn't have (see rule 2 in `electron/high-scores.ts`).
+ */
+function recordBanner(record: HighScore): { icon: string; body: ReactNode; hint?: string } {
+  const category = categoryOf(record.categoryId);
+  return {
+    icon: "🏆",
+    body: (
+      <>
+        <b>{formatScore(category.unit, record.value)}</b> — {category.label}
+        {record.detail ? <span className="ca-detail"> · {record.detail}</span> : null}
+      </>
+    ),
+    hint:
+      record.previous === undefined
+        ? "new high score!"
+        : `new high score — beats ${formatScore(category.unit, record.previous)}`,
+  };
+}
+

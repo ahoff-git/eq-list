@@ -4,13 +4,13 @@ import { api } from "@/lib/api";
 import { connectToRoom, randomPeerId, ROOM_ID } from "@/lib/awari/net";
 import { useSettings, useCurrentZone, usePlayerLoc, useWatcherStatus } from "@/lib/hooks";
 import { showToast } from "@/lib/toast";
-import { shortId } from "@/lib/usePeerShare";
+import { shortId } from "@/lib/peers/usePeerShare";
 import { createLogger } from "@/shared/logging";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { AWARI_MSG } from "@/shared/types";
 import type { AwariPayload, AwariPeer } from "@/shared/types";
-import { readOffer, readProtocol } from "@/shared/peer-share";
-import { createRoomWatch, spread, type RoomWatch } from "@/shared/room-watch";
+import { readOffer, readProtocol } from "@/shared/peers/peer-share";
+import { createRoomWatch, spread, type RoomWatch } from "@/shared/peers/room-watch";
 import type { MessageRoute, RoomSession } from "@awari/protocol";
 
 const log = createLogger("awari");

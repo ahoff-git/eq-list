@@ -14,7 +14,7 @@ import {
   causeConfidence,
   causeConfidenceWhy,
   createFactionCauseTracker,
-} from "../../src/shared/faction-cause";
+} from "../../src/shared/faction/faction-cause";
 import type { FactionEvent, FactionCauseTally, LogLine } from "../../src/shared/types";
 
 function hit(sec: number, faction = "Agents of Mistmoore"): FactionEvent {

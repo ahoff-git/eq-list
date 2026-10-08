@@ -14,7 +14,7 @@
 import { desktopCapturer, globalShortcut, screen, type BrowserWindow, type WebContents, type NativeImage } from "electron";
 import { createLookupWindow, destroyLookupWindows, hasLookupWindows } from "./windows";
 import { createLogger } from "./../src/shared/logging";
-import { ocrReadings } from "../src/shared/ocr-variants";
+import { ocrReadings } from "../src/shared/chrome/ocr-variants";
 import type { Ocr } from "./ocr";
 import type { Rect } from "../src/shared/types";
 

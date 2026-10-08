@@ -25,7 +25,7 @@
  * (main process) and any consumer (renderer) share it.
  */
 
-import { normalizeZone } from "../sources";
+import { normalizeZone } from "../items/sources";
 import { createZoneResolver, type ZoneResolver } from "../zones/resolve";
 
 /** An EQ world position, `/loc` order plus height. */

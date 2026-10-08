@@ -6,8 +6,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { factionPoolStanding, factionPoolWhy } from "../../src/shared/faction-pooling";
-import type { FactionCauseKnowledge } from "../../src/shared/faction-observation";
+import { factionPoolStanding, factionPoolWhy } from "../../src/shared/faction/faction-pooling";
+import type { FactionCauseKnowledge } from "../../src/shared/faction/faction-observation";
 
 const known = (over: Partial<FactionCauseKnowledge> = {}): FactionCauseKnowledge => ({
   faction: "Wharf Rats",

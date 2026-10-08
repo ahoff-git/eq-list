@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { TextField } from "./ui";
-import type { Vocabulary, VocabularyKind } from "@/shared/log-vocabulary";
+import { TextField } from "@/app/components/ui";
+import type { Vocabulary, VocabularyKind } from "@/shared/alerts/log-vocabulary";
 
 /**
  * A text box that finishes your sentence with what the log actually said.

@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canDryRun, checkWatch, dryRun } from "../../src/shared/watch-check";
+import { canDryRun, checkWatch, dryRun } from "../../src/shared/alerts/watch-check";
 import { splitLine } from "../../src/shared/log-parser";
 import type { CastAlertSettings, CastWatch, LogLine } from "../../src/shared/types";
 

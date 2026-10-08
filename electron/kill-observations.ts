@@ -11,7 +11,7 @@
  * opens no connection of its own; every caller hands it the `Database` (and rows) to read.
  */
 import type { Database } from "better-sqlite3";
-import { observeMobs, sumObservations, type MobObservation } from "../src/shared/mob-stats";
+import { observeMobs, sumObservations, type MobObservation } from "../src/shared/mob/mob-stats";
 import type { KillRecord } from "../src/shared/types";
 
 /** A `kill_records` row, before it's shaped into a `KillRecord` (`rowToRecord`). */

@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { itemLevel, levelText, mobCardLevel, npcKey, parseLevelRange, questCardLevel } from "../../src/shared/item-levels";
+import { itemLevel, levelText, mobCardLevel, npcKey, parseLevelRange, questCardLevel } from "../../src/shared/items/item-levels";
 import type { ItemSource } from "../../src/shared/types";
 
 const drop = (mob: string, zone?: string): ItemSource => ({ kind: "drop", where: mob, detail: zone });

@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { summarizeWatch } from "../../src/shared/watch-summary";
+import { summarizeWatch } from "../../src/shared/alerts/watch-summary";
 import type { CastWatch } from "../../src/shared/types";
 
 const watch = (over: Partial<CastWatch> = {}): CastWatch => ({ id: "w", spell: "Mesmeri", enabled: true, ...over });

@@ -13,7 +13,7 @@
  * See [ADR 0276](../specs/decisions/0276-overlapping-fights-are-pooled-not-only-proven.md).
  */
 import { createCombatStats, MAX_RECENT_HEALS, MAX_RECENT_HITS } from "./combat-stats";
-import { HIT_MATCH_TOLERANCE_MS } from "../src/shared/peer-share";
+import { HIT_MATCH_TOLERANCE_MS } from "../src/shared/peers/peer-share";
 import type { DamageEvent, FightHeal, FightHit, FightStats, HealEvent } from "../src/shared/types";
 
 /** One source's own hits and heals for the fight, already named for real (never "You"). */

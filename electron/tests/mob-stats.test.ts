@@ -22,7 +22,7 @@ import {
   type MobArea,
   type MobKnowledge,
   type MobObservation,
-} from "../../src/shared/mob-stats";
+} from "../../src/shared/mob/mob-stats";
 import type { KillRecord } from "../../src/shared/types";
 
 test("mobKey folds the wiki's article and case onto the kill log's stripped name", () => {

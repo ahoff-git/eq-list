@@ -51,8 +51,8 @@
  */
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { BUFF_STYLE_ID, alertStyle } from "../src/shared/alert-styles";
-import { SELF, spellName, spellRank } from "../src/shared/combat-parser";
+import { BUFF_STYLE_ID, alertStyle } from "../src/shared/alerts/alert-styles";
+import { SELF, spellName, spellRank } from "../src/shared/combat/combat-parser";
 import {
   announceWhen,
   buffKey,
@@ -80,9 +80,9 @@ import {
   type BuffView,
   type EnemyEpisodeContext,
   type KnownBuff,
-} from "../src/shared/buff-tracking";
-import type { BuffLexicon } from "../src/shared/spell-strings";
-import type { SpellFacts } from "../src/shared/spell-file";
+} from "../src/shared/buffs/buff-tracking";
+import type { BuffLexicon } from "../src/shared/spells/spell-strings";
+import type { SpellFacts } from "../src/shared/spells/spell-file";
 import type {
   CastAlertEvent,
   CastAlertSettings,

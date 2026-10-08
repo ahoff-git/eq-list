@@ -7,8 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCombatStats } from "../combat-stats";
-import { overlayDealers } from "../../src/shared/damage-overlay";
-import { parseCombat } from "../../src/shared/combat-parser";
+import { overlayDealers } from "../../src/shared/combat/damage-overlay";
+import { parseCombat } from "../../src/shared/combat/combat-parser";
 import { parseParty, splitLine } from "../../src/shared/log-parser";
 import type { CombatEvent } from "../../src/shared/types";
 

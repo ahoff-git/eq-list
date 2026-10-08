@@ -41,18 +41,18 @@ import {
   setShard,
   shardOf,
   type PeerCoverage,
-} from "../../src/shared/item-shards";
-import { candidatesFrom, probeOrder, type Verdict } from "../../src/shared/wiki-shape";
-import type { SharedItemPage, SharedSpellPage } from "../../src/shared/peer-share";
-import { itemLevel, mobCardLevel, npcKey, parseLevelRange, questCardLevel, type LevelSources } from "../../src/shared/item-levels";
+} from "../../src/shared/items/item-shards";
+import { candidatesFrom, probeOrder, type Verdict } from "../../src/shared/items/wiki-shape";
+import type { SharedItemPage, SharedSpellPage } from "../../src/shared/peers/peer-share";
+import { itemLevel, mobCardLevel, npcKey, parseLevelRange, questCardLevel, type LevelSources } from "../../src/shared/items/item-levels";
 import { fuzzyRank } from "../../src/shared/fuzzy";
-import { normalizeItemName } from "../../src/shared/grouping";
-import { bestReading } from "../../src/shared/ocr-variants";
+import { normalizeItemName } from "../../src/shared/items/grouping";
+import { bestReading } from "../../src/shared/chrome/ocr-variants";
 import { itemBaseName, zoneBaseName } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
-import { forTransfer, itemRows, type ItemRow } from "../../src/shared/item-search";
-import { spellRows } from "../../src/shared/spell-search";
+import { forTransfer, itemRows, type ItemRow } from "../../src/shared/items/item-search";
+import { spellRows } from "../../src/shared/spells/spell-search";
 
 const log = createLogger("wiki");
 /**

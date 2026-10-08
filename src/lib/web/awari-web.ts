@@ -14,7 +14,7 @@
  * asks from the snapshot's page cache (`item-shard-source.ts`) and folds in pages a peer hands back,
  * so the room gets real value from a tab that has never touched eqlwiki directly.
  */
-import { createPeerShareHub } from "@/shared/peer-share-hub";
+import { createPeerShareHub } from "@/shared/peers/peer-share-hub";
 import { rememberPage } from "./snapshot";
 import { loadWebItemSources, type ItemShardSource } from "./item-shard-source";
 import { getList, onListChanged } from "./local-store";
@@ -28,7 +28,7 @@ import type {
   Settings,
   Unsubscribe,
 } from "@/shared/types";
-import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind } from "@/shared/peer-share";
+import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind } from "@/shared/peers/peer-share";
 import type { WikiPage } from "@/shared/types";
 
 function emitter<T>() {

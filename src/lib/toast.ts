@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { queueToast, type Toast, type ToastInput } from "@/shared/toasts";
+import { queueToast, type Toast, type ToastInput } from "@/shared/chrome/toasts";
 
 /**
  * toast.ts — raising one of the app's brief notices, from anywhere in a window.
@@ -25,7 +25,7 @@ export {
   type ToastAction,
   type ToastInput,
   type ToastTone,
-} from "@/shared/toasts";
+} from "@/shared/chrome/toasts";
 
 const listeners = new Set<(t: Toast) => void>();
 let nextId = 1;

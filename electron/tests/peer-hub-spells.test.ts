@@ -9,9 +9,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createPeerShareHub, type PeerShareDeps } from "../../src/shared/peer-share-hub";
+import { createPeerShareHub, type PeerShareDeps } from "../../src/shared/peers/peer-share-hub";
 import { AWARI_MSG, type AwariPayload, type AwariPeer, type Settings } from "../../src/shared/types";
-import type { ShareKind, ShareSettings } from "../../src/shared/peer-share";
+import type { ShareKind, ShareSettings } from "../../src/shared/peers/peer-share";
 
 const ALL_KINDS: ShareKind[] = [
   "watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores",

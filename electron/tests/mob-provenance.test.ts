@@ -4,8 +4,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { disagreeBadge, provenanceBadge } from "../../src/shared/mob-provenance";
-import type { MobKnowledge } from "../../src/shared/mob-stats";
+import { disagreeBadge, provenanceBadge } from "../../src/shared/mob/mob-provenance";
+import type { MobKnowledge } from "../../src/shared/mob/mob-stats";
 
 function known(p: Partial<MobKnowledge> & { kills: number; myKills: number }): MobKnowledge {
   return {

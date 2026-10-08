@@ -5,8 +5,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LIVE_WITHIN_MS, matchCast, matchFade, matchLine, watchesLines } from "../../src/shared/cast-alerts";
-import { alertStyle } from "../../src/shared/alert-styles";
+import { LIVE_WITHIN_MS, matchCast, matchFade, matchLine, watchesLines } from "../../src/shared/alerts/cast-alerts";
+import { alertStyle } from "../../src/shared/alerts/alert-styles";
 import type { CastAlertSettings, CastWatch } from "../../src/shared/types";
 
 /** A cast that just happened — the timing rule has its own tests below. */

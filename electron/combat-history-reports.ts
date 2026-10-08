@@ -15,7 +15,7 @@
  * connection of its own.
  */
 import type { Database } from "better-sqlite3";
-import { opponentOf } from "../src/shared/damage-tree";
+import { opponentOf } from "../src/shared/combat/damage-tree";
 import { placeKey, placeName } from "../src/shared/zones/place";
 import { ratio, round } from "../src/shared/numbers";
 import type { FightBest, FightStats, SessionSummary, StoredFight, ZoneReport } from "../src/shared/types";

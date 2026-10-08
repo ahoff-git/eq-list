@@ -37,7 +37,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import type { Database } from "better-sqlite3";
 import { createLogger } from "../src/shared/logging";
-import { fightMatches } from "../src/shared/fight-search";
+import { fightMatches } from "../src/shared/combat/fight-search";
 import type { DataStamp } from "../src/shared/data-provenance";
 import type {
   AdminAudit,

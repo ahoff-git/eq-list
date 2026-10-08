@@ -12,10 +12,10 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../src/shared/logging";
 import { stripArticle } from "../src/shared/log-parser";
-import { isMobEntry, normalizeItemName, originKey } from "../src/shared/grouping";
+import { isMobEntry, normalizeItemName, originKey } from "../src/shared/items/grouping";
 import { MAP_UI_SCALE, clampScale, clampUiScale } from "../src/shared/constants";
-import { BUILT_IN_STYLES, RECORD_STYLE_ID } from "../src/shared/alert-styles";
-import { factionRaiseNote } from "../src/shared/wiki-add";
+import { BUILT_IN_STYLES, RECORD_STYLE_ID } from "../src/shared/alerts/alert-styles";
+import { factionRaiseNote } from "../src/shared/items/wiki-add";
 import { readJson, writeJson } from "./json-store";
 import type {
   ShoppingList,

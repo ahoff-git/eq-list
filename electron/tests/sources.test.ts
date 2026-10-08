@@ -13,7 +13,7 @@ import {
   otherSources,
   sourceZones,
   isObtainableIn,
-} from "../../src/shared/sources";
+} from "../../src/shared/items/sources";
 import type { ItemSource } from "../../src/shared/types";
 
 const drops: ItemSource[] = [

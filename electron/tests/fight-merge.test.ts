@@ -9,8 +9,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mergeFight, type MergeSource } from "../fight-merge";
 import { MAX_RECENT_HITS } from "../combat-stats";
-import { SELF } from "../../src/shared/combat-parser";
-import { shareableHits } from "../../src/shared/peer-share";
+import { SELF } from "../../src/shared/combat/combat-parser";
+import { shareableHits } from "../../src/shared/peers/peer-share";
 import type { FightHeal, FightHit } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-09-03T18:00:00.000Z");

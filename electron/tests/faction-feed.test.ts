@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeFactionFeed, factionKey } from "../../src/shared/faction-feed";
+import { mergeFactionFeed, factionKey } from "../../src/shared/faction/faction-feed";
 import type { FactionEvent } from "../../src/shared/types";
 
 function hit(faction: string, sec: number, logId = sec): FactionEvent {

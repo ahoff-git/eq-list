@@ -43,7 +43,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Database } from "better-sqlite3";
-import { shardOf } from "../../src/shared/item-shards";
+import { shardOf } from "../../src/shared/items/item-shards";
 import { createLogger } from "../../src/shared/logging";
 import type { Migration } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";

@@ -18,7 +18,7 @@
  * the scale exists.
  */
 import { UI_SCALE_ROOT_ATTR } from "@/lib/hooks";
-import type { AnchorBox, Size } from "@/shared/tooltip";
+import type { AnchorBox, Size } from "@/shared/chrome/tooltip";
 
 /** A point in either space — a mouse event's `clientX/clientY`, or that same point converted. */
 export interface ScreenPoint {

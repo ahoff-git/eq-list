@@ -11,7 +11,7 @@ import {
   MAX_DELAY_SECONDS,
   MAX_REPEAT,
   parseDelay,
-} from "../../src/shared/alert-schedule";
+} from "../../src/shared/alerts/alert-schedule";
 
 // ── the syntax ─────────────────────────────────────────────────────────────────
 // A bare number is seconds, because the common cue ("recast that") is seconds long. `m` is the

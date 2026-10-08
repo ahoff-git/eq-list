@@ -1,13 +1,13 @@
 "use client";
-import CastAlerts from "../components/CastAlerts";
-import AlertPlacement from "../components/AlertPlacement";
-import SpawnOverlay from "../components/SpawnOverlay";
-import GoalsOverlay from "../components/GoalsOverlay";
-import BuffOverlay from "../components/BuffOverlay";
-import DebuffOverlay from "../components/DebuffOverlay";
-import GameClockOverlay from "../components/GameClockOverlay";
-import DamageMeterOverlay from "../components/DamageMeterOverlay";
-import { useSolidIslands } from "@/lib/clickThrough";
+import CastAlerts from "@/app/components/alerts/CastAlerts";
+import AlertPlacement from "@/app/components/alerts/AlertPlacement";
+import SpawnOverlay from "@/app/components/mob/SpawnOverlay";
+import GoalsOverlay from "@/app/components/goals/GoalsOverlay";
+import BuffOverlay from "@/app/components/buffs/BuffOverlay";
+import DebuffOverlay from "@/app/components/buffs/DebuffOverlay";
+import GameClockOverlay from "@/app/components/gameclock/GameClockOverlay";
+import DamageMeterOverlay from "@/app/components/combat/DamageMeterOverlay";
+import { useSolidIslands } from "@/lib/chrome/clickThrough";
 
 /**
  * The cast-alert overlay window's page: the alert visuals on a transparent body, so it can float

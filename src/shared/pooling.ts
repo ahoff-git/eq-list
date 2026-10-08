@@ -26,9 +26,9 @@
  * Pure and DOM-free: the panels word it, this decides it.
  */
 import { confidenceOf, disagrees, type Confidence, type SampleScale } from "./estimates";
-import { SETTLED_AFTER_KILLS, TRUST_OBSERVED_AFTER_KILLS } from "./drop-truth";
+import { SETTLED_AFTER_KILLS, TRUST_OBSERVED_AFTER_KILLS } from "./mob/drop-truth";
 import { ratio } from "./numbers";
-import type { MobDrop, MobKnowledge } from "./mob-stats";
+import type { MobDrop, MobKnowledge } from "./mob/mob-stats";
 
 /**
  * The sample ladder a pooled figure is judged on — the same two numbers `drop-truth.ts` has used to

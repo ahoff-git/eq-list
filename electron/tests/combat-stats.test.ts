@@ -5,11 +5,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCombatStats } from "../combat-stats";
-import { drillDown, sumDamage } from "../../src/shared/damage-tree";
-import { healDrillDown, sumHealed } from "../../src/shared/heal-tree";
-import { fightShareOf } from "../../src/shared/peer-share";
+import { drillDown, sumDamage } from "../../src/shared/combat/damage-tree";
+import { healDrillDown, sumHealed } from "../../src/shared/combat/heal-tree";
+import { fightShareOf } from "../../src/shared/peers/peer-share";
 import type { DamageAxis } from "../../src/shared/types";
-import { parseCombat } from "../../src/shared/combat-parser";
+import { parseCombat } from "../../src/shared/combat/combat-parser";
 import { parseParty, splitLine } from "../../src/shared/log-parser";
 import type { CoinEvent, CombatEvent, FightStats, LootEvent, XpEvent } from "../../src/shared/types";
 

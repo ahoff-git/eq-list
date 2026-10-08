@@ -15,8 +15,8 @@ import {
   sortLoot,
   sortPrices,
   tallyFates,
-} from "../../src/shared/loot-filters";
-import { normalizeItemName } from "../../src/shared/grouping";
+} from "../../src/shared/items/loot-filters";
+import { normalizeItemName } from "../../src/shared/items/grouping";
 import type { ItemPrice, LootFate, LootRecord } from "../../src/shared/types";
 
 function drop(p: Partial<LootRecord> & { item: string }): LootRecord {

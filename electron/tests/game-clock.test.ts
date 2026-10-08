@@ -18,7 +18,7 @@ import {
   readingMinutes,
   to24Hour,
   type GameClockAnchor,
-} from "../../src/shared/game-clock";
+} from "../../src/shared/gameclock/game-clock";
 
 test("to24Hour folds the 12-hour reading the log gives", () => {
   assert.equal(to24Hour(6, "PM"), 18);

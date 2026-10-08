@@ -8,8 +8,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createDamageCells, damageKind, damageSource, drillDown, rollUpDamage, sumDamage } from "../../src/shared/damage-tree";
-import { parseCombat } from "../../src/shared/combat-parser";
+import { createDamageCells, damageKind, damageSource, drillDown, rollUpDamage, sumDamage } from "../../src/shared/combat/damage-tree";
+import { parseCombat } from "../../src/shared/combat/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type { DamageAxis, DamageEvent, DamageNode, MissEvent } from "../../src/shared/types";
 

@@ -48,12 +48,12 @@ import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { splitLine } from "../src/shared/log-parser";
 import { parseSplitLine } from "../src/shared/parse-line";
-import { upgradeWatches } from "../src/shared/watch-upgrade";
-import { BUILT_IN_STYLES } from "../src/shared/alert-styles";
+import { upgradeWatches } from "../src/shared/alerts/watch-upgrade";
+import { BUILT_IN_STYLES } from "../src/shared/alerts/alert-styles";
 import { classifyZoneLine } from "../src/shared/zones/place";
-import { timerInPlace } from "../src/shared/spawn-timers";
+import { timerInPlace } from "../src/shared/mob/spawn-timers";
 import type { CastAlertSettings, HighScore, KillRecord, LootRecord, StoredFight } from "../src/shared/types";
-import type { MobObservation } from "../src/shared/mob-stats";
+import type { MobObservation } from "../src/shared/mob/mob-stats";
 import { readJson, writeJson } from "./json-store";
 import { contributorName, legacyContributorId } from "../src/shared/contributors";
 

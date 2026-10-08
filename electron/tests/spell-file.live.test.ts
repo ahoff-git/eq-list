@@ -19,7 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { gameFile, liveOnly } from "./game-data";
-import { isObtainable, parseSpellFile, parseSpellLine } from "../../src/shared/spell-file";
+import { isObtainable, parseSpellFile, parseSpellLine } from "../../src/shared/spells/spell-file";
 
 /** Parsed once — the file is ~38 MB, and every test below wants the same map. */
 let cached: Map<string, ReturnType<typeof parseSpellLine>> | null = null;

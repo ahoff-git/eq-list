@@ -1,9 +1,9 @@
 "use client";
 import { type DependencyList, type RefObject, useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "./api";
+import { api } from "@/lib/api";
 import { createLogger, setRendererDebug } from "@/shared/logging";
 import { UI_SCALE, clampScale, windowOpacity, type ScaleRange } from "@/shared/constants";
-import { useWindowToggle } from "./windowToggles";
+import { useWindowToggle } from "@/lib/chrome/windowToggles";
 import type {
   AchievementView,
   ShoppingList,
@@ -41,13 +41,13 @@ import type {
   Unsubscribe,
   EqlCapabilities,
 } from "@/shared/types";
-import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob-stats";
+import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob/mob-stats";
 import type { KnowledgeContributor } from "@/shared/contributors";
-import type { FactionCauseKnowledge } from "@/shared/faction-observation";
+import type { FactionCauseKnowledge } from "@/shared/faction/faction-observation";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
-import type { SharedKill } from "@/shared/kill-filters";
-import { mergeLootFeed } from "@/shared/loot-feed";
-import { mergeFactionFeed } from "@/shared/faction-feed";
+import type { SharedKill } from "@/shared/kills/kill-filters";
+import { mergeLootFeed } from "@/shared/items/loot-feed";
+import { mergeFactionFeed } from "@/shared/faction/faction-feed";
 import { ratio } from "@/shared/numbers";
 import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
 import {
@@ -57,19 +57,19 @@ import {
   neededEntries,
   type HuntTarget,
   type HuntZone,
-} from "@/shared/hunt";
-import { itemDropSources, type ItemDropSource } from "@/shared/item-sources";
-import { knownItems, type KnownItem } from "@/shared/known-items";
-import type { ItemRow } from "@/shared/item-search";
-import type { SpellRow } from "@/shared/spell-search";
-import { clockSkew } from "@/shared/spawn-timers";
-import { runningGoalTargets } from "@/shared/goal-progress";
-import { usePersistentState } from "./usePersistentState";
-import { STORAGE_KEYS } from "./storageKeys";
-import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/game-clock";
-import { DEFAULT_OVERLAY_PIN_AT } from "@/shared/damage-overlay";
-import type { AlertUsage } from "@/shared/alert-styles";
-import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/log-vocabulary";
+} from "@/shared/mob/hunt";
+import { itemDropSources, type ItemDropSource } from "@/shared/items/item-sources";
+import { knownItems, type KnownItem } from "@/shared/items/known-items";
+import type { ItemRow } from "@/shared/items/item-search";
+import type { SpellRow } from "@/shared/spells/spell-search";
+import { clockSkew } from "@/shared/mob/spawn-timers";
+import { runningGoalTargets } from "@/shared/goals/goal-progress";
+import { usePersistentState } from "@/lib/usePersistentState";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/gameclock/game-clock";
+import { DEFAULT_OVERLAY_PIN_AT } from "@/shared/combat/damage-overlay";
+import type { AlertUsage } from "@/shared/alerts/alert-styles";
+import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/alerts/log-vocabulary";
 import { parseLogText } from "@/shared/log-parser";
 import { outOfEraSet } from "@/shared/zones/expansions";
 import { samePlace } from "@/shared/zones/place";

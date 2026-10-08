@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeWatches, encodeWatches, SHARE_PREFIX } from "../../src/shared/watch-share";
+import { decodeWatches, encodeWatches, SHARE_PREFIX } from "../../src/shared/alerts/watch-share";
 import type { CastWatch } from "../../src/shared/types";
 
 let n = 0;

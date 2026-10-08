@@ -4,8 +4,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildFactionWatch, isFactionWatched } from "../../src/shared/faction-watch";
-import { checkWatch } from "../../src/shared/watch-check";
+import { buildFactionWatch, isFactionWatched } from "../../src/shared/alerts/faction-watch";
+import { checkWatch } from "../../src/shared/alerts/watch-check";
 import type { CastWatch } from "../../src/shared/types";
 
 test("a faction watch passes the same soundness check a hand-made watch does", () => {

@@ -16,7 +16,7 @@ import {
   filterAbilities,
   matchesAbility,
   type Ability,
-} from "../../src/shared/stances-invocations";
+} from "../../src/shared/spells/stances-invocations";
 
 test("every stance and invocation is named once, with real text and at least one class", () => {
   for (const list of [ABILITY_STANCES, ABILITY_INVOCATIONS]) {

@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCombat, combatant, meleeSkill, SELF } from "../../src/shared/combat-parser";
+import { parseCombat, combatant, meleeSkill, SELF } from "../../src/shared/combat/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type {
   BuffFadedEvent,

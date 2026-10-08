@@ -31,7 +31,7 @@
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { characterFromLogFile } from "../src/shared/log-parser";
-import { beats, fightCandidates, scoreOrder } from "../src/shared/high-scores";
+import { beats, fightCandidates, scoreOrder } from "../src/shared/combat/high-scores";
 import type { HighScore, ScoreBoard, ScoreCandidate, StoredFight } from "../src/shared/types";
 import { createSaver, readJson } from "./json-store";
 import { createArrayAdminStore, type AdminStore } from "./admin";

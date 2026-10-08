@@ -11,7 +11,7 @@
  */
 import { fuzzyRank } from "@/shared/fuzzy";
 import { itemBaseName } from "@/shared/names";
-import { normalizeItemName } from "@/shared/grouping";
+import { normalizeItemName } from "@/shared/items/grouping";
 import { manifestHasLucyCache } from "./snapshot";
 import type { CachedItem, LucyItem, LucySearchResult } from "@/shared/types";
 

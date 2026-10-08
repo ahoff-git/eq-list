@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeAdd, summarizeAdd } from "../../src/shared/list-add";
+import { describeAdd, summarizeAdd } from "../../src/shared/items/list-add";
 import type { ShoppingList, ShoppingListEntry } from "../../src/shared/types";
 
 function entry(p: Partial<ShoppingListEntry> & { name: string }): ShoppingListEntry {

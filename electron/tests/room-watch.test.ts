@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ALONE_CHECKS_MS, createRoomWatch, spread, type RoomProbe, type RoomWatch } from "../../src/shared/room-watch";
+import { ALONE_CHECKS_MS, createRoomWatch, spread, type RoomProbe, type RoomWatch } from "../../src/shared/peers/room-watch";
 
 /** Nothing found: the directory names a leader nobody can reach, which is usually us. */
 const NOBODY: RoomProbe = { reached: false };

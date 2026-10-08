@@ -17,7 +17,7 @@ import {
   spellRows,
   spellSortValue,
   type SpellCriteria,
-} from "../../src/shared/spell-search";
+} from "../../src/shared/spells/spell-search";
 import type { CachedSpell } from "../../src/shared/types";
 
 const spell = (title: string, lines: string[]): CachedSpell => ({

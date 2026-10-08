@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildVocabulary, NO_VOCABULARY } from "../../src/shared/log-vocabulary";
+import { buildVocabulary, NO_VOCABULARY } from "../../src/shared/alerts/log-vocabulary";
 import { parseLogText } from "../../src/shared/log-parser";
 
 const LOG = [

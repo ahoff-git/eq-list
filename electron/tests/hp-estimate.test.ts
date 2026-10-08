@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHpEstimate } from "../hp-estimate";
-import { parseCombat } from "../../src/shared/combat-parser";
+import { parseCombat } from "../../src/shared/combat/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type { CombatEvent } from "../../src/shared/types";
 

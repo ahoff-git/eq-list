@@ -15,7 +15,7 @@ import {
   parseGoalDuration,
   parseStreakInterval,
   runningGoalTargets,
-} from "../../src/shared/goal-progress";
+} from "../../src/shared/goals/goal-progress";
 import type { RunningGoal } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-17T12:00:00.000Z");

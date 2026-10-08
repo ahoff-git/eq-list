@@ -7,8 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { huntPins, unplacedHuntMobs } from "../../src/shared/map/hunt-pins";
-import { buildHunt, type HuntInput } from "../../src/shared/hunt";
-import type { MobKnowledge, MobObservation } from "../../src/shared/mob-stats";
+import { buildHunt, type HuntInput } from "../../src/shared/mob/hunt";
+import type { MobKnowledge, MobObservation } from "../../src/shared/mob/mob-stats";
 import type { ItemSource } from "../../src/shared/types";
 
 const drop = (where: string, zone: string): ItemSource => ({ kind: "drop", where, detail: zone });

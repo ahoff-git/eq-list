@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EQ_CLASSES, parseItemStats, statLine } from "../../src/shared/item-stats";
+import { EQ_CLASSES, parseItemStats, statLine } from "../../src/shared/items/item-stats";
 
 test("several stats on one line are all read", () => {
   const { stats } = parseItemStats(["WIS: +9 INT: +4 MANA: +25"]);

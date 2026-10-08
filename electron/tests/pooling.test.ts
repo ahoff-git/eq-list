@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { disagreements, poolStanding, poolWhy, provenanceOf, rateSplit } from "../../src/shared/pooling";
-import type { MobKnowledge } from "../../src/shared/mob-stats";
+import type { MobKnowledge } from "../../src/shared/mob/mob-stats";
 
 function known(p: Partial<MobKnowledge> & { kills: number; myKills: number }): MobKnowledge {
   return {

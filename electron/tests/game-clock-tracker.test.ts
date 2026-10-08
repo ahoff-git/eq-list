@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createGameClockTracker, type GameClockTracker } from "../game-clock-tracker";
-import { advanceGameMinutes, DEFAULT_RATE } from "../../src/shared/game-clock";
+import { advanceGameMinutes, DEFAULT_RATE } from "../../src/shared/gameclock/game-clock";
 import type { CastAlertEvent, CastAlertSettings } from "../../src/shared/types";
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "eql-gameclock-"));

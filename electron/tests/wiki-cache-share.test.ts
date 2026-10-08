@@ -21,9 +21,9 @@ import { createWikiClient, closeOwnedDatabases } from "../wiki";
 import { createPageStore, WIKI_PAGE_MIGRATIONS, type PageStore } from "../wiki/page-store";
 import { openAppDatabase } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
-import { itemRows, type ItemRow } from "../../src/shared/item-search";
-import { shardOf } from "../../src/shared/item-shards";
-import type { SharedItemPage } from "../../src/shared/peer-share";
+import { itemRows, type ItemRow } from "../../src/shared/items/item-search";
+import { shardOf } from "../../src/shared/items/item-shards";
+import type { SharedItemPage } from "../../src/shared/peers/peer-share";
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL_DAYS = 14;

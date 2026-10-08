@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { detectFloors, floorAt, mapZRange, type EqMap, type MapFloor, type ZBand } from "@/shared/map/eqmap";
-import type { HeightPick } from "@/app/components/MapFilters";
+import type { HeightPick } from "@/app/components/map/MapFilters";
 import type { LocEvent } from "@/shared/types";
 
 /** The centre and half-width a `followOpacity` fade is scored against — see `Floors.followCenter`. */

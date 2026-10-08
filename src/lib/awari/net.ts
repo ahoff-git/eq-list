@@ -9,8 +9,8 @@
  */
 import type { AwariMessage, RoomSession } from "@awari/protocol";
 import { createLogger } from "@/shared/logging";
-import { createHttpBootstrapClient, DEFAULT_BOOTSTRAP_URL } from "@/shared/awari-bootstrap";
-import type { RoomProbe } from "@/shared/room-watch";
+import { createHttpBootstrapClient, DEFAULT_BOOTSTRAP_URL } from "@/shared/peers/awari-bootstrap";
+import type { RoomProbe } from "@/shared/peers/room-watch";
 
 const log = createLogger("awari");
 

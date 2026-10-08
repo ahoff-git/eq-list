@@ -26,8 +26,8 @@ import {
   itemValue,
   matchesItem,
   searchItems,
-} from "../../src/shared/item-search";
-import { parseItemStats } from "../../src/shared/item-stats";
+} from "../../src/shared/items/item-search";
+import { parseItemStats } from "../../src/shared/items/item-stats";
 import type { CachedItem, ItemSource } from "../../src/shared/types";
 
 const item = (title: string, lines: string[], sources: ItemSource[] = [], extra: Partial<CachedItem> = {}): CachedItem => ({

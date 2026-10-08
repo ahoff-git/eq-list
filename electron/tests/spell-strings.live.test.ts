@@ -20,8 +20,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { gameFile, liveOnly } from "./game-data";
-import { parseSpellCatalog } from "../../src/shared/spell-file";
-import { buildBuffLexicon, parseSpellStringFile, type BuffLexicon } from "../../src/shared/spell-strings";
+import { parseSpellCatalog } from "../../src/shared/spells/spell-file";
+import { buildBuffLexicon, parseSpellStringFile, type BuffLexicon } from "../../src/shared/spells/spell-strings";
 
 /** Parsed once — between them the two files are ~43 MB, and every test below wants the same result. */
 let cachedLexicon: BuffLexicon | null = null;

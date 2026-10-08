@@ -23,7 +23,7 @@
  */
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
-import { mergeObservations, withAreas, type MobArea, type MobKnowledge, type MobObservation } from "../src/shared/mob-stats";
+import { mergeObservations, withAreas, type MobArea, type MobKnowledge, type MobObservation } from "../src/shared/mob/mob-stats";
 import { classifyZoneLine, samePlace } from "../src/shared/zones/place";
 import { plausible } from "../src/shared/estimates";
 import { isAdminAudit, type AdminAudit } from "../src/shared/admin";

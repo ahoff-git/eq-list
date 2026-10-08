@@ -1,5 +1,5 @@
 import type { EqlApi } from "@/shared/types";
-import { getWebApi } from "@/lib/web-api";
+import { getWebApi } from "@/lib/web/web-api";
 
 /**
  * The preload bridge lives on `window.eql` (see electron/preload.ts). It's absent during Next's

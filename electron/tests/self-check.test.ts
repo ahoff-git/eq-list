@@ -25,7 +25,7 @@ import {
   worstStatus,
   type CheckResult,
   type CheckStep,
-} from "../../src/shared/self-check";
+} from "../../src/shared/chrome/self-check";
 import { selfCheck, type SelfCheckDeps } from "../self-check";
 import type { Settings, ShoppingList, WatcherStatus } from "../../src/shared/types";
 

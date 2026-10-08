@@ -12,9 +12,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCombat } from "../../src/shared/combat-parser";
+import { parseCombat } from "../../src/shared/combat/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
-import { createPetRegistry } from "../../src/shared/pet-registry";
+import { createPetRegistry } from "../../src/shared/combat/pet-registry";
 import type { PetEngageEvent } from "../../src/shared/types";
 
 const TS = "[Wed Jul 29 00:12:33 2026] ";
