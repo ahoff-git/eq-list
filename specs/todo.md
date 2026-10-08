@@ -199,16 +199,6 @@ everything else, so this list can stay short enough to read:
   by zone size — the one number in ADR 0228 with the least real evidence behind it, same situation
   `CORRELATION_WINDOW_SEC` was in before a real log corrected it (ADR 0224).
 
-- **A replayed gap is read and parsed in one tick.** Startup no longer stalls on the maps
-  ([ADR 0072](./decisions/0072-a-folder-of-maps-is-named-once-and-remembered.md)), but the other thing
-  that begins at launch still can: `log-watcher.poll()` reads *everything* appended since the cursor in
-  a single `readNew(offset, size)` and runs the whole batch through `splitLine` → `parseSplitLine` → the
-  handlers without yielding. Measured on a real log, parsing alone is ~20ms/MB and the downstream fan-out
-  (meter, kill log, HP, alerts) costs more than the parse — so play for an evening with the app closed
-  and the first poll is a multi-second freeze, ADR 0044's "read it as the news it is" paid all at once.
-  The fix is a byte cap per pass, continuing on the next tick until caught up, which `catchingUp` already
-  has the shape for; the care needed is that `onCaughtUp` must still fire once, after the last chunk.
-
 - **Three expansion pages the zone table can't read.** `scripts/fetch-zone-expansions.mjs` gets 22 of 25
   expansions; **Omens of War**, **Ring of Scale** and **The Darkened Sea** write their zone lists in a
   shape neither of the two it handles matches, so it skips them and says so

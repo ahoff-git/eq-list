@@ -321,6 +321,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0282: An unmatched dialogue line is kept to retry](./0282-an-unmatched-dialogue-line-is-kept-to-retry.md)
 - [0283: A faction cause's pooled half gets built](./0283-a-faction-causes-pooled-half-gets-built.md)
 - [0284: A held event replays at its own moment](./0284-a-held-event-replays-at-its-own-moment.md)
+- [0285: A catch-up poll is capped and chained](./0285-a-catch-up-poll-is-capped-and-chained.md)
 
 ## Open Questions
 
