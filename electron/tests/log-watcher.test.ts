@@ -445,6 +445,120 @@ test("the gap is reported, with how stale it is", async () => {
   }
 });
 
+// A backlog bigger than one pass's cap used to be read and parsed in a single uninterruptible tick
+// — a multi-second main-process freeze the first time the app reopened after an evening away. The
+// fix caps each pass (`MAX_CATCHUP_BYTES_PER_POLL`) and chains the next one immediately until the gap
+// is gone; the part that had to be gotten right is that `onCaughtUp` still fires exactly once, after
+// the *last* chunk, with the whole gap's byte count — not once per chunk.
+test("a backlog bigger than one pass reports caughtUp exactly once, for the whole gap", async () => {
+  const dir = tempLogDir();
+  const data = tempLogDir();
+  const cursor = createLogCursor(data);
+  const file = path.join(dir, "eqlog_Tester_test.txt");
+  fs.writeFileSync(file, "");
+
+  const first = createLogWatcher(cursor);
+  first.start(dir, "");
+  const loot: LootEvent[] = [];
+  const caught: { bytes: number; lastAt?: string }[] = [];
+  let second: ReturnType<typeof createLogWatcher> | null = null;
+  try {
+    await sleep(700);
+    first.stop(); // the app "quits"
+
+    // Write a gap several times the 1 MiB cap, as one line repeated, ending with a real loot line
+    // so `lastAt` has something to carry — the last chunk's responsibility, not an earlier one's.
+    const filler = stamp("You say, 'Hail, a guard'") + "\n";
+    const backlog = filler.repeat(Math.ceil((3 * 1024 * 1024) / filler.length)) + stamp(LOOT) + "\n";
+    fs.appendFileSync(file, backlog);
+    const gapBytes = fs.statSync(file).size;
+    assert.ok(gapBytes > 3 * 1024 * 1024, "the gap has to outrun more than one capped pass");
+
+    second = createLogWatcher(cursor); // ...and "reopens"
+    second.onCaughtUp((info) => caught.push(info));
+    second.onLoot((e) => loot.push(e));
+    second.start(dir, "");
+
+    await waitFor(() => caught.length >= 1);
+    await sleep(700); // let a second (per-chunk) report show up, if it were going to
+
+    assert.equal(caught.length, 1, "reported once for the whole gap, not once per chunk");
+    assert.equal(caught[0].bytes, gapBytes, "bytes covers every chunk, not just the last one");
+    assert.equal(new Date(caught[0].lastAt!).getHours(), 19); // the final line's own timestamp
+    assert.equal(loot.length, 1, "every chunk's lines were still parsed and emitted");
+  } finally {
+    first.stop();
+    second?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(data, { recursive: true, force: true });
+  }
+});
+
+// The bug this pins: a capped pass that stops short reschedules itself with `setImmediate(poll)`
+// (above), which `clearInterval` cannot cancel the way it cancels the normal tick. Calling `stop()`
+// before that queued continuation runs left it firing anyway — re-emitting backlog events after the
+// caller was told watching had stopped, and even reviving `status().watching` back to `true` with no
+// timer left to ever service it again.
+test("stopping mid-catch-up cancels the queued continuation, not just the regular tick", async () => {
+  const dir = tempLogDir();
+  const data = tempLogDir();
+  const cursor = createLogCursor(data);
+  const file = path.join(dir, "eqlog_Tester_test.txt");
+  fs.writeFileSync(file, "");
+
+  const first = createLogWatcher(cursor);
+  first.start(dir, "");
+  let second: ReturnType<typeof createLogWatcher> | null = null;
+  try {
+    await sleep(700);
+    first.stop();
+
+    const filler = stamp("You say, 'Hail, a guard'") + "\n";
+    const backlog = filler.repeat(Math.ceil((3 * 1024 * 1024) / filler.length)) + stamp(LOOT) + "\n";
+    fs.appendFileSync(file, backlog);
+
+    const loot: LootEvent[] = [];
+    second = createLogWatcher(cursor);
+    second.onLoot((e) => loot.push(e));
+    second.start(dir, ""); // one capped pass runs synchronously here, queuing more via setImmediate
+    const afterFirstPass = loot.length;
+    second.stop(); // ...stopped before any of those queued passes get to run at all
+
+    await sleep(1000); // ample time for the whole backlog to have been chewed through, were it going to
+    assert.equal(loot.length, afterFirstPass, "no further events after stop(), from a queued pass");
+    assert.deepEqual(second.status(), { watching: false }, "stop() isn't quietly undone by a straggler");
+  } finally {
+    first.stop();
+    second?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(data, { recursive: true, force: true });
+  }
+});
+
+// The common case — the player is actively playing, and each 500ms tick only has a few new lines —
+// must not pay any chunking overhead: one pass, same as before the cap existed.
+test("a gap smaller than the cap is still read in a single pass", async () => {
+  const dir = tempLogDir();
+  const file = path.join(dir, "eqlog_Tester_test.txt");
+  fs.writeFileSync(file, "");
+
+  const watcher = createLogWatcher();
+  const events: LootEvent[] = [];
+  watcher.onLoot((e) => events.push(e));
+  watcher.start(dir, "");
+
+  try {
+    await sleep(700);
+    fs.appendFileSync(file, stamp(LOOT) + "\n");
+    await waitFor(() => events.length >= 1);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].item, "Bone Chips");
+  } finally {
+    watcher.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("an empty catch-up is still reported", async () => {
   const dir = tempLogDir();
   const watcher = createLogWatcher();

@@ -20,6 +20,19 @@ import type { CoinEvent, FactionEvent, GameTimeEvent, LootEvent, LogLine, LoginE
 
 const log = createLogger("log-watcher");
 const POLL_MS = 500;
+/**
+ * The most one `poll()` pass will read and run through `splitLine`/`parseSplitLine`/the event
+ * handlers before yielding back to the event loop. Parsing alone measures ~20ms/MB on a real log,
+ * and the fan-out to every listener (meter, kill log, HP, alerts) costs more than the parse — so an
+ * uncapped read of a whole evening's backlog is a multi-second main-process freeze on the very first
+ * poll after a restart (see [ADR 0285](../specs/decisions/0285-a-catch-up-poll-is-capped-and-chained.md)).
+ * 1 MiB keeps one pass's total main-thread cost comfortably under the ~100ms a stall starts reading
+ * as a freeze rather than a blip, while staying large enough that an ordinary poll (a few new lines
+ * every 500ms) never pays the chunking overhead — it reads its whole, tiny gap in one pass exactly as
+ * before. When a pass is capped short of the gap's end, `poll` reschedules itself immediately (see
+ * `leftoverBacklog` below) instead of waiting out the rest of `POLL_MS`.
+ */
+const MAX_CATCHUP_BYTES_PER_POLL = 1024 * 1024;
 
 /** What one pass of catching a log up came to — see `onCaughtUp`. */
 export interface CaughtUp {
@@ -247,8 +260,20 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
   }
 
   function poll() {
+    // `stop()` clears `timer` and nothing else restores it — a reliable "has watching actually
+    // stopped since this call was scheduled" check, needed because a capped pass's own continuation
+    // (`setImmediate(poll)` below) isn't cancelled by `stop()` the way `clearInterval` cancels the
+    // regular tick. Without this, a `stop()` called mid-catch-up left a straggler chain of `poll()`
+    // calls running on their own, re-emitting backlog events and even reviving `status().watching`
+    // to `true` with no timer left to ever service it again — confirmed by a direct repro.
+    if (!timer) return;
     if (busy) return;
     busy = true;
+    // Set the moment this pass reads a capped-short chunk — the only case where more of the
+    // current gap is known to remain. Drives both the "poll again immediately" reschedule and the
+    // "don't report caughtUp yet" check below, so the two can never disagree about whether the gap
+    // is actually finished.
+    let leftoverBacklog = false;
     try {
       // In auto mode, follow whichever eqlog was written most recently.
       if (!activeLogFile) {
@@ -273,9 +298,15 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
         pending = "";
       }
       if (size > offset) {
-        const { text, bytesRead } = readNew(target, offset, size);
+        // Cap what one pass reads: a fresh gap the size of an evening's play must not be parsed and
+        // fanned out in a single uninterruptible tick (see `MAX_CATCHUP_BYTES_PER_POLL`). An ordinary
+        // poll's gap is almost always smaller than the cap, so `to` is just `size` and nothing below
+        // changes from today's behavior.
+        const to = Math.min(size, offset + MAX_CATCHUP_BYTES_PER_POLL);
+        const { text, bytesRead } = readNew(target, offset, to);
         pending += text;
         offset += bytesRead;
+        if (to < size) leftoverBacklog = true;
         if (catchingUp) catchingUp.bytes += bytesRead;
         const lines = pending.split(/\r?\n/);
         pending = lines.pop() ?? ""; // trailing partial line waits for more bytes
@@ -307,9 +338,19 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
       setStatus({ watching: false, error: (e as Error).message });
     } finally {
       busy = false;
-      // The first poll after `start` is the one that reads the gap; report it even when it was
-      // empty, so a caller doesn't have to guess whether one is still coming.
-      if (catchingUp) {
+      if (leftoverBacklog) {
+        // This pass stopped at the cap with bytes of the same gap still unread. Catching up the
+        // rest can't wait for the next regular `POLL_MS` tick — that would make a big backlog take
+        // many seconds of wall-clock time to clear — so the next chunk is queued for as soon as the
+        // event loop is free. `busy` is already false by the time this runs, so it can never collide
+        // with the timer's own next tick. `catchingUp` (if set) is deliberately left alone: the gap
+        // isn't finished, so it isn't reported yet.
+        setImmediate(poll);
+      } else if (catchingUp) {
+        // The first poll after `start` is the one that reads the gap, across as many capped passes
+        // as it took; report it exactly once, now that `offset === size` and nothing is left to
+        // read this round — not once per chunk. Reported even when it was empty, so a caller doesn't
+        // have to guess whether one is still coming.
         const done = catchingUp;
         catchingUp = null;
         if (done.bytes) log.debug("caught up on gap", done);
