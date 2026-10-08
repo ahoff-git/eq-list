@@ -42,6 +42,7 @@ import type {
   EqlCapabilities,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob-stats";
+import type { KnowledgeContributor } from "@/shared/contributors";
 import type { FactionCauseKnowledge } from "@/shared/faction-observation";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
 import type { SharedKill } from "@/shared/kill-filters";
@@ -428,6 +429,26 @@ export function useMobKnowledge(refreshKey: unknown): Record<string, MobKnowledg
     }
     return byMob;
   }, [mobs]);
+}
+
+const EMPTY_MOB_CONTRIBUTORS: KnowledgeContributor[] = [];
+
+/**
+ * Who has pooled mob knowledge with us, newest report first — what a "who have I pooled with, and
+ * forget this one" list is built on (`mobs.contributors()`/`forgetPeers(id)`, both wired end to end
+ * since mob knowledge pooling shipped, with nothing reading the first until now).
+ *
+ * `peers.onChanged` is the same trigger `useZoneMobs` already follows for the pooled figures
+ * themselves — a peer's report lands or `forgetPeers` removes one, and both move what this answers
+ * without any kill of ours having changed.
+ */
+export function useMobContributors(): KnowledgeContributor[] {
+  return useFollowedRead<KnowledgeContributor[]>(
+    (a) => a.mobs.contributors(),
+    (a, reload) => a.peers.onChanged(reload),
+    EMPTY_MOB_CONTRIBUTORS,
+    [],
+  );
 }
 
 /**

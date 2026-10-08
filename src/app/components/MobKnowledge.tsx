@@ -1,12 +1,14 @@
 "use client";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { useMobContributors } from "@/lib/hooks";
 import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "./ItemLink";
 import { dropKey, dropSources, roamWhy, type MobKnowledge } from "@/shared/mob-stats";
 import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
+import { disagreeBadge, provenanceBadge } from "@/shared/mob-provenance";
 import { filterMobKnowledge, matchesDrop, mobChoices, type KillFilters } from "@/shared/kill-filters";
-import { count, countOf } from "@/shared/format";
+import { count, countOf, when } from "@/shared/format";
 import type { KillEmphasis } from "@/shared/types";
 import KillFilterBar from "./KillFilterBar";
 import { RoamLinks } from "./MapLink";
@@ -35,6 +37,14 @@ import { Caret } from "./ui";
  * both panels cost two rows that said two different things before either list began. The count now sits
  * in a bar that also filters, and the 📖 in front of it is what says which toolbar button you're looking
  * at the panel for.
+ *
+ * **Pooled provenance gets the same treatment the Faction tab's cause rows now get (ADR 0283).**
+ * `provenanceBadge` grades whose a mob's kill tally mostly is (`pooling.ts`'s `poolStanding`/`poolWhy`,
+ * via `mob-provenance.ts`), and `disagreeBadge` flags a drop whose own rate and the pool's plainly
+ * disagree — both silent the moment nothing pooled touches a row, the common case. "Pooled with" below
+ * the bar is a separate, store-level list (`mobs.contributors()`): everyone who has ever pooled mob
+ * knowledge with this install, independent of whether they're in the room right now, each with its own
+ * forget button (`forgetPeers(id)`) beside the blanket one the bar already had.
  */
 export default function MobKnowledgePanel({
   zone,
@@ -60,6 +70,7 @@ export default function MobKnowledgePanel({
   onEmphasize?: (emphasis: KillEmphasis | null) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const contributors = useMobContributors();
   const mobs = useMemo(() => filterMobKnowledge(all, filters), [all, filters]);
   // The picker offers what's here *before* filtering, or choosing a mob would empty its own list.
   const names = useMemo(() => mobChoices(all), [all]);
@@ -123,6 +134,28 @@ export default function MobKnowledgePanel({
         </button>
       </KillFilterBar>
 
+      {contributors.length > 0 && (
+        <details className="mk-contributors">
+          <summary className="muted small">Pooled with {count(contributors.length, "peer")}</summary>
+          {contributors.map((c) => (
+            <div className="mk-contributor" key={c.by.id} title={c.seenAt ? `Last reported ${when(c.seenAt)}` : undefined}>
+              <span className="u-name">{c.by.name}</span>
+              <span className="muted small">
+                {count(c.kills, "kill")} over {count(c.observations, "entry")}
+              </span>
+              <span className="spacer" />
+              <button
+                className="btn ghost sm"
+                title={`Forget everything ${c.by.name} has told us. Your own observations are kept.`}
+                onClick={() => void api()?.mobs.forgetPeers(c.by.id)}
+              >
+                Forget
+              </button>
+            </div>
+          ))}
+        </details>
+      )}
+
       {mobs.length === 0 && (
         <p className="muted small">
           Nothing here matches the filters — {count(all.length, "mob is", "mobs are")} known in this zone.
@@ -132,6 +165,9 @@ export default function MobKnowledgePanel({
       {mobs.map((mob) => {
         const key = `${mob.mob}|${mob.zone}`;
         const pooled = mob.kills - mob.myKills;
+        // The richer, confidence-graded read on the same split the kill count above already states
+        // in numbers — `undefined` the moment nothing is pooled, same as `pooledCauseBadge`.
+        const provenance = provenanceBadge(mob);
         return (
           <div className={`mob-row ${showDrops(key) ? "open" : ""}`} key={key}>
             <div
@@ -154,6 +190,11 @@ export default function MobKnowledgePanel({
                 {count(mob.kills, "kill")}
                 {pooled > 0 ? ` (${mob.myKills} yours)` : ""}
               </span>
+              {provenance && (
+                <span className={`muted small mk-prov ${provenance.confidence}`} title={provenance.title}>
+                  · {provenance.label}
+                </span>
+              )}
               {mob.copper > 0 && (
                 <span
                   className="muted small"
@@ -187,6 +228,9 @@ export default function MobKnowledgePanel({
                     // The line the search was for, marked — with several rows open at once, the item
                     // you typed is otherwise just one more line among their whole loot tables.
                     const hit = searching && matchesDrop(drop.item, filters.drop);
+                    // Your own rate and the pool's plainly disagree — `undefined` the common case,
+                    // when they agree or either sample is too thin to lead (`disagreements()`).
+                    const disagree = disagreeBadge(mob, drop);
                     return (
                       <div
                         className={`mob-drop ${hit ? "hit" : ""}`}
@@ -199,6 +243,11 @@ export default function MobKnowledgePanel({
                         {from.length > 1 && (
                           <span className="md-from muted small" title={alsoFrom(drop.item, mob.mob, from)}>
                             {count(from.length, "source")}
+                          </span>
+                        )}
+                        {disagree && (
+                          <span className="md-disagree" title={disagree.title}>
+                            ⚠ {disagree.label}
                           </span>
                         )}
                         <span className="md-count muted small">

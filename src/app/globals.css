@@ -2716,6 +2716,14 @@ kbd {
 .mob-drop .md-rate.solid, .mk-head .md-rate.solid { color: var(--accent); font-weight: 600; }
 .mob-drop .md-rate.fair, .mk-head .md-rate.fair { color: var(--accent); }
 .mob-drop .md-rate.thin, .mk-head .md-rate.thin { color: var(--text-dim); }
+/* Whose a pooled kill tally mostly is (`provenanceBadge`) — the same `.md-rate` ladder, since it's
+   graded on the same sample-size confidence, just worn by a provenance label instead of a percentage. */
+.mk-prov.fair { color: var(--accent); }
+.mk-prov.solid { color: var(--accent); font-weight: 600; }
+.mk-prov.thin { color: var(--text-dim); }
+/* A drop row whose own rate and the pool's plainly disagree (`disagreeBadge`) — the same `--bad`
+   a suspicious wiki claim already uses (`.badge.era-out`), since both are "worth a second look". */
+.md-disagree { color: var(--bad); font-size: 11px; }
 
 /* A mob's own page, saying what your kills taught — one block per zone. Borrows `.mob-drop` and its
    rate colours from the panel above: the same number, read the same way, wherever it's shown. */
@@ -2736,6 +2744,13 @@ kbd {
 .mk-loc .md-rate.solid { color: var(--accent); font-weight: 600; }
 .roam-links { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; }
 .mob-locations { margin-top: 4px; }
+
+/* Who has ever pooled mob knowledge with this install (`mobs.contributors()`) — independent of
+   whether they're in the room right now, so this sits beside the mob list rather than in the Peers
+   tab's live roster, which answers a different question. */
+.mk-contributors { margin: 2px 0 6px; font-size: 12px; }
+.mk-contributor { display: flex; align-items: center; gap: 8px; padding: 2px 4px; }
+.mk-contributor .u-name { font-weight: 500; }
 
 /* kills panel: the heatmap's filters and the rows behind it */
 .kill-list {
