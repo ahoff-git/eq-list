@@ -63,7 +63,7 @@ import { knownItems, type KnownItem } from "@/shared/known-items";
 import type { ItemRow } from "@/shared/item-search";
 import type { SpellRow } from "@/shared/spell-search";
 import { clockSkew } from "@/shared/spawn-timers";
-import { runningGoalTargets } from "@/shared/goal-progress";
+import { runningGoalTargets } from "@/shared/goals/goal-progress";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { advanceGameMinutes, DEFAULT_PIN_AT, DEFAULT_RATE } from "@/shared/gameclock/game-clock";

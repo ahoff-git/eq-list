@@ -16,8 +16,8 @@ import { count } from "@/shared/format";
 import { Caret, caretGlyph, Empty } from "@/app/components/ui";
 import { AlertStyleDrawer } from "@/app/components/AlertStyleField";
 import { LOOT_STYLE_ID } from "@/shared/alert-styles";
-import { goalWantsItem, goalWantsMob } from "@/shared/goal-progress";
-import GoalFocusBanner from "@/app/components/GoalFocusBanner";
+import { goalWantsItem, goalWantsMob } from "@/shared/goals/goal-progress";
+import GoalFocusBanner from "@/app/components/goals/GoalFocusBanner";
 import {
   countableEntries,
   effectiveNeeded,

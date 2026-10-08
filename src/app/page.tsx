@@ -13,7 +13,7 @@ import ScaleButtons from "@/app/components/ScaleButtons";
 import ListPanel from "@/app/components/ListPanel";
 import HuntPanel, { type HuntGrouping } from "@/app/components/HuntPanel";
 import SpawnPanel from "@/app/components/SpawnPanel";
-import GoalsPanel from "@/app/components/GoalsPanel";
+import GoalsPanel from "@/app/components/goals/GoalsPanel";
 import AchievementsPanel from "@/app/components/AchievementsPanel";
 import BuffPanel from "@/app/components/BuffPanel";
 import SettingsPanel from "@/app/components/SettingsPanel";

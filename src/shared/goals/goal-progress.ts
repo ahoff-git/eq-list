@@ -6,11 +6,11 @@
  * the clock — so `electron/goal-tracker.ts` is the only thing that owns a clock, and this is tested
  * without one.
  */
-import { parseDuration } from "./duration";
-import { stripArticle } from "./log-parser";
-import { normalizeItemName } from "./grouping";
-import { mobKey } from "./mob-stats";
-import type { Goal, GoalMode, GoalState, GoalTarget, RunningGoal } from "./types";
+import { parseDuration } from "../duration";
+import { stripArticle } from "../log-parser";
+import { normalizeItemName } from "../grouping";
+import { mobKey } from "../mob-stats";
+import type { Goal, GoalMode, GoalState, GoalTarget, RunningGoal } from "../types";
 
 /** The progress fractions a running goal is bannered at, in the order they're crossed. */
 export const MILESTONE_FRACTIONS = [0.25, 0.5, 0.75] as const;

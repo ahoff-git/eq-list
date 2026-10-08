@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useCurrentZone, useGoalFocus, useHunt, useSettings, useMobLoot, useMobKnowledge } from "@/lib/hooks";
-import { goalWantsItem, goalWantsMob } from "@/shared/goal-progress";
-import GoalFocusBanner from "@/app/components/GoalFocusBanner";
+import { goalWantsItem, goalWantsMob } from "@/shared/goals/goal-progress";
+import GoalFocusBanner from "@/app/components/goals/GoalFocusBanner";
 import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/drop-truth";
 import { mobKey } from "@/shared/mob-stats";
 import ItemLink from "@/app/components/ItemLink";
