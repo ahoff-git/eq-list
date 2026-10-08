@@ -175,15 +175,6 @@ everything else, so this list can stay short enough to read:
   handler) — there is no ledger that tracks *why* you got money the way `faction-log.ts` tracks a
   faction's standing. Worth a real tab only if someone actually wants one; nothing forces it.
 
-- **Nothing yet shows the pooled provenance it now carries.** `src/shared/pooling.ts` can say whose a
-  figure mostly is, split a pooled drop rate back into your evidence and each contributor's, and name
-  the drops where the two plainly disagree — and no panel reads it yet. The mob knowledge panel shows
-  `myKills` of `kills` and a contributor list, which is the old, coarser version of the same idea.
-  Wiring `poolStanding`/`poolWhy` into that panel's hover, and surfacing `disagreements()` somewhere,
-  is what makes ADR 0132's "reported, not resolved" visible rather than merely true. `mobs.contributors()`
-  is likewise wired end to end with nothing calling it — it's what a "who have I pooled with, and
-  forget this one" list would be built on (`forgetPeers(id)` already takes an id).
-
 - **A mob with several known locations still only ever gets one pin on the map.** [ADR 0228](./decisions/0228-a-mob-can-have-more-than-one-known-location.md)
   taught `mob-stats.ts` to keep every distinct camp (`MobArea[]`, clustered rather than blended) instead
   of one bad average, and the three "where does this live" lists (the map panel, a mob's own wiki page,
