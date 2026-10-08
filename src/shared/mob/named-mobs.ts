@@ -12,8 +12,8 @@
  * ("A bandit (Eastern Karana)"), and `stripArticle` (`log-parser.ts`) drops the leading article a
  * kill log or roster row carries and a wiki title never does.
  */
-import { npcKey } from "./item-levels";
-import { stripArticle } from "./log-parser";
+import { npcKey } from "../item-levels";
+import { stripArticle } from "../log-parser";
 import { NAMED_MOBS } from "./named-mobs.generated";
 
 const namedKey = (name: string): string => npcKey(stripArticle(name));

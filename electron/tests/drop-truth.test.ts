@@ -10,7 +10,7 @@ import {
   reconcileDrops,
   SUSPICIOUS_AFTER_KILLS,
   TRUST_OBSERVED_AFTER_KILLS,
-} from "../../src/shared/drop-truth";
+} from "../../src/shared/mob/drop-truth";
 
 test("a drop the wiki lists and we've seen is confirmed", () => {
   const [truth] = reconcileDrops({ "Bone Chips": "20%" }, { "Bone Chips": 5 }, 20);

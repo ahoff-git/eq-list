@@ -53,11 +53,11 @@ import type {
   WikiPage,
   WikiPageKind,
 } from "../types";
-import { withAreas, type MobArea, type MobObservation } from "../mob-stats";
+import { withAreas, type MobArea, type MobObservation } from "../mob/mob-stats";
 import type { FactionObservation } from "../faction/faction-observation";
 import type { SharedKill } from "../kills/kill-filters";
 import type { BuffInstance, BuffRiseSource } from "../buffs/buff-tracking";
-import type { RespawnLearning, SpawnTimer } from "../spawn-timers";
+import type { RespawnLearning, SpawnTimer } from "../mob/spawn-timers";
 import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "../buffs/buff-tracking";
 import { decodeWatches } from "../watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "../map/pins";

@@ -40,13 +40,13 @@
  * Pure and DOM-free: main derives observations from the kill log, the renderer merges them for
  * display, and both use exactly this code.
  */
-import { confidenceOf, type Confidence, type SampleScale } from "./estimates";
-import { stripArticle } from "./log-parser";
-import { placeKey, placeName } from "./zones/place";
-import type { KillRecord } from "./types";
-import { ratio } from "./numbers";
-import { locText } from "./format";
-import { legacyContributorId } from "./contributors";
+import { confidenceOf, type Confidence, type SampleScale } from "../estimates";
+import { stripArticle } from "../log-parser";
+import { placeKey, placeName } from "../zones/place";
+import type { KillRecord } from "../types";
+import { ratio } from "../numbers";
+import { locText } from "../format";
+import { legacyContributorId } from "../contributors";
 
 /** Positions this poor are ignored when working out where a mob lives. */
 const AREA_MIN_CONFIDENCE = 0.2;

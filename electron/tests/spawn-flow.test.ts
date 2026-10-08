@@ -30,7 +30,7 @@ import { splitLine } from "../../src/shared/log-parser";
 import { parseSplitLine } from "../../src/shared/parse-line";
 import { createKillLog, KILL_LOG_MIGRATIONS } from "../kill-log";
 import { createSpawnTracker, type SpawnTracker } from "../spawn-tracker";
-import { timerKey } from "../../src/shared/spawn-timers";
+import { timerKey } from "../../src/shared/mob/spawn-timers";
 import type { CastAlertEvent, CastAlertSettings, SpawnView } from "../../src/shared/types";
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "eql-flow-"));
@@ -353,13 +353,13 @@ test("flow: the refiner pads a wanderer, and is warned before it is due", () => 
 /** The row's figure as the panel would word it — imported lazily to keep the flow readable. */
 function describe(respawn: NonNullable<ReturnType<typeof rowFor>>["respawn"]): string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { describeRespawn } = require("../../src/shared/spawn-timers");
+  const { describeRespawn } = require("../../src/shared/mob/spawn-timers");
   return respawn ? describeRespawn(respawn) : "";
 }
 
 function caveatOf(view: SpawnView, mob: string): string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { respawnCaveat } = require("../../src/shared/spawn-timers");
+  const { respawnCaveat } = require("../../src/shared/mob/spawn-timers");
   const respawn = view.known.find((k) => k.mob === mob)?.respawn;
   return respawn ? (respawnCaveat(respawn) ?? "") : "";
 }

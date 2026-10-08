@@ -28,7 +28,7 @@
  * Pure: text in, text out. No I/O, no clipboard, no clock of its own — `at` arrives as an argument.
  */
 import { reconcileDrops } from "./drop-truth";
-import { count, percent } from "./format";
+import { count, percent } from "../format";
 import type { MobDrop, MobKnowledge } from "./mob-stats";
 
 export interface WikiContributionInput {

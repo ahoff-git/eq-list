@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isRace, raceOf } from "../../src/shared/mob-races";
+import { isRace, raceOf } from "../../src/shared/mob/mob-races";
 
 test("raceOf reads a real mob's race back, case-insensitively", () => {
   assert.equal(raceOf("Peg Leg"), "Dwarf");

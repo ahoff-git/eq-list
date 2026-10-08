@@ -5,7 +5,7 @@
  * beside it have to describe the same set of kills, and the surest way to guarantee that is
  * to have only one implementation. Pure and DOM-free, so it's testable on its own.
  */
-import type { MobKnowledge } from "../mob-stats";
+import type { MobKnowledge } from "../mob/mob-stats";
 import { compareValues } from "../sorting";
 import type { KillRecord } from "../types";
 

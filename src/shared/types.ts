@@ -1,7 +1,7 @@
 import type { DataReportRow } from "./data-provenance";
 import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./self-check";
-import type { MobKnowledge, MobObservation } from "./mob-stats";
+import type { MobKnowledge, MobObservation } from "./mob/mob-stats";
 import type { KnowledgeContributor } from "./contributors";
 import type { FactionCauseKnowledge } from "./faction/faction-observation";
 import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, ShareSettings } from "./peers/peer-share";
@@ -9,7 +9,7 @@ import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, Shar
 // `types.ts` is where that surface is described.
 export type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind } from "./peers/peer-share";
 import type { SharedKill } from "./kills/kill-filters";
-import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./spawn-timers";
+import type { Floor, Respawn, RespawnLearning, Sighting, SpawnState, SpawnTimer } from "./mob/spawn-timers";
 import type { BuffInstance, BuffView, KnownBuff } from "./buffs/buff-tracking";
 import type { EqMap } from "./map/eqmap";
 import type { MapPin } from "./map/pins";

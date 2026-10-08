@@ -6,8 +6,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NAMED_MOBS, NAMED_MOBS_SOURCE } from "../../src/shared/named-mobs.generated";
-import { isNamedMob } from "../../src/shared/named-mobs";
+import { NAMED_MOBS, NAMED_MOBS_SOURCE } from "../../src/shared/mob/named-mobs.generated";
+import { isNamedMob } from "../../src/shared/mob/named-mobs";
 
 // Pinned against a real run (6586, 2026-09-21) with margin — the floor below which something
 // clearly broke (the same role `aa-list.test.ts`'s `MIN_TOTAL` plays for its own list).

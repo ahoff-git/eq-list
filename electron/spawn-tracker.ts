@@ -20,7 +20,7 @@
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { SPAWN_STYLE_ID, alertStyle } from "../src/shared/alert-styles";
-import { mobKey } from "../src/shared/mob-stats";
+import { mobKey } from "../src/shared/mob/mob-stats";
 import { placeKey, placeName } from "../src/shared/zones/place";
 import {
   learnRespawns,
@@ -47,7 +47,7 @@ import {
   type Floor,
   type Sighting,
   type SpawnTimer,
-} from "../src/shared/spawn-timers";
+} from "../src/shared/mob/spawn-timers";
 import type {
   CastAlertEvent,
   CastAlertSettings,

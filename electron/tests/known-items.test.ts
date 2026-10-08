@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { knownItems, searchKnownItems, unknownToTheWiki } from "../../src/shared/known-items";
-import type { MobKnowledge } from "../../src/shared/mob-stats";
+import type { MobKnowledge } from "../../src/shared/mob/mob-stats";
 import type { LootedItem, SearchResult } from "../../src/shared/types";
 
 const looted = (item: string, count = 1, lastAt = "2026-07-17T18:41:14"): LootedItem => ({

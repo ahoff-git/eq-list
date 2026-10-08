@@ -21,7 +21,7 @@
  *
  * Pure and DOM-free. It knows nothing about where a level was read; the parser hands it a number.
  */
-import { plausible, widen, type Plausible } from "./estimates";
+import { plausible, widen, type Plausible } from "../estimates";
 
 /**
  * What a level may be before it stops being a level.

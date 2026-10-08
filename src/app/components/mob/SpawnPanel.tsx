@@ -14,7 +14,7 @@ import {
   untimedReason,
   contradicted,
   type RecentCamp,
-} from "@/shared/spawn-timers";
+} from "@/shared/mob/spawn-timers";
 import { fuzzyRank } from "@/shared/fuzzy";
 import { formatDuration } from "@/shared/duration";
 import { when } from "@/shared/format";

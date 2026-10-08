@@ -1,7 +1,7 @@
 "use client";
 import { useItemDrops, useItemPrices } from "@/lib/hooks";
 import { ringMob, ringOnHover } from "@/lib/showOnMap";
-import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
+import { dropRate, rateConfidence, rateWhy } from "@/shared/mob/drop-truth";
 import { count } from "@/shared/format";
 import { itemDropTotals, priceOfItem, type ItemDropSource } from "@/shared/item-sources";
 import { describeCoins, formatCoins } from "@/shared/money";

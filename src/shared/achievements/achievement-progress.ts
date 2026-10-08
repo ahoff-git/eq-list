@@ -24,7 +24,7 @@
  * `event.killer === SELF`, the same self-only discipline every other criterion kind holds to.
  */
 import { matchCast, matchFade, matchLine, type MatchContext } from "../cast-alerts";
-import { isRace } from "../mob-races";
+import { isRace } from "../mob/mob-races";
 import { placeKey } from "../zones/place";
 import type {
   AchievementCriterion,

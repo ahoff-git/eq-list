@@ -49,7 +49,7 @@ import {
   type PeerTimer,
 } from "../../src/shared/peers/peer-share";
 import { ON_PET, ON_YOU, type BuffInstance } from "../../src/shared/buffs/buff-tracking";
-import type { SpawnTimer } from "../../src/shared/spawn-timers";
+import type { SpawnTimer } from "../../src/shared/mob/spawn-timers";
 import type { HighScore } from "../../src/shared/types";
 import { EMPTY_FIGHT } from "../../src/shared/empty-values";
 /**

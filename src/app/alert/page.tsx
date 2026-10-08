@@ -1,7 +1,7 @@
 "use client";
 import CastAlerts from "@/app/components/CastAlerts";
 import AlertPlacement from "@/app/components/AlertPlacement";
-import SpawnOverlay from "@/app/components/SpawnOverlay";
+import SpawnOverlay from "@/app/components/mob/SpawnOverlay";
 import GoalsOverlay from "@/app/components/goals/GoalsOverlay";
 import BuffOverlay from "@/app/components/buffs/BuffOverlay";
 import DebuffOverlay from "@/app/components/buffs/DebuffOverlay";

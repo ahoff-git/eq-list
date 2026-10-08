@@ -15,7 +15,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runMigrations } from "../migrations";
-import { observeMobs } from "../../src/shared/mob-stats";
+import { observeMobs } from "../../src/shared/mob/mob-stats";
 import type { KillRecord } from "../../src/shared/types";
 
 function dirs(): { userData: string; logs: string } {

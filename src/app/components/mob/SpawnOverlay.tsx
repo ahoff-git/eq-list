@@ -1,7 +1,7 @@
 "use client";
 import { useSettings, useSpawns } from "@/lib/hooks";
 import { alertPlacement, alertStyle } from "@/shared/alert-styles";
-import { countdownMs, formatCountdown } from "@/shared/spawn-timers";
+import { countdownMs, formatCountdown } from "@/shared/mob/spawn-timers";
 import type { AlertPositionValue, RunningSpawn } from "@/shared/types";
 
 /**

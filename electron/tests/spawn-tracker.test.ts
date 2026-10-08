@@ -11,8 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createSpawnTracker, type SpawnTracker } from "../spawn-tracker";
-import { CAMPING_KILLS, contradicted, MAX_CAMP_TIMERS, respawnCaveat, timerKey } from "../../src/shared/spawn-timers";
-import type { RespawnFacts } from "../../src/shared/spawn-timers";
+import { CAMPING_KILLS, contradicted, MAX_CAMP_TIMERS, respawnCaveat, timerKey } from "../../src/shared/mob/spawn-timers";
+import type { RespawnFacts } from "../../src/shared/mob/spawn-timers";
 import { BUILT_IN_STYLES } from "../../src/shared/alert-styles";
 import type { CastAlertEvent, CastAlertSettings, KillRecord } from "../../src/shared/types";
 

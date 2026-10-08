@@ -25,7 +25,7 @@
 import { fuzzyRank } from "./fuzzy";
 import { normalizeItemName } from "./grouping";
 import { itemBaseName } from "./names";
-import type { MobKnowledge } from "./mob-stats";
+import type { MobKnowledge } from "./mob/mob-stats";
 import type { LootedItem, SearchResult } from "./types";
 
 /** One item we know exists because we've held it, however the wiki feels about that. */

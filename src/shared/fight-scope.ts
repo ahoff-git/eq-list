@@ -59,7 +59,7 @@
  * for one event at a time, and what a caller does with "not yet" is its business, not this one's.
  */
 import { hasArticle } from "./log-parser";
-import { mobKey } from "./mob-stats";
+import { mobKey } from "./mob/mob-stats";
 import type { CombatEvent } from "./types";
 
 /** `admits`'s answer — see the module doc for what each one means and who acts on it. */

@@ -11,7 +11,7 @@
  * `FactionCauseKnowledge` — so this is only the "a panel wants a short badge, not a whole sentence"
  * layer on top of it, not a second `provenanceOf`/`rateSplit`.
  */
-import { poolStanding, poolWhy, rateSplit, type PoolStanding } from "./pooling";
+import { poolStanding, poolWhy, rateSplit, type PoolStanding } from "../pooling";
 import { dropRate } from "./drop-truth";
 import type { MobDrop, MobKnowledge } from "./mob-stats";
 

@@ -16,7 +16,7 @@ import {
   type KillFilters,
 } from "../../src/shared/kills/kill-filters";
 import { confidenceTier, CONFIDENCE_TIERS, PLOTTABLE_CONFIDENCE } from "../../src/shared/kills/kill-confidence";
-import type { MobKnowledge } from "../../src/shared/mob-stats";
+import type { MobKnowledge } from "../../src/shared/mob/mob-stats";
 import type { KillRecord } from "../../src/shared/types";
 
 const NOW = Date.parse("2026-07-29T12:00:00.000Z");

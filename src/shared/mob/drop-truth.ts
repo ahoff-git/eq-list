@@ -18,10 +18,10 @@
  *
  * Pure and DOM-free so it can be tested without a wiki or a log.
  */
-import { normalizeItemName } from "./grouping";
-import { itemBaseName } from "./names";
-import { percent } from "./format";
-import { round } from "./numbers";
+import { normalizeItemName } from "../grouping";
+import { itemBaseName } from "../names";
+import { percent } from "../format";
+import { round } from "../numbers";
 
 /** How much evidence before "never seen it" is worth remarking on. */
 export const SUSPICIOUS_AFTER_KILLS = 25;

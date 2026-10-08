@@ -19,7 +19,7 @@
  *
  * Pure and DOM-free; tested in `electron/tests/mob-place.test.ts`.
  */
-import { mobKey, roamWhy, type MobArea } from "../mob-stats";
+import { mobKey, roamWhy, type MobArea } from "../mob/mob-stats";
 import type { ItemCard } from "../types";
 
 /** What a mob's wiki page states about where it stands. Either half may be missing. */

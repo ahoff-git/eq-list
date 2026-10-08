@@ -18,8 +18,8 @@
  *
  * Pure and DOM-free, like the rest of `src/shared/map` — tested in `electron/tests/hunt-pins.test.ts`.
  */
-import type { HuntZone } from "../hunt";
-import { mobKey, type MobKnowledge, type MobObservation } from "../mob-stats";
+import type { HuntZone } from "../mob/hunt";
+import { mobKey, type MobKnowledge, type MobObservation } from "../mob/mob-stats";
 import { zoneMatches } from "../sources";
 import { bestPlaced, mobPlace, type MobPlace, type PlaceSource, type WikiPlace } from "./mob-place";
 

@@ -6,8 +6,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildWikiContribution, type WikiContributionInput } from "../../src/shared/wiki-contribution";
-import type { MobKnowledge } from "../../src/shared/mob-stats";
+import { buildWikiContribution, type WikiContributionInput } from "../../src/shared/mob/wiki-contribution";
+import type { MobKnowledge } from "../../src/shared/mob/mob-stats";
 
 const AT = "2026-09-08T20:00:00.000Z";
 

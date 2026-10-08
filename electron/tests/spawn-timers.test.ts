@@ -40,7 +40,7 @@ import {
   MAX_TIMER_SECONDS,
   type RespawnFacts,
   type RespawnLearning,
-} from "../../src/shared/spawn-timers";
+} from "../../src/shared/mob/spawn-timers";
 import type { KillRecord } from "../../src/shared/types";
 
 const T0 = Date.parse("2026-08-17T12:00:00.000Z");

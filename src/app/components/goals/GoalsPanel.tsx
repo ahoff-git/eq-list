@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useGoalFocus, useGoals, useLogVocabulary } from "@/lib/hooks";
-import { formatCountdown } from "@/shared/spawn-timers";
+import { formatCountdown } from "@/shared/mob/spawn-timers";
 import { formatDuration } from "@/shared/duration";
 import { parseGoalDuration, parseStreakInterval } from "@/shared/goals/goal-progress";
 import { count } from "@/shared/format";

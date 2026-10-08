@@ -9,7 +9,7 @@ import { zoneKey } from "@/shared/names";
 import { pickHit } from "@/shared/map/hit-test";
 import { clearCanvas, drawLine, drawCircle } from "@/lib/map/draw";
 import { localPoint } from "@/lib/screen";
-import { mobKey } from "@/shared/mob-stats";
+import { mobKey } from "@/shared/mob/mob-stats";
 import { locText } from "@/shared/format";
 import { TRAIL_OPACITY_DEFAULT } from "@/shared/constants";
 import type { CanvasSize, Loc, MapView, Point, Zone } from "@/shared/map/types";

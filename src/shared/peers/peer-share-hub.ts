@@ -80,7 +80,7 @@ import { decodeCoverage, type PeerCoverage } from "../item-shards";
 import type { FightShare, SharedGameTime, SharedItemPage, SharedRespawn, SharedSpellPage } from "./peer-share";
 import type { MapPin } from "../map/pins";
 import type { KillRecord, KnownSpawn } from "../types";
-import type { MobObservation } from "../mob-stats";
+import type { MobObservation } from "../mob/mob-stats";
 import type { FactionObservation } from "../faction/faction-observation";
 import type { SharedKill } from "../kills/kill-filters";
 

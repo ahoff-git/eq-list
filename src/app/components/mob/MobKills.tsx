@@ -2,12 +2,12 @@
 import { useMobZones, useSettings } from "@/lib/hooks";
 import { copyText } from "@/lib/clipboard";
 import { ringMob, ringOnHover } from "@/lib/showOnMap";
-import { dropRate, rateConfidence, rateWhy } from "@/shared/drop-truth";
+import { dropRate, rateConfidence, rateWhy } from "@/shared/mob/drop-truth";
 import { count } from "@/shared/format";
 import { describeCoins, formatCoins } from "@/shared/money";
-import type { MobKnowledge } from "@/shared/mob-stats";
+import type { MobKnowledge } from "@/shared/mob/mob-stats";
 import type { WikiComponent } from "@/shared/types";
-import { buildWikiContribution } from "@/shared/wiki-contribution";
+import { buildWikiContribution } from "@/shared/mob/wiki-contribution";
 import ItemLink from "@/app/components/ItemLink";
 import { RoamLinks, ZoneLink } from "@/app/components/MapLink";
 

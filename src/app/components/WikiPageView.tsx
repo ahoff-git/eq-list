@@ -6,7 +6,7 @@ import ItemLink from "@/app/components/ItemLink";
 import LucySays, { LucyLink } from "@/app/components/LucySays";
 import RefreshPage from "@/app/components/RefreshPage";
 import MapLink, { ZoneLink } from "@/app/components/MapLink";
-import MobKills from "@/app/components/MobKills";
+import MobKills from "@/app/components/mob/MobKills";
 import { AddButton } from "@/app/components/ui";
 import { addItem, addPage, addPageItself } from "@/lib/addToList";
 import { factionRaiseNote, wikiAddAction } from "@/shared/wiki-add";

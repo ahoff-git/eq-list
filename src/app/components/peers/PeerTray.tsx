@@ -8,7 +8,7 @@ import { count, duration } from "@/shared/format";
 import { targetLabel } from "@/shared/buffs/buff-tracking";
 import { Caret } from "@/app/components/ui";
 import type { BuffInstance } from "@/shared/buffs/buff-tracking";
-import type { SpawnTimer } from "@/shared/spawn-timers";
+import type { SpawnTimer } from "@/shared/mob/spawn-timers";
 import type { CastWatch, NamedAlertStyle, ReceivedShare, ShoppingListEntry } from "@/shared/types";
 import type { MapPin } from "@/shared/map/pins";
 

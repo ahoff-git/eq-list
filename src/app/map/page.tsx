@@ -24,7 +24,7 @@ import { PASS_THROUGH, useClickThrough } from "@/lib/clickThrough";
 import { useWindowPin } from "@/lib/windowToggles";
 import MapPanel, { type RenderKill, type RenderPin } from "@/app/components/MapPanel";
 import KillList from "@/app/components/kills/KillList";
-import MobKnowledgePanel from "@/app/components/MobKnowledge";
+import MobKnowledgePanel from "@/app/components/mob/MobKnowledge";
 import { DEFAULT_KILL_FILTERS, filterKills, sharedAsKill, windowMoves, type KillFilters } from "@/shared/kills/kill-filters";
 import { useMapSource, useVectorMap } from "@/lib/map/useMapSource";
 import { useFloors } from "@/lib/map/useFloors";

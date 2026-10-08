@@ -15,8 +15,8 @@ import {
   huntZoneOptions,
   neededEntries,
   type HuntInput,
-} from "../../src/shared/hunt";
-import type { MobKnowledge } from "../../src/shared/mob-stats";
+} from "../../src/shared/mob/hunt";
+import type { MobKnowledge } from "../../src/shared/mob/mob-stats";
 import type { ItemSource, ShoppingListEntry } from "../../src/shared/types";
 
 const drop = (where: string, zone: string): ItemSource => ({ kind: "drop", where, detail: zone });

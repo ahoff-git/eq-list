@@ -6,11 +6,11 @@
  * items that mob drops. Pure + testable; the Hunt tab renders the result and the
  * overlay's current zone can float to the top.
  */
-import type { ItemSource, ShoppingListEntry } from "./types";
-import { effectiveNeeded, isMobEntry, originKey } from "./grouping";
+import type { ItemSource, ShoppingListEntry } from "../types";
+import { effectiveNeeded, isMobEntry, originKey } from "../grouping";
 import { mobKey, type MobKnowledge } from "./mob-stats";
-import { distinct } from "./sorting";
-import { normalizeZone, sourceZones } from "./sources";
+import { distinct } from "../sorting";
+import { normalizeZone, sourceZones } from "../sources";
 
 export interface HuntItemRef {
   item: string;

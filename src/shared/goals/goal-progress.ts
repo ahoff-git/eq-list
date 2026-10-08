@@ -9,7 +9,7 @@
 import { parseDuration } from "../duration";
 import { stripArticle } from "../log-parser";
 import { normalizeItemName } from "../grouping";
-import { mobKey } from "../mob-stats";
+import { mobKey } from "../mob/mob-stats";
 import type { Goal, GoalMode, GoalState, GoalTarget, RunningGoal } from "../types";
 
 /** The progress fractions a running goal is bannered at, in the order they're crossed. */

@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useCurrentZone, useGoalFocus, useHunt, useSettings, useMobLoot, useMobKnowledge } from "@/lib/hooks";
 import { goalWantsItem, goalWantsMob } from "@/shared/goals/goal-progress";
 import GoalFocusBanner from "@/app/components/goals/GoalFocusBanner";
-import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/drop-truth";
-import { mobKey } from "@/shared/mob-stats";
+import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/mob/drop-truth";
+import { mobKey } from "@/shared/mob/mob-stats";
 import ItemLink from "@/app/components/ItemLink";
 import ZonePicker from "@/app/components/ZonePicker";
 import { api } from "@/lib/api";
@@ -17,7 +17,7 @@ import {
   huntZoneOptions,
   type HuntPlace,
   type HuntZone,
-} from "@/shared/hunt";
+} from "@/shared/mob/hunt";
 import { zoneMatches } from "@/shared/sources";
 import { distinct } from "@/shared/sorting";
 import { zoneLevelText, zoneLevelWhy, zoneLevels } from "@/shared/zones/levels";

@@ -26,8 +26,8 @@
  *
  * Pure and DOM-free, like the rest of `src/shared/map` — tested in `electron/tests/named-pins.test.ts`.
  */
-import { mobKey, type MobKnowledge, type MobObservation } from "../mob-stats";
-import { isNamedMob } from "../named-mobs";
+import { mobKey, type MobKnowledge, type MobObservation } from "../mob/mob-stats";
+import { isNamedMob } from "../mob/named-mobs";
 import { bestPlaced, mobPlace, type MobPlace, type PlaceSource, type WikiPlace } from "./mob-place";
 
 /** A named mob, placed by whichever source can — the map's own mark, not something you dropped. */

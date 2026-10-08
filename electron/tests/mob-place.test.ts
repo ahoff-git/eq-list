@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cardLoc, cardZone, mobPlace, placeLabel, statesNothing, wikiPlace } from "../../src/shared/map/mob-place";
-import type { MobArea } from "../../src/shared/mob-stats";
+import type { MobArea } from "../../src/shared/mob/mob-stats";
 
 const area = (over: Partial<MobArea> = {}): MobArea => ({ y: 100, x: -200, spread: 30, samples: 8, ...over });
 
