@@ -74,14 +74,6 @@ everything else, so this list can stay short enough to read:
   `WARNING: Out of era items may be listed!` over its own results, which is a caveat to carry through
   rather than launder.
 
-- **Lucy isn't in the setup check.** The `wiki` step pings eqlwiki and reports how long it took
-  (`pingWiki`, `electron/self-check.ts`), and there is no equivalent for
-  [Lucy](./lucy-data/README.md) — so "search found nothing" and "lucy.allakhazam.com is unreachable"
-  read identically in the one place built to tell those apart. The shape is already there: a
-  `pingLucy` beside `pingWiki` (smallest thing the site will serve, short deadline, never throws), one
-  more entry in `SETUP_CHECKS`, one more injected dep. The wording should say what the `wiki` step's
-  does — that nothing else in the app needs it.
-
 - **A consider's level is unread — and one real line unblocks it.** The model is built and tested
   ([ADR 0121](./decisions/0121-a-mob-is-a-range-of-levels.md), `src/shared/levels.ts`): a mob's level
   is a *range*, its bounds widen with evidence, the wiki's `Level: 33-37` already parses, and pooling

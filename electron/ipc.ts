@@ -10,6 +10,7 @@ import { placeName } from "../src/shared/zones/place";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { createLogger } from "../src/shared/logging";
 import { WIKI_BASE, pingWiki } from "./wiki/api";
+import { pingLucy } from "./lucy/api";
 import { digestLog } from "./log-import";
 import { createMapReader, createZoneNamer, listSources } from "./eq-maps";
 import { createTravelRouter } from "./travel-graph";
@@ -846,6 +847,7 @@ function registerAppIpc(context: IpcContext): void {
         return !!overlay && !overlay.isDestroyed();
       },
       pingWiki: () => pingWiki(),
+      pingLucy: () => pingLucy(),
     }),
   );
   ipcMain.handle(CH.appOpenLog, () => shell.openPath(logFile));

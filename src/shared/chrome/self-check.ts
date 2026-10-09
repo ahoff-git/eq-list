@@ -68,9 +68,9 @@ export interface CheckResult {
  * either a consequence or a separate concern; sorting by severity would break exactly that reading.
  *
  * The log thread comes first because it is what breaks: the folder, the file, the watcher, the
- * shape of the lines. The rest are independent — a place to save what's learned, the wiki, the
- * game's maps, the alert overlay, and whether there's anything on the list to watch for — and each
- * fails on its own without taking the others down.
+ * shape of the lines. The rest are independent — a place to save what's learned, the wiki, Lucy,
+ * the game's maps, the alert overlay, and whether there's anything on the list to watch for — and
+ * each fails on its own without taking the others down.
  */
 export const SETUP_CHECKS: CheckStep[] = [
   {
@@ -133,6 +133,11 @@ export const SETUP_CHECKS: CheckStep[] = [
     id: "wiki",
     label: "eqlwiki.com is reachable",
     matters: "Searching, and adding an item, quest or recipe from the wiki. Watching your log doesn't need it.",
+  },
+  {
+    id: "lucy",
+    label: "lucy.allakhazam.com is reachable",
+    matters: "A second opinion when the wiki doesn't know an item. Watching your log doesn't need it.",
   },
   {
     id: "maps",

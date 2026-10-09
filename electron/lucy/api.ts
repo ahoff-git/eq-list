@@ -192,6 +192,36 @@ export async function itemPage(id: number): Promise<string> {
   return body;
 }
 
+/**
+ * Is Lucy answering, and how quickly — the `lucy` step of the setup check.
+ *
+ * Its own request to `COOKIE_URL`, for the same two reasons `pingWiki` (`electron/wiki/api.ts`)
+ * chooses its own call over a borrowed one: it's the **smallest** thing the site will answer (a
+ * redirect page, not an item page), and it wants a **short** deadline rather than the queue's
+ * ordinary pacing. Deliberately outside `ensureSession`/the polite queue — a diagnostic button
+ * somebody is watching shouldn't wait behind whatever else is queued, and doesn't need an actual
+ * session to answer "is the site there".
+ *
+ * Never throws: "we couldn't reach it, and here's what happened" is the answer, not an error.
+ */
+export async function pingLucy(timeoutMs = 6000): Promise<{ ok: boolean; detail: string }> {
+  const started = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(COOKIE_URL, { headers: { "User-Agent": UA }, signal: ctrl.signal });
+    const took = Date.now() - started;
+    if (!res.ok) return { ok: false, detail: `${LUCY_BASE} answered HTTP ${res.status} after ${took} ms.` };
+    return { ok: true, detail: `${LUCY_BASE} answered in ${took} ms.` };
+  } catch (err) {
+    const took = Date.now() - started;
+    const why = (err as Error)?.name === "AbortError" ? `no answer within ${timeoutMs} ms` : String(err);
+    return { ok: false, detail: `Couldn't reach ${LUCY_BASE} (${why}, after ${took} ms).` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Lucy's published id/name list, as offered on its own downloads page. */
 const ITEM_LIST_URL = `${LUCY_BASE}/itemlist.txt.gz`;
 

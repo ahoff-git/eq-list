@@ -121,6 +121,7 @@ function settings(over: Partial<Settings> = {}): Settings {
   return {
     logDir: "",
     activeLogFile: "",
+    askLucy: true,
     castAlerts: { enabled: true, watches: [{ id: "a", spell: "Fear", enabled: true }] },
     ...over,
   } as unknown as Settings;
@@ -134,6 +135,7 @@ function deps(over: Partial<SelfCheckDeps> = {}): SelfCheckDeps {
     userDataDir: tempDir(),
     alertOverlayUp: () => true,
     pingWiki: async () => ({ ok: true, detail: "answered" }),
+    pingLucy: async () => ({ ok: true, detail: "answered" }),
     ...over,
   };
 }
@@ -281,6 +283,29 @@ test("an unreachable wiki warns and says what still works without it", async () 
   const wiki = row(results, "wiki");
   assert.equal(wiki.status, "warn");
   assert.match(wiki.fix ?? "", /log/i);
+});
+
+test("an unreachable Lucy warns and says what still works without it", async () => {
+  const results = await selfCheck(deps({ pingLucy: async () => ({ ok: false, detail: "no answer" }) }));
+  const lucy = row(results, "lucy");
+  assert.equal(lucy.status, "warn");
+  assert.match(lucy.detail, /no answer/);
+});
+
+test("Lucy switched off reports so without ever touching the network", async () => {
+  // Same reasoning as the alerts step's own master switch (below): off is a choice, not a fault, so
+  // the row says that rather than pinging a site the player deliberately isn't using.
+  let pinged = false;
+  const results = await selfCheck(
+    deps({
+      getSettings: () => settings({ askLucy: false }),
+      pingLucy: async () => ((pinged = true), { ok: true, detail: "answered" }),
+    }),
+  );
+  const lucy = row(results, "lucy");
+  assert.equal(lucy.status, "warn");
+  assert.match(lucy.detail, /switched off/i);
+  assert.equal(pinged, false, "a deliberate off needs no network call to explain itself");
 });
 
 test("alerts report the three ways they can fail to reach the screen", async () => {

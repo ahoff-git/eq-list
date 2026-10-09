@@ -57,6 +57,8 @@ export interface SelfCheckDeps {
   alertOverlayUp: () => boolean;
   /** Can we reach the wiki, and how quickly? Injected so a test never touches the network. */
   pingWiki: () => Promise<{ ok: boolean; detail: string }>;
+  /** Can we reach Lucy, and how quickly? Injected so a test never touches the network. */
+  pingLucy: () => Promise<{ ok: boolean; detail: string }>;
   /** Now, in ms. Injectable so a test can age a file deterministically. */
   now?: () => number;
 }
@@ -219,6 +221,18 @@ function probes(deps: SelfCheckDeps): Record<string, CheckProbe> {
       return warn(
         detail,
         "Search and adding items from the wiki won't work until it's reachable. Watching your log, the meter and your alerts all carry on without it.",
+      );
+    },
+
+    lucy: async () => {
+      // Same reasoning as `alerts`' own master-switch check: off is a deliberate choice, not a
+      // fault, and the honest row says so rather than reaching for a site nobody asked to use.
+      if (!deps.getSettings().askLucy) return warn("Lucy is switched off, so nothing here needs it.", "Settings → ask Lucy, if the wiki alone isn't finding an item.");
+      const { ok, detail } = await deps.pingLucy();
+      if (ok) return pass(detail);
+      return warn(
+        detail,
+        "Lucy is only ever a second opinion for an item the wiki doesn't know — search and everything else carry on without it.",
       );
     },
 
