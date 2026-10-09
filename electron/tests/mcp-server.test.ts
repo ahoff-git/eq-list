@@ -111,25 +111,49 @@ async function rig() {
   const noNetworkFile = path.join(userDataDir, "no-network-preload.mjs");
   fs.writeFileSync(noNetworkFile, 'globalThis.fetch = () => Promise.reject(new Error("network disabled for this test"));\n', "utf8");
 
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: ["--import", pathToFileURL(noNetworkFile).href, SERVER, "--data-dir", userDataDir],
-    cwd: REPO_ROOT,
-    stderr: "pipe",
-  });
-  let stderr = "";
-  transport.stderr?.on("data", (d: Buffer) => (stderr += d.toString()));
-  const client = new Client({ name: "mcp-server-test", version: "0.0.1" });
-  await client.connect(transport);
+  const { client, stderrSoFar } = await connectWithRetry(noNetworkFile, userDataDir);
 
   return {
     client,
-    stderrSoFar: () => stderr,
+    stderrSoFar,
     async cleanup() {
       await client.close().catch(() => {});
       fs.rmSync(userDataDir, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Spawn the server and connect, retrying the spawn (not the fixture setup above, which is
+ * expensive and never at fault) a couple of times before giving up. Nineteen of these tests — this
+ * whole file — went from passing to a single contiguous block of "MCP error -32000: Connection
+ * closed" in CI (never locally, same Node version, same OS), which is a spawned `node.exe` losing
+ * the race under `node --test`'s own concurrent test-file load on a 2-vCPU runner, not a wiring
+ * bug: a real schema/handler break fails every attempt, the same way, with the same stderr. A
+ * failure that survives every retry still throws, stderr and all, rather than hiding it.
+ */
+async function connectWithRetry(noNetworkFile: string, userDataDir: string, attempts = 3): Promise<{ client: Client; stderrSoFar: () => string }> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ["--import", pathToFileURL(noNetworkFile).href, SERVER, "--data-dir", userDataDir],
+      cwd: REPO_ROOT,
+      stderr: "pipe",
+    });
+    let stderr = "";
+    transport.stderr?.on("data", (d: Buffer) => (stderr += d.toString()));
+    const client = new Client({ name: "mcp-server-test", version: "0.0.1" });
+    try {
+      await client.connect(transport);
+      return { client, stderrSoFar: () => stderr };
+    } catch (err) {
+      await client.close().catch(() => {});
+      lastErr = err instanceof Error ? new Error(`${err.message}\nstderr:\n${stderr}`) : err;
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+    }
+  }
+  throw lastErr;
 }
 
 /** `callTool` plus the one unwrap every test needs — parsed JSON, or the raw error text when flagged. */
