@@ -79,16 +79,20 @@ travels peer-to-peer, on request, over that peer's own connection.
     ([ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)) — `mobs` and `kills`
     already had this property (a mob's card and the map's heatmap both read the pooled figure), so
     this closes the one remaining gap between the three.
-  - **live** (`timers`, `buffs`, `scores`, `fight`) — true on somebody else's machine right now. Held
-    in memory, dropped when they go, never written to disk — except `fight`, which is the newest of
-    the four and the one exception: a confirmed match is *pooled* into your own stored history, not
-    only held live (see below). Its rows carry your current or last fight's headline figures plus the
-    fight's own hits and heals, unversioned like `timers`/`buffs` for the same reason — a fight's
-    numbers move mid-swing, and a version that ever answered "unchanged" while they did would be
-    exactly the lie a version is supposed to prevent
+  - **live** (`timers`, `buffs`, `scores`, `fight`, `celebrations`) — true on somebody else's machine
+    right now. Held in memory, dropped when they go, never written to disk — except `fight`, the one
+    exception: a confirmed match is *pooled* into your own stored history, not only held live (see
+    below). Its rows carry your current or last fight's headline figures plus the fight's own hits
+    and heals, unversioned like `timers`/`buffs` for the same reason — a fight's numbers move
+    mid-swing, and a version that ever answered "unchanged" while they did would be exactly the lie a
+    version is supposed to prevent
     ([ADR 0276](../decisions/0276-overlapping-fights-are-pooled-not-only-proven.md), superseding
     [ADR 0275](../decisions/0275-a-shared-swing-proves-the-same-fight.md), superseding
-    [ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md)).
+    [ADR 0274](../decisions/0274-a-fight-is-compared-live-with-your-party.md)). `celebrations` is the
+    newest and the odd one out a different way: it's the one `live` kind worth *interrupting* somebody
+    about rather than only displaying — a new row (not a re-answered one) raises a banner
+    ([ADR 0287](../decisions/0287-a-drop-is-celebrated-not-claimed.md)) — but it stays exactly as
+    uncredited and undisplayed-elsewhere as a score: never merged into anyone's list, never pooled.
   - **mirror** (`items`, `factions`) — neither made nor observed: a copy of a **third party's public page**, the
     same for everyone, which anyone could fetch for themselves
     ([ADR 0160](../decisions/0160-a-room-fills-the-catalogue-once.md)). The **one family applied
@@ -295,8 +299,9 @@ travels peer-to-peer, on request, over that peer's own connection.
   The transport ids (peer and session) stay per-session; the only stable id is the **contributor id**
   ([`identity.ts`](../../electron/identity.ts)), which rides on contributed payloads only.
 - **No room scoping.** There is one room, `eq-list`, and everything in the catalogue is offered to
-  everyone in it. Group- or camp-scoped rooms are not built — see the open question in
-  [decisions/README.md](../decisions/README.md). Fight *matching* sidesteps the gap rather than
+  everyone in it. Group- or camp-scoped rooms are deliberately not built —
+  [ADR 0286](../decisions/0286-the-room-stays-one.md) settles this as the durable shape, not a stopgap.
+  Fight *matching* sidesteps the gap rather than
   needing it closed: proving two peers share a swing is a smaller, sharper unit than any room could
   scope to, so it runs over the whole room safely. Fight *pooling* still leans on party membership,
   though — proof alone can't rule out a stranger's real overlap on a shared public mob, so the one

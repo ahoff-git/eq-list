@@ -76,4 +76,5 @@ A list entry may **ask to be told**, and the loot line that satisfies it raises 
   buries — but the open question about rate-limiting a noisy trigger now has a second caller.
 - **Group loot is still out of reach**, and deliberately: nothing here pretends to know what a
   group-mate looted. The awari version is an Open Question in
-  [decisions/README.md](./README.md).
+  [decisions/README.md](./README.md). *Settled as a celebration, not a claim, by
+  [ADR 0287](./0287-a-drop-is-celebrated-not-claimed.md).*

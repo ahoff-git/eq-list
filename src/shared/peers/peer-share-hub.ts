@@ -77,7 +77,7 @@ import {
   type ShareOffer,
 } from "./peer-share";
 import { decodeCoverage, type PeerCoverage } from "../items/item-shards";
-import type { FightShare, SharedGameTime, SharedItemPage, SharedRespawn, SharedSpellPage } from "./peer-share";
+import type { CelebrationRow, FightShare, SharedGameTime, SharedItemPage, SharedRespawn, SharedSpellPage } from "./peer-share";
 import type { MapPin } from "../map/pins";
 import type { KillRecord, KnownSpawn } from "../types";
 import type { MobObservation } from "../mob/mob-stats";
@@ -245,6 +245,12 @@ export interface PeerShareDeps {
    * notice.
    */
   outdated: (notice: PeerVersionNotice) => void;
+  /**
+   * A peer's celebration landed and it's a new one, not the same row answered again — worth a
+   * banner (ADR 0287). Optional: a build with no alert path to wire it to simply never raises one,
+   * and the row still sits in the tray like any other `live` kind's.
+   */
+  celebrated?: (row: CelebrationRow, from: string) => void;
   /** Take item pages a peer handed us into the page cache. Returns how many were new. */
   acceptItems?: (pages: SharedItemPage[], shard?: number) => number;
   /** Take spell pages a peer handed us into the page cache. Returns how many were new. */
@@ -411,6 +417,12 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
   let noticeTimer: unknown = null;
   let pins: MapPin[] = [];
   let debounce: unknown = null;
+  /**
+   * The last celebration id we've already told `deps.celebrated` about, per peer — so re-measuring
+   * a peer's still-current row (the ordinary minute tick, a reconnect) doesn't raise the same
+   * banner twice. Nothing to prune: a peer's own single row replaces this the moment it changes.
+   */
+  const lastCelebrationId = new Map<string, string>();
 
   const trayKey = (peerId: string, kind: ShareKind) => `${peerId}:${kind}`;
 
@@ -890,6 +902,17 @@ export function createPeerShareHub(deps: PeerShareDeps): PeerShareHub {
     // Authored only — `live` stays exactly as ephemeral as it always was (ADR 0242 doesn't touch
     // it), and a name is required: nothing to remember a nameless give under.
     if (spec?.family === "authored" && give.from) deps.archiveReceived?.(give.what, give.from, rows);
+    // `celebrations` is the one `live` kind worth *interrupting* about rather than only displaying
+    // (ADR 0287) — but its single row is re-measured on the ordinary tick like any other, so without
+    // this it would re-announce itself every time the catalogue happened to be re-read rather than
+    // only once, the moment it actually changed.
+    if (give.what === "celebrations") {
+      const [row] = rows as CelebrationRow[];
+      if (row && lastCelebrationId.get(peerId) !== row.id) {
+        lastCelebrationId.set(peerId, row.id);
+        deps.celebrated?.(row, give.from);
+      }
+    }
     log.debug("kept", rows.length, give.what, "from", peerId);
     deps.changed();
   }
@@ -1386,6 +1409,12 @@ export function shareSources(context: {
   fight: { current: () => FightShare | undefined };
   /** The clock's own last `/time` reading, for sharing — see `game-clock-tracker.ts`'s `reading()`. */
   gameClock: { reading: () => { hour: number; at: string } | null };
+  /**
+   * The one celebration worth offering right now — `undefined` once it's aged out
+   * (`electron/celebrations.ts`). Read fresh, the same unversioned treatment `timers`/`buffs`/
+   * `fight` get above: it ages out between ticks on its own, with nothing written to say so.
+   */
+  celebrations: { current: () => CelebrationRow | undefined };
 }): Record<ShareKind, ShareSource> {
   return {
     watches: { rows: () => context.getSettings().castAlerts?.watches ?? [] },
@@ -1433,6 +1462,12 @@ export function shareSources(context: {
       rows: () => {
         const f = context.fight.current();
         return f ? [f] : [];
+      },
+    },
+    celebrations: {
+      rows: () => {
+        const c = context.celebrations.current();
+        return c ? [c] : [];
       },
     },
     // Addressed by shard, never as a whole (see `PeerShareDeps.items`). Present so the table has no

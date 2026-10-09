@@ -460,7 +460,7 @@ test("public pages share by default; everything of yours does not", () => {
   assert.equal(sharing({}, "items"), true);
   assert.equal(sharing(undefined, "gameTime"), true);
   assert.equal(sharing({}, "gameTime"), true);
-  for (const key of ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "fight"] as const) {
+  for (const key of ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "fight", "celebrations"] as const) {
     assert.equal(sharing({}, key), false, `${key} must stay off by default`);
   }
 });
@@ -839,6 +839,46 @@ test("a shard number outside the bitmap is not a shard", () => {
   assert.equal(readAsk({ what: "items", shard: 99999 })?.shard, undefined);
   assert.equal(readAsk({ what: "items", shard: "3" })?.shard, undefined);
   assert.equal(readAsk({ what: "items", shard: 3 })?.shard, 3);
+});
+
+// ── A peer's celebration: a drop is celebrated, never claimed (ADR 0287) ─────
+
+function readCelebrationGive(raw: unknown): unknown[] {
+  return wholeRows(readGive({ what: "celebrations", rev: 1, rows: [raw] }, () => "id"));
+}
+
+test("celebrations is live, off by default, and always the same row", () => {
+  const spec = shareKind("celebrations");
+  assert.equal(spec?.family, "live");
+  assert.equal(spec?.defaultOn, undefined);
+  assert.equal(sharing({}, "celebrations"), false);
+  assert.equal(spec?.rowKey?.({} as never), "celebration");
+});
+
+test("a celebration needs an id, an item and a readable timestamp", () => {
+  assert.deepEqual(readCelebrationGive({ item: "Flowing Black Robe", at: "2026-09-03T18:00:00.000Z" }), [], "no id");
+  assert.deepEqual(readCelebrationGive({ id: "c1", at: "2026-09-03T18:00:00.000Z" }), [], "no item");
+  assert.deepEqual(readCelebrationGive({ id: "c1", item: "Flowing Black Robe" }), [], "no timestamp");
+  assert.deepEqual(readCelebrationGive({ id: "c1", item: "Flowing Black Robe", at: "nonsense" }), [], "unreadable timestamp");
+});
+
+test("a valid celebration crosses whole, qty included", () => {
+  const [row] = readCelebrationGive({ id: "c1", item: "Flowing Black Robe", qty: 2, at: "2026-09-03T18:00:00.000Z" }) as {
+    id: string;
+    item: string;
+    qty?: number;
+    at: string;
+  }[];
+  assert.deepEqual(row, { id: "c1", item: "Flowing Black Robe", qty: 2, at: "2026-09-03T18:00:00.000Z" });
+});
+
+test("qty is optional, and clamped rather than believed when it's unreasonable", () => {
+  const [bare] = readCelebrationGive({ id: "c1", item: "Bone Chips", at: "2026-09-03T18:00:00.000Z" }) as { qty?: number }[];
+  assert.equal(bare.qty, undefined);
+  const [huge] = readCelebrationGive({ id: "c1", item: "Bone Chips", qty: 999_999, at: "2026-09-03T18:00:00.000Z" }) as {
+    qty?: number;
+  }[];
+  assert.equal(huge.qty, 1000);
 });
 
 // ─── Identity, projection, and deltas ───────────────────────────────────────

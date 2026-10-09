@@ -59,6 +59,10 @@ const DEFAULT_SETTINGS: Settings = {
     sound: true,
     flash: true,
     includeSelf: false,
+    // On by default: a peer's celebration is cosmetic, never a claim (ADR 0287), so there's nothing
+    // here for a quiet default to protect — unlike `shareCelebrations`-equivalent *sending*, which
+    // is the `celebrations` row in `share` below, off like every other kind until switched on.
+    showCelebrations: true,
     // Starter set of common crowd-control effects — the "Suggested" chips in Settings offer
     // more (and mark these as already-on). Substring, case-insensitive, so each catches a whole
     // family: "Terror" gets Screaming Terror, "Instill" is this server's root line.

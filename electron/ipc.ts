@@ -48,6 +48,8 @@ import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery, FightStats } from "../src/shared/types";
+import type { AlertRouter } from "./alert-router";
+import type { CelebrationFeed } from "./celebrations";
 import { AWARI_MSG } from "../src/shared/types";
 import { groupByOrigin, readContributor } from "../src/shared/contributors";
 import { createPeerShareHub, shareSources } from "../src/shared/peers/peer-share-hub";
@@ -117,6 +119,10 @@ export interface IpcContext {
   /** Push an event to every window (owned by main.ts). */
   broadcast: (channel: string, payload: unknown) => void;
   watcher: LogWatcher;
+  /** The whole alert path (`alert-router.ts`) — reached from here only for a peer's celebration. */
+  alerts: AlertRouter;
+  /** The one celebration worth offering right now (`electron/celebrations.ts`). */
+  celebrations: CelebrationFeed;
 }
 
 export function registerIpc(context: IpcContext): PeerIpc {
@@ -1013,6 +1019,8 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
     gameClock,
     combat,
     getCurrentZone,
+    alerts,
+    celebrations,
   } = context;
 
   /**
@@ -1080,6 +1088,9 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
     changed: () => broadcast(CH.peerShareChanged, undefined),
     offered: (notice) => broadcast(CH.peerOffered, notice),
     outdated: (notice) => broadcast(CH.peerOutdated, notice),
+    // A peer's celebration landed and it's new — the one `live` kind worth interrupting about
+    // rather than only displaying (ADR 0287).
+    celebrated: (row, from) => alerts.celebration(row, from),
     archiveReceived: (kind, name, rows) => peerArchive.record(kind, name, rows),
     archived: (kind) => peerArchive.entries(kind),
     archiveClear: (name, kind) => peerArchive.clear(name, kind),
@@ -1101,6 +1112,7 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
           fightShareOf(combat.snapshot().fight, getCurrentZone(), combat.recentHits(), combat.recentHeals(), getName()),
       },
       gameClock,
+      celebrations: { current: () => celebrations.current() },
     }),
     // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).
     items: wiki.items,

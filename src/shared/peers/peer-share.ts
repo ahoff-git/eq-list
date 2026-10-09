@@ -171,6 +171,7 @@ export type ShareKind =
   | "buffs"
   | "scores"
   | "fight"
+  | "celebrations"
   | "items"
   | "spells"
   | "factions"
@@ -273,6 +274,9 @@ const MAX_ROWS: Record<ShareKind, number> = {
   // There is only ever one fight you're in — a second row would just be a lie somebody sent, the
   // same reasoning `gameTime` states below.
   fight: 1,
+  // Only the most recent is worth asking about — see the `rowKey` comment on the `celebrations`
+  // kind itself (ADR 0287).
+  celebrations: 1,
   // One shard is about eleven pages (`item-shards.ts`); the cap is generous headroom for an uneven
   // hash while still bounding what a single hostile `give` can cost us.
   items: 64,
@@ -684,6 +688,19 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     // There is only ever one — your current or last fight — the same reasoning `gameTime`'s key
     // states below.
     rowKey: () => "fight",
+  },
+  {
+    key: "celebrations",
+    family: "live",
+    label: "Drop celebrations",
+    blurb:
+      "A quick “got it!” when a tracked item drops for you — a celebration, never a claim (ADR 0287). Nothing is merged into anyone's list.",
+    noun: "celebration",
+    read: (rows) => readList(rows, MAX_ROWS.celebrations, readCelebration),
+    // There is only ever one worth asking about — the most recent. Nothing here is pooled or kept
+    // (ADR 0287), so a second celebration doesn't queue behind the first; it simply replaces it,
+    // the same reasoning `fight`'s own key states above.
+    rowKey: () => "celebration",
   },
   {
     key: "items",
@@ -1629,6 +1646,20 @@ function readBuff(raw: unknown): BuffInstance | null {
   };
 }
 
+/**
+ * A peer's single most-recent "I got it!" for a tracked item ([ADR 0287](../../../specs/decisions/0287-a-drop-is-celebrated-not-claimed.md)).
+ * Never merged into anyone's list — only shown, the same way a peer's `HighScore` is only ever laid
+ * beside your own board and never folded into it. Who's celebrating is `ReceivedShare.from`, not a
+ * field here, the same split every other kind in this family draws between a row and its sender.
+ */
+export interface CelebrationRow {
+  /** Tells a new celebration from the same one answered again — nothing here is content-unique. */
+  id: string;
+  item: string;
+  qty?: number;
+  at: string;
+}
+
 /** A record standing on somebody's board. Never merged into yours — only laid beside it. */
 function readScore(raw: unknown): HighScore | null {
   if (!isRecord(raw)) return null;
@@ -1644,6 +1675,17 @@ function readScore(raw: unknown): HighScore | null {
     beaten: clamp(int(raw.beaten) ?? 1, 0, 100_000),
     unsettled: raw.unsettled === true,
   };
+}
+
+/** A peer's one current celebration — dropped outright without an `id`, an `item` or an `at`. */
+function readCelebration(raw: unknown): CelebrationRow | null {
+  if (!isRecord(raw)) return null;
+  const id = str(raw.id);
+  const item = str(raw.item);
+  const at = iso(raw.at);
+  if (!id || !item || !at) return null;
+  const qty = num(raw.qty);
+  return { id, item, at, qty: qty !== undefined ? clamp(Math.round(qty), 1, 1000) : undefined };
 }
 
 /** How long a shared fight may claim to have run — a day is generous headroom for a real one. */

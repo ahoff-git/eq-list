@@ -57,6 +57,7 @@ const settings = (watches: CastWatch[], over: Partial<CastAlertSettings> = {}): 
   sound: false,
   flash: false,
   includeSelf: false,
+  showCelebrations: true,
   watches,
   color: "#e5534b",
   soundName: "chirp",
@@ -382,4 +383,38 @@ test("a loot banner never waits, and nothing cancels it", () => {
   assert.equal(h.raised.length, 1);
   assert.equal(h.router.pending(), 0);
   assert.equal(LOOT_STYLE_ID, "built-in:loot");
+});
+
+// ── a peer's own celebration (ADR 0287) ────────────────────────────────────
+
+const CELEBRATION = { id: "c1", item: "Flowing Black Robe", qty: 1, at: new Date().toISOString() };
+
+test("a peer's celebration raises a banner naming them and the item, wearing the Loot look", () => {
+  const h = harness([], { styles: [...BUILT_IN_STYLES] });
+  h.router.celebration(CELEBRATION, "Bran");
+  assert.equal(h.raised.length, 1);
+  const alert = h.raised[0];
+  assert.equal(alert.event, "celebration");
+  assert.equal(alert.celebration?.item, "Flowing Black Robe");
+  assert.equal(alert.celebration?.by, "Bran");
+  // The same built-in Loot style a bare drop wears — see `celebrationAlert`'s own doc comment.
+  assert.equal(alert.style?.color, "#d4a03c");
+});
+
+test("showCelebrations off stays silent, and so does the master switch", () => {
+  const off = harness([], { showCelebrations: false });
+  off.router.celebration(CELEBRATION, "Bran");
+  assert.equal(off.raised.length, 0, "the player turned peer celebrations off");
+
+  const silenced = harness([], { enabled: false });
+  silenced.router.celebration(CELEBRATION, "Bran");
+  assert.equal(silenced.raised.length, 0, "the master switch covers this path too");
+});
+
+test("a celebration never waits, and nothing cancels it", () => {
+  const h = harness([]);
+  h.feed(line("You have been slain by a gnoll pup!"));
+  h.router.celebration(CELEBRATION, "Bran");
+  assert.equal(h.raised.length, 1);
+  assert.equal(h.router.pending(), 0);
 });

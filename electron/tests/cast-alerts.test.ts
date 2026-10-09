@@ -19,6 +19,7 @@ function settings(over: Partial<CastAlertSettings> = {}): CastAlertSettings {
     sound: false,
     flash: false,
     includeSelf: false,
+    showCelebrations: true,
     watches: [
       { id: "fear", spell: "Fear", enabled: true },
       { id: "mez", spell: "Mesmeri", enabled: true },

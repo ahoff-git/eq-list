@@ -63,6 +63,7 @@ function rig(over: {
     scores: { board: () => ({ scores: [] }) },
     fight: { current: () => undefined },
     gameClock: { reading: () => null },
+    celebrations: { current: () => undefined },
   });
 }
 

@@ -57,6 +57,7 @@ import { once } from "../src/shared/once";
 import { characterFromLogFile } from "../src/shared/log-parser";
 import { classifyZoneLine } from "../src/shared/zones/place";
 import { createAlertRouter } from "./alert-router";
+import { createCelebrationFeed } from "./celebrations";
 import { createSpawnTracker } from "./spawn-tracker";
 import { createGoalTracker } from "./goal-tracker";
 import { createAchievementTracker } from "./achievement-tracker";
@@ -414,6 +415,20 @@ if (!app.requestSingleInstanceLock()) {
   const damageOverlay = createDamageOverlayTracker({ userDataDir: userData });
   damageOverlay.onChanged(() => broadcast(CH.damageOverlayChanged, undefined));
 
+  // The whole alert path — match, style, and hold a cue until it's due — lives in one place
+  // (`alert-router.ts`). Main's part is telling it where the player is and where a banner goes.
+  // Built here, ahead of `registerIpc`, so the share hub it wires below (`celebrated`) can reach it;
+  // `raiseAlert` is a declaration below, hoisted, the same reason `spawns`/`goals`/etc. can already
+  // pass it in above.
+  const alerts = createAlertRouter({
+    getSettings: () => store.getSettings().castAlerts,
+    getScoreSettings: () => store.getSettings().highScores,
+    getZone: () => currentZone,
+    raise: raiseAlert,
+  });
+  // The one celebration worth offering right now, in memory only — see `electron/celebrations.ts`.
+  const celebrations = createCelebrationFeed();
+
   const { mergedFight } = registerIpc({
     store,
     wiki,
@@ -448,6 +463,8 @@ if (!app.requestSingleInstanceLock()) {
     getCurrentLoc: () => currentLoc,
     getAppInfo: () => appInfo,
     broadcast,
+    alerts,
+    celebrations,
   });
 
   // Quietly ask whether a newer build has been published, and let electron-updater fetch and
@@ -497,14 +514,6 @@ if (!app.requestSingleInstanceLock()) {
     getAlertWindow()?.moveTop();
     broadcast(CH.castAlert, alert);
   }
-  // The whole alert path — match, style, and hold a cue until it's due — lives in one place
-  // (`alert-router.ts`). Main's part is telling it where the player is and where a banner goes.
-  const alerts = createAlertRouter({
-    getSettings: () => store.getSettings().castAlerts,
-    getScoreSettings: () => store.getSettings().highScores,
-    getZone: () => currentZone,
-    raise: raiseAlert,
-  });
   // A record that falls gets a banner (if celebrations are on — the router decides) and a nudge to
   // every window, so a scoreboard that happens to be open updates itself rather than going stale.
   scores.onRecord((record) => {
@@ -627,6 +636,10 @@ if (!app.requestSingleInstanceLock()) {
       // it actually speaks. The count it quotes is the row's own, runs and all, so the banner and the
       // list can't disagree about how far along you are (ADR 0105).
       alerts.loot(event, entry, effectiveNeeded(entry, runsFor(store.getList(), entry)));
+      // Unconditional here — whether this ever reaches a peer is entirely the `celebrations` row in
+      // the Peers tab's share toggles, the same consent gate every other `live` kind already has.
+      // `entry.notify` is a different axis (do *you* want your own banner) and doesn't gate this.
+      celebrations.announce(event.item, event.qty, event.at);
     }
     // A separate question from the list above: a goal is timeboxed and counts from when it started,
     // where a list entry counts for life — so this reads the same loot line independently rather

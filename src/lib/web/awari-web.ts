@@ -134,6 +134,9 @@ export function createAwariWeb(deps: { getSettings: () => Settings; getName: () 
       scores: { rows: () => [] },
       // A web tab has no log and so no fight of its own — nothing to offer, ever.
       fight: { rows: () => [] },
+      // Same reasoning: no log, so nothing of its own to celebrate. `celebrated` is left unwired
+      // above for the same reason — a browsing tab has no overlay to raise a banner on.
+      celebrations: { rows: () => [] },
       // Addressed by shard, never as a whole kind — present so the table has no hole in it.
       items: { rows: () => [] },
       spells: { rows: () => [] },

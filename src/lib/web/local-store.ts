@@ -82,6 +82,9 @@ const DEFAULT_SETTINGS: Settings = {
   castAlerts: {
     enabled: false,
     includeSelf: false,
+    // No overlay in a browsing tab to raise one on either way, but the field is required and
+    // on is the honest default — the same one `electron/store.ts` ships.
+    showCelebrations: true,
     watches: [],
     locations: [],
     sound: false,

@@ -76,6 +76,7 @@ const STRINGS = [
 const SETTINGS: CastAlertSettings = {
   enabled: true,
   includeSelf: false,
+  showCelebrations: true,
   watches: [],
   sound: true,
   flash: false,

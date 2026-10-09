@@ -142,6 +142,7 @@ const settings = (over: Partial<CastAlertSettings> = {}): CastAlertSettings => (
   sound: false,
   flash: false,
   includeSelf: false,
+  showCelebrations: true,
   watches: [],
   color: "#e5534b",
   soundName: "chirp",

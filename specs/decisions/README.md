@@ -322,6 +322,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0283: A faction cause's pooled half gets built](./0283-a-faction-causes-pooled-half-gets-built.md)
 - [0284: A held event replays at its own moment](./0284-a-held-event-replays-at-its-own-moment.md)
 - [0285: A catch-up poll is capped and chained](./0285-a-catch-up-poll-is-capped-and-chained.md)
+- [0286: The room stays one](./0286-the-room-stays-one.md)
+- [0287: A drop is celebrated, not claimed](./0287-a-drop-is-celebrated-not-claimed.md)
 
 ## Open Questions
 
@@ -351,31 +353,6 @@ finished, so a number is claimed before a second author can reach for it.
   *error*, which is what makes this hypothetical rather than observed. A deadline is easy; what is
   not obvious is what to do with a join that lands *after* it, since abandoning one leaves a ghost
   in the room. Wanted the moment somebody sees a client stuck on "joining".
-- **Should there be more than one room?** There is exactly one — `eq-list` — and after
-  [ADR 0141](./0141-the-room-is-a-meeting-place.md) everything in a catalogue is offered to everyone
-  in it. That was fine while the room carried a location and a map click. It is the thing standing in
-  the way of half of what sharing is now capable of: a buff board, a camp's countdowns, a group's
-  loot and a shopping list for the quest you are all running are all things you want to hand to
-  *these five people*, and the only unit available is "everybody running the app". Direct routing
-  makes the *delivery* private; it does nothing about the catalogue, which is still shouted. A group
-  room, a camp room and a server room are three different answers with three different join stories
-  (who invites, what the id is, whether it outlives a session), and picking one is what unblocks the
-  privacy defaults for every kind that is currently too loud to switch on.
-  [ADR 0274](./0274-a-fight-is-compared-live-with-your-party.md) was a data point for whoever answers
-  this — it wanted exactly a "these five people" room and settled for a client-side workaround (match
-  against your own party roster) rather than wait on it. [ADR 0275](./0275-a-shared-swing-proves-the-same-fight.md)
-  found a better answer for *matching* and dropped the party restriction: proving two peers share a
-  swing is a smaller, sharper unit than "these five people" and doesn't need the room to scope itself
-  at all. [ADR 0276](./0276-overlapping-fights-are-pooled-not-only-proven.md) then brought party
-  membership back in — not because matching needed it, but because *pooling* a peer's data into your
-  own total is a stronger claim than comparing it, and a party roster is the one thing standing
-  between "a confirmed party-mate" and "a stranger who happens to be hitting the same public mob".
-  So today's answer is layered: matching is room-wide and proof-based; merging still leans on party
-  membership for the one part proof alone can't safely decide. That's specific to fight-matching,
-  though — a buff board, a camp's countdowns or a shopping list have no equivalent "the data proves
-  who it's for" trick available, so the room question stands
-  for those.
-
 - **Should a repop say what it took?** Changing the instance difficulty rebuilds the world, so every
   countdown measuring from a death in that place is dropped
   ([0092](./0092-a-named-s-respawn-is-learned-from-your-own-kills.md)) — now only the mob ones
@@ -407,8 +384,6 @@ finished, so a number is claimed before a second author can reach for it.
   and you have conned five things here at 12" is a comparison we could make — the same
   report-don't-resolve shape as a drop rate. Worth surfacing, or is a zone's range too coarse a claim
   to be contradicted by whatever happened to be conned in one camp?
-
-- Should a **group-mate's** drop reach your overlay? [ADR 0105](./0105-a-tracked-item-says-so-when-it-drops.md) can only speak about **your** loot, because that is all the log ever names — and the request it came from was "tell me when one of *us* loots it". **The cost half is now settled and it is nothing**: [ADR 0141](./0141-the-room-is-a-meeting-place.md) made a share kind a row in `SHARE_KINDS`, and a direct peer route already exists to carry it. What needs deciding is everything around it, and none of that got easier. Whose list does an arriving drop credit — nobody's, or the asker's, given [ADR 0027](./0027-only-your-kills-count.md) says only your own kills count for you? It is a **privacy default** in the same family as `shareLocation`, and a louder one: a location is where you are, a drop is what you have. And it can only ever be partial, since a peer not running the app is invisible while sitting in the same group — which makes silence indistinguishable from "they didn't loot it".
 
 - **Can a celebration exist without a number to beat?** The scoreboard
   ([0093](./0093-a-high-score-is-a-personal-best-with-a-floor.md)) is built entirely on *magnitude*: a

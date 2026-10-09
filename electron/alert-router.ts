@@ -25,6 +25,7 @@
 import { createAlertQueue, type AlertQueue, type Timers } from "./alert-queue";
 import { lineSubject, matchCast, matchFade, matchLine, stale, watchesLines, type MatchContext } from "../src/shared/alerts/cast-alerts";
 import { alertStyle, LOOT_STYLE_ID } from "../src/shared/alerts/alert-styles";
+import type { CelebrationRow } from "../src/shared/peers/peer-share";
 import type {
   AlertStyle,
   CastAlertEvent,
@@ -76,6 +77,12 @@ export interface AlertRouter {
    * list has already done (`effectiveNeeded`).
    */
   loot(event: LootEvent, entry: ShoppingListEntry, needed: number): void;
+  /**
+   * A peer's own tracked-item win just arrived — say so, if the player wants to see theirs
+   * (ADR 0287). Skips steps 2 and 4 like `record`/`loot`: the hub already decided this was a new
+   * celebration worth mentioning, and one held back until later wouldn't be.
+   */
+  celebration(row: CelebrationRow, from: string): void;
   /** A log line, before it was parsed: cancel what it cancels, then match raw-text rules. */
   line(line: LogLine): void;
   /** Alerts were switched off — drop every waiting cue, since there's nothing left to say them on. */
@@ -161,6 +168,13 @@ export function createAlertRouter({ getSettings, getScoreSettings, getZone, rais
       // exactly what `showObtained` is for) would nag for ever about a thing you already have.
       if (entry.obtained - event.qty >= needed) return;
       raise(lootAlert(settings, event, entry, needed));
+    },
+
+    celebration(row, from) {
+      const settings = getSettings();
+      if (!settings.enabled) return;
+      if (!settings.showCelebrations) return;
+      raise(celebrationAlert(settings, row, from));
     },
 
     line(line) {
@@ -258,6 +272,26 @@ export function lootAlert(
       obtained: entry.obtained,
       needed,
     },
+    style: alertStyle(settings, { styleId: LOOT_STYLE_ID }),
+  };
+}
+
+/**
+ * The banner for a peer's own tracked-item win.
+ *
+ * `from` is the peer's display name, resolved by the share hub the same way a shared score's board
+ * owner is (`ReceivedShare.from`) — nothing here checks the item against this list, because nothing
+ * here is allowed to (ADR 0287). Wears the same **Loot** look a bare drop does: both are "something
+ * worth a moment of pleasure arrived", and a second sticky style for a cosmetic, opt-in extra isn't
+ * worth the Alerts tab gaining a row nobody can turn off.
+ */
+export function celebrationAlert(settings: CastAlertSettings, row: CelebrationRow, from: string): CastAlertEvent {
+  return {
+    caster: "",
+    spell: row.item,
+    at: row.at,
+    event: "celebration",
+    celebration: { item: row.item, qty: row.qty, by: from },
     style: alertStyle(settings, { styleId: LOOT_STYLE_ID }),
   };
 }

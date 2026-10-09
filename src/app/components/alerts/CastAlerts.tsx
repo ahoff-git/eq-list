@@ -6,7 +6,7 @@ import { playAlertSound, DEFAULT_ALERT_SOUND } from "@/lib/alerts/alertSounds";
 import { categoryOf, formatScore } from "@/shared/combat/high-scores";
 import { alertPlacement } from "@/shared/alerts/alert-styles";
 import { alternativesLabel, ON_PET, ON_UNKNOWN, ON_YOU } from "@/shared/buffs/buff-tracking";
-import type { AchievementAlertPayload, AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, GoalAlertPayload, HighScore, LootAlert } from "@/shared/types";
+import type { AchievementAlertPayload, AlertPositionValue, AlertStyle, BuffInstance, CastAlertEvent, CelebrationAlert, GoalAlertPayload, HighScore, LootAlert } from "@/shared/types";
 
 const DEFAULT_DURATION_MS = 6000;
 const MIN_DURATION_MS = 1000;
@@ -156,6 +156,10 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
           ? "⏰"
         : a.event === "loot"
           ? "💰"
+          // A peer's own tracked-item win (ADR 0287) — confetti, not the coin pouch, so it reads at
+          // a glance as "someone else's good news" rather than your own drop.
+          : a.event === "celebration"
+            ? "🎊"
           : a.event === "line"
             ? "💬"
             : a.event === "fade"
@@ -187,6 +191,9 @@ function banner(a: CastAlertEvent): { icon: string; body: ReactNode; hint?: stri
   // A drop is the same case: no watch behind it, so no wording to override, and the counts it words
   // itself from are already in the payload (see `lootAlert`).
   if (a.event === "loot" && a.loot) return lootBanner(a.loot);
+  // A peer's own win, the same case again: nothing wrote it a sentence, and it is never checked
+  // against anything on *your* list (ADR 0287).
+  if (a.event === "celebration" && a.celebration) return celebrationBanner(a.celebration);
   // And a lapsed buff, for the same reason again: nothing wrote it a sentence, and the facts it words
   // itself from — which spell, on whom, and whether we could narrow it — are all in the payload.
   if (a.event === "buff" && a.buff) return buffBanner(a.buff);
@@ -385,6 +392,23 @@ function lootBanner(loot: LootAlert): { icon: string; body: ReactNode; hint?: st
     // News rather than a warning, so it says where it came from instead of what to press — which is
     // also the one thing the loot line knows that the list doesn't.
     hint: loot.source ? `from ${loot.source}` : "on your list",
+  };
+}
+
+/**
+ * A peer's own tracked-item win (ADR 0287). The **celebrant leads**, the same reason a drop's own
+ * name does: this isn't your list, so "who" is the thing you recognise before "what".
+ */
+function celebrationBanner(celebration: CelebrationAlert): { icon: string; body: ReactNode; hint?: string } {
+  return {
+    icon: "🎊",
+    body: (
+      <>
+        <b>{celebration.by}</b> got <b>{celebration.item}</b>
+        {celebration.qty && celebration.qty > 1 ? ` ×${celebration.qty}` : ""}
+      </>
+    ),
+    hint: "celebrating with you",
   };
 }
 

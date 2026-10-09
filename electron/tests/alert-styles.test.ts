@@ -61,6 +61,7 @@ function settings(watches: CastWatch[], styles: NamedAlertStyle[] = [LOUD]): Cas
     sound: false,
     flash: false,
     includeSelf: false,
+    showCelebrations: true,
     watches,
     styles,
     color: "#e5534b",

@@ -2804,6 +2804,12 @@ export interface CastAlertSettings extends AlertStyle {
   enabled: boolean;
   /** Also alert on YOUR own casts (off by default — you know what you're casting). */
   includeSelf: boolean;
+  /**
+   * Put a banner up for a peer's own tracked-item win (ADR 0287) — their celebration, never yours.
+   * On by default: independent of whether *you* broadcast your own (`ShareKind` "celebrations"),
+   * so a player can watch without ever sending.
+   */
+  showCelebrations: boolean;
   watches: CastWatch[];
   /**
    * Named looks a watch can wear by id (`CastWatch.styleId`), so "the loud red one" is a decision
@@ -2851,6 +2857,23 @@ export interface LootAlert {
 }
 
 /**
+ * A peer's own "I got it!" for a tracked item — carried raw for the same reason a `LootAlert` is:
+ * the overlay words it from the payload rather than being handed a finished sentence.
+ *
+ * Deliberately thin. There is no `obtained`/`needed` here the way `LootAlert` has them: this never
+ * checks itself against anything on *your* list — a celebration credits nobody's entry but the
+ * looter's own ([ADR 0287](../../specs/decisions/0287-a-drop-is-celebrated-not-claimed.md)).
+ */
+export interface CelebrationAlert {
+  /** The item as the peer's own loot line named it. */
+  item: string;
+  /** How many the peer's line reported. */
+  qty?: number;
+  /** Who's celebrating — the peer's display name. */
+  by: string;
+}
+
+/**
  * Fired when a watched spell begins casting or fades, or a watched **line** appeared — the
  * payload the overlay banner shows.
  */
@@ -2881,8 +2904,11 @@ export interface CastAlertEvent {
    * An **achievement** (ADR 0212) is one criterion being satisfied, or the whole thing completing —
    * carried raw like a goal, and the two are told apart by `achievement.kind` the same way a goal's
    * milestone and completion are.
+   *
+   * A **celebration** (ADR 0287) is a peer's own tracked-item win, not yours — carried raw like
+   * `loot`, but never checked against this list, because it isn't about this list.
    */
-  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff" | "goal" | "achievement";
+  event?: "cast" | "fade" | "line" | "record" | "spawn" | "timer" | "loot" | "buff" | "goal" | "achievement" | "celebration";
   /** For a fade, who it wore off ("your pet", a mob). Absent means it was on you. */
   target?: string;
   /**
@@ -2907,6 +2933,8 @@ export interface CastAlertEvent {
    * record is: the counts *are* the message, and the overlay can word them itself.
    */
   loot?: LootAlert;
+  /** For a `celebration` alert, the peer's win — carried raw for the same reason `loot` is. */
+  celebration?: CelebrationAlert;
   /**
    * For a `buff` alert, the buff that lapsed — carried raw for the same reason a record and a drop
    * are: the overlay can word it itself from shared code (`lapseMessage`), and the *target* is the

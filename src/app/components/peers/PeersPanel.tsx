@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useSettings, useWatcherStatus } from "@/lib/hooks";
 import { hasOffered, offeredCount, offeredKinds, shortId, usePeerShare } from "@/lib/peers/usePeerShare";
@@ -284,20 +284,41 @@ function MyShares({
           {kindsOf(family).map((spec) => {
             const held = offer[spec.key];
             return (
-              <div key={spec.key} className="peers-toggle">
-                <CheckField
-                  className="setting-check"
-                  label={
-                    <>
-                      {spec.label}
-                      {held ? <span className="muted small"> · {count(held.n, spec.noun)}</span> : null}
-                    </>
-                  }
-                  checked={sharing(settings.share, spec.key)}
-                  onChange={(v) => set(spec.key, v)}
-                />
-                <span className="hint">{spec.blurb}</span>
-              </div>
+              <Fragment key={spec.key}>
+                <div className="peers-toggle">
+                  <CheckField
+                    className="setting-check"
+                    label={
+                      <>
+                        {spec.label}
+                        {held ? <span className="muted small"> · {count(held.n, spec.noun)}</span> : null}
+                      </>
+                    }
+                    checked={sharing(settings.share, spec.key)}
+                    onChange={(v) => set(spec.key, v)}
+                  />
+                  <span className="hint">{spec.blurb}</span>
+                </div>
+                {/**
+                 * The other half of ADR 0287's "both ends opt in independently": sending a
+                 * celebration is the toggle just above, like any other kind; whether an arriving one
+                 * raises a banner is this — a separate, receiver-side opt-in that implies nothing
+                 * about the first and lives beside it so the pair reads as one feature at a glance.
+                 */}
+                {spec.key === "celebrations" && (
+                  <div className="peers-toggle" style={{ marginLeft: 20 }}>
+                    <CheckField
+                      className="setting-check"
+                      label="Show a banner for theirs"
+                      checked={settings.castAlerts.showCelebrations}
+                      onChange={(v) => void api()?.settings.update({ castAlerts: { showCelebrations: v } })}
+                    />
+                    <span className="hint">
+                      Independent of sending yours above — receive without broadcasting, or the other way round.
+                    </span>
+                  </div>
+                )}
+              </Fragment>
             );
           })}
         </div>

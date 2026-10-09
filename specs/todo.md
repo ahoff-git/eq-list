@@ -21,8 +21,6 @@ everything else, so this list can stay short enough to read:
   link would just need to be templated by something, since nothing hardcodes the current version
   today). Low value since `/releases/latest` already redirects correctly; only worth it to save the
   extra hop.
-- **Code signing (optional).** Builds are unsigned → Windows SmartScreen warns "unknown publisher".
-  Needs a cert (`CSC_LINK`/`CSC_KEY_PASSWORD` secrets) wired into the workflow.
 
 ## Next up
 
@@ -563,3 +561,7 @@ Four of the six are **done** and have left this list: rank-aware spell costs
   Items tab hanging, and cost an hour to diagnose. `npm run app` rebuilds only when the build is
   *missing*, never when it is merely stale. Worth either stamping both halves with the same version
   and refusing to start on a mismatch, or making `launch.mjs` compare mtimes against `src/`.
+- **ADR 0280's tool count is stale.** It says `scripts/mcp-server.mjs` registers "Seven tools"; it
+  actually registers nine — `item_facet_options` and `list_spell_classes` were added afterward and
+  never folded back into the decision text. Update the ADR's Decision section (or note it as a known
+  drift) next time that file is touched.

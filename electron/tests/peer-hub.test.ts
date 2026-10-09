@@ -54,6 +54,8 @@ interface Rig {
   archivedCalls: { kind: ShareKind; name: string; rows: unknown[] }[];
   /** What `archiveClear` was told to forget, in order. */
   archiveClears: { name?: string; kind?: ShareKind }[];
+  /** Every time `deps.celebrated` fired, in order — a new celebration, never a re-answered one. */
+  celebrated: { row: unknown; from: string }[];
   /** Run the minute tick by hand. */
   tick: () => void;
   /** Run whatever debounce is pending — a catalogue re-publish, or a notice. */
@@ -110,6 +112,7 @@ function rig(
   const outdated: Rig["outdated"] = [];
   const archivedCalls: Rig["archivedCalls"] = [];
   const archiveClears: Rig["archiveClears"] = [];
+  const celebrated: Rig["celebrated"] = [];
   let changes = 0;
   let clock = 1_000_000;
   let ticker: (() => void) | null = null;
@@ -131,6 +134,7 @@ function rig(
     changed: () => void (changes += 1),
     offered: (n) => void notices.push(n),
     outdated: (n) => void outdated.push(n),
+    celebrated: (row, from) => void celebrated.push({ row, from }),
     acceptItems: (pages, shard) => (accepted.push({ pages, shard }), pages.length),
     acceptGameTime: (reading) => void acceptedGameTime.push(reading),
     acceptFactions: (pages) => (acceptedFactions.push(pages), pages.length),
@@ -160,6 +164,7 @@ function rig(
     outdated,
     archivedCalls,
     archiveClears,
+    celebrated,
     get changes() {
       return changes;
     },
@@ -372,6 +377,80 @@ test("a live give with no name isn't archived — nothing to remember it under",
     rows: [{ zone: "Blackburrow", y: 10, x: 20 }],
   } as unknown as AwariPayload);
   assert.equal(r.archivedCalls.length, 0);
+});
+
+// ── A peer's celebration (ADR 0287) ─────────────────────────────────────────
+
+test("a peer's celebration lands in the tray like any other live kind, and raises a banner once", () => {
+  const r = rig();
+  r.hub.handle("bran-session", {
+    kind: AWARI_MSG.give,
+    what: "celebrations",
+    rev: 1,
+    from: "Bran",
+    rows: [{ id: "c1", item: "Flowing Black Robe", qty: 1, at: "2026-01-01T00:00:00Z" }],
+  } as unknown as AwariPayload);
+  assert.equal(r.hub.received("bran-session", "celebrations")[0]?.rows.length, 1, "it waits in the tray like any other live kind");
+  assert.equal(r.celebrated.length, 1);
+  assert.equal((r.celebrated[0].row as { item: string }).item, "Flowing Black Robe");
+  assert.equal(r.celebrated[0].from, "Bran");
+});
+
+test("the same celebration measured again doesn't raise a second banner", () => {
+  const r = rig();
+  const give = {
+    kind: AWARI_MSG.give,
+    what: "celebrations",
+    rev: 1,
+    from: "Bran",
+    rows: [{ id: "c1", item: "Flowing Black Robe", qty: 1, at: "2026-01-01T00:00:00Z" }],
+  };
+  r.hub.handle("bran-session", give as unknown as AwariPayload);
+  // The ordinary minute tick re-measures a peer's still-current row the same way any `live` kind is
+  // — a second `give` of the exact same celebration must not read as a second one.
+  r.hub.handle("bran-session", { ...give, rev: 2 } as unknown as AwariPayload);
+  assert.equal(r.celebrated.length, 1);
+});
+
+test("a genuinely new celebration from the same peer raises its own banner", () => {
+  const r = rig();
+  r.hub.handle("bran-session", {
+    kind: AWARI_MSG.give,
+    what: "celebrations",
+    rev: 1,
+    from: "Bran",
+    rows: [{ id: "c1", item: "Flowing Black Robe", qty: 1, at: "2026-01-01T00:00:00Z" }],
+  } as unknown as AwariPayload);
+  r.hub.handle("bran-session", {
+    kind: AWARI_MSG.give,
+    what: "celebrations",
+    rev: 2,
+    from: "Bran",
+    rows: [{ id: "c2", item: "Fungi Tunic", qty: 1, at: "2026-01-01T00:05:00Z" }],
+  } as unknown as AwariPayload);
+  assert.equal(r.celebrated.length, 2);
+  assert.equal((r.celebrated[1].row as { item: string }).item, "Fungi Tunic");
+});
+
+test("two peers' celebrations are tracked independently", () => {
+  const r = rig();
+  r.hub.handle("bran-session", {
+    kind: AWARI_MSG.give,
+    what: "celebrations",
+    rev: 1,
+    from: "Bran",
+    rows: [{ id: "c1", item: "Flowing Black Robe", qty: 1, at: "2026-01-01T00:00:00Z" }],
+  } as unknown as AwariPayload);
+  r.hub.handle("arya-session", {
+    kind: AWARI_MSG.give,
+    what: "celebrations",
+    rev: 1,
+    from: "Arya",
+    rows: [{ id: "c1", item: "Flowing Black Robe", qty: 1, at: "2026-01-01T00:00:00Z" }],
+  } as unknown as AwariPayload);
+  // Same id, different peer — each is its own first sighting, not a repeat of the other's.
+  assert.equal(r.celebrated.length, 2);
+  assert.deepEqual(r.celebrated.map((c) => c.from), ["Bran", "Arya"]);
 });
 
 test("received() folds in what the archive remembers, for a name not currently live", () => {

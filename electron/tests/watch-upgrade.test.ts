@@ -26,7 +26,7 @@ const DEFAULTS: AlertStyle = {
 };
 
 function settings(watches: CastWatch[], over: Partial<CastAlertSettings> = {}): CastAlertSettings {
-  return { enabled: true, includeSelf: false, watches, locations: [], ...DEFAULTS, ...over };
+  return { enabled: true, includeSelf: false, showCelebrations: true, watches, locations: [], ...DEFAULTS, ...over };
 }
 
 /** How a watch list looked before any of this: a substring, a flag or two, nothing said explicitly. */
