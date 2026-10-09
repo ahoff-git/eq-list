@@ -56,18 +56,6 @@ everything else, so this list can stay short enough to read:
   the app behind it doesn't). That blocks the item below, which depends on reading its pages. Worth
   re-checking before spending any time on it; a 502 is the kind of thing that comes back.
 
-- **The Items tab's Lucy-origin rows still can't judge live zone closure.**
-  [ADR 0210](./decisions/0210-out-of-era-flagging-reaches-spells-the-shopping-list-and-lucys-live-verdict.md)
-  closed the shopping list's and `LucySays`'s versions of this gap
-  ([ADR 0170](./decisions/0170-an-item-s-sources-are-read-against-the-era.md)'s original two), but
-  the Items tab's `eraCorpus` still can't: it runs a row's zone strings through `item-era.ts`'s
-  generic, wiki-shaped zone matching, and Lucy's zone strings carry decorations (`[RoS]` tags, `2.0`
-  revamp numbers, parenthetical glosses) that only `lucy-era.ts`'s own `zoneReadings()` knows how to
-  strip. Reconciling the two zone-matching paths — probably by having `item-era.ts` try
-  `zoneReadings()` as a fallback — is a real, separate change. Also still open: a cached Lucy verdict
-  (`CachedItem.outOfEra`, `LucySearchResult.era`) can go stale until the item is refetched, since
-  it's baked once in main at fetch/parse time — the harder half ADR 0170 already declined to settle.
-
 - **An item's era is derived where a neighbour simply states it.** [Lucy](./lucy-data/README.md) is
   in ([ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md)) and its one real weakness is the era:
   Lucy has no era or expansion field anywhere, so the verdict is inferred from the zones on its drop

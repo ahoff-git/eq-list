@@ -88,6 +88,42 @@ test("a source that names no place is unjudged, not unreachable", () => {
   assert.equal(row.shut, undefined, "a quest reward with no zone is a source, not a dead end");
 });
 
+// ── Lucy's decorated zone strings (ADR 0210's still-open gap) ────────────────
+//
+// Lucy's own era verdict (`lucy-era.ts`) already knows to strip these before judging — real strings,
+// copied the same way `lucy-era.test.ts` does, off real Lucy item pages. This module used to run them
+// through its own wiki-shaped fold instead, which doesn't know any of these three shapes and silently
+// read every one of them as still reachable.
+
+const LUCY_SHUT = outOfEraSet(["West Freeport", "The Hole", "Lavastorm Mountains", "The Overthere"]);
+
+test("a Lucy zone's dotted revamp number is tried bare, not just as written", () => {
+  assert.equal(zoneShut("West Freeport 2.0", LUCY_SHUT), "out-of-era");
+  assert.equal(zoneShut("Lavastorm Mountains 3.0", LUCY_SHUT), "out-of-era");
+});
+
+test("a Lucy zone's parenthesised gloss is tried too — often the only placeable half", () => {
+  assert.equal(zoneShut("Ruins of Old Paineel 2.0 (The Hole)", LUCY_SHUT), "out-of-era");
+});
+
+test("a Lucy zone's bracketed expansion tag already folded before this fix, and still does", () => {
+  assert.equal(zoneShut("The Overthere [RoS]", LUCY_SHUT), "out-of-era");
+});
+
+test("a plain wiki zone has exactly one reading, so this is unchanged for every pre-existing case", () => {
+  assert.equal(zoneShut("Dreadlands", KUNARK_SHUT), "out-of-era");
+  assert.equal(zoneShut("Permafrost", KUNARK_SHUT), undefined);
+});
+
+test("the Items corpus flags a Lucy-origin item the same way it flags a wiki one", () => {
+  const rows = itemRows([
+    cached("Robe of the Lost Circle", [drop("Zone Vendor", "West Freeport 2.0")], { origin: "lucy" }),
+  ]);
+  const shown = eraCorpus(rows, LUCY_SHUT, false);
+  assert.equal(shown[0].item.outOfEra, true, "the decorated zone must not read as reachable");
+  assert.deepEqual(eraCorpus(rows, LUCY_SHUT, true), [], "and the hide toggle cuts it like any other out-of-era row");
+});
+
 test("openZones only ever removes, and keeps the order it was given", () => {
   assert.deepEqual(openZones(["Dreadlands", "Permafrost", "Lavastorm Mountains"], KUNARK_SHUT), [
     "Permafrost",

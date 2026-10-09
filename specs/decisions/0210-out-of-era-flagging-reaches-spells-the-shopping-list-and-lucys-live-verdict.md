@@ -61,7 +61,10 @@ feeding `CachedItem.outOfEra` for Lucy-origin Items-tab rows (`electron/lucy/ind
   check runs a row's zone strings through `item-era.ts`'s generic, wiki-shaped zone matching; Lucy's
   zone strings carry decorations (`[RoS]` tags, `2.0` revamp numbers, parenthetical glosses) that
   only `lucy-era.ts`'s own `zoneReadings()` knows how to strip. Reconciling the two zone-matching
-  paths is a real, separate change.
+  paths is a real, separate change. *Fixed: `item-era.ts`'s `zoneShut` now tries every one of
+  `zoneReadings`' candidate spellings rather than only the raw string — a wiki zone has exactly one
+  reading, so every pre-existing case is unchanged, and a Lucy-decorated one is tried under the
+  readings that already strip it correctly.*
 - **A cached Lucy verdict can still go stale until refetched.** `LucySays`'s badge is now live, but
   `CachedItem.outOfEra`/`LucySearchResult.era` for Lucy items are unchanged — still baked once at
   fetch/parse time in main. Making *those* live is the harder half ADR 0170 already declined to

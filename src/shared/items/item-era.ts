@@ -25,6 +25,7 @@
  * Pure, so the whole judgement is testable against real wiki source rows.
  */
 import { namesAPlace, type ItemRow } from "./item-search";
+import { zoneReadings } from "./lucy-era";
 import type { ItemSource } from "../types";
 import { unavailableReason, zoneExpansion, zoneUnavailable, type ZoneUnavailable } from "../zones/expansions";
 
@@ -34,11 +35,21 @@ import { unavailableReason, zoneExpansion, zoneUnavailable, type ZoneUnavailable
  * A cell that names no place answers `undefined` too, and on purpose: the caller's question is "should
  * I mark this one", and "we can't tell" and "you can go there" both answer no. What we can't judge, we
  * don't badge.
+ *
+ * Tried under every one of [lucy-era](./lucy-era.ts)'s `zoneReadings`, not just the raw string — a
+ * wiki zone carries no decoration, so that's one reading and this is unchanged for it, but a Lucy one
+ * can ([RoS] tags, a dotted revamp number, a parenthesised gloss) and this module's own fold doesn't
+ * know those shapes. Reusing the reading generator, rather than re-deriving a second one, is what
+ * keeps the item page and the Items tab unable to disagree about the same Lucy zone string.
  */
 export function zoneShut(zone: string | undefined, closed?: ReadonlySet<string>): ZoneUnavailable | undefined {
   const named = zone?.trim();
   if (!named || !namesAPlace(named)) return undefined;
-  return zoneUnavailable(named, closed);
+  for (const reading of zoneReadings(named)) {
+    const shut = zoneUnavailable(reading, closed);
+    if (shut) return shut;
+  }
+  return undefined;
 }
 
 /** One of an item's sources, judged against the era the server is actually running. */
