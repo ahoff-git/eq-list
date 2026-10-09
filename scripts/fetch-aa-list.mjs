@@ -46,7 +46,7 @@ async function main() {
   const wikitext = pages.get(PAGE_TITLE);
   if (!wikitext) throw new Error(`eqlwiki has no page "${PAGE_TITLE}" — has it been renamed or deleted?`);
 
-  const { SPELL_CLASSES } = load("src/shared/spell-file.js");
+  const { SPELL_CLASSES } = load("src/shared/spells/spell-file.js");
   const entries = parseAlternateAdvancement(wikitext, SPELL_CLASSES);
 
   console.log(`Parsed ${entries.length} AAs.`);

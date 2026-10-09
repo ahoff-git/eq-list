@@ -5,8 +5,8 @@
  * MCP tools, through the exact same `createWikiClient` the app itself uses
  * (`electron/wiki/index.ts`) reading the same shared `eqlist.db` (ADR 0232) — so an MCP client sees
  * whatever this install has already browsed/harvested, not a second copy of it. The catalogue tools
- * filter with the *exact* predicates the Items/Spells tabs use (`src/shared/item-search.ts`,
- * `src/shared/spell-search.ts`) rather than a second, looser copy of "what matches" — every field
+ * filter with the *exact* predicates the Items/Spells tabs use (`src/shared/items/item-search.ts`,
+ * `src/shared/spells/spell-search.ts`) rather than a second, looser copy of "what matches" — every field
  * those panels filter by is a parameter here too. See
  * [ADR 0280](../specs/decisions/0280-an-mcp-server-exposes-the-wiki-cache-read-only.md).
  *
@@ -44,10 +44,10 @@ helpIfAsked(import.meta.url);
 const { createWikiClient } = load("electron/wiki/index.js");
 const { openAppDatabase } = load("electron/sqlite-store.js");
 const { WIKI_PAGE_MIGRATIONS } = load("electron/wiki/page-store.js");
-const { STATS } = load("src/shared/item-stats.js");
-const { FACETS, NO_FACET_VALUE, facetOptions, searchItems } = load("src/shared/item-search.js");
-const { classOptions, searchSpells } = load("src/shared/spell-search.js");
-const { eraFiltered, page, toItemCriteria } = load("src/shared/mcp-catalogue.js");
+const { STATS } = load("src/shared/items/item-stats.js");
+const { FACETS, NO_FACET_VALUE, facetOptions, searchItems } = load("src/shared/items/item-search.js");
+const { classOptions, searchSpells } = load("src/shared/spells/spell-search.js");
+const { eraFiltered, page, toItemCriteria } = load("src/shared/items/mcp-catalogue.js");
 
 // `--data-dir` is mainly for tests (a hermetic temp profile rather than this machine's real one) —
 // operationally useful too, for pointing at a specific install's folder rather than whichever one
