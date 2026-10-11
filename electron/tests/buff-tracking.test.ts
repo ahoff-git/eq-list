@@ -455,3 +455,9 @@ test("urgency turns amber at half-way and red in the last tick or fifth", () => 
   assert.equal(countdownUrgency(40, 96), "low");
   assert.equal(countdownUrgency(19, 96), "critical"); // a fifth of a long Dazzle beats one tick
 });
+
+test("a typed duration outranks both the learned figure and the ceiling (ADR 0290)", () => {
+  // Mesmerization IV: the file states the unranked 24s, the player knows the rank lasts longer.
+  const k = known({ durationSeconds: 18, durationSpreadSeconds: 20, durationSamples: 3, maxDurationSeconds: 24, customDurationSeconds: 48 });
+  assert.deepEqual(debuffCountdown(MEZZED, k, after(12)), { remainingSeconds: 36, totalSeconds: 48, basis: "custom", urgency: "fresh" });
+});

@@ -227,6 +227,7 @@ const api: EqlApi = {
     notify: (key, on) => ipcRenderer.invoke(CH.buffsNotify, key, on),
     showOnScreen: (key, on) => ipcRenderer.invoke(CH.buffsOnScreen, key, on),
     style: (key, styleId) => ipcRenderer.invoke(CH.buffsStyle, key, styleId),
+    duration: (key, seconds) => ipcRenderer.invoke(CH.buffsDuration, key, seconds),
     forget: (key) => ipcRenderer.invoke(CH.buffsForget, key),
     dismiss: (key, target, slot) => ipcRenderer.invoke(CH.buffsDismiss, key, target, slot),
     dismissAll: () => ipcRenderer.invoke(CH.buffsDismissAll),

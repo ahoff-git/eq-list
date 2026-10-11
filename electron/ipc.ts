@@ -707,6 +707,10 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
     buffs.style(key, styleId);
     return buffs.view();
   });
+  ipcMain.handle(CH.buffsDuration, (_e, key: string, seconds: number | null) => {
+    buffs.duration(key, seconds);
+    return buffs.view();
+  });
   ipcMain.handle(CH.buffsForget, (_e, key: string) => {
     buffs.forget(key);
     return buffs.view();

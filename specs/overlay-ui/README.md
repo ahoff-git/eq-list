@@ -306,7 +306,10 @@ list, hunt, search, damage, session, peers, settings.
     counts down from the spell file's **tick cap** instead (`≤Ns left`) — a ceiling that needs no
     caster level — and the row turns amber at half-way and red in its last tick or fifth, with a bar
     draining along its foot
-    ([ADR 0289](../decisions/0289-a-debuff-counts-down-from-the-file-s-ceiling.md)). Both states carry a ✕: on a lapsed row it's `BuffOverlay`'s "I
+    ([ADR 0289](../decisions/0289-a-debuff-counts-down-from-the-file-s-ceiling.md)). The file can't
+    see a **rank** (EQL scales `Mesmerization IV` server-side), so a debuff's row in the Buffs tab
+    has a ⏱ button for typing the real duration, which outranks both
+    ([ADR 0290](../decisions/0290-a-debuff-s-duration-can-be-typed.md)). Both states carry a ✕: on a lapsed row it's `BuffOverlay`'s "I
     know, stop reminding me"; on an up row it's new — "that isn't real, forget it" — for correcting
     a slot the heuristic guessed wrong. Both states also carry the same 🔕 `BuffOverlay` does, meaning
     the same thing in both: turn `notify` off, leave the row alone.

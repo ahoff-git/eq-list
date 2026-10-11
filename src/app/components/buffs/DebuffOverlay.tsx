@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { SOLID } from "@/lib/chrome/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { alertPlacement, alertStyle, BUFF_STYLE_ID, DEBUFF_DEFAULT_POSITION } from "@/shared/alerts/alert-styles";
-import { debuffCountdown, heldMs, targetLabel } from "@/shared/buffs/buff-tracking";
+import { debuffCountdown, heldMs, targetLabel, type CountdownBasis } from "@/shared/buffs/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { clockSkew } from "@/shared/mob/spawn-timers";
 import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types";
@@ -104,6 +104,9 @@ export default function DebuffOverlay() {
   );
 }
 
+/** How sure each countdown basis is, worn in front of its figure — see `debuffCountdown`. */
+const HEDGE: Record<CountdownBasis, string> = { custom: "", learned: "~", ceiling: "≤" };
+
 function HudRow({
   buff,
   known,
@@ -118,7 +121,7 @@ function HudRow({
   several: boolean;
 }) {
   const countdown = debuffCountdown(buff, known, now);
-  const hedge = countdown?.basis === "ceiling" ? "≤" : "~";
+  const hedge = countdown ? HEDGE[countdown.basis] : "";
   const clock = !buff.up
     ? "broke free"
     : !countdown

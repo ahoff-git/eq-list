@@ -165,6 +165,7 @@ export const CH = {
   buffsNotify: "buffs:notify",
   buffsOnScreen: "buffs:onScreen", // keep "this is down" over the game until it's back
   buffsStyle: "buffs:style",
+  buffsDuration: "buffs:duration",
   buffsForget: "buffs:forget", // drop the row entirely; it returns if the spell is cast again
   buffsDismiss: "buffs:dismiss", // stand down one lapse without recasting it
   buffsDismissAll: "buffs:dismissAll",

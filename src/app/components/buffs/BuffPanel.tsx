@@ -10,6 +10,7 @@ import { when } from "@/shared/format";
 import { CheckField, Empty, PickField } from "@/app/components/ui";
 import AlertStyleField, { AlertStyleDrawer } from "@/app/components/alerts/AlertStyleField";
 import SearchField from "@/app/components/SearchField";
+import SecondsField from "@/app/components/SecondsField";
 import { BUFF_STYLE_ID } from "@/shared/alerts/alert-styles";
 import { SPELL_CLASSES } from "@/shared/spells/spell-file";
 import { distinctSorted } from "@/shared/sorting";
@@ -350,6 +351,9 @@ function KnownRow({ known }: { known: KnownBuff }) {
   // Which look its banner wears is a *standing* choice like the two checkboxes beside it, so the
   // editor opens under the row rather than sending the player to another tab to make it.
   const [styling, setStyling] = useState(false);
+  // A debuff's countdown on the overlay runs from this; see `durationSetting`.
+  const [timing, setTiming] = useState(false);
+  const lasts = durationSetting(known);
   // Reference fact, not a state of the row — same footing as `permanent`/`detrimental` below,
   // shown whether or not this spell is currently up.
   const buffLine = buffLinesFor(known.spell)
@@ -410,6 +414,15 @@ function KnownRow({ known }: { known: KnownBuff }) {
             onChange={(checked) => void api()?.buffs.showOnScreen(known.key, checked)}
             label="On screen"
           />
+          {known.detrimental && (
+            <button
+              className={`btn ghost sm${known.customDurationSeconds ? " active" : ""}`}
+              title={lasts.title}
+              onClick={() => setTiming((v) => !v)}
+            >
+              ⏱ {lasts.label}
+            </button>
+          )}
           {known.notify && (
             <AlertStyleField
               styleId={known.styleId}
@@ -431,8 +444,40 @@ function KnownRow({ known }: { known: KnownBuff }) {
         ✕
       </button>
       {styling && <AlertStyleDrawer styleId={known.styleId} fallback={BUFF_STYLE_ID} forkable />}
+      {timing && (
+        <SecondsField
+          initial={known.customDurationSeconds}
+          placeholder="e.g. 48s"
+          whenSet="The overlay counts down from this, ahead of anything the game file or your fades say."
+          whenBlank={lasts.fallback}
+          onSave={(seconds) => void api()?.buffs.duration(known.key, seconds)}
+          onDone={() => setTiming(false)}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * What a debuff's duration button says, and what clearing a typed figure would fall back to.
+ *
+ * The player's own figure exists because the game file's ceiling can't see a rank: EQL scales a
+ * ranked spell's duration server-side, so `Mesmerization IV` outlasts the 24s the file states for
+ * Mesmerization (ADR 0290).
+ */
+function durationSetting(known: KnownBuff): { label: string; title: string; fallback: string } {
+  const ceiling = known.maxDurationSeconds;
+  const fallback = ceiling
+    ? `Empty goes back to the game file's ${formatDuration(ceiling)} (or a shorter figure learned from your fades).`
+    : "Empty goes back to whatever your own fades teach.";
+  if (known.customDurationSeconds) {
+    return { label: formatDuration(known.customDurationSeconds), title: "How long it lasts — your figure. Click to change it", fallback };
+  }
+  return {
+    label: ceiling ? `≤${formatDuration(ceiling)}` : "set",
+    title: "How long it lasts, for the overlay's countdown. The game file states only the unranked spell's figure, so a ranked cast lasts longer — click to type the real one",
+    fallback,
+  };
 }
 
 /**

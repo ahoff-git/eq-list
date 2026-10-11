@@ -125,6 +125,8 @@ interface StoredBuff {
   classes?: string[];
   /** And the file's duration ceiling — see `KnownBuff.maxDurationSeconds`. */
   maxDurationSeconds?: number;
+  /** The player's own figure — see `KnownBuff.customDurationSeconds`. */
+  customDurationSeconds?: number;
   /** We've seen you cast it, rather than only ever receiving it. */
   mine?: boolean;
   rises?: number;
@@ -224,6 +226,8 @@ export interface BuffTracker {
   showOnScreen(key: string, on: boolean): void;
   /** Which saved style its banner wears, or `null` for the buff default. */
   style(key: string, styleId: string | null): void;
+  /** How long it really lasts, in seconds, or `null` to go back to the file's and the log's figures. */
+  duration(key: string, seconds: number | null): void;
   /** Forget the row entirely. It returns, fresh, if the spell is cast again. */
   forget(key: string): void;
   /**
@@ -467,6 +471,7 @@ export function createBuffTracker({
       detrimental: !!row.detrimental,
       classes: row.classes,
       maxDurationSeconds: row.maxDurationSeconds,
+      customDurationSeconds: row.customDurationSeconds,
       mine: !!row.mine,
       rises: row.rises ?? 0,
       lastUp: row.lastUp,
@@ -1096,6 +1101,12 @@ export function createBuffTracker({
       edit(key, (row) => {
         if (styleId) row.styleId = styleId;
         else delete row.styleId;
+      });
+    },
+    duration(key, seconds) {
+      edit(key, (row) => {
+        if (seconds && seconds > 0) row.customDurationSeconds = seconds;
+        else delete row.customDurationSeconds;
       });
     },
     forget(key) {

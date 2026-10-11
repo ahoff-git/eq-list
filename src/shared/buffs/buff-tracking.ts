@@ -230,6 +230,13 @@ export interface KnownBuff {
    */
   maxDurationSeconds?: number;
   /**
+   * How long the player says it lasts, in seconds — typed in the Buffs tab, and it outranks both the
+   * learned figure and the file's ceiling. It exists because neither can see a **rank**: EQL scales
+   * a ranked spell's duration server-side (`Mesmerization IV`), while the file states only the base
+   * spell's cap, so the ceiling reads short for every rank above I (ADR 0290).
+   */
+  customDurationSeconds?: number;
+  /**
    * We have seen *you* cast it, as opposed to only ever receiving it.
    *
    * For a buff this is colour on the row. For a **debuff** it is the whole of why the row exists.
@@ -501,10 +508,15 @@ export function durationErratic(estimate: Pick<DurationEstimate, "seconds" | "sp
  */
 export type CountdownUrgency = "fresh" | "low" | "critical";
 
+/** Which figure a countdown runs from — see `debuffCountdown`. */
+export type CountdownBasis = "custom" | "learned" | "ceiling";
+
 /**
  * A running debuff's countdown, or `undefined` when nothing honest can be said about when it ends.
  *
- * `basis` says which figure it counts from, because the two promise different things:
+ * `basis` says which figure it counts from, because each promises something different:
+ * - `custom` — what the player typed (`customDurationSeconds`). It outranks both of the others,
+ *   because it is the only one that can know the spell's rank. Shown bare, with no hedge.
  * - `learned` — the shortest confirmed rise-to-fade gap (ADR 0202), when it agrees with itself
  *   (`durationErratic`, ADR 0206). A prediction, so the HUD wears it with `~`.
  * - `ceiling` — the game file's tick cap (`maxDurationSeconds`, ADR 0289): the most it can last.
@@ -514,10 +526,13 @@ export type CountdownUrgency = "fresh" | "low" | "critical";
  */
 export function debuffCountdown(
   buff: BuffInstance,
-  known: Pick<KnownBuff, "durationSeconds" | "durationSpreadSeconds" | "durationSamples" | "maxDurationSeconds"> | undefined,
+  known:
+    | Pick<KnownBuff, "durationSeconds" | "durationSpreadSeconds" | "durationSamples" | "maxDurationSeconds" | "customDurationSeconds">
+    | undefined,
   now: number,
-): { remainingSeconds: number; totalSeconds: number; basis: "learned" | "ceiling"; urgency: CountdownUrgency } | undefined {
+): { remainingSeconds: number; totalSeconds: number; basis: CountdownBasis; urgency: CountdownUrgency } | undefined {
   if (!buff.up || !known) return undefined;
+  if (known.customDurationSeconds) return countdownFrom(known.customDurationSeconds, "custom", buff, now);
   const learned =
     known.durationSeconds !== undefined &&
     !durationErratic({ seconds: known.durationSeconds, spreadSeconds: known.durationSpreadSeconds, count: known.durationSamples ?? 0 })
@@ -527,8 +542,12 @@ export function debuffCountdown(
   const useLearned = learned !== undefined && (ceiling === undefined || learned < ceiling);
   const totalSeconds = useLearned ? learned : ceiling;
   if (totalSeconds === undefined) return undefined;
+  return countdownFrom(totalSeconds, useLearned ? "learned" : "ceiling", buff, now);
+}
+
+function countdownFrom(totalSeconds: number, basis: CountdownBasis, buff: BuffInstance, now: number) {
   const remainingSeconds = Math.max(0, totalSeconds - Math.round(heldMs(buff, now) / 1000));
-  return { remainingSeconds, totalSeconds, basis: useLearned ? "learned" : "ceiling", urgency: countdownUrgency(remainingSeconds, totalSeconds) };
+  return { remainingSeconds, totalSeconds, basis, urgency: countdownUrgency(remainingSeconds, totalSeconds) };
 }
 
 /** One buff tick: the least warning worth giving, however short the spell. */

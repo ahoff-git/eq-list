@@ -60,7 +60,7 @@ const SPELLS = new Map<number, SpellFacts>([
   [515, facts(515, "Thistlecoat", { permanent: true })],
   [519, facts(519, "Thorncoat", { permanent: true, levels: { Druid: 47 } })],
   [13, facts(13, "Complete Heal")],
-  [10, facts(10, "Root", { beneficial: false })],
+  [10, facts(10, "Root", { beneficial: false, maxDurationSeconds: 48 })],
   [11, facts(11, "Snare", { beneficial: false })],
   [20, facts(20, "Mesmerize", { beneficial: false })],
 ]);
@@ -1129,4 +1129,40 @@ test("a spell's duration is learned from its own fades, and only ever tightens",
   known = h.buffs.view().known.find((k) => k.key === "mesmerize");
   assert.equal(known?.durationSeconds, 60, "a longer gap must not loosen the figure back up");
   assert.equal(known?.durationSamples, 3);
+});
+
+// ── a debuff's duration can be typed (ADR 0290) ─────────────────────────────────
+
+test("a debuff's row carries the file's ceiling, and a typed duration survives a restart until cleared", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-buffs-"));
+  const deps = {
+    userDataDir: dir,
+    getSettings: () => SETTINGS,
+    raise: () => {},
+    lexicon: () => buildBuffLexicon(parseSpellStringFile(STRINGS), SPELLS),
+    facts: (spell: string) => [...SPELLS.values()].find((s) => s.name.toLowerCase() === spell.trim().toLowerCase()),
+    player: () => PLAYER,
+    inFight: () => false,
+    now: () => T0,
+  };
+  const first = createBuffTracker(deps);
+  first.combat({ kind: "cast", caster: "You", spell: "Root", at: iso(0), raw: "You begin casting Root.", logId: 0 });
+  first.combat({
+    kind: "buff-faded",
+    spell: "Root",
+    pet: false,
+    target: "a wild tiger",
+    at: iso(10),
+    message: "Your Root spell has worn off of a wild tiger.",
+    raw: "[Thu Aug 20 20:00:10 2026] Your Root spell has worn off of a wild tiger.",
+    logId: 2,
+  });
+  assert.equal(first.view().known.find((k) => k.key === "root")?.maxDurationSeconds, 48);
+  first.duration("root", 96);
+  first.flush();
+
+  const second = createBuffTracker(deps);
+  assert.equal(second.view().known.find((k) => k.key === "root")?.customDurationSeconds, 96);
+  second.duration("root", null);
+  assert.equal(second.view().known.find((k) => k.key === "root")?.customDurationSeconds, undefined);
 });

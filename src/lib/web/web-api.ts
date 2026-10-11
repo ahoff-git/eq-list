@@ -359,6 +359,7 @@ function createWebApi(): EqlApi {
       notify: async () => EMPTY_BUFFS,
       showOnScreen: async () => EMPTY_BUFFS,
       style: async () => EMPTY_BUFFS,
+      duration: async () => EMPTY_BUFFS,
       forget: async () => EMPTY_BUFFS,
       dismiss: async () => EMPTY_BUFFS,
       dismissAll: async () => EMPTY_BUFFS,

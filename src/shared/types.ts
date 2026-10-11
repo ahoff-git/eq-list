@@ -3978,6 +3978,11 @@ export interface EqlApi {
      * from wherever the look is worn ([ADR 0148](../../specs/decisions/0148-a-look-is-edited-where-it-is-worn.md)). */
     style(key: string, styleId: string | null): Promise<BuffView>;
     /**
+     * How long this spell really lasts, in seconds, or `null` to go back to what the game file and
+     * your own fades say. It outranks both, because neither can see a spell's rank (ADR 0290).
+     */
+    duration(key: string, seconds: number | null): Promise<BuffView>;
+    /**
      * Forget this spell entirely: the row and everything set on it. It comes back, fresh, if the
      * spell is ever cast again — which is the difference from `track(key, false)`, and why both
      * exist. To silence something for good, uncheck it.
