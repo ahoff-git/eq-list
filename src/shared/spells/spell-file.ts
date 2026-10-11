@@ -31,7 +31,8 @@
  * trading a fact for a guess, so this stops at the scalar columns — the things the log *can't*
  * see. Buff duration is left out on the same grounds (it's a formula, not a number) — but the
  * formula's **id** is read, because one yes/no question of it needs no arithmetic and answers
- * something EQL players are bitten by daily: see `PERMANENT_FORMULAS`.
+ * something EQL players are bitten by daily: see `PERMANENT_FORMULAS`. So is its tick **cap**, the
+ * one figure that holds whatever the caster's level: see `maxDurationSeconds`.
  *
  * Pure: text in, facts out. No I/O, no clock.
  */
@@ -71,7 +72,7 @@ const IDX = {
    * anything — see `PERMANENT_FORMULAS` for the one thing we read it for.
    */
   durationFormula: 11,
-  /** The formula's cap or fixed figure, in ticks (6 seconds each). Meaningless without the formula. */
+  /** The formula's cap, in ticks (6 seconds each) — see `maxDurationSeconds` for the one use of it. */
   durationTicks: 12,
   mana: 14,
   /** 0 = detrimental, 1 = beneficial, 2 = beneficial (group only). */
@@ -117,6 +118,26 @@ export const PERMANENT_FORMULAS = new Set([50, 51]);
  * spells: every direct heal, every gate and port, cancel, bind, feign, shrink.
  */
 export const INSTANT_FORMULA = 0;
+
+/** Seconds in one buff tick — the unit the file states every duration cap in. */
+const TICK_SECONDS = 6;
+
+/**
+ * The most a timed spell can last, in seconds — its formula's tick cap — or `undefined` when the
+ * file states none (instant, permanent, or a formula with no cap).
+ *
+ * This is the one duration question that, like `permanent`, needs no caster level: every timed
+ * formula in the file is "some function of level, **capped** at the ticks column", so the cap is a
+ * ceiling whatever level cast it. And for crowd control the ceiling is the figure: checked against a
+ * live install, Mesmerize (formula 7), Mesmerization (1), Entrance (9) and Dazzle (10) all reach
+ * their cap at a level below the one that can first cast them. Still a ceiling, not a promise —
+ * a mez breaks the moment its target takes damage — which is how `debuffCountdown` presents it
+ * ([ADR 0289](../../specs/decisions/0289-a-debuff-counts-down-from-the-file-s-ceiling.md)).
+ */
+export function maxDurationSeconds(formula: number, ticks: number): number | undefined {
+  if (formula === INSTANT_FORMULA || PERMANENT_FORMULAS.has(formula) || ticks <= 0) return undefined;
+  return ticks * TICK_SECONDS;
+}
 
 /** The highest index we read; a row shorter than this can't be a spell we understand. */
 const MIN_FIELDS = IDX.classes + SPELL_CLASSES.length;
@@ -180,6 +201,8 @@ export interface SpellFacts {
    * ([ADR 0157](../../specs/decisions/0157-an-instant-spell-is-not-a-buff.md)).
    */
   instant: boolean;
+  /** The most this can last, in seconds, whatever level cast it — see `maxDurationSeconds`. */
+  maxDurationSeconds?: number;
 }
 
 /** A number the file states, or 0 — a blank or junk field must never become NaN downstream. */
@@ -199,6 +222,7 @@ export function parseSpellLine(line: string): SpellFacts | null {
   const name = fields[IDX.name]?.trim();
   const id = Number(fields[IDX.id]);
   if (!name || !Number.isFinite(id)) return null;
+  const formula = num(fields, IDX.durationFormula);
 
   const levels: SpellFacts["levels"] = {};
   SPELL_CLASSES.forEach((cls, i) => {
@@ -216,8 +240,9 @@ export function parseSpellLine(line: string): SpellFacts | null {
     recastMs: num(fields, IDX.recastMs),
     levels,
     beneficial: num(fields, IDX.goodEffect) > 0,
-    permanent: PERMANENT_FORMULAS.has(num(fields, IDX.durationFormula)),
-    instant: num(fields, IDX.durationFormula) === INSTANT_FORMULA,
+    permanent: PERMANENT_FORMULAS.has(formula),
+    instant: formula === INSTANT_FORMULA,
+    maxDurationSeconds: maxDurationSeconds(formula, num(fields, IDX.durationTicks)),
   };
 }
 

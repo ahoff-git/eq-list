@@ -9,6 +9,8 @@ import assert from "node:assert/strict";
 import {
   buffKey,
   buffTarget,
+  countdownUrgency,
+  debuffCountdown,
   durationErratic,
   enemySlot,
   enemySlotForLanding,
@@ -399,4 +401,57 @@ test("proven but nothing was up yet: every landing opens fresh, same as discover
   // A second landing in the same cast, still nothing up yet in this snapshot (both are new adds).
   const afterFirst = [{ up: true, slot: 1 }];
   assert.equal(enemySlotForLanding(afterFirst, { ...ep, index: 1 }, true), 2);
+});
+
+// ── a debuff counts down from the file's ceiling (ADR 0289) ─────────────────────
+
+const MEZZED: BuffInstance = {
+  key: "mesmerization",
+  spell: "Mesmerization",
+  target: "a gnoll",
+  up: true,
+  at: AT,
+  since: AT,
+  source: "landed",
+  byYou: true,
+  permanent: false,
+  onEnemy: true,
+  slot: 1,
+};
+const after = (seconds: number) => Date.parse(AT) + seconds * 1000;
+
+test("with nothing learned, a mez counts down from the file's ceiling", () => {
+  const c = debuffCountdown(MEZZED, known({ maxDurationSeconds: 24 }), after(10));
+  assert.deepEqual(c, { remainingSeconds: 14, totalSeconds: 24, basis: "ceiling", urgency: "fresh" });
+});
+
+test("an erratic learned figure falls back to the ceiling rather than to nothing", () => {
+  // The measured mez spread (ADR 0206): too erratic to count down from, but the cap still holds.
+  const k = known({ durationSeconds: 1, durationSpreadSeconds: 167, durationSamples: 40, maxDurationSeconds: 24 });
+  assert.equal(debuffCountdown(MEZZED, k, after(0))?.basis, "ceiling");
+});
+
+test("a trustworthy learned figure shorter than the ceiling wins; a longer one is a lagging fade", () => {
+  const shorter = known({ durationSeconds: 18, durationSpreadSeconds: 20, durationSamples: 3, maxDurationSeconds: 24 });
+  assert.equal(debuffCountdown(MEZZED, shorter, after(0))?.totalSeconds, 18);
+  assert.equal(debuffCountdown(MEZZED, shorter, after(0))?.basis, "learned");
+  const longer = known({ durationSeconds: 30, durationSpreadSeconds: 31, durationSamples: 3, maxDurationSeconds: 24 });
+  assert.equal(debuffCountdown(MEZZED, longer, after(0))?.basis, "ceiling");
+});
+
+test("no ceiling and nothing learned means no countdown, and a lapsed row never has one", () => {
+  assert.equal(debuffCountdown(MEZZED, known(), after(5)), undefined);
+  assert.equal(debuffCountdown({ ...MEZZED, up: false }, known({ maxDurationSeconds: 24 }), after(5)), undefined);
+});
+
+test("past the ceiling reads as zero left, not negative", () => {
+  assert.equal(debuffCountdown(MEZZED, known({ maxDurationSeconds: 24 }), after(40))?.remainingSeconds, 0);
+});
+
+test("urgency turns amber at half-way and red in the last tick or fifth", () => {
+  assert.equal(countdownUrgency(13, 24), "fresh");
+  assert.equal(countdownUrgency(12, 24), "low");
+  assert.equal(countdownUrgency(6, 24), "critical"); // one tick out, though more than a fifth remains
+  assert.equal(countdownUrgency(40, 96), "low");
+  assert.equal(countdownUrgency(19, 96), "critical"); // a fifth of a long Dazzle beats one tick
 });

@@ -325,6 +325,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0286: The room stays one](./0286-the-room-stays-one.md)
 - [0287: A drop is celebrated, not claimed](./0287-a-drop-is-celebrated-not-claimed.md)
 - [0288: A spell past the live level cap is out of era](./0288-a-spell-past-the-live-level-cap-is-out-of-era.md)
+- [0289: A debuff counts down from the file's ceiling](./0289-a-debuff-counts-down-from-the-file-s-ceiling.md)
 
 ## Open Questions
 

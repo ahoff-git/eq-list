@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { SOLID } from "@/lib/chrome/clickThrough";
 import { useBuffs, useSettings } from "@/lib/hooks";
 import { alertPlacement, alertStyle, BUFF_STYLE_ID, DEBUFF_DEFAULT_POSITION } from "@/shared/alerts/alert-styles";
-import { durationErratic, heldMs, targetLabel } from "@/shared/buffs/buff-tracking";
+import { debuffCountdown, heldMs, targetLabel } from "@/shared/buffs/buff-tracking";
 import { formatDuration } from "@/shared/duration";
 import { clockSkew } from "@/shared/mob/spawn-timers";
 import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types";
@@ -23,11 +23,13 @@ import type { AlertPositionValue, BuffInstance, KnownBuff } from "@/shared/types
  * `SpawnOverlay` numbers two clocks for one camp — because EQ's log names a mob only by that string,
  * and two same-named adds mezzed at once are two rows to tell apart, not one refreshed.
  *
- * **The "up" figure is a prediction, not a fact**, and says so by wearing `~`. The game states a
- * duration *formula*, not a number (`spell-file.ts`), so this is learned instead — the shortest
- * confirmed rise-to-fade gap seen this session, the same technique `spawn-timers.ts` uses for a
- * respawn. It only ever ratchets down, which is the safe direction for a reminder that exists
- * because letting the thing lapse is bad: better an early warning than a late one.
+ * **The "up" figure is a prediction or a ceiling, never a fact**, and says which by wearing `~` or
+ * `≤` (`debuffCountdown`). Learned is the shortest confirmed rise-to-fade gap, the same technique
+ * `spawn-timers.ts` uses for a respawn; the ceiling is the game file's tick cap, the most the spell
+ * can last whatever level cast it (ADR 0289) — which is what a mez shows, since its learned figure
+ * rarely agrees with itself (ADR 0206). The row's colour and draining bar track the same countdown:
+ * green, then amber at half-way, then red in the last tick or fifth — so "recast now" reads at a
+ * glance rather than by doing arithmetic on a clock.
  *
  * **Both states carry a ✕**, and they mean different things. On a lapsed row it's `BuffOverlay`'s
  * gesture: "I know, stop reminding me." On an up row it's new: the order-based slot is a heuristic
@@ -102,22 +104,6 @@ export default function DebuffOverlay() {
   );
 }
 
-/**
- * How much longer an up instance is predicted to hold, in seconds — `undefined` if never learned, or
- * if what's been learned disagrees with itself too much to show as a figure
- * ([ADR 0206](../../../specs/decisions/0206-a-duration-that-disagrees-with-itself-says-so.md)). A
- * mez broken early by a stray nuke, or a charm that failed its first resist check, would otherwise
- * ratchet the estimate down once and read every ordinary cast afterwards as expiring seconds after
- * it lands — the countdown becoming the alert nobody trusts, instead of the one that mattered.
- */
-function predictedRemaining(buff: BuffInstance, known: KnownBuff | undefined, now: number): number | undefined {
-  if (known?.durationSeconds === undefined) return undefined;
-  if (durationErratic({ seconds: known.durationSeconds, spreadSeconds: known.durationSpreadSeconds, count: known.durationSamples ?? 0 })) {
-    return undefined;
-  }
-  return Math.max(0, known.durationSeconds - Math.round(heldMs(buff, now) / 1000));
-}
-
 function HudRow({
   buff,
   known,
@@ -131,16 +117,22 @@ function HudRow({
   color: string;
   several: boolean;
 }) {
-  const remaining = buff.up ? predictedRemaining(buff, known, now) : undefined;
-  const clock = buff.up
-    ? remaining === undefined
+  const countdown = debuffCountdown(buff, known, now);
+  const hedge = countdown?.basis === "ceiling" ? "≤" : "~";
+  const clock = !buff.up
+    ? "broke free"
+    : !countdown
       ? `up ${formatDuration(Math.round(heldMs(buff, now) / 1000))}`
-      : remaining > 0
-        ? `~${formatDuration(remaining)} left`
-        : "~overdue"
-    : "broke free";
+      : countdown.remainingSeconds > 0
+        ? `${hedge}${formatDuration(countdown.remainingSeconds)} left`
+        : "overdue";
+  const className = ["debuff-hud-row", buff.up ? "up" : "lapsed", countdown?.urgency, countdown && "timed"]
+    .filter(Boolean)
+    .join(" ");
+  // Drives the draining bar (`.debuff-hud-row.timed::after`); absent leaves the row bar-less.
+  const left = countdown ? { "--left": `${(100 * countdown.remainingSeconds) / countdown.totalSeconds}%` } : {};
   return (
-    <div className={`debuff-hud-row ${buff.up ? "up" : "lapsed"}`} style={{ borderLeftColor: color }}>
+    <div className={className} style={{ borderLeftColor: color, ...left } as CSSProperties}>
       <button
         {...SOLID}
         className="dhr-x"

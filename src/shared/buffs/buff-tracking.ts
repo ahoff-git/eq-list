@@ -224,6 +224,12 @@ export interface KnownBuff {
    */
   classes?: string[];
   /**
+   * The most this spell can last, in seconds, whatever level cast it — the game file's tick cap
+   * (`maxDurationSeconds` in `spell-file.ts`), re-asserted like `permanent`. A ceiling, not a
+   * prediction: it is what `debuffCountdown` falls back to when nothing trustworthy has been learned.
+   */
+  maxDurationSeconds?: number;
+  /**
    * We have seen *you* cast it, as opposed to only ever receiving it.
    *
    * For a buff this is colour on the row. For a **debuff** it is the whole of why the row exists.
@@ -490,6 +496,55 @@ export function durationErratic(estimate: Pick<DurationEstimate, "seconds" | "sp
 }
 
 /**
+ * How close a countdown is to running out — what the debuff HUD colours a row by. `low` is the
+ * "get ready to recast" band, `critical` is "now".
+ */
+export type CountdownUrgency = "fresh" | "low" | "critical";
+
+/**
+ * A running debuff's countdown, or `undefined` when nothing honest can be said about when it ends.
+ *
+ * `basis` says which figure it counts from, because the two promise different things:
+ * - `learned` — the shortest confirmed rise-to-fade gap (ADR 0202), when it agrees with itself
+ *   (`durationErratic`, ADR 0206). A prediction, so the HUD wears it with `~`.
+ * - `ceiling` — the game file's tick cap (`maxDurationSeconds`, ADR 0289): the most it can last.
+ *   A mez still breaks early on damage, so the HUD wears it with `≤`.
+ *
+ * A learned figure longer than the ceiling is a fade line that lagged, not news, so the ceiling wins.
+ */
+export function debuffCountdown(
+  buff: BuffInstance,
+  known: Pick<KnownBuff, "durationSeconds" | "durationSpreadSeconds" | "durationSamples" | "maxDurationSeconds"> | undefined,
+  now: number,
+): { remainingSeconds: number; totalSeconds: number; basis: "learned" | "ceiling"; urgency: CountdownUrgency } | undefined {
+  if (!buff.up || !known) return undefined;
+  const learned =
+    known.durationSeconds !== undefined &&
+    !durationErratic({ seconds: known.durationSeconds, spreadSeconds: known.durationSpreadSeconds, count: known.durationSamples ?? 0 })
+      ? known.durationSeconds
+      : undefined;
+  const ceiling = known.maxDurationSeconds;
+  const useLearned = learned !== undefined && (ceiling === undefined || learned < ceiling);
+  const totalSeconds = useLearned ? learned : ceiling;
+  if (totalSeconds === undefined) return undefined;
+  const remainingSeconds = Math.max(0, totalSeconds - Math.round(heldMs(buff, now) / 1000));
+  return { remainingSeconds, totalSeconds, basis: useLearned ? "learned" : "ceiling", urgency: countdownUrgency(remainingSeconds, totalSeconds) };
+}
+
+/** One buff tick: the least warning worth giving, however short the spell. */
+const CRITICAL_SECONDS = 6;
+
+/**
+ * Proportional, so a 24s mez and a 96s Dazzle both turn amber at half-way — but never later than one
+ * tick out for `critical`, which is about how long a recast takes to land.
+ */
+export function countdownUrgency(remainingSeconds: number, totalSeconds: number): CountdownUrgency {
+  if (remainingSeconds <= Math.max(CRITICAL_SECONDS, totalSeconds * 0.2)) return "critical";
+  if (remainingSeconds <= totalSeconds * 0.5) return "low";
+  return "fresh";
+}
+
+/**
  * Is this rise-to-fade gap worth learning from at all?
  *
  * Guards against the gap being made of something other than the spell running its course — an app
@@ -704,7 +759,7 @@ export function shouldHold(known: KnownBuff | undefined, reason: BuffLapseReason
 export function newKnownBuff(
   spell: string,
   at: string,
-  opts: { mine: boolean; permanent: boolean; detrimental: boolean; classes?: string[] },
+  opts: { mine: boolean; permanent: boolean; detrimental: boolean; classes?: string[]; maxDurationSeconds?: number },
 ): KnownBuff {
   return {
     key: buffKey(spell),
@@ -715,6 +770,7 @@ export function newKnownBuff(
     permanent: opts.permanent,
     detrimental: opts.detrimental,
     classes: opts.classes,
+    maxDurationSeconds: opts.maxDurationSeconds,
     mine: opts.mine,
     rises: 0,
     lastUp: at,

@@ -1542,6 +1542,24 @@ button {
 /* State lives on the clock, the same split `.spawn-hud-row` keeps between its edge and its clock —
    an up row is quiet, a lapsed one is the call to action. */
 .debuff-hud-row.up .dhr-clock { color: var(--good); }
+/* A row with a countdown (`debuffCountdown`) is coloured by how close it is to running out — amber
+   at half-way, red in the last tick — and drains a bar along its foot to match, so "recast now" reads
+   at a glance. An untimed up row keeps the quiet green above. */
+.debuff-hud-row.timed { position: relative; overflow: hidden; }
+.debuff-hud-row.timed::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: var(--left, 0%);
+  background: var(--urgency, var(--good));
+  transition: width 0.5s linear;
+}
+.debuff-hud-row.up.low { --urgency: var(--accent); }
+.debuff-hud-row.up.critical { --urgency: var(--bad); background: rgba(229, 83, 75, 0.2); }
+.debuff-hud-row.up.low .dhr-clock,
+.debuff-hud-row.up.critical .dhr-clock { color: var(--urgency); font-weight: 700; }
 .debuff-hud-row.lapsed { border-left-color: var(--bad); }
 .debuff-hud-row.lapsed .dhr-clock { color: var(--bad); font-weight: 700; }
 .debuff-hud-row .dhr-x {

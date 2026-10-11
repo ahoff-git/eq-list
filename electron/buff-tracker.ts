@@ -123,6 +123,8 @@ interface StoredBuff {
   detrimental?: boolean;
   /** Likewise again: which classes can cast it — see `KnownBuff.classes`. */
   classes?: string[];
+  /** And the file's duration ceiling — see `KnownBuff.maxDurationSeconds`. */
+  maxDurationSeconds?: number;
   /** We've seen you cast it, rather than only ever receiving it. */
   mine?: boolean;
   rises?: number;
@@ -134,6 +136,15 @@ interface StoredBuff {
   durationSamples?: number;
   /** Proven area-effect — see `KnownBuff.aoe`. */
   aoe?: boolean;
+}
+
+/** What `knownFor` may learn or re-assert about a spell's row as it's seen. */
+interface KnownFor {
+  mine?: boolean;
+  permanent?: boolean;
+  detrimental?: boolean;
+  classes?: string[];
+  maxDurationSeconds?: number;
 }
 
 export interface BuffTrackerDeps {
@@ -378,6 +389,11 @@ export function createBuffTracker({
     return about ? Object.keys(about.levels) : undefined;
   }
 
+  /** What the game's own file says a spell *is* — the facts `knownFor` re-asserts on every sighting. */
+  function fileFacts(about: SpellFacts | undefined): Pick<KnownFor, "permanent" | "classes" | "maxDurationSeconds"> {
+    return { permanent: about?.permanent, classes: spellClasses(about), maxDurationSeconds: about?.maxDurationSeconds };
+  }
+
   /**
    * Should this spell get a row, given what the game file says about it and who cast it?
    *
@@ -391,10 +407,7 @@ export function createBuffTracker({
   }
 
   /** The row for a spell, creating it the first time the spell is seen. */
-  function knownFor(
-    spell: string,
-    opts: { mine?: boolean; permanent?: boolean; detrimental?: boolean; classes?: string[] } = {},
-  ): KnownBuff {
+  function knownFor(spell: string, opts: KnownFor = {}): KnownBuff {
     const key = buffKey(spell);
     const row = stored.known[key];
     if (row) {
@@ -404,6 +417,7 @@ export function createBuffTracker({
       if (opts.permanent !== undefined) row.permanent = opts.permanent;
       if (opts.detrimental !== undefined) row.detrimental = opts.detrimental;
       if (opts.classes !== undefined) row.classes = opts.classes;
+      if (opts.maxDurationSeconds !== undefined) row.maxDurationSeconds = opts.maxDurationSeconds;
       if (opts.mine) row.mine = true;
       return hydrate(key, row);
     }
@@ -412,6 +426,7 @@ export function createBuffTracker({
       permanent: !!opts.permanent,
       detrimental: !!opts.detrimental,
       classes: opts.classes,
+      maxDurationSeconds: opts.maxDurationSeconds,
     });
     // Bounded, and only rows nobody has touched may go — see `evictable`.
     const rows = Object.values(stored.known);
@@ -430,6 +445,7 @@ export function createBuffTracker({
       permanent: fresh.permanent,
       detrimental: fresh.detrimental,
       classes: fresh.classes,
+      maxDurationSeconds: fresh.maxDurationSeconds,
       mine: fresh.mine,
       rises: 0,
       lastUp: fresh.lastUp,
@@ -450,6 +466,7 @@ export function createBuffTracker({
       permanent: !!row.permanent,
       detrimental: !!row.detrimental,
       classes: row.classes,
+      maxDurationSeconds: row.maxDurationSeconds,
       mine: !!row.mine,
       rises: row.rises ?? 0,
       lastUp: row.lastUp,
@@ -556,12 +573,7 @@ export function createBuffTracker({
     const detrimental = spellFacts ? !spellFacts.beneficial : undefined;
     if (!watchable(spell, spellFacts, opts.byYou)) return;
     if (doneToYou({ detrimental }, target)) return; // a debuff on your own side is not a buff of yours
-    const known = knownFor(spell, {
-      mine: opts.byYou,
-      permanent: spellFacts?.permanent,
-      detrimental,
-      classes: spellClasses(spellFacts),
-    });
+    const known = knownFor(spell, { mine: opts.byYou, detrimental, ...fileFacts(spellFacts) });
     if (!known.tracked) return; // unchecked means the app is not watching this one at all
     const key = known.key;
     const onEnemy = isEnemyTarget(target, known.detrimental);
@@ -641,9 +653,8 @@ export function createBuffTracker({
     const row =
       known ??
       knownFor(spell, {
-        permanent: spellFacts?.permanent,
         detrimental,
-        classes: spellClasses(spellFacts),
+        ...fileFacts(spellFacts),
         // We only reached here because the spell is ours — a debuff by the gate above, a buff by
         // having been on you. Saying so is what stops a row you cast reading "cast on you".
         mine: detrimental || undefined,
@@ -853,11 +864,7 @@ export function createBuffTracker({
           // *is* the rise. One that has one waits: the landing names the target, and a target is
           // worth the second or two.
           if (!lexicon().landsQuietly(event.spell)) {
-            knownFor(event.spell, {
-              mine: true,
-              permanent: spellFacts.permanent,
-              classes: spellClasses(spellFacts),
-            });
+            knownFor(event.spell, { mine: true, ...fileFacts(spellFacts) });
             changed();
             return;
           }

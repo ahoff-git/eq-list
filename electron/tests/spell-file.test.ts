@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   isObtainable,
+  maxDurationSeconds,
   parseSpellFile,
   parseSpellLine,
   MAX_LEVEL,
@@ -100,4 +101,21 @@ test("a non-numeric field reads as zero rather than NaN", () => {
   for (let i = 0; i < 16; i++) fields[36 + i] = "255";
   const spell = parseSpellLine(fields.join("^"));
   assert.equal(spell?.mana, 0, "NaN must never reach a per-mana division");
+});
+
+test("a timed spell's duration ceiling is its tick cap, and nothing untimed has one", () => {
+  // Mesmerize and Mesmerization as a live install states them: formula 7 / 1, capped at 4 ticks.
+  assert.equal(maxDurationSeconds(7, 4), 24);
+  assert.equal(maxDurationSeconds(1, 4), 24);
+  assert.equal(maxDurationSeconds(0, 0), undefined); // instant
+  assert.equal(maxDurationSeconds(50, 0), undefined); // permanent
+  assert.equal(maxDurationSeconds(51, 3), undefined); // aura: permanent whatever the column says
+  assert.equal(maxDurationSeconds(3, 0), undefined); // a formula with no cap stated
+});
+
+test("the ceiling is read from the formula and ticks columns", () => {
+  const fields = fs.readFileSync(FIXTURE, "utf8").split("\n")[0].trim().split("^");
+  fields[11] = "7";
+  fields[12] = "4";
+  assert.equal(parseSpellLine(fields.join("^"))?.maxDurationSeconds, 24);
 });
