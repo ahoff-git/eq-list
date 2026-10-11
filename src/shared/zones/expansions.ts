@@ -145,6 +145,38 @@ export function outOfEraSet(zones: Iterable<string>): ReadonlySet<string> {
   return set;
 }
 
+/** The level cap each expansion this server runs brings with it. */
+const EXPANSION_LEVEL_CAP: Readonly<Record<string, number>> = {
+  "Original Release": 50,
+  "The Ruins of Kunark": 60,
+  "The Scars of Velious": 60,
+};
+
+/**
+ * Is this expansion open right now, by the live era list?
+ *
+ * **Most of its zones, not any of them.** This server opens zones out of their fandom expansion: The
+ * Hole, Stonebrunt and The Warrens are in era while the rest of Kunark and Velious are shut, so "one
+ * zone open" would call both expansions open. A fandom name eqlwiki spells differently ("Burning
+ * Woods" for "Burning Wood") reads as open too, which leans the same fail-open way as the rest of this
+ * module — and an empty list (the wiki unreachable) opens everything.
+ */
+export function expansionOpen(expansion: string, outOfEra: ReadonlySet<string>): boolean {
+  const zones = ZONE_EXPANSIONS.find((e) => e.expansion === expansion)?.zones ?? [];
+  const shut = zones.filter((zone) => zoneUnavailable(zone, outOfEra) === "out-of-era").length;
+  return shut * 2 <= zones.length;
+}
+
+/**
+ * The highest level a character can reach in the era that's open now — 50 while Kunark and Velious
+ * are both shut, 60 once either opens. Unlike `spell-file.ts`'s `MAX_LEVEL`, which is what the server
+ * *has*, this moves as eras open.
+ */
+export function liveLevelCap(outOfEra: ReadonlySet<string>): number {
+  const open = SERVER_EXPANSIONS.filter((e) => e === SERVER_EXPANSIONS[0] || expansionOpen(e, outOfEra));
+  return Math.max(...open.map((e) => EXPANSION_LEVEL_CAP[e] ?? 0));
+}
+
 /** How a zone's unavailability reads to a person. */
 export function unavailableReason(why: ZoneUnavailable, found?: ZoneExpansion): string {
   if (why === "out-of-era") return "not in this era yet";

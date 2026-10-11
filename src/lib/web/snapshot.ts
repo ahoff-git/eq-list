@@ -298,7 +298,13 @@ export function cachedSpellsJson(): Promise<string> {
   spellsPromise ??= allPages().then((pages) => {
     const spells: CachedSpell[] = [];
     for (const { page } of pages.values()) {
-      if (page.kind === "spell") spells.push({ title: page.title, wikiPath: page.wikiPath, card: page.card, fetchedAt: page.fetchedAt });
+      if (page.kind === "spell") spells.push({
+          title: page.title,
+          wikiPath: page.wikiPath,
+          card: page.card,
+          outOfEra: page.outOfEra,
+          fetchedAt: page.fetchedAt,
+        });
     }
     return JSON.stringify(spellRows(spells));
   });

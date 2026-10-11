@@ -8,6 +8,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  expansionOpen,
+  liveLevelCap,
   outOfEraSet,
   SERVER_EXPANSIONS,
   unavailableReason,
@@ -79,4 +81,25 @@ test("a permanent refusal outranks a temporary one", () => {
   // If both applied, "not on this server" is the truer thing to say: an era opening won't help.
   const closed = outOfEraSet(["Argath, Bastion of Illdaera"]);
   assert.equal(zoneUnavailable("Argath, Bastion of Illdaera", closed), "future");
+});
+
+test("the live level cap follows whether Kunark and Velious are open, not whether one of their zones is", () => {
+  // The live list as eqlwiki served it on 2026-10-10: The Hole, Stonebrunt and The Warrens are open,
+  // the rest of Kunark and Velious shut.
+  const closed = outOfEraSet([
+    "Burning Wood", "Cabilis", "Chardok (Post-Revamp)", "Chardok (Pre-Revamp)", "City of Mist", "Cobalt Scar",
+    "Crystal Caverns", "Dalnir", "Dragon Necropolis", "Dreadlands", "Eastern Wastes", "Emerald Jungle",
+    "Field of Bone", "Firiona Vie", "Frontier Mountains", "Great Divide", "Howling Stones", "Iceclad Ocean",
+    "Icewell Keep", "Kael Drakkel", "Kaesora", "Karnor's Castle", "Kurn's Tower", "Lake of Ill Omen",
+    "Mines of Nurga", "Old Sebilis", "Plane of Growth", "Plane of Mischief", "Siren's Grotto",
+    "Skyfire Mountains", "Skyshrine", "Sleeper's Tomb", "Swamp of No Hope", "Temple of Droga",
+    "Temple of Veeshan", "The Overthere", "The Wakening Land", "Thurgadin", "Timorous Deep",
+    "Tower of Frozen Shadow", "Trakanon's Teeth", "Veeshan's Peak", "Velketor's Labyrinth", "Warsliks Woods",
+    "Western Wastes",
+  ]);
+  assert.equal(expansionOpen("The Ruins of Kunark", closed), false);
+  assert.equal(expansionOpen("The Scars of Velious", closed), false);
+  assert.equal(liveLevelCap(closed), 50);
+  // Fails open: no list (the wiki unreachable) is every expansion open.
+  assert.equal(liveLevelCap(outOfEraSet([])), 60);
 });

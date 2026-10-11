@@ -31,6 +31,27 @@ export function spellRows(spells: readonly CachedSpell[]): SpellRow[] {
   return spells.map((spell) => ({ spell, stats: parseSpellStats(spell.card?.lines) }));
 }
 
+/**
+ * The catalogue read against the era that's open now — the spell counterpart to `item-era.ts`'s
+ * `eraCorpus`.
+ *
+ * The wiki's flag is a *page category*, and most level 51-60 spells carry none (Torrent of Poison,
+ * Primal Avatar: `Category:Spells` and nothing else), so the flag alone let them through. A spell no
+ * class can cast at or under `levelCap` is out of era whatever its page says. A card naming no class
+ * is never judged by level — there's nothing to judge it on.
+ */
+export function spellEraRows(rows: readonly SpellRow[], levelCap: number): SpellRow[] {
+  let widened = 0;
+  const out = rows.map((row) => {
+    const lowest = minLevel(row.stats.levels);
+    if (row.spell.outOfEra || lowest === undefined || lowest <= levelCap) return row;
+    widened++;
+    return { ...row, spell: { ...row.spell, outOfEra: true } };
+  });
+  if (widened) log.debug("level cap", levelCap, "marks", widened, "unflagged spells out of era");
+  return out;
+}
+
 /** Everything one search is narrowed by. */
 export interface SpellCriteria {
   /** Name contains every word of this, in any order — same rule as the Items tab's name box. */

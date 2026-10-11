@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useMemo } from "react";
-import { useSpellCatalog, useSpellHarvest } from "@/lib/hooks";
+import { useClosedZones, useSpellCatalog, useSpellHarvest } from "@/lib/hooks";
 import { useSpellQuery } from "@/lib/spells/useSpellQuery";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -38,7 +38,8 @@ export default function SpellSearchPanel() {
   const active = useMemo<SpellCriteria>(() => ({ ...NO_CRITERIA, ...criteria }), [criteria]);
   const set = useCallback((patch: Partial<SpellCriteria>) => setCriteria({ ...active, ...patch }), [active, setCriteria]);
 
-  const { classes, found } = useSpellQuery(rows, active, sort);
+  const closedZones = useClosedZones();
+  const { classes, found } = useSpellQuery(rows, active, sort, closedZones);
   const conditions = activeCriteria(active);
   const shown = useMemo(() => found.slice(0, MAX_ROWS), [found]);
 

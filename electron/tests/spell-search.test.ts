@@ -14,6 +14,7 @@ import {
   matchesSpell,
   minLevel,
   searchSpells,
+  spellEraRows,
   spellRows,
   spellSortValue,
   type SpellCriteria,
@@ -111,6 +112,20 @@ test("hideOutOfEra cuts a flagged spell by default, and untucking it brings the 
 
   const shown = searchSpells(withEra, { ...NO_CRITERIA, hideOutOfEra: false }, { key: "name", desc: false });
   assert.ok(shown.some((r) => r.spell.title === "Ice Comet"), "unticking the toggle brings it back");
+});
+
+test("a spell no class can cast under the live level cap is out of era, whatever its page says", () => {
+  // Torrent of Poison's real page: `Category:Spells` and nothing else, so the wiki flag never fires.
+  const unflagged = spell("Torrent of Poison", ["Classes: Shaman - Level 55"]);
+  const shared = spell("Spirit of Wolf", ["Classes: Shaman - Level 9, Beastlord - Level 55"]);
+  const corpus = spellEraRows(spellRows([...CATALOGUE, unflagged, shared, OUT_OF_ERA_SPELL]), 50);
+  const flagged = (title: string) => corpus.find((r) => r.spell.title === title)?.spell.outOfEra;
+
+  assert.equal(flagged("Torrent of Poison"), true);
+  assert.equal(flagged("Spirit of Wolf"), undefined, "one class reaching it under the cap keeps it");
+  assert.equal(flagged("Ice Comet"), true, "a wiki flag survives even with no class to judge by");
+  assert.equal(searchSpells(corpus, NO_CRITERIA, { key: "name", desc: false }).length, CATALOGUE.length + 1);
+  assert.equal(spellEraRows(spellRows([unflagged]), 60)[0].spell.outOfEra, undefined, "the day the cap rises");
 });
 
 test("classOptions lists every class any cached spell names", () => {
