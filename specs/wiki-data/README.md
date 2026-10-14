@@ -512,6 +512,11 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
   any page is opened. One generic parser reads any table of that shape, so each new step is one
   config line. See
   [ADR 0291](../decisions/0291-quest-pickups-are-generated-static-data.md).
+- **An eighth: items only ever handed out at GM events.** `src/shared/items/gm-event-items.generated.ts`
+  (`scripts/fetch-gm-event-items.mjs`) lists the items eqlwiki says came from a GM event, in an
+  item's own notes or tagged on another page. They are out of era whatever their categories say,
+  applied over every era flag (`gm-event-items.ts`). See
+  [ADR 0292](../decisions/0292-a-gm-event-item-is-never-in-era.md).
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
 - The **wiki's** drop rates live on the mob page (per loot line — a `(X%)` chance or a rarity

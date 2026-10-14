@@ -26,6 +26,7 @@ import { surveyZone } from "@/shared/travel/survey";
 import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
 import { RACE_UNLOCK_CHEAT_SHEET_URL } from "@/shared/faction/race-unlocks";
 import { withQuestPickups } from "@/shared/quests/quest-pickups";
+import { withGmEventEra } from "@/shared/items/gm-event-items";
 import type {
   AchievementView,
   BuffView,
@@ -140,10 +141,10 @@ function createWebApi(): EqlApi {
     },
 
     wiki: {
-      search: (term) => snapshot.search(term),
-      getPage: async (title) => withQuestPickups(await snapshot.getPage(title)),
+      search: async (term) => (await snapshot.search(term)).map((r) => withGmEventEra(r)),
+      getPage: async (title) => withGmEventEra(withQuestPickups(await snapshot.getPage(title))),
       // No live re-fetch on the web — the snapshot is this build's whole wiki. Same page back.
-      refreshPage: async (title) => withQuestPickups(await snapshot.getPage(title)),
+      refreshPage: async (title) => withGmEventEra(withQuestPickups(await snapshot.getPage(title))),
       searchZones: (term) => snapshot.searchZones(term),
       questsByZone: (zone) => snapshot.questsByZone(zone),
       searchFactions: (term) => snapshot.searchFactions(term),

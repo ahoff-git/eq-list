@@ -56,6 +56,7 @@ import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } fr
 import { forTransfer, itemRows, type ItemRow } from "../../src/shared/items/item-search";
 import { spellRows } from "../../src/shared/spells/spell-search";
 import { withQuestPickups } from "../../src/shared/quests/quest-pickups";
+import { outOfEraWithGmEvents, withGmEventEra } from "../../src/shared/items/gm-event-items";
 
 const log = createLogger("wiki");
 /**
@@ -594,7 +595,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
         for (const t of need) if (!eraFlagCache.has(t)) eraFlagCache.set(t, false);
       }
     }
-    return results.map((r) => ({ ...r, outOfEra: eraFlagCache.get(r.title) ?? false }));
+    // A GM-event item is out of era whatever its categories say (ADR 0292).
+    return results.map((r) => ({ ...r, outOfEra: outOfEraWithGmEvents(r.title, eraFlagCache.get(r.title)) }));
   }
 
   // Warm these shortly after startup so the first searches are already fuzzy — and so the travel
@@ -645,6 +647,13 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
     if (!titles || !titles.length) return [];
     return fuzzyRank(q, titles, (t) => t, { limit: 12, minScore: 0.45 }).map((r) => toResult(r.item));
   }
+
+  /**
+   * What a page looks like on its way out, with the facts we bundle beside the wiki laid over it: a
+   * quest's ground pickups as turn-ins (ADR 0291), and a GM-event item flagged out of era (ADR 0292).
+   * Never cached, so the cache keeps exactly what the wiki said.
+   */
+  const servedPage = (page: WikiPage | null): WikiPage | null => withGmEventEra(withQuestPickups(page));
 
   /** Titles the wiki says it doesn't have, re-asked once a day (`missing-pages.ts`). */
   const missingPages = createMissingPages(path.join(cacheDir, "missing-pages.json"));
@@ -2242,10 +2251,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
       }
     },
 
-    // A quest whose pickups are bundled gets them as turn-ins (ADR 0291). Applied on the way out, never
-    // cached, so the cache keeps exactly what the wiki said.
-    getPage: async (title) => withQuestPickups(await getPageInternal(title)),
-    refreshPage: async (title) => withQuestPickups(await getPageInternal(title, true)),
+    getPage: async (title) => servedPage(await getPageInternal(title)),
+    refreshPage: async (title) => servedPage(await getPageInternal(title, true)),
 
     harvest: harvester,
     onHarvest(listener) {

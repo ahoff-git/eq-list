@@ -328,6 +328,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0289: A debuff counts down from the file's ceiling](./0289-a-debuff-counts-down-from-the-file-s-ceiling.md)
 - [0290: A debuff's duration can be typed](./0290-a-debuff-s-duration-can-be-typed.md)
 - [0291: Quest pickups are generated static data — one list entry and one map pin per pickup](./0291-quest-pickups-are-generated-static-data.md)
+- [0292: A GM-event item is never in era — a generated list laid over every era flag](./0292-a-gm-event-item-is-never-in-era.md)
 
 ## Open Questions
 

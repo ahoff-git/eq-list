@@ -26,6 +26,7 @@
  */
 import { namesAPlace, type ItemRow } from "./item-search";
 import { zoneReadings } from "./lucy-era";
+import { outOfEraWithGmEvents } from "./gm-event-items";
 import type { ItemSource } from "../types";
 import { unavailableReason, zoneExpansion, zoneUnavailable, type ZoneUnavailable } from "../zones/expansions";
 
@@ -105,15 +106,19 @@ export function eraCorpus(rows: readonly ItemRow[], closed: ReadonlySet<string> 
   for (const row of rows) {
     const open = openZones(row.zones, closed);
     // No zones at all is unjudgeable, not unreachable — see the note on silence above.
-    const flagged = !!row.item.outOfEra;
+    // A GM-event item is out of era whatever its categories say (ADR 0292).
+    const flagged = outOfEraWithGmEvents(row.item.title, row.item.outOfEra);
     const outOfEra = flagged || (row.zones.length > 0 && open.length === 0);
     if (hide && outOfEra) continue;
     const zones = hide ? open : row.zones;
-    if (zones.length === row.zones.length && outOfEra === flagged) {
+    // Compared with the row's *own* flag, not `flagged`: the GM-event rule can turn a row the wiki left
+    // unflagged out of era, and that change has to be written onto the row.
+    const same = outOfEra === !!row.item.outOfEra;
+    if (zones.length === row.zones.length && same) {
       out.push(row);
       continue;
     }
-    out.push({ ...row, zones, item: outOfEra === flagged ? row.item : { ...row.item, outOfEra } });
+    out.push({ ...row, zones, item: same ? row.item : { ...row.item, outOfEra } });
   }
   return out;
 }
