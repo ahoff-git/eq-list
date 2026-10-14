@@ -18,6 +18,7 @@ import {
   opensearch,
   fullTextSearch,
   fetchPageHtml,
+  PAGE_MISSING,
   fetchAllTitles,
   fetchCategoryTitles,
   fetchRedirectAliases,
@@ -29,6 +30,7 @@ import {
   CHANGES_RETENTION_MS,
 } from "./api";
 import { exploreCategories, EXPLORE_SEEDS } from "./explore";
+import { createMissingPages } from "./missing-pages";
 import { belongsToRoster, planChanges, trackingCurrent } from "./changes";
 import { parseWikiPage } from "./parse";
 import { createPageStore, WIKI_PAGE_MIGRATIONS } from "./page-store";
@@ -53,6 +55,7 @@ import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
 import { forTransfer, itemRows, type ItemRow } from "../../src/shared/items/item-search";
 import { spellRows } from "../../src/shared/spells/spell-search";
+import { withQuestPickups } from "../../src/shared/quests/quest-pickups";
 
 const log = createLogger("wiki");
 /**
@@ -643,6 +646,8 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
     return fuzzyRank(q, titles, (t) => t, { limit: 12, minScore: 0.45 }).map((r) => toResult(r.item));
   }
 
+  /** Titles the wiki says it doesn't have, re-asked once a day (`missing-pages.ts`). */
+  const missingPages = createMissingPages(path.join(cacheDir, "missing-pages.json"));
 
   async function getPageInternal(title: string, force = false): Promise<WikiPage | null> {
     const cached = readCache(title);
@@ -666,14 +671,21 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
       log.debug("cache hit", title);
       return cached.page;
     }
+    // The wiki said within the day that it has no such page: take its word rather than ask again.
+    // A ↻ (`force`) still asks, so a page someone has just written can be had at once.
+    if (!force && missingPages.isMissing(title)) return cached?.page ?? null;
     try {
       // A graded item has no page of its own — the wiki knows "Dragoon Dirk", not "Dragoon Dirk
       // +2" — so a miss retries the base name (`names.ts`). The asked-for title is tried first,
       // so a build where the wiki *does* carry a grade still gets its own page, and the result
       // caches under the name we were asked about rather than paying for two fetches each time.
       const base = itemBaseName(title);
-      const fetched = (await fetchPageHtml(title)) ?? (base !== title ? await fetchPageHtml(base) : null);
-      if (!fetched) return cached?.page ?? null;
+      const asked = await fetchPageHtml(title);
+      const fetched = asked && asked !== PAGE_MISSING ? asked : base !== title ? await fetchPageHtml(base) : asked;
+      // Only the wiki's own "no such page" is remembered — a failed request says nothing about it.
+      if (fetched === PAGE_MISSING) missingPages.markMissing(title);
+      if (!fetched || fetched === PAGE_MISSING) return cached?.page ?? null;
+      missingPages.markFound(title);
       const wikiPath = `/${fetched.title.replace(/ /g, "_")}`;
       const page = parseWikiPage(fetched.title, wikiPath, fetched.html);
       const outEra = await ensureOutEraSet();
@@ -2230,8 +2242,10 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
       }
     },
 
-    getPage: (title) => getPageInternal(title),
-    refreshPage: (title) => getPageInternal(title, true),
+    // A quest whose pickups are bundled gets them as turn-ins (ADR 0291). Applied on the way out, never
+    // cached, so the cache keeps exactly what the wiki said.
+    getPage: async (title) => withQuestPickups(await getPageInternal(title)),
+    refreshPage: async (title) => withQuestPickups(await getPageInternal(title, true)),
 
     harvest: harvester,
     onHarvest(listener) {

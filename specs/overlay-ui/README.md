@@ -119,6 +119,15 @@ list, hunt, search, damage, session, peers, settings.
   next to it because that is the fact that makes somebody reach for the button — a page fetched an
   hour ago rarely needs it. `SearchPanel` re-reads the open page off a nonce rather than being handed
   the fresh one, so the effect that decides what `page` is stays the only writer of it.
+- **A page reads at a glance** (`.page-detail` in `globals.css`, shared by the wiki, pickup and
+  observed-item pages). Section headings are gold small caps over a rule. Links are blue and
+  underlined before you hover. Links that open the **map** (`MapLink`'s `map-link` class: a zone, a loc)
+  are teal with a ⌖, because they go to another window rather than another page. The pickup page lines
+  its facts up under a label column and sets the wiki's directions in a callout.
+- **A quest pickup's page is built, not fetched** (`components/items/PickupPageView.tsx`). A title
+  that names a bundled pickup ("Rod (Azia)") skips the wiki lookup, and `SearchPanel` shows its zone
+  and spot (both map links), the wiki's directions, the quest it's for, the rest of its set, and a ↗
+  link to the eqlwiki page it was read from ([ADR 0291](../decisions/0291-quest-pickups-are-generated-static-data.md)).
 - **A page carries the evidence, not just the claim** (`components/WikiPageView.tsx`). A wiki page is
   someone else's sample of an older build ([ADR 0025](../decisions/0025-observation-over-the-wiki.md)),
   so a **mob's** page ends with `MobKills`: what your own kills taught, one block per zone you've

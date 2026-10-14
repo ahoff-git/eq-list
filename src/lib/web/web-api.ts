@@ -25,6 +25,7 @@ import { answerRoute, travelZone } from "@/shared/travel/route";
 import { surveyZone } from "@/shared/travel/survey";
 import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
 import { RACE_UNLOCK_CHEAT_SHEET_URL } from "@/shared/faction/race-unlocks";
+import { withQuestPickups } from "@/shared/quests/quest-pickups";
 import type {
   AchievementView,
   BuffView,
@@ -140,9 +141,9 @@ function createWebApi(): EqlApi {
 
     wiki: {
       search: (term) => snapshot.search(term),
-      getPage: (title) => snapshot.getPage(title),
+      getPage: async (title) => withQuestPickups(await snapshot.getPage(title)),
       // No live re-fetch on the web — the snapshot is this build's whole wiki. Same page back.
-      refreshPage: (title) => snapshot.getPage(title),
+      refreshPage: async (title) => withQuestPickups(await snapshot.getPage(title)),
       searchZones: (term) => snapshot.searchZones(term),
       questsByZone: (zone) => snapshot.questsByZone(zone),
       searchFactions: (term) => snapshot.searchFactions(term),

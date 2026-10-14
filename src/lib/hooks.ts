@@ -73,6 +73,7 @@ import { buildVocabulary, NO_VOCABULARY, type Vocabulary } from "@/shared/alerts
 import { parseLogText } from "@/shared/log-parser";
 import { outOfEraSet } from "@/shared/zones/expansions";
 import { samePlace } from "@/shared/zones/place";
+import { pickupSources } from "@/shared/quests/quest-pickups";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -1563,7 +1564,11 @@ export function useEntrySources(entries: ShoppingListEntry[]): {
   const { value: sources, loading } = useReading(
     async (a) =>
       Object.fromEntries(
-        await Promise.all(entries.map(async (e) => [e.name, (await a.wiki.getPage(e.name))?.sources ?? []] as const)),
+        await Promise.all(
+          // A quest pickup's whereabouts are bundled (ADR 0291), and its list name ("Rod (Azia)") is
+          // no wiki title — asking would only fetch a near-miss page's sources.
+          entries.map(async (e) => [e.name, pickupSources(e.name) ?? (await a.wiki.getPage(e.name))?.sources ?? []] as const),
+        ),
       ),
     NO_SOURCES,
     [key],

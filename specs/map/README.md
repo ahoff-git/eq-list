@@ -463,6 +463,16 @@ world coordinates, so a map knows where it is. See
   panel narrowed to that mob with its kills ringed, the same answer arriving from another window
   gives (ADR 0104). The 👁 panel switches them off — and switching off stops the wiki lookups too,
   not just the drawing — and that choice persists.
+- **Quest pickups** (`src/shared/map/pickup-pins.ts`, pure — `electron/tests/quest-pickups.test.ts`)
+  — quest items lying on the ground at a stated spot, such as the wizard epic's ten Rods
+  ([ADR 0291](../decisions/0291-quest-pickups-are-generated-static-data.md)). The data is bundled
+  (`src/shared/quests/quest-pickups.generated.ts`, from eqlwiki's quest pages by
+  `scripts/fetch-quest-pickups.mjs`). A pin is drawn for each pickup whose list entry
+  (`Item (Label)`) is still needed and whose zone is on screen. Its hover gives the item, quest and
+  loc on one line and the table's Description below, on the pin tip's own note line, which every
+  pin's note now uses. It is captioned with the label, drawn
+  as a hunt mark with a stated position's dashed ring, and switched by the hunt toggle. Derived and
+  never stored, like a hunt pin; a click opens nothing, since there is no mob behind it.
 - **Named spawns** (`src/shared/map/named-pins.ts`, pure — `electron/tests/named-pins.test.ts`) —
   the map's other self-placed marker: every mob eqlwiki's own `Category:Named Mobs` knows about in
   the zone on screen, whether or not it's on the hunt list

@@ -13,6 +13,8 @@ import { addByTitle, addItem } from "@/lib/items/addToList";
 import { searchKnownItems, unknownToTheWiki, type KnownItem } from "@/shared/items/known-items";
 import { count } from "@/shared/format";
 import type { LucyEra, LucySearchResult, SearchResult, WikiPage } from "@/shared/types";
+import { pickupFor } from "@/shared/quests/quest-pickups";
+import PickupPageView from "@/app/components/items/PickupPageView";
 
 type Mode = "name" | "zone" | "faction";
 
@@ -86,6 +88,7 @@ export default function SearchPanel({
    * answer is current.
    */
   const [pageNonce, setPageNonce] = useState(0);
+  const pickup = nav.current ? pickupFor(nav.current) : undefined;
 
   const settings = useSettings();
   const hideEra = settings?.hideOutOfEra ?? false;
@@ -187,7 +190,8 @@ export default function SearchPanel({
   useEffect(() => {
     const a = api();
     const title = nav.current;
-    if (!a || !title) {
+    // A quest pickup's page is built from the bundled dataset (`PickupPageView`) — no wiki has it.
+    if (!a || !title || pickupFor(title)) {
       setPage(null);
       return;
     }
@@ -466,8 +470,9 @@ export default function SearchPanel({
 
       {/* No wiki page is not the end of the answer: the item may be one your log knows and the wiki
           doesn't, in which case this is its page (ADR 0103). */}
-      {nav.current && !loadingPage && !page && <ObservedItemView title={nav.current} known={known} />}
+      {nav.current && !loadingPage && !page && !pickup && <ObservedItemView title={nav.current} known={known} />}
 
+      {pickup && <PickupPageView pickup={pickup} />}
       {page && <WikiPageView page={page} onRefreshed={() => setPageNonce((n) => n + 1)} />}
     </div>
   );

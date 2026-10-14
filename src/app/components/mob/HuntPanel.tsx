@@ -23,6 +23,8 @@ import { distinct } from "@/shared/sorting";
 import { zoneLevelText, zoneLevelWhy, zoneLevels } from "@/shared/zones/levels";
 import { CheckField, Empty, segCls } from "@/app/components/ui";
 import type { Zone } from "@/shared/map/types";
+import type { ShoppingListEntry } from "@/shared/types";
+import { pickupFor, pickupLocText } from "@/shared/quests/quest-pickups";
 
 /** How many zones the picker offers unfiltered — the hunt's list is short, so show it all. */
 const ZONE_MATCHES = 40;
@@ -121,7 +123,8 @@ export default function HuntPanel({
    */
   const { needed, sources, targets, zones: allZones, loading } = useHunt();
   const covered = new Set(allZones.flatMap((z) => z.mobs.flatMap((m) => m.items.map((i) => i.item))));
-  const noSource = needed.filter((e) => !covered.has(e.name));
+  // A quest pickup lies on the ground rather than dropping (ADR 0291): its own section, not "no source".
+  const noSource = needed.filter((e) => !covered.has(e.name) && !pickupFor(e.name));
 
   // Drop rates come from each mob's loot page (the item's "Drops From" has none).
   const mobNames = useMemo(() => distinct(allZones.flatMap((z) => z.mobs.map((m) => m.mob))), [allZones]);
@@ -369,6 +372,13 @@ export default function HuntPanel({
         />
       )}
 
+      <PickupGroup
+        entries={needed.filter((e) =>
+          grouping === "zone" ? !narrow || zoneMatches(narrow, pickupFor(e.name)?.zone ?? "") : !pickedItem || e.name === pickedItem,
+        )}
+        onAdjust={setObtained}
+      />
+
       {/* Also an answer about the whole list rather than about the one item asked for. */}
       {!loading && !(grouping === "item" && pickedItem) && noSource.length > 0 && (
         <div className="hunt-nosource">
@@ -571,6 +581,39 @@ function ZoneName({ zone, here }: { zone: string; here: boolean }) {
  * No entry behind `id` (a test-built `HuntItemRef`) draws the count with no buttons rather than ones
  * that would silently do nothing.
  */
+/**
+ * Quest pickups still needed — things lying on the ground at a stated spot, so there is no mob to
+ * hunt and nothing to rate: just where, and how to get there. The map pins the same entries.
+ */
+function PickupGroup({
+  entries,
+  onAdjust,
+}: {
+  entries: ShoppingListEntry[];
+  onAdjust: (id: string, obtained: number, delta: number) => void;
+}) {
+  const rows = entries.flatMap((e) => {
+    const p = pickupFor(e.name);
+    return p ? [{ e, p }] : [];
+  });
+  if (!rows.length) return null;
+  return (
+    <div className="hunt-nosource">
+      <h4 className="muted small">On the ground ({rows.length})</h4>
+      {rows.map(({ e, p }) => (
+        <div key={e.id} className="row" title={p.note}>
+          <ItemLink title={e.name} />
+          <span className="muted small">
+            {p.zone} · {pickupLocText(p)}
+          </span>
+          <span className="spacer" />
+          <ObtainedStepper id={e.id} obtained={e.obtained} needed={e.needed} onAdjust={onAdjust} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ObtainedStepper({
   id,
   obtained,

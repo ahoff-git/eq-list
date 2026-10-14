@@ -38,6 +38,7 @@ import { poiGroupSummary, type PoiKind } from "@/shared/map/poi-kinds";
 import { HUNT_PIN, NAMED_PIN, PIN_TYPES, pinType, type MapPin, type PinKind } from "@/shared/map/pins";
 import { huntPins, unplacedHuntMobs } from "@/shared/map/hunt-pins";
 import { namedPins, unplacedNamedMobs } from "@/shared/map/named-pins";
+import { pickupPins } from "@/shared/map/pickup-pins";
 import MapFilters from "@/app/components/map/MapFilters";
 import MapTitlebar from "@/app/components/map/MapTitlebar";
 import MapToolbar from "@/app/components/map/MapToolbar";
@@ -472,7 +473,7 @@ export default function MapWindow() {
    * shut — the marks on the canvas are the useful half, and a reader who never opens the panel is
    * exactly who they're for. The panel is handed them (`known`), so the two can't disagree.
    */
-  const { zones: huntZones } = useHunt();
+  const { zones: huntZones, needed: huntNeeded } = useHunt();
   const zoneMobs = useZoneMobs(zoneKey, `${myKills.length}:${peerKills.length}`);
   /**
    * **The wiki, asked only where our own kills are silent.**
@@ -503,6 +504,14 @@ export default function MapWindow() {
           })
         : [],
     [showHuntPins, huntZones, zoneKey, zoneMobs, wikiPlaces, pins, zoneMatch],
+  );
+  /**
+   * Quest pickups still on the list (ADR 0291) — part of the hunt, so they share its switch: they are
+   * the other half of "what is my list sending me to get here".
+   */
+  const pickupMarks = useMemo(
+    () => (showHuntPins ? pickupPins(huntNeeded, zoneMatch) : []),
+    [showHuntPins, huntNeeded, zoneMatch],
   );
 
   /**
@@ -629,9 +638,26 @@ export default function MapWindow() {
         kind: "named",
       }),
     );
-    return [...local, ...peer, ...hunt, ...named];
+    // A pickup is a hunt mark for something you pick up rather than kill: same look, no mob behind it,
+    // so a click has nothing to open. No `spread` — the wiki states the spot, it isn't measured.
+    const pickups = pickupMarks.map(
+      (p): RenderPin => ({
+        id: p.id,
+        y: p.y,
+        x: p.x,
+        color: HUNT_PIN.color,
+        glyph: HUNT_PIN.glyph,
+        label: `${HUNT_PIN.label} · ${p.about}`,
+        title: p.title,
+        note: p.note,
+        mine: false,
+        loud: true,
+        kind: "hunt",
+      }),
+    );
+    return [...local, ...peer, ...hunt, ...pickups, ...named];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden, huntMarks, namedMarks, showNamedRings]);
+  }, [pins, room.peerPins, zoneKey, viewLayers, pinKinds.hidden, hiddenSharers.hidden, huntMarks, pickupMarks, namedMarks, showNamedRings]);
 
   function placePin(eq: { y: number; x: number }, clientX: number, clientY: number) {
     if (!heldPin || !zoneKey) return;
@@ -811,7 +837,7 @@ export default function MapWindow() {
             onPinKind={pinKinds.setVisible}
             trailOpacity={trailOpacity}
             onTrailOpacity={setTrailOpacity}
-            huntPins={huntMarks.length}
+            huntPins={huntMarks.length + pickupMarks.length}
             showHuntPins={showHuntPins}
             onHuntPins={setShowHuntPins}
             namedPins={namedMarks.length}

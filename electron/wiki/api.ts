@@ -348,17 +348,28 @@ export async function fetchQuestBacklinks(title: string, category = "Quests", ma
   return [...found.values()];
 }
 
+/** The wiki's answer that it has no page by this title — distinct from failing to answer at all. */
+export const PAGE_MISSING = "missing";
+
 /**
  * Fetch a page's rendered content HTML plus its category names (one `parse`
  * call). Categories feed the out-of-era check in the wiki client.
+ *
+ * `PAGE_MISSING` when the wiki says the page doesn't exist, so the caller can remember that
+ * (`missing-pages.ts`); `null` for any other failure, which says nothing about the page.
  */
 export async function fetchPageHtml(
   title: string,
-): Promise<{ title: string; html: string; categories: string[] } | null> {
+): Promise<{ title: string; html: string; categories: string[] } | typeof PAGE_MISSING | null> {
   const data = await apiGet<{
     parse?: { title: string; text: { "*": string }; categories?: { "*": string }[] };
-    error?: { info: string };
+    error?: { code?: string; info: string };
   }>({ action: "parse", page: title, prop: "text|categories", redirects: "1" });
+  if (data.error?.code === "missingtitle") {
+    // Expected, not alarming: lots of names have no page. Quiet, and remembered by the caller.
+    log.debug("no page for", title);
+    return PAGE_MISSING;
+  }
   if (data.error || !data.parse) {
     log.warn("parse failed for", title, data.error?.info ?? "");
     return null;

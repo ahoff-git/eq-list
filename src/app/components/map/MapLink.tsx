@@ -40,7 +40,8 @@ export default function MapLink({
     e.stopPropagation();
     showOnMap(target);
   };
-  const cls = `${as === "button" ? "btn ghost sm" : "link"}${className ? ` ${className}` : ""}`;
+  // `map-link` lets a page tell "opens the map" from "opens a page" at a glance (`.page-detail`).
+  const cls = `${as === "button" ? "btn ghost sm" : "link map-link"}${className ? ` ${className}` : ""}`;
   const label = title ?? describe(target);
   return as === "button" ? (
     <button className={cls} title={label} onClick={onClick}>

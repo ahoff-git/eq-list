@@ -10,6 +10,7 @@ import {
   type GoalFocus,
 } from "@/lib/hooks";
 import { api } from "@/lib/api";
+import QuestPickupAdd from "@/app/components/items/QuestPickupAdd";
 import ItemLink, { NameList } from "@/app/components/items/ItemLink";
 import { LucyLink } from "@/app/components/items/LucySays";
 import { count } from "@/shared/format";
@@ -83,16 +84,20 @@ export default function ListPanel() {
   return (
     <div>
       {list.entries.length === 0 ? (
-        <Empty
-          title="Your shopping list is empty."
-          hint="Find items, quests, or recipes on the Search tab and add them here."
-        />
+        <>
+          <Empty
+            title="Your shopping list is empty."
+            hint="Find items, quests, or recipes on the Search tab and add them here."
+          />
+          <QuestPickupAdd />
+        </>
       ) : (
         <div className="row" style={{ marginBottom: 12 }}>
           <span className="muted small">
             {count(list.entries.length, "item")} watched · {count(groups.length, "group")}
           </span>
           <span className="spacer" />
+          <QuestPickupAdd />
           {armed && (
             <button
               className={`btn ghost sm ${styling ? "on" : ""}`}

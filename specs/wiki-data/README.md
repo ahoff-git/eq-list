@@ -281,6 +281,15 @@ shopping list.
   A page from a peer keeps **its** pull date, and a copy newer than ours replaces ours
   ([ADR 0164](../decisions/0164-the-newest-copy-in-the-room-wins.md)), so a room re-pulls each page
   about once between everyone per TTL rather than once each.
+- **A page the wiki doesn't have is asked about once a day** (`electron/wiki/missing-pages.ts`,
+  tested in `electron/tests/missing-pages.test.ts`). `fetchPageHtml` tells the wiki's own
+  `missingtitle` answer (`PAGE_MISSING`) apart from a failed request, and `getPage` remembers only
+  the first, in `missing-pages.json` beside the cache, for 24 hours. Until then it answers from the
+  cache or with nothing, without a request or a warning. Names with no page are asked for constantly:
+  hover cards, list rows, and quest pickups' own names such as "Rod (Ena)"
+  ([ADR 0291](../decisions/0291-quest-pickups-are-generated-static-data.md)). A ↻ still forces the
+  question, and a page that turns up clears its entry. A timeout or a server error is never
+  remembered, so it can't hide a page that exists.
 - **A page can be cached under two names, and the catalogue folds them.** Asking for a *graded* item
   (`Cloth Cape +2`, off the log or the shopping list) finds no page of that name, so `getPage` retries
   the base name and caches the answer under the name it was **asked** about — which is what stops the
@@ -496,6 +505,13 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
   category someone edited should show up as a diff to review, not silently at runtime), and read by
   the map's [named spawns](../map/README.md) layer. See
   [ADR 0265](../decisions/0265-named-spawns-mark-themselves-on-the-map.md).
+- **A seventh exception: quest pickup tables.**
+  `src/shared/quests/quest-pickups.generated.ts` (`scripts/fetch-quest-pickups.mjs`) ships the
+  Zone / Location tables on eqlwiki quest pages whose items lie on the ground, such as the Rods on
+  "Tarton's Wheel". The page parser doesn't read these tables, and the map and list need them before
+  any page is opened. One generic parser reads any table of that shape, so each new step is one
+  config line. See
+  [ADR 0291](../decisions/0291-quest-pickups-are-generated-static-data.md).
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
 - The **wiki's** drop rates live on the mob page (per loot line — a `(X%)` chance or a rarity

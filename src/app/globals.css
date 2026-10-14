@@ -515,6 +515,52 @@ button {
    about the item, and still what to plan for when the era opens (see `SourceList`). */
 .page-detail li.out-of-era { opacity: 0.55; }
 
+/* Scannable at a glance: a page mixes titles, prose and two kinds of link, and with links in body
+   colour until hovered they all read alike. Links are blue; links that open the **map** (a zone, a
+   loc) are teal with a ⌖, since they go somewhere else entirely; section headings are gold small caps
+   over a rule, so the page breaks into the questions it answers. Scoped to `.page-detail` — the wiki,
+   pickup and observed-item pages — so the rest of the app's dense rows are untouched. */
+.page-detail {
+  --link: #7cc4ff;
+  --link-map: #5fd3a4;
+}
+.page-detail h3 { font-size: 17px; }
+.page-detail h4 {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.page-detail .link {
+  color: var(--link);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.page-detail .map-link { color: var(--link-map); }
+.page-detail .map-link::before { content: "⌖ "; opacity: 0.8; }
+.page-detail .link:hover { color: var(--accent); text-decoration: underline solid; }
+.page-detail p { line-height: 1.5; }
+
+/* A label column for "Zone: … / Location: …" facts, so the values line up and the eye can run down them. */
+.page-detail .field-label {
+  flex: 0 0 76px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+/* The wiki's own directions — prose to read, set apart from the facts and links around it. */
+.page-detail .page-callout {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border-left: 3px solid var(--accent-dim);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.page-detail .done { color: var(--good); }
+
 /* inline stat card on a page (item stats / spell description + details) */
 .page-card {
   display: flex;

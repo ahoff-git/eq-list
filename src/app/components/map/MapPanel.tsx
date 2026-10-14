@@ -106,6 +106,8 @@ interface HoverTarget {
   priority: number;
   title: string;
   detail?: string;
+  /** Free text under the detail, on its own lines — a pin's note, which can run to a paragraph. */
+  note?: string;
   /** Set for a pin, which has its own click behaviour (edit / move). */
   pin?: RenderPin;
   /** Set for a kill, which the page may want to act on. */
@@ -547,11 +549,11 @@ export default function MapPanel({
         title: pin.title || pin.label,
         detail: [
           pin.title ? pin.label : "",
-          pin.note ?? "",
           pin.mine ? "click to edit" : pin.mob ? "click for what's known about it" : "",
         ]
           .filter(Boolean)
           .join(" · "),
+        note: pin.note,
         pin,
       });
     }
@@ -1287,6 +1289,7 @@ export default function MapPanel({
         <div className="pin-tip" style={{ left: hovered.x + 12, top: hovered.y + 12 }}>
           <div className="pt-title">{hovered.target.title}</div>
           {hovered.target.detail && <div className="pt-label">{hovered.target.detail}</div>}
+          {hovered.target.note && <div className="pt-note">{hovered.target.note}</div>}
         </div>
       )}
       {!hasMap && <p className="muted small map-note">No map for this zone yet.</p>}
