@@ -6,6 +6,7 @@ import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, 
 import { useGridSort } from "@/lib/useGridSort";
 import { buffLinesFor } from "@/shared/buffs/buff-lines";
 import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spells/spell-search";
+import { sourceKindsLabel, spellSource } from "@/shared/spells/spell-sources";
 import type { Sort } from "@/shared/sorting";
 
 /** Which way each column opens on its first click — the same rule the old `SortHeader` calls
@@ -19,6 +20,7 @@ const START_DESC: Record<SpellSortKey, boolean> = {
   range: false,
   damage: true,
   manaPerDamage: false,
+  source: false,
 };
 
 type Row = SpellRow & { id: string };
@@ -128,6 +130,16 @@ export default function SpellCatalogTable({
         valueGetter: (_v, row) => classesOf(row) || "—",
       },
       {
+        field: "source",
+        headerName: "Source",
+        description: "How the wiki says it's obtained — sort to bring the quest-only spells to the top",
+        flex: 2,
+        minWidth: 140,
+        valueGetter: (_v, row) => sourceText(row),
+        cellClassName: "small",
+        renderCell: (p) => <SpellSourceCell title={p.row.spell.title} />,
+      },
+      {
         field: "buffLine",
         headerName: "Buff Line",
         description: "Spells sharing a line can't be up at once — eqlwiki's own Buff Lines guide, ADR 0264",
@@ -194,4 +206,31 @@ function classesOf(row: SpellRow): string {
     .sort(([, a], [, b]) => (a ?? 0) - (b ?? 0))
     .map(([cls, level]) => `${cls} ${level}`)
     .join(", ");
+}
+
+/** The Source column as plain text — what the grid's own filter matches against. */
+function sourceText(row: SpellRow): string {
+  const source = spellSource(row.spell.title);
+  if (!source) return "—";
+  const quests = source.quests ?? [];
+  return quests.length ? `${sourceKindsLabel(source)}: ${quests.join(", ")}` : sourceKindsLabel(source);
+}
+
+/** The kinds, then each quest as a link to its page. */
+function SpellSourceCell({ title }: { title: string }) {
+  const source = spellSource(title);
+  if (!source) return <span className="muted">—</span>;
+  const quests = source.quests ?? [];
+  return (
+    <>
+      {sourceKindsLabel(source)}
+      {quests.length > 0 && ": "}
+      {quests.map((quest, i) => (
+        <span key={quest}>
+          {i > 0 && ", "}
+          <ItemLink title={quest} />
+        </span>
+      ))}
+    </>
+  );
 }

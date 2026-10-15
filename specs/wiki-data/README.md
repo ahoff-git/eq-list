@@ -111,11 +111,20 @@ shopping list.
     ("[1] 1x 25% (50%)"), taking the **lowest** % (the real chance, not the per-slot
     figure) — else a trailing "(X%) (low% - high%)". Rarity *words* ("Rare"/"Always")
     carry no number and are ignored. Powers the Hunt tab.
+  - Quest **steps** (`WikiPage.steps`, `electron/wiki/quest-steps.ts`): the first walkthrough or
+    checklist section whose bullets nest (else the first checklist), as a tree of bullets with links
+    in place. What each link is (NPC, zone, item, quest) is read off its own page when shown, not
+    parsed. Only the page view re-fetches a quest cached before them
+    ([ADR 0295](../decisions/0295-a-quest-is-a-tree-of-steps.md)).
   - Stat card (`WikiPage.card`), reused across kinds — the block shown inline on the
     page and on hover (`ItemLink` / `useItemCard`):
     - **items**: the page's own `.itemtopbg`(title) + `.itemdata` (icon + stat lines),
       ignoring blocks nested in a `.hb` tooltip (those are embedded, not the page's own).
     - **spells**: `.eql-spellpage` description + classes + effect/casting tables.
+      A spell's "Where to Obtain" becomes its `sources` (merchant table, class spell-vendor links,
+      quest prose, or an unlinked note kept as text) and "Items with Spell Effect" its
+      `effectItems`. Only the page view needs those, so only it re-fetches a spell cached before them
+      (`MIN_VIEW_VERSION`, [ADR 0294](../decisions/0294-a-spell-page-says-how-to-get-it-and-every-era-flag-reads-the-level-cap.md)).
     - **mobs/NPCs**: the `.mobStatsBox`/`.eql-mobpage-stats` table → **location**
       (Spawn Zone / Location) + Level/Race/Class/HP/Special, plus the mob portrait, then
       **faction impact** (the "Factions" / "Opposing Factions" lists — "None" is dropped).
@@ -517,6 +526,11 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
   item's own notes or tagged on another page. They are out of era whatever their categories say,
   applied over every era flag (`gm-event-items.ts`). See
   [ADR 0292](../decisions/0292-a-gm-event-item-is-never-in-era.md).
+- **A ninth: how each spell is obtained.** `src/shared/spells/spell-sources.generated.ts`
+  (`scripts/fetch-spell-sources.mjs`) classifies every spell page's `where_to_obtain` field as quest,
+  research, drop or vendor, and keeps the quests it links. The spell harvest's card never kept that
+  section, and the Spells tab's Source column needs it from the first open. See
+  [ADR 0296](../decisions/0296-spell-sources-are-generated-static-data.md).
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
 - The **wiki's** drop rates live on the mob page (per loot line — a `(X%)` chance or a rarity

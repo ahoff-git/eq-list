@@ -80,8 +80,8 @@ export type SharedItemPage = Omit<WikiPage, "fetchedAt"> & { fetchedAt?: string 
 
 /**
  * A spell page as it crosses between peers — the same "public page, self-checking" deal
- * `SharedItemPage` makes, over the much smaller shape a spell's card actually has (no sources,
- * components, npcs or links to carry). See
+ * `SharedItemPage` makes, over the much smaller shape a spell page actually has (its card and how to
+ * get it; no components, npcs or links to carry). See
  * [ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md).
  */
 export interface SharedSpellPage {
@@ -92,6 +92,13 @@ export interface SharedSpellPage {
    *  the same way `SharedItemPage.outOfEra` does. */
   outOfEra?: boolean;
   fetchedAt?: string;
+  /**
+   * How to get it — `WikiPage.sources`. **Absent** from an older build, which never read it, and the
+   * receiver files such a copy as not current rather than as a spell nobody can get.
+   */
+  sources?: ItemSource[];
+  /** The items that carry it as an effect — `WikiPage.effectItems`. */
+  effectItems?: string[];
 }
 
 /**
@@ -2050,21 +2057,7 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
       }
     : undefined;
 
-  const sources = Array.isArray(raw.sources)
-    ? raw.sources
-        .slice(0, MAX_PAGE_SOURCES)
-        .map((row): ItemSource | null => {
-          if (!isRecord(row)) return null;
-          const where = text(row.where);
-          if (!where) return null;
-          return {
-            kind: SOURCE_KINDS.has(str(row.kind)) ? (str(row.kind) as SourceKind) : "unknown",
-            where,
-            detail: text(row.detail) || undefined,
-          };
-        })
-        .filter((row): row is ItemSource => !!row)
-    : [];
+  const sources = readSources(raw.sources) ?? [];
 
   const components = Array.isArray(raw.components)
     ? raw.components
@@ -2130,9 +2123,33 @@ function readSharedPage(raw: unknown): SharedItemPage | null {
 }
 
 /**
+ * A page's sources as a peer sent them, rebuilt row by row and capped — `undefined` when the sender
+ * sent none at all, which a spell page's reader has to tell apart from an empty list.
+ */
+function readSources(raw: unknown): ItemSource[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .slice(0, MAX_PAGE_SOURCES)
+    .map((row): ItemSource | null => {
+      if (!isRecord(row)) return null;
+      const where = text(row.where);
+      if (!where) return null;
+      const label = text(row.label);
+      return {
+        kind: SOURCE_KINDS.has(str(row.kind)) ? (str(row.kind) as SourceKind) : "unknown",
+        where,
+        detail: text(row.detail) || undefined,
+        // Only a spell's sources carry these, so an item's row crosses exactly as it always has.
+        ...(label ? { label } : {}),
+        ...(row.plain === true ? { plain: true } : {}),
+      };
+    })
+    .filter((row): row is ItemSource => !!row);
+}
+
+/**
  * A spell page as a peer sent it — the same rebuild-from-scratch discipline `readSharedPage` applies,
- * over the much smaller shape a spell's card has: no sources, components or links to validate, since
- * nothing reads a spell's *acquisition* the way an item's is.
+ * over the much smaller shape a spell page has: its card, how to get it, and the items that carry it.
  */
 function readSharedSpellPage(raw: unknown): SharedSpellPage | null {
   if (!isRecord(raw)) return null;
@@ -2153,6 +2170,10 @@ function readSharedSpellPage(raw: unknown): SharedSpellPage | null {
     card,
     outOfEra: raw.outOfEra === true,
     fetchedAt: readStamp(raw.fetchedAt),
+    sources: readSources(raw.sources),
+    effectItems: Array.isArray(raw.effectItems)
+      ? [...new Set(raw.effectItems.slice(0, MAX_PAGE_PARTS).map((t) => text(t)).filter((t): t is string => !!t))]
+      : undefined,
   };
 }
 

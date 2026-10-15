@@ -57,6 +57,8 @@ import { forTransfer, itemRows, type ItemRow } from "../../src/shared/items/item
 import { spellRows } from "../../src/shared/spells/spell-search";
 import { withQuestPickups } from "../../src/shared/quests/quest-pickups";
 import { outOfEraWithGmEvents, withGmEventEra } from "../../src/shared/items/gm-event-items";
+import { withSpellLevelEra } from "../../src/shared/spells/spell-era";
+import { liveLevelCap, outOfEraSet } from "../../src/shared/zones/expansions";
 
 const log = createLogger("wiki");
 /**
@@ -135,7 +137,16 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // it points at ("Wizard Test of Concentration" reading as a page that was never fetched, when the
 // href is really `/Wizard_Plane_of_Sky_Tests`), and everything keyed off the old `where` had nothing
 // to find.
-const CACHE_VERSION = 25;
+// v26: a spell page now reads its "Where to Obtain" into `sources` and its "Items with Spell Effect"
+// into `effectItems` — a spell cached before it says nothing about how to get it.
+// v27: a quest page now keeps its walkthrough as a tree of `steps` (ADR 0295).
+const CACHE_VERSION = 27;
+
+/** The version a spell page began carrying how to get it — a sourceless peer copy is filed just under. */
+const SPELL_SOURCES_AT = 26;
+
+/** The version a quest page began carrying its `steps`. */
+const QUEST_STEPS_AT = 27;
 
 /** The version "faction" became a kind the parser could produce at all — see the misclassified
  * check below, which only needs to distrust a cached kind *older* than this. */
@@ -178,6 +189,23 @@ const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
   // `parseLinkList`. Mob, spell and zone pages are unaffected.
   item: 25,
   recipe: 25,
+  // Spells are not raised for v26 (`SPELL_SOURCES_AT`): their card is unchanged, and every catalogue
+  // walk reads only the card — see `MIN_VIEW_VERSION` for where v26 is asked for instead.
+};
+
+/**
+ * The version a page of each kind has to have been parsed at to be **shown**, where that is stricter
+ * than `MIN_PARSE_VERSION` — a parse that added something only the page view reads.
+ *
+ * v26 taught a spell page how to get it, which only the page view shows. Raising the spell floor
+ * instead would drop every cached spell from the Spells tab until a re-harvest fetched all ~2,000 of
+ * them again, for a card that hasn't changed; this way a spell is re-fetched when someone opens it.
+ */
+const MIN_VIEW_VERSION: Partial<Record<WikiPageKind, number>> = {
+  spell: SPELL_SOURCES_AT,
+  // v27, for the same reason: a quest's turn-ins and card are unchanged, and item levels are read off
+  // ~950 quest pages, so only opening one asks for its steps.
+  quest: QUEST_STEPS_AT,
 };
 
 /** Below this, a page predates parts of the parse every kind depends on. */
@@ -186,6 +214,21 @@ const MIN_PARSE_FLOOR = 12;
 /** Was this page parsed by a parser current enough for what we now read off it? */
 function parsedCurrently(kind: WikiPageKind, version: number): boolean {
   return version >= (MIN_PARSE_VERSION[kind] ?? MIN_PARSE_FLOOR);
+}
+
+/** Was it parsed current enough to show — everything the page view reads, not just the catalogue? */
+function parsedForView(kind: WikiPageKind, version: number): boolean {
+  return parsedCurrently(kind, version) && version >= (MIN_VIEW_VERSION[kind] ?? 0);
+}
+
+/**
+ * The version a peer's copy of a page is filed under. The shared shape carries what the catalogue
+ * reads, never what only the page view does (a quest's `steps`), so a kind with a view floor is filed
+ * just under it: its catalogue facts serve at once, and opening it fetches the page.
+ */
+function peerCopyVersion(kind: WikiPageKind): number {
+  const view = MIN_VIEW_VERSION[kind];
+  return view ? Math.min(CACHE_VERSION, view - 1) : CACHE_VERSION;
 }
 
 // Wiki taxonomy (confirmed against the live wiki). Kept as named constants so a
@@ -577,11 +620,28 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
   // Per-title out-of-era flag, cached for the session (search hits repeat a lot).
   const eraFlagCache = new Map<string, boolean>();
 
-  /** Tag each result with `outOfEra` by looking up (and caching) its categories. */
+  /**
+   * The level cap of the era open now, off the cached out-of-era zone list (ADR 0288). Read per call
+   * rather than captured, so an era opening reaches the next search without a restart; an empty list
+   * opens everything, the same fail-open `liveLevelCap` already has.
+   */
+  const levelCap = (): number => liveLevelCap(outOfEraSet(outEraZoneIndex.get() ?? []));
+
+  /**
+   * The era rules that aren't page categories, laid over a result: a GM-event item (ADR 0292), and a
+   * spell past the live level cap, judged off the copy we hold — the whole spell catalogue is
+   * harvested, so that is nearly always one.
+   */
+  function withRuleEra(r: SearchResult): SearchResult {
+    const flagged = { ...r, outOfEra: outOfEraWithGmEvents(r.title, r.outOfEra) };
+    return withSpellLevelEra(flagged, readCache(r.title)?.page, levelCap());
+  }
+
+  /** Tag each result with `outOfEra` by looking up (and caching) its categories, then the rules above. */
   async function flagOutOfEra(results: SearchResult[]): Promise<SearchResult[]> {
     if (!results.length) return results;
     const outEra = await ensureOutEraSet();
-    if (!outEra.size) return results;
+    if (!outEra.size) return results.map(withRuleEra);
     const need = results.map((r) => r.title).filter((t) => !eraFlagCache.has(t));
     if (need.length) {
       try {
@@ -595,8 +655,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
         for (const t of need) if (!eraFlagCache.has(t)) eraFlagCache.set(t, false);
       }
     }
-    // A GM-event item is out of era whatever its categories say (ADR 0292).
-    return results.map((r) => ({ ...r, outOfEra: outOfEraWithGmEvents(r.title, eraFlagCache.get(r.title)) }));
+    return results.map((r) => withRuleEra({ ...r, outOfEra: eraFlagCache.get(r.title) }));
   }
 
   // Warm these shortly after startup so the first searches are already fuzzy — and so the travel
@@ -650,10 +709,14 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
 
   /**
    * What a page looks like on its way out, with the facts we bundle beside the wiki laid over it: a
-   * quest's ground pickups as turn-ins (ADR 0291), and a GM-event item flagged out of era (ADR 0292).
-   * Never cached, so the cache keeps exactly what the wiki said.
+   * quest's ground pickups as turn-ins (ADR 0291), a GM-event item flagged out of era (ADR 0292), and
+   * a spell past the live level cap flagged too (ADR 0288). Never cached, so the cache keeps exactly
+   * what the wiki said — and a cap that moves reaches the next view.
    */
-  const servedPage = (page: WikiPage | null): WikiPage | null => withGmEventEra(withQuestPickups(page));
+  const servedPage = (page: WikiPage | null): WikiPage | null => {
+    const served = withGmEventEra(withQuestPickups(page));
+    return withSpellLevelEra(served, served, levelCap());
+  };
 
   /** Titles the wiki says it doesn't have, re-asked once a day (`missing-pages.ts`). */
   const missingPages = createMissingPages(path.join(cacheDir, "missing-pages.json"));
@@ -676,7 +739,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
       (factionIndex.get() ?? []).includes(title);
     // Only a current-version, unexpired entry is a hit; a stale-version entry is
     // re-parsed (but still kept below as an offline fallback).
-    if (!force && cached && !misclassified && parsedCurrently(cached.page.kind, cached.version) && cached.ageMs < ttlMs()) {
+    if (!force && cached && !misclassified && parsedForView(cached.page.kind, cached.version) && cached.ageMs < ttlMs()) {
       log.debug("cache hit", title);
       return cached.page;
     }
@@ -1240,9 +1303,12 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
     for (const title of spellByShard.get(shard) ?? []) {
       const hit = readCache(title);
       if (!hit || !parsedCurrently(hit.page.kind, hit.version) || hit.ageMs >= ttlMs()) continue;
-      const { kind, title: name, wikiPath, card, outOfEra, fetchedAt } = hit.page;
+      const { kind, title: name, wikiPath, card, outOfEra, fetchedAt, sources, effectItems } = hit.page;
       if (kind !== "spell") continue;
-      out.push({ title: name, wikiPath, card, outOfEra, fetchedAt });
+      // A copy parsed before v26 has an empty `sources` that means "never read", not "none" — so it
+      // travels without one, and the receiver knows to fetch the page before showing it.
+      const read = hit.version >= SPELL_SOURCES_AT;
+      out.push({ title: name, wikiPath, card, outOfEra, fetchedAt, ...(read ? { sources, effectItems } : {}) });
     }
     return out;
   }
@@ -1391,7 +1457,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
       }
       const full: WikiPage = { ...page, fetchedAt: new Date(fetchedAt).toISOString() };
       try {
-        store.put(page.title, CACHE_VERSION, full);
+        store.put(page.title, peerCopyVersion(page.kind), full);
         taken++;
         // The shard is re-checked once for the whole batch below, so only the derived data goes here.
         dropDerived();
@@ -1423,15 +1489,20 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
         kind: "spell",
         title: page.title,
         wikiPath: page.wikiPath ?? `/${page.title.replace(/ /g, "_")}`,
-        sources: [],
+        sources: page.sources ?? [],
         components: [],
         rewards: [],
         card: page.card,
+        effectItems: page.effectItems,
         outOfEra: page.outOfEra,
         fetchedAt: new Date(fetchedAt).toISOString(),
       };
+      // A peer on an older build (or with an older copy) sends no `sources` at all, which is not the
+      // same as a spell with none: filed just under the version that reads them, so its card serves
+      // the catalogue while opening the page still fetches it (`MIN_VIEW_VERSION`).
+      const version = page.sources ? CACHE_VERSION : SPELL_SOURCES_AT - 1;
       try {
-        store.put(page.title, CACHE_VERSION, full);
+        store.put(page.title, version, full);
         taken++;
         spellCatalogue = null;
         spellRowCache = null;
@@ -1466,7 +1537,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
       }
       const full: WikiPage = { ...page, fetchedAt: new Date(fetchedAt).toISOString() };
       try {
-        store.put(page.title, CACHE_VERSION, full);
+        store.put(page.title, peerCopyVersion(page.kind), full);
         factionsHeld.set(page.title, full);
         taken++;
       } catch (e) {

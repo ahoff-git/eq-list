@@ -4,6 +4,7 @@ import { useClosedZones, useLucyCard, useSettings } from "@/lib/hooks";
 import ItemDrops from "@/app/components/items/ItemDrops";
 import ItemLink from "@/app/components/items/ItemLink";
 import LucySays, { LucyLink } from "@/app/components/items/LucySays";
+import QuestSteps from "@/app/components/items/QuestSteps";
 import RefreshPage from "@/app/components/items/RefreshPage";
 import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
 import MobKills from "@/app/components/mob/MobKills";
@@ -207,6 +208,15 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
         </div>
       )}
 
+      {/* The walkthrough step by step, before the flat turn-in list: a chain quest's turn-ins mix what
+          you hand in at the end with what each step makes on the way (ADR 0295). */}
+      {(page.steps?.length ?? 0) > 0 && (
+        <>
+          <h4 className="muted small" style={{ marginTop: 12 }}>Steps</h4>
+          <QuestSteps steps={page.steps!} trail={[page.title]} />
+        </>
+      )}
+
       {bundle && bundle.length > 0 ? (
         <QuestBundleSections subQuests={bundle} page={page} addOne={addOne} />
       ) : (
@@ -254,14 +264,15 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
       {page.kind === "zone" && (
         <p className="muted small" style={{ marginTop: 12 }}>Zone page — open it on eqlwiki to browse its contents.</p>
       )}
-      {page.kind === "spell" && (
+      {page.kind === "spell" && page.sources.length === 0 && (
         <p className="muted small" style={{ marginTop: 12 }}>
-          Spell — add it to watch for it dropping, or open it on eqlwiki for how to acquire it.
+          Spell — the wiki doesn’t say where to get it. Add it to watch for it dropping, or check eqlwiki.
         </p>
       )}
       {page.kind === "faction" && page.raise && page.lower && <FactionSides title={page.title} raise={page.raise} lower={page.lower} />}
 
       {page.sources.length > 0 && <SourceList sources={page.sources} />}
+      {(page.effectItems?.length ?? 0) > 0 && <EffectItems titles={page.effectItems!} />}
       {/* The wiki's claims are above; this is what killing things actually taught us about the item
           itself — who drops it, where, and what it sells for. Offered to every page that names a
           *thing you can hold* (a spell page is its scroll, and scrolls drop): a mob's own evidence is
@@ -493,13 +504,32 @@ function SourceList({ sources }: { sources: ItemSource[] }) {
         {reach.map(({ source: s, shut, why }, i) => (
           <li key={i} className={shut ? "out-of-era" : undefined}>
             <span className={`badge kind-${s.kind}`}>{s.kind}</span>
-            <ItemLink title={s.where} />
+            {s.plain ? <span>{s.where}</span> : <ItemLink title={s.where} label={s.label} />}
             {s.detail && <span className="muted small">{s.detail}</span>}
             {shut && (
               <span className="badge era-out" title={why}>
                 {shut === "future" ? "not on this server" : "out of era"}
               </span>
             )}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * A spell page's "Items with Spell Effect" — the other way to have a spell than to scribe it. Links
+ * only: each item's own page says how to get *it*, and hovering shows its card.
+ */
+function EffectItems({ titles }: { titles: string[] }) {
+  return (
+    <>
+      <h4 className="muted small" style={{ marginTop: 12 }}>Items with this effect</h4>
+      <ul>
+        {titles.map((title) => (
+          <li key={title}>
+            <ItemLink title={title} />
           </li>
         ))}
       </ul>

@@ -14,10 +14,16 @@
  */
 import type { ItemSource, WikiPage } from "../types";
 import { distinct } from "../sorting";
-import { QUEST_PICKUPS, QUEST_PICKUPS_SOURCE, type QuestPickup } from "./quest-pickups.generated";
+import {
+  QUEST_NPCS,
+  QUEST_PICKUPS,
+  QUEST_PICKUPS_SOURCE,
+  type QuestNpc,
+  type QuestPickup,
+} from "./quest-pickups.generated";
 
-export { QUEST_PICKUPS, QUEST_PICKUPS_SOURCE };
-export type { QuestPickup };
+export { QUEST_NPCS, QUEST_PICKUPS, QUEST_PICKUPS_SOURCE };
+export type { QuestNpc, QuestPickup };
 
 /** The list entry a pickup is filed as. */
 export function pickupEntryName(p: QuestPickup): string {
@@ -38,8 +44,13 @@ export function pickupsForQuest(quest: string): QuestPickup[] {
   return QUEST_PICKUPS.filter((p) => p.quest === quest);
 }
 
+/** The NPCs a quest sends you to, in the order its page names them (ADR 0293). */
+export function npcsForQuest(quest: string): QuestNpc[] {
+  return QUEST_NPCS.filter((n) => n.quest === quest);
+}
+
 /** `-1159, 2329` — the way `/loc` prints it, so it can be compared by eye. */
-export function pickupLocText(p: QuestPickup): string {
+export function pickupLocText(p: { loc: QuestPickup["loc"] }): string {
   return [p.loc.y, p.loc.x, p.loc.z].filter((n) => n !== undefined).join(", ");
 }
 

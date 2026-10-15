@@ -1592,6 +1592,16 @@ export interface ItemSource {
   where: string;
   /** Optional extra context: zone, drop rate, cost, notes. */
   detail?: string;
+  /**
+   * How to show `where` when it isn't the page title itself — a spell page's "Shaman Spell Vendors"
+   * link points at the `Shaman` page.
+   */
+  label?: string;
+  /**
+   * `where` is the wiki's own words, not a page — a spell page's "Kunark Level 50+ Mob Drop" names no
+   * one — so it is shown as text rather than as a link to a page that doesn't exist.
+   */
+  plain?: boolean;
 }
 
 /** A required ingredient/turn-in (recipe/quest) or a mob's loot line. */
@@ -1628,6 +1638,15 @@ export interface WikiReward {
   text: string;
   item?: string;
   wikiPath?: string;
+}
+
+/** One piece of a quest step's sentence: the wiki's words, or a link to the page it names. */
+export type QuestStepPart = string | { title: string; label?: string };
+
+/** One bullet of a quest's walkthrough: its sentence with links in place, and its own sub-bullets. */
+export interface QuestStep {
+  parts: QuestStepPart[];
+  steps: QuestStep[];
 }
 
 /**
@@ -1667,7 +1686,7 @@ export interface WikiPage {
   kind: WikiPageKind;
   title: string;
   wikiPath: string;
-  /** For items: how to obtain it. */
+  /** For items and spells: how to obtain it. */
   sources: ItemSource[];
   /** For quests/recipes: the items you must gather. */
   components: WikiComponent[];
@@ -1718,10 +1737,22 @@ export interface WikiPage {
    * [ADR 0197](../../specs/decisions/0197-a-gear-set-quest-page-is-several-quests.md).
    */
   subQuests?: WikiSubQuest[];
+  /**
+   * For a **quest** page: its walkthrough or checklist as the wiki orders it, one step per bullet,
+   * with sub-bullets as sub-steps. Who each link is (NPC, zone, item, another quest) is the linked
+   * page's business, asked when the steps are shown
+   * ([ADR 0295](../../specs/decisions/0295-a-quest-is-a-tree-of-steps.md)).
+   */
+  steps?: QuestStep[];
   /** For **faction** pages: what raises this faction — the zones it's tied to, the quests, the mobs to kill. */
   raise?: FactionSide;
   /** For **faction** pages: the mirror image of `raise` — what lowers it. */
   lower?: FactionSide;
+  /**
+   * For **spell** pages: the items that carry this spell as an effect (click, worn, proc), by title —
+   * the wiki's "Items with Spell Effect" list. The other way to have a spell than to scribe it.
+   */
+  effectItems?: string[];
   /** True if the page is tagged with an era that isn't live yet (can't obtain). */
   outOfEra?: boolean;
   fetchedAt: string;

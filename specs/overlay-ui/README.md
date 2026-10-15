@@ -126,8 +126,10 @@ list, hunt, search, damage, session, peers, settings.
   its facts up under a label column and sets the wiki's directions in a callout.
 - **A quest pickup's page is built, not fetched** (`components/items/PickupPageView.tsx`). A title
   that names a bundled pickup ("Rod (Azia)") skips the wiki lookup, and `SearchPanel` shows its zone
-  and spot (both map links), the wiki's directions, the quest it's for, the rest of its set, and a ↗
-  link to the eqlwiki page it was read from ([ADR 0291](../decisions/0291-quest-pickups-are-generated-static-data.md)).
+  and spot (both map links), the wiki's directions, the quest it's for, **who to see** (the quest's
+  NPCs with zone and spot links, and what you hand them —
+  [ADR 0293](../decisions/0293-quest-npcs-are-bundled-and-pinned-while-their-quest-is-listed.md)), the rest
+  of its set, and a ↗ link to the eqlwiki page it was read from ([ADR 0291](../decisions/0291-quest-pickups-are-generated-static-data.md)).
 - **A page carries the evidence, not just the claim** (`components/WikiPageView.tsx`). A wiki page is
   someone else's sample of an older build ([ADR 0025](../decisions/0025-observation-over-the-wiki.md)),
   so a **mob's** page ends with `MobKills`: what your own kills taught, one block per zone you've

@@ -5,7 +5,13 @@ import ItemLink from "@/app/components/items/ItemLink";
 import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
 import { AddButton } from "@/app/components/ui";
 import { addItem } from "@/lib/items/addToList";
-import { pickupEntryName, pickupLocText, pickupsForQuest, type QuestPickup } from "@/shared/quests/quest-pickups";
+import {
+  npcsForQuest,
+  pickupEntryName,
+  pickupLocText,
+  pickupsForQuest,
+  type QuestPickup,
+} from "@/shared/quests/quest-pickups";
 
 /**
  * A quest pickup's own page — "Rod (Azia)" — built from the bundled dataset rather than fetched,
@@ -21,6 +27,7 @@ export default function PickupPageView({ pickup: p }: { pickup: QuestPickup }) {
   const owned = (e: { obtained: number; needed: number }) => e.obtained >= e.needed;
   const mine = entryFor(name);
   const siblings = pickupsForQuest(p.quest).filter((s) => s !== p);
+  const npcs = npcsForQuest(p.quest);
 
   return (
     <div className="page-detail">
@@ -77,6 +84,22 @@ export default function PickupPageView({ pickup: p }: { pickup: QuestPickup }) {
           </span>
         </li>
       </ul>
+
+      {npcs.length > 0 && (
+        <>
+          <h4 style={{ marginTop: 14 }}>Who to see</h4>
+          <ul>
+            {npcs.map((n) => (
+              <li key={n.npc}>
+                <ItemLink title={n.npc} />
+                <ZoneLink zone={n.zone} />
+                <MapLink target={{ zone: n.zone, loc: n.loc, label: n.npc }}>{pickupLocText(n)}</MapLink>
+                {n.steps.length > 0 && <span className="muted small">— {n.steps.join(" ")}</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       {siblings.length > 0 && (
         <>

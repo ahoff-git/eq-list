@@ -777,6 +777,29 @@ test("a spell page a peer sent keeps its era flag, the same way an item page doe
   assert.equal(flagged.outOfEra, true);
 });
 
+test("a spell page a peer sent carries how to get it — and an older sender's silence stays silence", () => {
+  const page = readSpellPage({
+    title: "Tashania",
+    sources: [
+      { kind: "quest", where: "Coin of Tash (Tashania)" },
+      { kind: "drop", where: "Kunark Level 50+ Mob Drop", plain: true },
+      { kind: "vendor", where: "Shaman", label: "Shaman Spell Vendors" },
+      { where: "" },
+    ],
+    effectItems: ["Orb of Tishan", "Orb of Tishan", 7],
+  }) as { sources?: unknown[]; effectItems?: string[] };
+  assert.deepEqual(page.sources, [
+    { kind: "quest", where: "Coin of Tash (Tashania)", detail: undefined },
+    { kind: "drop", where: "Kunark Level 50+ Mob Drop", detail: undefined, plain: true },
+    { kind: "vendor", where: "Shaman", detail: undefined, label: "Shaman Spell Vendors" },
+  ]);
+  assert.deepEqual(page.effectItems, ["Orb of Tishan"]);
+
+  // A build that never read a spell's sources sends none — not the same as a spell nobody can get.
+  const old = readSpellPage({ title: "Tashania" }) as { sources?: unknown[] };
+  assert.equal(old.sources, undefined);
+});
+
 test("only the kinds the catalogue is made of travel under this kind", () => {
   // Items and recipes are the catalogue; mobs and quests are what give an item its level, so they
   // are in the roster and therefore in the sharing (ADR 0163).

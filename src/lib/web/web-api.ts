@@ -27,6 +27,8 @@ import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
 import { RACE_UNLOCK_CHEAT_SHEET_URL } from "@/shared/faction/race-unlocks";
 import { withQuestPickups } from "@/shared/quests/quest-pickups";
 import { withGmEventEra } from "@/shared/items/gm-event-items";
+import { withSpellLevelEra } from "@/shared/spells/spell-era";
+import { liveLevelCap, outOfEraSet } from "@/shared/zones/expansions";
 import type {
   AchievementView,
   BuffView,
@@ -40,6 +42,7 @@ import type {
   ScoreBoard,
   SpawnView,
   Unsubscribe,
+  WikiPage,
 } from "@/shared/types";
 
 const log = createLogger("web-api");
@@ -54,6 +57,16 @@ const EMPTY_GOALS: GoalView = { now: new Date().toISOString(), goals: [], templa
 const EMPTY_ACHIEVEMENTS: AchievementView = { achievements: [] };
 const EMPTY_SCOREBOARD: ScoreBoard = { character: "", scores: [], streak: 0, seeded: false };
 const EMPTY_HP: HpEstimate = { atLeast: 0, samples: 0, updatedAt: new Date().toISOString() };
+
+/** The level cap of the era the snapshot's zone list describes — main's `levelCap`, over the snapshot. */
+const levelCap = async (): Promise<number> => liveLevelCap(outOfEraSet(await snapshot.outOfEraZones()));
+
+/** A snapshot page with the facts main lays over its own on the way out (`electron/wiki`'s `servedPage`). */
+async function servedPage(title: string): Promise<WikiPage | null> {
+  const [page, cap] = await Promise.all([snapshot.getPage(title), levelCap()]);
+  const served = withGmEventEra(withQuestPickups(page));
+  return withSpellLevelEra(served, served, cap);
+}
 // A harvest is Electron-only (there's no wiki category walk on the web — the snapshot is this
 // build's whole catalogue), so `wiki.harvestStart`/`spellHarvestStart` etc. all report the same
 // permanent "idle, nothing to fetch" state rather than pretending a run could ever start.
@@ -141,10 +154,13 @@ function createWebApi(): EqlApi {
     },
 
     wiki: {
-      search: async (term) => (await snapshot.search(term)).map((r) => withGmEventEra(r)),
-      getPage: async (title) => withGmEventEra(withQuestPickups(await snapshot.getPage(title))),
+      search: async (term) => {
+        const [results, cap] = await Promise.all([snapshot.search(term), levelCap()]);
+        return Promise.all(results.map(async (r) => withSpellLevelEra(withGmEventEra(r), await snapshot.getPage(r.title), cap)));
+      },
+      getPage: (title) => servedPage(title),
       // No live re-fetch on the web — the snapshot is this build's whole wiki. Same page back.
-      refreshPage: async (title) => withGmEventEra(withQuestPickups(await snapshot.getPage(title))),
+      refreshPage: (title) => servedPage(title),
       searchZones: (term) => snapshot.searchZones(term),
       questsByZone: (zone) => snapshot.questsByZone(zone),
       searchFactions: (term) => snapshot.searchFactions(term),

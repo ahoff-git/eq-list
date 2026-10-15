@@ -270,6 +270,39 @@ test("spell page → classified as spell with a description/details card", () =>
   assert.ok(p.card!.lines.some((l) => /^Mana:/.test(l)));
 });
 
+test("spell page → its merchant table as vendor sources, zone as detail", () => {
+  const p = parseFixture("spell-burst-of-fire", "Burst of Fire");
+  assert.equal(p.sources.length, 5);
+  assert.deepEqual(p.sources[0], { kind: "vendor", where: "Uleen Laughingwater", detail: "Greater Faydark" });
+  assert.ok(p.sources.every((s) => s.kind === "vendor"));
+});
+
+test("spell page → a quest named in prose, and the items that carry its effect", () => {
+  const p = parseFixture("spell-tashania", "Tashania");
+  assert.deepEqual(p.sources, [{ kind: "quest", where: "Coin of Tash (Tashania)", label: undefined }]);
+  // The hover box's own "Effect: Tashania" self-link has no href, so only the items are read.
+  assert.deepEqual(p.effectItems, ["Shissar Nullifier Staff", "Orb of Tishan"]);
+});
+
+test("spell page → an unlinked drop note stays text; a Related Quests heading makes its links quests", () => {
+  const p = parseFixture("spell-defoliation", "Defoliation");
+  assert.deepEqual(p.sources, [
+    { kind: "drop", where: "Kunark Level 50+ Mob Drop", plain: true },
+    // A piped link: the page it points at is `where`, the text the wiki shows is `label`.
+    { kind: "quest", where: "Necromancer Spells", label: "Necromancer Spells (The Overthere)" },
+    { kind: "quest", where: "Necromancer Spells (Cabilis)", label: undefined },
+  ]);
+  assert.deepEqual(p.effectItems, []);
+});
+
+test("spell page → a class's spell-vendor anchor is a vendor source opening the class page", () => {
+  const p = parseFixture("spell-drowsy", "Drowsy");
+  assert.deepEqual(p.sources, [
+    { kind: "vendor", where: "Beastlord", label: "Beastlord Spell Vendors" },
+    { kind: "vendor", where: "Shaman", label: "Shaman Spell Vendors" },
+  ]);
+});
+
 test("quest reward items → linkable, with the embedded tooltip stat-dump stripped", () => {
   const p = parseFixture("quest-langseax", "Langseax Quest");
   assert.equal(p.kind, "quest");

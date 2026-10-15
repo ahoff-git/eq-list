@@ -14,11 +14,16 @@
  * Pure and DOM-free — the panel renders these decisions, this module makes them.
  */
 import { createLogger } from "../logging";
+import { minLevel, pastLevelCap } from "./spell-era";
 import { parseSpellStats, type SpellStats } from "./spell-stats";
+import { spellSourceSortValue } from "./spell-sources";
 import { distinctSorted, sortRows, type Sort } from "../sorting";
 import type { CachedSpell } from "../types";
 
 const log = createLogger("spell-search");
+
+// Lived here before the level rule moved to `spell-era.ts`; still exported here for its callers.
+export { minLevel };
 
 /** One spell in the searchable catalogue: what the cache holds, plus what it means. */
 export interface SpellRow {
@@ -37,14 +42,13 @@ export function spellRows(spells: readonly CachedSpell[]): SpellRow[] {
  *
  * The wiki's flag is a *page category*, and most level 51-60 spells carry none (Torrent of Poison,
  * Primal Avatar: `Category:Spells` and nothing else), so the flag alone let them through. A spell no
- * class can cast at or under `levelCap` is out of era whatever its page says. A card naming no class
- * is never judged by level — there's nothing to judge it on.
+ * class can cast at or under `levelCap` is out of era whatever its page says (`spell-era.ts`, the
+ * same rule the search box and page view apply).
  */
 export function spellEraRows(rows: readonly SpellRow[], levelCap: number): SpellRow[] {
   let widened = 0;
   const out = rows.map((row) => {
-    const lowest = minLevel(row.stats.levels);
-    if (row.spell.outOfEra || lowest === undefined || lowest <= levelCap) return row;
+    if (row.spell.outOfEra || !pastLevelCap(row.stats.levels, levelCap)) return row;
     widened++;
     return { ...row, spell: { ...row.spell, outOfEra: true } };
   });
@@ -92,13 +96,7 @@ export function matchesSpell(row: SpellRow, c: SpellCriteria): boolean {
 }
 
 /** Which column the results are ordered by. */
-export type SpellSortKey = "name" | "level" | "mana" | "castSec" | "recastSec" | "range" | "damage" | "manaPerDamage";
-
-/** The lowest level any class can cast it at, or undefined if the card named no class at all. */
-export function minLevel(levels: Partial<Record<string, number>>): number | undefined {
-  const values = Object.values(levels).filter((n): n is number => n !== undefined);
-  return values.length ? Math.min(...values) : undefined;
-}
+export type SpellSortKey = "name" | "level" | "mana" | "castSec" | "recastSec" | "range" | "damage" | "manaPerDamage" | "source";
 
 /**
  * What a point of mana bought, for ranking only — see the module note on why this is approximate
@@ -126,6 +124,8 @@ export function spellSortValue(row: SpellRow, key: SpellSortKey): string | numbe
       return row.stats.damage;
     case "manaPerDamage":
       return manaPerDamage(row.stats);
+    case "source":
+      return spellSourceSortValue(row.spell.title);
     default:
       return row.stats[key];
   }

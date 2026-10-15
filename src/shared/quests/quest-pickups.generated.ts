@@ -2,11 +2,11 @@
  * Quest items that lie on the ground at a known spot — GENERATED, do not edit by hand.
  *
  * Regenerate with `node scripts/fetch-quest-pickups.mjs`, which reads eqlwiki's quest-page
- * pickup tables (scraped 2026-10-14T19:42:50.299Z). Shipped rather than fetched at runtime — see
+ * pickup tables (scraped 2026-10-15T17:16:44.800Z). Shipped rather than fetched at runtime — see
  * [ADR 0291](../../../specs/decisions/0291-quest-pickups-are-generated-static-data.md). Read it
  * through `quest-pickups.ts`, which owns how a pickup is named on the list and placed on the map.
  *
- * 10 pickups.
+ * 20 pickups, 4 quest NPCs.
  */
 
 export interface QuestPickup {
@@ -26,7 +26,23 @@ export interface QuestPickup {
   page: string;
 }
 
-export const QUEST_PICKUPS_SOURCE = { wiki: "https://eqlwiki.com", pages: ["Tarton's Wheel"], scrapedAt: "2026-10-14T19:42:50.299Z" };
+/** Someone a quest sends you to — placed by their own wiki page, with what you do there. */
+export interface QuestNpc {
+  /** The quest whose top table names them. */
+  quest: string;
+  /** Their name — their wiki page's title, and the map pin's caption. */
+  npc: string;
+  /** The zone, in the wiki's wording. */
+  zone: string;
+  /** Where their page says they stand, in `/loc` order. */
+  loc: { y: number; x: number };
+  /** The quest's checklist steps that name them — what to hand in, and what you get back. */
+  steps: string[];
+  /** How to reach them, from their page. */
+  note: string;
+}
+
+export const QUEST_PICKUPS_SOURCE = { wiki: "https://eqlwiki.com", pages: ["Tarton's Wheel","Coin of Tash (Tashania)"], scrapedAt: "2026-10-15T17:16:44.800Z" };
 
 export const QUEST_PICKUPS: QuestPickup[] = [
   {
@@ -152,5 +168,190 @@ export const QUEST_PICKUPS: QuestPickup[] = [
     },
     "note": "Underwater on the hidden cavern floor to the right of the manor. Near Serra and a gnomish spelunker, but in a cubby between them and the gazebo. Enduring Breath Recommended: No",
     "page": "Tarton's Wheel"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Azia",
+    "zone": "Ak'anon",
+    "loc": {
+      "y": 1990,
+      "x": -260,
+      "z": -125
+    },
+    "note": "Near great wheel (not in water). It's on the West side of the water wheel, then North a bit, right at the Star light thing.",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Beza",
+    "zone": "Erudin Palace",
+    "loc": {
+      "y": 703,
+      "x": 740,
+      "z": 44
+    },
+    "note": "In the Caster's Guild zone (Erudin Palace), go one level up from the zone-in teleporter. It's in the fountain with rocks in it, on the rocks.",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Caza",
+    "zone": "Northern Felwithe",
+    "loc": {
+      "y": -110,
+      "x": -790,
+      "z": -50
+    },
+    "note": "In the fishing pond.",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Dena",
+    "zone": "West Freeport",
+    "loc": {
+      "y": 129,
+      "x": -750,
+      "z": -80
+    },
+    "note": "In the pool under the Academy of Arcane Science (Caster Guild).",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Ena",
+    "zone": "Grobb",
+    "loc": {
+      "y": 197,
+      "x": -261,
+      "z": -2.31
+    },
+    "note": "In the pool near a bar. When you enter the zone and go across the first bridge, you'll see the small pool on the right.",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Fana",
+    "zone": "Halas",
+    "loc": {
+      "y": -138,
+      "x": 179
+    },
+    "note": "In the lake in front of city. If you're facing the city, it's to the left near the far dock, underwater on a raised ledge.",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Geza",
+    "zone": "South Kaladim",
+    "loc": {
+      "y": 75,
+      "x": 360,
+      "z": -5
+    },
+    "note": "Pool by warrior's guild.",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Heda",
+    "zone": "Neriak Commons",
+    "loc": {
+      "y": 0,
+      "x": -795,
+      "z": -70
+    },
+    "note": "Pass the Constructed Potential by the big bridge. Jump off to the left; it's in the water next to the glass windows.",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Izah",
+    "zone": "Oggok",
+    "loc": {
+      "y": 109,
+      "x": 101,
+      "z": -137
+    },
+    "note": "In the lake near warrior guild at the north end.",
+    "page": "Coin of Tash (Tashania)"
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "item": "Old Silver Coin",
+    "label": "Jaka",
+    "zone": "North Qeynos",
+    "loc": {
+      "y": -90,
+      "x": -445,
+      "z": -10
+    },
+    "note": "Under the Temple of Life \"UFO\" in the Koalindl Fish Pool.",
+    "page": "Coin of Tash (Tashania)"
+  }
+];
+
+export const QUEST_NPCS: QuestNpc[] = [
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "npc": "Romar Sunto",
+    "zone": "Temple of Solusek Ro",
+    "loc": {
+      "y": 393,
+      "x": 90
+    },
+    "steps": [
+      "Get Coin Pouch from Romar Sunto in The Temple of Solusek Ro",
+      "Give Radiant Coin of Tash to Romar Sunto in The Temple of Solusek Ro at (393, 90) to receive the Spell: Tashania."
+    ],
+    "note": "2nd floor. He is accessed from the 3rd level past Lord Searfire and the Undead Knights in the 2nd floor library."
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "npc": "Tarn Visilin",
+    "zone": "High Keep",
+    "loc": {
+      "y": 65,
+      "x": -223
+    },
+    "steps": [
+      "Give Coin of Tash to Tarn Visilin in the library at High Keep, at (75, -220), to receive the Glowing Coin of Tash."
+    ],
+    "note": "Located on the second left after the \"Established 2097\" sign at the entrance. First floor."
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "npc": "Mizr N`Mar",
+    "zone": "Neriak Third Gate",
+    "loc": {
+      "y": 913,
+      "x": -1314
+    },
+    "steps": [
+      "Give Glowing Coin of Tash to Mizr N`Mar in the Neriak 3rd Gate library at (913, -1314) to receive the Gleaming Coin of Tash."
+    ],
+    "note": ""
+  },
+  {
+    "quest": "Coin of Tash (Tashania)",
+    "npc": "Raine Beteria",
+    "zone": "Erudin",
+    "loc": {
+      "y": -1050,
+      "x": -212
+    },
+    "steps": [
+      "Give Gleaming Coin of Tash to Raine Beteria in the Erudin library at (-1050, -212) to receive the Radiant Coin of Tash."
+    ],
+    "note": "Located on the second floor of the Erudin City Library. Sells various enchanter illusion spells."
   }
 ];

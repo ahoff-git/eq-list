@@ -18,7 +18,7 @@ retired: [0062](./0062-a-travel-graph-of-zone-lines.md) routes between zones ove
 **exit labels**, which is different data with a different provenance, and still does no routing
 inside one.
 
-**0105, 0120, 0141, 0152, 0153, 0181, 0243 and 0271 were each issued twice**, by two pieces of work
+**0105, 0120, 0141, 0152, 0153, 0181, 0243, 0271 and 0293 were each issued twice**, by two pieces of work
 landing the same day. The earlier record of each pair keeps its number; the later one moved to the
 end of the sequence, which is the only resolution that leaves every citation in the code still
 pointing at what it meant:
@@ -33,6 +33,7 @@ pointing at what it meant:
 | 0181 | **0266** | [A new install asks before it crawls](./0266-a-new-install-asks-before-it-crawls.md) |
 | 0243 | **0244** | [A pooled fact answers your own queries too, and the wiki gets a third mirror](./0244-a-pooled-fact-answers-your-own-queries-too.md) |
 | 0271 | **0273** | [A heal is a cell too — the Healers view gets a drill-down](./0273-a-heal-is-a-cell-too.md) |
+| 0293 | **0296** | [Spell sources are generated static data](./0296-spell-sources-are-generated-static-data.md) |
 
 The lesson is cheap to apply: **take the next number when the file is created**, not when the work is
 finished, so a number is claimed before a second author can reach for it.
@@ -329,8 +330,20 @@ finished, so a number is claimed before a second author can reach for it.
 - [0290: A debuff's duration can be typed](./0290-a-debuff-s-duration-can-be-typed.md)
 - [0291: Quest pickups are generated static data — one list entry and one map pin per pickup](./0291-quest-pickups-are-generated-static-data.md)
 - [0292: A GM-event item is never in era — a generated list laid over every era flag](./0292-a-gm-event-item-is-never-in-era.md)
+- [0293: Quest NPCs are bundled with the pickups and pinned while their quest is on the list](./0293-quest-npcs-are-bundled-and-pinned-while-their-quest-is-listed.md)
+- [0294: A spell page says how to get it, and every era flag reads the level cap](./0294-a-spell-page-says-how-to-get-it-and-every-era-flag-reads-the-level-cap.md)
+- [0295: A quest is a tree of steps — its links are asked what they are when shown](./0295-a-quest-is-a-tree-of-steps.md)
+- [0296: Spell sources are generated static data — a sortable Source column finds the quest spells](./0296-spell-sources-are-generated-static-data.md)
 
 ## Open Questions
+
+- **One spell field, two readers.** A spell's `where_to_obtain` is read at build time into
+  `spell-sources.generated.ts` for the Spells tab's Source column
+  ([ADR 0296](./0296-spell-sources-are-generated-static-data.md)), and at view time into
+  `WikiPage.sources` for the page ([ADR 0294](./0294-a-spell-page-says-how-to-get-it-and-every-era-flag-reads-the-level-cap.md)).
+  They were written in parallel. Should one feed the other: the column read off the cached pages, or
+  the page view read off the dataset (which today keeps kinds and quest names, not merchants or
+  effect items)?
 
 - **The admin panel's cross-store `search()` still does a full table scan per store, per search.**
   [ADR 0239](./0239-a-store-with-no-cap-needs-a-cheap-count.md) fixed `stores()`'s equivalent cost

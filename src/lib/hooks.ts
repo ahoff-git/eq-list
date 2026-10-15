@@ -40,11 +40,13 @@ import type {
   LootedItem,
   Unsubscribe,
   EqlCapabilities,
+  WikiPage,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob/mob-stats";
 import type { KnowledgeContributor } from "@/shared/contributors";
 import type { FactionCauseKnowledge } from "@/shared/faction/faction-observation";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
+import { describeStepLink, type StepLinkInfo } from "@/shared/quests/quest-steps";
 import type { SharedKill } from "@/shared/kills/kill-filters";
 import { mergeLootFeed } from "@/shared/items/loot-feed";
 import { mergeFactionFeed } from "@/shared/faction/faction-feed";
@@ -1681,6 +1683,28 @@ export function useMobWikiPlaces(mobNames: string[]): Record<string, WikiPlace |
     NO_MOB_PLACES,
     [key],
   );
+}
+
+/**
+ * What each page a quest's steps link to is — an NPC (and where it stands), a zone, an item, another
+ * quest — read the way `useMobWikiPlaces` reads a mob's place: one cached `wiki.getPage` per title,
+ * refetched only when the set of titles changes (ADR 0295).
+ */
+export function useStepLinks(titles: string[]): Record<string, StepLinkInfo | undefined> {
+  const key = titles.join("|");
+  return useRead(
+    async (a) =>
+      Object.fromEntries(await Promise.all(titles.map(async (t) => [t, describeStepLink(await a.wiki.getPage(t))] as const))),
+    NO_STEP_LINKS,
+    [key],
+  );
+}
+
+const NO_STEP_LINKS: Record<string, StepLinkInfo | undefined> = {};
+
+/** A wiki page by title, or null until it's read — for a view that draws another page inside it. */
+export function useWikiPage(title: string | null): WikiPage | null {
+  return useRead(async (a) => (title ? a.wiki.getPage(title) : null), null, [title]);
 }
 
 const NO_NPCS: { name: string; level: string }[] = [];

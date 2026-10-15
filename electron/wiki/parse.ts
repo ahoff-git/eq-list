@@ -19,6 +19,7 @@
 import { parse, HTMLElement, type Node } from "node-html-parser";
 import { WIKI_BASE } from "./api";
 import { htmlToLines } from "../html-text";
+import { parseQuestSteps } from "./quest-steps";
 import type {
   WikiPage,
   ItemSource,
@@ -40,6 +41,11 @@ export function pathToTitle(path: string): string {
   } catch {
     return slug.replace(/_/g, " ");
   }
+}
+
+/** A list, or undefined when it's empty — so a page with nothing to say carries no empty field. */
+function optional<T>(list: T[]): T[] | undefined {
+  return list.length ? list : undefined;
 }
 
 function isElement(n: Node): n is HTMLElement {
@@ -210,7 +216,14 @@ function parseDropsFrom(section: Section): ItemSource[] {
 /** "Sold by": table.eoTable3 with Zone | Merchant | Area | Loc columns. */
 function parseSoldBy(section: Section): ItemSource[] {
   const table = section.els.find((e) => e.tagName === "TABLE") ?? section.els[0]?.querySelector("table");
-  if (!table) return [];
+  return table ? merchantRows(table) : [];
+}
+
+/**
+ * A merchant table (Zone | Merchant | Area | Loc) → vendor sources, the zone as `detail` so the era
+ * check can read it. An item's "Sold by" and a spell's "Where to Obtain" draw the same table.
+ */
+function merchantRows(table: HTMLElement): ItemSource[] {
   const rows = table.querySelectorAll("tr");
   const sources: ItemSource[] = [];
   for (const row of rows) {
@@ -880,6 +893,80 @@ function parseSpellCard(content: HTMLElement, title: string): ItemCard | undefin
   return { title, icon, lines };
 }
 
+/**
+ * A spell's "Where to Obtain" section → sources, in the four shapes the wiki writes it:
+ *
+ *  - a merchant table, the same one an item's "Sold by" draws (Burst of Fire);
+ *  - a list of `<Class>#Spell_Vendors` links — "Shaman Spell Vendors" (Drowsy);
+ *  - a prose line naming quests — "obtained via a quest - Coin of Tash (Tashania)" (Tashania);
+ *  - an unlinked note — "Kunark Level 50+ Mob Drop" — kept as text, since it names no page.
+ *
+ * A "Related Quests" heading inside the section makes the links under it quests, which their own
+ * text ("Necromancer Spells (Cabilis)") wouldn't say.
+ */
+function parseSpellObtain(content: HTMLElement): ItemSource[] {
+  const section = content.querySelector(".eql-spellpage-obtain");
+  if (!section) return [];
+  const sources: ItemSource[] = [];
+  let context: SourceKind | undefined;
+  for (const el of section.childNodes.filter(isElement)) {
+    const heading = /^H\d$/.test(el.tagName) ? el : el.querySelector("h2, h3, h4");
+    if (heading) {
+      if (heading.id !== "Where_to_Obtain") context = /quest/i.test(heading.text) ? "quest" : undefined;
+      continue;
+    }
+    if (el.tagName === "TABLE") {
+      sources.push(...merchantRows(el));
+      continue;
+    }
+    const lines = el.querySelectorAll("li");
+    // A `<pre>`/`<p>` of prose is one line per newline — Defoliation's note and its quests are apart.
+    const each = lines.length ? lines : el.innerHTML.split("\n").map((html) => parse(html));
+    for (const line of each) sources.push(...obtainLine(line, context));
+  }
+  return sources;
+}
+
+/** One line of a spell's "Where to Obtain": a source per page it links, or the line itself as text. */
+function obtainLine(line: HTMLElement, context: SourceKind | undefined): ItemSource[] {
+  const text = line.text.replace(/\s+/g, " ").replace(/^\s*\*\s*/, "").trim();
+  if (!text) return [];
+  const links = line.querySelectorAll("a").filter(isContentLink);
+  const kind = obtainKind(text, links, context);
+  if (!links.length) return [{ kind, where: text, plain: true }];
+  return links.map((a) => {
+    // A class's vendor list is an anchor on the class page — the page is what opens.
+    const where = linkName(a).split("#")[0].trim();
+    const shown = a.text.replace(/\s+/g, " ").trim();
+    return { kind, where, label: shown && shown !== where ? shown : undefined };
+  });
+}
+
+/** What kind of source a "Where to Obtain" line describes, by its links and then its words. */
+function obtainKind(text: string, links: HTMLElement[], context: SourceKind | undefined): SourceKind {
+  if (links.some((a) => /#Spell_Vendors/i.test(a.getAttribute("href") ?? ""))) return "vendor";
+  if (context) return context;
+  if (/\bquests?\b/i.test(text)) return "quest";
+  if (/\bdrop(s|ped)?\b/i.test(text)) return "drop";
+  if (/\b(vendors?|merchants?|sold|buy|purchas)/i.test(text)) return "vendor";
+  if (/\bforag/i.test(text)) return "forage";
+  return "unknown";
+}
+
+/**
+ * A spell's "Items with Spell Effect" → the items' titles. Each row is the item's link followed by
+ * its hover box, whose own "Effect:" link is a self-link with no href — so the first content link is
+ * the item.
+ */
+function parseSpellEffectItems(content: HTMLElement): string[] {
+  const titles = new Set<string>();
+  for (const li of content.querySelectorAll(".eql-spellpage-items li")) {
+    const a = li.querySelectorAll("a").find(isContentLink);
+    if (a) titles.add(linkName(a));
+  }
+  return [...titles];
+}
+
 // ─── Faction page ───────────────────────────────────────────────────────────
 
 /**
@@ -1022,6 +1109,10 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       components: subQuests.length ? subQuests.flatMap((q) => q.components) : components,
       rewards: subQuests.length ? subQuests.flatMap((q) => q.rewards) : rewards,
       subQuests: subQuests.length ? subQuests : undefined,
+      // A gear-set bundle's checklist is its pieces, which `subQuests` already lays out one by one.
+      steps: subQuests.length
+        ? undefined
+        : optional(parseQuestSteps(walkthroughSections, (a) => (isContentLink(a) ? linkName(a) : undefined))),
       card: cardWithTier,
       links: parseContentLinks(content),
       dialogue: dialogue.length ? dialogue : undefined,
@@ -1068,10 +1159,11 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
       kind: "spell",
       title,
       wikiPath,
-      sources: [],
+      sources: parseSpellObtain(content),
       components: [],
       rewards: [],
       card: parseSpellCard(content, title),
+      effectItems: parseSpellEffectItems(content),
       fetchedAt,
     };
   }

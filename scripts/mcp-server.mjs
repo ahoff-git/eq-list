@@ -79,7 +79,7 @@ const SOURCE_KINDS = ["drop", "quest", "recipe", "vendor", "forage", "ground", "
 // of sync just sorts nothing (both sort functions fall back to `row.stats[key]` → `undefined` → last),
 // never throws, so the failure mode of this one being stale is quiet, not broken.
 const ITEM_SORT_KEYS = ["name", "value", "slot", "source", "zone", "level", ...STAT_KEYS];
-const SPELL_SORT_KEYS = ["name", "level", "mana", "castSec", "recastSec", "range", "damage", "manaPerDamage"];
+const SPELL_SORT_KEYS = ["name", "level", "mana", "castSec", "recastSec", "range", "damage", "manaPerDamage", "source"];
 
 // The picker's own "(none)" label — accepted literally in a facet array, translated by `toItemCriteria`
 // (`src/shared/mcp-catalogue.ts`) to the real `NO_FACET_VALUE` sentinel `matchesFacet` expects.

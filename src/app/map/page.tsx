@@ -39,6 +39,7 @@ import { HUNT_PIN, NAMED_PIN, PIN_TYPES, pinType, type MapPin, type PinKind } fr
 import { huntPins, unplacedHuntMobs } from "@/shared/map/hunt-pins";
 import { namedPins, unplacedNamedMobs } from "@/shared/map/named-pins";
 import { pickupPins } from "@/shared/map/pickup-pins";
+import { questNpcPins } from "@/shared/map/quest-npc-pins";
 import MapFilters from "@/app/components/map/MapFilters";
 import MapTitlebar from "@/app/components/map/MapTitlebar";
 import MapToolbar from "@/app/components/map/MapToolbar";
@@ -506,11 +507,12 @@ export default function MapWindow() {
     [showHuntPins, huntZones, zoneKey, zoneMobs, wikiPlaces, pins, zoneMatch],
   );
   /**
-   * Quest pickups still on the list (ADR 0291) — part of the hunt, so they share its switch: they are
-   * the other half of "what is my list sending me to get here".
+   * Quest pickups still on the list (ADR 0291), and the NPCs their quests send you to (ADR 0293) —
+   * part of the hunt, so they share its switch: they are the other half of "what is my list sending
+   * me to get here".
    */
   const pickupMarks = useMemo(
-    () => (showHuntPins ? pickupPins(huntNeeded, zoneMatch) : []),
+    () => (showHuntPins ? [...pickupPins(huntNeeded, zoneMatch), ...questNpcPins(huntNeeded, zoneMatch)] : []),
     [showHuntPins, huntNeeded, zoneMatch],
   );
 

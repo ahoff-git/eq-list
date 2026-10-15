@@ -515,6 +515,14 @@ button {
    about the item, and still what to plan for when the era opens (see `SourceList`). */
 .page-detail li.out-of-era { opacity: 0.55; }
 
+/* A quest's steps (`QuestSteps`): numbered, and each bullet one sentence with its links inline, so not
+   the flex row every other page list is. A sub-step and an opened sub-quest indent under their step. */
+.page-detail ol.quest-steps { list-style: decimal; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+.page-detail ol.quest-steps li { display: list-item; line-height: 1.5; }
+.page-detail ol.quest-steps ol.quest-steps { list-style: lower-alpha; margin-top: 4px; }
+.page-detail .quest-steps .btn { margin-left: 4px; }
+.page-detail .quest-substeps { margin: 4px 0 4px 4px; padding-left: 8px; border-left: 2px solid var(--border); }
+
 /* Scannable at a glance: a page mixes titles, prose and two kinds of link, and with links in body
    colour until hovered they all read alike. Links are blue; links that open the **map** (a zone, a
    loc) are teal with a ⌖, since they go somewhere else entirely; section headings are gold small caps
