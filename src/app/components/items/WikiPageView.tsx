@@ -15,6 +15,7 @@ import { countOf } from "@/shared/format";
 import type { FactionSide, ItemSource, WikiPage, WikiSubQuest } from "@/shared/types";
 import { buildFactionWatch, isFactionWatched } from "@/shared/alerts/faction-watch";
 import { cardZone, statesNothing } from "@/shared/map/mob-place";
+import { effectLineParts } from "@/shared/items/item-stats";
 
 /**
  * A wiki page, read in the app: what it is, how to get it, and what it puts on your list.
@@ -66,6 +67,16 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
   // Render a stat-card line: a Zone → map link; any embedded EQ coordinate → a map
   // link that opens the mob's zone and marks that spot; otherwise plain text.
   function cardLineNode(line: string): React.ReactNode {
+    // An effect line names a spell — focus, worn, click or proc alike — so the spell is a link.
+    const effect = effectLineParts(line);
+    if (effect) {
+      return (
+        <>
+          {effect.label}: <ItemLink title={effect.name} />
+          {effect.rest}
+        </>
+      );
+    }
     const zoneM = line.match(/^(Zone|Spawn Zone):\s*(.+)$/i);
     if (zoneM) {
       const z = zoneM[2].trim();

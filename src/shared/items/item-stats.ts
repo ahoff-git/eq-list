@@ -246,6 +246,22 @@ function effectKind(label: string, line: string): EffectKind {
  */
 const EFFECT_LINE = /^(Focus Effect|Combat Effect|Click Effect|Worn Effect|Effect)\s*:\s*(.+)$/i;
 
+/**
+ * An effect line split into its label, the spell it names, and what follows the name — so a card can
+ * link the spell (`WikiPageView`) and the stats can file it (`itemStats`) off one reading.
+ *
+ * "Feet like Cat (Combat, Casting Time: Instant) at Level 20" — the name is what precedes the
+ * parenthetical, and the parenthetical is what says *how you get at it*. 44 lines in the catalogue
+ * are a bare `Effect:` with nothing after it; a nameless effect is not an effect, so that's `undefined`.
+ */
+export function effectLineParts(line: string): { label: string; name: string; rest: string } | undefined {
+  const m = EFFECT_LINE.exec(line.trim());
+  if (!m) return undefined;
+  const name = m[2].split(/\s*\(|\s+at Level\b/i)[0].trim();
+  if (!name) return undefined;
+  return { label: m[1], name, rest: m[2].slice(m[2].indexOf(name) + name.length) };
+}
+
 /** Everything a card says about one item, as facts rather than as text. */
 export interface ItemStats {
   /**
@@ -407,15 +423,10 @@ export function parseItemStats(lines: readonly string[] | undefined): ItemStats 
     const line = raw.trim();
     if (!line) continue;
 
-    const effect = EFFECT_LINE.exec(line);
-    if (effect) {
-      // "Feet like Cat (Combat, Casting Time: Instant) at Level 20" — the name is what precedes the
-      // parenthetical, and the parenthetical is what says *how you get at it*.
-      const name = effect[2].split(/\s*\(|\s+at Level\b/i)[0].trim();
-      // 44 lines in the catalogue are a bare `Effect:` with nothing after it. A nameless effect is
-      // not an effect.
-      if (name && !out.effects.some((e) => e.name === name)) {
-        out.effects.push({ name, kind: effectKind(effect[1], line) });
+    if (EFFECT_LINE.test(line)) {
+      const effect = effectLineParts(line);
+      if (effect && !out.effects.some((e) => e.name === effect.name)) {
+        out.effects.push({ name: effect.name, kind: effectKind(effect.label, line) });
       }
       continue; // never scanned for stats or flags: a spell's words are not the item's (see EFFECT_LINE)
     }

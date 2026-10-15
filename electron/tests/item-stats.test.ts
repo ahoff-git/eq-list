@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EQ_CLASSES, parseItemStats, statLine } from "../../src/shared/items/item-stats";
+import { EQ_CLASSES, effectLineParts, parseItemStats, statLine } from "../../src/shared/items/item-stats";
 
 test("several stats on one line are all read", () => {
   const { stats } = parseItemStats(["WIS: +9 INT: +4 MANA: +25"]);
@@ -189,4 +189,21 @@ test("no card at all is a reading, not a crash", () => {
   assert.deepEqual(read.stats, {});
   assert.deepEqual(read.slots, []);
   assert.equal(statLine(read), "");
+});
+
+test("an effect line splits into its label, the spell it names, and what follows — so the card can link the spell", () => {
+  assert.deepEqual(effectLineParts("Focus Effect: Tavee's Charm of Diuturnity"), {
+    label: "Focus Effect",
+    name: "Tavee's Charm of Diuturnity",
+    rest: "",
+  });
+  assert.deepEqual(effectLineParts("Effect: Feet like Cat (Combat, Casting Time: Instant) at Level 20"), {
+    label: "Effect",
+    name: "Feet like Cat",
+    rest: " (Combat, Casting Time: Instant) at Level 20",
+  });
+  assert.equal(effectLineParts("Worn Effect: Haste (Worn)")?.name, "Haste");
+  // A bare label names nothing, and a stat line isn't an effect at all.
+  assert.equal(effectLineParts("Effect:"), undefined);
+  assert.equal(effectLineParts("AC: 6"), undefined);
 });
