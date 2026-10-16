@@ -338,6 +338,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0298: NPC sightings place what you never kill — a hail, a /say or a consider, paired with your nearest /loc](./0298-npc-sightings-place-what-you-never-kill.md)
 - [0299: Ground spawns in prose are named, then read — curated spots, located off the page; long quests bundled for their NPCs](./0299-ground-spawns-in-prose-are-named-then-read.md)
 - [0300: A long quest is a plan of stages — epics and Plane of Sky tests as routes, tracked by the list, pinned by stage](./0300-a-long-quest-is-a-plan-of-stages.md)
+- [0301: A zone line learned late re-files what it missed — a one-time, logged repair of records filed under the zone before](./0301-a-zone-line-learned-late-re-files-what-it-missed.md)
 
 ## Open Questions
 

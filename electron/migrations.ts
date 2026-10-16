@@ -56,6 +56,8 @@ import type { CastAlertSettings, HighScore, KillRecord, LootRecord, StoredFight 
 import type { MobObservation } from "../src/shared/mob/mob-stats";
 import { readJson, writeJson } from "./json-store";
 import { contributorName, legacyContributorId } from "../src/shared/contributors";
+import type Database from "better-sqlite3";
+import { misfiledZone } from "./zone-line-repair";
 
 const log = createLogger("migrations");
 
@@ -94,7 +96,12 @@ const ZONE_REPAIR_VERSION = 1;
 
 interface StoredRepairs {
   zoneRepair?: number;
+  /** `repairNewlyResolvedZones` — see `zone-line-repair.ts`. */
+  zoneLines?: number;
 }
+
+/** Version for `repairNewlyResolvedZones`; bump to run it again against logs it has since learned to read. */
+const ZONE_LINES_REPAIR_VERSION = 1;
 
 /** Where the log says you were, as a list of "from this moment, this zone" in log order. */
 interface ZoneTimeline {
@@ -112,7 +119,7 @@ interface ZoneTimeline {
  * Never throws: a migration that can't run leaves the data exactly as it was, which is always a
  * working state — the zone-less records simply stay unplaced, as they have been all along.
  */
-export function runMigrations(userDataDir: string, logDir: string | undefined): void {
+export function runMigrations(userDataDir: string, logDir: string | undefined, db?: Database.Database): void {
   // Both zone-repair migrations below read the same thing — every log file's zone-line timeline —
   // and a launch with candidates for both (the common case, since they gate on the same
   // `classifyZoneLine`/"blacklisted" check) used to read and parse every log file twice in a row,
@@ -148,6 +155,75 @@ export function runMigrations(userDataDir: string, logDir: string | undefined): 
   } catch (err) {
     log.error("zone repair failed; data left untouched", err);
   }
+  try {
+    if (db) repairNewlyResolvedZones(db, userDataDir, logDir, timelines);
+  } catch (err) {
+    log.error("zone-line repair failed; data left untouched", err);
+  }
+}
+
+/** A stored UTC instant (`2026-10-15T05:56:46.000Z`) as the log stamps it: local time, no zone. */
+function logStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/**
+ * Re-file the kills, drops and fights recorded while the app couldn't name the zone you were in
+ * (`zone-line-repair.ts`). Runs once, against the SQLite stores, in one transaction; every change it
+ * makes is written to `zone-line-repair-1.json` first (table, row, from, to), so it can be read back or
+ * undone. Without logs it waits, as `fillMissingKillZones` does: the logs are the only evidence, and a
+ * folder that moved may come back.
+ */
+function repairNewlyResolvedZones(
+  db: Database.Database,
+  userDataDir: string,
+  logDir: string | undefined,
+  getTimelines: () => ZoneTimeline[],
+): void {
+  const stateFile = path.join(userDataDir, "data-repairs.json");
+  const state = readJson<StoredRepairs>(stateFile, {});
+  if ((state.zoneLines ?? 0) >= ZONE_LINES_REPAIR_VERSION || !logDir) return;
+  const timelines = getTimelines();
+  if (!timelines.length) return;
+
+  const tables = [
+    { table: "kill_records", id: "id", at: "at", utc: false },
+    { table: "loot_records", id: "key", at: "at", utc: false },
+    { table: "combat_fights", id: "id", at: "startedAt", utc: true },
+  ] as const;
+  const changes: { table: string; id: string; at: string; from: string; to: string }[] = [];
+  for (const t of tables) {
+    const rows = db.prepare(`SELECT ${t.id} AS id, ${t.at} AS at, zone FROM ${t.table} WHERE zone IS NOT NULL`).all() as {
+      id: string;
+      at: string;
+      zone: string;
+    }[];
+    for (const row of rows) {
+      const to = misfiledZone(timelines, t.utc ? logStamp(row.at) : row.at, row.zone);
+      if (to) changes.push({ table: t.table, id: row.id, at: row.at, from: row.zone, to });
+    }
+  }
+
+  if (changes.length) {
+    // The record of what moved goes to disk before anything moves.
+    writeJson(path.join(userDataDir, `zone-line-repair-${ZONE_LINES_REPAIR_VERSION}.json`), { changes }, { pretty: true, what: "zone-line repair record" });
+    const apply = db.transaction(() => {
+      for (const t of tables) {
+        const update = db.prepare(`UPDATE ${t.table} SET zone = ? WHERE ${t.id} = ?`);
+        for (const c of changes) if (c.table === t.table) update.run(c.to, c.id);
+      }
+    });
+    apply();
+  }
+  stamped(stateFile, { ...state, zoneLines: ZONE_LINES_REPAIR_VERSION }, "zone repair state");
+  log.info(`zone-line repair: ${changes.length} record(s) re-filed`, {
+    kills: changes.filter((c) => c.table === "kill_records").length,
+    loot: changes.filter((c) => c.table === "loot_records").length,
+    fights: changes.filter((c) => c.table === "combat_fights").length,
+  });
 }
 
 /**
@@ -578,7 +654,7 @@ function repairBadZones(userDataDir: string, logDir: string | undefined, getTime
     .map(([place]) => place);
 
   if (!lootCandidates.length && !fightCandidates.length && !scoreCandidates.length && !badPlaces.length) {
-    stamped(stateFile, { zoneRepair: ZONE_REPAIR_VERSION }, "zone repair state");
+    stamped(stateFile, { ...state, zoneRepair: ZONE_REPAIR_VERSION }, "zone repair state");
     return;
   }
 
@@ -606,7 +682,7 @@ function repairBadZones(userDataDir: string, logDir: string | undefined, getTime
     backUpFile(spawnFile, userDataDir, "spawn-timers");
     writeJson(spawnFile, spawn, { what: "spawn timers (migration)" });
   }
-  stamped(stateFile, { zoneRepair: ZONE_REPAIR_VERSION }, "zone repair state");
+  stamped(stateFile, { ...state, zoneRepair: ZONE_REPAIR_VERSION }, "zone repair state");
   log.debug("corrected zones a restriction notice had faked", {
     loot: { filled: lootFilled, cleared: lootCleared },
     fights: { filled: fightsFilled, cleared: fightsCleared },

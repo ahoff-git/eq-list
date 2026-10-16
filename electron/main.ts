@@ -246,7 +246,8 @@ if (!app.requestSingleInstanceLock()) {
   // One-time repairs to data already on disk, before anything reads it. Chief among them: a kill
   // recorded before the log had named the zone is stored unplaced, and so counts towards no drop
   // rate and no heatmap — the log itself knows where you were, so it fills them in (ADR 0083).
-  runMigrations(userData, store.getSettings().logDir);
+  // The database too, for the repairs that correct rows already in it (`zone-line-repair.ts`).
+  runMigrations(userData, store.getSettings().logDir, db);
   // Where we had read to when we last ran, so anything logged since is read as the news it is
   // rather than being skipped ([ADR 0044](../specs/decisions/0044-the-log-position-outlives-the-app.md)).
   const cursor = createLogCursor(userData);
