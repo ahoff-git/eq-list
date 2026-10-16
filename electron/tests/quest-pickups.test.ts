@@ -21,12 +21,44 @@ import { pickupPins } from "../../src/shared/map/pickup-pins";
 import { questNpcPins } from "../../src/shared/map/quest-npc-pins";
 import { isKnownPlace, samePlace } from "../../src/shared/zones/place";
 
-test("every pickup has a label, a zone and a real location", () => {
+test("every pickup has a label and a zone, and any stated location is a real one", () => {
   for (const p of QUEST_PICKUPS) {
     assert.ok(p.quest && p.item && p.label && p.zone, JSON.stringify(p));
+    if (!p.loc) continue; // described, not located — the config has to say so (`noLoc`)
     assert.ok(Number.isFinite(p.loc.y) && Number.isFinite(p.loc.x), `${p.label} has no loc`);
     assert.ok(p.loc.y !== 0 || p.loc.x !== 0, `${p.label} sits at 0, 0`);
   }
+});
+
+test("ground spawns read out of prose: one of a kind is listed by its own name", () => {
+  const shovel = pickupFor("Abandoned Orc Shovel");
+  assert.equal(shovel?.quest, "Chalice of Conquest Quest");
+  assert.equal(shovel?.zone, "Lake Rathetear");
+  assert.deepEqual(shovel?.loc, { y: 3486, x: -663 });
+  assert.equal(pickupEntryName(shovel!), "Abandoned Orc Shovel");
+  // Its turn-in on the quest's own page and the pickup are one entry, so it isn't added twice.
+  const page = withQuestPickups({ ...pickupQuestPage("Chalice of Conquest Quest"), components: [{ name: "Abandoned Orc Shovel", qty: 1 }] })!;
+  assert.deepEqual(page.components.map((c) => c.name), ["Abandoned Orc Shovel"]);
+
+  assert.deepEqual(pickupsForQuest("Ivan McMannus' Remains").map((p) => [p.item, pickupLocText(p)]), [
+    ["Barbarian Femur", "1405, -4570, -190"],
+    ["Barbarian Jaw", "1465, -4500, -230"],
+    ["Barbarian Skull", "1580, -4485, -245"],
+  ]);
+  // The coordinates come before the item in this sentence, and the config's `match` finds them.
+  assert.deepEqual(pickupFor("Sealed List")?.loc, { y: 275, x: -350 });
+});
+
+test("a pickup the page only describes has its zone and directions, and no pin", () => {
+  const backbone = pickupFor("A Dusty Old Backbone")!;
+  assert.equal(backbone.zone, "Unrest");
+  assert.equal(backbone.loc, undefined);
+  assert.equal(pickupLocText(backbone), "");
+  assert.match(backbone.note, /Ghost Room Pit/);
+  assert.deepEqual(pickupSources("A Dusty Old Backbone"), [{ kind: "ground", where: "A Dusty Old Backbone", detail: "Unrest" }]);
+  const inUnrest = (z: string) => samePlace(z, "The Estate of Unrest");
+  assert.deepEqual(pickupPins([{ name: "A Dusty Old Backbone" }], inUnrest), []);
+  assert.equal(pickupsForQuest("The Bones of Darak Lightforge").length, 7);
 });
 
 test("every pickup's zone is one the map can open", () => {
@@ -90,8 +122,12 @@ test("an NPC whose page states no spot is placed by the measured fallback", () =
   assert.deepEqual(sulgar?.loc, { y: 2998, x: -2399 });
 });
 
-test("every quest NPC's zone is one the map can open", () => {
-  for (const n of QUEST_NPCS) assert.ok(isKnownPlace(n.zone), `${n.npc}: "${n.zone}"`);
+test("only quest NPCs in a zone the map can open are listed; the rest wait for their era", () => {
+  for (const quest of new Set(QUEST_NPCS.map((n) => n.quest)))
+    for (const n of npcsForQuest(quest)) assert.ok(isKnownPlace(n.zone), `${n.npc}: "${n.zone}"`);
+  // A long quest bundled for its NPCs alone: Incandescent Armor names a dozen, most of them placed.
+  assert.ok(npcsForQuest("Incandescent Armor Quests").length >= 8);
+  assert.ok(!PICKUP_QUESTS.includes("Incandescent Armor Quests"), "no pickups, so not in the picker");
 });
 
 test("a quest's NPCs are pinned while anything under that quest is still needed", () => {

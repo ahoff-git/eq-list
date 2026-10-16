@@ -55,6 +55,38 @@ export async function wikitextFor(titles) {
 }
 
 /**
+ * `title` → `{ title, text }`, keyed by **the title as asked**, following redirects.
+ *
+ * `wikitextFor` keys by the wiki's own spelling, which is fine for a list of page names we wrote. A
+ * quest step links pages however its editor typed them — `[[thought destroyer]]` (stored as "Thought
+ * destroyer"), `[[Kargek Redblade]]` through a redirect — so a reader keyed by the link would find
+ * nothing. A title with no page is simply absent.
+ */
+export async function pagesByLink(titles) {
+  const out = new Map();
+  const unique = [...new Set(titles)];
+  for (let i = 0; i < unique.length; i += BATCH) {
+    const batch = unique.slice(i, i + BATCH);
+    const data = await api({ action: "query", prop: "revisions", rvprop: "content", rvslots: "main", redirects: "1", titles: batch.join("|") });
+    const hop = new Map();
+    for (const n of data.query?.normalized ?? []) hop.set(n.from, n.to);
+    for (const r of data.query?.redirects ?? []) hop.set(r.from, r.to);
+    const byTitle = new Map();
+    for (const page of data.query?.pages ?? []) {
+      const text = page.revisions?.[0]?.slots?.main?.content;
+      if (text) byTitle.set(page.title, { title: page.title, text });
+    }
+    for (const asked of batch) {
+      let title = asked;
+      for (let n = 0; n < 4 && hop.has(title); n++) title = hop.get(title);
+      const page = byTitle.get(title);
+      if (page) out.set(asked, page);
+    }
+  }
+  return out;
+}
+
+/**
  * Every labelled row of a zone's infobox, by its label, values verbatim.
  *
  * The shape is a header line and the value on the next:

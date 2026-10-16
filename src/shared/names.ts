@@ -85,11 +85,15 @@ const ZONE_MODE_RE = /\s*[([]\s*([A-Za-z][^()[\]]*?)\s*[)\]]\s*$/;
  * a real peer's observations — so this is the game's wording, not a guess — and it means a zone opened
  * under a ruleset exactly as the parenthesised form does.
  *
- * Safe to fold because **no zone name contains " - "**: measured across all the app ships (the
- * hyphens it does have are inside a word — `Cazic-Thule`, `Takish-Hiz`), and a test pins it. Requires
- * spaces around the dash for that reason.
+ * **Only a ruleset word folds after a dash.** This used to take any word, on the belief that no zone
+ * name contains " - " — but the game's own names for Neriak's districts do: "You have entered Neriak -
+ * Foreign Quarter." / "…Neriak - Commons." (a real log, 2026-10-14). Folding any tag turned both into
+ * plain "Neriak", which no gazetteer entry names, so the zone line read as unresolved. A dash tag that
+ * isn't one of these stays part of the name — failing closed, as an unknown name should, rather than
+ * merging two places. Spaces around the dash are still required: `Cazic-Thule` is one word.
  */
-const ZONE_DASH_MODE_RE = /\s+-\s+([A-Za-z][A-Za-z ]*?)\s*$/;
+const DASH_RULESETS = `${TIER_WORDS}|Solo|Group|Raid|Hardcore`;
+const ZONE_DASH_MODE_RE = new RegExp(String.raw`\s+-\s+(${DASH_RULESETS})\s*$`, "i");
 
 /**
  * A **named tier standing on its own**, with no enclosure and no separator: `Blackburrow Fused`,
@@ -297,6 +301,25 @@ const HAND_ALIASES: Record<string, string> = {
   // name), and "South Ro" is the same distance away — so the pair still has to be stated, and it
   // must fold *to* the fandom spelling, since that's what the expansion lookup is keyed by.
   "north ro": "northern desert of ro",
+  // And the game's own name for `sro`, which the gazetteer knows only as "South Ro": a real log writes
+  // "You have entered The Southern Desert of Ro." (Kainos, 2026-08-26). Unaliased, that arrival read as
+  // an unresolved zone line, so `currentZone` never moved into it.
+  "southern desert of ro": "south ro",
+  // Neriak's districts as the game names them, now that the dash in them is no longer read as a
+  // ruleset (`ZONE_DASH_MODE_RE`): "You have entered Neriak - Foreign Quarter." (Kainos's log).
+  "neriak - foreign quarter": "neriak foreign quarter",
+  "neriak - commons": "neriak commons",
+  "neriak - 3rd gate": "neriak third gate",
+  "neriak - third gate": "neriak third gate",
+  // The same gap for the four Karanas and the Aqueducts: "You have entered The Western Plains of
+  // Karana." / "…The Qeynos Aqueduct System." (Kainos's log, 2026-10-14) are the game's names; the
+  // gazetteer has only the short ones. Each was an unresolved zone line, so `currentZone` stayed in
+  // the zone before it.
+  "western plains of karana": "west karana",
+  "eastern plains of karana": "east karana",
+  "northern plains of karana": "north karana",
+  "southern plains of karana": "south karana",
+  "qeynos aqueduct system": "qeynos aqueducts",
   /*
    * **The three names a real EQL log turned out to use.** Found in a peer's shared observations, which
    * are derived from *their* log — so this is the game's own wording, which is the wording data is

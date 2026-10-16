@@ -5,6 +5,8 @@ import ItemDrops from "@/app/components/items/ItemDrops";
 import ItemLink from "@/app/components/items/ItemLink";
 import LucySays, { LucyLink } from "@/app/components/items/LucySays";
 import QuestSteps from "@/app/components/items/QuestSteps";
+import QuestPlanView from "@/app/components/items/QuestPlanView";
+import { planFor } from "@/shared/quests/quest-plans";
 import RefreshPage from "@/app/components/items/RefreshPage";
 import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
 import MobKills from "@/app/components/mob/MobKills";
@@ -35,6 +37,8 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
   // Which buttons this page gets. The rule lives in `wiki-add.ts` because the search results list
   // adds by the same one, and the two had drifted — see that file.
   const add = wikiAddAction(page);
+  // A class epic or a Plane of Sky test has a bundled plan, drawn in place of the generic steps.
+  const plan = page.kind === "quest" ? planFor(page.title) : undefined;
   // A "gear-set" bundle (ADR 0197): one giver/zone offering several independently turned-in armor
   // pieces off this one page. Rendered as its own list of sections below, in place of the flat
   // turn-ins/rewards every other quest gets — the flat `page.components`/`page.rewards` (the union,
@@ -209,9 +213,11 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
         </div>
       )}
 
-      {/* The walkthrough step by step, before the flat turn-in list: a chain quest's turn-ins mix what
-          you hand in at the end with what each step makes on the way (ADR 0295). */}
-      {(page.steps?.length ?? 0) > 0 && (
+      {/* A long quest with a bundled plan shows the plan — stages, places, progress (ADR 0300). Any
+          other quest's walkthrough step by step, before the flat turn-in list: a chain quest's turn-ins
+          mix what you hand in at the end with what each step makes on the way (ADR 0295). */}
+      {plan && <QuestPlanView plan={plan} />}
+      {!plan && (page.steps?.length ?? 0) > 0 && (
         <>
           <h4 className="muted small" style={{ marginTop: 12 }}>Steps</h4>
           <QuestSteps steps={page.steps!} trail={[page.title]} />

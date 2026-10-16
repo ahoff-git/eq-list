@@ -56,6 +56,7 @@ import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } fr
 import { forTransfer, itemRows, type ItemRow } from "../../src/shared/items/item-search";
 import { spellRows } from "../../src/shared/spells/spell-search";
 import { withQuestPickups } from "../../src/shared/quests/quest-pickups";
+import { withQuestPlan } from "../../src/shared/quests/quest-plans";
 import { outOfEraWithGmEvents, withGmEventEra } from "../../src/shared/items/gm-event-items";
 import { withSpellLevelEra } from "../../src/shared/spells/spell-era";
 import { liveLevelCap, outOfEraSet } from "../../src/shared/zones/expansions";
@@ -709,12 +710,13 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
 
   /**
    * What a page looks like on its way out, with the facts we bundle beside the wiki laid over it: a
-   * quest's ground pickups as turn-ins (ADR 0291), a GM-event item flagged out of era (ADR 0292), and
+   * quest's ground pickups and a long quest's plan items as turn-ins (ADR 0291, ADR 0300), a GM-event
+   * item flagged out of era (ADR 0292), and
    * a spell past the live level cap flagged too (ADR 0288). Never cached, so the cache keeps exactly
    * what the wiki said — and a cap that moves reaches the next view.
    */
   const servedPage = (page: WikiPage | null): WikiPage | null => {
-    const served = withGmEventEra(withQuestPickups(page));
+    const served = withGmEventEra(withQuestPlan(withQuestPickups(page)));
     return withSpellLevelEra(served, served, levelCap());
   };
 

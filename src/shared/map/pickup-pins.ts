@@ -34,7 +34,8 @@ export interface PickupPin {
 export function pickupPins(needed: readonly { name: string }[], inZone: (zone: string) => boolean): PickupPin[] {
   return needed.flatMap((e) => {
     const p = pickupFor(e.name);
-    if (!p || !inZone(p.zone)) return [];
+    // A pickup the page only describes has no spot to pin; its zone and directions are on its page.
+    if (!p?.loc || !inZone(p.zone)) return [];
     return [
       {
         id: `pickup:${e.name}`,

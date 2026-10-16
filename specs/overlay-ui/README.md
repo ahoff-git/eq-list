@@ -124,6 +124,13 @@ list, hunt, search, damage, session, peers, settings.
   underlined before you hover. Links that open the **map** (`MapLink`'s `map-link` class: a zone, a loc)
   are teal with a ⌖, because they go to another window rather than another page. The pickup page lines
   its facts up under a label column and sets the wiki's directions in a callout.
+- **A long quest's page shows its plan** (`components/items/QuestPlanView.tsx`). For a quest with a
+  bundled plan (the class epics and the Plane of Sky tests), stages of steps replace the generic step
+  tree. A segmented switch shows them by stage or by zone, and by island inside Plane of Sky. Each step
+  has its mark (ticking it marks its items obtained on the list), what it gets you as links, who,
+  where (zone and spot open the map), and an era badge when its zone isn't open. The header counts done
+  steps and steps not in era. See
+  [ADR 0300](../decisions/0300-a-long-quest-is-a-plan-of-stages.md).
 - **A quest pickup's page is built, not fetched** (`components/items/PickupPageView.tsx`). A title
   that names a bundled pickup ("Rod (Azia)") skips the wiki lookup, and `SearchPanel` shows its zone
   and spot (both map links), the wiki's directions, the quest it's for, **who to see** (the quest's

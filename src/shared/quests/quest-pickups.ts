@@ -11,9 +11,15 @@
  * name, and the list keys entries by name, so ten `Rod`s would fold into one line of "10 needed" that
  * can't say *which* you still lack. The label is what the wiki tells them apart by, and what the map
  * captions them with.
+ *
+ * **A pickup that is the only one of its name is filed under that name alone** — "Abandoned Orc
+ * Shovel", not "Abandoned Orc Shovel (Abandoned Orc Shovel)" — so it is the same entry as the turn-in
+ * the quest's own page already lists, and that entry gets the pin
+ * ([ADR 0299](../../../specs/decisions/0299-ground-spawns-in-prose-are-named-then-read.md)).
  */
 import type { ItemSource, WikiPage } from "../types";
 import { distinct } from "../sorting";
+import { isKnownPlace } from "../zones/place";
 import {
   QUEST_NPCS,
   QUEST_PICKUPS,
@@ -27,7 +33,7 @@ export type { QuestNpc, QuestPickup };
 
 /** The list entry a pickup is filed as. */
 export function pickupEntryName(p: QuestPickup): string {
-  return `${p.item} (${p.label})`;
+  return p.label === p.item ? p.item : `${p.item} (${p.label})`;
 }
 
 const BY_ENTRY = new Map(QUEST_PICKUPS.map((p) => [pickupEntryName(p).toLowerCase(), p]));
@@ -44,14 +50,24 @@ export function pickupsForQuest(quest: string): QuestPickup[] {
   return QUEST_PICKUPS.filter((p) => p.quest === quest);
 }
 
-/** The NPCs a quest sends you to, in the order its page names them (ADR 0293). */
+/**
+ * The quest NPCs standing in a zone this server runs. A long quest's top table names people across
+ * eras, and one in a zone the map can't open is a link to nowhere, so they wait here — and appear by
+ * themselves once the gazetteer learns their zone ([ADR 0299](../../../specs/decisions/0299-ground-spawns-in-prose-are-named-then-read.md)).
+ */
+export const REACHABLE_QUEST_NPCS: readonly QuestNpc[] = QUEST_NPCS.filter((n) => isKnownPlace(n.zone));
+
+/** The NPCs a quest sends you to, in the order its page names them (ADR 0293) — reachable ones only. */
 export function npcsForQuest(quest: string): QuestNpc[] {
-  return QUEST_NPCS.filter((n) => n.quest === quest);
+  return REACHABLE_QUEST_NPCS.filter((n) => n.quest === quest);
 }
 
-/** `-1159, 2329` — the way `/loc` prints it, so it can be compared by eye. */
-export function pickupLocText(p: { loc: QuestPickup["loc"] }): string {
-  return [p.loc.y, p.loc.x, p.loc.z].filter((n) => n !== undefined).join(", ");
+/**
+ * `-1159, 2329` — the way `/loc` prints it, so it can be compared by eye. Empty for a pickup the page
+ * only describes ("in the Ghost Room Pit"), which has a zone and directions but no spot.
+ */
+export function pickupLocText(p: { loc?: QuestPickup["loc"] }): string {
+  return p.loc ? [p.loc.y, p.loc.x, p.loc.z].filter((n) => n !== undefined).join(", ") : "";
 }
 
 /**
@@ -61,7 +77,7 @@ export function pickupLocText(p: { loc: QuestPickup["loc"] }): string {
  */
 export function pickupSources(entryName: string): ItemSource[] | undefined {
   const p = pickupFor(entryName);
-  return p && [{ kind: "ground", where: `${p.label} at ${pickupLocText(p)}`, detail: p.zone }];
+  return p && [{ kind: "ground", where: p.loc ? `${p.label} at ${pickupLocText(p)}` : p.label, detail: p.zone }];
 }
 
 /**

@@ -366,3 +366,22 @@ test("parseFactionLine reads the floor and ceiling wordings, which state no numb
 test("ignores chatter that merely mentions a faction", () => {
   assert.equal(parseFactionLine("[Fri Jul 17 18:41:14 2026] Bob tells the guild, 'faction standing is annoying'"), null);
 });
+
+test("the game's own long zone names resolve to the gazetteer's places", async () => {
+  const { classifyZoneLine, placeName } = await import("../../src/shared/zones/place");
+  // Each is a real "You have entered …" line (Kainos's log). Unresolved, `currentZone` stayed put.
+  const seen: Record<string, string> = {
+    "The Southern Desert of Ro": "South Ro",
+    "The Western Plains of Karana": "West Karana",
+    "The Eastern Plains of Karana 3 (Fused)": "East Karana",
+    "The Northern Plains of Karana": "North Karana",
+    "The Southern Plains of Karana": "South Karana",
+    "The Qeynos Aqueduct System": "Qeynos Aqueducts",
+    "Neriak - Foreign Quarter": "Neriak Foreign Quarter",
+    "Neriak - Commons": "Neriak Commons",
+  };
+  for (const [line, place] of Object.entries(seen)) {
+    assert.equal(classifyZoneLine(line), "known", line);
+    assert.equal(placeName(line), place, line);
+  }
+});

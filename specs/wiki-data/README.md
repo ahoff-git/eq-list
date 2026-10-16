@@ -116,6 +116,10 @@ shopping list.
     in place. What each link is (NPC, zone, item, quest) is read off its own page when shown, not
     parsed. Only the page view re-fetches a quest cached before them
     ([ADR 0295](../decisions/0295-a-quest-is-a-tree-of-steps.md)).
+  - Long-quest **plans** are not parsed here at all. The class epics and Plane of Sky tests are
+    bundled by `scripts/fetch-quest-plans.mjs` (stages, steps, items, people, places) and laid over the
+    served page by `withQuestPlan`, which also makes a Plane of Sky test page (parsed as an item) a
+    quest ([ADR 0300](../decisions/0300-a-long-quest-is-a-plan-of-stages.md)).
   - Stat card (`WikiPage.card`), reused across kinds — the block shown inline on the
     page and on hover (`ItemLink` / `useItemCard`):
     - **items**: the page's own `.itemtopbg`(title) + `.itemdata` (icon + stat lines),

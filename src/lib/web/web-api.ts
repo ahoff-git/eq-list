@@ -26,6 +26,7 @@ import { surveyZone } from "@/shared/travel/survey";
 import { EMPTY_FIGHT, EMPTY_HARVEST } from "@/shared/empty-values";
 import { RACE_UNLOCK_CHEAT_SHEET_URL } from "@/shared/faction/race-unlocks";
 import { withQuestPickups } from "@/shared/quests/quest-pickups";
+import { withQuestPlan } from "@/shared/quests/quest-plans";
 import { withGmEventEra } from "@/shared/items/gm-event-items";
 import { withSpellLevelEra } from "@/shared/spells/spell-era";
 import { liveLevelCap, outOfEraSet } from "@/shared/zones/expansions";
@@ -64,7 +65,7 @@ const levelCap = async (): Promise<number> => liveLevelCap(outOfEraSet(await sna
 /** A snapshot page with the facts main lays over its own on the way out (`electron/wiki`'s `servedPage`). */
 async function servedPage(title: string): Promise<WikiPage | null> {
   const [page, cap] = await Promise.all([snapshot.getPage(title), levelCap()]);
-  const served = withGmEventEra(withQuestPickups(page));
+  const served = withGmEventEra(withQuestPlan(withQuestPickups(page)));
   return withSpellLevelEra(served, served, cap);
 }
 // A harvest is Electron-only (there's no wiki category walk on the web — the snapshot is this

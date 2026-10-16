@@ -2536,7 +2536,8 @@ kbd {
 }
 /* A dropdown's options take their colours from the select, so one styled as a ghost button (the List
    tab's "＋ Quest pickups…") opened light-on-white. Give every option the input colours outright. */
-select option {
+select option,
+select optgroup {
   background: var(--bg-input);
   color: var(--text);
 }
@@ -4041,3 +4042,17 @@ select option {
    with the number it is currently at, since a slider with no read-out is a guess. */
 .level-slider { width: 120px; accent-color: var(--accent); }
 .level-cap { min-width: 26px; font-variant-numeric: tabular-nums; }
+
+/* A long quest's plan (`QuestPlanView`, ADR 0300): stage headings, then one row per step — its mark,
+   the sentence with what it gets you, and where it happens. A sub-step indents under its step. */
+.page-detail .plan-stage { margin: 12px 0 4px; font-size: 12px; color: var(--accent); }
+.page-detail ul.plan-steps { display: flex; flex-direction: column; gap: 4px; padding-left: 0; }
+.page-detail li.plan-step { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; line-height: 1.45; }
+.page-detail li.plan-step.depth-2 { padding-left: 16px; }
+.page-detail li.plan-step.depth-3 { padding-left: 32px; }
+.page-detail li.plan-step.done .plan-text { opacity: 0.55; text-decoration: line-through; }
+.page-detail .plan-mark { background: none; border: none; color: var(--text-dim); font-size: 13px; width: 16px; padding: 0; cursor: pointer; }
+.page-detail .plan-mark:disabled { cursor: default; }
+.page-detail li.plan-step.done .plan-mark { color: var(--good); }
+.page-detail .plan-text { flex: 1 1 260px; min-width: 0; }
+.page-detail .plan-place { display: inline-flex; flex-wrap: wrap; gap: 6px; }

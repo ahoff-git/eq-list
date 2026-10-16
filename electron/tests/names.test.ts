@@ -173,8 +173,12 @@ test("the game writes a ruleset two ways, and both fold", () => {
   assert.equal(zoneBaseName("Cazic-Thule 3 - Solo"), "Cazic-Thule");
   assert.equal(zoneDifficulty("Cazic-Thule 3 - Solo"), 3);
   assert.equal(zoneMode("Cazic-Thule 3 - Solo"), "Solo");
-  // **Spaces around the dash are required**, because a hyphen inside a word is part of the name —
-  // and no zone the app ships has " - " in it, which is what makes this safe to fold at all.
+  // **Spaces around the dash are required**, because a hyphen inside a word is part of the name.
+  // And only a ruleset word folds after one: the game's own "Neriak - Commons" is a district, not a
+  // ruleset, and folding it made both Neriak districts plain "Neriak", a place nobody names.
+  assert.equal(zoneBaseName("Neriak - Commons"), "Neriak - Commons");
+  assert.equal(zoneMode("Neriak - Foreign Quarter"), undefined);
+  assert.notEqual(zoneKey("Neriak - Commons"), zoneKey("Neriak - Foreign Quarter"));
   assert.equal(zoneBaseName("Cazic-Thule"), "Cazic-Thule");
   assert.equal(zoneBaseName("Takish-Hiz"), "Takish-Hiz");
   assert.equal(zoneMode("Kor-Sha Laboratory"), undefined);

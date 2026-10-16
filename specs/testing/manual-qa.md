@@ -2506,3 +2506,23 @@ smoke-test attempt couldn't confirm it live (see the "Launching the app" entry a
 - **No regression to normal scrolling.** On a tall tab (Loot, Items, a long Combat history) confirm
   ordinary scrolling still works exactly as before — `overscroll-behavior: contain` only changes what
   happens *past* the ends, not ordinary scrolling within them.
+
+## A long quest's plan (ADR 0300)
+
+Verified 2026-10-16. The page view, add and tick were checked in the web build. The rest was checked in
+an **isolated desktop instance** (`--user-data-dir` on a scratch profile, test log and maps folder,
+driven over the DevTools protocol):
+
+- the Paladin epic added through `window.eql`;
+- "You have entered West Freeport." moved the map window, which pinned exactly its two stops there
+  (Bucket of Water at the peasant woman, Joshua);
+- marking Bucket of Water obtained dropped its pin live;
+- "You have entered Neriak - Commons." moved the map to Neriak Commons.
+
+Then a walk across six long quests in the same instance: the Cleric, Warrior, Necromancer and Bard
+epics, and the Wizard and Cleric Plane of Sky tests. Each was added through `window.eql`, then every
+zone the map can open that it visits was entered through the log. In all 31 zones the map followed, and
+its Hunt layer held at least the plan's predicted stops (exactly, for the Plane of Sky tests). Across
+all 30 plans, `quest-plans.test.ts` holds every one of 813 stops inside its zone's drawn map.
+
+A real loot line ticking a step is covered by `quest-plans.test.ts`. Nothing here is left open.

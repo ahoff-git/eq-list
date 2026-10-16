@@ -11,7 +11,7 @@
  *
  * Pure and DOM-free, like the rest of `src/shared/map` — tested in `electron/tests/quest-pickups.test.ts`.
  */
-import { pickupLocText, QUEST_NPCS } from "../quests/quest-pickups";
+import { pickupLocText, REACHABLE_QUEST_NPCS } from "../quests/quest-pickups";
 import type { PickupPin } from "./pickup-pins";
 
 /** One pin per NPC of a quest that still has a needed entry, in the zone on screen. */
@@ -20,7 +20,7 @@ export function questNpcPins(
   inZone: (zone: string) => boolean,
 ): PickupPin[] {
   const quests = new Set(needed.flatMap((e) => (e.origin ? [e.origin.name] : [])));
-  return QUEST_NPCS.filter((n) => quests.has(n.quest) && inZone(n.zone)).map((n) => ({
+  return REACHABLE_QUEST_NPCS.filter((n) => quests.has(n.quest) && inZone(n.zone)).map((n) => ({
     id: `quest-npc:${n.quest}:${n.npc}`,
     y: n.loc.y,
     x: n.loc.x,

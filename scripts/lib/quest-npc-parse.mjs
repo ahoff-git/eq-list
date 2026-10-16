@@ -33,6 +33,11 @@ function infoboxParam(wikitext, key) {
 /** A stated location's first `( … )` group, so trailing words ("2nd floor") never read as a z. */
 const LOC_GROUP = /\(([^()]*\d[^()]*)\)/;
 
+/** The zone an NPC's page names, even when it gives no spot — for a reader that can place them otherwise. */
+export function npcZone(npcWikitext) {
+  return plainText(infoboxParam(npcWikitext, "zone")) || undefined;
+}
+
 /**
  * Where an NPC's page says it stands: `{ zone, loc, note }`, or `undefined` if it states no zone or
  * no two-number location. `note` is the page's description plus anything the location adds in words.

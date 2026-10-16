@@ -63,7 +63,11 @@ export default function PickupPageView({ pickup: p }: { pickup: QuestPickup }) {
         </li>
         <li>
           <span className="field-label">Location</span>
-          <MapLink target={{ zone: p.zone, loc: p.loc, label: p.label }}>{pickupLocText(p)}</MapLink>
+          {p.loc ? (
+            <MapLink target={{ zone: p.zone, loc: p.loc, label: p.label }}>{pickupLocText(p)}</MapLink>
+          ) : (
+            <span className="muted small">not stated — see the directions below</span>
+          )}
         </li>
         <li>
           <span className="field-label">In game</span>

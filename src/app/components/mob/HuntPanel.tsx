@@ -604,7 +604,7 @@ function PickupGroup({
         <div key={e.id} className="row" title={p.note}>
           <ItemLink title={e.name} />
           <span className="muted small">
-            {p.zone} · {pickupLocText(p)}
+            {[p.zone, pickupLocText(p)].filter(Boolean).join(" · ")}
           </span>
           <span className="spacer" />
           <ObtainedStepper id={e.id} obtained={e.obtained} needed={e.needed} onAdjust={onAdjust} />

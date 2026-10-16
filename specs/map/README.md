@@ -468,13 +468,24 @@ world coordinates, so a map knows where it is. See
   enchanter's ten Old Silver Coins for Coin of Tash
   ([ADR 0291](../decisions/0291-quest-pickups-are-generated-static-data.md)). The data is bundled
   (`src/shared/quests/quest-pickups.generated.ts`, from eqlwiki's quest pages by
-  `scripts/fetch-quest-pickups.mjs`, which reads either a Zone / Location table or, for a page
-  without one, `Label - Zone - directions (y, x, z)` checklist bullets). A pin is drawn for each pickup whose list entry
-  (`Item (Label)`) is still needed and whose zone is on screen. Its hover gives the item, quest and
+  `scripts/fetch-quest-pickups.mjs`, which reads a Zone / Location table, `Label - Zone - directions
+  (y, x, z)` checklist bullets, or, for a page that only mentions them in prose, spots named in its
+  config and located off the page —
+  [ADR 0299](../decisions/0299-ground-spawns-in-prose-are-named-then-read.md)). A pin is drawn for
+  each pickup whose list entry (`Item (Label)`, or just `Item` when it's the only one of its name) is
+  still needed, whose zone is on screen, and whose page states a spot. One that's only described ("in
+  the Ghost Room Pit") gets no pin. Its hover gives the item, quest and
   loc on one line and the table's Description below, on the pin tip's own note line, which every
   pin's note now uses. It is captioned with the label, drawn
   as a hunt mark with a stated position's dashed ring, and switched by the hunt toggle. Derived and
   never stored, like a hunt pin; a click opens nothing, since there is no mob behind it.
+- **Long-quest stops** (`planPins` in `src/shared/quests/quest-plans.ts`, pure —
+  `electron/tests/quest-plans.test.ts`). These are the places a listed class epic or Plane of Sky test
+  still sends you, from its bundled plan
+  ([ADR 0300](../decisions/0300-a-long-quest-is-a-plan-of-stages.md)). A step is still to do while an
+  item it gets is needed under that quest. A step that gets nothing is pinned only for the stage
+  you're on. There is one pin per person or stated spot per zone, with every step there in its hover.
+  Drawn like pickup pins, under the hunt switch.
 - **Quest NPCs** (`src/shared/map/quest-npc-pins.ts`, pure — `electron/tests/quest-pickups.test.ts`)
   — the people a pickup quest sends you to, such as Coin of Tash's four coin enchanters
   ([ADR 0293](../decisions/0293-quest-npcs-are-bundled-and-pinned-while-their-quest-is-listed.md)).
