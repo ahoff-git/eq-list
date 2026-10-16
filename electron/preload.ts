@@ -147,6 +147,9 @@ const api: EqlApi = {
     contributors: () => ipcRenderer.invoke(CH.mobsContributors),
     forgetPeers: (id) => ipcRenderer.invoke(CH.mobsForgetPeers, id),
   },
+  sightings: {
+    of: (name) => ipcRenderer.invoke(CH.sightingsOf, name),
+  },
   factionObservations: {
     knowledge: () => ipcRenderer.invoke(CH.factionObservationsKnowledge),
     forgetPeers: (id) => ipcRenderer.invoke(CH.factionObservationsForgetPeers, id),

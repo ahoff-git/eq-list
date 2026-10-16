@@ -42,6 +42,8 @@ import type { CombatHistory } from "./combat-history";
 import type { FactionLog } from "./faction-log";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
+import type { NpcSightings } from "./npc-sightings";
+import { createSightingPlacer, speakerOf } from "../src/shared/npc/npc-sightings";
 
 const log = createLogger("log-import");
 
@@ -85,10 +87,11 @@ export function digestLog(
   history?: CombatHistory,
   lootLog?: LootLog,
   factionLog?: FactionLog,
+  npcSightings?: NpcSightings,
 ): LogImportResult {
   try {
     killLog.setPlayer(characterFromLogFile(file) ?? "");
-    return importLog(file, killLog, history, lootLog, factionLog);
+    return importLog(file, killLog, history, lootLog, factionLog, npcSightings);
   } finally {
     killLog.setPlayer(live);
   }
@@ -100,6 +103,7 @@ export function importLog(
   history?: CombatHistory,
   lootLog?: LootLog,
   factionLog?: FactionLog,
+  npcSightings?: NpcSightings,
 ): LogImportResult {
   // This can legitimately re-encounter a line already recorded — eating the same log twice, or one
   // already watched live — so kills and drops must compare against everything on permanent record
@@ -155,6 +159,12 @@ export function importLog(
   let session: string | undefined;
   combat?.setPlayer(characterFromLogFile(file) ?? "");
   /**
+   * The same placer `main.ts` feeds live (ADR 0298), so an eaten evening places its NPCs exactly as a
+   * watched one would. The store skips a sighting it already holds, so a log read twice adds nothing.
+   */
+  const sightings = npcSightings ? createSightingPlacer((s) => npcSightings.add(s)) : null;
+  sightings?.setPlayer(characterFromLogFile(file) ?? "");
+  /**
    * Collected rather than filed one at a time, because the history replaces a log file's fights as a
    * **set**: a rule that makes a new line readable can move a boundary, so which stored fight a
    * derived one answers to is only knowable once they're all in hand (ADR 0128).
@@ -174,6 +184,9 @@ export function importLog(
     // it — a line of NPC dialogue matches no event kind at all, the same reason `main.ts`'s live
     // watcher offers every split line to `factionCause.noteLine` on its own `onLine` channel.
     factionCause.noteLine(line);
+    // Someone speaking at /say range is standing near you — like dialogue, a line no event claims.
+    const speaker = sightings && speakerOf(line.message);
+    if (speaker) sightings.note(speaker, "speech", line.at, zone);
     const event = parseSplitLine(line);
     if (!event) continue;
     const at = Date.parse(event.at);
@@ -191,6 +204,7 @@ export function importLog(
         // and unlike the live path, this replays whole evenings at once, so it's worth knowing about.
         const verdict = classifyZoneLine(event.zone);
         if (verdict === "known") {
+          if (event.zone !== zone) sightings?.noteZone();
           zone = event.zone;
           combat?.setZone(event.zone);
         } else if (verdict === "unresolved") {
@@ -200,6 +214,10 @@ export function importLog(
       }
       case "loc":
         killLog.noteLoc(event, zone);
+        sightings?.noteLoc(event, zone);
+        break;
+      case "sighting":
+        sightings?.note(event.target, event.how, event.at, zone);
         break;
       case "loot":
         if (killLog.noteLoot(event)) drops++;
@@ -246,6 +264,7 @@ export function importLog(
         // The group as it was that evening, so an eaten log's fights are scoped the same way a
         // watched one's are (ADR 0067).
         combat?.recordParty(event);
+        sightings?.noteParty(event.change, event.who);
         break;
       case "login":
         // Close the sitting that just ended before the id changes, so its last fight files under
@@ -259,6 +278,7 @@ export function importLog(
     }
   }
   combat?.flush(); // the log ended mid-sitting; its last fight is still a fight
+  sightings?.flush(); // anything still waiting for a `/loc` won't get one now
   // The file has ended — nothing left to check a still-pending hit against either direction, so
   // resolve every one of them now rather than lose it.
   for (const event of pendingFaction) {

@@ -82,6 +82,15 @@ export interface DataConcern {
    */
   unattended?: boolean;
   /**
+   * Does a store with **no file at all** count as stale, for an `unattended` re-read?
+   *
+   * For a store that is new in a release and read entirely off the logs: the evenings already on disk
+   * hold everything it would have learned, and the first start that has it can read them once. A
+   * store that would only ever be empty on a first run (no logs yet) costs nothing either way — the
+   * re-read finds no sources and stops.
+   */
+  backfill?: boolean;
+  /**
    * What to assume a file carrying **no stamp** was written at.
    *
    * Defaults to `revision`, i.e. "assume it's fine". That default is the important half: the day
@@ -267,6 +276,19 @@ export const DATA_CONCERNS: DataConcern[] = [
     blurb: "Every faction-standing change the log has shown — what raised or lowered it, and by how much.",
     changed:
       "The 5,000-hit cap is gone (ADR 0232): a hit that had aged past it still counted toward your standing, but its own record — when it happened, and the kill or conversation guessed to have caused it — was gone. Digesting your logs again recovers the full hit-by-hit ledger for anything still covered by a file on disk.",
+  },
+  {
+    id: "npc-sightings",
+    label: "NPC sightings",
+    file: "npc-sightings.json",
+    revision: 1,
+    remedy: "re-eat",
+    // New in a release, and read entirely off the logs: the first start that has it reads the logs
+    // already on disk once, so quest givers you hailed months ago are placed from day one (ADR 0298).
+    unattended: true,
+    backfill: true,
+    blurb:
+      "Everyone you've hailed, heard speak, or considered, by zone, with where you stood — rough standing spots for NPCs you never kill.",
   },
   {
     id: "spawn-timers",

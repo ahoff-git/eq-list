@@ -101,6 +101,7 @@ export const CH = {
   /** Point lookup for `useKills`' incremental patch path — full records for exactly these ids. */
   killsByIds: "kills:byIds",
   mobsAll: "mobs:all",
+  sightingsOf: "sightings:of",
   mobsMine: "mobs:mine",
   /** Who has pooled with us, and how much each of them has told us. */
   mobsContributors: "mobs:contributors",

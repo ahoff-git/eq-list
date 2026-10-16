@@ -248,6 +248,14 @@ as they drop and the damage meter can show how the fight went.
   `applyFactionCorrections` — so every reader of `faction.standings()`, the Standings table and the
   Race Unlocks bars alike, sees the corrected figure without knowing corrections exist. See
   [ADR 0229](../decisions/0229-a-faction-correction-is-a-stated-offset.md).
+- `electron/npc-sightings.ts` + `src/shared/npc/npc-sightings.ts` — everyone you **hail**, hear
+  **speak** at /say range, or **consider**, by zone, paired with your nearest same-zone `/loc` within
+  30 s either side. That places NPCs you never kill (quest givers, merchants), roughly: it's your spot
+  beside them, not theirs. Hails outrank speech, which outranks considers, and they're never averaged
+  together. Pets, corpses, your group, and a player's bare "Hail" are filtered out. Fed live and on
+  a re-read through one placer, and backfilled from the logs on disk the first start that has it.
+  Local only, never shared. Shown on a mob/NPC page under **Where you've seen them**. See
+  [ADR 0298](../decisions/0298-npc-sightings-place-what-you-never-kill.md).
 - `src/shared/name-registry.ts` — one spelling per creature. EQ capitalizes a name at the start
   of a sentence, so the damage meter and the kill log would otherwise disagree about what a mob
   is called; both take their names from here.
@@ -358,6 +366,7 @@ Two invocations do more than scale numbers, and both are now accounted for
 [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md) ·
 [ADR 0218](../decisions/0218-a-faction-hit-is-parsed-not-only-watched.md) ·
 [ADR 0219](../decisions/0219-a-faction-cause-is-a-guess-from-timing.md) ·
+[ADR 0298](../decisions/0298-npc-sightings-place-what-you-never-kill.md) ·
 [ADR 0220](../decisions/0220-a-conversation-can-be-the-guessed-cause-too.md) ·
 [ADR 0221](../decisions/0221-a-guessed-speaker-can-name-a-quest-giver.md) ·
 [ADR 0223](../decisions/0223-a-guessed-line-can-match-a-quests-own-dialogue.md) ·

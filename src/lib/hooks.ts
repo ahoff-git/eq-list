@@ -47,6 +47,7 @@ import type { KnowledgeContributor } from "@/shared/contributors";
 import type { FactionCauseKnowledge } from "@/shared/faction/faction-observation";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
 import { describeStepLink, type StepLinkInfo } from "@/shared/quests/quest-steps";
+import type { NpcSighting } from "@/shared/npc/npc-sightings";
 import type { SharedKill } from "@/shared/kills/kill-filters";
 import { mergeLootFeed } from "@/shared/items/loot-feed";
 import { mergeFactionFeed } from "@/shared/faction/faction-feed";
@@ -504,6 +505,16 @@ export function useHunt(): {
   );
   return { needed, sources, targets, zones, loading };
 }
+
+/**
+ * Every zone you've hailed, heard, or considered someone in, with where you stood — the placing
+ * for an NPC you never kill (ADR 0298). Most recently seen first.
+ */
+export function useNpcSightings(name: string | null): NpcSighting[] {
+  return useRead(async (a) => (name ? a.sightings.of(name) : []), NO_SIGHTINGS, [name]);
+}
+
+const NO_SIGHTINGS: NpcSighting[] = [];
 
 /**
  * What we know about **one** mob, one row per zone it's been killed in, most kills first.

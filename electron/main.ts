@@ -35,6 +35,8 @@ import { appDatabaseFile, openAppDatabase } from "./sqlite-store";
 import { createWebSnapshotJob } from "./web-snapshot-job";
 import { createFactionLog, FACTION_LOG_MIGRATIONS } from "./faction-log";
 import { createFactionCorrections } from "./faction-corrections";
+import { createNpcSightings } from "./npc-sightings";
+import { createSightingPlacer, speakerOf } from "../src/shared/npc/npc-sightings";
 import { CORRELATION_WINDOW_SEC, createFactionCauseTracker } from "../src/shared/faction/faction-cause";
 import { lootRecord } from "../src/shared/items/loot-feed";
 import { autoUpdater } from "electron-updater";
@@ -280,6 +282,10 @@ if (!app.requestSingleInstanceLock()) {
   lootLog.onPricesChanged(() => broadcast(CH.lootPricesChanged, undefined));
   const factionLog = createFactionLog(db, userData);
   const factionCorrections = createFactionCorrections(userData);
+  // Everyone you hail, hear, or consider, placed by your nearest `/loc` (ADR 0298). The placer is fed
+  // in log order by the handlers below; a re-read feeds its own through `log-import.ts`.
+  const npcSightings = createNpcSightings(userData);
+  const sightingPlacer = createSightingPlacer((s) => npcSightings.add(s));
   // A guess at what caused a hit, from the kill the log wrote just before it, or (failing that) from
   // NPC dialogue — narrowed, when the speaker matches a cached quest's giver, to whichever of that
   // giver's quests the line itself resembles, but only once the speaker is confirmed as a mob (a
@@ -443,6 +449,7 @@ if (!app.requestSingleInstanceLock()) {
     lootLog,
     factionLog,
     factionCorrections,
+    npcSightings,
     updates,
     mobs,
     factionObservations,
@@ -557,6 +564,7 @@ if (!app.requestSingleInstanceLock()) {
     combat.setPlayer(character);
     hp.setPlayer(character); // heals on you are logged by character name, not "you"
     killLog.setPlayer(character); // so your pet's death isn't filed as a mob you farm
+    sightingPlacer.setPlayer(character); // and your own /say isn't an NPC standing where you are
     // A board belongs to a character, so naming them is what decides whose records these are — and
     // the first time we meet one, their own past fights seed the board rather than leaving it empty
     // with a dozen bars nobody has ever cleared. Capped high rather than unbounded: `search("")`
@@ -581,6 +589,7 @@ if (!app.requestSingleInstanceLock()) {
     // changing the instance difficulty respawns everything, and it arrives as a different *variant*
     // of the same zone.
     spawns.noteZone(event.zone);
+    sightingPlacer.noteZone(); // a sighting still waiting for a `/loc` won't get one in the next zone
     // Buffs cross a zone line, so this is not a reason to drop the board — but a half-finished cast
     // does not, and that is what `noteZone` clears. See the tracker.
     buffs.noteZone(event.zone);
@@ -615,6 +624,7 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onLoc((event) => {
     currentLoc = event;
     killLog.noteLoc(event, currentZone); // the fix a later kill will be placed against
+    sightingPlacer.noteLoc(event, currentZone); // and the one a hail just before or after is placed by
     broadcast(CH.locChanged, currentLoc);
   });
   watcher.onLoot((event) => {
@@ -655,7 +665,10 @@ if (!app.requestSingleInstanceLock()) {
   });
   // Considering or hailing a mob you're timing counts as seeing it up — free evidence from what a
   // camper does anyway, through exactly the path the "It's up" button uses (ADR 0097).
-  watcher.onSighting((event) => spawns.noteSighting(event.target, currentZone));
+  watcher.onSighting((event) => {
+    spawns.noteSighting(event.target, currentZone);
+    sightingPlacer.note(event.target, event.how, event.at, currentZone);
+  });
   watcher.onKill((event) => {
     combat.recordKill(event.target, event.at);
     achievements.kill(event); // a "raceKill" criterion — gated to the player's own credit internally (ADR 0215)
@@ -700,7 +713,10 @@ if (!app.requestSingleInstanceLock()) {
   watcher.onGameTime((event) => gameClock.noteReading(event.hour, Date.parse(event.at)));
   // Who's grouped with you decides whose fights the meter counts (ADR 0067). Nothing else
   // needs it, so it goes straight to the tracker that does.
-  watcher.onParty((event) => combat.recordParty(event));
+  watcher.onParty((event) => {
+    combat.recordParty(event);
+    sightingPlacer.noteParty(event.change, event.who); // a group member is a player, not an NPC
+  });
   watcher.onXp((event) => {
     combat.recordXp(event);
     if (event.pct) xp.addGain(event.pct); // creeps the player-stated "into level" forward
@@ -761,6 +777,9 @@ if (!app.requestSingleInstanceLock()) {
     // faction cause for when no kill explains a hit (ADR 0220). Cheap: one regex test, one slot
     // overwritten on a match, no history kept.
     factionCause.noteLine(line);
+    // Someone speaking at /say range is standing near you (ADR 0298) — like dialogue, no event claims it.
+    const speaker = speakerOf(line.message);
+    if (speaker) sightingPlacer.note(speaker, "speech", line.at, currentZone);
   });
   /**
    * A fight ends in quiet, and quiet logs nothing — so without this the last pull of a camp was
@@ -991,6 +1010,7 @@ if (!app.requestSingleInstanceLock()) {
       killLog,
       lootLog,
       factionLog,
+      npcSightings,
       logDir: store.getSettings().logDir,
       live: characterFromLogFile(watcher.status().file) ?? "",
     }).then((report) => {
@@ -1025,6 +1045,8 @@ if (!app.requestSingleInstanceLock()) {
     flushPendingFaction();
     factionLog.flush();
     factionCorrections.flush();
+    sightingPlacer.flush();
+    npcSightings.flush();
     scores.flush();
     mobs.flush();
     factionObservations.flush();

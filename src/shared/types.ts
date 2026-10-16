@@ -2,6 +2,7 @@ import type { DataReportRow } from "./data-provenance";
 import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./chrome/self-check";
 import type { MobKnowledge, MobObservation } from "./mob/mob-stats";
+import type { NpcSighting } from "./npc/npc-sightings";
 import type { KnowledgeContributor } from "./contributors";
 import type { FactionCauseKnowledge } from "./faction/faction-observation";
 import type { PeerOfferNotice, PeerVersionNotice, ReceivedShare, ShareKind, ShareSettings } from "./peers/peer-share";
@@ -3797,6 +3798,15 @@ export interface EqlApi {
      * are derived from the kill log and untouched either way.
      */
     forgetPeers(id?: string): Promise<void>;
+  };
+  /**
+   * Everyone you've hailed, heard speak, or considered, by zone, with where you stood at the time —
+   * rough standing spots for NPCs you never kill (`electron/npc-sightings.ts`, ADR 0298). Yours only;
+   * never pooled.
+   */
+  sightings: {
+    /** Every zone this name has been seen in, most recently seen first. */
+    of(name: string): Promise<NpcSighting[]>;
   };
   /**
    * Pooled evidence for what's raised/lowered a faction — the *verified* half of a faction hit's

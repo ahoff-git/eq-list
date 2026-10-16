@@ -10,11 +10,19 @@ import path from "node:path";
 import { pendingReReads, reReadLogs } from "../log-reread";
 import { createCombatHistory, COMBAT_HISTORY_MIGRATIONS, type CombatHistory } from "../combat-history";
 import { openAppDatabase } from "../sqlite-store";
-import { concernById } from "../../src/shared/data-provenance";
+import { concernById, DATA_CONCERNS } from "../../src/shared/data-provenance";
 import type { KillLog } from "../kill-log";
 
+/**
+ * A userData dir as an install that already has every `backfill` store would leave it — written at
+ * the current revision — so the only thing a test here finds pending is what it set up itself.
+ */
 function tempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "eql-reread-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-reread-"));
+  for (const c of DATA_CONCERNS.filter((c) => c.backfill && c.file)) {
+    fs.writeFileSync(path.join(dir, c.file!), JSON.stringify({ provenance: { revision: c.revision } }));
+  }
+  return dir;
 }
 
 /** A history over a real file — `stored()` below writes one, then this file reopens the same `dir`
@@ -121,6 +129,18 @@ test("a stale stamp is pending; the current one is not", () => {
   // A file written by a *newer* build is not stale — putting it "right" would be a downgrade eating
   // the better answer, which `dataState` is careful about.
   assert.deepEqual(pendingReReads(stored(current + 1, logPath)), []);
+});
+
+test("a backfill store that has never been written is pending; once written, it is not", () => {
+  const logDir = tempDir();
+  const logPath = path.join(logDir, "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(logPath, LOG_LINES);
+  const dir = stored(concernById("combat-history")!.revision, logPath);
+  fs.rmSync(path.join(dir, "npc-sightings.json"));
+  // New in a release, read entirely off the logs: the first start that has it reads them (ADR 0298).
+  assert.deepEqual(pendingReReads(dir), ["npc-sightings"]);
+  fs.writeFileSync(path.join(dir, "npc-sightings.json"), JSON.stringify({ provenance: { revision: 1 }, entries: {} }));
+  assert.deepEqual(pendingReReads(dir), []);
 });
 
 test("a stale history is re-read and its figures put right, with nothing asked of anybody", async () => {

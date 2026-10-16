@@ -335,6 +335,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0295: A quest is a tree of steps — its links are asked what they are when shown](./0295-a-quest-is-a-tree-of-steps.md)
 - [0296: Spell sources are generated static data — a sortable Source column finds the quest spells](./0296-spell-sources-are-generated-static-data.md)
 - [0297: A spell no class can cast is not in the spell list — NPC, proc and focus spells hide by default](./0297-a-spell-no-class-can-cast-is-not-in-the-spell-list.md)
+- [0298: NPC sightings place what you never kill — a hail, a /say or a consider, paired with your nearest /loc](./0298-npc-sightings-place-what-you-never-kill.md)
 
 ## Open Questions
 

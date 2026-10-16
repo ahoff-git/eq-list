@@ -33,6 +33,7 @@ import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
 import type { FactionLog } from "./faction-log";
 import type { FactionCorrections } from "./faction-corrections";
+import type { NpcSightings } from "./npc-sightings";
 import { applyFactionCorrections } from "../src/shared/faction/faction-correction";
 import type { AutoUpdater } from "./auto-update";
 import type { MobKnowledgeStore } from "./mob-knowledge";
@@ -81,6 +82,8 @@ export interface IpcContext {
   factionLog: FactionLog;
   /** The player's own stated faction totals, layered onto `factionLog`'s standings on read (`faction-corrections.ts`). */
   factionCorrections: FactionCorrections;
+  /** Everyone you've hailed, heard, or considered, and where you stood (`npc-sightings.ts`, ADR 0298). */
+  npcSightings: NpcSightings;
   updates: AutoUpdater;
   mobs: MobKnowledgeStore;
   /** Pooled, *verified* faction-cause evidence — the pooled half of `faction-cause.ts`'s guess, once
@@ -195,7 +198,7 @@ function registerListIpc(context: IpcContext): void {
  * Settings, the cast-alert test, and digesting a past log — the Settings tab's own surface.
  */
 function registerSettingsIpc(context: IpcContext): void {
-  const { store, watcher, combat, history, killLog, lootLog, factionLog, broadcast } = context;
+  const { store, watcher, combat, history, killLog, lootLog, factionLog, npcSightings, broadcast } = context;
 
   // ── panel settings ──
   // Built here rather than by main: nothing outside this bridge reads it, and it needs only the
@@ -327,7 +330,8 @@ function registerSettingsIpc(context: IpcContext): void {
     const file = res.filePaths[0];
     const live = characterFromLogFile(watcher.status().file) ?? "";
     try {
-      const result = digestLog(file, live, killLog, history, lootLog, factionLog);
+      const result = digestLog(file, live, killLog, history, lootLog, factionLog, npcSightings);
+      npcSightings.flush();
       killLog.flush();
       history.flush();
       lootLog.flush();
@@ -482,7 +486,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot, faction standing and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight"]): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, factionCorrections, mobs, factionObservations, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, factionCorrections, npcSightings, mobs, factionObservations, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // Pooled the same way the live push and a filed fight both are (ADR 0276) — a reader that opens
   // the Combat tab mid-fight gets the same merged figures `CH.combatChanged` would have pushed it,
@@ -523,6 +527,7 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
     lootLog.clear(scope);
     factionLog.clear(scope);
     factionCorrections.clear(scope);
+    npcSightings.clear(scope);
     broadcast(CH.killsChanged, undefined);
     broadcast(CH.dataChanged, undefined);
   });
@@ -779,6 +784,7 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
   // to supply and no host to validate against; the ↗ button in `RaceUnlocksView` is its only caller.
   ipcMain.handle(CH.raceUnlocksOpenCheatSheet, () => shell.openExternal(RACE_UNLOCK_CHEAT_SHEET_URL));
   ipcMain.handle(CH.mobsAll, (_e, zone?: string) => mobs.all(zone));
+  ipcMain.handle(CH.sightingsOf, (_e, name: string) => npcSightings.of(name));
   ipcMain.handle(CH.mobsMine, (_e, zone?: string) => mobs.mine(zone));
   // Who has told us what. Reporting is **not** here: contributions are filed by `registerPeerIpc`
   // as they arrive, so nothing depends on a particular window being open to receive them.

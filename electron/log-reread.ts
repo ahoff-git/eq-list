@@ -39,6 +39,7 @@ import type { CombatHistory } from "./combat-history";
 import type { FactionLog } from "./faction-log";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
+import type { NpcSightings } from "./npc-sightings";
 
 const log = createLogger("log-reread");
 
@@ -70,6 +71,7 @@ export interface ReReadDeps {
   killLog: KillLog;
   lootLog?: LootLog;
   factionLog?: FactionLog;
+  npcSightings?: NpcSightings;
   /** Where logs live now, for a source recorded under a folder that has since moved. */
   logDir: string;
   /** The character being watched, so the kill log's identity is restored to it afterwards. */
@@ -82,7 +84,7 @@ export interface ReReadDeps {
  */
 export function pendingReReads(userDataDir: string): string[] {
   return dataReport(userDataDir)
-    .filter((row) => row.state === "stale" && row.concern.unattended)
+    .filter((row) => row.concern.unattended && (row.state === "stale" || (row.state === "absent" && row.concern.backfill)))
     .map((row) => row.concern.id);
 }
 
@@ -133,7 +135,7 @@ export async function reReadLogs(deps: ReReadDeps): Promise<ReReadReport | null>
   for (const file of sources) {
     await breathe(); // before the work, so the first file is off the caller's tick too
     try {
-      const res = digestLog(file, deps.live, deps.killLog, deps.history, deps.lootLog, deps.factionLog);
+      const res = digestLog(file, deps.live, deps.killLog, deps.history, deps.lootLog, deps.factionLog, deps.npcSightings);
       report.files.push(file);
       report.refreshed += res.refreshed;
       report.added += res.fights;
@@ -156,6 +158,7 @@ export async function reReadLogs(deps: ReReadDeps): Promise<ReReadReport | null>
   deps.killLog.flush();
   deps.lootLog?.flush();
   deps.factionLog?.flush();
+  deps.npcSightings?.flush();
   log.info(
     `re-read ${report.files.length} log(s) in ${report.ms}ms: ${report.refreshed} fights redone, ` +
       `${report.added} added, ${report.placed} drops placed`,
