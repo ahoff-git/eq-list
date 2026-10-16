@@ -2534,6 +2534,12 @@ kbd {
   padding: 2px 6px;
   max-width: 55%;
 }
+/* A dropdown's options take their colours from the select, so one styled as a ghost button (the List
+   tab's "＋ Quest pickups…") opened light-on-white. Give every option the input colours outright. */
+select option {
+  background: var(--bg-input);
+  color: var(--text);
+}
 /* The map source sits left of the zone picker and stays narrow — the zone name is the
    thing worth reading, and the titlebar has to fit both. */
 .map-source-select { max-width: 22%; }
