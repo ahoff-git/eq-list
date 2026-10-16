@@ -128,7 +128,8 @@ list, hunt, search, damage, session, peers, settings.
   bundled plan (the class epics and the Plane of Sky tests), stages of steps replace the generic step
   tree. A segmented switch shows them by stage or by zone, and by island inside Plane of Sky. Each step
   has its mark (ticking it marks its items obtained on the list), what it gets you as links, who,
-  where (zone and spot open the map), and an era badge when its zone isn't open. The header counts done
+  where (zone and spot open the map), and an era badge when its zone isn't open. A step with no place
+  says why (any vendor, combine anywhere, see its sub-steps, …), and a continuation shows "same place ↑". The header counts done
   steps and steps not in era. See
   [ADR 0300](../decisions/0300-a-long-quest-is-a-plan-of-stages.md).
 - **A quest pickup's page is built, not fetched** (`components/items/PickupPageView.tsx`). A title

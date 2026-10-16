@@ -7,10 +7,11 @@ import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
 import { segCls } from "@/app/components/ui";
 import {
   planByZone,
+  stagePlaces,
   progressOf,
-  stepPlace,
   stepStatus,
   type HasItem,
+  type NoPlaceReason,
   type PlanStage,
   type PlanStep,
   type QuestPlan,
@@ -18,6 +19,19 @@ import {
 } from "@/shared/quests/quest-plans";
 
 const MARK = { done: "✓", todo: "○", info: "·" } as const;
+
+/** What to say for a step that names no place — every one has a reason, and most have no place to have. */
+const NO_PLACE: Record<NoPlaceReason, string> = {
+  vendor: "any vendor",
+  combine: "combine anywhere",
+  forage: "forage",
+  spell: "cast anywhere",
+  "sub-steps": "see its sub-steps",
+  quest: "another quest",
+  note: "note",
+  various: "various places",
+  unstated: "place not stated",
+};
 
 /**
  * A long quest as its plan — stages of steps, or the same steps by zone — with each step's place and
@@ -43,7 +57,7 @@ export default function QuestPlanView({ plan }: { plan: QuestPlan }) {
   const tracked = entries.size > 0;
   const all = plan.stages.flatMap((s) => s.steps);
   const { done, total } = progressOf(all, has);
-  const shutSteps = all.filter((st) => stepPlace(st, closed).shut).length;
+  const shutSteps = plan.stages.flatMap((s) => stagePlaces(s, closed, plan)).filter((p) => p.shut).length;
 
   /** Tick or untick a step: every item it gets, obtained in full or not at all. */
   const toggle = (step: PlanStep) => {
@@ -89,7 +103,7 @@ export default function QuestPlanView({ plan }: { plan: QuestPlan }) {
         <ZoneView plan={plan} closed={closed} has={has} tracked={tracked} toggle={toggle} />
       ) : (
         plan.stages.map((stage) => (
-          <StageView key={stage.title} stage={stage} closed={closed} has={has} tracked={tracked} toggle={toggle} />
+          <StageView key={stage.title} stage={stage} plan={plan} closed={closed} has={has} tracked={tracked} toggle={toggle} />
         ))
       )}
     </div>
@@ -102,8 +116,9 @@ interface RowProps {
   toggle: (step: PlanStep) => void;
 }
 
-function StageView({ stage, closed, ...row }: { stage: PlanStage; closed: ReadonlySet<string> } & RowProps) {
+function StageView({ stage, plan, closed, ...row }: { stage: PlanStage; plan: QuestPlan; closed: ReadonlySet<string> } & RowProps) {
   const { done, total } = progressOf(stage.steps, row.has);
+  const places = stagePlaces(stage, closed, plan);
   return (
     <>
       <h5 className="plan-stage">
@@ -113,7 +128,7 @@ function StageView({ stage, closed, ...row }: { stage: PlanStage; closed: Readon
       </h5>
       <ul className="plan-steps">
         {stage.steps.map((step, i) => (
-          <StepRow key={i} step={step} place={stepPlace(step, closed)} {...row} />
+          <StepRow key={i} step={step} place={places[i]} {...row} />
         ))}
       </ul>
     </>
@@ -123,10 +138,10 @@ function StageView({ stage, closed, ...row }: { stage: PlanStage; closed: Readon
 function ZoneView({ plan, closed, ...row }: { plan: QuestPlan; closed: ReadonlySet<string> } & RowProps) {
   return (
     <>
-      {planByZone(plan, closed).map(({ zone, area, steps }) => (
-        <div key={`${zone}|${area ?? ""}` || "nowhere"}>
+      {planByZone(plan, closed).map(({ zone, area, why, steps }) => (
+        <div key={`${zone}|${area ?? ""}|${why ?? ""}`}>
           <h5 className="plan-stage">
-            {zone ? <ZoneLink zone={zone} /> : <span className="muted">No place stated</span>}
+            {zone ? <ZoneLink zone={zone} /> : <span className="muted">No place · {NO_PLACE[why ?? "unstated"]}</span>}
             {area && <span> · {area}</span>}
             {steps[0]?.place.shut && <EraBadge place={steps[0].place} />}
           </h5>
@@ -186,6 +201,8 @@ function StepRow({
 function PlaceLinks({ place, hideZone }: { place: StepPlace; hideZone?: boolean }) {
   return (
     <span className="muted small plan-place">
+      {place.why && !hideZone && <span>{NO_PLACE[place.why]}</span>}
+      {place.inherited && <span title="Where the step before it happens">same place ↑</span>}
       {place.who && <ItemLink title={place.who.name} />}
       {!hideZone && place.zone && (place.mapped ? <ZoneLink zone={place.zone} /> : <span>{place.zone}</span>)}
       {place.area && <span>{place.area}</span>}

@@ -13,6 +13,7 @@ import {
   planQuestPage,
   progressOf,
   QUEST_PLANS,
+  stagePlaces,
   stepPlace,
   stepStatus,
   withQuestPlan,
@@ -230,4 +231,39 @@ test("every plan's stops land inside the zone map they're pinned on", (t) => {
     }
   }
   assert.ok(pins > 500, `only ${pins} pins checked`);
+});
+
+test("in a stage's company: a continuation is placed where the step before it was, a first name finds its person, and every placeless step says why", () => {
+  const placed = (quest: string, find: (t: string) => boolean) => {
+    const plan = planFor(quest)!;
+    for (const stage of plan.stages) {
+      const i = stage.steps.findIndex((s) => find(s.text));
+      if (i >= 0) return stagePlaces(stage, undefined, plan)[i];
+    }
+    throw new Error(`no step in ${quest}`);
+  };
+  // "Receive the Jeweled Dragon Head Hilt" follows the hand-in to Wenden in East Freeport.
+  const hilt = placed("Warrior Epic Quest", (t) => t.startsWith("Receive the Jeweled Dragon Head Hilt"));
+  assert.equal(hilt.inherited, true);
+  assert.equal(hilt.zone, "East Freeport");
+  // "…Find Jark in North Kaladim. Tell him…" names its own zone (an alias), and a "him" mid-sentence
+  // doesn't make it a continuation of the Plane of Hate step before it.
+  const jark = placed("Paladin Epic Quest", (t) => t.startsWith("Do the Pure Crystal Quest"));
+  assert.equal(jark.zone, "North Kaladim");
+  assert.equal(jark.inherited, undefined);
+  // "Return Translated Parchment to Stanos": the one Stanos this plan places.
+  assert.equal(placed("Rogue Epic Quest", (t) => t.startsWith("Return Translated Parchment to Stanos")).who?.name, "Stanos Herkanor");
+  // No place, and a reason for it.
+  assert.equal(placed("Enchanter Epic Quest", (t) => t.startsWith("Purchase a Quill")).why, "vendor");
+  assert.equal(placed("Druid Epic Quest", (t) => t.startsWith("Create a Summoned: Firefly Globe")).why, "spell");
+
+  // Across every plan, a step is placed or says why — and few are left with nothing to say.
+  let unstated = 0;
+  for (const plan of QUEST_PLANS)
+    for (const stage of plan.stages)
+      for (const p of stagePlaces(stage, undefined, plan)) {
+        assert.ok(p.zone || p.why, `${plan.quest} / ${stage.title}: a step with neither a place nor a reason`);
+        if (p.why === "unstated") unstated++;
+      }
+  assert.ok(unstated <= 10, `${unstated} steps that should name a place and don't`);
 });

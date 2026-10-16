@@ -73,12 +73,18 @@ you're on. The List tab's picker offers every plan under **Long quests**.
      becomes Northern Felwithe for Elia the Pure);
   3. any zone page the sentence names.
 
-  A person the step names without linking is found among the plan's placed people (Kazen Fecae). A
-  zone still unmapped is out of era when its own wiki page is tagged with a later era ("Burning Woods":
-  Kunark), since the gazetteer carries every zone this server runs. Of 732 steps, 563 open the map, 98
-  are out of era, 2 say "Various", and 69 name no place by nature: combines, purchases, foraging, and
-  "Acquire X" headers whose sub-steps carry the places.
-- A test pins every plan's stops inside the drawn map of the zone they're pinned on: 813 pins across
+  A person the step names without linking is found among the plan's placed people (Kazen Fecae), or
+  by a first name that is theirs alone in the plan ("Stanos"). A zone still unmapped is out of era when
+  its own wiki page is tagged with a later era ("Burning Woods": Kunark), since the gazetteer carries
+  every zone this server runs.
+- **A stage is placed as a whole** (`stagePlaces`), so a step reads the steps around it. A
+  continuation ("Receive the Jeweled Dragon Head Hilt", "2. Give him …") happens where the step before
+  it did. A step that names no place says why: a vendor, a combine, foraging, a spell, its sub-steps,
+  another quest, or a note. The view groups these under their reason, not one "no place" heap. Of 732
+  steps, 580 open the map, 99 are out of era, 5 are continuations, 45 have a stated reason for having
+  no place, and 8 are the wiki not saying where ("Kill a white dragon (Lady Vox, Gorenaire)"). A test
+  holds every step to having a place or a reason, and the unstated ones to a handful.
+- A test pins every plan's stops inside the drawn map of the zone they're pinned on: 814 pins across
   all 30 plans, wherever the map files are on disk.
 - Someone whose page states no spot is placed by their zone map's own label (`scripts/lib/map-labels.mjs`),
   ignoring a legend column. That places the Plane of Sky's island bosses, whose item codes ("3-Gorga")

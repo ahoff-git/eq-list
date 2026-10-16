@@ -17,7 +17,7 @@
 import type { WikiPage } from "../types";
 import { mobKey } from "../mob/mob-stats";
 import { zoneUnavailable, type ZoneUnavailable } from "../zones/expansions";
-import { CURATED_ZONES } from "../zones/gazetteer";
+import { CURATED_ZONES, ZONE_NAME_PAIRS } from "../zones/gazetteer";
 import { isKnownPlace, placeName, samePlace } from "../zones/place";
 import {
   QUEST_PLAN_PEOPLE,
@@ -80,7 +80,18 @@ export interface StepPlace {
   mapped: boolean;
   /** Why you can't go there yet, if you can't: an expansion this server lacks, or one not open. */
   shut?: ZoneUnavailable;
+  /** Read from the step before it — "Receive the Jeweled Dragon Head Hilt" happens where the hand-in did. */
+  inherited?: boolean;
+  /** For a step with no place: why not, so "nowhere" is a statement rather than a gap. */
+  why?: NoPlaceReason;
 }
+
+/**
+ * Why a step names no place. Most are steps that have none: a purchase from any vendor, a combine you do
+ * where you stand, foraging, a spell you cast where you are, a line whose sub-steps carry the places, a pointer to another quest, or a
+ * note between steps. `unstated` is what's left: a step that should say where and doesn't.
+ */
+export type NoPlaceReason = "vendor" | "combine" | "forage" | "spell" | "sub-steps" | "quest" | "note" | "various" | "unstated";
 
 /**
  * The one zone a person's page means for this step. A page can name several ("Lake Rathetear /
@@ -98,7 +109,12 @@ function personZone(who: PlanPerson | undefined, text: string): string | undefin
 }
 
 /** Every zone the map knows, longest name first, so "East Freeport" is found before "Freeport". */
-const MAPPED_NAMES = [...new Set(CURATED_ZONES.map((z) => z.name))].sort((a, b) => b.length - a.length);
+const MAPPED_NAMES = [
+  ...new Set([...CURATED_ZONES.map((z) => z.name), ...ZONE_NAME_PAIRS.flatMap((p) => [p.alias, p.canonical])]),
+]
+  // Aliases too ("North Kaladim" is one), but only real words: "Kaladim A" is a file's name, not prose.
+  .filter((name) => name.length >= 5 && !/\s[A-Z]$/.test(name) && isKnownPlace(name))
+  .sort((a, b) => b.length - a.length);
 
 /**
  * A zone the map knows, named in the step's own sentence: Kargek's page says only "Freeport", but the
@@ -179,12 +195,77 @@ export function stepPlace(step: PlanStep, closed?: ReadonlySet<string>): StepPla
   };
 }
 
+/** "Receive …", "Return …", "1. Give him …": a step that carries on where the one before it happened. */
+const CONTINUES = /^(?:\d+\.\s*)?(?:receive|recieve|return|hand\b|take\b|then\b|(?:give|tell|talk to|hail) (?:him|her|it)\b)/i;
+const NOTE = /^(?:save |note|super |lots of |\(optional\)\s*acquire level)|\bimportant\b/i;
+const QUEST_POINTER = /\b(?:via quests?|sub-quest|quest for|complete quest|do the .* quest)\b/i;
+
+/**
+ * Every step of a stage placed, reading each in the company of the steps around it — what a single
+ * step can't know on its own:
+ *
+ *   - **a continuation** ("Receive the Jeweled Dragon Head Hilt", "1. Give him Cazic's Skin") happens
+ *     where the step before it did;
+ *   - **someone named by first name** ("Return Translated Parchment to Stanos") is the one person of that
+ *     first name this plan places elsewhere;
+ *   - **a step with no place says why** — a vendor, a combine, foraging, its sub-steps, another quest, a
+ *     note — and only a step that should name somewhere and doesn't is `unstated`.
+ */
+export function stagePlaces(stage: PlanStage, closed?: ReadonlySet<string>, plan?: QuestPlan): StepPlace[] {
+  const firstNames = plan ? planFirstNames(plan) : new Map<string, string>();
+  const out: StepPlace[] = [];
+  stage.steps.forEach((step, i) => {
+    let place = stepPlace(step, closed);
+    if (!place.zone && !step.who) {
+      const first = [...firstNames.keys()].find((n) => new RegExp(`\\b${escapeRe(n)}\\b`, "i").test(step.text));
+      if (first) place = stepPlace({ ...step, who: firstNames.get(first) }, closed);
+    }
+    const before = out[i - 1];
+    if (!place.zone && before?.zone && CONTINUES.test(step.text) && !QUEST_POINTER.test(step.text))
+      place = { ...before, inherited: true, why: undefined };
+    if (!place.zone || /^various/i.test(place.zone)) place = { ...place, why: noPlaceReason(stage, i) };
+    out.push(place);
+  });
+  return out;
+}
+
+function noPlaceReason(stage: PlanStage, i: number): NoPlaceReason {
+  const step = stage.steps[i];
+  const next = stage.steps[i + 1];
+  if (step.zone && /^various/i.test(step.zone)) return "various";
+  if (next && next.depth > step.depth) return "sub-steps";
+  if (step.kind === "buy") return "vendor";
+  if (step.kind === "combine") return "combine";
+  if (/\bforag/i.test(step.text)) return "forage";
+  if (/^(?:create|scribe|summon|cast)\b/i.test(step.text)) return "spell";
+  if (step.kind === "quest" || QUEST_POINTER.test(step.text)) return "quest";
+  if (NOTE.test(step.text)) return "note";
+  return "unstated";
+}
+
+/** A plan's people by first name, where that first name is theirs alone in the plan: "Stanos" → Stanos Herkanor. */
+function planFirstNames(plan: QuestPlan): Map<string, string> {
+  const count = new Map<string, string[]>();
+  for (const s of plan.stages)
+    for (const st of s.steps) {
+      if (!st.who || !QUEST_PLAN_PEOPLE[st.who]?.zone) continue;
+      const first = st.who.split(/\s+/)[0];
+      if (first.length < 4 || /^(?:an?|the)$/i.test(first)) continue;
+      const list = count.get(first) ?? [];
+      if (!list.includes(st.who)) list.push(st.who);
+      count.set(first, list);
+    }
+  return new Map([...count].filter(([, who]) => who.length === 1).map(([first, who]) => [first, who[0]]));
+}
+
 /** One zone's (or one island's) share of a plan: every step there, with the stage it belongs to. */
 export interface PlanZone {
   /** The place, named the way the rest of the app names it ("" for steps that name nowhere). */
   zone: string;
   /** Part of the zone, where the plan splits it — a Plane of Sky island. */
   area?: string;
+  /** For the steps that name no zone: why not — one group per reason. */
+  why?: NoPlaceReason;
   steps: { stage: PlanStage; step: PlanStep; place: StepPlace }[];
 }
 
@@ -197,13 +278,15 @@ export interface PlanZone {
 export function planByZone(plan: QuestPlan, closed?: ReadonlySet<string>): PlanZone[] {
   const out = new Map<string, PlanZone>();
   for (const stage of plan.stages) {
-    for (const step of stage.steps) {
-      const place = stepPlace(step, closed);
-      const zone = place.zone ? placeName(place.zone) : "";
-      const key = `${zone}|${place.area ?? ""}`.toLowerCase();
-      if (!out.has(key)) out.set(key, { zone, ...(place.area ? { area: place.area } : {}), steps: [] });
+    const places = stagePlaces(stage, closed, plan);
+    stage.steps.forEach((step, i) => {
+      const place = places[i];
+      // "Various" is a zone in name only; it groups with the other steps that name nowhere, by reason.
+      const zone = place.zone && !place.why ? placeName(place.zone) : "";
+      const key = `${zone}|${place.area ?? ""}|${zone ? "" : place.why}`.toLowerCase();
+      if (!out.has(key)) out.set(key, { zone, ...(place.area ? { area: place.area } : {}), ...(zone ? {} : { why: place.why }), steps: [] });
       out.get(key)!.steps.push({ stage, step, place });
-    }
+    });
   }
   const zones = [...out.values()];
   return [...zones.filter((z) => z.zone), ...zones.filter((z) => !z.zone)];
@@ -246,10 +329,11 @@ export function planPins(
     const has: HasItem = (item) => !missing.has(item.toLowerCase());
     const current = currentStage(plan, has);
     for (const stage of plan.stages) {
-      for (const step of stage.steps) {
+      const places = stagePlaces(stage, undefined, plan);
+      for (const [i, step] of stage.steps.entries()) {
         const status = stepStatus(step, has);
         if (status === "done" || (status === "info" && stage !== current)) continue;
-        const place = stepPlace(step);
+        const place = places[i];
         if (!place.zone || !place.loc || !inZone(place.zone)) continue;
         const name = place.who?.name ?? step.gets[0] ?? stage.title;
         const id = `plan:${plan.quest}:${mobKey(name)}:${Math.round(place.loc.y)},${Math.round(place.loc.x)}`;
