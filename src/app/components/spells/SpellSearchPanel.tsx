@@ -67,6 +67,12 @@ export default function SpellSearchPanel() {
           checked={active.hideOutOfEra}
           onChange={(hideOutOfEra) => set({ hideOutOfEra })}
         />
+        <CheckField
+          label="player spells only"
+          title="Hide what no class can cast — NPC abilities, weapon procs, focus and potion effects"
+          checked={active.playerOnly}
+          onChange={(playerOnly) => set({ playerOnly })}
+        />
         <span className="spacer" />
         {conditions > 0 && (
           <button className="btn sm" onClick={() => setCriteria(NO_CRITERIA)} title="Drop every criterion">

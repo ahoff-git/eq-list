@@ -64,13 +64,16 @@ export interface SpellCriteria {
   classes: string[];
   /** Drop what the server hasn't opened yet — the same toggle the Items tab has. */
   hideOutOfEra: boolean;
+  /** Drop what no player class can cast — NPC abilities, procs, focus and potion effects. */
+  playerOnly: boolean;
 }
 
-export const NO_CRITERIA: SpellCriteria = { text: "", classes: [], hideOutOfEra: true };
+export const NO_CRITERIA: SpellCriteria = { text: "", classes: [], hideOutOfEra: true, playerOnly: true };
 
 /** How many conditions are currently cutting the list. */
 export function activeCriteria(c: SpellCriteria): number {
-  // The era flag is deliberately not counted — see `item-search.ts`'s `activeCriteria` for why.
+  // The era and player-only flags are deliberately not counted — see `item-search.ts`'s
+  // `activeCriteria` for why.
   return (c.text.trim() ? 1 : 0) + (c.classes.length ? 1 : 0);
 }
 
@@ -87,9 +90,19 @@ function matchesText(title: string, text: string): boolean {
   return words.every((w) => name.includes(w));
 }
 
+/**
+ * Can some player class cast it? A card that reads but names no class is an NPC ability, a proc, a
+ * focus or a potion effect (ADR 0297). A card with no lines at all says nothing either way, so it
+ * keeps its row — the same benefit of the doubt `pastLevelCap` gives it.
+ */
+export function isPlayerSpell(row: SpellRow): boolean {
+  return minLevel(row.stats.levels) !== undefined || !row.spell.card?.lines.length;
+}
+
 /** Does this row survive every criterion? */
 export function matchesSpell(row: SpellRow, c: SpellCriteria): boolean {
   if (c.hideOutOfEra && row.spell.outOfEra) return false;
+  if (c.playerOnly && !isPlayerSpell(row)) return false;
   if (!matchesText(row.spell.title, c.text)) return false;
   if (c.classes.length && !c.classes.some((cls) => row.stats.levels[cls] !== undefined)) return false;
   return true;
@@ -136,6 +149,10 @@ export function searchSpells(rows: readonly SpellRow[], criteria: SpellCriteria,
   if (criteria.hideOutOfEra) {
     const outOfEra = rows.reduce((n, row) => n + (row.spell.outOfEra ? 1 : 0), 0);
     if (outOfEra) log.debug("era filter hiding", outOfEra, "of", rows.length, "cached spells");
+  }
+  if (criteria.playerOnly) {
+    const npcOnly = rows.reduce((n, row) => n + (isPlayerSpell(row) ? 0 : 1), 0);
+    if (npcOnly) log.debug("player-only filter hiding", npcOnly, "of", rows.length, "cached spells");
   }
   const kept = rows.filter((row) => matchesSpell(row, criteria));
   // Ties break by name, the same way `searchItems` does — `sortRows` is stable.

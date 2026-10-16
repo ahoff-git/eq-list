@@ -110,7 +110,8 @@ test("hideOutOfEra cuts a flagged spell by default, and untucking it brings the 
   const found = searchSpells(withEra, NO_CRITERIA, { key: "name", desc: false });
   assert.ok(!found.some((r) => r.spell.title === "Ice Comet"), "out-of-era spell is hidden by default");
 
-  const shown = searchSpells(withEra, { ...NO_CRITERIA, hideOutOfEra: false }, { key: "name", desc: false });
+  // Ice Comet's fixture names no class, so the player-only cut is lifted to test the era toggle alone.
+  const shown = searchSpells(withEra, { ...NO_CRITERIA, hideOutOfEra: false, playerOnly: false }, { key: "name", desc: false });
   assert.ok(shown.some((r) => r.spell.title === "Ice Comet"), "unticking the toggle brings it back");
 });
 
@@ -126,6 +127,17 @@ test("a spell no class can cast under the live level cap is out of era, whatever
   assert.equal(flagged("Ice Comet"), true, "a wiki flag survives even with no class to judge by");
   assert.equal(searchSpells(corpus, NO_CRITERIA, { key: "name", desc: false }).length, CATALOGUE.length + 1);
   assert.equal(spellEraRows(spellRows([unflagged]), 60)[0].spell.outOfEra, undefined, "the day the cap rises");
+});
+
+test("playerOnly cuts a card that names no class by default, but never a card that says nothing", () => {
+  // Blinding Fear's real card: "Classes: This spell is cast by NPCs only." — and no era category.
+  const npc = spell("Blinding Fear", ["Blinds you with terror. Cast by Trakanon.", "Classes: This spell is cast by NPCs only."]);
+  const corpus = spellRows([...CATALOGUE, npc]);
+  const titles = (c: SpellCriteria) => searchSpells(corpus, c, { key: "name", desc: false }).map((r) => r.spell.title);
+
+  assert.ok(!titles(NO_CRITERIA).includes("Blinding Fear"), "an NPC-only spell is hidden by default");
+  assert.ok(titles(NO_CRITERIA).includes("Unknowable Rune"), "a cardless page keeps the benefit of the doubt");
+  assert.ok(titles({ ...NO_CRITERIA, playerOnly: false }).includes("Blinding Fear"), "unticking brings it back");
 });
 
 test("classOptions lists every class any cached spell names", () => {
