@@ -478,7 +478,8 @@ world coordinates, so a map knows where it is. See
 - **Quest NPCs** (`src/shared/map/quest-npc-pins.ts`, pure — `electron/tests/quest-pickups.test.ts`)
   — the people a pickup quest sends you to, such as Coin of Tash's four coin enchanters
   ([ADR 0293](../decisions/0293-quest-npcs-are-bundled-and-pinned-while-their-quest-is-listed.md)).
-  Bundled beside the pickups from each NPC's own wiki page. Pinned while any entry under their quest
+  Bundled beside the pickups from each NPC's own wiki page, or, where the page gives no spot, a
+  `/loc` measured in game (`MEASURED_NPC_PLACES` in the generator; Sulgar). Pinned while any entry under their quest
   is still needed, drawn as pickup pins are, captioned with the NPC's name, and the hover gives the
   quest's checklist steps for them.
 - **Named spawns** (`src/shared/map/named-pins.ts`, pure — `electron/tests/named-pins.test.ts`) —

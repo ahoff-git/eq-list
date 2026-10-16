@@ -35,6 +35,15 @@ const PAGES = [
   { page: "Coin of Tash (Tashania)", quest: "Coin of Tash (Tashania)", item: "Old Silver Coin", from: "checklist" },
 ];
 
+/**
+ * Where an NPC stands when their wiki page doesn't say — measured in game, so a quest's NPC still gets
+ * a pin. Used only as a fallback: once the page states a location, the page wins.
+ */
+const MEASURED_NPC_PLACES = {
+  // `/loc` beside him while handing in Tarton's Wheel, 2026-10-14. His page has only a map image.
+  Sulgar: { zone: "Everfrost Peaks", loc: { y: 2998, x: -2399 }, note: "" },
+};
+
 const WIKI = "https://eqlwiki.com";
 const OUT = path.join(ROOT, "src/shared/quests/quest-pickups.generated.ts");
 const dryRun = flag("dry-run");
@@ -142,7 +151,7 @@ async function questNpcs(questTexts) {
   for (const { quest, text, names } of wanted) {
     const unplaced = [];
     for (const npc of names) {
-      const place = npcPlace(npcTexts.get(npc) ?? "");
+      const place = npcPlace(npcTexts.get(npc) ?? "") ?? MEASURED_NPC_PLACES[npc];
       if (!place) {
         unplaced.push(npc);
         continue;

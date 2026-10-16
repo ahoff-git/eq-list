@@ -2,11 +2,11 @@
  * Quest items that lie on the ground at a known spot — GENERATED, do not edit by hand.
  *
  * Regenerate with `node scripts/fetch-quest-pickups.mjs`, which reads eqlwiki's quest-page
- * pickup tables (scraped 2026-10-15T17:16:44.800Z). Shipped rather than fetched at runtime — see
+ * pickup tables (scraped 2026-10-16T05:16:48.963Z). Shipped rather than fetched at runtime — see
  * [ADR 0291](../../../specs/decisions/0291-quest-pickups-are-generated-static-data.md). Read it
  * through `quest-pickups.ts`, which owns how a pickup is named on the list and placed on the map.
  *
- * 20 pickups, 4 quest NPCs.
+ * 20 pickups, 5 quest NPCs.
  */
 
 export interface QuestPickup {
@@ -42,7 +42,7 @@ export interface QuestNpc {
   note: string;
 }
 
-export const QUEST_PICKUPS_SOURCE = { wiki: "https://eqlwiki.com", pages: ["Tarton's Wheel","Coin of Tash (Tashania)"], scrapedAt: "2026-10-15T17:16:44.800Z" };
+export const QUEST_PICKUPS_SOURCE = { wiki: "https://eqlwiki.com", pages: ["Tarton's Wheel","Coin of Tash (Tashania)"], scrapedAt: "2026-10-16T05:16:48.963Z" };
 
 export const QUEST_PICKUPS: QuestPickup[] = [
   {
@@ -301,6 +301,17 @@ export const QUEST_PICKUPS: QuestPickup[] = [
 ];
 
 export const QUEST_NPCS: QuestNpc[] = [
+  {
+    "quest": "Tarton's Wheel",
+    "npc": "Sulgar",
+    "zone": "Everfrost Peaks",
+    "loc": {
+      "y": 2998,
+      "x": -2399
+    },
+    "steps": [],
+    "note": ""
+  },
   {
     "quest": "Coin of Tash (Tashania)",
     "npc": "Romar Sunto",

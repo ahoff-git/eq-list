@@ -82,6 +82,14 @@ test("Coin of Tash's four NPCs are placed by their own pages, with the steps tha
   assert.equal(npcs[2].note, "");
 });
 
+test("an NPC whose page states no spot is placed by the measured fallback", () => {
+  // Sulgar's page has only a map image; his spot is a `/loc` taken beside him.
+  const [sulgar] = npcsForQuest("Tarton's Wheel");
+  assert.equal(sulgar?.npc, "Sulgar");
+  assert.equal(sulgar?.zone, "Everfrost Peaks");
+  assert.deepEqual(sulgar?.loc, { y: 2998, x: -2399 });
+});
+
 test("every quest NPC's zone is one the map can open", () => {
   for (const n of QUEST_NPCS) assert.ok(isKnownPlace(n.zone), `${n.npc}: "${n.zone}"`);
 });
