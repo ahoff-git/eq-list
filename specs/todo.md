@@ -288,6 +288,13 @@ everything else, so this list can stay short enough to read:
   ([ADR 0048](./decisions/0048-a-map-label-is-read-by-its-words.md)) — worth re-tallying rather than
   patching blind.
 
+- **"West Cabilis" and "East Cabilis" don't resolve to Cabilis.** The wiki's merchant tables name the
+  two halves; the expansion table and the wiki's own out-of-era list both say `Cabilis`. So
+  `zoneShut("West Cabilis", closed)` is `undefined` while Kunark is shut, and a Cabilis merchant reads
+  as somewhere to buy: on an item page's "How to get it" and in the Tradeskills hover ("Buy: Klok
+  Scaleroot (West Cabilis)…" for Birthwort). Probably one alias in the zone resolver, but it is the
+  resolver every era check shares, so it wants its own look at what else the fold would catch.
+
 ## From the neighbours
 
 Changes decided by reading **EQBuddy** and **eql-tooltip**, both of which solve our problems for

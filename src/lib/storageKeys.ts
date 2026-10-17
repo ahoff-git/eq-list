@@ -78,6 +78,9 @@ export const STORAGE_KEYS = {
   /** Main window: the AAs tab's standing answers — same workbench reasoning as the Spells/Stances
    *  tabs: this is reference data you come back to, not a search you ran a moment ago. */
   aaCriteria: "eqlist.main.aaCriteria",
+  /** Main window: the Tradeskills tab's skill on screen and its era toggle — reference you come back
+   *  to, so it reopens where you left it. */
+  tradeskillView: "eqlist.main.tradeskillView",
   /**
    * Main window: the Loot tab's standing answers — which half you're reading, what you've narrowed
    * the feed to, and the order of each table.

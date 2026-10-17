@@ -58,6 +58,7 @@ import type { FactionObservation } from "../faction/faction-observation";
 import type { SharedKill } from "../kills/kill-filters";
 import type { BuffInstance, BuffRiseSource } from "../buffs/buff-tracking";
 import type { RespawnLearning, SpawnTimer } from "../mob/spawn-timers";
+import type { SharedCraftRate } from "../tradeskills/craft-rates";
 import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "../buffs/buff-tracking";
 import { decodeWatches } from "../alerts/watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "../map/pins";
@@ -174,6 +175,7 @@ export type ShareKind =
   | "factionObservations"
   | "kills"
   | "respawns"
+  | "crafting"
   | "timers"
   | "buffs"
   | "scores"
@@ -275,6 +277,9 @@ const MAX_ROWS: Record<ShareKind, number> = {
   factionObservations: 1000,
   kills: 5000,
   respawns: 2000,
+  // One row per (tradeskill, item, skill level) a career ever produces — a few hundred for a
+  // serious crafter across every skill, so this is generous and still bounds a hostile give.
+  crafting: 5000,
   timers: 200,
   buffs: 200,
   scores: 200,
@@ -648,6 +653,18 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     // `key` is the camp — one mob, one place — which two different observers can equally have
     // learned about, so the origin joins it for the reason `mobs`' key states at length.
     rowKey: (row) => (isRecord(row) ? rowKeyOf(str(row.key), str(row.byId) || "self") : undefined),
+  },
+  {
+    key: "crafting",
+    family: "observation",
+    label: "Crafting success rates",
+    blurb: "How often each craft came out at each skill level — counts only, never when you crafted or what you were doing.",
+    noun: "rate",
+    read: (rows) => readList(rows, MAX_ROWS.crafting, readCraftRate),
+    // The rate's own identity — skill, item, level — and whose it is, for the reason `mobs`' key
+    // states: two people's rates for the same item at the same level must not collide (ADR 0242).
+    rowKey: (row) =>
+      isRecord(row) ? rowKeyOf(str(row.skill), str(row.item), num(row.level) ?? "", str(row.byId) || "self") : undefined,
   },
   {
     key: "timers",
@@ -1474,6 +1491,22 @@ function readOrigin(raw: Record<string, unknown>): { by?: string; byId?: string 
   const by = str(raw.by);
   const byId = str(raw.byId);
   return { ...(by ? { by } : {}), ...(byId ? { byId } : {}) };
+}
+
+/**
+ * A crafting success rate (ADR 0303). Counts only, and they must be possible: whole, non-negative,
+ * no more successes than combines, at a skill a tradeskill can reach.
+ */
+function readCraftRate(raw: unknown): SharedCraftRate | null {
+  if (!isRecord(raw)) return null;
+  const skill = str(raw.skill);
+  const item = str(raw.item);
+  const level = int(raw.level);
+  const attempts = int(raw.attempts);
+  const ok = int(raw.ok);
+  if (!skill || !item || level === undefined || attempts === undefined || ok === undefined) return null;
+  if (level < 0 || level > 400 || attempts <= 0 || attempts > 1_000_000 || ok < 0 || ok > attempts) return null;
+  return { skill, item, level, attempts, ok, ...readOrigin(raw) };
 }
 
 /**

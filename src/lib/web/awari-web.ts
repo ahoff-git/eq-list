@@ -129,6 +129,8 @@ export function createAwariWeb(deps: { getSettings: () => Settings; getName: () 
       factionObservations: { rows: () => [] },
       kills: { rows: () => [] },
       respawns: { rows: () => [] },
+      // No log in a browser tab, so no crafting of its own to offer.
+      crafting: { rows: () => [] },
       timers: { rows: () => [] },
       buffs: { rows: () => [] },
       scores: { rows: () => [] },

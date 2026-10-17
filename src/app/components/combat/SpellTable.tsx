@@ -35,7 +35,7 @@ function spellOnly<T>(row: Row, pick: (s: SpellRow) => T): T | undefined {
  *   **Dmg/s cast** — damage divided by the seconds actually spent casting it. A 4s nuke
  *   and a 2s nuke that hit for the same number are not equally good, and this is the
  *   column that says so. Only measured casts count (see `combat-stats.ts`).
- *   **Resist %** — share of completed casts the target shrugged off.
+ *   **Resist %** — resists out of every time the spell reached its target (lands + resists).
  *
  * A row's `Damage` is everything that spell did, a DoT's ticks included
  * ([ADR 0071](../../../specs/decisions/0071-a-dot-tick-belongs-to-whoever-cast-it.md)) — which
@@ -140,7 +140,7 @@ export default function SpellTable({ window }: { window: FightStats }) {
       {
         field: "resistRate",
         headerName: "Resist",
-        description: "Share of completed casts resisted",
+        description: "Resists out of every time it reached its target (lands + resists)",
         ...NUM_COL,
         flex: 1,
         cellClassName: (p) =>
@@ -492,7 +492,7 @@ function statGroups(s: SpellStat, facts?: SpellFacts): StatGroup[] {
   const failed = s.resists + s.blocked + s.fizzles + s.interrupts;
 
   const landed: Stat[] = [
-    { label: "landed", value: s.lands.toLocaleString(), title: "Casts that put damage or a heal on something. A DoT counts once, when it first lands." },
+    { label: "landed", value: s.lands.toLocaleString(), title: "Casts that finished and hit their target unresisted — each target, for an area spell. A mez, root or DoT counts when its cast finishes." },
     s.maxHit ? { label: "biggest", value: s.maxHit.toLocaleString(), title: "The largest single landing" } : null,
     s.lands && hitDamage > 0
       ? { label: "per landing", value: Math.round(hitDamage / s.lands).toLocaleString(), title: "Direct damage per landing, before any ticks" }

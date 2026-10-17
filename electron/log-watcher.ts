@@ -16,6 +16,7 @@ import { splitLine } from "../src/shared/log-parser";
 import { catchUpState, type CaughtUpState } from "../src/shared/log-catchup";
 import { createLogger } from "../src/shared/logging";
 import type { LogCursor } from "./log-cursor";
+import type { CombineEvent, SkillUpEvent } from "../src/shared/types";
 import type { CoinEvent, FactionEvent, GameTimeEvent, LootEvent, LogLine, LoginEvent, PartyEvent, ZoneEvent, XpEvent, KillEvent, LocEvent, LevelEvent, CombatEvent, SightingEvent, WatcherStatus } from "../src/shared/types";
 
 const log = createLogger("log-watcher");
@@ -57,6 +58,10 @@ export interface LogWatcher {
   onGameTime(cb: (e: GameTimeEvent) => void): void;
   onCombat(cb: (e: CombatEvent) => void): void;
   onLevel(cb: (e: LevelEvent) => void): void;
+  /** A skill going up, with its new value — the only place the log states a skill. */
+  onSkillUp(cb: (e: SkillUpEvent) => void): void;
+  /** A tradeskill combine's result, success or failure. */
+  onCombine(cb: (e: CombineEvent) => void): void;
   /** You considered or hailed something — so it is in front of you, alive (ADR 0097). */
   onSighting(cb: (e: SightingEvent) => void): void;
   /** A faction-standing change — a stated delta, or a floor/ceiling hit. */
@@ -404,6 +409,8 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     onGameTime: (cb) => void bus.on("gameTime", cb),
     onCombat: (cb) => void bus.on("combat", cb),
     onLevel: (cb) => void bus.on("level", cb),
+    onSkillUp: (cb) => void bus.on("skillup", cb),
+    onCombine: (cb) => void bus.on("combine", cb),
     onSighting: (cb) => void bus.on("sighting", cb),
     onFaction: (cb) => void bus.on("faction", cb),
     onParty: (cb) => void bus.on("party", cb),

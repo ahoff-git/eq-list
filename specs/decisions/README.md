@@ -339,6 +339,10 @@ finished, so a number is claimed before a second author can reach for it.
 - [0299: Ground spawns in prose are named, then read — curated spots, located off the page; long quests bundled for their NPCs](./0299-ground-spawns-in-prose-are-named-then-read.md)
 - [0300: A long quest is a plan of stages — epics and Plane of Sky tests as routes, tracked by the list, pinned by stage](./0300-a-long-quest-is-a-plan-of-stages.md)
 - [0301: A zone line learned late re-files what it missed — a one-time, logged repair of records filed under the zone before](./0301-a-zone-line-learned-late-re-files-what-it-missed.md)
+- [0302: Tradeskill guides are generated static data, read from the rendered page, and their era is judged live](./0302-tradeskill-guides-are-generated-static-data.md)
+- [0303: A tradeskill guide follows your skill from the log, your combines are a crafting log, and success rates are a shared observation kind](./0303-a-tradeskill-guide-follows-your-skill.md)
+- [0304: A fight lasts until everything in it is dead or charmed — not until the first kill, and not for a 60s lull](./0304-a-fight-lasts-until-everything-in-it-is-dead-or-charmed.md)
+- [0305: A resist rate is resists out of every time the spell reached its target (lands + resists), and a mez or DoT that went in is a land](./0305-a-resist-rate-counts-every-cast-that-reached-a-target.md)
 
 ## Open Questions
 

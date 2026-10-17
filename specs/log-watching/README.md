@@ -25,7 +25,10 @@ as they drop and the damage meter can show how the fight went.
   `parseParty` (`X has joined/left the group.`, removals, disbands — and **group chat**, which is
   the only evidence a group formed before the app started ever produces; the same sentence about
   *you* means the group changed rather than a member did) and
-  `parseLogin` (`Welcome to EverQuest Legends!`). The tail of the coin line is the point of it:
+  `parseLogin` (`Welcome to EverQuest Legends!`), `parseSkillUp` (`You have become better at X! (N)`
+  — the new value, the only place the log states a skill) and `parseCombine` (`You have fashioned the
+  items together to create something new: X.` / `You lacked the skills to fashion X.` — the item,
+  never the skill; [ADR 0303](../decisions/0303-a-tradeskill-guide-follows-your-skill.md)). The tail of the coin line is the point of it:
   it's the only thing telling a mob's money from an auto-sold item's, and the two are counted
   separately — see [ADR 0047](../decisions/0047-money-is-copper-in-two-ledgers.md). The login line
   is the only mark in the log for **where one play session ends and the next begins** (12 of them
@@ -156,9 +159,10 @@ as they drop and the damage meter can show how the fight went.
   the rows stay blended and the split is on hover. It also
   folds the two capitalizations EQ gives one name (`Obsolete model` / `obsolete model`)
   into a single row, which needs memory a per-line parser doesn't have. Fights are
-  delimited by swings in **log time**, but a fight ends on a **death**, not a lull — a mob
-  chases until dead, so a gap is tolerated (short once something's died, long while the enemy's
-  still up; [ADR 0036](../decisions/0036-a-fight-ends-on-death-not-a-lull.md)). A replayed log
+  delimited by swings in **log time**, but a fight isn't over until everything that hit your
+  side, or that your side hit, is **killed or charmed** (or you die, or zone) — then a short
+  quiet closes it; anything left standing only times out as abandoned after five minutes
+  ([ADR 0304](../decisions/0304-a-fight-lasts-until-everything-in-it-is-dead-or-charmed.md)). A replayed log
   meters exactly like a live one, and it keeps no past fights — it emits `fightEnd` and
   stays memoryless. See
   [ADR 0017](../decisions/0017-camp-efficiency-and-asking-the-player.md) and

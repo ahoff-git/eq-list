@@ -616,13 +616,13 @@ test("a stream of never-resolved held swings doesn't keep an otherwise-stale fig
   ]);
   assert.equal(t.inFight(), true, "still open — nothing has resolved it either way yet");
 
-  // ENGAGED_END_MS (60s) since the *real* swing at t=1 — a held line arriving as recently as
+  // ABANDONED_END_MS (300s) since the *real* swing at t=1 — a held line arriving as recently as
   // t=59 must not have reset that clock, or this wouldn't be stale yet.
-  t.settle(at(62));
+  t.settle(at(302));
   assert.deepEqual(reasons, ["timeout"], "closed on schedule — the held swings were never activity");
 
   // Expired with the fight, so even the game finally placing Garn doesn't resurrect them.
-  feed(t, [[63, "Garn told you, 'Attacking a rat Master.'"]]);
+  feed(t, [[303, "Garn told you, 'Attacking a rat Master.'"]]);
   assert.equal(t.snapshot().session.byCombatant.find((r) => r.name === "Garn"), undefined);
 });
 
@@ -656,15 +656,114 @@ test("a fight that ended in your death says so", () => {
 });
 
 test("a fight nothing resolved is a timeout, not a kill", () => {
-  // The mob was still up when the log went quiet — it fled, you zoned, or the log lagged.
-  // It takes the *long* gap to close, which is what tells it apart from a settled fight.
+  // The mob was still up when the log went quiet — it fled, you outran it, or the log lagged.
+  // It takes the *abandonment* gap to close, which is what tells it apart from a settled fight.
   const t = tracker();
   const reasons = endReasons(t);
   feed(t, [
     [1, "You pierce a coyote for 10 points of damage."],
-    [200, "You pierce a rat for 10 points of damage."],
+    [200, "You pierce a rat for 10 points of damage."], // the coyote is still up: same fight
   ]);
+  assert.deepEqual(reasons, []);
+  feed(t, [[600, "You pierce a bat for 10 points of damage."]]);
   assert.deepEqual(reasons, ["timeout"]);
+});
+
+// ── a fight lasts until everything in it is dead or charmed (ADR 0303) ──
+test("killing one of two mobs doesn't end the fight while the other is still up", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [
+    [1, "You pierce a coyote for 10 points of damage."],
+    [2, "A rat bites YOU for 3 points of damage."],
+  ]);
+  t.recordKill("a coyote", stamp(3));
+  t.settle(at(60)); // long past a settled fight's quiet — but the rat never died
+  assert.deepEqual(reasons, []);
+  feed(t, [[61, "You pierce a rat for 7 points of damage."]]);
+  assert.equal(t.snapshot().fight.totalDealt, 20, "one fight: coyote, rat bite, rat");
+  t.recordKill("a rat", stamp(62));
+  t.settle(at(80));
+  assert.deepEqual(reasons, ["kill"]);
+});
+
+test("something that only hit you still has to be dealt with", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [[1, "A coyote bites YOU for 5 points of damage."]]);
+  t.settle(at(120));
+  assert.deepEqual(reasons, [], "you never swung back, but it's still on you");
+  t.recordKill("a coyote", stamp(121));
+  t.settle(at(140));
+  assert.deepEqual(reasons, ["kill"]);
+});
+
+test("a charmed mob is out of the fight, as a dead one is", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [
+    [1, "An elite gnoll fighter hits YOU for 21 points of damage."],
+    [2, "an elite gnoll fighter has been charmed."],
+  ]);
+  t.settle(at(20));
+  assert.deepEqual(reasons, ["charm"]);
+});
+
+test("a charm that breaks puts the mob straight back in the fight", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [
+    [1, "An elite gnoll fighter hits YOU for 21 points of damage."],
+    [2, "an elite gnoll fighter has been charmed."],
+    [5, "An elite gnoll fighter hits YOU for 9 points of damage."], // the charm broke
+  ]);
+  t.settle(at(60));
+  assert.deepEqual(reasons, []);
+});
+
+test("a stranger finishing your mob still finishes it", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a coyote", stamp(2)); // whoever's line it was, the coyote is dead
+  t.settle(at(20));
+  assert.deepEqual(reasons, ["kill"]);
+});
+
+test("a death across the camp doesn't resolve your fight", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const reasons = endReasons(t);
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.recordKill("a bat", stamp(2));
+  t.settle(at(60));
+  assert.deepEqual(reasons, []);
+});
+
+test("zoning away files the fight, and the next swing opens a new one", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  const filed: { reason?: string; zone: string | null }[] = [];
+  t.onFightEnd((f) => filed.push({ reason: f.endReason, zone: t.zone() }));
+  t.setZone("North Karana");
+  feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
+  t.setZone("Qeynos Hills");
+  assert.deepEqual(filed, [{ reason: "timeout", zone: "North Karana" }], "filed against the camp it happened in");
+  feed(t, [[5, "You pierce a rat for 7 points of damage."]]);
+  assert.equal(t.snapshot().fight.totalDealt, 7);
+});
+
+test("hitting yourself is not a fight", () => {
+  const t = tracker();
+  t.setPlayer("Kainos");
+  feed(t, [[1, "You hit yourself for 31 points of unresistable damage by Cannibalize III."]]);
+  assert.equal(t.inFight(), false);
+  assert.equal(t.snapshot().session.byCombatant.find((r) => r.name === "yourself"), undefined);
 });
 
 test("a reset banks the fight as cut, not as something the log ended", () => {
@@ -721,9 +820,9 @@ test("an unresolved fight is not filed by a lull — the mob is still up and cha
   const t = tracker();
   const reasons = endReasons(t);
   feed(t, [[1, "You pierce a coyote for 10 points of damage."]]);
-  t.settle(at(40)); // 39s: long past a settled fight's quiet, nowhere near an engaged one's
+  t.settle(at(200)); // long past a settled fight's quiet, nowhere near an abandoned one's
   assert.deepEqual(reasons, []);
-  t.settle(at(90));
+  t.settle(at(310));
   assert.deepEqual(reasons, ["timeout"]);
 });
 
@@ -1007,6 +1106,48 @@ test("fizzles, interrupts and resists are tallied, and give a resist rate", () =
   assert.equal(s.interrupts, 1);
   // Only completed casts count: 1 landed, 1 resisted → 50%. A fizzle never completed.
   assert.equal(s.resistRate, 0.5);
+});
+
+// ── a resist rate counts every cast that reached a target (ADR 0304) ──
+test("a spell that never writes a landing line is resisted out of its casts, not out of its resists", () => {
+  // A mez lands silently as far as the meter can read — four casts, one resisted, is 25%, not 100%.
+  const t = tracker();
+  feed(t, [
+    [1, "You begin casting Mesmerization."],
+    [3, "You begin casting Mesmerization."],
+    [5, "You begin casting Mesmerization."],
+    [7, "You begin casting Mesmerization."],
+    [8, "A coyote resisted your Mesmerization!"],
+  ]);
+  const s = t.snapshot().session.spells.find((x) => x.spell === "Mesmerization")!;
+  assert.equal(s.lands, 3, "three casts finished and weren't resisted — each one went in");
+  assert.equal(s.resistRate, 0.25);
+});
+
+test("a blocked spell is neither a land nor a resist", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You begin casting Inner Fire."],
+    [3, "Your Inner Fire spell did not take hold on Jarn. (Blocked by Courage.)"],
+    [5, "You begin casting Inner Fire."],
+    [7, "Jarn resisted your Inner Fire!"],
+  ]);
+  const s = t.snapshot().session.spells.find((x) => x.spell === "Inner Fire")!;
+  assert.equal(s.lands, 0);
+  assert.equal(s.resistRate, 1);
+});
+
+test("an area spell is resisted out of the targets it reached, not the casts", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You begin casting Firestorm."],
+    [3, "You hit a coyote for 10 points of fire damage by Firestorm."],
+    [3, "You hit a rat for 10 points of fire damage by Firestorm."],
+    [3, "You hit a bat for 10 points of fire damage by Firestorm."],
+    [3, "A snake resisted your Firestorm!"],
+  ]);
+  const s = t.snapshot().session.spells.find((x) => x.spell === "Firestorm")!;
+  assert.equal(s.resistRate, 0.25);
 });
 
 test("a resisted cast doesn't get paired with the next spell's landing", () => {

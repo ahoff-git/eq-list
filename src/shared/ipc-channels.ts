@@ -93,6 +93,7 @@ export const CH = {
   recordsTest: "records:test", // show a sample celebration, wearing the look records use
   recordsClear: "records:clear",
   xpGet: "xp:get",
+  tradeskillProgress: "tradeskills:progress",
   xpSet: "xp:set",
   hpGet: "hp:get",
   hpSet: "hp:set",
@@ -309,6 +310,7 @@ export const CH = {
   locChanged: "evt:loc",
   combatChanged: "evt:combat",
   xpChanged: "evt:xp",
+  tradeskillProgressChanged: "evt:tradeskill-progress",
   hpChanged: "evt:hp",
   searchPrefill: "evt:searchPrefill",
   searchOpenPageRequest: "evt:searchOpenPage",

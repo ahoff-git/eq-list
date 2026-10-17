@@ -15,7 +15,7 @@
  * doesn't own, so the order only affects cost — never the outcome.
  */
 import { parseCombat } from "./combat/combat-parser";
-import { parseCoin, parseFactionChange, parseGameTime, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseParty, parseSighting, parseXp, parseZone, splitLine } from "./log-parser";
+import { parseCoin, parseCombine, parseFactionChange, parseGameTime, parseKill, parseLevel, parseLoc, parseLogin, parseLoot, parseParty, parseSighting, parseSkillUp, parseXp, parseZone, splitLine } from "./log-parser";
 import type { CombatEvent, LogEvent, LogLine } from "./types";
 
 /** Everything a log line can turn into. */
@@ -46,6 +46,7 @@ const COMBAT_KINDS: Record<CombatEvent["kind"], true> = {
   stance: true,
   invocation: true,
   "pet-engage": true,
+  charm: true,
 };
 
 /** Is this parsed event one the damage meter takes? Narrows, so callers keep their types. */
@@ -63,6 +64,11 @@ const MATCHERS: ((line: LogLine) => ParsedEvent | null)[] = [
   parseLoc,
   parseLevel,
   parseCoin,
+  // A skill-up: thousands in a real log (every weapon swing and spell can raise one), on one tight
+  // anchor, so it sits with the busier lines.
+  parseSkillUp,
+  // A tradeskill combine's result — a few hundred an evening of crafting, none otherwise.
+  parseCombine,
   // A `/time` response. Rare — a couple of lines whenever the player types it — so it costs
   // nothing to leave this late, after everything that owns a busier line outright.
   parseGameTime,

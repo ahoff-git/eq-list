@@ -535,6 +535,18 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
   research, drop or vendor, and keeps the quests it links. The spell harvest's card never kept that
   section, and the Spells tab's Source column needs it from the first open. See
   [ADR 0296](../decisions/0296-spell-sources-are-generated-static-data.md).
+- **A tenth: the tradeskill leveling guides.** `src/shared/tradeskills/tradeskills.generated.ts`
+  (`scripts/fetch-tradeskills.mjs`) ships the leveling-guide sections of every page in
+  `Category:Tradeskills`, kept as the wiki wrote them (headings, text, lists, tables of runs), plus the
+  era keys of each page and each linked item. The first generator to read the **rendered** HTML rather
+  than wikitext, because the era badges and item transclusions only become uniform once expanded. The
+  era is judged at runtime (`tradeskill-era.ts`). A linked item's era is looked up in the committed
+  page-cache snapshot first (`scripts/lib/wiki-snapshot.mjs`). Only what that can't settle is
+  fetched. The same snapshot names what an ingredients-only step makes, by matching its ingredients
+  against every cached recipe (`scripts/lib/tradeskill-results.mjs`). Vendor prices are read from
+  item pages' `notes` and the skill pages' cost tables (`wiki-price.ts`), since the wiki has no price
+  field, and each step's span, materials and per-combine cost are worked out once (`step-plan.ts`). See
+  [ADR 0302](../decisions/0302-tradeskill-guides-are-generated-static-data.md).
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.
 - The **wiki's** drop rates live on the mob page (per loot line — a `(X%)` chance or a rarity

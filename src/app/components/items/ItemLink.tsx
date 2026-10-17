@@ -3,9 +3,10 @@ import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "
 import { createPortal } from "react-dom";
 import { useOptionalNav } from "@/lib/chrome/nav";
 import { api } from "@/lib/api";
-import { useItemCard } from "@/lib/hooks";
+import { useClosedZones, useItemCard, useWikiPage } from "@/lib/hooks";
 import { localSize, localTextBox, localView, scaleRoot } from "@/lib/screen";
 import { besideWidth, placeTooltip, type AnchorBox, type Placement } from "@/shared/chrome/tooltip";
+import { craftNotes } from "@/shared/tradeskills/craft-notes";
 import type { ItemCard } from "@/shared/types";
 
 /**
@@ -37,13 +38,17 @@ export default function ItemLink({
   title,
   label,
   className,
+  craft,
 }: {
   title: string;
   label?: React.ReactNode;
   className?: string;
+  /** Add a crafter's lines under the card — where to buy it, what it's made from, what uses it
+   *  (`craft-notes.ts`). For the Tradeskills tab; everywhere else the card alone is the answer. */
+  craft?: boolean;
 }) {
   const nav = useOptionalNav();
-  const hover = useCardHover(title);
+  const hover = useCardHover(title, craft);
   const open = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (nav) nav.openPage(title);
@@ -101,11 +106,11 @@ export function NameList({
 }
 
 /** Hover state: a debounced fetch + a card placed beside the name, never over it. */
-function useCardHover(title: string) {
+function useCardHover(title: string, craft = false) {
   const [hovering, setHovering] = useState(false);
   const [anchor, setAnchor] = useState<AnchorBox | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const card = useItemCard(hovering ? title : null);
+  const card = useItemCard(hovering && !craft ? title : null);
 
   function onMouseEnter(e: React.MouseEvent<HTMLSpanElement>) {
     // The whole box, not just a corner: which side the card goes on depends on all four edges. And
@@ -124,11 +129,28 @@ function useCardHover(title: string) {
     setHovering(false);
   }
 
-  const tip = hovering && card && anchor ? <ItemCardTip card={card} anchor={anchor} /> : null;
+  const tip = !hovering || !anchor ? null : craft ? (
+    <CraftCardTip title={title} anchor={anchor} />
+  ) : card ? (
+    <ItemCardTip card={card} anchor={anchor} />
+  ) : null;
   return { onMouseEnter, onMouseLeave, tip };
 }
 
-function ItemCardTip({ card, anchor }: { card: ItemCard; anchor: AnchorBox }) {
+/**
+ * The card plus the crafting lines. Mounted only while hovering, so the page read and the era list it
+ * judges vendors against cost nothing for the hundred links a guide holds until one is pointed at.
+ * Shown for a page with no stat card too, when it has something to say about buying it.
+ */
+function CraftCardTip({ title, anchor }: { title: string; anchor: AnchorBox }) {
+  const page = useWikiPage(title);
+  const closed = useClosedZones();
+  const notes = craftNotes(page, closed);
+  if (!page || (!page.card && !notes.length)) return null;
+  return <ItemCardTip card={page.card ?? { title: page.title, lines: [] }} anchor={anchor} notes={notes} />;
+}
+
+function ItemCardTip({ card, anchor, notes }: { card: ItemCard; anchor: AnchorBox; notes?: string[] }) {
   const ref = useRef<HTMLSpanElement>(null);
   // How wide it may be is a question about where the name sits, not about the card, so it's answered
   // before the first paint — the measurement below then sees the size the card will keep.
@@ -144,7 +166,7 @@ function ItemCardTip({ card, anchor }: { card: ItemCard; anchor: AnchorBox }) {
     const el = ref.current;
     if (!el) return;
     setPlace({ ...placeTooltip(anchor, localSize(el), localView()), ready: true });
-  }, [anchor, card]);
+  }, [anchor, card, notes?.length]);
 
   return createPortal(
     <span
@@ -173,6 +195,15 @@ function ItemCardTip({ card, anchor }: { card: ItemCard; anchor: AnchorBox }) {
           {l}
         </span>
       ))}
+      {notes && notes.length > 0 && (
+        <span className="ic-craft">
+          {notes.map((n, i) => (
+            <span className="ic-craft-line" key={i}>
+              {n}
+            </span>
+          ))}
+        </span>
+      )}
     </span>,
     scaleRoot(),
   );

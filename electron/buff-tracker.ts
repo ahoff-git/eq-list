@@ -1028,7 +1028,7 @@ export function createBuffTracker({
       // standing list already says so under "you died", and a stack of "recast it" over a corpse is
       // the exact noise ADR 0082 refuses. `cut` is a reset or a quit — the player's own doing, and
       // not a moment to start talking.
-      const worthSaying = reason === "kill" || reason === "timeout";
+      const worthSaying = reason === "kill" || reason === "charm" || reason === "timeout";
       for (const [id, buff] of held) {
         // Only if it is *still* missing. A rise removes its held banner, so this is belt and braces
         // for anything that cleared the row another way (a dismissal, an untick) — a banner about a

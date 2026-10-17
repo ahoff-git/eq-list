@@ -29,6 +29,7 @@ import { to24Hour } from "./gameclock/game-clock";
 import { parseCoins } from "./money";
 import type {
   CoinEvent,
+  CombineEvent,
   FactionEvent,
   GameTimeEvent,
   LogLine,
@@ -42,6 +43,7 @@ import type {
   LoginEvent,
   PartyEvent,
   SightingEvent,
+  SkillUpEvent,
 } from "./types";
 
 const MONTHS: Record<string, number> = {
@@ -315,6 +317,36 @@ export function parseLevel(line: LogLine): LevelEvent | null {
     };
   }
   return null;
+}
+
+/**
+ * A skill-up, verbatim from a real log: `You have become better at Blacksmithing! (60)`. The number
+ * is the new value. Every skill uses the one wording — combat, casting, instruments, tradeskills —
+ * and a real log holds thousands of them.
+ */
+const SKILLUP_RE = /^You have become better at (?<skill>[^!]+)! \((?<value>\d+)\)$/;
+
+export function parseSkillUp(line: LogLine): SkillUpEvent | null {
+  const m = SKILLUP_RE.exec(line.message);
+  if (!m?.groups) return null;
+  return { kind: "skillup", skill: m.groups.skill.trim(), value: Number(m.groups.value), logId: line.logId, raw: line.raw, at: line.at };
+}
+
+/**
+ * A combine's result, verbatim from a real log:
+ * `You have fashioned the items together to create something new: Sheet Metal.` and
+ * `You lacked the skills to fashion Sheet Metal.` — 329 and 65 of them across one evening of
+ * smithing. Both name the item; neither names the skill.
+ */
+const COMBINE_OK_RE = /^You have fashioned the items together to create (?:something new|an alternate product)?:?\s*(?<item>.+?)\.$/;
+const COMBINE_FAIL_RE = /^You lacked the skills to fashion (?<item>.+?)\.$/;
+
+export function parseCombine(line: LogLine): CombineEvent | null {
+  const ok = COMBINE_OK_RE.exec(line.message);
+  const fail = ok ? null : COMBINE_FAIL_RE.exec(line.message);
+  const m = ok ?? fail;
+  if (!m?.groups) return null;
+  return { kind: "combine", item: m.groups.item.trim(), ok: !!ok, logId: line.logId, raw: line.raw, at: line.at };
 }
 
 /**

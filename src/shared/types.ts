@@ -1,3 +1,4 @@
+import type { SkillProgressView } from "./tradeskills/skill-progress";
 import type { DataReportRow } from "./data-provenance";
 import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./chrome/self-check";
@@ -485,6 +486,27 @@ export interface LevelEvent extends LogEventBase {
 }
 
 /**
+ * A skill going up: "You have become better at Blacksmithing! (60)". `value` is the skill **after**
+ * the increase — the only place the log ever states a skill, so the latest one is the character's
+ * current skill.
+ */
+export interface SkillUpEvent extends LogEventBase {
+  kind: "skillup";
+  skill: string;
+  value: number;
+}
+
+/**
+ * A tradeskill combine's result. The line names the item tried but never the skill — that has to
+ * be worked out from the skill-ups around it (`skill-progress.ts`).
+ */
+export interface CombineEvent extends LogEventBase {
+  kind: "combine";
+  item: string;
+  ok: boolean;
+}
+
+/**
  * Coin changing hands. The log says how much and from what *kind* of source, never which
  * mob or which item — so `from` is the only thing separating the two money ledgers at the
  * point of parsing, and it's load-bearing (ADR 0047).
@@ -544,7 +566,9 @@ export type LogEvent =
   | SightingEvent
   | PartyEvent
   | GameTimeEvent
-  | FactionEvent;
+  | FactionEvent
+  | SkillUpEvent
+  | CombineEvent;
 
 /** One "tell me at this time of day" alarm against the running Norrath clock. */
 export interface GameTimeAlarm {
@@ -741,8 +765,19 @@ export interface PetEngageEvent extends LogEventBase {
   target: string;
 }
 
+/**
+ * A creature taken under someone's control: `an elite gnoll fighter has been charmed.` It stops
+ * being an opponent the moment this lands — the only way besides dying that a creature leaves a
+ * fight ([ADR 0304](../../specs/decisions/0304-a-fight-lasts-until-everything-in-it-is-dead-or-charmed.md)).
+ */
+export interface CharmEvent extends LogEventBase {
+  kind: "charm";
+  target: string;
+}
+
 export type CombatEvent =
   | DamageEvent
+  | CharmEvent
   | MissEvent
   | HealEvent
   | CastEvent
@@ -1163,20 +1198,22 @@ export interface DeathRecap {
 /**
  * Why a fight stopped being the current fight.
  *
- * [ADR 0036](../../specs/decisions/0036-a-fight-ends-on-death-not-a-lull.md) already draws the
- * distinction that matters — a **resolved** fight (something died) closes after a short quiet,
- * while an unresolved one needs a much longer silence — and the tracker computes which applied.
- * Naming it is what makes an odd row explicable: a fight that ran 90 seconds and ended in a
- * `timeout` is a mob that fled, a kite that ended, a zone-out or a lagging log, and reads
- * completely differently from the same 90 seconds ending in a `kill`.
+ * A fight is **resolved** once everything your side traded blows with is dead or charmed, or you
+ * are ([ADR 0304](../../specs/decisions/0304-a-fight-lasts-until-everything-in-it-is-dead-or-charmed.md));
+ * a resolved fight closes after a short quiet, an unresolved one only after a long abandonment.
+ * Naming which is what makes an odd row explicable: a fight that ended in a `timeout` is a mob that
+ * fled, a kite you broke off, a zone-out or a lagging log, and reads completely differently from the
+ * same fight ending in a `kill`.
  *
- * - `kill` — the last thing to happen was something dying to you.
- * - `death` — the last thing to happen was *your* death.
- * - `timeout` — nothing resolved it; the enemy was presumably still up when the log went quiet.
+ * - `kill` — the last opponent standing died.
+ * - `charm` — the last opponent standing was charmed.
+ * - `death` — *you* died, which ends everything you were fighting.
+ * - `timeout` — something you fought was still up: you zoned away from it, or the log went quiet
+ *   for long enough to call it abandoned.
  * - `cut` — the fight didn't end in the log at all. The meter was reset, or the tracker was
  *   flushed (app closing, character switching), and the fight was banked mid-flow.
  */
-export type FightEndReason = "kill" | "death" | "timeout" | "cut";
+export type FightEndReason = "kill" | "charm" | "death" | "timeout" | "cut";
 
 /** Damage totals over a window: one fight, or the whole session. */
 export interface FightStats {
@@ -4068,6 +4105,14 @@ export interface EqlApi {
    * Experience progress — the one figure the log can't give us, so the UI asks for it
    * and this keeps it current afterwards.
    */
+  /**
+   * Your tradeskills as the log states them — current values and your measured combines per point
+   * (`electron/skill-progress.ts`). Pushed as skill-ups arrive.
+   */
+  tradeskills: {
+    progress(): Promise<SkillProgressView>;
+    onProgress(cb: (view: SkillProgressView) => void): Unsubscribe;
+  };
   xp: {
     get(): Promise<XpProgress>;
     /** Record what the player says their current XP into the level is (0–100). */

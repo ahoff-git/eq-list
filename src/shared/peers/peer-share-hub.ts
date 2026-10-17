@@ -53,6 +53,7 @@
  * the panel that draws them merges with `mergeTimers` / `mergeBuffs` — so the de-dupe is one tested
  * function rather than a main-process opinion the windows have to agree with.
  */
+import type { SharedCraftRate } from "../tradeskills/craft-rates";
 import { createLogger } from "../logging";
 import { AWARI_MSG, type AwariPayload, type AwariPeer, type AwariStatus, type Settings } from "../types";
 import {
@@ -1392,6 +1393,11 @@ export function shareSources(context: {
   /** Pooled respawn learning — the peer half of `respawns` (`electron/peer-respawns.ts`). */
   peerRespawns: { all: () => SharedRespawn[] };
   /**
+   * Crafting success rates (ADR 0303): yours, from the crafting log (`shareableCraftRates`), and every
+   * peer's that has reached us (`electron/peer-crafting.ts`), already credited to whoever made them.
+   */
+  crafting: { mine: () => SharedCraftRate[]; pooled: () => SharedCraftRate[] };
+  /**
    * Faction pages we hold — everyone's, not shard-addressed the way `items`/`spells` are
    * (`electron/wiki/index.ts`'s `factions`, [ADR 0244](../../specs/decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)).
    */
@@ -1450,6 +1456,9 @@ export function shareSources(context: {
     // about camps we haven't necessarily sat at ourselves. Unversioned, like the three below: nothing
     // here is expensive enough yet to be worth the risk of a `respawns`-shaped store answering wrong.
     respawns: { rows: () => [...shareableRespawns(context.spawns.view().known), ...context.peerRespawns.all()] },
+    // Yours plus everyone's that reached us, the same two halves `respawns` offers. Unversioned for the
+    // same reason: a few hundred rows, cheap to measure.
+    crafting: { rows: () => [...context.crafting.mine(), ...context.crafting.pooled()] },
     // **Deliberately unversioned**, all three. The obvious counter to hook is the store's own save,
     // and for these it would be a *lie*: a running countdown and a buff that is counting down are
     // views over a clock, so their rows differ from one second to the next while nothing has been

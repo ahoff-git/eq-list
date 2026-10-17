@@ -527,3 +527,20 @@ test("a spell wearing off you by name is still your own", () => {
   assert.equal(event?.kind, "buff-faded");
   assert.equal(event.target, undefined, "the reflexive form means it was on you");
 });
+
+test("a charm landing names the creature taken out of the fight", () => {
+  const charmed = parse("an elite gnoll fighter has been charmed.");
+  assert.deepEqual(charmed && { kind: charmed.kind, target: "target" in charmed ? charmed.target : undefined }, {
+    kind: "charm",
+    target: "an elite gnoll fighter",
+  });
+  // Enthrall is a mez: the mob is asleep, not yours, and still has to be killed.
+  assert.equal(parse("A Pickclaw mindripper has been enthralled."), null);
+});
+
+test("a spell you hit yourself with names you as its target, not 'yourself'", () => {
+  const event = parse("You hit yourself for 31 points of unresistable damage by Cannibalize III.") as DamageEvent;
+  assert.equal(event.attacker, SELF);
+  assert.equal(event.target, SELF);
+  assert.equal(event.spell, "Cannibalize");
+});

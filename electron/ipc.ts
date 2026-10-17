@@ -28,6 +28,7 @@ import type { CombatTracker } from "./combat-stats";
 import type { CombatHistory } from "./combat-history";
 import type { HighScoreKeeper } from "./high-scores";
 import type { XpTracker } from "./xp-progress";
+import type { SkillProgressTracker } from "./skill-progress";
 import type { HpTracker } from "./hp-estimate";
 import type { KillLog } from "./kill-log";
 import type { LootLog } from "./loot-log";
@@ -40,6 +41,9 @@ import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { FactionObservationsStore } from "./faction-observations";
 import type { PeerKillStore } from "./peer-kills";
 import type { PeerRespawnStore } from "./peer-respawns";
+import type { PeerCraftingStore } from "./peer-crafting";
+import type { SkillProgressView } from "../src/shared/tradeskills/skill-progress";
+import { shareableCraftRates } from "../src/shared/tradeskills/craft-rates";
 import type { PeerArchive } from "./peer-archive";
 import type { SpawnTracker } from "./spawn-tracker";
 import type { GoalTracker } from "./goal-tracker";
@@ -75,6 +79,7 @@ export interface IpcContext {
   /** Personal bests — the board, and wiping it. */
   scores: HighScoreKeeper;
   xp: XpTracker;
+  skills: SkillProgressTracker;
   hp: HpTracker;
   killLog: KillLog;
   lootLog: LootLog;
@@ -93,6 +98,10 @@ export interface IpcContext {
   peerKills: PeerKillStore;
   /** Respawn intervals other players have learned, kept across sessions (`peer-respawns.ts`). */
   peerRespawns: PeerRespawnStore;
+  /** Crafting success rates other players have shared (`peer-crafting.ts`, ADR 0303). */
+  peerCrafting: PeerCraftingStore;
+  /** Your tradeskills plus the room's pooled rates — what the Tradeskills tab reads and is pushed. */
+  tradeskillView: () => SkillProgressView;
   /** The last authored share (watches/styles/lists/pins) each name has handed over (`peer-archive.ts`). */
   peerArchive: PeerArchive;
   /** This install's contributor id, stamped onto everything we contribute (`identity.ts`). */
@@ -486,7 +495,7 @@ function registerLucyIpc(context: IpcContext): void {
  * loot, faction standing and pooled mob knowledge.
  */
 function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight"]): void {
-  const { watcher, combat, history, xp, hp, killLog, lootLog, factionLog, factionCorrections, npcSightings, mobs, factionObservations, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
+  const { watcher, combat, history, xp, skills, hp, killLog, lootLog, factionLog, factionCorrections, npcSightings, mobs, factionObservations, spawns, goals, buffs, achievements, gameClock, damageOverlay, getCurrentZone, getCurrentLoc, broadcast } = context;
 
   // Pooled the same way the live push and a filed fight both are (ADR 0276) — a reader that opens
   // the Combat tab mid-fight gets the same merged figures `CH.combatChanged` would have pushed it,
@@ -511,6 +520,7 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
   ipcMain.handle(CH.combatZones, () => history.zones());
   ipcMain.handle(CH.combatBests, () => history.bests());
   ipcMain.handle(CH.xpGet, () => xp.state());
+  ipcMain.handle(CH.tradeskillProgress, () => context.tradeskillView());
   // The one figure the log can't give us, supplied by the player (see xp-progress.ts).
   ipcMain.handle(CH.xpSet, (_e, intoLevel: number, level?: number) => xp.set(intoLevel, level));
   ipcMain.handle(CH.hpGet, () => hp.state());
@@ -799,7 +809,9 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
     // Kills and observations are the same person's contribution split across two stores, so
     // forgetting one of them and leaving the other would credit a contributor you had just dropped.
     context.peerKills.forget(id);
+    context.peerCrafting.forget(id);
     broadcast(CH.peerDataChanged, undefined);
+    broadcast(CH.tradeskillProgressChanged, context.tradeskillView());
   });
   ipcMain.handle(CH.peerKillsAll, (_e, zone?: string) => context.peerKills.all(zone));
   ipcMain.handle(CH.combatClearHistory, () => {
@@ -1018,6 +1030,8 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
     factionObservations,
     peerKills,
     peerRespawns,
+    peerCrafting,
+    tradeskillView,
     peerArchive,
     contributorId,
     store,
@@ -1069,6 +1083,10 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
       // Timers tab needs telling the same way a kill or a player edit already tells it, or a fresh
       // pooled interval would sit unseen until something else happened to trigger a refetch.
       broadcast(CH.spawnsChanged, undefined);
+    } else if (payload.kind === "crafting" && Array.isArray(payload.crafting)) {
+      for (const { by: origin, rows } of groupByOrigin(payload.crafting, by).values()) peerCrafting.report(origin, rows);
+      // Shown beside your own rates in the crafting log, so the Tradeskills tab is told directly.
+      broadcast(CH.tradeskillProgressChanged, tradeskillView());
     } else return;
     broadcast(CH.peerDataChanged, undefined);
   };
@@ -1115,6 +1133,11 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
       factionObservations,
       peerKills,
       peerRespawns,
+      crafting: {
+        // Yours, from the log's own rolled-up rates; the pooled ones are relayed as they arrived.
+        mine: () => shareableCraftRates(context.skills.view().crafting),
+        pooled: () => peerCrafting.all(),
+      },
       factions: wiki.factions,
       spawns,
       buffs,
@@ -1324,6 +1347,7 @@ function registerAdminIpc(context: IpcContext): void {
     respawnTimers: context.spawns.admin,
     peerKills: context.peerKills.admin,
     peerRespawns: context.peerRespawns.admin,
+    peerCrafting: context.peerCrafting.admin,
     pooledMobKnowledge: context.mobs.admin,
     pooledFactionObservations: context.factionObservations.admin,
   });

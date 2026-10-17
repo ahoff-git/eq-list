@@ -7,6 +7,7 @@ import ItemSearchPanel from "@/app/components/items/ItemSearchPanel";
 import SpellSearchPanel from "@/app/components/spells/SpellSearchPanel";
 import StancesPanel from "@/app/components/spells/StancesPanel";
 import AAPanel from "@/app/components/aa/AAPanel";
+import TradeskillsPanel from "@/app/components/tradeskills/TradeskillsPanel";
 import WindowButtons from "@/app/components/chrome/WindowButtons";
 import Titlebar from "@/app/components/chrome/Titlebar";
 import ScaleButtons from "@/app/components/chrome/ScaleButtons";
@@ -47,7 +48,7 @@ import { useWindowPin } from "@/lib/chrome/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "combat" | "session" | "alerts" | "peers" | "settings";
+type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "combat" | "session" | "alerts" | "peers" | "settings";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -250,6 +251,9 @@ function ControlWindow() {
     // Beside Stances, the fourth shelf — what you could *train* (Alternate Advancement) rather than
     // wear, cast or do right now. Same static-reference grouping, same reason it carries no log gate.
     { key: "aa", label: "AAs" },
+    // Beside AAs, the last shelf — what you could *make*. Static reference data from eqlwiki's
+    // leveling guides like its neighbours, so no log gate.
+    { key: "tradeskills", label: "Tradeskills" },
     { key: "combat", label: "Combat", disabled: needsLog, disabledReason: noLog },
     { key: "session", label: "Session", disabled: needsLog, disabledReason: noLog },
     // Before Settings, and after everything you look at while playing. It is the same kind of thing
@@ -350,6 +354,7 @@ function ControlWindow() {
           {tab === "spells" && <SpellSearchPanel />}
           {tab === "stances" && <StancesPanel />}
           {tab === "aa" && <AAPanel />}
+          {tab === "tradeskills" && <TradeskillsPanel />}
           {tab === "combat" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "alerts" && <AlertsPanel />}

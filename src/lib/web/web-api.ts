@@ -400,6 +400,11 @@ function createWebApi(): EqlApi {
       onChanged: () => noop,
     },
 
+    // No log in the web build, so no skills to read: the guides show without the "you" parts.
+    tradeskills: {
+      progress: async () => ({ character: "", skills: {}, rates: {}, scanning: false, crafting: { sittings: [], items: [] } }),
+      onProgress: () => noop,
+    },
     xp: {
       get: async () => ({ intoLevel: 0, known: false }),
       set: async () => ({ intoLevel: 0, known: false }),

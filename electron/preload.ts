@@ -245,6 +245,10 @@ const api: EqlApi = {
     setRegen: (perTick) => ipcRenderer.invoke(CH.hpSetRegen, perTick),
     onChanged: (cb) => on(CH.hpChanged, cb),
   },
+  tradeskills: {
+    progress: () => ipcRenderer.invoke(CH.tradeskillProgress),
+    onProgress: (cb) => on(CH.tradeskillProgressChanged, cb),
+  },
   xp: {
     get: () => ipcRenderer.invoke(CH.xpGet),
     set: (intoLevel, level) => ipcRenderer.invoke(CH.xpSet, intoLevel, level),

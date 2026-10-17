@@ -5,9 +5,10 @@
  * *that* fight go" (`fight`) and "how has the whole session gone" (`session`). A fight
  * is a burst of combat: the first damage event starts one. Ending it is deliberately
  * reluctant — in this game a mob chases until it (or you) dies, so a lull in the log is
- * usually lag or repositioning, not the end. Only once something has **died** (a kill, or
- * your own death) does a short quiet (`SETTLED_END_MS`) close the fight so the next pull is
- * its own; while the enemy is presumably still up, it takes a long silence (`ENGAGED_END_MS`).
+ * usually lag or repositioning, not the end. Anything that hits your side, or that your side
+ * hits, has to be **killed or charmed** before the fight can be over (or you die, or zone away
+ * from it); once nothing is left standing a short quiet (`SETTLED_END_MS`) closes it so the next
+ * pull is its own. Something left standing only times out as abandoned (`ABANDONED_END_MS`).
  * The active-time DPS divides by is separate: any gap over `ACTIVE_GAP_MS` is downtime either
  * way, so tolerating a lull never deflates the rate.
  *
@@ -76,17 +77,19 @@ function isHoldable(event: CombatEvent): event is HoldableEvent {
 const ACTIVE_GAP_MS = 10_000;
 
 /**
- * Once something has died — the mob you were on, or you — the fight is resolved, and this much
- * quiet then ends it, so the next pull is its own fight.
+ * Once nothing your side fought is left standing — all killed or charmed, or you died — the fight
+ * is resolved, and this much quiet then ends it, so the next pull is its own fight.
  */
 const SETTLED_END_MS = 10_000;
 
 /**
- * While an engagement is unresolved (nothing dead yet), a lull is lag or repositioning, not the
- * end — the mob is still chasing. Only this much *total* silence ends the fight. Generous on
- * purpose: a kite with long pauses, or a stretch where the log lagged, stays one fight.
+ * While something you fought is still up, a lull is lag, a kite, a mez, or a mana break — not the
+ * end ([ADR 0304](../specs/decisions/0304-a-fight-lasts-until-everything-in-it-is-dead-or-charmed.md)).
+ * This is only the safety valve for the fight that will never resolve in the log: you outran it,
+ * it fled out of earshot, or it died somewhere the kill line never reached you. Long on purpose —
+ * five minutes of *total* silence is a camp abandoned, not a fight paused.
  */
-const ENGAGED_END_MS = 60_000;
+const ABANDONED_END_MS = 300_000;
 
 /**
  * A cast that takes longer than this to land isn't the cast we're timing — the log
@@ -697,8 +700,12 @@ export function createCombatStats(
   /** The last mob to die, for experience attribution, and when the last kill landed. */
   let lastKill: { mob: string; at: number } | null = null;
   let lastKillAt = 0;
-  /** Log time of your last death — like a kill, it resolves the fight (combat's over, you're down). */
-  let lastDeathAt = 0;
+  /**
+   * How the fight in progress last had an opponent leave it — what it will be filed as ending in,
+   * if that leaves nothing standing. Null until something has, so a fight that never resolved
+   * anything reads as the timeout it is.
+   */
+  let lastResolution: "kill" | "charm" | "death" | null = null;
   /** Rolling tail of damage taken by you, for the death recap. */
   const incoming: { at: number; source: string; amount: number }[] = [];
   /**
@@ -918,7 +925,13 @@ export function createCombatStats(
 
   const spellRow = (spell: string, t: SpellTally): SpellStat => {
     const avgCastSec = ratio(t.castMs / 1000, t.timed, 2);
-    const completed = t.lands + t.resists + t.blocked;
+    // A land is a cast that finished and hit its target without being resisted
+    // ([ADR 0305](../specs/decisions/0305-a-resist-rate-counts-every-cast-that-reached-a-target.md)).
+    // Two counts see it, and each misses a kind of spell: a landing line exists only for damage and
+    // heals, so a mez, a root, a debuff or a DoT never writes one — for those, it's the casts that
+    // finished and weren't resisted or blocked. An area spell lands on several targets per cast — for
+    // that, it's the landing lines. Whichever sees more is the one that saw this spell.
+    const lands = Math.max(t.lands, t.casts - t.fizzles - t.interrupts - t.resists - t.blocked);
     // Priced at the rank actually cast, so a rank VI nuke quotes its own cost. Undefined stays
     // undefined all the way down: an unknown cost must never become a zero, or a spell we can't
     // price and a spell that's free end up on the same row.
@@ -938,7 +951,7 @@ export function createCombatStats(
       damagePerMana: perMana(t.damage + t.invocationHealed),
       healPerMana: perMana(t.healed),
       casts: t.casts,
-      lands: t.lands,
+      lands,
       ticks: t.ticks,
       tickDamage: t.tickDamage,
       maxTick: t.maxTick,
@@ -955,8 +968,9 @@ export function createCombatStats(
       // inflate a spell whose casts were mostly untimed (all the damage, a fraction of
       // the time). For a DoT, `damage` includes its ticks — which is right: the whole
       // point is what one cast eventually earns.
-      dpc: ratio(t.damage, t.lands * avgCastSec, 1),
-      resistRate: ratio(t.resists, completed, 2),
+      dpc: ratio(t.damage, lands * avgCastSec, 1),
+      // Of every time the spell reached its target, the share that was shrugged off.
+      resistRate: ratio(t.resists, lands + t.resists, 2),
       overhealed: t.overhealed,
       invocationHealed: t.invocationHealed,
       resistedBy: [...t.resistedBy.entries()]
@@ -1312,6 +1326,7 @@ export function createCombatStats(
         break;
       }
       case "death":
+      case "charm":
       case "stance":
       case "invocation":
         // Deaths go through `recordDeath` (they need the rolling incoming-damage buffer,
@@ -1324,29 +1339,24 @@ export function createCombatStats(
   /**
    * Is the fight in progress over as of `at`, and if so what ended it?
    *
-   * A lull is not the end of a fight. Only end it promptly once the engagement has been
-   * *resolved* — the last thing to happen was a death (a kill, or yours), so this quiet is the
-   * pause before the next pull. While it's unresolved (the enemy's still up and, in this game,
-   * still chasing), tolerate a much longer silence before splitting into a new fight.
+   * A lull is not the end of a fight. Only end it promptly once it has been *resolved* — nothing
+   * your side traded blows with is still standing — so this quiet is the pause before the next
+   * pull. While something is (the enemy's still up and, in this game, still chasing), only an
+   * abandonment-length silence splits it.
+   *
+   * A fight already filed is over whatever the clock says: a zone-out files it on the spot, and
+   * the next swing must open a new one rather than land in a window history has already taken.
    *
    * Asked from two places and so it lives in one: the next event arriving (`record`) and the
    * clock simply passing (`settle`). Two copies of this rule would let a fight be filed under one
    * reason and split under another.
    */
   function quietBy(at: number): { stale: boolean; endReason: FightEndReason } {
-    const killResolved = lastKillAt >= lastCombatAt;
-    const deathResolved = lastDeathAt >= lastCombatAt;
-    const resolved = killResolved || deathResolved;
-    const endGap = resolved ? SETTLED_END_MS : ENGAGED_END_MS;
+    const resolved = scope.standing() === 0;
+    const endGap = resolved ? SETTLED_END_MS : ABANDONED_END_MS;
     return {
-      stale: !!lastCombatAt && at - lastCombatAt > endGap,
-      // The same branch, named — see `FightEndReason`. When both resolved it, the later one
-      // is what actually finished the fight (you killed it, then died to its friend).
-      endReason: !resolved
-        ? "timeout"
-        : killResolved && (!deathResolved || lastKillAt >= lastDeathAt)
-          ? "kill"
-          : "death",
+      stale: fightFiled || (!!lastCombatAt && at - lastCombatAt > endGap),
+      endReason: resolved && lastResolution ? lastResolution : "timeout",
     };
   }
 
@@ -1381,6 +1391,7 @@ export function createCombatStats(
   function newFight(): void {
     fight = createWindow(canon);
     fightFiled = false;
+    lastResolution = null;
     // Belt and braces alongside `endFight`'s own clear: covers a fight that was nothing but held
     // events so far (so `endFight` had nothing to file and returned early) meeting a fresh pull.
     heldQueue = [];
@@ -1604,7 +1615,10 @@ export function createCombatStats(
     // A new pull is a new engagement, so the enemy set goes first — *before* this event is
     // judged. It's what makes the first swing of a fight have to stand on its own: without
     // it, a stranger fighting the twin of last pull's mob would open a fight of ours.
-    const swing = event.kind === "damage" || event.kind === "miss";
+    // A swing at yourself — Cannibalize, a recourse — is a cost, not combat: it rides along with a
+    // fight already running, but never opens one (a night of canni would otherwise be a night of
+    // one-line "fights").
+    const swing = (event.kind === "damage" || event.kind === "miss") && canon(event.attacker) !== canon(event.target);
     if (stale && swing) {
       log.debug("stale swing, new engagement — enemy set reset", { endReason });
       scope.reset();
@@ -1639,11 +1653,19 @@ export function createCombatStats(
       invocation = event.invocation;
       return void emit();
     }
+    if (event.kind === "charm") {
+      // Charmed is out of the fight just as dead is — it's somebody's pet now. Its next swing at
+      // you, once the charm breaks, puts it straight back in.
+      if (scope.resolve(event.target)) lastResolution = "charm";
+      return void emit();
+    }
 
     const castMs = admittedCastMs(event, at);
 
     if (event.kind === "death") {
-      lastDeathAt = at; // resolves the fight: a short quiet now ends it (you're down, combat's over)
+      // Resolves the fight: whatever was on you is done with you, so a short quiet now ends it.
+      scope.resolveAll();
+      lastResolution = "death";
       const recap = recordDeath(at, event.killer);
       for (const w of openWindows()) {
         w.deaths.unshift(recap);
@@ -1716,6 +1738,9 @@ export function createCombatStats(
      */
     recordKill(rawMob, atIso) {
       const mob = canon(rawMob);
+      // Whoever landed the blow, an opponent of ours dying takes it out of the fight — a stranger
+      // finishing your mob still finishes it. Asked before the gate below, which is about credit.
+      if (scope.resolve(mob)) lastResolution = "kill";
       if (!countsKill(mob)) return;
       const at = ms(atIso);
       const from = Math.max(fight.span.firstAt || at, lastKillAt || 0) || at;
@@ -1784,6 +1809,10 @@ export function createCombatStats(
     },
 
     setZone(next) {
+      // You can't be fighting something in a zone you've left. Filed before the zone moves, so the
+      // fight is stamped with the camp it happened in. A first zone (`null` → somewhere) is the
+      // log telling us where we already were, not a zone line crossed.
+      if (currentZone !== null && next !== currentZone) endFight("timeout");
       currentZone = next;
     },
     zone: () => currentZone,
@@ -1810,7 +1839,6 @@ export function createCombatStats(
       pending = null;
       lastKill = null;
       lastKillAt = 0;
-      lastDeathAt = 0;
       lastLanding = null;
       incoming.length = 0;
       heldIncoming.clear();

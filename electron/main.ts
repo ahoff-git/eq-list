@@ -28,6 +28,7 @@ import { createHighScores } from "./high-scores";
 import { eventCandidates, fightCandidates } from "../src/shared/combat/high-scores";
 import { effectiveNeeded, runsFor } from "../src/shared/items/grouping";
 import { createXpProgress } from "./xp-progress";
+import { createSkillProgress } from "./skill-progress";
 import { createHpEstimate } from "./hp-estimate";
 import { createKillLog, KILL_LOG_MIGRATIONS } from "./kill-log";
 import { createLootLog, LOOT_LOG_MIGRATIONS } from "./loot-log";
@@ -45,6 +46,8 @@ import { createMobKnowledge } from "./mob-knowledge";
 import { createFactionObservations } from "./faction-observations";
 import { createPeerKills } from "./peer-kills";
 import { createPeerRespawns } from "./peer-respawns";
+import { createPeerCrafting } from "./peer-crafting";
+import { poolCraftRates } from "../src/shared/tradeskills/craft-rates";
 import { createPeerArchive } from "./peer-archive";
 import { readIdentity } from "./identity";
 import { createOcr } from "./ocr";
@@ -269,6 +272,9 @@ if (!app.requestSingleInstanceLock()) {
   const scores = createHighScores(userData);
   scores.setQuiet(true);
   const xp = createXpProgress(userData);
+  // Your tradeskills as the log states them, with the log's history read once (`skill-progress.ts`).
+  const skills = createSkillProgress(userData);
+  // What the Tradeskills tab is told is `tradeskillView` below: this, plus the room's pooled rates.
   const hp = createHpEstimate(userData);
   const killLog = createKillLog(db, userData);
   // A background recompute of `observations()` landed a fresher answer than whatever a window's
@@ -337,6 +343,9 @@ if (!app.requestSingleInstanceLock()) {
   const peerKills = createPeerKills(userData);
   // The `respawns` counterpart — same reasoning as `peerKills`.
   const peerRespawns = createPeerRespawns(userData);
+  // The `crafting` counterpart: success rates the room has shared (ADR 0303).
+  const peerCrafting = createPeerCrafting(userData);
+  const tradeskillView = () => ({ ...skills.view(), pooled: poolCraftRates(peerCrafting.all()) });
   // What an authored share (watches/styles/lists/pins) still says once the tray's half-hour has
   // passed or the app restarts — never applied, never relayed onward (ADR 0242).
   const peerArchive = createPeerArchive(userData);
@@ -445,6 +454,7 @@ if (!app.requestSingleInstanceLock()) {
     history,
     scores,
     xp,
+    skills,
     hp,
     killLog,
     lootLog,
@@ -456,6 +466,8 @@ if (!app.requestSingleInstanceLock()) {
     factionObservations,
     peerKills,
     peerRespawns,
+    peerCrafting,
+    tradeskillView: () => tradeskillView(),
     peerArchive,
     contributorId,
     spawns,
@@ -562,6 +574,7 @@ if (!app.requestSingleInstanceLock()) {
     // The log's filename carries the character name, which is how the damage meter
     // knows which rows are yours (you + "<Character>`s warder").
     const character = characterFromLogFile(status.file) ?? "";
+    skills.setFile(status.file); // whose tradeskills, and the log their history is read from
     combat.setPlayer(character);
     hp.setPlayer(character); // heals on you are logged by character name, not "you"
     killLog.setPlayer(character); // so your pet's death isn't filed as a mob you farm
@@ -844,6 +857,9 @@ if (!app.requestSingleInstanceLock()) {
     buffs.noteFightEnd(fight.endReason ?? "timeout");
   });
   xp.onChange((progress) => broadcast(CH.xpChanged, progress));
+  skills.onChange(() => broadcast(CH.tradeskillProgressChanged, tradeskillView()));
+  watcher.onSkillUp((event) => skills.note(event));
+  watcher.onCombine((event) => skills.note(event));
   hp.onChange((estimate) => broadcast(CH.hpChanged, estimate));
   combat.onChange(
     coalesce(250, () => {
@@ -1053,6 +1069,7 @@ if (!app.requestSingleInstanceLock()) {
     factionObservations.flush();
     peerKills.flush();
     peerRespawns.flush();
+    peerCrafting.flush();
     peerArchive.flush();
     spawns.flush();
     spawns.dispose();

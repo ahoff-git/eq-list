@@ -44,6 +44,7 @@
 import type {
   BuffFadedEvent,
   CastEvent,
+  CharmEvent,
   CombatEvent,
   DamageEvent,
   DeathEvent,
@@ -361,6 +362,14 @@ const FADE_RES = [
  * says which mode is now in force.
  */
 const STANCE_RE = /^You assume an? (?<stance>.+?) stance\.$/;
+
+/**
+ * A creature taken under control — the landing text of Charm: `an elite gnoll fighter has been
+ * charmed.` (67 lines in a real log). Not "has been enthralled.": Enthrall is a **mez**, and a
+ * mezzed mob is still in the fight — it wakes up and has to be killed. Befriend Animal lands as
+ * "<mob> blinks.", which says nothing a line can be trusted on, so it isn't read.
+ */
+const CHARM_RE = /^(?<target>.+?) has been charmed\.$/;
 const INVOCATION_RE = /^You begin reciting the (?<invocation>.+?) invocation\.$/;
 
 /** How a cast ended other than landing. Each resolves the cast in flight. */
@@ -534,6 +543,11 @@ export function parseCombat(line: LogLine): CombatEvent | null {
     } satisfies InvocationEvent;
   }
 
+  const charm = message.match(CHARM_RE);
+  if (charm?.groups) {
+    return { kind: "charm", target: combatant(charm.groups.target), logId, at, raw } satisfies CharmEvent;
+  }
+
   const petEngage = message.match(PET_ENGAGE_RE);
   if (petEngage?.groups) {
     return {
@@ -585,10 +599,15 @@ function damage(
   line: LogLine,
   melee: boolean,
 ): DamageEvent {
+  const attacker = combatant(g.attacker ?? "");
+  // "You hit yourself for 31 points of unresistable damage by Cannibalize III." — a self-inflicted
+  // spell names its target reflexively, the way a self-heal does. Read literally, "yourself" became
+  // a creature of its own: a row in the meter, and an opponent no kill line would ever resolve.
+  const target = REFLEXIVE.has((g.target ?? "").toLowerCase()) ? attacker : combatant(g.target ?? "");
   return {
     kind: "damage",
-    attacker: combatant(g.attacker ?? ""),
-    target: combatant(g.target ?? ""),
+    attacker,
+    target,
     amount: Number(g.amount),
     verb: g.verb,
     // A damage shield names no spell, so its source word ("flames") stands in. `source` is

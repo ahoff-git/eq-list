@@ -78,7 +78,10 @@ travels peer-to-peer, on request, over that peer's own connection.
     estimate the moment someone else in the room has
     ([ADR 0244](../decisions/0244-a-pooled-fact-answers-your-own-queries-too.md)) — `mobs` and `kills`
     already had this property (a mob's card and the map's heatmap both read the pooled figure), so
-    this closes the one remaining gap between the three.
+    this closes the one remaining gap between the three. **`crafting`** joined them later: success
+    rates per tradeskill, item and skill level, counts only, filed by `electron/peer-crafting.ts` on
+    the same five rules and shown beside your own in the crafting log, never merged into it
+    ([ADR 0303](../decisions/0303-a-tradeskill-guide-follows-your-skill.md)).
   - **live** (`timers`, `buffs`, `scores`, `fight`, `celebrations`) — true on somebody else's machine
     right now. Held in memory, dropped when they go, never written to disk — except `fight`, the one
     exception: a confirmed match is *pooled* into your own stored history, not only held live (see

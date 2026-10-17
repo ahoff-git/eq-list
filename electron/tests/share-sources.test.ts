@@ -7,6 +7,7 @@
  * this is the one place that composition is worth testing on its own, independent of both the hub's
  * behaviour (`peer-hub.test.ts`) and the pure wire rules (`peer-share.test.ts`).
  */
+import type { SharedCraftRate } from "../../src/shared/tradeskills/craft-rates";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { shareSources } from "../../src/shared/peers/peer-share-hub";
@@ -28,6 +29,8 @@ function rig(over: {
   pooledKillVersion?: number;
   knownRespawns?: KnownSpawn[];
   pooledRespawns?: SharedRespawn[];
+  ownCrafting?: SharedCraftRate[];
+  pooledCrafting?: SharedCraftRate[];
   factionRows?: unknown[];
   ownFactionObservations?: FactionObservation[];
   factionLogVersion?: number;
@@ -57,6 +60,7 @@ function rig(over: {
       version: () => over.pooledKillVersion ?? 0,
     },
     peerRespawns: { all: () => over.pooledRespawns ?? [] },
+    crafting: { mine: () => over.ownCrafting ?? [], pooled: () => over.pooledCrafting ?? [] },
     factions: { rows: () => over.factionRows ?? [] },
     spawns: { view: () => ({ running: [], known: over.knownRespawns ?? [] }) },
     buffs: { view: () => ({ active: [] }) },
@@ -166,4 +170,11 @@ test("factions reads straight off the wiki's own held pages — no reduction, no
   const sources = rig({ factionRows: [page] });
   assert.deepEqual(sources.factions.rows(), [page]);
   assert.equal(sources.factions.version, undefined, "unversioned, like the other small kinds");
+});
+
+test("crafting offers your rates and the room's, each with its origin", () => {
+  const mine = { skill: "Blacksmithing", item: "Sheet Metal", level: 36, attempts: 16, ok: 10 };
+  const theirs = { ...mine, attempts: 4, ok: 4, by: "Ayla", byId: "ayla-id" };
+  const rows = rig({ ownCrafting: [mine], pooledCrafting: [theirs] }).crafting.rows();
+  assert.deepEqual(rows, [mine, theirs]);
 });

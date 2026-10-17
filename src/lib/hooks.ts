@@ -43,6 +43,7 @@ import type {
   WikiPage,
 } from "@/shared/types";
 import { mobKey, type MobKnowledge, type MobObservation } from "@/shared/mob/mob-stats";
+import type { SkillProgressView } from "@/shared/tradeskills/skill-progress";
 import type { KnowledgeContributor } from "@/shared/contributors";
 import type { FactionCauseKnowledge } from "@/shared/faction/faction-observation";
 import { wikiPlace, type WikiPlace } from "@/shared/map/mob-place";
@@ -250,6 +251,7 @@ export function useDismiss(inside: RefObject<HTMLElement | null>, open: boolean,
 const LIVE = {
   combat: live<CombatStats>((a) => a.combat.get(), (a, on) => a.combat.onChanged(on)),
   xp: live<XpProgress>((a) => a.xp.get(), (a, on) => a.xp.onChanged(on)),
+  tradeskills: live<SkillProgressView>((a) => a.tradeskills.progress(), (a, on) => a.tradeskills.onProgress(on)),
   hp: live<HpEstimate>((a) => a.hp.get(), (a, on) => a.hp.onChanged(on)),
   zone: live<string | null>((a) => a.zone.current(), (a, on) => a.zone.onChanged(on)),
   loc: live<LocEvent | null>((a) => a.loc.current(), (a, on) => a.loc.onChanged(on)),
@@ -322,6 +324,17 @@ export function useCombatReportsRefresh(): number {
     return a.combat.onHistoryChanged(() => setTick((n) => n + 1));
   }, []);
   return tick;
+}
+
+/** Stable, because it is a live value's initial value. */
+const NO_SKILL_PROGRESS: SkillProgressView = { character: "", skills: {}, rates: {}, scanning: false, crafting: { sittings: [], items: [] } };
+
+/**
+ * Your tradeskills as your log states them — current values and measured combines per point — kept
+ * current as skill-ups arrive (`electron/skill-progress.ts`).
+ */
+export function useTradeskillProgress(): SkillProgressView {
+  return useLive(LIVE.tradeskills, NO_SKILL_PROGRESS);
 }
 
 /**

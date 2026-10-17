@@ -62,6 +62,15 @@ import { hasArticle } from "../log-parser";
 import { mobKey } from "../mob/mob-stats";
 import type { CombatEvent } from "../types";
 
+/**
+ * The creature a pet belongs to, keyed as `mobKey` keys it, if the name is the `<owner> pet` shape
+ * EQ gives an NPC's pet ("Lord Soptyvr pet", "a muddite elder pet"). Null for anything else.
+ */
+function ownerKey(key: string): string | null {
+  const m = /^(?<owner>.+) pet$/.exec(key);
+  return m?.groups ? mobKey(m.groups.owner) : null;
+}
+
 /** `admits`'s answer — see the module doc for what each one means and who acts on it. */
 export type ScopeVerdict = "admit" | "hold" | "drop";
 
@@ -74,6 +83,18 @@ export interface FightScope {
   admits(event: CombatEvent): ScopeVerdict;
   /** Has your side traded blows with this creature in the fight so far? Any spelling. */
   fought(name: string): boolean;
+  /**
+   * This creature is out of the fight — killed or charmed. True if it was one your side was still
+   * fighting, so the caller can tell its own opponent going down from a death across the camp.
+   */
+  resolve(name: string): boolean;
+  /** Everything is out of the fight at once — your death; nothing is still fighting you. */
+  resolveAll(): void;
+  /**
+   * How many creatures your side has traded blows with that are still up. A fight is only over
+   * once this reaches zero ([ADR 0304](../../specs/decisions/0304-a-fight-lasts-until-everything-in-it-is-dead-or-charmed.md)).
+   */
+  standing(): number;
   /** A new fight — forget who the last one was against. */
   reset(): void;
 }
@@ -97,15 +118,44 @@ export function createFightScope({ ours, sidesKnown = () => true }: FightScopeOp
    * "a coyote" mid-line, and the kill line strips the article outright.
    */
   const enemies = new Set<string>();
+  /**
+   * The enemies still **up** — same keys, but a kill or a charm takes one out again. Kept apart from
+   * `enemies` because the two answer different questions: a dead mob's lines (its corpse's DoT
+   * tick, its twin across the room) still belong to the fight, but it no longer keeps the fight open.
+   * A twin is the price of keying by name: one "a coyote" dying stands down every coyote, until the
+   * survivor's next swing puts it straight back.
+   */
+  const live = new Set<string>();
 
-  /** True if either side of an exchange is ours; marks the other as an enemy when so. */
-  const engage = (attacker: string, target: string): boolean => {
+  const enemy = (name: string): void => {
+    const key = mobKey(name);
+    enemies.add(key);
+    // A creature's pet goes when it does — the game despawns it, and writes no kill line to say so.
+    // So a pet still swinging in the second after its owner died doesn't reopen the fight.
+    const owner = ownerKey(key);
+    if (owner && enemies.has(owner) && !live.has(owner)) return;
+    live.add(key);
+  };
+
+  /**
+   * True if either side of an exchange is ours; marks the other as an enemy when so. A DoT tick
+   * whose caster the log never named carries the *spell* as its attacker (`casterUnknown`), which is
+   * no creature to fight — and one no kill line would ever take out of the fight again.
+   */
+  const engage = (attacker: string, target: string, casterUnknown = false): boolean => {
     const oursAttacking = ours(attacker);
     const oursDefending = ours(target);
     if (!oursAttacking && !oursDefending) return false;
-    if (!oursAttacking) enemies.add(mobKey(attacker));
-    if (!oursDefending) enemies.add(mobKey(target));
+    if (!oursAttacking && !casterUnknown) enemy(attacker);
+    if (!oursDefending) enemy(target);
     return true;
+  };
+
+  /** Take one creature out of the fight, and its pet with it. True if either was still up. */
+  const resolve = (name: string): boolean => {
+    const key = mobKey(name);
+    const pet = live.delete(`${key} pet`);
+    return live.delete(key) || pet;
   };
 
   /** In the fight already: on your side, or something your side is fighting. */
@@ -117,7 +167,7 @@ export function createFightScope({ ours, sidesKnown = () => true }: FightScopeOp
       switch (event.kind) {
         case "damage":
         case "miss": {
-          const engaged = engage(event.attacker, event.target);
+          const engaged = engage(event.attacker, event.target, event.kind === "damage" && event.casterUnknown);
           if (!sidesKnown() || engaged || inFight(event.attacker, event.target)) return "admit";
           // Neither side is in the fight yet. An article forecloses a name for good — the game
           // never writes a player, a pet or a group-mate with one — so hold only while at least
@@ -140,6 +190,9 @@ export function createFightScope({ ours, sidesKnown = () => true }: FightScopeOp
           // inside the fight rather than having to open one on its own.
           enemies.add(mobKey(event.target));
           return "admit";
+        case "charm":
+          // Only ever *ends* something's part in a fight, so there's nothing to keep out — a charm
+          // on a creature we weren't fighting resolves nothing (see `resolve`).
         case "death":
         case "stance":
         case "invocation":
@@ -149,6 +202,12 @@ export function createFightScope({ ours, sidesKnown = () => true }: FightScopeOp
       }
     },
     fought: (name) => enemies.has(mobKey(name)),
-    reset: () => enemies.clear(),
+    resolve,
+    resolveAll: () => live.clear(),
+    standing: () => live.size,
+    reset: () => {
+      enemies.clear();
+      live.clear();
+    },
   };
 }

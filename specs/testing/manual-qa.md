@@ -2526,3 +2526,35 @@ its Hunt layer held at least the plan's predicted stops (exactly, for the Plane 
 all 30 plans, `quest-plans.test.ts` holds every one of 813 stops inside its zone's drawn map.
 
 A real loot line ticking a step is covered by `quest-plans.test.ts`. Nothing here is left open.
+
+## The Tradeskills tab (ADR 0302)
+
+Seen in the web build (`next dev` off the committed snapshot, driven from a hidden Electron window):
+every skill renders its guide, Jewelcrafting reads "1 out-of-era part left out" with the Velium stage
+gone, Tailoring leaves out its four `Unknown`-era race masks, and with "in era only" off those rows and
+all eleven cultural pages come back dimmed with an "out of era" badge whose hover names the reason
+("Cultural Tradeskills: Gnome is Velious era"). Not yet done in the desktop app:
+
+- **↗ leveling guide lands on the heading.** Click it on Jewelcrafting and confirm the browser opens
+  `eqlwiki.com/Jewelcrafting#Recommended_Leveling` scrolled to that section, not the top of the page.
+- **An item opens in-app.** Hover `Silver Bar` for its card, click it, and confirm the page view opens
+  and Back returns to the same skill.
+- **+ List merges in the desktop list.** Seen in the web build: Tailoring's "Silk Swatch" row lists 2×
+  Spider Silk, and Brewing's Skull Ale step lists Cyclops Skull, Short Beer, Spices and Vinegar. In the
+  desktop app, press the same "+ List" twice and confirm the group's counts double rather than the rows
+  repeating, and that setting the group's runs to 20 scales every row.
+- **Live against your skill.** Seen in an isolated second instance reading a copy of a real log's
+  tradeskill lines: the panel read "Kainos's Blacksmithing: 60 · your pace: about the guides' pace",
+  greyed the two steps below 60, marked "41 to 68: Large Lantern" as "you · 60" with ≈ 8–21 combines
+  left — and an appended `You have become better at Blacksmithing! (61)` moved all of it to 61 with
+  no reload. Not yet: a real skill-up made in game while the app watches.
+- **Crafting success rates between two clients.** Not run: needs two connected installs. On both,
+  connect and switch on "Crafting success rates" (Peers tab). Within a minute, the other's rates should
+  appear in Tradeskills → Crafting log → "The room", and in "By level"'s Room columns for any item
+  and level you have both made. Then "forget" that contributor and confirm their rows go.
+- **Estimates and "+ List" runs.** Seen in the web build: Jewelcrafting's first step reads "≈ 16–40
+  combines · ≈ 8.8pp–22.1pp · Silver Bar ×16–40 @ 5g 3s · Malachite ×16–40". In the desktop app, press
+  its "+ List" and confirm the group lands with runs at 16 (the floor) and Silver Bar needed ×16. Then
+  do a real stretch of combines and compare the count against the range: the ceiling is a measured
+  worst case at the guides' stats, and a character with much lower INT/WIS should note how far past it
+  they ran.

@@ -139,3 +139,43 @@ test("with no idea who you are, nothing can be called somebody else's", () => {
   const blind = createFightScope({ ours: () => false, sidesKnown: () => false });
   assert.equal(blind.admits(event("Randomguy slashes a wolf for 40 points of damage.")), "admit");
 });
+
+test("an enemy stays standing until it is resolved, and only enemies resolve", () => {
+  const scope = scopeFor();
+  scope.admits(event("You pierce a coyote for 6 points of damage."));
+  scope.admits(event("A rat bites YOU for 2 points of damage."));
+  assert.equal(scope.standing(), 2);
+  assert.equal(scope.resolve("bat"), false, "a death across the camp resolves nothing of ours");
+  assert.equal(scope.resolve("coyote"), true, "the kill line's article-less spelling is the same coyote");
+  assert.equal(scope.standing(), 1);
+  assert.equal(scope.fought("a coyote"), true, "dead, but still part of the fight it was in");
+  scope.admits(event("You pierce a coyote for 6 points of damage.")); // its twin, still up
+  assert.equal(scope.standing(), 2);
+  scope.resolveAll();
+  assert.equal(scope.standing(), 0);
+});
+
+test("a pet sent at something doesn't keep the fight open until it actually lands", () => {
+  const scope = scopeFor();
+  scope.admits(event("Garn told you, 'Attacking a coyote Master.'"));
+  assert.equal(scope.fought("a coyote"), true);
+  assert.equal(scope.standing(), 0);
+});
+
+test("a creature's pet leaves the fight with it", () => {
+  const scope = scopeFor();
+  scope.admits(event("You pierce a grikbar kobold for 6 points of damage."));
+  scope.admits(event("A grikbar kobold pet pierces YOU for 13 points of damage."));
+  assert.equal(scope.standing(), 2);
+  assert.equal(scope.resolve("grikbar kobold"), true);
+  assert.equal(scope.standing(), 0, "the pet despawns with its owner, and no kill line says so");
+  // A swing it got off in the same second doesn't put it back.
+  scope.admits(event("A grikbar kobold pet pierces YOU for 13 points of damage."));
+  assert.equal(scope.standing(), 0);
+});
+
+test("a DoT tick that names no caster doesn't make the spell an opponent", () => {
+  const scope = scopeFor();
+  assert.equal(scope.admits(event("Kainos`s warder has taken 6 damage by Weak Poison.")), "admit");
+  assert.equal(scope.standing(), 0);
+});

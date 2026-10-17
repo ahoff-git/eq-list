@@ -288,7 +288,8 @@ function Fight({
  */
 const END_MARK: Record<string, { mark: string; why: string } | null> = {
   kill: null,
+  charm: { mark: "♥", why: "Ended when the last mob standing was charmed" },
   death: { mark: "☠", why: "Ended when you died" },
-  timeout: { mark: "⏱", why: "Nothing killed anything — the mob fled, you zoned, or the log went quiet" },
+  timeout: { mark: "⏱", why: "Something you fought was still up — you zoned away, or it went quiet for five minutes" },
   cut: { mark: "✂", why: "Banked mid-fight: the meter was reset, or the app closed" },
 };

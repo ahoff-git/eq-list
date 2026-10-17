@@ -1487,6 +1487,86 @@ button {
 .aa-name { font-weight: 600; }
 .aa-description { flex-basis: 100%; }
 
+/* ── Tradeskills (TradeskillsPanel) ────────────────────────────── */
+/* Each skill reads like an item or quest page, so it wears `.page-detail` — raised box, blue links, gold
+   section headings — and these rules only cover what a guide has that a page doesn't: stage headings
+   under a section, real nested bullets, and a table whose columns are anything. */
+/* Nine skills is more than a window's width of segmented buttons, so this one wraps. */
+.segmented.wrap { flex-wrap: wrap; }
+.tradeskill-detail h3 { margin-bottom: 0; }
+.tradeskill-detail > p { margin: 6px 0 2px; }
+.tradeskill-detail h4 { margin-top: 14px; }
+/* The guide's own heading row carries the rule, so the ↗ button sits on it rather than under it. */
+.tradeskill-guide { margin-top: 16px; }
+.tradeskill-guide-head { border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.tradeskill-guide-head h4 { border-bottom: none; margin: 0; padding-bottom: 4px; }
+/* A stage ("Silver Jewelry (1-34)") — a step up from body text, a step down from the gold section. */
+.page-detail .tradeskill-stage { margin: 14px 0 4px; font-size: 13px; font-weight: 700; color: var(--text); }
+.tradeskill-guide p { margin: 4px 0; }
+/* A paragraph the wiki set wholly in bold labels what follows ("1 - 202 Skill"). */
+.tradeskill-guide p.tradeskill-label { font-weight: 700; color: var(--text); margin-top: 8px; }
+/* Real bullets, not the page view's flex rows: a guide's lines are sentences with links inside. */
+.page-detail ul.tradeskill-lines { display: block; list-style: disc; margin: 4px 0; padding-left: 20px; }
+.page-detail ul.tradeskill-lines ul.tradeskill-lines { list-style: circle; margin: 2px 0; }
+.page-detail ul.tradeskill-lines li { display: list-item; margin: 3px 0; line-height: 1.5; }
+.tradeskill-table td { vertical-align: top; }
+/* The stat-table's right-aligned numeric 2nd/3rd columns don't fit a guide, whose columns are anything. */
+.stat-table.tradeskill-table td:nth-child(n),
+.stat-table.tradeskill-table th:nth-child(n) { text-align: left; width: auto; }
+.stat-table.tradeskill-table td.tradeskill-add { width: 1%; white-space: nowrap; text-align: right; }
+/* What a step makes, filled in where the guide left it out — the result is what you're crafting, so it
+   reads heavier than the ingredients before it. */
+.tradeskill-makes { color: var(--text-dim); }
+.page-detail .tradeskill-makes .link { font-weight: 600; }
+/* A step's estimate: combines and cost lead in the accent colour, the materials follow as a wrapping
+   run — readable at a glance, and every figure explains itself on hover. */
+.step-estimate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin: 2px 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.step-estimate-figure { color: var(--accent); font-weight: 600; cursor: help; }
+.step-estimate-material { white-space: nowrap; }
+/* In a table the estimate rides in its own full-width row, joined to the step above it. */
+.stat-table.tradeskill-table tr.has-estimate td { border-bottom: none; padding-bottom: 2px; }
+.stat-table.tradeskill-table tr.step-estimate-row td { padding-top: 0; }
+/* You, against the guide. A step you're past is greyed — still readable, plainly behind you — and the
+   one you're in gets the accent rule down its left, so it's what the eye lands on. */
+.you-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 6px 0 2px; }
+.you-skill { color: var(--accent); font-size: 14px; }
+.seg-skill { margin-left: 6px; font-size: 11px; font-weight: 700; opacity: 0.8; }
+.page-detail .step-done { opacity: 0.45; }
+.page-detail .step-done:hover { opacity: 0.8; }
+.page-detail ul.tradeskill-lines li.step-current {
+  border-left: 3px solid var(--accent);
+  padding-left: 8px;
+  margin-left: -11px;
+  list-style: none;
+}
+.stat-table.tradeskill-table tr.step-current td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.badge.step-done-badge { color: var(--text-dim); border-style: dashed; margin-left: 6px; }
+.badge.step-here-badge { color: var(--accent); border-color: var(--accent); margin-left: 6px; }
+.crafting-log h4 { margin-top: 14px; }
+.tradeskill-list-btn { margin-left: 6px; padding-top: 0; padding-bottom: 0; }
+.tradeskill-pages { gap: 4px; margin-bottom: 6px; }
+/* Shown only with "in era only" off: still readable, plainly not for today. */
+.era-shut { opacity: 0.55; }
+/* The crafter's lines under a hover card — set apart from the stats by a rule, in the link colour so
+   "where to buy" reads as the answer to the question being asked. */
+.item-card .ic-craft {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.item-card .ic-craft-line { color: #7cc4ff; line-height: 1.35; }
+
 /* ── buffs you are missing, drawn over the game ───────────────── */
 /* Same anchoring as the pinned countdowns, and for the same reason: a standing reminder belongs in
    the corner the player already looks at for alerts. */
