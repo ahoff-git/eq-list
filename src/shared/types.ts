@@ -3219,6 +3219,36 @@ export interface LogTail {
   whole: boolean;
 }
 
+/** How a log search reads the file (`log.search`). */
+export interface LogSearchOptions {
+  /** Only lines the combat parser reads as combat — swings, spells, heals, deaths… */
+  combatOnly?: boolean;
+  /** How many of the newest matches to send back. The count covers all of them regardless. */
+  limit?: number;
+}
+
+/** One line a log search matched. */
+export interface LogSearchHit {
+  /** Its line number in the file, 1-based — stable, so a list can key on it. */
+  line: number;
+  /** The log's own timestamp, as an ISO-shaped local time (`2026-08-29T00:45:56`). */
+  at: string;
+  /** The line without its timestamp. */
+  message: string;
+  /** What the parser read it as ("damage", "kill", "loot"…), when it read it as anything. */
+  kind?: string;
+}
+
+/** A whole-file log search: the newest matches, newest first, and how many there were in all. */
+export interface LogSearchResult {
+  /** The file searched, or undefined when there's no log to search. */
+  file?: string;
+  total: number;
+  hits: LogSearchHit[];
+  /** A newer search started before this one finished, so this one stopped early — ignore it. */
+  superseded?: boolean;
+}
+
 export interface WatcherStatus {
   watching: boolean;
   file?: string;
@@ -3720,6 +3750,12 @@ export interface EqlApi {
      * back" ladder). Empty only when there's no log to read; `whole` means there is no further back.
      */
     recent(bytes?: number): Promise<LogTail>;
+    /**
+     * Every line of the watched log containing `query` (any case, timestamp included), newest
+     * first — capped to the newest `options.limit`, with `total` counting all of them. A result
+     * marked `superseded` was cut short by a newer search and should be ignored.
+     */
+    search(query: string, options?: LogSearchOptions): Promise<LogSearchResult>;
   };
   /** Auto-update (rolling `latest` release; downloads and installs itself, ADR 0279). */
   update: {

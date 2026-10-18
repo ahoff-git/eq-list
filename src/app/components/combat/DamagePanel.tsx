@@ -7,6 +7,7 @@ import DamageMeter, { type DamageView } from "@/app/components/combat/DamageMete
 import SpellTable from "@/app/components/combat/SpellTable";
 import DamageHistory from "@/app/components/combat/DamageHistory";
 import HighScoreBoard from "@/app/components/combat/HighScoreBoard";
+import LogSearch from "@/app/components/combat/LogSearch";
 import Sparkline from "@/app/components/combat/Sparkline";
 import AskValue from "@/app/components/AskValue";
 import ZoneTag from "@/app/components/map/ZoneTag";
@@ -36,8 +37,11 @@ import { ratio } from "@/shared/numbers";
  * question asked over your whole history — *what is the best this has ever been* — and the tab bar
  * already collapses at this window's default width, so a ninth tab would have pushed a feature into
  * the » menu to make room for one that lives two clicks from the same data.
+ *
+ * `log` sits there for the same reason: it is the raw text every figure on this tab was parsed
+ * from, and "what did the log actually say" is the question a strange number sends you to ask.
  */
-type Scope = "fight" | "session" | "history" | "records";
+type Scope = "fight" | "session" | "history" | "records" | "log";
 type View = keyof typeof LAYOUTS | "spells";
 
 /**
@@ -118,7 +122,7 @@ export default function DamagePanel() {
   // a damage window at all — it spans every fight ever — so it has none, and everything below that
   // renders a window sits out.
   const window: FightStats | null =
-    scope === "history" ? picked?.stats ?? null : scope === "records" ? null : stats[scope];
+    scope === "history" ? picked?.stats ?? null : scope === "records" || scope === "log" ? null : stats[scope];
   const petShare = window ? petShareOfYours(window) : 0;
   const overhealed = window ? overhealedIn(window) : 0;
   // A personal best only means something for one fight against a named opponent. `opponentOf` is
@@ -132,7 +136,7 @@ export default function DamagePanel() {
   const where: { zone: string | null | undefined; why: string } | null =
     scope === "history"
       ? picked && { zone: picked.zone, why: "Where this fight was fought" }
-      : scope === "records"
+      : scope === "records" || scope === "log"
         ? null
         : {
             zone: currentZone,
@@ -165,10 +169,17 @@ export default function DamagePanel() {
           >
             🏆 Records
           </button>
+          <button
+            className={segCls(scope === "log")}
+            title="Search your whole log for a string — every matching line, with its timestamp"
+            onClick={() => setScope("log")}
+          >
+            🔎 Log
+          </button>
         </div>
         {/* Which way damage fans out is a question about a *window* of damage; the scoreboard isn't
             one, so the toggle would be a row of controls that did nothing. */}
-        <div className="segmented" hidden={scope === "records"}>
+        <div className="segmented" hidden={scope === "records" || scope === "log"}>
           {entries(LAYOUTS).map(([key, layout]) => (
             <button key={key} className={segCls(view === key)} title={layout.hint} onClick={() => setView(key)}>
               {layout.label}
@@ -211,7 +222,7 @@ export default function DamagePanel() {
         )}
         {/* The scoreboard has a Reset of its own, for the records — two buttons called Reset meaning
             different things is worse than one being somewhere else. */}
-        {scope !== "history" && scope !== "records" && (
+        {(scope === "fight" || scope === "session") && (
           <button className="btn ghost sm" onClick={resetSession} title="Clear the live meter and the session counters (recorded fights are kept)">
             Reset
           </button>
@@ -219,6 +230,8 @@ export default function DamagePanel() {
       </div>
 
       {scope === "records" && <HighScoreBoard />}
+
+      {scope === "log" && <LogSearch />}
 
       {scope === "history" && <DamageHistory picked={picked} onPick={setPicked} />}
 

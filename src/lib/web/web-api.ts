@@ -237,6 +237,7 @@ function createWebApi(): EqlApi {
     log: {
       import: async () => null,
       recent: async () => EMPTY_LOG_TAIL,
+      search: async () => ({ total: 0, hits: [] }),
     },
 
     update: {

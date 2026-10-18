@@ -22,6 +22,7 @@ export const CH = {
   uiStateSet: "uiState:set",
   logImport: "log:import",
   logRecent: "log:recent", // the last few thousand lines, for testing an alert rule against them
+  logSearch: "log:search", // every line of the watched log matching a string, newest first
   lootRecent: "loot:recent",
   lootPrices: "loot:prices",
   lootItems: "loot:items",

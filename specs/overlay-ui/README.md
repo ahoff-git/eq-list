@@ -762,6 +762,13 @@ list, hunt, search, damage, session, peers, settings.
       holds every fight (the tree only ever loads the session you opened). Results are capped at
       the newest 100 and the tally says how many matched, since a fight carries its whole
       breakdown and a truncated list that reads like the whole answer is a wrong conclusion.
+    - `LogSearch` — the **🔎 Log** scope: every line of the watched log containing a string (any
+      case, timestamp included, so a time like `Aug 29 00:4` works), newest first, each with its
+      timestamp and what the parser read it as — the quick way to see whether a strange figure came
+      from a line the parser misread. **Combat lines only** keeps just what the combat parser claims.
+      The match is `shared/log-search.ts`; the file is streamed in **main** (`electron/log-search.ts`),
+      the newest 500 are sent back with a count of all of them, and a newer search from the same
+      window cuts an older one short rather than scanning 70MB for an answer nobody will read.
     - `HighScoreBoard` — the **🏆 Records** scope: your **personal bests**, the one question the
       other three scopes can't answer (they hold a fight, a session and a list; none is a bar to
       clear). Grouped by *hits* / *survival* / *fights* / *streaks*, each row leading with the figure

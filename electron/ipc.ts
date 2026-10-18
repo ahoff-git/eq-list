@@ -53,7 +53,8 @@ import type { GameClockTracker } from "./game-clock-tracker";
 import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
-import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery, FightStats } from "../src/shared/types";
+import { searchLogFile } from "./log-search";
+import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery, FightStats, LogSearchOptions } from "../src/shared/types";
 import type { AlertRouter } from "./alert-router";
 import type { CelebrationFeed } from "./celebrations";
 import { AWARI_MSG } from "../src/shared/types";
@@ -321,6 +322,12 @@ function registerSettingsIpc(context: IpcContext): void {
   // because it re-answers on every keystroke while a rule is being written.
   ipcMain.handle(CH.logRecent, (_e, bytes?: number) =>
     readLogTail(context.watcher.status().file, typeof bytes === "number" ? bytes : undefined),
+  );
+  // The whole watched file, searched for a string — the combat tab's log searcher. Streamed in main
+  // (`log-search.ts`) and only the newest matches sent back, so a common word costs a scan, not a
+  // megabyte of IPC.
+  ipcMain.handle(CH.logSearch, (e, query: unknown, options?: LogSearchOptions) =>
+    searchLogFile(context.watcher.status().file, typeof query === "string" ? query : "", options ?? {}, e.sender.id),
   );
 
   // "Eat" a log file: a catch-up that digests it into every store that can take it — the kill log
