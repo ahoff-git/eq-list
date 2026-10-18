@@ -352,6 +352,17 @@ test("a cast's start is captured, for you and for others", () => {
   assert.equal(theirs.spell, "Lifespike");
 });
 
+test("a bard's song is a cast too — they sing rather than cast", () => {
+  const mine = parse("You begin singing Solon's Song of the Sirens.") as CastEvent;
+  assert.equal(mine.kind, "cast");
+  assert.equal(mine.caster, SELF);
+  assert.equal(mine.spell, "Solon's Song of the Sirens");
+
+  const theirs = parse("Sparkdust begins singing Kelin's Lucid Lullaby.") as CastEvent;
+  assert.equal(theirs.caster, "Sparkdust");
+  assert.equal(theirs.spell, "Kelin's Lucid Lullaby");
+});
+
 test("memorizing a spell is not a cast", () => {
   assert.equal(parse("You begin to change your invocation."), null);
 });

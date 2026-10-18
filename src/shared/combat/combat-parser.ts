@@ -299,7 +299,11 @@ const HEAL_RE = new RegExp(
 // heal that follows (or the outcome that ends it) and the log tells you how long each
 // spell actually took. "You begin to change your invocation." is memorization, not a
 // cast, and doesn't match ("begin to change" ≠ "begin casting").
-const CAST_RE = /^(?<caster>.+?) begins? casting (?<spell>.+?)\.$/;
+//
+// A bard **sings** instead ("You begin singing Solon's Song of the Sirens."), and it is the same
+// event: without it a song is never seen being cast by you, so a bard's mez or charm never earns a
+// row on the Buffs board (a debuff is only tracked on evidence you cast it) and its fade goes unseen.
+const CAST_RE = /^(?<caster>.+?) begins? (?:casting|singing) (?<spell>.+?)\.$/;
 
 /**
  * A pet confirming an attack order to its owner: `Garn told you, 'Attacking a coyote Master.'`
