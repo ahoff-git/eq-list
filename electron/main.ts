@@ -241,6 +241,9 @@ if (!app.requestSingleInstanceLock()) {
   const wiki = createWikiClient(path.join(userData, "wiki-cache"), {
     db,
     ttlMs: () => Math.max(1, store.getSettings().wikiPageTtlDays) * 24 * 60 * 60 * 1000,
+    // Asked lazily, when the Spells tab first reads its rows — by then `spells` below exists and
+    // knows the log folder.
+    spellCategory: (title) => spells.category(title),
   });
   // The supplementary item source, in its own cache directory so its month-long TTL and the wiki's
   // week never share a file (ADR 0124). Created eagerly and cheaply: it reads nothing and fetches

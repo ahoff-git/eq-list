@@ -17,6 +17,7 @@ import { createLogger } from "../logging";
 import { minLevel, pastLevelCap } from "./spell-era";
 import { parseSpellStats, type SpellStats } from "./spell-stats";
 import { spellSourceSortValue } from "./spell-sources";
+import { CATEGORY_SEPARATOR, categoryLabel, type SpellCategory } from "./spell-categories";
 import { distinctSorted, sortRows, type Sort } from "../sorting";
 import type { CachedSpell } from "../types";
 
@@ -29,11 +30,23 @@ export { minLevel };
 export interface SpellRow {
   spell: CachedSpell;
   stats: SpellStats;
+  /** Where the game's own spellbook files it — absent with no game install to ask. */
+  category?: SpellCategory;
 }
 
-/** The searchable catalogue: cards read as numbers. Built once per catalogue, not per keystroke. */
-export function spellRows(spells: readonly CachedSpell[]): SpellRow[] {
-  return spells.map((spell) => ({ spell, stats: parseSpellStats(spell.card?.lines) }));
+/**
+ * The searchable catalogue: cards read as numbers. Built once per catalogue, not per keystroke.
+ * `categoryOf` is the game file's answer (`spell-categories.ts`), when there is one to ask.
+ */
+export function spellRows(
+  spells: readonly CachedSpell[],
+  categoryOf?: (title: string) => SpellCategory | undefined,
+): SpellRow[] {
+  return spells.map((spell) => {
+    const category = categoryOf?.(spell.title);
+    const row: SpellRow = { spell, stats: parseSpellStats(spell.card?.lines) };
+    return category ? { ...row, category } : row;
+  });
 }
 
 /**
@@ -60,6 +73,18 @@ export function spellEraRows(rows: readonly SpellRow[], levelCap: number): Spell
 export interface SpellCriteria {
   /** Name contains every word of this, in any order — same rule as the Items tab's name box. */
   text: string;
+  /**
+   * Match `text` against **everything the spell says about itself** — the wiki card's description
+   * and effect lines, and its spellbook category — not just its name. How "charm" finds Solon's
+   * Song of the Sirens, and "control them" finds Cajoling Whispers.
+   */
+  searchAll: boolean;
+  /**
+   * Ticked spellbook categories (`categoryOptions`). Either a bare category ("Direct Damage"), which
+   * takes everything filed under it, or one subcategory ("Utility Detrimental › Charm"). Several
+   * ticked are an *or*; empty doesn't narrow.
+   */
+  categories: string[];
   /** Ticked classes. An empty list is "don't narrow by class". Several ticked are an *or*. */
   classes: string[];
   /** Drop what the server hasn't opened yet — the same toggle the Items tab has. */
@@ -68,13 +93,20 @@ export interface SpellCriteria {
   playerOnly: boolean;
 }
 
-export const NO_CRITERIA: SpellCriteria = { text: "", classes: [], hideOutOfEra: true, playerOnly: true };
+export const NO_CRITERIA: SpellCriteria = {
+  text: "",
+  searchAll: false,
+  categories: [],
+  classes: [],
+  hideOutOfEra: true,
+  playerOnly: true,
+};
 
 /** How many conditions are currently cutting the list. */
 export function activeCriteria(c: SpellCriteria): number {
   // The era and player-only flags are deliberately not counted — see `item-search.ts`'s
   // `activeCriteria` for why.
-  return (c.text.trim() ? 1 : 0) + (c.classes.length ? 1 : 0);
+  return (c.text.trim() ? 1 : 0) + (c.classes.length ? 1 : 0) + (c.categories.length ? 1 : 0);
 }
 
 /** Every class any cached spell names, for the class picker. */
@@ -82,12 +114,33 @@ export function classOptions(rows: readonly SpellRow[]): string[] {
   return distinctSorted(rows.flatMap((row) => Object.keys(row.stats.levels)));
 }
 
-/** Does the name contain every word typed? Literal, not fuzzy — a filter only ever cuts. */
-function matchesText(title: string, text: string): boolean {
+/**
+ * Every spellbook category any cached spell is filed under, for the category picker: each bare
+ * category, and each category › subcategory pair beneath it. Sorted, so a category's subcategories
+ * fall directly under it in the menu.
+ */
+export function categoryOptions(rows: readonly SpellRow[]): string[] {
+  return distinctSorted(rows.flatMap((row) => (row.category ? [row.category.category, categoryLabel(row.category)] : [])));
+}
+
+/** Is this row filed under the ticked label — the bare category, or that exact subcategory? */
+function inCategory(row: SpellRow, label: string): boolean {
+  if (!row.category) return false;
+  return label.includes(CATEGORY_SEPARATOR) ? categoryLabel(row.category) === label : row.category.category === label;
+}
+
+/** What `text` is matched against: the name, or with `searchAll` everything the spell says. */
+function searchableText(row: SpellRow, all: boolean): string {
+  if (!all) return row.spell.title;
+  return [row.spell.title, ...(row.spell.card?.lines ?? []), row.category ? categoryLabel(row.category) : ""].join("\n");
+}
+
+/** Does the text contain every word typed? Literal, not fuzzy — a filter only ever cuts. */
+function matchesText(haystack: string, text: string): boolean {
   const words = text.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
-  const name = title.toLowerCase();
-  return words.every((w) => name.includes(w));
+  const lower = haystack.toLowerCase();
+  return words.every((w) => lower.includes(w));
 }
 
 /**
@@ -103,13 +156,24 @@ export function isPlayerSpell(row: SpellRow): boolean {
 export function matchesSpell(row: SpellRow, c: SpellCriteria): boolean {
   if (c.hideOutOfEra && row.spell.outOfEra) return false;
   if (c.playerOnly && !isPlayerSpell(row)) return false;
-  if (!matchesText(row.spell.title, c.text)) return false;
+  if (!matchesText(searchableText(row, c.searchAll), c.text)) return false;
+  if (c.categories.length && !c.categories.some((label) => inCategory(row, label))) return false;
   if (c.classes.length && !c.classes.some((cls) => row.stats.levels[cls] !== undefined)) return false;
   return true;
 }
 
 /** Which column the results are ordered by. */
-export type SpellSortKey = "name" | "level" | "mana" | "castSec" | "recastSec" | "range" | "damage" | "manaPerDamage" | "source";
+export type SpellSortKey =
+  | "name"
+  | "level"
+  | "mana"
+  | "castSec"
+  | "recastSec"
+  | "range"
+  | "damage"
+  | "manaPerDamage"
+  | "source"
+  | "category";
 
 /**
  * What a point of mana bought, for ranking only — see the module note on why this is approximate
@@ -139,6 +203,9 @@ export function spellSortValue(row: SpellRow, key: SpellSortKey): string | numbe
       return manaPerDamage(row.stats);
     case "source":
       return spellSourceSortValue(row.spell.title);
+    case "category":
+      // Sorting by it is what *groups* the list: each category's subcategories together, in order.
+      return row.category ? categoryLabel(row.category).toLowerCase() : undefined;
     default:
       return row.stats[key];
   }

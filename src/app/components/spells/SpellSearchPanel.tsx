@@ -39,7 +39,7 @@ export default function SpellSearchPanel() {
   const set = useCallback((patch: Partial<SpellCriteria>) => setCriteria({ ...active, ...patch }), [active, setCriteria]);
 
   const closedZones = useClosedZones();
-  const { classes, found } = useSpellQuery(rows, active, sort, closedZones);
+  const { classes, categories, found } = useSpellQuery(rows, active, sort, closedZones);
   const conditions = activeCriteria(active);
   const shown = useMemo(() => found.slice(0, MAX_ROWS), [found]);
 
@@ -50,10 +50,25 @@ export default function SpellSearchPanel() {
       <div className="row wrap item-criteria">
         <TextField
           className="field item-name-box"
-          placeholder="Name contains…"
+          placeholder={active.searchAll ? "Any text contains…" : "Name contains…"}
           value={active.text}
           onChange={(text) => set({ text })}
         />
+        <CheckField
+          label="search all text"
+          title="Match the description, effects and spellbook category too — “charm” finds every charm, whatever it's called"
+          checked={active.searchAll}
+          onChange={(searchAll) => set({ searchAll })}
+        />
+        {categories.length > 0 && (
+          <FacetPicker
+            label="Category"
+            any="any category"
+            options={categories}
+            chosen={active.categories}
+            onChange={(next) => set({ categories: next })}
+          />
+        )}
         <FacetPicker
           label="Class"
           any="any class"

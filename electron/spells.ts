@@ -37,6 +37,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { parseSpellCatalog, type SpellFacts } from "../src/shared/spells/spell-file";
+import { parseSpellCategoryNames, spellCategory, type SpellCategory } from "../src/shared/spells/spell-categories";
 import {
   buildBuffLexicon,
   parseSpellStringFile,
@@ -54,6 +55,11 @@ const SPELL_FILE = "spells_us.txt";
  * about a fade, without touching the mana path at all.
  */
 const STRING_FILE = "spells_us_str.txt";
+/**
+ * The client's string table, for the one slice of it a spell needs: its category names
+ * (`spell-categories.ts`). Read only when something asks what *kind* of spell this is.
+ */
+const DBSTR_FILE = "dbstr_us.txt";
 
 export interface SpellCatalog {
   /** Point at the log folder being watched; forgets anything loaded for a previous one. */
@@ -69,10 +75,26 @@ export interface SpellCatalog {
    * handle rather than a null check per question.
    */
   lexicon(): BuffLexicon;
+  /**
+   * Where the game's spellbook files a spell — `Utility Detrimental › Charm`. Undefined when the
+   * spell, the file, or `dbstr_us.txt` isn't there.
+   */
+  category(spell: string): SpellCategory | undefined;
   /** Is a spell file loaded and non-empty? What the UI asks before promising a mana column. */
   ready(): boolean;
   /** Where the file was found, for the debug log and Settings. */
   file(): string | undefined;
+}
+
+/**
+ * A spell name with the differences between the wiki's spelling and the file's folded away. The
+ * file writes *some* apostrophes as backticks (Wrath of Al`Kabor, but Al`Kabor's Aura), so no
+ * one-way swap gets there; folding both sides does. And the wiki tags a page that shares its name
+ * with an item `(Spell)`. Only for matching a wiki title — the log already writes the file's
+ * spelling, so `find` itself needs none of this.
+ */
+function foldSpellName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s*\(spell\)$/, "").replace(/[`’]/g, "'");
 }
 
 /** `<EverQuest>/<name>` for the log dir we're watching, or undefined. */
@@ -113,6 +135,10 @@ export function createSpellCatalog(): SpellCatalog {
    * above. Most sessions ask about mana and never about a fade, and this is a second file to read.
    */
   let buffLexicon: BuffLexicon | null = null;
+  /** Null until the first question about a category — a third file, so a third laziness. */
+  let categoryNames: Map<number, string> | null = null;
+  /** `byName` re-keyed by `foldSpellName`, built only when a wiki title misses as written. */
+  let byFold: Map<string, SpellFacts> | null = null;
 
   function load(): Map<string, SpellFacts> {
     if (byName) return byName;
@@ -169,6 +195,48 @@ export function createSpellCatalog(): SpellCatalog {
     return buffLexicon;
   }
 
+  function loadCategoryNames(): Map<number, string> {
+    if (categoryNames) return categoryNames;
+    categoryNames = new Map();
+    const dbstr = findGameFile(logDir, DBSTR_FILE);
+    if (!dbstr) {
+      log.debug("no", DBSTR_FILE, "beside", logDir || "(no log dir)");
+      return categoryNames;
+    }
+    try {
+      categoryNames = parseSpellCategoryNames(fs.readFileSync(dbstr, "utf8"));
+      log.debug(`read ${categoryNames.size} spell category names from ${dbstr}`);
+    } catch (e) {
+      log.warn("could not read", dbstr, (e as Error).message);
+    }
+    return categoryNames;
+  }
+
+  /** A wiki title's row when it isn't spelled the file's way — see `foldSpellName`. */
+  function findFolded(title: string): SpellFacts | undefined {
+    if (!byFold) {
+      byFold = new Map();
+      // `byName` has already resolved shared names to the row a player can hold; first fold wins.
+      for (const facts of load().values()) {
+        const key = foldSpellName(facts.name);
+        if (!byFold.has(key)) byFold.set(key, facts);
+      }
+    }
+    return byFold.get(foldSpellName(title));
+  }
+
+  function find(spell: string, rank?: string): SpellFacts | undefined {
+    const spells = load();
+    if (!spells.size || !spell) return undefined;
+    const base = spell.trim().toLowerCase();
+    // The ranked row is the exact answer; the base name is what a damage line gives us.
+    if (rank) {
+      const ranked = spells.get(`${base} ${rank.trim().toLowerCase()}`);
+      if (ranked) return ranked;
+    }
+    return spells.get(base);
+  }
+
   return {
     setLogDir(next) {
       const dir = next?.trim() ?? "";
@@ -177,20 +245,16 @@ export function createSpellCatalog(): SpellCatalog {
       byName = null; // a different install may have a different file
       byId = null;
       buffLexicon = null;
+      categoryNames = null;
+      byFold = null;
       file = undefined;
     },
-    find(spell, rank) {
-      const spells = load();
-      if (!spells.size || !spell) return undefined;
-      const base = spell.trim().toLowerCase();
-      // The ranked row is the exact answer; the base name is what a damage line gives us.
-      if (rank) {
-        const ranked = spells.get(`${base} ${rank.trim().toLowerCase()}`);
-        if (ranked) return ranked;
-      }
-      return spells.get(base);
-    },
+    find,
     lexicon: () => loadLexicon(),
+    category(spell) {
+      const facts = find(spell) ?? findFolded(spell);
+      return facts ? spellCategory(facts, loadCategoryNames()) : undefined;
+    },
     ready: () => load().size > 0,
     file: () => {
       load();

@@ -92,3 +92,33 @@ test("an unknown spell is undefined, not a zero-cost spell", () => {
   assert.equal(spells.find("Nonexistent Spell"), undefined);
   assert.equal(spells.find("Chant of Battle")?.mana, 0);
 });
+
+test("a spell's category is its file row's ids, named by dbstr_us.txt — under the wiki's spelling too", () => {
+  const logs = install(false);
+  const root = path.dirname(logs);
+  const row = (id: number, name: string) => {
+    const fields = new Array(100).fill("0");
+    fields[0] = String(id);
+    fields[1] = name;
+    for (let i = 0; i < 16; i++) fields[36 + i] = "255";
+    fields[36 + 13] = "20"; // Enchanter
+    fields[87] = "126";
+    fields[88] = "13";
+    return fields.join("^");
+  };
+  fs.writeFileSync(path.join(root, "spells_us.txt"), [row(1, "Cajoling Whispers"), row(2, "Al`Kabor's Charm")].join("\n"));
+  fs.writeFileSync(path.join(root, "dbstr_us.txt"), "13^5^Charm^0^\n126^5^Utility Detrimental^0^\n");
+  const spells = createSpellCatalog();
+  spells.setLogDir(logs);
+  const charm = { category: "Utility Detrimental", subcategory: "Charm" };
+  assert.deepEqual(spells.category("Cajoling Whispers"), charm);
+  // The wiki types an apostrophe and disambiguates with "(Spell)"; the file writes a backtick.
+  assert.deepEqual(spells.category("Al'Kabor's Charm (Spell)"), charm);
+  assert.equal(spells.category("Nothing Like It"), undefined);
+});
+
+test("with no dbstr_us.txt a spell simply has no category", () => {
+  const spells = createSpellCatalog();
+  spells.setLogDir(install());
+  assert.equal(spells.category("Burst of Fire"), undefined);
+});

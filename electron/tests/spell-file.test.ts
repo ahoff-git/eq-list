@@ -119,3 +119,23 @@ test("the ceiling is read from the formula and ticks columns", () => {
   fields[12] = "4";
   assert.equal(parseSpellLine(fields.join("^"))?.maxDurationSeconds, 24);
 });
+
+test("the spellbook category and subcategory are read from columns 87 and 88", () => {
+  const fields = new Array(100).fill("0");
+  fields[0] = "725";
+  fields[1] = "Solon's Song of the Sirens";
+  for (let i = 0; i < 16; i++) fields[36 + i] = "255";
+  fields[87] = "126";
+  fields[88] = "13";
+  const spell = parseSpellLine(fields.join("^"));
+  assert.equal(spell?.categoryId, 126);
+  assert.equal(spell?.subcategoryId, 13);
+});
+
+test("a row filed nowhere, or too short to say, has no category", () => {
+  const fields = new Array(100).fill("0");
+  fields[0] = "1";
+  fields[1] = "Unfiled";
+  assert.equal(parseSpellLine(fields.join("^"))?.categoryId, undefined);
+  assert.equal(parseSpellLine(fields.slice(0, 60).join("^"))?.categoryId, undefined);
+});

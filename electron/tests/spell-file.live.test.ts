@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { gameFile, liveOnly } from "./game-data";
 import { isObtainable, parseSpellFile, parseSpellLine } from "../../src/shared/spells/spell-file";
+import { categoryLabel, parseSpellCategoryNames, spellCategory } from "../../src/shared/spells/spell-categories";
 
 /** Parsed once — the file is ~38 MB, and every test below wants the same map. */
 let cached: Map<string, ReturnType<typeof parseSpellLine>> | null = null;
@@ -85,4 +86,18 @@ test("a shared name still resolves to a spell a player can hold", liveOnly(), ()
   for (const name of ["minor healing", "spirit of wolf", "burst of flame", "chant of battle"]) {
     assert.ok(isObtainable(all.get(name)!), `${name} resolved to a row nobody can cast`);
   }
+});
+
+test("every charm is filed under Utility Detrimental › Charm, every mez under › Enthrall", liveOnly(), () => {
+  const names = parseSpellCategoryNames(fs.readFileSync(gameFile("dbstr_us.txt"), "utf8"));
+  const label = (name: string) => {
+    const facts = spells().get(name);
+    const category = facts && spellCategory(facts, names);
+    return category && categoryLabel(category);
+  };
+  assert.equal(label("solon's song of the sirens"), "Utility Detrimental › Charm");
+  assert.equal(label("cajoling whispers"), "Utility Detrimental › Charm");
+  assert.equal(label("kelin's lucid lullaby"), "Utility Detrimental › Enthrall");
+  assert.equal(label("mesmerization"), "Utility Detrimental › Enthrall");
+  assert.match(label("burst of fire") ?? "", /^Direct Damage/);
 });

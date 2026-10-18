@@ -6,6 +6,7 @@ import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, 
 import { useGridSort } from "@/lib/useGridSort";
 import { buffLinesFor } from "@/shared/buffs/buff-lines";
 import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spells/spell-search";
+import { categoryLabel } from "@/shared/spells/spell-categories";
 import { sourceKindsLabel, spellSource } from "@/shared/spells/spell-sources";
 import type { Sort } from "@/shared/sorting";
 
@@ -21,6 +22,7 @@ const START_DESC: Record<SpellSortKey, boolean> = {
   damage: true,
   manaPerDamage: false,
   source: false,
+  category: false,
 };
 
 type Row = SpellRow & { id: string };
@@ -53,6 +55,22 @@ export default function SpellCatalogTable({
             {p.row.spell.outOfEra && <span className="badge era-out">out of era</span>}
           </>
         ),
+      },
+      {
+        field: "category",
+        headerName: "Category",
+        description: "Where the game's own spellbook files it — sort by this to group the list",
+        flex: 1.5,
+        minWidth: 120,
+        cellClassName: "small",
+        valueGetter: (_v, row) => (row.category ? categoryLabel(row.category) : "—"),
+        // The subcategory is the useful word ("Charm"); the full path is a hover away.
+        renderCell: (p) =>
+          p.row.category ? (
+            <span title={categoryLabel(p.row.category)}>{p.row.category.subcategory ?? p.row.category.category}</span>
+          ) : (
+            <span className="muted">—</span>
+          ),
       },
       {
         field: "level",

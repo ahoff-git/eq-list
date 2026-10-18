@@ -9,6 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   NO_CRITERIA,
+  categoryOptions,
   classOptions,
   manaPerDamage,
   matchesSpell,
@@ -20,6 +21,7 @@ import {
   type SpellCriteria,
 } from "../../src/shared/spells/spell-search";
 import type { CachedSpell } from "../../src/shared/types";
+import type { SpellCategory } from "../../src/shared/spells/spell-categories";
 
 const spell = (title: string, lines: string[]): CachedSpell => ({
   title,
@@ -146,4 +148,79 @@ test("classOptions lists every class any cached spell names", () => {
 
 test("spellSortValue lowercases the name, so the sort isn't case-sensitive", () => {
   assert.equal(spellSortValue(rows()[0], "name"), "burst of fire");
+});
+
+// ── any text, and the spellbook's own categories ──
+
+const CHARMS: CachedSpell[] = [
+  spell("Solon's Song of the Sirens", [
+    "An enticing melody that charms the target, allowing you to command it.",
+    "Classes: Bard - Level 27",
+  ]),
+  spell("Cajoling Whispers", [
+    "Dominates your target's mind, allowing you to control them for a short time.",
+    "Classes: Enchanter - Level 37",
+  ]),
+  spell("Kelin's Lucid Lullaby", ["Classes: Bard - Level 15"]),
+  ...CATALOGUE,
+];
+
+/** What the game file says, keyed by title — `electron/spells.ts`'s job in the app. */
+const FILED: Record<string, SpellCategory> = {
+  "Solon's Song of the Sirens": { category: "Utility Detrimental", subcategory: "Charm" },
+  "Cajoling Whispers": { category: "Utility Detrimental", subcategory: "Charm" },
+  "Kelin's Lucid Lullaby": { category: "Utility Detrimental", subcategory: "Enthrall" },
+  "Burst of Fire": { category: "Direct Damage", subcategory: "Fire" },
+};
+const filedRows = () => spellRows(CHARMS, (title) => FILED[title]);
+const titles = (criteria: SpellCriteria) =>
+  filedRows()
+    .filter((r) => matchesSpell(r, criteria))
+    .map((r) => r.spell.title)
+    .sort();
+
+test("searching all text reaches the description, not just the name", () => {
+  assert.deepEqual(titles({ ...NO_CRITERIA, text: "control them" }), []);
+  assert.deepEqual(titles({ ...NO_CRITERIA, text: "control them", searchAll: true }), ["Cajoling Whispers"]);
+});
+
+test("searching all text reaches the spellbook category too", () => {
+  // The Lullaby's card never says "enthrall"; the game's filing of it does.
+  assert.deepEqual(titles({ ...NO_CRITERIA, text: "enthrall", searchAll: true }), ["Kelin's Lucid Lullaby"]);
+  assert.deepEqual(titles({ ...NO_CRITERIA, text: "charm", searchAll: true }), ["Cajoling Whispers", "Solon's Song of the Sirens"]);
+});
+
+test("a bare category takes everything under it; a subcategory only itself", () => {
+  assert.deepEqual(titles({ ...NO_CRITERIA, categories: ["Utility Detrimental"] }), [
+    "Cajoling Whispers",
+    "Kelin's Lucid Lullaby",
+    "Solon's Song of the Sirens",
+  ]);
+  assert.deepEqual(titles({ ...NO_CRITERIA, categories: ["Utility Detrimental › Charm"] }), [
+    "Cajoling Whispers",
+    "Solon's Song of the Sirens",
+  ]);
+  // Several ticked widen, the way the class facet does.
+  assert.deepEqual(titles({ ...NO_CRITERIA, categories: ["Utility Detrimental › Enthrall", "Direct Damage"] }), [
+    "Burst of Fire",
+    "Kelin's Lucid Lullaby",
+  ]);
+});
+
+test("categoryOptions offers each category, with its subcategories directly beneath it", () => {
+  assert.deepEqual(categoryOptions(filedRows()), [
+    "Direct Damage",
+    "Direct Damage › Fire",
+    "Utility Detrimental",
+    "Utility Detrimental › Charm",
+    "Utility Detrimental › Enthrall",
+  ]);
+});
+
+test("sorting by category groups the list, and an unfiled spell sinks to the bottom", () => {
+  const found = searchSpells(filedRows(), NO_CRITERIA, { key: "category", desc: false });
+  assert.deepEqual(
+    found.map((r) => r.spell.title),
+    ["Burst of Fire", "Cajoling Whispers", "Solon's Song of the Sirens", "Kelin's Lucid Lullaby", "Minor Healing", "Unknowable Rune"],
+  );
 });

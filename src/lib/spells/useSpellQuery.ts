@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import type { Sort } from "@/shared/sorting";
 import { liveLevelCap } from "@/shared/zones/expansions";
 import {
+  categoryOptions,
   classOptions,
   searchSpells,
   spellEraRows,
@@ -15,6 +16,8 @@ import {
 export interface SpellQuery {
   /** Every class any cached spell names, for the class picker. */
   classes: string[];
+  /** Every spellbook category any cached spell is filed under, for the category picker. */
+  categories: string[];
   /** The results, filtered and ordered. */
   found: SpellRow[];
 }
@@ -36,6 +39,7 @@ export function useSpellQuery(
   const levelCap = useMemo(() => liveLevelCap(closedZones), [closedZones]);
   const corpus = useMemo(() => spellEraRows(rows, levelCap), [rows, levelCap]);
   const classes = useMemo(() => classOptions(rows), [rows]);
+  const categories = useMemo(() => categoryOptions(rows), [rows]);
   const found = useMemo(() => searchSpells(corpus, criteria, sort), [corpus, criteria, sort]);
-  return { classes, found };
+  return { classes, categories, found };
 }

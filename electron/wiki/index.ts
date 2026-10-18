@@ -55,6 +55,7 @@ import { createLogger } from "../../src/shared/logging";
 import type { CachedItem, CachedSpell, SearchResult, WikiPage, WikiPageKind } from "../../src/shared/types";
 import { forTransfer, itemRows, type ItemRow } from "../../src/shared/items/item-search";
 import { spellRows } from "../../src/shared/spells/spell-search";
+import type { SpellCategory } from "../../src/shared/spells/spell-categories";
 import { withQuestPickups } from "../../src/shared/quests/quest-pickups";
 import { withQuestPlan } from "../../src/shared/quests/quest-plans";
 import { outOfEraWithGmEvents, withGmEventEra } from "../../src/shared/items/gm-event-items";
@@ -546,7 +547,19 @@ export function closeOwnedDatabases(cacheDir: string): void {
  * is what every test in this codebase that only ever constructs one client per directory wants —
  * see `closeOwnedDatabases` for how such a test gets its directory back afterward.
  */
-export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number; db?: Database } = {}): WikiClient {
+export function createWikiClient(
+  cacheDir: string,
+  opts: {
+    ttlMs?: () => number;
+    db?: Database;
+    /**
+     * Where the game's own spellbook files a spell (`spell-categories.ts`), joined onto each Spells
+     * tab row. Injected rather than read here: the game install is `spells.ts`'s business, and a
+     * client with none simply has uncategorised rows.
+     */
+    spellCategory?: (title: string) => SpellCategory | undefined;
+  } = {},
+): WikiClient {
   fs.mkdirSync(cacheDir, { recursive: true });
   /**
    * Read on every freshness test rather than captured, so changing the setting takes effect at once
@@ -1773,7 +1786,7 @@ export function createWikiClient(cacheDir: string, opts: { ttlMs?: () => number;
     spellRowBuilding ??= (async () => {
       const startedAt = Date.now();
       const spells = await cachedSpellPages();
-      const json = JSON.stringify(spellRows(spells));
+      const json = JSON.stringify(spellRows(spells, opts.spellCategory));
       log.debug("spell catalogue:", spells.length, "rows built in", `${Date.now() - startedAt}ms`);
       spellRowCache = json;
       return json;

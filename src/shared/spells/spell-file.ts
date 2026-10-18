@@ -19,7 +19,7 @@
  *
  * **The stability rule, and it is the whole design.** EQL *inserts* columns by patch: one landed
  * at index 103 in mid-2026 and shifted everything after it. Columns **0–102 have never moved**.
- * Every index below is ≤ 51, deliberately — so a patch that appends or inserts later columns
+ * Every index below is under 103, deliberately — so a patch that appends or inserts later columns
  * cannot silently change what we read. Nothing here counts columns or validates a total width,
  * for the same reason: a row simply needs to be long enough for the fields we want.
  *
@@ -58,7 +58,7 @@ export const SPELL_CLASSES = [
 ] as const;
 
 /**
- * Column indices. All ≤ 51 on purpose — see the stability rule above. Named rather than inlined
+ * Column indices. All under 103 on purpose — see the stability rule above. Named rather than inlined
  * so the one place they'd need changing is visible if EQL ever does move an early column.
  */
 const IDX = {
@@ -79,6 +79,14 @@ const IDX = {
   goodEffect: 28,
   /** First of 16 per-class minimum levels. */
   classes: 36,
+  /**
+   * The spellbook's own filing: a category ("Direct Damage", "Utility Detrimental") and a
+   * subcategory under it ("Fire", "Charm", "Enthrall"), each an id into `dbstr_us.txt` — see
+   * `spell-categories.ts`. Checked against a live install: every bard, enchanter, druid and
+   * necromancer charm reads `Utility Detrimental › Charm`, every mez `› Enthrall`.
+   */
+  category: 87,
+  subcategory: 88,
 } as const;
 
 /**
@@ -203,6 +211,10 @@ export interface SpellFacts {
   instant: boolean;
   /** The most this can last, in seconds, whatever level cast it — see `maxDurationSeconds`. */
   maxDurationSeconds?: number;
+  /** The spellbook category's string id (`IDX.category`); absent when the file files it nowhere. */
+  categoryId?: number;
+  /** The subcategory's string id, under `categoryId`; absent the same way. */
+  subcategoryId?: number;
 }
 
 /** A number the file states, or 0 — a blank or junk field must never become NaN downstream. */
@@ -243,6 +255,8 @@ export function parseSpellLine(line: string): SpellFacts | null {
     permanent: PERMANENT_FORMULAS.has(formula),
     instant: formula === INSTANT_FORMULA,
     maxDurationSeconds: maxDurationSeconds(formula, num(fields, IDX.durationTicks)),
+    categoryId: num(fields, IDX.category) || undefined,
+    subcategoryId: num(fields, IDX.subcategory) || undefined,
   };
 }
 

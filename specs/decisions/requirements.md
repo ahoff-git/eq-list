@@ -176,9 +176,14 @@ reading like a measurement, and they are shared code
 - **Cast timing is measured, not looked up.** One cast in flight per caster; an outcome resolves the
   pending cast; a DoT tick never consumes one; `dpc` is per-landing damage over the *average* cast
   time. Only your own casts are tracked. ([0016](./0016-combat-history-and-spell-analytics.md))
-- **Mana comes from the game's own `spells_us.txt`**, columns ≤ 51 only, scalars only, priced at the
-  rank actually cast, injected into the tracker so it stays free of I/O. Unknown and free stay
-  distinct; the wiki is the fallback, not a rival. ([0080](./0080-the-game-s-own-spell-file.md))
+- **Mana comes from the game's own `spells_us.txt`**, columns below 103 only (the range that has
+  never moved), scalars only, priced at the rank actually cast, injected into the tracker so it
+  stays free of I/O. Unknown and free stay distinct; the wiki is the fallback, not a rival.
+  ([0080](./0080-the-game-s-own-spell-file.md), [0306](./0306-a-spell-s-kind-is-the-game-s-own-spellbook-category.md))
+- **A spell's kind is the game's own spellbook category** (`spells_us.txt` columns 87/88, named by
+  `dbstr_us.txt` type 5), never a keyword rule of ours. The Spells tab filters, groups and full-text
+  searches by it; a wiki title is matched to the file with apostrophes/backticks folded.
+  ([0306](./0306-a-spell-s-kind-is-the-game-s-own-spellbook-category.md))
 - **Rates that divide by time use combat time, and the label says so** where the distinction matters.
   Session XP/hour uses elapsed time, because that one is a forecast. Downtime is its own figure. ([0017](./0017-camp-efficiency-and-asking-the-player.md))
 - **History is a flat, bounded list of finished fights; sessions are derived.** One list, one bound,

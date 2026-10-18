@@ -274,7 +274,13 @@ server.registerTool(
   },
   async (args) => {
     const rows = JSON.parse(await wiki.spellCatalogueJson());
-    const criteria = { text: args.text ?? "", classes: args.class ?? [], hideOutOfEra: args.hideOutOfEra };
+    const criteria = {
+      text: args.text ?? "",
+      searchAll: false,
+      categories: [],
+      classes: args.class ?? [],
+      hideOutOfEra: args.hideOutOfEra,
+    };
     const results = searchSpells(rows, criteria, { key: args.sortBy, desc: args.sortDesc });
     return result(page(results, args));
   },
