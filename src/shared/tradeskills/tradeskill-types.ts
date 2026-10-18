@@ -53,6 +53,19 @@ export interface StepNeed {
   total?: boolean;
 }
 
+/** One merchant selling a material, from the item page's merchant table. */
+export interface VendorSpot {
+  /** The zone as the wiki shows it — "East Cabilis". */
+  zone: string;
+  /** The page the zone links to, when that differs — "Cabilis". */
+  zonePage?: string;
+  merchant: string;
+  /** The wiki's note on where in the zone ("Inside Armor by Ikthar"). */
+  area?: string;
+  y?: number;
+  x?: number;
+}
+
 /** A vendor price, in copper, and the page the wiki stated it on. */
 export interface WikiPrice {
   copper: number;

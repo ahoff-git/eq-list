@@ -2552,6 +2552,10 @@ all eleven cultural pages come back dimmed with an "out of era" badge whose hove
   connect and switch on "Crafting success rates" (Peers tab). Within a minute, the other's rates should
   appear in Tradeskills → Crafting log → "The room", and in "By level"'s Room columns for any item
   and level you have both made. Then "forget" that contributor and confirm their rows go.
+- **Section costs and where to buy.** Seen in an isolated instance at Blacksmithing 61 in East
+  Freeport: "≈ 1,975pp–4,938pp+ to finish" on the guide, a cost on each section, merchants grouped
+  "here" with locations, and Tislan's "134, -298" opening the map on East Freeport with his marker.
+  Not yet: walk to a merchant the box names and confirm they're there and sell it.
 - **Estimates and "+ List" runs.** Seen in the web build: Jewelcrafting's first step reads "≈ 16–40
   combines · ≈ 8.8pp–22.1pp · Silver Bar ×16–40 @ 5g 3s · Malachite ×16–40". In the desktop app, press
   its "+ List" and confirm the group lands with runs at 16 (the floor) and Silver Bar needed ×16. Then

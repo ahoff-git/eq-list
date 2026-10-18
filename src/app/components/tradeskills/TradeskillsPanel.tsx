@@ -1,11 +1,14 @@
 "use client";
 import { Fragment, createContext, useContext } from "react";
 import { api } from "@/lib/api";
-import { useClosedZones, useTradeskillProgress } from "@/lib/hooks";
+import { useClosedZones, useCurrentZone, useTradeskillProgress } from "@/lib/hooks";
 import { usePersistentShape } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { addStep } from "@/lib/tradeskills/addStep";
-import { PRICES, TRADESKILLS } from "@/shared/tradeskills/tradeskills.generated";
+import { PRICES, TRADESKILLS, VENDORS } from "@/shared/tradeskills/tradeskills.generated";
+import { sectionCost, type CostedStep } from "@/shared/tradeskills/section-cost";
+import { whereToBuy, type MerchantHere, type ShoppingPlan } from "@/shared/tradeskills/where-to-buy";
+import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
 import {
   RATE_BANDS,
   costText,
@@ -34,7 +37,7 @@ import {
   type JudgedLine,
 } from "@/shared/tradeskills/tradeskill-era";
 import { lineLinks, rowLinks, type StepLinks } from "@/shared/tradeskills/step-materials";
-import type { GuideRun, SkillSpan, StepNeed, Tradeskill, TradeskillGuide } from "@/shared/tradeskills/tradeskill-types";
+import type { GuideRun, SkillSpan, StepCost, StepNeed, Tradeskill, TradeskillGuide } from "@/shared/tradeskills/tradeskill-types";
 import { AddButton, CheckField, Empty, segCls } from "@/app/components/ui";
 import ItemLink from "@/app/components/items/ItemLink";
 import CraftingLogView from "@/app/components/tradeskills/CraftingLogView";
@@ -69,6 +72,8 @@ interface You {
   factor: number;
   /** What the factor was measured on: this skill's own skill-ups, or another tradeskill's. */
   basis?: { skill: string; rate: MeasuredRate; own: boolean };
+  /** The zone the log last put you in, for "where to buy". */
+  zone?: string | null;
 }
 const NOBODY: You = { factor: 1 };
 const YouContext = createContext<You>(NOBODY);
@@ -98,6 +103,47 @@ function forYou(span: SkillSpan | undefined | null, you: You): { place: StepPlac
   const place = placeStep(span, you.skill);
   if (place.at === "done") return { place };
   return { place, span: place.at === "current" ? place.remaining : (span ?? undefined) };
+}
+
+/** One step, worked out once for both its own line and its section's total. */
+interface StepPlan {
+  place: StepPlace;
+  estimate?: StepEstimate;
+  /** The step as `sectionCost` reads it — absent for a step you're past, or one with no span. */
+  costed?: CostedStep;
+  /** What it uses, for "where to buy". */
+  materials: string[];
+}
+
+function planFor(span: SkillSpan | undefined | null, needs: StepNeed[] | undefined, cost: StepCost | undefined, you: You): StepPlan {
+  const mine = forYou(span, you);
+  const estimate = estimateStep(mine.span, needs, cost, PRICES, you.factor);
+  const materials = mine.place.at === "done" ? [] : (needs ?? []).map((n) => n.name);
+  if (!estimate || !mine.span) return { place: mine.place, estimate, materials };
+  const totals = (needs ?? []).filter((n) => n.total);
+  const fixed = totals.reduce((sum, n) => sum + (PRICES[n.name]?.copper ?? 0) * n.qty, 0);
+  const unpriced = [...(cost?.unpriced ?? []), ...totals.filter((n) => !PRICES[n.name]).map((n) => n.name)];
+  return {
+    place: mine.place,
+    estimate,
+    materials,
+    costed: { span: mine.span, perCombine: cost?.copper, fixed, unpriced },
+  };
+}
+
+/**
+ * A guide's sections: what comes before its first heading, then each heading's run of blocks. Each
+ * holds its steps' plans, so its total and its shopping list read the same figures its lines show.
+ */
+function sectionsOf(blocks: readonly JudgedBlock[], you: You): Map<number, StepPlan[]> {
+  const sections = new Map<number, StepPlan[]>([[-1, []]]);
+  let at = -1;
+  blocks.forEach((b, i) => {
+    if (b.kind === "heading") sections.set((at = i), []);
+    else if (b.kind === "list") for (const l of b.items) sections.get(at)!.push(planFor(l.skill, l.needs, l.cost, you));
+    else if (b.kind === "table") for (const r of b.rows) sections.get(at)!.push(planFor(r.skill, r.needs, r.cost, you));
+  });
+  return sections;
 }
 
 const PLACE_CLASS: Record<StepPlace["at"], string | undefined> = {
@@ -244,7 +290,8 @@ function SkillGuides({
   hideOutOfEra: boolean;
   progress: SkillProgressView;
 }) {
-  const you = youIn(skill, progress);
+  const zone = useCurrentZone();
+  const you = { ...youIn(skill, progress), zone };
   return (
     <YouContext.Provider value={you}>
       <div className="page-detail tradeskill-detail">
@@ -332,10 +379,14 @@ function Guide({
   const judged = judgeGuide(guide, closed);
   const { blocks, hidden } = hideOutOfEra ? withoutShut(judged) : { blocks: judged, hidden: 0 };
   const onAdd: OnAddStep = (step, planned) => void addStep(skill, guide.anchor, step, planned);
+  const you = useContext(YouContext);
+  const sections = sectionsOf(blocks, you);
+  const all = [...sections.values()].flat();
   return (
     <section className="tradeskill-guide">
       <div className="row tradeskill-guide-head">
         <h4>{guide.name}</h4>
+        <CostToFinish steps={all} label="this guide" />
         <span className="spacer" />
         <button className="btn ghost sm" onClick={() => openOnWiki(skill.title, guide.anchor)} title="This leveling guide on eqlwiki">
           ↗ leveling guide
@@ -347,10 +398,137 @@ function Guide({
           {hidden === 1 ? "it" : "them"}.
         </p>
       )}
+      <SectionSummary steps={sections.get(-1) ?? []} closed={closed} />
       {blocks.map((b, i) => (
-        <Block key={i} block={b} closed={closed} onAdd={onAdd} />
+        <Fragment key={i}>
+          <Block block={b} closed={closed} onAdd={onAdd} />
+          {b.kind === "heading" && <SectionSummary steps={sections.get(i) ?? []} closed={closed} withCost />}
+        </Fragment>
       ))}
     </section>
+  );
+}
+
+/** "≈ 12pp–31pp to finish" — the point-by-point total (`sectionCost`), with what it leaves out. */
+function CostToFinish({ steps, label }: { steps: StepPlan[]; label: string }) {
+  const you = useContext(YouContext);
+  const total = sectionCost(steps.flatMap((s) => (s.costed ? [s.costed] : [])), you.factor);
+  if (!total) return null;
+  if (!total.pricedPoints) {
+    // Steps ahead, but nothing in them the wiki prices — say so rather than show nothing, so a blank
+    // never reads as "free".
+    return (
+      <span className="section-cost unpriced" title="None of what's left here has a price on the wiki — its merchants are listed below">
+        cost unknown{total.unpriced.length ? ` (no price for ${total.unpriced.slice(0, 3).join(", ")})` : ""}
+      </span>
+    );
+  }
+  const partial = total.unpricedPoints > 0 || total.unpriced.length > 0;
+  const hover =
+    `To finish ${label}${you.skill !== undefined ? ` from your ${you.skill}` : ""}: each skill point ahead bought with the cheapest step ` +
+    `that covers it, ${rangeText(total.combines)} combines in all, plus each chosen step's one-off purchases. ` +
+    (total.unpricedPoints ? `${total.unpricedPoints} of ${total.unpricedPoints + total.pricedPoints} points have no priced step and aren't counted. ` : "") +
+    (total.unpriced.length ? `No price on the wiki for: ${total.unpriced.join(", ")}.` : "");
+  return (
+    <span className="section-cost" title={hover}>
+      ≈ {costText(total.cost)}
+      {partial ? "+" : ""} to finish
+    </span>
+  );
+}
+
+/**
+ * A section's cost to finish and where to buy what's left of it — open on the section you're in,
+ * folded on the others so the guide still reads as a guide.
+ */
+function SectionSummary({ steps, closed, withCost }: { steps: StepPlan[]; closed: ReadonlySet<string>; withCost?: boolean }) {
+  const you = useContext(YouContext);
+  const materials = steps.flatMap((s) => s.materials);
+  if (!materials.length && !(withCost && steps.some((s) => s.costed))) return null;
+  const plan = whereToBuy(materials, VENDORS, you.zone, closed);
+  const current = steps.some((s) => s.place.at === "current");
+  const soldHere = new Set(plan.here.map((h) => h.item)).size;
+  return (
+    <div className="section-summary">
+      {withCost && <CostToFinish steps={steps} label="this section" />}
+      {materials.length > 0 && (
+        <details className="where-to-buy" open={current}>
+          <summary>
+            Where to buy{you.zone ? ` — you're in ${you.zone}` : ""}
+            {soldHere ? ` · ${soldHere} sold here` : ""}
+          </summary>
+          <ShoppingView plan={plan} zone={you.zone} />
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** Here's merchants, grouped by merchant; then the best other stops; then what no merchant sells. */
+function ShoppingView({ plan, zone }: { plan: ShoppingPlan; zone?: string | null }) {
+  const byMerchant = new Map<string, MerchantHere[]>();
+  for (const h of plan.here) byMerchant.set(h.merchant, [...(byMerchant.get(h.merchant) ?? []), h]);
+  return (
+    <div className="shopping small">
+      {byMerchant.size > 0 && (
+        <div className="shopping-group">
+          <span className="shopping-label">Here:</span>
+          {[...byMerchant.values()].map((sells) => (
+            <span key={sells[0].merchant} className="shopping-merchant">
+              <Merchant name={sells[0].merchant} zone={sells[0].zone} loc={sells[0].loc} area={sells[0].area} />:{" "}
+              {sells.map((s, i) => (
+                <span key={s.item}>
+                  {i > 0 && ", "}
+                  <ItemLink title={s.item} craft />
+                </span>
+              ))}
+            </span>
+          ))}
+        </div>
+      )}
+      {plan.stops.map((stop) => (
+        <div key={stop.zone} className="shopping-group">
+          <span className="shopping-label">
+            <ZoneLink zone={stop.zone} />:
+          </span>
+          {stop.items.map((s) => (
+            <span key={s.item} className="shopping-merchant">
+              <ItemLink title={s.item} craft /> (<Merchant name={s.merchant} zone={stop.zone} loc={s.loc} area={s.area} />)
+            </span>
+          ))}
+        </div>
+      ))}
+      {plan.notSold.length > 0 && (
+        <div className="shopping-group muted" title="No merchant the wiki lists, in a zone that's open, sells these — they drop, are foraged, or are made first">
+          <span className="shopping-label">Not sold:</span>
+          {plan.notSold.map((item, i) => (
+            <span key={item}>
+              {i > 0 && ", "}
+              <ItemLink title={item} craft />
+            </span>
+          ))}
+        </div>
+      )}
+      {!zone && <p className="muted small">The log hasn&apos;t said which zone you&apos;re in yet, so these are only the best stops.</p>}
+    </div>
+  );
+}
+
+/** A merchant, clickable to their page; and their spot, clickable to the map, when the wiki gives one. */
+function Merchant({ name, zone, loc, area }: { name: string; zone: string; loc?: { y: number; x: number }; area?: string }) {
+  return (
+    <>
+      <ItemLink title={name} />
+      {loc && (
+        <>
+          {" "}
+          <MapLink target={{ zone, loc, label: name }}>
+            {loc.y}, {loc.x}
+          </MapLink>
+        </>
+      )}
+      {area && <span className="muted"> ({area})</span>}
+    </>
   );
 }
 
@@ -402,8 +580,8 @@ function GuideTable({
         <tbody>
           {block.rows.map((row, r) => {
             const step = rowLinks(block.header, row.cells, row.makes);
-            const mine = forYou(row.skill, you);
-            const estimate = estimateStep(mine.span, row.needs, row.cost, PRICES, you.factor);
+            const { place, estimate } = planFor(row.skill, row.needs, row.cost, you);
+            const mine = { place };
             const classes = [row.shut && "era-shut", PLACE_CLASS[mine.place.at]].filter(Boolean);
             const last = row.cells.length - 1;
             return (
@@ -453,8 +631,9 @@ function Lines({
       {lines.map((l, i) => {
         const top = depth === 0;
         const step = top ? lineLinks(l) : undefined;
-        const mine = forYou(l.skill, you);
-        const estimate = top ? estimateStep(mine.span, l.needs, l.cost, PRICES, you.factor) : undefined;
+        const plan = planFor(l.skill, l.needs, l.cost, you);
+        const mine = { place: plan.place };
+        const estimate = top ? plan.estimate : undefined;
         const classes = [l.shut && "era-shut", top && PLACE_CLASS[mine.place.at]].filter(Boolean).join(" ");
         return (
           <li key={i} className={classes || undefined}>

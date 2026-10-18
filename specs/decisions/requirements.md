@@ -383,6 +383,10 @@ reading like a measurement, and they are shared code
   by byte position. A step you're past greys out, the one you're in is estimated from where you are,
   and every combine range is scaled by your own measured pace. Success rates by item and level travel
   as the `crafting` observation kind, conclusions only, and sit beside yours rather than in them. ([0303](./0303-a-tradeskill-guide-follows-your-skill.md))
+- **A guide section is priced point by point and shops from where you stand.** Each skill point ahead
+  takes the cheapest step covering it, so alternatives aren't double-counted; unpriced points are
+  named, never zero. Merchants come from the item pages' merchant tables: those in your zone first, with
+  map links, then the zones selling the most of the rest, then what no open merchant sells. ([0304](./0304-a-guide-section-says-what-it-costs-and-where-to-buy-it.md))
 - **Lucy is a third rung, asked only where the first two are silent**, quoted rather than believed:
   its rows open rather than add, they reach no rate, and they sit under a heading naming the other
   game. Era is derived from the zones and "unknown" is a real third answer. ([0124](./0124-lucy-is-a-second-opinion.md))

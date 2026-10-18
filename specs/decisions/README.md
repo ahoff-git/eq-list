@@ -341,6 +341,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0301: A zone line learned late re-files what it missed — a one-time, logged repair of records filed under the zone before](./0301-a-zone-line-learned-late-re-files-what-it-missed.md)
 - [0302: Tradeskill guides are generated static data, read from the rendered page, and their era is judged live](./0302-tradeskill-guides-are-generated-static-data.md)
 - [0303: A tradeskill guide follows your skill from the log, your combines are a crafting log, and success rates are a shared observation kind](./0303-a-tradeskill-guide-follows-your-skill.md)
+- [0304: A guide section says what it costs to finish, priced point by point, and where to buy it from the zone you're in, with map links](./0304-a-guide-section-says-what-it-costs-and-where-to-buy-it.md)
 - [0304: A fight lasts until everything in it is dead or charmed — not until the first kill, and not for a 60s lull](./0304-a-fight-lasts-until-everything-in-it-is-dead-or-charmed.md)
 - [0305: A resist rate is resists out of every time the spell reached its target (lands + resists), and a mez or DoT that went in is a land](./0305-a-resist-rate-counts-every-cast-that-reached-a-target.md)
 

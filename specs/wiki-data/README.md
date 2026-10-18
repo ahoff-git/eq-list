@@ -545,7 +545,9 @@ The numbers above, taken against the live wiki and worth re-taking rather than t
   fetched. The same snapshot names what an ingredients-only step makes, by matching its ingredients
   against every cached recipe (`scripts/lib/tradeskill-results.mjs`). Vendor prices are read from
   item pages' `notes` and the skill pages' cost tables (`wiki-price.ts`), since the wiki has no price
-  field, and each step's span, materials and per-combine cost are worked out once (`step-plan.ts`). See
+  field, and each step's span, materials and per-combine cost are worked out once (`step-plan.ts`).
+  The same pages' `{{ItemWhereRow}}` merchant tables become `VENDORS` (zone, merchant, area,
+  location), for the guide's "where to buy" ([ADR 0304](../decisions/0304-a-guide-section-says-what-it-costs-and-where-to-buy-it.md)). See
   [ADR 0302](../decisions/0302-tradeskill-guides-are-generated-static-data.md).
 - Out-of-era flagging covers the opened page and the shown search/quest results
   (not the whole title index) — the "hide" toggle filters the shown results.

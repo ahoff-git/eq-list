@@ -322,3 +322,59 @@ export function notesField(wikitext) {
   const m = /^\|\s*notes\s*=([\s\S]*?)(?=^\|\s*\w+\s*=|^\}\})/m.exec(wikitext ?? "");
   return m ? m[1].trim() : undefined;
 }
+
+// ─── Merchants ──────────────────────────────────────────────────────────────────────────────────
+
+/** `[[Target|Shown]]` → { target, shown }; plain text → both the text. */
+function wikiLink(cell) {
+  const m = /\[\[([^\]|]+)(?:\|([^\]]*))?\]\]/.exec(cell);
+  if (!m) {
+    const text = cell.replace(/'''?/g, "").trim();
+    return { target: text, shown: text };
+  }
+  return { target: m[1].trim(), shown: (m[2] || m[1]).trim() };
+}
+
+/** Split a template's cells on `|`, but not the `|` inside a `[[link|shown]]`. */
+function templateCells(body) {
+  const cells = [];
+  let depth = 0;
+  let cell = "";
+  for (let i = 0; i < body.length; i++) {
+    const two = body.slice(i, i + 2);
+    if (two === "[[") depth++;
+    if (two === "]]") depth = Math.max(0, depth - 1);
+    if (body[i] === "|" && depth === 0) {
+      cells.push(cell);
+      cell = "";
+    } else cell += body[i];
+  }
+  cells.push(cell);
+  return cells.map((c) => c.trim());
+}
+
+/**
+ * Every merchant an item page lists, from its `{{ItemWhereRow | Zone | Merchant | Area | (y, x) }}`
+ * rows (and their era variants, `ItemWhereRowVel`…). The zone is the name **shown** — "East Cabilis"
+ * where the link goes to `Cabilis` — because that's the zone you stand in; the link target is kept
+ * beside it. A location the editor mistyped (`(417, -427` with no bracket) still reads; one with no
+ * two numbers is dropped rather than guessed.
+ */
+export function vendorRows(wikitext) {
+  const out = [];
+  for (const m of (wikitext ?? "").matchAll(/\{\{\s*ItemWhereRow\w*\s*\|([^{}]*)\}\}/g)) {
+    const [zoneCell = "", merchantCell = "", areaCell = "", locCell = ""] = templateCells(m[1]);
+    const zone = wikiLink(zoneCell);
+    const merchant = wikiLink(merchantCell).target;
+    if (!zone.shown || !merchant) continue;
+    const loc = /(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/.exec(locCell);
+    out.push({
+      zone: zone.shown,
+      ...(zone.target !== zone.shown ? { zonePage: zone.target } : {}),
+      merchant,
+      ...(areaCell ? { area: areaCell.replace(/\[\[([^\]|]+)\|?([^\]]*)\]\]/g, (_, t, s) => s || t) } : {}),
+      ...(loc ? { y: Number(loc[1]), x: Number(loc[2]) } : {}),
+    });
+  }
+  return out;
+}

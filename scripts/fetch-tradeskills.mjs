@@ -23,7 +23,7 @@
 import path from "node:path";
 import { ROOT, flag, load, writeGenerated } from "./lib/cli.mjs";
 import { api, categoryMembers, pagesByLink, wikitextFor } from "./lib/eqlwiki.mjs";
-import { inEras, linkedTitles, notesField, pageEras, parseGuides, priceRows } from "./lib/tradeskills-parse.mjs";
+import { inEras, linkedTitles, notesField, pageEras, parseGuides, priceRows, vendorRows } from "./lib/tradeskills-parse.mjs";
 import { snapshotPages } from "./lib/wiki-snapshot.mjs";
 import { addMadeItems, recipeIndex } from "./lib/tradeskill-results.mjs";
 
@@ -136,6 +136,13 @@ async function harvestPrices(pages, priced, cache) {
     if (copper) prices[t] = { copper, source: t };
   }
   const fromNotes = Object.keys(prices).length;
+  // The same pages list who sells each material and where they stand — read now, for the guide's
+  // "where to buy" (ADR 0304). Nothing extra is fetched for it.
+  const vendors = {};
+  for (const t of needed) {
+    const rows = vendorRows(texts.get(t)?.text);
+    if (rows.length) vendors[t] = rows;
+  }
 
   const crafted = (t) => (cache.get(t)?.components?.length ?? 0) > 0;
   for (const { title, copper, source } of priced) {
@@ -147,7 +154,9 @@ async function harvestPrices(pages, priced, cache) {
     `Prices: ${needed.length} materials needed, ${priceOf} priced (${fromNotes} from item notes, the rest ` +
       `from skill-page tables); ${Object.keys(combineCosts).length} whole-combine costs.`,
   );
-  return { prices: sortKeys(prices), combineCosts: sortKeys(combineCosts) };
+  const merchants = Object.values(vendors).reduce((n, rows) => n + rows.length, 0);
+  console.log(`Vendors: ${Object.keys(vendors).length} materials sold by ${merchants} merchant rows.`);
+  return { prices: sortKeys(prices), combineCosts: sortKeys(combineCosts), vendors: sortKeys(vendors) };
 }
 
 const sortKeys = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
@@ -213,7 +222,7 @@ async function main() {
   }
   console.log(`${Object.keys(itemEras).length} items with a non-classic era. Open today: ${open.join(", ")}.`);
 
-  const { prices, combineCosts } = await harvestPrices(pages, priced, cache);
+  const { prices, combineCosts, vendors } = await harvestPrices(pages, priced, cache);
   for (const p of pages) for (const g of p.guides) costGuide(g, lookup, { prices, combineCosts });
 
   const scrapedAt = new Date().toISOString();
@@ -229,7 +238,7 @@ async function main() {
  * on the day this was scraped. Whether a line is out of era *now* is \`tradeskill-era.ts\`'s call.
  */
 
-import type { Tradeskill, WikiPrice } from "./tradeskill-types";
+import type { Tradeskill, VendorSpot, WikiPrice } from "./tradeskill-types";
 
 export const TRADESKILLS_SOURCE = { category: ${JSON.stringify(CATEGORY)}, scrapedAt: ${JSON.stringify(scrapedAt)} };
 
@@ -248,6 +257,15 @@ export const PRICES: Readonly<Record<string, WikiPrice>> = ${JSON.stringify(pric
 
 /** What one combine of a crafted item costs in materials, where a skill page states it whole. */
 export const COMBINE_COSTS: Readonly<Record<string, WikiPrice>> = ${JSON.stringify(combineCosts, null, 2)};
+
+/**
+ * Who sells each material and where they stand, from the item pages' merchant tables — one line per
+ * material. \`zone\` is the zone as shown ("East Cabilis"), \`zonePage\` the wiki page it links to when
+ * that differs, \`y\`/\`x\` the merchant's location when the wiki gives one.
+ */
+export const VENDORS: Readonly<Record<string, readonly VendorSpot[]>> = {
+${Object.entries(vendors).map(([item, rows]) => `  ${JSON.stringify(item)}: ${JSON.stringify(rows)},`).join("\n")}
+};
 
 export const TRADESKILLS: readonly Tradeskill[] = ${JSON.stringify(pages, null, 1)};
 `;

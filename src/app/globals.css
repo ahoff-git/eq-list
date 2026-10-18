@@ -1551,6 +1551,18 @@ button {
 .badge.step-done-badge { color: var(--text-dim); border-style: dashed; margin-left: 6px; }
 .badge.step-here-badge { color: var(--accent); border-color: var(--accent); margin-left: 6px; }
 .crafting-log h4 { margin-top: 14px; }
+/* A section's cost to finish and its shopping list. The cost sits in the accent like a step's
+   estimate; the shopping list folds, open on the section you're in. */
+.section-cost { color: var(--accent); font-weight: 600; font-size: 12px; margin-left: 10px; cursor: help; }
+.section-summary { margin: 0 0 6px; }
+.section-summary .section-cost { margin-left: 0; }
+.section-cost.unpriced { color: var(--text-dim); font-weight: 400; }
+.where-to-buy { margin: 4px 0; font-size: 12px; }
+.where-to-buy > summary { cursor: pointer; color: var(--text-dim); }
+.where-to-buy[open] > summary { margin-bottom: 4px; }
+.shopping { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; background: var(--bg-input); border-radius: var(--radius); }
+.shopping-group { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; }
+.shopping-label { font-weight: 600; color: var(--text); }
 .tradeskill-list-btn { margin-left: 6px; padding-top: 0; padding-bottom: 0; }
 .tradeskill-pages { gap: 4px; margin-bottom: 6px; }
 /* Shown only with "in era only" off: still readable, plainly not for today. */
