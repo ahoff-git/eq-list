@@ -23,6 +23,7 @@ import { cardZone, statesNothing } from "@/shared/map/mob-place";
 import { effectLineParts } from "@/shared/items/item-stats";
 import { cardAtLevel, ladderOf, levelledTitle } from "@/shared/upgrade-view";
 import UpgradeSlider from "@/app/components/items/UpgradeSlider";
+import LevelledText from "@/app/components/items/LevelledText";
 
 /**
  * A wiki page, read in the app: what it is, how to get it, and what it puts on your list.
@@ -226,7 +227,8 @@ export default function WikiPageView({
           <div className="pc-lines">
             {card.lines.map((l, i) => (
               <div className="pc-line" key={i}>
-                {cardLineNode(l)}
+                {/* A line the level changed shows what moved; the rest keep their links (effects, zones, spots). */}
+                {l !== page.card?.lines[i] ? <LevelledText base={page.card?.lines[i]} line={l} /> : cardLineNode(l)}
               </div>
             ))}
           </div>

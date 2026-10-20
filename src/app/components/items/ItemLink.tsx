@@ -8,6 +8,7 @@ import { localSize, localTextBox, localView, scaleRoot } from "@/lib/screen";
 import { besideWidth, placeTooltip, type AnchorBox, type Placement } from "@/shared/chrome/tooltip";
 import { craftNotes } from "@/shared/tradeskills/craft-notes";
 import type { ItemCard } from "@/shared/types";
+import LevelledText from "@/app/components/items/LevelledText";
 import { itemGrade } from "@/shared/names";
 import { cardAtLevel, ladderOf, levelInName, unrankedSpellTitle } from "@/shared/upgrade-view";
 
@@ -171,10 +172,21 @@ function LevelledCardTip({ title, anchor }: { title: string; anchor: AnchorBox }
     () => (page ? cardAtLevel(page, ladderOf(page), levelInName(title, page.kind)) : undefined),
     [page, title],
   );
-  return card ? <ItemCardTip card={card} anchor={anchor} /> : null;
+  return card ? <ItemCardTip card={card} anchor={anchor} base={page?.card?.lines} /> : null;
 }
 
-function ItemCardTip({ card, anchor, notes }: { card: ItemCard; anchor: AnchorBox; notes?: string[] }) {
+function ItemCardTip({
+  card,
+  anchor,
+  notes,
+  base,
+}: {
+  card: ItemCard;
+  anchor: AnchorBox;
+  notes?: string[];
+  /** The level-0 card's lines, when `card` is at a level — so what the level moved is marked. */
+  base?: readonly string[];
+}) {
   const ref = useRef<HTMLSpanElement>(null);
   // How wide it may be is a question about where the name sits, not about the card, so it's answered
   // before the first paint — the measurement below then sees the size the card will keep.
@@ -216,7 +228,7 @@ function ItemCardTip({ card, anchor, notes }: { card: ItemCard; anchor: AnchorBo
       </span>
       {card.lines.map((l, i) => (
         <span className="ic-line" key={i}>
-          {l}
+          {base ? <LevelledText base={base[i]} line={l} /> : l}
         </span>
       ))}
       {notes && notes.length > 0 && (

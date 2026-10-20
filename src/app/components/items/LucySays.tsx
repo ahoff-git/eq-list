@@ -1,5 +1,6 @@
 "use client";
 import { gradedCardLines } from "@/shared/items/item-upgrade";
+import LevelledText from "@/app/components/items/LevelledText";
 import { useClosedZones } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { count, countOf } from "@/shared/format";
@@ -58,7 +59,7 @@ export default function LucySays({ item, grade = 0 }: { item: LucyItem; /** The 
           <div className="pc-lines">
             {lines.map((l, i) => (
               <div className="pc-line" key={i}>
-                {l}
+                <LevelledText base={item.card?.lines[i]} line={l} />
               </div>
             ))}
           </div>

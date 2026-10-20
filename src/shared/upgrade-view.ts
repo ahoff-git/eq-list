@@ -42,7 +42,9 @@ export function ladderOf(page: CardPage | null | undefined): Ladder | undefined 
     const rule = spellLevelRule(page.spellCategory, lines);
     return rule ? { kind: "spell", max: MAX_SPELL_LEVEL, rule } : undefined;
   }
-  if (page.kind !== "item") return undefined;
+  // A recipe page's card is the crafted item's own, and that item merges up like any other. A quest's
+  // card is about the quest, and a mob's `AC:`/`HP:` are the mob's — neither has a grade.
+  if (page.kind !== "item" && page.kind !== "recipe") return undefined;
   const top = gradedCardLines(lines, MAX_GRADE);
   return top.some((l, i) => l !== lines[i]) || top.length !== lines.length ? { kind: "item", max: MAX_GRADE } : undefined;
 }
@@ -73,6 +75,36 @@ export function cardAtLevel(page: CardPage, ladder: Ladder | undefined, level: n
   if (!card || !ladder || level <= 0) return card;
   const lines = ladder.kind === "item" ? gradedCardLines(card.lines, level) : levelledSpellLines(card.lines, ladder.rule, level);
   return { ...card, title: levelledTitle(card.title, ladder, level), lines };
+}
+
+/** A piece of a card line, and whether the level changed it. */
+export interface LinePart {
+  text: string;
+  changed: boolean;
+}
+
+const NUMBER_SPLIT = /(\d+(?:\.\d+)?)/;
+
+/**
+ * A levelled line against its level-0 self, split so a view can mark exactly the numbers the level
+ * moved (`AC: ` unchanged, `24` changed). A level only ever rewrites numbers in place and keeps the
+ * card's line order, so the two line up number for number; a line with no level-0 counterpart (the
+ * slider's own `SV VOID: +N`) is new, so all of it is marked.
+ */
+export function changedParts(base: string | undefined, now: string): LinePart[] {
+  if (base === now) return [{ text: now, changed: false }];
+  const was = base?.split(NUMBER_SPLIT);
+  const is = now.split(NUMBER_SPLIT);
+  if (!was || was.length !== is.length) return [{ text: now, changed: true }];
+  const parts: LinePart[] = [];
+  is.forEach((text, i) => {
+    // Odd indexes are the numbers the split captured; the text between them is never rewritten.
+    const changed = i % 2 === 1 && text !== was[i];
+    const last = parts.at(-1);
+    if (last && last.changed === changed) last.text += text;
+    else if (text) parts.push({ text, changed });
+  });
+  return parts;
 }
 
 /** One line saying what a level does, for beside the slider: `Buff · per level: cast −4%, mana −4%, duration +10%`. */

@@ -4155,6 +4155,8 @@ select optgroup {
 .upgrade-slider { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 2px; }
 .upgrade-slider .row { gap: 6px; align-items: center; }
 .upgrade-slider .level-slider { width: 180px; }
+/* A number on a card that the upgrade slider moved (LevelledText) — the slider's whole point, made visible. */
+.lv-changed { color: var(--good); font-weight: 600; }
 
 /* A long quest's plan (`QuestPlanView`, ADR 0300): stage headings, then one row per step — its mark,
    the sentence with what it gets you, and where it happens. A sub-step indents under its step. */

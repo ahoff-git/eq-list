@@ -56,7 +56,7 @@ Show and count everything at the level its name states, by the wiki's arithmetic
   grade points they agree everywhere but one vendor-price line `item-stats.ts` misreads (todo). The one
   place we part from the wiki's slider to get there: a weapon that writes `Base Dmg:` grows like `DMG:`.
   Lucy's card for an item the wiki lacks is shown at the opened copy's grade too.
-- **Every page that levels gets a slider** (`UpgradeSlider`), starting at the level of the copy you
+- **Every page that levels gets a slider** (`UpgradeSlider`) — an item, a spell, and a recipe, whose card is the crafted item's own, starting at the level of the copy you
   opened. Hovering a name that states a level shows the card at that level; the inventory dump and
   the damage meter's spell names now link by the held name.
 

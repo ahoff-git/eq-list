@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardAtLevel, ladderOf, levelInName, levelledTitle, unrankedSpellTitle } from "../../src/shared/upgrade-view";
+import { cardAtLevel, changedParts, ladderOf, levelInName, levelledTitle, unrankedSpellTitle } from "../../src/shared/upgrade-view";
 import type { WikiPage } from "../../src/shared/types";
 
 const page = (kind: WikiPage["kind"], title: string, lines: string[], extra: Partial<WikiPage> = {}) =>
@@ -30,6 +30,14 @@ test("only a page whose card a level would change gets a ladder", () => {
   assert.deepEqual(ladderOf(BOW), { kind: "item", max: 10 });
   assert.equal(ladderOf(page("item", "A Nickel Key", ["WT: 0.1 Size: TINY"])), undefined);
   assert.equal(ladderOf(page("mob", "a gnoll", ["Level: 5"])), undefined);
+  assert.equal(ladderOf(page("mob", "A reanimated hand", ["Level: 39-41", "AC: 356", "HP: 3230-3270 (1)"])), undefined, "a mob's AC is not gear");
+  // A recipe page carries the crafted item's card — this one verbatim from the cache — and motes level it.
+  const greaves = page("recipe", "Dwarven Plate Greaves (Enchanted Imbued)", [
+    "MAGIC ITEM", "Slot: LEGS", "AC: 20", "STR: +8 STA: +8 WIS: +4", "SV FIRE: +4 SV MAGIC: +2",
+    "WT: 8.5 Size: LARGE", "Class: WAR CLR PAL", "Race: ALL", "Deity: Brell Serilis",
+  ]);
+  assert.deepEqual(ladderOf(greaves), { kind: "item", max: 10 });
+  assert.equal(cardAtLevel(greaves, ladderOf(greaves), 2)!.lines[2], "AC: 24");
   assert.equal(ladderOf(KELIN)?.kind, "spell");
   assert.equal(ladderOf(page("spell", "Gate", ["Classes: Wizard - Level 4", "Spell Type: Beneficial", "Duration: Instant"])), undefined);
 });
@@ -53,4 +61,23 @@ test("a spell page with the game's category follows it rather than the card's wo
   const filed = { ...KELIN, spellCategory: { category: "Utility Detrimental", subcategory: "Calm" } };
   const ladder = ladderOf(filed);
   assert.equal(ladder?.kind === "spell" && ladder.rule.key, "debuff");
+});
+
+test("a levelled line marks exactly the numbers the level moved", () => {
+  assert.deepEqual(changedParts("AC: 20", "AC: 24"), [
+    { text: "AC: ", changed: false },
+    { text: "24", changed: true },
+  ]);
+  // Several numbers on a line: the one that moved is marked, a weight already at its 0.1 floor isn't.
+  assert.deepEqual(changedParts("WT: 0.1 Range: 125 Size: LARGE", "WT: 0.1 Range: 135 Size: LARGE"), [
+    { text: "WT: 0.1 Range: ", changed: false },
+    { text: "135", changed: true },
+    { text: " Size: LARGE", changed: false },
+  ]);
+  assert.deepEqual(changedParts("Casting Time: 3.00", "Casting Time: 2.88"), [
+    { text: "Casting Time: ", changed: false },
+    { text: "2.88", changed: true },
+  ]);
+  assert.deepEqual(changedParts("Race: ALL", "Race: ALL"), [{ text: "Race: ALL", changed: false }]);
+  assert.deepEqual(changedParts(undefined, "SV VOID: +2"), [{ text: "SV VOID: +2", changed: true }], "new at this level");
 });
