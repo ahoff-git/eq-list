@@ -83,11 +83,20 @@ export type ManualLink =
       why: string;
     };
 
-/** Two places in one zone you can't actually walk between. */
+/**
+ * Two places in one zone you can't actually walk between — or, with `oneWay`, can walk between in only
+ * one direction: from `a` to `b`, never back. The second is a drop: past the first ledge in The Hole
+ * you can walk on down but not up again.
+ *
+ * Each end is a label, matched **exactly first** and then as a piece of one; an end that a piece
+ * matches more than one place with is refused and reported, because a block walls off whatever it
+ * names and The Hole's `to Paineel` is also the start of `to Paineel (portal)`.
+ */
 export interface ManualBlock {
   zone: string;
   a: string;
   b: string;
+  oneWay?: boolean;
   why: string;
 }
 
@@ -154,6 +163,15 @@ function matching(nodes: TravelNode[], zone: string, label: string): TravelNode[
   const wanted = label.toLowerCase();
   const says = (n: TravelNode) => [n.label, ...(n.labels ?? [])].some((l) => l.toLowerCase().includes(wanted));
   return nodes.filter((n) => n.zones.includes(zone) && says(n));
+}
+
+/** The one place a block's end names — see `ManualBlock`. */
+function blockEnd(nodes: TravelNode[], zone: string, label: string): TravelNode | undefined {
+  const found = matching(nodes, zone, label);
+  const wanted = label.toLowerCase();
+  const exact = found.filter((n) => [n.label, ...(n.labels ?? [])].some((l) => l.toLowerCase() === wanted));
+  const [only, ...more] = exact.length ? exact : found;
+  return more.length ? undefined : only;
 }
 
 /**
@@ -432,14 +450,14 @@ export function applyManual(graph: TravelGraph, manual: TravelManual): { graph: 
   const walled = new Set<string>();
   for (const block of manual.blocks ?? []) {
     const zone = fileFor(graph, block.zone) ?? block.zone;
-    const [a] = matching(nodes, zone, block.a);
-    const [b] = matching(nodes, zone, block.b);
+    const a = blockEnd(nodes, zone, block.a);
+    const b = blockEnd(nodes, zone, block.b);
     if (!a || !b || a.id === b.id) {
-      report.unresolvedBlocks.push(`${block.zone}: ${block.a} ↔ ${block.b}`);
+      report.unresolvedBlocks.push(`${block.zone}: ${block.a} ${block.oneWay ? "→" : "↔"} ${block.b}`);
       continue;
     }
-    walled.add(`${a.id}|${b.id}|${zone}`);
     walled.add(`${b.id}|${a.id}|${zone}`);
+    if (!block.oneWay) walled.add(`${a.id}|${b.id}|${zone}`);
   }
   if (walled.size) {
     const before = edges.length;

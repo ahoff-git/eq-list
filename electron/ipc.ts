@@ -35,7 +35,8 @@ import type { LootLog } from "./loot-log";
 import type { FactionLog } from "./faction-log";
 import type { FactionCorrections } from "./faction-corrections";
 import type { NpcSightings } from "./npc-sightings";
-import { applyFactionCorrections } from "../src/shared/faction/faction-correction";
+import { applyFactionCorrections, newestCorrections } from "../src/shared/faction/faction-correction";
+import { readFactionDumpCorrections } from "./faction-dump";
 import type { AutoUpdater } from "./auto-update";
 import type { MobKnowledgeStore } from "./mob-knowledge";
 import type { FactionObservationsStore } from "./faction-observations";
@@ -54,6 +55,7 @@ import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
 import { searchLogFile } from "./log-search";
+import { inventoryShareRows, readExport, readExportTimes } from "./game-exports";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery, FightStats, LogSearchOptions } from "../src/shared/types";
 import type { AlertRouter } from "./alert-router";
 import type { CelebrationFeed } from "./celebrations";
@@ -329,6 +331,9 @@ function registerSettingsIpc(context: IpcContext): void {
   ipcMain.handle(CH.logSearch, (e, query: unknown, options?: LogSearchOptions) =>
     searchLogFile(context.watcher.status().file, typeof query === "string" ? query : "", options ?? {}, e.sender.id),
   );
+  // The `/outputfile` dumps beside the followed log's `Logs` folder — their ages, for the Exports tab.
+  ipcMain.handle(CH.logExports, () => readExportTimes(context.watcher.status().file));
+  ipcMain.handle(CH.logExportRead, (_e, fileType: unknown) => readExport(context.watcher.status().file, fileType));
 
   // "Eat" a log file: a catch-up that digests it into every store that can take it — the kill log
   // (→ mob knowledge), combat history, and the loot feed (→ prices). `digestLog` owns the kill log's
@@ -782,8 +787,14 @@ function registerStatsIpc(context: IpcContext, mergedFight: PeerIpc["mergedFight
   ipcMain.handle(CH.factionHitsPage, (_e, query: FactionHitsQuery) => factionLog.hitsPage(query));
   // Every faction touched, folded to its net standing — with any stated correction folded in on top
   // (`faction-correction.ts`), so every reader of this one channel sees it without knowing corrections
-  // exist.
-  ipcMain.handle(CH.factionStandings, () => applyFactionCorrections(factionLog.standings(), factionCorrections.all()));
+  // exist. The game's own `/outputfile faction` dump counts as a statement for every faction in it,
+  // and per faction the newer of it and a typed one wins (`faction-dump.ts`).
+  ipcMain.handle(CH.factionStandings, () =>
+    applyFactionCorrections(
+      factionLog.standings(),
+      newestCorrections(factionCorrections.all(), readFactionDumpCorrections(watcher.status().file, factionLog)),
+    ),
+  );
   // The Faction tab's Session view — the same fold, just scoped to hits at or after the session's own
   // start. No correction applied: a correction states a *lifetime* total, which a bounded window can't
   // meaningfully offset.
@@ -1155,6 +1166,7 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
       },
       gameClock,
       celebrations: { current: () => celebrations.current() },
+      inventory: { rows: () => inventoryShareRows(context.watcher.status().file) },
     }),
     // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).
     items: wiki.items,

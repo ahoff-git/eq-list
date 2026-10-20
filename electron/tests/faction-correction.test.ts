@@ -4,7 +4,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyFactionCorrections } from "../../src/shared/faction/faction-correction";
+import { applyFactionCorrections, factionDumpCorrections, newestCorrections } from "../../src/shared/faction/faction-correction";
+import { logStamp } from "../../src/shared/log-clock";
 import type { FactionStanding } from "../../src/shared/types";
 
 function standing(p: Partial<FactionStanding> & { faction: string; net: number }): FactionStanding {
@@ -40,4 +41,35 @@ test("an uncorrected faction beside a corrected one is untouched", () => {
   const marr = corrected.find((s) => s.faction === "Priests of Marr")!;
   assert.equal(marr.net, 40);
   assert.equal(marr.correction, undefined);
+});
+
+test("a faction dump states every faction's total as of the dump, so later hits still count", () => {
+  // The ledger had seen +213 by the dump and +5 since; the game said 1551 at the dump.
+  const corrections = factionDumpCorrections(
+    [{ name: "Antonius Bayle", standing: 1551 }, { name: "Craftkeepers", standing: 2000 }],
+    "2026-10-20T17:16:42.000Z",
+    (f) => (f === "Antonius Bayle" ? 213 : 0),
+  );
+  assert.deepEqual(corrections["Antonius Bayle"], { offset: 1338, statedAt: "2026-10-20T17:16:42.000Z", source: "dump" });
+  const [bayle, craft] = applyFactionCorrections([standing({ faction: "Antonius Bayle", net: 218 })], corrections);
+  assert.equal(bayle.net, 1556, "the dump's 1551 plus the 5 logged since");
+  assert.equal(bayle.correction?.source, "dump");
+  assert.equal(craft.faction, "Craftkeepers", "a faction the log never saw still gets its row");
+  assert.equal(craft.net, 2000);
+});
+
+test("per faction, the newer statement wins, compared as instants whatever their spelling", () => {
+  const typed = { "Antonius Bayle": { offset: 100, statedAt: "2026-10-20T18:00:00.000Z" }, Other: { offset: 1, statedAt: "2026-10-19T00:00:00.000Z" } };
+  const dump = { "Antonius Bayle": { offset: 1338, statedAt: "2026-10-20T17:16:42.000Z", source: "dump" as const } };
+  assert.equal(newestCorrections(typed, dump)["Antonius Bayle"].offset, 100, "typed after the dump");
+  const laterDump = { "Antonius Bayle": { ...dump["Antonius Bayle"], statedAt: "2026-10-20T19:00:00.000Z" } };
+  assert.equal(newestCorrections(typed, laterDump)["Antonius Bayle"].offset, 1338, "dumped after the typing");
+  assert.equal(newestCorrections(typed, laterDump).Other.offset, 1, "a faction only one side states is kept");
+});
+
+test("logStamp writes an instant the way the log does: local time, no zone", () => {
+  const at = new Date(2026, 9, 20, 9, 57, 17).getTime();
+  assert.equal(logStamp(at), "2026-10-20T09:57:17");
+  assert.equal(logStamp(new Date(at).toISOString()), "2026-10-20T09:57:17");
+  assert.equal(logStamp("not a time"), "not a time");
 });

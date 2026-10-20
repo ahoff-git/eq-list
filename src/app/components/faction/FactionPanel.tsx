@@ -720,7 +720,8 @@ function StandingTable({
       {
         field: "observedNet",
         headerName: "Ledger-observed",
-        description: "What the ledger alone has seen for this faction, live — Net above already has your stated correction folded in on top of it",
+        description:
+          "What the ledger alone has seen for this faction, live — Net above already has a stated total folded in on top of it (yours, or the game's own from /outputfile faction)",
         ...NUM_COL,
         flex: 1,
         sortable: false,
@@ -730,12 +731,22 @@ function StandingTable({
       {
         field: "correctedAt",
         headerName: "Corrected at",
+        description: "When Net was last set to a known total — by you, or by the game's /outputfile faction dump (marked ⇩)",
         flex: 1,
         minWidth: 130,
         sortable: false,
         cellClassName: "lt-time",
         valueGetter: (_v, row) => row.correction?.correctedAt,
-        renderCell: (p) => (p.value ? <span title={when(p.value)}>{dayTime(p.value)}</span> : "—"),
+        renderCell: (p) => {
+          if (!p.value) return "—";
+          const fromDump = p.row.correction?.source === "dump";
+          return (
+            <span title={`${when(p.value)}${fromDump ? " — from the game's /outputfile faction dump" : " — stated by you"}`}>
+              {fromDump ? "⇩ " : ""}
+              {dayTime(p.value)}
+            </span>
+          );
+        },
       },
       {
         field: "rate",

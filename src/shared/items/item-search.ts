@@ -50,6 +50,11 @@ export interface ItemRow {
   /** Its card, read as numbers. `NO_ITEM_STATS` for an item whose source gave no card. */
   stats: ItemStats;
   /**
+   * The `+N` of the copy you hold, when the row stands for it — `stats` are then that copy's, not the
+   * catalogue's +0 (ADR 0312). Absent for a row that is just the catalogue's.
+   */
+  grade?: number;
+  /**
    * What level you need to be — derived, since the wiki states one only for a handful of items
    * ([item-levels](./item-levels.ts)). Computed here rather than during the cache walk because the
    * card is already parsed at this point, and parsing eleven thousand of them twice is 130ms of a

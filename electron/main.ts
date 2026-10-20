@@ -70,6 +70,7 @@ import { createBuffTracker } from "./buff-tracker";
 import { createGameClockTracker } from "./game-clock-tracker";
 import { createDamageOverlayTracker } from "./damage-overlay-tracker";
 import { coalesce } from "./coalesce";
+import { watchExport } from "./game-exports";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent, FactionEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -807,6 +808,9 @@ if (!app.requestSingleInstanceLock()) {
    */
   const settleTimer = setInterval(() => combat.settle(logClock.now()), SETTLE_MS);
   settleTimer.unref?.(); // a timer must never be the reason the process stays up
+  // A new `/outputfile faction` dump restates every faction (`faction-dump.ts`), and nothing in the
+  // log says one was taken — so the Faction tab is told the same way a wholesale ledger change is.
+  watchExport(() => watcher.status().file, "faction", () => broadcast(CH.dataChanged, undefined));
   // Everything logged while the app was closed has just been fed through the live path, which is
   // what makes the app's state independent of when it was launched. The one thing that *isn't*
   // simply "state" is the live meter: its totals mean "this sitting". Restart mid-camp and carrying

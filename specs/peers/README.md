@@ -82,7 +82,7 @@ travels peer-to-peer, on request, over that peer's own connection.
     rates per tradeskill, item and skill level, counts only, filed by `electron/peer-crafting.ts` on
     the same five rules and shown beside your own in the crafting log, never merged into it
     ([ADR 0303](../decisions/0303-a-tradeskill-guide-follows-your-skill.md)).
-  - **live** (`timers`, `buffs`, `scores`, `fight`, `celebrations`) — true on somebody else's machine
+  - **live** (`timers`, `buffs`, `scores`, `fight`, `celebrations`, `inventory`) — true on somebody else's machine
     right now. Held in memory, dropped when they go, never written to disk — except `fight`, the one
     exception: a confirmed match is *pooled* into your own stored history, not only held live (see
     below). Its rows carry your current or last fight's headline figures plus the fight's own hits
@@ -225,7 +225,13 @@ travels peer-to-peer, on request, over that peer's own connection.
   is read off the *filename* of the newest log in the folder — announced before a line is parsed — so
   you can sit in a room with EverQuest closed. The only gap is a fresh install that has never played,
   which has no name to announce; the Peers tab carries the name field for exactly that.
-- **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray` and `PeerScores`) — **the
+- **`inventory`** is the newest live kind ([ADR 0309](../decisions/0309-an-inventory-is-shared-live-and-judged-by-the-receiver.md)):
+  one row per item a character holds, totalled across bags, bank, depot, hoard and Storage, from
+  their newest `/outputfile inventory` dump and dated by it. It is searched on the Peers tab
+  (`PeerInventories`, "Who has it") rather than listed in the tray. **What can't be traded is
+  flagged by the receiver**, from its own catalogue's `NO DROP` / `NO TRADE`; rows carry no trade
+  flag at all, so a sender can't claim otherwise.
+- **The Peers tab** (`src/app/components/PeersPanel.tsx`, with `PeerTray`, `PeerScores` and `PeerInventories`) — **the
   one home for the whole feature** ([ADR 0146](../decisions/0146-one-home-for-the-peer-network.md) ·
 [ADR 0176](../decisions/0176-a-room-fills-itself.md) ·
 [ADR 0171](../decisions/0171-a-shared-kind-states-what-a-row-is.md) ·

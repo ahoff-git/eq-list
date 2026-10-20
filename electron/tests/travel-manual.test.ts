@@ -272,7 +272,12 @@ test("the shipped table is applied without complaint about its own shape", () =>
   assert.equal(report.unknownZones.length, 0);
   assert.deepEqual(report.badBoundaries, [], "every border entry names exactly two zones");
   assert.equal(report.applied.length, MANUAL_TRAVEL.links.length, "every entry contributed something");
-  assert.deepEqual(report.unresolvedBlocks, []);
+  // A block names places by their labels, so it can only resolve against a pack — The Hole's are
+  // checked against its own labels in travel-hole.test.ts. Here, only that each is well-formed.
+  for (const block of MANUAL_TRAVEL.blocks ?? []) {
+    assert.notEqual(block.a.toLowerCase(), block.b.toLowerCase(), `${block.zone}: a block joins two places`);
+    assert.ok(block.why.trim(), `${block.zone}: a block says why`);
+  }
 });
 
 /** A border whose label carries a translocator's name, the way the packs write them. */

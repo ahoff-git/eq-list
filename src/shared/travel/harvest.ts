@@ -47,10 +47,28 @@ export interface TravelPoint {
    * at all.
    */
   crossing?: TravelCrossing;
+  /**
+   * For a border: **which way the label says it goes**, when it says. `out` is a crossing its own words
+   * call one-way (`ONE_WAY`, or a portal), taken from this zone; `in` is a `from X` — where you land
+   * coming from X. Absent is an ordinary zone line, which goes both ways.
+   */
+  way?: "out" | "in";
 }
 
-/** `from The Overthere` — the other half of a border, which some packs label instead of the exit. */
+/**
+ * `from The Overthere` — **where you land** coming from there. Nearly always beside a `to The
+ * Overthere` in the same zone (Chardok has both), so it is the arriving half of an ordinary border; the
+ * builder only makes it one-way when the far side's crossing already is.
+ */
 const ARRIVAL = /^(?:from)\s+(.+)$/i;
+
+/**
+ * **A crossing whose own words say you don't come back that way**: `(One Way)`, `One-Way`, and a fall,
+ * a drop or a jump in the label's brackets — `(fall down)`, `(Drop Down)`, `(Hole - jump)`. Brackets
+ * only for those three, because the bare words are inside zone names (`Befallen`, `Stoneroot Falls`,
+ * `Firefall Pass`); the corpus has none of them bracketed.
+ */
+const ONE_WAY = /\bone[\s-]?way\b|[([][^)\]]*\b(?:fall|drop|jump)\b[^)\]]*[)\]]/i;
 
 /**
  * The destination a **conveyance** names: `Boat to Butcherblock Mountains`, `Translocator to Erudin`,
@@ -180,7 +198,13 @@ export function travelPoint(poi: MapPoi): TravelPoint | undefined {
     // nothing of you but turning up at the dock, so a labelled ferry destination is the same fact as a
     // labelled zone line — and where a pack labels both ends this way, the two pair into one boundary
     // with no hand-authored entry needed at all.
-    return { label, at, kind: "border", to };
+    if (inbound) return { label, at, kind: "border", to, way: "in" };
+    // **A portal is a ride one way.** A zone line is a line you can step back over; `to Paineel
+    // (portal)` states a ride to Paineel and nothing about one back, and if there is one its own
+    // label states it.
+    const portal = PORTAL.test(label);
+    if (!portal && !ONE_WAY.test(label)) return { label, at, kind: "border", to };
+    return { label, at, kind: "border", to, way: "out", ...(portal ? { crossing: "portal" as const } : {}) };
   }
 
   if (!RECLASSIFIABLE.has(kind)) return undefined;
@@ -191,7 +215,9 @@ export function travelPoint(poi: MapPoi): TravelPoint | undefined {
   // Where it goes, if it says. Handed to `zoneLinkName` as a `to X` label so its rules apply here too.
   const named = CONVEYANCE_TO.exec(label)?.[1];
   const to = named ? zoneLinkName(`to ${named}`) : null;
-  return { label, at, kind: "place", ...(crossing ? { crossing } : {}), ...(to ? { to } : {}) };
+  // `portal to Neriak` is the same one-way ride as `to Neriak (portal)`, written the other way round.
+  const way = to && (crossing === "portal" || ONE_WAY.test(label)) ? { way: "out" as const } : {};
+  return { label, at, kind: "place", ...(crossing ? { crossing } : {}), ...(to ? { to } : {}), ...way };
 }
 
 /** What a zone's labels yielded, and what they didn't. */

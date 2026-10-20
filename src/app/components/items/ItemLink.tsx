@@ -8,6 +8,8 @@ import { localSize, localTextBox, localView, scaleRoot } from "@/lib/screen";
 import { besideWidth, placeTooltip, type AnchorBox, type Placement } from "@/shared/chrome/tooltip";
 import { craftNotes } from "@/shared/tradeskills/craft-notes";
 import type { ItemCard } from "@/shared/types";
+import { itemGrade } from "@/shared/names";
+import { cardAtLevel, ladderOf, levelInName, unrankedSpellTitle } from "@/shared/upgrade-view";
 
 /**
  * Hover an item name to see the wiki's stat card — the same "hover for stats" the
@@ -110,7 +112,10 @@ function useCardHover(title: string, craft = false) {
   const [hovering, setHovering] = useState(false);
   const [anchor, setAnchor] = useState<AnchorBox | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const card = useItemCard(hovering && !craft ? title : null);
+  // A name that states a level (`Dragoon Dirk +2`, `Shock of Lightning VI`) gets the card *at* that level,
+  // which needs the whole page (its kind, a spell's category) rather than the bare card.
+  const levelled = !craft && (itemGrade(title) !== undefined || !!unrankedSpellTitle(title));
+  const card = useItemCard(hovering && !craft && !levelled ? title : null);
 
   function onMouseEnter(e: React.MouseEvent<HTMLSpanElement>) {
     // The whole box, not just a corner: which side the card goes on depends on all four edges. And
@@ -131,6 +136,8 @@ function useCardHover(title: string, craft = false) {
 
   const tip = !hovering || !anchor ? null : craft ? (
     <CraftCardTip title={title} anchor={anchor} />
+  ) : levelled ? (
+    <LevelledCardTip title={title} anchor={anchor} />
   ) : card ? (
     <ItemCardTip card={card} anchor={anchor} />
   ) : null;
@@ -148,6 +155,23 @@ function CraftCardTip({ title, anchor }: { title: string; anchor: AnchorBox }) {
   const notes = craftNotes(page, closed);
   if (!page || (!page.card && !notes.length)) return null;
   return <ItemCardTip card={page.card ?? { title: page.title, lines: [] }} anchor={anchor} notes={notes} />;
+}
+
+/**
+ * The card at the level the name states. Mounted only while hovering, like `CraftCardTip`. A ranked
+ * spell has no page of its own, so a miss falls back to the base spell — but only to a *spell* page,
+ * so an item that merely ends in a numeral never borrows a stranger's card.
+ */
+function LevelledCardTip({ title, anchor }: { title: string; anchor: AnchorBox }) {
+  const asked = useWikiPage(title);
+  const unranked = unrankedSpellTitle(title);
+  const fallback = useWikiPage(asked === null && unranked ? unranked : null);
+  const page = asked ?? (fallback?.kind === "spell" ? fallback : null);
+  const card = useMemo(
+    () => (page ? cardAtLevel(page, ladderOf(page), levelInName(title, page.kind)) : undefined),
+    [page, title],
+  );
+  return card ? <ItemCardTip card={card} anchor={anchor} /> : null;
 }
 
 function ItemCardTip({ card, anchor, notes }: { card: ItemCard; anchor: AnchorBox; notes?: string[] }) {

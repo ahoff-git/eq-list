@@ -49,9 +49,10 @@ test("a spell the log named finds its row", () => {
   assert.equal(spells.find("burst of fire")?.mana, 7);
 });
 
-test("a rank gets the ranked row, not the base spell's cost", () => {
-  // The whole point: a rank VI nuke costs 110, not the base spell's 20. `spellName()` strips the
-  // rank so cast and damage lines agree, and `spellRank()` is what puts it back for this lookup.
+test("a ranked row that is the same spell is the answer, not the base spell's cost", () => {
+  // A castable row in the same spellbook category is the spell at that rank — a classic sequel like
+  // `Burnout II` is the real case; the fixture's `Shock of Lightning VI` stands in for it. (In the real
+  // file that name has no row at all; that case is the next tests', ADR 0312.)
   const spells = createSpellCatalog();
   spells.setLogDir(install());
   assert.equal(spells.find("Shock of Lightning", "VI")?.mana, 110);
@@ -121,4 +122,70 @@ test("with no dbstr_us.txt a spell simply has no category", () => {
   const spells = createSpellCatalog();
   spells.setLogDir(install());
   assert.equal(spells.category("Burst of Fire"), undefined);
+});
+
+// ── a rank is an upgrade level (ADR 0312) ─────────────────────────────────────────────────────────
+
+/** One spells_us.txt row: everything 0, no class can cast it unless `wizardLevel` says so. */
+function row(id: number, name: string, f: { mana?: number; castMs?: number; wizardLevel?: number; cat?: number; sub?: number; formula?: number; ticks?: number }): string {
+  const cols = Array.from({ length: 171 }, () => "0");
+  cols[0] = String(id);
+  cols[1] = name;
+  cols[8] = String(f.castMs ?? 0);
+  cols[11] = String(f.formula ?? 0);
+  cols[12] = String(f.ticks ?? 0);
+  cols[14] = String(f.mana ?? 0);
+  for (let c = 36; c < 52; c++) cols[c] = "255";
+  if (f.wizardLevel) cols[47] = String(f.wizardLevel);
+  cols[87] = String(f.cat ?? 0);
+  cols[88] = String(f.sub ?? 0);
+  return cols.join("^");
+}
+
+/** An install whose spell file holds exactly `rows`, with the category names they file under. */
+function installWith(rows: string[]): string {
+  const logs = install(false);
+  const root = path.dirname(logs);
+  fs.writeFileSync(path.join(root, "spells_us.txt"), rows.join("\n"));
+  fs.writeFileSync(
+    path.join(root, "dbstr_us.txt"),
+    ["25^5^Direct Damage^0^", "58^5^Magic^0^", "126^5^Utility Detrimental^0^", "81^5^Root^0^", "125^5^Utility Beneficial^0^", "62^5^Melee Guard^0^"].join("\n"),
+  );
+  return logs;
+}
+
+test("a rank the file has no row for is the base spell at that level", () => {
+  // `You begin casting Lightning Bolt VI`: the server applies the level, so the file only has the base.
+  const spells = createSpellCatalog();
+  spells.setLogDir(installWith([row(1, "Lightning Bolt", { mana: 50, castMs: 2200, wizardLevel: 10, cat: 25, sub: 58 })]));
+  const vi = spells.find("Lightning Bolt", "VI");
+  assert.equal(vi?.mana, 44, "a nuke is 2% cheaper a level");
+  assert.equal(vi?.castMs, 1940);
+  assert.equal(spells.find("Lightning Bolt")?.mana, 50);
+});
+
+test("a ranked debuff's duration ceiling grows with the level — what the buff timers count down", () => {
+  const spells = createSpellCatalog();
+  spells.setLogDir(installWith([row(2, "Root", { mana: 20, castMs: 2000, wizardLevel: 4, cat: 126, sub: 81, formula: 3, ticks: 8 })]));
+  assert.equal(spells.find("Root")?.maxDurationSeconds, 48);
+  assert.equal(spells.find("Root", "V")?.maxDurationSeconds, 72, "+10% a level for a debuff");
+});
+
+test("a stranger that only shares the ranked name is not the spell", () => {
+  // `Guard VI` in the real file is a free NPC row; pricing a cast of Guard at rank VI off it made a
+  // paid spell read as free.
+  const spells = createSpellCatalog();
+  spells.setLogDir(
+    installWith([
+      row(3, "Guard", { mana: 80, castMs: 3000, wizardLevel: 20, cat: 125, sub: 62 }),
+      row(4, "Guard VI", { mana: 0, castMs: 0 }),
+    ]),
+  );
+  assert.equal(spells.find("Guard", "VI")?.mana, 61, "Guard at level VI, not the stranger's 0");
+});
+
+test("an AA's ranks are rows of their own and stay the answer", () => {
+  const spells = createSpellCatalog();
+  spells.setLogDir(installWith([row(5, "Harm Touch", { castMs: 0 }), row(6, "Harm Touch III", { castMs: 0, mana: 0 })]));
+  assert.equal(spells.find("Harm Touch", "III")?.name, "Harm Touch III");
 });

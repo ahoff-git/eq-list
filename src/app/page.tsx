@@ -8,6 +8,7 @@ import SpellSearchPanel from "@/app/components/spells/SpellSearchPanel";
 import StancesPanel from "@/app/components/spells/StancesPanel";
 import AAPanel from "@/app/components/aa/AAPanel";
 import TradeskillsPanel from "@/app/components/tradeskills/TradeskillsPanel";
+import GameExportsPanel from "@/app/components/exports/GameExportsPanel";
 import WindowButtons from "@/app/components/chrome/WindowButtons";
 import Titlebar from "@/app/components/chrome/Titlebar";
 import ScaleButtons from "@/app/components/chrome/ScaleButtons";
@@ -48,7 +49,7 @@ import { useWindowPin } from "@/lib/chrome/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "combat" | "session" | "alerts" | "peers" | "settings";
+type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -256,6 +257,10 @@ function ControlWindow() {
     { key: "tradeskills", label: "Tradeskills" },
     { key: "combat", label: "Combat", disabled: needsLog, disabledReason: noLog },
     { key: "session", label: "Session", disabled: needsLog, disabledReason: noLog },
+    // After everything you watch while playing and before Peers/Settings: like them, a place you
+    // visit to do one thing (copy a command) and leave. Log-gated because the dumps are found beside
+    // the log, and named after the character in its file name.
+    { key: "exports", label: "Exports", disabled: needsLog, disabledReason: noLog },
     // Before Settings, and after everything you look at while playing. It is the same kind of thing
     // as Settings — a place you go to decide something and then leave — but it also has a live half
     // (who is here, what has arrived), which is why it isn't a group inside it
@@ -357,6 +362,7 @@ function ControlWindow() {
           {tab === "tradeskills" && <TradeskillsPanel />}
           {tab === "combat" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
+          {tab === "exports" && <GameExportsPanel />}
           {tab === "alerts" && <AlertsPanel />}
           {tab === "peers" && <PeersPanel focusPeer={focusPeer} onViewPeer={viewPeer} />}
           {tab === "settings" && <SettingsPanel />}

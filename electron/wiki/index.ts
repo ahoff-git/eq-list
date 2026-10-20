@@ -730,7 +730,12 @@ export function createWikiClient(
    */
   const servedPage = (page: WikiPage | null): WikiPage | null => {
     const served = withGmEventEra(withQuestPlan(withQuestPickups(page)));
-    return withSpellLevelEra(served, served, levelCap());
+    return withSpellCategory(withSpellLevelEra(served, served, levelCap()));
+  };
+  /** A spell page carries the game's own filing of it, so its level slider picks the right rule (ADR 0312). */
+  const withSpellCategory = (page: WikiPage | null): WikiPage | null => {
+    const spellCategory = page?.kind === "spell" ? opts.spellCategory?.(page.title) : undefined;
+    return spellCategory ? { ...page!, spellCategory } : page;
   };
 
   /** Titles the wiki says it doesn't have, re-asked once a day (`missing-pages.ts`). */

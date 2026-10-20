@@ -23,6 +23,39 @@
  */
 import type { FactionCorrection, FactionStanding } from "../types";
 
+/**
+ * A faction dump (`/outputfile faction`) as corrections: the game's own total for each faction, as
+ * of the moment the dump was written. `observedNetAt(faction)` is what the ledger had seen for it
+ * **by then**, so hits logged after the dump keep adding on top — the same offset a typed
+ * correction is, stated for every faction at once and by the game rather than the player.
+ */
+export function factionDumpCorrections(
+  rows: readonly { name: string; standing: number }[],
+  dumpedAt: string,
+  observedNetAt: (faction: string) => number,
+): Record<string, FactionCorrection> {
+  const out: Record<string, FactionCorrection> = {};
+  for (const r of rows) out[r.name] = { offset: r.standing - observedNetAt(r.name), statedAt: dumpedAt, source: "dump" };
+  return out;
+}
+
+/**
+ * Per faction, whichever statement is newer — a dump taken after you typed a number supersedes it,
+ * and a number typed after the dump supersedes that. Compared as instants, not strings.
+ */
+export function newestCorrections(
+  ...sets: readonly Readonly<Record<string, FactionCorrection>>[]
+): Record<string, FactionCorrection> {
+  const out: Record<string, FactionCorrection> = {};
+  for (const set of sets) {
+    for (const [faction, c] of Object.entries(set)) {
+      const held = out[faction];
+      if (!held || Date.parse(c.statedAt) > Date.parse(held.statedAt)) out[faction] = c;
+    }
+  }
+  return out;
+}
+
 /** A faction the player corrected but the ledger never saw a hit for still needs a row to correct —
  *  covering exactly the history the ledger couldn't have seen is the whole point. */
 function blankStanding(faction: string, at: string): FactionStanding {
@@ -44,7 +77,11 @@ export function applyFactionCorrections(
   const byFaction = new Map(standings.map((s) => [s.faction, s]));
   for (const [faction, c] of entries) {
     const base = byFaction.get(faction) ?? blankStanding(faction, c.statedAt);
-    byFaction.set(faction, { ...base, net: base.net + c.offset, correction: { observedNet: base.net, correctedAt: c.statedAt } });
+    byFaction.set(faction, {
+      ...base,
+      net: base.net + c.offset,
+      correction: { observedNet: base.net, correctedAt: c.statedAt, ...(c.source ? { source: c.source } : {}) },
+    });
   }
   return [...byFaction.values()];
 }

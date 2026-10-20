@@ -345,6 +345,12 @@ finished, so a number is claimed before a second author can reach for it.
 - [0304: A fight lasts until everything in it is dead or charmed — not until the first kill, and not for a 60s lull](./0304-a-fight-lasts-until-everything-in-it-is-dead-or-charmed.md)
 - [0305: A resist rate is resists out of every time the spell reached its target (lands + resists), and a mez or DoT that went in is a land](./0305-a-resist-rate-counts-every-cast-that-reached-a-target.md)
 - [0306: A spell's kind is the game's own spellbook category (spells_us.txt cols 87/88, named by dbstr_us.txt); the Spells tab filters, sorts and full-text searches by it](./0306-a-spell-s-kind-is-the-game-s-own-spellbook-category.md)
+- [0307: An item's grade (+0…+10) is computed by porting eqlwiki's item-page slider arithmetic verbatim; where it disagrees with the guide's prose, the slider wins](./0307-an-item-s-grade-is-the-wiki-slider-s-arithmetic.md)
+- [0308: The game's /outputfile faction dump is a stated total for every faction, offset against what the ledger had seen by then; per faction the newer of it and a typed correction wins](./0308-the-game-s-faction-dump-is-a-stated-total.md)
+- [0309: An inventory is shared as a live, opt-in kind (per-item totals and places from the dump), and the receiver flags what can't be traded from its own catalogue](./0309-an-inventory-is-shared-live-and-judged-by-the-receiver.md)
+- [0310: Best in slot is an exact assignment of what you hold to slots, by your own weights at each item's grade; merges are spare copies only, exaltations ranked by the effects you pick](./0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)
+- [0311: A crossing can go one way — a portal, a fall or a labelled one-way is its own node, a `from X` lands on X's one-way crossing, and a block can be one-way](./0311-a-crossing-can-go-one-way.md)
+- [0312: An upgrade level is shown and counted at its level: items +N and spells/songs 0-X by eqlwiki's two sliders' arithmetic, a spell's rule from the game's spellbook category, a ranked row only when it is the spell; a slider on every page that levels](./0312-an-upgrade-level-is-shown-and-counted-at-its-level.md)
 
 ## Open Questions
 
@@ -615,3 +621,18 @@ and degrading to blank facts when the file isn't there.*
   networking and some way to know which account it's writing for — both new territory it has never
   needed before. Worth revisiting if the two ever grow enough overlap that keeping two achievement
   boards straight becomes its own annoyance; nothing forces the question today.
+
+- **When one border is crossed in several places, which crossing do you come out of?**
+  [ADR 0311](./0311-a-crossing-can-go-one-way.md) split off the crossings that go one way, but a
+  two-way border with several crossings is still one node, and a walk takes the nearest one in each
+  zone separately. So a route can walk into Lower Guk's shaft A and walk on from shaft C, or take
+  Nagafen's Lair's way (1) in and come out at (6). [ADR 0062](./0062-a-travel-graph-of-zone-lines.md)
+  says no exit is ever paired with an arrival, because two maps share no coordinate frame. But the
+  labels often pair themselves (`(1)`…`(6)`, `(Crow's Bar)`). The candidates are pairing by a matching
+  qualifier, or pricing an unpaired border at its worst pair instead of its best. Either one would
+  supersede part of 0062.
+- **Which parts of a zone can you walk between?** Walks join every pair of a zone's nodes, and a
+  `ManualBlock` takes one away, one pair at a time. The Hole needed three of them for one pit. A zone
+  split into several parts would be shorter, and harder to get wrong, written as a list of which
+  crossings sit in which part. That would also let a `/loc` say which part you're in, which nothing
+  can today ([ADR 0311](./0311-a-crossing-can-go-one-way.md)'s consequences).

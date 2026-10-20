@@ -325,6 +325,18 @@ export function createBuffTracker({
    */
   const castByYou = new Set<string>();
   /**
+   * `buffKey` → the rank (upgrade level) of your last cast of it, this session.
+   *
+   * A landing line and a fade name the spell bare (`...by Mesmerization`) — only the cast line says
+   * `Mesmerization V`. Without this, the next fade would re-assert the base spell's ceiling over the
+   * levelled one the cast put there, and a rank-V mez would count down a rank-0 duration (ADR 0312).
+   * Session-scoped for the same reason `castByYou` is; the row's stored ceiling carries it across.
+   */
+  const castRank = new Map<string, string>();
+  /** The file's facts for a spell as *you* cast it — at the rank the log named, or the one you last cast. */
+  const factsAsCast = (spell: string): SpellFacts | undefined =>
+    facts(spellName(spell), spellRank(spell) ?? castRank.get(buffKey(spell)));
+  /**
    * The cast a same-named `onEnemy` pair's landings are currently being counted against, keyed by
    * `instanceKey(key, target)` — what tells a *second* landing of one cast (proof of an area effect,
    * see `enemySlotForLanding`) from a landing that belongs to a *later*, separate cast.
@@ -574,7 +586,7 @@ export function createBuffTracker({
     source: BuffInstance["source"],
     opts: { byYou: boolean; alsoCouldBe?: string[] },
   ): void {
-    const spellFacts = facts(spellName(spell), spellRank(spell));
+    const spellFacts = factsAsCast(spell);
     const detrimental = spellFacts ? !spellFacts.beneficial : undefined;
     if (!watchable(spell, spellFacts, opts.byYou)) return;
     if (doneToYou({ detrimental }, target)) return; // a debuff on your own side is not a buff of yours
@@ -647,7 +659,7 @@ export function createBuffTracker({
     const known = stored.known[key] ? hydrate(key, stored.known[key]) : undefined;
     // A spell we have never seen go up can still lapse — a fade is proof it *was* up, and that is
     // exactly the reminder the player asked for. Enrol it so the row exists to be unchecked.
-    const spellFacts = facts(spellName(spell));
+    const spellFacts = factsAsCast(spell);
     const detrimental = spellFacts ? !spellFacts.beneficial : undefined;
     // Asked of the fade as well as of the rise, and it is the arm that does the work: a debuff is
     // nearly always met *by* its fade, since a detrimental cast enrols nothing on its own.
@@ -850,6 +862,8 @@ export function createBuffTracker({
           if (event.caster !== SELF) return; // but their cast tells us nothing about a target
           const spellFacts = facts(event.spell, event.rank);
           const key = buffKey(event.spell);
+          if (event.rank) castRank.set(key, event.rank);
+          else castRank.delete(key);
           pending.set(key, Date.parse(event.at) || now());
           // Recorded for **every** cast of yours, beneficial or not, and this is the only place a
           // debuff can ever be shown to be yours: your detrimental casts are deliberately not

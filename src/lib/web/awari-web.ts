@@ -139,6 +139,8 @@ export function createAwariWeb(deps: { getSettings: () => Settings; getName: () 
       // Same reasoning: no log, so nothing of its own to celebrate. `celebrated` is left unwired
       // above for the same reason — a browsing tab has no overlay to raise a banner on.
       celebrations: { rows: () => [] },
+      // No game folder in a browser, so no inventory dump to offer.
+      inventory: { rows: () => [] },
       // Addressed by shard, never as a whole kind — present so the table has no hole in it.
       items: { rows: () => [] },
       spells: { rows: () => [] },

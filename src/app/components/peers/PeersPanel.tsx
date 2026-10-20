@@ -9,6 +9,7 @@ import { characterFromLogFile } from "@/shared/log-parser";
 import { CheckField } from "@/app/components/ui";
 import PeerTray from "@/app/components/peers/PeerTray";
 import PeerScores from "@/app/components/peers/PeerScores";
+import PeerInventories from "@/app/components/peers/PeerInventories";
 import type { AwariPeer, AwariStatus, Settings } from "@/shared/types";
 
 /**
@@ -93,6 +94,7 @@ export default function PeersPanel({
         knownPeerIds={knownPeerIds}
       />
       <PeerScores received={share.received} />
+      <PeerInventories received={share.received} />
     </div>
   );
 }

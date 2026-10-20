@@ -53,6 +53,13 @@ shopping list.
   `src/shared/names.ts`, and `getPage` retries the base name when the asked-for title has no page —
   the exact title first, so a graded page still wins if one exists.
   See [ADR 0057](../decisions/0057-a-grade-is-not-an-identity.md).
+- **…but the level is put back for display.** A page prints level 0. Every page whose card a level
+  changes gets a +N slider, starting at the level of the copy you opened (`+2`, or a spell's `VI` — a
+  ranked spell name with no page falls back to the base spell), and a hover on a name that states a
+  level shows the card at it. The arithmetic is eqlwiki's own two sliders', ported (`item-upgrade.ts`,
+  `spell-upgrade.ts`, joined in `upgrade-view.ts`); a spell's rule comes from the game's spellbook
+  category, which main lays on a spell page as it is served (`spellCategory`). See
+  [ADR 0312](../decisions/0312-an-upgrade-level-is-shown-and-counted-at-its-level.md).
 - **Quests by zone** — `questsByZone(zone)` returns the quests in a zone. This wiki
   runs stock MediaWiki (no CirrusSearch), so `incategory:` search doesn't work and
   category membership doesn't tag quests to zones. Instead we take the zone page's

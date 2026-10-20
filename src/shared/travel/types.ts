@@ -292,6 +292,17 @@ export interface TravelNode {
    */
   via?: TravelCrossing;
   /**
+   * **A crossing that only goes one way** — the zone it delivers you into. Absent, which is nearly
+   * every border, means both ways.
+   *
+   * A portal in the bottom of The Hole sends you to Neriak and nothing in Neriak sends you back; a fall
+   * from Paineel lands you in The Hole and you don't climb up it. Read as a border those were two-way,
+   * and since a border is one place in both its zones, Neriak to Paineel came out at 25 units. So a
+   * one-way crossing is its own node (`oneWayId`), entered only from the other zone and left only into
+   * this one — `walkable` is the rule, and its `at` in this zone is where you land.
+   */
+  into?: string;
+  /**
    * Where it is **in each zone**, keyed by zone. Two frames for a boundary, because two maps drew it.
    *
    * A zone can offer **several** crossing points to the same neighbour — three ways out of Greater
@@ -396,6 +407,28 @@ export function zoneDistance(
 /** A boundary's canonical id and the pair behind it — sorted, so one border has one name. */
 export function boundaryId(a: string, b: string): string {
   return [a, b].sort().join("|");
+}
+
+/**
+ * A one-way crossing's id: `from>into`. Not sorted, because the direction *is* the crossing — and never
+ * the same id as the border between the same two zones, because it isn't the same place: The Hole's
+ * portal to Paineel is at the bottom of the zone and its zone line to Paineel is at the top.
+ */
+export function oneWayId(from: string, into: string): string {
+  return `${from}>${into}`;
+}
+
+/**
+ * **Can a walk in `zone` leave `from` and reach `to`?** The one rule for a one-way crossing, asked by
+ * the builder when it wires a zone's walks and by the router when it wires the two ends.
+ *
+ * Standing at a node is standing in both its zones, so a one-way crossing has to be closed at both:
+ * nobody walks *into* it on the side it delivers to (that would be crossing it backwards), and nobody
+ * walks *away* from it on the side it's taken from (being at it means taking it). Every other node is
+ * open both ways, which is why this is `true` for nearly every pair.
+ */
+export function walkable(from: Pick<TravelNode, "into">, to: Pick<TravelNode, "into">, zone: string): boolean {
+  return !(from.into && from.into !== zone) && to.into !== zone;
 }
 
 /**

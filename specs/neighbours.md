@@ -36,6 +36,7 @@ logic in `Core` and `UI.Shared`, thin views over it — the same split as our `s
 | `src/EQBuddy.Core/TrackedRule.cs` | Per-rule alert delay (`AlertDelaySeconds`, capped at 30 min; `IsCombatCue` is the short-cue-dies-with-you rule) and the regex path with its `RegexMatchTimeoutException` handling |
 | `src/EQBuddy.Core/SpawnTimers.cs` · `SpawnCatalog.cs` · `SpawnOverrides.cs` | Seeded timers, observed tightening, and never overwriting a hand-typed value |
 | `src/EQBuddy.Core/WatchRuleShare.cs` | The `EQB1` share string, and rebuilding a rule field-by-field on import |
+| `src/EQBuddy.Core/InventoryFile.cs` · `src/EQBuddy/InventoryWindow.cs` | The fourth `/outputfile inventory` reader: base-name folding, stack counts, and loot-since-dump layered on the snapshot |
 | `src/EQBuddy.Core/WikiContribution.cs` · `DropsReport.cs` | "Copy for wiki" — observations formatted as a wiki contribution |
 
 ## eql-tooltip — the cursor lookup
@@ -235,7 +236,7 @@ The tables above go repo → file. This one goes the other way, for picking up a
 | Incremental refresh via `recentchanges` *(shipped — [ADR 0181](./decisions/0181-the-wiki-says-what-changed.md))* | `getRecentChanges` in `src/mediawiki.ts` — **everquest-legends-mcp** |
 | Data-integrity tests | `src/lib/maps.test.ts` — **everquest-legends-companion** |
 | An item's era, stated rather than derived *(the open half of [ADR 0124](./decisions/0124-lucy-is-a-second-opinion.md))* | the expansion badge and "verified as available in EverQuest Legends" flag on `/item/search` — **EQLGS**, keyed on the same item ids we already hold |
-| `/out inventory` | `main.js` (`pollInv`) + `renderer/app.js` (`INV_SECTIONS`, `WORN_RX`) — **eqltools-companion** · `internal/inventorysync/observer.go` — **eqdps** |
+| `/out inventory` | `InventoryFile.cs` — **EQBuddy** · `main.js` (`pollInv`) + `renderer/app.js` (`INV_SECTIONS`, `WORN_RX`) — **eqltools-companion** · `internal/inventorysync/observer.go` — **eqdps** |
 | Gate a shared emote on your own cast | `README.md` → *Self-only combat clocks*, then `CHANGELOG.md` v0.1.29 for the withdraw-on-fizzle half — **eql-alerts** |
 | Permanent buffs on Legends *(shipped — [ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md), and the list turned out to be derivable: every name on it is `buffdurationformula == 50` in the game's own file)* | `samples/eql_permanent_buffs.json` — **eql-alerts** |
 | A fade line read back to its spell *(shipped — [ADR 0140](./decisions/0140-a-buff-is-watched-until-it-lapses.md))* | `src/EQBuddy.Core/FadeMessageCatalog.cs` — **EQBuddy**, for why one sentence can mean several spells |

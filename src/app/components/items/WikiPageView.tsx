@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useClosedZones, useLucyCard, useSettings } from "@/lib/hooks";
 import ItemDrops from "@/app/components/items/ItemDrops";
@@ -20,6 +21,8 @@ import type { FactionSide, ItemSource, WikiPage, WikiSubQuest } from "@/shared/t
 import { buildFactionWatch, isFactionWatched } from "@/shared/alerts/faction-watch";
 import { cardZone, statesNothing } from "@/shared/map/mob-place";
 import { effectLineParts } from "@/shared/items/item-stats";
+import { cardAtLevel, ladderOf, levelledTitle } from "@/shared/upgrade-view";
+import UpgradeSlider from "@/app/components/items/UpgradeSlider";
 
 /**
  * A wiki page, read in the app: what it is, how to get it, and what it puts on your list.
@@ -33,7 +36,22 @@ import { effectLineParts } from "@/shared/items/item-stats";
  * Adding goes straight to `api()` rather than through a prop: the list is the main process's, so there
  * is nothing for a parent to mediate.
  */
-export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; onRefreshed?: () => void }) {
+export default function WikiPageView({
+  page,
+  heldLevel = 0,
+  onRefreshed,
+}: {
+  page: WikiPage;
+  /** The upgrade level the name you opened states (`+2`, `VI`) — where the slider starts. */
+  heldLevel?: number;
+  onRefreshed?: () => void;
+}) {
+  // An item's grade or a spell's level, and the card at it (ADR 0312). Starts at the level of the copy
+  // you opened, and goes back there whenever a different page — or a different copy — is opened.
+  const ladder = useMemo(() => ladderOf(page), [page]);
+  const [level, setLevel] = useState(heldLevel);
+  useEffect(() => setLevel(heldLevel), [page.title, heldLevel]);
+  const card = useMemo(() => cardAtLevel(page, ladder, level), [page, ladder, level]);
   // Which buttons this page gets. The rule lives in `wiki-add.ts` because the search results list
   // adds by the same one, and the two had drifted — see that file.
   const add = wikiAddAction(page);
@@ -122,7 +140,7 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
   return (
     <div className="page-detail">
       <div className="row">
-        <h3>{page.title}</h3>
+        <h3>{levelledTitle(page.title, ladder, level)}</h3>
         <span className={`badge kind-${page.kind}`}>{page.kind}</span>
         {page.outOfEra && <span className="badge era-out">out of era</span>}
         <span className="spacer" />
@@ -197,14 +215,16 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
         )}
       </div>
 
-      {page.card && (
+      {ladder && <UpgradeSlider ladder={ladder} level={level} held={heldLevel} onChange={setLevel} />}
+
+      {card && (
         <div className="page-card">
-          {page.card.icon && (
+          {card.icon && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img className="pc-icon" src={page.card.icon} alt="" width={40} height={40} />
+            <img className="pc-icon" src={card.icon} alt="" width={40} height={40} />
           )}
           <div className="pc-lines">
-            {page.card.lines.map((l, i) => (
+            {card.lines.map((l, i) => (
               <div className="pc-line" key={i}>
                 {cardLineNode(l)}
               </div>
@@ -305,7 +325,7 @@ export default function WikiPageView({ page, onRefreshed }: { page: WikiPage; on
           the whole point of a third-rung source is that it fills gaps rather than competing
           (ADR 0124). The ↗ Lucy link in the header is offered either way: a link is an offer, where a
           block is an answer. */}
-      {lucy && !page.card && <LucySays item={lucy} />}
+      {lucy && !page.card && <LucySays item={lucy} grade={heldLevel} />}
     </div>
   );
 }

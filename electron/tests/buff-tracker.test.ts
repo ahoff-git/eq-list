@@ -922,6 +922,35 @@ test("permanence comes from the spell file, and reaches the row and the alert", 
   assert.equal(h.raised.at(-1)?.buff?.permanent, true);
 });
 
+test("a ranked cast's ceiling survives the bare-named fade that follows it (ADR 0312)", () => {
+  // The cast line says `Root V`; the fade says only `Root`. Main levels the ceiling by rank, so the
+  // tracker has to keep asking at the rank you cast — or the fade re-asserts the base spell's 48s.
+  const root = SPELLS.get(10)!;
+  const buffs = createBuffTracker({
+    userDataDir: fs.mkdtempSync(path.join(os.tmpdir(), "eql-buffs-")),
+    getSettings: () => SETTINGS,
+    raise: () => {},
+    lexicon: () => buildBuffLexicon(parseSpellStringFile(STRINGS), SPELLS),
+    facts: (spell: string, rank?: string) =>
+      spell.trim().toLowerCase() !== "root" ? undefined : rank === "V" ? { ...root, maxDurationSeconds: 72 } : root,
+    player: () => PLAYER,
+    inFight: () => false,
+    now: () => T0,
+  });
+  buffs.combat({ kind: "cast", caster: "You", spell: "Root", rank: "V", at: iso(0), raw: "You begin casting Root V.", logId: 0 });
+  buffs.combat({
+    kind: "buff-faded",
+    spell: "Root",
+    pet: false,
+    target: "a wild tiger",
+    at: iso(10),
+    message: "Your Root spell has worn off of a wild tiger.",
+    raw: "[Thu Aug 20 20:00:10 2026] Your Root spell has worn off of a wild tiger.",
+    logId: 2,
+  });
+  assert.equal(buffs.view().known.find((k) => k.key === "root")?.maxDurationSeconds, 72);
+});
+
 test("the view says whether the sentence file was found", () => {
   assert.equal(harness().buffs.view().lexicon, true);
   assert.equal(harness({ lexicon: false }).buffs.view().lexicon, false);

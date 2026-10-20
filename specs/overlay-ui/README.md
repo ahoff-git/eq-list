@@ -552,6 +552,22 @@ list, hunt, search, damage, session, peers, settings.
     the page for a name you have; this finds the name for a *shape* you want — "the best thing I
     could wear on my fingers" — over every item page already cached
     ([ADR 0152](../decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md)).
+    - **"What I own" searches your inventory dump** (shown once there is one). Ticked, it narrows the
+      *catalogue* before the query, the same way the era toggle does, so every picker counts within
+      what you hold: "Fingers · 3" means three rings you have. Items are keyed by base name, so grades
+      fold, and an **exaltation counts for its base item**. A **Where** column (present whenever
+      there's a dump) says where each is: `Bank 14`, `Worn Fingers`, `Dragon's hoard 33`,
+      `Storage: Equipment`, or `Exaltation in Gnoll Slayer +3 (Worn Secondary)` for one that's
+      socketed. Owned things with no item page are counted in the footer rather than silently left out.
+      `ownedItems` in `src/shared/game-export-dumps.ts`, read through `useOwnedItems`.
+    - **Best in slot** (`BisView`, a Search / Best in slot switch at the top). The criteria and weights
+      above it drive both modes. From your inventory dump it shows four things. **Wear** is the
+      optimal loadout from everything you hold, wherever it is, against what you're wearing now.
+      **Merge** feeds spare copies into the one worn. **Exaltations** lists each socket the
+      loadout's grades open, with stones that fit. **Hunt** is what to go and get, by gain at `+0`
+      and at `+1/+2/+3`, with level and where it drops. Rules and reasoning:
+      [ADR 0310](../decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md);
+      `src/shared/items/bis.ts`, `bis-plan.ts`, `exaltations.ts`.
     - **The panel is state and layout only.** The computation is one hook
       (`useItemQuery` — the era-scoped corpus, the picker options, their counts, the results, the stat
       columns, the unplaced tally), and each band of controls is its own component: `ItemFacetRow`
@@ -896,7 +912,27 @@ list, hunt, search, damage, session, peers, settings.
     **fourth**, because `TabBar` collapses overflow from the end and only six fit at the default
     width — last would have made it *less* reachable than it was inside Settings — and its label
     carries the live rule count, or `(off)`, since a silenced overlay looks exactly like a quiet one.
-  - `PeersPanel` — **the whole peer network, in one tab** (`PeerTray`, `PeerScores`,
+  - `GameExportsPanel` — the **Exports tab**: the game's `/outputfile` dumps. **Commands** has one
+    copy button per command (inventory, guild bank, real estate, spellbook, missing spells, faction,
+    achievements, and one per tradeskill for recipes, since the EQL client refuses `recipes all`).
+    Each is tinted from `--good` through `--warn` to `--bad` as the game's dump for the followed
+    character ages, each command with its own time until fully stale (12h for inventory, 30 days for
+    a house); one never taken stays neutral. The game writes these only when the player types the
+    command, so the tab can remind but never fetch. Beside Commands, one view per dump that exists,
+    each under its own copy button so retaking it is one click away:
+    - **Inventory** by place (worn with sockets, bags with contents, bank, shared bank, Tradeskill
+      Depot, Dragon's Hoard, and the Storage tabs Equipment / Exaltation / Activated items) or by item
+      (every grade and place added up). Names are `ItemLink`s, and items on the shopping list are
+      starred. When the depot or hoard is missing it says which window to open, because a missing
+      section means "not loaded", not "empty".
+    - **Faction**: every standing with its `/con` word and distance to max.
+    - **Achievements**: the game's tree by category, open-only by default, with counts on counting
+      objectives.
+    - Anything else (spellbook, real estate, recipes…) as the table it is.
+
+    Files are found by `electron/game-exports.ts` beside `Logs/` and parsed in the renderer by
+    `src/shared/game-export-dumps.ts`. Matching and staleness live in `src/shared/game-exports.ts`.
+  - `PeersPanel` — **the whole peer network, in one tab** (`PeerTray`, `PeerScores`, `PeerInventories`,
     `PeerOfferToasts`; owned by [peers](../peers/README.md)). Before Settings and after everything you
     read while playing: it is the same *kind* of thing as Settings — somewhere you go to decide
     something and then leave — but it has a live half too, which is why it isn't a group inside it.

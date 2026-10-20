@@ -181,6 +181,7 @@ export type ShareKind =
   | "scores"
   | "fight"
   | "celebrations"
+  | "inventory"
   | "items"
   | "spells"
   | "factions"
@@ -289,6 +290,9 @@ const MAX_ROWS: Record<ShareKind, number> = {
   // Only the most recent is worth asking about — see the `rowKey` comment on the `celebrations`
   // kind itself (ADR 0287).
   celebrations: 1,
+  // One row per distinct item a character holds. A full Tradeskill Depot alone is up to 5,000
+  // slots, though rarely that many *distinct* things; generous, and still a bound on a hostile give.
+  inventory: 6000,
   // One shard is about eleven pages (`item-shards.ts`); the cap is generous headroom for an uneven
   // hash while still bounding what a single hostile `give` can cost us.
   items: 64,
@@ -725,6 +729,17 @@ export const SHARE_KINDS: ShareKindSpec[] = [
     // (ADR 0287), so a second celebration doesn't queue behind the first; it simply replaces it,
     // the same reasoning `fight`'s own key states above.
     rowKey: () => "celebration",
+  },
+  {
+    key: "inventory",
+    family: "live",
+    label: "Inventory",
+    blurb:
+      "What your newest /outputfile inventory dump says you hold — bags, bank, depot, hoard and Storage — so a group can find who has a material. Item names, counts and where; nothing else.",
+    noun: "item",
+    read: (rows) => readList(rows, MAX_ROWS.inventory, readInventoryRow),
+    // One row per item, which is what an inventory total is (`inventoryTotals`).
+    rowKey: (row) => fieldKey(row, "item"),
   },
   {
     key: "items",
@@ -1715,6 +1730,41 @@ function readScore(raw: unknown): HighScore | null {
     beaten: clamp(int(raw.beaten) ?? 1, 0, 100_000),
     unsettled: raw.unsettled === true,
   };
+}
+
+/**
+ * One item a peer holds, added up across every place it is (`inventoryTotals`), as of their newest
+ * inventory dump. A **live** row: true on their machine now, gone when they leave, never kept.
+ */
+export interface InventoryShareRow {
+  item: string;
+  count: number;
+  /** Where, by place: `Bank` with slots `["3", "14"]`, `Storage: Equipment` with none. */
+  places: { label: string; slots: string[]; count: number }[];
+  /** When the game wrote the dump these totals come from. */
+  asOf: string;
+}
+
+/** How many places and slots a row may name — an item is in a handful, never hundreds. */
+const MAX_PLACES = 20;
+const MAX_SLOTS = 60;
+
+/** A peer's inventory row — dropped without an item, a positive count or a date. */
+function readInventoryRow(raw: unknown): InventoryShareRow | null {
+  if (!isRecord(raw)) return null;
+  const item = str(raw.item);
+  const count = int(raw.count);
+  const asOf = iso(raw.asOf);
+  if (!item || count === undefined || count < 1 || !asOf) return null;
+  const places = (Array.isArray(raw.places) ? raw.places : []).slice(0, MAX_PLACES).flatMap((p: unknown) => {
+    if (!isRecord(p)) return [];
+    const label = str(p.label);
+    const n = int(p.count);
+    if (!label || n === undefined || n < 1) return [];
+    const slots = (Array.isArray(p.slots) ? p.slots : []).slice(0, MAX_SLOTS).map(str).filter(Boolean);
+    return [{ label, slots, count: clamp(n, 1, 1_000_000) }];
+  });
+  return { item, count: clamp(count, 1, 1_000_000), places, asOf };
 }
 
 /** A peer's one current celebration — dropped outright without an `id`, an `item` or an `at`. */

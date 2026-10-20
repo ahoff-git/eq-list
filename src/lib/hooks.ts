@@ -78,6 +78,7 @@ import { parseLogText } from "@/shared/log-parser";
 import { outOfEraSet } from "@/shared/zones/expansions";
 import { samePlace } from "@/shared/zones/place";
 import { pickupSources } from "@/shared/quests/quest-pickups";
+import { levelledSpellLines, rankLevel, spellLevelRule } from "@/shared/spells/spell-upgrade";
 
 /**
  * A value the **main process owns**: how to read it now, and how to follow it afterwards.
@@ -600,6 +601,18 @@ export function useKnownItems(): KnownItem[] {
  * point. Keyed by the refresh key, so a finished harvest still re-reads.
  */
 let heldCatalogue: { key: string; rows: ItemRow[] } | null = null;
+
+/**
+ * The item catalogue, keyed so it is re-read when a harvest run **ends**, not as it goes: the key is
+ * constant while a run is going, so eleven thousand progress events don't become eleven thousand
+ * re-reads, and it changes once when the run stops or finishes. One rule for every reader, so they
+ * share the one held copy rather than evicting each other's.
+ */
+export function useCurrentItemCatalog(): { rows: ItemRow[]; loading: boolean; harvest: ReturnType<typeof useHarvest> } {
+  const harvest = useHarvest();
+  const key = harvest.status === "running" ? "running" : `${harvest.status}:${harvest.fetched}`;
+  return { ...useItemCatalog(key), harvest };
+}
 
 export function useItemCatalog(refreshKey?: unknown): { rows: ItemRow[]; loading: boolean } {
   // **Rows arrive built.** The merge, the stat parsing and the zone folding all happen once in main,
@@ -1629,10 +1642,13 @@ export function useSpellFacts(spells: { spell: string; rank?: string }[]): Recor
       Object.fromEntries(
         await Promise.all(
           spells.map(async ({ spell, rank }) => {
-            const page =
-              (rank ? await a.wiki.getPage(`Spell: ${spell} ${rank}`) : null) ??
-              (await a.wiki.getPage(`Spell: ${spell}`));
-            return [spell, factsFromCard(page?.card?.lines ?? [])] as const;
+            const ranked = rank ? await a.wiki.getPage(`Spell: ${spell} ${rank}`) : null;
+            const page = ranked ?? (await a.wiki.getPage(`Spell: ${spell}`));
+            const lines = page?.card?.lines ?? [];
+            // No page of the rank's own: the base page at the rank's level (ADR 0312), since that is
+            // what the server charges — not the base spell's price.
+            const atRank = ranked || !rank ? lines : levelledSpellLines(lines, spellLevelRule(page?.spellCategory, lines), rankLevel(rank));
+            return [spell, factsFromCard(atRank)] as const;
           }),
         ),
       ),
@@ -1642,7 +1658,7 @@ export function useSpellFacts(spells: { spell: string; rank?: string }[]): Recor
 }
 
 /** Pull the two numbers we want out of a spell card's "Label: value" lines. */
-function factsFromCard(lines: string[]): SpellFacts {
+function factsFromCard(lines: readonly string[]): SpellFacts {
   const find = (label: string): number | undefined => {
     const line = lines.find((l) => l.toLowerCase().startsWith(`${label}:`));
     const value = line ? Number.parseFloat(line.slice(line.indexOf(":") + 1)) : NaN;

@@ -35,6 +35,7 @@ import {
   CROSSING_PLACES,
   TRAVEL_DEFAULTS,
   TRAVEL_VERBS,
+  walkable,
   zoneDistance,
   type TravelAt,
   type TravelGraph,
@@ -445,13 +446,15 @@ export function findRoute(
   }
   // The two ends, wired in by the same rule as everything else: with no position given there is
   // nothing to charge, and the route says that figure is a stand-in.
+  // A one-way crossing is wired by the builder's own rule (`walkable`), so you can't set off up the
+  // portal that brought you to Neriak, or finish by arriving at the top of a fall.
   for (const node of graph.nodes) {
     if (banned.has(node.id)) continue;
-    if (node.zones.includes(fromZone)) {
+    if (node.zones.includes(fromZone) && walkable(here, node, fromZone)) {
       const leg = start.at ? zoneDistance(here, node, fromZone) : { cost: 0, assumed: true };
       add(START, { to: node.id, mode: "walk", across: named(fromZone), ...leg });
     }
-    if (node.zones.includes(toZone)) {
+    if (node.zones.includes(toZone) && walkable(node, there, toZone)) {
       const leg = finish.at ? zoneDistance(node, there, toZone) : { cost: 0, assumed: true };
       add(node.id, { to: GOAL, mode: "walk", across: named(toZone), ...leg });
     }

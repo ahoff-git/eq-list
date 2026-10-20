@@ -4,6 +4,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useSettings, useSpellFacts, type SpellFacts } from "@/lib/hooks";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import { Empty } from "@/app/components/ui";
+import ItemLink from "@/app/components/items/ItemLink";
 import type { FightStats, SpellStat } from "@/shared/types";
 
 import { count, figure, percent } from "@/shared/format";
@@ -74,6 +75,9 @@ export default function SpellTable({ window }: { window: FightStats }) {
         flex: 2,
         minWidth: 160,
         cellClassName: (p) => (p.row.kind === "melee" ? "muted" : ""),
+        // Named at the rank you cast, so the hover and the page show that rank's cost and duration.
+        renderCell: (p) =>
+          p.row.kind === "melee" ? p.value : <ItemLink title={p.row.rank ? `${p.row.spell} ${p.row.rank}` : p.row.spell} label={p.row.spell} />,
       },
       {
         field: "casts",

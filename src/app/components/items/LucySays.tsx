@@ -1,4 +1,5 @@
 "use client";
+import { gradedCardLines } from "@/shared/items/item-upgrade";
 import { useClosedZones } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import { count, countOf } from "@/shared/format";
@@ -22,7 +23,9 @@ import type { LucyEra, LucyItem } from "@/shared/types";
  * `lucy-era.ts`) rather than read off the page, and a derived judgement that can't be checked is one
  * a player has no reason to believe.
  */
-export default function LucySays({ item }: { item: LucyItem }) {
+export default function LucySays({ item, grade = 0 }: { item: LucyItem; /** The `+N` of the copy opened (ADR 0312). */ grade?: number }) {
+  // A graded copy's card is the card at its grade — the same arithmetic as a wiki card's.
+  const lines = item.card ? gradedCardLines(item.card.lines, grade) : [];
   const zoneDrops = groupDropsByZone(item.sources);
   const others = otherSources(item.sources);
   const shown = zoneDrops.reduce((n, z) => n + z.mobs.length, 0) + others.length;
@@ -53,7 +56,7 @@ export default function LucySays({ item }: { item: LucyItem }) {
             <img className="pc-icon" src={item.card.icon} alt="" width={40} height={40} />
           )}
           <div className="pc-lines">
-            {item.card.lines.map((l, i) => (
+            {lines.map((l, i) => (
               <div className="pc-line" key={i}>
                 {l}
               </div>

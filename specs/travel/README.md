@@ -31,7 +31,10 @@ rule, and a new rule has to say what it replaces.**
    one node in two zones, which is what makes zoning free and dissolves *which exit pairs with which
    arrival*. A zone drawn twice is one zone
    ([0111](../decisions/0111-one-zone-one-map-file.md)); a gnome serving two borders is one gnome, so
-   the walk between them is nothing.
+   the walk between them is nothing. A crossing that only goes one way is a different place from the
+   border, and so a different node
+   ([0311](../decisions/0311-a-crossing-can-go-one-way.md)): The Hole's portal to Paineel is at the
+   bottom of the zone and its zone line is at the top.
 
 3. **Evidence has a precedence, and it never runs backwards.**
    ([0117](../decisions/0117-the-wiki-says-which-zones-touch.md)) A person's judgement (the hand-authored
@@ -79,8 +82,8 @@ as insurance.
   process):
   - `types.ts` — `TravelNode` / `TravelEdge` / `TravelGraph`, the `TravelMode` list
     (`walk` · `druid` · `wizard` · `gnome` · `succor`), `TravelNetwork` and `TRAVEL_DEFAULTS`;
-    `TravelOptions` and `TravelAvoided`; `UNKNOWN_CROSSING`, `dist3d`, `positionsIn`, `zoneDistance`
-    and `boundaryId`.
+    `TravelOptions` and `TravelAvoided`; `UNKNOWN_CROSSING`, `dist3d`, `positionsIn`, `zoneDistance`,
+    `boundaryId`, `oneWayId` and `walkable`.
 
     **A node is a boundary, and the zones are metadata on it.** Greater Faydark's `to Clan Crushbone`
     and Clan Crushbone's `to Greater Faydark` are one place, so they are one node —
@@ -103,6 +106,14 @@ as insurance.
     Lesser Faydark — so `at` holds a list per zone and `zoneDistance` takes **the nearest pair**.
     That's both the truthful answer (you use the near one) and what dissolves the question nothing
     could answer: which of A's exits pairs with which of B's arrivals.
+
+    **A crossing can go one way** ([ADR 0311](../decisions/0311-a-crossing-can-go-one-way.md)). A
+    portal, a fall or a labelled one-way is its own node, `from>into` (`oneWayId`), which carries `into`
+    (the zone it delivers you to). Its position there is where you land. `walkable` is the one rule,
+    asked by the builder's walks and the router's two ends: nobody walks into it on the side it delivers
+    to, or away from it on the side it's taken from. A `from X` label lands on X's one-way crossing into
+    this zone when there is one. Otherwise it's the arriving half of an ordinary border, which is what
+    it nearly always is (Chardok labels both `to` and `from The Burning Woods`).
 
     The other two kinds: a `place` sits in one zone (a druid ring, a spire, a dock), and a `hub` is a
     teleport network, in no zone at all.
@@ -167,6 +178,10 @@ as insurance.
     ([ADR 0048](../decisions/0048-a-map-label-is-read-by-its-words.md)), and a destination is read by
     **`zoneLinkName`**, which already strips the noise (`(Click Book)`, `(Boat)`) and already refuses
     the labels that name two zones at once. Reused, not re-decided.
+
+    A border point says **which way it goes** (`way`) when its words do: `out` for a portal, or for
+    *one-way* anywhere and a fall, drop or jump inside the brackets (`(fall down)`, `(Hole - jump)`;
+    bracketed only, because the bare words are in `Befallen` and `Stoneroot Falls`); `in` for a `from X`.
 
     Two additions of its own. A label `poiKind` left in one of its two **fallback** kinds is re-read
     with this module's conveyance vocabulary — `Druid Rings` reads as a plain *name* to the shared
@@ -406,7 +421,10 @@ as insurance.
     already there cost, so redoing them is the only answer that stays consistent. A **block** ("you
     can't actually walk between these two") *removes* the walk rather than being remembered beside it,
     and is applied **last**, so a recomputed zone can't put back a walk a person said isn't one.
-    Applying never mutates its input.
+    A `oneWay` block removes only the walk back, from `b` to `a`, for a drop you can go down and not
+    up. The Hole's pit is the first one. A block's ends match an exact label first, and an end that
+    matches several places is reported, not resolved to whichever came first, because a block walls off
+    whatever it names. Applying never mutates its input.
 
     **A `drop` takes a zone out of a network without touching the map.** The node stays — it's a real
     place — only its free ride to the rest of the hub goes. `deadConveyance` (ADR 0114) already refuses
@@ -664,7 +682,10 @@ as insurance.
 - **A specific exit is never paired with a specific arrival on the far side** — and nothing needs it
   to be. There's no shared coordinate frame across two map files, so when Greater Faydark has three
   exits to Lesser Faydark, they're three crossing points of **one** border rather than three borders to
-  match up. The node keeps all three and a walk takes the nearest.
+  match up. The node keeps all three and a walk takes the nearest. That lets a route walk into one
+  crossing and out of another, which is wrong where they're far apart (Lower Guk's shafts). It's an open
+  question in the [decisions log](../decisions/README.md). A crossing that only goes one way is
+  already apart from this ([ADR 0311](../decisions/0311-a-crossing-can-go-one-way.md)).
 - **No route is drawn — only the graph's own nodes.** The panel lists places, and the map marks where
   the graph says those places *are*
   ([ADR 0113](../decisions/0113-the-graph-is-drawn-on-the-map-it-was-read-from.md)). Nothing joins two
@@ -705,4 +726,5 @@ as insurance.
 [ADR 0109](../decisions/0109-a-route-can-be-denied-one-place.md) ·
 [ADR 0169](../decisions/0169-the-travel-graph-is-built-once-and-remembered.md) ·
 [ADR 0255](../decisions/0255-the-spell-list-can-call-a-ring-dead-too.md) ·
+[ADR 0311](../decisions/0311-a-crossing-can-go-one-way.md) ·
 [testing](../testing/README.md)

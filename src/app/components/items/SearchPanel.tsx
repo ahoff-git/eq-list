@@ -9,6 +9,7 @@ import ObservedItemView from "@/app/components/items/ObservedItemView";
 import WikiPageView from "@/app/components/items/WikiPageView";
 import { AddButton, CheckField, segCls } from "@/app/components/ui";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
+import { levelInName, unrankedSpellTitle } from "@/shared/upgrade-view";
 import { addByTitle, addItem } from "@/lib/items/addToList";
 import { searchKnownItems, unknownToTheWiki, type KnownItem } from "@/shared/items/known-items";
 import { count } from "@/shared/format";
@@ -199,7 +200,10 @@ export default function SearchPanel({
     setLoadingPage(true);
     setPage(null);
     void (async () => {
-      const p = await a.wiki.getPage(title);
+      // A ranked spell (`Shock of Lightning VI`) has no page of its own — its level is ours to apply —
+      // so a miss retries the base spell, the way main already retries a graded item's base name.
+      const unranked = unrankedSpellTitle(title);
+      const p = (await a.wiki.getPage(title)) ?? (unranked ? await a.wiki.getPage(unranked) : null);
       if (!cancelled) {
         setPage(p);
         setLoadingPage(false);
@@ -473,7 +477,13 @@ export default function SearchPanel({
       {nav.current && !loadingPage && !page && !pickup && <ObservedItemView title={nav.current} known={known} />}
 
       {pickup && <PickupPageView pickup={pickup} />}
-      {page && <WikiPageView page={page} onRefreshed={() => setPageNonce((n) => n + 1)} />}
+      {page && (
+        <WikiPageView
+          page={page}
+          heldLevel={nav.current ? levelInName(nav.current, page.kind) : 0}
+          onRefreshed={() => setPageNonce((n) => n + 1)}
+        />
+      )}
     </div>
   );
 }

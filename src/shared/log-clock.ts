@@ -26,6 +26,18 @@
  * in `combat-stats.ts` — a test can say what time it is.
  */
 
+/**
+ * An instant as the log stamps its lines — local time, no zone (`2026-10-20T09:57:17`) — so it can
+ * be compared with a stored line's `at`. Takes a UTC ISO string or epoch ms; an unparseable string
+ * comes back as it was.
+ */
+export function logStamp(when: string | number): string {
+  const d = new Date(when);
+  if (Number.isNaN(d.getTime())) return String(when);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 export interface LogClock {
   /** Fold in a line's timestamp. Anything unparseable is ignored rather than resetting the clock. */
   note(at: string): void;

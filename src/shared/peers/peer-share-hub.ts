@@ -1421,6 +1421,12 @@ export function shareSources(context: {
    * `fight` get above: it ages out between ticks on its own, with nothing written to say so.
    */
   celebrations: { current: () => CelebrationRow | undefined };
+  /**
+   * The followed character's inventory totals, from their newest `/outputfile inventory` dump
+   * (`electron/game-exports.ts`). Read fresh: the game rewrites the file, and nothing here is
+   * expensive enough to version.
+   */
+  inventory: { rows: () => unknown[] };
 }): Record<ShareKind, ShareSource> {
   return {
     watches: { rows: () => context.getSettings().castAlerts?.watches ?? [] },
@@ -1473,6 +1479,7 @@ export function shareSources(context: {
         return f ? [f] : [];
       },
     },
+    inventory: { rows: () => context.inventory.rows() },
     celebrations: {
       rows: () => {
         const c = context.celebrations.current();

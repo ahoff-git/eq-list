@@ -163,6 +163,12 @@ export const STORAGE_KEYS = {
   /** The 🧭 panel's survey strip — what the graph holds about this zone. Off by default: it answers
    *  “should I believe this?”, which is a question you ask now and then rather than on every trip. */
   mapTravelAudit: "eqlist.map.travelAudit",
+  /** Items tab: searching the catalogue, or the best-in-slot advice built from it. */
+  itemMode: "eqlist.items.mode",
+  /** Items tab: narrowed to what your newest inventory dump says you own. */
+  itemOwnedOnly: "eqlist.items.ownedOnly",
+  /** Exports tab: which view is showing — the commands, or one dump's contents (its `fileType`). */
+  exportsView: "eqlist.main.exportsView",
   /**
    * Any resizable panel (`ResizablePanel`), by the id it was given: the height its reader dragged it
    * to, as a % of its window. Absent means "as the panel was designed" — a default is a real answer

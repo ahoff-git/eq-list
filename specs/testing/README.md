@@ -66,6 +66,16 @@ unit-tested.
     haste are not substitutes, so the kind is what the effect dropdowns are built on. Every classified
     line is verbatim from the catalogue, `Must Equip` is pinned as a *click* rather than a fifth kind,
     and a bare `Effect:` with nothing after it — 44 of them exist — is not an effect.)
+  - `src/shared/items/item-upgrade.ts` → `electron/tests/item-upgrade.test.ts` (an item's numbers at
+    `+N`. The expected values are what eqlwiki's item-page slider computes for the same inputs, led by
+    the guide's own breastplate — including the half-grade where the slider and the guide's prose
+    disagree ([ADR 0307](../decisions/0307-an-item-s-grade-is-the-wiki-slider-s-arithmetic.md)).)
+  - `src/shared/spells/spell-upgrade.ts` → `electron/tests/spell-upgrade.test.ts` (a spell or song at
+    upgrade level N. Expected values are what eqlwiki's spell-page slider prints for the same cards,
+    verbatim from the page cache; the rule is the game's spellbook category's, pinned with the bard songs
+    the wiki's own guess misfiles ([ADR 0312](../decisions/0312-an-upgrade-level-is-shown-and-counted-at-its-level.md)).)
+  - `src/shared/upgrade-view.ts` → `electron/tests/upgrade-view.test.ts` (which ladder a page is on, the
+    level a held name states, and the card a slider or hover shows at it.)
   - `src/shared/item-search.ts` → `electron/tests/item-search.test.ts` (what a criterion may do, and
     what a value weight means. The promise that everything rests on is pinned twice over: **a
     criterion may only ever remove rows** — including the case that would catch a "helpful"

@@ -1,5 +1,7 @@
+import type { SpellCategory } from "./spells/spell-categories";
 import type { SkillProgressView } from "./tradeskills/skill-progress";
 import type { DataReportRow } from "./data-provenance";
+import type { GameExportTimes } from "./game-exports";
 import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./chrome/self-check";
 import type { MobKnowledge, MobObservation } from "./mob/mob-stats";
@@ -342,7 +344,7 @@ export interface FactionStanding {
    * redefining what `net` has always meant everywhere else, the same reason a guessed `cause` is never
    * folded into `net` as though it were certain.
    */
-  correction?: { observedNet: number; correctedAt: string };
+  correction?: { observedNet: number; correctedAt: string; source?: "dump" };
 }
 
 /** Columns `FactionHitsGrid` may sort a page of the ledger by (`electron/faction-log.ts`). */
@@ -412,6 +414,9 @@ export interface FactionHitsPage {
 export interface FactionCorrection {
   offset: number;
   statedAt: string;
+  /** Where the stated total came from: absent for one the player typed, `"dump"` for the game's own
+   *  `/outputfile faction` (`faction-correction.ts`'s `factionDumpCorrections`). */
+  source?: "dump";
 }
 
 /** A parsed "You have entered <zone>" line — tracks the player's current zone. */
@@ -1732,6 +1737,12 @@ export interface WikiPage {
   rewards: WikiReward[];
   /** The item's own stat card (items/recipes), for the hover tooltip. */
   card?: ItemCard;
+  /**
+   * For a **spell** page: the game's own spellbook filing of it (`spell-categories.ts`), laid on by
+   * main as the page is served — never cached, never on the web build. What picks the rule its
+   * level slider applies (`spell-upgrade.ts`); absent, the slider falls back to the wiki's own guess.
+   */
+  spellCategory?: SpellCategory;
   /**
    * For **zone** pages: every NPC the zone lists, with its level as the wiki writes it (`"7-9"`).
    *
@@ -3249,6 +3260,13 @@ export interface LogSearchResult {
   superseded?: boolean;
 }
 
+/** One `/outputfile` dump as main read it — parsed in the renderer by `game-export-dumps.ts`. */
+export interface GameExportDump {
+  fileName: string;
+  writtenAt: number;
+  text: string;
+}
+
 export interface WatcherStatus {
   watching: boolean;
   file?: string;
@@ -3756,6 +3774,13 @@ export interface EqlApi {
      * marked `superseded` was cut short by a newer search and should be ignored.
      */
     search(query: string, options?: LogSearchOptions): Promise<LogSearchResult>;
+    /**
+     * When each of the followed character's `/outputfile` dumps was last written, keyed by the
+     * lower-cased type in its file name (`src/shared/game-exports.ts`). Empty when there are none.
+     */
+    exports(): Promise<GameExportTimes>;
+    /** The newest dump for one command (its `fileType`), as text, or null when there is none. */
+    exportRead(fileType: string): Promise<GameExportDump | null>;
   };
   /** Auto-update (rolling `latest` release; downloads and installs itself, ADR 0279). */
   update: {

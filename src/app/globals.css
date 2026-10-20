@@ -15,6 +15,7 @@
   --accent: #f0b429; /* EQ-ish gold */
   --accent-dim: #7a5c12;
   --good: #46c86b;
+  --warn: #e3c341; /* between --good and --bad: a nudge, not a fault */
   --bad: #e5534b;
   --flash: #f0b42933;
   --radius: 8px;
@@ -4150,6 +4151,10 @@ select optgroup {
    with the number it is currently at, since a slider with no read-out is a guess. */
 .level-slider { width: 120px; accent-color: var(--accent); }
 .level-cap { min-width: 26px; font-variant-numeric: tabular-nums; }
+/* A page's +N slider (UpgradeSlider): sits above the card it rescales. */
+.upgrade-slider { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 2px; }
+.upgrade-slider .row { gap: 6px; align-items: center; }
+.upgrade-slider .level-slider { width: 180px; }
 
 /* A long quest's plan (`QuestPlanView`, ADR 0300): stage headings, then one row per step — its mark,
    the sentence with what it gets you, and where it happens. A sub-step indents under its step. */
@@ -4164,3 +4169,97 @@ select optgroup {
 .page-detail li.plan-step.done .plan-mark { color: var(--good); }
 .page-detail .plan-text { flex: 1 1 260px; min-width: 0; }
 .page-detail .plan-place { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+
+/* The Exports tab: copy buttons whose edge and age drift from --good to --bad as the game's dump
+   ages (`--stale`, mixed per button in GameExportsPanel). A dump never taken stays neutral. */
+.game-exports { display: flex; flex-direction: column; gap: 10px; }
+.game-export-list { display: flex; flex-direction: column; gap: 6px; }
+.game-export {
+  --stale: var(--border);
+  display: grid;
+  grid-template-columns: 8em 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  text-align: left;
+  color: var(--text);
+  background: color-mix(in oklab, var(--stale) 12%, var(--bg-raised));
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--stale);
+  border-radius: var(--radius);
+  transition: background 0.6s, border-color 0.6s;
+}
+.game-export:hover { background: color-mix(in oklab, var(--stale) 22%, var(--bg-raised)); }
+.game-export-label { font-weight: 600; }
+.game-export-command { font-family: var(--mono); font-size: 12px; color: var(--text-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game-export-age { color: var(--stale); font-variant-numeric: tabular-nums; font-size: 12px; }
+.game-export.never .game-export-age { color: var(--text-dim); font-style: italic; }
+.game-export-heading { font-size: 13px; margin-top: 4px; display: flex; gap: 8px; align-items: baseline; }
+.game-export-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.game-export.compact { grid-template-columns: 1fr auto; padding: 6px 8px; }
+.game-export.compact .game-export-label { font-weight: 500; }
+
+/* Exports tab: reading a dump. */
+.game-export-views { flex-wrap: wrap; align-self: flex-start; }
+.dump-view { display: flex; flex-direction: column; gap: 6px; }
+.dump-toolbar { gap: 8px; align-items: center; margin-bottom: 4px; }
+.dump-missing { margin-top: 6px; }
+.dump-section { border-bottom: 1px solid var(--border); }
+.dump-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 2px;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+}
+.dump-section-title { font-weight: 600; }
+.dump-section-aside {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.dump-section-body { padding: 0 0 8px 16px; }
+.dump-bar { display: inline-block; width: 60px; height: 5px; border-radius: 2px; background: var(--bg-input); overflow: hidden; vertical-align: middle; }
+.dump-fill { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+.dump-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dump-table th { text-align: left; color: var(--text-dim); font-weight: 600; font-size: 12px; padding: 3px 6px; border-bottom: 1px solid var(--border); }
+.dump-table td { padding: 3px 6px; border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
+.dump-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dump-bar-cell { width: 70px; }
+.inv-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.inv-inner { padding: 2px 0 4px 18px; border-left: 1px solid var(--border); margin-left: 6px; }
+.inv-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.inv-bag { color: var(--text-dim); }
+.inv-count { font-variant-numeric: tabular-nums; color: var(--accent); }
+.inv-wanted { color: var(--accent); }
+.inv-socket { font-size: 11px; color: var(--text-dim); }
+.inv-slot { font-size: 11px; margin-left: auto; }
+.ach-dump { padding: 4px 0; }
+.ach-dump.done .ach-dump-name { color: var(--good); }
+.ach-dump-objectives { list-style: none; padding-left: 18px; font-size: 12px; color: var(--text-dim); }
+.ach-dump-objectives li { display: flex; gap: 8px; justify-content: space-between; }
+.ach-dump-objectives li.done { color: color-mix(in oklab, var(--good) 70%, var(--text-dim)); }
+.ach-dump-progress { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Peers: who has a material. A row its card says can't be traded is dimmed and chipped. */
+.peer-inventory tr.untradeable td { opacity: 0.6; }
+.chip.no-trade { margin-left: 6px; color: var(--bad); border-color: color-mix(in oklab, var(--bad) 50%, var(--border)); }
+
+/* Items tab: Search / Best in slot, and the BiS view. */
+.item-mode { margin: 6px 0; }
+.bis { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.bis-summary { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; font-size: 15px; }
+.bis-summary .good, .bis .good { color: var(--good); }
+.bis-move td:first-child { border-left: 3px solid var(--accent); }
+.bis-list { list-style: none; padding-left: 4px; display: flex; flex-direction: column; gap: 2px; }
+.bis-socket { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
+.bis-socket .bis-list { flex-basis: 100%; padding-left: 16px; }
+.bis-empty td { opacity: 0.85; }
+.bis-empty td:first-child { border-left: 3px solid var(--border); }

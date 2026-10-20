@@ -24,10 +24,11 @@
  *
  * **How a name matches.** The log writes a spell's **rank** in the cast line ("Shock of Lightning
  * VI") and the base name everywhere it does something, which is why `spellName()` strips it and
- * `spellRank()` keeps it. The file lists each rank as its own spell with its own cost, so the
- * ranked name is the exact answer and the base name is the fallback — ask for both, prefer the
- * former. That's what makes a per-rank mana figure real rather than an estimate scaled by a
- * rule of thumb.
+ * `spellRank()` keeps it. For a spell, that numeral is its **upgrade level** (0–10), which the
+ * server applies at runtime: the file has no `Shock of Lightning VI` row, so the base row is levelled
+ * by `spell-upgrade.ts` (ADR 0312). A ranked row is still the answer where it is the real thing — an
+ * AA's ranks (`Harm Touch III`) are rows of their own — but not where it is an unrelated row that
+ * happens to share the name (`Guard VI`, a free NPC spell, against the 80-mana Guard you cast).
  *
  * **When it isn't there.** Every answer is `undefined` and nothing else changes — the same way a
  * missing map pack leaves the map blank rather than breaking the window. A player on a custom
@@ -38,6 +39,7 @@ import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { parseSpellCatalog, type SpellFacts } from "../src/shared/spells/spell-file";
 import { parseSpellCategoryNames, spellCategory, type SpellCategory } from "../src/shared/spells/spell-categories";
+import { levelledFacts, rankLevel, spellLevelRule } from "../src/shared/spells/spell-upgrade";
 import {
   buildBuffLexicon,
   parseSpellStringFile,
@@ -225,16 +227,20 @@ export function createSpellCatalog(): SpellCatalog {
     return byFold.get(foldSpellName(title));
   }
 
+  /** The spell's own row at an upgrade level — the file's base row with the level's rule applied. */
+  function levelled(row: SpellFacts, rank: string): SpellFacts {
+    return levelledFacts(row, spellLevelRule(spellCategory(row, loadCategoryNames())), rankLevel(rank));
+  }
+
   function find(spell: string, rank?: string): SpellFacts | undefined {
     const spells = load();
     if (!spells.size || !spell) return undefined;
     const base = spell.trim().toLowerCase();
-    // The ranked row is the exact answer; the base name is what a damage line gives us.
-    if (rank) {
-      const ranked = spells.get(`${base} ${rank.trim().toLowerCase()}`);
-      if (ranked) return ranked;
-    }
-    return spells.get(base);
+    const baseRow = spells.get(base);
+    if (!rank) return baseRow;
+    const ranked = spells.get(`${base} ${rank.trim().toLowerCase()}`);
+    if (ranked && rankedRowIsTheSpell(baseRow, ranked)) return ranked;
+    return baseRow ? levelled(baseRow, rank) : ranked;
   }
 
   return {
@@ -261,4 +267,16 @@ export function createSpellCatalog(): SpellCatalog {
       return file;
     },
   };
+}
+
+/**
+ * Is `Name II` in the file really this spell at rank II? Only when the base isn't a spell a player
+ * casts (an AA, whose ranks are rows of their own), or when the ranked row is one too, filed in the
+ * same spellbook category — a classic sequel like `Burnout II`. Otherwise it is a stranger sharing
+ * the name: 56 castable families collide this way, `Guard VI` and `Savage Spirit III` among them.
+ */
+export function rankedRowIsTheSpell(baseRow: SpellFacts | undefined, ranked: SpellFacts): boolean {
+  const castable = (row: SpellFacts) => Object.keys(row.levels).length > 0;
+  if (!baseRow || !castable(baseRow)) return true;
+  return castable(ranked) && ranked.categoryId === baseRow.categoryId;
 }

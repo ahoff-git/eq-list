@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useMemo } from "react";
-import { useClosedZones, useHarvest, useItemCatalog } from "@/lib/hooks";
+import { useClosedZones, useCurrentItemCatalog } from "@/lib/hooks";
 import { useItemQuery } from "@/lib/items/useItemQuery";
+import { useHeldGrades, useOwnedItems } from "@/lib/exports/useGameExports";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import CatalogueHarvest from "@/app/components/items/CatalogueHarvest";
@@ -9,9 +10,14 @@ import ItemFacetRow from "@/app/components/items/ItemFacetRow";
 import ItemLevelBand from "@/app/components/items/ItemLevelBand";
 import ItemTable from "@/app/components/items/ItemTable";
 import ItemWeights from "@/app/components/items/ItemWeights";
+import BisView from "@/app/components/items/BisView";
 import StatFloors from "@/app/components/items/StatFloors";
-import { CheckField, Empty, TextField, caretGlyph } from "@/app/components/ui";
-import { countOf } from "@/shared/format";
+import { CheckField, Empty, TextField, caretGlyph, segCls } from "@/app/components/ui";
+import { count, countOf } from "@/shared/format";
+import { exportAgeText } from "@/shared/game-exports";
+import { ownedText } from "@/shared/game-export-dumps";
+import { gradedItemStats } from "@/shared/items/item-upgrade";
+import { normalizeItemName } from "@/shared/items/grouping";
 import type { Sort } from "@/shared/sorting";
 import {
   EFFECT_FACETS,
@@ -59,16 +65,8 @@ const MAX_ROWS = 300;
  * were previously in the same four hundred lines.
  */
 export default function ItemSearchPanel() {
-  const harvest = useHarvest();
-  /**
-   * Re-read the catalogue when a run **ends**, not as it goes.
-   *
-   * The key is constant while the harvest is running, so eleven thousand progress events don't
-   * become eleven thousand re-reads of a growing catalogue — and it changes once when the run stops
-   * or finishes, which is the moment there is something new to show.
-   */
-  const catalogueKey = harvest.status === "running" ? "running" : `${harvest.status}:${harvest.fetched}`;
-  const { rows, loading } = useItemCatalog(catalogueKey);
+  // Re-read when a harvest run ends, not as it goes — see `useCurrentItemCatalog`.
+  const { rows, loading, harvest } = useCurrentItemCatalog();
 
   // Persisted, like the Hunt tab's zone: this is a workbench you come back to. A half-built query
   // thrown away because you glanced at the List tab is the same annoyance in both places.
@@ -80,6 +78,9 @@ export default function ItemSearchPanel() {
   const [sort, setSort] = usePersistentState<Sort<ItemSortKey>>(STORAGE_KEYS.itemSort, { key: "name", desc: false });
   const [pace, setPace] = usePersistentState<string>(STORAGE_KEYS.itemHarvestPace, "1000");
   const [weightsOpen, setWeightsOpen] = usePersistentState(STORAGE_KEYS.itemWeightsOpen, false);
+  // The same criteria and weights answer two questions: "which items are like this" (Search) and
+  // "what should I be wearing, and what next" (Best in slot, `BisView`).
+  const [mode, setMode] = usePersistentState<"search" | "bis">(STORAGE_KEYS.itemMode, "search");
 
   /**
    * A criteria object stored last week can be missing a facet added since; folding it over the empty
@@ -101,13 +102,65 @@ export default function ItemSearchPanel() {
   // Which of the eras this server *has* are actually open — the live half of the era judgement, and
   // the only half a window can't work out for itself (`item-era.ts`).
   const closedZones = useClosedZones();
-  const { options, counts, found, columns, scored, unplaced } = useItemQuery(rows, active, weights, sort, closedZones);
+
+  /**
+   * **What you own** narrows the *catalogue*, not the query — the same way the era toggle does (see
+   * `useItemQuery`'s `corpus`). Every picker then counts within your inventory, so "Fingers · 3" means
+   * three rings you hold. Exaltations count for their base item, and the Where column says where each
+   * is socketed.
+   */
+  const { owned, at: ownedAt } = useOwnedItems();
+  const [ownedOnly, setOwnedOnly] = usePersistentState(STORAGE_KEYS.itemOwnedOnly, false);
+  const narrowToOwned = ownedOnly && !!owned;
+  // A thing you hold graded is searched, scored and shown as *your* copy — a `+9` talisman at +9, not
+  // at the catalogue's +0 (ADR 0312). Best-in-slot gets the plain rows: it grades each copy itself.
+  const held = useHeldGrades();
+  const yours = useMemo(
+    () =>
+      held.size
+        ? rows.map((r) => {
+            const grade = held.get(normalizeItemName(r.item.title));
+            return grade ? { ...r, grade, stats: gradedItemStats(r.stats, grade) } : r;
+          })
+        : rows,
+    [held, rows],
+  );
+  const searched = useMemo(
+    () => (narrowToOwned && owned ? yours.filter((r) => owned.has(normalizeItemName(r.item.title))) : yours),
+    [narrowToOwned, owned, yours],
+  );
+  // Owned things the catalogue has no page for can't be searched by stat; say how many, not nothing.
+  const uncatalogued = useMemo(() => {
+    if (!narrowToOwned || !owned) return 0;
+    const known = new Set(rows.map((r) => normalizeItemName(r.item.title)));
+    return [...owned.keys()].filter((k) => !known.has(k)).length;
+  }, [narrowToOwned, owned, rows]);
+  const where = useCallback(
+    (title: string) => {
+      const places = owned?.get(normalizeItemName(title));
+      return places ? ownedText(places) : undefined;
+    },
+    [owned],
+  );
+
+  const { options, counts, found, columns, scored, unplaced } = useItemQuery(searched, active, weights, sort, closedZones);
   const conditions = activeCriteria(active);
   const shown = useMemo(() => found.slice(0, MAX_ROWS), [found]);
 
   return (
     <div className="item-search">
       <CatalogueHarvest progress={harvest} held={rows.length} pace={pace} onPace={setPace} />
+
+      <div className="segmented item-mode">
+        <button className={segCls(mode === "search")} onClick={() => setMode("search")}>Search</button>
+        <button
+          className={segCls(mode === "bis")}
+          onClick={() => setMode("bis")}
+          title="The best gear from what you hold, exaltations to add, and what to hunt next — by your value weights"
+        >
+          Best in slot
+        </button>
+      </div>
 
       <div className="row wrap item-criteria">
         <TextField
@@ -126,6 +179,14 @@ export default function ItemSearchPanel() {
           checked={active.hideOutOfEra}
           onChange={(hideOutOfEra) => set({ hideOutOfEra })}
         />
+        {owned && (
+          <CheckField
+            label="what I own"
+            title={`Only items in your newest /outputfile inventory dump${ownedAt ? `, written ${exportAgeText(Date.now() - ownedAt)}` : ""} — bags, bank, depot, hoard, Storage, and exaltations wherever they're socketed`}
+            checked={ownedOnly}
+            onChange={setOwnedOnly}
+          />
+        )}
         <span className="spacer" />
         {conditions > 0 && (
           <button className="btn sm" onClick={() => setCriteria(NO_CRITERIA)} title="Drop every criterion">
@@ -153,26 +214,31 @@ export default function ItemSearchPanel() {
           {caretGlyph(weightsOpen)} Value weights{scored.length ? ` (${scored.length})` : ""}
         </button>
         <span className="muted small">
-          {loading ? "Reading the item cache…" : countOf(found.length, rows.length, "item")}
+          {loading ? "Reading the item cache…" : countOf(found.length, searched.length, "item")}
+          {uncatalogued > 0 && ` · ${count(uncatalogued, "thing")} you own has no item page here yet`}
         </span>
       </div>
       {weightsOpen && <ItemWeights weights={weights} onChange={setWeights} />}
 
-      {!loading && !rows.length && (
+      {mode === "bis" && (
+        <BisView rows={rows} criteria={active} weights={weights} closedZones={closedZones} scored={!!scored.length} />
+      )}
+
+      {mode === "search" && !loading && !rows.length && (
         <Empty
           title="Nothing cached yet."
           hint="Open a few items from the Search tab and they'll appear here — this searches what you've already looked at, so it grows as you use the app."
         />
       )}
 
-      {!loading && rows.length > 0 && !found.length && (
+      {mode === "search" && !loading && rows.length > 0 && !found.length && (
         <Empty
           title="No item matches all of that."
           hint="Every criterion only ever removes rows — drop one and the list grows back."
         />
       )}
 
-      {shown.length > 0 && (
+      {mode === "search" && shown.length > 0 && (
         <ItemTable
           rows={shown}
           columns={columns}
@@ -180,10 +246,11 @@ export default function ItemSearchPanel() {
           onSort={setSort}
           scored={!!scored.length}
           pickedZones={active.facets.zone}
+          where={owned ? where : undefined}
         />
       )}
 
-      {found.length > shown.length && (
+      {mode === "search" && found.length > shown.length && (
         <div className="muted small item-more">
           Showing the first {MAX_ROWS} of {found.length}. Narrow it and the rest come into view.
         </div>

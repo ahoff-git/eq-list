@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { useLucyCard, useSettings } from "@/lib/hooks";
 import { count, dayTime } from "@/shared/format";
 import { normalizeItemName } from "@/shared/items/grouping";
+import { itemGrade } from "@/shared/names";
 import type { KnownItem } from "@/shared/items/known-items";
 import ItemDrops from "@/app/components/items/ItemDrops";
 import LucySays, { LucyLink } from "@/app/components/items/LucySays";
@@ -103,7 +104,7 @@ export default function ObservedItemView({ title, known }: { title: string; know
           *is*. Cache-only, so opening this page costs Lucy nothing — it's populated by having found
           the item through search (ADR 0124). Last on the page on purpose: it is the least trusted
           thing on it. */}
-      {lucy && <LucySays item={lucy} />}
+      {lucy && <LucySays item={lucy} grade={itemGrade(title) ?? 0} />}
     </div>
   );
 }

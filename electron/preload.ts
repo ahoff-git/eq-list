@@ -102,6 +102,8 @@ const api: EqlApi = {
     import: () => ipcRenderer.invoke(CH.logImport),
     recent: (bytes) => ipcRenderer.invoke(CH.logRecent, bytes),
     search: (query, options) => ipcRenderer.invoke(CH.logSearch, query, options),
+    exports: () => ipcRenderer.invoke(CH.logExports),
+    exportRead: (fileType) => ipcRenderer.invoke(CH.logExportRead, fileType),
   },
   update: {
     status: () => ipcRenderer.invoke(CH.updateStatus),

@@ -24,6 +24,12 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **`item-stats.ts` reads a vendor-price line as a stat.** `VALUE TO VENDOR with CHA : 68 and faction
+  at Kindly` (Chipped Hematite) parses as **CHA 68**, so the Items tab finds a gem worth 68 charisma and
+  best-in-slot would weigh it. Found by pinning graded readings to graded cards across the catalogue
+  (ADR 0312) — the only card of 9,358 where they part. The label match should want the colon right after
+  the label, as every real stat line has it.
+
 - **Three more pet/group-mate deciders from eql-meter v0.1.28** (see [neighbours.md](./neighbours.md)),
   on top of the ones [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md)'s three-step
   plan already built against — all three now done: a stored fight re-derives
@@ -440,35 +446,42 @@ Four of the six are **done** and have left this list: rank-aware spell costs
 ([ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md)), and the unread-line tally
 ([ADR 0079](./decisions/0079-an-unread-line-is-counted-by-its-shape.md)). What's left:
 
-- **`/out inventory` writes a file, and we never look at it.** The game will dump every bag, bank slot,
-  depot and key-ring row to `<Char>_<server>-Inventory.txt` on command — and we are a **shopping list**
-  that has no idea what the player already owns. Three of the ten neighbours read it
-  (eqltools-companion parses it fully, eqdps has an `inventorysync` module, eql-log-reader's launcher
-  detects it); we don't reference it anywhere.
+- **The inventory dump is read; three things still don't use it.** The Exports tab ([overlay-ui](./overlay-ui/README.md))
+  parses `/outputfile inventory` (`src/shared/game-export-dumps.ts`): worn gear with its sockets,
+  bags and their contents, the bank, the shared bank, the Tradeskill Depot, the Dragon's Hoard, and
+  the Storage window's tabs. It shows them by place or by item, and stars anything on the shopping
+  list. The Items tab can search it ("what I own", with a Where column), the faction dump feeds the
+  Faction tab as a correction ([ADR 0308](./decisions/0308-the-game-s-faction-dump-is-a-stated-total.md)),
+  and peers can search each other's when they opt in
+  ([ADR 0309](./decisions/0309-an-inventory-is-shared-live-and-judged-by-the-receiver.md)). What's left:
 
-  It is cheaper than it sounds, because the file lands in the **EQ install directory — the parent of
-  the `Logs` folder we tail** — and [eq-maps.ts](../electron/eq-maps.ts) already derives exactly that
-  path (`path.join(path.dirname(logDir), "maps")`) to find the map pack. The same `dirname` finds the
-  dump. Poll for the newest by path+mtime; a dump is a few KB, so ship the whole file and parse it
-  where the data lives.
+  - **The list should count what you hold.** An entry's "5 of 3" is loot seen in the log; the dump
+    knows you already had 640 Bone Chips. EQBuddy (`src/EQBuddy.Core/InventoryFile.cs`) layers
+    log-seen loot and sells *since the dump* on top of it as `SinceDump`, so the number stays current
+    and says which part came from where. That's the shape to copy. It also unlocks the
+    quest-readiness item above and the **ignore list** in [ideas.md](./ideas.md).
+  - **Keep the last depot and hoard we saw.** The game overwrites one file per character. A dump
+    taken without the depot or hoard window open has no rows for them, and that means "not loaded",
+    not "empty" (the tab says so). Copying each area's newest rows into userData would let the view
+    show the last known contents, dated, instead of nothing.
+  - **Best in slot can't price an effect.** Exaltations and an item's own effects carry no number,
+    so the loadout is optimal for stats only ([ADR 0310](./decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)).
+    A per-effect weight (the way the weight sheet does stats) would let the solver trade them
+    properly. Two rules are also secondhand and worth checking in game: an Any Slot weapon not
+    swinging, and whether LORE applies across Any Slots.
+  - **Storage may drop rows.** eqltools-companion (commit 56031f1, "storage export drops rows")
+    recorded a bought item missing from Storage across three dumps. Cause unknown; the tab warns
+    about it.
 
-  The format, from eqltools-companion's `renderer/app.js` where it's recorded against real dumps: a
-  **TSV** with header `Location/Name/ID/Count/Slots`, CRLF line endings, and `Empty` placeholder rows
-  to skip. Locations are worn slots (plus `-SlotN` socket rows), `General 1`–`12` with bag sub-slots,
-  `Held`, `Bank 1`–`24`, `SharedBank`, `Personal-Depot`, `KeyRing`, and the Dragon's Hoard *only while
-  its window is open*. Two traps they hit and wrote down: the client spells `General 1` **with** a
-  space and `Bank1` **without**, so a matcher wants the space optional; and anything that matches no
-  section must land in an "elsewhere" bucket rather than being dropped, because the list of locations
-  is not closed.
-
-  The honest limit is that a dump is a **snapshot taken on command**, not a feed — so live loot counts
-  on top of it until the next one, and the app has to say which of the two a number came from. That is
-  the same claim-vs-observation shape as everywhere else, and it's what makes the feature safe to
-  build: it never silently goes stale, it goes *old*, visibly.
-
-  What it unlocks: an item on the list you already hold, the quest-readiness item above (which needs
-  "what do I have" far more than it needs "what did I loot"), and the **ignore list** in
-  [ideas.md](./ideas.md).
+  Format notes, from real dumps (2026-10-20), to save rediscovering them. The client's own usage line
+  is `usage: /outputfile [achievements | faction | guild | guildbank | guildhall | inventory |
+  missingspells | raid | realestate | recipes [argument] | spellbook ] [optional filename]`, so there
+  is no depot, hoard or storage option; everything comes through `inventory`. Each dump also logs
+  `Outputfile Complete: <file>`, which could replace polling the folder. Some file names carry a
+  class code (`-WIZ-Factions`, `-WIZ-Spellbook`). `recipes all` is refused. Inventory: `Hoard N` and
+  `Personal-DepotN` rows appear only while their windows are open. The Storage tabs come last, under
+  a second `KeyRing Name ID` header (`Equipment`, `Augmentation` = Exaltation, `Activated`); the
+  Currencies tab isn't dumped. `Any Slot` is EQL's name for two worn slots.
 
 - **Gate a shared emote on your own cast, instead of guessing from the sentence.**
   [cast-alerts.ts](../src/shared/cast-alerts.ts)'s `isNamedCaster` decides player-vs-mob from the

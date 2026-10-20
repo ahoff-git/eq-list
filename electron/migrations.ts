@@ -47,6 +47,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import { splitLine } from "../src/shared/log-parser";
+import { logStamp } from "../src/shared/log-clock";
 import { parseSplitLine } from "../src/shared/parse-line";
 import { upgradeWatches } from "../src/shared/alerts/watch-upgrade";
 import { BUILT_IN_STYLES } from "../src/shared/alerts/alert-styles";
@@ -160,14 +161,6 @@ export function runMigrations(userDataDir: string, logDir: string | undefined, d
   } catch (err) {
     log.error("zone-line repair failed; data left untouched", err);
   }
-}
-
-/** A stored UTC instant (`2026-10-15T05:56:46.000Z`) as the log stamps it: local time, no zone. */
-function logStamp(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 /**

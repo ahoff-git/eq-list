@@ -147,8 +147,36 @@ export const MANUAL_TRAVEL: TravelManual = {
   ],
 
   // Two places in one zone you can't walk between, which is the one thing the "every pair of a zone's
-  // nodes is a walk" rule can't express. Nothing known to need this yet.
-  blocks: [],
+  // nodes is a walk" rule can't express — or, `oneWay`, a drop you can walk down and not back up.
+  // Labels differ between packs (Brewall's fall is `(fall down)`, the game's own `(Hole - jump)`), so a
+  // drop is written once per spelling and the pack that hasn't got one reports it unresolved.
+  blocks: [
+    // The Hole is a shaft: "shortly after the entrance is a drop off pit that you can't walk back up
+    // from" (Wedar's guide, P1999 wiki), and eqlwiki says the same of the first ledge. Its portals are
+    // one-way by their own labels; this is the rest — the fall from Paineel lands at the bottom, beside
+    // Master Yael, and nothing walks from there to the entrance or the succor point beside it.
+    {
+      zone: "hole",
+      a: "to Paineel",
+      b: "(fall down)",
+      oneWay: true,
+      why: "The Hole's pit can't be climbed out of: the fall from Paineel lands at the bottom, and the zone line is at the top.",
+    },
+    {
+      zone: "hole",
+      a: "Succor",
+      b: "(fall down)",
+      oneWay: true,
+      why: "The Hole's succor point is beside the zone line at the top of the pit — evacuating reaches it, walking up from the bottom doesn't.",
+    },
+    {
+      zone: "hole",
+      a: "to Paineel",
+      b: "Hole - jump",
+      oneWay: true,
+      why: "The game's own spelling of the fall into The Hole — same pit, same rule as `(fall down)`.",
+    },
+  ],
 };
 
 /**

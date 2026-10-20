@@ -39,11 +39,19 @@ const dryRun = flag("dry-run");
  * **A piped link keeps its display text.** `[[Freeport|East Freeport]]` is the Freeport page standing
  * in for East Freeport, and East Freeport is the zone — the same side a map label writes, and the same
  * choice the expansion table makes.
+ *
+ * **An entry the note calls a teleporter, a portal or one-way is not an adjacency at all**, and goes
+ * with its note. The Hole lists `[[Neriak Third Gate]] (teleporter), [[Erudin]] (teleporter)`: rides
+ * down out of the zone that nobody takes back up, and the second isn't even the zone it lands in (that
+ * is Erudin Palace). Read as borders, both were ways *into* the bottom of The Hole. A conveyance is a
+ * map label's to state, with its direction, or a hand-authored one's.
  */
+const RIDE = /\[\[[^\]]+\]\]\s*\([^()]*\b(?:teleport\w*|portal|one[\s-]?way)\b[^()]*\)/gi;
+
 export function adjacentIn(wikitext) {
   const row = infoboxRow(wikitext, "Adjacent Zones");
   if (!row) return [];
-  const value = row.replace(/\([^()]*\)/g, " ");
+  const value = row.replace(RIDE, " ").replace(/\([^()]*\)/g, " ");
   const names = [];
   for (const link of value.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g)) {
     const name = (link[2] ?? link[1]).trim();

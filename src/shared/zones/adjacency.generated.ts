@@ -14,7 +14,7 @@
  * zone comparison in the app shares. Nothing should import this file directly — the lookup is
  * `adjacency.ts` beside it.
  *
- * 115 zones, 264 stated pairs.
+ * 116 zones, 265 stated pairs.
  */
 
 /** A zone name → the zones its page lists as adjacent, as the wiki spells them. */
@@ -59,6 +59,7 @@ export const WIKI_ADJACENT: Readonly<Record<string, readonly string[]>> = {
   "Iceclad Ocean": ["North Ro", "Eastern Wastes", "Tower of Frozen Shadow"],
   "Icewell Keep": ["Thurgadin"],
   "Innothule Swamp": ["Grobb", "Upper Guk", "Southern Desert of Ro", "The Feerrott"],
+  "Jaggedpine Forest": ["Blackburrow", "Nedaria's Landing", "Surefall Glade"],
   "Kael Drakkel": ["Eastern Wastes", "Wakening Land"],
   "Kaesora": ["Field of Bone"],
   "Kaladim": ["Butcherblock Mountains"],
@@ -116,7 +117,7 @@ export const WIKI_ADJACENT: Readonly<Record<string, readonly string[]>> = {
   "The Arena": ["Lake Rathetear"],
   "The Estate of Unrest": ["Dagnor's Cauldron"],
   "The Feerrott": ["Rathe Mountains", "Oggok", "Cazic Thule", "Plane of Fear", "Innothule Swamp"],
-  "The Hole": ["Paineel", "Neriak Third Gate", "Erudin"],
+  "The Hole": ["Paineel"],
   "The Northern Desert of Ro": ["East Freeport", "East Commonlands", "Iceclad Ocean", "Oasis of Marr", "New Sebilis Expedition"],
   "The Overthere": ["Frontier Mountains", "Howling Stones", "Skyfire Mountains", "Timorous Deep", "Warsliks Woods"],
   "The Temple of Solusek Ro": ["Lavastorm Mountains"],

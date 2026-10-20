@@ -68,6 +68,7 @@ function rig(over: {
     fight: { current: () => undefined },
     gameClock: { reading: () => null },
     celebrations: { current: () => undefined },
+    inventory: { rows: () => [] },
   });
 }
 

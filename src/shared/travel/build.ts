@@ -7,7 +7,9 @@
  *     Clan Crushbone's `to Greater Faydark` are one place — the boundary — so they collapse into
  *     `crushbone|gfaydark`, holding its position in each zone's own frame. Which of three exits pairs
  *     with which of two arrivals stops being a question nobody can answer: they're all the same
- *     border, and a walk to it takes the nearest one.
+ *     border, and a walk to it takes the nearest one. A crossing whose label says it only goes one
+ *     way — a portal, a fall — is a node of its own, `from>into`
+ *     ([ADR 0311](../../../specs/decisions/0311-a-crossing-can-go-one-way.md)).
  *  2. **Walks within a zone are the edges.** For each zone, every pair of its nodes gets an edge
  *     weighted by the distance between them *in that zone*. Crossing the boundary itself needs no
  *     edge at all: standing at the node is standing in both zones. A zone whose map marks its **succor
@@ -24,12 +26,14 @@
 import type { WikiAdjacency } from "../zones/adjacency";
 import { resolveZone, type ZoneMatchHow } from "../zones/resolve";
 import { zoneSpelling } from "../zones/spelling";
-import type { ZoneHarvest } from "./harvest";
+import type { TravelPoint, ZoneHarvest } from "./harvest";
 import {
   boundaryId,
   isCast,
   networkOfCrossing,
+  oneWayId,
   slug,
+  walkable,
   zoneFileFor,
   zoneDistance,
   type TravelAt,
@@ -99,15 +103,16 @@ export interface TravelBuildReport {
 }
 
 /**
- * The two directed walk edges between a pair of nodes sharing a zone. Shared with the manual pass, so
- * a hand-added dock is wired into its zone by exactly the rule everything else was.
+ * The directed walk edges between a pair of nodes sharing a zone — both, unless one is a one-way
+ * crossing (`walkable`). Shared with the manual pass, so a hand-added dock is wired into its zone by
+ * exactly the rule everything else was.
  */
 export function walkPair(a: TravelNode, b: TravelNode, zone: string): TravelEdge[] {
   const { cost, assumed } = zoneDistance(a, b, zone);
   const edge = { mode: "walk" as const, cost, zone, ...(assumed ? { assumed: true } : {}) };
   return [
-    { from: a.id, to: b.id, ...edge },
-    { from: b.id, to: a.id, ...edge },
+    ...(walkable(a, b, zone) ? [{ from: a.id, to: b.id, ...edge }] : []),
+    ...(walkable(b, a, zone) ? [{ from: b.id, to: a.id, ...edge }] : []),
   ];
 }
 
@@ -232,6 +237,9 @@ export function pairByReciprocal(
   /** Per zone, the neighbours that named a border with it and got nothing back. */
   const claimants = new Map<string, [string, string][]>();
   for (const node of boundaries.values()) {
+    // A one-way crossing's missing side is a landing nobody labelled, not a border someone named and
+    // this zone didn't — and the pairing below can only ever place a border.
+    if (node.into) continue;
     for (const zone of node.zones) {
       if (node.at[zone]?.length) continue;
       const far = node.zones.find((z) => z !== zone);
@@ -333,6 +341,41 @@ export function buildTravelGraph(
   /** How you cross a border, when a conveyance's own label said so. */
   const crossings = new Map<string, TravelCrossing>();
 
+  /**
+   * The crossing an id names, created the first time either side mentions it. A border's zones are its
+   * sorted id; a one-way crossing's are `[from, into]`, in the order you go.
+   */
+  const crossingNode = (id: string, zones: string[], into?: string): TravelNode => {
+    let node = boundaries.get(id);
+    if (!node) {
+      node = { id, kind: "boundary", label: id, zones, at: {}, ...(into ? { into } : {}) };
+      boundaries.set(id, node);
+      usedIds.add(id);
+      nodes.push(node);
+    }
+    return node;
+  };
+  const border = (a: string, b: string): TravelNode => crossingNode(boundaryId(a, b), boundaryId(a, b).split("|"));
+
+  /**
+   * **Both sides land here.** Whichever zone is read first creates the node; the other adds its own
+   * coordinates to it. A zone labelling three ways across adds three positions, and a walk to the
+   * border takes the nearest.
+   */
+  const placeOn = (node: TravelNode, zone: string, point: TravelPoint) => {
+    node.at[zone] = [...(node.at[zone] ?? []), point.at];
+    // Kept because the name is about to be rewritten to `A ↔ B`, and this is the only thing that can
+    // find this border again by what the mapmaker actually wrote on it — which is how
+    // `manual-links.ts` names a place (`TravelNode.labels`).
+    if (!node.labels?.includes(point.label)) node.labels = [...(node.labels ?? []), point.label];
+    // A ride names itself on the border, so a route can say "take the boat" rather than leaving you
+    // to wonder why two zones an ocean apart are next to each other.
+    if (point.crossing && !crossings.has(node.id)) crossings.set(node.id, point.crossing);
+  };
+
+  /** `from X` labels, held until every crossing is known — see where they're placed. */
+  const arrivals: { zone: string; from: string; point: TravelPoint }[] = [];
+
   for (const harvest of harvests) {
     // A zone that isn't in the game contributes nothing — not its borders, not its docks. Its map file
     // is real and still draws; it just isn't somewhere you can be. A second drawing of a zone we
@@ -395,27 +438,27 @@ export function buildTravelGraph(
         continue;
       }
 
-      // **Both sides land here.** Whichever zone is read first creates the node; the other adds its
-      // own coordinates to it. A zone labelling three ways across adds three positions, and a walk
-      // to the border takes the nearest.
-      const id = boundaryId(harvest.zone, target!);
-      let node = boundaries.get(id);
-      if (!node) {
-        node = { id, kind: "boundary", label: id, zones: id.split("|"), at: {} };
-        boundaries.set(id, node);
-        usedIds.add(id);
-        nodes.push(node);
+      if (point.way === "in") {
+        arrivals.push({ zone: harvest.zone, from: target!, point });
+        continue;
       }
-      node.at[harvest.zone] = [...(node.at[harvest.zone] ?? []), point.at];
-      // Kept because the name is about to be rewritten to `A ↔ B`, and this is the only thing that can
-      // find this border again by what the mapmaker actually wrote on it — which is how
-      // `manual-links.ts` names a place (`TravelNode.labels`).
-      if (!node.labels?.includes(point.label)) node.labels = [...(node.labels ?? []), point.label];
-      // A ride names itself on the border, so a route can say "take the boat" rather than leaving you
-      // to wonder why two zones an ocean apart are next to each other.
-      if (point.crossing && !crossings.has(id)) crossings.set(id, point.crossing);
+      // **A one-way crossing is not the border.** The Hole's portal to Paineel is at the bottom of the
+      // zone and its zone line to Paineel at the top; filed under one node, standing at either was
+      // standing at both, and the walk down the dungeon cost nothing.
+      const node =
+        point.way === "out"
+          ? crossingNode(oneWayId(harvest.zone, target!), [harvest.zone, target!], target)
+          : border(harvest.zone, target!);
+      placeOn(node, harvest.zone, point);
     }
   }
+
+  // **A `from X` is where the crossing from X lands**, placed once every `to` label is in, because which
+  // crossing that is depends on the far side. Where X's own label made the way here one-way, this is its
+  // landing (Erudin Palace's `from The Hole`, under The Hole's `to Erudin Palace (portal)`); otherwise
+  // it's the arriving half of an ordinary border, as it always was (Chardok's `from The Burning Woods`,
+  // beside its own `to The Burning Woods`).
+  for (const { zone, from, point } of arrivals) placeOn(boundaries.get(oneWayId(from, zone)) ?? border(zone, from), zone, point);
 
   /**
    * **What the wiki says, for the borders the maps never established.**
@@ -441,7 +484,9 @@ export function buildTravelGraph(
     }
     if (a === b) continue;
     const id = boundaryId(a, b);
-    if (boundaries.has(id)) {
+    // A one-way crossing the maps drew is the maps having spoken too: the wiki writes The Hole's portal
+    // to Neriak as an adjacency, and turning that into a border would hand back the way up it.
+    if ([id, oneWayId(a, b), oneWayId(b, a)].some((known) => boundaries.has(known))) {
       claimed.already++;
       continue;
     }
@@ -488,7 +533,7 @@ export function buildTravelGraph(
     const [a, b] = node.zones;
     const how = crossings.get(id);
     if (how) node.via = how;
-    node.label = `${zoneLabel(a)} ↔ ${zoneLabel(b)}`;
+    node.label = `${zoneLabel(a)} ${node.into ? "→" : "↔"} ${zoneLabel(b)}`;
   }
 
   // ── Walks within each zone ───────────────────────────────────────────────────────────────────

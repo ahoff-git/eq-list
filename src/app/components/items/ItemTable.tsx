@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { useGridSort } from "@/lib/useGridSort";
 import { sourceKindLabel } from "@/shared/items/sources";
 import { LEVEL_CONFIDENCE, levelText } from "@/shared/items/item-levels";
+import { gradedTitle } from "@/shared/items/item-upgrade";
 import { STATS, statLine, statMeta, type StatKey } from "@/shared/items/item-stats";
 import { zonesInFilterOrder, type ItemSortKey, type ValuedItem } from "@/shared/items/item-search";
 import type { Sort } from "@/shared/sorting";
@@ -41,6 +42,7 @@ export default function ItemTable({
   onSort,
   scored,
   pickedZones,
+  where,
 }: {
   rows: readonly ValuedItem[];
   /** The stat columns to show, in card order. */
@@ -51,6 +53,8 @@ export default function ItemTable({
   scored: boolean;
   /** The ticked zones, so the Zone column can lead with one that kept the row. */
   pickedZones: string[];
+  /** Where you hold an item, from your inventory dump — absent when there's no dump, and so no column. */
+  where?: (title: string) => string | undefined;
 }) {
   const gridRows = useMemo<Row[]>(
     () => rows.map((row) => ({ ...row, id: `${row.item.origin}:${row.item.title}` })),
@@ -68,7 +72,8 @@ export default function ItemTable({
         valueGetter: (_v, row) => row.item.title,
         renderCell: (p) => (
           <>
-            <ItemLink title={p.row.item.title} />
+            {/* A row standing for your graded copy is named as it, so the hover shows the numbers it was scored by. */}
+            <ItemLink title={gradedTitle(p.row.item.title, p.row.grade ?? 0)} />
             {/* Lucy describes a different game, so a row sourced from it never passes as the wiki's. */}
             {p.row.item.origin === "lucy" && (
               <span className="chip lucy-chip" title="From Lucy — Live EverQuest's database, not this game's">
@@ -78,6 +83,21 @@ export default function ItemTable({
           </>
         ),
       },
+      // Second, so it is on screen without scrolling: "where is it" is the question owning it raises.
+      ...(where
+        ? [
+            {
+              field: "where",
+              headerName: "Where",
+              description: "Where you hold it, from your newest /outputfile inventory dump — exaltations by the item they're socketed in",
+              flex: 2,
+              minWidth: 160,
+              cellClassName: "small",
+              valueGetter: (_v: unknown, row: Row) => where(row.item.title) ?? "",
+              renderCell: (p: { value?: string }) => (p.value ? <span title={p.value}>{p.value}</span> : <span className="muted">—</span>),
+            } satisfies GridColDef<Row>,
+          ]
+        : []),
       {
         field: "slot",
         headerName: "Slot",
@@ -321,7 +341,7 @@ export default function ItemTable({
         },
       },
     ],
-    [columns, pickedZones, scored],
+    [columns, pickedZones, scored, where],
   );
 
   const { sortModel, onSortModelChange } = useGridSort(sort, onSort, startDescFor);

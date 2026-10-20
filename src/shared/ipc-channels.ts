@@ -23,6 +23,8 @@ export const CH = {
   logImport: "log:import",
   logRecent: "log:recent", // the last few thousand lines, for testing an alert rule against them
   logSearch: "log:search", // every line of the watched log matching a string, newest first
+  logExports: "log:exports", // when each of this character's /outputfile dumps was last written
+  logExportRead: "log:exportRead", // the newest of one of those dumps, as text
   lootRecent: "loot:recent",
   lootPrices: "loot:prices",
   lootItems: "loot:items",
