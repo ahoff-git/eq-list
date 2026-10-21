@@ -70,3 +70,18 @@ test("a step only a peer can supply still counts", () => {
   const holdings = holdingsOf([], [{ by: "Bob", item: "Fish Scales", count: 30 }]);
   assert.deepEqual(alternativesAt(guideSteps(guides), 130, holdings).map((a) => [a.step.label, a.combines, a.withPeers]), [["Fish Pie", 0, 30]]);
 });
+
+test("guide steps: a step under a heading the guide says is unavailable is left out with it", () => {
+  const shut: { name: string; blocks: JudgedBlock[] }[] = [
+    {
+      name: "Recommended",
+      blocks: [
+        { kind: "heading", level: 1, text: "Silver (1-100)", anchor: "s" },
+        { kind: "list", items: [{ runs: [link("Silver Ring")], skill: { from: 1, to: 100 }, needs: [{ name: "Silver Bar", qty: 1 }] }] },
+        { kind: "heading", level: 1, text: "Velium (279+)", anchor: "v", shut: { why: "out-of-era", because: "Velium is not currently available" } },
+        { kind: "list", items: [{ runs: [link("Velium Ring")], skill: { from: 279, to: 300 }, needs: [{ name: "Velium Bar", qty: 1 }] }] },
+      ],
+    },
+  ];
+  assert.deepEqual(guideSteps(shut).map((s) => s.label), ["Silver Ring"]);
+});
