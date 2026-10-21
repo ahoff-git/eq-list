@@ -73,3 +73,14 @@ test("logStamp writes an instant the way the log does: local time, no zone", () 
   assert.equal(logStamp(new Date(at).toISOString()), "2026-10-20T09:57:17");
   assert.equal(logStamp("not a time"), "not a time");
 });
+
+test("a corrected-only faction's row is stamped in the ledger's local time, so it sorts among real hits", () => {
+  // The ledger's firstAt/lastAt are log stamps (local, no zone) and the Standings table sorts them as
+  // text; a UTC `...Z` stamp there sorts hours off — a whole dump's untouched factions jumping above
+  // every faction actually hit since.
+  const statedAt = "2026-10-20T17:16:42.000Z";
+  const [row] = applyFactionCorrections([], { Craftkeepers: { offset: 2000, statedAt, source: "dump" } });
+  assert.equal(row.lastAt, logStamp(statedAt));
+  assert.equal(row.firstAt, logStamp(statedAt));
+  assert.equal(row.correction?.correctedAt, statedAt, "the correction itself keeps its instant");
+});

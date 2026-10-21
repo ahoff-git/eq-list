@@ -22,6 +22,7 @@
  * `faction-unlock-progress.ts`, so the merge can be pinned by a test independent of persistence.
  */
 import type { FactionCorrection, FactionStanding } from "../types";
+import { logStamp } from "../log-clock";
 
 /**
  * A faction dump (`/outputfile faction`) as corrections: the game's own total for each faction, as
@@ -57,8 +58,11 @@ export function newestCorrections(
 }
 
 /** A faction the player corrected but the ledger never saw a hit for still needs a row to correct —
- *  covering exactly the history the ledger couldn't have seen is the whole point. */
-function blankStanding(faction: string, at: string): FactionStanding {
+ *  covering exactly the history the ledger couldn't have seen is the whole point. Its `firstAt`/
+ *  `lastAt` are stamped the way the ledger's are (local, no zone): they're sorted as text beside real
+ *  rows, where a UTC `statedAt` would land hours off. */
+function blankStanding(faction: string, statedAt: string): FactionStanding {
+  const at = logStamp(statedAt);
   return { faction, net: 0, raises: 0, lowers: 0, floors: 0, ceilings: 0, firstAt: at, lastAt: at, causes: [] };
 }
 
