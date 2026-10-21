@@ -1195,3 +1195,22 @@ test("a debuff's row carries the file's ceiling, and a typed duration survives a
   second.duration("root", null);
   assert.equal(second.view().known.find((k) => k.key === "root")?.customDurationSeconds, undefined);
 });
+
+test("a cast-only rise that fades on a named target is filed under that target", () => {
+  // No landing sentence, so the cast *is* the rise and its target is unknown. The fade then names the
+  // target — and the lapse has to live under that target's id, or the end-of-fight banner (held by
+  // target) finds no row and is dropped, and the panel's dismiss (sent by target) finds nothing.
+  const h = harness({ lexicon: false });
+  h.cast("Spirit of Wolf", 0);
+  assert.equal(h.buffs.view().active[0]?.target, ON_UNKNOWN);
+  h.fighting(true);
+  h.fade({ spell: "Spirit of Wolf", target: "Bloop", offsetSec: 30 });
+  assert.equal(h.raised.length, 0, "held until the fight ends");
+
+  h.endFight("kill");
+  assert.equal(h.raised.length, 1, "the held banner is said once the fight is over");
+  assert.equal(h.raised[0].target, "Bloop");
+
+  h.buffs.dismiss("spirit of wolf", "Bloop");
+  assert.equal(h.buffs.view().lapsed.length, 0, "dismissing by the target the row shows clears it");
+});

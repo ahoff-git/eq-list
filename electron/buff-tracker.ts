@@ -704,10 +704,12 @@ export function createBuffTracker({
         alsoCouldBe: alsoCouldBe ?? was.alsoCouldBe,
       };
       board.delete(id);
-      // Re-set under the **same** id rather than reconstructed from `key`+`target`: for a slotted
-      // `onEnemy` row `id` carries the slot and a bare rebuild would lose it, silently colliding a
-      // second slot's later lapse into this one (ADR 0202).
-      if (shouldHold(row, reason)) board.set(id, lapsed);
+      // A slotted `onEnemy` row keeps its **same** id: it carries the slot, and a bare rebuild would
+      // lose it, silently colliding a second slot's later lapse into this one (ADR 0202). Any other
+      // row is filed under the target it *settled* on — an `ON_UNKNOWN` placeholder the fade has just
+      // named has to move, because the held banner and the panel's dismiss both look it up by target.
+      const lapsedId = was.onEnemy ? id : instanceKey(row.key, settled);
+      if (shouldHold(row, reason)) board.set(lapsedId, lapsed);
       // Only a genuine, watched rise teaches anything — an orphan's `since` is fabricated, and
       // "died"/"recast" aren't the spell running its course.
       if (reason === "faded" && was.onEnemy) {

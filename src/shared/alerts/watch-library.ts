@@ -60,7 +60,12 @@ export const WATCH_LIBRARY: readonly LibraryGroup[] = [
           delay: "25",
           repeat: 1,
           retrigger: "restart",
-          cancelWhen: [{ field: "line", op: "contains", text: "has been slain" }],
+          // Both, because the log words a kill by who saw it: yours is "You have slain …!", anyone
+          // else's "… has been slain by …!" — and the mob you mezzed is usually the one you kill.
+          cancelWhen: [
+            { field: "line", op: "contains", text: "has been slain" },
+            { field: "line", op: "contains", text: "You have slain" },
+          ],
         },
       },
       {
@@ -76,7 +81,9 @@ export const WATCH_LIBRARY: readonly LibraryGroup[] = [
           delay: "8m",
           retrigger: "queue",
           cancelOnDeath: "never",
-          conditions: [{ field: "line", op: "contains", text: "has been slain" }],
+          // A regex for the two wordings of a kill (see "remez"): a condition can't be "any" on its
+          // own while the trigger has to hold too.
+          conditions: [{ field: "line", op: "regex", text: "You have slain|has been slain" }],
         },
       },
       {
