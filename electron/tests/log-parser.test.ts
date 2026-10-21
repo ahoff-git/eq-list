@@ -133,6 +133,33 @@ test("each loot line records what became of the item", () => {
   assert.equal(combined!.detail, "Crushbone Belt +5");
 });
 
+// A raid's Reward Chest isn't a corpse, so its lines carry no "'s corpse" — verbatim EQL shapes.
+// They were dropped entirely, so a chest item never counted toward the shopping list.
+test("loot from a Reward Chest parses like loot from a corpse", () => {
+  const sold = parseLogLine(
+    "[Tue Sep 15 21:43:03 2026] You looted an Evil Eye Eyestalk from Reward Chest and sold it for 2 gold, 3 silver and 2 copper.",
+  );
+  assert.equal(sold!.item, "Evil Eye Eyestalk");
+  assert.equal(sold!.source, "Reward Chest");
+  assert.equal(sold!.soldFor, 232);
+
+  const stored = parseLogLine(
+    "[Tue Sep 15 21:43:03 2026] You looted 3 Spiderling Silk from Reward Chest and stored it in your tradeskill depot",
+  );
+  assert.equal(stored!.qty, 3);
+  assert.equal(stored!.fate, "stored");
+
+  const combined = parseLogLine(
+    "[Tue Sep 15 21:43:03 2026] You looted an Onyx Earring +1 from Reward Chest to create an Onyx Earring +3",
+  );
+  assert.equal(combined!.item, "Onyx Earring +1");
+  assert.equal(combined!.detail, "Onyx Earring +3");
+
+  // The corpse form still keeps its mob, not "an orc's corpse".
+  const corpse = parseLogLine("[Fri Jul 17 18:41:14 2026] --You have looted a Bone Chips from a skeleton's corpse.--");
+  assert.equal(corpse!.source, "skeleton");
+});
+
 // Coin. The line names neither mob nor item — only which of the two paid — so `from` is the
 // whole basis for keeping the two money ledgers apart downstream (ADR 0047).
 test("parses coin off a corpse", () => {

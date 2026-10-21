@@ -145,27 +145,29 @@ export function characterFromLogFile(file?: string): string | null {
  * captures `item`, `qty` and `source`; where the line goes on to say what happened, that
  * tail is captured as `detail` (the coins, the container, the thing it became).
  * `an?` consumes the article so it never lands in the captured item name.
+ * `'s corpse` is optional because not every source is a corpse: a raid's loot comes "from
+ * Reward Chest", and requiring the suffix silently dropped every item it gave.
  */
 const LOOT_PATTERNS: { fate: LootFate; re: RegExp }[] = [
   // Standard drop line, wrapped in -- --
   {
     fate: "kept",
-    re: /^--You have looted (?:(?<qty>\d+) )?(?:an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse\.--$/,
+    re: /^--You have looted (?:(?<qty>\d+) )?(?:an? |the )?(?<item>.+?) from (?<source>.+?)(?:'s corpse)?\.--$/,
   },
   // Auto-sell: looted then immediately vendored
   {
     fate: "sold",
-    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and sold it for (?<detail>.+?)\.$/,
+    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)(?:'s corpse)? and sold it for (?<detail>.+?)\.$/,
   },
   // Auto-store: straight into a tradeskill depot / currency tab (no trailing period)
   {
     fate: "stored",
-    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse and stored it in your (?<detail>.+?)\.?$/,
+    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)(?:'s corpse)? and stored it in your (?<detail>.+?)\.?$/,
   },
   // Loot-and-combine (item upgrades): the input item is still "obtained"
   {
     fate: "combined",
-    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)'s corpse to create (?<detail>.+?)\.?$/,
+    re: /^You looted (?:(?<qty>\d+) |an? |the )?(?<item>.+?) from (?<source>.+?)(?:'s corpse)? to create (?<detail>.+?)\.?$/,
   },
 ];
 
