@@ -97,6 +97,20 @@ test("start refuses a blank name or a non-positive qty/duration, and files nothi
   assert.equal(tracker.view().goals.length, 0);
 });
 
+test("start refuses a qty or duration that only rounds to zero, rather than filing a goal already met", () => {
+  // Regression: the guard checked the raw figure but the goal stored the rounded one, so a typed
+  // qty of 0.4 (the Goals tab's number box allows it) filed a 0-of-0 goal that read "completed" the
+  // moment it started, with no banner; a 0.4s streak interval broke on its first hit.
+  const { tracker } = harness();
+  assert.equal(tracker.start({ kind: "item", name: "Powder" }, 0.4, 3600), null);
+  assert.equal(tracker.start({ kind: "item", name: "Powder" }, 20, 0.4), null);
+  assert.equal(tracker.startStreak({ kind: "mob", name: "gnoll pup" }, 0.4, false), null);
+  tracker.saveTemplate({ kind: "item", name: "Powder" }, 0.4, 3600);
+  tracker.saveStreakTemplate({ kind: "mob", name: "gnoll pup" }, 0.4, false);
+  assert.equal(tracker.view().goals.length, 0);
+  assert.equal(tracker.view().templates.length, 0);
+});
+
 test("a loot line credits every running item goal it matches, and only those", () => {
   const { tracker } = harness();
   tracker.start({ kind: "item", name: "Phosphorous Powder" }, 20, 3600);

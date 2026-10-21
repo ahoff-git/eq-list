@@ -295,21 +295,29 @@ export function createGoalTracker({
 
   const handle = setEvery(sweep, SWEEP_MS);
 
+  /** A count or a seconds figure as it will be filed — whole, or `null` when that leaves nothing
+   *  positive. Checked *after* rounding: a typed `0.4` passes `> 0` but files as `0`, which made a
+   *  goal that read as met the moment it started. */
+  function wholePositive(n: number): number | null {
+    const whole = Math.round(n);
+    return Number.isFinite(whole) && whole > 0 ? whole : null;
+  }
+
   return {
-    start(target, qty, durationSec) {
+    start(target, typedQty, typedDurationSec) {
       const name = targetName(target);
-      if (!name || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(durationSec) || durationSec <= 0) {
-        return null;
-      }
+      const qty = wholePositive(typedQty);
+      const durationSec = wholePositive(typedDurationSec);
+      if (!name || qty === null || durationSec === null) return null;
       const at = now();
       const goal: Goal = {
         id: randomUUID(),
         mode: "target",
         target: { kind: target.kind, name },
-        qty: Math.round(qty),
+        qty,
         obtained: 0,
         startedAt: new Date(at).toISOString(),
-        durationSec: Math.round(durationSec),
+        durationSec,
         dueAt: new Date(at + durationSec * 1000).toISOString(),
         announcedMilestones: [],
         resultAnnounced: false,
@@ -320,9 +328,10 @@ export function createGoalTracker({
       return goal;
     },
 
-    startStreak(target, intervalSec, autoRestart) {
+    startStreak(target, typedIntervalSec, autoRestart) {
       const name = targetName(target);
-      if (!name || !Number.isFinite(intervalSec) || intervalSec <= 0) return null;
+      const intervalSec = wholePositive(typedIntervalSec);
+      if (!name || intervalSec === null) return null;
       const at = now();
       const goal: Goal = {
         id: randomUUID(),
@@ -331,7 +340,7 @@ export function createGoalTracker({
         qty: 0,
         obtained: 0,
         startedAt: new Date(at).toISOString(),
-        durationSec: Math.round(intervalSec),
+        durationSec: intervalSec,
         dueAt: new Date(at + intervalSec * 1000).toISOString(),
         announcedMilestones: [],
         resultAnnounced: false,
@@ -398,30 +407,33 @@ export function createGoalTracker({
       if (state.goals.length !== before) changed();
     },
 
-    saveTemplate(target, qty, durationSec, label) {
+    saveTemplate(target, typedQty, typedDurationSec, label) {
       const name = targetName(target);
-      if (!name || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(durationSec) || durationSec <= 0) return;
+      const qty = wholePositive(typedQty);
+      const durationSec = wholePositive(typedDurationSec);
+      if (!name || qty === null || durationSec === null) return;
       const template: GoalTemplate = {
         id: randomUUID(),
         mode: "target",
         target: { kind: target.kind, name },
-        qty: Math.round(qty),
-        durationSec: Math.round(durationSec),
+        qty,
+        durationSec,
         label: label?.trim() || undefined,
       };
       state.templates = [...state.templates, template];
       changed();
     },
 
-    saveStreakTemplate(target, intervalSec, autoRestart, label) {
+    saveStreakTemplate(target, typedIntervalSec, autoRestart, label) {
       const name = targetName(target);
-      if (!name || !Number.isFinite(intervalSec) || intervalSec <= 0) return;
+      const intervalSec = wholePositive(typedIntervalSec);
+      if (!name || intervalSec === null) return;
       const template: GoalTemplate = {
         id: randomUUID(),
         mode: "streak",
         target: { kind: target.kind, name },
         qty: 0,
-        durationSec: Math.round(intervalSec),
+        durationSec: intervalSec,
         label: label?.trim() || undefined,
         autoRestart,
       };
