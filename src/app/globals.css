@@ -4265,3 +4265,11 @@ select optgroup {
 .bis-socket .bis-list { flex-basis: 100%; padding-left: 16px; }
 .bis-empty td { opacity: 0.85; }
 .bis-empty td:first-child { border-left: 3px solid var(--border); }
+
+/* Tradeskills: what you already hold, against what a step wants. */
+.held-enough { color: var(--good); }
+.held-some { color: var(--warn); }
+.held-summary { margin: 4px 0; }
+.from-what-you-hold { margin: 6px 0 10px; padding: 6px 10px; border-left: 3px solid var(--good); background: color-mix(in oklab, var(--good) 6%, transparent); border-radius: var(--radius); }
+.from-what-you-hold ul { list-style: none; margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
+.from-what-you-hold .good { color: var(--good); }

@@ -1,9 +1,12 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useWatcherStatus } from "@/lib/hooks";
 import { exportCommandFor, lastExportedAt, type GameExportTimes } from "@/shared/game-exports";
-import { heldGrades, ownedItems, parseInventoryDump, type InventoryItem, type OwnedPlace } from "@/shared/game-export-dumps";
+import { heldGrades, inventoryTotals, ownedItems, parseInventoryDump, type InventoryItem, type OwnedPlace } from "@/shared/game-export-dumps";
+import { holdingsOf, type Holdings } from "@/shared/tradeskills/held-materials";
+import { rowsOf, usePeerShare } from "@/lib/peers/usePeerShare";
+import type { InventoryShareRow } from "@/shared/peers/peer-share";
 import { normalizeItemName } from "@/shared/items/grouping";
 import type { GameExportDump } from "@/shared/types";
 
@@ -85,4 +88,34 @@ export function useOwnedItems(): { owned: Map<string, OwnedPlace[]> | null; at?:
   const { items, at } = useInventory();
   const owned = useMemo(() => (items ? ownedItems(items, normalizeItemName) : null), [items]);
   return { owned, at };
+}
+
+/**
+ * What you and the peers who've shared their inventories hold, by item — for crossing a recipe or a
+ * guide's materials with what's already to hand. Null when there's neither a dump nor a shared row.
+ *
+ * **Asks for them, too.** Inventory is a `live` kind, which nothing fetches unprompted (ADR 0309) — so
+ * a view that uses holdings asks each peer offering one, once per revision of theirs: opening the
+ * guide *is* the person asking. Only peers who switched sharing on are offering anything to ask for.
+ */
+export function useHoldings(): Holdings | null {
+  const { items } = useInventory();
+  const { peers, received, ask } = usePeerShare();
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    for (const peer of peers) {
+      const offered = peer.offer?.inventory;
+      if (!offered?.n || !peer.sessionId) continue;
+      const have = received.find((r) => r.peerId === peer.peerId && r.kind === "inventory");
+      const key = `${peer.peerId}@${offered.rev}`;
+      if ((have && have.rev >= offered.rev) || asked.current.has(key)) continue;
+      asked.current.add(key);
+      ask(peer.peerId, "inventory");
+    }
+  }, [peers, received, ask]);
+  return useMemo(() => {
+    const peers = rowsOf<InventoryShareRow>(received, "inventory").map((r) => ({ by: r.by, item: r.row.item, count: r.row.count }));
+    if (!items && !peers.length) return null;
+    return holdingsOf(items ? inventoryTotals(items) : [], peers);
+  }, [items, received]);
 }

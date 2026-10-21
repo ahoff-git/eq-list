@@ -37,6 +37,8 @@ import {
   type JudgedLine,
 } from "@/shared/tradeskills/tradeskill-era";
 import { lineLinks, rowLinks, type StepLinks } from "@/shared/tradeskills/step-materials";
+import { alternativesAt, guideSteps, heldOf, type Holdings } from "@/shared/tradeskills/held-materials";
+import { useHoldings } from "@/lib/exports/useGameExports";
 import type { GuideRun, SkillSpan, StepCost, StepNeed, Tradeskill, TradeskillGuide } from "@/shared/tradeskills/tradeskill-types";
 import { AddButton, CheckField, Empty, segCls } from "@/app/components/ui";
 import ItemLink from "@/app/components/items/ItemLink";
@@ -77,6 +79,11 @@ interface You {
 }
 const NOBODY: You = { factor: 1 };
 const YouContext = createContext<You>(NOBODY);
+/**
+ * What you — and peers who've shared their inventories — already hold, by item (`held-materials.ts`).
+ * Null with no inventory dump and nothing shared, so nothing says "have 0" about a bank never read.
+ */
+const HoldingsContext = createContext<Holdings | null>(null);
 
 /**
  * Your standing in one tradeskill. The pace comes from the skill's own skill-ups when there are
@@ -292,8 +299,10 @@ function SkillGuides({
 }) {
   const zone = useCurrentZone();
   const you = { ...youIn(skill, progress), zone };
+  const holdings = useHoldings();
   return (
     <YouContext.Provider value={you}>
+      <HoldingsContext.Provider value={holdings}>
       <div className="page-detail tradeskill-detail">
         <div className="row">
           <h3>{skill.name}</h3>
@@ -304,6 +313,7 @@ function SkillGuides({
           </button>
         </div>
         <YouLine skill={skill} you={you} progress={progress} />
+        <FromWhatYouHold skill={skill} closed={closed} />
         <p className="muted small">
           Hover an ingredient for where to buy it. <b>+ List</b> puts a step&apos;s materials on your shopping list, where
           each row says where to get them — set the group&apos;s runs to the number of combines.
@@ -312,6 +322,7 @@ function SkillGuides({
           <Guide key={g.anchor} skill={skill} guide={g} closed={closed} hideOutOfEra={hideOutOfEra} />
         ))}
       </div>
+      </HoldingsContext.Provider>
     </YouContext.Provider>
   );
 }
@@ -362,6 +373,90 @@ function YouLine({ skill, you, progress }: { skill: Tradeskill; you: You; progre
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * A gentle aside: other guide steps that would skill you up from where you are, using what you — or
+ * peers sharing their bags and vaults with you — already hold, so a bank full of one material can
+ * stand in for a trip to buy another. Silent unless one of them uses something someone has; ranked by
+ * how many combines the group could cover, with yours alone beside it (`alternativesAt`). Out-of-era
+ * steps are never suggested.
+ */
+function FromWhatYouHold({ skill, closed }: { skill: Tradeskill; closed: ReadonlySet<string> }) {
+  const you = useContext(YouContext);
+  const holdings = useContext(HoldingsContext);
+  if (!holdings || you.skill === undefined) return null;
+  const steps = guideSteps(skill.guides.map((g) => ({ name: g.name, blocks: judgeGuide(g, closed) })));
+  const alternatives = alternativesAt(steps, you.skill, holdings);
+  if (!alternatives.length) return null;
+  return (
+    <details className="from-what-you-hold small" open>
+      <summary>Skill-ups at {you.skill} from what you and your peers already hold</summary>
+      <ul>
+        {alternatives.map((a) => (
+          <li key={a.step.label}>
+            <b>{a.step.label}</b>{" "}
+            <span className="muted">
+              ({a.step.span.from}–{a.step.span.to}, {a.step.guide})
+            </span>{" "}
+            <CombinesText combines={a.combines} withPeers={a.withPeers} />
+            <span className="muted">
+              {" "}
+              · {a.held.map(heldText).join(", ")}
+              {a.missing.length ? ` · still need ${a.missing.join(", ")}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** "enough for ~8 combines (~40 with peers)", or what it is when nobody has enough for one. */
+function CombinesText({ combines, withPeers }: { combines: number; withPeers: number }) {
+  if (combines > 0)
+    return (
+      <span className="good">
+        enough for ~{combines} combines{withPeers > combines ? ` (~${withPeers} with peers')` : ""}
+      </span>
+    );
+  if (withPeers > 0) return <span className="held-some">~{withPeers} combines with peers&apos; materials</span>;
+  return <span className="muted">partly in hand</span>;
+}
+
+/** "Bone Chips ×643 + Bob 20" — yours first, then who else has some. */
+function heldText(h: { name: string; mine: number; peers: { by: string; count: number }[] }): string {
+  const theirs = h.peers.slice(0, 2).map((p) => `${p.by} ${p.count}`);
+  const parts = [...(h.mine > 0 ? [`×${h.mine}`] : []), ...theirs];
+  return `${h.name} ${parts.join(" + ")}`;
+}
+
+/**
+ * How many of a material you hold, beside how many a step wants — green once it covers the high
+ * estimate. Peers who hold some are named after it, smaller, since theirs is a favour to ask.
+ */
+function HeldNote({ name, need }: { name: string; need: number }) {
+  const holdings = useContext(HoldingsContext);
+  if (!holdings) return null;
+  const held = heldOf(holdings, name);
+  if (!held) return null;
+  const peers = held.peers.slice(0, 3).map((p) => `${p.by} ${p.count}`).join(", ");
+  return (
+    <>
+      {held.mine > 0 && (
+        <span className={held.mine >= need ? "held-enough" : "held-some"} title="In your newest inventory dump — bags, bank, depot, hoard">
+          {" "}
+          · have {held.mine}
+        </span>
+      )}
+      {peers && (
+        <span className="muted" title="From inventories peers have shared with you">
+          {" "}
+          · {peers}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -443,14 +538,39 @@ function CostToFinish({ steps, label }: { steps: StepPlan[]; label: string }) {
  */
 function SectionSummary({ steps, closed, withCost }: { steps: StepPlan[]; closed: ReadonlySet<string>; withCost?: boolean }) {
   const you = useContext(YouContext);
+  const holdings = useContext(HoldingsContext);
   const materials = steps.flatMap((s) => s.materials);
   if (!materials.length && !(withCost && steps.some((s) => s.costed))) return null;
   const plan = whereToBuy(materials, VENDORS, you.zone, closed);
   const current = steps.some((s) => s.place.at === "current");
   const soldHere = new Set(plan.here.map((h) => h.item)).size;
+  const unique = [...new Set(materials)];
+  const inHand = holdings
+    ? unique.flatMap((m) => {
+        const mine = heldOf(holdings, m)?.mine ?? 0;
+        return mine > 0 ? [`${m} ×${mine}`] : [];
+      })
+    : [];
+  // What sharing peers hold of the rest — named, since asking for it is a conversation.
+  const withPeers = holdings
+    ? unique.flatMap((m) => {
+        const peers = heldOf(holdings, m)?.peers ?? [];
+        return peers.length ? [`${m} (${peers.slice(0, 3).map((p) => `${p.by} ${p.count}`).join(", ")})`] : [];
+      })
+    : [];
   return (
     <div className="section-summary">
       {withCost && <CostToFinish steps={steps} label="this section" />}
+      {inHand.length > 0 && (
+        <p className="small held-summary" title="From your newest inventory dump — check before you buy">
+          Already in your bags or bank: {inHand.join(", ")}
+        </p>
+      )}
+      {withPeers.length > 0 && (
+        <p className="small muted held-summary" title="From inventories peers are sharing with you">
+          Your peers hold: {withPeers.join(", ")}
+        </p>
+      )}
       {materials.length > 0 && (
         <details className="where-to-buy" open={current}>
           <summary>
@@ -744,6 +864,7 @@ function StepEstimateView({ estimate, needsFor }: { estimate: StepEstimate | und
         <span key={m.name} className="step-estimate-material">
           <ItemLink title={m.name} craft /> ×{rangeText(m.qty)}
           {m.each !== undefined && <span className="muted"> @ {roughCoins(m.each)}</span>}
+          <HeldNote name={m.name} need={m.qty.high} />
         </span>
       ))}
     </div>

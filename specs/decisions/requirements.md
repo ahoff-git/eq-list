@@ -392,6 +392,11 @@ reading like a measurement, and they are shared code
   takes the cheapest step covering it, so alternatives aren't double-counted; unpriced points are
   named, never zero. Merchants come from the item pages' merchant tables: those in your zone first, with
   map links, then the zones selling the most of the rest, then what no open merchant sells. ([0304](./0304-a-guide-section-says-what-it-costs-and-where-to-buy-it.md))
+- **A guide knows what you and your sharing peers hold.** Each material shows how many you have and
+  which peers have some; a section lists what's in your bags or bank and what peers hold. Other steps
+  at your skill are suggested by how many combines you could cover, alone and with peers' materials,
+  always saying whose: at most three, never out of era. An open guide asks sharing peers for their
+  inventories, once per revision. ([0314](./0314-a-guide-counts-what-your-peers-share.md))
 - **Lucy is a third rung, asked only where the first two are silent**, quoted rather than believed:
   its rows open rather than add, they reach no rate, and they sit under a heading naming the other
   game. Era is derived from the zones and "unknown" is a real third answer. ([0124](./0124-lucy-is-a-second-opinion.md))
