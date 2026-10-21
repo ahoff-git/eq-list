@@ -16,8 +16,13 @@
  * Either way each link's own page is read, because a zone, an NPC or a quest is never an ingredient.
  * A step that names only results ("Footwarming Boots to 235") asks you to buy what they're made of.
  *
- * Counts are read off the text in front of a link ("Buy 3 File Mold", "2x Spider Silk"), else one.
- * A count is per combine; the list's own runs control multiplies it.
+ * Counts are read off the text in front of a link ("Buy 3 File Mold", "2x Spider Silk"), else off a
+ * multiplier right after it ("Small Vial x5"), else one. A count is per combine; the list's own runs
+ * control multiplies it.
+ *
+ * **Pick-one ingredients are one need.** "Ruined Bear or Wolf or Cat Pelts" and "(Small) High Quality
+ * Wolf Skin, (Medium) … Cat Pelt, (Large) … Bear Skin" ask for any one of them, not all three: the
+ * first is the need and the rest ride along as its `alternatives`.
  */
 import type { WikiPage } from "../types";
 import type { GuideRun } from "./tradeskill-types";
@@ -28,6 +33,8 @@ export interface StepMaterial {
   qty: number;
   /** The count is for the whole step, not per combine — "Buy 3 File Mold, 53 Water Flask". */
   total?: boolean;
+  /** Any of these does instead of `name` — "Ruined Bear or Wolf or Cat Pelts". */
+  alternatives?: string[];
 }
 
 /** A step's links before any page is read. */
@@ -45,11 +52,24 @@ const NOT_CARRIED_COLUMN = /combine|container|era|trivial|range|description|cost
 const LABEL_MAX = 60;
 
 /** "Buy 3 ", "2x ", "(Small) 1 " → the count in front of the link. */
-function countBefore(text: string | undefined): number {
+function countBefore(text: string | undefined): number | undefined {
   const m = text ? /(?:^|[\s(])(\d+)\s*x?\s*$/i.exec(text) : null;
-  const n = m ? Number(m[1]) : 1;
-  return n > 0 ? n : 1;
+  return m && Number(m[1]) > 0 ? Number(m[1]) : undefined;
 }
+
+/**
+ * " x5", "x 5", " (x5)" → a multiplier written right after the link (Alchemy's "Small Vial x5"). Only
+ * with the "x": a bare "(92)" after a name is how the guides write a trivial ("Banded Gorget (92)").
+ */
+function countAfter(text: string | undefined): number | undefined {
+  const m = text ? /^\s*\(?\s*[x×]\s*(\d+)\s*\)?(?![\w.])/i.exec(text) : null;
+  return m && Number(m[1]) > 0 ? Number(m[1]) : undefined;
+}
+
+/** Between two links, a word saying "either": " or ", ", or ", " / ". */
+const EITHER = /^\s*,?\s*(?:or|\/)\s*$/i;
+/** A size tag in front of a link — "(Small) ", ", (Medium) 1 " — one of a set of size variants. */
+const SIZE_TAG = /\((?:small|medium|large)\)\s*(?:\d+\s*x?\s*)?$/i;
 
 /** "1 [[Pie Tin]] (returned)" — a tool the combine hands back, so not something it uses up. */
 const RETURNED = /^\s*\(returned\)/i;
@@ -60,19 +80,35 @@ const RETURNED = /^\s*\(returned\)/i;
  */
 const BUY_LINE = /^\s*(?:you\s+)?(?:will\s+)?(?:need\s+to\s+)?buy\b/i;
 
+const textAt = (runs: readonly GuideRun[], i: number) => {
+  const r = runs[i];
+  return typeof r === "string" ? r : undefined;
+};
+
 function linksOf(runs: readonly GuideRun[]): StepMaterial[] {
   const out: StepMaterial[] = [];
   const total = typeof runs[0] === "string" && BUY_LINE.test(runs[0]);
+  let previous: { at: number; sized: boolean } | undefined;
   runs.forEach((r, i) => {
-    const after = runs[i + 1];
-    if (typeof r === "object" && "link" in r && !(typeof after === "string" && RETURNED.test(after))) {
-      const before = runs[i - 1];
-      const qty = countBefore(typeof before === "string" ? before : undefined);
+    const before = textAt(runs, i - 1);
+    const after = textAt(runs, i + 1);
+    if (typeof r !== "object" || !("link" in r) || (after !== undefined && RETURNED.test(after))) return;
+    const sized = before !== undefined && SIZE_TAG.test(before);
+    // Only "or" (or the next size tag) between this link and the last one: the same choice, not a new need.
+    const choice = previous?.at === i - 2 ? out[out.length - 1] : undefined;
+    if (choice && ((before !== undefined && EITHER.test(before)) || (sized && previous?.sized))) {
+      choice.alternatives = [...(choice.alternatives ?? []), r.link];
+    } else {
+      const qty = countBefore(before) ?? countAfter(after) ?? 1;
       out.push(total ? { name: r.link, qty, total: true } : { name: r.link, qty });
     }
+    previous = { at: i, sized };
   });
   return out;
 }
+
+/** A material's name and every alternative to it. */
+const namesOf = (m: StepMaterial) => [m.name, ...(m.alternatives ?? [])];
 
 const plainText = (runs: readonly GuideRun[]) =>
   runs.map((r) => (typeof r === "string" ? r : "text" in r ? r.text : "")).join("").replace(/\s+/g, " ").trim();
@@ -94,7 +130,7 @@ export function lineLinks(line: JudgedLine): StepLinks {
   const made = line.makes ?? [];
   // A step the generator found a recipe for has said what it makes, so what it links is all ingredient.
   if (!under.length) return { label: made.length ? shorten(made.join(" / ")) : label, results: made, candidates: own, sorted: made.length > 0 };
-  return { label, results: own.map((l) => l.name), candidates: under, sorted: true };
+  return { label, results: own.flatMap(namesOf), candidates: under, sorted: true };
 }
 
 /** A table row, read by its header. */
@@ -106,7 +142,7 @@ export function rowLinks(header: readonly string[], cells: readonly GuideRun[][]
     const h = header[i]?.trim() ?? "";
     const links = linksOf(cell);
     if (RESULT_COLUMN.test(h)) {
-      results.push(...links.map((l) => l.name));
+      results.push(...links.flatMap(namesOf));
       label ||= plainText(cell);
     } else if (!NOT_CARRIED_COLUMN.test(h)) candidates.push(...links);
   });
@@ -121,9 +157,22 @@ function merged(list: StepMaterial[]): StepMaterial[] {
   const by = new Map<string, StepMaterial>();
   for (const m of list) {
     const seen = by.get(m.name);
-    if (!seen || m.qty > seen.qty) by.set(m.name, m.total ? { name: m.name, qty: m.qty, total: true } : { name: m.name, qty: m.qty });
+    if (seen && m.qty <= seen.qty) continue;
+    const one: StepMaterial = m.total ? { name: m.name, qty: m.qty, total: true } : { name: m.name, qty: m.qty };
+    if (m.alternatives?.length) one.alternatives = [...m.alternatives];
+    by.set(m.name, one);
   }
   return [...by.values()];
+}
+
+/** A pick-one material cut down to the names `keep` allows, the first left standing as the need. */
+function narrowed(m: StepMaterial, keep: (name: string) => boolean): StepMaterial[] {
+  const [name, ...alternatives] = namesOf(m).filter(keep);
+  if (!name) return [];
+  const one: StepMaterial = { ...m, name };
+  if (alternatives.length) one.alternatives = alternatives;
+  else delete one.alternatives;
+  return [one];
 }
 
 /**
@@ -157,8 +206,8 @@ export function stepMaterialsFor(step: StepLinks, pages: ReadonlyMap<string, Wik
     const p = pages.get(name);
     return p ? isThing(p) : blind;
   };
-  const things = step.candidates.filter((c) => !results.has(c.name) && keep(c.name));
-  const plain = step.sorted ? things : things.filter((c) => !isCrafted(pages.get(c.name)));
+  const things = step.candidates.flatMap((c) => narrowed(c, (name) => !results.has(name) && keep(name)));
+  const plain = step.sorted ? things : things.flatMap((c) => narrowed(c, (name) => !isCrafted(pages.get(name))));
   if (plain.length) return { materials: merged(plain) };
   return madeOf(step, things, pages);
 }
@@ -169,7 +218,7 @@ export function stepMaterialsFor(step: StepLinks, pages: ReadonlyMap<string, Wik
  * materials are the first one's, never the six recipes' molds added together.
  */
 function madeOf(step: StepLinks, things: StepMaterial[], pages: ReadonlyMap<string, WikiPage | null>): StepMaterialsFor {
-  const options = [...new Set([...step.results, ...things.map((t) => t.name)])].filter((t) => isCrafted(pages.get(t)));
+  const options = [...new Set([...step.results, ...things.flatMap(namesOf)])].filter((t) => isCrafted(pages.get(t)));
   const first = options.length ? pages.get(options[0]) : undefined;
   if (!first) return { materials: [] };
   const materials = merged(first.components.map((c) => ({ name: c.name, qty: c.qty })));
@@ -178,5 +227,5 @@ function madeOf(step: StepLinks, things: StepMaterial[], pages: ReadonlyMap<stri
 
 /** Every title a step could need a page for. */
 export function stepTitles(step: StepLinks): string[] {
-  return [...new Set([...step.results, ...step.candidates.map((c) => c.name)])];
+  return [...new Set([...step.results, ...step.candidates.flatMap(namesOf)])];
 }

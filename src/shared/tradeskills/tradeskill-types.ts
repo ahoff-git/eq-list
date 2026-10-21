@@ -51,6 +51,9 @@ export interface StepNeed {
   qty: number;
   /** The count is for the whole step ("Buy 3 File Mold"), not per combine. */
   total?: boolean;
+  /** Any one of these does instead of `name` — "Ruined Bear or Wolf or Cat Pelts". `name` is the
+   *  cheapest priced of them when the generator could price one, else the first the guide wrote. */
+  alternatives?: string[];
 }
 
 /** One merchant selling a material, from the item page's merchant table. */

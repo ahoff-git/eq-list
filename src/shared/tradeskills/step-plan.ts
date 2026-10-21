@@ -8,7 +8,9 @@
  * - a step that states only the end ("Trivial 17", "up to 168:", "Flameless Lantern to 68", a
  *   Trivial column's 46) starts where the step before it ended;
  * - a stage heading with a range ("Silver Jewelry (1-34)") starts its first step at the low end;
- * - "you start at 50" (gnomes and Tinkering) moves the start before any step.
+ * - "you start at 50" (gnomes and Tinkering) moves the start before any step;
+ * - a step that starts one past where the last one ended ("1-83" then "84-150") was written end
+ *   included, so the last one is taken to run up to it — no skill point falls between two steps.
  *
  * A step never ends above `SKILL_CAP`: a 302-trivial recipe still stops skilling at the cap.
  *
@@ -121,8 +123,18 @@ export function planGuide(guide: TradeskillGuide, pages: PageLookup): Tradeskill
   let cursor = 0;
   // A bold label's range ("1 - 202 Skill" over a one-bullet list) waits for the next step to claim it.
   let labelled: SkillSpan | undefined;
+  let last: SkillSpan | undefined;
   const advance = (span: SkillSpan | undefined) => {
-    if (span) cursor = Math.max(cursor, span.to);
+    if (!span) return span;
+    if (span.to > span.from) {
+      // Alchemy's table writes "1-83" then "84-150": skill points you make it *at*, end included, where
+      // a span here is where you start and the skill you *reach* (`to` itself is the next step's).
+      // Read that way, 83 belonged to no step — so a step starting one past the last one's end means
+      // the last one really ran up to it. Spans sharing an end ("15-26" then "26-36") already meet.
+      if (last && span.from === last.to + 1) last.to = span.from;
+      last = span;
+    }
+    cursor = Math.max(cursor, span.to);
     return span;
   };
   for (const b of guide.blocks as GuideBlock[]) {
@@ -174,7 +186,7 @@ export interface PriceBook {
  * shape says it makes, and — for a lone bullet — anything it links that the wiki shows as crafted.
  */
 function resultsOf(step: StepLinks, makes: readonly string[] | undefined, pages: PageLookup): string[] {
-  const crafted = step.sorted ? [] : step.candidates.map((c) => c.name).filter((t) => (pages.get(t)?.components.length ?? 0) > 0);
+  const crafted = step.sorted ? [] : step.candidates.flatMap((c) => [c.name, ...(c.alternatives ?? [])]).filter((t) => (pages.get(t)?.components.length ?? 0) > 0);
   return [...new Set([...(makes ?? []), ...step.results, ...crafted])];
 }
 
@@ -201,18 +213,36 @@ export function stepCost(
 }
 
 /**
+ * A pick-one material ("Ruined Bear or Wolf or Cat Pelts") stood for by its cheapest priced choice,
+ * the others kept as its alternatives in the guide's order. Unpriced choices only stand in when none
+ * is priced, and then the guide's first does.
+ */
+export function cheapestChoice<T extends StepMaterial>(need: T, prices: PriceBook["prices"]): T {
+  if (!need.alternatives?.length) return need;
+  const names = [need.name, ...need.alternatives];
+  const priced = names.filter((n) => prices[n]);
+  if (!priced.length) return need;
+  const name = priced.reduce((a, b) => (prices[b].copper < prices[a].copper ? b : a));
+  return { ...need, name, alternatives: names.filter((n) => n !== name) };
+}
+
+/**
  * Write `cost` onto every step that has a span — a second pass, after `planGuide`, because which
- * materials need a price is what decides which prices the generator goes and reads.
+ * materials need a price is what decides which prices the generator goes and reads. It also settles
+ * which choice of a pick-one material stands for it, now that there are prices to choose by.
  */
 export function costGuide(guide: TradeskillGuide, pages: PageLookup, book: PriceBook): TradeskillGuide {
+  const cheapest = (needs: StepMaterial[] | undefined) => needs?.map((n) => cheapestChoice(n, book.prices));
   for (const b of guide.blocks as GuideBlock[]) {
     if (b.kind === "list") {
       for (const line of b.items) {
         if (!line.skill) continue;
+        if (line.needs) line.needs = cheapest(line.needs);
         const cost = stepCost(plain(line.runs), resultsOf(lineLinks(line), line.makes, pages), line.needs ?? [], book);
         if (cost) line.cost = cost;
       }
     } else if (b.kind === "table" && b.skill) {
+      if (b.needs) b.needs = b.needs.map((n) => cheapest(n) ?? []);
       const costs = b.rows.map((cells, i) => {
         if (!b.skill?.[i]) return null;
         const step = rowLinks(b.header, cells, b.makes?.[i] ?? []);

@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { headerUnit, parsePriceCell, parsePriceText, priceFromNotes } from "../../src/shared/tradeskills/wiki-price";
-import { costGuide, nameBeforeTo, planGuide, spanIn, statedPerCombine, stepCost, type PageLookup } from "../../src/shared/tradeskills/step-plan";
+import { cheapestChoice, costGuide, nameBeforeTo, planGuide, spanIn, statedPerCombine, stepCost, type PageLookup } from "../../src/shared/tradeskills/step-plan";
 import { combineRange, costText, estimateStep, rangeText, roughCoins } from "../../src/shared/tradeskills/step-cost";
 import { PRICES, TRADESKILLS } from "../../src/shared/tradeskills/tradeskills.generated";
 import type { GuideLine, TradeskillGuide } from "../../src/shared/tradeskills/tradeskill-types";
@@ -112,6 +112,56 @@ test("planning a guide: stage ranges start steps, spans chain, materials and cos
   costGuide(guide, pages, { prices: {}, combineCosts: { "Silver Malachite Ring": { copper: 553, source: "Jewelcrafting" } } });
   assert.deepEqual(lines[0].cost, { copper: 553, how: "recipe", source: "Jewelcrafting" });
   assert.equal(lines[1].cost, undefined);
+});
+
+test("ranges written end included leave no skill point between steps", () => {
+  // Alchemy's table: "1-83", "84-150"; Tailoring's shares its ends ("15-26", "26-36") and is left alone.
+  const header = ["Trivial", "Recipe", "Ingredient 1"];
+  const alchemy: TradeskillGuide = {
+    name: "g",
+    anchor: "g",
+    blocks: [{ kind: "table", header, rows: [[["1-83"], [link("Potion of Accuracy")], [link("Birthwort")]], [["84-150"], [link("Greater Potion of Accuracy")], [link("Birthwort")]], [["151-212"], [link("Elixir")], [link("Birthwort")]]] }],
+  };
+  planGuide(alchemy, lookup(item("Birthwort")));
+  const spans = (alchemy.blocks[0] as { skill?: unknown }).skill;
+  assert.deepEqual(spans, [{ from: 1, to: 84 }, { from: 84, to: 151 }, { from: 151, to: 212 }], "83 is the first step's; the last one's end is as written");
+
+  const tailoring: TradeskillGuide = {
+    name: "g",
+    anchor: "g",
+    blocks: [{ kind: "table", header: ["Range", "Item"], rows: [[["15-26"], [link("Boots")]], [["26-36"], [link("Headband")]], [["51-82"], [link("Mask")]]] }],
+  };
+  planGuide(tailoring, lookup());
+  assert.deepEqual((tailoring.blocks[0] as { skill?: unknown }).skill, [{ from: 15, to: 26 }, { from: 26, to: 36 }, { from: 51, to: 82 }], "a real gap stays a gap");
+
+  // Bullets too: "41 to 68" then "69 to 90".
+  const lines: GuideLine[] = [{ runs: ["41 to 68: ", link("Large Lantern")] }, { runs: ["69 to 90: ", link("Banded Belt")] }];
+  planGuide({ name: "g", anchor: "g", blocks: [{ kind: "list", items: lines }] }, lookup());
+  assert.deepEqual([lines[0].skill, lines[1].skill], [{ from: 41, to: 69 }, { from: 69, to: 90 }]);
+});
+
+test("a pick-one need is stood for by its cheapest priced choice", () => {
+  const need = { name: "Ruined Bear Pelt", qty: 1, alternatives: ["Ruined Wolf Pelt", "Ruined Cat Pelt"] };
+  const prices = { "Ruined Wolf Pelt": { copper: 40, source: "x" }, "Ruined Cat Pelt": { copper: 25, source: "x" } };
+  assert.deepEqual(cheapestChoice(need, prices), { name: "Ruined Cat Pelt", qty: 1, alternatives: ["Ruined Bear Pelt", "Ruined Wolf Pelt"] });
+  assert.equal(cheapestChoice(need, {}), need, "none priced: the guide's first");
+  // And the cost is one pelt's, not three.
+  const lines: GuideLine[] = [{ runs: ["1 to 10: ", link("Boots")], skill: { from: 1, to: 10 }, needs: [need] }];
+  costGuide({ name: "g", anchor: "g", blocks: [{ kind: "list", items: lines }] }, lookup(), { prices, combineCosts: {} });
+  assert.equal(lines[0].needs?.[0].name, "Ruined Cat Pelt");
+  assert.deepEqual(lines[0].cost, { copper: 25, how: "materials" });
+});
+
+test("the committed data: Alchemy's vials are five, Tailoring's pelts one choice, Alchemy's ranges meet", () => {
+  const blocks = (name: string) => TRADESKILLS.find((t) => t.name === name)!.guides.flatMap((g) => g.blocks);
+  const tables = (name: string) => blocks(name).flatMap((b) => (b.kind === "table" ? [b] : []));
+  const needs = (name: string) => tables(name).flatMap((t) => t.needs ?? []).flat();
+  assert.ok(needs("Alchemy").some((n) => n.name === "Small Vial" && n.qty === 5));
+  const pelts = needs("Tailoring").filter((n) => /^Ruined (Bear|Wolf|Cat) Pelt$/.test(n.name));
+  assert.equal(pelts.length, 1);
+  assert.equal(pelts[0].alternatives?.length, 2);
+  const spans = tables("Alchemy")[0].skill!.filter((s): s is NonNullable<typeof s> => !!s);
+  spans.slice(1).forEach((s, i) => assert.equal(s.from, spans[i].to, `${JSON.stringify(spans[i])} then ${JSON.stringify(s)}`));
 });
 
 test("a step naming its result in plain text gets it, singular or not", () => {

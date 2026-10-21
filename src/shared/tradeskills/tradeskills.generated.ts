@@ -2,7 +2,7 @@
  * Tradeskills and their leveling guides — GENERATED, do not edit by hand.
  *
  * Regenerate with `node scripts/fetch-tradeskills.mjs`, which reads every page in eqlwiki's
- * `Category:Tradeskills` (scraped 2026-10-17T23:17:46.939Z). Shipped rather than fetched at runtime — see the
+ * `Category:Tradeskills` (scraped 2026-10-21T00:27:15.777Z). Shipped rather than fetched at runtime — see the
  * script's header and
  * [ADR 0302](../../../specs/decisions/0302-tradeskill-guides-are-generated-static-data.md).
  *
@@ -12,7 +12,7 @@
 
 import type { Tradeskill, VendorSpot, WikiPrice } from "./tradeskill-types";
 
-export const TRADESKILLS_SOURCE = { category: "Tradeskills", scrapedAt: "2026-10-17T23:17:46.939Z" };
+export const TRADESKILLS_SOURCE = { category: "Tradeskills", scrapedAt: "2026-10-21T00:27:15.777Z" };
 
 /** `Template:PageEra`'s `in` keys on the day of the scrape. Anything else is shut (its `#default`). */
 export const OPEN_ERAS_AT_SCRAPE: readonly string[] = ["classic","fear","hate","hole","sky","stonebrunt","temple","warrens","paineel"];
@@ -3054,19 +3054,19 @@ export const TRADESKILLS: readonly Tradeskill[] = [
       "skill": [
        {
         "from": 1,
-        "to": 83
+        "to": 84
        },
        {
         "from": 84,
-        "to": 150
+        "to": 151
        },
        {
         "from": 151,
-        "to": 212
+        "to": 213
        },
        {
         "from": 213,
-        "to": 244
+        "to": 245
        },
        {
         "from": 245,
@@ -3637,7 +3637,7 @@ export const TRADESKILLS: readonly Tradeskill[] = [
         },
         {
          "name": "Small Vial",
-         "qty": 1
+         "qty": 5
         }
        ],
        [],
@@ -3648,7 +3648,7 @@ export const TRADESKILLS: readonly Tradeskill[] = [
       ],
       "cost": [
        {
-        "copper": 2213,
+        "copper": 2253,
         "how": "partial",
         "unpriced": [
          "Deepwater Ink"
@@ -5593,7 +5593,7 @@ export const TRADESKILLS: readonly Tradeskill[] = [
         ],
         "skill": {
          "from": 41,
-         "to": 68
+         "to": 69
         },
         "needs": [
          {
@@ -9812,15 +9812,11 @@ export const TRADESKILLS: readonly Tradeskill[] = [
         },
         {
          "name": "Ruined Bear Pelt",
-         "qty": 1
-        },
-        {
-         "name": "Ruined Wolf Pelt",
-         "qty": 1
-        },
-        {
-         "name": "Ruined Cat Pelt",
-         "qty": 1
+         "qty": 1,
+         "alternatives": [
+          "Ruined Wolf Pelt",
+          "Ruined Cat Pelt"
+         ]
         }
        ],
        [
@@ -9860,15 +9856,11 @@ export const TRADESKILLS: readonly Tradeskill[] = [
        [
         {
          "name": "High Quality Wolf Skin",
-         "qty": 1
-        },
-        {
-         "name": "High Quality Cat Pelt",
-         "qty": 1
-        },
-        {
-         "name": "High Quality Bear Skin",
-         "qty": 1
+         "qty": 1,
+         "alternatives": [
+          "High Quality Cat Pelt",
+          "High Quality Bear Skin"
+         ]
         },
         {
          "name": "Steel Boning",
