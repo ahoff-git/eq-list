@@ -111,3 +111,9 @@ test("observed standings undo every correction, so a newer dump read alongside a
   const plain = [standing({ faction, net: 7 })];
   assert.equal(observedStandings(plain), plain, "nothing corrected passes through");
 });
+
+test("a held statement with an unreadable time is replaced by any readable one", () => {
+  const held = { Bayle: { offset: 1, statedAt: "garbage" } };
+  const fresh = { Bayle: { offset: 2, statedAt: "2026-10-20T17:00:00.000Z" } };
+  assert.equal(newestCorrections(held, fresh).Bayle.offset, 2);
+});

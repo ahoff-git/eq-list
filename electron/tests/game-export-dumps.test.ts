@@ -202,3 +202,8 @@ test("what you own is keyed by item page, with exaltations placed by what they'r
   assert.equal(ownedText(owned.get("adamantite epaulets")!), "Storage: Equipment");
   assert.equal(owned.has("minotaur horn (exaltation)"), false, "never keyed by the exaltation's own name");
 });
+
+test("faction: a blank standing column is no standing, not a zero", () => {
+  const rows = parseFactionDump(["ID\tName\tStandingValue\tPointsToMax", "65\tBrownies of Faydwer\t\t2046", "9\tCraftkeepers\t0\t2000"].join("\r\n"));
+  assert.deepEqual(rows.map((r) => [r.name, r.standing]), [["Craftkeepers", 0]]);
+});

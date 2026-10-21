@@ -233,7 +233,8 @@ export function parseFactionDump(text: string): FactionDumpRow[] {
   for (const raw of text.split(/\r?\n/)) {
     const [id, name, standing, toMax] = raw.split("\t");
     if (!name || id === "ID") continue;
-    const value = Number(standing);
+    // `Number("")` is 0, so a blank column would read as a real standing of zero.
+    const value = standing?.trim() ? Number(standing) : NaN;
     if (!Number.isFinite(value)) continue;
     rows.push({ id: Number(id) || 0, name: name.trim(), standing: value, pointsToMax: Number(toMax) || 0 });
   }

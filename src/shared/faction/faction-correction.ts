@@ -51,7 +51,9 @@ export function newestCorrections(
   for (const set of sets) {
     for (const [faction, c] of Object.entries(set)) {
       const held = out[faction];
-      if (!held || Date.parse(c.statedAt) > Date.parse(held.statedAt)) out[faction] = c;
+      // A held statement with no readable time can't claim to be newer than anything.
+      const heldAt = held ? Date.parse(held.statedAt) : NaN;
+      if (!held || Number.isNaN(heldAt) || Date.parse(c.statedAt) > heldAt) out[faction] = c;
     }
   }
   return out;
