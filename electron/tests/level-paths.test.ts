@@ -17,7 +17,9 @@ import { rankedSpellTitle, spellName, spellRank } from "../../src/shared/combat/
 import { levelInName, pageForName, unrankedSpellTitle } from "../../src/shared/upgrade-view";
 import { itemGrade, itemBaseName } from "../../src/shared/names";
 import { sumPrices } from "../loot-prices";
-import { TRADESKILLS } from "../../src/shared/tradeskills/tradeskills.generated";
+import { TRADESKILLS, VENDORS } from "../../src/shared/tradeskills/tradeskills.generated";
+import { whereToBuy } from "../../src/shared/tradeskills/where-to-buy";
+import { buildHunt, huntInputsFor } from "../../src/shared/mob/hunt";
 import { createStore } from "../store";
 
 const REPO_ROOT = path.join(__dirname, "../../..");
@@ -143,4 +145,60 @@ test("tradeskill guides: every material, choice and result is an ungraded wiki n
       }
   assert.ok(names.length > 300, "the shipped guides were read");
   assert.deepEqual(names.filter((n) => itemGrade(n) !== undefined), []);
+});
+
+// ─── Per view: each traced from the data or function that view renders ────
+
+/** Every page in the shipped cache, by kind. */
+function shippedPages(): { title: string; page: Record<string, unknown> }[] {
+  const dir = path.join(REPO_ROOT, "public", "data", "wiki-cache", "pages");
+  const out: { title: string; page: Record<string, unknown> }[] = [];
+  for (const file of fs.readdirSync(dir)) {
+    for (const line of fs.readFileSync(path.join(dir, file), "utf8").split("\n")) {
+      const [title, , json] = line.split("\t");
+      if (json?.startsWith("{")) out.push({ title, page: JSON.parse(json) });
+    }
+  }
+  return out;
+}
+
+test("Spells tab: every catalogue row opens and hovers as printed, at level 0 — its title is the spell", () => {
+  // SpellCatalogTable links `row.spell.title`, which is a spell page's own title.
+  const spells = shippedPages().filter((p) => p.page.kind === "spell");
+  assert.ok(spells.length > 2000);
+  for (const { title, page } of spells) {
+    const shown = pageForName(title, { ...(page as object), kind: "spell", title } as never, null);
+    assert.equal(shown?.level, 0, title);
+  }
+});
+
+test("Wiki page view: every component, reward and drop name a page links is a +0 wiki name", () => {
+  // WikiPageView links `c.name` (components), `r.item` (rewards) and `m.name`/sources off the page.
+  const graded: string[] = [];
+  let names = 0;
+  for (const { page } of shippedPages()) {
+    for (const c of (page.components as { name?: string }[] | undefined) ?? []) if (c.name && (names++, itemGrade(c.name) !== undefined)) graded.push(c.name);
+    for (const r of (page.rewards as { item?: string }[] | undefined) ?? []) if (r.item && (names++, itemGrade(r.item) !== undefined)) graded.push(r.item);
+  }
+  assert.ok(names > 1000, "the shipped pages were read");
+  assert.deepEqual(graded, [], "a linked name with a grade would be shown at that grade — none are");
+});
+
+test("Hunt tab: an item on your list keeps its name, grade and all, from list entry to the Hunt row", () => {
+  // HuntPanel links `it.item` / `g.item`, built by `buildHunt(huntInputsFor(entries, …))`.
+  const entry = { id: "e1", name: "Dragoon Dirk +2", needed: 1, obtained: 0, added: "2026-10-20T10:00:00.000Z" };
+  const sources = { "Dragoon Dirk +2": [{ kind: "drop" as const, where: "a gnoll", detail: "Blackburrow" }] };
+  const zones = buildHunt(huntInputsFor([entry as never], sources as never, {}));
+  const shown = JSON.stringify(zones);
+  assert.ok(shown.includes('"Dragoon Dirk +2"'), "the Hunt row links the name as listed");
+  assert.equal(levelInName("Dragoon Dirk +2", "item"), 2);
+});
+
+test("Tradeskills: the shopping view names each material exactly as the guide does", () => {
+  // TradeskillsPanel's "Where to buy" links `s.item`/`item` from `whereToBuy(materials, VENDORS, …)`.
+  const materials = ["Bone Chips", "Small Piece of Ore", "Water Flask", "Not A Real Item"];
+  const plan = whereToBuy(materials, VENDORS, null, new Set());
+  const named = [...plan.here.map((h) => h.item), ...plan.stops.flatMap((s) => s.items.map((i) => i.item)), ...plan.elsewhere, ...plan.notSold];
+  for (const name of named) assert.ok(materials.includes(name), `${name} is a guide name, unchanged`);
+  assert.ok(named.length >= materials.length, "every material lands somewhere");
 });
