@@ -11,6 +11,7 @@ import path from "node:path";
 import {
   factionConText,
   heldGrades,
+  carryForward,
   inventoryTotals,
   ownedItems,
   ownedText,
@@ -229,4 +230,22 @@ test("what you own is keyed by item page, with exaltations placed by what they'r
 test("faction: a blank standing column is no standing, not a zero", () => {
   const rows = parseFactionDump(["ID\tName\tStandingValue\tPointsToMax", "65\tBrownies of Faydwer\t\t2046", "9\tCraftkeepers\t0\t2000"].join("\r\n"));
   assert.deepEqual(rows.map((r) => [r.name, r.standing]), [["Craftkeepers", 0]]);
+});
+
+test("a dump that left the bank out keeps the last bank seen, dated, and a newer bank replaces it", () => {
+  const atBank = parseInventoryDump(INVENTORY);
+  const first = carryForward(atBank, 1000, {});
+  assert.equal(first.carried.length, 0, "everything is in this dump");
+  assert.deepEqual(Object.keys(first.saved).sort(), ["bank", "depot", "hoard"]);
+
+  // Later, in the field: only worn gear and bags.
+  const inField = atBank.filter((i) => i.area === "worn" || i.area === "bags");
+  const later = carryForward(inField, 2000, first.saved);
+  assert.deepEqual(later.carried.map((c) => [c.area, c.at]), [["bank", 1000], ["depot", 1000], ["hoard", 1000]]);
+  const chips = later.items.filter((i) => i.name === "Bone Chips");
+  assert.deepEqual(chips.map((c) => [c.area, c.asOf]), [["bags", undefined], ["bank", 1000]]);
+
+  // An older dump read afterwards never overwrites a newer saved copy.
+  const stale = carryForward(atBank, 500, first.saved);
+  assert.equal(stale.saved.bank?.at, 1000);
 });

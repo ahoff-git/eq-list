@@ -55,7 +55,7 @@ import type { DamageOverlayTracker } from "./damage-overlay-tracker";
 import type { Lookup } from "./lookup";
 import { readLogTail } from "./log-tail";
 import { searchLogFile } from "./log-search";
-import { inventoryShareRows, readExport, readExportTimes } from "./game-exports";
+import { inventoryShareRows, readExport, readExportTimes, readInventory } from "./game-exports";
 import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial, Settings, Rect, AppInfo, LocEvent, AwariPayload, AwariInbound, AwariOutbound, AwariStatus, AwariPeer, CastAlertEvent, KillEmphasis, MapFocus, SpawnKind, GoalTarget, AchievementCriterionInput, TravelAnswer, TravelEnd, TravelOptions, WindowToggles, FactionHitsQuery, LootSearchFilter, LootDropsQuery, FightStats, LogSearchOptions } from "../src/shared/types";
 import type { AlertRouter } from "./alert-router";
 import type { CelebrationFeed } from "./celebrations";
@@ -333,7 +333,10 @@ function registerSettingsIpc(context: IpcContext): void {
   );
   // The `/outputfile` dumps beside the followed log's `Logs` folder — their ages, for the Exports tab.
   ipcMain.handle(CH.logExports, () => readExportTimes(context.watcher.status().file));
-  ipcMain.handle(CH.logExportRead, (_e, fileType: unknown) => readExport(context.watcher.status().file, fileType));
+  // Inventory reads go through `readInventory`, which carries forward sections a dump left out.
+  ipcMain.handle(CH.logExportRead, (_e, fileType: unknown) =>
+    fileType === "inventory" ? readInventory(context.watcher.status().file, context.userData) : readExport(context.watcher.status().file, fileType),
+  );
 
   // "Eat" a log file: a catch-up that digests it into every store that can take it — the kill log
   // (→ mob knowledge), combat history, and the loot feed (→ prices). `digestLog` owns the kill log's
@@ -1166,7 +1169,7 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
       },
       gameClock,
       celebrations: { current: () => celebrations.current() },
-      inventory: { rows: () => inventoryShareRows(context.watcher.status().file) },
+      inventory: { rows: () => inventoryShareRows(context.watcher.status().file, context.userData) },
     }),
     // The item catalogue, which is addressed by shard rather than as a whole (ADR 0160).
     items: wiki.items,

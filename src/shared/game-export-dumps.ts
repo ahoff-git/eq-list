@@ -50,6 +50,12 @@ export interface InventoryItem {
   container: boolean;
   /** For an item inside a bag: the bag's location. */
   inside?: string;
+  /**
+   * When the dump this row came from was written (ms), for a row **carried forward** from an older
+   * dump because the newest one didn't include its section (`carryForward`). Absent for a row the
+   * newest dump holds, which is the ordinary case.
+   */
+  asOf?: number;
 }
 
 /**
@@ -420,4 +426,46 @@ export function ownedText(places: readonly OwnedPlace[]): string {
     // A socketed one says what it is ("Exaltation in …"); one in Storage's Exaltation tab already does.
     .map((p) => `${p.exaltation && p.text.startsWith("in ") ? "Exaltation " : ""}${p.text}${p.count > 1 ? ` ×${p.count}` : ""}`)
     .join(" · ");
+}
+
+// ─── Carrying sections forward ──────────────────────────────────────────────
+
+/**
+ * Sections a dump can leave out without them being empty: away from a banker the bank and shared
+ * bank may not be loaded, and the depot and hoard only come with their windows open.
+ */
+export const CARRIED_AREAS: readonly InventoryArea[] = ["bank", "sharedBank", "depot", "hoard"];
+
+/** The newest rows seen for each carried section, and when the dump holding them was written. */
+export type CarriedSections = Partial<Record<InventoryArea, { at: number; items: InventoryItem[] }>>;
+
+/**
+ * A dump with what it left out filled back in.
+ *
+ * Each carried section the dump *has* replaces the saved copy (it's newer). Each one it lacks is
+ * carried from the saved copy, its rows marked `asOf` that copy's date — so a dump taken in the field
+ * doesn't make the bank look empty, and every reader can still say the bank is as of three days ago.
+ * A saved copy is only ever replaced by a newer dump, never by an older one read later.
+ */
+export function carryForward(
+  items: readonly InventoryItem[],
+  writtenAt: number,
+  saved: CarriedSections,
+): { items: InventoryItem[]; saved: CarriedSections; carried: { area: InventoryArea; at: number }[] } {
+  const next: CarriedSections = { ...saved };
+  const out = [...items];
+  const carried: { area: InventoryArea; at: number }[] = [];
+  for (const area of CARRIED_AREAS) {
+    const fresh = items.filter((i) => i.area === area);
+    const held = saved[area];
+    if (fresh.length) {
+      if (!held || held.at <= writtenAt) next[area] = { at: writtenAt, items: fresh };
+      continue;
+    }
+    if (held && held.at < writtenAt) {
+      out.push(...held.items.map((i) => ({ ...i, asOf: held.at })));
+      carried.push({ area, at: held.at });
+    }
+  }
+  return { items: out, saved: next, carried };
 }

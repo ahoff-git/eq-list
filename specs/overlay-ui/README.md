@@ -925,6 +925,9 @@ list, hunt, search, damage, session, peers, settings.
       (every grade and place added up). Names are `ItemLink`s, and items on the shopping list are
       starred. When the depot or hoard is missing it says which window to open, because a missing
       section means "not loaded", not "empty".
+      A section a newer dump left out (bank, shared bank, depot, hoard) is carried from the last dump
+      that had it and labelled with that dump's age (`carryForward`, saved per character by
+      `readInventory` in `inventory-carried.json`), so a dump taken in the field doesn't empty the bank.
     - **Faction**: every standing with its `/con` word and distance to max.
     - **Achievements**: the game's tree by category, open-only by default, with counts on counting
       objectives.

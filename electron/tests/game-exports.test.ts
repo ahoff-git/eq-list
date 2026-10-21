@@ -16,7 +16,7 @@ import {
   lastExportedAt,
   RECIPE_EXPORT_COMMANDS,
 } from "../../src/shared/game-exports";
-import { readExportTimes } from "../game-exports";
+import { inventoryShareRows, readExportTimes, readInventory } from "../game-exports";
 
 const HOUR = 3_600_000;
 const inventory = GAME_EXPORT_COMMANDS.find((c) => c.fileType === "inventory")!;
@@ -85,4 +85,28 @@ test("the reader finds this character's dumps beside the Logs folder, and no one
   assert.equal(times.inventory, at.getTime());
   assert.deepEqual(readExportTimes(path.join(root, "nowhere", "Logs", "eqlog_X_y.txt")), {});
   assert.deepEqual(readExportTimes(undefined), {});
+});
+
+test("readInventory: a field dump that overwrote a bank dump still shows the bank, dated by the older dump", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "eql-carry-"));
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "eql-carry-ud-"));
+  fs.mkdirSync(path.join(root, "Logs"));
+  const logFile = path.join(root, "Logs", "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(logFile, "");
+  const dump = path.join(root, "Kainos_qeynos-Inventory.txt");
+  const write = (rows: string[], when: Date) => {
+    fs.writeFileSync(dump, ["Location\tName\tID\tCount\tSlots", ...rows].join("\r\n"));
+    fs.utimesSync(dump, when, when);
+  };
+  const atBank = new Date("2026-10-18T12:00:00Z");
+  write(["General 1\tBag\t1\t1\t8", "General 1-Slot1\tBone Chips\t13073\t5\t11", "Bank3\tJade\t10023\t21\t11", "Personal-Depot1\tAmber\t10022\t39\t11"], atBank);
+  assert.equal(readInventory(logFile, userData)?.carriedItems, undefined, "nothing to carry yet");
+
+  // The game rewrites the same file away from the bank: bags only.
+  write(["General 1\tBag\t1\t1\t8", "General 1-Slot1\tBone Chips\t13073\t9\t11"], new Date("2026-10-20T12:00:00Z"));
+  const field = readInventory(logFile, userData);
+  assert.deepEqual(field?.carried?.map((c) => [c.area, c.at]).sort(), [["bank", atBank.getTime()], ["depot", atBank.getTime()]]);
+  assert.deepEqual(field?.carriedItems?.map((i) => [i.name, i.asOf]).sort(), [["Amber", atBank.getTime()], ["Jade", atBank.getTime()]]);
+  // Shared with peers too, carried rows included.
+  assert.ok(inventoryShareRows(logFile, userData).some((r) => r.item === "Jade"));
 });

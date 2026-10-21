@@ -2,6 +2,7 @@ import type { SpellCategory } from "./spells/spell-categories";
 import type { SkillProgressView } from "./tradeskills/skill-progress";
 import type { DataReportRow } from "./data-provenance";
 import type { GameExportTimes } from "./game-exports";
+import type { InventoryItem } from "./game-export-dumps";
 import type { AdminPatchResult, AdminRecord, AdminSearchHit, AdminStoreInfo } from "./admin";
 import type { CheckResult } from "./chrome/self-check";
 import type { MobKnowledge, MobObservation } from "./mob/mob-stats";
@@ -3265,6 +3266,13 @@ export interface GameExportDump {
   fileName: string;
   writtenAt: number;
   text: string;
+  /**
+   * Inventory only: rows of sections this dump left out (bank, shared bank, depot, hoard), carried
+   * from the newest older dump that had them, each marked `asOf` its date (`carryForward`).
+   */
+  carriedItems?: InventoryItem[];
+  /** Which sections were carried, and from when — so a view can say they may be out of date. */
+  carried?: { area: string; at: number }[];
 }
 
 export interface WatcherStatus {

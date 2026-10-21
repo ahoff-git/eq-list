@@ -72,7 +72,8 @@ export function useInventory(): { items: InventoryItem[] | null; at?: number } {
   const cmd = exportCommandFor("inventory");
   const at = cmd ? lastExportedAt(cmd, times) : undefined;
   const dump = useExportDump("inventory", at);
-  const items = useMemo(() => (dump ? parseInventoryDump(dump.text) : null), [dump]);
+  // With any section the dump left out carried from an older one, marked `asOf` (`readInventory`).
+  const items = useMemo(() => (dump ? [...parseInventoryDump(dump.text), ...(dump.carriedItems ?? [])] : null), [dump]);
   return { items, at: dump?.writtenAt };
 }
 

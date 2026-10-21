@@ -446,7 +446,7 @@ Four of the six are **done** and have left this list: rank-aware spell costs
 ([ADR 0078](./decisions/0078-a-fight-records-why-it-ended.md)), and the unread-line tally
 ([ADR 0079](./decisions/0079-an-unread-line-is-counted-by-its-shape.md)). What's left:
 
-- **The inventory dump is read; three things still don't use it.** The Exports tab ([overlay-ui](./overlay-ui/README.md))
+- **The inventory dump is read; a few things still don't use it.** The Exports tab ([overlay-ui](./overlay-ui/README.md))
   parses `/outputfile inventory` (`src/shared/game-export-dumps.ts`): worn gear with its sockets,
   bags and their contents, the bank, the shared bank, the Tradeskill Depot, the Dragon's Hoard, and
   the Storage window's tabs. It shows them by place or by item, and stars anything on the shopping
@@ -460,10 +460,6 @@ Four of the six are **done** and have left this list: rank-aware spell costs
     log-seen loot and sells *since the dump* on top of it as `SinceDump`, so the number stays current
     and says which part came from where. That's the shape to copy. It also unlocks the
     quest-readiness item above and the **ignore list** in [ideas.md](./ideas.md).
-  - **Keep the last depot and hoard we saw.** The game overwrites one file per character. A dump
-    taken without the depot or hoard window open has no rows for them, and that means "not loaded",
-    not "empty" (the tab says so). Copying each area's newest rows into userData would let the view
-    show the last known contents, dated, instead of nothing.
   - **Best in slot can't price an effect.** Exaltations and an item's own effects carry no number,
     so the loadout is optimal for stats only ([ADR 0310](./decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)).
     A per-effect weight (the way the weight sheet does stats) would let the solver trade them

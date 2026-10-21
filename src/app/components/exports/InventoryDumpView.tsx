@@ -15,6 +15,7 @@ import {
   type InventoryPlace,
 } from "@/shared/game-export-dumps";
 import { DumpSection, textMatches } from "./DumpParts";
+import { exportAgeText } from "@/shared/game-exports";
 import { socketName } from "@/shared/items/exaltations";
 
 type Mode = "place" | "item";
@@ -29,8 +30,9 @@ const FOLDED_AREAS: ReadonlySet<InventoryArea> = new Set(["storage"]);
  * item they're in — or **by item**, every grade and location of a thing added up. Items also on
  * the shopping list are marked, since "do I already have one?" is what the list keeps asking.
  */
-export default function InventoryDumpView({ text }: { text: string }) {
-  const items = useMemo(() => parseInventoryDump(text), [text]);
+export default function InventoryDumpView({ text, carriedItems }: { text: string; carriedItems?: InventoryItem[] }) {
+  // Sections this dump left out come carried from the last dump that had them, dated (`asOf`).
+  const items = useMemo(() => [...parseInventoryDump(text), ...(carriedItems ?? [])], [text, carriedItems]);
   const [mode, setMode] = useState<Mode>("place");
   const [query, setQuery] = useState("");
   const list = useShoppingList();
@@ -76,7 +78,9 @@ function ByPlace({ items, query, isWanted }: { items: InventoryItem[]; query: st
         .map((top) => ({ top, inner: (contents.get(top.location) ?? []).filter(matches) }))
         .filter(({ top, inner }) => matches(top) || inner.length > 0);
       const total = members.filter((i) => !i.container).length;
-      return { key, area, label, rows, total };
+      // A carried section is as of an older dump — say so, since its contents may have moved since.
+      const asOf = members.find((i) => i.asOf !== undefined)?.asOf;
+      return { key, area, label: asOf === undefined ? label : `${label} — from an older dump (${exportAgeText(Date.now() - asOf)}), may be out of date`, rows, total };
     })
     .filter((s) => s.rows.length > 0);
   const missing = CONDITIONAL_AREAS.filter(({ area }) => !items.some((i) => i.area === area));

@@ -14,6 +14,7 @@ import {
   type GameExportTimes,
 } from "@/shared/game-exports";
 import ExportButton from "./ExportButton";
+import type { InventoryItem } from "@/shared/game-export-dumps";
 import InventoryDumpView from "./InventoryDumpView";
 import FactionDumpView from "./FactionDumpView";
 import AchievementsDumpView from "./AchievementsDumpView";
@@ -102,7 +103,7 @@ function DumpView({ cmd, times, now }: { cmd: GameExportCommand; times: GameExpo
       {dump && (
         <>
           <p className="muted small">{dump.fileName}</p>
-          <DumpBody cmd={cmd} text={dump.text} />
+          <DumpBody cmd={cmd} text={dump.text} carriedItems={dump.carriedItems} />
         </>
       )}
     </>
@@ -110,8 +111,8 @@ function DumpView({ cmd, times, now }: { cmd: GameExportCommand; times: GameExpo
 }
 
 /** The reader for a dump's kind; anything without one is shown as the table it is. */
-function DumpBody({ cmd, text }: { cmd: GameExportCommand; text: string }) {
-  if (cmd === exportCommandFor("inventory")) return <InventoryDumpView text={text} />;
+function DumpBody({ cmd, text, carriedItems }: { cmd: GameExportCommand; text: string; carriedItems?: InventoryItem[] }) {
+  if (cmd === exportCommandFor("inventory")) return <InventoryDumpView text={text} carriedItems={carriedItems} />;
   if (cmd === exportCommandFor("faction")) return <FactionDumpView text={text} />;
   if (cmd === exportCommandFor("achievements")) return <AchievementsDumpView text={text} />;
   return <DumpTableView text={text} columns={cmd.columns} emptyText={cmd.emptyText ?? "This dump is empty."} />;

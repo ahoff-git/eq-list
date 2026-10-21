@@ -17,7 +17,8 @@ import {
   type GameExportTimes,
 } from "../src/shared/game-exports";
 import type { GameExportDump } from "../src/shared/types";
-import { inventoryTotals, parseInventoryDump } from "../src/shared/game-export-dumps";
+import { carryForward, inventoryTotals, parseInventoryDump, type CarriedSections } from "../src/shared/game-export-dumps";
+import { readJson, writeJson } from "./json-store";
 import type { InventoryShareRow } from "../src/shared/peers/peer-share";
 
 const log = createLogger("game-exports");
@@ -119,9 +120,32 @@ export function watchExport(
  * The followed character's inventory as peers see it, when sharing is on: one row per item, totals
  * and places, dated by the dump. Empty when there's no dump.
  */
-export function inventoryShareRows(logFile: string | undefined): InventoryShareRow[] {
-  const dump = readExport(logFile, "inventory");
+export function inventoryShareRows(logFile: string | undefined, userDataDir?: string): InventoryShareRow[] {
+  const dump = userDataDir ? readInventory(logFile, userDataDir) : readExport(logFile, "inventory");
   if (!dump) return [];
   const asOf = new Date(dump.writtenAt).toISOString();
-  return inventoryTotals(parseInventoryDump(dump.text)).map((t) => ({ item: t.baseName, count: t.count, places: t.places, asOf }));
+  const items = [...parseInventoryDump(dump.text), ...(dump.carriedItems ?? [])];
+  return inventoryTotals(items).map((t) => ({ item: t.baseName, count: t.count, places: t.places, asOf }));
+}
+
+/**
+ * The newest inventory dump, with the sections it left out carried from the last dump that had them
+ * (`carryForward`). A dump taken away from a banker — or without the depot or hoard window open —
+ * has no rows for those, and reading that as "empty" would throw away what we knew. The newest copy
+ * of each such section is kept per character in `inventory-carried.json`, and only a newer dump that
+ * has the section replaces it.
+ */
+export function readInventory(logFile: string | undefined, userDataDir: string): GameExportDump | null {
+  const dump = readExport(logFile, "inventory");
+  const who = exportFilePrefix(logFile);
+  if (!dump || !who) return dump;
+  const file = path.join(userDataDir, "inventory-carried.json");
+  const store = readJson<Record<string, CarriedSections>>(file, {});
+  const result = carryForward(parseInventoryDump(dump.text), dump.writtenAt, store[who] ?? {});
+  if (JSON.stringify(result.saved) !== JSON.stringify(store[who] ?? {})) {
+    writeJson(file, { ...store, [who]: result.saved });
+    log.debug("saved inventory sections", { who, areas: Object.keys(result.saved) });
+  }
+  const carriedItems = result.items.filter((i) => i.asOf !== undefined);
+  return carriedItems.length ? { ...dump, carriedItems, carried: result.carried } : dump;
 }
