@@ -12,9 +12,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { splitLine, parseCombine, parseLoot } from "../../src/shared/log-parser";
-import { parseInventoryDump } from "../../src/shared/game-export-dumps";
+import { heldGrades, inventoryTotals, parseInventoryDump } from "../../src/shared/game-export-dumps";
 import { rankedSpellTitle, spellName, spellRank } from "../../src/shared/combat/combat-parser";
-import { levelInName, pageForName, unrankedSpellTitle } from "../../src/shared/upgrade-view";
+import { ladderOf, levelInName, pageForName, unrankedSpellTitle } from "../../src/shared/upgrade-view";
 import { itemGrade, itemBaseName } from "../../src/shared/names";
 import { sumPrices } from "../loot-prices";
 import { TRADESKILLS, VENDORS } from "../../src/shared/tradeskills/tradeskills.generated";
@@ -29,6 +29,7 @@ import { reconcileDrops } from "../../src/shared/mob/drop-truth";
 import { itemDropSources } from "../../src/shared/items/item-sources";
 import { itemRows, NO_CRITERIA } from "../../src/shared/items/item-search";
 import { bisPlan } from "../../src/shared/items/bis-plan";
+import { shareKind } from "../../src/shared/peers/peer-share";
 import { gradedTitle } from "../../src/shared/items/item-upgrade";
 
 const REPO_ROOT = path.join(__dirname, "../../..");
@@ -265,4 +266,44 @@ test("best in slot: a held graded item is picked and shown at its grade", () => 
   const pick = plan.loadout.picks.find((p) => p.item.title === "Gnoll Slayer");
   assert.equal(pick?.item.grade, 3);
   assert.equal(gradedTitle(pick!.item.title, pick!.item.grade), "Gnoll Slayer +3");
+});
+
+test("not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it", () => {
+  // Every `notAnItem(...)` link — a mob, zone, NPC, faction, quest or guide — opens a page whose card
+  // `ladderOf` gives no ladder, so no level in the name can change what is shown.
+  const others = shippedPages().filter((p) => !["item", "recipe", "spell"].includes(String(p.page.kind)));
+  assert.ok(others.length > 1000, "the shipped mob, zone and quest pages were read");
+  for (const { title, page } of others) assert.equal(ladderOf(page as never), undefined, `${title} (${String(page.kind)})`);
+});
+
+test("best in slot: hunt targets are catalogue items you don't hold, named at +0", () => {
+  // BisHuntTable / BisWearTable / BisEffects link `wikiName(hunt.item.title)`, a catalogue row's title.
+  const card = (title: string, str: number) => ({ title, origin: "wiki", card: { title, lines: ["Slot: HEAD", `STR: +${str}`, "Class: ALL", "Race: ALL"] }, sources: [], outOfEra: false });
+  const rows = itemRows([card("Old Cap", 1), card("Better Cap", 9)] as never);
+  const inventory = parseInventoryDump(["Location\tName\tID\tCount\tSlots", "Head\tOld Cap +2\t1\t1\t11"].join("\r\n"));
+  const plan = bisPlan({ rows, inventory, criteria: { ...NO_CRITERIA, hideOutOfEra: false }, weights: { str: 1 } });
+  assert.deepEqual(plan.hunt.map((h) => [h.item.title, h.item.grade]), [["Better Cap", 0]]);
+});
+
+test("Items tab: an owned item's row is weighed and linked at the best grade you hold", () => {
+  // ItemTable links `gradedTitle(row.item.title, row.grade)`; `row.grade` is `heldGrades`' answer.
+  const items = parseInventoryDump(["Location\tName\tID\tCount\tSlots", "Fingers\tMoonstone Ring +1\t1\t1\t11", "Bank1\tMoonstone Ring +4\t1\t1\t11"].join("\r\n"));
+  const grade = heldGrades(items, (n) => n.toLowerCase()).get("moonstone ring") ?? 0;
+  assert.equal(gradedTitle("Moonstone Ring", grade), "Moonstone Ring +4");
+});
+
+test("Exports by item: a total is linked at the best grade among the copies it counts", () => {
+  // InventoryDumpView links `gradedTitle(t.baseName, t.bestGrade)` from `inventoryTotals`.
+  const totals = inventoryTotals(parseInventoryDump(["Location\tName\tID\tCount\tSlots", "General 1\tGnoll Slayer\t1\t1\t11", "Bank1\tGnoll Slayer +3\t1\t1\t11"].join("\r\n")));
+  const t = totals.find((x) => x.baseName === "Gnoll Slayer")!;
+  assert.equal(gradedTitle(t.baseName, t.bestGrade), "Gnoll Slayer +3");
+});
+
+test("Who has it: a peer's row carries their best grade and is linked at it", () => {
+  // PeerInventories links `gradedTitle(f.item, f.bestGrade)` from the peer's inventory row's `grade`.
+  const [row] = shareKind("inventory")!.read([{ item: "Gnoll Slayer", count: 2, grade: 3, places: [], asOf: "2026-10-20T10:00:00.000Z" }], () => "id") as {
+    item: string;
+    grade?: number;
+  }[];
+  assert.equal(gradedTitle(row.item, row.grade ?? 0), "Gnoll Slayer +3");
 });
