@@ -10,8 +10,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isAdded, WATCH_LIBRARY, type LibraryRule } from "../../src/shared/alerts/watch-library";
 import { checkWatch } from "../../src/shared/alerts/watch-check";
-import { alertCue } from "../../src/shared/alerts/alert-schedule";
-import type { CastWatch } from "../../src/shared/types";
+import { alertCue, usableCancels } from "../../src/shared/alerts/alert-schedule";
+import { conditionMatches } from "../../src/shared/alerts/watch-conditions";
+import { lineSubject, matchLine } from "../../src/shared/alerts/cast-alerts";
+import type { CastAlertSettings, CastWatch } from "../../src/shared/types";
 
 const rules: LibraryRule[] = WATCH_LIBRARY.flatMap((g) => g.rules);
 
@@ -79,4 +81,23 @@ test("isAdded matches on what a rule catches, not on what it's called", () => {
   assert.equal(isAdded([], rule), false);
   // Same words pointed at a different kind of line is a different rule.
   assert.equal(isAdded([{ ...added, onLine: !rule.watch.onLine }], rule), false);
+});
+
+test("a death rule hears your own kills, which the log words differently from anyone else's", () => {
+  // Real log shapes: the killer sees "You have slain …!", everyone else "… has been slain by …!".
+  // A mob you kill yourself is by far the common case (7.7k vs 2.3k lines in a real log).
+  const yourKill = "You have slain a placeholder!";
+  const theirKill = "A placeholder has been slain by Bunnyslayer!";
+  const remez = rules.find((r) => r.id === "remez")!;
+  const cancels = usableCancels(remez.watch);
+  for (const line of [yourKill, theirKill]) {
+    assert.ok(cancels.some((c) => conditionMatches(c, lineSubject(line))), `remez not cancelled by “${line}”`);
+  }
+
+  const placeholder = rules.find((r) => r.id === "placeholder")!;
+  const settings = { enabled: true, includeSelf: false, watches: [asWatch(placeholder)] } as unknown as CastAlertSettings;
+  const at = new Date().toISOString();
+  for (const line of [yourKill, theirKill]) {
+    assert.ok(matchLine({ message: line, at }, settings), `placeholder not started by “${line}”`);
+  }
 });
