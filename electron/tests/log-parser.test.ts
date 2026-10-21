@@ -60,6 +60,15 @@ test("splitLine tolerates a space-padded day", () => {
   assert.match(r!.at, /^2026-07-07T/);
 });
 
+test("splitLine reads a line that follows a run of NUL padding", () => {
+  // Shape taken from the real log: a crashed session leaves the file NUL-padded, and the next
+  // session's first line is written straight after the NULs, with no newline between them.
+  const r = splitLine("\u0000".repeat(200) + "[Mon Sep 21 12:33:10 2026] You have entered West Freeport.\r", 7);
+  assert.ok(r);
+  assert.equal(r.at, "2026-09-21T12:33:10");
+  assert.equal(r.message, "You have entered West Freeport.");
+});
+
 test("splitLine rejects a line with no timestamp — a wrapped continuation, not an event", () => {
   assert.equal(splitLine("  Policy set or a policy with unsafe-eval enabled."), null);
   assert.equal(splitLine(""), null);

@@ -643,3 +643,71 @@ test("a log too long to find a zone line in still reports the position it found"
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a line half-written when the app quits is read whole on the next start", async () => {
+  const dir = tempLogDir();
+  const data = tempLogDir();
+  const cursor = createLogCursor(data);
+  const file = path.join(dir, "eqlog_Tester_test.txt");
+  fs.writeFileSync(file, "");
+
+  const first = createLogWatcher(cursor);
+  const after: LootEvent[] = [];
+  let second: ReturnType<typeof createLogWatcher> | null = null;
+  try {
+    first.start(dir, "");
+    await sleep(300);
+    // The game has written the first half of a line, and a poll reads it before the rest lands.
+    fs.appendFileSync(file, stamp("--You have looted a Half"));
+    await sleep(1200);
+    first.stop(); // the app quits holding that half back as a partial line
+    fs.appendFileSync(file, " Written from a rat's corpse.--\r\n");
+
+    second = createLogWatcher(cursor);
+    second.onLoot((e) => after.push(e));
+    second.start(dir, "");
+    await waitFor(() => after.length >= 1, 3000).catch(() => undefined);
+    assert.deepEqual(after.map((e) => e.item), ["Half Written"]);
+  } finally {
+    first.stop();
+    second?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(data, { recursive: true, force: true });
+  }
+});
+
+test("a multibyte character split by a capped pass is decoded whole", async () => {
+  const dir = tempLogDir();
+  const data = tempLogDir();
+  const cursor = createLogCursor(data);
+  const file = path.join(dir, "eqlog_Tester_test.txt");
+  fs.writeFileSync(file, "");
+
+  const first = createLogWatcher(cursor);
+  first.start(dir, "");
+  const lines: LogLine[] = [];
+  let second: ReturnType<typeof createLogWatcher> | null = null;
+  try {
+    await sleep(300);
+    first.stop();
+
+    // The real log carries U+FFFD (three bytes) inside chat. Put its first byte on the last byte of
+    // the first 1 MiB pass, so the pass boundary falls inside the character.
+    const cap = 1024 * 1024;
+    const head = stamp("Someone tells General:1, 'see ");
+    const filler = "x".repeat(cap - 1 - 2 - Buffer.byteLength(head)) + "\r\n";
+    fs.appendFileSync(file, filler + head + "� here'\r\n");
+    assert.equal(fs.readFileSync(file).indexOf(Buffer.from("�")), cap - 1);
+
+    second = createLogWatcher(cursor);
+    second.onLine((l) => lines.push(l));
+    second.start(dir, "");
+    await waitFor(() => lines.length >= 1);
+    assert.equal(lines[0].message, "Someone tells General:1, 'see � here'");
+  } finally {
+    first.stop();
+    second?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(data, { recursive: true, force: true });
+  }
+});

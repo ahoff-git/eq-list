@@ -138,7 +138,14 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
   let offset = 0;
   /** How far we had read each file we've followed, so switching back doesn't replay it. */
   const seen = new Map<string, number>();
-  let pending = "";
+  /**
+   * The unfinished last line, as bytes. Held undecoded so a multibyte character split by a read
+   * boundary is decoded whole once its tail arrives — and excluded from what we `remember`, so a
+   * line half-written when we stop is re-read whole next time rather than losing its timestamped half.
+   */
+  let pending: Buffer = Buffer.alloc(0);
+  /** Where the next unread line starts: what's been read, less the partial line still held back. */
+  const consumed = (): number => offset - pending.length;
   let busy = false;
   /** Set by `start`, cleared by the first poll that follows it — the pass that reads the gap. */
   let catchingUp: { file: string; bytes: number; lastAt?: string } | null = null;
@@ -171,9 +178,9 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
    * says — the same argument, for the case where we've read part of it.
    */
   function switchTarget(file: string | null, fromStart = false) {
-    if (target) remember(target, offset);
+    if (target) remember(target, consumed());
     target = file;
-    pending = "";
+    pending = Buffer.alloc(0);
     if (!file) {
       offset = 0;
       return;
@@ -213,7 +220,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     let widest: CaughtUpState = {};
     for (const window of CATCHUP_WINDOWS) {
       const from = Math.max(0, size - window);
-      const { text } = readNew(file, from, size);
+      const text = readNew(file, from, size).toString("utf8");
       // A partial first line is junk, so drop it — unless we started at the very beginning.
       const body = from === 0 ? text : text.slice(text.indexOf("\n") + 1);
       const lines = body.split(/\r?\n/).flatMap((raw) => splitLine(raw) ?? []);
@@ -250,15 +257,15 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
     }
   }
 
-  // Returns the decoded text AND the byte count actually read: a short read (fewer bytes
-  // than requested) must not decode the zero-filled tail as NUL characters, nor let the
-  // caller advance the offset past bytes it never saw.
-  function readNew(file: string, from: number, to: number): { text: string; bytesRead: number } {
+  // Returns only the bytes actually read: a short read (fewer bytes than requested) must not
+  // decode the zero-filled tail as NUL characters, nor let the caller advance the offset past
+  // bytes it never saw.
+  function readNew(file: string, from: number, to: number): Buffer {
     const fd = fs.openSync(file, "r");
     try {
       const buf = Buffer.alloc(to - from);
       const bytesRead = fs.readSync(fd, buf, 0, buf.length, from);
-      return { text: buf.toString("utf8", 0, bytesRead), bytesRead };
+      return buf.subarray(0, bytesRead);
     } finally {
       fs.closeSync(fd);
     }
@@ -300,7 +307,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
       if (size < offset) {
         // Truncated or rotated — start over from the top of the file.
         offset = 0;
-        pending = "";
+        pending = Buffer.alloc(0);
       }
       if (size > offset) {
         // Cap what one pass reads: a fresh gap the size of an evening's play must not be parsed and
@@ -308,13 +315,18 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
         // poll's gap is almost always smaller than the cap, so `to` is just `size` and nothing below
         // changes from today's behavior.
         const to = Math.min(size, offset + MAX_CATCHUP_BYTES_PER_POLL);
-        const { text, bytesRead } = readNew(target, offset, to);
-        pending += text;
-        offset += bytesRead;
+        const chunk = readNew(target, offset, to);
+        offset += chunk.length;
         if (to < size) leftoverBacklog = true;
-        if (catchingUp) catchingUp.bytes += bytesRead;
-        const lines = pending.split(/\r?\n/);
-        pending = lines.pop() ?? ""; // trailing partial line waits for more bytes
+        if (catchingUp) catchingUp.bytes += chunk.length;
+        // Split on the last newline *byte* before decoding: 0x0A never occurs inside a multibyte
+        // UTF-8 character, so everything before it decodes whole, and the trailing partial line
+        // waits (copied, so it doesn't pin the whole chunk) for more bytes.
+        const bytes = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+        const end = bytes.lastIndexOf(0x0a) + 1;
+        pending = Buffer.from(bytes.subarray(end));
+        const lines = end ? bytes.toString("utf8", 0, end).split(/\r?\n/) : [];
+        lines.pop(); // the empty string after the final newline
         for (const raw of lines) {
           // One pass per line: the timestamp comes off once, the split line goes out as-is (for
           // whoever watches the log's own words), then to the matchers, and the typed event is
@@ -336,7 +348,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
         }
         // Only now — the lines are ingested, so it's safe to say we've read them. A crash
         // between the two would replay this batch, which is why the write isn't deferred.
-        remember(target, offset);
+        remember(target, consumed());
       }
       setStatus({ watching: true, file: target });
     } catch (e) {
@@ -396,7 +408,7 @@ export function createLogWatcher(cursor?: LogCursor): LogWatcher {
       if (timer) clearInterval(timer);
       timer = null;
       catchingUp = null; // a start that never got its poll shouldn't report a gap later
-      if (target) remember(target, offset); // so the next run picks up exactly here
+      if (target) remember(target, consumed()); // so the next run picks up exactly here
       setStatus({ watching: false });
     },
     status: () => status,
