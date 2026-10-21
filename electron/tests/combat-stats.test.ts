@@ -1108,6 +1108,20 @@ test("fizzles, interrupts and resists are tallied, and give a resist rate", () =
   assert.equal(s.resistRate, 0.5);
 });
 
+test("a song broken by a missed note doesn't time the next landing of that song", () => {
+  const t = tracker();
+  feed(t, [
+    [1, "You begin singing Denon's Disruptive Discord."],
+    [2, "You miss a note, bringing your Denon's Disruptive Discord to a close!"],
+    // No fresh cast line: this landing must not be timed against the broken song (9s).
+    [10, "You hit a coyote for 30 points of sonic damage by Denon's Disruptive Discord."],
+  ]);
+  const s = t.snapshot().session.spells.find((x) => x.spell === "Denon's Disruptive Discord")!;
+  assert.equal(s.casts, 1);
+  assert.equal(s.interrupts, 1);
+  assert.equal(s.avgCastSec, 0);
+});
+
 // ── a resist rate counts every cast that reached a target (ADR 0304) ──
 test("a spell that never writes a landing line is resisted out of its casts, not out of its resists", () => {
   // A mez lands silently as far as the meter can read — four casts, one resisted, is 25%, not 100%.

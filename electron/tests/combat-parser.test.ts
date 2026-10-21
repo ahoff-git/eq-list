@@ -379,6 +379,26 @@ test("fizzles and interrupts are outcomes of your own cast", () => {
   assert.equal(interrupted.spell, "Levitate");
 });
 
+test("a bard's missed note is an interrupt of the song it names", () => {
+  // Real line shape (EQL log, 2026-08-01).
+  const e = parse("You miss a note, bringing your Cinda's Charismatic Carillon to a close!") as SpellOutcomeEvent;
+  assert.equal(e.kind, "spell-outcome");
+  assert.equal(e.outcome, "interrupted");
+  assert.equal(e.caster, SELF);
+  assert.equal(e.spell, "Cinda's Charismatic Carillon");
+  // Ranked the way the cast line is, so the two agree on the spell.
+  assert.equal(
+    (parse("You miss a note, bringing your Solon's Song of the Sirens V to a close!") as SpellOutcomeEvent).spell,
+    "Solon's Song of the Sirens",
+  );
+});
+
+test("a missed note in chat or someone else's song is not your interrupt", () => {
+  assert.equal(parse("Bob tells General:1, 'You miss a note, bringing your song to a close!'"), null);
+  assert.equal(parse("Bob says, 'You miss a note, bringing your song to a close!'"), null);
+  assert.equal(parse("A missed note brings Bob's Anthem de Arms to a close!"), null);
+});
+
 test("a resist names the spell's caster — theirs or ours", () => {
   const ours = parse("A coyote resisted your Blast of Cold!") as SpellOutcomeEvent;
   assert.equal(ours.outcome, "resisted");
