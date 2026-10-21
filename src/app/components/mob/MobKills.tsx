@@ -10,7 +10,7 @@ import type { WikiComponent } from "@/shared/types";
 import { buildWikiContribution } from "@/shared/mob/wiki-contribution";
 import ItemLink from "@/app/components/items/ItemLink";
 import { RoamLinks, ZoneLink } from "@/app/components/map/MapLink";
-import { dropTableName } from "@/shared/shown-name";
+import { heldAsNamed } from "@/shared/shown-name";
 
 /**
  * What **your** kills say about the mob whose page you're reading — one block per zone you've killed
@@ -88,7 +88,8 @@ export default function MobKills({ mob, components }: { mob: string; components:
               ) : (
                 z.drops.map((drop) => (
                   <div className="mob-drop" key={drop.item}>
-                    <ItemLink title={dropTableName(drop.item)} />
+                    {/* Your own kills' drops, keyed by `dropKey`, which folds case and not grade: shown as looted. */}
+                    <ItemLink title={heldAsNamed(drop.item)} />
                     <span className="spacer" />
                     <span className="md-count muted small">
                       {drop.count}/{z.kills}

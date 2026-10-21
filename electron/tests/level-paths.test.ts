@@ -21,6 +21,15 @@ import { TRADESKILLS, VENDORS } from "../../src/shared/tradeskills/tradeskills.g
 import { whereToBuy } from "../../src/shared/tradeskills/where-to-buy";
 import { buildHunt, huntInputsFor } from "../../src/shared/mob/hunt";
 import { createStore } from "../store";
+import { createLootLog, LOOT_LOG_MIGRATIONS } from "../loot-log";
+import { openAppDatabase } from "../sqlite-store";
+import { createCombatStats } from "../combat-stats";
+import { dropKey } from "../../src/shared/mob/mob-stats";
+import { reconcileDrops } from "../../src/shared/mob/drop-truth";
+import { itemDropSources } from "../../src/shared/items/item-sources";
+import { itemRows, NO_CRITERIA } from "../../src/shared/items/item-search";
+import { bisPlan } from "../../src/shared/items/bis-plan";
+import { gradedTitle } from "../../src/shared/items/item-upgrade";
 
 const REPO_ROOT = path.join(__dirname, "../../..");
 
@@ -201,4 +210,59 @@ test("Tradeskills: the shopping view names each material exactly as the guide do
   const named = [...plan.here.map((h) => h.item), ...plan.stops.flatMap((s) => s.items.map((i) => i.item)), ...plan.elsewhere, ...plan.notSold];
   for (const name of named) assert.ok(materials.includes(name), `${name} is a guide name, unchanged`);
   assert.ok(named.length >= materials.length, "every material lands somewhere");
+});
+
+test("Loot tab: a graded drop is stored and read back as looted, so its row links at its grade", () => {
+  // LootPanel links `row.item` from the loot ledger (`recent()`), filled by `add()` from a loot line.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eql-level-loot-"));
+  const loot = createLootLog(openAppDatabase(dir, LOOT_LOG_MIGRATIONS), dir);
+  loot.add({ kind: "loot", item: "Dragoon Dirk +2", qty: 1, source: "a gnoll", fate: "kept", logId: 1, raw: "looted", at: "2026-10-20T10:00:00" } as never);
+  assert.equal(loot.recent()[0]?.item, "Dragoon Dirk +2");
+  assert.equal(levelInName(loot.recent()[0].item, "item"), 2);
+});
+
+test("MobKills: your kills' drops are keyed by case only, so a graded drop shows as looted", () => {
+  // MobKills links `drop.item` from your kill log's per-mob drops, keyed by `dropKey`.
+  assert.equal(dropKey("Copper Amulet +2"), "copper amulet +2", "the grade is part of the key — not folded");
+});
+
+test("MobKnowledge: a mob's reconciled drop table folds a graded drop into its item — by design", () => {
+  // MobKnowledge links `drop.item` from `reconcileDrops`: a +2 drop is the same drop (ADR 0057).
+  const truth = reconcileDrops({ "Gnoll Slayer": "5%" }, { "Gnoll Slayer +2": 1 }, 10);
+  assert.deepEqual(truth.map((t) => t.item), ["Gnoll Slayer"]);
+});
+
+test("ItemDrops: each row links the mob that dropped the item — a mob name, whatever the item's grade", () => {
+  // ItemDrops links `row.mob` from `itemDropSources(item, knowledge)`.
+  const known = [
+    { mob: "a gnoll pup", zone: "Blackburrow", kills: 4, myKills: 4, contributors: [], lastAt: "2026-10-20T10:00:00", drops: [{ item: "gnoll slayer", count: 1, rate: 0.25 }] },
+  ];
+  const rows = itemDropSources("Gnoll Slayer +2", known as never);
+  assert.deepEqual(rows.map((r) => r.mob), ["a gnoll pup"]);
+});
+
+test("Camp report: its mob column is the name a kill was recorded under — a mob, never an item", () => {
+  // CampReport links `row.mob` from the session's `byMob`, keyed by `recordKill(mob)`.
+  const stats = createCombatStats(() => "2026-07-29T00:00:00.000Z");
+  stats.recordKill("a gnoll pup", "2026-07-29T00:00:05");
+  assert.deepEqual(stats.snapshot().session.byMob.map((m) => m.mob), ["a gnoll pup"]);
+});
+
+test("Search tab: every graded title in the search index is an alias of its +0 page", () => {
+  // SearchPanel links `r.title` from the wiki's title index; a `+N` title must be the base page's alias.
+  const index = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "public", "data", "wiki-cache", "title-index.json"), "utf8")) as { titles: string[] };
+  const titles = new Set(index.titles);
+  assert.ok(titles.size > 5000, "the search index was read");
+  const graded = [...titles].filter((t) => itemGrade(t) !== undefined);
+  for (const t of graded) assert.ok(titles.has(itemBaseName(t)), `${t} has its +0 page in the index`);
+});
+
+test("best in slot: a held graded item is picked and shown at its grade", () => {
+  // BisWearTable links `gradedTitle(pick.item.title, pick.item.grade)` from `bisPlan`'s picks.
+  const rows = itemRows([{ title: "Gnoll Slayer", origin: "wiki", card: { title: "Gnoll Slayer", lines: ["Slot: PRIMARY", "STR: +5", "Class: ALL", "Race: ALL"] }, sources: [], outOfEra: false } as never]);
+  const inventory = parseInventoryDump(["Location\tName\tID\tCount\tSlots", "Primary\tGnoll Slayer +3\t5417\t1\t11"].join("\r\n"));
+  const plan = bisPlan({ rows, inventory, criteria: { ...NO_CRITERIA, hideOutOfEra: false }, weights: { str: 1 } });
+  const pick = plan.loadout.picks.find((p) => p.item.title === "Gnoll Slayer");
+  assert.equal(pick?.item.grade, 3);
+  assert.equal(gradedTitle(pick!.item.title, pick!.item.grade), "Gnoll Slayer +3");
 });

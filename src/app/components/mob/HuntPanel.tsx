@@ -25,7 +25,8 @@ import { CheckField, Empty, segCls } from "@/app/components/ui";
 import type { Zone } from "@/shared/map/types";
 import type { ShoppingListEntry } from "@/shared/types";
 import { pickupFor, pickupLocText } from "@/shared/quests/quest-pickups";
-import { dropTableName, notAnItem, wikiName } from "@/shared/shown-name";
+// Hunt rows are your list entries, as listed (`buildHunt(huntInputsFor(entries))`).
+import { heldAsNamed, notAnItem } from "@/shared/shown-name";
 
 /** How many zones the picker offers unfiltered — the hunt's list is short, so show it all. */
 const ZONE_MATCHES = 40;
@@ -442,7 +443,7 @@ function ZoneGroups({
                       // `it.item` alone would hand React the same key twice.
                       <span key={it.id ?? it.item} className="hunt-item-wrap">
                         <ItemLink
-                          title={dropTableName(it.item)}
+                          title={heldAsNamed(it.item)}
                           className="hunt-item"
                           label={
                             <>
@@ -495,7 +496,7 @@ function ItemGroups({
         // item wanted by two different quests), and `g.item` alone would hand React the same key twice.
         <div className="hunt-item-group" key={g.id ?? g.item}>
           <div className="hunt-item-head">
-            <ItemLink title={wikiName(g.item)} className="hi-name" />
+            <ItemLink title={heldAsNamed(g.item)} className="hi-name" />
             <ObtainedStepper id={g.id} obtained={g.obtained} needed={g.needed} onAdjust={onAdjust} />
           </div>
           {g.places.map((p) => (
@@ -603,7 +604,7 @@ function PickupGroup({
       <h4 className="muted small">On the ground ({rows.length})</h4>
       {rows.map(({ e, p }) => (
         <div key={e.id} className="row" title={p.note}>
-          <ItemLink title={wikiName(e.name)} />
+          <ItemLink title={heldAsNamed(e.name)} />
           <span className="muted small">
             {[p.zone, pickupLocText(p)].filter(Boolean).join(" · ")}
           </span>
