@@ -38,7 +38,13 @@ function dumpFiles(logFile?: string): DumpFile[] {
       const type = exportFileType(name, prefix);
       if (!type) return [];
       const file = path.join(dir, name);
-      return [{ file, type, writtenAt: fs.statSync(file).mtimeMs }];
+      // One file vanishing between the listing and the stat (the game rewriting it) skips that file
+      // alone — not every dump, which the folder-wide catch below would otherwise do.
+      try {
+        return [{ file, type, writtenAt: fs.statSync(file).mtimeMs }];
+      } catch {
+        return [];
+      }
     });
   } catch (err) {
     // A missing or unreadable install folder reads as "never exported", which is what the tab says
