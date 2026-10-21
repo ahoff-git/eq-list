@@ -53,6 +53,61 @@ test("a count in front of a link is read; none means one", () => {
   ]);
 });
 
+test("a multiplier written after a link is its count; a bare number after one is not", () => {
+  // Alchemy's "After Skill 255" table writes the vials last: "Small Vial x5".
+  const header = ["Trivial", "Recipe", "Ingredient 1", "Ingredient 4"];
+  const step = rowLinks(header, [["302"], [link("Distillate of Alacrity IX")], [link("Comfrey")], [link("Small Vial"), " x5"]]);
+  const pages = pagesOf(page("Comfrey", "item"), page("Small Vial", "item"));
+  assert.deepEqual(stepMaterials(step, pages), [
+    { name: "Comfrey", qty: 1 },
+    { name: "Small Vial", qty: 5 },
+  ]);
+  const spaced = rowLinks(["Item", "Ingredients"], [[link("Thing")], [link("Small Vial"), " (x 3)"]]);
+  assert.deepEqual(stepMaterials(spaced, pages), [{ name: "Small Vial", qty: 3 }]);
+  // "(92)" after a name is how the guides write a trivial, and a count in front still wins.
+  const trivial = rowLinks(["Item", "Ingredients"], [[link("Thing")], [link("Comfrey"), " (92), 2x ", link("Small Vial"), " x5"]]);
+  assert.deepEqual(stepMaterials(trivial, pages), [
+    { name: "Comfrey", qty: 1 },
+    { name: "Small Vial", qty: 2 },
+  ]);
+});
+
+test("pick-one ingredients are one need, the others its alternatives", () => {
+  const header = ["Range", "Trivial", "Item", "Ingredients", "Combine in", "Era"];
+  // Tailoring's "Ruined Bear or Wolf or Cat Pelts" — the links' targets are the pelts.
+  const pelt = (animal: string) => ({ link: `Ruined ${animal} Pelt`, text: animal });
+  const boots = rowLinks(header, [["15-26"], ["26"], [link("Patchwork Boots")], [link("Boot Pattern"), ", Ruined ", pelt("Bear"), " or ", pelt("Wolf"), " or ", pelt("Cat"), " Pelts"], [link("Sewing Kit")], []]);
+  const pages = pagesOf(
+    page("Boot Pattern", "item"),
+    page("Ruined Bear Pelt", "item"),
+    page("Ruined Wolf Pelt", "item"),
+    page("Ruined Cat Pelt", "item"),
+    page("High Quality Wolf Skin", "item"),
+    page("High Quality Cat Pelt", "item"),
+    page("High Quality Bear Skin", "item"),
+    page("Steel Boning", "item"),
+  );
+  assert.deepEqual(stepMaterials(boots, pages), [
+    { name: "Boot Pattern", qty: 1 },
+    { name: "Ruined Bear Pelt", qty: 1, alternatives: ["Ruined Wolf Pelt", "Ruined Cat Pelt"] },
+  ]);
+  assert.ok(stepTitles(boots).includes("Ruined Cat Pelt"), "an alternative's page is still read");
+  // Reinforced Armor's size variants, then an ingredient that's needed alongside them.
+  const armor = rowLinks(header, [["88-108"], ["108"], [link("Reinforced Armor")], [
+    "(Small) ", link("High Quality Wolf Skin"), ", (Medium) ", link("High Quality Cat Pelt"), ", (Large) ", link("High Quality Bear Skin"), ", 1-4x ", link("Steel Boning"), ", 1x * Pattern",
+  ], [], []]);
+  assert.deepEqual(stepMaterials(armor, pages), [
+    { name: "High Quality Wolf Skin", qty: 1, alternatives: ["High Quality Cat Pelt", "High Quality Bear Skin"] },
+    { name: "Steel Boning", qty: 1 },
+  ]);
+  // A list of things all needed stays a list; an alternative that isn't an item drops out of the choice.
+  const both = rowLinks(["Item", "Ingredients"], [[link("Thing")], [link("Boot Pattern"), ", ", link("Steel Boning"), " or ", link("East Freeport")]]);
+  assert.deepEqual(stepMaterials(both, pagesOf(page("Boot Pattern", "item"), page("Steel Boning", "item"), page("East Freeport", "zone"))), [
+    { name: "Boot Pattern", qty: 1 },
+    { name: "Steel Boning", qty: 1 },
+  ]);
+});
+
 test("a lone bullet: a crafted item beside plain ones is the result, not an ingredient", () => {
   const line: JudgedLine = { runs: ["Trivial 218 - ", link("Platinum Bar"), " + ", link("Malachite"), " Result: ", link("Platinum Malachite Ring")] };
   const pages = pagesOf(page("Platinum Bar", "item"), page("Malachite", "item"), crafted("Platinum Malachite Ring", ["Enchanted Platinum Bar", 1], ["Malachite", 1]));

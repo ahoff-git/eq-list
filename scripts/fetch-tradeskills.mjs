@@ -97,10 +97,10 @@ async function categoriesOf(titles) {
   return out;
 }
 
-/** Every material any step needs, by name. */
+/** Every material any step needs, by name — a pick-one need's alternatives too, so the cheapest can be chosen. */
 function neededMaterials(pages) {
   const names = new Set();
-  const add = (needs) => needs?.forEach((n) => names.add(n.name));
+  const add = (needs) => needs?.forEach((n) => [n.name, ...(n.alternatives ?? [])].forEach((t) => names.add(t)));
   const visit = (items) => items.forEach((i) => (add(i.needs), visit(i.children ?? [])));
   for (const p of pages) {
     for (const g of p.guides) {

@@ -50,6 +50,21 @@ export function heldOf(holdings: Holdings, name: string): Held | undefined {
   return holdings.get(normalizeItemName(name));
 }
 
+/**
+ * What's held toward one need: its material and, for a pick-one need ("Ruined Bear or Wolf or Cat
+ * Pelts"), every alternative too — any of them makes the combine.
+ */
+export function heldForNeed(holdings: Holdings, need: Pick<StepNeed, "name" | "alternatives">): Held | undefined {
+  const all = [need.name, ...(need.alternatives ?? [])].flatMap((n) => heldOf(holdings, n) ?? []);
+  if (all.length <= 1) return all[0];
+  const peers = new Map<string, number>();
+  for (const h of all) for (const p of h.peers) peers.set(p.by, (peers.get(p.by) ?? 0) + p.count);
+  return {
+    mine: all.reduce((sum, h) => sum + h.mine, 0),
+    peers: [...peers].map(([by, count]) => ({ by, count })).sort((a, b) => b.count - a.count),
+  };
+}
+
 /** A guide step with a skill span and known materials — something you repeat to skill up. */
 export interface GuideStep {
   guide: string;
@@ -117,13 +132,13 @@ export function alternativesAt(steps: readonly GuideStep[], skill: number, holdi
     if (seen.has(key)) continue;
     seen.add(key);
     const held = step.needs.flatMap((n) => {
-      const h = heldOf(holdings, n.name);
+      const h = heldForNeed(holdings, n);
       return h && (h.mine > 0 || h.peers.length) ? [{ name: n.name, mine: h.mine, peers: h.peers }] : [];
     });
     if (!held.length) continue;
     const perCombine = step.needs.filter((n) => !n.total);
     const cover = (count: (h: Held | undefined) => number) =>
-      perCombine.length ? Math.min(...perCombine.map((n) => Math.floor(count(heldOf(holdings, n.name)) / Math.max(1, n.qty)))) : 0;
+      perCombine.length ? Math.min(...perCombine.map((n) => Math.floor(count(heldForNeed(holdings, n)) / Math.max(1, n.qty)))) : 0;
     out.push({
       step,
       combines: cover((h) => h?.mine ?? 0),

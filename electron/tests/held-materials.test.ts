@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alternativesAt, guideSteps, heldOf, holdingsOf } from "../../src/shared/tradeskills/held-materials";
+import { alternativesAt, guideSteps, heldForNeed, heldOf, holdingsOf } from "../../src/shared/tradeskills/held-materials";
 import type { JudgedBlock } from "../../src/shared/tradeskills/tradeskill-era";
 
 const link = (name: string) => ({ link: name, text: name });
@@ -64,6 +64,20 @@ test("alternatives at your skill count peers' shared holdings, and keep yours ap
   );
   assert.deepEqual(alts[1].held.find((h) => h.name === "Cyclops Skull"), { name: "Cyclops Skull", mine: 0, peers: [{ by: "Bob", count: 99 }] });
   assert.deepEqual(alternativesAt(guideSteps(guides), 135, holdings).map((a) => a.step.label), ["Bone Paste", "Fish Pie"], "135 is past Skull Ale's span; 70 combines beats 12");
+});
+
+test("a pick-one need counts holdings of any of its choices", () => {
+  const need = { name: "Ruined Bear Pelt", qty: 1, alternatives: ["Ruined Wolf Pelt", "Ruined Cat Pelt"] };
+  const pelts: { name: string; blocks: JudgedBlock[] }[] = [
+    { name: "Leveling", blocks: [{ kind: "list", items: [{ runs: [link("Patchwork Boots")], skill: { from: 15, to: 26 }, needs: [need] }] }] },
+  ];
+  const holdings = holdingsOf(
+    [{ baseName: "Ruined Wolf Pelt", count: 3 }, { baseName: "Ruined Cat Pelt", count: 4 }],
+    [{ by: "Bob", item: "Ruined Bear Pelt", count: 5 }, { by: "Bob", item: "Ruined Cat Pelt", count: 1 }],
+  );
+  assert.deepEqual(heldForNeed(holdings, need), { mine: 7, peers: [{ by: "Bob", count: 6 }] });
+  const [alt] = alternativesAt(guideSteps(pelts), 20, holdings);
+  assert.deepEqual([alt.combines, alt.withPeers, alt.missing], [7, 13, []]);
 });
 
 test("a step only a peer can supply still counts", () => {
