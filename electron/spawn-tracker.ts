@@ -88,6 +88,14 @@ interface Stored {
    * on offering it back.
    */
   said: Record<string, { named: boolean; mob: string }>;
+  /**
+   * Mob key → its spelling, for every mob a consider tagged `- a rare creature -` (ADR 0324). The
+   * game's own word that it's a rare spawn, and the only proof there is for one the log writes with an
+   * article (`a ghoul cavalier`), which the article test can never catch. Stored because a consider
+   * is not in the kill log, so there is nothing to re-derive it from. A player's "not named" in `said`
+   * still outranks it.
+   */
+  rare: Record<string, string>;
   /** Timer key → ISO moment to learn afresh from, for a figure the player threw away. */
   relearned: Record<string, string>;
   /**
@@ -210,6 +218,7 @@ function load(file: string): Stored {
   return {
     stated: { ...stored.stated },
     said: { ...stored.said },
+    rare: { ...stored.rare },
     relearned: { ...stored.relearned },
     lead: { ...stored.lead },
     notify: { ...stored.notify },
@@ -313,6 +322,12 @@ export interface SpawnTracker {
    * has no `killedAt` to measure a sighting from.
    */
   noteSighting(mob: string, zone: string | null, at?: string): void;
+  /**
+   * A consider tagged this mob `- a rare creature -`, so it's a rare spawn worth timing (ADR 0324):
+   * its kills are learned from as a named's are, and its next kill starts a countdown. Remembered
+   * for good, so a digested log teaches it as well as a live consider does.
+   */
+  noteRare(mob: string): void;
   /**
    * It's dead — start the countdown from this moment, or restart one already running.
    *
@@ -476,7 +491,7 @@ export function createSpawnTracker({
   function read(only?: string): { isNamed: (key: string) => boolean; learned: Map<string, RespawnLearning> } {
     const all = kills();
     const proven = provenNamed(all);
-    const isNamed = (key: string) => state.said[key]?.named ?? proven.has(key);
+    const isNamed = (key: string) => state.said[key]?.named ?? (proven.has(key) || key in state.rare);
     const learned = new Map(
       learnRespawns(all, isNamed, {
         relearnedAt,
@@ -1121,6 +1136,14 @@ export function createSpawnTracker({
     showOnScreen(key, on) {
       if (on) state.onScreen[key] = true;
       else delete state.onScreen[key];
+      changed();
+    },
+
+    noteRare(mob) {
+      const key = mobKey(mob);
+      if (!key || key in state.rare) return;
+      state.rare[key] = mob;
+      log.debug("rare creature", { mob });
       changed();
     },
 

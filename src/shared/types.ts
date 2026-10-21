@@ -471,6 +471,8 @@ export interface SightingEvent extends LogEventBase {
   target: string;
   /** Which line said so. Kept because a hail is deliberate and a consider is a glance. */
   how: "consider" | "hail";
+  /** The consider tagged it `- a rare creature -`: the game saying outright it's a rare spawn (ADR 0324). */
+  rare?: boolean;
 }
 
 /** A parsed "Your Location is Y, X, Z" line (EQ reports y first). Drives the map. */

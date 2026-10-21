@@ -24,6 +24,14 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **A group-mate killed by a named lands on the spawn board as a named.** `provenNamed` only knows
+  someone is a person once the log shows them killing an article mob, so a group-mate who never lands
+  a killing blow in your log passes both article checks when a named kills them. On a live install
+  (2026-10-21): `Bunnyslayer` and `Karartik` (slain by Lord Nagafen), `Gonekn` (Magus Rokyl) and
+  `Gabartik` (Master Yael). The killer being a known named, by the article proof or a rare tag
+  ([ADR 0324](./decisions/0324-the-game-saying-rare-is-proof.md)), looks like the tell: a named killing
+  something is the shape of a player or pet dying, never of a named dying.
+
 - **Three more pet/group-mate deciders from eql-meter v0.1.28** (see [neighbours.md](./neighbours.md)),
   on top of the ones [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md)'s three-step
   plan already built against — all three now done: a stored fight re-derives

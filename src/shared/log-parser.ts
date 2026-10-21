@@ -520,7 +520,10 @@ export function parseSighting(line: LogLine): SightingEvent | null {
     const target = consideredName(con.groups.target);
     // A decoration and nothing else would leave an empty name, which is not a mob.
     if (target) {
-      return { kind: "sighting", target, how: "consider", logId: line.logId, raw: line.raw, at: line.at };
+      const sighting: SightingEvent = { kind: "sighting", target, how: "consider", logId: line.logId, raw: line.raw, at: line.at };
+      // Off the name, but kept as a fact: it's the game stating the mob is rare (ADR 0324).
+      if (RARE_SUFFIX_RE.test(con.groups.target)) sighting.rare = true;
+      return sighting;
     }
   }
   return null;

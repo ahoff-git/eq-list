@@ -210,7 +210,7 @@ function registerListIpc(context: IpcContext): void {
  * Settings, the cast-alert test, and digesting a past log — the Settings tab's own surface.
  */
 function registerSettingsIpc(context: IpcContext): void {
-  const { store, watcher, combat, history, killLog, lootLog, factionLog, npcSightings, broadcast } = context;
+  const { store, watcher, combat, history, killLog, lootLog, factionLog, npcSightings, spawns, broadcast } = context;
 
   // ── panel settings ──
   // Built here rather than by main: nothing outside this bridge reads it, and it needs only the
@@ -354,7 +354,7 @@ function registerSettingsIpc(context: IpcContext): void {
     const file = res.filePaths[0];
     const live = characterFromLogFile(watcher.status().file) ?? "";
     try {
-      const result = digestLog(file, live, killLog, history, lootLog, factionLog, npcSightings);
+      const result = digestLog(file, live, killLog, history, lootLog, factionLog, npcSightings, spawns.noteRare);
       npcSightings.flush();
       killLog.flush();
       history.flush();

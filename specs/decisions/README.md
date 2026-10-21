@@ -364,6 +364,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0321: Search's one box also finds what you hold (at your best grade), stances and invocations, and AAs, each matched the way its own section matches; the sections stay for narrowing by shape](./0321-find-answers-from-one-box.md)
 - [0322: A race-unlock step that names a count shows what you and sharing peers hold of it and puts the rest on the list in one press, seeded at your holdings; the list's have, need and runs take a typed figure](./0322-a-race-unlock-step-knows-what-you-hold.md)
 - [0323: A grade is never stored, only applied: the page cache and the pooled drop table fold `+N` before lookup, cache or tally; installs' graded page copies are purged](./0323-a-grade-is-never-stored.md)
+- [0324: A consider tagged `- a rare creature -` proves its mob is worth timing, beside the article test; remembered by name, a player's "not a named" still wins](./0324-the-game-saying-rare-is-proof.md)
 
 ## Open Questions
 

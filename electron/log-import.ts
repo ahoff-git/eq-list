@@ -88,10 +88,11 @@ export function digestLog(
   lootLog?: LootLog,
   factionLog?: FactionLog,
   npcSightings?: NpcSightings,
+  noteRare?: (mob: string) => void,
 ): LogImportResult {
   try {
     killLog.setPlayer(characterFromLogFile(file) ?? "");
-    return importLog(file, killLog, history, lootLog, factionLog, npcSightings);
+    return importLog(file, killLog, history, lootLog, factionLog, npcSightings, noteRare);
   } finally {
     killLog.setPlayer(live);
   }
@@ -104,6 +105,9 @@ export function importLog(
   lootLog?: LootLog,
   factionLog?: FactionLog,
   npcSightings?: NpcSightings,
+  /** Told of every mob a consider tags `- a rare creature -`, so an eaten log teaches the spawn tracker
+   *  the rares a watched one would have (ADR 0324). */
+  noteRare?: (mob: string) => void,
 ): LogImportResult {
   // This can legitimately re-encounter a line already recorded — eating the same log twice, or one
   // already watched live — so kills and drops must compare against everything on permanent record
@@ -218,6 +222,7 @@ export function importLog(
         sightings?.noteLoc(event, zone);
         break;
       case "sighting":
+        if (event.rare) noteRare?.(event.target);
         sightings?.note(event.target, event.how, event.at, zone);
         break;
       case "loot":

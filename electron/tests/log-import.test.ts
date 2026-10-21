@@ -480,3 +480,21 @@ test("without a history to fill, eating a log still digests kills — and files 
     fs.rmSync(file, { force: true });
   }
 });
+
+test("eating a log tells the spawn tracker every mob a consider called rare — and only those", () => {
+  const file = path.join(os.tmpdir(), `eql-import-rare-${process.pid}.txt`);
+  fs.writeFileSync(
+    file,
+    [
+      "[Sat Oct 17 16:50:00 2026] A ghoul cavalier - a rare creature - glares at you threateningly -- what would you like your tombstone to say? (Lvl: 30)",
+      "[Sat Oct 17 16:51:00 2026] A zol ghoul knight glares at you threateningly -- what would you like your tombstone to say? (Lvl: 30)",
+    ].join("\n"),
+  );
+  try {
+    const rare: string[] = [];
+    importLog(file, stubKillLog(), undefined, undefined, undefined, undefined, (mob) => rare.push(mob));
+    assert.deepEqual(rare, ["A ghoul cavalier"]);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+});

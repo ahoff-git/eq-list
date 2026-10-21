@@ -693,6 +693,7 @@ if (!app.requestSingleInstanceLock()) {
   // Considering or hailing a mob you're timing counts as seeing it up — free evidence from what a
   // camper does anyway, through exactly the path the "It's up" button uses (ADR 0097).
   watcher.onSighting((event) => {
+    if (event.rare) spawns.noteRare(event.target);
     spawns.noteSighting(event.target, currentZone, event.at);
     sightingPlacer.note(event.target, event.how, event.at, currentZone);
   });

@@ -101,7 +101,10 @@ function app(startMs: number) {
       }
       if (event.kind === "loc") killLog.noteLoc(event, currentZone);
       // Considering or hailing a mob you're timing is a free sighting (ADR 0097).
-      if (event.kind === "sighting") spawns.noteSighting(event.target, currentZone, event.at);
+      if (event.kind === "sighting") {
+        if (event.rare) spawns.noteRare(event.target);
+        spawns.noteSighting(event.target, currentZone, event.at);
+      }
       if (event.kind === "kill") {
         // Main's order, and it is load-bearing: record first, then tell the tracker.
         if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named, event.killerNamed)) {
@@ -243,6 +246,35 @@ test("flow: the plain consider still works, and a bare decoration names nothing"
   const b = app(T0);
   b.feed([entered(T0, "Lower Guk"), considered(T0 + 1 * MIN, "- a rare creature -")].join("\n"));
   assert.deepEqual(b.view().running, []);
+});
+
+/** The cavalier's row, however its article was kept. */
+const cavalier = (view: SpawnView) => view.known.find((k) => /ghoul cavalier$/i.test(k.mob));
+
+test("flow: a rare creature the log writes with an article is timed once the game calls it rare", () => {
+  // Lower Guk's rares are written `a ghoul cavalier`, so the article test reads every kill as trash
+  // and nothing is ever learned or timed. The consider's tag is the game saying otherwise (ADR 0324).
+  const a = app(T0);
+  a.feed(
+    [
+      entered(T0, "Lower Guk"),
+      slain(T0 + 2 * MIN, "a ghoul cavalier"),
+      slain(T0 + 22 * MIN, "a ghoul cavalier"),
+    ].join("\n"),
+  );
+  assert.equal(cavalier(a.view()), undefined, "an article alone proves nothing");
+
+  a.feed([considered(T0 + 40 * MIN, "A ghoul cavalier - a rare creature -"), slain(T0 + 42 * MIN, "a ghoul cavalier")].join("\n"));
+  assert.equal(cavalier(a.view())?.respawn?.source, "killed", "its kill gaps now teach a respawn");
+  assert.ok(a.view().running.some((t) => /ghoul cavalier$/i.test(t.mob)), "and its next kill starts a countdown");
+});
+
+test("flow: a rare tag doesn't outrank the player saying it isn't a named", () => {
+  const a = app(T0);
+  a.feed([entered(T0, "Lower Guk"), considered(T0 + MIN, "A ghoul cavalier - a rare creature -")].join("\n"));
+  a.spawns.markNamed("a ghoul cavalier", false);
+  a.feed([slain(T0 + 2 * MIN, "a ghoul cavalier"), slain(T0 + 22 * MIN, "a ghoul cavalier")].join("\n"));
+  assert.deepEqual(a.view().running, []);
 });
 
 // ── Use case 2: the arriver ────────────────────────────────────────────────────
