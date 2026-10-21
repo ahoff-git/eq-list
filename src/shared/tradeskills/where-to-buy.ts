@@ -7,7 +7,8 @@
  *   map can be opened on them;
  * - **Stops** — for what isn't sold here, the zones selling the most of it, so the trip is as few stops
  *   as the wiki allows. Ranked by how much of the list a zone covers, not by distance: the guide has no
- *   way to know how you'd travel, and "Ak'Anon sells 4 of the 5" is the useful half of that question;
+ *   way to know how you'd travel, and "Ak'Anon sells 4 of the 5" is the useful half of that question.
+ *   What the last stop still leaves is named as sold **elsewhere** (its hover says where);
  * - **Not sold** — what no open merchant sells (a drop, a forage, something to make first).
  *
  * A merchant in a zone the server hasn't opened is no merchant (`zoneShut`), the same rule every
@@ -35,6 +36,8 @@ export interface Stop {
 export interface ShoppingPlan {
   here: MerchantHere[];
   stops: Stop[];
+  /** Sold, but only somewhere past the last stop — named so it doesn't vanish from the list. */
+  elsewhere: string[];
   notSold: string[];
 }
 
@@ -83,5 +86,5 @@ export function whereToBuy(
     stops.push(best);
     for (const i of best.items) left.delete(i.item);
   }
-  return { here, stops, notSold };
+  return { here, stops, elsewhere: [...left.keys()], notSold };
 }

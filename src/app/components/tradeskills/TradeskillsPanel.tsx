@@ -618,6 +618,17 @@ function ShoppingView({ plan, zone }: { plan: ShoppingPlan; zone?: string | null
           ))}
         </div>
       ))}
+      {plan.elsewhere.length > 0 && (
+        <div className="shopping-group" title="Sold, but not at the stops above — hover each for its merchants">
+          <span className="shopping-label">Elsewhere:</span>
+          {plan.elsewhere.map((item, i) => (
+            <span key={item}>
+              {i > 0 && ", "}
+              <ItemLink title={item} craft />
+            </span>
+          ))}
+        </div>
+      )}
       {plan.notSold.length > 0 && (
         <div className="shopping-group muted" title="No merchant the wiki lists, in a zone that's open, sells these — they drop, are foraged, or are made first">
           <span className="shopping-label">Not sold:</span>

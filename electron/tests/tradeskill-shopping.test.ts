@@ -87,6 +87,15 @@ test("a merchant in a shut zone is no merchant", () => {
   assert.deepEqual(plan.notSold, ["Water Flask"]);
 });
 
+test("what a fourth stop would sell isn't dropped — it's named as sold elsewhere", () => {
+  const spot = (zone: string): VendorSpot[] => [{ zone, merchant: `${zone} merchant` }];
+  const plan = whereToBuy(["A", "B", "C", "D"], { A: spot("Qeynos"), B: spot("Freeport"), C: spot("Halas"), D: spot("Rivervale") }, null, new Set());
+  assert.equal(plan.stops.length, 3);
+  const listed = [...plan.stops.flatMap((s) => s.items.map((i) => i.item)), ...plan.elsewhere, ...plan.notSold];
+  assert.deepEqual(listed.sort(), ["A", "B", "C", "D"]);
+  assert.deepEqual(plan.elsewhere, ["D"]);
+});
+
 test("no zone from the log still gives stops", () => {
   const plan = whereToBuy(["Sheet Metal"], V, null, new Set());
   assert.deepEqual([plan.here.length, plan.stops[0]?.zone], [0, "East Freeport"]);
