@@ -928,6 +928,8 @@ list, hunt, search, damage, session, peers, settings.
       A section a newer dump left out (bank, shared bank, depot, hoard) is carried from the last dump
       that had it and labelled with that dump's age (`carryForward`, saved per character by
       `readInventory` in `inventory-carried.json`), so a dump taken in the field doesn't empty the bank.
+      Every dump is also archived whole, never deleted (`archiveExports`,
+      [ADR 0315](../decisions/0315-every-export-is-kept.md)), since the game overwrites its own file.
     - **Faction**: every standing with its `/con` word and distance to max.
     - **Achievements**: the game's tree by category, open-only by default, with counts on counting
       objectives.

@@ -70,7 +70,7 @@ import { createBuffTracker } from "./buff-tracker";
 import { createGameClockTracker } from "./game-clock-tracker";
 import { createDamageOverlayTracker } from "./damage-overlay-tracker";
 import { coalesce } from "./coalesce";
-import { watchExport } from "./game-exports";
+import { startExportArchive, watchExport } from "./game-exports";
 import type { Settings, AppInfo, LocEvent, CastAlertEvent, FactionEvent } from "../src/shared/types";
 
 const log = createLogger("main");
@@ -820,6 +820,9 @@ if (!app.requestSingleInstanceLock()) {
   // A new `/outputfile faction` dump restates every faction (`faction-dump.ts`), and nothing in the
   // log says one was taken — so the Faction tab is told the same way a wholesale ledger change is.
   watchExport(() => watcher.status().file, "faction", () => broadcast(CH.dataChanged, undefined));
+  // Every export the game writes is kept: it overwrites one file per type, so a new dump would
+  // otherwise destroy the last (`archiveExports`).
+  startExportArchive(() => watcher.status().file, userData);
   // Everything logged while the app was closed has just been fed through the live path, which is
   // what makes the app's state independent of when it was launched. The one thing that *isn't*
   // simply "state" is the live meter: its totals mean "this sitting". Restart mid-camp and carrying

@@ -7,6 +7,7 @@
  * renderer's (`src/shared/game-export-dumps.ts`): a dump is tens of KB, so the text crosses whole.
  */
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { createLogger } from "../src/shared/logging";
 import {
@@ -148,4 +149,46 @@ export function readInventory(logFile: string | undefined, userDataDir: string):
   }
   const carriedItems = result.items.filter((i) => i.asOf !== undefined);
   return carriedItems.length ? { ...dump, carriedItems, carried: result.carried } : dump;
+}
+
+/**
+ * Keep a copy of every `/outputfile` dump the followed character has, under
+ * `<userData>/export-archive/<Character>_<server>/<type>/`, named by when the game wrote it.
+ *
+ * The game overwrites one file per character and type, so each new export would otherwise destroy
+ * the last: a bank seen at the banker, a faction standing from last week. Copies are **only ever
+ * added** — nothing here deletes or overwrites one — and an identical rewrite (same content) is not
+ * stored twice, so archiving on every poll costs a hash and nothing more. Returns how many new copies
+ * were written.
+ */
+export function archiveExports(logFile: string | undefined, userDataDir: string): number {
+  const who = exportFilePrefix(logFile);
+  if (!who) return 0;
+  let added = 0;
+  for (const dump of dumpFiles(logFile)) {
+    try {
+      const body = fs.readFileSync(dump.file);
+      const hash = createHash("sha1").update(body).digest("hex").slice(0, 12);
+      const dir = path.join(userDataDir, "export-archive", who.replace(/-$/, ""), dump.type);
+      fs.mkdirSync(dir, { recursive: true });
+      if (fs.readdirSync(dir).some((name) => name.endsWith(`-${hash}.txt`))) continue;
+      // `:` isn't allowed in a Windows file name, so the instant is written with `-` instead.
+      const stamp = new Date(dump.writtenAt).toISOString().replace(/[:.]/g, "-");
+      fs.writeFileSync(path.join(dir, `${stamp}-${hash}.txt`), body, { flag: "wx" });
+      added++;
+    } catch (err) {
+      // One unreadable dump (being rewritten right now) is retried on the next poll; the rest go on.
+      log.debug("couldn't archive a dump", { file: dump.file, err: String(err) });
+    }
+  }
+  if (added) log.debug("archived dumps", { who, added });
+  return added;
+}
+
+/** Archive on a timer as well as on demand, so a dump is kept even if nobody opens the Exports tab. */
+export function startExportArchive(getLogFile: () => string | undefined, userDataDir: string, ms = 30_000): () => void {
+  archiveExports(getLogFile(), userDataDir);
+  const timer = setInterval(() => archiveExports(getLogFile(), userDataDir), ms);
+  timer.unref?.(); // a timer must never be the reason the process stays up
+  return () => clearInterval(timer);
 }

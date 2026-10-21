@@ -16,7 +16,7 @@ import {
   lastExportedAt,
   RECIPE_EXPORT_COMMANDS,
 } from "../../src/shared/game-exports";
-import { inventoryShareRows, readExportTimes, readInventory } from "../game-exports";
+import { archiveExports, inventoryShareRows, readExportTimes, readInventory } from "../game-exports";
 
 const HOUR = 3_600_000;
 const inventory = GAME_EXPORT_COMMANDS.find((c) => c.fileType === "inventory")!;
@@ -109,4 +109,40 @@ test("readInventory: a field dump that overwrote a bank dump still shows the ban
   assert.deepEqual(field?.carriedItems?.map((i) => [i.name, i.asOf]).sort(), [["Amber", atBank.getTime()], ["Jade", atBank.getTime()]]);
   // Shared with peers too, carried rows included.
   assert.ok(inventoryShareRows(logFile, userData).some((r) => r.item === "Jade"));
+});
+
+test("every export is archived once per content, and nothing archived is ever removed", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "eql-archive-"));
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "eql-archive-ud-"));
+  fs.mkdirSync(path.join(root, "Logs"));
+  const logFile = path.join(root, "Logs", "eqlog_Kainos_qeynos.txt");
+  fs.writeFileSync(logFile, "");
+  const inv = path.join(root, "Kainos_qeynos-Inventory.txt");
+  const fac = path.join(root, "Kainos_qeynos-WIZ-Factions.txt");
+  fs.writeFileSync(inv, "Location\tName\tID\tCount\tSlots\r\nBank1\tJade\t1\t21\t11");
+  fs.writeFileSync(fac, "ID\tName\tStandingValue\tPointsToMax\r\n9\tCraftkeepers\t2000\t0");
+  fs.writeFileSync(path.join(root, "Other_qeynos-Inventory.txt"), "not ours");
+  const archived = (type: string) => {
+    const dir = path.join(userData, "export-archive", "Kainos_qeynos", type);
+    return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
+  };
+
+  assert.equal(archiveExports(logFile, userData), 2);
+  assert.equal(archiveExports(logFile, userData), 0, "the same content isn't kept twice");
+  assert.equal(archived("inventory").length, 1);
+  assert.equal(archived("wiz-factions").length, 1);
+  assert.ok(!fs.existsSync(path.join(userData, "export-archive", "Other_qeynos")), "another character's dump isn't ours to keep");
+
+  // The game overwrites the file with a new export: both are kept.
+  fs.writeFileSync(inv, "Location\tName\tID\tCount\tSlots\r\nGeneral 1\tBone Chips\t2\t9\t11");
+  fs.utimesSync(inv, new Date("2026-10-21T08:00:00Z"), new Date("2026-10-21T08:00:00Z"));
+  assert.equal(archiveExports(logFile, userData), 1);
+  const copies = archived("inventory");
+  assert.equal(copies.length, 2);
+  assert.ok(copies.some((c) => fs.readFileSync(path.join(userData, "export-archive", "Kainos_qeynos", "inventory", c), "utf8").includes("Jade")), "the first export is still there");
+
+  // Even if the game's file goes, the archive stays.
+  fs.rmSync(inv);
+  archiveExports(logFile, userData);
+  assert.equal(archived("inventory").length, 2);
 });
