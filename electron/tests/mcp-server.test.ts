@@ -21,7 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { openAppDatabase } from "../sqlite-store";
 import { createWikiClient, closeOwnedDatabases } from "../wiki";
 import { WIKI_PAGE_MIGRATIONS } from "../wiki/page-store";
@@ -140,6 +140,13 @@ async function connectWithRetry(noNetworkFile: string, userDataDir: string, atte
       args: ["--import", pathToFileURL(noNetworkFile).href, SERVER, "--data-dir", userDataDir],
       cwd: REPO_ROOT,
       stderr: "pipe",
+      // The SDK hands the child only an allowlisted environment, which drops ELECTRON_RUN_AS_NODE —
+      // so under Electron's own Node (the runtime that matches better-sqlite3's build) the spawned
+      // `electron.exe` started as an app and closed the pipe at once. Carried through when set.
+      env: {
+        ...getDefaultEnvironment(),
+        ...(process.env.ELECTRON_RUN_AS_NODE ? { ELECTRON_RUN_AS_NODE: process.env.ELECTRON_RUN_AS_NODE } : {}),
+      },
     });
     let stderr = "";
     transport.stderr?.on("data", (d: Buffer) => (stderr += d.toString()));

@@ -35,9 +35,12 @@ function rig(opts: { roster?: string[] } = {}) {
       const rows = JSON.parse(await wiki.spellCatalogueJson()) as SpellRow[];
       return rows.find((s) => s.spell.title === title)?.stats.mana;
     },
-    cleanup: () => {
+    // Async, and awaited: building the catalogue writes its pack file fire-and-forget, which can land
+    // while the folder is being removed (ENOTEMPTY). A synchronous retry blocks the very write it is
+    // waiting on; `fs.promises.rm` yields between retries, so the write finishes and the retry wins.
+    cleanup: async () => {
       closeOwnedDatabases(dir);
-      fs.rmSync(dir, { recursive: true, force: true });
+      await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     },
   };
 }
@@ -62,17 +65,17 @@ test("a spell page we don't hold is taken, keeping the age the sender pulled it"
     assert.equal(r.wiki.spells.accept([page("Chant of Battle", daysAgo(10), 0)]), 1);
     assert.equal(await r.mana("Chant of Battle"), 0);
   } finally {
-    r.cleanup();
+    await r.cleanup();
   }
 });
 
-test("an older copy than ours is refused", () => {
+test("an older copy than ours is refused", async () => {
   const r = rig();
   try {
     r.wiki.spells.accept([page("Chant of Battle", daysAgo(10), 0)]);
     assert.equal(r.wiki.spells.accept([page("Chant of Battle", daysAgo(12), 99)]), 0);
   } finally {
-    r.cleanup();
+    await r.cleanup();
   }
 });
 
@@ -83,7 +86,7 @@ test("a newer copy replaces ours", async () => {
     assert.equal(r.wiki.spells.accept([page("Chant of Battle", daysAgo(1), 5)]), 1);
     assert.equal(await r.mana("Chant of Battle"), 5);
   } finally {
-    r.cleanup();
+    await r.cleanup();
   }
 });
 
@@ -93,7 +96,7 @@ test("a copy already past our own TTL is not cached at all", async () => {
     assert.equal(r.wiki.spells.accept([page("Stale Spell", daysAgo(TTL_DAYS + 6), 5)]), 0);
     assert.equal(await r.mana("Stale Spell"), undefined);
   } finally {
-    r.cleanup();
+    await r.cleanup();
   }
 });
 
@@ -107,7 +110,7 @@ test("a spell page never becomes an item row", async () => {
     const items = JSON.parse(await r.wiki.catalogueJson()) as { item: { title: string } }[];
     assert.deepEqual(items.map((i) => i.item.title), []);
   } finally {
-    r.cleanup();
+    await r.cleanup();
   }
 });
 
@@ -124,7 +127,7 @@ test("the shard we'd hand a peer carries only what status/shardTitles agree we h
     assert.deepEqual(r.wiki.spells.shard(shard).map((p) => p.title), ["Chant of Battle"]);
     assert.deepEqual(r.wiki.spells.shardTitles(shard), ["Chant of Battle"]);
   } finally {
-    r.cleanup();
+    await r.cleanup();
   }
 });
 
@@ -138,7 +141,7 @@ test("learning a peer's titles grows the roster and re-checks the shard it lands
     assert.equal(learned, 1);
     assert.deepEqual(r.wiki.spells.shardTitles(shardOf("Minor Healing")), ["Minor Healing"]);
   } finally {
-    r.cleanup();
+    await r.cleanup();
   }
 });
 
