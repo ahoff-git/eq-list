@@ -15,6 +15,7 @@ import {
   type InventoryPlace,
 } from "@/shared/game-export-dumps";
 import { DumpSection, textMatches } from "./DumpParts";
+import { gradedTitle } from "@/shared/items/item-upgrade";
 import { exportAgeText } from "@/shared/game-exports";
 import { socketName } from "@/shared/items/exaltations";
 
@@ -159,7 +160,8 @@ function ByItem({ items, query, isWanted }: { items: InventoryItem[]; query: str
           <tr key={t.baseName}>
             <td className="num">{t.count}</td>
             <td>
-              <ItemLink title={t.baseName} />
+              {/* At the best grade among the copies counted, so the hover card is that copy's. */}
+              <ItemLink title={gradedTitle(t.baseName, t.bestGrade)} />
               {isWanted(t.baseName) && <span className="inv-wanted" title="On your shopping list">★</span>}
             </td>
             <td className="muted small">{t.places.map((p) => placeText(p, t.places.length > 1)).join(" · ")}</td>

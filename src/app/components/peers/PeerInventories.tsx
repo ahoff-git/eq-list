@@ -6,6 +6,7 @@ import { useCurrentItemCatalog } from "@/lib/hooks";
 import { rowsOf } from "@/lib/peers/usePeerShare";
 import { exportAgeText } from "@/shared/game-exports";
 import { normalizeItemName } from "@/shared/items/grouping";
+import { gradedTitle } from "@/shared/items/item-upgrade";
 import type { InventoryShareRow } from "@/shared/peers/peer-share";
 import type { ReceivedShare } from "@/shared/types";
 
@@ -18,6 +19,7 @@ const MAX_SHOWN = 100;
 interface Holder {
   by: string;
   count: number;
+  grade: number;
   where: string;
   asOf: string;
 }
@@ -25,6 +27,8 @@ interface Holder {
 interface Found {
   item: string;
   total: number;
+  /** The best grade any holder has — what the link's card is shown at. */
+  bestGrade: number;
   holders: Holder[];
 }
 
@@ -54,9 +58,10 @@ export default function PeerInventories({ received }: { received: ReceivedShare[
     for (const { row, by } of rows) {
       if (q && !row.item.toLowerCase().includes(q)) continue;
       const key = normalizeItemName(row.item);
-      const f = byItem.get(key) ?? { item: row.item, total: 0, holders: [] };
+      const f = byItem.get(key) ?? { item: row.item, total: 0, bestGrade: 0, holders: [] };
       f.total += row.count;
-      f.holders.push({ by, count: row.count, where: whereText(row.places, true), asOf: row.asOf });
+      f.bestGrade = Math.max(f.bestGrade, row.grade ?? 0);
+      f.holders.push({ by, count: row.count, grade: row.grade ?? 0, where: whereText(row.places, true), asOf: row.asOf });
       byItem.set(key, f);
     }
     return [...byItem.values()].sort((a, b) => a.item.localeCompare(b.item));
@@ -104,7 +109,7 @@ function TradeFlags({ items }: { items: Found[] }) {
             <tr key={f.item} className={stuck ? "untradeable" : ""}>
               <td className="num">{f.total}</td>
               <td>
-                <ItemLink title={f.item} />
+                <ItemLink title={gradedTitle(f.item, f.bestGrade)} />
                 {stuck && (
                   <span className="chip no-trade" title="Its item card says NO DROP / NO TRADE — it can't be handed over">
                     no trade
@@ -114,7 +119,8 @@ function TradeFlags({ items }: { items: Found[] }) {
               <td className="small">
                 {f.holders.map((h) => (
                   <div key={h.by} title={`From their inventory dump, written ${exportAgeText(now - Date.parse(h.asOf))}`}>
-                    <b>{h.by}</b> {h.count} <span className="muted">· {h.where}</span>
+                    <b>{h.by}</b> {h.count}
+                    {h.grade > 0 && <span className="muted"> (best +{h.grade})</span>} <span className="muted">· {h.where}</span>
                   </div>
                 ))}
               </td>

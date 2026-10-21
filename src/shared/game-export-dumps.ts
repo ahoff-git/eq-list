@@ -3,7 +3,8 @@
  * show. Pure: text in, rows out. The formats here are the ones the EQL client actually wrote
  * (2026-10-20), which differ from Live's documentation in places — each parser says where.
  */
-import { itemBaseName, itemGrade } from "./names";
+import { itemBaseName } from "./names";
+import { heldName, isExaltation } from "./items/held-name";
 
 // ─── Inventory ──────────────────────────────────────────────────────────────
 
@@ -42,6 +43,8 @@ export interface InventoryItem {
   name: string;
   /** Without its `+N` grade — the name the wiki and the shopping list use. */
   baseName: string;
+  /** Its `+N` (`heldName`); 0 when the name states none, and for an exaltation stone. */
+  grade: number;
   id: number;
   count: number;
   /** What's in this item's sockets (`(Exaltation)` rows on EQL), with which socket each is in. */
@@ -175,7 +178,7 @@ function markBag(byLocation: ReadonlyMap<string, InventoryItem>, location: strin
 }
 
 function makeItem(base: Pick<InventoryItem, "location" | "area" | "slot" | "name" | "id" | "count">): InventoryItem {
-  return { ...base, baseName: itemBaseName(base.name), sockets: [], container: false };
+  return { ...base, baseName: itemBaseName(base.name), grade: heldName(base.name).grade, sockets: [], container: false };
 }
 
 /** One place a counted item is in: an area (a Storage tab counts as its own), and which slots. */
@@ -190,6 +193,8 @@ export interface InventoryPlace {
 export interface InventoryTotal {
   baseName: string;
   count: number;
+  /** The highest grade among the copies counted — what showing the item at its level uses. */
+  bestGrade: number;
   /** Where `count` is, in `INVENTORY_AREAS` order. */
   places: InventoryPlace[];
 }
@@ -219,8 +224,9 @@ export function inventoryTotals(items: readonly InventoryItem[]): InventoryTotal
   const totals = new Map<string, InventoryTotal>();
   for (const item of items) {
     const key = item.baseName.toLowerCase();
-    const total = totals.get(key) ?? { baseName: item.baseName, count: 0, places: [] };
+    const total = totals.get(key) ?? { baseName: item.baseName, count: 0, bestGrade: 0, places: [] };
     total.count += item.count;
+    total.bestGrade = Math.max(total.bestGrade, item.grade);
     const label = inventoryPlaceLabel(item);
     let place = total.places.find((p) => p.label === label);
     if (!place) {
@@ -375,8 +381,6 @@ export function inventoryPlaceText(item: Pick<InventoryItem, "area" | "slot">): 
   return slot ? `${inventoryPlaceLabel(item)} ${slot}` : inventoryPlaceLabel(item);
 }
 
-const EXALTATION_RE = /\s*\(Exaltation\)$/i;
-
 /**
  * Everything the character holds, keyed by the name an item page has — so the Items tab can answer
  * "which of *my* things fits this slot" and say where each one is.
@@ -388,8 +392,8 @@ const EXALTATION_RE = /\s*\(Exaltation\)$/i;
 export function ownedItems(items: readonly InventoryItem[], key: (name: string) => string): Map<string, OwnedPlace[]> {
   const owned = new Map<string, OwnedPlace[]>();
   const add = (name: string, text: string, count: number) => {
-    const exaltation = EXALTATION_RE.test(name);
-    const k = key(itemBaseName(name.replace(EXALTATION_RE, "")));
+    const { title, exaltation } = heldName(name);
+    const k = key(title);
     const places = owned.get(k) ?? [];
     const same = places.find((p) => p.text === text && p.exaltation === exaltation);
     if (same) same.count += count;
@@ -411,11 +415,9 @@ export function ownedItems(items: readonly InventoryItem[], key: (name: string) 
 export function heldGrades(items: readonly InventoryItem[], key: (name: string) => string): Map<string, number> {
   const best = new Map<string, number>();
   for (const item of items) {
-    if (EXALTATION_RE.test(item.name)) continue;
-    const grade = itemGrade(item.name);
-    if (!grade) continue;
+    if (isExaltation(item.name) || !item.grade) continue;
     const k = key(item.baseName);
-    if (grade > (best.get(k) ?? 0)) best.set(k, grade);
+    if (item.grade > (best.get(k) ?? 0)) best.set(k, item.grade);
   }
   return best;
 }

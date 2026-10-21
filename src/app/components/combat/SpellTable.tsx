@@ -9,6 +9,7 @@ import type { FightStats, SpellStat } from "@/shared/types";
 
 import { count, figure, percent } from "@/shared/format";
 import { ratio } from "@/shared/numbers";
+import { rankedSpellTitle } from "@/shared/combat/combat-parser";
 /**
  * A resist rate worth flagging. One in four casts wasted is the point where the spell is the problem
  * rather than the luck — below that it's variance on a small number of casts.
@@ -77,7 +78,7 @@ export default function SpellTable({ window }: { window: FightStats }) {
         cellClassName: (p) => (p.row.kind === "melee" ? "muted" : ""),
         // Named at the rank you cast, so the hover and the page show that rank's cost and duration.
         renderCell: (p) =>
-          p.row.kind === "melee" ? p.value : <ItemLink title={p.row.rank ? `${p.row.spell} ${p.row.rank}` : p.row.spell} label={p.row.spell} />,
+          p.row.kind === "melee" ? p.value : <ItemLink title={rankedSpellTitle(p.row.spell, p.row.rank)} label={p.row.spell} />,
       },
       {
         field: "casts",

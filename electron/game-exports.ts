@@ -126,7 +126,13 @@ export function inventoryShareRows(logFile: string | undefined, userDataDir?: st
   if (!dump) return [];
   const asOf = new Date(dump.writtenAt).toISOString();
   const items = [...parseInventoryDump(dump.text), ...(dump.carriedItems ?? [])];
-  return inventoryTotals(items).map((t) => ({ item: t.baseName, count: t.count, places: t.places, asOf }));
+  return inventoryTotals(items).map((t) => ({
+    item: t.baseName,
+    count: t.count,
+    ...(t.bestGrade > 0 ? { grade: t.bestGrade } : {}),
+    places: t.places,
+    asOf,
+  }));
 }
 
 /**

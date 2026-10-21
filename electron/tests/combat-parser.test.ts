@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCombat, combatant, meleeSkill, SELF } from "../../src/shared/combat/combat-parser";
+import { SELF, combatant, meleeSkill, parseCombat, rankedSpellTitle, spellName, spellRank } from "../../src/shared/combat/combat-parser";
 import { splitLine } from "../../src/shared/log-parser";
 import type {
   BuffFadedEvent,
@@ -574,4 +574,11 @@ test("a spell you hit yourself with names you as its target, not 'yourself'", ()
   assert.equal(event.attacker, SELF);
   assert.equal(event.target, SELF);
   assert.equal(event.spell, "Cannibalize");
+});
+
+test("rankedSpellTitle names a spell at the rank you know, and is the inverse of spellName/spellRank", () => {
+  assert.equal(rankedSpellTitle("Shock of Lightning", "VI"), "Shock of Lightning VI");
+  assert.equal(rankedSpellTitle("Shock of Lightning", undefined), "Shock of Lightning");
+  const cast = "Mesmerization IV";
+  assert.equal(rankedSpellTitle(spellName(cast), spellRank(cast)), cast);
 });

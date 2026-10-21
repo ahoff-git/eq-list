@@ -16,19 +16,18 @@
  *
  * Pure. The panel supplies the rows and the dump; nothing here reads a file.
  */
-import { gradedValues, bestLoadout, copiesFor, huntSuggestions, mergedGrade, type BisCandidate, type BisLoadout, type BisSuggestion } from "./bis";
+import { gradedValues, bestLoadout, isTwoHanded, copiesFor, huntSuggestions, mergedGrade, type BisCandidate, type BisLoadout, type BisSuggestion } from "./bis";
 import { openSockets, extractableAt, EXALTATION_SOCKETS, socketPlan, type SocketPlan, type Stone } from "./exaltations";
 import { eraCorpus } from "./item-era";
 import { matchesFacet, matchesItem, scorer, type ItemCriteria, type ItemRow, type StatWeights } from "./item-search";
 import { normalizeItemName } from "./grouping";
-import { itemBaseName, itemGrade } from "../names";
+import { heldName, isExaltation } from "./held-name";
 import { inventoryPlaceText, type InventoryItem } from "../game-export-dumps";
 import type { EffectKind } from "./item-stats";
 
 /** Grades a hunt target is weighed at, beyond `+0` — enough to show what farming copies buys. */
 const HUNT_GRADES = [1, 2, 3] as const;
 
-const EXALTATION_RE = /\s*\(Exaltation\)$/i;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export interface BisMerge {
@@ -85,7 +84,7 @@ function candidateOf(id: string, row: ItemRow, grade: number, score: ReturnType<
     value,
     anyValue,
     lore: row.stats.flags.includes("LORE"),
-    twoHanded: /^2H\b/i.test(row.stats.skill ?? ""),
+    twoHanded: isTwoHanded(row.stats),
     heldAt,
   };
 }
@@ -101,14 +100,14 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones }: Bis
   const held: { item: InventoryItem; row: ItemRow; candidate: BisCandidate }[] = [];
   const unweighed = new Set<string>();
   inventory.forEach((item, i) => {
-    if (EXALTATION_RE.test(item.name)) return; // a loose stone is an effect, not gear
+    if (isExaltation(item.name)) return; // a loose stone is an effect, not gear
     const row = rowOf(item.baseName);
     if (!row) {
       if (item.area === "worn") unweighed.add(item.baseName);
       return;
     }
     if (!wearable(row, criteria)) return;
-    const grade = itemGrade(item.name) ?? 0;
+    const grade = item.grade;
     held.push({ item, row, candidate: candidateOf(`held:${i}`, row, grade, score, inventoryPlaceText(item)) });
   });
   const loadout = bestLoadout(held.map((h) => h.candidate));
@@ -154,8 +153,8 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones }: Bis
   for (const item of inventory) {
     // A loose stone anywhere — Storage's Exaltation tab, a bag, the bank. Socketed ones are already
     // folded onto their host by the parser, so they never reach here.
-    if (EXALTATION_RE.test(item.name)) {
-      const source = rowOf(itemBaseName(item.name.replace(EXALTATION_RE, "")));
+    if (isExaltation(item.name)) {
+      const source = rowOf(heldName(item.name).title);
       if (!source) continue;
       const effects = source.stats.effects;
       for (const e of effects) {

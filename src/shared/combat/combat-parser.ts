@@ -412,6 +412,15 @@ export function spellRank(name: string): string | undefined {
 
 const RANK_RE = / ([IVXL]+)$/;
 
+/**
+ * The name to show and link a spell by when you know its rank: `Shock of Lightning VI`. The inverse
+ * of `spellName`/`spellRank`, and the one place that spelling is built, so every view that names a
+ * ranked spell shows (and opens, via `ItemLink`) it at that rank (ADR 0312).
+ */
+export function rankedSpellTitle(spell: string, rank: string | undefined): string {
+  return rank ? `${spellName(spell)} ${rank}` : spell;
+}
+
 /** Reflexive heal/damage targets ("healed himself") resolve to the actor. */
 const REFLEXIVE = new Set(["himself", "herself", "itself", "themselves", "yourself", "myself"]);
 

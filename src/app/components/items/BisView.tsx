@@ -6,6 +6,7 @@ import { DumpSection } from "@/app/components/exports/DumpParts";
 import { useInventory } from "@/lib/exports/useGameExports";
 import { bisPlan, type BisHunt, type BisPlan } from "@/shared/items/bis-plan";
 import { WORN_LAYOUT, type BisPick } from "@/shared/items/bis";
+import { gradedTitle } from "@/shared/items/item-upgrade";
 import { exportAgeText } from "@/shared/game-exports";
 import type { SocketPlan } from "@/shared/items/exaltations";
 import type { ItemCriteria, ItemRow, StatWeights } from "@/shared/items/item-search";
@@ -15,7 +16,6 @@ const MAX_HUNT = 60;
 
 /** A slot in words — the card's uppercase, read as a reader would say it. */
 const slotLabel = (slot: string) => (slot === "ANY" ? "Any Slot" : slot.charAt(0) + slot.slice(1).toLowerCase());
-const graded = (title: string, grade: number) => (grade > 0 ? `${title} +${grade}` : title);
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
 /**
@@ -90,7 +90,7 @@ export default function BisView({
                   <td className="muted">{slotLabel(slot)}</td>
                   <td>
                     {/* By the graded name, so the hover shows this copy's numbers — the ones it was weighed by. */}
-                    <ItemLink title={graded(pick.item.title, pick.item.grade)} />
+                    <ItemLink title={gradedTitle(pick.item.title, pick.item.grade)} />
                   </td>
                   <td className="num">{pick.value}</td>
                   <td className="small">
@@ -125,7 +125,7 @@ export default function BisView({
           <ul className="bis-list">
             {plan.merges.map((m) => (
               <li key={m.title}>
-                <ItemLink title={graded(m.title, m.to)} /> — merge your {m.grades.length} copies (+{m.grades.join(", +")}) into one +{m.to}
+                <ItemLink title={gradedTitle(m.title, m.to)} /> — merge your {m.grades.length} copies (+{m.grades.join(", +")}) into one +{m.to}
                 {m.toExp > 0 && <span className="muted" title="Exp toward the next grade already raises the bigger stats"> and {m.toExp}/{2 ** m.to} exp toward +{m.to + 1}</span>}
                 <span className="good"> {signed(m.gain)}</span>
               </li>
@@ -234,7 +234,7 @@ function HuntTable({ hunt }: { hunt: BisHunt[] }) {
                 {signed(g.gain)}
               </td>
             ))}
-            <td className="small muted">{h.replaces ? graded(h.replaces.item.title, h.replaces.item.grade) : "empty slot"}</td>
+            <td className="small muted">{h.replaces ? gradedTitle(h.replaces.item.title, h.replaces.item.grade) : "empty slot"}</td>
             <td className="num muted" title={h.row.level?.why}>
               {h.row.level ? (h.row.level.min === h.row.level.max ? h.row.level.min : `${h.row.level.min}–${h.row.level.max}`) : "—"}
             </td>

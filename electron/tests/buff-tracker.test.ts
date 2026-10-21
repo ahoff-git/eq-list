@@ -1214,3 +1214,16 @@ test("a cast-only rise that fades on a named target is filed under that target",
   h.buffs.dismiss("spirit of wolf", "Bloop");
   assert.equal(h.buffs.view().lapsed.length, 0, "dismissing by the target the row shows clears it");
 });
+
+test("a buff you cast at a rank carries the rank, so its row is shown at it (ADR 0312)", () => {
+  const h = harness();
+  h.buffs.combat({ kind: "cast", caster: "You", spell: "Mesmerize", rank: "III", at: iso(0), raw: "You begin casting Mesmerize III.", logId: 1 });
+  h.line("a wild tiger is mesmerized.", 2);
+  const row = h.buffs.view().active.find((b) => b.key === "mesmerize");
+  assert.equal(row?.rank, "III");
+  // Somebody else's cast of the same spell names no rank of yours.
+  const other = harness();
+  other.cast("Mesmerize", 0, "Bob");
+  other.line("a wild tiger is mesmerized.", 2);
+  assert.equal(other.buffs.view().active.find((b) => b.key === "mesmerize")?.rank, undefined);
+});

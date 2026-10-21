@@ -92,6 +92,7 @@ test("inventory: every area lands where the game shows it, sockets on their host
     slot: "Personal-Depot43",
     name: "Phosphorous Powder",
     baseName: "Phosphorous Powder",
+    grade: 0,
     id: 24082,
     count: 756,
     sockets: [],
@@ -129,6 +130,7 @@ test("inventory totals fold grades and places into one count per item", () => {
   assert.deepEqual(chips, {
     baseName: "Bone Chips",
     count: 647,
+    bestGrade: 0,
     places: [
       { label: "Bags", slots: ["1"], count: 643 },
       { label: "Bank", slots: ["3"], count: 4 },
@@ -248,4 +250,11 @@ test("a dump that left the bank out keeps the last bank seen, dated, and a newer
   // An older dump read afterwards never overwrites a newer saved copy.
   const stale = carryForward(atBank, 500, first.saved);
   assert.equal(stale.saved.bank?.at, 1000);
+});
+
+test("an item carries its grade, and a total the best grade among its copies", () => {
+  const items = parseInventoryDump(INVENTORY);
+  assert.equal(items.find((i) => i.name === "Devlas Ilkvel +2")?.grade, 2);
+  assert.equal(items.find((i) => i.name === "Cat Skull Cap (Exaltation)")?.grade, 0, "a stone has no grade of its own");
+  assert.equal(inventoryTotals(items).find((t) => t.baseName === "Moonstone Ring")?.bestGrade, 4);
 });

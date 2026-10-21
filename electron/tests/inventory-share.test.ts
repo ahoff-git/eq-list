@@ -58,3 +58,17 @@ test("what we offer is one row per item from the newest dump, dated by it", () =
   assert.deepEqual(inventory.read(rows, newId), rows, "our own rows pass the reader a peer would run them through");
   assert.deepEqual(inventoryShareRows(path.join(root, "Logs", "eqlog_Nobody_qeynos.txt")), []);
 });
+
+test("a row may carry the sender's best grade; a +0, a missing one or nonsense reads as none", () => {
+  const [graded, plain, silly] = inventory.read(
+    [
+      { item: "Gnoll Slayer", count: 2, grade: 3, places: [], asOf: AS_OF },
+      { item: "Jade", count: 1, grade: 0, places: [], asOf: AS_OF },
+      { item: "Pearl", count: 1, grade: 99, places: [], asOf: AS_OF },
+    ],
+    newId,
+  ) as { grade?: number }[];
+  assert.equal(graded.grade, 3);
+  assert.equal(plain.grade, undefined);
+  assert.equal(silly.grade, 10, "clamped to the highest grade there is");
+});

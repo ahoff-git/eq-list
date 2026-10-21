@@ -132,6 +132,8 @@ export interface BuffInstance {
   key: string;
   /** The spell's display spelling, as the file or the log gave it. */
   spell: string;
+  /** The rank you cast it at (`VI`), when it's yours and the cast named one (ADR 0312). */
+  rank?: string;
   /** Who it's on: `ON_YOU`, `ON_PET`, a character's name, or `ON_UNKNOWN`. */
   target: string;
   /** Up now, or lapsed. */

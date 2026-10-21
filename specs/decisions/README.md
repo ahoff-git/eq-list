@@ -354,6 +354,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0313: A tradeskill guide step shows how much of each material you (and sharing peers) hold, and suggests other steps at your skill that your own materials cover](./0313-a-guide-step-knows-what-you-already-hold.md)
 - [0314: A guide counts what sharing peers hold: alternatives show combines from yours and with peers', sections name peers' holdings, and an open guide asks sharing peers for their inventories (supersedes 0313)](./0314-a-guide-counts-what-your-peers-share.md)
 - [0315: Every /outputfile dump is copied into a per-character archive in userData, deduplicated by content and never deleted, so a new export never destroys the last](./0315-every-export-is-kept.md)
+- [0316: A held item or ranked spell is named at its level everywhere through one reader and one writer each (heldName/gradedTitle, rankedSpellTitle); peer inventory rows carry the sender's best grade](./0316-a-held-thing-is-named-at-its-level-everywhere.md)
 
 ## Open Questions
 

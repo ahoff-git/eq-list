@@ -15,6 +15,8 @@ import { BUFF_STYLE_ID } from "@/shared/alerts/alert-styles";
 import { SPELL_CLASSES } from "@/shared/spells/spell-file";
 import { distinctSorted } from "@/shared/sorting";
 import type { BuffInstance, KnownBuff } from "@/shared/types";
+import ItemLink from "@/app/components/items/ItemLink";
+import { rankedSpellTitle } from "@/shared/combat/combat-parser";
 
 /** The class picker's options, alphabetical rather than `SPELL_CLASSES`'s file-column order (that
  *  order matters for parsing the spell file and must stay put there) — the same order every other
@@ -267,7 +269,7 @@ function LapsedRow({ buff, now, several }: { buff: BuffInstance; now: number; se
           without dragging Dismiss out of the fixed column every other row's button sits in. */}
       <div className="buff-row-body">
         <span className="buff-name">
-          {buff.spell}
+          <ItemLink title={rankedSpellTitle(buff.spell, buff.rank)} label={rankedSpellTitle(buff.spell, buff.rank)} />
           {several && <em className="spawn-slot"> #{buff.slot}</em>}
           {buff.permanent && (
             // Worth saying here rather than only on the settings row: a permanent buff that has gone is
@@ -318,7 +320,7 @@ function ActiveRow({ buff, now, several, conflictsWith }: { buff: BuffInstance; 
       </span>
       <div className="buff-row-body">
         <span className="buff-name">
-          {buff.spell}
+          <ItemLink title={rankedSpellTitle(buff.spell, buff.rank)} label={rankedSpellTitle(buff.spell, buff.rank)} />
           {several && <em className="spawn-slot"> #{buff.slot}</em>}
           {conflictsWith?.length ? (
             <em

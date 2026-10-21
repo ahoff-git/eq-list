@@ -605,6 +605,8 @@ export function createBuffTracker({
     const instance: BuffInstance = {
       key,
       spell: known.spell,
+      // The rank you last cast it at, when it's yours — so the row is shown and opened at that rank.
+      ...(opts.byYou && castRank.get(key) ? { rank: castRank.get(key) } : existing?.rank ? { rank: existing.rank } : {}),
       target,
       up: true,
       at,

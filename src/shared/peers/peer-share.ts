@@ -36,6 +36,7 @@
  * than off a switch somewhere, since a kind added without a reader then fails closed instead of
  * arriving unchecked.
  */
+import { MAX_GRADE } from "../items/item-upgrade";
 import type {
   CastWatch,
   FightHeal,
@@ -1739,6 +1740,8 @@ function readScore(raw: unknown): HighScore | null {
 export interface InventoryShareRow {
   item: string;
   count: number;
+  /** The best grade among the sender's copies — absent from a peer that predates it, or at +0. */
+  grade?: number;
   /** Where, by place: `Bank` with slots `["3", "14"]`, `Storage: Equipment` with none. */
   places: { label: string; slots: string[]; count: number }[];
   /** When the game wrote the dump these totals come from. */
@@ -1764,7 +1767,14 @@ function readInventoryRow(raw: unknown): InventoryShareRow | null {
     const slots = (Array.isArray(p.slots) ? p.slots : []).slice(0, MAX_SLOTS).map(str).filter(Boolean);
     return [{ label, slots, count: clamp(n, 1, 1_000_000) }];
   });
-  return { item, count: clamp(count, 1, 1_000_000), places, asOf };
+  const grade = int(raw.grade);
+  return {
+    item,
+    count: clamp(count, 1, 1_000_000),
+    ...(grade !== undefined && grade > 0 ? { grade: clamp(grade, 1, MAX_GRADE) } : {}),
+    places,
+    asOf,
+  };
 }
 
 /** A peer's one current celebration — dropped outright without an `id`, an `item` or an `at`. */
