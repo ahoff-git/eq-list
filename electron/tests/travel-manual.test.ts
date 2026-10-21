@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { buildTravelGraph } from "../../src/shared/travel/build";
 import type { TravelPoint, ZoneHarvest } from "../../src/shared/travel/harvest";
 import { applyManual, type TravelManual } from "../../src/shared/travel/manual";
-import { NOT_IN_GAME, STALE_DRAWINGS } from "../../src/shared/travel/manual-links";
+import { MANUAL_TRAVEL, NOT_IN_GAME, STALE_DRAWINGS } from "../../src/shared/travel/manual-links";
 import { findRoute } from "../../src/shared/travel/route";
 
 const NAMES = {
@@ -263,7 +263,6 @@ test("a hand-authored place names its zone either way round — its name or its 
 test("the shipped table is applied without complaint about its own shape", () => {
   // Not a check that the data is *right* — nothing here can know that. It checks the entries parse,
   // resolve and produce links, which is what would break if the shape drifted.
-  const { MANUAL_TRAVEL } = require("../../src/shared/travel/manual-links") as typeof import("../../src/shared/travel/manual-links");
   // Entries name zones the way a person would, so the stand-in graph has to know those names.
   const zones = [...new Set(MANUAL_TRAVEL.links.flatMap((l) => l.places.map((p) => p.zone)))];
   const zoneNames = Object.fromEntries(zones.map((z) => [z.toLowerCase().replace(/[^a-z]/g, ""), z]));

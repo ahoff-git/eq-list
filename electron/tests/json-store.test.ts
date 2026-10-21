@@ -163,7 +163,7 @@ test("`restart` waits for the changes to stop; the default doesn't", async () =>
  */
 test("changed() saves even with nobody listening yet", () => {
   const file = path.join(tempDir(), "notifier.json");
-  let state = { n: 1 };
+  const state = { n: 1 };
   const saver = createSaver(file, "notifier", () => state, 10);
   const notifier = createChangeNotifier(saver);
   notifier.changed();
@@ -173,7 +173,7 @@ test("changed() saves even with nobody listening yet", () => {
 test("changed() tells the listener, and a later listener replaces the earlier one", () => {
   const saver = createSaver(path.join(tempDir(), "n2.json"), "n2", () => ({}), 10_000);
   const notifier = createChangeNotifier(saver);
-  let heard: string[] = [];
+  const heard: string[] = [];
   notifier.onChanged(() => heard.push("first"));
   notifier.changed();
   assert.deepEqual(heard, ["first"]);

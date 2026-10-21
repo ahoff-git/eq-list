@@ -25,9 +25,9 @@ const { dbFile, modulePath, exportName } = workerData as BackgroundCacheWorkerDa
 // read.
 const db = new Database(dbFile, { readonly: true });
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- the one place a compute
-// function is loaded by name rather than a static import, so this file can stay the same for
-// every store that wants a background cache instead of growing a new worker per store.
+// The one place a compute function is loaded by name rather than a static import, so this file can
+// stay the same for every store that wants a background cache instead of growing a new worker per store.
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded by name, see above
 const compute = (require(modulePath) as Record<string, (db: Database.Database) => unknown>)[exportName];
 
 parentPort?.on("message", (msg: unknown) => {
