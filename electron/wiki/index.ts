@@ -302,6 +302,11 @@ export interface WikiClient {
    */
   spellCatalogueJson(): Promise<string>;
   /**
+   * The answer `opts.spellCategory` gives may have changed (a different game install), so the rows
+   * built from it are stale. Only the rows go: the pages they were read from haven't changed.
+   */
+  spellCategoriesChanged(): void;
+  /**
    * Fill the spell catalogue from `Category:Spells`, peer-shared on the same shard-addressed terms
    * as `items` — see [ADR 0196](../../specs/decisions/0196-spells-get-their-own-shard-addressed-mirror.md).
    */
@@ -2383,6 +2388,9 @@ export function createWikiClient(
 
     catalogueJson,
     spellCatalogueJson,
+    spellCategoriesChanged() {
+      spellRowCache = null;
+    },
 
   /** The titles line, read defensively: a malformed pack is a rebuild, never a throw. */
     joinRoom(link) {

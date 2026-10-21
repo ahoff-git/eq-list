@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useMemo } from "react";
-import { useClosedZones, useSpellCatalog, useSpellHarvest } from "@/lib/hooks";
+import { useClosedZones, useSettings, useSpellCatalog, useSpellHarvest } from "@/lib/hooks";
 import { useSpellQuery } from "@/lib/spells/useSpellQuery";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -28,7 +28,10 @@ export default function SpellSearchPanel() {
   const harvest = useSpellHarvest();
   // Re-read the catalogue when a run ends, not as it goes — same reasoning as `ItemSearchPanel`'s
   // `catalogueKey`: a constant key while running spares the table a re-parse on every progress tick.
-  const catalogueKey = harvest.status === "running" ? "running" : `${harvest.status}:${harvest.fetched}`;
+  // The log folder too: each row's category comes from that install's game files, so pointing
+  // Settings at one (or another) has to re-read the rows main rebuilt for it.
+  const logDir = useSettings()?.logDir ?? "";
+  const catalogueKey = harvest.status === "running" ? `running:${logDir}` : `${harvest.status}:${harvest.fetched}:${logDir}`;
   const { rows, loading } = useSpellCatalog(catalogueKey);
 
   const [criteria, setCriteria] = usePersistentState<SpellCriteria>(STORAGE_KEYS.spellCriteria, NO_CRITERIA);

@@ -18,6 +18,7 @@ import { openAppDatabase } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
 import type { ItemRow } from "../../src/shared/items/item-search";
 import type { SpellRow } from "../../src/shared/spells/spell-search";
+import type { SpellCategory } from "../../src/shared/spells/spell-categories";
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL_DAYS = 14;
@@ -114,6 +115,24 @@ test("a fresh client walks the store fresh, rather than inheriting another clien
     const next = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY });
     const spells = JSON.parse(await next.spellCatalogueJson()) as SpellRow[];
     assert.deepEqual(spells.map((s) => s.spell.title), ["Spirit of Wolf"]);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("rows built before the game install was known pick up its categories once told it changed", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eqlist-spellcat-install-"));
+  try {
+    seed(dir, { kind: "spell", title: "Mesmerize", wikiPath: "/Mesmerize", card: { title: "Mesmerize", lines: ["Mana: 20"] } });
+    // No log folder yet (a first run): the spell file can't be found, so nothing is filed.
+    const install: { now?: SpellCategory } = {};
+    const wiki = createWikiClient(dir, { ttlMs: () => TTL_DAYS * DAY, spellCategory: () => install.now });
+    assert.equal((JSON.parse(await wiki.spellCatalogueJson()) as SpellRow[])[0].category, undefined);
+
+    install.now = { category: "Utility Detrimental", subcategory: "Enthrall" };
+    wiki.spellCategoriesChanged();
+    const rows = JSON.parse(await wiki.spellCatalogueJson()) as SpellRow[];
+    assert.deepEqual(rows[0].category, install.now, "the rows were rebuilt against the install now set");
   } finally {
     await cleanup(dir);
   }
