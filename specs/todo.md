@@ -24,12 +24,6 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
-- **`item-stats.ts` reads a vendor-price line as a stat.** `VALUE TO VENDOR with CHA : 68 and faction
-  at Kindly` (Chipped Hematite) parses as **CHA 68**, so the Items tab finds a gem worth 68 charisma and
-  best-in-slot would weigh it. Found by pinning graded readings to graded cards across the catalogue
-  (ADR 0312) — the only card of 9,358 where they part. The label match should want the colon right after
-  the label, as every real stat line has it.
-
 - **Three more pet/group-mate deciders from eql-meter v0.1.28** (see [neighbours.md](./neighbours.md)),
   on top of the ones [ADR 0127](./decisions/0127-an-unknown-name-is-held-not-dropped.md)'s three-step
   plan already built against — all three now done: a stored fight re-derives

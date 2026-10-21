@@ -279,6 +279,8 @@ reading like a measurement, and they are shared code
 - **A grade and a difficulty are not identities.** Names fold where they are *matched* and stay whole
   where the log is *recorded*, so "Blackburrow 3" survives in the status bar while its kills tally
   with Blackburrow's. ([0057](./0057-a-grade-is-not-an-identity.md), [0059](./0059-a-zone-s-variants-are-one-zone.md))
+- **A level is applied, never stored.** A `+N` or rank is arithmetic on the base page, so the page cache
+  and the pooled drop table hold one copy per item and fold the grade before they look up or tally. ([0323](./0323-a-grade-is-never-stored.md))
 - **Looseness belongs to a resolver, not to a fold.** A fold must be right about a name it has never
   seen; a resolver is handed the candidates, so it can be loose *and* fail closed — answering only
   when exactly one candidate wins. ([0068](./0068-a-zone-name-resolves-against-what-we-know.md))

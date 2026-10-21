@@ -63,9 +63,8 @@ export function levelInName(name: string, kind: WikiPage["kind"] | undefined): n
  * page view alike. `asked` is the page found under the name itself; `unranked` the base spell page,
  * looked up only when that missed.
  *
- * - **An item** found under its name is levelled by the name's grade: a `Cloth Cape +2` title is an
- *   alias of the base page with the `+0` card (pinned in `level-paths.test.ts`), so the grade is
- *   applied once.
+ * - **An item** found under its name is levelled by the name's grade: `Cloth Cape +2` is answered with
+ *   the base page and its `+0` card (pinned in `level-paths.test.ts`), so the grade is applied once.
  * - **A spell** found under its exact name *is* that spell — a classic sequel (`Burnout II`) or an AA
  *   rank's own row (`Harm Touch III`) — so it is shown as printed, level 0. Reading `II` as a rank
  *   would level a card that is already the spell's own.

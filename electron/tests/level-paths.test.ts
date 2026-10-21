@@ -24,7 +24,7 @@ import { createStore } from "../store";
 import { createLootLog, LOOT_LOG_MIGRATIONS } from "../loot-log";
 import { openAppDatabase } from "../sqlite-store";
 import { createCombatStats } from "../combat-stats";
-import { dropKey } from "../../src/shared/mob/mob-stats";
+import { mergeObservations } from "../../src/shared/mob/mob-stats";
 import { reconcileDrops } from "../../src/shared/mob/drop-truth";
 import { itemDropSources } from "../../src/shared/items/item-sources";
 import { itemRows, NO_CRITERIA } from "../../src/shared/items/item-search";
@@ -74,9 +74,9 @@ test("spells: a ranked name is read back at its rank, and falls back to the unra
 });
 
 test("the catalogue: an item page is the +0 thing, so a level is applied once, never twice", () => {
-  // Read the shipped cache directly: every item page either has no grade in its title, or is an alias
-  // of the base page (same wiki path, same card) — so ItemLink levelling `Cloth Cape +2` applies the
-  // grade to +0 numbers exactly once.
+  // Read the shipped cache directly: no page is held under a graded name — a grade is arithmetic on the
+  // base page (ADR 0057), so ItemLink levelling `Cloth Cape +2` applies it to +0 numbers exactly once,
+  // and there is no second copy to drift from the first.
   const pages = new Map<string, { wikiPath?: string; lines?: string[] }>();
   const dir = path.join(REPO_ROOT, "public", "data", "wiki-cache", "pages");
   for (const file of fs.readdirSync(dir)) {
@@ -88,13 +88,7 @@ test("the catalogue: an item page is the +0 thing, so a level is applied once, n
     }
   }
   assert.ok(pages.size > 1000, "the shipped catalogue was read");
-  const graded = [...pages.keys()].filter((t) => itemGrade(t) !== undefined);
-  for (const title of graded) {
-    const base = pages.get(itemBaseName(title));
-    assert.ok(base, `${title} has a base page`);
-    assert.equal(pages.get(title)!.wikiPath, base.wikiPath, `${title} is an alias of its base page`);
-    assert.deepEqual(pages.get(title)!.lines, base.lines, `${title}'s card is the +0 card, so it's levelled once`);
-  }
+  assert.deepEqual([...pages.keys()].filter((t) => itemGrade(t) !== undefined), [], "no page is held under a +N name");
 });
 
 test("shopping list: an entry added by a graded name keeps it, so the List tab links it at that grade", () => {
@@ -244,9 +238,11 @@ test("Loot tab: a graded drop is stored and read back as looted, so its row link
   assert.equal(levelInName(loot.recent()[0].item, "item"), 2);
 });
 
-test("MobKills: your kills' drops are keyed by case only, so a graded drop shows as looted", () => {
-  // MobKills links `drop.item` from your kill log's per-mob drops, keyed by `dropKey`.
-  assert.equal(dropKey("Copper Amulet +2"), "copper amulet +2", "the grade is part of the key — not folded");
+test("MobKills: a mob's drop table pools every grade under its +0 item", () => {
+  // MobKills links `drop.item` from `useMobZones` — `mergeObservations` — whose rows fold the grade (ADR 0057).
+  const [known] = mergeObservations([{ mob: "a gnoll", zone: "Blackburrow", kills: 2, drops: { "Copper Amulet +2": 1, "Copper Amulet": 1 }, lastAt: "2026-10-20T10:00:00" }], []);
+  assert.deepEqual(known.drops.map((d) => d.item), ["Copper Amulet"]);
+  assert.equal(levelInName(known.drops[0].item, "item"), 0, "linked as the +0 page");
 });
 
 test("MobKnowledge: a mob's reconciled drop table folds a graded drop into its item — by design", () => {

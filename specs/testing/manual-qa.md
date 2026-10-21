@@ -2289,12 +2289,14 @@ watched through a full harvest or a crash.
 
 ## Graded aliases in the catalogue
 
-A page fetched for a graded name (`Cloth Cape +2`) is cached under that name as well as its own, so
-two files can hold one page. Folded on the way into the catalogue; 36 such aliases on a real cache.
+A page is never cached under a graded name any more ([ADR 0323](../decisions/0323-a-grade-is-never-stored.md)):
+the first launch on that build deletes the copies an older build kept (29 on a real cache, every one
+drifted from its base).
 
 - **No item appears twice.** Items tab → sort by name and skim for adjacent identical rows; there
   should be none. Search a known one (`Cloth Cape`, `Bamboo Bokken`) — exactly one row each.
-- **The row is the real page**, not an empty stand-in: it should carry its stats and its level.
+- **A graded hover is its grade on today's page.** Hover a `+N` item in your inventory dump or loot:
+  the card should be the base page levelled, with no network fetch for the `+N` name.
 
 ## Back goes back one place (ADR 0173)
 

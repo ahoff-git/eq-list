@@ -9,6 +9,7 @@
  */
 import { createLogger } from "@/shared/logging";
 import { shardOf } from "@/shared/items/item-shards";
+import { itemBaseName } from "@/shared/names";
 import { fuzzyRank } from "@/shared/fuzzy";
 import { parseEqMap, mergeEqMaps, type EqMap } from "@/shared/map/eqmap";
 import { spellRows } from "@/shared/spells/spell-search";
@@ -149,8 +150,12 @@ export function rememberPage(page: WikiPage): void {
   overlay.set(page.title, page);
 }
 
-/** A page held in the snapshot (or learned from a peer this session), or null. */
-export async function getPage(title: string): Promise<WikiPage | null> {
+/**
+ * A page held in the snapshot (or learned from a peer this session), or null. A graded name reads its
+ * base page, as main's cache does — the snapshot holds no `+N` copies (ADR 0057).
+ */
+export async function getPage(asked: string): Promise<WikiPage | null> {
+  const title = itemBaseName(asked);
   const learned = overlay.get(title);
   if (learned) return learned;
   const bucket = await loadBucket(shardOf(title) % PAGE_BUCKETS);

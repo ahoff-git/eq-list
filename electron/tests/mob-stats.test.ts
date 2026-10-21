@@ -233,6 +233,20 @@ test("a drop rate is drops over kills, and says how much of it you saw", () => {
   assert.deepEqual(known.contributors, []);
 });
 
+test("every grade of a drop is one row and one rate, named by its base item", () => {
+  // The log names each copy at its roll; the table is per item (ADR 0057). Kept verbatim, a
+  // Blackburrow gnoll's Hunting Bow read as four rows at a quarter of its rate each.
+  const mine = observeMobs([
+    kill({ mob: "a gnoll", zone: "Blackburrow", drops: ["Hunting Bow"] }),
+    kill({ mob: "a gnoll", zone: "Blackburrow", drops: ["Hunting Bow +2"] }),
+    kill({ mob: "a gnoll", zone: "Blackburrow", drops: ["Hunting Bow +3"] }),
+    kill({ mob: "a gnoll", zone: "Blackburrow" }),
+  ]);
+  const theirs: MobObservation[] = [{ mob: "a gnoll", zone: "Blackburrow", kills: 4, drops: { "Hunting Bow +1": 1 }, lastAt: "2026-07-01T00:00:00", by: "Ally", byId: "ally" }];
+  const [known] = mergeObservations(mine, theirs);
+  assert.deepEqual(known.drops, [{ item: "Hunting Bow", count: 4, rate: 0.5, myCount: 3 }]);
+});
+
 test("pooling a peer's observations sharpens the rate and records who helped", () => {
   const mine = observeMobs([kill({ mob: "a coyote", drops: ["Chunk of Meat"] })]);
   const theirs: MobObservation[] = [

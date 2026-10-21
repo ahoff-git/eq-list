@@ -746,7 +746,13 @@ export function createWikiClient(
   /** Titles the wiki says it doesn't have, re-asked once a day (`missing-pages.ts`). */
   const missingPages = createMissingPages(path.join(cacheDir, "missing-pages.json"));
 
-  async function getPageInternal(title: string, force = false): Promise<WikiPage | null> {
+  async function getPageInternal(asked: string, force = false): Promise<WikiPage | null> {
+    // A grade is arithmetic on the +0 page, not a page (ADR 0057, ADR 0307): the wiki has "Dragoon
+    // Dirk", never "Dragoon Dirk +2" — none of its titles ends in a grade — so the base is what's
+    // read, fetched and cached. Keying by the asked-for name kept one copy per grade ever hovered,
+    // each refreshed on its own schedule, so they drifted apart; the caller levels the page by the
+    // name it holds (`pageForName`).
+    const title = itemBaseName(asked);
     const cached = readCache(title);
     // A page cached *before* faction support existed has no version to catch it: "faction" never
     // existed as a kind for `MIN_PARSE_VERSION` to floor, so a title that's since turned out to be
@@ -772,13 +778,7 @@ export function createWikiClient(
     // A ↻ (`force`) still asks, so a page someone has just written can be had at once.
     if (!force && missingPages.isMissing(title)) return cached?.page ?? null;
     try {
-      // A graded item has no page of its own — the wiki knows "Dragoon Dirk", not "Dragoon Dirk
-      // +2" — so a miss retries the base name (`names.ts`). The asked-for title is tried first,
-      // so a build where the wiki *does* carry a grade still gets its own page, and the result
-      // caches under the name we were asked about rather than paying for two fetches each time.
-      const base = itemBaseName(title);
-      const asked = await fetchPageHtml(title);
-      const fetched = asked && asked !== PAGE_MISSING ? asked : base !== title ? await fetchPageHtml(base) : asked;
+      const fetched = await fetchPageHtml(title);
       // Only the wiki's own "no such page" is remembered — a failed request says nothing about it.
       if (fetched === PAGE_MISSING) missingPages.markMissing(title);
       if (!fetched || fetched === PAGE_MISSING) return cached?.page ?? null;

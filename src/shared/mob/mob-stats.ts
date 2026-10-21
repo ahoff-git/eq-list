@@ -47,6 +47,7 @@ import type { KillRecord } from "../types";
 import { ratio } from "../numbers";
 import { locText } from "../format";
 import { legacyContributorId } from "../contributors";
+import { itemBaseName } from "../names";
 
 /** Positions this poor are ignored when working out where a mob lives. */
 const AREA_MIN_CONFIDENCE = 0.2;
@@ -518,7 +519,10 @@ export function mergeObservations(mine: MobObservation[], theirs: MobObservation
     // `withAreas` covers a peer still on a build from before ADR 0228, which only ever sends `area`.
     known.seenAreas.push(...withAreas(obs).areas);
 
-    for (const [item, count] of Object.entries(obs.drops)) {
+    // Every grade of an item is one drop with a roll on it (ADR 0057), so the table and its rate are
+    // per item: kept verbatim, a gnoll's Hunting Bow read as four rows at a quarter of its rate each.
+    for (const [looted, count] of Object.entries(obs.drops)) {
+      const item = itemBaseName(looted);
       const drop = known.drops.find((d) => d.item === item);
       if (drop) {
         drop.count += count;

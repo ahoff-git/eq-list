@@ -155,6 +155,9 @@ const STAT_LINE = new RegExp(
   "gi",
 );
 
+/** A card's vendor-price line, which names a stat (the charisma it was priced at) without being one. */
+const VENDOR_VALUE_LINE = /^VALUE TO VENDOR\b/i;
+
 /** The classes EQ has, in the order a card lists them — what `Class: ALL` expands to, in the
  *  abbreviated form the card itself is written in (`class-names.ts` holds the full spelling). */
 export const EQ_CLASSES: readonly string[] = CLASS_ABBREVIATIONS;
@@ -431,8 +434,10 @@ export function parseItemStats(lines: readonly string[] | undefined): ItemStats 
       continue; // never scanned for stats or flags: a spell's words are not the item's (see EFFECT_LINE)
     }
 
+    // `VALUE TO VENDOR with CHA : 68 and faction at Kindly` is a price at a charisma, not a stat. The
+    // label rule can't tell it apart — `BACKSTAB : 8` is a real stat spaced the same way — so the line goes.
     STAT_LINE.lastIndex = 0;
-    for (let m = STAT_LINE.exec(line); m; m = STAT_LINE.exec(line)) {
+    for (let m = VENDOR_VALUE_LINE.test(line) ? null : STAT_LINE.exec(line); m; m = STAT_LINE.exec(line)) {
       const key = ALIAS_TO_KEY.get(m[1].toUpperCase().replace(/\s+/g, " "));
       const value = Number(m[2]);
       // Two spellings of one stat on one line would be a malformed card; the first wins, since a

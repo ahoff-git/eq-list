@@ -192,7 +192,8 @@ unit-tested.
     its titles by walking the cache meant 11,519 opens — and 11,519 real-time antimalware scans — each
     time the app started. That cost is invisible to any timing taken inside the app, which is why it
     is asserted as a *count* rather than a duration. Another pins that a page cached under **two
-    names** — the graded alias `getPage` writes so a `+2` need not be re-fetched — becomes one row
+    names** — a redirect's, or the graded alias an older build wrote before the grade was folded first
+    ([ADR 0323](../decisions/0323-a-grade-is-never-stored.md)) — becomes one row
     and not two. Three more cover the **bucket store**
     ([ADR 0165](../decisions/0165-the-page-cache-is-a-few-files-not-eleven-thousand.md)): an old
     one-file-per-page cache is folded into buckets and the loose files deleted while the indexes

@@ -44,6 +44,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Database } from "better-sqlite3";
 import { shardOf } from "../../src/shared/items/item-shards";
+import { itemGrade } from "../../src/shared/names";
 import { createLogger } from "../../src/shared/logging";
 import type { Migration } from "../sqlite-store";
 import type { WikiPage } from "../../src/shared/types";
@@ -74,6 +75,20 @@ export const WIKI_PAGE_MIGRATIONS: readonly Migration[] = [
         );
         CREATE INDEX wiki_pages_kind_idx ON wiki_pages(kind);
       `);
+    },
+  },
+  {
+    version: 11,
+    label: "wiki_pages: drop copies held under a graded name",
+    up(db) {
+      // Pages are no longer cached under a `+N` name (the grade is folded before lookup, ADR 0323), so
+      // every such row is a stale duplicate of its base page — measured: all 29 on a live install had
+      // drifted from it. Matched with `itemGrade`, not a GLOB, so it folds exactly what lookup folds.
+      const graded = (db.prepare(`SELECT title FROM wiki_pages`).all() as { title: string }[]).filter(
+        (r) => itemGrade(r.title) !== undefined,
+      );
+      const drop = db.prepare(`DELETE FROM wiki_pages WHERE title = ?`);
+      for (const r of graded) drop.run(r.title);
     },
   },
 ];
@@ -392,10 +407,11 @@ export interface ExportRow {
  * Every row, with each page held under several names written as its **newest copy under all of
  * them**: newest pull first, then newest parser.
  *
- * A page is cached under the name it was asked for (`Cloth Cape +2`, a redirect, a `#section` link)
- * as well as its own, and each name is refreshed only when that name is next asked for. So the copies
- * drift: a `+5` re-pulled today carries the wiki's current card while the base still holds last
- * week's, and the snapshot said two things about one page. The export is where every name is in
+ * A page is cached under the name it was asked for (a redirect, a `#section` link) as well as its
+ * own, and each name is refreshed only when that name is next asked for. So the copies drift: an
+ * alias re-pulled today carries the wiki's current card while the base still holds last week's, and
+ * the snapshot said two things about one page. (Graded `+N` names were the worst of it, and are no
+ * longer cached at all — ADR 0323.) The export is where every name is in
  * hand at once, so it settles them there.
  */
 export function freshestUnderEveryName(rows: readonly ExportRow[]): ExportRow[] {

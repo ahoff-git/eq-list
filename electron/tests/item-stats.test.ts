@@ -184,6 +184,12 @@ test("a whole real card reads as its numbers", () => {
   assert.equal(statLine(read), "AC 2 · Mana 75 · STA -10 · SV Magic 10 · Weight 0.1");
 });
 
+test("a vendor-price line is a price at a charisma, not a stat — while a spaced-out stat still reads", () => {
+  // Chipped Hematite's live card: read as CHA 68 before, a gem worth 68 charisma to best-in-slot.
+  const read = parseItemStats(["MAGIC ITEM", "VALUE TO VENDOR with CHA : 68 and faction at Kindly", "BACKSTAB : 8"]);
+  assert.deepEqual(read.stats, { backstab: 8 });
+});
+
 test("no card at all is a reading, not a crash", () => {
   const read = parseItemStats(undefined);
   assert.deepEqual(read.stats, {});
