@@ -42,6 +42,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Database } from "better-sqlite3";
 import { createLogger } from "../src/shared/logging";
+import { logStamp } from "../src/shared/log-clock";
 import type { AdminAudit, AdminScalar } from "../src/shared/admin";
 import type { DataStamp } from "../src/shared/data-provenance";
 import type {
@@ -619,7 +620,11 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
   /** `standingsSince`'s own body — same shape as `computeStandings`, just a time-scoped query and no
    *  frozen data to fold in (see the interface doc). */
   function computeStandingsSince(sinceIso: string): FactionStanding[] {
-    const rows = selectStandingsSinceAgg.all(sinceIso) as {
+    // Hits are stamped in the log's local time with no zone and compared as text, while callers hand
+    // in an instant (the session's `startedAt` is `toISOString()`). Restated the log's way so the
+    // cutoff is the same moment, not one a zone offset away; a local stamp passes through unchanged.
+    const since = logStamp(sinceIso);
+    const rows = selectStandingsSinceAgg.all(since) as {
       faction: string;
       net: number;
       raises: number;
@@ -631,7 +636,7 @@ export function createFactionLog(db: Database, userDataDir: string): FactionLog 
     }[];
 
     const causes = new Map<string, FactionCauseTally[]>();
-    for (const c of selectCausesSince.all(sinceIso) as {
+    for (const c of selectCausesSince.all(since) as {
       faction: string;
       kind: string;
       source: string;

@@ -22,6 +22,7 @@
  * `faction-unlock-progress.ts`, so the merge can be pinned by a test independent of persistence.
  */
 import type { FactionCorrection, FactionStanding } from "../types";
+import { logStamp } from "../log-clock";
 
 /**
  * A faction dump (`/outputfile faction`) as corrections: the game's own total for each faction, as
@@ -57,8 +58,11 @@ export function newestCorrections(
 }
 
 /** A faction the player corrected but the ledger never saw a hit for still needs a row to correct —
- *  covering exactly the history the ledger couldn't have seen is the whole point. */
-function blankStanding(faction: string, at: string): FactionStanding {
+ *  covering exactly the history the ledger couldn't have seen is the whole point. Its `firstAt`/
+ *  `lastAt` are stamped the way the ledger's are (local, no zone): they're sorted as text beside real
+ *  rows, where a UTC `statedAt` would land hours off. */
+function blankStanding(faction: string, statedAt: string): FactionStanding {
+  const at = logStamp(statedAt);
   return { faction, net: 0, raises: 0, lowers: 0, floors: 0, ceilings: 0, firstAt: at, lastAt: at, causes: [] };
 }
 
@@ -84,4 +88,14 @@ export function applyFactionCorrections(
     });
   }
   return [...byFaction.values()];
+}
+
+/**
+ * `applyFactionCorrections` undone: each row's net back to what the ledger itself observed. For a
+ * reader that reports *movement* (`RaceUnlockAlerts`) — a restatement isn't movement, and a newer
+ * dump is only read on the next standings fetch, which is usually the one a hit triggered.
+ */
+export function observedStandings(standings: readonly FactionStanding[]): FactionStanding[] {
+  if (!standings.some((s) => s.correction)) return standings as FactionStanding[];
+  return standings.map((s) => (s.correction ? { ...s, net: s.correction.observedNet } : s));
 }

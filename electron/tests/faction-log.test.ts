@@ -480,6 +480,17 @@ test("standingsSince folds only hits at or after the cutoff, ordered most-recent
   assert.equal(mistmoore.net, -1, "the hit at second 1 predates the cutoff and doesn't count toward the session net");
 });
 
+test("standingsSince takes a UTC instant (the session's own startedAt) as the same moment in the log's local time", () => {
+  // Hits are stamped local with no zone; `CombatStats.startedAt` is `toISOString()`. Compared as
+  // text, the session cutoff sat a whole zone offset away from the hits it was meant to bound.
+  const l = freshLog();
+  l.add(lowered("Agents of Mistmoore", 1, -3));
+  l.add(lowered("Agents of Mistmoore", 3, -1));
+  const cutoff = new Date(2026, 6, 29, 0, 0, 2).toISOString();
+  const [mistmoore] = l.standingsSince(cutoff);
+  assert.equal(mistmoore?.net, -1, "only the hit at or after the instant counts, whatever the zone");
+});
+
 test("standingsSince rolls up causes the same way standings() does, scoped to the same window", () => {
   const l = freshLog();
   l.add(lowered("Agents of Mistmoore", 1, -3, "a gnoll pup"));
