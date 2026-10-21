@@ -66,7 +66,9 @@ const TIMESTAMP_RE =
  * the continuation of a wrapped message, never an event, so returning null drops it.
  */
 export function splitLine(raw: string, logId = 0): LogLine | null {
-  const trimmed = raw.trim();
+  // A session that crashed leaves the file NUL-padded, and the next one writes its first line right
+  // after the padding with no newline between — so the NULs are stripped, not taken as "no timestamp".
+  const trimmed = raw.replace(/^[\s\0]+/, "").trim();
   if (!trimmed) return null;
   const m = trimmed.match(TIMESTAMP_RE);
   if (!m?.groups) return null;
