@@ -6,7 +6,7 @@ import { usePersistentShape } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { addStep } from "@/lib/tradeskills/addStep";
 import { PRICES, TRADESKILLS, VENDORS } from "@/shared/tradeskills/tradeskills.generated";
-import { sectionCost, type CostedStep } from "@/shared/tradeskills/section-cost";
+import { costedStep, sectionCost, type CostedStep } from "@/shared/tradeskills/section-cost";
 import { whereToBuy, type MerchantHere, type ShoppingPlan } from "@/shared/tradeskills/where-to-buy";
 import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
 import {
@@ -127,15 +127,7 @@ function planFor(span: SkillSpan | undefined | null, needs: StepNeed[] | undefin
   const estimate = estimateStep(mine.span, needs, cost, PRICES, you.factor);
   const materials = mine.place.at === "done" ? [] : (needs ?? []).map((n) => n.name);
   if (!estimate || !mine.span) return { place: mine.place, estimate, materials };
-  const totals = (needs ?? []).filter((n) => n.total);
-  const fixed = totals.reduce((sum, n) => sum + (PRICES[n.name]?.copper ?? 0) * n.qty, 0);
-  const unpriced = [...(cost?.unpriced ?? []), ...totals.filter((n) => !PRICES[n.name]).map((n) => n.name)];
-  return {
-    place: mine.place,
-    estimate,
-    materials,
-    costed: { span: mine.span, perCombine: cost?.copper, fixed, unpriced },
-  };
+  return { place: mine.place, estimate, materials, costed: costedStep(mine.span, needs, cost, PRICES) };
 }
 
 /**
