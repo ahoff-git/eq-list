@@ -13,6 +13,7 @@ import WindowButtons from "@/app/components/chrome/WindowButtons";
 import Titlebar from "@/app/components/chrome/Titlebar";
 import ScaleButtons from "@/app/components/chrome/ScaleButtons";
 import ListPanel from "@/app/components/items/ListPanel";
+import NowOverview from "@/app/components/now/NowOverview";
 import HuntPanel, { type HuntGrouping } from "@/app/components/mob/HuntPanel";
 import SpawnPanel from "@/app/components/mob/SpawnPanel";
 import GoalsPanel from "@/app/components/goals/GoalsPanel";
@@ -26,6 +27,7 @@ import DamagePanel from "@/app/components/combat/DamagePanel";
 import LootPanel from "@/app/components/items/LootPanel";
 import FactionPanel from "@/app/components/faction/FactionPanel";
 import StatusBar from "@/app/components/chrome/StatusBar";
+import StaleExportChip from "@/app/components/exports/StaleExportChip";
 import PinButton from "@/app/components/chrome/PinButton";
 import OpacityButton from "@/app/components/chrome/OpacityButton";
 import ClickThroughButton from "@/app/components/chrome/ClickThroughButton";
@@ -34,6 +36,7 @@ import UpdateBanner from "@/app/components/chrome/UpdateBanner";
 import WebDownloadBanner from "@/app/components/chrome/WebDownloadBanner";
 import Toasts from "@/app/components/chrome/Toasts";
 import TabBar, { type TabItem } from "@/app/components/chrome/TabBar";
+import JumpPalette, { type JumpTarget } from "@/app/components/chrome/JumpPalette";
 import PeersPanel from "@/app/components/peers/PeersPanel";
 import PeerOfferToasts from "@/app/components/peers/PeerOfferToasts";
 import AchievementAlertToasts from "@/app/components/achievements/AchievementAlertToasts";
@@ -43,13 +46,15 @@ import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, use
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/chrome/nav";
+import { OwnershipProvider } from "@/lib/exports/ownership";
 import NavBar from "@/app/components/chrome/NavBar";
+import { AREAS, areaOf, sectionToOpen, type AreaKey } from "@/shared/chrome/areas";
 import { PASS_THROUGH, useClickThrough } from "@/lib/chrome/clickThrough";
 import { useWindowPin } from "@/lib/chrome/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings";
+type Tab = "overview" | "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -60,7 +65,9 @@ type Tab = "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "lo
 export default function Home() {
   return (
     <NavProvider>
-      <ControlWindow />
+      <OwnershipProvider>
+        <ControlWindow />
+      </OwnershipProvider>
     </NavProvider>
   );
 }
@@ -204,75 +211,54 @@ function ControlWindow() {
   const needsLog = !capabilities.log;
   const noLog = "Needs the desktop app — no EverQuest log to read here.";
 
-  const tabItems: TabItem[] = [
-    { key: "list", label: list.entries.length ? `List (${list.entries.length})` : "List" },
-    { key: "hunt", label: "Hunt" },
-    // Beside Hunt, which is the tool it belongs with. `TabBar` collapses from the *end*, so a
-    // ninth tab put after Settings would be the first one to disappear at the default width —
-    // and a timer you cannot see is worse than no timer (ADR 0092).
-    { key: "timers", label: "Timers", disabled: needsLog, disabledReason: noLog },
-    // Beside Timers, the other "what's running right now" board — a farming session you started on
-    // purpose rather than a camp the game handed you. Log-driven the same way (progress comes from
-    // loot/kill lines), so it's gated the same way. The count is *running* goals, silent at zero, the
-    // same restraint the tabs below it use.
-    { key: "goals", label: goalsLabel(goalsRunning), disabled: needsLog, disabledReason: noLog },
-    // Beside Goals — the fourth "what's running" board, and log-gated for the same reason: a
-    // `"watch"`/`"zone"`/`"highscore"` criterion (ADR 0212) needs the log the web build doesn't
-    // have. The manual half would work without one, but a tab that only half-works reads as broken
-    // rather than as a feature, so it stays behind the same gate as its siblings.
-    { key: "achievements", label: achievementsLabel(achievementsRunning), disabled: needsLog, disabledReason: noLog },
-    // Beside Timers, because it is the same kind of thing: a board of what is running out. It goes
-    // *before* Loot for the same reason Timers goes before Alerts — `TabBar` collapses from the end,
-    // and a buff that dropped is something you need to see mid-fight, which is exactly when you
-    // cannot go hunting through a » menu for it. The count is what is currently **missing**, since
-    // that is the only number here anyone acts on.
-    { key: "buffs", label: buffsLabel(buffs), disabled: needsLog, disabledReason: noLog },
-    { key: "loot", label: "Loot", disabled: needsLog, disabledReason: noLog },
-    // Beside Loot, the same kind of thing: a log-derived ledger rather than a board of what's
-    // currently running, which is why it sits with Loot rather than up with Timers/Goals/Buffs.
-    { key: "faction", label: "Faction", disabled: needsLog, disabledReason: noLog },
-    // Fourth, not last but one. `TabBar` collapses whatever doesn't fit into its » menu from the
-    // **end**, and at the window's default width only six tabs fit — so putting alerts after
-    // Settings would have left the feature *less* reachable than when it was a group inside
-    // Settings. The count is the *enabled* rules, since that's what's live, and "off" is worth
-    // saying out loud here: a silent overlay looks identical to one with nothing to say.
-    { key: "alerts", label: alertsLabel(settings?.castAlerts), disabled: needsLog, disabledReason: noLog },
-    { key: "search", label: "Search" },
-    // Straight after Search, because it is the same drawer opened from the other side: Search finds
-    // the page for a name you have, Items finds the name for a shape you want. Neither is wanted
-    // mid-fight, so both sit late enough that `TabBar` may fold them into the » menu.
-    { key: "items", label: "Items" },
-    // Beside Items, the same drawer as Items opened on a different shelf — one browses what you
-    // could wear, this browses what you could cast. Same "not needed mid-fight" grouping.
-    { key: "spells", label: "Spells" },
-    // Beside Spells, the third shelf of the same cabinet — what you could *do* (melee stance /
-    // casting invocation) rather than wear or cast. Static reference data like its two neighbours,
-    // so it gets no log gate either.
-    { key: "stances", label: "Stances" },
-    // Beside Stances, the fourth shelf — what you could *train* (Alternate Advancement) rather than
-    // wear, cast or do right now. Same static-reference grouping, same reason it carries no log gate.
-    { key: "aa", label: "AAs" },
-    // Beside AAs, the last shelf — what you could *make*. Static reference data from eqlwiki's
-    // leveling guides like its neighbours, so no log gate.
-    { key: "tradeskills", label: "Tradeskills" },
-    { key: "combat", label: "Combat", disabled: needsLog, disabledReason: noLog },
-    { key: "session", label: "Session", disabled: needsLog, disabledReason: noLog },
-    // After everything you watch while playing and before Peers/Settings: like them, a place you
-    // visit to do one thing (copy a command) and leave. Log-gated because the dumps are found beside
-    // the log, and named after the character in its file name.
-    { key: "exports", label: "Exports", disabled: needsLog, disabledReason: noLog },
-    // Before Settings, and after everything you look at while playing. It is the same kind of thing
-    // as Settings — a place you go to decide something and then leave — but it also has a live half
-    // (who is here, what has arrived), which is why it isn't a group inside it
-    // ([ADR 0141](../../specs/decisions/0141-the-room-is-a-meeting-place.md)). `TabBar` collapses
-    // from the end, so this and Settings are the two that go into the » menu first, which is right:
-    // neither is needed mid-fight.
-    { key: "peers", label: peersLabel(peers.length, settings?.connectPeers) },
-    { key: "settings", label: "Settings" },
-  ];
+  // Every section by its key — what used to be a tab each (ADR 0320). The label carries a count only
+  // where the number is worth acting on; a log-fed section is greyed out on a host with no log.
+  const logged = { disabled: needsLog, disabledReason: noLog };
+  const sectionItems: Record<Tab, TabItem> = {
+    overview: { key: "overview", label: "Overview", ...logged },
+    buffs: { key: "buffs", label: buffsLabel(buffs), ...logged },
+    timers: { key: "timers", label: "Timers", ...logged },
+    goals: { key: "goals", label: goalsLabel(goalsRunning), ...logged },
+    achievements: { key: "achievements", label: achievementsLabel(achievementsRunning), ...logged },
+    alerts: { key: "alerts", label: alertsLabel(settings?.castAlerts), ...logged },
+    list: { key: "list", label: "List" },
+    hunt: { key: "hunt", label: "Hunt" },
+    search: { key: "search", label: "Search" },
+    items: { key: "items", label: "Items" },
+    spells: { key: "spells", label: "Spells" },
+    stances: { key: "stances", label: "Stances" },
+    aa: { key: "aa", label: "AAs" },
+    exports: { key: "exports", label: "Inventory & exports", ...logged },
+    faction: { key: "faction", label: "Faction", ...logged },
+    tradeskills: { key: "tradeskills", label: "Tradeskills" },
+    combat: { key: "combat", label: "Combat", ...logged },
+    session: { key: "session", label: "Session", ...logged },
+    loot: { key: "loot", label: "Loot", ...logged },
+    settings: { key: "settings", label: "General" },
+    peers: { key: "peers", label: peersLabel(peers.length, settings?.connectPeers) },
+  };
+  const usable = (section: string) => !sectionItems[section as Tab]?.disabled;
   // A remembered trail can name a tab this build no longer has (renamed, or dropped): show the
-  // first tab rather than an empty panel.
-  const tab = (tabItems.some((t) => t.key === nav.tab) ? nav.tab : tabItems[0].key) as Tab;
+  // home section rather than an empty panel.
+  const tab: Tab = Object.hasOwn(sectionItems, nav.tab) ? (nav.tab as Tab) : "list";
+  const area = areaOf(tab) ?? AREAS[0];
+  // The section each area was last left on, so picking an area lands where you were — one click
+  // back to the board you use, not two.
+  const [lastSections, setLastSections] = usePersistentState<Record<string, string>>(STORAGE_KEYS.areaSections, {});
+  useEffect(() => {
+    setLastSections((prev) => (prev[area.key] === tab ? prev : { ...prev, [area.key]: tab }));
+  }, [area.key, tab, setLastSections]);
+  const areaItems: TabItem[] = AREAS.map((a) => ({
+    key: a.key,
+    label: areaLabel(a.key, { buffsDown: buffs.lapsed.length, listed: list.entries.length }),
+    disabled: !a.sections.some(usable),
+    disabledReason: noLog,
+  }));
+  const jumpTargets: JumpTarget[] = AREAS.flatMap((a) => a.sections.map((k) => ({ section: sectionItems[k as Tab], area: a.label })));
+  const openArea = (key: string) => {
+    const picked = AREAS.find((a) => a.key === key);
+    if (picked) openTab(sectionToOpen(picked, lastSections, usable));
+  };
 
   return (
     <>
@@ -293,6 +279,14 @@ function ControlWindow() {
           (/alert), which floats over the game. This window is the always-alive one that can
           reliably play the sound. */}
       <CastAlerts showVisual={false} />
+      <JumpPalette
+        targets={jumpTargets}
+        onJump={openTab}
+        onLookUp={(text) => {
+          openTab("search");
+          setPrefill(text);
+        }}
+      />
 
       <div ref={appShellRef} className={`app glass ${maximized ? "maximized" : ""}`}>
         <Titlebar>
@@ -331,7 +325,10 @@ function ControlWindow() {
         <UpdateBanner />
         <WebDownloadBanner />
 
-        <TabBar items={tabItems} active={tab} onSelect={openTab} />
+        <TabBar items={areaItems} active={area.key} onSelect={openArea} />
+        {area.sections.length > 1 && (
+          <TabBar className="sections" items={area.sections.map((k) => sectionItems[k as Tab])} active={tab} onSelect={openTab} />
+        )}
 
         {/* Where you have been, under the tabs and above the panel — because the trail crosses both
             (ADR 0173). Draws nothing on a window that hasn't been anywhere. */}
@@ -339,6 +336,7 @@ function ControlWindow() {
 
         {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}
         <div className="panel" {...PASS_THROUGH}>
+          {tab === "overview" && <NowOverview />}
           {tab === "list" && <ListPanel />}
           {tab === "hunt" && (
             <HuntPanel
@@ -368,7 +366,7 @@ function ControlWindow() {
           {tab === "settings" && <SettingsPanel />}
         </div>
 
-        <StatusBar />
+        <StatusBar>{capabilities.log && <StaleExportChip />}</StatusBar>
       </div>
 
       {/* Outside `.app`, which clips its children (`overflow: hidden`): a notice is drawn over the
@@ -376,6 +374,18 @@ function ControlWindow() {
       <Toasts />
     </>
   );
+}
+
+/**
+ * What an area says about itself on the top row. Only two carry a number, each the one worth seeing
+ * without opening the area: Now counts buffs that are **down** (the reason to look mid-fight), List
+ * counts what's on it. The rest name themselves — their sections carry their own counts.
+ */
+function areaLabel(key: AreaKey, counts: { buffsDown: number; listed: number }): string {
+  const label = AREAS.find((a) => a.key === key)?.label ?? key;
+  if (key === "now" && counts.buffsDown) return `${label} (${counts.buffsDown})`;
+  if (key === "list" && counts.listed) return `${label} (${counts.listed})`;
+  return label;
 }
 
 /**

@@ -465,7 +465,7 @@ reading like a measurement, and they are shared code
 - **A one-time conversion is idempotent and changes what no rule matches**, asserted by matching the
   same events either side of it. ([0087](./0087-an-old-rule-is-converted-once-and-the-path-is-one-module.md))
 - **Alerts are edited in a tab and stored in settings.** Where a thing is edited is a different
-  question from where it is stored, and the tab label says when the master switch is down. ([0088](./0088-alerts-are-a-tab-not-a-setting.md))
+  question from where it is stored, and the tab label says when the master switch is down. ([0088](./0088-alerts-are-a-tab-not-a-setting.md), [0320](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md))
 - **Completions come from the log, and nothing is accepted implicitly.** A trie answers per keystroke;
   prefix beats contains beats fuzzy, at a higher floor than the search box uses. ([0091](./0091-a-rule-is-typed-with-the-log-s-help.md))
 
@@ -658,7 +658,13 @@ reading like a measurement, and they are shared code
   sitting where its own alert would, with the banner drawing over it. ([0099](./0099-a-countdown-can-stay-on-screen.md))
 - **A toast is read, never acted on; it always leaves by itself; and it is never the only place
   something is said.** ([0106](./0106-an-add-says-what-it-did.md))
-- **A tab is promoted by position, not into a menu**, and the overflow collapses from the end. ([0088](./0088-alerts-are-a-tab-not-a-setting.md))
+- **Tabs are grouped into areas by what you are doing**, each area's sections on a second row. A
+  section keeps its old tab key (the trail records it), an area reopens on the section you left it
+  on, and only Now (buffs down) and List (entries) carry a number on the top row. Alerts stays a
+  section of its own, never a group in Settings. ([0320](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md))
+- **Fewer clicks, not just fewer tabs**: Now → Overview summarises every running board, Ctrl+K jumps
+  to any section or looks the text up, the status bar names the stalest export, and an item's hover
+  card says who has it, from shares already received and never by asking. ([0320](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md))
 
 ## Peers
 

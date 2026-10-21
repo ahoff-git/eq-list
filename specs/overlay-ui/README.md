@@ -248,6 +248,16 @@ list, hunt, search, damage, session, peers, settings.
   dropdown) instead of shrinking their labels off the edge — so every tab stays reachable
   without resizing. It measures natural tab widths from an off-screen ghost row and
   re-fits on resize (`ResizeObserver`) and when a label changes (the List count).
+- **Areas and sections** (`shared/chrome/areas.ts`, drawn by two `TabBar`s in `page.tsx`): the top
+  row is seven **areas** grouped by what you are doing (Now, List, Find, Character, Craft, History,
+  Settings), and the row under it is the showing area's **sections**. Each section is one of the old
+  tabs, under its old key, so the trail and `openTab` are unchanged. The area is derived from the
+  section; each area reopens on the section last used there (`eqlist.main.areaSections`); a
+  one-section area draws no second row. **Ctrl+K** (`JumpPalette`) jumps to any section or looks the
+  typed text up in Search. Now's first section is the **Overview** (`now/NowOverview.tsx`), one card
+  per running board, each opening its section. The status bar carries the **stale-export reminder**
+  (`exports/StaleExportChip.tsx`), and an item's hover card says **who has it** (`lib/exports/ownership.tsx`).
+  ([ADR 0320](../decisions/0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md))
 - **The trail** (`lib/nav.tsx` + `shared/nav-trail.ts`, drawn by `components/NavBar.tsx`): where the
   window is, and how it got there. A **place** is a tab *plus* the page open on it, and every move
   appends one — so back from a page opened by a name click on Hunt returns to **Hunt**, which is the

@@ -13,6 +13,7 @@ import {
   exportFileType,
   exportStaleness,
   GAME_EXPORT_COMMANDS,
+  stalestExport,
   lastExportedAt,
   RECIPE_EXPORT_COMMANDS,
 } from "../../src/shared/game-exports";
@@ -145,4 +146,19 @@ test("every export is archived once per content, and nothing archived is ever re
   fs.rmSync(inv);
   archiveExports(logFile, userData);
   assert.equal(archived("inventory").length, 2);
+});
+
+test("stalestExport: the stalest dump you have taken, once it is past the nudge point", () => {
+  const [inventory, guildbank] = GAME_EXPORT_COMMANDS;
+  const now = Date.parse("2026-10-21T12:00:00Z");
+  const ago = (ms: number) => now - ms;
+  // Fresh: nothing to say.
+  assert.equal(stalestExport(GAME_EXPORT_COMMANDS, { inventory: ago(60_000) }, now), undefined);
+  // Past half its stale time, it's the reminder.
+  assert.equal(stalestExport(GAME_EXPORT_COMMANDS, { inventory: ago(inventory.staleAfterMs * 0.6) }, now), inventory);
+  // Of two, the staler one relative to its own clock.
+  const times = { inventory: ago(inventory.staleAfterMs * 0.6), guildbank: ago(guildbank.staleAfterMs * 2) };
+  assert.equal(stalestExport(GAME_EXPORT_COMMANDS, times, now), guildbank);
+  // A command never run is not nagged about.
+  assert.equal(stalestExport(GAME_EXPORT_COMMANDS, {}, now), undefined);
 });

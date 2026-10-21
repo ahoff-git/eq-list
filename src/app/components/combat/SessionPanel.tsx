@@ -138,7 +138,7 @@ function TimeToLevel({ xp, xpPerHour }: { xp: XpProgress; xpPerHour: number }) {
 }
 
 /** Percent of a level per hour, over the session's elapsed (not combat) time. */
-function ratePerHour(session: FightStats): number {
+export function ratePerHour(session: FightStats): number {
   if (!session.spanSec || !session.xpPct) return 0;
   return ratio(session.xpPct, session.spanSec / 3600, 2);
 }

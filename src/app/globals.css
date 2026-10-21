@@ -303,6 +303,17 @@ button {
   cursor: not-allowed;
 }
 
+/* The second row: the showing area's sections (ADR 0320). Quieter than the area row above it, so
+   the two read as a place and the rooms in it rather than two competing strips. */
+.tabs.sections {
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.tabs.sections .tab {
+  padding: 5px 10px;
+  font-size: 0.92em;
+}
+
 /* Overflow "»" menu for tabs that don't fit (TabBar) */
 .tab-more {
   position: relative;
@@ -4201,6 +4212,8 @@ select optgroup {
 .game-export-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .game-export.compact { grid-template-columns: 1fr auto; padding: 6px 8px; }
 .game-export.compact .game-export-label { font-weight: 500; }
+/* The status bar's reminder (StaleExportChip): the same button, shrunk to the bar's line height. */
+.statusbar .game-export { padding: 1px 8px; gap: 6px; font-size: 12px; }
 
 /* Exports tab: reading a dump. */
 .game-export-views { flex-wrap: wrap; align-self: flex-start; }
@@ -4294,3 +4307,76 @@ select optgroup {
 .from-what-you-hold { margin: 6px 0 10px; padding: 6px 10px; border-left: 3px solid var(--good); background: color-mix(in oklab, var(--good) 6%, transparent); border-radius: var(--radius); }
 .from-what-you-hold ul { list-style: none; margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
 .from-what-you-hold .good { color: var(--good); }
+
+/* Now → Overview: one card per board of what's running (NowOverview, ADR 0320). */
+.now-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.now-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.now-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 0 0 4px;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.now-card-head:hover { color: var(--accent); }
+.now-row { display: flex; align-items: baseline; gap: 8px; }
+.now-clock { font-variant-numeric: tabular-nums; min-width: 4.5em; color: var(--text-dim); }
+.now-warn { color: var(--warn, #e0a030); }
+
+/* Ctrl+K jump palette (JumpPalette, ADR 0320). */
+.jump-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 72px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.jump-palette {
+  width: min(420px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.jump-palette .field { width: 100%; }
+.jump-list { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; }
+.jump-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.jump-item.active, .jump-item:hover { background: var(--bg); color: var(--accent); }
+
+/* Item hover card: who has it (useOwnershipNotes, ADR 0320) — set apart from the stats like the craft lines. */
+.ic-owned { display: flex; flex-direction: column; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--good); }

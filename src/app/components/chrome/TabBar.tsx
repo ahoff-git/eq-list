@@ -20,15 +20,21 @@ const GAP = 4; // must match `.tabs` gap in globals.css
  * the edge. Natural tab widths are measured from an off-screen ghost row, so the visible
  * row can render only what fits; it re-measures on resize (ResizeObserver) and when the
  * labels change (e.g. the List count).
+ *
+ * The same bar draws both rows of the control window's navigation — areas, and the sections of the
+ * one showing (ADR 0320) — told apart only by `className`.
  */
 export default function TabBar({
   items,
   active,
   onSelect,
+  className = "",
 }: {
   items: TabItem[];
   active: string;
   onSelect: (key: string) => void;
+  /** Extra classes for the row — `sections` for the second row. */
+  className?: string;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -76,7 +82,7 @@ export default function TabBar({
   const overflowActive = overflow.some((t) => t.key === active);
 
   return (
-    <div className="tabs" ref={rowRef}>
+    <div className={`tabs ${className}`} ref={rowRef}>
       {visible.map((t) => (
         <button
           key={t.key}

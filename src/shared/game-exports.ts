@@ -180,6 +180,28 @@ export function exportStaleness(cmd: GameExportCommand, writtenAt: number | unde
   return Math.min(1, age / cmd.staleAfterMs);
 }
 
+/** How stale a dump must be before the status bar mentions it — past the midpoint, where its button turns from green toward yellow. */
+export const NUDGE_STALENESS = 0.5;
+
+/**
+ * The one dump most worth retaking, for the status bar's reminder (ADR 0320): of the commands you have
+ * run at least once, the stalest, if it is at least `NUDGE_STALENESS` stale. A command never run isn't
+ * nagged about — you may simply not use it — and a fresh set says nothing at all.
+ */
+export function stalestExport(
+  commands: readonly GameExportCommand[],
+  times: GameExportTimes,
+  now: number,
+): GameExportCommand | undefined {
+  let worst: { cmd: GameExportCommand; staleness: number } | undefined;
+  for (const cmd of commands) {
+    const staleness = exportStaleness(cmd, lastExportedAt(cmd, times), now);
+    if (staleness === null || staleness < NUDGE_STALENESS) continue;
+    if (!worst || staleness > worst.staleness) worst = { cmd, staleness };
+  }
+  return worst?.cmd;
+}
+
 /** An age at the coarseness a reminder wants — `just now`, `40m ago`, `5h ago`, `3d ago`. */
 export function exportAgeText(ageMs: number): string {
   const minutes = Math.floor(Math.max(0, ageMs) / 60_000);

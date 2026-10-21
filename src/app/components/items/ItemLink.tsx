@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { useOptionalNav } from "@/lib/chrome/nav";
 import { api } from "@/lib/api";
 import { useClosedZones, useItemCard, useWikiPage } from "@/lib/hooks";
+import { useOwnershipNotes } from "@/lib/exports/ownership";
 import { localSize, localTextBox, localView, scaleRoot } from "@/lib/screen";
 import { besideWidth, placeTooltip, type AnchorBox, type Placement } from "@/shared/chrome/tooltip";
 import { craftNotes } from "@/shared/tradeskills/craft-notes";
@@ -188,6 +189,9 @@ function ItemCardTip({
   base?: readonly string[];
 }) {
   const ref = useRef<HTMLSpanElement>(null);
+  // Who has it — you, where and at what best grade, and sharing peers (ADR 0320). Empty for a spell,
+  // for anything nobody holds, and in the map window, which has no ownership to read.
+  const owned = useOwnershipNotes(card.title);
   // How wide it may be is a question about where the name sits, not about the card, so it's answered
   // before the first paint — the measurement below then sees the size the card will keep.
   const avail = useMemo(() => besideWidth(anchor, localView()), [anchor]);
@@ -202,7 +206,7 @@ function ItemCardTip({
     const el = ref.current;
     if (!el) return;
     setPlace({ ...placeTooltip(anchor, localSize(el), localView()), ready: true });
-  }, [anchor, card, notes?.length]);
+  }, [anchor, card, notes?.length, owned.length]);
 
   return createPortal(
     <span
@@ -234,6 +238,15 @@ function ItemCardTip({
       {notes && notes.length > 0 && (
         <span className="ic-craft">
           {notes.map((n, i) => (
+            <span className="ic-craft-line" key={i}>
+              {n}
+            </span>
+          ))}
+        </span>
+      )}
+      {owned.length > 0 && (
+        <span className="ic-owned">
+          {owned.map((n, i) => (
             <span className="ic-craft-line" key={i}>
               {n}
             </span>

@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode } from "react";
 import { useWatcherStatus, useLootFeed, useCurrentZone } from "@/lib/hooks";
 import ZoneTag from "@/app/components/map/ZoneTag";
 import GameClock from "@/app/components/gameclock/GameClock";
@@ -12,8 +13,11 @@ import GameClock from "@/app/components/gameclock/GameClock";
  * ([ADR 0136](../../../specs/decisions/0136-logged-data-says-where-it-happened.md)). Unlinked: this bar
  * is in every window, and a link that opened the map from under the panel you were reading is a
  * gesture nobody asked for.
+ *
+ * `children` go at the far end — what a window adds of its own (the main window's stale-export
+ * reminder).
  */
-export default function StatusBar() {
+export default function StatusBar({ children }: { children?: ReactNode }) {
   const status = useWatcherStatus();
   const feed = useLootFeed(1);
   const zone = useCurrentZone();
@@ -37,6 +41,7 @@ export default function StatusBar() {
           last drop: {last.item} <span className="small">from {last.source}</span>
         </span>
       )}
+      {children}
     </div>
   );
 }

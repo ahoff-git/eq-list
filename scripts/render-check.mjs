@@ -197,6 +197,19 @@ const checks = [
     expect: ["Mesmerize III"],
   },
   {
+    view: "Now → Overview — a buff that lapsed, at its rank",
+    mounted: () => mount((p) => h(load("lib/chrome/nav").NavProvider, null, h(load("app/components/now/NowOverview").default, p)), {}, {
+      "buffs.view": {
+        active: [],
+        lapsed: [{ key: "clarity", spell: "Clarity", rank: "II", target: "you", up: false, at: "2026-10-20T10:00:00", since: "2026-10-20T09:00:00", source: "cast", byYou: true, permanent: false, onEnemy: false }],
+        known: [],
+        lexicon: true,
+        now: "2026-10-20T10:01:00",
+      },
+    }),
+    expect: ["Clarity II"],
+  },
+  {
     view: "Search tab — a graded name finds its +0 page",
     mounted: () => mount((p) => h(load("lib/chrome/nav").NavProvider, null, h(load("app/components/items/SearchPanel").default, p)), { prefill: "Dragoon Dirk +2", onPrefillUsed: () => {} }, {
       "wiki.search": [{ title: "Dragoon Dirk", wikiPath: "Dragoon_Dirk" }],

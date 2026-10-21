@@ -16,6 +16,12 @@ export const STORAGE_KEYS = {
    * place of a new trail, so an upgrade opens on the tab it was closed on.
    */
   activeTab: "eqlist.main.tab",
+  /**
+   * Main window: the section each area was last left on (ADR 0320), so picking an area lands where
+   * you were. Not a second answer to where the window *is* — that's the trail's — only where each
+   * area reopens.
+   */
+  areaSections: "eqlist.main.areaSections",
   /** Main window: the Hunt tab's zone filter. */
   huntZone: "eqlist.main.huntZone",
   /** Main window: whether the Hunt tab groups by zone or by item. */

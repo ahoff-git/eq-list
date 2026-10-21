@@ -2562,3 +2562,23 @@ all eleven cultural pages come back dimmed with an "out of era" badge whose hove
   do a real stretch of combines and compare the count against the range: the ceiling is a measured
   worst case at the guides' stats, and a character with much lower INT/WIS should note how far past it
   they ran.
+
+## Areas and sections (ADR 0320)
+
+- **The top row fits at the default window width.** Open the app at its default size: Now, List,
+  Find, Character, Craft, History and Settings should all show, with no `»`. Narrow the window and
+  confirm they fold into `»` from the end, as before.
+- **Each area reopens where you left it**, across a restart: go to History → Loot, then Now, then
+  History again (it should land on Loot), quit and relaunch (still Loot).
+- **Ctrl+K over the game.** With the window focused over EverQuest, Ctrl+K opens the palette, and
+  typing reaches the palette's box, not the game. Esc closes it. Enter on a name nothing matches
+  ("Gnoll Fang") lands in Find → Search with the text in the box.
+- **The stale-export reminder** appears at the right of the status bar once your inventory dump is
+  over six hours old (half of its twelve). One click copies `/outputfile inventory`, and it goes
+  away within a minute of the new dump being written.
+- **Who has it, on a hover card.** With an inventory dump read, hover an item you hold in the List
+  or Search: the card ends with "You have N (best +G): Bank 3, …". With a sharing peer who has handed
+  over their inventory, a "Peers: …" line follows. Hovering an item in the **map** window shows no
+  such line, and no hover asks a peer for anything (the peer's Activity shows no new ask).
+- **Now → Overview mid-fight**: buffs going down, a timer counting, a running goal and the session's
+  XP/hour all update on the cards without opening their sections.

@@ -83,6 +83,7 @@ const TRACES: Record<string, string> = {
   "mob/HuntPanel.tsx|notAnItem(zone)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "mob/MobKills.tsx|heldAsNamed(drop.item)": "MobKills: your kills' drops are keyed by case only, so a graded drop shows as looted",
   "mob/MobKnowledge.tsx|dropTableName(drop.item)": "MobKnowledge: a mob's reconciled drop table folds a graded drop into its item — by design",
+  "now/NowOverview.tsx|rankedSpellTitle(b.spell, b.rank)": "spells: a ranked name is read back at its rank, and falls back to the unranked page",
   "mob/MobKnowledge.tsx|notAnItem(mob.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "peers/PeerInventories.tsx|gradedTitle(f.item, f.bestGrade)": "Who has it: a peer's row carries their best grade and is linked at it",
   "spells/SpellCatalogTable.tsx|notAnItem(quest)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",

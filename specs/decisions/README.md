@@ -125,7 +125,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0085: A rule can be tested, shared and borrowed](./0085-a-rule-can-be-tested-shared-and-borrowed.md) — *its recent-lines buffer superseded by 0089; styles refined by 0086 and 0090*
 - [0086: Editing a shared style from a rule forks it](./0086-editing-a-shared-style-from-a-rule-forks-it.md)
 - [0087: An old rule is converted once, and the alert path is one module](./0087-an-old-rule-is-converted-once-and-the-path-is-one-module.md)
-- [0088: Alerts are a tab, not a setting](./0088-alerts-are-a-tab-not-a-setting.md)
+- [0088: Alerts are a tab, not a setting — superseded by 0320](./0088-alerts-are-a-tab-not-a-setting.md)
 - [0089: A rule is checked against the log file, not against this session](./0089-a-rule-is-checked-against-the-log-file.md)
 - [0090: One style editor at a time, opened by a button](./0090-one-style-editor-at-a-time.md)
 - [0091: A rule is typed with the log's help](./0091-a-rule-is-typed-with-the-log-s-help.md)
@@ -358,6 +358,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0317: HP, mana and AC weights fold into STA, INT/WIS and AGI for your classes (best two of three pools) at your level cap, once, for both item search and best in slot](./0317-hp-mana-and-ac-are-weighted-through-the-stats-that-make-them.md)
 - [0318: Best in slot takes your word: title-keyed slot locks solved exactly around, wanted effects met cheapest-first (worn → socketed stone → worn from what you hold → hunt) and pinned, benched items and skipped hunts, hunts added to the list from the page, and whole-tab presets](./0318-best-in-slot-takes-your-word.md)
 - [0319: ItemLink takes only a ShownName — built by a level writer (gradedTitle, rankedSpellTitle) or a marker (heldAsNamed, wikiName, dropTableName, notAnItem) — so every linked item or spell has its level decided, checked by the compiler](./0319-a-linked-name-has-its-level-decided-by-type.md)
+
+- [0320: The control window's tabs are grouped into seven areas by what you are doing, with each area's sections on a second row; Now → Overview, Ctrl+K, a stale-export reminder and ownership on hover cards cut the clicks (supersedes 0088)](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md)
 
 ## Open Questions
 
@@ -654,3 +656,7 @@ and degrading to blank facts when the file isn't there.*
   split into several parts would be shorter, and harder to get wrong, written as a list of which
   crossings sit in which part. That would also let a `/loc` say which part you're in, which nothing
   can today ([ADR 0311](./0311-a-crossing-can-go-one-way.md)'s consequences).
+- **One search box across kinds?** Find groups Search, Items, Spells, Stances and AAs, but each keeps
+  its own box. A single box with results grouped by kind (and an item's filters appearing when you
+  pick items) would save choosing a section first; whether the shape filters survive being folded in
+  is the question ([ADR 0320](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md)).
