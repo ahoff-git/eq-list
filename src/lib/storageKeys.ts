@@ -167,6 +167,10 @@ export const STORAGE_KEYS = {
   itemMode: "eqlist.items.mode",
   /** Items tab: narrowed to what your newest inventory dump says you own. */
   itemOwnedOnly: "eqlist.items.ownedOnly",
+  /** Items tab: what you've told best in slot — locks, wanted effects, benched items, skipped hunts. */
+  itemBisOptions: "eqlist.items.bisOptions",
+  /** Items tab: named setups — criteria, weights and best-in-slot choices together (`item-presets.ts`). */
+  itemPresets: "eqlist.items.presets",
   /** Exports tab: which view is showing — the commands, or one dump's contents (its `fileType`). */
   exportsView: "eqlist.main.exportsView",
   /**

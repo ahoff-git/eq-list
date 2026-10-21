@@ -355,9 +355,14 @@ finished, so a number is claimed before a second author can reach for it.
 - [0314: A guide counts what sharing peers hold: alternatives show combines from yours and with peers', sections name peers' holdings, and an open guide asks sharing peers for their inventories (supersedes 0313)](./0314-a-guide-counts-what-your-peers-share.md)
 - [0315: Every /outputfile dump is copied into a per-character archive in userData, deduplicated by content and never deleted, so a new export never destroys the last](./0315-every-export-is-kept.md)
 - [0316: A held item or ranked spell is named at its level everywhere through one reader and one writer each (heldName/gradedTitle, rankedSpellTitle); peer inventory rows carry the sender's best grade](./0316-a-held-thing-is-named-at-its-level-everywhere.md)
+- [0317: HP, mana and AC weights fold into STA, INT/WIS and AGI for your classes (best two of three pools) at your level cap, once, for both item search and best in slot](./0317-hp-mana-and-ac-are-weighted-through-the-stats-that-make-them.md)
+- [0318: Best in slot takes your word: title-keyed slot locks solved exactly around, wanted effects met cheapest-first (worn → socketed stone → worn from what you hold → hunt) and pinned, benched items and skipped hunts, hunts added to the list from the page, and whole-tab presets](./0318-best-in-slot-takes-your-word.md)
 
 ## Open Questions
 
+- **What does AGI buy in AC on EQL, and where do the mana and STA knees sit?** [ADR 0317](./0317-hp-mana-and-ac-are-weighted-through-the-stats-that-make-them.md)
+  uses ⅓ AC per AGI (one eqlwiki figure) and the 101–200 band's mana rate for everyone. A gear swap
+  read off two inventory dumps would measure either one, the way eqltools measured mana past 200.
 - **Should the faction ledger be per character?** `faction_hits` records no character (`log_id` is a
   line id, not a log file), so standings, typed corrections and the `/outputfile faction` dump's
   offset ([ADR 0308](./0308-the-game-s-faction-dump-is-a-stated-total.md)) all mix every character the

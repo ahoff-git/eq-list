@@ -39,10 +39,11 @@ const SITES: Record<string, Level> = {
   "exports/InventoryDumpView.tsx|gradedTitle(t.baseName, t.bestGrade)": "levelled",
   "exports/InventoryDumpView.tsx|item.name": "as-named",
   "items/BisView.tsx|gradedTitle(m.title, m.to)": "levelled",
-  "items/BisView.tsx|gradedTitle(pick.item.title, pick.item.grade)": "levelled",
+  "items/BisWearTable.tsx|gradedTitle(r.pick.item.title, r.pick.item.grade)": "levelled",
   // Hunt targets are catalogue items you don't hold, weighed at +0 (the table shows +1/+2/+3 apart).
-  "items/BisView.tsx|h.item.title": "wiki",
-  "items/BisView.tsx|hunt.item.title": "wiki",
+  "items/BisHuntTable.tsx|h.item.title": "wiki",
+  "items/BisWearTable.tsx|r.hunt.item.title": "wiki",
+  "items/BisEffects.tsx|h.item.title": "wiki", // a catalogue item carrying a wanted effect, not held
   "items/ItemTable.tsx|gradedTitle(p.row.item.title, p.row.grade ?? 0)": "levelled",
   "items/ItemTable.tsx|row.quests[0]": "not-item",
   "peers/PeerInventories.tsx|gradedTitle(f.item, f.bestGrade)": "levelled",

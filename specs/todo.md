@@ -460,10 +460,12 @@ Four of the six are **done** and have left this list: rank-aware spell costs
     log-seen loot and sells *since the dump* on top of it as `SinceDump`, so the number stays current
     and says which part came from where. That's the shape to copy. It also unlocks the
     quest-readiness item above and the **ignore list** in [ideas.md](./ideas.md).
-  - **Best in slot can't price an effect.** Exaltations and an item's own effects carry no number,
-    so the loadout is optimal for stats only ([ADR 0310](./decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)).
-    A per-effect weight (the way the weight sheet does stats) would let the solver trade them
-    properly. Two rules are also secondhand and worth checking in game: an Any Slot weapon not
+  - **Best in slot can't price an effect.** An effect can now be *required*
+    ([ADR 0318](./decisions/0318-best-in-slot-takes-your-word.md)), but not weighed: one nobody asked
+    for is worth nothing to the solver, and a wanted one is kept at any price
+    ([ADR 0310](./decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md)). A
+    per-effect weight would let it trade them; the snag is that same-named effects don't stack,
+    which an assignment can't express. Two rules are also secondhand and worth checking in game: an Any Slot weapon not
     swinging, and whether LORE applies across Any Slots.
   - **Storage may drop rows.** eqltools-companion (commit 56031f1, "storage export drops rows")
     recorded a bought item missing from Storage across three dumps. Cause unknown; the tab warns

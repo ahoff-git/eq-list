@@ -124,3 +124,57 @@ test("hunting: an off-hand while swinging a two-hander is weighed against the tw
   // Wearing the buckler means putting the axe away: 4 - 10 is no gain.
   assert.deepEqual(found, []);
 });
+
+// ─── Locks ──────────────────────────────────────────────────────────────────
+
+test("a locked item is worn where it was locked, and the rest is still solved exactly around it", () => {
+  const layout = ["ANY", "FINGER"];
+  const big = item("Big Ring", ["FINGER"], 10);
+  const small = item("Small Ring", ["FINGER"], 3);
+  const ear = item("Earring", ["EAR"], 8);
+  // Unlocked, the earring takes ANY and the big ring FINGER. Lock the small ring into FINGER: the big
+  // ring moves to ANY, and the earring is the one left out.
+  const loadout = bestLoadout([big, small, ear], layout, [{ slotIndex: 1, item: small }]);
+  assert.deepEqual(worn(loadout), ["ANY:Big Ring", "FINGER:Small Ring"]);
+  assert.equal(loadout.total, 13);
+  assert.deepEqual(loadout.locked, [1]);
+});
+
+test("a slot locked empty stays empty; an unlocked loadout reports no locks", () => {
+  const layout = ["HEAD", "CHEST"];
+  const all = [item("Hat", ["HEAD"], 4), item("Tunic", ["CHEST"], 5)];
+  assert.deepEqual(worn(bestLoadout(all, layout, [{ slotIndex: 0, item: null }])), ["CHEST:Tunic"]);
+  assert.deepEqual(bestLoadout(all, layout).locked, []);
+});
+
+test("locks and two-handers: a locked two-hander takes the off-hand; a locked off-hand stops one being swung", () => {
+  const layout = ["PRIMARY", "SECONDARY"];
+  const axe = item("Greataxe", ["PRIMARY"], 3, { twoHanded: true });
+  const sword = item("Sword", ["PRIMARY", "SECONDARY"], 6);
+  const shield = item("Shield", ["SECONDARY"], 5);
+  const lockedAxe = bestLoadout([axe, sword, shield], layout, [{ slotIndex: 0, item: axe }]);
+  assert.deepEqual(worn(lockedAxe), ["PRIMARY:Greataxe"]);
+  assert.deepEqual(lockedAxe.locked, [0, 1], "the off-hand it gave up counts as decided");
+
+  const big = item("Big Axe", ["PRIMARY"], 20, { twoHanded: true });
+  assert.deepEqual(worn(bestLoadout([big, sword, shield], layout, [{ slotIndex: 1, item: shield }])), ["PRIMARY:Sword", "SECONDARY:Shield"]);
+  // With the off-hand held *empty*, the two-hander can simply be swung.
+  assert.deepEqual(worn(bestLoadout([big, sword, shield], layout, [{ slotIndex: 1, item: null }])), ["PRIMARY:Big Axe"]);
+});
+
+test("a locked LORE item keeps its other copies out of the rest", () => {
+  const layout = ["FINGER", "FINGER"];
+  const plain = item("Lore Ring", ["FINGER"], 5, { lore: true });
+  const graded = item("Lore Ring", ["FINGER"], 9, { lore: true, grade: 4 });
+  const loadout = bestLoadout([plain, graded, item("Iron Ring", ["FINGER"], 1)], layout, [{ slotIndex: 0, item: plain }]);
+  assert.deepEqual(loadout.picks.map((p) => `${p.item.title}+${p.item.grade}`).sort(), ["Iron Ring+0", "Lore Ring+0"]);
+});
+
+test("hunting skips a locked slot, and can keep losses when asked", () => {
+  const layout = ["HEAD", "CHEST"];
+  const hat = item("Hat", ["HEAD"], 4);
+  const held = bestLoadout([hat], layout, [{ slotIndex: 0, item: hat }]);
+  assert.deepEqual(huntSuggestions(held, [item("Crown", ["HEAD"], 9)], layout), [], "the head is the player's");
+  const loss = huntSuggestions(bestLoadout([item("Tunic", ["CHEST"], 9)], layout), [item("Rag", ["CHEST"], 2)], layout, true);
+  assert.deepEqual(loss.map((s) => [s.item.title, s.gain]), [["Rag", -7]]);
+});

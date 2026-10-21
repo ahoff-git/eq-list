@@ -568,6 +568,18 @@ list, hunt, search, damage, session, peers, settings.
       and at `+1/+2/+3`, with level and where it drops. Rules and reasoning:
       [ADR 0310](../decisions/0310-best-in-slot-is-an-exact-assignment-by-your-weights.md);
       `src/shared/items/bis.ts`, `bis-plan.ts`, `exaltations.ts`.
+      **You get a say** ([ADR 0318](../decisions/0318-best-in-slot-takes-your-word.md),
+      `bis-options.ts`). Each slot can be locked (🔒) to what's in it, set to anything else you hold, or
+      held empty, and the rest is still solved exactly. "Lock all" freezes the whole loadout. ⊘ benches
+      an item so it's never worn. **Wanted effects** are met cheapest-first (worn → a stone you hold,
+      socketed → wear something you hold that has it → hunt), each with how and at what cost. **Hunt**
+      rows add straight to the shopping list (or "the best per slot" at once), say when they're already
+      listed, filter by slot, and ✕ skips one for good. The summary says what your choices cost. "Copy
+      loadout" puts it on the clipboard as text. Split by job: `BisWearTable`, `BisEffects`,
+      `BisHuntTable`.
+    - **Presets** (`ItemPresets`, `item-presets.ts`) save the whole tab under a name: criteria,
+      weights and best-in-slot choices. Picking one puts all of it back. The picker shows which one is
+      live, and shows none once anything has changed.
     - **The panel is state and layout only.** The computation is one hook
       (`useItemQuery` — the era-scoped corpus, the picker options, their counts, the results, the stat
       columns, the unplaced tally), and each band of controls is its own component: `ItemFacetRow`

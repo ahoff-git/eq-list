@@ -1,6 +1,7 @@
 "use client";
 import { STATS, statMeta, type StatGroup, type StatKey } from "@/shared/items/item-stats";
 import { weightedStats, type StatWeights } from "@/shared/items/item-search";
+import { ratesInUse, type DerivedRate } from "@/shared/items/derived-stats";
 import { count } from "@/shared/format";
 
 /** The sections a card's numbers fall into, in the order a card prints them. */
@@ -25,15 +26,28 @@ const GROUPS: readonly { key: StatGroup; label: string }[] = [
  *
  * Delay and weight are marked as wanting a negative number. They are the two stats where less is
  * better, and a sheet that scored them like the rest would rank the heaviest, slowest weapon top.
+ *
+ * HP, Mana and AC are also partly *made of* other stats, and the sheet says so underneath: weight
+ * Mana and an INT point is worth what it adds to your pools too (`derived-stats.ts`). Said here,
+ * because otherwise a ring with nothing but INT scoring under a Mana-only sheet looks like a bug.
  */
 export default function ItemWeights({
   weights,
+  rates,
+  level,
+  classesTicked,
   onChange,
 }: {
   weights: StatWeights;
+  /** What a primary stat buys in HP, mana and AC for the ticked classes — see `derived-stats.ts`. */
+  rates: readonly DerivedRate[];
+  level: number;
+  classesTicked: boolean;
   onChange: (weights: StatWeights) => void;
 }) {
   const scored = weightedStats(weights);
+  const folded = ratesInUse(weights, rates);
+  const poolsNeedClasses = !classesTicked && (!!weights.hp || !!weights.mana);
 
   const setWeight = (key: StatKey, text: string) => {
     const next = { ...weights };
@@ -58,6 +72,20 @@ export default function ItemWeights({
           </button>
         )}
       </div>
+
+      {(folded.length > 0 || poolsNeedClasses) && (
+        <div className="row wrap iw-derived muted small">
+          {folded.length > 0 && (
+            <span title="Each primary point also scores the secondary stat it raises, at your weight for that stat">
+              Also counted at level {level}:{" "}
+              {folded
+                .map((r) => `1 ${statMeta(r.from).label} = ${r.perPoint} ${statMeta(r.to).label}${r.pools.length ? ` (${r.pools.join(" + ")})` : ""}`)
+                .join(" · ")}
+            </span>
+          )}
+          {poolsNeedClasses && <span>Tick your classes above to count STA toward HP and INT/WIS toward mana.</span>}
+        </div>
+      )}
 
       {GROUPS.map((group) => (
         <div className="row wrap iw-group" key={group.key}>

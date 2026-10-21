@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openSockets, socketName, socketPlan, stoneFits, type Stone } from "../../src/shared/items/exaltations";
-import { bisPlan } from "../../src/shared/items/bis-plan";
+import { bisPlan, loadoutText } from "../../src/shared/items/bis-plan";
 import { itemRows, NO_CRITERIA, type ItemCriteria } from "../../src/shared/items/item-search";
 import { parseInventoryDump } from "../../src/shared/game-export-dumps";
 import type { CachedItem } from "../../src/shared/types";
@@ -146,4 +146,115 @@ test("a loose exaltation stone in a bag or the bank is offered, not only one in 
   const plan = bisPlan({ rows: ringRows, inventory, criteria: wizard, weights: { mana: 1 } });
   const focus = plan.sockets.find((s) => s.host === "Moonstone Ring +1" && s.kind === "focus");
   assert.deepEqual(focus?.options.map((o) => [o.effect, o.where]), [["Pearl Focus", "Bank 1"]]);
+});
+
+// ─── What the player told it ────────────────────────────────────────────────
+
+const tsvDump = (...lines: string[][]) => [["Location", "Name", "ID", "Count", "Slots"], ...lines].map((r) => r.join("\t")).join("\r\n");
+
+test("locks hold by title across dumps, report one you no longer hold, and benching keeps a thing out", () => {
+  const inventory = parseInventoryDump(dump);
+  // FINGER is index 16 in the layout. Lock the Iron Ring there; lock the head to a cap you don't own.
+  const plan = bisPlan({
+    rows,
+    inventory,
+    criteria: wizard,
+    weights: { mana: 1 },
+    options: { locks: { 16: { title: "Iron Ring" }, 4: { title: "Cap of Mana" } }, wantEffects: [], benched: [], skipHunt: [] },
+  });
+  assert.equal(plan.loadout.picks.find((p) => p.slotIndex === 16)?.item.title, "Iron Ring");
+  assert.deepEqual(plan.staleLocks, [{ slotIndex: 4, title: "Cap of Mana" }]);
+  assert.equal(plan.unconstrained, 98, "what no choices would have got");
+  // The head is free again (the stale lock frees it), so the cap is still a hunt.
+  assert.deepEqual(plan.hunt.map((h) => h.item.title), ["Cap of Mana"]);
+
+  const benched = bisPlan({
+    rows,
+    inventory,
+    criteria: wizard,
+    weights: { mana: 1 },
+    options: { locks: {}, wantEffects: [], benched: ["Iron Ring"], skipHunt: ["Cap of Mana"] },
+  });
+  assert.ok(!benched.loadout.picks.some((p) => p.item.title === "Iron Ring"));
+  assert.deepEqual(benched.benched, ["Iron Ring"]);
+  assert.deepEqual(benched.hunt, [], "a skipped hunt isn't suggested");
+  assert.equal(benched.wearing, 38, "what you wear now still counts the benched ring");
+});
+
+test("a wanted effect already worn pins its item; one nothing gives you says what to hunt", () => {
+  const plan = bisPlan({
+    rows,
+    inventory: parseInventoryDump(dump),
+    criteria: wizard,
+    weights: { mana: 1 },
+    options: { locks: {}, wantEffects: ["Extended Range II", "Wind Resonance 10"], benched: [], skipHunt: [] },
+  });
+  const [range, wind] = plan.effects;
+  assert.equal(range.how, "worn");
+  assert.match(range.by ?? "", /^Moonstone Ring/);
+  assert.equal(plan.pinned[Number(Object.keys(plan.pinned)[0])], "Extended Range II");
+  // The horn's stone is Primary/Secondary and nothing in the loadout is graded for it; the horn
+  // itself is only a stone here, not a held item — so it's missing.
+  assert.equal(wind.how, "missing");
+});
+
+test("a wanted effect is socketed from a stone before anything is worn for it", () => {
+  const ringRows = itemRows([
+    page("Moonstone Ring", ["Slot: FINGER", "MANA: +30", "Class: ALL", "Race: ALL"]),
+    page("Pearl Ring", ["Slot: FINGER", "MANA: +1", "Class: ALL", "Race: ALL", "Focus Effect: Pearl Focus"]),
+  ]);
+  const inventory = parseInventoryDump(
+    tsvDump(["Fingers", "Moonstone Ring +1", "10150", "1", "11"], ["Bank1", "Backpack", "17005", "1", "8"], ["Bank1-Slot1", "Pearl Ring (Exaltation)", "1", "1", "11"]),
+  );
+  const plan = bisPlan({
+    rows: ringRows,
+    inventory,
+    criteria: wizard,
+    weights: { mana: 1 },
+    options: { locks: {}, wantEffects: ["Pearl Focus"], benched: [], skipHunt: [] },
+  });
+  assert.deepEqual(
+    plan.effects.map((e) => [e.effect, e.how, e.by, e.stone?.where]),
+    [["Pearl Focus", "socket", "Moonstone Ring +1", "Bank 1"]],
+  );
+  assert.deepEqual(plan.socketClaims.map((c) => [c.host, c.kind]), [["Moonstone Ring +1", "focus"]]);
+});
+
+test("a wanted effect only a held item carries is worn, at the cost of what it displaces", () => {
+  const headRows = itemRows([
+    page("Cap of Mana", ["Slot: HEAD", "MANA: +40", "Class: ALL", "Race: ALL"]),
+    page("Hasted Hat", ["Slot: HEAD", "MANA: +10", "Class: ALL", "Race: ALL", "Worn Effect: Haste"]),
+    page("Mana Charm", ["Slot: CHARM", "MANA: +50", "Class: ALL", "Race: ALL"]),
+  ]);
+  const inventory = parseInventoryDump(
+    tsvDump(
+      ["Head", "Cap of Mana", "1", "1", "1"],
+      ["Bank1", "Backpack", "17005", "1", "8"],
+      ["Bank1-Slot1", "Hasted Hat", "2", "1", "1"],
+      ["Bank1-Slot2", "Mana Charm", "3", "1", "1"],
+      ["Bank1-Slot3", "Mana Charm", "3", "1", "1"],
+    ),
+  );
+  const plan = bisPlan({
+    rows: headRows,
+    inventory,
+    criteria: wizard,
+    weights: { mana: 1 },
+    options: { locks: {}, wantEffects: ["Haste"], benched: [], skipHunt: [] },
+  });
+  // The charms fill both Any Slots and the cap the head, so the hat is left out — until Haste is
+  // wanted. Cheapest is the head (losing the cap, 40 → 10), not an Any Slot (losing a charm, 50 → 10).
+  assert.equal(plan.unconstrained, 140);
+  assert.deepEqual([plan.effects[0].how, plan.effects[0].by, plan.effects[0].cost], ["forced", "Hasted Hat", 30]);
+  assert.equal(plan.loadout.picks.find((p) => p.slot === "HEAD")?.item.title, "Hasted Hat");
+  assert.equal(plan.loadout.total, 110);
+});
+
+test("the loadout as text: one line a slot, graded names, and where to fetch what isn't worn", () => {
+  const plan = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: wizard, weights: { mana: 1 } });
+  const lines = loadoutText(plan).split("\n");
+  assert.equal(lines[0], "Best in slot — 98 (wearing 38)");
+  assert.equal(lines.length, 24, "a title and every slot of the layout");
+  assert.ok(lines.includes("Head: —"));
+  assert.ok(lines.some((l) => /^Any Slot: Moonstone Ring \[30\] \(from Bank 1/.test(l)), lines.join("\n"));
 });

@@ -7,10 +7,11 @@ import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import CatalogueHarvest from "@/app/components/items/CatalogueHarvest";
 import ItemFacetRow from "@/app/components/items/ItemFacetRow";
-import ItemLevelBand from "@/app/components/items/ItemLevelBand";
+import ItemLevelBand, { MAX_PLAYER_LEVEL } from "@/app/components/items/ItemLevelBand";
 import ItemTable from "@/app/components/items/ItemTable";
 import ItemWeights from "@/app/components/items/ItemWeights";
 import BisView from "@/app/components/items/BisView";
+import ItemPresets from "@/app/components/items/ItemPresets";
 import StatFloors from "@/app/components/items/StatFloors";
 import { CheckField, Empty, TextField, caretGlyph, segCls } from "@/app/components/ui";
 import { count, countOf } from "@/shared/format";
@@ -18,12 +19,16 @@ import { exportAgeText } from "@/shared/game-exports";
 import { ownedText } from "@/shared/game-export-dumps";
 import { gradedItemStats } from "@/shared/items/item-upgrade";
 import { normalizeItemName } from "@/shared/items/grouping";
+import { derivedRates, foldDerivedWeights } from "@/shared/items/derived-stats";
+import { normalizeBisOptions, type BisOptions } from "@/shared/items/bis-options";
+import { normalizePreset, type ItemPreset } from "@/shared/items/item-presets";
 import type { Sort } from "@/shared/sorting";
 import {
   EFFECT_FACETS,
   NO_CRITERIA,
   PLAIN_FACETS,
   activeCriteria,
+  weightedStats,
   type ItemCriteria,
   type ItemSortKey,
   type StatWeights,
@@ -81,6 +86,19 @@ export default function ItemSearchPanel() {
   // The same criteria and weights answer two questions: "which items are like this" (Search) and
   // "what should I be wearing, and what next" (Best in slot, `BisView`).
   const [mode, setMode] = usePersistentState<"search" | "bis">(STORAGE_KEYS.itemMode, "search");
+  // What you've told best in slot. Held here rather than in `BisView` so a preset can carry it.
+  const [storedBis, setBisOptions] = usePersistentState<BisOptions>(STORAGE_KEYS.itemBisOptions, normalizeBisOptions(undefined));
+  const bisOptions = useMemo(() => normalizeBisOptions(storedBis), [storedBis]);
+  const [presets, setPresets] = usePersistentState<ItemPreset[]>(STORAGE_KEYS.itemPresets, []);
+  const applyPreset = useCallback(
+    (stored: ItemPreset) => {
+      const p = normalizePreset(stored);
+      setCriteria(p.criteria);
+      setWeights(p.weights);
+      setBisOptions(p.bis);
+    },
+    [setCriteria, setWeights, setBisOptions],
+  );
 
   /**
    * A criteria object stored last week can be missing a facet added since; folding it over the empty
@@ -143,13 +161,27 @@ export default function ItemSearchPanel() {
     [owned],
   );
 
-  const { options, counts, found, columns, scored, unplaced } = useItemQuery(searched, active, weights, sort, closedZones);
+  /**
+   * The sheet both Search and Best in slot score by: yours, with HP, mana and AC folded into the stats
+   * that make them, for the ticked classes at the level cap (`derived-stats.ts`). Folded once here so
+   * the two modes can't weigh an INT point differently.
+   */
+  const rates = useMemo(
+    () => derivedRates({ classes: active.facets.class, level: active.levelMax ?? MAX_PLAYER_LEVEL }),
+    [active.facets.class, active.levelMax],
+  );
+  const scoring = useMemo(() => foldDerivedWeights(weights, rates), [weights, rates]);
+  const yourWeights = weightedStats(weights);
+
+  const { options, counts, found, columns, scored, unplaced } = useItemQuery(searched, active, scoring, sort, closedZones);
   const conditions = activeCriteria(active);
   const shown = useMemo(() => found.slice(0, MAX_ROWS), [found]);
 
   return (
     <div className="item-search">
       <CatalogueHarvest progress={harvest} held={rows.length} pace={pace} onPace={setPace} />
+
+      <ItemPresets presets={presets} onPresets={setPresets} current={{ criteria: active, weights, bis: bisOptions }} onApply={applyPreset} />
 
       <div className="segmented item-mode">
         <button className={segCls(mode === "search")} onClick={() => setMode("search")}>Search</button>
@@ -211,17 +243,33 @@ export default function ItemSearchPanel() {
 
       <div className="row wrap item-weights-head">
         <button className="btn sm" onClick={() => setWeightsOpen((open) => !open)} aria-expanded={weightsOpen}>
-          {caretGlyph(weightsOpen)} Value weights{scored.length ? ` (${scored.length})` : ""}
+          {caretGlyph(weightsOpen)} Value weights{yourWeights.length ? ` (${yourWeights.length})` : ""}
         </button>
         <span className="muted small">
           {loading ? "Reading the item cache…" : countOf(found.length, searched.length, "item")}
           {uncatalogued > 0 && ` · ${count(uncatalogued, "thing")} you own has no item page here yet`}
         </span>
       </div>
-      {weightsOpen && <ItemWeights weights={weights} onChange={setWeights} />}
+      {weightsOpen && (
+        <ItemWeights
+          weights={weights}
+          rates={rates}
+          level={active.levelMax ?? MAX_PLAYER_LEVEL}
+          classesTicked={active.facets.class.length > 0}
+          onChange={setWeights}
+        />
+      )}
 
       {mode === "bis" && (
-        <BisView rows={rows} criteria={active} weights={weights} closedZones={closedZones} scored={!!scored.length} />
+        <BisView
+          rows={rows}
+          criteria={active}
+          weights={scoring}
+          closedZones={closedZones}
+          scored={!!scored.length}
+          options={bisOptions}
+          onOptions={setBisOptions}
+        />
       )}
 
       {mode === "search" && !loading && !rows.length && (

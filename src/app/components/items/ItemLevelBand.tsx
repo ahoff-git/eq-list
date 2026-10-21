@@ -3,7 +3,7 @@ import { figure } from "@/shared/format";
 import type { ItemCriteria } from "@/shared/items/item-search";
 
 /** The level cap in this era. At the slider's far right it means "no cap", which is also the truth. */
-const MAX_PLAYER_LEVEL = 60;
+export const MAX_PLAYER_LEVEL = 60;
 
 /**
  * "What can I use?", as a floor you type and a cap you drag.

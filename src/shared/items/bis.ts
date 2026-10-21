@@ -68,6 +68,23 @@ export interface BisPick {
 export interface BisLoadout {
   picks: BisPick[];
   total: number;
+  /** Slot indices the caller's locks decided — including an off-hand a locked two-hander gave up. */
+  locked: number[];
+}
+
+/**
+ * A slot held by the player: to one item, or to nothing (`null`) — whatever the solver would rather.
+ * The rest of the layout is solved around it, still exactly.
+ */
+export interface BisLock {
+  slotIndex: number;
+  item: BisCandidate | null;
+}
+
+/** A slot of the layout the solver may fill, by its index in the full layout. */
+interface OpenSlot {
+  index: number;
+  slot: string;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -94,7 +111,7 @@ export function gradedValues(
 }
 
 /** What this item is worth in this slot, or null when it can't go there. `ANY` takes anything wearable. */
-function valueIn(item: BisCandidate, slot: string): number | null {
+export function valueIn(item: BisCandidate, slot: string): number | null {
   if (slot === "ANY") return item.slots.length > 0 ? item.anyValue : null;
   return item.slots.includes(slot) ? item.value : null;
 }
@@ -185,33 +202,58 @@ function oneOfEachLore(candidates: readonly BisCandidate[]): BisCandidate[] {
   return [...rest, ...best.values()];
 }
 
-function loadoutOver(candidates: readonly BisCandidate[], layout: readonly string[], worth: typeof valueIn = valueIn): BisLoadout {
+function loadoutOver(candidates: readonly BisCandidate[], slots: readonly OpenSlot[], worth: typeof valueIn = valueIn): BisPick[] {
   const items = candidates.filter((c) => c.value > 0 || c.anyValue > 0);
-  const owner = assign(items, layout, worth);
+  const owner = assign(items, slots.map((s) => s.slot), worth);
   const picks: BisPick[] = [];
-  owner.forEach((o, slotIndex) => {
-    if (o !== -1) picks.push({ slotIndex, slot: layout[slotIndex], item: items[o], value: worth(items[o], layout[slotIndex]) ?? 0 });
+  owner.forEach((o, i) => {
+    if (o !== -1) picks.push({ slotIndex: slots[i].index, slot: slots[i].slot, item: items[o], value: worth(items[o], slots[i].slot) ?? 0 });
   });
-  return { picks, total: round2(picks.reduce((t, p) => t + p.value, 0)) };
+  return picks;
+}
+
+const totalOf = (picks: readonly BisPick[]) => round2(picks.reduce((t, p) => t + p.value, 0));
+
+/**
+ * The best picks over the open slots. How a two-hander may be used depends on the hands: with both
+ * open it is weighed both ways — not swung (it may still sit in an `Any Slot`), or swung with the
+ * off-hand given up — and whichever is worth more wins. With the off-hand held empty it may simply
+ * be swung; with either hand held to something, it can't be.
+ */
+function solveOpen(pool: readonly BisCandidate[], slots: readonly OpenSlot[], hands: "both" | "swing" | "unswung"): BisPick[] {
+  if (hands === "swing") return loadoutOver(pool, slots);
+  const oneHanded = loadoutOver(pool, slots, unswungValueIn);
+  if (hands === "unswung" || !pool.some((c) => c.twoHanded)) return oneHanded;
+  const twoHanded = loadoutOver(pool, slots.filter((s) => s.slot !== "SECONDARY"));
+  return totalOf(twoHanded) > totalOf(oneHanded) ? twoHanded : oneHanded;
 }
 
 /**
- * The most valuable loadout these candidates allow. Two-handers are weighed both ways: no two-hander
- * swung (one may still sit in an `Any Slot`, unswung), or a two-hander in the main hand with the
- * off-hand given up — whichever is worth more wins.
+ * The most valuable loadout these candidates allow, around any slots the player has locked. A locked
+ * item is worn where it was locked whatever it is worth there; the rest is solved exactly over the
+ * slots left. A two-hander locked into the main hand takes the off-hand with it. A LORE item locked
+ * somewhere keeps its other copies out of the rest.
  */
-export function bestLoadout(candidates: readonly BisCandidate[], layout: readonly string[] = WORN_LAYOUT): BisLoadout {
-  const pool = oneOfEachLore(candidates);
+export function bestLoadout(candidates: readonly BisCandidate[], layout: readonly string[] = WORN_LAYOUT, locks: readonly BisLock[] = []): BisLoadout {
   const main = layout.indexOf("PRIMARY");
   const off = layout.indexOf("SECONDARY");
-  // A two-hander can't be swung beside an off-hand, but it can be worn in an Any Slot.
-  const oneHanded = loadoutOver(pool, layout, unswungValueIn);
-  if (main === -1 || off === -1 || !pool.some((c) => c.twoHanded)) return oneHanded;
-  const withoutOffHand = layout.filter((_, i) => i !== off);
-  const twoHanded = loadoutOver(pool, withoutOffHand);
-  if (twoHanded.total <= oneHanded.total) return oneHanded;
-  // Re-index onto the full layout so a pick's `slotIndex` always means the same slot.
-  return { ...twoHanded, picks: twoHanded.picks.map((p) => ({ ...p, slotIndex: p.slotIndex >= off ? p.slotIndex + 1 : p.slotIndex })) };
+  const lockAt = new Map(locks.filter((l) => l.slotIndex >= 0 && l.slotIndex < layout.length).map((l) => [l.slotIndex, l.item]));
+  // A two-hander swung leaves no off-hand, whatever the off-hand was locked to.
+  if (main !== -1 && off !== -1 && lockAt.get(main)?.twoHanded) lockAt.set(off, null);
+
+  const fixed: BisPick[] = [];
+  for (const [slotIndex, item] of lockAt) {
+    if (item) fixed.push({ slotIndex, slot: layout[slotIndex], item, value: valueIn(item, layout[slotIndex]) ?? 0 });
+  }
+  const taken = new Set(fixed.map((p) => p.item.id));
+  const loreTaken = new Set(fixed.filter((p) => p.item.lore).map((p) => p.item.title.toLowerCase()));
+  const pool = oneOfEachLore(candidates.filter((c) => !taken.has(c.id) && !(c.lore && loreTaken.has(c.title.toLowerCase()))));
+
+  const open = layout.map((slot, index) => ({ index, slot })).filter((s) => !lockAt.has(s.index));
+  const hands =
+    main === -1 || off === -1 || lockAt.has(main) ? "unswung" : !lockAt.has(off) ? "both" : lockAt.get(off) === null ? "swing" : "unswung";
+  const picks = [...fixed, ...solveOpen(pool, open, hands)].sort((a, b) => a.slotIndex - b.slotIndex);
+  return { picks, total: totalOf(picks), locked: [...lockAt.keys()].sort((a, b) => a - b) };
 }
 
 // ─── Grades ─────────────────────────────────────────────────────────────────
@@ -255,10 +297,20 @@ export interface BisSuggestion {
  *
  * Judged one at a time, which is what "the next thing to hunt" means: two suggestions for the same
  * slot each assume the other wasn't got. A two-hander swung is weighed against the main hand and off
- * hand together, since it takes both.
+ * hand together, since it takes both. A slot the loadout's locks decided (`loadout.locked`) is the
+ * player's, so nothing is suggested for it.
+ *
+ * `keepLosses` keeps a candidate whose best slot is still a loss — for "what would carry this effect"
+ * questions, where the stats aren't the point.
  */
-export function huntSuggestions(loadout: BisLoadout, candidates: readonly BisCandidate[], layout: readonly string[] = WORN_LAYOUT): BisSuggestion[] {
+export function huntSuggestions(
+  loadout: BisLoadout,
+  candidates: readonly BisCandidate[],
+  layout: readonly string[] = WORN_LAYOUT,
+  keepLosses = false,
+): BisSuggestion[] {
   const inSlot = new Map(loadout.picks.map((p) => [p.slotIndex, p]));
+  const locked = new Set(loadout.locked);
   const out: BisSuggestion[] = [];
   for (const c of candidates) {
     let best: BisSuggestion | undefined;
@@ -270,16 +322,17 @@ export function huntSuggestions(loadout: BisLoadout, candidates: readonly BisCan
     // An off-hand beside a swung two-hander means putting the two-hander away.
     const swungTwoHander = inSlot.get(main)?.item.twoHanded ? inSlot.get(main) : undefined;
     layout.forEach((slot, i) => {
+      if (locked.has(i)) return;
       const value = unswungValueIn(c, slot);
       if (value === null) return;
       const there = i === off && swungTwoHander ? swungTwoHander : inSlot.get(i);
       consider({ item: c, gain: value - (there?.value ?? 0), replaces: there, slot });
     });
-    if (c.twoHanded && main !== -1 && c.slots.includes("PRIMARY")) {
+    if (c.twoHanded && main !== -1 && c.slots.includes("PRIMARY") && !locked.has(main) && !locked.has(off)) {
       const displaced = (inSlot.get(main)?.value ?? 0) + (off === -1 ? 0 : inSlot.get(off)?.value ?? 0);
       consider({ item: c, gain: c.value - displaced, replaces: inSlot.get(main), slot: "PRIMARY" });
     }
-    if (best && best.gain > 0) out.push({ ...best, gain: round2(best.gain) });
+    if (best && (best.gain > 0 || keepLosses)) out.push({ ...best, gain: round2(best.gain) });
   }
   return out.sort((a, b) => b.gain - a.gain || a.item.title.localeCompare(b.item.title));
 }

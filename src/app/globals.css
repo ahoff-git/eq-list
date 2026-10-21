@@ -4052,6 +4052,7 @@ select optgroup {
 .item-weights-head { gap: 8px; align-items: center; }
 .item-weights { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
 .iw-head { gap: 8px; align-items: center; }
+.iw-derived { gap: 8px; }
 .iw-group { gap: 8px; align-items: center; }
 /* A fixed label column, so the four groups line up down the left edge and can be skipped past. */
 .iw-group-label { flex: 0 0 68px; }
@@ -4265,6 +4266,26 @@ select optgroup {
 .bis-socket .bis-list { flex-basis: 100%; padding-left: 16px; }
 .bis-empty td { opacity: 0.85; }
 .bis-empty td:first-child { border-left: 3px solid var(--border); }
+/* Best in slot: your say — locks, picks, benches, skips, wanted effects, presets. */
+.bis .warn { color: var(--warn); }
+.bis-wear .bis-lock-cell { width: 1%; padding-right: 0; }
+.bis-wear tr.bis-move td:first-child, .bis-wear tr.bis-empty td:first-child { border-left: 0; }
+.bis-wear tr.bis-move td:nth-child(2) { border-left: 3px solid var(--accent); }
+.bis-wear tr.bis-empty td:nth-child(2) { border-left: 3px solid var(--border); }
+.bis-lock { opacity: 0.45; }
+.bis-lock.on, .bis-lock:hover { opacity: 1; }
+.bis-actions { white-space: nowrap; text-align: right; }
+.bis-actions .select-sm { max-width: 220px; }
+.bis-tag { margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 11px; color: var(--good); border: 1px solid color-mix(in oklab, var(--good) 45%, transparent); }
+.bis-choices { display: flex; flex-direction: column; gap: 4px; }
+.bis-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 0 0 8px; border-radius: 10px; border: 1px solid var(--border); }
+.bis-effects { display: flex; flex-direction: column; gap: 6px; }
+.bis-effect-mark { display: inline-block; width: 1.2em; text-align: center; }
+.bis-effect.worn .bis-effect-mark, .bis-effect.forced .bis-effect-mark, .bis-effect.socket .bis-effect-mark { color: var(--good); }
+.bis-effect.missing .bis-effect-mark { color: var(--bad); }
+.bis-effect > .bis-list { padding-left: 22px; }
+.bis-socket.claimed { background: color-mix(in oklab, var(--good) 7%, transparent); }
+.item-presets { gap: 6px; align-items: center; margin-top: 4px; }
 
 /* Tradeskills: what you already hold, against what a step wants. */
 .held-enough { color: var(--good); }
