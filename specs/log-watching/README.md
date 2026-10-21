@@ -91,7 +91,7 @@ as they drop and the damage meter can show how the fight went.
   melee swings, spell/proc damage, damage shields, DoT ticks, misses and heals, plus the
   `(Critical)`/`(Riposte)` qualifier that trails *after* the sentence. It also follows the
   **casting lifecycle** — `cast` (`You begin casting X`, or a bard's `You begin singing X`) and `spell-outcome`
-  (fizzle / interrupted / resisted / blocked) — which is what makes cast times and resist
+  (fizzle / interrupted — a bard's `You miss a note, bringing your X to a close!` included / resisted / blocked) — which is what makes cast times and resist
   rates measurable at all, plus your own `death` (`You have been slain by X!`, which
   `parseKill` deliberately ignores), `buff-faded` (see [below](#how-a-fade-is-worded) — the pet
   flag matters, since a pet's buff can't change *your* totals), and the two combat

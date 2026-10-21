@@ -30,6 +30,7 @@
  *           Hullshamancer begins casting Lifespike.
  *   outcome Your Blast of Cold spell fizzles!
  *           Your Levitate spell is interrupted.
+ *           You miss a note, bringing your Cinda's Charismatic Carillon to a close!
  *           A coyote resisted your Blast of Cold!
  *           You resist a female rat's Plague Rat Disease!
  *           Your Inner Fire spell did not take hold on Jarn. (Blocked by Courage.)
@@ -380,6 +381,12 @@ const INVOCATION_RE = /^You begin reciting the (?<invocation>.+?) invocation\.$/
 const OUTCOME_RES: [outcome: SpellOutcome, re: RegExp][] = [
   ["fizzle", /^Your (?<spell>.+?) spell fizzles!$/],
   ["interrupted", /^Your (?<spell>.+?) spell is interrupted\.$/],
+  // A bard's song is interrupted in its own words ("You miss a note, bringing your Cinda's
+  // Charismatic Carillon to a close!") — never "spell is interrupted". Without this a broken song
+  // stays the cast in flight and pairs with the next landing of that song, however much later.
+  // First person only, like the line above: the third-person form ("A missed note brings Seppi's
+  // Anthem de Arms to a close!") is left unread, as other casters' interrupts already are.
+  ["interrupted", /^You miss a note, bringing your (?<spell>.+?) to a close!$/],
   // Someone shrugged off *our* spell…
   ["resisted", /^(?<target>.+?) resisted your (?<spell>.+?)!$/],
   // …and we shrugged off theirs (their cast, so it's their resist rate, not ours).
