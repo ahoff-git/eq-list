@@ -60,6 +60,8 @@ export interface MaterialEstimate {
   qty: Range;
   /** One of it, when the wiki prices it. */
   each?: Copper;
+  /** Any one of these does instead (`StepNeed.alternatives`) — so holdings of them count too. */
+  alternatives?: string[];
 }
 
 export interface StepEstimate {
@@ -91,7 +93,8 @@ export function estimateStep(
   const materials = (needs ?? []).map((n): MaterialEstimate => {
     const qty = n.total ? { low: n.qty, high: n.qty } : { low: n.qty * combines.low, high: n.qty * combines.high };
     const each = prices[n.name]?.copper;
-    return each === undefined ? { name: n.name, qty } : { name: n.name, qty, each };
+    const choice = n.alternatives?.length ? { alternatives: n.alternatives } : {};
+    return each === undefined ? { name: n.name, qty, ...choice } : { name: n.name, qty, each, ...choice };
   });
 
   // Whole-step purchases are bought once, whatever the combine count.

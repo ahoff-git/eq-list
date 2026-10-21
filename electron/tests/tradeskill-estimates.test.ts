@@ -235,3 +235,11 @@ test("a bold label's range goes to the step under it", () => {
   assert.deepEqual(lines[0].skill, { from: 1, to: 202 });
   assert.deepEqual(lines[0].needs, [{ name: "Sickle Leaf", qty: 2 }]);
 });
+
+test("an estimate carries a pick-one need's choices, so what you hold of any of them can count", () => {
+  const e = estimateStep({ from: 10, to: 12 }, [{ name: "Ruined Bear Pelt", qty: 1, alternatives: ["Ruined Wolf Pelt", "Ruined Cat Pelt"] }, { name: "Boot Pattern", qty: 1 }], undefined, {});
+  assert.deepEqual(e?.materials.map((m) => [m.name, m.alternatives]), [
+    ["Ruined Bear Pelt", ["Ruined Wolf Pelt", "Ruined Cat Pelt"]],
+    ["Boot Pattern", undefined],
+  ]);
+});

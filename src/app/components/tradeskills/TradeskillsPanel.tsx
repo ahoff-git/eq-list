@@ -37,7 +37,7 @@ import {
   type JudgedLine,
 } from "@/shared/tradeskills/tradeskill-era";
 import { lineLinks, rowLinks, type StepLinks } from "@/shared/tradeskills/step-materials";
-import { alternativesAt, guideSteps, heldOf, type Holdings } from "@/shared/tradeskills/held-materials";
+import { alternativesAt, guideSteps, heldForNeed, type Holdings } from "@/shared/tradeskills/held-materials";
 import { useHoldings } from "@/lib/exports/useGameExports";
 import type { GuideRun, SkillSpan, StepCost, StepNeed, Tradeskill, TradeskillGuide } from "@/shared/tradeskills/tradeskill-types";
 import { AddButton, CheckField, Empty, segCls } from "@/app/components/ui";
@@ -120,14 +120,17 @@ interface StepPlan {
   costed?: CostedStep;
   /** What it uses, for "where to buy". */
   materials: string[];
+  /** The same, as needs — a pick-one need's choices included, for what you already hold. */
+  needs: StepNeed[];
 }
 
 function planFor(span: SkillSpan | undefined | null, needs: StepNeed[] | undefined, cost: StepCost | undefined, you: You): StepPlan {
   const mine = forYou(span, you);
   const estimate = estimateStep(mine.span, needs, cost, PRICES, you.factor);
-  const materials = mine.place.at === "done" ? [] : (needs ?? []).map((n) => n.name);
-  if (!estimate || !mine.span) return { place: mine.place, estimate, materials };
-  return { place: mine.place, estimate, materials, costed: costedStep(mine.span, needs, cost, PRICES) };
+  const ahead = mine.place.at === "done" ? [] : (needs ?? []);
+  const materials = ahead.map((n) => n.name);
+  if (!estimate || !mine.span) return { place: mine.place, estimate, materials, needs: ahead };
+  return { place: mine.place, estimate, materials, needs: ahead, costed: costedStep(mine.span, needs, cost, PRICES) };
 }
 
 /**
@@ -428,10 +431,11 @@ function heldText(h: { name: string; mine: number; peers: { by: string; count: n
  * How many of a material you hold, beside how many a step wants — green once it covers the high
  * estimate. Peers who hold some are named after it, smaller, since theirs is a favour to ask.
  */
-function HeldNote({ name, need }: { name: string; need: number }) {
+function HeldNote({ name, alternatives, need }: { name: string; alternatives?: string[]; need: number }) {
   const holdings = useContext(HoldingsContext);
   if (!holdings) return null;
-  const held = heldOf(holdings, name);
+  // A pick-one need ("Bear or Wolf or Cat Pelts") is met by holding any of its choices.
+  const held = heldForNeed(holdings, { name, alternatives });
   if (!held) return null;
   const peers = held.peers.slice(0, 3).map((p) => `${p.by} ${p.count}`).join(", ");
   return (
@@ -536,18 +540,19 @@ function SectionSummary({ steps, closed, withCost }: { steps: StepPlan[]; closed
   const plan = whereToBuy(materials, VENDORS, you.zone, closed);
   const current = steps.some((s) => s.place.at === "current");
   const soldHere = new Set(plan.here.map((h) => h.item)).size;
-  const unique = [...new Set(materials)];
+  // One entry per need, by name; a pick-one need counts holdings of any of its choices.
+  const unique = [...new Map(steps.flatMap((s) => s.needs).map((n) => [n.name, n])).values()];
   const inHand = holdings
-    ? unique.flatMap((m) => {
-        const mine = heldOf(holdings, m)?.mine ?? 0;
-        return mine > 0 ? [`${m} ×${mine}`] : [];
+    ? unique.flatMap((n) => {
+        const mine = heldForNeed(holdings, n)?.mine ?? 0;
+        return mine > 0 ? [`${n.name} ×${mine}`] : [];
       })
     : [];
   // What sharing peers hold of the rest — named, since asking for it is a conversation.
   const withPeers = holdings
-    ? unique.flatMap((m) => {
-        const peers = heldOf(holdings, m)?.peers ?? [];
-        return peers.length ? [`${m} (${peers.slice(0, 3).map((p) => `${p.by} ${p.count}`).join(", ")})`] : [];
+    ? unique.flatMap((n) => {
+        const peers = heldForNeed(holdings, n)?.peers ?? [];
+        return peers.length ? [`${n.name} (${peers.slice(0, 3).map((p) => `${p.by} ${p.count}`).join(", ")})`] : [];
       })
     : [];
   return (
@@ -867,7 +872,7 @@ function StepEstimateView({ estimate, needsFor }: { estimate: StepEstimate | und
         <span key={m.name} className="step-estimate-material">
           <ItemLink title={m.name} craft /> ×{rangeText(m.qty)}
           {m.each !== undefined && <span className="muted"> @ {roughCoins(m.each)}</span>}
-          <HeldNote name={m.name} need={m.qty.high} />
+          <HeldNote name={m.name} alternatives={m.alternatives} need={m.qty.high} />
         </span>
       ))}
     </div>
