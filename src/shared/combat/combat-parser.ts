@@ -384,7 +384,7 @@ const OUTCOME_RES: [outcome: SpellOutcome, re: RegExp][] = [
   // A bard's song is interrupted in its own words ("You miss a note, bringing your Cinda's
   // Charismatic Carillon to a close!") — never "spell is interrupted". Without this a broken song
   // stays the cast in flight and pairs with the next landing of that song, however much later.
-  // First person only, like the line above: the third-person form ("A missed note brings Seppi's
+  // First person only, like the line above: the third-person form ("A missed note brings Bob's
   // Anthem de Arms to a close!") is left unread, as other casters' interrupts already are.
   ["interrupted", /^You miss a note, bringing your (?<spell>.+?) to a close!$/],
   // Someone shrugged off *our* spell…

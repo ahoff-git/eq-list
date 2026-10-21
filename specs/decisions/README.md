@@ -356,6 +356,14 @@ finished, so a number is claimed before a second author can reach for it.
 
 ## Open Questions
 
+- **Should the faction ledger be per character?** `faction_hits` records no character (`log_id` is a
+  line id, not a log file), so standings, typed corrections and the `/outputfile faction` dump's
+  offset ([ADR 0308](./0308-the-game-s-faction-dump-is-a-stated-total.md)) all mix every character the
+  app has followed. With one character that's exact. With alts, a dump states one character's totals
+  against everyone's net. Scoping it means a migration that tags each hit with its log's character,
+  and a decision about hits that can't be attributed: keep them shared, or drop them from per-character
+  views. Found by the 2026-10-20 bug sweep; nothing is wrong while one character is followed.
+
 - **One spell field, two readers.** A spell's `where_to_obtain` is read at build time into
   `spell-sources.generated.ts` for the Spells tab's Source column
   ([ADR 0296](./0296-spell-sources-are-generated-static-data.md)), and at view time into
