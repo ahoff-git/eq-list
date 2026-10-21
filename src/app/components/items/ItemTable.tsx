@@ -2,6 +2,7 @@
 import { useMemo } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import ItemLink from "@/app/components/items/ItemLink";
+import { ZoneNames } from "@/app/components/map/ZoneName";
 import {
   DEFAULT_PAGE_SIZE,
   GRID_DEFAULTS,
@@ -29,8 +30,27 @@ import { notAnItem } from "@/shared/shown-name";
  * kept here since the grid's own click cycle is overridden to match it (see `ItemTable`).
  */
 function startDescFor(key: ItemSortKey): boolean {
-  return key !== "name" && key !== "slot" && key !== "source" && key !== "zone" && key !== "level";
+  return !ASCENDING_FIRST.has(key);
 }
+
+/** The columns read as names (plus Level, which reads lowest-first) — every other key is a number. */
+const ASCENDING_FIRST: ReadonlySet<ItemSortKey> = new Set<ItemSortKey>([
+  "name",
+  "where",
+  "slot",
+  "source",
+  "zone",
+  "level",
+  "statsLine",
+  "origin",
+  "classes",
+  "races",
+  "flags",
+  "skill",
+  "size",
+  "effects",
+  "quests",
+]);
 
 type Row = ValuedItem & { id: string };
 
@@ -153,14 +173,8 @@ export default function ItemTable({
         flex: 1,
         valueGetter: (_v, row) => zonesInFilterOrder(row.zones, pickedZones).join(" ") || "—",
         renderCell: (p) => {
-          const zones = zonesInFilterOrder(p.row.zones, pickedZones);
-          const zoneTitle = zones.length > 1 ? `Drops in ${zones.length} zones: ${zones.join(", ")}` : zones[0];
-          return (
-            // `+N` is "and N other zones" — the count is in the hover, since the column has to stay narrow.
-            <span className="muted" title={zoneTitle}>
-              {zones.length > 1 ? `${zones[0]} +${zones.length - 1}` : (zones[0] ?? "—")}
-            </span>
-          );
+          // `+N` is "and N other zones" — the names are in its hover, since the column has to stay narrow.
+          return <ZoneNames zones={zonesInFilterOrder(p.row.zones, pickedZones)} className="muted" />;
         },
       },
       {
@@ -194,15 +208,14 @@ export default function ItemTable({
             }),
           )
         : // With no stat column asked for, the card's own numbers fill the gap so the table always
-          // has something to read. No `ItemSortKey` names this combined line, so it isn't sortable —
-          // it wasn't before either (a plain, unsortable `<th>Stats</th>`).
+          // has something to read. Sorts by the line as written, which is mostly a way to group
+          // cards that carry the same stats.
           [
             {
               field: "statsLine",
               headerName: "Stats",
               flex: 2,
-              sortable: false,
-              cellClassName: "muted small",
+                    cellClassName: "muted small",
               valueGetter: (_v, row) => statLine(row.stats) || "—",
             } satisfies GridColDef<Row>,
           ]),
@@ -236,7 +249,6 @@ export default function ItemTable({
         headerName: "Origin",
         description: "Which cache this row came from — the wiki, or Lucy's database",
         flex: 1,
-        sortable: false,
         cellClassName: "muted",
         valueGetter: (_v, row) => (row.item.origin === "lucy" ? "Lucy" : "Wiki"),
       },
@@ -245,7 +257,6 @@ export default function ItemTable({
         headerName: "Classes",
         description: "Who can use it",
         flex: 2,
-        sortable: false,
         cellClassName: "muted small",
         valueGetter: (_v, row) => row.stats.classes.join(", ") || "None",
       },
@@ -254,7 +265,6 @@ export default function ItemTable({
         headerName: "Races",
         description: "Which races can use it",
         flex: 2,
-        sortable: false,
         cellClassName: "muted small",
         valueGetter: (_v, row) => row.stats.races.join(", ") || "None",
       },
@@ -263,7 +273,6 @@ export default function ItemTable({
         headerName: "Flags",
         description: "MAGIC, LORE, NO DROP, and the like",
         flex: 1,
-        sortable: false,
         cellClassName: "muted small",
         valueGetter: (_v, row) => row.stats.flags.join(", ") || "—",
       },
@@ -273,7 +282,6 @@ export default function ItemTable({
         description: "A level the card states outright — rare, and outranks anything derived from where it came from",
         ...NUM_COL,
         flex: 1,
-        sortable: false,
         valueGetter: (_v, row) => row.stats.requiredLevel,
         renderCell: (p) => p.value ?? "—",
       },
@@ -282,7 +290,6 @@ export default function ItemTable({
         headerName: "Skill",
         description: "The weapon skill, as the card writes it",
         flex: 1,
-        sortable: false,
         cellClassName: "muted",
         valueGetter: (_v, row) => row.stats.skill ?? "—",
       },
@@ -290,7 +297,6 @@ export default function ItemTable({
         field: "size",
         headerName: "Size",
         flex: 1,
-        sortable: false,
         cellClassName: "muted",
         valueGetter: (_v, row) => row.stats.size ?? "—",
       },
@@ -300,7 +306,6 @@ export default function ItemTable({
         description: "What it does beyond its numbers, and how you reach it — worn, click, proc or focus",
         flex: 3,
         minWidth: 200,
-        sortable: false,
         cellClassName: "muted small",
         valueGetter: (_v, row) => row.stats.effects.map((e) => `${e.name} (${e.kind})`).join(", ") || "—",
       },
@@ -310,7 +315,6 @@ export default function ItemTable({
         description: "Every quest it's related to, in source order",
         flex: 2,
         minWidth: 160,
-        sortable: false,
         cellClassName: "muted small",
         valueGetter: (_v, row) => row.quests.join(", ") || "—",
       },

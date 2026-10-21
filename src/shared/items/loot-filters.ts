@@ -108,7 +108,7 @@ export function tallyFates(drops: readonly LootRecord[]): Record<LootFate, numbe
   return counts;
 }
 
-export type LootSortKey = "at" | "item" | "source" | "qty" | "fate" | "zone";
+export type LootSortKey = "at" | "item" | "source" | "qty" | "fate" | "zone" | "detail" | "soldFor" | "raw";
 
 /** Newest first — the order the feed arrives in, and the only one that reads as a log. */
 export const DEFAULT_LOOT_SORT: Sort<LootSortKey> = { key: "at", desc: true };
@@ -117,7 +117,7 @@ export const DEFAULT_LOOT_SORT: Sort<LootSortKey> = { key: "at", desc: true };
  * `at` is the log's own timestamp string (`2026-07-17T18:41:14`), which sorts chronologically as
  * text — no parsing, and an odd clock can't become a `NaN` that shuffles a row to the end.
  */
-const lootValue = (d: LootRecord, key: LootSortKey): string | number => {
+const lootValue = (d: LootRecord, key: LootSortKey): string | number | undefined => {
   switch (key) {
     case "at":
       return d.at;
@@ -140,6 +140,16 @@ const lootValue = (d: LootRecord, key: LootSortKey): string | number => {
      */
     case "zone":
       return d.zone ? placeName(d.zone).toLowerCase() : "￿";
+    // The particulars themselves, not the grid's fate-worded phrasing of them — that prefix would
+    // only re-sort by fate, which the Fate column already does. Only some fates carry any, and a
+    // drop with none is "nothing to say", which `sortRows` keeps last either way round.
+    case "detail":
+      return d.detail ? d.detail.toLowerCase() : undefined;
+    // Set only on an auto-sell — every other fate has no price to rank, not a price of zero.
+    case "soldFor":
+      return d.soldFor;
+    case "raw":
+      return d.raw.toLowerCase();
   }
 };
 
@@ -152,7 +162,7 @@ export function sortLoot(drops: readonly LootRecord[], sort: Sort<LootSortKey>):
   return sortRows(drops, sort, lootValue);
 }
 
-export type PriceSortKey = "item" | "unitCopper" | "qty" | "copper" | "lastAt";
+export type PriceSortKey = "item" | "unitCopper" | "qty" | "copper" | "lastAt" | "sales";
 
 /** The biggest earners first — what the table is for is "what is my trash worth". */
 export const DEFAULT_PRICE_SORT: Sort<PriceSortKey> = { key: "copper", desc: true };

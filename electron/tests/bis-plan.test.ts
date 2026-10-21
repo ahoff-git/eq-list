@@ -90,11 +90,11 @@ test("the plan: wear the best of what you hold, merge where it pays, fill socket
   // Hunting: the cap fills an empty head slot; the warrior's helm is worth more but a Wizard can't
   // wear it; rings you already hold aren't targets.
   assert.deepEqual(plan.hunt.map((h) => [h.item.title, h.slot, h.gain]), [["Cap of Mana", "HEAD", 40]]);
-  // +1 / +2 / +3: 40 mana is over 10, so +10% a grade, rounded half up.
+  // +2 / +5 / +10: 40 mana is over 10, so +10% a grade, rounded half up.
   assert.deepEqual(plan.hunt[0].atGrades, [
-    { grade: 1, copies: 2, gain: 44 },
     { grade: 2, copies: 4, gain: 48 },
-    { grade: 3, copies: 8, gain: 52 },
+    { grade: 5, copies: 32, gain: 60 },
+    { grade: 10, copies: 1024, gain: 80 },
   ]);
 });
 

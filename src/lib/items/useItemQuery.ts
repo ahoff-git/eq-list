@@ -53,6 +53,8 @@ export function useItemQuery(
   weights: StatWeights,
   sort: Sort<ItemSortKey>,
   closedZones?: ReadonlySet<string>,
+  /** Where you hold an item — what the Where column sorts by (`searchItems`). */
+  heldAt?: (title: string) => string | undefined,
 ): ItemQuery {
   /**
    * The catalogue the panel is actually working over.
@@ -90,7 +92,7 @@ export function useItemQuery(
    */
   const counts = useMemo(() => facetCounts(corpus, criteria), [corpus, criteria]);
 
-  const found = useMemo(() => searchItems(corpus, criteria, weights, sort), [corpus, criteria, weights, sort]);
+  const found = useMemo(() => searchItems(corpus, criteria, weights, sort, heldAt), [corpus, criteria, weights, sort, heldAt]);
 
   const scored = useMemo(() => weightedStats(weights), [weights]);
 

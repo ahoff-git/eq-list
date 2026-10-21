@@ -7,6 +7,9 @@ import { SHARE_KINDS, mergeBuffs, mergeTimers, shareKind, type ShareKind } from 
 import { count, duration } from "@/shared/format";
 import { targetLabel } from "@/shared/buffs/buff-tracking";
 import { Caret } from "@/app/components/ui";
+import ItemLink from "@/app/components/items/ItemLink";
+import { ZoneName } from "@/app/components/map/ZoneName";
+import { heldAsNamed, notAnItem } from "@/shared/shown-name";
 import type { BuffInstance } from "@/shared/buffs/buff-tracking";
 import type { SpawnTimer } from "@/shared/mob/spawn-timers";
 import type { CastWatch, NamedAlertStyle, ReceivedShare, ShoppingListEntry } from "@/shared/types";
@@ -319,7 +322,8 @@ function Lists({
           {group.entries.map((e, j) => (
             <div className="tray-row tray-sub" key={j}>
               <span className="tray-what">
-                {e.name}
+                {/* As the sender listed it, grade and all — the same marker the List tab links its own entries by. */}
+                {e.kind === "mob" ? <ItemLink title={notAnItem(e.name)} /> : <ItemLink title={heldAsNamed(e.name)} />}
                 {e.kind === "mob" ? <span className="muted small"> · mob</span> : null}
               </span>
               <span className="muted small">×{e.needed}</span>
@@ -361,7 +365,7 @@ function Pins({ received }: { received: ReceivedShare[] }) {
       {zones.map((group, i) => (
         <div className="tray-row" key={i}>
           <span className="tray-what">
-            {group.zone}
+            <ZoneName zone={group.zone} />
             <By by={group.by} />
           </span>
           <span className="muted small">{count(group.pins.length, "pin")}</span>
@@ -396,7 +400,10 @@ function Timers({ received }: { received: ReceivedShare[] }) {
         <div className="tray-row" key={`${entry.timer.key}-${entry.timer.dueAt}`}>
           <span className="tray-what">
             {entry.timer.mob}
-            <span className="muted small"> · {entry.timer.place}</span>
+            <span className="muted small">
+              {" "}
+              · <ZoneName zone={entry.timer.place} />
+            </span>
           </span>
           <span className={entry.timer.seenAt ? "sc-value" : "muted small"}>
             {entry.timer.seenAt ? "up now" : dueIn(entry.timer.dueAt, now)}

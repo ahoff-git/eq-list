@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import QuestPickupAdd from "@/app/components/items/QuestPickupAdd";
 import AskValue from "@/app/components/AskValue";
 import ItemLink, { NameList } from "@/app/components/items/ItemLink";
+import { ZoneName } from "@/app/components/map/ZoneName";
 import { LucyLink } from "@/app/components/items/LucySays";
 import { count } from "@/shared/format";
 import { Caret, caretGlyph, Empty } from "@/app/components/ui";
@@ -338,7 +339,7 @@ function EntryRow({
             <div className="entry-summary muted small">
               {bestZone ? (
                 <>
-                  <span className={`es-zone ${isHere ? "here" : ""}`}>{bestZone.zone}</span>
+                  <ZoneName zone={bestZone.zone} className={`es-zone ${isHere ? "here" : ""}`} />
                   {" — "}
                   <NameList names={bestZone.mobs.map(notAnItem)} />
                 </>
@@ -491,7 +492,7 @@ function ZoneRow({ drops, here, closedZones }: { drops: ZoneDrops; here?: boolea
   return (
     <div className={`drop-zone ${here ? "here" : ""} ${shut ? "out-of-era" : ""}`.trim()}>
       <span className="src-kind k-drop">kill</span>
-      <span className="dz-name">{drops.zone}</span>
+      <ZoneName zone={drops.zone} className="dz-name" />
       <NameList names={drops.mobs.map(notAnItem)} className="dz-mobs" />
       {shut && (
         <span className="badge era-out" title={why}>

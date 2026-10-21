@@ -121,6 +121,21 @@ test("hitsPage sorts a null delta (a floor/ceiling hit) to the end, in either di
   assert.deepEqual(desc.rows.map((e) => e.delta), [2, -5, null]);
 });
 
+test("hitsPage sorts by Source's Kill/Quest label and by raw line, uncorrelated hits last either way", () => {
+  const l = freshLog();
+  l.add(raised("Circle of Unseen Hands", 1, 2, "a gnoll"));
+  l.add(hit("Agents of Mistmoore", 2, -3, "lowered"));
+  l.add(hit("Priests of Marr", 3, 4, "raised", { kind: "dialogue", npc: "Guard Leslie", text: "hail", gapSec: 1 }));
+
+  const asc = l.hitsPage({ offset: 0, limit: 10, sortField: "causeKind", sortDesc: false });
+  assert.deepEqual(asc.rows.map((e) => e.faction), ["Circle of Unseen Hands", "Priests of Marr", "Agents of Mistmoore"]);
+  const desc = l.hitsPage({ offset: 0, limit: 10, sortField: "causeKind", sortDesc: true });
+  assert.deepEqual(desc.rows.map((e) => e.faction), ["Priests of Marr", "Circle of Unseen Hands", "Agents of Mistmoore"]);
+
+  const byRaw = l.hitsPage({ offset: 0, limit: 10, sortField: "raw", sortDesc: false });
+  assert.deepEqual(byRaw.rows.map((e) => e.faction), ["Agents of Mistmoore", "Circle of Unseen Hands", "Priests of Marr"]);
+});
+
 test("hitsPage's filter reaches the whole ledger, not just the requested page — total reflects it too", () => {
   const l = freshLog();
   l.add(raised("Circle of Unseen Hands", 1, 2));

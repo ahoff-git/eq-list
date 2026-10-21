@@ -26,6 +26,7 @@ import {
   itemValue,
   matchesItem,
   searchItems,
+  itemSortValue,
 } from "../../src/shared/items/item-search";
 import { parseItemStats } from "../../src/shared/items/item-stats";
 import type { CachedItem, ItemSource } from "../../src/shared/types";
@@ -273,6 +274,29 @@ test("a level nothing places still sorts last, ascending or descending", () => {
   assert.equal(found.at(-1)?.item.title, "Unplaceable");
 });
 
+test("every card column sorts by what it shows, and an empty cell by nothing", () => {
+  const catalogue = [
+    item("Rusty Sword", ["MAGIC ITEM", "Skill: 1H Slashing Atk Delay: 30", "WT: 8 Size: MEDIUM", "STR: +2", "Class: WAR PAL", "Race: HUM", "Req Level: 20", "Effect: Flame Lick (Combat)"]),
+    item("Plain Rock", ["Slot: RANGE"]),
+  ];
+  const [sword, rock] = searchItems(itemRows(catalogue), NO_CRITERIA, {}, { key: "name", desc: true });
+  assert.equal(itemSortValue(sword, "origin"), "wiki");
+  assert.equal(itemSortValue(sword, "requiredLevel"), 20);
+  assert.equal(itemSortValue(sword, "skill"), "1H Slashing");
+  assert.equal(itemSortValue(sword, "size"), "MEDIUM");
+  assert.match(String(itemSortValue(sword, "statsLine")), /^STR 2 · /);
+  assert.equal(itemSortValue(sword, "flags"), "MAGIC");
+  assert.match(String(itemSortValue(sword, "classes")), /Warrior/);
+  assert.equal(itemSortValue(sword, "effects"), "Flame Lick");
+  for (const key of ["statsLine", "classes", "races", "flags", "requiredLevel", "skill", "size", "effects", "quests"] as const) {
+    assert.equal(itemSortValue(rock, key), undefined, `${key} with nothing to show sorts last`);
+  }
+  // Ascending or descending, the card with nothing in the column trails.
+  for (const desc of [false, true]) {
+    assert.equal(searchItems(itemRows(catalogue), NO_CRITERIA, {}, { key: "skill", desc }).at(-1)?.item.title, "Plain Rock");
+  }
+});
+
 test("sorting by value ranks by the weights you set", () => {
   const found = searchItems(rows(), NO_CRITERIA, { int: 2, wis: 1 }, { key: "value", desc: true });
   assert.deepEqual(titles(found), ["Circlet of Intellect", "Cloak of Wisdom", "Aviak Talon"]);
@@ -474,4 +498,14 @@ test("the quest cross-reference outranks the title guess when both are available
     questZone,
   );
   assert.deepEqual(mask.zones, ["Some Other Zone"]);
+});
+
+test("the Where column sorts by where you hold each item, and what you don't hold goes last both ways", () => {
+  const all = rows();
+  const [first, second] = [all[0].item.title, all[1].item.title];
+  const heldAt = (title: string) => (title === first ? "Worn Fingers" : title === second ? "Bank 3" : undefined);
+  const asc = searchItems(all, NO_CRITERIA, {}, { key: "where", desc: false }, heldAt).map((r) => r.item.title);
+  assert.deepEqual(asc.slice(0, 2), [second, first], "Bank 3 before Worn Fingers");
+  const desc = searchItems(all, NO_CRITERIA, {}, { key: "where", desc: true }, heldAt).map((r) => r.item.title);
+  assert.deepEqual(desc.slice(0, 2), [first, second]);
 });

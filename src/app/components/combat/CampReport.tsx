@@ -6,6 +6,7 @@ import type { MobKillStat, ZoneReport } from "@/shared/types";
 import { duration, when } from "@/shared/format";
 import { useCombatReportsRefresh, useRead } from "@/lib/hooks";
 import ItemLink from "@/app/components/items/ItemLink";
+import { ZoneName } from "@/app/components/map/ZoneName";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import { notAnItem } from "@/shared/shown-name";
 /** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
@@ -170,7 +171,7 @@ const ZONE_COLUMNS: GridColDef<ZoneRow>[] = [
     minWidth: 160,
     renderCell: (p) => (
       <span title={`Last fought ${when(p.row.lastAt)}`}>
-        <ItemLink title={notAnItem(p.row.zone)} />
+        <ZoneName zone={p.row.zone} />
       </span>
     ),
   },

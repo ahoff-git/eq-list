@@ -2,10 +2,10 @@
 import { useMemo, useState } from "react";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useSettings, useSpellFacts, type SpellFacts } from "@/lib/hooks";
-import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, GRID_SX_FIT, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import { Empty } from "@/app/components/ui";
 import ItemLink from "@/app/components/items/ItemLink";
-import type { FightStats, SpellStat } from "@/shared/types";
+import type { FightStats, SpellModeStat, SpellStat } from "@/shared/types";
 
 import { count, figure, percent } from "@/shared/format";
 import { ratio } from "@/shared/numbers";
@@ -353,33 +353,49 @@ export default function SpellTable({ window }: { window: FightStats }) {
  * `DataGrid` has no row this table's Community tier can nest one under).
  */
 function InvocationRows({ spell }: { spell: SpellStat }) {
+  const rows = useMemo<InvocationRow[]>(() => spell.byInvocation.map((m) => ({ ...m, id: m.mode })), [spell.byInvocation]);
   return (
-    <table className="stat-table spell-table spell-invocation-table">
-      <thead>
-        <tr>
-          <th>Invocation</th>
-          <th>Casts</th>
-          <th>Damage</th>
-          <th>Healed</th>
-          <th>Cast</th>
-          <th>Dmg/s cast</th>
-        </tr>
-      </thead>
-      <tbody>
-        {spell.byInvocation.map((m) => (
-          <tr className="spell-mode" key={m.mode}>
-            <td>↳ {m.mode}</td>
-            <td>{m.casts || "—"}</td>
-            <td>{figure(m.damage)}</td>
-            <td>{figure(m.healed)}</td>
-            <td>{m.avgCastSec ? `${m.avgCastSec.toFixed(1)}s` : "—"}</td>
-            <td className="num-accent">{m.dpc || "—"}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <DataGrid
+      {...GRID_DEFAULTS}
+      // A handful of rows at most (one per invocation seen), so the box fits them rather than
+      // reserving `GRID_SX`'s fixed height — and with no pager, `autoHeight` has no footer to misplace.
+      sx={GRID_SX_FIT}
+      autoHeight
+      hideFooter
+      className="spell-invocation-table"
+      rows={rows}
+      columns={INVOCATION_COLUMNS}
+      initialState={{ sorting: { sortModel: [{ field: "damage", sort: "desc" }] } }}
+    />
   );
 }
+
+type InvocationRow = SpellModeStat & { id: string };
+
+/** The same six figures, and the same "—" for a zero, the old per-invocation sub-rows showed. */
+const INVOCATION_COLUMNS: GridColDef<InvocationRow>[] = [
+  { field: "mode", headerName: "Invocation", flex: 2, minWidth: 120 },
+  { field: "casts", headerName: "Casts", ...NUM_COL, flex: 1, renderCell: (p) => p.value || "—" },
+  { field: "damage", headerName: "Damage", ...NUM_COL, flex: 1, renderCell: (p) => figure(p.value ?? 0) },
+  { field: "healed", headerName: "Healed", ...NUM_COL, flex: 1, renderCell: (p) => figure(p.value ?? 0) },
+  {
+    field: "avgCastSec",
+    headerName: "Cast",
+    description: "Average measured cast time",
+    ...NUM_COL,
+    flex: 1,
+    renderCell: (p) => (p.value ? `${p.value.toFixed(1)}s` : "—"),
+  },
+  {
+    field: "dpc",
+    headerName: "Dmg/s cast",
+    description: "Damage per second spent casting",
+    ...NUM_COL,
+    flex: 1,
+    cellClassName: "num-accent",
+    renderCell: (p) => p.value || "—",
+  },
+];
 
 /**
  * What each invocation did beyond scaling numbers: the healing it granted off your damage

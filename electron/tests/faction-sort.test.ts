@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pooledCauseBadge, ratePerHour, sortFactionHits, sortFactionStandings } from "../../src/shared/faction/faction-sort";
-import type { FactionEvent, FactionStanding } from "../../src/shared/types";
+import type { FactionEvent, FactionRecord, FactionStanding } from "../../src/shared/types";
 import type { FactionCauseKnowledge } from "../../src/shared/faction/faction-observation";
 
 function hit(p: Partial<FactionEvent> & { faction: string }): FactionEvent {
@@ -38,6 +38,17 @@ test("hits sort by time, faction, or the stated delta — a floor/ceiling hit so
   assert.deepEqual(byDelta, ["Circle of Unseen Hands", "Agents of Mistmoore", "Priests of Marr"]);
 });
 
+test("hits sort by Source's Kill/Quest label (uncorrelated last either way) and by raw line", () => {
+  const caused: FactionRecord[] = [
+    hit({ faction: "Uncaused", raw: "b line" }),
+    { ...hit({ faction: "Quest", raw: "c line" }), causedBy: { kind: "dialogue", npc: "Guard Leslie", text: "hail", gapSec: 1 } },
+    { ...hit({ faction: "Kill", raw: "A line" }), causedBy: { kind: "kill", mob: "a gnoll", gapSec: 1 } },
+  ];
+  assert.deepEqual(sortFactionHits(caused, { key: "causeKind", desc: false }).map((h) => h.faction), ["Kill", "Quest", "Uncaused"]);
+  assert.deepEqual(sortFactionHits(caused, { key: "causeKind", desc: true }).map((h) => h.faction), ["Quest", "Kill", "Uncaused"]);
+  assert.deepEqual(sortFactionHits(caused, { key: "raw", desc: false }).map((h) => h.faction), ["Kill", "Uncaused", "Quest"]);
+});
+
 const standings: FactionStanding[] = [
   { faction: "Agents of Mistmoore", net: -8, raises: 1, lowers: 2, floors: 1, ceilings: 0, firstAt: "a", lastAt: "2026-07-17T18:00:00", causes: [] },
   { faction: "Priests of Marr", net: 10, raises: 1, lowers: 0, floors: 0, ceilings: 1, firstAt: "a", lastAt: "2026-07-18T09:00:00", causes: [] },
@@ -56,6 +67,45 @@ test("standings sort by any column, biggest net gain first by default", () => {
     "Agents of Mistmoore",
     "Priests of Marr",
   ]);
+});
+
+test("standings sort by floor/ceiling counts and first hit", () => {
+  assert.deepEqual(sortFactionStandings(standings, { key: "floors", desc: true }).map((s) => s.faction), [
+    "Agents of Mistmoore",
+    "Priests of Marr",
+  ]);
+  assert.deepEqual(sortFactionStandings(standings, { key: "ceilings", desc: true }).map((s) => s.faction), [
+    "Priests of Marr",
+    "Agents of Mistmoore",
+  ]);
+  const early: FactionStanding = { ...standings[0], faction: "Early", firstAt: "2026-07-01T00:00:00" };
+  const late: FactionStanding = { ...standings[0], faction: "Late", firstAt: "2026-07-02T00:00:00" };
+  assert.deepEqual(sortFactionStandings([early, late], { key: "firstAt", desc: true }).map((s) => s.faction), ["Late", "Early"]);
+});
+
+test("standings sort by correction and top cause — a standing without one sorts last either way", () => {
+  const corrected: FactionStanding = {
+    ...standings[0],
+    faction: "Corrected",
+    correction: { observedNet: 5, correctedAt: "2026-07-18T10:00:00" },
+    causes: [{ kind: "kill", source: "Zebra", net: -2, hits: 1 }],
+  };
+  const older: FactionStanding = {
+    ...standings[0],
+    faction: "Older",
+    correction: { observedNet: -5, correctedAt: "2026-07-17T10:00:00" },
+    causes: [{ kind: "kill", source: "aardvark", net: -2, hits: 1 }],
+  };
+  const plain: FactionStanding = { ...standings[0], faction: "Plain" };
+  const rows = [plain, corrected, older];
+  for (const desc of [false, true]) {
+    for (const key of ["observedNet", "correctedAt", "causes"] as const) {
+      assert.equal(sortFactionStandings(rows, { key, desc }).at(-1)?.faction, "Plain", `${key} ${desc ? "desc" : "asc"}`);
+    }
+  }
+  assert.deepEqual(sortFactionStandings(rows, { key: "observedNet", desc: true }).map((s) => s.faction), ["Corrected", "Older", "Plain"]);
+  assert.deepEqual(sortFactionStandings(rows, { key: "correctedAt", desc: true }).map((s) => s.faction), ["Corrected", "Older", "Plain"]);
+  assert.deepEqual(sortFactionStandings(rows, { key: "causes", desc: false }).map((s) => s.faction), ["Older", "Corrected", "Plain"]);
 });
 
 test("standings sort by net/hour, derived rather than stored", () => {

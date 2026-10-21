@@ -620,6 +620,13 @@ reading like a measurement, and they are shared code
 
 ## Windows and the interface
 
+- **Every grid sorts by every column**; only a column of buttons is exempt, and a searched catalogue's
+  columns sort upstream, before the cut. ([0327](./0327-every-grid-sorts-by-every-column.md))
+- **The status bar is a way in**: each chip opens where its subject is dealt with, the zone its page and
+  never the map. ([0326](./0326-the-status-bar-is-a-way-in.md))
+- **Every item and zone a view names is a link.** An item through `ItemLink`, a zone through `ZoneName`
+  (its page, by the wiki's title); a name left as text is listed with its reason in
+  `names-are-links.test.ts`. ([0325](./0325-every-named-item-and-zone-is-a-link.md))
 - **An Electron shell around a static-export renderer.** Main does windows, filesystem and fetching;
   the renderer talks to it only through the typed `window.eql` preload bridge, with
   `contextIsolation` on and `nodeIntegration` off. Production serves `out/` over a privileged

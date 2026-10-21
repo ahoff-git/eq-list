@@ -349,12 +349,11 @@ export interface FactionStanding {
 }
 
 /** Columns `FactionHitsGrid` may sort a page of the ledger by (`electron/faction-log.ts`). */
-export type FactionHitSortField = "at" | "faction" | "delta" | "cause";
+export type FactionHitSortField = "at" | "faction" | "delta" | "cause" | "causeKind" | "raw";
 
-/** Fields `FactionHitsGrid`'s column filter may target — every sortable field, plus `causeKind` and
- *  `raw` (ADR 0260), which `hitsPage` can filter against a real SQL column/expression but doesn't
- *  offer as a sort: neither is one of `HIT_SORT_COLUMNS`' fixed keys, and `causeKind` in particular
- *  has no single column to sort by (it's a `CASE` over `caused_by_kind`, chosen for filtering only). */
+/** Fields `FactionHitsGrid`'s column filter may target. ADR 0260 widened this past the sort side with
+ *  `causeKind` and `raw`; both are now sortable too (every grid column sorts), so the two sets
+ *  currently coincide — kept as separate types since a future filter-only field could part them again. */
 export type FactionHitFilterField = FactionHitSortField | "causeKind" | "raw";
 
 /** Operators `FactionHitsGrid`'s column filter menu may send — the subset of `GridFilterItem["operator"]`

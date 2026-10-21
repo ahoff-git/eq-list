@@ -236,6 +236,11 @@ function mergeCauseTallies(a: readonly FactionCauseTally[], b: readonly FactionC
   return [...byKey.values()].sort(byCauseImpact);
 }
 
+/** The "Kill"/"Quest" label `causeKindLabel` (`faction-sort.ts`) renders, reproduced in SQL —
+ *  `caused_by_kind` itself stores `"kill"`/`"dialogue"`. Shared by sort and filter so both order and
+ *  match against what the Source column actually shows. */
+const CAUSE_KIND_LABEL_SQL = "(CASE caused_by_kind WHEN 'kill' THEN 'Kill' WHEN 'dialogue' THEN 'Quest' ELSE NULL END)";
+
 /** Columns/expressions `hitsPage` may sort by — an allow-list, so a caller's sort field is never
  *  interpolated into SQL as anything but one of these fixed strings. */
 const HIT_SORT_COLUMNS: Record<FactionHitSortField, string> = {
@@ -243,6 +248,8 @@ const HIT_SORT_COLUMNS: Record<FactionHitSortField, string> = {
   faction: "LOWER(faction)",
   delta: "delta",
   cause: "LOWER(caused_by_source)",
+  causeKind: CAUSE_KIND_LABEL_SQL,
+  raw: "LOWER(raw)",
 };
 
 /** Which SQL column (or fixed expression) backs each filterable field, and whether it's compared as
@@ -250,16 +257,15 @@ const HIT_SORT_COLUMNS: Record<FactionHitSortField, string> = {
  *  never become anything but one of these fixed expressions. `cause` filters by `caused_by_source`
  *  directly: that's the same column `causeSource` (`faction-sort.ts`) reads to produce the grid's
  *  `cause` value in the first place, just not yet lowercased/joined with the kill-vs-dialogue label
- *  the cell renders. `causeKind` has no column of its own — `caused_by_kind` stores `"kill"`/
- *  `"dialogue"`, not the "Kill"/"Quest" label `causeKindLabel` (`faction-sort.ts`) renders — so it
- *  filters against a `CASE` that reproduces that label in SQL instead (ADR 0260), matching what the
- *  Source column actually shows rather than the raw stored kind. */
+ *  the cell renders. `causeKind` has no column of its own, so it filters against
+ *  `CAUSE_KIND_LABEL_SQL` (ADR 0260), matching what the Source column actually shows rather than the
+ *  raw stored kind. */
 const HIT_FILTER_COLUMNS: Record<FactionHitFilterField, { column: string; kind: "text" | "number" }> = {
   at: { column: "at", kind: "text" },
   faction: { column: "faction", kind: "text" },
   delta: { column: "delta", kind: "number" },
   cause: { column: "caused_by_source", kind: "text" },
-  causeKind: { column: "(CASE caused_by_kind WHEN 'kill' THEN 'Kill' WHEN 'dialogue' THEN 'Quest' ELSE NULL END)", kind: "text" },
+  causeKind: { column: CAUSE_KIND_LABEL_SQL, kind: "text" },
   raw: { column: "raw", kind: "text" },
 };
 

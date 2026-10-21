@@ -2,11 +2,12 @@
 import { useMemo } from "react";
 import FacetPicker from "@/app/components/FacetPicker";
 import ItemLink from "@/app/components/items/ItemLink";
+import { ZoneNames } from "@/app/components/map/ZoneName";
 import { AddButton } from "@/app/components/ui";
 import { addByTitle } from "@/lib/items/addToList";
 import { effectIndex, slotLabel, type BisEffectPlan } from "@/shared/items/bis-plan";
 import type { ItemRow } from "@/shared/items/item-search";
-import { wikiName } from "@/shared/shown-name";
+import { heldAsNamed, wikiName } from "@/shared/shown-name";
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 const MARK: Record<BisEffectPlan["how"], string> = { worn: "✓", socket: "◆", forced: "✓", missing: "✗" };
@@ -57,7 +58,10 @@ export default function BisEffects({
                       <span className={h.gain > 0 ? "good" : "muted"} title="Stats over what it would replace">
                         {signed(h.gain)}
                       </span>
-                      <span className="muted"> · {h.row.zones[0] ?? h.row.kinds.join(", ")}</span>{" "}
+                      <span className="muted">
+                        {" "}
+                        · <ZoneNames zones={h.row.zones} empty={h.row.kinds.join(", ")} />
+                      </span>{" "}
                       <AddButton className="btn ghost sm" onAdd={() => void addByTitle(h.item.title, h.row.item.wikiPath)} title="Put it on the shopping list">
                         + Add
                       </AddButton>
@@ -87,7 +91,8 @@ function EffectHow({ plan: p }: { plan: BisEffectPlan }) {
     case "socket":
       return (
         <span className="small">
-          put the stone from {p.stone?.from} <span className="muted">({p.stone?.where})</span> in {p.by}&apos;s {p.stone?.kind} socket
+          put the stone from {p.stone && <ItemLink title={wikiName(p.stone.from)} />} <span className="muted">({p.stone?.where})</span> in{" "}
+          {p.by && <ItemLink title={heldAsNamed(p.by)} />}&apos;s {p.stone?.kind} socket
           {p.replaces && <span className="warn"> — replacing {p.replaces}</span>}
         </span>
       );

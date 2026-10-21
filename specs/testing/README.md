@@ -876,6 +876,13 @@ activity rather than an assertion. If a real line ever needs pinning as a fixtur
 first: no chat or tells, character names replaced.
 
 ## Guidance
+- **A view that names an item or a zone links it**, and `names-are-links.test.ts` fails one that
+  doesn't. When a name really should stay text, add it to that test's `PLAIN` table with the reason —
+  that table is the whole policy, kept in one place to change
+  ([ADR 0325](../decisions/0325-every-named-item-and-zone-is-a-link.md)).
+- **Every grid sorts by every column**, and `grids-are-sortable.test.ts` fails a plain `<table>` or a
+  data column marked `sortable: false`. A real exception goes in its `ALLOWED` table with the reason
+  ([ADR 0327](../decisions/0327-every-grid-sorts-by-every-column.md)).
 - New pure logic (e.g. the wiki HTML parser) should get its own `*.test.ts` under
   `electron/tests/` with a captured HTML fixture, so it becomes a black box too.
 - Anything read from the player's install gets a synthetic fixture for the everyday suite **and** a

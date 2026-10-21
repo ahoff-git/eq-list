@@ -45,8 +45,8 @@ const { createWikiClient } = load("electron/wiki/index.js");
 const { openAppDatabase } = load("electron/sqlite-store.js");
 const { WIKI_PAGE_MIGRATIONS } = load("electron/wiki/page-store.js");
 const { STATS } = load("src/shared/items/item-stats.js");
-const { FACETS, NO_FACET_VALUE, facetOptions, searchItems } = load("src/shared/items/item-search.js");
-const { classOptions, searchSpells } = load("src/shared/spells/spell-search.js");
+const { FACETS, ITEM_SORT_KEYS, NO_FACET_VALUE, facetOptions, searchItems } = load("src/shared/items/item-search.js");
+const { SPELL_SORT_KEYS, classOptions, searchSpells } = load("src/shared/spells/spell-search.js");
 const { eraFiltered, page, toItemCriteria } = load("src/shared/items/mcp-catalogue.js");
 
 // `--data-dir` is mainly for tests (a hermetic temp profile rather than this machine's real one) —
@@ -74,12 +74,6 @@ const STAT_KEYS = STATS.map((s) => s.key);
 const FACET_KEYS = FACETS.map((f) => f.key);
 // `SourceKind` (src/shared/types.ts) — a closed set, so validated as an enum rather than a free string.
 const SOURCE_KINDS = ["drop", "quest", "recipe", "vendor", "forage", "ground", "unknown"];
-// `ItemSortKey`/`SpellSortKey` (item-search.ts/spell-search.ts) are TS-only types with no runtime
-// export; mirrored here rather than imported since there's nothing to import. A key that drifts out
-// of sync just sorts nothing (both sort functions fall back to `row.stats[key]` → `undefined` → last),
-// never throws, so the failure mode of this one being stale is quiet, not broken.
-const ITEM_SORT_KEYS = ["name", "value", "slot", "source", "zone", "level", ...STAT_KEYS];
-const SPELL_SORT_KEYS = ["name", "level", "mana", "castSec", "recastSec", "range", "damage", "manaPerDamage", "source"];
 
 // The picker's own "(none)" label — accepted literally in a facet array, translated by `toItemCriteria`
 // (`src/shared/mcp-catalogue.ts`) to the real `NO_FACET_VALUE` sentinel `matchesFacet` expects.

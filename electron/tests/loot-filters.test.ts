@@ -100,6 +100,25 @@ test("a column sorts both ways", () => {
   assert.deepEqual(sortLoot(feed, { key: "qty", desc: true })[0].item, "Bone Chips");
 });
 
+// The columns only some drops fill in: a drop with nothing there is "no data", kept last whichever
+// way the arrow points rather than ranked as an empty string or a price of zero.
+const fated: LootRecord[] = [
+  drop({ item: "Crushbone Belt +2", raw: "[b] You looted a Crushbone Belt +2" }),
+  drop({ item: "Bone Chips", fate: "sold", detail: "4 silver", soldFor: 40, raw: "[c] You looted 4 Bone Chips" }),
+  drop({ item: "Rat Ear", fate: "stored", detail: "Depot", raw: "[a] You looted a Rat Ear" }),
+  drop({ item: "Spider Silk", fate: "sold", detail: "1 gold", soldFor: 100, raw: "[d] You looted 2 Spider Silk" }),
+];
+
+test("the sometimes-empty columns sort both ways, blanks last", () => {
+  const items = (key: "detail" | "soldFor" | "raw", desc: boolean) =>
+    sortLoot(fated, { key, desc }).map((d) => d.item);
+  assert.deepEqual(items("detail", false), ["Spider Silk", "Bone Chips", "Rat Ear", "Crushbone Belt +2"]);
+  assert.deepEqual(items("detail", true), ["Rat Ear", "Bone Chips", "Spider Silk", "Crushbone Belt +2"]);
+  assert.deepEqual(items("soldFor", true), ["Spider Silk", "Bone Chips", "Crushbone Belt +2", "Rat Ear"]);
+  assert.deepEqual(items("soldFor", false), ["Bone Chips", "Spider Silk", "Crushbone Belt +2", "Rat Ear"]);
+  assert.deepEqual(items("raw", false), ["Rat Ear", "Crushbone Belt +2", "Bone Chips", "Spider Silk"]);
+});
+
 /**
  * The same ledger with zones on it, as the recorder writes them: **the log's own wording**, so one
  * camp turns up under three spellings and one drop was looted before any zone line was seen
@@ -157,4 +176,5 @@ test("prices sort by any column, biggest earner first by default", () => {
   assert.deepEqual(sortPrices(prices, { key: "unitCopper", desc: true }).map((p) => p.item), ["Rat Ear", "Bone Chips"]);
   assert.deepEqual(sortPrices(prices, { key: "lastAt", desc: true }).map((p) => p.item), ["Rat Ear", "Bone Chips"]);
   assert.deepEqual(sortPrices(prices, { key: "item", desc: false }).map((p) => p.item), ["Bone Chips", "Rat Ear"]);
+  assert.deepEqual(sortPrices(prices, { key: "sales", desc: true }).map((p) => p.item), ["Bone Chips", "Rat Ear"]);
 });

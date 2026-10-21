@@ -27,19 +27,23 @@ export default function ExportButton({
   times,
   now,
   compact,
+  onOpen,
 }: {
   cmd: GameExportCommand;
   times: GameExportTimes;
   now: number;
   compact?: boolean;
+  /** Open where this export is dealt with instead of copying its command — the status bar's chip. */
+  onOpen?: { label: string; open: () => void };
 }) {
   const at = lastExportedAt(cmd, times);
   const staleness = exportStaleness(cmd, at, now);
   const className = `game-export ${compact ? "compact" : ""} ${staleness === null ? "never" : ""}`;
   const style = staleness === null ? undefined : ({ "--stale": staleColor(staleness) } as CSSProperties);
-  const title = `${cmd.what}\n\nClick to copy: ${cmd.command}${at ? `\nLast written ${new Date(at).toLocaleString()}` : ""}`;
+  const click = onOpen ? `Click to open ${onOpen.label}` : `Click to copy: ${cmd.command}`;
+  const title = `${cmd.what}\n\n${click}${at ? `\nLast written ${new Date(at).toLocaleString()}` : ""}`;
   return (
-    <button type="button" className={className} style={style} title={title} onClick={() => void copyText(cmd.command, cmd.command)}>
+    <button type="button" className={className} style={style} title={title} onClick={() => (onOpen ? onOpen.open() : void copyText(cmd.command, cmd.command))}>
       <span className="game-export-label">{cmd.label}</span>
       {!compact && <code className="game-export-command">{cmd.command}</code>}
       <span className="game-export-age">{at === undefined ? "never" : exportAgeText(now - at)}</span>

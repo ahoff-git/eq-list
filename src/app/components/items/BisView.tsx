@@ -4,6 +4,7 @@ import ItemLink from "@/app/components/items/ItemLink";
 import BisWearTable from "@/app/components/items/BisWearTable";
 import BisEffects from "@/app/components/items/BisEffects";
 import BisHuntTable from "@/app/components/items/BisHuntTable";
+import BisStats from "@/app/components/items/BisStats";
 import { Empty } from "@/app/components/ui";
 import { DumpSection } from "@/app/components/exports/DumpParts";
 import { useInventory } from "@/lib/exports/useGameExports";
@@ -12,6 +13,7 @@ import { bisPlan, loadoutText, type BisPlan } from "@/shared/items/bis-plan";
 import { NO_BIS_OPTIONS, bisOptionCount, lockAll, toggleTitle, type BisOptions } from "@/shared/items/bis-options";
 import { WORN_LAYOUT } from "@/shared/items/bis";
 import { gradedTitle } from "@/shared/items/item-upgrade";
+import { wikiName } from "@/shared/shown-name";
 import { exportAgeText } from "@/shared/game-exports";
 import { createLogger } from "@/shared/logging";
 import type { SocketPlan } from "@/shared/items/exaltations";
@@ -102,6 +104,10 @@ export default function BisView({
 
       <DumpSection title="Wear" aside={`${filled} of ${WORN_LAYOUT.length} slots filled`}>
         <BisWearTable plan={plan} options={options} onOptions={onOptions} />
+      </DumpSection>
+
+      <DumpSection title="Stats" aside="wearing now → best in slot" defaultOpen>
+        <BisStats wearing={plan.stats.wearing} loadout={plan.stats.loadout} />
       </DumpSection>
 
       <DumpSection
@@ -196,7 +202,7 @@ function TitleChips({ label, titles, onRemove }: { label: string; titles: readon
       <span className="muted">{label}:</span>
       {titles.map((t) => (
         <span key={t} className="bis-chip">
-          {t}
+          <ItemLink title={wikiName(t)} />
           <button className="btn ghost sm" title="Undo" onClick={() => onRemove(t)}>
             ×
           </button>
@@ -223,7 +229,9 @@ function SocketRow({ plan, claim }: { plan: SocketPlan; claim?: BisPlan["socketC
           {plan.options.map((o, i) => (
             <li key={i} title={o.uncertain ? "This stone's item has more than one effect; the dump can't say which it holds" : undefined}>
               {o.effect}
-              {o.uncertain ? "?" : ""} <span className="muted">· from {o.from} · {o.where}</span>
+              {o.uncertain ? "?" : ""} <span className="muted">
+                · from <ItemLink title={wikiName(o.from)} /> · {o.where}
+              </span>
             </li>
           ))}
         </ul>

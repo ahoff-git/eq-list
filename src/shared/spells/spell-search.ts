@@ -18,6 +18,7 @@ import { minLevel, pastLevelCap } from "./spell-era";
 import { parseSpellStats, type SpellStats } from "./spell-stats";
 import { spellSourceSortValue } from "./spell-sources";
 import { CATEGORY_SEPARATOR, categoryLabel, type SpellCategory } from "./spell-categories";
+import { buffLinesFor } from "../buffs/buff-lines";
 import { distinctSorted, sortRows, type Sort } from "../sorting";
 import type { CachedSpell } from "../types";
 
@@ -163,17 +164,45 @@ export function matchesSpell(row: SpellRow, c: SpellCriteria): boolean {
 }
 
 /** Which column the results are ordered by. */
-export type SpellSortKey =
-  | "name"
-  | "level"
-  | "mana"
-  | "castSec"
-  | "recastSec"
-  | "range"
-  | "damage"
-  | "manaPerDamage"
-  | "source"
-  | "category";
+/** Every key `spellSortValue` answers. A runtime list, not just a type, so the MCP server offers exactly
+ *  these rather than a hand-kept copy that drifts. */
+export const SPELL_SORT_KEYS = [
+  "name",
+  "level",
+  "mana",
+  "castSec",
+  "recastSec",
+  "range",
+  "damage",
+  "manaPerDamage",
+  "source",
+  "category",
+  "classes",
+  "buffLine",
+  "outOfEra",
+  "beneficial",
+  "instant",
+] as const;
+
+export type SpellSortKey = (typeof SPELL_SORT_KEYS)[number];
+
+/** Every class that can cast it, lowest level first ("Cleric 1, Druid 3") — empty when none is named. */
+export function spellClassesText(row: SpellRow): string {
+  return Object.entries(row.stats.levels)
+    .sort(([, a], [, b]) => (a ?? 0) - (b ?? 0))
+    .map(([cls, level]) => `${cls} ${level}`)
+    .join(", ");
+}
+
+/** The buff lines it belongs to, per eqlwiki's guide — empty for anything the guide doesn't cover. */
+export function spellBuffLinesText(row: SpellRow): string {
+  return buffLinesFor(row.spell.title)
+    .map((l) => l.label)
+    .join(", ");
+}
+
+/** A yes/no flag as a sort value: yes ranks above no, and an unread flag stays `undefined`. */
+const flagValue = (flag: boolean | undefined): number | undefined => (flag === undefined ? undefined : flag ? 1 : 0);
 
 /**
  * What a point of mana bought, for ranking only — see the module note on why this is approximate
@@ -206,6 +235,18 @@ export function spellSortValue(row: SpellRow, key: SpellSortKey): string | numbe
     case "category":
       // Sorting by it is what *groups* the list: each category's subcategories together, in order.
       return row.category ? categoryLabel(row.category).toLowerCase() : undefined;
+    case "classes":
+      // The line as shown, so it groups by whichever class reaches the spell first.
+      return spellClassesText(row).toLowerCase() || undefined;
+    case "buffLine":
+      return spellBuffLinesText(row).toLowerCase() || undefined;
+    case "outOfEra":
+      // Always known: a spell without the flag is in era, not unread.
+      return row.spell.outOfEra ? 1 : 0;
+    case "beneficial":
+      return flagValue(row.stats.beneficial);
+    case "instant":
+      return flagValue(row.stats.instant);
     default:
       return row.stats[key];
   }

@@ -103,8 +103,7 @@ import { notAnItem } from "@/shared/shown-name";
  * query for what is, underneath, the same question the Hits tab already answers. Only queried once a
  * row is actually opened, same as the cause tally beside it.
  *
- * Both tables are `DataGrid`s — sortable and filterable on every column, save the few `sortable: false`
- * ones a closed sort/filter contract with `hitsPage` (or main-process aggregation) can't reach.
+ * Both tables are `DataGrid`s — sortable and filterable on every column.
  *
  * **Hits pages through the whole ledger, server-side, not just the most recent 200.** The feed used
  * to be a flat 200-row cap fetched once with nowhere further to go, then (briefly) the *entire*
@@ -377,8 +376,7 @@ const STANDING_HITS_DEFAULT_PAGE_SIZE = 10;
 /** The only fields the main Hits tab's columns declare — a filter item naming anything else
  *  (shouldn't happen; the grid only ever offers a column it was given) is dropped rather than
  *  forwarded. Moot for the Standings drill-down's own `FactionHitsGrid`, which skips the filter panel
- *  entirely (see `FactionHitsGrid` itself). Wider than `FactionHitSortKey` since `causeKind` and `raw`
- *  are filterable but not sortable (ADR 0260) — see `hitColumns`. */
+ *  entirely (see `FactionHitsGrid` itself). Every column is both sortable and filterable. */
 const HIT_FILTER_FIELDS = new Set<FactionHitFilterField>(["at", "faction", "delta", "cause", "causeKind", "raw"]);
 
 /** Converts the grid's own filter model into what `hitsPage` takes (ADR 0234) — same field names and
@@ -400,20 +398,15 @@ function toHitsFilter(model: GridFilterModel): FactionHitsFilter | undefined {
 /** The Hits grid's columns — identical in every place it's shown, the open ledger and the Standings
  *  drill-down's one-faction slice alike, right down to the Faction column that's redundant once
  *  scoped to a single faction: showing it anyway is the price of it actually being the same grid
- *  rather than one that merely looks similar. `sortable` turns off column sorting for the
- *  drill-down's fixed, newest-first order instead of the main tab's interactive, persisted one —
- *  the one difference `hitsPage`'s query shape doesn't currently let this collapse away too (its
- *  scope filter and a column's own filter aren't composable yet; see `FactionHitsGrid`). Source and
- *  Raw line stay unsortable either way — neither is a `FactionHitSortField` `hitsPage` knows how to
- *  order by — but both are filterable (ADR 0260): `hitsPage` filters `causeKind` against the same
- *  "Kill"/"Quest" label the Source column shows, and `raw` by plain substring match. */
-function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
+ *  rather than one that merely looks similar. Every column sorts in both (ADR 0327). `hitsPage`
+ *  sorts and filters `causeKind` by the same "Kill"/"Quest" label the Source column shows (ADR 0260),
+ *  and `raw` as plain text. */
+function hitColumns(): GridColDef<HitRow>[] {
   return [
     {
       field: "at",
       headerName: "Time",
       description: "When the log recorded it",
-      sortable,
       flex: 1,
       minWidth: 130,
       valueGetter: (_v, row) => row.at,
@@ -422,7 +415,6 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
     {
       field: "faction",
       headerName: "Faction",
-      sortable,
       flex: 2,
       minWidth: 160,
       renderCell: (p) => <ItemLink title={notAnItem(p.row.faction)} />,
@@ -431,7 +423,6 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
       field: "delta",
       headerName: "Change",
       description: "What the line stated — a signed amount, or a floor/ceiling hit, which states none",
-      sortable,
       ...NUM_COL,
       flex: 1,
       cellClassName: (p) => changeClass(p.row),
@@ -443,7 +434,6 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
       description: "Which kind of guessed cause this is — a kill, or a conversation that might be a quest turn-in",
       flex: 1,
       minWidth: 90,
-      sortable: false,
       valueGetter: (_v, row) => causeKindLabel(row) ?? "",
       renderCell: (p) => {
         const hit = p.row;
@@ -461,7 +451,6 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
       field: "cause",
       headerName: "Likely cause",
       description: "A guess from timing, not a fact the game states — see the ≈ on each row",
-      sortable,
       flex: 3,
       minWidth: 220,
       valueGetter: (_v, row) => (row.causedBy ? causeSource(row) : ""),
@@ -482,8 +471,6 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
       field: "raw",
       headerName: "Raw line",
       description: "The original log line this hit was read from",
-      // `hitsPage`'s sort allow-list doesn't know this field, but its filter one does (ADR 0260).
-      sortable: false,
       flex: 3,
       minWidth: 220,
       cellClassName: "muted small",
@@ -497,23 +484,23 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
  * row is expanded (`faction` set, `CauseBreakdown`'s caller). One component instead of the two
  * near-identical ones this used to be (`HitTable`, `FactionHitsForStanding`): same columns
  * (`hitColumns`, Faction included) and same row shape everywhere — just a narrower filter, smaller
- * pages, and a simpler, fixed sort once scoped to a single faction.
+ * pages, and a sort of its own (unpersisted, newest-first) once scoped to a single faction.
  */
 function FactionHitsGrid({
   faction,
   sort = DEFAULT_FACTION_HIT_SORT,
   onSort,
 }: {
-  /** Scopes the grid to one faction — no interactive sort/filter (`sort`/`onSort` are ignored), the
+  /** Scopes the grid to one faction — no filter panel, a sort of its own (`sort`/`onSort` are ignored), the
    *  drill-down's smaller page sizes, and a "Hits (N)" label above it. Columns stay the same as the
    *  main Hits tab's, Faction included, even though every row here shares one. Left unset for the
    *  main Hits tab, which shows every faction with interactive, persisted sort and a real filter
    *  panel. */
   faction?: string;
-  /** Ignored when `faction` is set — the drill-down's sort is always newest-first, which happens to
-   *  be this prop's own default (`DEFAULT_FACTION_HIT_SORT`), so its caller doesn't pass one at all. */
+  /** Ignored when `faction` is set — the drill-down keeps its own sort, opening newest-first
+   *  (`DEFAULT_FACTION_HIT_SORT`) for each faction rather than borrowing the main tab's persisted one. */
   sort?: Sort<FactionHitSortKey>;
-  /** Ignored (and safe to leave unset) when `faction` is set — nothing ever re-sorts a fixed grid. */
+  /** Ignored (and safe to leave unset) when `faction` is set — the drill-down's sort is its own. */
   onSort?: (next: Sort<FactionHitSortKey>) => void;
 }) {
   const scoped = faction !== undefined;
@@ -522,39 +509,45 @@ function FactionHitsGrid({
     pageSize: scoped ? STANDING_HITS_DEFAULT_PAGE_SIZE : HITS_DEFAULT_PAGE_SIZE,
   });
   const [filterModel, setFilterModel] = useState<GridFilterModel>({ items: [] });
+  // The drill-down's own sort: it sorts like the main tab, but a re-sort of one faction's hits is a
+  // look, not a preference to keep — so it isn't persisted, and each faction opens newest-first.
+  const [ownSort, setOwnSort] = useState<Sort<FactionHitSortKey>>(DEFAULT_FACTION_HIT_SORT);
+  const activeSort = onSort ? sort : ownSort;
+  const changeSort = onSort ?? setOwnSort;
 
   // The component instance is reused across different Standings drill-downs (no `key` on it), so a
   // switch from one scoped faction to another has to reset the page itself — otherwise page 3 of a
   // faction with fewer hits than that renders blank instead of the new faction's first page.
   useEffect(() => {
     setPaginationModel((p) => ({ ...p, page: 0 }));
+    setOwnSort(DEFAULT_FACTION_HIT_SORT);
   }, [faction]);
 
   const query = useMemo<FactionHitsQuery>(
     () => ({
       offset: paginationModel.page * paginationModel.pageSize,
       limit: paginationModel.pageSize,
-      sortField: sort.key,
-      sortDesc: sort.desc,
+      sortField: activeSort.key,
+      sortDesc: activeSort.desc,
       filter:
         faction !== undefined
           ? { items: [{ field: "faction", operator: "equals", value: faction }], logicOperator: "and" }
           : toHitsFilter(filterModel),
     }),
-    [faction, paginationModel, sort, filterModel],
+    [faction, paginationModel, activeSort, filterModel],
   );
   const { page, loading } = useFactionHitsPage(query);
   const rows = useMemo<HitRow[]>(() => page.rows.map((hit) => ({ ...hit, id: factionKey(hit) })), [page.rows]);
 
-  const columns = useMemo<GridColDef<HitRow>[]>(() => hitColumns(!scoped), [scoped]);
+  const columns = useMemo<GridColDef<HitRow>[]>(() => hitColumns(), []);
 
   // A re-sort changes what belongs on every page, including this one — the row that opened page 3
   // under the old order has no claim to still be there under the new one, so re-sorting also resets
-  // pagination back to page 0. Never actually fires when scoped: every column is unsortable there.
+  // pagination back to page 0.
   const { sortModel, onSortModelChange } = useGridSort(
-    sort,
-    onSort ?? (() => {}),
-    (key) => key !== "faction" && key !== "cause",
+    activeSort,
+    changeSort,
+    (key) => key !== "faction" && key !== "cause" && key !== "causeKind" && key !== "raw",
     () => setPaginationModel((p) => ({ ...p, page: 0 })),
   );
 
@@ -579,12 +572,13 @@ function FactionHitsGrid({
         paginationModel={paginationModel}
         onPaginationModelChange={setPaginationModel}
         rowCount={page.total}
+        // Sorted by `hitsPage` over every hit, scoped or not — the grid only ever holds one page.
+        sortingMode="server"
+        sortModel={sortModel}
+        onSortModelChange={onSortModelChange}
         {...(scoped
           ? {}
           : {
-              sortingMode: "server" as const,
-              sortModel,
-              onSortModelChange,
               // Reaches every hit the ledger holds, not just this page — ADR 0234. Same reason a
               // re-sort resets to page 0: a new filter changes what belongs on every page, including
               // this one.
@@ -697,7 +691,6 @@ function StandingTable({
         description: "Hits at the bottom, which states no amount",
         ...NUM_COL,
         flex: 1,
-        sortable: false,
         cellClassName: "lt-num",
       },
       {
@@ -706,7 +699,6 @@ function StandingTable({
         description: "Hits at the top, which states no amount",
         ...NUM_COL,
         flex: 1,
-        sortable: false,
         cellClassName: "lt-num",
       },
       {
@@ -714,7 +706,6 @@ function StandingTable({
         headerName: "First hit",
         flex: 1,
         minWidth: 130,
-        sortable: false,
         cellClassName: "lt-time",
         renderCell: (p) => <span title={when(p.row.firstAt)}>{dayTime(p.row.firstAt)}</span>,
       },
@@ -725,7 +716,6 @@ function StandingTable({
           "What the ledger alone has seen for this faction, live — Net above already has a stated total folded in on top of it (yours, or the game's own from /outputfile faction)",
         ...NUM_COL,
         flex: 1,
-        sortable: false,
         valueGetter: (_v, row) => row.correction?.observedNet,
         renderCell: (p) => p.value ?? "—",
       },
@@ -735,7 +725,6 @@ function StandingTable({
         description: "When Net was last set to a known total — by you, or by the game's /outputfile faction dump (marked ⇩)",
         flex: 1,
         minWidth: 130,
-        sortable: false,
         cellClassName: "lt-time",
         valueGetter: (_v, row) => row.correction?.correctedAt,
         renderCell: (p) => {
@@ -767,7 +756,6 @@ function StandingTable({
           : "A guess from timing, not a fact the game states — a mob's kill or a nearby conversation that landed shortly before one or more hits this session (ADR 0219, ADR 0220).",
         flex: 3,
         minWidth: 220,
-        sortable: false,
         valueGetter: (_v, row) => row.causes.map((c) => c.source).join(" "),
         renderCell: (p) => {
           const shown = p.row.causes.slice(0, MAX_CAUSES_SHOWN);
@@ -795,7 +783,7 @@ function StandingTable({
   );
 
   // Computed before the early return below: a hook can't be called conditionally.
-  const { sortModel, onSortModelChange } = useGridSort(sort, onSort, (key) => key !== "faction");
+  const { sortModel, onSortModelChange } = useGridSort(sort, onSort, (key) => key !== "faction" && key !== "causes");
 
   if (standings.length === 0) {
     return <Empty title={emptyTitle} hint={emptyHint} />;

@@ -99,6 +99,18 @@ export const STATS: readonly StatMeta[] = [
   { key: "wt", label: "Weight", group: "weapon", lowerIsBetter: true, places: 1 },
 ];
 
+/**
+ * The sections a card's numbers fall into, in the order a card prints them, with what a heading calls
+ * each. The first is named for what's in it — the card's own `AC` / `HP` / `Mana` — because no one
+ * word covers armour and two pools without misdescribing one of them ("Defence" read as AC alone).
+ */
+export const STAT_GROUPS: readonly { key: StatGroup; label: string }[] = [
+  { key: "defence", label: "AC, HP & Mana" },
+  { key: "attribute", label: "Attributes" },
+  { key: "resist", label: "Resists" },
+  { key: "weapon", label: "Weapon" },
+];
+
 const STAT_BY_KEY = new Map<StatKey, StatMeta>(STATS.map((s) => [s.key, s]));
 
 /** What a stat is called and how it behaves; every renderer asks here rather than hard-coding it. */

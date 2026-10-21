@@ -1,8 +1,10 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import SearchField from "@/app/components/SearchField";
 import ItemLink from "@/app/components/items/ItemLink";
 import { segCls } from "@/app/components/ui";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "@/app/components/dataGridDefaults";
 import { useShoppingList } from "@/lib/hooks";
 import { normalizeItemName } from "@/shared/items/grouping";
 import {
@@ -13,6 +15,7 @@ import {
   type InventoryArea,
   type InventoryItem,
   type InventoryPlace,
+  type InventoryTotal,
 } from "@/shared/game-export-dumps";
 import { DumpSection, textMatches } from "./DumpParts";
 import { gradedTitle } from "@/shared/items/item-upgrade";
@@ -39,7 +42,8 @@ export default function InventoryDumpView({ text, carriedItems }: { text: string
   const [query, setQuery] = useState("");
   const list = useShoppingList();
   const wanted = useMemo(() => new Set(list.entries.map((e) => normalizeItemName(e.name))), [list.entries]);
-  const isWanted = (name: string) => wanted.has(normalizeItemName(name));
+  // Stable, so By item's grid columns (which draw the ★) aren't rebuilt on every render.
+  const isWanted = useCallback((name: string) => wanted.has(normalizeItemName(name)), [wanted]);
 
   return (
     <div className="dump-view">
@@ -152,23 +156,45 @@ function placeText(place: InventoryPlace, split: boolean): string {
 
 function ByItem({ items, query, isWanted }: { items: InventoryItem[]; query: string; isWanted: (name: string) => boolean }) {
   const totals = useMemo(() => inventoryTotals(items), [items]);
+  const columns = useMemo<GridColDef<InventoryTotal>[]>(
+    () => [
+      { field: "count", headerName: "Count", ...NUM_COL, width: 80 },
+      {
+        field: "item",
+        headerName: "Item",
+        flex: 2,
+        minWidth: 180,
+        valueGetter: (_v, row) => row.baseName,
+        renderCell: ({ row: t }) => (
+          <>
+            {/* At the best grade among the copies counted, so the hover card is that copy's. */}
+            <ItemLink title={gradedTitle(t.baseName, t.bestGrade)} />
+            {isWanted(t.baseName) && <span className="inv-wanted" title="On your shopping list">★</span>}
+          </>
+        ),
+      },
+      {
+        field: "where",
+        headerName: "Where",
+        flex: 3,
+        minWidth: 200,
+        cellClassName: "muted small",
+        valueGetter: (_v, t) => t.places.map((p) => placeText(p, t.places.length > 1)).join(" · "),
+      },
+    ],
+    [isWanted],
+  );
   const shown = totals.filter((t) => textMatches(query, t.baseName));
   if (!shown.length) return <p className="muted">Nothing here matches “{query}”.</p>;
   return (
-    <table className="dump-table">
-      <tbody>
-        {shown.map((t) => (
-          <tr key={t.baseName}>
-            <td className="num">{t.count}</td>
-            <td>
-              {/* At the best grade among the copies counted, so the hover card is that copy's. */}
-              <ItemLink title={gradedTitle(t.baseName, t.bestGrade)} />
-              {isWanted(t.baseName) && <span className="inv-wanted" title="On your shopping list">★</span>}
-            </td>
-            <td className="muted small">{t.places.map((p) => placeText(p, t.places.length > 1)).join(" · ")}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <DataGrid
+      {...GRID_DEFAULTS}
+      sx={GRID_SX}
+      columns={columns}
+      rows={shown}
+      getRowId={(t) => t.baseName}
+      pageSizeOptions={PAGE_SIZE_OPTIONS}
+      initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+    />
   );
 }

@@ -141,20 +141,21 @@ const checks = [
   },
   {
     view: "Best in slot — Wear",
-    html: () => renderToStaticMarkup(h(load("app/components/items/BisWearTable").default, { plan, options: NO_BIS_OPTIONS, onOptions: () => {} })),
+    // Mounted, not server-rendered: a DataGrid lays its rows out in a browser and draws none server-side.
+    mounted: () => mount(load("app/components/items/BisWearTable").default, { plan, options: NO_BIS_OPTIONS, onOptions: () => {} }, {}),
     expect: ["Gnoll Slayer +3", "Moonstone Ring +4"],
   },
   {
     view: "Best in slot — Hunt",
-    html: () => renderToStaticMarkup(h(load("app/components/items/BisHuntTable").default, { hunt: plan.hunt, onSkip: () => {} })),
+    mounted: () => mount(load("app/components/items/BisHuntTable").default, { hunt: plan.hunt, onSkip: () => {} }, {}),
     expect: ["Crown of Hunting"],
   },
   {
     view: "Peers — Who has it",
-    html: () => {
+    mounted: () => {
       const rows = shareKind("inventory").read([{ item: "Gnoll Slayer", count: 2, grade: 3, places: [], asOf: "2026-10-20T10:00:00.000Z" }], () => "id");
       const received = [{ peerId: "p1", kind: "inventory", from: "Bob", rows, rev: 1, at: Date.now() }];
-      return renderToStaticMarkup(h(load("app/components/peers/PeerInventories").default, { received }));
+      return mount(load("app/components/peers/PeerInventories").default, { received }, {});
     },
     expect: ["Gnoll Slayer +3"],
   },

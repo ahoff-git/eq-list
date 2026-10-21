@@ -183,7 +183,7 @@ const SITTING_COLUMNS: GridColDef<SittingRow>[] = [
     headerName: "Made",
     flex: 1,
     minWidth: 200,
-    sortable: false,
+    // Sorts by what the cell reads — the joined list, so by the first thing made, A to Z.
     valueGetter: (_v, row) => row.items.map((i) => `${i.item} ×${i.attempts}`).join(", "),
   },
 ];

@@ -6,6 +6,7 @@ import GoalFocusBanner from "@/app/components/goals/GoalFocusBanner";
 import { bestRate, reconcileDrops, type DropTruth, type ShownRate } from "@/shared/mob/drop-truth";
 import { mobKey } from "@/shared/mob/mob-stats";
 import ItemLink from "@/app/components/items/ItemLink";
+import { ZoneName } from "@/app/components/map/ZoneName";
 import ZonePicker from "@/app/components/map/ZonePicker";
 import { api } from "@/lib/api";
 import { ringMob } from "@/lib/map/showOnMap";
@@ -419,7 +420,7 @@ function ZoneGroups({
         return (
           <div className={`hunt-zone ${youAreHere ? "here" : ""}`} key={z.zone}>
             <div className="hunt-zone-head">
-              <ZoneName zone={z.zone} here={youAreHere} />
+              <HuntZoneName zone={z.zone} here={youAreHere} />
             </div>
             {z.mobs.map((m) => (
               <div
@@ -549,7 +550,7 @@ function PlaceRow({
       {children}
       <ItemLink title={notAnItem(place.mob)} className="hm-name" />
       <span className="hp-in muted">in</span>
-      <ZoneName zone={place.zone} here={youAreHere} />
+      <HuntZoneName zone={place.zone} here={youAreHere} />
       {place.target && <TargetFlag />}
     </div>
   );
@@ -559,7 +560,7 @@ function PlaceRow({
  * A zone, as both views write it: its name, what level the wiki says it is, and whether you're
  * standing in it. One component so a zone can't read one way in the header and another in a row.
  */
-function ZoneName({ zone, here }: { zone: string; here: boolean }) {
+function HuntZoneName({ zone, here }: { zone: string; here: boolean }) {
   // What you're walking into, from the zone's own wiki page — the question "go here" raises and the
   // list itself can't answer. Absent for the cities, which state no monster levels.
   const levels = zoneLevels(zone);
@@ -567,7 +568,7 @@ function ZoneName({ zone, here }: { zone: string; here: boolean }) {
     <>
       {/* A zone has a wiki page too, and "what else is in here" is the question a hunt raises
           next — so its name opens like every other name in the app. */}
-      <ItemLink title={notAnItem(zone)} className="hz-name" />
+      <ZoneName zone={zone} className="hz-name" />
       {levels && (
         <span className="hz-levels" title={zoneLevelWhy(levels, zone)}>
           lv {zoneLevelText(levels)}

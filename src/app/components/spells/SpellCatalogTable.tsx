@@ -4,8 +4,14 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import ItemLink from "@/app/components/items/ItemLink";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
 import { useGridSort } from "@/lib/useGridSort";
-import { buffLinesFor } from "@/shared/buffs/buff-lines";
-import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/shared/spells/spell-search";
+import {
+  manaPerDamage,
+  minLevel,
+  spellBuffLinesText,
+  spellClassesText,
+  type SpellRow,
+  type SpellSortKey,
+} from "@/shared/spells/spell-search";
 import { categoryLabel } from "@/shared/spells/spell-categories";
 import { sourceKindsLabel, spellSource } from "@/shared/spells/spell-sources";
 import type { Sort } from "@/shared/sorting";
@@ -24,6 +30,12 @@ const START_DESC: Record<SpellSortKey, boolean> = {
   manaPerDamage: false,
   source: false,
   category: false,
+  classes: false,
+  buffLine: false,
+  // The yes/no flags open on "yes" — that's the rows a click on them is asking to see.
+  outOfEra: true,
+  beneficial: true,
+  instant: true,
 };
 
 type Row = SpellRow & { id: string };
@@ -141,12 +153,10 @@ export default function SpellCatalogTable({
       {
         field: "classes",
         headerName: "Classes",
+        description: "Every class that can cast it, lowest level first",
         flex: 2,
-        // No `SpellSortKey` names this combined line, so it isn't sortable — it wasn't before either
-        // (a plain, unsortable `<th>Classes</th>`).
-        sortable: false,
         cellClassName: "muted small",
-        valueGetter: (_v, row) => classesOf(row) || "—",
+        valueGetter: (_v, row) => spellClassesText(row) || "—",
       },
       {
         field: "source",
@@ -163,16 +173,14 @@ export default function SpellCatalogTable({
         headerName: "Buff Line",
         description: "Spells sharing a line can't be up at once — eqlwiki's own Buff Lines guide, ADR 0264",
         flex: 2,
-        sortable: false,
         cellClassName: "muted small",
-        valueGetter: (_v, row) => buffLinesFor(row.spell.title).map((l) => l.label).join(", ") || "—",
+        valueGetter: (_v, row) => spellBuffLinesText(row) || "—",
       },
       {
         field: "outOfEra",
         headerName: "Out of era",
         description: "The server hasn't opened this one yet — already shown as a badge beside the name",
         flex: 1,
-        sortable: false,
         cellClassName: "muted",
         valueGetter: (_v, row) => (row.spell.outOfEra ? "Yes" : "No"),
       },
@@ -181,7 +189,6 @@ export default function SpellCatalogTable({
         headerName: "Beneficial",
         description: "A buff or heal rather than something you throw at a mob",
         flex: 1,
-        sortable: false,
         cellClassName: "muted",
         valueGetter: (_v, row) => (row.stats.beneficial === undefined ? "—" : row.stats.beneficial ? "Yes" : "No"),
       },
@@ -190,7 +197,6 @@ export default function SpellCatalogTable({
         headerName: "Instant",
         description: "No duration at all — a direct heal, a gate, a bind: something that happens and is over",
         flex: 1,
-        sortable: false,
         cellClassName: "muted",
         valueGetter: (_v, row) => (row.stats.instant === undefined ? "—" : row.stats.instant ? "Yes" : "No"),
       },
@@ -218,13 +224,6 @@ export default function SpellCatalogTable({
       }}
     />
   );
-}
-
-function classesOf(row: SpellRow): string {
-  return Object.entries(row.stats.levels)
-    .sort(([, a], [, b]) => (a ?? 0) - (b ?? 0))
-    .map(([cls, level]) => `${cls} ${level}`)
-    .join(", ");
 }
 
 /** The Source column as plain text — what the grid's own filter matches against. */

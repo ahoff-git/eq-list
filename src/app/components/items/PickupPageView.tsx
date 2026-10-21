@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { useShoppingList } from "@/lib/hooks";
 import ItemLink from "@/app/components/items/ItemLink";
 import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
+import { ZoneName } from "@/app/components/map/ZoneName";
 import { AddButton } from "@/app/components/ui";
 import { addItem } from "@/lib/items/addToList";
 import {
@@ -119,7 +120,7 @@ export default function PickupPageView({ pickup: p }: { pickup: QuestPickup }) {
                     {done ? "✓" : "○"}
                   </span>
                   <ItemLink title={wikiName(pickupEntryName(s))} />
-                  <span className="muted small">{s.zone}</span>
+                  {s.zone && <ZoneName zone={s.zone} className="muted small" />}
                 </li>
               );
             })}

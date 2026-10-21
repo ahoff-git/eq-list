@@ -1523,11 +1523,6 @@ button {
 .page-detail ul.tradeskill-lines { display: block; list-style: disc; margin: 4px 0; padding-left: 20px; }
 .page-detail ul.tradeskill-lines ul.tradeskill-lines { list-style: circle; margin: 2px 0; }
 .page-detail ul.tradeskill-lines li { display: list-item; margin: 3px 0; line-height: 1.5; }
-.tradeskill-table td { vertical-align: top; }
-/* The stat-table's right-aligned numeric 2nd/3rd columns don't fit a guide, whose columns are anything. */
-.stat-table.tradeskill-table td:nth-child(n),
-.stat-table.tradeskill-table th:nth-child(n) { text-align: left; width: auto; }
-.stat-table.tradeskill-table td.tradeskill-add { width: 1%; white-space: nowrap; text-align: right; }
 /* What a step makes, filled in where the guide left it out — the result is what you're crafting, so it
    reads heavier than the ingredients before it. */
 .tradeskill-makes { color: var(--text-dim); }
@@ -1545,9 +1540,6 @@ button {
 }
 .step-estimate-figure { color: var(--accent); font-weight: 600; cursor: help; }
 .step-estimate-material { white-space: nowrap; }
-/* In a table the estimate rides in its own full-width row, joined to the step above it. */
-.stat-table.tradeskill-table tr.has-estimate td { border-bottom: none; padding-bottom: 2px; }
-.stat-table.tradeskill-table tr.step-estimate-row td { padding-top: 0; }
 /* You, against the guide. A step you're past is greyed — still readable, plainly behind you — and the
    one you're in gets the accent rule down its left, so it's what the eye lands on. */
 .you-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 6px 0 2px; }
@@ -1561,7 +1553,6 @@ button {
   margin-left: -11px;
   list-style: none;
 }
-.stat-table.tradeskill-table tr.step-current td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .badge.step-done-badge { color: var(--text-dim); border-style: dashed; margin-left: 6px; }
 .badge.step-here-badge { color: var(--accent); border-color: var(--accent); margin-left: 6px; }
 .crafting-log h4 { margin-top: 14px; }
@@ -1864,29 +1855,6 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
-.stat-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.stat-table th,
-.stat-table td {
-  text-align: left;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
-}
-.stat-table th {
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 600;
-}
-.stat-table td:nth-child(2),
-.stat-table td:nth-child(3),
-.stat-table th:nth-child(2),
-.stat-table th:nth-child(3) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  width: 64px;
-}
 
 /* ── loot feed ───────────────────────────────────────────────── */
 /* Text-led tables, so the shared right-aligned 2nd/3rd columns above don't apply: a fate and a
@@ -1915,7 +1883,7 @@ button {
 .fc-cause { font-style: italic; color: var(--text-dim); cursor: help; }
 .fc-guess { color: var(--text-dim); }
 
-/* A Standings row opens to its full cause breakdown — same drill-down shape as `.spell-table`'s. */
+/* A Standings row opens to its full cause breakdown. */
 .faction-table .standing-row.expandable { cursor: pointer; }
 .faction-table .standing-row.expandable:hover { background: var(--bg-raised); }
 .faction-table .standing-row .caret { color: var(--text-dim); font-size: 10px; }
@@ -2108,36 +2076,6 @@ button {
 .tab-fill { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tab-fill-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .grid-fill { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.spell-table { font-size: 12px; white-space: nowrap; }
-.spell-table td:not(:first-child),
-.spell-table th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-/* Sortable headers belong to any `.stat-table` — the spell breakdown and both loot views share
-   them. The button inherits its column's alignment, so a numeric header stays over its digits. */
-.stat-table th.sortable { padding: 0; }
-.stat-table th.sortable button {
-  width: 100%;
-  padding: 6px 10px;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  text-align: inherit;
-  cursor: pointer;
-}
-.stat-table th.sortable button:hover { color: var(--text); }
-.stat-table th.sorted { color: var(--accent); }
-.stat-table .num-accent { color: var(--accent); }
-.stat-table .num-bad { color: var(--bad); }
-.spell-table .spell-melee td { color: var(--text-dim); font-style: italic; }
-/* Click a spell for its breakdown — the caret sits in the name cell so the numeric columns
-   keep their alignment. */
-.spell-table .spell-row.expandable { cursor: pointer; }
-.spell-table .spell-row.expandable:hover { background: var(--bg-raised); }
-.spell-table .spell-row .caret { color: var(--text-dim); font-size: 10px; }
-/* The panel under a row: every figure the tracker keeps, grouped by the question it answers.
-   Wraps rather than scrolling, since it's prose-shaped and the table beside it already scrolls. */
-.spell-table .spell-detail td { padding: 0; border-bottom: 1px solid var(--border); }
 .spell-breakdown {
   display: flex;
   flex-direction: column;
@@ -2149,9 +2087,6 @@ button {
 /* Captions share `.dmg-caption` with the damage drill-down: same job, same look. */
 .spell-group > .dmg-caption { flex: none; width: 82px; padding-top: 0; }
 .spell-stat { font-variant-numeric: tabular-nums; }
-/* Per-invocation rows under a spell, when the split-by-mode setting is on. */
-.spell-table .spell-mode td { color: var(--text-dim); border-bottom-color: transparent; }
-.spell-table .spell-mode td:first-child { padding-left: 20px; }
 /* Footnotes under the spell table: what each invocation did beyond scaling numbers. */
 .invocation-notes {
   display: flex;
@@ -4249,11 +4184,6 @@ select optgroup {
 .dump-section-body { padding: 0 0 8px 16px; }
 .dump-bar { display: inline-block; width: 60px; height: 5px; border-radius: 2px; background: var(--bg-input); overflow: hidden; vertical-align: middle; }
 .dump-fill { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
-.dump-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.dump-table th { text-align: left; color: var(--text-dim); font-weight: 600; font-size: 12px; padding: 3px 6px; border-bottom: 1px solid var(--border); }
-.dump-table td { padding: 3px 6px; border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
-.dump-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dump-bar-cell { width: 70px; }
 .inv-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .inv-inner { padding: 2px 0 4px 18px; border-left: 1px solid var(--border); margin-left: 6px; }
 .inv-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
@@ -4268,8 +4198,6 @@ select optgroup {
 .ach-dump-objectives li { display: flex; gap: 8px; justify-content: space-between; }
 .ach-dump-objectives li.done { color: color-mix(in oklab, var(--good) 70%, var(--text-dim)); }
 .ach-dump-progress { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-/* Peers: who has a material. A row its card says can't be traded is dimmed and chipped. */
-.peer-inventory tr.untradeable td { opacity: 0.6; }
 .chip.no-trade { margin-left: 6px; color: var(--bad); border-color: color-mix(in oklab, var(--bad) 50%, var(--border)); }
 
 /* Items tab: Search / Best in slot, and the BiS view. */
@@ -4285,10 +4213,6 @@ select optgroup {
 .bis-empty td:first-child { border-left: 3px solid var(--border); }
 /* Best in slot: your say — locks, picks, benches, skips, wanted effects, presets. */
 .bis .warn { color: var(--warn); }
-.bis-wear .bis-lock-cell { width: 1%; padding-right: 0; }
-.bis-wear tr.bis-move td:first-child, .bis-wear tr.bis-empty td:first-child { border-left: 0; }
-.bis-wear tr.bis-move td:nth-child(2) { border-left: 3px solid var(--accent); }
-.bis-wear tr.bis-empty td:nth-child(2) { border-left: 3px solid var(--border); }
 .bis-lock { opacity: 0.45; }
 .bis-lock.on, .bis-lock:hover { opacity: 1; }
 .bis-actions { white-space: nowrap; text-align: right; }
@@ -4388,3 +4312,12 @@ select optgroup {
 /* Search: matches beyond the wiki (FindAcross, ADR 0321). A stance or AA row carries its effect inline. */
 .across-head { margin-top: 10px; }
 .result.across { flex-direction: column; align-items: flex-start; gap: 2px; }
+
+/* A status-bar chip that opens its tab (`StatusLink`): reads as the bar's text until pointed at. */
+.statusbar .status-link { cursor: pointer; border-radius: 4px; padding: 1px 4px; }
+.statusbar .status-link:hover { background: color-mix(in srgb, var(--text-dim) 14%, transparent); color: var(--text); }
+
+/* A figure worth noticing, and one that's bad news — set on a grid cell by `cellClassName`. Global,
+   since grid cells sit in no table class; scoped to the old `.stat-table` they had stopped applying. */
+.num-accent { color: var(--accent); }
+.num-bad { color: var(--bad); }

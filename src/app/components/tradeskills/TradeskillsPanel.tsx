@@ -1,5 +1,6 @@
 "use client";
-import { Fragment, createContext, useContext } from "react";
+import { Fragment, createContext, useContext, useMemo } from "react";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { api } from "@/lib/api";
 import { useClosedZones, useCurrentZone, useTradeskillProgress } from "@/lib/hooks";
 import { usePersistentShape } from "@/lib/usePersistentState";
@@ -42,6 +43,16 @@ import { useHoldings } from "@/lib/exports/useGameExports";
 import type { GuideRun, SkillSpan, StepCost, StepNeed, Tradeskill, TradeskillGuide } from "@/shared/tradeskills/tradeskill-types";
 import { AddButton, CheckField, Empty, segCls } from "@/app/components/ui";
 import ItemLink from "@/app/components/items/ItemLink";
+import {
+  ACTION_COL,
+  DEFAULT_PAGE_SIZE,
+  GRID_DEFAULTS,
+  GRID_SX,
+  GRID_SX_FIT,
+  NUM_COL,
+  PAGE_SIZE_OPTIONS,
+  hiddenByDefault,
+} from "@/app/components/dataGridDefaults";
 import CraftingLogView from "@/app/components/tradeskills/CraftingLogView";
 import { wikiName } from "@/shared/shown-name";
 
@@ -683,6 +694,35 @@ function Block({ block, closed, onAdd }: { block: JudgedBlock; closed: ReadonlyS
   }
 }
 
+/** One guide-table row, worked out once for every column that reads it. */
+interface GuideRow {
+  /** The row's place in the guide — its step order, and what the grid opens sorted by. */
+  id: number;
+  row: Extract<JudgedBlock, { kind: "table" }>["rows"][number];
+  step: StepLinks;
+  plan: StepPlan;
+}
+
+/** A cell as plain text, for sorting and filtering by what it reads. */
+const runsText = (runs: GuideRun[] | undefined) =>
+  (runs ?? []).map((r) => (typeof r === "string" ? r : "era" in r ? r.era : r.text)).join("").trim();
+
+/** Numbers inside the text compare as numbers — a guide's columns are mostly skill spans ("1-20",
+ *  "102-130") and counts, which plain text order would put 102 before 20. */
+const byReading = (a: unknown, b: unknown) => String(a ?? "").localeCompare(String(b ?? ""), undefined, { numeric: true });
+
+/** Cells wrap and sit at the top, as the guide's own table did; the step you're in keeps its accent
+ *  rule down the left (`.tradeskill-table tr.step-current td:first-child` in the old markup). */
+const GUIDE_CELLS = {
+  "& .MuiDataGrid-row .MuiDataGrid-cell": { whiteSpace: "normal", alignItems: "flex-start", py: "4px", lineHeight: 1.5 },
+  "& .MuiDataGrid-row.step-current .MuiDataGrid-cell[data-colindex='0']": { boxShadow: "inset 3px 0 0 var(--accent)" },
+};
+const GUIDE_SX = { ...GRID_SX, ...GUIDE_CELLS };
+/** A table that fits on one page grows to fit it — a guide is read top to bottom, and a three-row
+ *  table in a fixed box would be mostly empty. Longer ones page in the fixed box, like every grid. */
+const GUIDE_SX_FIT = { ...GRID_SX_FIT, ...GUIDE_CELLS };
+const autoRowHeight = () => "auto" as const;
+
 function GuideTable({
   block,
   closed,
@@ -693,52 +733,82 @@ function GuideTable({
   onAdd: OnAddStep;
 }) {
   const you = useContext(YouContext);
+  const rows = useMemo<GuideRow[]>(
+    () =>
+      block.rows.map((row, id) => ({
+        id,
+        row,
+        step: rowLinks(block.header, row.cells, row.makes),
+        plan: planFor(row.skill, row.needs, row.cost, you),
+      })),
+    [block, you],
+  );
+  const width = Math.max(block.header.length, ...block.rows.map((r) => r.cells.length));
+
+  const columns = useMemo<GridColDef<GuideRow>[]>(
+    () => [
+      // Hidden: the guide's own order, there to open on and to come back to.
+      { field: "order", headerName: "Step", ...NUM_COL, width: 70, valueGetter: (_v, r) => r.id },
+      ...Array.from({ length: width }, (_, c): GridColDef<GuideRow> => ({
+        field: `c${c}`,
+        headerName: block.header[c] ?? "",
+        flex: 1,
+        minWidth: 120,
+        valueGetter: (_v, r) => runsText(r.row.cells[c]),
+        sortComparator: byReading,
+        renderCell: ({ row: { row, plan } }) => {
+          const last = row.cells.length - 1;
+          if (c > last) return null;
+          return (
+            <div>
+              <Runs runs={row.cells[c]} closed={closed} />
+              {c === last && <Makes titles={row.makes} />}
+              {c === last && <PlaceBadge place={plan.place} span={row.skill} you={you} />}
+              {row.shut && c === last && <EraBadge shut={row.shut} />}
+            </div>
+          );
+        },
+      })),
+      {
+        field: "estimate",
+        headerName: "Estimate",
+        description: "Combines it takes you, what that costs, and how much of each material",
+        flex: 1.5,
+        minWidth: 180,
+        valueGetter: (_v, r) => r.plan.estimate?.combines.low,
+        sortComparator: (a, b) => (a ?? Infinity) - (b ?? Infinity),
+        renderCell: (p) => <StepEstimateView estimate={p.row.plan.estimate} />,
+      },
+      {
+        field: "add",
+        headerName: "",
+        ...ACTION_COL,
+        width: 80,
+        renderCell: ({ row: { row, step, plan } }) =>
+          hasLinks(step) && <ListButton step={step} planned={{ needs: row.needs, estimate: plan.estimate }} onAdd={onAdd} />,
+      },
+    ],
+    [block.header, width, closed, you, onAdd],
+  );
+  const fits = rows.length <= DEFAULT_PAGE_SIZE;
+
   return (
-    <div className="table-scroll">
-      <table className="stat-table tradeskill-table">
-        {block.header.length > 0 && (
-          <thead>
-            <tr>
-              {block.header.map((h, i) => (
-                <th key={i}>{h}</th>
-              ))}
-              <th aria-label="Add to list" />
-            </tr>
-          </thead>
-        )}
-        <tbody>
-          {block.rows.map((row, r) => {
-            const step = rowLinks(block.header, row.cells, row.makes);
-            const { place, estimate } = planFor(row.skill, row.needs, row.cost, you);
-            const mine = { place };
-            const classes = [row.shut && "era-shut", PLACE_CLASS[mine.place.at]].filter(Boolean);
-            const last = row.cells.length - 1;
-            return (
-              <Fragment key={r}>
-                <tr className={[...classes, estimate && "has-estimate"].filter(Boolean).join(" ") || undefined}>
-                  {row.cells.map((cell, c) => (
-                    <td key={c}>
-                      <Runs runs={cell} closed={closed} />
-                      {c === last && <Makes titles={row.makes} />}
-                      {c === last && <PlaceBadge place={mine.place} span={row.skill} you={you} />}
-                      {row.shut && c === last && <EraBadge shut={row.shut} />}
-                    </td>
-                  ))}
-                  <td className="tradeskill-add">{hasLinks(step) && <ListButton step={step} planned={{ needs: row.needs, estimate }} onAdd={onAdd} />}</td>
-                </tr>
-                {estimate && (
-                  <tr className={["step-estimate-row", ...classes].join(" ")}>
-                    <td colSpan={row.cells.length + 1}>
-                      <StepEstimateView estimate={estimate} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <DataGrid
+      {...GRID_DEFAULTS}
+      sx={fits ? GUIDE_SX_FIT : GUIDE_SX}
+      columns={columns}
+      rows={rows}
+      autoHeight={fits}
+      hideFooter={fits}
+      getRowHeight={autoRowHeight}
+      getRowClassName={({ row: r }) => [r.row.shut && "era-shut", PLACE_CLASS[r.plan.place.at]].filter(Boolean).join(" ")}
+      pageSizeOptions={PAGE_SIZE_OPTIONS}
+      initialState={{
+        columns: { columnVisibilityModel: hiddenByDefault("order") },
+        sorting: { sortModel: [{ field: "order", sort: "asc" }] },
+        pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } },
+      }}
+    />
   );
 }
 
@@ -857,7 +927,7 @@ function StepEstimateView({ estimate, needsFor }: { estimate: StepEstimate | und
           className="muted"
           title={`The step offers ${needsFor.options} things to make, any of them; each combine makes one. These are the materials for ${needsFor.result} — open another one for its own.`}
         >
-          for {needsFor.result} (1 of {needsFor.options}):
+          for <ItemLink title={wikiName(needsFor.result)} craft /> (1 of {needsFor.options}):
         </span>
       )}
       <span className="step-estimate-figure" title={combinesHover(estimate, you)}>

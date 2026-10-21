@@ -31,7 +31,7 @@
  * Pure and DOM-free — the panel renders these decisions, this module makes them. The argument for
  * all three is [ADR 0152](../../specs/decisions/0152-an-item-search-is-a-filter-with-your-own-yardstick.md).
  */
-import { EFFECT_KINDS, parseItemStats, statMeta, type EffectKind, type ItemStats, type StatKey } from "./item-stats";
+import { EFFECT_KINDS, STATS, parseItemStats, statLine, statMeta, type EffectKind, type ItemStats, type StatKey } from "./item-stats";
 import { itemLevel, type ItemLevel, type LevelSources } from "./item-levels";
 
 /** Nothing known about any mob or quest — the zone rung still answers, from the shipped tables. */
@@ -558,7 +558,37 @@ export function facetCounts(rows: readonly ItemRow[], c: ItemCriteria): FacetCou
 }
 
 /** Which column the results are ordered by. A stat key sorts by that stat. */
-export type ItemSortKey = "name" | "value" | "slot" | "source" | "zone" | "level" | StatKey;
+/** The columns an item list sorts by besides the stats themselves. A runtime list, not just a type, so
+ *  the MCP server offers exactly these rather than a hand-kept copy that drifts. */
+const ITEM_COLUMN_SORT_KEYS = [
+  "name",
+  "value",
+  "slot",
+  "source",
+  "zone",
+  "level",
+  "statsLine",
+  "origin",
+  "classes",
+  "races",
+  "flags",
+  "requiredLevel",
+  "skill",
+  "size",
+  "effects",
+  "quests",
+  // Where you hold it, from your inventory dump — answered only when the caller hands `searchItems` the
+  // lookup (`heldAt`); without one every row has no value, and sorts as such.
+  "where",
+] as const;
+
+export type ItemSortKey = (typeof ITEM_COLUMN_SORT_KEYS)[number] | StatKey;
+
+/** Every key `itemSortValue` answers: the columns, then every stat in card order. */
+export const ITEM_SORT_KEYS: readonly ItemSortKey[] = [...ITEM_COLUMN_SORT_KEYS, ...STATS.map((s) => s.key)];
+
+/** A list cell's text, or `undefined` when it lists nothing — so an empty cell sorts last, not first. */
+const listed = (values: readonly string[]): string | undefined => values.join(", ") || undefined;
 
 /**
  * What a row is worth in the sorted column.
@@ -582,6 +612,28 @@ export function itemSortValue(row: ValuedItem, key: ItemSortKey): string | numbe
       return row.zones.join(" ");
     case "level":
       return row.level?.min;
+    case "statsLine":
+      return statLine(row.stats) || undefined;
+    case "origin":
+      return row.item.origin;
+    case "classes":
+      return listed(row.stats.classes);
+    case "races":
+      return listed(row.stats.races);
+    case "flags":
+      return listed(row.stats.flags);
+    case "requiredLevel":
+      return row.stats.requiredLevel;
+    case "skill":
+      return row.stats.skill;
+    case "size":
+      return row.stats.size;
+    case "effects":
+      return listed(row.stats.effects.map((e) => e.name));
+    case "quests":
+      return listed(row.quests);
+    case "where":
+      return undefined; // only `searchItems` knows where you hold things, and answers it there
     default:
       return row.stats.stats[key];
   }
@@ -598,6 +650,8 @@ export function searchItems(
   criteria: ItemCriteria,
   weights: StatWeights,
   sort: Sort<ItemSortKey>,
+  /** Where you hold an item, from your inventory dump — what the `where` column sorts by. */
+  heldAt?: (title: string) => string | undefined,
 ): ValuedItem[] {
   const score = scorer(weights);
   const kept = rows
@@ -607,7 +661,7 @@ export function searchItems(
   // stable, so pre-sorting by name is all that takes. Sorted in place: `kept` is already this
   // function's own array, and copying 6,878 rows to sort them twice is a copy for nothing.
   kept.sort((a, b) => a.item.title.localeCompare(b.item.title));
-  return sortRows(kept, sort, itemSortValue);
+  return sortRows(kept, sort, (row, key) => (key === "where" ? heldAt?.(row.item.title) : itemSortValue(row, key)));
 }
 
 /** A stat's own column header — the card's spelling, so the table matches what you hover. */

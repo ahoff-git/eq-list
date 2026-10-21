@@ -35,7 +35,7 @@ import type { Sort } from "@/shared/sorting";
 import ItemLink from "@/app/components/items/ItemLink";
 import ZoneTag from "@/app/components/map/ZoneTag";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX_FILL, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
-import type { ItemPrice, LootFate, LootRecord, LootSearchFilter } from "@/shared/types";
+import type { ItemPrice, LootDropSortField, LootFate, LootRecord, LootSearchFilter } from "@/shared/types";
 
 import { count, countOf, dayTime, when } from "@/shared/format";
 import { CheckField, Empty, PickField, segCls } from "@/app/components/ui";
@@ -74,7 +74,7 @@ import { heldAsNamed, notAnItem } from "@/shared/shown-name";
  * itself.
  *
  * **Drops pages server-side for the common case** (ADR 0254, superseding ADR 0250 for it).
- * `filters.wantedOnly` off and sorting by anything but `zone` — true for most of the tab's life —
+ * `filters.wantedOnly` off and sorting by a column SQL knows (`SERVER_SORTS`) — most of the tab's life —
  * reads from `loot.dropsPage`: offset/limit/sort/filter all pushed into one SQL query, the same
  * shape `FactionPanel`'s `hitsPage` proved out, so a long-lived ledger's whole history is never
  * fetched just to draw one page of it. The two things ADR 0250 flagged as not worth building a SQL
@@ -94,6 +94,13 @@ type View = "drops" | "prices";
  *  key the prices refetch, without fetching the window `DropTable` now owns fetching for itself (the
  *  same trick `FactionPanel`'s `HITS_PROBE_QUERY` uses). */
 const PROBE_FETCH = 1;
+
+/** The sorts `loot.dropsPage`'s SQL allow-list knows. Every other column (`zone`'s `placeName` fold,
+ *  and the Where-it-went / Sold-for / Raw-line columns the allow-list never grew) falls back to the
+ *  whole-ledger client path — the same trade ADR 0254 already makes for `zone`, rather than a column
+ *  header that can't be clicked. */
+const SERVER_SORTS: ReadonlySet<string> = new Set<LootDropSortField>(["at", "item", "source", "qty", "fate"]);
+const isServerSort = (key: LootSortKey): key is LootDropSortField => SERVER_SORTS.has(key);
 
 /** Stable empty reference for the server-paged branch, where `source`/`matches` are never actually
  *  computed from a fetch. */
@@ -144,7 +151,7 @@ export default function LootPanel() {
 
   const dropsQuery = useMemo(() => {
     const sortField = lootSort.key;
-    if (filters.wantedOnly || sortField === "zone") return null;
+    if (filters.wantedOnly || !isServerSort(sortField)) return null;
     return {
       offset: paginationModel.page * paginationModel.pageSize,
       limit: paginationModel.pageSize,
@@ -357,6 +364,9 @@ const LOOT_START_DESC: Record<LootSortKey, boolean> = {
   item: false,
   source: false,
   zone: false,
+  detail: false,
+  soldFor: true,
+  raw: false,
 };
 
 /** Phrase the fate's particulars the way the log means them. */
@@ -476,7 +486,6 @@ function DropTable({
         headerName: "Where it went",
         flex: 2,
         minWidth: 140,
-        sortable: false,
         cellClassName: "muted",
         valueGetter: (_v, row) => (row.detail ? detailLabel(row) : ""),
       },
@@ -486,7 +495,6 @@ function DropTable({
         description: "What the vendor paid, in total — set only on an auto-sell, where the log states it",
         ...NUM_COL,
         flex: 1,
-        sortable: false,
         cellClassName: "lt-num",
         renderCell: (p) => (p.row.soldFor ? formatCoins(p.row.soldFor) : "—"),
       },
@@ -496,7 +504,6 @@ function DropTable({
         description: "The original log line this drop was read from",
         flex: 3,
         minWidth: 220,
-        sortable: false,
         cellClassName: "muted small",
       },
     ],
@@ -610,7 +617,6 @@ function PriceTable({
         description: "How many auto-sell lines are behind this price — already in the Last sold hover",
         ...NUM_COL,
         flex: 1,
-        sortable: false,
         cellClassName: "lt-num",
       },
     ],

@@ -7,7 +7,7 @@
  * already uses (`buffKey`), so a wiki-cased "Nimble" and a live "Nimble Rk. II"-style cast resolve
  * to the same row without a second normalization rule.
  *
- * Only what a caller actually needs is exposed — see `BuffPanel.tsx` and `SpellCatalogTable.tsx`.
+ * Only what a caller actually needs is exposed — see `BuffPanel.tsx` and `spell-search.ts`.
  */
 import { BUFF_LINES, type BuffLine } from "./buff-lines.generated";
 import { buffKey } from "./buff-tracking";

@@ -88,6 +88,12 @@ export const GRID_SX: SxProps<Theme> = { ...GRID_LOOK_SX, height: GRID_HEIGHT };
  *  `flex: 1; min-height: 0` relay `.map-body`/`.panel-resize` already use elsewhere in this app. */
 export const GRID_SX_FILL: SxProps<Theme> = { ...GRID_LOOK_SX, flex: 1, minHeight: 0 };
 
+/** For a small table that always fits on one page (the worn slots, a stat comparison, one spell's
+ *  invocations) — grows to its rows instead of sitting in `GRID_SX`'s mostly-empty fixed box. Pair it
+ *  with `autoHeight` and `hideFooter`: with nothing to page there's no footer for `autoHeight` to
+ *  misplace (the problem this file's header describes). */
+export const GRID_SX_FIT: SxProps<Theme> = { ...GRID_LOOK_SX, height: "auto" };
+
 /** A numeric column's shorthand: right-aligned, numeric filter operators instead of text ones. */
 export const NUM_COL: Pick<GridColDef, "type" | "align" | "headerAlign"> = {
   type: "number",

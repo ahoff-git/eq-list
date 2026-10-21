@@ -16,6 +16,8 @@ import {
   minLevel,
   searchSpells,
   spellEraRows,
+  spellBuffLinesText,
+  spellClassesText,
   spellRows,
   spellSortValue,
   type SpellCriteria,
@@ -148,6 +150,34 @@ test("classOptions lists every class any cached spell names", () => {
 
 test("spellSortValue lowercases the name, so the sort isn't case-sensitive", () => {
   assert.equal(spellSortValue(rows()[0], "name"), "burst of fire");
+});
+
+test("classes sorts by the line as shown, lowest level first, and a spell naming none sinks", () => {
+  const [nuke, heal, unknowable] = rows();
+  assert.equal(spellClassesText(heal), "Cleric 1, Druid 3, Shaman 4");
+  assert.equal(spellSortValue(nuke, "classes"), "druid 3, ranger 14");
+  assert.equal(spellSortValue(unknowable, "classes"), undefined);
+  const found = searchSpells(rows(), NO_CRITERIA, { key: "classes", desc: true });
+  assert.deepEqual(found.map((r) => r.spell.title), ["Burst of Fire", "Minor Healing", "Unknowable Rune"]);
+});
+
+test("buffLine is undefined for a spell the guide doesn't cover, so it sorts last either way", () => {
+  assert.equal(spellBuffLinesText(rows()[0]), "");
+  assert.equal(spellSortValue(rows()[0], "buffLine"), undefined);
+});
+
+test("the yes/no columns sort yes above no, and an unread flag is no data rather than a no", () => {
+  const [nuke, heal, unknowable] = rows();
+  assert.equal(spellSortValue(heal, "beneficial"), 1);
+  assert.equal(spellSortValue(nuke, "beneficial"), 0);
+  assert.equal(spellSortValue(unknowable, "beneficial"), undefined);
+  assert.equal(spellSortValue(nuke, "instant"), 1);
+  assert.equal(spellSortValue(unknowable, "instant"), undefined);
+  // The era flag is always known: unflagged is in era.
+  assert.equal(spellSortValue(unknowable, "outOfEra"), 0);
+  assert.equal(spellSortValue(spellRows([OUT_OF_ERA_SPELL])[0], "outOfEra"), 1);
+  const found = searchSpells(rows(), NO_CRITERIA, { key: "beneficial", desc: true });
+  assert.deepEqual(found.map((r) => r.spell.title), ["Minor Healing", "Burst of Fire", "Unknowable Rune"]);
 });
 
 // ── any text, and the spellbook's own categories ──

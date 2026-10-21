@@ -44,13 +44,14 @@ import { eraCorpus } from "./item-era";
 import { matchesFacet, matchesItem, scorer, type ItemCriteria, type ItemRow, type StatWeights } from "./item-search";
 import { normalizeItemName } from "./grouping";
 import { heldName, isExaltation } from "./held-name";
-import { gradedTitle } from "./item-upgrade";
+import { gradedItemStats, gradedTitle } from "./item-upgrade";
+import { loadoutStats, type LoadoutStats } from "./loadout-stats";
 import { inventoryPlaceText, type InventoryItem } from "../game-export-dumps";
 import { NO_BIS_OPTIONS, type BisOptions } from "./bis-options";
 import type { EffectKind } from "./item-stats";
 
-/** Grades a hunt target is weighed at, beyond `+0` — enough to show what farming copies buys. */
-const HUNT_GRADES = [1, 2, 3] as const;
+/** Grades a hunt target is weighed at, beyond `+0`: a couple of merges, a long farm, and the cap — what farming copies buys. */
+export const HUNT_GRADES = [2, 5, 10] as const;
 
 /** Things you hold offered per slot for a lock — the slot's best few, which is what a choice needs. */
 const ALTERNATIVES_PER_SLOT = 8;
@@ -117,6 +118,8 @@ export interface BisPlan {
   loadout: BisLoadout;
   /** What the gear you're wearing right now is worth, by the same weights — the "before". */
   wearing: number;
+  /** The stats behind those two numbers: what you're wearing adds up to, and what the loadout would. */
+  stats: { wearing: LoadoutStats; loadout: LoadoutStats };
   /** The best from what you hold with no locks, benches or wanted effects — what your choices cost, by difference. */
   unconstrained: number;
   merges: BisMerge[];
@@ -361,6 +364,17 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     held.filter((h) => h.item.area === "worn").reduce((t, h) => t + (h.item.slot === "Any Slot" ? h.candidate.anyValue : h.candidate.value), 0),
   );
 
+  // Each piece at its own grade — the same reading its value above was weighed at.
+  const stats = {
+    wearing: loadoutStats(held.filter((h) => h.item.area === "worn").map((h) => gradedItemStats(h.row.stats, h.item.grade))),
+    loadout: loadoutStats(
+      loadout.picks.flatMap((p) => {
+        const row = rowOf(p.item.title);
+        return row ? [gradedItemStats(row.stats, p.item.grade, p.item.exp)] : [];
+      }),
+    ),
+  };
+
   // ── Merges ──
   // Merge your *spare* copies — the ones the loadout doesn't wear — into the best copy it does. The
   // gain is exact: the whole loadout re-solved (locks and all) with the merged copy in place of all of
@@ -452,6 +466,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
   return {
     loadout,
     wearing,
+    stats,
     unconstrained,
     merges,
     sockets,

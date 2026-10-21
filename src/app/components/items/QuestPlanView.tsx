@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useClosedZones, useShoppingList } from "@/lib/hooks";
 import ItemLink from "@/app/components/items/ItemLink";
 import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
+import { ZoneName } from "@/app/components/map/ZoneName";
 import { segCls } from "@/app/components/ui";
 import {
   planByZone,
@@ -205,7 +206,7 @@ function PlaceLinks({ place, hideZone }: { place: StepPlace; hideZone?: boolean 
       {place.why && !hideZone && <span>{NO_PLACE[place.why]}</span>}
       {place.inherited && <span title="Where the step before it happens">same place ↑</span>}
       {place.who && <ItemLink title={notAnItem(place.who.name)} />}
-      {!hideZone && place.zone && (place.mapped ? <ZoneLink zone={place.zone} /> : <span>{place.zone}</span>)}
+      {!hideZone && place.zone && (place.mapped ? <ZoneLink zone={place.zone} /> : <ZoneName zone={place.zone} />)}
       {place.area && <span>{place.area}</span>}
       {place.zone && place.loc && place.mapped && (
         <MapLink target={{ zone: place.zone, loc: place.loc, label: place.who?.name }}>

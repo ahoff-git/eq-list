@@ -12,7 +12,7 @@ import { count } from "../format";
 import { factionPoolWhy } from "./faction-pooling";
 import type { FactionCauseKnowledge } from "./faction-observation";
 
-export type FactionHitSortKey = "at" | "faction" | "delta" | "cause";
+export type FactionHitSortKey = "at" | "faction" | "delta" | "cause" | "causeKind" | "raw";
 
 /** Newest first — the order the feed arrives in, and the only one that reads as a log. */
 export const DEFAULT_FACTION_HIT_SORT: Sort<FactionHitSortKey> = { key: "at", desc: true };
@@ -32,7 +32,8 @@ export const causeKindLabel = (e: FactionRecord): string | undefined =>
  * `at` is the log's own timestamp string, which sorts chronologically as text — the same trick
  * `loot-filters.ts`'s `lootValue` relies on. `delta` is `undefined` for a floor/ceiling hit, which
  * states no number; `cause` is `undefined` when nothing was correlated. `sortRows` already sends an
- * `undefined` value to the end either direction.
+ * `undefined` value to the end either direction. `causeKind` sorts by the "Kill"/"Quest" label the
+ * Source column shows rather than the stored kind, so the order matches what's on screen.
  */
 const hitValue = (e: FactionRecord, key: FactionHitSortKey): string | number | undefined => {
   switch (key) {
@@ -44,6 +45,10 @@ const hitValue = (e: FactionRecord, key: FactionHitSortKey): string | number | u
       return e.delta ?? undefined;
     case "cause":
       return causeSource(e)?.toLowerCase();
+    case "causeKind":
+      return causeKindLabel(e);
+    case "raw":
+      return e.raw.toLowerCase();
   }
 };
 
@@ -51,7 +56,19 @@ export function sortFactionHits(hits: readonly FactionRecord[], sort: Sort<Facti
   return sortRows(hits, sort, hitValue);
 }
 
-export type FactionStandingSortKey = "faction" | "net" | "raises" | "lowers" | "rate" | "lastAt";
+export type FactionStandingSortKey =
+  | "faction"
+  | "net"
+  | "raises"
+  | "lowers"
+  | "floors"
+  | "ceilings"
+  | "firstAt"
+  | "observedNet"
+  | "correctedAt"
+  | "rate"
+  | "causes"
+  | "lastAt";
 
 /** Biggest net gain first — what the table is for is "which factions am I actually moving". */
 export const DEFAULT_FACTION_STANDING_SORT: Sort<FactionStandingSortKey> = { key: "net", desc: true };
@@ -64,8 +81,25 @@ export function ratePerHour(s: FactionStanding): number {
   return ratio(s.net, spanHours, 1);
 }
 
-const standingValue = (s: FactionStanding, key: FactionStandingSortKey): string | number =>
-  key === "faction" ? s.faction.toLowerCase() : key === "rate" ? ratePerHour(s) : s[key];
+/** `observedNet`/`correctedAt` are `undefined` for a standing never corrected to a known total, and
+ *  `causes` for one with nothing correlated — `sortRows` sends those last either direction. `causes`
+ *  sorts by the first-named (biggest-impact) cause, the one the Likely causes cell leads with. */
+const standingValue = (s: FactionStanding, key: FactionStandingSortKey): string | number | undefined => {
+  switch (key) {
+    case "faction":
+      return s.faction.toLowerCase();
+    case "rate":
+      return ratePerHour(s);
+    case "observedNet":
+      return s.correction?.observedNet;
+    case "correctedAt":
+      return s.correction?.correctedAt;
+    case "causes":
+      return s.causes[0]?.source.toLowerCase();
+    default:
+      return s[key];
+  }
+};
 
 export function sortFactionStandings(
   standings: readonly FactionStanding[],

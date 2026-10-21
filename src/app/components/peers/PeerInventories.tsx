@@ -1,7 +1,10 @@
 "use client";
 import { useMemo, useState } from "react";
+import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import type { SxProps, Theme } from "@mui/material/styles";
 import SearchField from "@/app/components/SearchField";
 import ItemLink from "@/app/components/items/ItemLink";
+import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS } from "@/app/components/dataGridDefaults";
 import { useCurrentItemCatalog } from "@/lib/hooks";
 import { rowsOf } from "@/lib/peers/usePeerShare";
 import { exportAgeText } from "@/shared/game-exports";
@@ -12,9 +15,6 @@ import type { ReceivedShare } from "@/shared/types";
 
 /** Flags that mean an item can't be handed to someone else, as the item card writes them. */
 const UNTRADEABLE = new Set(["NO DROP", "NO TRADE"]);
-
-/** How many matches to draw. A search is one keystroke from narrower. */
-const MAX_SHOWN = 100;
 
 interface Holder {
   by: string;
@@ -79,17 +79,22 @@ export default function PeerInventories({ received }: { received: ReceivedShare[
           {found.length} items across {people} {people === 1 ? "inventory" : "inventories"}
         </span>
       </div>
-      <TradeFlags items={found.slice(0, MAX_SHOWN)} />
-      {found.length > MAX_SHOWN && (
-        <p className="muted small">Showing the first {MAX_SHOWN} of {found.length}. Narrow the search for the rest.</p>
-      )}
+      {/* Every match, paged: a cap would make a sort by Total rank only whichever came first by name. */}
+      <TradeFlags items={found} />
     </section>
   );
 }
 
+type Row = Found & { stuck: boolean };
+
+/** Dims a row nobody can hand over, as the old table's `tr.untradeable` did. `GRID_SX` is a plain
+ *  object; its `SxProps` type just doesn't promise that, hence the cast to spread it. */
+const TRADE_SX: SxProps<Theme> = { ...(GRID_SX as object), "& .MuiDataGrid-row.untradeable": { opacity: 0.6 } };
+
 /**
  * The results, with the catalogue's verdict on each. Its own component so the catalogue is only
- * read once there are results to judge — it's the largest thing a window holds.
+ * read once there are results to judge — it's the largest thing a window holds. A `DataGrid`
+ * (ADR 0230), so every column sorts; it opens by item name, the order it's handed.
  */
 function TradeFlags({ items }: { items: Found[] }) {
   const { rows: catalogue } = useCurrentItemCatalog();
@@ -98,36 +103,61 @@ function TradeFlags({ items }: { items: Found[] }) {
     for (const r of catalogue) if (r.stats.flags.some((f) => UNTRADEABLE.has(f))) flagged.add(normalizeItemName(r.item.title));
     return flagged;
   }, [catalogue]);
-  const now = Date.now();
+  const rows = useMemo<Row[]>(() => items.map((f) => ({ ...f, stuck: untradeable.has(normalizeItemName(f.item)) })), [items, untradeable]);
+  const columns = useMemo<GridColDef<Row>[]>(() => {
+    const now = Date.now();
+    return [
+      { field: "total", headerName: "Total", ...NUM_COL, width: 80 },
+      {
+        field: "item",
+        headerName: "Item",
+        flex: 2,
+        minWidth: 180,
+        renderCell: ({ row: f }) => (
+          <>
+            <ItemLink title={gradedTitle(f.item, f.bestGrade)} />
+            {f.stuck && (
+              <span className="chip no-trade" title="Its item card says NO DROP / NO TRADE — it can't be handed over">
+                no trade
+              </span>
+            )}
+          </>
+        ),
+      },
+      {
+        field: "holders",
+        headerName: "Held by",
+        flex: 3,
+        minWidth: 220,
+        description: "Who has it, how many, and where",
+        // Sorts by who holds it, so one person's share reads together.
+        valueGetter: (_v, row) => row.holders.map((h) => h.by).join(", "),
+        renderCell: ({ row: f }) => (
+          <div className="small">
+            {f.holders.map((h) => (
+              <div key={h.by} title={`From their inventory dump, written ${exportAgeText(now - Date.parse(h.asOf))}`}>
+                <b>{h.by}</b> {h.count}
+                {h.grade > 0 && <span className="muted"> (best +{h.grade})</span>} <span className="muted">· {h.where}</span>
+              </div>
+            ))}
+          </div>
+        ),
+      },
+    ];
+  }, []);
 
   return (
-    <table className="dump-table peer-inventory">
-      <tbody>
-        {items.map((f) => {
-          const stuck = untradeable.has(normalizeItemName(f.item));
-          return (
-            <tr key={f.item} className={stuck ? "untradeable" : ""}>
-              <td className="num">{f.total}</td>
-              <td>
-                <ItemLink title={gradedTitle(f.item, f.bestGrade)} />
-                {stuck && (
-                  <span className="chip no-trade" title="Its item card says NO DROP / NO TRADE — it can't be handed over">
-                    no trade
-                  </span>
-                )}
-              </td>
-              <td className="small">
-                {f.holders.map((h) => (
-                  <div key={h.by} title={`From their inventory dump, written ${exportAgeText(now - Date.parse(h.asOf))}`}>
-                    <b>{h.by}</b> {h.count}
-                    {h.grade > 0 && <span className="muted"> (best +{h.grade})</span>} <span className="muted">· {h.where}</span>
-                  </div>
-                ))}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <DataGrid
+      {...GRID_DEFAULTS}
+      sx={TRADE_SX}
+      columns={columns}
+      rows={rows}
+      getRowId={(f) => f.item}
+      // A row is as tall as its holder list, one line per peer.
+      getRowHeight={() => "auto"}
+      getRowClassName={(p) => (p.row.stuck ? "untradeable" : "")}
+      pageSizeOptions={PAGE_SIZE_OPTIONS}
+      initialState={{ pagination: { paginationModel: { pageSize: DEFAULT_PAGE_SIZE, page: 0 } } }}
+    />
   );
 }

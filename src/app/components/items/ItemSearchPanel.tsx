@@ -173,7 +173,7 @@ export default function ItemSearchPanel() {
   const scoring = useMemo(() => foldDerivedWeights(weights, rates), [weights, rates]);
   const yourWeights = weightedStats(weights);
 
-  const { options, counts, found, columns, scored, unplaced } = useItemQuery(searched, active, scoring, sort, closedZones);
+  const { options, counts, found, columns, scored, unplaced } = useItemQuery(searched, active, scoring, sort, closedZones, owned ? where : undefined);
   const conditions = activeCriteria(active);
   const shown = useMemo(() => found.slice(0, MAX_ROWS), [found]);
 

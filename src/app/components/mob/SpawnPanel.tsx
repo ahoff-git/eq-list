@@ -24,6 +24,7 @@ import { SPAWN_STYLE_ID } from "@/shared/alerts/alert-styles";
 import SecondsField from "@/app/components/SecondsField";
 import SuggestField from "@/app/components/SuggestField";
 import ZonePicker from "@/app/components/map/ZonePicker";
+import { ZoneName } from "@/app/components/map/ZoneName";
 import { CURATED_ZONES, sortZones } from "@/shared/map/zones";
 import type { Zone } from "@/shared/map/types";
 import type { KnownSpawn, RunningSpawn, SpawnKind } from "@/shared/types";
@@ -538,7 +539,9 @@ function RunningRow({ timer, now, several }: { timer: RunningSpawn; now: number;
           {timer.mob}
           {several && <em className="spawn-slot"> #{timer.slot}</em>}
         </span>
-        <small>{timer.place}</small>
+        <small>
+          <ZoneName zone={timer.place} />
+        </small>
       </span>
       <span className="spawn-note">
         {phase.label && <b className="spawn-phase">{phase.label}</b>} {note}
@@ -626,7 +629,9 @@ function KnownRow({ known }: { known: KnownSpawn }) {
     <div className="spawn-known-row">
       <span className="spawn-name">
         {known.mob}
-        <small>{known.place}</small>
+        <small>
+          <ZoneName zone={known.place} />
+        </small>
       </span>
       <span className="spawn-figure">
         {known.respawn ? describeRespawn(known.respawn) : <em>not timed yet</em>}

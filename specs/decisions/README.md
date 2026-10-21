@@ -365,6 +365,9 @@ finished, so a number is claimed before a second author can reach for it.
 - [0322: A race-unlock step that names a count shows what you and sharing peers hold of it and puts the rest on the list in one press, seeded at your holdings; the list's have, need and runs take a typed figure](./0322-a-race-unlock-step-knows-what-you-hold.md)
 - [0323: A grade is never stored, only applied: the page cache and the pooled drop table fold `+N` before lookup, cache or tally; installs' graded page copies are purged](./0323-a-grade-is-never-stored.md)
 - [0324: A consider tagged `- a rare creature -` proves its mob is worth timing, beside the article test; remembered by name, a player's "not a named" still wins](./0324-the-game-saying-rare-is-proof.md)
+- [0325: Every item and zone a view names is a link — `ZoneName` is the one way to name a zone (its page, by the wiki's title); a static test fails any other, bar a listed reason](./0325-every-named-item-and-zone-is-a-link.md)
+- [0326: Every status-bar chip opens where its subject is dealt with — settings, the zone's page, Loot, Exports (the export chip no longer copies, changing 0320)](./0326-the-status-bar-is-a-way-in.md)
+- [0327: Every grid sorts by every column — a DataGrid, a sort key upstream for a searched catalogue, only action columns exempt; a static test fails the rest](./0327-every-grid-sorts-by-every-column.md)
 
 ## Open Questions
 
