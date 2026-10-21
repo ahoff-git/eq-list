@@ -154,6 +154,13 @@ export interface LootLog {
    * a **gap**: a row that already names a zone is never overwritten.
    */
   add(event: LootRecord): LootAdded;
+  /**
+   * Call before re-reading a log whose lines may already be on record (eating a log, an unattended
+   * re-read). Live, every `add` is a new line, so two identical lines in one second are two drops;
+   * in a replay the Kth identical line is new only once fewer than K are already recorded — the
+   * same contract as `KillLog.startReplay`.
+   */
+  startReplay(): void;
   /** The most recent drops, newest first (at most `limit`). */
   recent(limit?: number): LootRecord[];
   /**
@@ -221,7 +228,15 @@ export interface LootLog {
  * (ADR 0033). Two identical items off the same corpse in the same logged second collapse into
  * one — the trade that ADR made, and under-counting is the safer way to be wrong.
  */
-const lootKey = (e: LootEvent): string => `${e.at} ${e.item.toLowerCase()} ${e.source.toLowerCase()}`;
+/** A loot line's signature: what every identical line in the same second shares. */
+const baseLootKey = (e: LootEvent): string => `${e.at} ${e.item.toLowerCase()} ${e.source.toLowerCase()}`;
+
+/**
+ * A drop's identity — its signature plus which occurrence of it this is (ADR 0207's rule, as
+ * `kill-log.ts` applies it). The first occurrence keeps the bare signature, so every key written
+ * before ordinals existed still names the same row and a re-read still recognises it.
+ */
+const lootKey = (base: string, ordinal: number): string => (ordinal ? `${base}#${ordinal}` : base);
 
 interface LootRow {
   key: string;
@@ -344,9 +359,19 @@ export function createLootLog(db: Database, userDataDir: string): LootLog {
     return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
   }
 
-  function paramsOf(event: LootRecord) {
+  // Every ordinal of one signature: the bare key plus its `#N` siblings, which sort together
+  // between "<base>#" and "<base>$" — a range the primary key's index answers directly.
+  const countSignature = db.prepare(
+    `SELECT COUNT(*) as n FROM loot_records WHERE key = ? OR (key >= ? AND key < ?)`,
+  );
+  const recordedCount = (base: string): number =>
+    (countSignature.get(base, `${base}#`, `${base}$`) as { n: number }).n;
+  /** `null` outside a replay — see `startReplay`. */
+  let replay: Map<string, number> | null = null;
+
+  function paramsOf(event: LootRecord, key: string) {
     return {
-      key: lootKey(event),
+      key,
       at: event.at,
       fate: event.fate,
       detail: event.detail ?? null,
@@ -375,21 +400,33 @@ export function createLootLog(db: Database, userDataDir: string): LootLog {
 
   return {
     add(event) {
-      const key = lootKey(event);
-      // The same line again — a replayed gap, a re-read, or a log eaten twice. Not a second drop,
-      // but possibly the first time we can say where it happened (ADR 0137). Gaps only: an existing
-      // zone is left alone, since a disagreement means the *rules* moved, not the facts.
-      const held = selectByKey.get(key) as LootRow | undefined;
-      if (held) {
-        if (!event.zone || held.zone) return "known";
+      const base = baseLootKey(event);
+      const already = recordedCount(base);
+      // Which occurrence of this signature the line is: live, always the next one (see `startReplay`).
+      const occurrence = replay ? (replay.get(base) ?? 0) + 1 : already + 1;
+      replay?.set(base, occurrence);
+      if (occurrence <= already) {
+        // A line already on record — a re-read, or a log eaten twice. Not a second drop, but possibly
+        // the first time we can say where it happened (ADR 0137). Gaps only: an existing zone is left
+        // alone, since a disagreement means the *rules* moved, not the facts.
+        const key = lootKey(base, occurrence - 1);
+        const held = selectByKey.get(key) as LootRow | undefined;
+        if (!held || !event.zone || held.zone) return "known";
         updateZone.run(event.zone, key);
         saver.save();
         return "placed";
       }
-      insertRecord.run(paramsOf(event));
+      // Normally `already` is free; stepping past a taken one covers a lower ordinal the admin panel removed.
+      let ordinal = already;
+      while (selectByKey.get(lootKey(base, ordinal))) ordinal++;
+      insertRecord.run(paramsOf(event, lootKey(base, ordinal)));
       saver.save();
       pricesCache.markChanged(); // may be a sold row — a placed-zone update above never affects a price
       return "added";
+    },
+
+    startReplay() {
+      replay = new Map();
     },
 
     recent: (limit = DEFAULT_LIMIT) => (selectRecent.all(limit) as LootRow[]).map(rowToRecord),
@@ -543,7 +580,7 @@ function migrateFromLegacyJson(db: Database, userDataDir: string, file: string):
   const run = db.transaction(() => {
     for (const e of loot) {
       insertRecord.run({
-        key: lootKey(e),
+        key: lootKey(baseLootKey(e), 0),
         at: e.at,
         fate: e.fate,
         detail: e.detail ?? null,

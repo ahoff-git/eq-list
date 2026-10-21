@@ -110,6 +110,7 @@ export function importLog(
   // rather than assuming every line here is new the way a live one always is
   // (ADR 0207, `KillLog.startReplay`).
   killLog.startReplay();
+  lootLog?.startReplay();
   const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
   let zone: string | null = null;
   let logId = 0;

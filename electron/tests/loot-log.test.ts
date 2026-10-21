@@ -49,11 +49,28 @@ function sold(item: string, sec: number, copper: number, qty = 1): LootEvent {
 test("the same loot line twice is one drop — a replayed gap isn't a second Bone Chips", () => {
   const l = freshLog();
   assert.equal(l.add(drop("Bone Chips", 1)), "added");
+  l.startReplay();
   assert.equal(l.add(drop("Bone Chips", 1)), "known", "the same line says so rather than landing twice");
   assert.deepEqual(l.recent().map((e) => e.item), ["Bone Chips"]);
   // A genuinely later drop of the same item is a different line, and counts.
   assert.equal(l.add(drop("Bone Chips", 2)), "added");
   assert.equal(l.recent().length, 2);
+});
+
+// EQ stamps to the second, and a mob that drops three Drop of Mercury writes three identical lines
+// (verbatim in a real EQL log). Live, each is a new drop — the watcher never re-reads a byte — so
+// all three must land, the same signature-plus-ordinal rule ADR 0207 gave the kill ledger.
+test("identical drops in the same second are each a drop, live", () => {
+  const l = freshLog();
+  for (let i = 0; i < 3; i++) assert.equal(l.add(sold("Drop of Mercury", 1, 357)), "added");
+  assert.equal(l.recent().length, 3);
+  assert.equal(l.prices()[0].sales, 3, "every sale prices the item");
+
+  // Re-reading those three lines is no new drop; a pass that finds a fourth adds exactly one.
+  l.startReplay();
+  for (let i = 0; i < 3; i++) assert.equal(l.add(sold("Drop of Mercury", 1, 357)), "known");
+  assert.equal(l.add(sold("Drop of Mercury", 1, 357)), "added");
+  assert.equal(l.recent().length, 4);
 });
 
 /**
@@ -66,11 +83,13 @@ test("a drop already filed can still learn where it was", () => {
   l.add(drop("Bone Chips", 1)); // recorded before the ledger held a zone at all
   assert.equal(l.recent()[0].zone, undefined);
 
+  l.startReplay();
   assert.equal(l.add({ ...drop("Bone Chips", 1), zone: "Blackburrow 3 (Fused)" }), "placed");
   assert.equal(l.recent()[0].zone, "Blackburrow 3 (Fused)", "kept verbatim — the reader folds it");
   assert.equal(l.recent().length, 1, "placing must never add a row");
 
   // Nothing left to learn: a second re-read is a no-op rather than a repeated report.
+  l.startReplay();
   assert.equal(l.add({ ...drop("Bone Chips", 1), zone: "Blackburrow 3 (Fused)" }), "known");
 });
 
@@ -79,6 +98,7 @@ test("a zone already recorded is never overwritten", () => {
   l.add({ ...drop("Bone Chips", 1), zone: "Blackburrow" });
   // A disagreement between two passes over one line means the *rules* moved, not the facts. Preferring
   // the newer read would make the ledger depend on how many times it had been re-read.
+  l.startReplay();
   assert.equal(l.add({ ...drop("Bone Chips", 1), zone: "The Feerrott" }), "known");
   assert.equal(l.recent()[0].zone, "Blackburrow");
 });
@@ -87,6 +107,7 @@ test("a re-read with nothing to say about the zone changes nothing", () => {
   const l = freshLog();
   l.add({ ...drop("Bone Chips", 1), zone: "Blackburrow" });
   // The log hadn't reported a zone yet at that point in the file — which must not blank the one we have.
+  l.startReplay();
   assert.equal(l.add(drop("Bone Chips", 1)), "known");
   assert.equal(l.recent()[0].zone, "Blackburrow");
 });
@@ -96,6 +117,7 @@ test("a placed zone survives a restart", () => {
   const db1 = openAppDatabase(dir, LOOT_LOG_MIGRATIONS);
   const first = createLootLog(db1, dir);
   first.add(drop("Bone Chips", 1));
+  first.startReplay();
   first.add({ ...drop("Bone Chips", 1), zone: "Blackburrow" });
   first.flush();
   db1.close();
