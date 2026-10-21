@@ -12,7 +12,7 @@
  */
 import { normalizeItemName } from "../items/grouping";
 import { lineLinks, rowLinks } from "./step-materials";
-import type { JudgedBlock, JudgedLine } from "./tradeskill-era";
+import { withoutShut, type JudgedBlock, type JudgedLine } from "./tradeskill-era";
 import type { SkillSpan, StepNeed } from "./tradeskill-types";
 
 /** One material's holdings: yours, and each peer's who has shared their inventory. */
@@ -63,7 +63,9 @@ export interface GuideStep {
 export function guideSteps(guides: readonly { name: string; blocks: readonly JudgedBlock[] }[]): GuideStep[] {
   const out: GuideStep[] = [];
   for (const g of guides) {
-    for (const block of g.blocks) {
+    // A shut heading ("Velium is not currently available") shuts the steps under it without marking
+    // them, so the line and row checks below can't see it — `withoutShut` drops the whole subsection.
+    for (const block of withoutShut(g.blocks).blocks) {
       if (block.kind === "list") {
         const walk = (line: JudgedLine) => {
           if (line.shut) return;

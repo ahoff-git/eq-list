@@ -13,7 +13,7 @@
  */
 import type { Copper } from "../money";
 import { RATE_BANDS, type Range } from "./step-cost";
-import type { SkillSpan } from "./tradeskill-types";
+import type { SkillSpan, StepCost, StepNeed, WikiPrice } from "./tradeskill-types";
 
 /** One step as the section sees it: the part still ahead of you, and what it costs. */
 export interface CostedStep {
@@ -35,6 +35,26 @@ export interface SectionCost {
   /** Materials with no price among the steps chosen — the cost is a floor where these appear. */
   unpriced: string[];
   combines: Range;
+}
+
+/**
+ * A step as the section reads it, from the part of its span still ahead and what the generator stored:
+ * its per-combine cost, its whole-step purchases priced once, and what has no price.
+ */
+export function costedStep(
+  span: SkillSpan,
+  needs: readonly StepNeed[] | undefined,
+  cost: StepCost | undefined | null,
+  prices: Readonly<Record<string, WikiPrice>>,
+): CostedStep {
+  const totals = (needs ?? []).filter((n) => n.total);
+  const fixed = totals.reduce((sum, n) => sum + (prices[n.name]?.copper ?? 0) * n.qty, 0);
+  const unpriced = [...(cost?.unpriced ?? []), ...totals.filter((n) => !prices[n.name]).map((n) => n.name)];
+  // A step that is all whole-step buys ("Buy 3 File Mold, 100 Small Piece of Ore") spends nothing per
+  // combine — `stepCost` has no per-combine figure for it because there's nothing to price, not
+  // because a price is missing. Unpriced, its priced buys would never reach the total.
+  const allBought = totals.length > 0 && totals.length === (needs ?? []).length;
+  return { span, perCombine: cost?.copper ?? (allBought ? 0 : undefined), fixed, unpriced };
 }
 
 /** Combines a point at the ceiling, at skill `p` and your pace. Unrounded: it's summed over points. */

@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sectionCost, type CostedStep } from "../../src/shared/tradeskills/section-cost";
+import { costedStep, sectionCost, type CostedStep } from "../../src/shared/tradeskills/section-cost";
 import { whereToBuy } from "../../src/shared/tradeskills/where-to-buy";
 import { VENDORS } from "../../src/shared/tradeskills/tradeskills.generated";
 import { ZONE_EXPANSIONS, outOfEraSet } from "../../src/shared/zones/expansions";
@@ -47,6 +47,21 @@ test("your pace scales the ceiling", () => {
   assert.equal(sectionCost([step(0, 10, 100)], 2)!.cost.high, 10 * 100 * 5);
 });
 
+test("a step that is all one-off purchases costs nothing per combine, so its priced buys reach the total", () => {
+  // Blacksmithing's "1 to 21: Metal Bits": Buy 3 File Mold, 53 Water Flask, 100 Small Piece of Ore.
+  const needs = [
+    { name: "File Mold", qty: 3, total: true },
+    { name: "Small Piece of Ore", qty: 100, total: true },
+  ];
+  const prices = { "Small Piece of Ore": { copper: 172, source: "x" } };
+  const costed = costedStep({ from: 1, to: 21 }, needs, undefined, prices);
+  assert.deepEqual(costed, { span: { from: 1, to: 21 }, perCombine: 0, fixed: 17200, unpriced: ["File Mold"] });
+  const total = sectionCost([costed])!;
+  assert.deepEqual([total.cost.low, total.pricedPoints, total.unpriced], [17200, 20, ["File Mold"]]);
+  // A step with per-combine materials and no price for any of them is still unpriced.
+  assert.equal(costedStep({ from: 1, to: 21 }, [{ name: "Ore", qty: 1 }], undefined, prices).perCombine, undefined);
+});
+
 test("nothing ahead is no total", () => {
   assert.equal(sectionCost([]), undefined);
 });
@@ -85,6 +100,15 @@ test("a merchant in a shut zone is no merchant", () => {
   const plan = whereToBuy(["Water Flask"], { "Water Flask": [V["Water Flask"][1]] }, "Firiona Vie", kunark);
   assert.deepEqual(plan.here, []);
   assert.deepEqual(plan.notSold, ["Water Flask"]);
+});
+
+test("what a fourth stop would sell isn't dropped — it's named as sold elsewhere", () => {
+  const spot = (zone: string): VendorSpot[] => [{ zone, merchant: `${zone} merchant` }];
+  const plan = whereToBuy(["A", "B", "C", "D"], { A: spot("Qeynos"), B: spot("Freeport"), C: spot("Halas"), D: spot("Rivervale") }, null, new Set());
+  assert.equal(plan.stops.length, 3);
+  const listed = [...plan.stops.flatMap((s) => s.items.map((i) => i.item)), ...plan.elsewhere, ...plan.notSold];
+  assert.deepEqual(listed.sort(), ["A", "B", "C", "D"]);
+  assert.deepEqual(plan.elsewhere, ["D"]);
 });
 
 test("no zone from the log still gives stops", () => {
