@@ -47,6 +47,7 @@
     "web:snapshot": "npm run build:electron && npm run rebuild:electron && node scripts/run-under-electron.mjs scripts/build-web-snapshot.mjs",
     "web:snapshot:publish": "npm run build:electron && npm run rebuild:electron && node scripts/run-under-electron.mjs scripts/build-web-snapshot.mjs --no-maps",
     "pretest": "npm run rebuild:node",
+    "test:render": "tsc -p tsconfig.render.json && node scripts/render-check.mjs",
     "test": "npm run build:electron && node --test --test-reporter=./scripts/test-reporter.mjs --test-reporter-destination=stdout \"dist-electron/electron/tests/**/*.test.js\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
