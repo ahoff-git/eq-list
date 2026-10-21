@@ -7,6 +7,9 @@ import { CheckField, Empty } from "@/app/components/ui";
 import { countOf, when } from "@/shared/format";
 import { LOG_SEARCH_MIN_CHARS } from "@/shared/log-search";
 import type { LogSearchResult } from "@/shared/types";
+import { createLogger } from "@/shared/logging";
+
+const log = createLogger("log-search");
 
 /** Long enough that a scan of the whole file runs once per pause in typing, not once per key. */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -37,11 +40,17 @@ export default function LogSearch() {
     let live = true;
     setSearching(true);
     const id = setTimeout(async () => {
-      const found = await api()?.log.search(query, { combatOnly });
+      let found: LogSearchResult | undefined;
+      try {
+        found = await api()?.log.search(query, { combatOnly });
+      } catch (err) {
+        // A failed search must still stop saying "Searching…" — it would otherwise spin for ever.
+        log.warn("log search failed", err);
+      }
       // A newer search cut this one short, or this effect was replaced while it ran — either way
       // the answer on screen belongs to whatever is being typed now, not to this.
-      if (!live || !found || found.superseded) return;
-      setResult(found);
+      if (!live || found?.superseded) return;
+      setResult(found ?? null);
       setSearching(false);
     }, SEARCH_DEBOUNCE_MS);
     return () => {
