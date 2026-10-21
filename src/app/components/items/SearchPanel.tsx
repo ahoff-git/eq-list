@@ -16,6 +16,7 @@ import { count } from "@/shared/format";
 import type { LucyEra, LucySearchResult, SearchResult, WikiPage } from "@/shared/types";
 import { pickupFor } from "@/shared/quests/quest-pickups";
 import PickupPageView from "@/app/components/items/PickupPageView";
+import { wikiName } from "@/shared/shown-name";
 
 type Mode = "name" | "zone" | "faction";
 
@@ -391,7 +392,7 @@ export default function SearchPanel({
           <div className="results">
             {shownResults.map((r, i) => (
               <div className={`result ${i === active ? "active" : ""}`} key={r.wikiPath}>
-                <ItemLink title={r.title} className="name" />
+                <ItemLink title={wikiName(r.title)} className="name" />
                 {r.outOfEra && <span className="badge era-out">era</span>}
                 <AddButton onAdd={() => void addByTitle(r.title, r.wikiPath)}>+ Add</AddButton>
               </div>
@@ -444,7 +445,7 @@ export default function SearchPanel({
               <div className="results">
                 {shownQuests.map((q) => (
                   <div className="result" key={q.wikiPath}>
-                    <ItemLink title={q.title} className="name" />
+                    <ItemLink title={wikiName(q.title)} className="name" />
                     {q.outOfEra && <span className="badge era-out">era</span>}
                     <AddButton onAdd={() => void addByTitle(q.title, q.wikiPath)}>+ Add quest</AddButton>
                   </div>
@@ -467,7 +468,7 @@ export default function SearchPanel({
           <div className="results">
             {factionSuggestions.map((f) => (
               <div className="result" key={f.wikiPath}>
-                <ItemLink title={f.title} className="name" />
+                <ItemLink title={wikiName(f.title)} className="name" />
               </div>
             ))}
           </div>

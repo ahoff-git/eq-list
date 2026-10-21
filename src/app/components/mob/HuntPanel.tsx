@@ -25,6 +25,7 @@ import { CheckField, Empty, segCls } from "@/app/components/ui";
 import type { Zone } from "@/shared/map/types";
 import type { ShoppingListEntry } from "@/shared/types";
 import { pickupFor, pickupLocText } from "@/shared/quests/quest-pickups";
+import { dropTableName, notAnItem, wikiName } from "@/shared/shown-name";
 
 /** How many zones the picker offers unfiltered — the hunt's list is short, so show it all. */
 const ZONE_MATCHES = 40;
@@ -428,7 +429,7 @@ function ZoneGroups({
                 onMouseEnter={() => emphasize(m.mob)}
                 onMouseLeave={() => emphasize(null)}
               >
-                <ItemLink title={m.mob} className="hm-name" />
+                <ItemLink title={notAnItem(m.mob)} className="hm-name" />
                 {/* Says why this row is here at all: a target was asked for by name, and may
                     have no items under it whatsoever. */}
                 {m.target && <TargetFlag />}
@@ -441,7 +442,7 @@ function ZoneGroups({
                       // `it.item` alone would hand React the same key twice.
                       <span key={it.id ?? it.item} className="hunt-item-wrap">
                         <ItemLink
-                          title={it.item}
+                          title={dropTableName(it.item)}
                           className="hunt-item"
                           label={
                             <>
@@ -494,7 +495,7 @@ function ItemGroups({
         // item wanted by two different quests), and `g.item` alone would hand React the same key twice.
         <div className="hunt-item-group" key={g.id ?? g.item}>
           <div className="hunt-item-head">
-            <ItemLink title={g.item} className="hi-name" />
+            <ItemLink title={wikiName(g.item)} className="hi-name" />
             <ObtainedStepper id={g.id} obtained={g.obtained} needed={g.needed} onAdjust={onAdjust} />
           </div>
           {g.places.map((p) => (
@@ -545,7 +546,7 @@ function PlaceRow({
       onMouseLeave={() => emphasize(null)}
     >
       {children}
-      <ItemLink title={place.mob} className="hm-name" />
+      <ItemLink title={notAnItem(place.mob)} className="hm-name" />
       <span className="hp-in muted">in</span>
       <ZoneName zone={place.zone} here={youAreHere} />
       {place.target && <TargetFlag />}
@@ -565,7 +566,7 @@ function ZoneName({ zone, here }: { zone: string; here: boolean }) {
     <>
       {/* A zone has a wiki page too, and "what else is in here" is the question a hunt raises
           next — so its name opens like every other name in the app. */}
-      <ItemLink title={zone} className="hz-name" />
+      <ItemLink title={notAnItem(zone)} className="hz-name" />
       {levels && (
         <span className="hz-levels" title={zoneLevelWhy(levels, zone)}>
           lv {zoneLevelText(levels)}
@@ -602,7 +603,7 @@ function PickupGroup({
       <h4 className="muted small">On the ground ({rows.length})</h4>
       {rows.map(({ e, p }) => (
         <div key={e.id} className="row" title={p.note}>
-          <ItemLink title={e.name} />
+          <ItemLink title={wikiName(e.name)} />
           <span className="muted small">
             {[p.zone, pickupLocText(p)].filter(Boolean).join(" · ")}
           </span>

@@ -7,6 +7,7 @@ import { duration, when } from "@/shared/format";
 import { useCombatReportsRefresh, useRead } from "@/lib/hooks";
 import ItemLink from "@/app/components/items/ItemLink";
 import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS, hiddenByDefault } from "@/app/components/dataGridDefaults";
+import { notAnItem } from "@/shared/shown-name";
 /** A stable empty, so a render that hasn't heard back yet doesn't look like a change. */
 const NO_ZONES: ZoneReport[] = [];
 
@@ -93,7 +94,7 @@ const MOB_COLUMNS: GridColDef<MobRow>[] = [
     minWidth: 160,
     // "Is this camp worth it?" is usually followed by "what does it drop?" — so the mob's name is
     // the same link it is in every other list.
-    renderCell: (p) => <ItemLink title={p.row.mob} />,
+    renderCell: (p) => <ItemLink title={notAnItem(p.row.mob)} />,
   },
   { field: "kills", headerName: "Kills", ...NUM_COL, flex: 1 },
   {
@@ -169,7 +170,7 @@ const ZONE_COLUMNS: GridColDef<ZoneRow>[] = [
     minWidth: 160,
     renderCell: (p) => (
       <span title={`Last fought ${when(p.row.lastAt)}`}>
-        <ItemLink title={p.row.zone} />
+        <ItemLink title={notAnItem(p.row.zone)} />
       </span>
     ),
   },

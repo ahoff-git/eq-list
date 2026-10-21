@@ -39,6 +39,7 @@ import type { ItemPrice, LootFate, LootRecord, LootSearchFilter } from "@/shared
 
 import { count, countOf, dayTime, when } from "@/shared/format";
 import { CheckField, Empty, PickField, segCls } from "@/app/components/ui";
+import { heldAsNamed, notAnItem } from "@/shared/shown-name";
 /**
  * Everything that has dropped and what became of it — kept, sold, stored in a depot, or consumed
  * to make something else. The log distinguishes all four and they matter differently: a sold item
@@ -446,7 +447,7 @@ function DropTable({
         headerName: "Item",
         flex: 2,
         minWidth: 160,
-        renderCell: (p) => <ItemLink title={p.row.item} className="lt-item" />,
+        renderCell: (p) => <ItemLink title={heldAsNamed(p.row.item)} className="lt-item" />,
       },
       {
         field: "source",
@@ -457,7 +458,7 @@ function DropTable({
         cellClassName: "muted",
         // Whose corpse it came off is a mob name like any other — worth a look-up, since "what else
         // does this thing drop" is the next question a ledger raises.
-        renderCell: (p) => (p.row.source ? <ItemLink title={p.row.source} /> : ""),
+        renderCell: (p) => (p.row.source ? <ItemLink title={notAnItem(p.row.source)} /> : ""),
       },
       {
         field: "zone",
@@ -565,7 +566,7 @@ function PriceTable({
 
   const columns = useMemo<GridColDef<PriceRow>[]>(
     () => [
-      { field: "item", headerName: "Item", flex: 2, minWidth: 160, renderCell: (p) => <ItemLink title={p.row.item} /> },
+      { field: "item", headerName: "Item", flex: 2, minWidth: 160, renderCell: (p) => <ItemLink title={heldAsNamed(p.row.item)} /> },
       {
         field: "unitCopper",
         headerName: "Each",

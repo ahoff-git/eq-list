@@ -357,6 +357,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0316: A held item or ranked spell is named at its level everywhere through one reader and one writer each (heldName/gradedTitle, rankedSpellTitle); peer inventory rows carry the sender's best grade](./0316-a-held-thing-is-named-at-its-level-everywhere.md)
 - [0317: HP, mana and AC weights fold into STA, INT/WIS and AGI for your classes (best two of three pools) at your level cap, once, for both item search and best in slot](./0317-hp-mana-and-ac-are-weighted-through-the-stats-that-make-them.md)
 - [0318: Best in slot takes your word: title-keyed slot locks solved exactly around, wanted effects met cheapest-first (worn → socketed stone → worn from what you hold → hunt) and pinned, benched items and skipped hunts, hunts added to the list from the page, and whole-tab presets](./0318-best-in-slot-takes-your-word.md)
+- [0319: ItemLink takes only a ShownName — built by a level writer (gradedTitle, rankedSpellTitle) or a marker (heldAsNamed, wikiName, dropTableName, notAnItem) — so every linked item or spell has its level decided, checked by the compiler](./0319-a-linked-name-has-its-level-decided-by-type.md)
 
 ## Open Questions
 

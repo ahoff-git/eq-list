@@ -4,6 +4,7 @@ import { WORN_LAYOUT, type BisPick } from "@/shared/items/bis";
 import { slotLabel, type BisHunt, type BisPlan, type BisSlotChoice } from "@/shared/items/bis-plan";
 import { toggleTitle, withLock, type BisOptions, type BisSlotLock } from "@/shared/items/bis-options";
 import { gradedTitle } from "@/shared/items/item-upgrade";
+import { wikiName } from "@/shared/shown-name";
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
@@ -124,7 +125,7 @@ export default function BisWearTable({
                   moved ? <>from {r.pick.item.heldAt}</> : <span className="muted">{r.pick.item.heldAt}</span>
                 ) : r.hunt ? (
                   <>
-                    hunt <ItemLink title={r.hunt.item.title} /> <span className="good">{signed(r.hunt.gain)}</span>
+                    hunt <ItemLink title={wikiName(r.hunt.item.title)} /> <span className="good">{signed(r.hunt.gain)}</span>
                   </>
                 ) : r.why === "nothing you hold fits" ? (
                   <span className="muted">nothing in the catalogue matches your criteria either</span>

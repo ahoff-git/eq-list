@@ -21,6 +21,7 @@ import { gradedTitle } from "@/shared/items/item-upgrade";
 import { STATS, statLine, statMeta, type StatKey } from "@/shared/items/item-stats";
 import { zonesInFilterOrder, type ItemSortKey, type ValuedItem } from "@/shared/items/item-search";
 import type { Sort } from "@/shared/sorting";
+import { notAnItem } from "@/shared/shown-name";
 
 /**
  * Which way a column opens on its first click — descending for a number ("show me the most"),
@@ -124,7 +125,7 @@ export default function ItemTable({
                 kind === "quest" && row.quests.length ? (
                   <ItemLink
                     key={kind}
-                    title={row.quests[0]}
+                    title={notAnItem(row.quests[0])}
                     className="src-kind-link"
                     label={
                       <span

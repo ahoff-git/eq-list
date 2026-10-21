@@ -6,6 +6,7 @@ import { DEFAULT_PAGE_SIZE, GRID_DEFAULTS, GRID_SX, NUM_COL, PAGE_SIZE_OPTIONS }
 import { successText, type CraftItem, type CraftSitting, type Tally } from "@/shared/tradeskills/crafting-log";
 import { craftRateKey, type PooledCraftRate } from "@/shared/tradeskills/craft-rates";
 import type { SkillProgressView } from "@/shared/tradeskills/skill-progress";
+import { heldAsNamed } from "@/shared/shown-name";
 
 /**
  * Your crafting log ([ADR 0303](../../../../specs/decisions/0303-a-tradeskill-guide-follows-your-skill.md)) —
@@ -190,7 +191,7 @@ const SITTING_COLUMNS: GridColDef<SittingRow>[] = [
 type ItemRow = CraftItem & { id: string; rate: number; skillName: string; span: string };
 
 const ITEM_COLUMNS: GridColDef<ItemRow>[] = [
-  { field: "item", headerName: "Item", flex: 1, minWidth: 180, renderCell: (p) => <ItemLink title={p.row.item} craft /> },
+  { field: "item", headerName: "Item", flex: 1, minWidth: 180, renderCell: (p) => <ItemLink title={heldAsNamed(p.row.item)} craft /> },
   { field: "skillName", headerName: "Skill", width: 120, valueFormatter: (v: string) => v || "—" },
   { field: "attempts", headerName: "Combines", ...NUM_COL, width: 95 },
   { field: "ok", headerName: "Made", ...NUM_COL, width: 75 },
@@ -212,7 +213,7 @@ type LevelRow = {
 };
 
 const LEVEL_COLUMNS: GridColDef<LevelRow>[] = [
-  { field: "item", headerName: "Item", flex: 1, minWidth: 180, renderCell: (p) => <ItemLink title={p.row.item} craft /> },
+  { field: "item", headerName: "Item", flex: 1, minWidth: 180, renderCell: (p) => <ItemLink title={heldAsNamed(p.row.item)} craft /> },
   { field: "skill", headerName: "Skill", width: 120, valueFormatter: (v: string) => v || "—" },
   { field: "level", headerName: "Your skill", ...NUM_COL, width: 95 },
   { field: "attempts", headerName: "Combines", ...NUM_COL, width: 95 },
@@ -239,7 +240,7 @@ const LEVEL_COLUMNS: GridColDef<LevelRow>[] = [
 type RoomRow = PooledCraftRate & { id: string; rate: number };
 
 const ROOM_COLUMNS: GridColDef<RoomRow>[] = [
-  { field: "item", headerName: "Item", flex: 1, minWidth: 180, renderCell: (p) => <ItemLink title={p.row.item} craft /> },
+  { field: "item", headerName: "Item", flex: 1, minWidth: 180, renderCell: (p) => <ItemLink title={heldAsNamed(p.row.item)} craft /> },
   { field: "skill", headerName: "Skill", width: 120 },
   { field: "level", headerName: "At skill", ...NUM_COL, width: 90 },
   { field: "attempts", headerName: "Combines", ...NUM_COL, width: 95 },

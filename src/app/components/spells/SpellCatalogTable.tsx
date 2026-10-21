@@ -9,6 +9,7 @@ import { manaPerDamage, minLevel, type SpellRow, type SpellSortKey } from "@/sha
 import { categoryLabel } from "@/shared/spells/spell-categories";
 import { sourceKindsLabel, spellSource } from "@/shared/spells/spell-sources";
 import type { Sort } from "@/shared/sorting";
+import { notAnItem, wikiName } from "@/shared/shown-name";
 
 /** Which way each column opens on its first click — the same rule the old `SortHeader` calls
  *  encoded per column, kept here since the grid's own click cycle is overridden to match it. */
@@ -51,7 +52,7 @@ export default function SpellCatalogTable({
         valueGetter: (_v, row) => row.spell.title,
         renderCell: (p) => (
           <>
-            <ItemLink title={p.row.spell.title} />
+            <ItemLink title={wikiName(p.row.spell.title)} />
             {p.row.spell.outOfEra && <span className="badge era-out">out of era</span>}
           </>
         ),
@@ -246,7 +247,7 @@ function SpellSourceCell({ title }: { title: string }) {
       {quests.map((quest, i) => (
         <span key={quest}>
           {i > 0 && ", "}
-          <ItemLink title={quest} />
+          <ItemLink title={notAnItem(quest)} />
         </span>
       ))}
     </>

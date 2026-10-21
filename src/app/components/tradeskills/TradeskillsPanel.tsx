@@ -43,6 +43,7 @@ import type { GuideRun, SkillSpan, StepCost, StepNeed, Tradeskill, TradeskillGui
 import { AddButton, CheckField, Empty, segCls } from "@/app/components/ui";
 import ItemLink from "@/app/components/items/ItemLink";
 import CraftingLogView from "@/app/components/tradeskills/CraftingLogView";
+import { wikiName } from "@/shared/shown-name";
 
 const SKILLS = TRADESKILLS.filter((t) => t.kind === "skill").sort((a, b) => a.name.localeCompare(b.name));
 const CULTURAL = TRADESKILLS.filter((t) => t.kind === "cultural");
@@ -596,7 +597,7 @@ function ShoppingView({ plan, zone }: { plan: ShoppingPlan; zone?: string | null
               {sells.map((s, i) => (
                 <span key={s.item}>
                   {i > 0 && ", "}
-                  <ItemLink title={s.item} craft />
+                  <ItemLink title={wikiName(s.item)} craft />
                 </span>
               ))}
             </span>
@@ -610,7 +611,7 @@ function ShoppingView({ plan, zone }: { plan: ShoppingPlan; zone?: string | null
           </span>
           {stop.items.map((s) => (
             <span key={s.item} className="shopping-merchant">
-              <ItemLink title={s.item} craft /> (<Merchant name={s.merchant} zone={stop.zone} loc={s.loc} area={s.area} />)
+              <ItemLink title={wikiName(s.item)} craft /> (<Merchant name={s.merchant} zone={stop.zone} loc={s.loc} area={s.area} />)
             </span>
           ))}
         </div>
@@ -621,7 +622,7 @@ function ShoppingView({ plan, zone }: { plan: ShoppingPlan; zone?: string | null
           {plan.elsewhere.map((item, i) => (
             <span key={item}>
               {i > 0 && ", "}
-              <ItemLink title={item} craft />
+              <ItemLink title={wikiName(item)} craft />
             </span>
           ))}
         </div>
@@ -632,7 +633,7 @@ function ShoppingView({ plan, zone }: { plan: ShoppingPlan; zone?: string | null
           {plan.notSold.map((item, i) => (
             <span key={item}>
               {i > 0 && ", "}
-              <ItemLink title={item} craft />
+              <ItemLink title={wikiName(item)} craft />
             </span>
           ))}
         </div>
@@ -646,7 +647,7 @@ function ShoppingView({ plan, zone }: { plan: ShoppingPlan; zone?: string | null
 function Merchant({ name, zone, loc, area }: { name: string; zone: string; loc?: { y: number; x: number }; area?: string }) {
   return (
     <>
-      <ItemLink title={name} />
+      <ItemLink title={wikiName(name)} />
       {loc && (
         <>
           {" "}
@@ -805,7 +806,7 @@ function Runs({ runs, closed }: { runs: GuideRun[]; closed: ReadonlySet<string> 
             {r.era}
           </span>
         ) : (
-          <ItemLink key={i} title={r.link} label={r.text} craft />
+          <ItemLink key={i} title={wikiName(r.link)} label={r.text} craft />
         ),
       )}
     </>
@@ -870,7 +871,7 @@ function StepEstimateView({ estimate, needsFor }: { estimate: StepEstimate | und
       )}
       {materials.map((m) => (
         <span key={m.name} className="step-estimate-material">
-          <ItemLink title={m.name} craft /> ×{rangeText(m.qty)}
+          <ItemLink title={wikiName(m.name)} craft /> ×{rangeText(m.qty)}
           {m.each !== undefined && <span className="muted"> @ {roughCoins(m.each)}</span>}
           <HeldNote name={m.name} alternatives={m.alternatives} need={m.qty.high} />
         </span>
@@ -891,7 +892,7 @@ function Makes({ titles }: { titles?: string[] }) {
       {titles.map((t, i) => (
         <span key={t}>
           {i > 0 && " or "}
-          <ItemLink title={t} craft />
+          <ItemLink title={wikiName(t)} craft />
         </span>
       ))}
     </span>

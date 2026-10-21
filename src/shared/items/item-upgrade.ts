@@ -26,6 +26,7 @@
  */
 
 import type { ItemStats, StatKey } from "./item-stats";
+import { heldAsNamed, type ShownName } from "../shown-name";
 
 /** The highest grade an item can merge to. */
 export const MAX_GRADE = 10;
@@ -208,6 +209,6 @@ export function gradedCardLines(lines: readonly string[], grade: number, exp = 0
 }
 
 /** `Dragoon Dirk +2` — how a graded copy is named, so a card and the log agree on it. */
-export function gradedTitle(title: string, grade: number): string {
-  return grade > 0 ? `${title} +${grade}` : title;
+export function gradedTitle(title: string, grade: number): ShownName {
+  return heldAsNamed(grade > 0 ? `${title} +${grade}` : title);
 }

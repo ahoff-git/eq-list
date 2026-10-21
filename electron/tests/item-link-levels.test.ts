@@ -1,112 +1,32 @@
 /**
- * Every place the app names an item or a spell is accounted for: it either shows the thing at its
- * level, or there is no level to show (ADR 0312, ADR 0316).
+ * Every place the app links an item or a spell has decided its level (ADR 0312, ADR 0316).
  *
- * `ItemLink` shows a name's card *at the level the name states* (`Gnoll Slayer +3`, `Shock of
- * Lightning VI`), so a view gets levels right by handing it the name as held — and gets them wrong
- * only by handing it a name it stripped, or one from a store that folded the level away. This test
- * finds every `<ItemLink title={…}>` in the renderer and requires each to be classified below. A new
- * or changed call site fails here until someone decides how its rank is handled, which is the point:
- * "everywhere" stays true without a person re-auditing seventy call sites.
+ * The decision is a **type**: `ItemLink`'s `title` (and `NameList`'s `names`) take only a `ShownName`
+ * (`src/shared/shown-name.ts`), which a name becomes by a level writer (`gradedTitle`,
+ * `rankedSpellTitle`) or by a marker saying why it needs none (`heldAsNamed`, `wikiName`,
+ * `dropTableName`, `notAnItem`). So the compiler checks every call site, and `level-paths.test.ts`
+ * checks what each marker promises against real data.
  *
- * Re-run when a component that uses `ItemLink` changes.
+ * This file pins the two halves of that: a plain string cannot pass for a `ShownName` (the compile
+ * of this very file fails if it could), and every `<ItemLink title={…}>` in the renderer is built by
+ * one of the six — not cast around them.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { heldAsNamed, type ShownName } from "../../src/shared/shown-name";
 
 const REPO_ROOT = path.join(__dirname, "../../..");
 const COMPONENTS = path.join(REPO_ROOT, "src", "app");
+const DECIDERS = ["gradedTitle", "rankedSpellTitle", "heldAsNamed", "wikiName", "dropTableName", "notAnItem"];
 
-/** How a call site's title gets its level right. */
-type Level =
-  /** Built at its level by a shared writer — `gradedTitle`, `rankedSpellTitle`. */
-  | "levelled"
-  /** A held name passed through as the game wrote it — a loot line, a dump row, a crafted result, a
-   *  list entry, a price row — so any `+N` it had reaches `ItemLink` intact. */
-  | "as-named"
-  /** A wiki or catalogue title: the page itself, which is the `+0` thing. */
-  | "wiki"
-  /** A mob's drop table, folded by grade on purpose — a `+2` copy is the same drop (ADR 0057). */
-  | "drop-table"
-  /** Not an item or a spell: a mob, zone, NPC, faction, quest or guide page. */
-  | "not-item";
-
-const SITES: Record<string, Level> = {
-  "buffs/BuffPanel.tsx|rankedSpellTitle(buff.spell, buff.rank)": "levelled",
-  "combat/SpellTable.tsx|rankedSpellTitle(p.row.spell, p.row.rank)": "levelled",
-  "exports/InventoryDumpView.tsx|gradedTitle(t.baseName, t.bestGrade)": "levelled",
-  "exports/InventoryDumpView.tsx|item.name": "as-named",
-  "items/BisView.tsx|gradedTitle(m.title, m.to)": "levelled",
-  "items/BisWearTable.tsx|gradedTitle(r.pick.item.title, r.pick.item.grade)": "levelled",
-  // Hunt targets are catalogue items you don't hold, weighed at +0 (the table shows +1/+2/+3 apart).
-  "items/BisHuntTable.tsx|h.item.title": "wiki",
-  "items/BisWearTable.tsx|r.hunt.item.title": "wiki",
-  "items/BisEffects.tsx|h.item.title": "wiki", // a catalogue item carrying a wanted effect, not held
-  "items/ItemTable.tsx|gradedTitle(p.row.item.title, p.row.grade ?? 0)": "levelled",
-  "items/ItemTable.tsx|row.quests[0]": "not-item",
-  "peers/PeerInventories.tsx|gradedTitle(f.item, f.bestGrade)": "levelled",
-
-  "items/LootPanel.tsx|p.row.item": "as-named", // the loot ledger and price rows keep the name as looted
-  "items/LootPanel.tsx|p.row.source": "not-item",
-  "items/ListPanel.tsx|entry.name": "as-named",
-  "items/ListPanel.tsx|g.label": "not-item",
-  "items/ListPanel.tsx|bestOther.where": "not-item",
-  "items/ListPanel.tsx|source.where": "not-item",
-  "tradeskills/CraftingLogView.tsx|p.row.item": "as-named", // what the log says you made
-  "items/ItemLink.tsx|name": "as-named", // a list of names handed in, shown as given
-
-  "mob/MobKills.tsx|drop.item": "drop-table",
-  "mob/MobKnowledge.tsx|drop.item": "drop-table",
-  "mob/HuntPanel.tsx|it.item": "drop-table",
-  "mob/HuntPanel.tsx|g.item": "wiki",
-  "mob/HuntPanel.tsx|e.name": "wiki",
-
-  "items/SearchPanel.tsx|r.title": "wiki",
-  "items/SearchPanel.tsx|q.title": "wiki",
-  "items/SearchPanel.tsx|f.title": "wiki",
-  "items/WikiPageView.tsx|c.name": "wiki",
-  "items/WikiPageView.tsx|effect.name": "wiki",
-  "items/WikiPageView.tsx|m.name": "wiki",
-  "items/WikiPageView.tsx|r.item": "wiki",
-  "items/WikiPageView.tsx|q.title": "not-item",
-  "items/WikiPageView.tsx|q": "not-item",
-  "items/WikiPageView.tsx|s.where": "not-item",
-  "items/WikiPageView.tsx|title": "wiki",
-  "items/PickupPageView.tsx|p.item": "wiki",
-  "items/PickupPageView.tsx|pickupEntryName(s)": "wiki",
-  "items/PickupPageView.tsx|p.quest": "not-item",
-  "items/PickupPageView.tsx|n.npc": "not-item",
-  "items/QuestPlanView.tsx|g": "wiki",
-  "items/QuestPlanView.tsx|place.who.name": "not-item",
-  "items/QuestSteps.tsx|part.title": "wiki",
-  "spells/SpellCatalogTable.tsx|p.row.spell.title": "wiki",
-  "spells/SpellCatalogTable.tsx|quest": "not-item",
-  "tradeskills/TradeskillsPanel.tsx|item": "wiki",
-  "tradeskills/TradeskillsPanel.tsx|m.name": "wiki",
-  "tradeskills/TradeskillsPanel.tsx|name": "wiki",
-  "tradeskills/TradeskillsPanel.tsx|r.link": "wiki",
-  "tradeskills/TradeskillsPanel.tsx|s.item": "wiki",
-  "tradeskills/TradeskillsPanel.tsx|t": "wiki",
-
-  "combat/CampReport.tsx|p.row.mob": "not-item",
-  "combat/CampReport.tsx|p.row.zone": "not-item",
-  "faction/FactionPanel.tsx|c.source": "not-item",
-  "faction/FactionPanel.tsx|causeSource(hit)!": "not-item",
-  "faction/FactionPanel.tsx|p.row.faction": "not-item",
-  "faction/RaceUnlocksView.tsx|RACE_UNLOCK_SOURCE.title": "not-item",
-  "faction/RaceUnlocksView.tsx|f.faction": "not-item",
-  "faction/RaceUnlocksView.tsx|h.faction": "not-item",
-  "faction/RaceUnlocksView.tsx|seg.link.title": "not-item",
-  "items/ItemDrops.tsx|row.mob": "not-item",
-  "kills/KillList.tsx|group.mob": "not-item",
-  "kills/KillList.tsx|kill.mob": "not-item",
-  "mob/HuntPanel.tsx|m.mob": "not-item",
-  "mob/HuntPanel.tsx|place.mob": "not-item",
-  "mob/HuntPanel.tsx|zone": "not-item",
-  "mob/MobKnowledge.tsx|mob.mob": "not-item",
-};
+test("a plain string is not a ShownName — the level has to be decided to link it", () => {
+  // @ts-expect-error a bare string carries no decision about its level
+  const bare: ShownName = "Dragoon Dirk";
+  const decided: ShownName = heldAsNamed("Dragoon Dirk +2");
+  assert.equal(`${bare} ${decided}`, "Dragoon Dirk Dragoon Dirk +2", "markers are the identity at runtime");
+});
 
 /** Every `.tsx` under `dir`. */
 function sources(dir: string): string[] {
@@ -140,22 +60,18 @@ function titlesIn(text: string): string[] {
   }
 }
 
-test("every ItemLink call site says how its item's level is shown", () => {
-  const found = new Set<string>();
-  const unknown: string[] = [];
+test("every ItemLink title is built by a level writer or a marker, never cast around them", () => {
+  const sites: string[] = [];
+  const undecided: string[] = [];
   for (const file of sources(COMPONENTS)) {
-    const rel = path.relative(path.join(COMPONENTS, "components"), file).replace(/\\/g, "/");
+    const rel = path.relative(COMPONENTS, file).replace(/\\/g, "/");
     for (const title of titlesIn(fs.readFileSync(file, "utf8"))) {
-      const key = `${rel}|${title}`;
-      found.add(key);
-      if (!(key in SITES)) unknown.push(key);
+      sites.push(`${rel}|${title}`);
+      // `NameList`'s own `name` is already a ShownName — its callers decided (they're checked by type).
+      const decided = DECIDERS.some((d) => title.startsWith(`${d}(`)) || (rel.endsWith("items/ItemLink.tsx") && title === "name");
+      if (!decided || /\bas ShownName\b/.test(title)) undecided.push(`${rel}|${title}`);
     }
   }
-  assert.deepEqual(
-    unknown,
-    [],
-    "classify each new call site in SITES: pass the held name (or gradedTitle / rankedSpellTitle) to show its level",
-  );
-  const stale = Object.keys(SITES).filter((k) => !found.has(k));
-  assert.deepEqual(stale, [], "these call sites are gone — remove them from SITES");
+  assert.ok(sites.length > 60, "the renderer's ItemLinks were found");
+  assert.deepEqual(undecided, [], "build each title with gradedTitle / rankedSpellTitle, or mark why it needs no level");
 });

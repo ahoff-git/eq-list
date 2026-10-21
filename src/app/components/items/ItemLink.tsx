@@ -11,6 +11,7 @@ import type { ItemCard } from "@/shared/types";
 import LevelledText from "@/app/components/items/LevelledText";
 import { itemGrade } from "@/shared/names";
 import { cardAtLevel, ladderOf, pageForName, unrankedSpellTitle } from "@/shared/upgrade-view";
+import type { ShownName } from "@/shared/shown-name";
 
 /**
  * Hover an item name to see the wiki's stat card — the same "hover for stats" the
@@ -43,7 +44,8 @@ export default function ItemLink({
   className,
   craft,
 }: {
-  title: string;
+  /** A name with its level decided — see `shown-name.ts` — so the card is shown at the right one. */
+  title: ShownName;
   label?: React.ReactNode;
   className?: string;
   /** Add a crafter's lines under the card — where to buy it, what it's made from, what uses it
@@ -87,7 +89,8 @@ export function NameList({
   extra,
   className,
 }: {
-  names: readonly string[];
+  /** Each with its level decided by the caller (`shown-name.ts`). */
+  names: readonly ShownName[];
   /** Given the position too, so a caller with a parallel list of counts needn't search it. */
   extra?: (name: string, index: number) => React.ReactNode;
   /** The wrapper's class — each list has its own idea of how wide and how wrapped it is. */

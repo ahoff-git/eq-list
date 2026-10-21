@@ -13,6 +13,7 @@ import type { KillEmphasis } from "@/shared/types";
 import KillFilterBar from "@/app/components/kills/KillFilterBar";
 import { RoamLinks } from "@/app/components/map/MapLink";
 import { Caret } from "@/app/components/ui";
+import { dropTableName, notAnItem } from "@/shared/shown-name";
 
 /**
  * What killing things has taught us: how often each mob drops what, what it carries, and
@@ -178,7 +179,7 @@ export default function MobKnowledgePanel({
             >
               <Caret open={showDrops(key)} />
               {/* A link, like the mob's name in the ☠ list beside it — the head still opens the row. */}
-              <ItemLink title={mob.mob} className="mob-name" />
+              <ItemLink title={notAnItem(mob.mob)} className="mob-name" />
               <span
                 className="muted small"
                 title={
@@ -238,7 +239,7 @@ export default function MobKnowledgePanel({
                         title={`Where ${drop.item} comes from — rings every kill of it on the map`}
                         onMouseEnter={() => emphasizeDrop(drop.item)}
                       >
-                        <ItemLink title={drop.item} />
+                        <ItemLink title={dropTableName(drop.item)} />
                         <span className="spacer" />
                         {from.length > 1 && (
                           <span className="md-from muted small" title={alsoFrom(drop.item, mob.mob, from)}>

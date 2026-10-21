@@ -5,6 +5,7 @@ import ItemLink from "@/app/components/items/ItemLink";
 import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
 import { stepLinkTitles, type StepLinkInfo } from "@/shared/quests/quest-steps";
 import type { QuestStep, QuestStepPart } from "@/shared/types";
+import { wikiName } from "@/shared/shown-name";
 
 /** How deep "show its steps" may open quests inside quests, which also stops a quest opening itself. */
 const MAX_TRAIL = 3;
@@ -66,7 +67,7 @@ function StepPart({ part, info, children }: { part: QuestStepPart; info?: StepLi
   if (info?.kind === "zone") return <ZoneLink zone={part.title}>{shown}</ZoneLink>;
   return (
     <>
-      <ItemLink title={part.title} label={shown} />
+      <ItemLink title={wikiName(part.title)} label={shown} />
       {info?.zones?.map((zone) => (
         <span key={zone} className="muted small">
           {" "}

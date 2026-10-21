@@ -9,6 +9,7 @@ import { Caret } from "@/app/components/ui";
 import KillFilterBar from "@/app/components/kills/KillFilterBar";
 import { ZoneDifficultyTag } from "@/app/components/map/ZoneTag";
 import type { KillEmphasis, KillRecord } from "@/shared/types";
+import { heldAsNamed, notAnItem } from "@/shared/shown-name";
 
 /** How many mob groups to show before the "show more" fold. Distinct mobs per zone are few. */
 const MAX_GROUPS = 40;
@@ -177,7 +178,7 @@ function MobGroup({
         <Caret open={open} />
         {/* The mob's name is a link like any other name in the app — clicking it looks the mob up
             rather than opening the row, which is what the caret and the rest of the head are for. */}
-        <ItemLink title={group.mob} className="kr-mob" />
+        <ItemLink title={notAnItem(group.mob)} className="kr-mob" />
         <span className="kg-count muted small">×{group.kills.length}</span>
         {others > 0 && (
           <span
@@ -199,7 +200,7 @@ function MobGroup({
         {headDrops.length > 0 && (
           <span className="kr-drops">
             <NameList
-              names={headDrops.map((d) => d.item)}
+              names={headDrops.map((d) => heldAsNamed(d.item))}
               extra={(_, i) => headDrops[i].count > 1 && <span className="muted small"> ×{headDrops[i].count}</span>}
             />
             {drops.length > headDrops.length && (
@@ -242,7 +243,7 @@ function KillRow({
     >
       <span className="kr-time">{clock(kill.at)}</span>
       {showConfidence && <ConfidenceMark kill={kill} />}
-      <ItemLink title={kill.mob} className="kr-mob" />
+      <ItemLink title={notAnItem(kill.mob)} className="kr-mob" />
       {kill.sharedBy ? (
         <span
           className="muted small"
@@ -261,7 +262,7 @@ function KillRow({
         )
       )}
       {kill.drops?.length ? (
-        <NameList names={kill.drops} className="kr-drops" />
+        <NameList names={(kill.drops ?? []).map(heldAsNamed)} className="kr-drops" />
       ) : (
         <span className="muted small" title={kill.sharedBy ? "A peer shares the kill, not the loot" : undefined}>
           {kill.sharedBy ? "—" : "no drop"}

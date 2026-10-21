@@ -8,6 +8,7 @@ import { describeCoins, formatCoins } from "@/shared/money";
 import ItemLink from "@/app/components/items/ItemLink";
 import { RoamLinks, ZoneLink } from "@/app/components/map/MapLink";
 import type { ItemSource } from "@/shared/types";
+import { notAnItem } from "@/shared/shown-name";
 
 /**
  * What **your** kills say about the item whose page you're reading — who drops it, where, and what
@@ -73,7 +74,7 @@ export default function ItemDrops({ item, sources }: { item: string; sources: It
         {rows.map((row) => (
           <div className="mk-zone" key={row.mob} {...ringOnHover(row.mob)}>
             <div className="mk-head">
-              <ItemLink title={row.mob} className="name" />
+              <ItemLink title={notAnItem(row.mob)} className="name" />
               {row.verdict === "undocumented" && (
                 <span
                   className="badge rate-observed"

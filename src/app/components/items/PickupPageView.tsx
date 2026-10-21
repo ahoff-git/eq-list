@@ -12,6 +12,7 @@ import {
   pickupsForQuest,
   type QuestPickup,
 } from "@/shared/quests/quest-pickups";
+import { notAnItem, wikiName } from "@/shared/shown-name";
 
 /**
  * A quest pickup's own page — "Rod (Azia)" — built from the bundled dataset rather than fetched,
@@ -72,7 +73,7 @@ export default function PickupPageView({ pickup: p }: { pickup: QuestPickup }) {
         <li>
           <span className="field-label">In game</span>
           <span>
-            <ItemLink title={p.item} /> <span className="muted small">— lying on the ground, no mob drops it</span>
+            <ItemLink title={wikiName(p.item)} /> <span className="muted small">— lying on the ground, no mob drops it</span>
           </span>
         </li>
       </ul>
@@ -83,7 +84,7 @@ export default function PickupPageView({ pickup: p }: { pickup: QuestPickup }) {
         <li>
           <span className="field-label">Quest</span>
           <span>
-            <ItemLink title={p.quest} />{" "}
+            <ItemLink title={notAnItem(p.quest)} />{" "}
             <span className="muted small">— one of its {siblings.length + 1} turn-ins</span>
           </span>
         </li>
@@ -95,7 +96,7 @@ export default function PickupPageView({ pickup: p }: { pickup: QuestPickup }) {
           <ul>
             {npcs.map((n) => (
               <li key={n.npc}>
-                <ItemLink title={n.npc} />
+                <ItemLink title={notAnItem(n.npc)} />
                 <ZoneLink zone={n.zone} />
                 <MapLink target={{ zone: n.zone, loc: n.loc, label: n.npc }}>{pickupLocText(n)}</MapLink>
                 {n.steps.length > 0 && <span className="muted small">— {n.steps.join(" ")}</span>}
@@ -117,7 +118,7 @@ export default function PickupPageView({ pickup: p }: { pickup: QuestPickup }) {
                   <span className={done ? "done" : "muted"} title={done ? "Obtained" : "Still needed"}>
                     {done ? "✓" : "○"}
                   </span>
-                  <ItemLink title={pickupEntryName(s)} />
+                  <ItemLink title={wikiName(pickupEntryName(s))} />
                   <span className="muted small">{s.zone}</span>
                 </li>
               );

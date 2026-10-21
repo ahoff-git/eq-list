@@ -7,6 +7,7 @@ import { useShoppingList } from "@/lib/hooks";
 import { normalizeItemName } from "@/shared/items/grouping";
 import { slotLabel, type BisHunt } from "@/shared/items/bis-plan";
 import { gradedTitle } from "@/shared/items/item-upgrade";
+import { wikiName } from "@/shared/shown-name";
 
 /** How many hunt targets to draw. Ranked, so these are the biggest gains. */
 const MAX_HUNT = 60;
@@ -68,7 +69,7 @@ export default function BisHuntTable({ hunt, onSkip }: { hunt: readonly BisHunt[
             return (
               <tr key={h.item.id}>
                 <td>
-                  <ItemLink title={h.item.title} />
+                  <ItemLink title={wikiName(h.item.title)} />
                 </td>
                 <td className="muted">{slotLabel(h.slot)}</td>
                 <td className="num good">{signed(h.gain)}</td>

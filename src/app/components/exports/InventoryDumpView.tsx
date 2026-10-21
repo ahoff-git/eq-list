@@ -18,6 +18,7 @@ import { DumpSection, textMatches } from "./DumpParts";
 import { gradedTitle } from "@/shared/items/item-upgrade";
 import { exportAgeText } from "@/shared/game-exports";
 import { socketName } from "@/shared/items/exaltations";
+import { heldAsNamed } from "@/shared/shown-name";
 
 type Mode = "place" | "item";
 
@@ -133,7 +134,7 @@ function InventoryRow({ item, isWanted, showSlot }: { item: InventoryItem; isWan
     <span className={`inv-row ${item.container ? "inv-bag" : ""}`}>
       {item.count > 1 && <span className="inv-count">{item.count}×</span>}
       {/* The held name, grade and all: the hover and the page show this copy's stats, not +0's (ADR 0312). */}
-      <ItemLink title={item.name} />
+      <ItemLink title={heldAsNamed(item.name)} />
       {isWanted(item.name) && <span className="inv-wanted" title="On your shopping list">★</span>}
       {item.sockets.map((s, n) => (
         <span key={n} className="inv-socket" title={`In its ${socketName(s.socket)} socket`}>◆ {s.name}</span>

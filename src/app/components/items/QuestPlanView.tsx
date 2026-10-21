@@ -17,6 +17,7 @@ import {
   type QuestPlan,
   type StepPlace,
 } from "@/shared/quests/quest-plans";
+import { notAnItem, wikiName } from "@/shared/shown-name";
 
 const MARK = { done: "✓", todo: "○", info: "·" } as const;
 
@@ -186,7 +187,7 @@ function StepRow({
             → {step.gets.map((g, i) => (
               <span key={g}>
                 {i > 0 && ", "}
-                <ItemLink title={g} />
+                <ItemLink title={wikiName(g)} />
               </span>
             ))}
           </span>
@@ -203,7 +204,7 @@ function PlaceLinks({ place, hideZone }: { place: StepPlace; hideZone?: boolean 
     <span className="muted small plan-place">
       {place.why && !hideZone && <span>{NO_PLACE[place.why]}</span>}
       {place.inherited && <span title="Where the step before it happens">same place ↑</span>}
-      {place.who && <ItemLink title={place.who.name} />}
+      {place.who && <ItemLink title={notAnItem(place.who.name)} />}
       {!hideZone && place.zone && (place.mapped ? <ZoneLink zone={place.zone} /> : <span>{place.zone}</span>)}
       {place.area && <span>{place.area}</span>}
       {place.zone && place.loc && place.mapped && (

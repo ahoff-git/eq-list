@@ -8,6 +8,7 @@ import { RACE_UNLOCK_SOURCE, wikiLinksIn, type RaceUnlockMethod, type RaceUnlock
 import type { FactionStanding } from "@/shared/types";
 import AskValue from "@/app/components/AskValue";
 import ItemLink from "@/app/components/items/ItemLink";
+import { notAnItem } from "@/shared/shown-name";
 
 /** Bounds a stated faction total is clamped to — generous enough for any real EQ faction range,
  *  which never approaches this on either side; just enough to catch a typo. */
@@ -52,7 +53,7 @@ export default function RaceUnlocksView({ standings }: { standings: FactionStand
     <div className="ru-list">
       <div className="row wrap ru-sources muted small">
         <span>
-          Source: <ItemLink title={RACE_UNLOCK_SOURCE.title} label="Alanna's Race Unlock Guide" /> on eqlwiki
+          Source: <ItemLink title={notAnItem(RACE_UNLOCK_SOURCE.title)} label="Alanna's Race Unlock Guide" /> on eqlwiki
         </span>
         <span className="spacer" />
         {/* External, not an in-app wiki page — its own IPC handler opens exactly this one URL
@@ -110,7 +111,7 @@ function RaceRow({
             {factions.map((f) => (
               <div className="ru-faction" key={f.faction}>
                 <span className="ru-faction-name">
-                  <ItemLink title={f.faction} />
+                  <ItemLink title={notAnItem(f.faction)} />
                 </span>
                 <div className="ru-bar" title={`${f.net} of ${f.target} observed since tracking began`}>
                   <div className="ru-fill" style={{ width: `${Math.max(0, Math.min(100, (f.net / f.target) * 100))}%` }} />
@@ -164,7 +165,7 @@ function MethodView({ method }: { method: RaceUnlockMethod }) {
           <div className="ru-hits">
             {g.hits.map((h, j) => (
               <span className="ru-hit" key={j} title={h.note}>
-                <ItemLink title={h.faction} />{" "}
+                <ItemLink title={notAnItem(h.faction)} />{" "}
                 <span className={h.amount > 0 ? "num-accent" : "num-bad"}>{h.amount > 0 ? `+${h.amount}` : h.amount}</span>
               </span>
             ))}
@@ -182,7 +183,7 @@ function LinkedText({ text }: { text: string }) {
   return (
     <>
       {wikiLinksIn(text).map((seg, i) =>
-        seg.link ? <ItemLink key={i} title={seg.link.title} label={seg.link.display} /> : <span key={i}>{seg.text}</span>,
+        seg.link ? <ItemLink key={i} title={notAnItem(seg.link.title)} label={seg.link.display} /> : <span key={i}>{seg.text}</span>,
       )}
     </>
   );

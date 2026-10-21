@@ -50,6 +50,7 @@ import {
   hiddenByDefault,
 } from "@/app/components/dataGridDefaults";
 import { Empty, segCls, StatTile } from "@/app/components/ui";
+import { notAnItem } from "@/shared/shown-name";
 
 /**
  * Everything the log has said raised or lowered a faction, and what it comes to for each one.
@@ -424,7 +425,7 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
       sortable,
       flex: 2,
       minWidth: 160,
-      renderCell: (p) => <ItemLink title={p.row.faction} />,
+      renderCell: (p) => <ItemLink title={notAnItem(p.row.faction)} />,
     },
     {
       field: "delta",
@@ -469,7 +470,7 @@ function hitColumns(sortable: boolean): GridColDef<HitRow>[] {
         if (!hit.causedBy) return <span className="muted">—</span>;
         return (
           <span className="fc-cause" title={causeTitle(hit)}>
-            <span className="fc-guess">≈</span> <ItemLink title={causeSource(hit)!} />
+            <span className="fc-guess">≈</span> <ItemLink title={notAnItem(causeSource(hit)!)} />
             {hit.causedBy.kind === "dialogue" && hit.causedBy.quests?.length ? (
               <span className="muted"> ({questHint(hit.causedBy.quests, hit.causedBy.questsMatched ?? false)})</span>
             ) : null}
@@ -661,7 +662,7 @@ function StandingTable({
         headerName: "Faction",
         flex: 2,
         minWidth: 160,
-        renderCell: (p) => <ItemLink title={p.row.faction} />,
+        renderCell: (p) => <ItemLink title={notAnItem(p.row.faction)} />,
       },
       {
         field: "net",
@@ -775,7 +776,7 @@ function StandingTable({
           return (
             <span className="fc-cause">
               <span className="fc-guess">≈</span>{" "}
-              <NameList names={shown.map((c) => c.source)} extra={(_, i) => causeExtra(shown[i])} />
+              <NameList names={shown.map((c) => notAnItem(c.source))} extra={(_, i) => causeExtra(shown[i])} />
               {hidden > 0 && <span className="muted"> +{hidden} more</span>}
             </span>
           );
@@ -892,7 +893,7 @@ function CauseGroup({
               key={`${c.kind}-${c.source}`}
               title={causeConfidenceWhy(c)}
             >
-              <ItemLink title={c.source} />
+              <ItemLink title={notAnItem(c.source)} />
               <span className="muted small">{causeExtra(c)}</span>
               {pooled && (
                 <span className="muted small fc-pooled" title={pooled.title}>

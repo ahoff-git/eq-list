@@ -42,6 +42,7 @@ import { zoneShut } from "@/shared/items/item-era";
 import { unavailableReason, zoneExpansion } from "@/shared/zones/expansions";
 import { createLogger } from "@/shared/logging";
 import type { ItemSource, ShoppingListEntry } from "@/shared/types";
+import { heldAsNamed, notAnItem } from "@/shared/shown-name";
 
 const log = createLogger("shopping-list");
 
@@ -142,7 +143,7 @@ export default function ListPanel() {
                     every real quest/recipe group opens the same way an item name does (ItemLink
                     stops the click reaching the header's own onClick, so this doesn't also toggle it). */}
                 {g.kind ? (
-                  <ItemLink title={g.label} className="group-label" />
+                  <ItemLink title={notAnItem(g.label)} className="group-label" />
                 ) : (
                   <span className="group-label">{g.label}</span>
                 )}
@@ -311,7 +312,7 @@ function EntryRow({
           {caretGlyph(open)}
         </button>
         <div className="entry-main">
-          <ItemLink title={entry.name} className="entry-name" />
+          <ItemLink title={heldAsNamed(entry.name)} className="entry-name" />
           {/* The one-line answer, right under the name — see the effect above for why it's already
               here and not waiting on a click. Silent while loading and when nothing is known, rather
               than a placeholder that would flicker true on almost every row (this is cache-fast). */}
@@ -321,13 +322,13 @@ function EntryRow({
                 <>
                   <span className={`es-zone ${isHere ? "here" : ""}`}>{bestZone.zone}</span>
                   {" — "}
-                  <NameList names={bestZone.mobs} />
+                  <NameList names={bestZone.mobs.map(notAnItem)} />
                 </>
               ) : (
                 bestOther && (
                   <>
                     <span className={`src-kind k-${bestOther.kind}`}>{sourceKindLabel(bestOther.kind)}</span>
-                    <ItemLink title={bestOther.where} />
+                    <ItemLink title={notAnItem(bestOther.where)} />
                   </>
                 )
               )}
@@ -455,7 +456,7 @@ function ZoneRow({ drops, here, closedZones }: { drops: ZoneDrops; here?: boolea
     <div className={`drop-zone ${here ? "here" : ""} ${shut ? "out-of-era" : ""}`.trim()}>
       <span className="src-kind k-drop">kill</span>
       <span className="dz-name">{drops.zone}</span>
-      <NameList names={drops.mobs} className="dz-mobs" />
+      <NameList names={drops.mobs.map(notAnItem)} className="dz-mobs" />
       {shut && (
         <span className="badge era-out" title={why}>
           {shut === "future" ? "not on this server" : "out of era"}
@@ -480,7 +481,7 @@ function SourceLine({ source }: { source: ItemSource }) {
   return (
     <div className="src-line">
       <span className={`src-kind k-${source.kind}`}>{sourceKindLabel(source.kind)}</span>
-      <ItemLink title={source.where} />
+      <ItemLink title={notAnItem(source.where)} />
       {source.detail && <span className="muted small">{source.detail}</span>}
     </div>
   );

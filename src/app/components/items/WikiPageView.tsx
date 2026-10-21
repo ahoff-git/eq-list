@@ -24,6 +24,7 @@ import { effectLineParts } from "@/shared/items/item-stats";
 import { cardAtLevel, ladderOf, levelledTitle } from "@/shared/upgrade-view";
 import UpgradeSlider from "@/app/components/items/UpgradeSlider";
 import LevelledText from "@/app/components/items/LevelledText";
+import { notAnItem, wikiName } from "@/shared/shown-name";
 
 /**
  * A wiki page, read in the app: what it is, how to get it, and what it puts on your list.
@@ -97,7 +98,7 @@ export default function WikiPageView({
     if (effect) {
       return (
         <>
-          {effect.label}: <ItemLink title={effect.name} />
+          {effect.label}: <ItemLink title={wikiName(effect.name)} />
           {effect.rest}
         </>
       );
@@ -260,7 +261,7 @@ export default function WikiPageView({
                   <li key={c.name}>
                     <span>
                       {c.qty > 1 ? `${c.qty}× ` : ""}
-                      <ItemLink title={c.name} />
+                      <ItemLink title={wikiName(c.name)} />
                       {c.dropRate && (
                         <span className="badge rarity" title="Drop rate">
                           {c.dropRate}
@@ -315,7 +316,7 @@ export default function WikiPageView({
           <h4 className="muted small" style={{ marginTop: 12 }}>Rewards</h4>
           <ul>
             {page.rewards.map((r, i) => (
-              <li key={i}>{r.item ? <ItemLink title={r.item} label={r.text} /> : r.text}</li>
+              <li key={i}>{r.item ? <ItemLink title={wikiName(r.item)} label={r.text} /> : r.text}</li>
             ))}
           </ul>
         </>
@@ -365,7 +366,7 @@ function QuestBundleSections({
           <div key={q.title} className="page-card" style={{ marginTop: 12 }}>
             <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <h4 className="small" style={{ margin: 0 }}>
-                <ItemLink title={q.title} />
+                <ItemLink title={notAnItem(q.title)} />
               </h4>
               <span className="spacer" />
               <AddButton className="btn primary sm" onAdd={() => void addPage(subPage)}>
@@ -378,7 +379,7 @@ function QuestBundleSections({
                   <li key={c.name}>
                     <span>
                       {c.qty > 1 ? `${c.qty}× ` : ""}
-                      <ItemLink title={c.name} />
+                      <ItemLink title={wikiName(c.name)} />
                     </span>
                     <AddButton className="btn ghost sm" onAdd={() => addOne(c.name, c.qty, c.wikiPath)}>
                       + Add
@@ -395,7 +396,7 @@ function QuestBundleSections({
                 {q.rewards.map((r, i) => (
                   <span key={i}>
                     {i > 0 && ", "}
-                    {r.item ? <ItemLink title={r.item} label={r.text} /> : r.text}
+                    {r.item ? <ItemLink title={wikiName(r.item)} label={r.text} /> : r.text}
                   </span>
                 ))}
               </p>
@@ -443,7 +444,7 @@ function FactionSideColumn({
         heading={`Quests (${side.quests.length})`}
         items={side.quests}
         keyOf={(q) => q}
-        render={(q) => <ItemLink title={q} />}
+        render={(q) => <ItemLink title={notAnItem(q)} />}
       />
       <FactionList
         heading={`Mobs (${side.mobs.length})`}
@@ -451,7 +452,7 @@ function FactionSideColumn({
         keyOf={(m) => m.name}
         render={(m) => (
           <>
-            <ItemLink title={m.name} />
+            <ItemLink title={wikiName(m.name)} />
             {m.note && <span className="muted small">{m.note}</span>}
             {trackable && (
               <AddButton
@@ -534,7 +535,7 @@ function SourceList({ sources }: { sources: ItemSource[] }) {
         {reach.map(({ source: s, shut, why }, i) => (
           <li key={i} className={shut ? "out-of-era" : undefined}>
             <span className={`badge kind-${s.kind}`}>{s.kind}</span>
-            {s.plain ? <span>{s.where}</span> : <ItemLink title={s.where} label={s.label} />}
+            {s.plain ? <span>{s.where}</span> : <ItemLink title={notAnItem(s.where)} label={s.label} />}
             {s.detail && <span className="muted small">{s.detail}</span>}
             {shut && (
               <span className="badge era-out" title={why}>
@@ -559,7 +560,7 @@ function EffectItems({ titles }: { titles: string[] }) {
       <ul>
         {titles.map((title) => (
           <li key={title}>
-            <ItemLink title={title} />
+            <ItemLink title={wikiName(title)} />
           </li>
         ))}
       </ul>

@@ -42,6 +42,7 @@
  * parser over a whole log and looking at what it failed to match.
  */
 
+import { heldAsNamed, type ShownName } from "../shown-name";
 import type {
   BuffFadedEvent,
   CastEvent,
@@ -417,8 +418,8 @@ const RANK_RE = / ([IVXL]+)$/;
  * of `spellName`/`spellRank`, and the one place that spelling is built, so every view that names a
  * ranked spell shows (and opens, via `ItemLink`) it at that rank (ADR 0312).
  */
-export function rankedSpellTitle(spell: string, rank: string | undefined): string {
-  return rank ? `${spellName(spell)} ${rank}` : spell;
+export function rankedSpellTitle(spell: string, rank: string | undefined): ShownName {
+  return heldAsNamed(rank ? `${spellName(spell)} ${rank}` : spell);
 }
 
 /** Reflexive heal/damage targets ("healed himself") resolve to the actor. */

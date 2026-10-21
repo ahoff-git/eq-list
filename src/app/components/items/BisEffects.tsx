@@ -6,6 +6,7 @@ import { AddButton } from "@/app/components/ui";
 import { addByTitle } from "@/lib/items/addToList";
 import { effectIndex, slotLabel, type BisEffectPlan } from "@/shared/items/bis-plan";
 import type { ItemRow } from "@/shared/items/item-search";
+import { wikiName } from "@/shared/shown-name";
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 const MARK: Record<BisEffectPlan["how"], string> = { worn: "✓", socket: "◆", forced: "✓", missing: "✗" };
@@ -52,7 +53,7 @@ export default function BisEffects({
                 <ul className="bis-list small">
                   {p.hunt.map((h) => (
                     <li key={h.item.id}>
-                      <ItemLink title={h.item.title} /> <span className="muted">{slotLabel(h.slot)}</span>{" "}
+                      <ItemLink title={wikiName(h.item.title)} /> <span className="muted">{slotLabel(h.slot)}</span>{" "}
                       <span className={h.gain > 0 ? "good" : "muted"} title="Stats over what it would replace">
                         {signed(h.gain)}
                       </span>
