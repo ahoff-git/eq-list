@@ -17,6 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHighScores } from "../high-scores";
+import { createAchievementTracker } from "../achievement-tracker";
 import {
   MIN_DPS_SEC,
   beats,
@@ -28,6 +29,7 @@ import {
   qualCategory,
 } from "../../src/shared/combat/high-scores";
 import type {
+  CastAlertSettings,
   CombatantStat,
   DamageCell,
   DamageEvent,
@@ -238,6 +240,32 @@ test("a replayed gap is filed and never announced", () => {
   scores.setQuiet(false);
   scores.offer([{ categoryId: "biggest-hit", value: 901, at: AT }]);
   assert.equal(announced.length, 1);
+});
+
+test("every record taken reaches onTaken — first, replayed and seeded alike — so a highscore achievement unlocks", () => {
+  // Regression: "highscore" achievement criteria (ADR 0212) were wired to `onRecord`, which only
+  // fires for an *announced* record — so a 500+ hit that was your first score, landed during a
+  // replayed gap, or came from seeded history never unlocked "Now We're Talking".
+  const scores = createHighScores(tempDir());
+  scores.setPlayer("Kainos");
+  const taken: HighScore[] = [];
+  scores.onTaken((r) => taken.push(r));
+
+  scores.offer([{ categoryId: "biggest-hit", value: 600, at: AT }]); // first score: silent
+  scores.setQuiet(true);
+  scores.offer([{ categoryId: "biggest-hit", value: 700, at: AT }]); // replayed: silent
+  scores.offer([{ categoryId: "biggest-hit", value: 650, at: AT }]); // not a record: nothing
+  assert.deepEqual(taken.map((r) => r.value), [600, 700]);
+
+  const achievements = createAchievementTracker({
+    userDataDir: tempDir(),
+    getSettings: () => ({ enabled: true, watches: [] }) as unknown as CastAlertSettings,
+    getZone: () => null,
+    raise: () => {},
+  });
+  for (const r of taken) achievements.record(r);
+  const hit = achievements.view().achievements.find((a) => a.definition.id === "stock:now-were-talking");
+  assert.deepEqual(hit?.done, ["hit"]);
 });
 
 test("a board belongs to a character, and comes back to the right one", () => {

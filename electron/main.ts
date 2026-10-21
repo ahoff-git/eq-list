@@ -546,9 +546,11 @@ if (!app.requestSingleInstanceLock()) {
   // every window, so a scoreboard that happens to be open updates itself rather than going stale.
   scores.onRecord((record) => {
     alerts.record(record);
-    achievements.record(record);
     broadcast(CH.recordSet, record);
   });
+  // A "highscore" criterion asks where the board stands, not whether the record was news — so it
+  // hears every record taken, including the silent first score, a replayed gap and seeded history.
+  scores.onTaken((record) => achievements.record(record));
 
   // The click-through alert overlay exists only while cast alerts are on — no point floating an
   // invisible window over the game otherwise, and turning alerts off should take it away.
@@ -593,6 +595,9 @@ if (!app.requestSingleInstanceLock()) {
     // matches every fight, and the store holds a thousand at most.
     scores.setPlayer(character);
     scores.seed(history.search("", Number.MAX_SAFE_INTEGER).fights);
+    // Reconciled against the board as it already stands (ADR 0212): a record set before this
+    // threshold existed — or on a board seeded before `onTaken` did — still unlocks it.
+    for (const record of scores.board().scores) achievements.record(record);
   });
   watcher.onZone((event) => {
     // The client reuses the zone-arrival sentence for restriction notices too ("You have entered

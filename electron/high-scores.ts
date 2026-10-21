@@ -87,6 +87,13 @@ export interface HighScoreKeeper {
   board(): ScoreBoard;
   /** Called with each record as it falls — only the ones worth announcing. */
   onRecord(cb: (record: HighScore) => void): void;
+  /**
+   * Called with **every** record taken — first scores, replayed gaps and seeded history included.
+   * `onRecord` is the banner's question ("is this news?"); this is the bookkeeping one ("does the
+   * board now stand here?"), which is what a `"highscore"` achievement criterion asks (ADR 0212).
+   * Wiring that criterion to `onRecord` meant a threshold first crossed silently never unlocked.
+   */
+  onTaken(cb: (record: HighScore) => void): void;
   /** Forget the current character's board. Everyone else's is untouched. */
   clear(): ScoreBoard;
   flush(): void;
@@ -99,6 +106,7 @@ export function createHighScores(userDataDir: string): HighScoreKeeper {
   const data: StoredScores = read();
   const saver = createSaver(file, "high scores", () => data, WRITE_DEBOUNCE_MS, { concern: "high-scores" });
   const listeners: ((record: HighScore) => void)[] = [];
+  const takenListeners: ((record: HighScore) => void)[] = [];
 
   let character = "";
   let quiet = false;
@@ -157,6 +165,7 @@ export function createHighScores(userDataDir: string): HighScoreKeeper {
     };
     board.scores[candidate.categoryId] = record;
     saver.save();
+    for (const cb of takenListeners) cb(record);
 
     // Rule 2: a first score has nothing to beat, so it's a bar being set rather than cleared.
     // Rule 3: replayed or imported history is filed, not announced.
@@ -270,6 +279,10 @@ export function createHighScores(userDataDir: string): HighScoreKeeper {
 
     onRecord(cb) {
       listeners.push(cb);
+    },
+
+    onTaken(cb) {
+      takenListeners.push(cb);
     },
 
     clear() {
