@@ -11,12 +11,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { splitLine, parseLoot } from "../../src/shared/log-parser";
+import { splitLine, parseCombine, parseLoot } from "../../src/shared/log-parser";
 import { parseInventoryDump } from "../../src/shared/game-export-dumps";
 import { rankedSpellTitle, spellName, spellRank } from "../../src/shared/combat/combat-parser";
-import { levelInName, unrankedSpellTitle } from "../../src/shared/upgrade-view";
+import { levelInName, pageForName, unrankedSpellTitle } from "../../src/shared/upgrade-view";
 import { itemGrade, itemBaseName } from "../../src/shared/names";
 import { sumPrices } from "../loot-prices";
+import { TRADESKILLS } from "../../src/shared/tradeskills/tradeskills.generated";
 import { createStore } from "../store";
 
 const REPO_ROOT = path.join(__dirname, "../../..");
@@ -87,4 +88,59 @@ test("shopping list: an entry added by a graded name keeps it, so the List tab l
   const entry = list.entries.find((e) => itemBaseName(e.name) === "Dragoon Dirk");
   assert.equal(entry?.name, "Dragoon Dirk +2");
   assert.equal(levelInName(entry!.name, "item"), 2);
+});
+
+test("a spell page found under its exact name is that spell, shown as printed — not levelled by its numeral", () => {
+  const spell = (title: string) => ({ kind: "spell" as const, title, card: { title, lines: ["Mana: 100"] } });
+  const item = (title: string) => ({ kind: "item" as const, title, card: { title, lines: ["AC: 20"] } });
+  // A classic sequel has its own page: it is that spell, at level 0.
+  assert.deepEqual(pageForName("Burnout II", spell("Burnout II"), null), { page: spell("Burnout II"), level: 0 });
+  // A rank of yours has no page; its base page is shown at the rank.
+  assert.deepEqual(pageForName("Shock of Lightning VI", null, spell("Shock of Lightning")), { page: spell("Shock of Lightning"), level: 6 });
+  // An item alias page is the +0 card, levelled by the name's grade.
+  assert.deepEqual(pageForName("Cloth Cape +2", item("Cloth Cape +2"), null)?.level, 2);
+  // An item that merely ends in a numeral never borrows a spell's card.
+  assert.equal(pageForName("Cloak of Flames II", null, item("Cloak of Flames")), null);
+});
+
+test("the catalogue: every spell page titled with a numeral is shown at level 0 under its own name", () => {
+  const dir = path.join(REPO_ROOT, "public", "data", "wiki-cache", "pages");
+  const numbered: { kind: "spell"; title: string }[] = [];
+  for (const file of fs.readdirSync(dir)) {
+    for (const line of fs.readFileSync(path.join(dir, file), "utf8").split("\n")) {
+      const [title, , json] = line.split("\t");
+      if (json?.startsWith('{"kind":"spell"') && spellRank(title)) numbered.push({ kind: "spell", title });
+    }
+  }
+  assert.ok(numbered.length > 100, "the shipped catalogue has its numbered spells");
+  for (const page of numbered) assert.equal(pageForName(page.title, page, null)?.level, 0, page.title);
+});
+
+test("crafting log: a crafted item's name is kept as the log wrote it, so a graded result would keep its grade", () => {
+  // A real combine line — a fresh craft is +0, and the name reaches the Crafting log untouched.
+  const real = parseCombine(splitLine("[Tue Aug 25 23:57:43 2026] You have fashioned the items together to create something new: Small Brick of High Quality Ore.", 1)!);
+  assert.equal(real?.item, "Small Brick of High Quality Ore");
+  // Should the game ever write a graded result, nothing on the way strips it.
+  const graded = parseCombine(splitLine("[Tue Aug 25 23:57:49 2026] You have fashioned the items together to create something new: Dragoon Dirk +2.", 1)!);
+  assert.equal(levelInName(graded!.item, "item"), 2);
+});
+
+test("tradeskill guides: every material, choice and result is an ungraded wiki name, so it's the +0 thing", () => {
+  const names: string[] = [];
+  const walk = (line: { needs?: { name: string; alternatives?: string[] }[]; makes?: string[]; children?: unknown[] }) => {
+    for (const n of line.needs ?? []) names.push(n.name, ...(n.alternatives ?? []));
+    names.push(...(line.makes ?? []));
+    for (const c of (line.children ?? []) as (typeof line)[]) walk(c);
+  };
+  for (const skill of TRADESKILLS)
+    for (const guide of skill.guides)
+      for (const block of guide.blocks) {
+        if (block.kind === "list") block.items.forEach(walk);
+        if (block.kind === "table") {
+          for (const row of block.needs ?? []) for (const n of row) names.push(n.name, ...(n.alternatives ?? []));
+          for (const row of block.makes ?? []) names.push(...row);
+        }
+      }
+  assert.ok(names.length > 300, "the shipped guides were read");
+  assert.deepEqual(names.filter((n) => itemGrade(n) !== undefined), []);
 });

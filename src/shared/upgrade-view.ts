@@ -58,6 +58,29 @@ export function levelInName(name: string, kind: WikiPage["kind"] | undefined): n
   return itemGrade(name) ?? 0;
 }
 
+/**
+ * The page a held name is shown on, and the level to show it at — one rule for the hover card and the
+ * page view alike. `asked` is the page found under the name itself; `unranked` the base spell page,
+ * looked up only when that missed.
+ *
+ * - **An item** found under its name is levelled by the name's grade: a `Cloth Cape +2` title is an
+ *   alias of the base page with the `+0` card (pinned in `level-paths.test.ts`), so the grade is
+ *   applied once.
+ * - **A spell** found under its exact name *is* that spell — a classic sequel (`Burnout II`) or an AA
+ *   rank's own row (`Harm Touch III`) — so it is shown as printed, level 0. Reading `II` as a rank
+ *   would level a card that is already the spell's own.
+ * - Only a ranked name that **missed** and fell back to its base spell is levelled by its rank.
+ */
+export function pageForName<P extends CardPage>(
+  name: string,
+  asked: P | null | undefined,
+  unranked: P | null | undefined,
+): { page: P; level: number } | null {
+  if (asked) return { page: asked, level: asked.kind === "spell" ? 0 : levelInName(name, asked.kind) };
+  if (unranked?.kind === "spell") return { page: unranked, level: levelInName(name, "spell") };
+  return null;
+}
+
 /** The base page a ranked spell name falls back to — the wiki has `Shock of Lightning`, not `… VI`. */
 export function unrankedSpellTitle(name: string): string | undefined {
   return spellRank(name) ? spellName(name) : undefined;

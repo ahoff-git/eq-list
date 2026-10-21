@@ -10,7 +10,7 @@ import { craftNotes } from "@/shared/tradeskills/craft-notes";
 import type { ItemCard } from "@/shared/types";
 import LevelledText from "@/app/components/items/LevelledText";
 import { itemGrade } from "@/shared/names";
-import { cardAtLevel, ladderOf, levelInName, unrankedSpellTitle } from "@/shared/upgrade-view";
+import { cardAtLevel, ladderOf, pageForName, unrankedSpellTitle } from "@/shared/upgrade-view";
 
 /**
  * Hover an item name to see the wiki's stat card — the same "hover for stats" the
@@ -167,12 +167,9 @@ function LevelledCardTip({ title, anchor }: { title: string; anchor: AnchorBox }
   const asked = useWikiPage(title);
   const unranked = unrankedSpellTitle(title);
   const fallback = useWikiPage(asked === null && unranked ? unranked : null);
-  const page = asked ?? (fallback?.kind === "spell" ? fallback : null);
-  const card = useMemo(
-    () => (page ? cardAtLevel(page, ladderOf(page), levelInName(title, page.kind)) : undefined),
-    [page, title],
-  );
-  return card ? <ItemCardTip card={card} anchor={anchor} base={page?.card?.lines} /> : null;
+  const shown = pageForName(title, asked, fallback);
+  const card = useMemo(() => (shown ? cardAtLevel(shown.page, ladderOf(shown.page), shown.level) : undefined), [shown]);
+  return card ? <ItemCardTip card={card} anchor={anchor} base={shown?.page.card?.lines} /> : null;
 }
 
 function ItemCardTip({

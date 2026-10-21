@@ -9,7 +9,7 @@ import ObservedItemView from "@/app/components/items/ObservedItemView";
 import WikiPageView from "@/app/components/items/WikiPageView";
 import { AddButton, CheckField, segCls } from "@/app/components/ui";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
-import { levelInName, unrankedSpellTitle } from "@/shared/upgrade-view";
+import { pageForName, unrankedSpellTitle } from "@/shared/upgrade-view";
 import { addByTitle, addItem } from "@/lib/items/addToList";
 import { searchKnownItems, unknownToTheWiki, type KnownItem } from "@/shared/items/known-items";
 import { count } from "@/shared/format";
@@ -80,6 +80,8 @@ export default function SearchPanel({
 
   // The page currently open in-app (nav.current) is fetched here.
   const [page, setPage] = useState<WikiPage | null>(null);
+  /** The level the open page is shown at — `pageForName`'s, from the name it was opened by. */
+  const [pageLevel, setPageLevel] = useState(0);
   const [loadingPage, setLoadingPage] = useState(false);
   /**
    * Bumped by the page's ↻, so the open page is re-read after it has been re-fetched.
@@ -203,9 +205,11 @@ export default function SearchPanel({
       // A ranked spell (`Shock of Lightning VI`) has no page of its own — its level is ours to apply —
       // so a miss retries the base spell, the way main already retries a graded item's base name.
       const unranked = unrankedSpellTitle(title);
-      const p = (await a.wiki.getPage(title)) ?? (unranked ? await a.wiki.getPage(unranked) : null);
+      const asked = await a.wiki.getPage(title);
+      const shown = pageForName(title, asked, !asked && unranked ? await a.wiki.getPage(unranked) : null);
       if (!cancelled) {
-        setPage(p);
+        setPage(shown?.page ?? null);
+        setPageLevel(shown?.level ?? 0);
         setLoadingPage(false);
       }
     })();
@@ -480,7 +484,7 @@ export default function SearchPanel({
       {page && (
         <WikiPageView
           page={page}
-          heldLevel={nav.current ? levelInName(nav.current, page.kind) : 0}
+          heldLevel={pageLevel}
           onRefreshed={() => setPageNonce((n) => n + 1)}
         />
       )}
