@@ -89,3 +89,13 @@ export function applyFactionCorrections(
   }
   return [...byFaction.values()];
 }
+
+/**
+ * `applyFactionCorrections` undone: each row's net back to what the ledger itself observed. For a
+ * reader that reports *movement* (`RaceUnlockAlerts`) — a restatement isn't movement, and a newer
+ * dump is only read on the next standings fetch, which is usually the one a hit triggered.
+ */
+export function observedStandings(standings: readonly FactionStanding[]): FactionStanding[] {
+  if (!standings.some((s) => s.correction)) return standings as FactionStanding[];
+  return standings.map((s) => (s.correction ? { ...s, net: s.correction.observedNet } : s));
+}

@@ -5,6 +5,7 @@ import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { showToast } from "@/lib/toast";
 import { factionKey } from "@/shared/faction/faction-feed";
+import { observedStandings } from "@/shared/faction/faction-correction";
 import { computeRaceUnlockProgress, diffRaceUnlockProgress, type RaceUnlockProgress } from "@/shared/faction/faction-unlock-progress";
 
 /**
@@ -22,7 +23,10 @@ import { computeRaceUnlockProgress, diffRaceUnlockProgress, type RaceUnlockProgr
  * whenever one lands (`useFactionStandings`'s own `onDataChanged` follow), which can move a watched
  * faction's `net` by however far off the ledger's guess was — a jump that would otherwise read as an
  * alarming single "moved" toast. Only a *new hit* is ever diffed; any other reason `standings` just
- * changed re-seeds `prior` silently, the same way the first snapshot after mount does.
+ * changed re-seeds `prior` silently, the same way the first snapshot after mount does. And the diff is
+ * of *observed* nets (`observedStandings`), never corrected ones: a newer `/outputfile faction` dump
+ * is only read on the next standings fetch — usually the very one a hit triggers — so a corrected
+ * diff would fold the whole restatement into that hit's toast.
  */
 export default function RaceUnlockAlerts() {
   const [watchedRaces] = usePersistentState<string[]>(STORAGE_KEYS.watchedRaceUnlocks, []);
@@ -59,7 +63,7 @@ export default function RaceUnlockAlerts() {
   // Diffs whenever standings actually change — a stated correction moves `standings` too (see the
   // module header), so this only announces when a hit is the reason it's owed a look.
   useEffect(() => {
-    const progress = computeRaceUnlockProgress(standings);
+    const progress = computeRaceUnlockProgress(observedStandings(standings));
     if (prior.current && pendingHit.current) {
       for (const alert of diffRaceUnlockProgress(prior.current, progress, new Set(watchedRaces))) {
         showToast({

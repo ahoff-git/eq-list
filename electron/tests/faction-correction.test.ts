@@ -4,7 +4,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyFactionCorrections, factionDumpCorrections, newestCorrections } from "../../src/shared/faction/faction-correction";
+import {
+  applyFactionCorrections,
+  factionDumpCorrections,
+  newestCorrections,
+  observedStandings,
+} from "../../src/shared/faction/faction-correction";
+import { computeRaceUnlockProgress, diffRaceUnlockProgress } from "../../src/shared/faction/faction-unlock-progress";
 import { logStamp } from "../../src/shared/log-clock";
 import type { FactionStanding } from "../../src/shared/types";
 
@@ -83,4 +89,25 @@ test("a corrected-only faction's row is stamped in the ledger's local time, so i
   assert.equal(row.lastAt, logStamp(statedAt));
   assert.equal(row.firstAt, logStamp(statedAt));
   assert.equal(row.correction?.correctedAt, statedAt, "the correction itself keeps its instant");
+});
+
+test("observed standings undo every correction, so a newer dump read alongside a hit isn't movement", () => {
+  // A dump is read lazily, on the next standings fetch — which is the one a hit triggers. Diffing
+  // corrected nets folded the whole restatement into that hit's race-unlock alert.
+  const barbarian = computeRaceUnlockProgress([]).find((p) => p.race === "Barbarian")!;
+  const [faction] = barbarian.factions.map((f) => f.faction);
+  const before = applyFactionCorrections([standing({ faction, net: 200 })], { [faction]: { offset: 100, statedAt: "2026-10-19T00:00:00Z" } });
+  const after = applyFactionCorrections([standing({ faction, net: 205 })], {
+    [faction]: { offset: 1351, statedAt: "2026-10-20T00:00:00Z", source: "dump" },
+  });
+  const [alert] = diffRaceUnlockProgress(
+    computeRaceUnlockProgress(observedStandings(before)),
+    computeRaceUnlockProgress(observedStandings(after)),
+    new Set(["Barbarian"]),
+  );
+  assert.deepEqual([alert.delta, alert.net], [5, 205], "only the hit moved it");
+  const blankOnly = observedStandings(applyFactionCorrections([], { Craftkeepers: { offset: 2000, statedAt: "2026-10-20T00:00:00Z" } }));
+  assert.equal(blankOnly[0].net, 0, "a corrected-only row was never observed moving");
+  const plain = [standing({ faction, net: 7 })];
+  assert.equal(observedStandings(plain), plain, "nothing corrected passes through");
 });
