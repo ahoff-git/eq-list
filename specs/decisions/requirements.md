@@ -665,6 +665,9 @@ reading like a measurement, and they are shared code
 - **Fewer clicks, not just fewer tabs**: Now → Overview summarises every running board, Ctrl+K jumps
   to any section or looks the text up, the status bar names the stalest export, and an item's hover
   card says who has it, from shares already received and never by asking. ([0320](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md))
+- **Search's one box finds what has no page too**: your held items at their best grade, stances and
+  invocations, and AAs, each matched as its own section matches, five per group with the heading
+  opening the rest. ([0321](./0321-find-answers-from-one-box.md))
 
 ## Peers
 

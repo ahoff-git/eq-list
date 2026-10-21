@@ -214,9 +214,20 @@ const checks = [
     mounted: () => mount((p) => h(load("lib/chrome/nav").NavProvider, null, h(load("app/components/items/SearchPanel").default, p)), { prefill: "Dragoon Dirk +2", onPrefillUsed: () => {} }, {
       "wiki.search": [{ title: "Dragoon Dirk", wikiPath: "Dragoon_Dirk" }],
       "zone.current": null,
+      "log.exportRead": null,
     }, 1000),
     expect: ["Dragoon Dirk"],
     never: [GRADED],
+  },
+  {
+    view: "Search — what you hold, from the same box, at its grade",
+    mounted: () => mount((p) => h(load("lib/chrome/nav").NavProvider, null, h(load("app/components/items/SearchPanel").default, p)), { prefill: "gnoll", onPrefillUsed: () => {} }, {
+      "wiki.search": [],
+      "zone.current": null,
+      "log.exports": { inventory: Date.now() },
+      "log.exportRead": { text: DUMP, writtenAt: Date.now() },
+    }, 1000),
+    expect: ["Gnoll Slayer +3"],
   },
   {
     view: "Tradeskills tab — guide materials are wiki names at +0",

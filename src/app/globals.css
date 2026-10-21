@@ -4380,3 +4380,7 @@ select optgroup {
 
 /* Item hover card: who has it (useOwnershipNotes, ADR 0320) — set apart from the stats like the craft lines. */
 .ic-owned { display: flex; flex-direction: column; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--good); }
+
+/* Search: matches beyond the wiki (FindAcross, ADR 0321). A stance or AA row carries its effect inline. */
+.across-head { margin-top: 10px; }
+.result.across { flex-direction: column; align-items: flex-start; gap: 2px; }

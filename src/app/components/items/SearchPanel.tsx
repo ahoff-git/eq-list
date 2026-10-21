@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useCapabilities, useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/chrome/nav";
 import ItemLink from "@/app/components/items/ItemLink";
+import FindAcross from "@/app/components/items/FindAcross";
 import { EraBadge } from "@/app/components/items/LucySays";
 import ObservedItemView from "@/app/components/items/ObservedItemView";
 import WikiPageView from "@/app/components/items/WikiPageView";
@@ -407,6 +408,8 @@ export default function SearchPanel({
               onOpen={openLucyItem}
             />
           )}
+          {/* Beyond the wiki: what you hold, stances, AAs — one box for every lookup (ADR 0321). */}
+          <FindAcross term={debounced} />
         </>
       )}
 

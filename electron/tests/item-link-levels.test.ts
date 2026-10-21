@@ -45,6 +45,7 @@ const TRACES: Record<string, string> = {
   "items/BisView.tsx|gradedTitle(m.title, m.to)": "best in slot: a held graded item is picked and shown at its grade",
   "items/BisWearTable.tsx|gradedTitle(r.pick.item.title, r.pick.item.grade)": "best in slot: a held graded item is picked and shown at its grade",
   "items/BisWearTable.tsx|wikiName(r.hunt.item.title)": "best in slot: hunt targets are catalogue items you don't hold, named at +0",
+  "items/FindAcross.tsx|gradedTitle(t.baseName, t.bestGrade)": "Exports by item: a total is linked at the best grade among the copies it counts",
   "items/ItemDrops.tsx|notAnItem(row.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "items/ItemLink.tsx|name": "inventory dump: a row's name keeps its grade, and the parsed grade agrees with ItemLink's reading",
   "items/ItemTable.tsx|gradedTitle(p.row.item.title, p.row.grade ?? 0)": "Items tab: an owned item's row is weighed and linked at the best grade you hold",

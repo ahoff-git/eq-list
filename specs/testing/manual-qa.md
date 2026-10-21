@@ -2582,3 +2582,7 @@ all eleven cultural pages come back dimmed with an "out of era" badge whose hove
   such line, and no hover asks a peer for anything (the peer's Activity shows no new ask).
 - **Now → Overview mid-fight**: buffs going down, a timer counting, a running goal and the session's
   XP/hour all update on the cards without opening their sections.
+- **Search's one box (ADR 0321).** With an inventory export read, type part of something you hold
+  ("gnoll"): under the wiki's results, **In your inventory** lists it at your best grade with where it
+  is. Type "berserker" for a stance and "mesmerization" for an AA (found by its description). Each
+  group's heading opens its section.

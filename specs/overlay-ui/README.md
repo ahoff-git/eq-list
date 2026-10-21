@@ -258,6 +258,10 @@ list, hunt, search, damage, session, peers, settings.
   per running board, each opening its section. The status bar carries the **stale-export reminder**
   (`exports/StaleExportChip.tsx`), and an item's hover card says **who has it** (`lib/exports/ownership.tsx`).
   ([ADR 0320](../decisions/0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md))
+- **Search's one box** (`items/FindAcross.tsx` over `shared/find/find-across.ts`): under the wiki's
+  results, the same query also lists what you hold (linked at your best grade), stances and
+  invocations, and AAs, with effects inline. Each group's heading opens its section.
+  ([ADR 0321](../decisions/0321-find-answers-from-one-box.md))
 - **The trail** (`lib/nav.tsx` + `shared/nav-trail.ts`, drawn by `components/NavBar.tsx`): where the
   window is, and how it got there. A **place** is a tab *plus* the page open on it, and every move
   appends one — so back from a page opened by a name click on Hunt returns to **Hunt**, which is the

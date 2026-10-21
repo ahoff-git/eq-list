@@ -361,6 +361,8 @@ finished, so a number is claimed before a second author can reach for it.
 
 - [0320: The control window's tabs are grouped into seven areas by what you are doing, with each area's sections on a second row; Now → Overview, Ctrl+K, a stale-export reminder and ownership on hover cards cut the clicks (supersedes 0088)](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md)
 
+- [0321: Search's one box also finds what you hold (at your best grade), stances and invocations, and AAs, each matched the way its own section matches; the sections stay for narrowing by shape](./0321-find-answers-from-one-box.md)
+
 ## Open Questions
 
 - **What does AGI buy in AC on EQL, and where do the mana and STA knees sit?** [ADR 0317](./0317-hp-mana-and-ac-are-weighted-through-the-stats-that-make-them.md)
@@ -656,7 +658,7 @@ and degrading to blank facts when the file isn't there.*
   split into several parts would be shorter, and harder to get wrong, written as a list of which
   crossings sit in which part. That would also let a `/loc` say which part you're in, which nothing
   can today ([ADR 0311](./0311-a-crossing-can-go-one-way.md)'s consequences).
-- **One search box across kinds?** Find groups Search, Items, Spells, Stances and AAs, but each keeps
-  its own box. A single box with results grouped by kind (and an item's filters appearing when you
-  pick items) would save choosing a section first; whether the shape filters survive being folded in
-  is the question ([ADR 0320](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md)).
+- **Item filters under the one box?** Search's box now finds pages, held items, stances and AAs
+  ([ADR 0321](./0321-find-answers-from-one-box.md)), but finding an item *by shape* (slot, class,
+  stats) is still the Items section. Whether those filters could appear under the box once you pick
+  "items", without crowding a lookup by name, is open.
