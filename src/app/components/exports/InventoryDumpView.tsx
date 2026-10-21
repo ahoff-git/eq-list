@@ -87,8 +87,10 @@ function ByPlace({ items, query, isWanted }: { items: InventoryItem[]; query: st
       {sections.map(({ key, area, label, rows, total }) => (
         <DumpSection key={key} title={label} aside={`${total}`} defaultOpen={!FOLDED_AREAS.has(area)} forceOpen={searching}>
           <ul className="inv-list">
-            {rows.map(({ top, inner }) => (
-              <li key={top.location}>
+            {/* Not keyed by location alone: worn slots repeat (`Ear`, `Fingers`, `Any Slot`) and every
+                Storage entry in a tab shares one, and duplicate keys drop or repeat rows on a re-filter. */}
+            {rows.map(({ top, inner }, n) => (
+              <li key={`${top.location}#${n}`}>
                 <InventoryRow item={top} isWanted={isWanted} showSlot={area === "worn"} />
                 {inner.length > 0 && (
                   <ul className="inv-list inv-inner">
