@@ -8,6 +8,7 @@ import {
   formatCountdown,
   formatInterval,
   killStillCounts,
+  liveTimers,
   parseInterval,
   recentCamps,
   respawnCaveat,
@@ -58,15 +59,18 @@ export default function SpawnPanel() {
   // `now` is main's clock as this window should read it: a row must agree with the process that
   // decides a timer is due, or it can read 0:00 while main still calls it waiting.
   const { view, now } = useSpawns();
+  // Each row's phase read on this window's second hand — main re-sends only when a row leaves, so
+  // the state it was fetched with goes out of date as soon as the clock passes a boundary.
+  const running = liveTimers(view.running, now);
 
-  const bare = !view.running.length && !view.known.length && !view.dismissed.length;
+  const bare = !running.length && !view.known.length && !view.dismissed.length;
   // Split before the markup, so the JSX stays a shape rather than a decision.
   const camps = view.known.filter((k) => k.kind === "mob");
   const made = view.known.filter((k) => k.kind === "custom");
   // How many clocks each camp is running. A placeholder camp has several and its rows have to be
   // tellable apart; every other camp has one and must not be labelled as though it were a set.
   const clocks = new Map<string, number>();
-  for (const timer of view.running) clocks.set(timer.key, (clocks.get(timer.key) ?? 0) + 1);
+  for (const timer of running) clocks.set(timer.key, (clocks.get(timer.key) ?? 0) + 1);
 
   return (
     <div className="spawns">
@@ -89,10 +93,10 @@ export default function SpawnPanel() {
         />
       )}
 
-      {view.running.length > 0 && (
+      {running.length > 0 && (
         <section className="spawn-running">
           <h2>Coming up</h2>
-          {view.running.map((timer) => (
+          {running.map((timer) => (
             <RunningRow
               key={timer.id}
               timer={timer}

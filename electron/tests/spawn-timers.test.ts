@@ -15,6 +15,7 @@ import {
   gapId,
   killStillCounts,
   learnRespawns,
+  liveTimers,
   MAX_LEARNED_GAP_SECONDS,
   mergeRespawns,
   recentCamps,
@@ -918,4 +919,22 @@ test("a camp nobody has killed says so, rather than claiming one kill", () => {
   // One kill is a different sentence, and still the right one.
   const [once] = learnRespawns([kill("Ghoul Lord", 0)], always);
   assert.match(reason(once), /Killed once/);
+});
+
+// ── a fetched row, read on the window's own second hand ─────────────────────────
+
+test("a row fetched while waiting reads as up once its by-time passes, and leaves once stale", () => {
+  // Main only re-sends the board when a timer *leaves* it, so the state a row was fetched with goes
+  // out of date as the clock runs; the window has to read it again from the times the row holds.
+  const row = {
+    id: "ghoul lord|lower guk#1",
+    state: "waiting" as const,
+    watchFrom: "2026-08-17T12:10:00.000Z",
+    dueAt: "2026-08-17T12:15:00.000Z",
+  };
+  const at = (iso: string) => Date.parse(iso);
+  assert.equal(liveTimers([row], at("2026-08-17T12:05:00.000Z"))[0].state, "waiting");
+  assert.equal(liveTimers([row], at("2026-08-17T12:12:00.000Z"))[0].state, "window");
+  assert.equal(liveTimers([row], at("2026-08-17T12:16:00.000Z"))[0].state, "up");
+  assert.deepEqual(liveTimers([row], at("2026-08-17T13:00:00.000Z")), [], "stale rows leave the board");
 });

@@ -1027,6 +1027,23 @@ export function spawnState(timer: Pick<SpawnTimer, "watchFrom" | "dueAt" | "seen
   return nowMs - due <= OVERDUE_GRACE_SECONDS * MS_PER_SECOND ? "up" : "stale";
 }
 
+/**
+ * Fetched rows, with each one's state read again at `nowMs` — and the stale ones gone.
+ *
+ * Main computes a row's state when it sends the board, but only re-sends it when a timer *leaves*
+ * (a row that merely comes due is meant to work that out on its own second hand). Reading the
+ * fetched `state` as-is froze every row in the phase it was fetched in: a countdown ran down to
+ * `0:00` and sat there instead of saying UP, and a padded window never said "may be up".
+ */
+export function liveTimers<T extends Pick<SpawnTimer, "watchFrom" | "dueAt" | "seenAt"> & { state: SpawnState }>(
+  timers: readonly T[],
+  nowMs: number,
+): T[] {
+  return timers
+    .map((timer) => ({ ...timer, state: spawnState(timer, nowMs) }))
+    .filter((timer) => timer.state !== "stale");
+}
+
 /** Milliseconds until the by-time — negative once it's passed, so a caller can say "3m ago". */
 export function remainingMs(timer: Pick<SpawnTimer, "dueAt">, nowMs: number): number {
   const due = Date.parse(timer.dueAt);

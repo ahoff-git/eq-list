@@ -1,7 +1,7 @@
 "use client";
 import { useSettings, useSpawns } from "@/lib/hooks";
 import { alertPlacement, alertStyle } from "@/shared/alerts/alert-styles";
-import { countdownMs, formatCountdown } from "@/shared/mob/spawn-timers";
+import { countdownMs, formatCountdown, liveTimers } from "@/shared/mob/spawn-timers";
 import type { AlertPositionValue, RunningSpawn } from "@/shared/types";
 
 /**
@@ -32,7 +32,8 @@ import type { AlertPositionValue, RunningSpawn } from "@/shared/types";
 export default function SpawnOverlay() {
   const { view, now } = useSpawns();
   const ca = useSettings()?.castAlerts;
-  const pinned = view.running.filter((t) => t.onScreen);
+  // Read at this window's `now`, not as fetched — see `liveTimers` — or a pinned clock sits on 0:00.
+  const pinned = liveTimers(view.running, now).filter((t) => t.onScreen);
   if (!pinned.length || !ca) return null;
 
   // Resolved once per timer — the position groups it and the colour marks it, and asking twice
