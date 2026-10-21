@@ -100,17 +100,26 @@ function valueIn(item: BisCandidate, slot: string): number | null {
 }
 
 /**
+ * As `valueIn`, with two-handers kept out of the hands — beside an off-hand one can't be swung. It is
+ * judged by the slot rather than by trimming the card's slots, since a two-hander that lists only
+ * PRIMARY is still wearable, and so still fits an `Any Slot`.
+ */
+function unswungValueIn(item: BisCandidate, slot: string): number | null {
+  return item.twoHanded && (slot === "PRIMARY" || slot === "SECONDARY") ? null : valueIn(item, slot);
+}
+
+/**
  * Maximum-value assignment of items to slots — the Hungarian method (shortest augmenting paths with
  * potentials), rows = slots, columns = items plus one "leave it empty" column per slot so a slot with
  * nothing worth wearing stays empty. O(slots² × columns): two dozen slots by a few hundred items.
  */
-function assign(items: readonly BisCandidate[], layout: readonly string[]): (number | -1)[] {
+function assign(items: readonly BisCandidate[], layout: readonly string[], worth: typeof valueIn): (number | -1)[] {
   const n = layout.length;
   const m = items.length + n;
   const FORBIDDEN = 1e9;
   const cost = (r: number, c: number): number => {
     if (c >= items.length) return 0; // empty
-    const v = valueIn(items[c], layout[r]);
+    const v = worth(items[c], layout[r]);
     return v === null || v <= 0 ? FORBIDDEN : -v;
   };
   const u = new Array<number>(n + 1).fill(0);
@@ -176,12 +185,12 @@ function oneOfEachLore(candidates: readonly BisCandidate[]): BisCandidate[] {
   return [...rest, ...best.values()];
 }
 
-function loadoutOver(candidates: readonly BisCandidate[], layout: readonly string[]): BisLoadout {
+function loadoutOver(candidates: readonly BisCandidate[], layout: readonly string[], worth: typeof valueIn = valueIn): BisLoadout {
   const items = candidates.filter((c) => c.value > 0 || c.anyValue > 0);
-  const owner = assign(items, layout);
+  const owner = assign(items, layout, worth);
   const picks: BisPick[] = [];
   owner.forEach((o, slotIndex) => {
-    if (o !== -1) picks.push({ slotIndex, slot: layout[slotIndex], item: items[o], value: valueIn(items[o], layout[slotIndex]) ?? 0 });
+    if (o !== -1) picks.push({ slotIndex, slot: layout[slotIndex], item: items[o], value: worth(items[o], layout[slotIndex]) ?? 0 });
   });
   return { picks, total: round2(picks.reduce((t, p) => t + p.value, 0)) };
 }
@@ -196,8 +205,7 @@ export function bestLoadout(candidates: readonly BisCandidate[], layout: readonl
   const main = layout.indexOf("PRIMARY");
   const off = layout.indexOf("SECONDARY");
   // A two-hander can't be swung beside an off-hand, but it can be worn in an Any Slot.
-  const unswung = pool.map((c) => (c.twoHanded ? { ...c, slots: c.slots.filter((s) => s !== "PRIMARY" && s !== "SECONDARY") } : c));
-  const oneHanded = loadoutOver(unswung, layout);
+  const oneHanded = loadoutOver(pool, layout, unswungValueIn);
   if (main === -1 || off === -1 || !pool.some((c) => c.twoHanded)) return oneHanded;
   const withoutOffHand = layout.filter((_, i) => i !== off);
   const twoHanded = loadoutOver(pool, withoutOffHand);
@@ -257,15 +265,16 @@ export function huntSuggestions(loadout: BisLoadout, candidates: readonly BisCan
     const consider = (s: BisSuggestion) => {
       if (!best || s.gain > best.gain) best = s;
     };
-    layout.forEach((slot, i) => {
-      if (c.twoHanded && (slot === "PRIMARY" || slot === "SECONDARY")) return;
-      const value = valueIn(c, slot);
-      if (value === null) return;
-      const there = inSlot.get(i);
-      consider({ item: c, gain: value - (there?.value ?? 0), replaces: there, slot });
-    });
     const main = layout.indexOf("PRIMARY");
     const off = layout.indexOf("SECONDARY");
+    // An off-hand beside a swung two-hander means putting the two-hander away.
+    const swungTwoHander = inSlot.get(main)?.item.twoHanded ? inSlot.get(main) : undefined;
+    layout.forEach((slot, i) => {
+      const value = unswungValueIn(c, slot);
+      if (value === null) return;
+      const there = i === off && swungTwoHander ? swungTwoHander : inSlot.get(i);
+      consider({ item: c, gain: value - (there?.value ?? 0), replaces: there, slot });
+    });
     if (c.twoHanded && main !== -1 && c.slots.includes("PRIMARY")) {
       const displaced = (inSlot.get(main)?.value ?? 0) + (off === -1 ? 0 : inSlot.get(off)?.value ?? 0);
       consider({ item: c, gain: c.value - displaced, replaces: inSlot.get(main), slot: "PRIMARY" });

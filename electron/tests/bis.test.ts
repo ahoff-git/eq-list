@@ -105,3 +105,22 @@ test("graded values: the grade's numbers, and an Any Slot that ignores damage an
   // +2: STR 5 → 7 (a stat of 10 or less gains 1 a grade); DMG 20 → 24 (+10% a grade, rounded down).
   assert.deepEqual(gradedValues(card, 2, score), { value: 31, anyValue: 7 });
 });
+
+test("a two-hander can still be worn, unswung, in an Any Slot beside a main hand and off hand", () => {
+  // Its card lists only PRIMARY; not swinging it must not stop it being worn in an Any Slot.
+  const layout = ["ANY", "PRIMARY", "SECONDARY"];
+  const loadout = bestLoadout(
+    [item("Sword", ["PRIMARY"], 6), item("Shield", ["SECONDARY"], 5), item("Staff", ["PRIMARY"], 8, { twoHanded: true, anyValue: 4 })],
+    layout,
+  );
+  assert.deepEqual(worn(loadout), ["ANY:Staff", "PRIMARY:Sword", "SECONDARY:Shield"]);
+  assert.equal(loadout.total, 15);
+});
+
+test("hunting: an off-hand while swinging a two-hander is weighed against the two-hander it unseats", () => {
+  const layout = ["PRIMARY", "SECONDARY"];
+  const held = bestLoadout([item("Greataxe", ["PRIMARY"], 10, { twoHanded: true })], layout);
+  const found = huntSuggestions(held, [item("Buckler", ["SECONDARY"], 4)], layout);
+  // Wearing the buckler means putting the axe away: 4 - 10 is no gain.
+  assert.deepEqual(found, []);
+});
