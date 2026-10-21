@@ -127,3 +127,23 @@ test("a merge that stays at the same grade still pays for its leftover exp", () 
   });
   assert.deepEqual(plan.merges, [{ title: "Moonstone Ring", grades: [2, 0], from: 2, to: 2, toExp: 1, gain: 1 }]);
 });
+
+test("a loose exaltation stone in a bag or the bank is offered, not only one in Storage", () => {
+  const ringRows = itemRows([
+    page("Moonstone Ring", ["Slot: FINGER", "MANA: +30", "Class: ALL", "Race: ALL", "Focus Effect: Extended Range II"]),
+    page("Pearl Ring", ["Slot: FINGER", "Class: ALL", "Race: ALL", "Focus Effect: Pearl Focus"]),
+  ]);
+  const inventory = parseInventoryDump(
+    [
+      ["Location", "Name", "ID", "Count", "Slots"],
+      ["Fingers", "Moonstone Ring +1", "10150", "1", "11"],
+      ["Bank1", "Backpack", "17005", "1", "8"],
+      ["Bank1-Slot1", "Pearl Ring (Exaltation)", "1", "1", "11"],
+    ]
+      .map((r) => r.join("\t"))
+      .join("\r\n"),
+  );
+  const plan = bisPlan({ rows: ringRows, inventory, criteria: wizard, weights: { mana: 1 } });
+  const focus = plan.sockets.find((s) => s.host === "Moonstone Ring +1" && s.kind === "focus");
+  assert.deepEqual(focus?.options.map((o) => [o.effect, o.where]), [["Pearl Focus", "Bank 1"]]);
+});

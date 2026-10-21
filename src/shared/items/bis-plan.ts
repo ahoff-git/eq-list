@@ -152,7 +152,9 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones }: Bis
   const yourClasses = criteria.facets.class;
   const stones: Stone[] = [];
   for (const item of inventory) {
-    if (item.area === "storage" && EXALTATION_RE.test(item.name)) {
+    // A loose stone anywhere — Storage's Exaltation tab, a bag, the bank. Socketed ones are already
+    // folded onto their host by the parser, so they never reach here.
+    if (EXALTATION_RE.test(item.name)) {
       const source = rowOf(itemBaseName(item.name.replace(EXALTATION_RE, "")));
       if (!source) continue;
       const effects = source.stats.effects;
