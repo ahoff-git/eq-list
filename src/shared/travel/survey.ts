@@ -27,6 +27,7 @@ import {
   type TravelToggle,
 } from "./types";
 import { zoneName, type TravelZone } from "./route";
+import type { Zone } from "../map/types";
 
 /** One node of the graph, as it sits in the zone being surveyed. */
 export interface SurveyNode {
@@ -112,6 +113,26 @@ const NETWORK_LABELS: Record<TravelToggle, string> = {
   gnome: "Translocators",
   succor: "Succor",
 };
+
+/**
+ * **Can this survey's positions be drawn on the map on screen?** Only when that map is the very file
+ * they were read from.
+ *
+ * A position is a fact about one drawing, not about the zone: two drawings are two coordinate frames
+ * ([ADR 0111](../../../specs/decisions/0111-one-zone-one-map-file.md)). The graph is the chosen pack's
+ * and is reached by zone *name*, so the window can be showing a different drawing of the same zone — one
+ * borrowed from the game's folder (`STOCK_ONLY_ZONES`' Lavastorm, whose Brewall file is the revamp), or
+ * the duplicate the graph folded into its twin — and its markers would then land where no crossing is.
+ * The survey stays true of the zone (the aside can still list it); only its *placement* is withheld.
+ */
+export function surveyFitsMap(
+  survey: Pick<TravelSurvey, "zone">,
+  drawn: Pick<Zone, "file" | "source"> | undefined,
+  /** The source the graph was built from — the pack chosen in the window. */
+  graphSource: string,
+): boolean {
+  return !!drawn?.file && drawn.source === graphSource && drawn.file === survey.zone.zone;
+}
 
 /**
  * Everything the graph knows about one zone.

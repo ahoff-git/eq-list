@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { zoneSuccors, zoneWalks } from "../../src/shared/travel/build";
-import { surveyZone } from "../../src/shared/travel/survey";
+import { surveyFitsMap, surveyZone } from "../../src/shared/travel/survey";
 import type { TravelEdge, TravelGraph, TravelNode } from "../../src/shared/travel/types";
 
 const at = (x: number) => ({ y: 0, x, z: 0 });
@@ -115,4 +115,17 @@ test("a zone the graph has nothing in surveys as empty rather than throwing", ()
   assert.deepEqual(survey.nodes, []);
   assert.equal(survey.unplaced, 0);
   assert.equal(survey.networks[0].here.length, 0, "the networks are still reachable from it");
+});
+
+test("a survey is drawn only on the drawing its positions were read from", () => {
+  // A position is only true in the file it was read from: two drawings of one zone are two frames
+  // (ADR 0111 — Misty Thicket's ring is at 1834, 531 in one and 585, 452 in the other). The graph is
+  // one pack's, so a zone drawn from another folder (borrowed, or `STOCK_ONLY_ZONES`' lavastorm,
+  // whose Brewall file is the revamp) or from the duplicate the graph folded away is another frame,
+  // and its markers would land somewhere the crossing isn't.
+  const survey = surveyZone(faydark(), "gfaydark");
+  assert.equal(surveyFitsMap(survey, { file: "gfaydark", source: "brewall" }, "brewall"), true);
+  assert.equal(surveyFitsMap(survey, { file: "gfaydark", source: "stock" }, "brewall"), false, "drawn from another folder");
+  assert.equal(surveyFitsMap(survey, { file: "greaterfaydark", source: "brewall" }, "brewall"), false, "the folded-away duplicate");
+  assert.equal(surveyFitsMap(survey, undefined, "brewall"), false, "nothing drawn");
 });

@@ -51,6 +51,7 @@ import Toasts from "@/app/components/chrome/Toasts";
 import TravelPanel from "@/app/components/map/TravelPanel";
 import MapTravelAside from "@/app/components/map/MapTravelAside";
 import { useTravelSurvey } from "@/lib/map/useTravelSurvey";
+import { surveyFitsMap } from "@/shared/travel/survey";
 import { characterFromLogFile } from "@/shared/log-parser";
 import { confidenceTier, isPlottable } from "@/shared/kills/kill-confidence";
 import { MAP_UI_SCALE, TRAIL_OPACITY_DEFAULT } from "@/shared/constants";
@@ -323,6 +324,9 @@ export default function MapWindow() {
   const [travelOpen, setTravelOpen] = usePersistentState(STORAGE_KEYS.mapTravelOpen, false);
   /** The travel graph over the zone on screen, while — and only while — the 🧭 panel is open. */
   const survey = useTravelSurvey(travelOpen, sourceId, mapZone, settings?.travel);
+  // Its positions are only true on the drawing they were read from — a borrowed or folded-away drawing
+  // of the same zone is another frame (ADR 0111), so the map gets nothing to place there.
+  const placedSurvey = survey && surveyFitsMap(survey, zone, sourceId) ? survey : null;
   /**
    * Whether the survey strip is up. **Off by default**: the markers on the map are the useful half and
    * cost nothing to read, while the strip answers “should I believe this?” — a question worth asking
@@ -910,7 +914,7 @@ export default function MapWindow() {
             }}
             moveMode={moveMode}
             onPinMove={(id, eq) => updatePin(id, { y: eq.y, x: eq.x })}
-            survey={survey}
+            survey={placedSurvey}
             routeLegs={routeLegs}
             highlight={hoverLeg}
           />
