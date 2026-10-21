@@ -656,6 +656,8 @@ button {
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
 }
+/* Typed-into figures (AskValue) keep the look of the count they replace. */
+.entry-count .ask, .runs-count .ask { color: inherit; font-size: inherit; padding: 0; }
 .entry-count .have { color: var(--accent); }
 .entry-count .have.met { color: var(--good); }
 .entry-origin { font-size: 11px; color: var(--text-dim); }
@@ -1951,6 +1953,8 @@ button {
 .ru-progress { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-dim); text-align: right; }
 .ru-method { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .ru-steps { margin: 0; padding-left: 20px; }
+/* What a counted step needs against what you hold (ADR 0322), under the step's own text. */
+.ru-held { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 2px 0 4px; }
 .ru-group { display: flex; flex-direction: column; gap: 2px; }
 .ru-hits { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 

@@ -16,6 +16,8 @@ export default function AskValue({
   initial,
   min = 0,
   max = 100,
+  step = 0.1,
+  className,
   onSubmit,
 }: {
   /** Short call to action, e.g. "set XP %". */
@@ -26,6 +28,10 @@ export default function AskValue({
   initial?: number;
   min?: number;
   max?: number;
+  /** The input's step — a whole count wants 1. */
+  step?: number;
+  /** Extra classes on the closed button, so a figure keeps the look of the text it replaces. */
+  className?: string;
   onSubmit: (value: number) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -39,7 +45,14 @@ export default function AskValue({
 
   if (!open) {
     return (
-      <button className="ask" title={why} onClick={() => setOpen(true)}>
+      <button
+        className={className ? `ask ${className}` : "ask"}
+        title={why}
+        onClick={() => {
+          setText(initial?.toString() ?? "");
+          setOpen(true);
+        }}
+      >
         {prompt}
       </button>
     );
@@ -53,7 +66,7 @@ export default function AskValue({
         value={text}
         min={min}
         max={max}
-        step="0.1"
+        step={step}
         autoFocus
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {

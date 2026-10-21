@@ -362,6 +362,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0320: The control window's tabs are grouped into seven areas by what you are doing, with each area's sections on a second row; Now → Overview, Ctrl+K, a stale-export reminder and ownership on hover cards cut the clicks (supersedes 0088)](./0320-tabs-are-grouped-into-areas-by-what-you-are-doing.md)
 
 - [0321: Search's one box also finds what you hold (at your best grade), stances and invocations, and AAs, each matched the way its own section matches; the sections stay for narrowing by shape](./0321-find-answers-from-one-box.md)
+- [0322: A race-unlock step that names a count shows what you and sharing peers hold of it and puts the rest on the list in one press, seeded at your holdings; the list's have, need and runs take a typed figure](./0322-a-race-unlock-step-knows-what-you-hold.md)
 
 ## Open Questions
 

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, type MouseEvent } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import { api } from "@/lib/api";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -8,7 +8,12 @@ import { RACE_UNLOCK_SOURCE, wikiLinksIn, type RaceUnlockMethod, type RaceUnlock
 import type { FactionStanding } from "@/shared/types";
 import AskValue from "@/app/components/AskValue";
 import ItemLink from "@/app/components/items/ItemLink";
-import { notAnItem } from "@/shared/shown-name";
+import { notAnItem, wikiName } from "@/shared/shown-name";
+import { useHoldings } from "@/lib/exports/useGameExports";
+import { useWikiPage } from "@/lib/hooks";
+import { addStepNeed } from "@/lib/items/addToList";
+import { stepCovered, stepMaterials, stepNeed, type StepMaterial, type StepNeed } from "@/shared/faction/step-needs";
+import type { Holdings } from "@/shared/tradeskills/held-materials";
 
 /** Bounds a stated faction total is clamped to — generous enough for any real EQ faction range,
  *  which never approaches this on either side; just enough to catch a typo. */
@@ -39,11 +44,17 @@ const FACTION_CORRECTION_BOUNDS = 20_000;
  * The 🔔 toggle is a per-race opt-in for `RaceUnlockAlerts`, persisted the same way a spawn timer's
  * `notify` is — silent until asked, and it only ever reports a faction moving, never a threshold
  * crossed (same caveat).
+ *
+ * **A step that names a count says how much of it you hold** (ADR 0322) — "800 Phosphorous Powder"
+ * reads "have 746 of 800", from your newest inventory dump and peers' shared ones, with one press to
+ * put the rest on the shopping list. Reading holdings asks sharing peers for theirs, the same as an
+ * open tradeskill guide does (ADR 0314).
  */
 export default function RaceUnlocksView({ standings }: { standings: FactionStanding[] }) {
   const [watchedRaces, setWatchedRaces] = usePersistentState<string[]>(STORAGE_KEYS.watchedRaceUnlocks, []);
   const progress = useMemo(() => computeRaceUnlockProgress(standings), [standings]);
   const watched = useMemo(() => new Set(watchedRaces), [watchedRaces]);
+  const holdings = useHoldings();
 
   function toggleWatch(race: string) {
     setWatchedRaces((prev) => (prev.includes(race) ? prev.filter((r) => r !== race) : [...prev, race]));
@@ -69,7 +80,7 @@ export default function RaceUnlocksView({ standings }: { standings: FactionStand
         </button>
       </div>
       {progress.map((p) => (
-        <RaceRow key={p.race} progress={p} watching={watched.has(p.race)} onToggleWatch={() => toggleWatch(p.race)} />
+        <RaceRow key={p.race} progress={p} holdings={holdings} watching={watched.has(p.race)} onToggleWatch={() => toggleWatch(p.race)} />
       ))}
     </div>
   );
@@ -77,16 +88,21 @@ export default function RaceUnlocksView({ standings }: { standings: FactionStand
 
 function RaceRow({
   progress,
+  holdings,
   watching,
   onToggleWatch,
 }: {
   progress: RaceUnlockProgress;
+  holdings: Holdings | null;
   watching: boolean;
   onToggleWatch: () => void;
 }) {
   const { race, requirement, factions } = progress;
+  // The body is drawn only while open: a quest step reads its quest's page for the turn-ins, and
+  // sixteen collapsed races shouldn't fetch a page each just by the tab being shown.
+  const [open, setOpen] = useState(false);
   return (
-    <details className="ru-race">
+    <details className="ru-race" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="ru-summary">
         {/* Stops here, the same reason `ItemLink`'s click does: the summary's whole width is already
             the details toggle, and a click meant for the star must not also collapse the row. */}
@@ -105,7 +121,7 @@ function RaceRow({
         <b className="ru-race-name">{race}</b>
         <span className="muted small">{requirementSummary(requirement)}</span>
       </summary>
-      <div className="ru-body">
+      {open && <div className="ru-body">
         {factions.length > 0 && (
           <div className="ru-factions">
             {factions.map((f) => (
@@ -130,8 +146,8 @@ function RaceRow({
             ))}
           </div>
         )}
-        <MethodView method={requirement.method} />
-      </div>
+        <MethodView method={requirement.method} holdings={holdings} />
+      </div>}
     </details>
   );
 }
@@ -146,7 +162,7 @@ function requirementSummary(r: RaceUnlockRequirement): string {
  *  inline (`wikiLinksIn`) rather than a separate, disconnected list — and every faction-point
  *  breakdown found underneath, grouped exactly as the guide grouped them (see the header on
  *  `race-unlocks.generated.ts` for why nothing here is merged across groups). */
-function MethodView({ method }: { method: RaceUnlockMethod }) {
+function MethodView({ method, holdings }: { method: RaceUnlockMethod; holdings: Holdings | null }) {
   if (!method.steps.length && !method.hitGroups.length) return null;
   return (
     <div className="ru-method">
@@ -155,6 +171,7 @@ function MethodView({ method }: { method: RaceUnlockMethod }) {
           {method.steps.map((s, i) => (
             <li key={i}>
               <LinkedText text={s} />
+              <StepHeld raw={s} holdings={holdings} />
             </li>
           ))}
         </ol>
@@ -186,5 +203,72 @@ function LinkedText({ text }: { text: string }) {
         seg.link ? <ItemLink key={i} title={notAnItem(seg.link.title)} label={seg.link.display} /> : <span key={i}>{seg.text}</span>,
       )}
     </>
+  );
+}
+
+/** Under a step that names a count: how much of each material it needs, how much you hold, and an
+ *  add for the rest. Silent for a step that names no count, or a quest whose page lists no turn-ins. */
+function StepHeld({ raw, holdings }: { raw: string; holdings: Holdings | null }) {
+  const need = useMemo(() => stepNeed(raw), [raw]);
+  return need ? <StepHeldFor need={need} holdings={holdings} /> : null;
+}
+
+function StepHeldFor({ need, holdings }: { need: StepNeed; holdings: Holdings | null }) {
+  const page = useWikiPage(need.kind === "quest" ? need.quest : null);
+  const materials = useMemo(() => stepMaterials(need, page, holdings), [need, page, holdings]);
+  if (!materials.length) return null;
+  const covered = stepCovered(materials);
+  return (
+    <div className="ru-held small">
+      {need.kind === "quest" && (
+        <span className="muted" title={need.partial ? "The guide means only part of this quest; these are the whole quest's turn-ins" : undefined}>
+          ×{need.runs}
+          {need.partial ? " (whole quest)" : ""}:
+        </span>
+      )}
+      {materials.map((m) => (
+        <MaterialHeld key={m.name} material={m} counted={!!holdings} />
+      ))}
+      {covered ? (
+        <span className="held-enough">✓ in hand</span>
+      ) : (
+        <button
+          className="btn ghost sm"
+          title={
+            need.kind === "quest"
+              ? `Put ${need.quest} on your shopping list, run ${need.runs} times, starting at what you hold`
+              : `Put ${need.qty} ${need.item} on your shopping list, starting at what you hold`
+          }
+          onClick={() => void addStepNeed(need, page, materials)}
+        >
+          + List
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** "Phosphorous Powder have 746 of 800 · Bob 20" — green once yours cover it, amber for some. With
+ *  no dump and nothing shared, just the count wanted: "have 0" would be about a bank never read. */
+function MaterialHeld({ material: m, counted }: { material: StepMaterial; counted: boolean }) {
+  const peers = m.peers.slice(0, 3).map((p) => `${p.by} ${p.count}`).join(", ");
+  const tone = m.mine >= m.qty ? "held-enough" : m.mine > 0 ? "held-some" : "muted";
+  return (
+    <span className="ru-material">
+      <ItemLink title={wikiName(m.name)} />{" "}
+      {counted ? (
+        <span className={tone} title="In your newest inventory dump — bags, bank, depot, hoard">
+          have {m.mine.toLocaleString()} of {m.qty.toLocaleString()}
+        </span>
+      ) : (
+        <span className="muted">×{m.qty.toLocaleString()}</span>
+      )}
+      {peers && (
+        <span className="muted" title="From inventories peers have shared with you">
+          {" "}
+          · {peers}
+        </span>
+      )}
+    </span>
   );
 }

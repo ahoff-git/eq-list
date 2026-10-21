@@ -397,6 +397,11 @@ reading like a measurement, and they are shared code
   at your skill are suggested by how many combines you could cover, alone and with peers' materials,
   always saying whose: at most three, never out of era. An open guide asks sharing peers for their
   inventories, once per revision. ([0314](./0314-a-guide-counts-what-your-peers-share.md))
+- **A race-unlock step that names a count knows what you hold of it.** "800 [[Item]]" and "[[Quest]]
+  N times" (the quest's turn-ins × N) read "have X of Y" with sharing peers named; nothing else in a
+  step is read as a count. One press puts the step on the shopping list at its quantities, raised and
+  never doubled, each entry started at what you hold. The list's have, need and runs counts take a
+  typed figure as well as +/−. ([0322](./0322-a-race-unlock-step-knows-what-you-hold.md))
 - **Lucy is a third rung, asked only where the first two are silent**, quoted rather than believed:
   its rows open rather than add, they reach no rate, and they sit under a heading naming the other
   game. Era is derived from the zones and "unknown" is a real third answer. ([0124](./0124-lucy-is-a-second-opinion.md))

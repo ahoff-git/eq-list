@@ -40,6 +40,7 @@ const TRACES: Record<string, string> = {
   "faction/RaceUnlocksView.tsx|notAnItem(f.faction)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "faction/RaceUnlocksView.tsx|notAnItem(h.faction)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "faction/RaceUnlocksView.tsx|notAnItem(seg.link.title)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "faction/RaceUnlocksView.tsx|wikiName(m.name)": "race unlock guide: a step's counted materials are the guide's own links or its quest's turn-ins, +0 wiki names",
   "items/BisEffects.tsx|wikiName(h.item.title)": "best in slot: hunt targets are catalogue items you don't hold, named at +0",
   "items/BisHuntTable.tsx|wikiName(h.item.title)": "best in slot: hunt targets are catalogue items you don't hold, named at +0",
   "items/BisView.tsx|gradedTitle(m.title, m.to)": "best in slot: a held graded item is picked and shown at its grade",

@@ -31,6 +31,9 @@ import { itemRows, NO_CRITERIA } from "../../src/shared/items/item-search";
 import { bisPlan } from "../../src/shared/items/bis-plan";
 import { shareKind } from "../../src/shared/peers/peer-share";
 import { gradedTitle } from "../../src/shared/items/item-upgrade";
+import { RACE_UNLOCKS } from "../../src/shared/faction/race-unlocks";
+import { stepMaterials, stepNeed } from "../../src/shared/faction/step-needs";
+import type { WikiPage } from "../../src/shared/types";
 
 const REPO_ROOT = path.join(__dirname, "../../..");
 
@@ -192,6 +195,25 @@ test("Wiki page view: every component, reward and drop name a page links is a +0
   }
   assert.ok(names > 1000, "the shipped pages were read");
   assert.deepEqual(graded, [], "a linked name with a grade would be shown at that grade — none are");
+});
+
+test("race unlock guide: a step's counted materials are the guide's own links or its quest's turn-ins, +0 wiki names", () => {
+  // RaceUnlocksView links `m.name` from `stepMaterials(stepNeed(step), questPage, holdings)`.
+  const pages = new Map(shippedPages().map((p) => [p.title, p.page as unknown as WikiPage]));
+  const names: string[] = [];
+  for (const r of RACE_UNLOCKS)
+    for (const step of r.method.steps) {
+      const need = stepNeed(step);
+      if (!need) continue;
+      const page = need.kind === "quest" ? (pages.get(need.quest) ?? null) : null;
+      for (const m of stepMaterials(need, page, null)) {
+        names.push(m.name);
+        if (need.kind === "item") assert.ok(step.includes(`[[${m.name}`), `${m.name} is the guide's own link`);
+        else assert.ok(page?.components.some((c) => c.name === m.name), `${m.name} is ${need.quest}'s own turn-in`);
+      }
+    }
+  assert.ok(names.length >= 5, "the guide's counted steps were read");
+  assert.deepEqual(names.filter((n) => itemGrade(n) !== undefined), []);
 });
 
 test("Hunt tab: an item on your list keeps its name, grade and all, from list entry to the Hunt row", () => {

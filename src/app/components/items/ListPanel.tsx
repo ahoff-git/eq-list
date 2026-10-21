@@ -11,6 +11,7 @@ import {
 } from "@/lib/hooks";
 import { api } from "@/lib/api";
 import QuestPickupAdd from "@/app/components/items/QuestPickupAdd";
+import AskValue from "@/app/components/AskValue";
 import ItemLink, { NameList } from "@/app/components/items/ItemLink";
 import { LucyLink } from "@/app/components/items/LucySays";
 import { count } from "@/shared/format";
@@ -45,6 +46,9 @@ import type { ItemSource, ShoppingListEntry } from "@/shared/types";
 import { heldAsNamed, notAnItem } from "@/shared/shown-name";
 
 const log = createLogger("shopping-list");
+
+/** Ceiling on a typed count — far past any real stack, just enough to catch a typo. */
+const MAX_COUNT = 100_000;
 
 /**
  * The shopping list, grouped under the quest/recipe that added each item (added
@@ -158,7 +162,18 @@ export default function ListPanel() {
                     <button className="btn ghost sm" onClick={() => setRuns(g, -1)} disabled={g.runs <= 1}>
                       −
                     </button>
-                    <span className="runs-count">×{g.runs}</span>
+                    <span className="runs-count">
+                      ×
+                      <AskValue
+                        prompt={String(g.runs)}
+                        why="How many times you'll run this — click to type it"
+                        initial={g.runs}
+                        min={1}
+                        max={MAX_COUNT}
+                        step={1}
+                        onSubmit={(runs) => api()?.list.setRuns(g.key, runs)}
+                      />
+                    </span>
                     <button className="btn ghost sm" onClick={() => setRuns(g, +1)}>
                       +
                     </button>
@@ -269,6 +284,9 @@ function EntryRow({
   // +/- adjust how many you've ACQUIRED (obtained); needed comes from the quest/recipe
   // qty × the group's runs. Obtained can exceed need (you can over-loot) but not go below 0.
   const setObtained = (delta: number) => api()?.list.update(entry.id, { obtained: Math.max(0, entry.obtained + delta) });
+  // The figures themselves are typed into as well — 800 Phosphorous Powder is not 800 presses of +.
+  // Need is stored per run, so with runs set the box asks for the per-run figure it scales.
+  const perRun = runs > 1;
 
   // Fetched as soon as the row mounts (cached in main, so this is usually free) rather than waiting
   // for the ▸ to be clicked: "where do I get this" is exactly what a shopping list is for, so the row
@@ -347,7 +365,25 @@ function EntryRow({
              them. A drop credits every group that wants the item, so the combined figure
              is the one that says whether you can stop farming. */
           <span className="entry-count" title={countTitle(entry.obtained, need, demands)}>
-            <span className={`have ${met ? "met" : ""}`}>{entry.obtained}</span> of {need}
+            <AskValue
+              className={`have ${met ? "met" : ""}`}
+              prompt={String(entry.obtained)}
+              why="How many you have — click to type it"
+              initial={entry.obtained}
+              max={MAX_COUNT}
+              step={1}
+              onSubmit={(obtained) => api()?.list.update(entry.id, { obtained: Math.round(obtained) })}
+            />{" "}
+            of{" "}
+            <AskValue
+              prompt={String(need)}
+              why={perRun ? `How many one run needs (now ${entry.needed}, ×${runs} runs) — click to type it` : "How many you need — click to type it"}
+              initial={entry.needed}
+              min={1}
+              max={MAX_COUNT}
+              step={1}
+              onSubmit={(needed) => api()?.list.update(entry.id, { needed: Math.round(needed) })}
+            />
             {total > need && <span className="muted small"> ({total})</span>}
           </span>
         )}

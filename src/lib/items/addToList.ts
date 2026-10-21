@@ -3,9 +3,11 @@ import { api } from "@/lib/api";
 import { showToast } from "@/lib/toast";
 import { createLogger } from "@/shared/logging";
 import { describeAdd, summarizeAdd } from "@/shared/items/list-add";
-import { normalizeItemName } from "@/shared/items/grouping";
+import { isMobEntry, normalizeItemName, originKey } from "@/shared/items/grouping";
+import { heldSeeds } from "@/shared/items/held-seed";
 import { wikiAddAction, wikiAddKind } from "@/shared/items/wiki-add";
-import type { EqlApi, ShoppingList, WikiPage } from "@/shared/types";
+import type { StepMaterial, StepNeed } from "@/shared/faction/step-needs";
+import type { EqlApi, ShoppingList, ShoppingListEntry, WikiPage } from "@/shared/types";
 
 /**
  * addToList.ts — every "+ Add" in the app, and the notice each one raises.
@@ -59,6 +61,47 @@ export function addPageItself(page: WikiPage): Promise<void> {
     (list) => list.add({ name: page.title, kind: wikiAddKind(page), wikiPath: page.wikiPath }),
     itemKey(page.title),
   );
+}
+
+/**
+ * A race-unlock step's materials onto the list, at the step's quantities, each started at what you
+ * already hold (ADR 0322). Raises rather than adds: pressing it twice, or after adding the quest by
+ * hand, must not ask for 1,600 when the step wants 800.
+ *
+ * An item step is a standalone entry; a quest step is the quest's own group, run `need.runs` times —
+ * the same group "+ Add" on the quest's page makes, so the two meet rather than duplicate.
+ */
+export function addStepNeed(need: StepNeed, page: WikiPage | null, materials: readonly StepMaterial[]): Promise<void> {
+  const held = new Map(materials.map((m) => [normalizeItemName(m.name), m.mine]));
+  if (need.kind === "item") {
+    return announce(async (list) => {
+      let now = await list.get();
+      const key = normalizeItemName(need.item);
+      const existing = now.entries.find((e) => !e.origin && !isMobEntry(e) && normalizeItemName(e.name) === key);
+      if (!existing) now = await list.add({ name: need.item, needed: need.qty });
+      else if (existing.needed < need.qty) now = await list.update(existing.id, { needed: need.qty });
+      return seed(list, now, undefined, held);
+    }, itemKey(need.item));
+  }
+  if (!page) return Promise.resolve();
+  const origin = { kind: page.kind, name: page.title };
+  return announce(async (list) => {
+    let now = await list.get();
+    const key = originKey(origin);
+    if (!now.entries.some((e) => originKey(e.origin) === key)) now = await list.addFromPage(page);
+    if ((now.questRuns[key] ?? 1) < need.runs) now = await list.setRuns(key, need.runs);
+    return seed(list, now, origin, held);
+  }, pageKey(page.title), page.title);
+}
+
+async function seed(
+  list: EqlApi["list"],
+  now: ShoppingList,
+  origin: ShoppingListEntry["origin"],
+  held: ReadonlyMap<string, number>,
+): Promise<ShoppingList> {
+  for (const s of heldSeeds(now, origin, held)) now = await list.update(s.id, { obtained: s.obtained });
+  return now;
 }
 
 /**
