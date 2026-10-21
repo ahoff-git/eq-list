@@ -530,6 +530,10 @@ if (!app.requestSingleInstanceLock()) {
     // The spell file lives in the same install the maps do, so a changed log folder may mean a
     // different one — tell the catalog before the first line arrives.
     spells.setLogDir(s.logDir);
+    // The Spells tab's rows carry each spell's category from that install's files, so rows built
+    // before the folder was set (a first run) or against another install would otherwise stay
+    // uncategorised until a restart.
+    wiki.spellCategoriesChanged();
     watcher.start(s.logDir, s.activeLogFile);
   }
 
