@@ -16,6 +16,9 @@ import type { GameExportDump } from "@/shared/types";
  */
 const REFRESH_MS = 30_000;
 
+/** How long an unanswered inventory ask waits before it's repeated (`useHoldings`). */
+const REASK_MS = 2 * 60_000;
+
 /**
  * When each of the followed character's dumps was last written, and `now` as of that read — the two
  * are fetched together so an age is always measured against the clock that read it.
@@ -101,15 +104,19 @@ export function useOwnedItems(): { owned: Map<string, OwnedPlace[]> | null; at?:
 export function useHoldings(): Holdings | null {
   const { items } = useInventory();
   const { peers, received, ask } = usePeerShare();
-  const asked = useRef(new Set<string>());
+  // When each (peer, revision) was last asked for. A reply can be lost on the way, and peers re-announce
+  // every minute (which re-runs this), so an unanswered ask is repeated after `REASK_MS`, not never.
+  const asked = useRef(new Map<string, number>());
   useEffect(() => {
+    const now = Date.now();
     for (const peer of peers) {
       const offered = peer.offer?.inventory;
       if (!offered?.n || !peer.sessionId) continue;
       const have = received.find((r) => r.peerId === peer.peerId && r.kind === "inventory");
       const key = `${peer.peerId}@${offered.rev}`;
-      if ((have && have.rev >= offered.rev) || asked.current.has(key)) continue;
-      asked.current.add(key);
+      const last = asked.current.get(key);
+      if ((have && have.rev >= offered.rev) || (last !== undefined && now - last < REASK_MS)) continue;
+      asked.current.set(key, now);
       ask(peer.peerId, "inventory");
     }
   }, [peers, received, ask]);
