@@ -410,6 +410,10 @@ function parseRewards(section: Section | undefined): WikiReward[] {
   if (!section) return [];
   const rewards: WikiReward[] = [];
   for (const el of section.els) {
+    if (el.tagName === "TABLE") {
+      rewards.push(...parseRewardTable(el));
+      continue;
+    }
     if (el.tagName !== "UL") continue;
     for (const li of el.querySelectorAll("li")) {
       const hb = hbLinkReward(li);
@@ -424,6 +428,36 @@ function parseRewards(section: Section | undefined): WikiReward[] {
       const wholeLineIsLink = !!a && isContentLink(a) && a.text.replace(/\s+/g, " ").trim() === text;
       rewards.push(wholeLineIsLink ? { text, item: linkName(a!), wikiPath: linkPath(a!) } : { text });
     }
+  }
+  return rewards;
+}
+
+/**
+ * A Reward section written as a comparison table — one row per choice, a "Reward" (or "Item") column
+ * naming it beside its class and stats (Soldier's Brooch Quest's eight brooches). Only that column is
+ * read: the rest compares the choices, it doesn't add to them. A table with no such column says
+ * nothing about rewards and yields none, so a stray stats table can't invent one.
+ */
+function parseRewardTable(table: HTMLElement): WikiReward[] {
+  // A gear-set table has an "Item" column too, plus a Totals row and repeated pieces — it has a reader
+  // of its own (`parseGearSetRewards`), which this mustn't pre-empt.
+  if (/eql-gear-set-table/.test(table.getAttribute("class") ?? "")) return [];
+  const rows = table.querySelectorAll("tr");
+  const header = rows.find((r) => r.querySelector("th"));
+  const column = header?.querySelectorAll("th").findIndex((th) => /^(?:rewards?|items?)$/i.test(th.text.trim()));
+  if (column === undefined || column < 0) return [];
+  const rewards: WikiReward[] = [];
+  for (const row of rows) {
+    const cell = row.querySelectorAll("td")[column];
+    if (!cell) continue; // the header row, or a short one
+    const hb = hbLinkReward(cell);
+    if (hb) {
+      rewards.push(hb);
+      continue;
+    }
+    const a = cell.querySelector("a");
+    const text = cell.text.replace(/\s+/g, " ").trim();
+    if (a && isContentLink(a)) rewards.push({ text, item: linkName(a), wikiPath: linkPath(a) });
   }
   return rewards;
 }
@@ -1066,8 +1100,9 @@ export function parseWikiPage(title: string, wikiPath: string, html: string): Wi
     // "Full Walkthrough" with the actual turn-in prose, or a "Checklist" alongside the "Walkthrough"
     // proper) — `find` would silently read only the first and miss every item named in the rest, so
     // every matching section is merged, in page order.
+    // "Guide" is the same section under another name (Soldier's Brooch Quest), checklist and all.
     const walkthroughSections = sections.filter(
-      (s) => /walkthrough|checklist/i.test(s.id) || /walkthrough|checklist/i.test(s.heading),
+      (s) => /walkthrough|checklist|guide/i.test(s.id) || /walkthrough|checklist|guide/i.test(s.heading),
     );
     const walkthrough = walkthroughSections.length
       ? { id: "Walkthrough", heading: "Walkthrough", empty: false, els: walkthroughSections.flatMap((s) => s.els) }

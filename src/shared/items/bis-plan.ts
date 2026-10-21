@@ -433,7 +433,11 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
   const reachable = eraCorpus(rows, closedZones, criteria.hideOutOfEra).filter(
     (r) => !heldTitles.has(r.item.title) && !skipped.has(normalizeItemName(r.item.title)) && wearable(r, criteria),
   );
-  const pool = reachable.filter((r) => matchesItem(r, criteria));
+  // Narrowed by what you can get — level band, zones, era, stat floors — but never by the Search
+  // box's name text: a name typed to look one item up is a lookup, and left in the box it silently
+  // emptied the whole Hunt ("Troll Green" from a quest lookup matched nothing wearable).
+  const huntCriteria = { ...criteria, text: "" };
+  const pool = reachable.filter((r) => matchesItem(r, huntCriteria));
   const huntOver = (from: readonly ItemRow[], keepLosses = false): BisHunt[] => {
     const targets = new Map(from.map((r) => [`target:${r.item.title}`, r]));
     return huntSuggestions(

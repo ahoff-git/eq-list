@@ -142,13 +142,21 @@ const INDEX_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 // v26: a spell page now reads its "Where to Obtain" into `sources` and its "Items with Spell Effect"
 // into `effectItems` — a spell cached before it says nothing about how to get it.
 // v27: a quest page now keeps its walkthrough as a tree of `steps` (ADR 0295).
-const CACHE_VERSION = 27;
+// v28: a quest's "Guide" section is read like a Walkthrough (its checkbox lists are turn-ins), and a
+// Reward section's table is read by its Reward/Item column — Soldier's Brooch Quest had neither.
+// v29: no parse change. A quest's own parse is filed here so its view floor can sit above the v28
+// parse floor, with a peer's copy (filed one under, at 28) clearing the one and not the other.
+const CACHE_VERSION = 29;
 
 /** The version a spell page began carrying how to get it — a sourceless peer copy is filed just under. */
 const SPELL_SOURCES_AT = 26;
 
-/** The version a quest page began carrying its `steps`. */
-const QUEST_STEPS_AT = 27;
+/**
+ * What a quest page must be parsed at to be *shown*: a parse of our own, which carries its `steps`
+ * (v27). One above the quest parse floor (v28), so a peer's copy — which never carries steps — is
+ * filed just under it, still serves the catalogue, and is fetched when opened.
+ */
+const QUEST_VIEW_AT = 29;
 
 /** The version "faction" became a kind the parser could produce at all — see the misclassified
  * check below, which only needs to distrust a cached kind *older* than this. */
@@ -185,7 +193,9 @@ const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
   // independent ones exist.
   // v24: a bare checklist bullet with no verb cue is now read structurally — a quest cached at v23
   // or earlier may be missing turn-ins entirely (silently) if its checklist was written this way.
-  quest: 24,
+  // v28: a "Guide" section's checklist and a Reward section's table are now read — a quest cached at
+  // v27 or earlier may be missing both (Soldier's Brooch Quest showed no turn-ins and no rewards).
+  quest: 28,
   // v25: an item or recipe page cached before it may hold a "Related quests"/"Tradeskill recipes"
   // `where` that names a piped link's display text instead of the page it actually points to — see
   // `parseLinkList`. Mob, spell and zone pages are unaffected.
@@ -206,8 +216,9 @@ const MIN_PARSE_VERSION: Partial<Record<WikiPageKind, number>> = {
 const MIN_VIEW_VERSION: Partial<Record<WikiPageKind, number>> = {
   spell: SPELL_SOURCES_AT,
   // v27, for the same reason: a quest's turn-ins and card are unchanged, and item levels are read off
-  // ~950 quest pages, so only opening one asks for its steps.
-  quest: QUEST_STEPS_AT,
+  // ~950 quest pages, so only opening one asks for its steps. Raised with the v28 parse floor to stay
+  // above it (`QUEST_VIEW_AT`).
+  quest: QUEST_VIEW_AT,
 };
 
 /** Below this, a page predates parts of the parse every kind depends on. */

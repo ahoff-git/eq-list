@@ -98,6 +98,15 @@ test("the plan: wear the best of what you hold, merge where it pays, fill socket
   ]);
 });
 
+test("the Search box's name text never narrows the hunt — the other criteria still do", () => {
+  // A name typed to look one item up ("Troll Green", from a quest lookup) used to stay in the shared
+  // criteria and empty the whole Hunt, since no wearable upgrade is called that.
+  const looked = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: { ...wizard, text: "Troll Green" }, weights: { mana: 1 } });
+  assert.deepEqual(looked.hunt.map((h) => h.item.title), ["Cap of Mana"]);
+  const capped = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: { ...wizard, text: "Troll Green", mins: { ac: 99 } }, weights: { mana: 1 } });
+  assert.deepEqual(capped.hunt, [], "a stat floor is a real criterion and still applies");
+});
+
 test("spare copies the loadout doesn't wear are suggested for merging into the one it does", () => {
   // Six +0 Moonstones in the bank and four ring-capable slots: two are spare. Fed into a worn one,
   // three units make a +1 with one exp of two toward +2 — and that half-grade already counts:

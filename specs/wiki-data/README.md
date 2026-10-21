@@ -96,8 +96,13 @@ shopping list.
     info **card** (`Minimum Level` / `Classes` / `Related NPCs` / `Related Zones` — the
     rows that aren't giver/zone); `Reward` `<ul>` (each line kept as `{text, item?}` —
     `item` set only when the whole line is one linked item, so a reward weapon is
-    hover/openable but faction/coin lines stay plain); and turn-ins mined heuristically
-    from `Walkthrough` (a link counts only when a quantity precedes it).
+    hover/openable but faction/coin lines stay plain), or a `Reward` **table** read by its
+    `Reward`/`Item` column only (one row per choice; the class and stat columns beside it compare
+    the choices — Soldier's Brooch Quest), never a gear-set table, which has its own reader below;
+    and turn-ins mined heuristically from `Walkthrough` (a link counts only when a quantity precedes
+    it), plus every `.checkbox-list` bullet that leads with its link. A section headed
+    `Checklist` or `Guide` counts as walkthrough too — measured, 4 of 880 quests have a "guide"
+    heading, and only Soldier's Brooch Quest's reading changes.
   - **Gear-set bundles** ([ADR 0197](../decisions/0197-a-gear-set-quest-page-is-several-quests.md)):
     a `Reward` section shaped as `table.eql-gear-set-table` (`Template:Gear_Set`, not the ordinary
     `<ul>`) is read as one reward row per item (first `.hbdiv > a` per row, Totals row skipped,

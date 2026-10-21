@@ -145,10 +145,20 @@ export default function BisView({
 
       <DumpSection title="Hunt" aside={`${plan.hunt.length}`}>
         <p className="muted small">
-          What it would add over what it replaces, at +0 — and at +1, +2, +3, which take 2, 4 and 8 copies merged. Narrowed by the
-          criteria above, so set the level band to what you can reach. Locked slots aren&apos;t hunted for.
+          What it would add over what it replaces, at +0 — and at +2, +5 and +10, which take 4, 32 and 1,024 copies merged (hover a
+          figure for the card at that grade). Narrowed by the criteria above — level band, zones, stat floors — though not by the
+          name box. Locked slots aren&apos;t hunted for.
         </p>
-        <BisHuntTable hunt={plan.hunt} onSkip={skip} />
+        {plan.hunt.length ? (
+          <BisHuntTable hunt={plan.hunt} onSkip={skip} />
+        ) : (
+          // An empty grid reads as broken; say what emptied it instead.
+          <p className="muted small">
+            Nothing you could get beats what you&apos;d wear
+            {plan.loadout.locked.length ? ` in the ${WORN_LAYOUT.length - plan.loadout.locked.length} slots you haven't locked` : ""}, under
+            your criteria above. Widen the level band, zones or stat floors to look further.
+          </p>
+        )}
       </DumpSection>
     </div>
   );

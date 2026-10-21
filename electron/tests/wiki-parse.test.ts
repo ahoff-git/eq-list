@@ -496,3 +496,32 @@ test("quest page → ordinary prose with no tier word near \"faction\" never mis
   const p = parseFixture("quest-shovel-of-ponz", "Shovel Of Ponz Quest");
   assert.ok(!p.card?.lines.some((l) => l.startsWith("Faction note:")));
 });
+
+test("quest: a 'Guide' section's checkbox lists are its turn-ins, and a Reward table's Reward column its rewards", () => {
+  // Soldier's Brooch Quest: each mob's drop sits in a CheckboxList under a "Guide" heading, and the
+  // eight brooches are a comparison table (Class, Reward, then the stats) rather than a list.
+  const p = parseFixture("quest-soldiers-brooch", "Soldier's Brooch Quest");
+  assert.deepEqual(
+    p.components.map((c) => [c.name, c.qty]),
+    [
+      ["Troll Greenblood Insignia", 1],
+      ["Troll Basher Insignia", 1],
+      ["Tier'Dal Arcane Insignia", 1],
+      ["Tier'Dal Priest Insignia", 1],
+    ],
+  );
+  assert.deepEqual(
+    p.rewards.map((r) => r.item),
+    [
+      "Soldier's Brooch of the Arcane",
+      "Soldier's Brooch of the Corrupt",
+      "Soldier's Brooch of the Darkened",
+      "Soldier's Brooch of the Robust",
+      "Soldier's Brooch of the Spirited",
+      "Soldier's Brooch of the Stalwart",
+      "Soldier's Brooch of the Stealthy",
+      "Soldier's Brooch of the Virtuous",
+    ],
+    "the Reward column only — the class and stat columns aren't rewards",
+  );
+});
