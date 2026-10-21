@@ -99,6 +99,29 @@ test("inventory: every area lands where the game shows it, sockets on their host
   assert.equal(items.some((i) => i.name === "Empty" || i.name === "Name"), false);
 });
 
+test("inventory: an empty bag is still a bag — its empty slots say so", () => {
+  // As the real dump writes an empty bag (2026-10-20): the bag, then a row per empty slot.
+  const items = parseInventoryDump(
+    [
+      row("Location", "Name", "ID", "Count", "Slots"),
+      row("General 5", "Light Burlap Sack", 17353, 1, 8),
+      row("General 5-Slot1", "Empty", 0, 0, 0),
+      row("General 5-Slot2", "Empty", 0, 0, 0),
+      row("Bank8", "Light Burlap Sack", 17353, 1, 8),
+      row("Bank8-Slot1", "Empty", 0, 0, 0),
+      row("Bank9", "Bone Chips", 13073, 4, 11),
+      row("Hoard 1", "Fine Steel Rapier", 7352, 1, 11),
+      row("Hoard 1-Slot2", "Empty", 0, 0, 0),
+    ].join("\r\n"),
+  );
+  const container = (location: string) => items.find((i) => i.location === location)?.container;
+  assert.equal(container("General 5"), true);
+  assert.equal(container("Bank8"), true);
+  assert.equal(container("Bank9"), false);
+  assert.equal(container("Hoard 1"), false, "an empty socket on a hoard item isn't a bag slot");
+  assert.equal(items.length, 4);
+});
+
 test("inventory totals fold grades and places into one count per item", () => {
   const totals = inventoryTotals(parseInventoryDump(INVENTORY));
   const chips = totals.find((t) => t.baseName === "Bone Chips");

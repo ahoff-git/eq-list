@@ -118,7 +118,13 @@ export function parseInventoryDump(text: string): InventoryItem[] {
       continue;
     }
     const name = (cols[1] ?? "").trim().replace(/\*$/, "").trim();
-    if (!name || name === "Empty") continue;
+    if (!name) continue;
+    if (name === "Empty") {
+      // An empty bag slot still says its host is a bag: an empty bag is written as the bag and a
+      // row of `Empty` slots, with nothing else to tell it from a loose item.
+      if (!inKeyRing) markBag(byLocation, cols[0].trim());
+      continue;
+    }
 
     if (inKeyRing) {
       const kind = cols[0].trim() || "Other";
@@ -146,13 +152,20 @@ export function parseInventoryDump(text: string): InventoryItem[] {
     const item = makeItem({ location, area, slot, name, id, count });
     if (depth === 1) {
       item.inside = slot;
-      const bag = byLocation.get(slot);
-      if (bag) bag.container = true;
+      markBag(byLocation, location);
     }
     byLocation.set(location, item);
     items.push(item);
   }
   return items;
+}
+
+/** If `location` is a slot inside a bag (one `-SlotN` under a bag-holding slot), mark that bag. */
+function markBag(byLocation: ReadonlyMap<string, InventoryItem>, location: string): void {
+  const parts = location.split("-Slot");
+  if (parts.length !== 2 || !BAG_AREAS.has(areaOf(parts[0]))) return;
+  const bag = byLocation.get(parts[0]);
+  if (bag) bag.container = true;
 }
 
 function makeItem(base: Pick<InventoryItem, "location" | "area" | "slot" | "name" | "id" | "count">): InventoryItem {
