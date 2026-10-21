@@ -7,6 +7,7 @@ import { heldGrades, inventoryTotals, ownedItems, parseInventoryDump, type Inven
 import { holdingsOf, type Holdings } from "@/shared/tradeskills/held-materials";
 import { rowsOf, usePeerShare } from "@/lib/peers/usePeerShare";
 import type { InventoryShareRow } from "@/shared/peers/peer-share";
+import { inventoryAsksDue } from "@/shared/peers/inventory-asks";
 import { normalizeItemName } from "@/shared/items/grouping";
 import type { GameExportDump } from "@/shared/types";
 
@@ -16,8 +17,6 @@ import type { GameExportDump } from "@/shared/types";
  */
 const REFRESH_MS = 30_000;
 
-/** How long an unanswered inventory ask waits before it's repeated (`useHoldings`). */
-const REASK_MS = 2 * 60_000;
 
 /**
  * When each of the followed character's dumps was last written, and `now` as of that read — the two
@@ -98,27 +97,17 @@ export function useOwnedItems(): { owned: Map<string, OwnedPlace[]> | null; at?:
  * guide's materials with what's already to hand. Null when there's neither a dump nor a shared row.
  *
  * **Asks for them, too.** Inventory is a `live` kind, which nothing fetches unprompted (ADR 0309) — so
- * a view that uses holdings asks each peer offering one, once per revision of theirs: opening the
- * guide *is* the person asking. Only peers who switched sharing on are offering anything to ask for.
+ * a view that uses holdings asks each peer offering one, once per revision of theirs — and again if
+ * the tray drops the answer or none comes (`inventoryAsksDue`): opening the guide *is* the person
+ * asking. Only peers who switched sharing on are offering anything to ask for.
  */
 export function useHoldings(): Holdings | null {
   const { items } = useInventory();
   const { peers, received, ask } = usePeerShare();
-  // When each (peer, revision) was last asked for. A reply can be lost on the way, and peers re-announce
-  // every minute (which re-runs this), so an unanswered ask is repeated after `REASK_MS`, not never.
+  // When each (peer, revision) was last asked for — the rules are `inventoryAsksDue`'s.
   const asked = useRef(new Map<string, number>());
   useEffect(() => {
-    const now = Date.now();
-    for (const peer of peers) {
-      const offered = peer.offer?.inventory;
-      if (!offered?.n || !peer.sessionId) continue;
-      const have = received.find((r) => r.peerId === peer.peerId && r.kind === "inventory");
-      const key = `${peer.peerId}@${offered.rev}`;
-      const last = asked.current.get(key);
-      if ((have && have.rev >= offered.rev) || (last !== undefined && now - last < REASK_MS)) continue;
-      asked.current.set(key, now);
-      ask(peer.peerId, "inventory");
-    }
+    for (const peerId of inventoryAsksDue(peers, received, asked.current, Date.now())) ask(peerId, "inventory");
   }, [peers, received, ask]);
   return useMemo(() => {
     const peers = rowsOf<InventoryShareRow>(received, "inventory").map((r) => ({ by: r.by, item: r.row.item, count: r.row.count }));
