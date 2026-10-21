@@ -361,16 +361,15 @@ export function createPageStore(db: Database, legacyDir: string): PageStore {
  */
 export function exportAsBuckets(db: Database, pagesDestDir: string): void {
   fs.mkdirSync(pagesDestDir, { recursive: true });
+  const rows = db
+    .prepare(`SELECT title, version, page_json, json_extract(page_json, '$.title') AS page_title, fetched_at FROM wiki_pages`)
+    .all() as ExportRow[];
   const byBucket = new Map<number, string[]>();
-  const rows = db.prepare(`SELECT title, version, page_json FROM wiki_pages`).iterate() as IterableIterator<{
-    title: string;
-    version: number;
-    page_json: string;
-  }>;
-  for (const row of rows) {
+  for (const row of freshestUnderEveryName(rows)) {
     const n = bucketOf(row.title);
     const lines = byBucket.get(n);
-    const line = `${row.title}\t${row.version}\t${row.page_json}\n`;
+    const line = `${row.title}	${row.version}	${row.page_json}
+`;
     if (lines) lines.push(line);
     else byBucket.set(n, [line]);
   }
@@ -378,4 +377,37 @@ export function exportAsBuckets(db: Database, pagesDestDir: string): void {
     const lines = byBucket.get(n);
     if (lines?.length) fs.writeFileSync(fileFor(pagesDestDir, n), lines.join(""), "utf8");
   }
+}
+
+/** One stored row as the export reads it: the key it's held under, and the page's own title. */
+export interface ExportRow {
+  title: string;
+  version: number;
+  page_json: string;
+  page_title: string | null;
+  fetched_at: string;
+}
+
+/**
+ * Every row, with each page held under several names written as its **newest copy under all of
+ * them**: newest pull first, then newest parser.
+ *
+ * A page is cached under the name it was asked for (`Cloth Cape +2`, a redirect, a `#section` link)
+ * as well as its own, and each name is refreshed only when that name is next asked for. So the copies
+ * drift: a `+5` re-pulled today carries the wiki's current card while the base still holds last
+ * week's, and the snapshot said two things about one page. The export is where every name is in
+ * hand at once, so it settles them there.
+ */
+export function freshestUnderEveryName(rows: readonly ExportRow[]): ExportRow[] {
+  const newest = new Map<string, ExportRow>();
+  const newer = (a: ExportRow, b: ExportRow) => a.fetched_at > b.fetched_at || (a.fetched_at === b.fetched_at && a.version > b.version);
+  for (const row of rows) {
+    if (!row.page_title) continue;
+    const best = newest.get(row.page_title);
+    if (!best || newer(row, best)) newest.set(row.page_title, row);
+  }
+  return rows.map((row) => {
+    const best = row.page_title ? newest.get(row.page_title) : undefined;
+    return best && best !== row ? { ...row, version: best.version, page_json: best.page_json, fetched_at: best.fetched_at } : row;
+  });
 }
