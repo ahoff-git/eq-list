@@ -312,7 +312,7 @@ export interface SpawnTracker {
    * quiet: considering a trash mob names nothing we are tracking, and a mob with no running timer
    * has no `killedAt` to measure a sighting from.
    */
-  noteSighting(mob: string, zone: string | null): void;
+  noteSighting(mob: string, zone: string | null, at?: string): void;
   /**
    * It's dead — start the countdown from this moment, or restart one already running.
    *
@@ -702,6 +702,33 @@ export function createSpawnTracker({
   }
 
   /**
+   * The mob is up, as of `at` — the shared body of the "It's up" click and a consider/hail line.
+   *
+   * The moment is a parameter because a log line has its own: everything logged while the app was
+   * shut is replayed at launch (ADR 0044), and stamping an hours-old consider with *now* both
+   * resurrected a long-stale row as ALIVE and recorded the whole time the app was closed as the
+   * sighting gap.
+   */
+  function seeUp(key: string, id: string | undefined, at: number): void {
+    const timer = clockOf(key, id);
+    if (!timer || timer.seenAt) return; // nothing counting down, or already known to be up
+    // The countdown is over because the question it was asking has been answered. Recorded on
+    // the timer rather than by deleting it, so the row can go on naming the mob and the place.
+    timer.seenAt = new Date(at).toISOString();
+    // ...and the sighting is evidence. `R ≤ now − died` is the tightest bound we can get, so it
+    // goes through the same ratchet as everything else: shortest wins, implausible is discarded.
+    const seconds = sightingFrom(timer.killedAt, at);
+    if (seconds !== null) {
+      state.seen[key] = tightenSighting(state.seen[key], seconds);
+      log.debug("sighting recorded", { mob: timer.mob, seconds, tightest: state.seen[key].seconds });
+    }
+    // It's up, so there is nothing left to announce about it coming up. This clock only: a
+    // sibling on the same camp is a different placeholder and still has its own pop coming.
+    announced.add(timer.id);
+    changed();
+  }
+
+  /**
    * Which clock a per-countdown action means. With one running there is no question; with several,
    * `id` says which, and without one the **next due** is the one anybody means by "it's up".
    */
@@ -905,23 +932,7 @@ export function createSpawnTracker({
     },
 
     markUp(key, id) {
-      const timer = clockOf(key, id);
-      if (!timer || timer.seenAt) return; // nothing counting down, or already known to be up
-      const at = now();
-      // The countdown is over because the question it was asking has been answered. Recorded on
-      // the timer rather than by deleting it, so the row can go on naming the mob and the place.
-      timer.seenAt = new Date(at).toISOString();
-      // ...and the sighting is evidence. `R ≤ now − died` is the tightest bound we can get, so it
-      // goes through the same ratchet as everything else: shortest wins, implausible is discarded.
-      const seconds = sightingFrom(timer.killedAt, at);
-      if (seconds !== null) {
-        state.seen[key] = tightenSighting(state.seen[key], seconds);
-        log.debug("sighting recorded", { mob: timer.mob, seconds, tightest: state.seen[key].seconds });
-      }
-      // It's up, so there is nothing left to announce about it coming up. This clock only: a
-      // sibling on the same camp is a different placeholder and still has its own pop coming.
-      announced.add(timer.id);
-      changed();
+      seeUp(key, id, now());
     },
 
     noteZone(zone) {
@@ -960,13 +971,16 @@ export function createSpawnTracker({
       log.debug("new sitting; camp kill counts reset");
     },
 
-    noteSighting(mob, zone) {
+    noteSighting(mob, zone, at) {
       if (!zone) return;
       const key = timerKey(mob, zone);
-      // `markUp` is the whole behaviour — ending the countdown, recording the bound, and silencing
-      // a pop about a mob you are looking at. Reaching for it rather than repeating it is what keeps
-      // an automatic sighting and a hand-clicked one from ever meaning different things.
-      this.markUp(key);
+      // `seeUp` is the whole behaviour — ending the countdown, recording the bound, and silencing
+      // a pop about a mob you are looking at — shared with the "It's up" click so an automatic
+      // sighting and a hand-clicked one can never mean different things. The line's own moment,
+      // never one in the future: an unreadable stamp falls back to now, as the click does.
+      const stamped = at ? Date.parse(at) : NaN;
+      const current = now();
+      seeUp(key, undefined, Number.isNaN(stamped) ? current : Math.min(stamped, current));
     },
 
     markDead(key, killedAt) {

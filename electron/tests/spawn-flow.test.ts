@@ -101,7 +101,7 @@ function app(startMs: number) {
       }
       if (event.kind === "loc") killLog.noteLoc(event, currentZone);
       // Considering or hailing a mob you're timing is a free sighting (ADR 0097).
-      if (event.kind === "sighting") spawns.noteSighting(event.target, currentZone);
+      if (event.kind === "sighting") spawns.noteSighting(event.target, currentZone, event.at);
       if (event.kind === "kill") {
         // Main's order, and it is load-bearing: record first, then tell the tracker.
         if (killLog.record(event.target, event.killer, currentZone, event.at, event.logId, event.named, event.killerNamed)) {

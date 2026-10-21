@@ -1676,3 +1676,27 @@ test("nothing pooled behaves exactly as it always did", () => {
   const h = harness({ kills: [record(MOB, 0), record(MOB, 900)] });
   assert.equal(h.tracker.view().known.length, 1);
 });
+
+// ── a sighting read back out of the log ────────────────────────────────────────
+
+test("a replayed consider is a sighting at the line's own moment, not at launch", () => {
+  // The app was shut through the evening and the gap is replayed at launch (ADR 0044): the kill at
+  // 900s and a consider at 1500s arrive three hours late. The consider proves the mob was up 600s
+  // after it died — not three hours after — and that row aged off the board long ago.
+  const kills = [record(MOB, 0), record(MOB, 900)];
+  const h = harness({ kills, startSec: 900 + 3 * 3600 });
+  h.tracker.noteKill(MOB, ZONE, iso(900), true);
+  h.tracker.noteSighting(MOB, ZONE, iso(1500));
+  const view = h.tracker.view();
+  assert.equal(view.running.filter((t) => t.state === "alive").length, 0, "an hours-old sighting is not ALIVE now");
+  assert.deepEqual(view.known.find((k) => k.key === KEY)?.seen, { seconds: 600, count: 1 });
+});
+
+test("a live consider with no moment of its own still counts from now", () => {
+  const h = timed();
+  h.tick(1500);
+  h.tracker.noteSighting(MOB, ZONE);
+  const view = h.tracker.view();
+  assert.equal(view.running[0].state, "alive");
+  assert.deepEqual(view.known.find((k) => k.key === KEY)?.seen, { seconds: 600, count: 1 });
+});
