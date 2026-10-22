@@ -11,9 +11,13 @@ import { NO_CRITERIA } from "../../src/shared/items/item-search";
 test("stored options are made whole, and a lock on a slot the layout doesn't have is dropped", () => {
   assert.deepEqual(normalizeBisOptions(undefined), NO_BIS_OPTIONS);
   assert.deepEqual(
-    normalizeBisOptions({ locks: { 3: { title: "Cap" }, 4: { empty: true }, 99: { title: "Nowhere" }, x: { title: "Bad" } }, benched: ["A", 7, ""] }),
-    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], benched: ["A"], skipHunt: [] },
+    normalizeBisOptions({ locks: { 3: { title: "Cap" }, 4: { empty: true }, 99: { title: "Nowhere" }, x: { title: "Bad" } }, excluded: ["A", 7, ""] }),
+    { locks: { 3: { title: "Cap" }, 4: { empty: true } }, wantEffects: [], excluded: ["A"], includeHunt: true, huntGrade: 0 },
   );
+  // An older build's two lists of things ruled out are one list now; a name in both is kept once.
+  assert.deepEqual(normalizeBisOptions({ benched: ["Iron Ring"], skipHunt: ["Cap", "iron ring"] }).excluded, ["Iron Ring", "Cap"]);
+  assert.equal(normalizeBisOptions({ huntGrade: 7 }).huntGrade, 0, "+7 isn't one of the grades offered");
+  assert.equal(normalizeBisOptions({ includeHunt: false }).includeHunt, false);
 });
 
 test("locking, unlocking, locking a whole loadout, and toggling a title the way names match", () => {
@@ -23,7 +27,7 @@ test("locking, unlocking, locking a whole loadout, and toggling a title the way 
   assert.deepEqual(lockAll(one, [{ slotIndex: 4, title: "Cap" }]).locks, { 2: { title: "Ear" }, 4: { title: "Cap" } });
   assert.deepEqual(toggleTitle(["Iron Ring"], "iron ring"), [], "case aside, it's the same thing");
   assert.deepEqual(toggleTitle([], "Iron Ring"), ["Iron Ring"]);
-  assert.equal(bisOptionCount({ ...one, benched: ["x"], wantEffects: ["Haste"] }), 3);
+  assert.equal(bisOptionCount({ ...one, excluded: ["x"], wantEffects: ["Haste"] }), 3);
 });
 
 const preset = (name: string, text = ""): ItemPreset => ({

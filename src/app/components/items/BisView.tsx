@@ -5,12 +5,12 @@ import BisWearTable from "@/app/components/items/BisWearTable";
 import BisEffects from "@/app/components/items/BisEffects";
 import BisHuntTable from "@/app/components/items/BisHuntTable";
 import BisStats from "@/app/components/items/BisStats";
-import { Empty } from "@/app/components/ui";
+import { CheckField, Empty } from "@/app/components/ui";
 import { DumpSection } from "@/app/components/exports/DumpParts";
 import { useInventory } from "@/lib/exports/useGameExports";
 import { copyText } from "@/lib/clipboard";
 import { bisPlan, loadoutText, type BisPlan } from "@/shared/items/bis-plan";
-import { NO_BIS_OPTIONS, bisOptionCount, lockAll, toggleTitle, type BisOptions } from "@/shared/items/bis-options";
+import { HUNT_GRADE_CHOICES, NO_BIS_OPTIONS, bisOptionCount, lockAll, toggleTitle, withExcluded, type BisOptions } from "@/shared/items/bis-options";
 import { WORN_LAYOUT } from "@/shared/items/bis";
 import { gradedTitle } from "@/shared/items/item-upgrade";
 import { wikiName } from "@/shared/shown-name";
@@ -18,6 +18,7 @@ import { exportAgeText } from "@/shared/game-exports";
 import { createLogger } from "@/shared/logging";
 import type { SocketPlan } from "@/shared/items/exaltations";
 import type { ItemCriteria, ItemRow, StatWeights } from "@/shared/items/item-search";
+import type { DerivedRate } from "@/shared/items/derived-stats";
 
 const log = createLogger("bis");
 
@@ -25,14 +26,17 @@ const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
- * Best in slot: the Items tab's weights and criteria turned on your inventory dump.
+ * The loadout builder: plan your gear, by the Items tab's weights and criteria.
  *
- * Three answers, in the order you'd act on them — **wear** (the best loadout from what you already
- * hold, wherever it is, and what that's worth over what you have on), **improve** (wanted effects,
- * merges and exaltation sockets), **hunt** (what to go and get, by how much it would add, and what
- * farming more copies of it would buy). Your own say — locks, wanted effects, benched items, skipped
- * hunts — is `options`, held by the panel so a preset can carry it. See `bis-plan.ts` for the rules
- * and `bis.ts` for why the loadout is exact.
+ * **One loadout** (ADR 0329), drawn from what you hold — bags, bank, Storage, wherever — and, with
+ * hunting on, from the catalogue: each slot says either where you have its pick or where to go and get
+ * it. Your say is `options`, held by the panel so a preset can carry it: locks (which hold until you
+ * unlock them), wanted effects (part of what "best" means, so they can take a slot — a shield for its
+ * focus), and exclusions (gone from every question this page asks). See `bis-plan.ts` for the rules and
+ * `bis.ts` for why the loadout is exact.
+ *
+ * Laid out as one thing: the loadout up top with what steers it, and everything that explains or
+ * refines it folded underneath.
  */
 export default function BisView({
   rows,
@@ -42,6 +46,8 @@ export default function BisView({
   scored,
   options,
   onOptions,
+  onClearName,
+  rates,
 }: {
   rows: readonly ItemRow[];
   criteria: ItemCriteria;
@@ -51,113 +57,149 @@ export default function BisView({
   scored: boolean;
   options: BisOptions;
   onOptions: (next: BisOptions) => void;
+  /** Clear the Search box's name text — offered when it's what narrowed the hunt to nothing. */
+  onClearName?: () => void;
+  /** What attributes add to HP, mana and AC for your classes and level — the totals include them. */
+  rates?: readonly DerivedRate[];
 }) {
   const { items, at } = useInventory();
   const plan = useMemo(() => {
-    if (!items || !scored) return null;
+    if (!scored) return null;
     const started = performance.now();
-    const p = bisPlan({ rows, inventory: items, criteria, weights, closedZones, options });
-    log.debug("plan", { ms: Math.round(performance.now() - started), picks: p.loadout.picks.length, hunt: p.hunt.length, effects: p.effects.length });
+    // No dump is still a plan: everything is to hunt, and nothing is worn now.
+    const p = bisPlan({ rows, inventory: items ?? [], criteria, weights, closedZones, options });
+    log.debug("plan", { ms: Math.round(performance.now() - started), picks: p.loadout.picks.length, toHunt: p.toHunt, effects: p.effects.length });
     return p;
   }, [items, scored, rows, criteria, weights, closedZones, options]);
 
-  if (!items) {
-    return <Empty title="No inventory dump yet." hint="In game, type /outputfile inventory (Exports tab has a copy button) — this works from what you hold." />;
-  }
   if (!scored || !plan) {
-    return <Empty title="Set some value weights first." hint="Open Value weights above and say what a point of each stat is worth to you — best in slot ranks by your yardstick, not ours." />;
+    return <Empty title="Set some value weights first." hint="Open Value weights above and say what a point of each stat is worth to you — the loadout is ranked by your yardstick, not ours." />;
   }
 
   const classes = criteria.facets.class;
   const filled = plan.loadout.picks.length;
+  const held = filled - plan.toHunt;
   const sockets = plan.sockets.filter((s) => s.filled || s.options.length);
-  const quietHosts = [...new Set(plan.sockets.filter((s) => !s.filled && !s.options.length).map((s) => s.host))];
   const choicesCost = round2(plan.unconstrained - plan.loadout.total);
-  const skip = (title: string) => onOptions({ ...options, skipHunt: toggleTitle(options.skipHunt, title) });
+  const met = plan.effects.filter((e) => e.how !== "missing").length;
+  const improve = plan.merges.length + sockets.length;
+  const skip = (title: string) => onOptions(withExcluded(options, title));
 
   return (
     <div className="bis">
       <p className="muted small">
         By your value weights, for {classes.length ? classes.join(" / ") : <b>any class</b>}
-        {classes.length ? "" : " — tick your three classes in Class above so only what you can wear counts"}. From your inventory dump
-        {at ? `, written ${exportAgeText(Date.now() - at)}` : ""}.
+        {classes.length ? "" : " — tick your three classes in Class above so only what you can wear counts"}.{" "}
+        {items ? `From your inventory dump${at ? `, written ${exportAgeText(Date.now() - at)}` : ""}.` : "No inventory dump yet — /outputfile inventory in game, and what you hold joins the plan."}
       </p>
 
+      <div className="row wrap bis-steer">
+        <CheckField
+          label="Include gear to hunt"
+          checked={options.includeHunt}
+          onChange={(includeHunt) => onOptions({ ...options, includeHunt })}
+          title="Plan with catalogue items you don't hold yet, beside what you do — off plans from your own gear only"
+        />
+        {options.includeHunt && (
+          <label className="muted small" title="Each item to hunt weighed as if merged up to this grade">
+            weighed at{" "}
+            <select className="select-sm" value={options.huntGrade} onChange={(e) => onOptions({ ...options, huntGrade: Number(e.target.value) })}>
+              {HUNT_GRADE_CHOICES.map((g) => (
+                <option key={g} value={g}>
+                  +{g}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <NameFilterNote text={criteria.text} matches={plan.catalogueMatches} hunting={options.includeHunt} onClear={onClearName} />
+      </div>
+
       <div className="bis-summary">
+        {items && (
+          <>
+            <span>
+              Wearing now <b>{plan.wearing}</b>
+            </span>
+            <span>→</span>
+          </>
+        )}
         <span>
-          Wearing now <b>{plan.wearing}</b>
+          Loadout <b>{plan.loadout.total}</b>
         </span>
-        <span>→</span>
-        <span>
-          Best from what you hold <b>{plan.loadout.total}</b>
+        {items && <span className={plan.loadout.total > plan.wearing ? "good" : "muted"}>{signed(round2(plan.loadout.total - plan.wearing))}</span>}
+        <span className="muted small">
+          {held} held · {plan.toHunt} to hunt
         </span>
-        <span className={plan.loadout.total > plan.wearing ? "good" : "muted"}>{signed(round2(plan.loadout.total - plan.wearing))}</span>
         {choicesCost > 0 && (
-          <span className="muted small" title={`With no locks, benches or wanted effects the best would be ${plan.unconstrained}`}>
-            your choices cost {choicesCost}
+          <span className="muted small" title={`With no locks or wanted effects the best would be ${plan.unconstrained}`}>
+            your locks and effects cost {choicesCost}
           </span>
         )}
       </div>
       {plan.unweighed.length > 0 && <p className="muted small">Not weighed — no item page here yet: {plan.unweighed.join(", ")}.</p>}
 
       <BisChoices plan={plan} options={options} onOptions={onOptions} />
-
-      <DumpSection title="Wear" aside={`${filled} of ${WORN_LAYOUT.length} slots filled`}>
-        <BisWearTable plan={plan} options={options} onOptions={onOptions} />
-      </DumpSection>
-
-      <DumpSection title="Stats" aside="wearing now → best in slot" defaultOpen>
-        <BisStats wearing={plan.stats.wearing} loadout={plan.stats.loadout} />
-      </DumpSection>
+      <BisWearTable plan={plan} options={options} onOptions={onOptions} weights={weights} rates={rates} />
 
       <DumpSection
         title="Wanted effects"
-        aside={plan.effects.length ? `${plan.effects.filter((e) => e.how !== "missing").length} of ${plan.effects.length} met` : "none asked for"}
-        defaultOpen
+        aside={plan.effects.length ? `${met} of ${plan.effects.length} met` : "none asked for"}
+        defaultOpen={plan.effects.length > met}
       >
         <BisEffects rows={rows} wanted={options.wantEffects} plans={plan.effects} onWanted={(wantEffects) => onOptions({ ...options, wantEffects })} />
       </DumpSection>
 
-      {plan.merges.length > 0 && (
-        <DumpSection title="Merge" aside={`${plan.merges.length}`}>
-          <ul className="bis-list">
-            {plan.merges.map((m) => (
-              <li key={m.title}>
-                <ItemLink title={gradedTitle(m.title, m.to)} /> — merge your {m.grades.length} copies (+{m.grades.join(", +")}) into one +{m.to}
-                {m.toExp > 0 && <span className="muted" title="Exp toward the next grade already raises the bigger stats"> and {m.toExp}/{2 ** m.to} exp toward +{m.to + 1}</span>}
-                <span className="good"> {signed(m.gain)}</span>
-              </li>
-            ))}
-          </ul>
+      {items && (
+        <DumpSection title="Improve what you own" aside={improve ? `${plan.merges.length} merges · ${sockets.length} sockets` : "nothing to do"} defaultOpen={false}>
+          {plan.merges.length > 0 && (
+            <ul className="bis-list">
+              {plan.merges.map((m) => (
+                <li key={m.title}>
+                  <ItemLink title={gradedTitle(m.title, m.to)} /> — merge your {m.grades.length} copies (+{m.grades.join(", +")}) into one +{m.to}
+                  {m.toExp > 0 && <span className="muted" title="Exp toward the next grade already raises the bigger stats"> and {m.toExp}/{2 ** m.to} exp toward +{m.to + 1}</span>}
+                  <span className="good"> {signed(m.gain)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="muted small">
+            A grade opens one exaltation socket of each kind — focus at +1, click at +2, worn at +3, proc at +4. A stone carries one effect,
+            never stats, so it isn&apos;t counted in the value above. Wanted effects come first; a stone planned for one shows on its row above.
+          </p>
+          {sockets.map((s, n) => (
+            <SocketRow key={n} plan={s} claim={plan.socketClaims.find((c) => c.host === s.host && c.kind === s.kind)} />
+          ))}
         </DumpSection>
       )}
 
-      <DumpSection title="Exaltations" aside={`${sockets.length} sockets`} defaultOpen={sockets.length > 0}>
-        <p className="muted small">
-          A grade opens one socket of each kind — focus at +1, click at +2, worn at +3, proc at +4. A stone carries one effect,
-          never stats, so it isn&apos;t counted in the value above. Wanted effects and the ones picked in the Effects filters come first.
-        </p>
-        {sockets.map((s, n) => (
-          <SocketRow key={n} plan={s} claim={plan.socketClaims.find((c) => c.host === s.host && c.kind === s.kind)} />
-        ))}
-        {quietHosts.length > 0 && <p className="muted small">Open with nothing you hold that fits: {quietHosts.join(", ")}.</p>}
+      <DumpSection title="Stats" aside={items ? "wearing now → loadout" : "the loadout"} defaultOpen={false}>
+        <BisStats wearing={plan.stats.wearing} loadout={plan.stats.loadout} rates={rates} />
       </DumpSection>
 
-      <DumpSection title="Hunt" aside={`${plan.hunt.length}`}>
-        <p className="muted small">
-          What it would add over what it replaces, at +0 — and at +2, +5 and +10, which take 4, 32 and 1,024 copies merged (hover a
-          figure for the card at that grade). Narrowed by the criteria above — level band, zones, stat floors — though not by the
-          name box. Locked slots aren&apos;t hunted for.
-        </p>
-        {plan.hunt.length ? (
-          <BisHuntTable hunt={plan.hunt} onSkip={skip} />
-        ) : (
-          // An empty grid reads as broken; say what emptied it instead.
+      {!options.includeHunt && (
+        <DumpSection title="Upgrades to hunt" aside={`${plan.hunt.length}`} defaultOpen={false}>
           <p className="muted small">
-            Nothing you could get beats what you&apos;d wear
-            {plan.loadout.locked.length ? ` in the ${WORN_LAYOUT.length - plan.loadout.locked.length} slots you haven't locked` : ""}, under
-            your criteria above. Widen the level band, zones or stat floors to look further.
+            What it would add over what it replaces, at +0 — and at +2, +5 and +10, which take 4, 32 and 1,024 copies merged (hover a figure
+            for the card at that grade). Switch on <i>Include gear to hunt</i> to plan them into the loadout itself.
           </p>
+          {plan.hunt.length ? (
+            <BisHuntTable hunt={plan.hunt} onSkip={skip} weights={weights} rates={rates} />
+          ) : (
+            <p className="muted small">
+              Nothing you could get beats what you&apos;d wear
+              {plan.loadout.locked.length ? ` in the ${WORN_LAYOUT.length - plan.loadout.locked.length} slots you haven't locked` : ""}, under your
+              criteria above.
+            </p>
+          )}
+        </DumpSection>
+      )}
+
+      <DumpSection title="Exclusions" aside={`${options.excluded.length}`} defaultOpen={options.excluded.length > 0}>
+        {options.excluded.length ? (
+          <TitleChips titles={options.excluded} onRemove={(t) => onOptions({ ...options, excluded: toggleTitle(options.excluded, t) })} />
+        ) : (
+          <p className="muted small">Nothing excluded. ⊘ on a loadout row rules an item out of everything on this page — worn, hunted, an effect&apos;s carrier or a stone&apos;s source.</p>
         )}
       </DumpSection>
     </div>
@@ -165,55 +207,66 @@ export default function BisView({
 }
 
 /**
- * What you've told best in slot, at a glance, with a way back out of each: the locks (and a way to
- * lock everything as it stands), benched items, skipped hunts — and the loadout as text to paste.
+ * Says so when the Search box's name text is narrowing what can be hunted — and loudly when it narrows
+ * it to nothing, which otherwise reads as a broken page (ADR 0329). The box is respected, not ignored:
+ * this is what makes that visible.
+ */
+function NameFilterNote({ text, matches, hunting, onClear }: { text: string; matches: number; hunting: boolean; onClear?: () => void }) {
+  if (!text.trim() || !hunting) return null;
+  return (
+    <span className={`small ${matches ? "muted" : "warn"}`}>
+      {matches
+        ? `Gear to hunt is narrowed to names containing “${text.trim()}” — ${matches} match.`
+        : `No gear to hunt: the name box says “${text.trim()}”, and nothing wearable matches it.`}{" "}
+      {onClear && (
+        <button className="btn ghost sm" onClick={onClear} title="Clear the Search box's name text">
+          Clear name
+        </button>
+      )}
+    </span>
+  );
+}
+
+/**
+ * What you've decided, with a way back out: lock everything as it stands, unlock, copy the loadout as
+ * text, or reset every lock, wanted effect and exclusion.
  */
 function BisChoices({ plan, options, onOptions }: { plan: BisPlan; options: BisOptions; onOptions: (next: BisOptions) => void }) {
   const locks = Object.keys(options.locks).length;
   const changed = bisOptionCount(options);
   return (
-    <div className="bis-choices">
-      <div className="row wrap">
-        <span className="muted small">Your choices:</span>
-        <button
-          className="btn sm"
-          title="Lock every slot to what the loadout puts there — then unlock just the ones you want re-solved"
-          onClick={() => onOptions(lockAll(options, plan.loadout.picks.map((p) => ({ slotIndex: p.slotIndex, title: p.item.title }))))}
-        >
-          🔒 Lock all
+    <div className="row wrap bis-choices">
+      <button
+        className="btn sm"
+        title="Lock every slot to what the loadout puts there — then unlock just the ones you want re-solved"
+        onClick={() => onOptions(lockAll(options, plan.loadout.picks.map((p) => ({ slotIndex: p.slotIndex, title: p.item.title }))))}
+      >
+        🔒 Lock all
+      </button>
+      {locks > 0 && (
+        <button className="btn sm" onClick={() => onOptions({ ...options, locks: {} })} title="Let the solver choose every slot again">
+          🔓 Unlock {locks}
         </button>
-        {locks > 0 && (
-          <button className="btn sm" onClick={() => onOptions({ ...options, locks: {} })} title="Let the solver choose every slot again">
-            🔓 Unlock {locks}
-          </button>
-        )}
-        <button className="btn sm" onClick={() => void copyText(loadoutText(plan), "the loadout")} title="Copy the loadout as text, a slot a line">
-          Copy loadout
-        </button>
-        {changed > 0 && (
-          <button className="btn sm" onClick={() => onOptions(NO_BIS_OPTIONS)} title="Drop every lock, wanted effect, bench and skip">
-            Reset ({changed})
-          </button>
-        )}
-      </div>
-      {options.benched.length > 0 && (
-        <TitleChips label="Benched — never worn" titles={options.benched} onRemove={(t) => onOptions({ ...options, benched: toggleTitle(options.benched, t) })} />
       )}
-      {options.skipHunt.length > 0 && (
-        <TitleChips label="Not hunting" titles={options.skipHunt} onRemove={(t) => onOptions({ ...options, skipHunt: toggleTitle(options.skipHunt, t) })} />
+      <button className="btn sm" onClick={() => void copyText(loadoutText(plan), "the loadout")} title="Copy the loadout as text, a slot a line">
+        Copy loadout
+      </button>
+      {changed > 0 && (
+        <button className="btn sm" onClick={() => onOptions({ ...NO_BIS_OPTIONS, includeHunt: options.includeHunt, huntGrade: options.huntGrade })} title="Drop every lock, wanted effect and exclusion">
+          Reset ({changed})
+        </button>
       )}
     </div>
   );
 }
 
-function TitleChips({ label, titles, onRemove }: { label: string; titles: readonly string[]; onRemove: (title: string) => void }) {
+function TitleChips({ titles, onRemove }: { titles: readonly string[]; onRemove: (title: string) => void }) {
   return (
     <div className="row wrap small">
-      <span className="muted">{label}:</span>
       {titles.map((t) => (
         <span key={t} className="bis-chip">
           <ItemLink title={wikiName(t)} />
-          <button className="btn ghost sm" title="Undo" onClick={() => onRemove(t)}>
+          <button className="btn ghost sm" title="Put it back into consideration" onClick={() => onRemove(t)}>
             ×
           </button>
         </span>
@@ -239,7 +292,8 @@ function SocketRow({ plan, claim }: { plan: SocketPlan; claim?: BisPlan["socketC
           {plan.options.map((o, i) => (
             <li key={i} title={o.uncertain ? "This stone's item has more than one effect; the dump can't say which it holds" : undefined}>
               {o.effect}
-              {o.uncertain ? "?" : ""} <span className="muted">
+              {o.uncertain ? "?" : ""}{" "}
+              <span className="muted">
                 · from <ItemLink title={wikiName(o.from)} /> · {o.where}
               </span>
             </li>

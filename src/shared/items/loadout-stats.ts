@@ -11,9 +11,15 @@
  *   - **A weapon's swing (DMG, Delay, Ratio, Backstab)** describes that weapon, not the character, so
  *     summing two weapons' delays would be a number about nothing. Left out.
  *
+ * **HP, mana and AC are also made of attributes**: STA into HP, INT/WIS into mana, AGI into AC, at
+ * your classes' and level's rates (`derived-stats.ts`, ADR 0317) — the same rates the value weights
+ * are folded with, so the totals shown and the score agree. `effectiveStats` adds them; the comparison
+ * says how much of each total came that way.
+ *
  * Pure → a tested black box.
  */
 import { STATS, type ItemStats, type StatKey } from "./item-stats";
+import type { DerivedRate } from "./derived-stats";
 
 /** Stats a loadout's total is reported for, in card order. */
 export const LOADOUT_STATS: readonly StatKey[] = STATS.filter((s) => s.group !== "weapon" || s.key === "haste" || s.key === "wt").map((s) => s.key);
@@ -39,6 +45,31 @@ export function loadoutStats(pieces: readonly Pick<ItemStats, "stats">[]): Loado
   return out;
 }
 
+/** Totals with what attributes add to HP, mana and AC folded in, and how much each fold added. */
+export interface EffectiveStats {
+  total: LoadoutStats;
+  /** For each secondary stat, the part of `total` the attributes gave — absent where they gave none. */
+  fromAttributes: LoadoutStats;
+}
+
+/**
+ * The totals as your character would see them: each rate adds `stats[from] × perPoint` to `to` — so
+ * +40 STA on a Warrior/Shaman at 50 is HP as well as STA. Whole points, as the game shows a pool.
+ */
+export function effectiveStats(stats: LoadoutStats, rates: readonly DerivedRate[]): EffectiveStats {
+  const total: LoadoutStats = { ...stats };
+  const fromAttributes: LoadoutStats = {};
+  for (const rate of rates) {
+    const points = stats[rate.from];
+    if (!points) continue;
+    const added = Math.round(points * rate.perPoint);
+    if (!added) continue;
+    fromAttributes[rate.to] = (fromAttributes[rate.to] ?? 0) + added;
+    total[rate.to] = (total[rate.to] ?? 0) + added;
+  }
+  return { total, fromAttributes };
+}
+
 /** One row of a before/after comparison: a stat either side gives. */
 export interface StatComparison {
   key: StatKey;
@@ -46,14 +77,25 @@ export interface StatComparison {
   after?: number;
   /** `after − before`, a missing side counting as 0. */
   change: number;
+  /** How much of `before` / `after` the attributes gave (HP, mana and AC only). */
+  fromAttributes?: { before?: number; after?: number };
 }
 
-/** The stats either side gives, in card order, with the change from `before` to `after`. */
-export function compareLoadoutStats(before: LoadoutStats, after: LoadoutStats): StatComparison[] {
-  return LOADOUT_STATS.filter((key) => before[key] !== undefined || after[key] !== undefined).map((key) => ({
-    key,
-    before: before[key],
-    after: after[key],
-    change: Math.round(((after[key] ?? 0) - (before[key] ?? 0)) * 10) / 10,
-  }));
+/**
+ * The stats either side gives, in card order, with the change from `before` to `after`. With `rates`,
+ * HP, mana and AC are the effective totals — attributes included — and each says how much came that way.
+ */
+export function compareLoadoutStats(before: LoadoutStats, after: LoadoutStats, rates: readonly DerivedRate[] = []): StatComparison[] {
+  const b = effectiveStats(before, rates);
+  const a = effectiveStats(after, rates);
+  return LOADOUT_STATS.filter((key) => b.total[key] !== undefined || a.total[key] !== undefined).map((key) => {
+    const via = b.fromAttributes[key] !== undefined || a.fromAttributes[key] !== undefined;
+    return {
+      key,
+      before: b.total[key],
+      after: a.total[key],
+      change: Math.round(((a.total[key] ?? 0) - (b.total[key] ?? 0)) * 10) / 10,
+      ...(via && { fromAttributes: { before: b.fromAttributes[key], after: a.fromAttributes[key] } }),
+    };
+  });
 }

@@ -84,9 +84,9 @@ export default function ItemSearchPanel() {
   const [pace, setPace] = usePersistentState<string>(STORAGE_KEYS.itemHarvestPace, "1000");
   const [weightsOpen, setWeightsOpen] = usePersistentState(STORAGE_KEYS.itemWeightsOpen, false);
   // The same criteria and weights answer two questions: "which items are like this" (Search) and
-  // "what should I be wearing, and what next" (Best in slot, `BisView`).
+  // "what should I be wearing, and what next" (the loadout builder, `BisView`).
   const [mode, setMode] = usePersistentState<"search" | "bis">(STORAGE_KEYS.itemMode, "search");
-  // What you've told best in slot. Held here rather than in `BisView` so a preset can carry it.
+  // What you've told the loadout builder. Held here rather than in `BisView` so a preset can carry it.
   const [storedBis, setBisOptions] = usePersistentState<BisOptions>(STORAGE_KEYS.itemBisOptions, normalizeBisOptions(undefined));
   const bisOptions = useMemo(() => normalizeBisOptions(storedBis), [storedBis]);
   const [presets, setPresets] = usePersistentState<ItemPreset[]>(STORAGE_KEYS.itemPresets, []);
@@ -162,7 +162,7 @@ export default function ItemSearchPanel() {
   );
 
   /**
-   * The sheet both Search and Best in slot score by: yours, with HP, mana and AC folded into the stats
+   * The sheet both Search and the loadout builder score by: yours, with HP, mana and AC folded into the stats
    * that make them, for the ticked classes at the level cap (`derived-stats.ts`). Folded once here so
    * the two modes can't weigh an INT point differently.
    */
@@ -188,9 +188,9 @@ export default function ItemSearchPanel() {
         <button
           className={segCls(mode === "bis")}
           onClick={() => setMode("bis")}
-          title="The best gear from what you hold, exaltations to add, and what to hunt next — by your value weights"
+          title="Plan your gear: the best loadout from what you hold and what you could hunt, by your value weights"
         >
-          Best in slot
+          Loadout builder
         </button>
       </div>
 
@@ -269,6 +269,8 @@ export default function ItemSearchPanel() {
           scored={!!scored.length}
           options={bisOptions}
           onOptions={setBisOptions}
+          onClearName={() => set({ text: "" })}
+          rates={rates}
         />
       )}
 

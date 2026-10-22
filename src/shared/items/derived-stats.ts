@@ -174,3 +174,24 @@ export function foldDerivedWeights(weights: StatWeights, rates: readonly Derived
 export function ratesInUse(weights: StatWeights, rates: readonly DerivedRate[]): DerivedRate[] {
   return rates.filter((rate) => !!weights[rate.to]);
 }
+
+/** What one item's attributes give in a weighted secondary stat: `amount` of `to`, from `points` of `from`. */
+export interface DerivedGain {
+  from: StatKey;
+  to: StatKey;
+  points: number;
+  amount: number;
+}
+
+/**
+ * Why an item is worth more than its printed numbers: what its attributes give in the secondary stats
+ * you've weighted — "+203 mana from 9 INT". Only the rates a sheet uses (`ratesInUse`), so an item is
+ * never explained by a stat you didn't ask for; whole points, as the game shows a pool.
+ */
+export function derivedGains(stats: Partial<Record<StatKey, number>>, weights: StatWeights, rates: readonly DerivedRate[]): DerivedGain[] {
+  return ratesInUse(weights, rates).flatMap((rate) => {
+    const points = stats[rate.from] ?? 0;
+    const amount = Math.round(points * rate.perPoint);
+    return points > 0 && amount > 0 ? [{ from: rate.from, to: rate.to, points, amount }] : [];
+  });
+}

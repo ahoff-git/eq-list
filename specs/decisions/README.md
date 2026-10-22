@@ -368,6 +368,9 @@ finished, so a number is claimed before a second author can reach for it.
 - [0325: Every item and zone a view names is a link — `ZoneName` is the one way to name a zone (its page, by the wiki's title); a static test fails any other, bar a listed reason](./0325-every-named-item-and-zone-is-a-link.md)
 - [0326: Every status-bar chip opens where its subject is dealt with — settings, the zone's page, Loot, Exports (the export chip no longer copies, changing 0320)](./0326-the-status-bar-is-a-way-in.md)
 - [0327: Every grid sorts by every column — a DataGrid, a sort key upstream for a searched catalogue, only action columns exempt; a static test fails the rest](./0327-every-grid-sorts-by-every-column.md)
+- [0328 (superseded by 0329): A theoretical best is planned from the whole catalogue — own locks, the shared "not hunting" list as its can't-get list, a chosen grade, exact via each slot's top contenders](./0328-a-theoretical-best-is-planned-from-the-catalogue.md)
+- [0329: The loadout builder plans one loadout from what you hold and (optionally) the catalogue — one set of locks that hold until unlocked, one exclusions list for the whole page, the name box respected and explained, wanted effects solved in (supersedes 0328)](./0329-the-loadout-is-one-plan-of-what-you-hold-and-what-to-hunt.md)
+- [0330: A ranked item's socket (outside Storage) is the truth about that kind of effect, and any socketed stone in something not worn can be moved](./0330-a-ranked-item-s-socket-says-what-it-carries.md)
 
 ## Open Questions
 

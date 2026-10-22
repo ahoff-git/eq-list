@@ -46,6 +46,7 @@ const PLAIN: Record<string, string> = {
   "components/items/BisWearTable.tsx|gradedTitle(c.title, c.grade)": "a native <option> in the slot's picker — options can't hold a link or show a hover",
   "components/items/SearchPanel.tsx|it.item": "already a link (opens what your log knows); these are items the wiki has no page for, so there's no card",
   "components/mob/HuntPanel.tsx|it.item": "the label inside its own ItemLink",
+  "components/items/BisWearTable.tsx|gradedTitle(pick.item.title, pick.item.grade)": "matched against a socket claim's host name to find the row's stone — compared, never rendered",
   "components/items/BisHuntTable.tsx|gradedTitle(row.replaces.item.title, row.replaces.item.grade)": "the Replaces column's sort value (`valueGetter`), never rendered — its cell links it",
   "components/map/TravelPanel.tsx|place.zone": "inside the button that puts a skipped place back",
   "components/peers/MapUsers.tsx|u.zone": "the button that opens that zone on the map",

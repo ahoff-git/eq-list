@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { derivedRates, foldDerivedWeights, ratesInUse } from "../../src/shared/items/derived-stats";
+import { derivedGains, derivedRates, foldDerivedWeights, ratesInUse } from "../../src/shared/items/derived-stats";
 import { itemRows, searchItems, NO_CRITERIA } from "../../src/shared/items/item-search";
 import type { CachedItem } from "../../src/shared/types";
 
@@ -100,4 +100,12 @@ test("a search for mana ranks an INT ring for a wizard, and not for a warrior", 
     }).map((r) => `${r.item.title} ${r.value}`);
   assert.deepEqual(order(["Wizard"]), ["Brain Band 112.5", "Mana Band 25"]);
   assert.deepEqual(order(["Warrior"]), ["Mana Band 25", "Brain Band 0"]);
+});
+
+test("an item says what its attributes give in the stats you weighted — and nothing for ones you didn't", () => {
+  // A Wizard/Enchanter at 50: 22.5 mana per INT. Weighting mana alone, a +9 INT item explains itself
+  // as mana; its STA would be HP, but HP isn't weighted, so it isn't mentioned.
+  const rates = derivedRates({ classes: ["Wizard", "Enchanter"], level: 50 });
+  assert.deepEqual(derivedGains({ int: 9, sta: 5, mana: 10 }, { mana: 1 }, rates), [{ from: "int", to: "mana", points: 9, amount: 203 }]);
+  assert.deepEqual(derivedGains({ int: 9 }, { hp: 1 }, rates), [], "mana not weighted: INT explains nothing");
 });

@@ -11,6 +11,9 @@ import { normalizeItemName } from "@/shared/items/grouping";
 import { HUNT_GRADES, slotLabel, type BisHunt } from "@/shared/items/bis-plan";
 import { gradedTitle } from "@/shared/items/item-upgrade";
 import { wikiName } from "@/shared/shown-name";
+import type { StatWeights } from "@/shared/items/item-search";
+import { derivedGains, type DerivedRate } from "@/shared/items/derived-stats";
+import { GainNote } from "@/app/components/items/GainNote";
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
@@ -44,7 +47,18 @@ function gainCol(grade: number, index?: number): GridColDef<Row> {
  * across dumps). A row already on the list says so, so a second evening's look doesn't re-add the
  * first one's farm.
  */
-export default function BisHuntTable({ hunt, onSkip }: { hunt: readonly BisHunt[]; onSkip: (title: string) => void }) {
+export default function BisHuntTable({
+  hunt,
+  onSkip,
+  weights = {},
+  rates = [],
+}: {
+  hunt: readonly BisHunt[];
+  onSkip: (title: string) => void;
+  /** Your own weights (unfolded) and your classes' rates — so a row can say what its attributes give you. */
+  weights?: StatWeights;
+  rates?: readonly DerivedRate[];
+}) {
   const [slot, setSlot] = useState("");
   const list = useShoppingList();
   const onList = useMemo(() => new Set(list.entries.map((e) => normalizeItemName(e.name))), [list.entries]);
@@ -68,7 +82,12 @@ export default function BisHuntTable({ hunt, onSkip }: { hunt: readonly BisHunt[
         flex: 2,
         minWidth: 180,
         valueGetter: (_v, row) => row.item.title,
-        renderCell: (p) => <ItemLink title={wikiName(p.row.item.title)} />,
+        renderCell: (p) => (
+          <div>
+            <ItemLink title={wikiName(p.row.item.title)} />
+            <GainNote gains={derivedGains(p.row.row.stats.stats, weights, rates)} />
+          </div>
+        ),
       },
       { field: "slot", headerName: "Slot", width: 100, valueGetter: (_v, row) => slotLabel(row.slot), cellClassName: "muted" },
       gainCol(0),
@@ -131,7 +150,7 @@ export default function BisHuntTable({ hunt, onSkip }: { hunt: readonly BisHunt[
         ),
       },
     ],
-    [onSkip],
+    [onSkip, weights, rates],
   );
 
   return (

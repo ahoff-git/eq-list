@@ -6,8 +6,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openSockets, socketName, socketPlan, stoneFits, type Stone } from "../../src/shared/items/exaltations";
-import { bisPlan, loadoutText } from "../../src/shared/items/bis-plan";
-import { itemRows, NO_CRITERIA, type ItemCriteria } from "../../src/shared/items/item-search";
+import { bisPlan, candidateOf, loadoutText } from "../../src/shared/items/bis-plan";
+import { bestLoadout, WORN_LAYOUT } from "../../src/shared/items/bis";
+import { NO_BIS_OPTIONS, withExcluded, withLock } from "../../src/shared/items/bis-options";
+import { itemRows, scorer, NO_CRITERIA, type ItemCriteria } from "../../src/shared/items/item-search";
 import { parseInventoryDump } from "../../src/shared/game-export-dumps";
 import type { CachedItem } from "../../src/shared/types";
 
@@ -63,10 +65,12 @@ const dump = [
   "KeyRing\tName\tID\t",
   "Augmentation\tMinotaur Horn (Exaltation)\t13077",
 ].join("\r\n");
+/** Planning from your own gear only — what most of these tests are about. */
+const OWNED = { ...NO_BIS_OPTIONS, includeHunt: false };
 const wizard: ItemCriteria = { ...NO_CRITERIA, hideOutOfEra: false, facets: { ...NO_CRITERIA.facets, class: ["Wizard"] } };
 
 test("the plan: wear the best of what you hold, merge where it pays, fill sockets, hunt what you can wear", () => {
-  const plan = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: wizard, weights: { mana: 1 } });
+  const plan = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: wizard, weights: { mana: 1 }, options: OWNED });
 
   // Two fingers and two Any Slots: all three Moonstones (+1 is 33 mana, +0 is 30) and the Iron Ring.
   assert.deepEqual(plan.loadout.picks.map((p) => `${p.item.title}+${p.item.grade}:${p.value}`).sort(), [
@@ -98,13 +102,14 @@ test("the plan: wear the best of what you hold, merge where it pays, fill socket
   ]);
 });
 
-test("the Search box's name text never narrows the hunt — the other criteria still do", () => {
-  // A name typed to look one item up ("Troll Green", from a quest lookup) used to stay in the shared
-  // criteria and empty the whole Hunt, since no wearable upgrade is called that.
+test("the Search box's name text narrows what can be hunted, and the plan says how many it left", () => {
+  // Respected, not ignored — but the page has to be able to say *why* nothing is suggested, so the
+  // count the name left is part of the plan.
   const looked = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: { ...wizard, text: "Troll Green" }, weights: { mana: 1 } });
-  assert.deepEqual(looked.hunt.map((h) => h.item.title), ["Cap of Mana"]);
-  const capped = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: { ...wizard, text: "Troll Green", mins: { ac: 99 } }, weights: { mana: 1 } });
-  assert.deepEqual(capped.hunt, [], "a stat floor is a real criterion and still applies");
+  assert.deepEqual([looked.hunt, looked.catalogueMatches, looked.toHunt], [[], 0, 0]);
+  const cap = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: { ...wizard, text: "cap" }, weights: { mana: 1 } });
+  assert.equal(cap.catalogueMatches, 1);
+  assert.equal(cap.loadout.picks.find((p) => p.item.title === "Cap of Mana")?.item.heldAt, undefined, "the cap is planned in, to hunt");
 });
 
 test("spare copies the loadout doesn't wear are suggested for merging into the one it does", () => {
@@ -118,6 +123,7 @@ test("spare copies the loadout doesn't wear are suggested for merging into the o
     inventory: parseInventoryDump([tsv("Location", "Name", "ID", "Count", "Slots"), tsv("Bank1", "Backpack", 17005, 1, 8), ...six].join("\r\n")),
     criteria: wizard,
     weights: { mana: 1 },
+    options: OWNED,
   });
   assert.equal(plan.loadout.total, 120);
   assert.deepEqual(plan.merges, [{ title: "Moonstone Ring", grades: [0, 0, 0], from: 0, to: 1, toExp: 1, gain: 5 }]);
@@ -133,6 +139,7 @@ test("a merge that stays at the same grade still pays for its leftover exp", () 
     inventory: parseInventoryDump([tsv("Location", "Name", "ID", "Count", "Slots"), tsv("Bank1", "Backpack", 17005, 1, 8), ...copies].join("\r\n")),
     criteria: wizard,
     weights: { mana: 1 },
+    options: OWNED,
   });
   assert.deepEqual(plan.merges, [{ title: "Moonstone Ring", grades: [2, 0], from: 2, to: 2, toExp: 1, gain: 1 }]);
 });
@@ -152,7 +159,7 @@ test("a loose exaltation stone in a bag or the bank is offered, not only one in 
       .map((r) => r.join("\t"))
       .join("\r\n"),
   );
-  const plan = bisPlan({ rows: ringRows, inventory, criteria: wizard, weights: { mana: 1 } });
+  const plan = bisPlan({ rows: ringRows, inventory, criteria: wizard, weights: { mana: 1 }, options: OWNED });
   const focus = plan.sockets.find((s) => s.host === "Moonstone Ring +1" && s.kind === "focus");
   assert.deepEqual(focus?.options.map((o) => [o.effect, o.where]), [["Pearl Focus", "Bank 1"]]);
 });
@@ -161,7 +168,7 @@ test("a loose exaltation stone in a bag or the bank is offered, not only one in 
 
 const tsvDump = (...lines: string[][]) => [["Location", "Name", "ID", "Count", "Slots"], ...lines].map((r) => r.join("\t")).join("\r\n");
 
-test("locks hold by title across dumps, report one you no longer hold, and benching keeps a thing out", () => {
+test("locks hold by title — on something to hunt too, with hunting off — and an exclusion keeps a thing out of everything", () => {
   const inventory = parseInventoryDump(dump);
   // FINGER is index 16 in the layout. Lock the Iron Ring there; lock the head to a cap you don't own.
   const plan = bisPlan({
@@ -169,25 +176,26 @@ test("locks hold by title across dumps, report one you no longer hold, and bench
     inventory,
     criteria: wizard,
     weights: { mana: 1 },
-    options: { locks: { 16: { title: "Iron Ring" }, 4: { title: "Cap of Mana" } }, wantEffects: [], benched: [], skipHunt: [] },
+    options: { ...OWNED, locks: { 16: { title: "Iron Ring" }, 4: { title: "Cap of Mana" } }, wantEffects: [] },
   });
   assert.equal(plan.loadout.picks.find((p) => p.slotIndex === 16)?.item.title, "Iron Ring");
-  assert.deepEqual(plan.staleLocks, [{ slotIndex: 4, title: "Cap of Mana" }]);
-  assert.equal(plan.unconstrained, 98, "what no choices would have got");
-  // The head is free again (the stale lock frees it), so the cap is still a hunt.
-  assert.deepEqual(plan.hunt.map((h) => h.item.title), ["Cap of Mana"]);
+  // A lock is the player's decision, and holds until they unlock it: the cap you don't own is planned
+  // in to hunt, even with hunting off — not dropped as stale.
+  const cap = plan.loadout.picks.find((p) => p.slotIndex === 4);
+  assert.deepEqual([cap?.item.title, cap?.item.heldAt, plan.staleLocks], ["Cap of Mana", undefined, []]);
+  assert.equal(plan.toHunt, 1);
+  assert.equal(plan.unconstrained, 98, "what no choices would have got — the locked-in cap isn't part of that pool");
 
   const benched = bisPlan({
     rows,
     inventory,
     criteria: wizard,
     weights: { mana: 1 },
-    options: { locks: {}, wantEffects: [], benched: ["Iron Ring"], skipHunt: ["Cap of Mana"] },
+    options: { ...OWNED, locks: {}, wantEffects: [], excluded: ["Iron Ring", "Cap of Mana"] },
   });
-  assert.ok(!benched.loadout.picks.some((p) => p.item.title === "Iron Ring"));
-  assert.deepEqual(benched.benched, ["Iron Ring"]);
-  assert.deepEqual(benched.hunt, [], "a skipped hunt isn't suggested");
-  assert.equal(benched.wearing, 38, "what you wear now still counts the benched ring");
+  assert.ok(!benched.loadout.picks.some((p) => p.item.title === "Iron Ring"), "an excluded thing you hold is never worn");
+  assert.deepEqual(benched.hunt, [], "nor suggested as a hunt");
+  assert.equal(benched.wearing, 38, "what you wear now still counts the excluded ring");
 });
 
 test("a wanted effect already worn pins its item; one nothing gives you says what to hunt", () => {
@@ -196,7 +204,7 @@ test("a wanted effect already worn pins its item; one nothing gives you says wha
     inventory: parseInventoryDump(dump),
     criteria: wizard,
     weights: { mana: 1 },
-    options: { locks: {}, wantEffects: ["Extended Range II", "Wind Resonance 10"], benched: [], skipHunt: [] },
+    options: { ...OWNED, locks: {}, wantEffects: ["Extended Range II", "Wind Resonance 10"] },
   });
   const [range, wind] = plan.effects;
   assert.equal(range.how, "worn");
@@ -220,7 +228,7 @@ test("a wanted effect is socketed from a stone before anything is worn for it", 
     inventory,
     criteria: wizard,
     weights: { mana: 1 },
-    options: { locks: {}, wantEffects: ["Pearl Focus"], benched: [], skipHunt: [] },
+    options: { ...OWNED, locks: {}, wantEffects: ["Pearl Focus"] },
   });
   assert.deepEqual(
     plan.effects.map((e) => [e.effect, e.how, e.by, e.stone?.where]),
@@ -249,7 +257,7 @@ test("a wanted effect only a held item carries is worn, at the cost of what it d
     inventory,
     criteria: wizard,
     weights: { mana: 1 },
-    options: { locks: {}, wantEffects: ["Haste"], benched: [], skipHunt: [] },
+    options: { ...OWNED, locks: {}, wantEffects: ["Haste"] },
   });
   // The charms fill both Any Slots and the cap the head, so the hat is left out — until Haste is
   // wanted. Cheapest is the head (losing the cap, 40 → 10), not an Any Slot (losing a charm, 50 → 10).
@@ -260,10 +268,164 @@ test("a wanted effect only a held item carries is worn, at the cost of what it d
 });
 
 test("the loadout as text: one line a slot, graded names, and where to fetch what isn't worn", () => {
-  const plan = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: wizard, weights: { mana: 1 } });
+  const plan = bisPlan({ rows, inventory: parseInventoryDump(dump), criteria: wizard, weights: { mana: 1 }, options: OWNED });
   const lines = loadoutText(plan).split("\n");
-  assert.equal(lines[0], "Best in slot — 98 (wearing 38)");
+  assert.equal(lines[0], "Loadout — 98 (wearing 38)");
   assert.equal(lines.length, 24, "a title and every slot of the layout");
   assert.ok(lines.includes("Head: —"));
   assert.ok(lines.some((l) => /^Any Slot: Moonstone Ring \[30\] \(from Bank 1/.test(l)), lines.join("\n"));
+});
+
+// ─── One loadout: what you hold, and what you'd go and get (ADR 0329) ─────────
+
+const catalogue = itemRows([
+  page("Cap of Mana", ["Slot: HEAD", "MANA: +40", "Class: ALL", "Race: ALL"]),
+  page("Helm of Vigor", ["Slot: HEAD", "HP: +60", "Class: ALL", "Race: ALL"]),
+  page("Warrior Helm", ["Slot: HEAD", "MANA: +90", "Class: WAR", "Race: ALL"]),
+  page("Moonstone Ring", ["Slot: FINGER", "MANA: +30", "Class: ALL", "Race: ALL"]),
+  page("Ring of the Ancients", ["LORE ITEM", "Slot: FINGER", "MANA: +50", "Class: ALL", "Race: ALL"]),
+  page("Ring of Life", ["Slot: FINGER", "HP: +45", "Class: ALL", "Race: ALL"]),
+  page("Kite Shield", ["Slot: SECONDARY", "AC: 10", "Class: ALL", "Race: ALL", "Focus Effect: Extended Range II"]),
+  page("Mana Orb", ["Slot: SECONDARY", "MANA: +35", "Class: ALL", "Race: ALL"]),
+]);
+const worn = (plan: ReturnType<typeof bisPlan>, title: string) => plan.loadout.picks.filter((p) => p.item.title === title);
+const nothingHeld = parseInventoryDump(tsvDump());
+
+test("with hunting on, the catalogue's best fills the loadout — LORE once, anything else as often as its slots allow", () => {
+  const plan = bisPlan({ rows: catalogue, inventory: nothingHeld, criteria: wizard, weights: { mana: 1 } });
+  assert.equal(worn(plan, "Cap of Mana").length, 1);
+  assert.equal(worn(plan, "Warrior Helm").length, 0, "more mana, but a Wizard can't wear it");
+  assert.equal(worn(plan, "Ring of the Ancients").length, 1, "LORE: one copy");
+  assert.equal(worn(plan, "Moonstone Ring").length, 2, "not LORE: a finger, and the Any Slot takes another");
+  assert.equal(plan.toHunt, plan.loadout.picks.length, "nothing is held, so every pick is a hunt");
+  assert.equal(plan.huntFrom["Cap of Mana"]?.item.title, "Cap of Mana", "and says where it comes from");
+});
+
+test("what you hold is planned beside what you'd hunt, your copy before a hypothetical one", () => {
+  const inventory = parseInventoryDump(tsvDump(["Bank1-Slot1", "Moonstone Ring +3", "1", "1", "11"]));
+  const plan = bisPlan({ rows: catalogue, inventory, criteria: wizard, weights: { mana: 1 }, options: { ...NO_BIS_OPTIONS, huntGrade: 10 } });
+  const rings = worn(plan, "Moonstone Ring");
+  assert.equal(rings.length, 2);
+  assert.equal(rings.filter((p) => p.item.heldAt).length, 1, "the one you hold is in it, from the bank");
+  assert.deepEqual(rings.map((p) => p.item.grade).sort((a, b) => a - b), [3, 10], "the other is a +10 to hunt");
+});
+
+test("the workflow: weigh mana, lock what you'll keep, exclude what you can't get, weigh HP for the rest", () => {
+  const mana = bisPlan({ rows: catalogue, inventory: nothingHeld, criteria: wizard, weights: { mana: 1 } });
+  const ancient = worn(mana, "Ring of the Ancients")[0];
+  let options = withLock(NO_BIS_OPTIONS, ancient.slotIndex, { title: "Ring of the Ancients" });
+  options = withExcluded(options, "Moonstone Ring");
+  const hp = bisPlan({ rows: catalogue, inventory: nothingHeld, criteria: wizard, weights: { hp: 1 }, options });
+  assert.equal(hp.loadout.picks.find((p) => p.slotIndex === ancient.slotIndex)?.item.title, "Ring of the Ancients", "the lock holds whatever the weights say now");
+  assert.equal(worn(hp, "Moonstone Ring").length, 0, "an excluded item is never picked");
+  assert.ok(worn(hp, "Ring of Life").length >= 1);
+  assert.equal(worn(hp, "Helm of Vigor").length, 1);
+  // Excluding something locked unlocks it — a lock on a thing ruled out can't hold.
+  assert.deepEqual(withExcluded(options, "Ring of the Ancients").locks, {});
+});
+
+test("a wanted effect can take a slot from what would otherwise win it — a shield to hunt for its focus", () => {
+  const plain = bisPlan({ rows: catalogue, inventory: nothingHeld, criteria: wizard, weights: { mana: 1 } });
+  assert.equal(plain.loadout.picks.find((p) => p.slot === "SECONDARY")?.item.title, "Mana Orb", "on stats alone, the orb");
+  // With both Any Slots held empty, the off-hand is the only place the shield can go.
+  const anyEmpty = Object.fromEntries(WORN_LAYOUT.flatMap((slot, i) => (slot === "ANY" ? [[i, { empty: true as const }]] : [])));
+  const wanted = bisPlan({ rows: catalogue, inventory: nothingHeld, criteria: wizard, weights: { mana: 1 }, options: { ...NO_BIS_OPTIONS, locks: anyEmpty, wantEffects: ["Extended Range II"] } });
+  const shield = worn(wanted, "Kite Shield")[0];
+  assert.equal(shield?.slot, "SECONDARY", "the shield takes the off-hand for its focus");
+  assert.equal(shield.item.heldAt, undefined, "and it's one to hunt");
+  assert.deepEqual(wanted.effects.map((e) => [e.effect, e.how, e.cost]), [["Extended Range II", "forced", 35]], "at the cost of the orb's mana");
+  // With an Any Slot free, it goes there instead and costs nothing — the cheapest way is taken.
+  const free = bisPlan({ rows: catalogue, inventory: nothingHeld, criteria: wizard, weights: { mana: 1 }, options: { ...NO_BIS_OPTIONS, wantEffects: ["Extended Range II"] } });
+  assert.deepEqual([worn(free, "Kite Shield")[0]?.slot, free.effects[0]?.cost], ["ANY", 0]);
+});
+
+test("solving only each slot's top contenders gives the exact best over the whole catalogue", () => {
+  // A catalogue far bigger than the layout, with two-handers that out-value any one-hander in the
+  // main hand, so the pruning has to keep one-handers for the both-hands loadout too.
+  let seed = 7;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const slots = [...new Set(WORN_LAYOUT)].filter((x) => x !== "ANY");
+  const many = itemRows(
+    Array.from({ length: 600 }, (_, i) => {
+      const twoHanded = i % 9 === 0;
+      const slot = twoHanded ? "PRIMARY" : slots[i % slots.length];
+      const lines = [`Slot: ${slot === "PRIMARY" && !twoHanded ? "PRIMARY SECONDARY" : slot}`, `MANA: +${1 + Math.floor(rand() * 80)}`, `HP: +${Math.floor(rand() * 60)}`, "Class: ALL", "Race: ALL"];
+      if (twoHanded) lines.push("Skill: 2H Blunt Atk Delay: 40", `DMG: ${10 + Math.floor(rand() * 20)}`);
+      if (i % 5 === 0) lines.push("LORE ITEM");
+      return page(`Item ${i}`, lines);
+    }),
+  );
+  const weights = { mana: 1, hp: 0.5 };
+  const plan = bisPlan({ rows: many, inventory: nothingHeld, criteria: { ...NO_CRITERIA, hideOutOfEra: false }, weights });
+  const score = scorer(weights);
+  const every = many.flatMap((r) => {
+    const copies = r.stats.flags.includes("LORE") ? 1 : Math.max(1, ...r.stats.slots.map((x) => WORN_LAYOUT.filter((l) => l === x).length));
+    return Array.from({ length: copies }, (_, i) => candidateOf(`all:${r.item.title}:${i}`, r, 0, score));
+  });
+  assert.equal(plan.loadout.total, bestLoadout(every).total);
+});
+
+// ─── Exaltations move (https://eqlwiki.com/Exaltations) ──────────────────────
+
+test("a stone socketed into something you won't wear is taken out and moved where a wanted effect needs it", () => {
+  // A Moonstone's focus sits in a Minotaur Horn in the bank — worth nothing to wear, so the stone is
+  // free to move into the worn Iron Ring +1's open focus socket.
+  const inventory = parseInventoryDump(
+    tsvDump(
+      ["Fingers", "Iron Ring +1", "1", "1", "11"],
+      ["Bank1", "Backpack", "17005", "1", "8"],
+      ["Bank1-Slot1", "Minotaur Horn", "2", "1", "11"],
+      ["Bank1-Slot1-Slot7", "Moonstone Ring (Exaltation)", "10150", "1", "11"],
+    ),
+  );
+  const plan = bisPlan({ rows, inventory, criteria: wizard, weights: { mana: 1 }, options: { ...OWNED, wantEffects: ["Extended Range II"] } });
+  const [effect] = plan.effects;
+  assert.deepEqual([effect.how, effect.by, effect.stone?.from], ["socket", "Iron Ring +1", "Moonstone Ring"]);
+  assert.match(effect.stone?.where ?? "", /^take it out of Minotaur Horn/);
+});
+
+test("a wanted effect already socketed into something the loadout wears is met where it is", () => {
+  const inventory = parseInventoryDump(tsvDump(["Fingers", "Iron Ring +1", "1", "1", "11"], ["Fingers-Slot7", "Moonstone Ring (Exaltation)", "10150", "1", "11"]));
+  const plan = bisPlan({ rows, inventory, criteria: wizard, weights: { mana: 1 }, options: { ...OWNED, wantEffects: ["Extended Range II"] } });
+  assert.deepEqual(plan.effects.map((e) => [e.how, e.by]), [["worn", "Iron Ring +1"]]);
+});
+
+test("a ranked item's socket says what it carries: its own effect swapped out for another's is gone", () => {
+  // A Moonstone Ring +1 is ranked to its focus socket, which holds a Minotaur Horn's stone, not its own
+  // Extended Range II — so it carries Wind Resonance 10, and Extended Range II is nowhere worn.
+  const inventory = parseInventoryDump(tsvDump(["Fingers", "Moonstone Ring +1", "10150", "1", "11"], ["Fingers-Slot7", "Minotaur Horn (Exaltation)", "13077", "1", "11"]));
+  const plan = bisPlan({ rows, inventory, criteria: wizard, weights: { mana: 1 }, options: { ...OWNED, wantEffects: ["Wind Resonance 10", "Extended Range II"] } });
+  assert.deepEqual(
+    plan.effects.map((e) => [e.effect, e.how]),
+    [
+      ["Wind Resonance 10", "worn"],
+      ["Extended Range II", "missing"],
+    ],
+  );
+});
+
+test("a stone can move to any item with that socket open — a better ring for it beats forcing on the one it's in", () => {
+  // Four Plain Rings (60 mana, +0, no sockets) fill both fingers and both Any Slots. Extended Range II
+  // is only on a Moonstone Ring +1 in the bank (33 mana at +1, its own focus in its socket). Forcing that
+  // ring on costs 27; wearing the Silver Ring +1 (55 mana at +1, focus socket open) and moving the stone
+  // into it costs 5 — so that's the plan.
+  const ringRows = itemRows([
+    page("Plain Ring", ["Slot: FINGER", "MANA: +60", "Class: ALL", "Race: ALL"]),
+    page("Silver Ring", ["Slot: FINGER", "MANA: +50", "Class: ALL", "Race: ALL"]),
+    page("Moonstone Ring", ["Slot: FINGER", "MANA: +30", "Class: ALL", "Race: ALL", "Focus Effect: Extended Range II"]),
+  ]);
+  const inventory = parseInventoryDump(
+    tsvDump(
+      ["Bank1", "Backpack", "17005", "1", "8"],
+      ["Bank1-Slot1", "Moonstone Ring +1", "10150", "1", "11"],
+      ["Bank1-Slot1-Slot7", "Moonstone Ring (Exaltation)", "10150", "1", "11"],
+      ["Bank1-Slot2", "Silver Ring +1", "2", "1", "11"],
+      ...[3, 4, 5, 6].map((n) => [`Bank1-Slot${n}`, "Plain Ring", "3", "1", "11"]),
+    ),
+  );
+  const plan = bisPlan({ rows: ringRows, inventory, criteria: wizard, weights: { mana: 1 }, options: { ...OWNED, wantEffects: ["Extended Range II"] } });
+  const [effect] = plan.effects;
+  assert.deepEqual([effect.how, effect.by, effect.stone?.from, effect.cost], ["socket", "Silver Ring +1", "Moonstone Ring", 5]);
+  assert.match(effect.stone?.where ?? "", /^take it out of Moonstone Ring \+1/);
+  assert.ok(!plan.loadout.picks.some((p) => p.item.title === "Moonstone Ring"), "the weaker ring stays in the bank");
 });
