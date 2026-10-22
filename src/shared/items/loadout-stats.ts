@@ -53,8 +53,10 @@ export interface EffectiveStats {
 }
 
 /**
- * The totals as your character would see them: each rate adds `stats[from] × perPoint` to `to` — so
- * +40 STA on a Warrior/Shaman at 50 is HP as well as STA. Whole points, as the game shows a pool.
+ * The totals as your character would see them: each rate adds what the gear's `from` buys in `to` — so
+ * +40 STA on a Warrior/Shaman at 50 is HP as well as STA. With the race known that's exact across the
+ * bands (`curve(base + gear) − curve(base)`: 20 AGI that lifts a 70 to 90 is 25 AC back and 5 more, not
+ * 6.67); without it, `points × perPoint`. Whole points, as the game shows a pool.
  */
 export function effectiveStats(stats: LoadoutStats, rates: readonly DerivedRate[]): EffectiveStats {
   const total: LoadoutStats = { ...stats };
@@ -62,7 +64,7 @@ export function effectiveStats(stats: LoadoutStats, rates: readonly DerivedRate[
   for (const rate of rates) {
     const points = stats[rate.from];
     if (!points) continue;
-    const added = Math.round(points * rate.perPoint);
+    const added = Math.round(rate.curve && rate.base !== undefined ? rate.curve(rate.base + points) - rate.curve(rate.base) : points * rate.perPoint);
     if (!added) continue;
     fromAttributes[rate.to] = (fromAttributes[rate.to] ?? 0) + added;
     total[rate.to] = (total[rate.to] ?? 0) + added;

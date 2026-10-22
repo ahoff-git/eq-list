@@ -2,7 +2,8 @@
 import { useCallback, useMemo } from "react";
 import { useClosedZones, useCurrentItemCatalog } from "@/lib/hooks";
 import { useItemQuery } from "@/lib/items/useItemQuery";
-import { useHeldGrades, useOwnedItems } from "@/lib/exports/useGameExports";
+import { useHeldGrades, useInventory, useOwnedItems } from "@/lib/exports/useGameExports";
+import { loadoutStats } from "@/shared/items/loadout-stats";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import CatalogueHarvest from "@/app/components/items/CatalogueHarvest";
@@ -162,13 +163,32 @@ export default function ItemSearchPanel() {
   );
 
   /**
+   * What you wear now, by your newest dump — with your race, what places each attribute in its band
+   * (an AGI point below 75 is worth fifteen above it; ADR 0331).
+   */
+  const { items: dump } = useInventory();
+  const worn = useMemo(() => {
+    if (!dump) return undefined;
+    const byTitle = new Map(rows.map((r) => [normalizeItemName(r.item.title), r]));
+    return loadoutStats(
+      dump.filter((it) => it.area === "worn").flatMap((it) => {
+        const row = byTitle.get(normalizeItemName(it.baseName));
+        return row ? [gradedItemStats(row.stats, it.grade)] : [];
+      }),
+    );
+  }, [dump, rows]);
+  // One ticked race is yours, the way the ticked classes are; none, or several, says nothing about it.
+  const race = active.facets.race.length === 1 ? active.facets.race[0] : undefined;
+
+  /**
    * The sheet both Search and the loadout builder score by: yours, with HP, mana and AC folded into the stats
-   * that make them, for the ticked classes at the level cap (`derived-stats.ts`). Folded once here so
-   * the two modes can't weigh an INT point differently.
+   * that make them, for the ticked classes at the level cap (`derived-stats.ts`) — at the rates where
+   * your totals actually stand, when your race is ticked. Folded once here so the two modes can't weigh
+   * an INT point differently.
    */
   const rates = useMemo(
-    () => derivedRates({ classes: active.facets.class, level: active.levelMax ?? MAX_PLAYER_LEVEL }),
-    [active.facets.class, active.levelMax],
+    () => derivedRates({ classes: active.facets.class, level: active.levelMax ?? MAX_PLAYER_LEVEL, race, worn }),
+    [active.facets.class, active.levelMax, race, worn],
   );
   const scoring = useMemo(() => foldDerivedWeights(weights, rates), [weights, rates]);
   const yourWeights = weightedStats(weights);

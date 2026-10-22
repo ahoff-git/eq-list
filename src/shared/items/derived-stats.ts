@@ -26,26 +26,45 @@
  *   level-60 Shadow Knight 3 AC). The softest number here. Below 75 the loss is far steeper, but no
  *   geared character is down there.
  *
- * The character's own stat totals are not known, so the 255 STA halving and the 200 INT/WIS knee are
- * not applied; the rates are the ones a character between 100 and 200 sees.
+ * **Where your totals sit decides the rate** ([Statistics](https://eqlwiki.com/Statistics), ADR 0331).
+ * Given your race (one ticked in the Race picker), your classes' modifiers and what you wear, each
+ * conversion is a curve, not a constant: INT/WIS buy mana 1:1 to 100, at 2.5× to the 200 soft cap and
+ * at half that above; AGI buys about ⅓ AC a point above 75 but costs 5 AC a point below it (66→75 AGI
+ * was 45 AC); and nothing past the 510 hard cap counts. A rate's `perPoint` is then the slope where you
+ * stand, and its `curve` lets a total be converted exactly across the bands. With no race known, the
+ * rates are the mid-band ones a geared character usually sees, as before.
+ *
+ * **Mana per point stops growing at 50.** EQEmu's `CalcBaseMana` keeps climbing (15 at 60), but EQL
+ * measures ~11.25 at 50 (eqltools) and ~11.27 at 60 (eqlwiki Statistics) — so the level term is held
+ * at 50, which fits both.
  */
 import type { ClassName } from "../class-names";
+import { ATTRIBUTE_CAP, baseAttributes, withGear, type Attribute } from "./character-base";
 import type { StatKey } from "./item-stats";
 import type { StatWeights } from "./item-search";
 
-/** Who is being scored for: the classes the Class picker has ticked, and a level. */
+/** Who is being scored for: the classes the Class picker has ticked, a level, and — when known — a race and what's worn. */
 export interface CharacterBasis {
   classes: readonly string[];
   level: number;
+  /** One race code (the Race picker's), when exactly one is ticked — what places totals in their bands. */
+  race?: string;
+  /** What the character wears now, so the per-point rates are the ones at its real totals. */
+  worn?: Partial<Record<StatKey, number>>;
 }
 
 /** One point of `from` is worth `perPoint` points of `to`, through these classes' pools. */
 export interface DerivedRate {
   from: StatKey;
   to: StatKey;
+  /** What one more point is worth where the character stands (the mid band when that isn't known). */
   perPoint: number;
   /** The classes whose pools carry it — empty for a rate no class changes (AGI → AC). */
   pools: string[];
+  /** `to` given a whole `from` total, across the bands and the cap — present when the race is known. */
+  curve?: (total: number) => number;
+  /** The character's `from` before gear (race and classes), the point the curve is measured from. */
+  base?: number;
 }
 
 /** A trio's pool is its two biggest classes' pools added up. */
@@ -56,6 +75,35 @@ const MID_BAND_CONVERSION = 2.5;
 
 /** AC per AGI above 75; see the module note. */
 const AC_PER_AGI = 1 / 3;
+
+/** AC lost per AGI below 75 — "66 to 75 AGI provides 45 AC". */
+const AC_PER_AGI_BELOW = 5;
+
+/** Where AGI stops costing AC and starts paying a little. */
+const AGI_KNEE = 75;
+
+/** The level past which mana per point stops growing; see the module note. */
+const MANA_LEVEL_CAP = 50;
+
+/** INT/WIS converted for mana: 1:1 to 100, 2.5× to the 200 soft cap, half that past it (EQEmu). */
+function convertedWisInt(total: number): number {
+  const t = Math.min(Math.max(total, 0), ATTRIBUTE_CAP);
+  if (t <= 100) return t;
+  if (t <= 200) return 100 + MID_BAND_CONVERSION * (t - 100);
+  return 100 + MID_BAND_CONVERSION * 100 + (MID_BAND_CONVERSION / 2) * (t - 200);
+}
+
+/** AC from AGI, relative to 75: a third a point above, five a point below. */
+function acFromAgi(total: number): number {
+  const t = Math.min(total, ATTRIBUTE_CAP);
+  return t >= AGI_KNEE ? (t - AGI_KNEE) * AC_PER_AGI : (t - AGI_KNEE) * AC_PER_AGI_BELOW;
+}
+
+/** HP from STA: linear up to the hard cap. */
+const capped = (total: number) => Math.min(Math.max(total, 0), ATTRIBUTE_CAP);
+
+/** The slope of a curve at a total: what the next point is worth there. */
+const slope = (curve: (t: number) => number, at: number) => curve(at + 1) - curve(at);
 
 /**
  * EQEmu's `GetClassLevelFactor`: the per-class HP-per-STA factor, which steps up with level. Each row
@@ -105,9 +153,10 @@ function hpFactor(klass: string, level: number): number {
   return steps?.find(([below]) => level < below)?.[1] ?? 0;
 }
 
-/** Mana per *converted* point of INT/WIS, per pool — EQEmu `CalcBaseMana`. */
+/** Mana per *converted* point of INT/WIS, per pool — EQEmu `CalcBaseMana`, its level term held at 50. */
 function manaPerConverted(level: number): number {
-  return level <= 40 ? 0.075 * level : 3 + 0.15 * (level - 40);
+  const l = Math.min(level, MANA_LEVEL_CAP);
+  return l <= 40 ? 0.075 * l : 3 + 0.15 * (l - 40);
 }
 
 /**
@@ -129,27 +178,34 @@ function countedManaPools(classes: readonly string[]): { klass: string; stat: "i
  * What one point of each primary stat is worth in HP, mana and AC, for these classes at this level.
  * No class ticked means no pools to speak of, so only AGI → AC is offered.
  */
-export function derivedRates({ classes, level }: CharacterBasis): DerivedRate[] {
+export function derivedRates({ classes, level, race, worn }: CharacterBasis): DerivedRate[] {
   const rates: DerivedRate[] = [];
+  const base = baseAttributes(race, classes);
+  const now = base && withGear(base, worn ?? {});
+  /** A rate with its curve: the slope where the character stands, or `midBand` when that isn't known. */
+  const rate = (from: Attribute, to: StatKey, pools: string[], curve: (t: number) => number, midBand: number): DerivedRate =>
+    base && now
+      ? { from, to, perPoint: round2(slope(curve, now[from])), pools, curve, base: base[from] }
+      : { from, to, perPoint: round2(midBand), pools };
 
   const hpPools = classes
     .filter((klass) => hpFactor(klass, level) > 0)
     .sort((a, b) => hpFactor(b, level) - hpFactor(a, level))
     .slice(0, COUNTED_POOLS);
   if (hpPools.length) {
-    const factor = hpPools.reduce((sum, klass) => sum + hpFactor(klass, level), 0);
-    rates.push({ from: "sta", to: "hp", perPoint: round2((level * factor) / 3000), pools: hpPools });
+    const perSta = (level * hpPools.reduce((sum, klass) => sum + hpFactor(klass, level), 0)) / 3000;
+    rates.push(rate("sta", "hp", hpPools, (t) => capped(t) * perSta, perSta));
   }
 
   const manaPools = countedManaPools(classes);
   for (const stat of ["int", "wis"] as const) {
     const pools = manaPools.filter((p) => p.stat === stat).map((p) => p.klass);
     if (!pools.length) continue;
-    const perPoint = pools.length * MID_BAND_CONVERSION * manaPerConverted(level);
-    rates.push({ from: stat, to: "mana", perPoint: round2(perPoint), pools });
+    const perConverted = pools.length * manaPerConverted(level);
+    rates.push(rate(stat, "mana", pools, (t) => convertedWisInt(t) * perConverted, MID_BAND_CONVERSION * perConverted));
   }
 
-  rates.push({ from: "agi", to: "ac", perPoint: round2(AC_PER_AGI), pools: [] });
+  rates.push(rate("agi", "ac", [], acFromAgi, AC_PER_AGI));
   return rates;
 }
 

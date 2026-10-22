@@ -9,6 +9,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { derivedGains, derivedRates, foldDerivedWeights, ratesInUse } from "../../src/shared/items/derived-stats";
+import { baseAttributes } from "../../src/shared/items/character-base";
+import { effectiveStats } from "../../src/shared/items/loadout-stats";
 import { itemRows, searchItems, NO_CRITERIA } from "../../src/shared/items/item-search";
 import type { CachedItem } from "../../src/shared/types";
 
@@ -58,10 +60,11 @@ test("two pools on one stat buy it twice; the counted pair is chosen by class, f
   assert.equal(rate(["Ranger", "Paladin", "Enchanter"], 50, "wis"), 11.25);
 });
 
-test("mana per point grows with level", () => {
+test("mana per point grows with level up to 50, then holds (EQL's measured ~11.25 at 50 and ~11.27 at 60)", () => {
   assert.equal(rate(["Wizard"], 20, "int"), 3.75);
   assert.equal(rate(["Wizard"], 40, "int"), 7.5);
-  assert.equal(rate(["Wizard"], 60, "int"), 15);
+  assert.equal(rate(["Wizard"], 50, "int"), 11.25);
+  assert.equal(rate(["Wizard"], 60, "int"), 11.25, "EQEmu would say 15; eqlwiki's Statistics page measured ~11.27");
 });
 
 test("AGI buys AC whatever the classes, so it is offered with none ticked", () => {
@@ -108,4 +111,38 @@ test("an item says what its attributes give in the stats you weighted — and no
   const rates = derivedRates({ classes: ["Wizard", "Enchanter"], level: 50 });
   assert.deepEqual(derivedGains({ int: 9, sta: 5, mana: 10 }, { mana: 1 }, rates), [{ from: "int", to: "mana", points: 9, amount: 203 }]);
   assert.deepEqual(derivedGains({ int: 9 }, { hp: 1 }, rates), [], "mana not weighted: INT explains nothing");
+});
+
+// ─── Where your totals sit (eqlwiki Statistics, ADR 0331) ─────────────────────
+
+test("a race and its classes start from the page's tables, classes adding up", () => {
+  // Human 75s, plus Wizard (STA 15, INT 15), Shaman (STA 10, WIS 15, CHA 5), Enchanter (INT 15, CHA 15).
+  assert.deepEqual(baseAttributes("HUM", ["Wizard", "Shaman", "Enchanter"]), { str: 75, sta: 100, agi: 75, dex: 75, wis: 90, int: 105, cha: 95 });
+  assert.equal(baseAttributes("Nope", ["Wizard"]), undefined, "a race the page doesn't list says nothing");
+  assert.equal(baseAttributes(undefined, ["Wizard"]), undefined);
+});
+
+test("AGI below 75 is worth fifteen times AGI above it — a Dwarf Wizard starts at 70", () => {
+  const agi = (worn: Record<string, number>) => derivedRates({ classes: ["Wizard"], level: 50, race: "DWF", worn }).find((r) => r.from === "agi")!;
+  assert.equal(agi({}).perPoint, 5, "at 70, the next point is 5 AC");
+  assert.equal(agi({ agi: 10 }).perPoint, 0.33, "at 80, a third");
+  // And gear that lifts 70 to 90 is 25 AC back to the knee and 5 past it — exact across the band.
+  assert.equal(effectiveStats({ agi: 20 }, [agi({})]).fromAttributes.ac, 30);
+});
+
+test("INT buys mana 1:1 to 100, 2.5× to the 200 soft cap, half that past it, nothing past 510", () => {
+  // A Barbarian Wizard starts at INT 75 (60 + 15); 11.25 mana per *converted* point at 50 is 4.5 per raw one.
+  const int = (worn: Record<string, number>) => derivedRates({ classes: ["Wizard"], level: 50, race: "BAR", worn }).find((r) => r.from === "int")!;
+  assert.equal(int({}).perPoint, 4.5, "under 100");
+  assert.equal(int({ int: 50 }).perPoint, 11.25, "between 100 and 200");
+  assert.equal(int({ int: 150 }).perPoint, 5.63, "past the soft cap, half");
+  assert.equal(int({ int: 500 }).perPoint, 0, "past the 510 hard cap, nothing");
+  // +50 INT from 75: 25 points at 1× and 25 at 2.5× is 87.5 converted, 393.75 mana at 4.5 per converted.
+  assert.equal(effectiveStats({ int: 50 }, [int({})]).fromAttributes.mana, Math.round(87.5 * 4.5));
+});
+
+test("with no race known, the rates are the mid-band ones they always were", () => {
+  assert.equal(rate(["Wizard"], 50, "int"), 11.25);
+  assert.equal(derivedRates({ classes: [], level: 50 }).find((r) => r.from === "agi")?.perPoint, 0.33);
+  assert.equal(derivedRates({ classes: ["Wizard"], level: 50 }).find((r) => r.from === "int")?.curve, undefined);
 });

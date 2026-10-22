@@ -371,6 +371,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0328 (superseded by 0329): A theoretical best is planned from the whole catalogue — own locks, the shared "not hunting" list as its can't-get list, a chosen grade, exact via each slot's top contenders](./0328-a-theoretical-best-is-planned-from-the-catalogue.md)
 - [0329: The loadout builder plans one loadout from what you hold and (optionally) the catalogue — one set of locks that hold until unlocked, one exclusions list for the whole page, the name box respected and explained, wanted effects solved in (supersedes 0328)](./0329-the-loadout-is-one-plan-of-what-you-hold-and-what-to-hunt.md)
 - [0330: A ranked item's socket (outside Storage) is the truth about that kind of effect, and any socketed stone in something not worn can be moved](./0330-a-ranked-item-s-socket-says-what-it-carries.md)
+- [0331: HP/mana/AC rates are taken where your totals sit — race base + class modifiers + worn gear, AGI's 75 knee, INT/WIS's 200 soft cap, the 510 cap — and mana per point holds at level 50](./0331-a-stat-s-worth-depends-on-where-your-totals-sit.md)
 
 ## Open Questions
 
