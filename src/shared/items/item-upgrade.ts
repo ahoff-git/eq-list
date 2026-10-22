@@ -25,7 +25,7 @@
  * another, so a stat the card was silent on stays silent.
  */
 
-import type { ItemStats, StatKey } from "./item-stats";
+import { labelPattern, type ItemStats, type StatKey } from "./item-stats";
 import { heldAsNamed, type ShownName } from "../shown-name";
 
 /** The highest grade an item can merge to. */
@@ -42,7 +42,7 @@ interface GradeState {
 
 /** The stats the slider's "spreadsheet" rule covers — the flat-then-percent growth. */
 const PRIMARY: ReadonlySet<StatKey> = new Set<StatKey>([
-  "ac", "hp", "mana", "str", "sta", "agi", "dex", "wis", "int", "cha",
+  "ac", "hp", "mana", "end", "str", "sta", "agi", "dex", "wis", "int", "cha",
   "svFire", "svCold", "svMagic", "svDisease", "svPoison",
 ]);
 
@@ -92,8 +92,9 @@ function scaleWeight(base: number, state: GradeState): number {
 function scaleStat(key: StatKey, base: number, state: GradeState): number {
   if (PRIMARY.has(key)) return scalePrimary(base, state);
   if (key === "dmg") return scaleDamage(base, state);
-  if (key === "haste") return scaleFlat(base, state);
+  if (key === "haste" || key === "hpRegen" || key === "manaRegen" || key === "endRegen") return scaleFlat(base, state);
   if (key === "wt") return scaleWeight(base, state);
+  if (key === "range") return base < 0 ? base : base + 10 * state.full;
   return base; // delay, backstab: the slider leaves them alone; ratio is re-derived below
 }
 
@@ -118,6 +119,10 @@ export function gradedStats(stats: Stats, grade: number, exp = 0): Stats {
   }
   // Same derivation and rounding as `parseItemStats`, so a graded ratio compares with an ungraded one.
   if (out.dmg !== undefined && out.delay) out.ratio = Math.round((out.dmg / out.delay) * 100) / 100;
+  // The slider's invented `SV VOID: +grade` for two or more attribute/save stats — a printed SV Void,
+  // which doesn't grow, comes first on the card and so is the one read.
+  const qualifiers = (Object.keys(stats) as StatKey[]).filter((k) => VOID_STAT_KEYS.has(k)).length;
+  if (state.full > 0 && qualifiers >= 2 && out.svVoid === undefined) out.svVoid = state.full;
   return out;
 }
 
@@ -149,10 +154,12 @@ const CARD_LABELS: readonly [label: string, key: string][] = [
   ["FIRE", "SV_FIRE"], ["MANA", "MP"], ["DMG", "DMG"], ["END", "END"], ["STR", "STR"], ["STA", "STA"],
   ["AGI", "AGI"], ["DEX", "DEX"], ["WIS", "WIS"], ["INT", "INT"], ["CHA", "CHA"], ["AC", "AC"], ["HP", "HP"],
   ["MP", "MP"], ["WT", "WT"],
+  // The bare saves some cards write (`MR: +15`) — read as saves by `item-stats.ts`, so graded as saves here.
+  ["MR", "SV_MAGIC"], ["FR", "SV_FIRE"], ["CR", "SV_COLD"], ["DR", "SV_DISEASE"], ["PR", "SV_POISON"],
 ];
 const CARD_KEY = new Map(CARD_LABELS.map(([label, key]) => [label, key]));
 const CARD_STAT_RE = new RegExp(
-  `(\\b(?:${CARD_LABELS.map(([l]) => l).join("|")})\\b)(:\\s*)([+-]?)(\\d+(?:\\.\\d+)?)(\\s*%?)`,
+  `(\\b(?:${CARD_LABELS.map(([l]) => labelPattern(l)).join("|")})\\b)(:\\s*)([+-]?)(\\d+(?:\\.\\d+)?)(\\s*%?)`,
   "gi",
 );
 /** Card keys under the flat-then-percent rule — `PRIMARY` plus Endurance, which `StatKey` lacks. */
@@ -161,6 +168,9 @@ const PRIMARY_CARD = new Set([
   "SV_MAGIC", "SV_FIRE", "SV_COLD", "SV_POISON", "SV_DISEASE",
 ]);
 const FLAT_CARD = new Set(["HP_REGEN", "MANA_REGEN", "END_REGEN", "HASTE"]);
+/** The same qualifiers, as the stat keys `gradedStats` sees. */
+const VOID_STAT_KEYS: ReadonlySet<StatKey> = new Set<StatKey>(["str", "sta", "int", "agi", "dex", "cha", "wis", "svFire", "svCold", "svPoison", "svMagic", "svDisease"]);
+
 /** Having two of these earns an item the slider's invented `SV VOID: +grade` line. HP, Mana and AC don't count. */
 const VOID_QUALIFIERS = new Set([
   "STR", "STA", "INT", "AGI", "DEX", "CHA", "WIS", "SV_FIRE", "SV_COLD", "SV_POISON", "SV_MAGIC", "SV_DISEASE",
@@ -194,7 +204,7 @@ export function gradedCardLines(lines: readonly string[], grade: number, exp = 0
   const qualifiers = new Set<string>();
   const out = lines.map((line) =>
     line.replace(CARD_STAT_RE, (match, label: string, colon: string, sign: string, num: string, pct: string, offset: number) => {
-      const key = CARD_KEY.get(label.toUpperCase().replace(/\s+/g, " ")) ?? label.toUpperCase();
+      const key = CARD_KEY.get(label.toUpperCase().replace(/[\s.]+/g, " ")) ?? label.toUpperCase();
       // `Base Dmg:` is weapon damage too (Keg Mallet). The wiki's slider misses it — it only knows a bare
       // `DMG:` — but its own rules say weapon damage grows, and `item-stats.ts` reads it as `dmg`, so
       // the card agrees with the numbers the Items tab and best-in-slot weigh.

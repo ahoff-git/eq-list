@@ -1627,8 +1627,12 @@ export function createWikiClient(
    * `rows9`: a `Class:` line's codes are now translated to full names (`class-names.ts`) — a pack
    * written before that still has `classes` full of `WAR`/`BST`/etc., which is exactly the stale
    * content this signature exists to catch.
+   * `rows10`: HP, Mana and End Regen are read as stats — a pack written before carries none.
+   * `rows11`: Endurance, Range, DMG Bonus, SV Void, instrument modifiers, `SV.Fire`-style and bare
+   * `MR:` saves, and an effect written without its label (`Grim Aura (Worn)`) are read too.
+   * `rows12`: elemental damage (`Cold DMG: 3`) is its own stat — a pack written before read it as DMG.
    */
-  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows9`;
+  const PACK_SIGNATURE = `v${CACHE_VERSION}/rows12`;
   /**
    * Set when a write invalidates the pack — so a harvest doesn't unlink a file per page, and so
    * `readPack` stops trusting it **at once**.

@@ -33,6 +33,10 @@ export type StatKey =
   | "ac"
   | "hp"
   | "mana"
+  | "end"
+  | "hpRegen"
+  | "manaRegen"
+  | "endRegen"
   | "str"
   | "sta"
   | "agi"
@@ -45,15 +49,27 @@ export type StatKey =
   | "svMagic"
   | "svDisease"
   | "svPoison"
+  | "svVoid"
   | "dmg"
   | "delay"
   | "ratio"
   | "backstab"
   | "haste"
+  | "dmgBonus"
+  | "coldDmg"
+  | "fireDmg"
+  | "poisonDmg"
+  | "diseaseDmg"
+  | "magicDmg"
+  | "range"
+  | "windMod"
+  | "stringMod"
+  | "percussionMod"
+  | "brassMod"
   | "wt";
 
 /** Which part of a card a stat comes from — the grouping every stat picker and weight editor uses. */
-export type StatGroup = "defence" | "attribute" | "resist" | "weapon";
+export type StatGroup = "defence" | "regen" | "attribute" | "resist" | "weapon" | "instrument";
 
 export interface StatMeta {
   key: StatKey;
@@ -79,6 +95,12 @@ export const STATS: readonly StatMeta[] = [
   { key: "ac", label: "AC", group: "defence" },
   { key: "hp", label: "HP", group: "defence" },
   { key: "mana", label: "Mana", group: "defence" },
+  { key: "end", label: "Endurance", group: "defence" },
+  // Per tick, as the card prints them (`HP Regen: 2  Mana Regen: 2  End Regen: 2`). Each grows +1 a
+  // grade on eqlwiki's slider, so a +9 Talisman of Kejaar Kerrath is 11 of each (ADR 0307).
+  { key: "hpRegen", label: "HP Regen", group: "regen" },
+  { key: "manaRegen", label: "Mana Regen", group: "regen" },
+  { key: "endRegen", label: "End Regen", group: "regen" },
   { key: "str", label: "STR", group: "attribute" },
   { key: "sta", label: "STA", group: "attribute" },
   { key: "agi", label: "AGI", group: "attribute" },
@@ -91,12 +113,28 @@ export const STATS: readonly StatMeta[] = [
   { key: "svMagic", label: "SV Magic", group: "resist" },
   { key: "svDisease", label: "SV Disease", group: "resist" },
   { key: "svPoison", label: "SV Poison", group: "resist" },
+  { key: "svVoid", label: "SV Void", group: "resist" },
   { key: "dmg", label: "DMG", group: "weapon" },
   { key: "delay", label: "Delay", group: "weapon", lowerIsBetter: true },
   { key: "ratio", label: "Ratio", group: "weapon", places: 2 },
   { key: "backstab", label: "Backstab", group: "weapon" },
   { key: "haste", label: "Haste", group: "weapon" },
+  // The flat bonus a weapon's card states on top of its DMG ("DMG Bonus: 13 @ lvl 50") — the slider
+  // leaves it alone — and a bow's Range, which the slider grows +10 a grade.
+  { key: "dmgBonus", label: "DMG Bonus", group: "weapon" },
+  // Elemental damage a weapon or arrow adds to each hit ("Cold DMG: 3"). The slider leaves it.
+  { key: "coldDmg", label: "Cold DMG", group: "weapon" },
+  { key: "fireDmg", label: "Fire DMG", group: "weapon" },
+  { key: "poisonDmg", label: "Poison DMG", group: "weapon" },
+  { key: "diseaseDmg", label: "Disease DMG", group: "weapon" },
+  { key: "magicDmg", label: "Magic DMG", group: "weapon" },
+  { key: "range", label: "Range", group: "weapon" },
   { key: "wt", label: "Weight", group: "weapon", lowerIsBetter: true, places: 1 },
+  // A bard's instrument modifiers ("Wind Resonance: 15", "Brass Instrument: 10"). The slider leaves them.
+  { key: "windMod", label: "Wind", group: "instrument" },
+  { key: "stringMod", label: "Stringed", group: "instrument" },
+  { key: "percussionMod", label: "Percussion", group: "instrument" },
+  { key: "brassMod", label: "Brass", group: "instrument" },
 ];
 
 /**
@@ -105,10 +143,12 @@ export const STATS: readonly StatMeta[] = [
  * word covers armour and two pools without misdescribing one of them ("Defence" read as AC alone).
  */
 export const STAT_GROUPS: readonly { key: StatGroup; label: string }[] = [
-  { key: "defence", label: "AC, HP & Mana" },
+  { key: "defence", label: "AC, HP, Mana & Endurance" },
+  { key: "regen", label: "Regeneration" },
   { key: "attribute", label: "Attributes" },
   { key: "resist", label: "Resists" },
   { key: "weapon", label: "Weapon" },
+  { key: "instrument", label: "Instruments" },
 ];
 
 const STAT_BY_KEY = new Map<StatKey, StatMeta>(STATS.map((s) => [s.key, s]));
@@ -127,15 +167,35 @@ export function statMeta(key: StatKey): StatMeta {
  * `ratio` has no entry: it is the one number no card prints.
  */
 const STAT_ALIASES: readonly (readonly [StatKey, readonly string[]])[] = [
-  ["svFire", ["SV FIRE", "SV FR"]],
-  ["svCold", ["SV COLD", "SV CR"]],
-  ["svMagic", ["SV MAGIC", "SV MR"]],
-  ["svDisease", ["SV DISEASE", "SV DR"]],
-  ["svPoison", ["SV POISON", "SV PR"]],
+  // The bare `MR:`/`FR:`… some cards write (Summoned: Elemental Blanket) mean the same saves.
+  ["svFire", ["SV FIRE", "SV FR", "FR"]],
+  ["svCold", ["SV COLD", "SV CR", "CR"]],
+  ["svMagic", ["SV MAGIC", "SV MR", "MR"]],
+  ["svDisease", ["SV DISEASE", "SV DR", "DR"]],
+  ["svPoison", ["SV POISON", "SV PR", "PR"]],
   ["delay", ["ATK DELAY", "DELAY"]],
   ["backstab", ["BACKSTAB"]],
   ["haste", ["HASTE"]],
   ["mana", ["MANA"]],
+  ["end", ["END", "ENDUR", "ENDURANCE"]],
+  ["svVoid", ["SV VOID"]],
+  ["dmgBonus", ["DMG BONUS", "DMG BON"]],
+  ["range", ["RANGE"]],
+  // Before the bare `DMG`, which would otherwise read `Cold DMG: 3` as the weapon's own damage.
+  ["coldDmg", ["COLD DMG", "COLD DAMAGE"]],
+  ["fireDmg", ["FIRE DMG", "FIRE DAMAGE"]],
+  ["poisonDmg", ["POISON DMG", "POISON DAMAGE"]],
+  ["diseaseDmg", ["DISEASE DMG", "DISEASE DAMAGE"]],
+  ["magicDmg", ["MAGIC DMG", "MAGIC DAMAGE"]],
+  ["windMod", ["WIND RESONANCE", "WIND INSTRUMENT", "WIND INSTRUMENTS"]],
+  ["stringMod", ["STRING RESONANCE", "STRINGED INSTRUMENT", "STRINGED INSTRUMENTS", "STRING INSTRUMENT", "STRING INSTRUMENTS"]],
+  ["percussionMod", ["PERCUSSION RESONANCE", "PERCUSSION INSTRUMENT", "PERCUSSION INSTRUMENTS"]],
+  ["brassMod", ["BRASS RESONANCE", "BRASS INSTRUMENT", "BRASS INSTRUMENTS"]],
+  // Every spelling the slider itself recognises (`ext.itemLevelSlider`); "HP"/"MANA" alone can't take
+  // these, since a label has to meet its colon.
+  ["hpRegen", ["HP REGEN", "HP REGENERATION"]],
+  ["manaRegen", ["MANA REGEN", "MANA REGENERATION", "MP REGEN"]],
+  ["endRegen", ["END REGEN", "ENDUR REGEN", "ENDURANCE REGEN", "ENDURANCE REGENERATION"]],
   ["dmg", ["DMG"]],
   ["ac", ["AC"]],
   ["hp", ["HP"]],
@@ -162,8 +222,15 @@ for (const [key, spellings] of STAT_ALIASES) {
  * Whitespace inside a two-word label is flexible because the wiki writes both `SV Magic` and
  * `SV  MAGIC`.
  */
+/**
+ * A label as a pattern: its words apart by any run of spaces or dots, since cards write `SV Magic`,
+ * `SV  MAGIC`, `SV.Fire` and `SV. Void` for the same thing. Shared with the card grader
+ * (`item-upgrade.ts`), so both read a label the same way.
+ */
+export const labelPattern = (label: string): string => label.replace(/ /g, "[\\s.]+");
+
 const STAT_LINE = new RegExp(
-  `(?:^|[\\s(,])(${[...ALIAS_TO_KEY.keys()].map((a) => a.replace(/ /g, "\\s+")).join("|")})\\s*:\\s*([+-]?\\d+(?:\\.\\d+)?)(?![A-Za-z0-9.])`,
+  `(?:^|[\\s(,])(${[...ALIAS_TO_KEY.keys()].map(labelPattern).join("|")})\\s*:\\s*([+-]?\\d+(?:\\.\\d+)?)(?![A-Za-z0-9.])`,
   "gi",
 );
 
@@ -262,6 +329,16 @@ function effectKind(label: string, line: string): EffectKind {
 const EFFECT_LINE = /^(Focus Effect|Combat Effect|Click Effect|Worn Effect|Effect)\s*:\s*(.+)$/i;
 
 /**
+ * An effect written without its label — `Grim Aura (Worn)` (Holgresh Spirit Beads) — said by nothing
+ * but the parenthetical naming how it's had. Measured: one card in the catalogue, and its effect was in
+ * no picker until this.
+ */
+const BARE_EFFECT_LINE = /^([^:()]+?)\s*(\((?:Worn|Combat|Must Equip|Click|Proc|Focus)\b[^)]*\).*)$/i;
+
+/** Does this line describe an effect, labelled or not? */
+const isEffectLine = (line: string) => EFFECT_LINE.test(line) || BARE_EFFECT_LINE.test(line);
+
+/**
  * An effect line split into its label, the spell it names, and what follows the name — so a card can
  * link the spell (`WikiPageView`) and the stats can file it (`itemStats`) off one reading.
  *
@@ -270,6 +347,8 @@ const EFFECT_LINE = /^(Focus Effect|Combat Effect|Click Effect|Worn Effect|Effec
  * are a bare `Effect:` with nothing after it; a nameless effect is not an effect, so that's `undefined`.
  */
 export function effectLineParts(line: string): { label: string; name: string; rest: string } | undefined {
+  const bare = EFFECT_LINE.test(line.trim()) ? null : BARE_EFFECT_LINE.exec(line.trim());
+  if (bare) return { label: "Effect", name: bare[1].trim(), rest: ` ${bare[2]}` };
   const m = EFFECT_LINE.exec(line.trim());
   if (!m) return undefined;
   const name = m[2].split(/\s*\(|\s+at Level\b/i)[0].trim();
@@ -438,7 +517,7 @@ export function parseItemStats(lines: readonly string[] | undefined): ItemStats 
     const line = raw.trim();
     if (!line) continue;
 
-    if (EFFECT_LINE.test(line)) {
+    if (isEffectLine(line)) {
       const effect = effectLineParts(line);
       if (effect && !out.effects.some((e) => e.name === effect.name)) {
         out.effects.push({ name: effect.name, kind: effectKind(effect.label, line) });
@@ -450,7 +529,7 @@ export function parseItemStats(lines: readonly string[] | undefined): ItemStats 
     // label rule can't tell it apart — `BACKSTAB : 8` is a real stat spaced the same way — so the line goes.
     STAT_LINE.lastIndex = 0;
     for (let m = VENDOR_VALUE_LINE.test(line) ? null : STAT_LINE.exec(line); m; m = STAT_LINE.exec(line)) {
-      const key = ALIAS_TO_KEY.get(m[1].toUpperCase().replace(/\s+/g, " "));
+      const key = ALIAS_TO_KEY.get(m[1].toUpperCase().replace(/[\s.]+/g, " "));
       const value = Number(m[2]);
       // Two spellings of one stat on one line would be a malformed card; the first wins, since a
       // card reads top-to-bottom and left-to-right and so should this.

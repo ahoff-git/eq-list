@@ -213,3 +213,13 @@ test("an effect line splits into its label, the spell it names, and what follows
   assert.equal(effectLineParts("Effect:"), undefined);
   assert.equal(effectLineParts("AC: 6"), undefined);
 });
+
+test("elemental damage is its own stat, never the weapon's DMG", () => {
+  // Blessed Guardian Arrows print no DMG of their own — only the cold they add.
+  assert.deepEqual(parseItemStats(["Cold DMG: 4"]).stats, { coldDmg: 4 });
+  // Fleeting Memory prints both on one line.
+  assert.deepEqual(parseItemStats(["DMG: 8 Cold DMG: 1 Range: 200"]).stats, { dmg: 8, coldDmg: 1, range: 200 });
+  const dagger = parseItemStats(["Skill: Piercing Atk Delay: 19", "DMG: 3", "Poison DMG: 1"]).stats;
+  assert.equal(dagger.dmg, 3);
+  assert.equal(dagger.poisonDmg, 1);
+});

@@ -22,7 +22,8 @@ import { STATS, type ItemStats, type StatKey } from "./item-stats";
 import type { DerivedRate } from "./derived-stats";
 
 /** Stats a loadout's total is reported for, in card order. */
-export const LOADOUT_STATS: readonly StatKey[] = STATS.filter((s) => s.group !== "weapon" || s.key === "haste" || s.key === "wt").map((s) => s.key);
+// Instrument modifiers aren't totals either: the instrument being played is the one that counts.
+export const LOADOUT_STATS: readonly StatKey[] = STATS.filter((s) => (s.group !== "weapon" && s.group !== "instrument") || s.key === "haste" || s.key === "wt").map((s) => s.key);
 
 /** Stats where the best single piece counts, not the sum. */
 const HIGHEST_COUNTS: ReadonlySet<StatKey> = new Set(["haste"]);

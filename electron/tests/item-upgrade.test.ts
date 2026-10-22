@@ -18,8 +18,9 @@ test("+0 is the card as printed", () => {
 });
 
 test("a big stat grows 10% a grade; a small one a flat point", () => {
-  assert.deepEqual(gradedStats(breastplate, 1), { ac: 33, str: 14, dex: 10, sta: 10, wt: 6.9 });
-  assert.deepEqual(gradedStats(breastplate, 2), { ac: 36, str: 16, dex: 11, sta: 11, wt: 6.2 });
+  // Three attribute stats earn the slider's SV Void at the grade, as the card shows it.
+  assert.deepEqual(gradedStats(breastplate, 1), { ac: 33, str: 14, dex: 10, sta: 10, wt: 6.9, svVoid: 1 });
+  assert.deepEqual(gradedStats(breastplate, 2), { ac: 36, str: 16, dex: 11, sta: 11, wt: 6.2, svVoid: 2 });
 });
 
 test("partial exp toward the next grade moves big stats only, rounded half-up", () => {
@@ -32,7 +33,7 @@ test("partial exp toward the next grade moves big stats only, rounded half-up", 
 });
 
 test("+10 doubles a big stat and leaves a tenth of the weight", () => {
-  assert.deepEqual(gradedStats(breastplate, 10), { ac: 60, str: 26, dex: 19, sta: 19, wt: 0.8 });
+  assert.deepEqual(gradedStats(breastplate, 10), { ac: 60, str: 26, dex: 19, sta: 19, wt: 0.8, svVoid: 10 });
 });
 
 test("grades and exp outside the ladder clamp", () => {
