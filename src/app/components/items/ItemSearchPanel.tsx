@@ -211,7 +211,9 @@ export default function ItemSearchPanel() {
           checked={active.hideOutOfEra}
           onChange={(hideOutOfEra) => set({ hideOutOfEra })}
         />
-        {owned && (
+        {/* Search only: the loadout builder plans from what you hold either way, and says for itself
+            whether it may reach past it (Include gear to hunt) — this box would do nothing there. */}
+        {owned && mode === "search" && (
           <CheckField
             label="what I own"
             title={`Only items in your newest /outputfile inventory dump${ownedAt ? `, written ${exportAgeText(Date.now() - ownedAt)}` : ""} — bags, bank, depot, hoard, Storage, and exaltations wherever they're socketed`}
