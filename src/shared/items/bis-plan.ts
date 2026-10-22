@@ -60,6 +60,16 @@ export const HUNT_GRADES = [2, 5, 10] as const;
 /** Things you hold offered per slot for a lock — the slot's best few, which is what a choice needs. */
 export const ALTERNATIVES_PER_SLOT = 8;
 
+/**
+ * The grade every item is planned as having, for its sockets: ranking up is easy (to +5 in a sitting),
+ * so the plan doesn't let a low grade stand in the way — any item can take a stone of any kind, and any
+ * effect can be taken out (the player's call, ADR 0330). An item's real grade still sets its stats, and
+ * still says how its sockets read in the dump (`heldEffects`): that is what's in it now.
+ */
+const ASSUMED_SOCKET_GRADE = 4;
+/** The sockets a copy is planned to have open — all of them, whatever its grade now. */
+const socketsOf = (grade: number) => openSockets(Math.max(grade, ASSUMED_SOCKET_GRADE));
+
 /** Catalogue items offered for a wanted effect nothing you hold can give you. */
 const EFFECT_HUNTS = 5;
 
@@ -299,7 +309,7 @@ function heldEffects(h: Held, rowOf: (name: string) => ItemRow | undefined): Hel
   for (const e of h.row.stats.effects) {
     const ranked = h.item.grade >= extractableAt(e.kind);
     if (ranked && socketsKnown) continue; // its socket says, below
-    out.push({ name: e.name, kind: e.kind, own: true, from: h.row, removable: ranked });
+    out.push({ name: e.name, kind: e.kind, own: true, from: h.row, removable: true }); // ranked up when needed
   }
   if (!socketsKnown) return out;
   for (const socketed of h.item.sockets) {
@@ -464,7 +474,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     for (const pick of loadout.picks) {
       const host = hostOf(pick);
       if (!host) continue;
-      const open = new Set(openSockets(pick.item.grade));
+      const open = new Set(socketsOf(pick.item.grade));
       for (const s of stones) {
         if (!open.has(s.stone.kind) || claimed.has(`${pick.item.id}|${s.stone.kind}`)) continue;
         if (!stoneFits(s.stone.card, host.row.stats, yourClasses)) continue;
@@ -508,7 +518,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     const stoneFor = (c: BisCandidate) => {
       const row = rowOfCandidate(c);
       if (!row) return undefined;
-      const open = new Set(openSockets(c.grade));
+      const open = new Set(socketsOf(c.grade));
       return stones.find((s) => open.has(s.stone.kind) && s.sourceId !== c.id && stoneFits(s.stone.card, row.stats, yourClasses));
     };
     const carriers = usableCandidates().filter((c) => carries(c, effect));
@@ -533,7 +543,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
         carriers.length || hosts.length
           ? "what could carry it only fits slots you've locked"
           : options.includeHunt
-            ? "nothing you hold or could hunt under your criteria carries it, and no stone of it fits a socket that's open (a focus socket opens at +1, click +2, worn +3, proc +4)"
+            ? "nothing you hold or could hunt under your criteria carries it, and no stone of it you have fits"
             : "nothing you hold carries it, and no stone of it fits an open socket — switch on gear to hunt to look further",
       );
       continue;
@@ -543,7 +553,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     const cost = round2(Math.max(0, before - loadout.total));
     const pick = loadout.picks.find((p) => p.slotIndex === best!.slotIndex);
     const host = pick && hostOf(pick);
-    if (best.stone && pick && host && openSockets(pick.item.grade).includes(best.stone.stone.kind)) {
+    if (best.stone && pick && host && socketsOf(pick.item.grade).includes(best.stone.stone.kind)) {
       // Worn for its socket: the stone moves in, out of wherever it is now.
       const stone = best.stone;
       claimed.add(`${pick.item.id}|${stone.stone.kind}`);
@@ -626,7 +636,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     ...options.wantEffects,
   ]);
   const hosts = loadout.picks
-    .filter((p) => openSockets(p.item.grade).length > 0)
+    .filter((p) => socketsOf(p.item.grade).length > 0)
     .flatMap((p) => {
       const host = hostOf(p);
       if (!host) return [];
@@ -635,7 +645,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
         const kind = kindOfSocket(s.socket);
         if (kind) filled.set(kind, s.name);
       }
-      return [{ held: host.name, grade: p.item.grade, card: host.row.stats, filled }];
+      return [{ held: host.name, grade: Math.max(p.item.grade, ASSUMED_SOCKET_GRADE), card: host.row.stats, filled }];
     });
   const sockets = socketPlan(hosts, stonesNow().map((s) => s.stone), wantedNames, yourClasses);
 

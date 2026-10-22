@@ -164,8 +164,9 @@ export default function BisView({
             </ul>
           )}
           <p className="muted small">
-            A grade opens one exaltation socket of each kind — focus at +1, click at +2, worn at +3, proc at +4. A stone carries one effect,
-            never stats, so it isn&apos;t counted in the value above. Wanted effects come first; a stone planned for one shows on its row above.
+            Any stone can go in any item&apos;s socket of its kind, and any effect can be taken out — ranking an item up for it is assumed. A
+            stone carries one effect, never stats, so it isn&apos;t counted in the value above. Wanted effects come first; a stone planned for one
+            shows on its row above.
           </p>
           {sockets.map((s, n) => (
             <SocketRow key={n} plan={s} claim={plan.socketClaims.find((c) => c.host === s.host && c.kind === s.kind)} />

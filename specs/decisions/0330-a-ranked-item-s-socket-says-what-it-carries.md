@@ -46,9 +46,12 @@ for an item in Storage, is read from the card.
   - wear something that carries it;
   - wear something with the socket open and move the stone in.
   The last two are weighed against each other: on the real dump, Extended Range II's stone moves into
-  the Ring of Xorbb +4 instead of the weaker ring it sits in being forced on. The only limit is the
-  socket: a ring needs +1 for a focus socket, so a +0 ring to hunt can take one only at a hunt grade
-  of +1 or more.
+  the Ring of Xorbb +4 instead of the weaker ring it sits in being forced on.
+- **Ranking up is assumed (the player's call).** Ranking an item to +5 is easy, so the plan doesn't let
+  a low grade stand in the way. Any effect can be taken out, and any item can take a stone of any kind
+  (`ASSUMED_SOCKET_GRADE` in `bis-plan.ts`). The real grade still sets an item's stats, and still says
+  how its sockets read in the dump. With this, a stone usually goes into something the loadout wears
+  anyway, at no cost. An item is forced on for an effect only when no stone of it exists to move.
 
 ## Consequences
 

@@ -237,7 +237,7 @@ test("a wanted effect is socketed from a stone before anything is worn for it", 
   assert.deepEqual(plan.socketClaims.map((c) => [c.host, c.kind]), [["Moonstone Ring +1", "focus"]]);
 });
 
-test("a wanted effect only a held item carries is worn, at the cost of what it displaces", () => {
+test("a wanted effect on something held is taken out and socketed where it costs nothing — ranking up assumed", () => {
   const headRows = itemRows([
     page("Cap of Mana", ["Slot: HEAD", "MANA: +40", "Class: ALL", "Race: ALL"]),
     page("Hasted Hat", ["Slot: HEAD", "MANA: +10", "Class: ALL", "Race: ALL", "Worn Effect: Haste"]),
@@ -259,12 +259,30 @@ test("a wanted effect only a held item carries is worn, at the cost of what it d
     weights: { mana: 1 },
     options: { ...OWNED, locks: {}, wantEffects: ["Haste"] },
   });
-  // The charms fill both Any Slots and the cap the head, so the hat is left out — until Haste is
-  // wanted. Cheapest is the head (losing the cap, 40 → 10), not an Any Slot (losing a charm, 50 → 10).
+  // The charms fill both Any Slots and the cap the head, so the hat stays in the bank — and its Haste,
+  // which this app takes as removable however the hat is ranked (ADR 0330), goes into the cap. Nothing
+  // is given up for it.
   assert.equal(plan.unconstrained, 140);
+  assert.deepEqual([plan.effects[0].how, plan.effects[0].by, plan.effects[0].stone?.from], ["socket", "Cap of Mana", "Hasted Hat"]);
+  assert.equal(plan.loadout.picks.find((p) => p.slot === "HEAD")?.item.title, "Cap of Mana");
+  assert.equal(plan.loadout.total, 140);
+});
+
+test("a wanted effect only something to hunt carries is worn, at the cost of what it displaces", () => {
+  // No stone of it exists to move — the hat is only in the catalogue — so it has to be worn. Cheapest
+  // is the head (losing the cap, 40 → 10), not an Any Slot (losing a charm, 50 → 10).
+  const headRows = itemRows([
+    page("Cap of Mana", ["Slot: HEAD", "MANA: +40", "Class: ALL", "Race: ALL"]),
+    page("Hasted Hat", ["Slot: HEAD", "MANA: +10", "Class: ALL", "Race: ALL", "Worn Effect: Haste"]),
+    page("Mana Charm", ["Slot: CHARM", "MANA: +50", "Class: ALL", "Race: ALL"]),
+  ]);
+  const inventory = parseInventoryDump(
+    tsvDump(["Head", "Cap of Mana", "1", "1", "1"], ["Bank1", "Backpack", "17005", "1", "8"], ["Bank1-Slot2", "Mana Charm", "3", "1", "1"], ["Bank1-Slot3", "Mana Charm", "3", "1", "1"]),
+  );
+  // Hunting on, but only the hat is offered from the catalogue (the name box), so nothing else changes.
+  const plan = bisPlan({ rows: headRows, inventory, criteria: { ...wizard, text: "hasted" }, weights: { mana: 1 }, options: { ...NO_BIS_OPTIONS, wantEffects: ["Haste"] } });
   assert.deepEqual([plan.effects[0].how, plan.effects[0].by, plan.effects[0].cost], ["forced", "Hasted Hat", 30]);
-  assert.equal(plan.loadout.picks.find((p) => p.slot === "HEAD")?.item.title, "Hasted Hat");
-  assert.equal(plan.loadout.total, 110);
+  assert.equal(plan.loadout.picks.find((p) => p.slot === "HEAD")?.item.heldAt, undefined, "the hat is one to hunt");
 });
 
 test("the loadout as text: one line a slot, graded names, and where to fetch what isn't worn", () => {
@@ -404,11 +422,10 @@ test("a ranked item's socket says what it carries: its own effect swapped out fo
   );
 });
 
-test("a stone can move to any item with that socket open — a better ring for it beats forcing on the one it's in", () => {
-  // Four Plain Rings (60 mana, +0, no sockets) fill both fingers and both Any Slots. Extended Range II
-  // is only on a Moonstone Ring +1 in the bank (33 mana at +1, its own focus in its socket). Forcing that
-  // ring on costs 27; wearing the Silver Ring +1 (55 mana at +1, focus socket open) and moving the stone
-  // into it costs 5 — so that's the plan.
+test("a stone moves into any item of its slot the loadout already wears — whatever its grade, at no cost", () => {
+  // Four Plain Rings (60 mana, +0) fill both fingers and both Any Slots. Extended Range II is only on a
+  // Moonstone Ring +1 in the bank. Ranking up is assumed (ADR 0330), so a +0 Plain Ring takes the stone:
+  // nothing is forced on, and nothing is given up.
   const ringRows = itemRows([
     page("Plain Ring", ["Slot: FINGER", "MANA: +60", "Class: ALL", "Race: ALL"]),
     page("Silver Ring", ["Slot: FINGER", "MANA: +50", "Class: ALL", "Race: ALL"]),
@@ -425,7 +442,7 @@ test("a stone can move to any item with that socket open — a better ring for i
   );
   const plan = bisPlan({ rows: ringRows, inventory, criteria: wizard, weights: { mana: 1 }, options: { ...OWNED, wantEffects: ["Extended Range II"] } });
   const [effect] = plan.effects;
-  assert.deepEqual([effect.how, effect.by, effect.stone?.from, effect.cost], ["socket", "Silver Ring +1", "Moonstone Ring", 5]);
+  assert.deepEqual([effect.how, effect.by, effect.stone?.from, effect.cost], ["socket", "Plain Ring", "Moonstone Ring", undefined]);
   assert.match(effect.stone?.where ?? "", /^take it out of Moonstone Ring \+1/);
   assert.ok(!plan.loadout.picks.some((p) => p.item.title === "Moonstone Ring"), "the weaker ring stays in the bank");
 });
