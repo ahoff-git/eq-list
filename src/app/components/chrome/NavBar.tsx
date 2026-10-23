@@ -9,16 +9,14 @@ import { placeLabel, useNav } from "@/lib/chrome/nav";
  * tabs and a control that only exists on wiki pages can only ever go back to a wiki page — which is
  * the button that used to do nothing after a name click from the Hunt tab (ADR 0173).
  *
- * Nothing to show is nothing drawn: a window sitting on the tab it opened on has no history worth a
- * row of its own, and this is an overlay that plays over a game.
+ * Always drawn, even with nowhere to go — then it just names where you are. A row that appeared on
+ * the first link click pushed the panel down under the cursor, so the trail jumped between being
+ * there and not (ADR 0333).
  */
 export default function NavBar() {
   const nav = useNav();
-  const idle = !nav.canBack && !nav.canForward;
   // The current crumb is where you already are — it names the screen rather than offering it.
   const crumbs = nav.crumbs.map((c) => ({ ...c, label: placeLabel(c.place) }));
-
-  if (idle) return null;
 
   return (
     <div className="crumbs no-drag">

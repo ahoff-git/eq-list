@@ -53,7 +53,6 @@ import {
   PAGE_SIZE_OPTIONS,
   hiddenByDefault,
 } from "@/app/components/dataGridDefaults";
-import CraftingLogView from "@/app/components/tradeskills/CraftingLogView";
 import { wikiName } from "@/shared/shown-name";
 
 const SKILLS = TRADESKILLS.filter((t) => t.kind === "skill").sort((a, b) => a.name.localeCompare(b.name));
@@ -61,14 +60,12 @@ const CULTURAL = TRADESKILLS.filter((t) => t.kind === "cultural");
 const REFERENCE = TRADESKILLS.filter((t) => t.kind === "reference");
 
 interface TradeskillView {
-  /** The leveling guides, or your own crafting log. */
-  mode: "guides" | "log";
   /** The skill on screen, by name. */
   skill: string;
   /** Leave out what the server hasn't opened — on by default, like the Items and Spells tabs. */
   hideOutOfEra: boolean;
 }
-const DEFAULT_VIEW: TradeskillView = { mode: "guides", skill: SKILLS[0]?.name ?? "", hideOutOfEra: true };
+const DEFAULT_VIEW: TradeskillView = { skill: SKILLS[0]?.name ?? "", hideOutOfEra: true };
 
 const openOnWiki = (title: string, anchor?: string) => void api()?.wiki.openInBrowser(guidePath(title, anchor));
 
@@ -188,30 +185,9 @@ type Planned = { needs?: StepNeed[]; estimate?: StepEstimate };
 export default function TradeskillsPanel() {
   const [view, setView] = usePersistentShape(STORAGE_KEYS.tradeskillView, DEFAULT_VIEW);
   const progress = useTradeskillProgress();
-  const crafted = progress.crafting.sittings.length;
   return (
     <div className="tradeskills-panel">
-      <div className="row wrap" style={{ marginBottom: 8 }}>
-        <div className="segmented">
-          <button className={segCls(view.mode === "guides")} onClick={() => setView({ ...view, mode: "guides" })}>
-            Guides
-          </button>
-          <button
-            className={segCls(view.mode === "log")}
-            onClick={() => setView({ ...view, mode: "log" })}
-            title="Every combine your log records — by sitting, by item, and by item at each skill level"
-          >
-            Crafting log{crafted ? ` (${crafted})` : ""}
-          </button>
-        </div>
-      </div>
-      {view.mode === "log" ? (
-        <div className="page-detail tradeskill-detail">
-          <CraftingLogView progress={progress} />
-        </div>
-      ) : (
-        <TradeskillGuides view={view} setView={setView} progress={progress} />
-      )}
+      <TradeskillGuides view={view} setView={setView} progress={progress} />
     </div>
   );
 }

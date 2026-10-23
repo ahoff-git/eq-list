@@ -358,7 +358,8 @@ button {
 }
 
 /* ── The trail (`NavBar`) ─────────────────────────────────────────────────────
-   Between the tabs and the panel, and only there when there is somewhere to go back to. Sits on the
+   Between the tabs and the panel, always — a row that came and went moved every panel down the first
+   time you clicked a link (ADR 0333). Sits on the
    raised strip the tabs sit on so it reads as part of the window's frame rather than as the top line
    of whatever panel is open — the trail belongs to the window, not to the page. One line, ellipsised
    from the left, because a long page title must not push the ← off a narrow overlay. */

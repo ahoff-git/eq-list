@@ -8,6 +8,7 @@ import SpellSearchPanel from "@/app/components/spells/SpellSearchPanel";
 import StancesPanel from "@/app/components/spells/StancesPanel";
 import AAPanel from "@/app/components/aa/AAPanel";
 import TradeskillsPanel from "@/app/components/tradeskills/TradeskillsPanel";
+import CraftingLogPanel from "@/app/components/tradeskills/CraftingLogPanel";
 import GameExportsPanel from "@/app/components/exports/GameExportsPanel";
 import WindowButtons from "@/app/components/chrome/WindowButtons";
 import Titlebar from "@/app/components/chrome/Titlebar";
@@ -42,7 +43,7 @@ import PeerOfferToasts from "@/app/components/peers/PeerOfferToasts";
 import AchievementAlertToasts from "@/app/components/achievements/AchievementAlertToasts";
 import PeerVersionToast from "@/app/components/peers/PeerVersionToast";
 import RaceUnlockAlerts from "@/app/components/faction/RaceUnlockAlerts";
-import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, useMaximized, useRendererDebug, useShoppingList, useSettings, useUiScale, useWindowOpacity } from "@/lib/hooks";
+import { useAchievementsRunning, useBuffs, useCapabilities, useGoalsRunning, useMaximized, useRendererDebug, useShoppingList, useSettings, useTradeskillProgress, useUiScale, useWindowOpacity } from "@/lib/hooks";
 import { usePersistentState } from "@/lib/usePersistentState";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { NavProvider, useNav } from "@/lib/chrome/nav";
@@ -54,7 +55,7 @@ import { useWindowPin } from "@/lib/chrome/windowToggles";
 import AwariHost from "@/lib/awari/host";
 import { OVERLAY_HOTKEY, UI_SCALE } from "@/shared/constants";
 
-type Tab = "overview" | "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings";
+type Tab = "overview" | "list" | "hunt" | "timers" | "goals" | "achievements" | "buffs" | "loot" | "faction" | "search" | "items" | "spells" | "stances" | "aa" | "tradeskills" | "crafting" | "combat" | "session" | "exports" | "alerts" | "peers" | "settings";
 
 /**
  * The app. This route *is* the app now, in Electron and in a plain browser tab alike — `api()`
@@ -91,6 +92,8 @@ function ControlWindow() {
   // Read here rather than only in the panel, so the tab itself can say how many buffs are down —
   // the one number in this feature that is worth seeing without opening it.
   const buffs = useBuffs();
+  // The Crafting log section's count — sittings your log records.
+  const crafted = useTradeskillProgress().crafting.sittings.length;
   // The lightweight "how many" read, not `useGoals`'s ticking one — the tab label only ever needs a
   // count, and it would otherwise re-render the whole shell once a second regardless of which tab
   // is open.
@@ -230,7 +233,8 @@ function ControlWindow() {
     aa: { key: "aa", label: "AAs" },
     exports: { key: "exports", label: "Inventory & exports", ...logged },
     faction: { key: "faction", label: "Faction", ...logged },
-    tradeskills: { key: "tradeskills", label: "Tradeskills" },
+    tradeskills: { key: "tradeskills", label: "Guides" },
+    crafting: { key: "crafting", label: crafted ? `Crafting log (${crafted})` : "Crafting log", ...logged },
     combat: { key: "combat", label: "Combat", ...logged },
     session: { key: "session", label: "Session", ...logged },
     loot: { key: "loot", label: "Loot", ...logged },
@@ -326,12 +330,12 @@ function ControlWindow() {
         <WebDownloadBanner />
 
         <TabBar items={areaItems} active={area.key} onSelect={openArea} />
-        {area.sections.length > 1 && (
-          <TabBar className="sections" items={area.sections.map((k) => sectionItems[k as Tab])} active={tab} onSelect={openTab} />
-        )}
+        {/* Every area draws its section row, and the trail always has its row, so the panel starts
+            at the same height on every screen (ADR 0333). */}
+        <TabBar className="sections" items={area.sections.map((k) => sectionItems[k as Tab])} active={tab} onSelect={openTab} />
 
         {/* Where you have been, under the tabs and above the panel — because the trail crosses both
-            (ADR 0173). Draws nothing on a window that hasn't been anywhere. */}
+            (ADR 0173). */}
         <NavBar />
 
         {/* The one region click-through hands to the game — see `PASS_THROUGH`. */}
@@ -358,6 +362,7 @@ function ControlWindow() {
           {tab === "stances" && <StancesPanel />}
           {tab === "aa" && <AAPanel />}
           {tab === "tradeskills" && <TradeskillsPanel />}
+          {tab === "crafting" && <CraftingLogPanel />}
           {tab === "combat" && <DamagePanel />}
           {tab === "session" && <SessionPanel />}
           {tab === "exports" && <GameExportsPanel />}

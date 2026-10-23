@@ -24,6 +24,13 @@ everything else, so this list can stay short enough to read:
 
 ## Next up
 
+- **One achievements view: the app's and the game's export together.** Now → Achievements
+  (`AchievementsPanel`, [ADR 0212](./decisions/0212-an-achievement-criterion-can-watch-the-log-or-wait-to-be-told.md)) tracks the stock
+  catalog and your own criteria from the log. Character → Inventory & exports shows the game's
+  achievements dump (`AchievementsDumpView`) separately. Combine them so one list shows what the
+  game says is done next to what the app is tracking, and an exported completion ticks the matching
+  app achievement.
+
 - **A group-mate killed by a named lands on the spawn board as a named.** `provenNamed` only knows
   someone is a person once the log shows them killing an article mob, so a group-mate who never lands
   a killing blow in your log passes both article checks when a named kills them. On a live install

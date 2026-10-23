@@ -28,7 +28,8 @@ export const AREAS: readonly AreaDef[] = [
   { key: "find", label: "Find", sections: ["search", "items", "spells", "stances", "aa"] },
   // You, as your exports describe you: what you carry and where, and who likes you.
   { key: "character", label: "Character", sections: ["exports", "faction"] },
-  { key: "craft", label: "Craft", sections: ["tradeskills"] },
+  // The guides, and your own combines — sections like every other area's, not a toggle inside one.
+  { key: "craft", label: "Craft", sections: ["tradeskills", "crafting"] },
   // What already happened: fights, the evening's rates, what dropped.
   { key: "history", label: "History", sections: ["combat", "session", "loot"] },
   // Places you go to decide something and leave — the room you share with is one of them.

@@ -373,6 +373,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0330: A ranked item's socket (outside Storage) is the truth about that kind of effect, and any socketed stone in something not worn can be moved](./0330-a-ranked-item-s-socket-says-what-it-carries.md)
 - [0331: HP/mana/AC rates are taken where your totals sit — race base + class modifiers + worn gear, AGI's 75 knee, INT/WIS's 200 soft cap, the 510 cap — and mana per point holds at level 50](./0331-a-stat-s-worth-depends-on-where-your-totals-sit.md)
 - [0332: Every number a card prints is read — regen, Endurance, Range, DMG Bonus, SV Void, instrument mods, elemental damage, lenient resist spellings, unlabelled effects — and graded as the slider does](./0332-every-number-a-card-prints-is-read.md)
+- [0333: Every area has the same two rows — Craft's Guides and Crafting log become sections — and the trail row is always drawn, so nothing jumps](./0333-every-area-has-the-same-two-rows.md)
 
 ## Open Questions
 
