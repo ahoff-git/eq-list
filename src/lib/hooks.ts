@@ -365,8 +365,16 @@ function useAllMobs(refreshKey?: unknown): MobKnowledge[] {
   return useFollowedRead<MobKnowledge[]>(
     (a) => a.mobs.all(),
     // Mob knowledge is derived from the kill log, so a bulk kill change (import / clear) means
-    // refetch — not just when the caller's refreshKey ticks over.
-    (a, reload) => a.kills.onChanged(reload),
+    // refetch — not just when the caller's refreshKey ticks over. The pooled half moves when a
+    // peer's report lands, with nothing of ours changing (`useZoneMobs` follows the same two).
+    (a, reload) => {
+      const stopKills = a.kills.onChanged(reload);
+      const stopPeers = a.peers.onChanged(reload);
+      return () => {
+        stopKills();
+        stopPeers();
+      };
+    },
     NO_MOBS,
     [refreshKey],
   );
@@ -471,17 +479,12 @@ export function useMobContributors(): KnowledgeContributor[] {
 }
 
 /**
- * The mobs on your list, paired with the zones you've actually killed them in — the Hunt tab's
+ * The mobs on your list, paired with the zones anyone has killed them in — the Hunt tab's
  * targets.
  *
- * The zones come from **your own kills** and nowhere else: a mob's wiki page carries no sources at
- * all, so where a named lives is a question only observation answers here. A mob you've never
- * killed comes back with an empty list and is shown as a target with an unknown home rather than
- * being quietly dropped.
- *
- * `mobs.all()` pools yours with peers', which is why the rule itself is `huntTargetsFor` and not a
- * filter written here: without it the tab said "go to Lower Guk" on somebody else's word, in the
- * same words it uses for a camp you have stood in.
+ * The zones come from kills — yours and peers' (`mobs.all()` pools them) — since a mob's wiki page
+ * carries no sources at all. A zone only a peer has seen is offered and credited (`huntTargetsFor`,
+ * ADR 0336); a mob nobody has killed is shown as a target with an unknown home.
  */
 export function useHuntTargets(entries: ShoppingListEntry[]): HuntTarget[] {
   const mobs = useAllMobs();

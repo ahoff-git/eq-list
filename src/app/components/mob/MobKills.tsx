@@ -13,8 +13,8 @@ import { RoamLinks, ZoneLink } from "@/app/components/map/MapLink";
 import { dropTableName } from "@/shared/shown-name";
 
 /**
- * What **your** kills say about the mob whose page you're reading — one block per zone you've killed
- * it in, with the observed drop rates and where it turned out to live.
+ * What kills say about the mob whose page you're reading — yours pooled with peers' (`useMobZones`),
+ * one block per zone it's been killed in, with the observed drop rates and where it turned out to live.
  *
  * The page above it is the wiki's claim; this is the evidence
  * ([ADR 0025](../../../specs/decisions/0025-observation-over-the-wiki.md)). Until now that evidence
@@ -40,14 +40,17 @@ export default function MobKills({
 }) {
   const zones = useMobZones(mob);
   const kills = zones.reduce((n, z) => n + z.kills, 0);
+  const myKills = zones.reduce((n, z) => n + z.myKills, 0);
+  // "Your kills" only while it's true — a pooled tally is half somebody else's.
+  const heading = kills > myKills ? `Kills · ${count(kills, "kill")} (${myKills} yours)` : `Your kills · ${count(kills, "kill")}`;
   const character = (useSettings()?.playerName || "").trim() || "you";
 
   if (zones.length === 0) {
     if (!onWiki) return null;
     return (
       <p className="muted small" style={{ marginTop: 12 }}>
-        You haven&apos;t killed this yet — the rates above are the wiki&apos;s, from an older build.
-        Kill it and your own turn up here.
+        Nobody has killed this yet — not you, nor any peer you&apos;ve pooled with — so the rates above
+        are the wiki&apos;s, from an older build. Kill it and your own turn up here.
       </p>
     );
   }
@@ -61,7 +64,7 @@ export default function MobKills({
   return (
     <>
       <h4 className="muted small" style={{ marginTop: 12 }}>
-        Your kills · {count(kills, "kill")} in {count(zones.length, "zone")}
+        {heading} in {count(zones.length, "zone")}
         <button
           className="btn ghost sm"
           style={{ marginLeft: 8 }}

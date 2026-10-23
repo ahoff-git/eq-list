@@ -434,7 +434,7 @@ function ZoneGroups({
                 <ItemLink title={notAnItem(m.mob)} className="hm-name" />
                 {/* Says why this row is here at all: a target was asked for by name, and may
                     have no items under it whatsoever. */}
-                {m.target && <TargetFlag />}
+                {m.target && <TargetFlag placedBy={m.placedBy} />}
                 <span className="hm-items">
                   {m.items.map((it) => {
                     const truth = truthFor(m.mob, it.item);
@@ -551,7 +551,7 @@ function PlaceRow({
       <ItemLink title={notAnItem(place.mob)} className="hm-name" />
       <span className="hp-in muted">in</span>
       <HuntZoneName zone={place.zone} here={youAreHere} />
-      {place.target && <TargetFlag />}
+      {place.target && <TargetFlag placedBy={place.placedBy} />}
     </div>
   );
 }
@@ -652,11 +652,18 @@ function ObtainedStepper({
   );
 }
 
-/** A mob you asked for by name, rather than one that happens to drop something. */
-function TargetFlag() {
+/**
+ * A mob you asked for by name, rather than one that happens to drop something — and, where only a
+ * peer's kills place it in this zone, whose (ADR 0336).
+ */
+function TargetFlag({ placedBy }: { placedBy?: string[] }) {
+  const peers = placedBy?.join(", ");
   return (
-    <span className="hm-target" title="On your list — you want to kill this one">
-      on your list
+    <span
+      className="hm-target"
+      title={peers ? `On your list — placed here by ${peers}'s kills, not yours yet` : "On your list — you want to kill this one"}
+    >
+      on your list{peers ? ` · via ${peers}` : ""}
     </span>
   );
 }

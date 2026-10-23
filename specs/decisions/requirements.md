@@ -260,8 +260,11 @@ reading like a measurement, and they are shared code
   auto-sold drops fetched — summed only where the sum is the question. Corpse coin is placed by what
   the log was doing; a price is derived from the loot ledger. ([0047](./0047-money-is-copper-in-two-ledgers.md))
 - **A mob is a thing you hunt, not a thing that drops.** A list entry has a `kind`; a mob is excluded
-  from loot matching and from "what's left", and is placed by your own kills because its wiki page has
-  no sources. ([0098](./0098-a-mob-is-a-thing-you-hunt.md))
+  from loot matching and from "what's left", and is placed by anyone's kills (yours first, a peer's
+  credited) because its wiki page has no sources. ([0098](./0098-a-mob-is-a-thing-you-hunt.md) ·
+  [0336](./0336-peer-data-is-evidence.md))
+- **Peer data is evidence, used wherever it answers a question**, always credited, never counted as
+  yours, and never your own data echoed back. ([0336](./0336-peer-data-is-evidence.md))
 - **An item page says who dropped it and where-ish**, from the pooled tally read from the item's end,
   carrying the same three verdicts and the same thresholds the mob page uses. ([0101](./0101-an-item-page-says-who-dropped-it.md))
 - **A position is printed `y, x`, rounded, y first**, through one formatter, with its spread beside it

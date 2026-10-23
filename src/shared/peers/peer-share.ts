@@ -253,10 +253,14 @@ export interface ShareKindSpec<T = unknown> {
    */
   project?: (rows: readonly unknown[], context: ShareContext) => unknown[];
   /**
-   * Whether this kind is shared when nobody has said either way. **Off for everything but `items`.**
+   * Whether this kind is shared when nobody has said either way. **On for the public mirrors and for
+   * every observation; off for what you made and what is live.**
    *
-   * Every other kind is *yours* — what you made, what you saw, what is true on your machine right
-   * now — and a share of those has to be a decision somebody took. An item page is none of those: it
+   * Observations are on because peer data is evidence the whole room is better for
+   * ([ADR 0336](../../specs/decisions/0336-peer-data-is-evidence.md)): counts, rates and kill
+   * positions, nothing you authored and nothing about you right now. Authored and live kinds are
+   * *yours* — what you made, what is true on your machine this minute — and a share of those has to
+   * be a decision somebody took. An item page is none of those: it
    * is a copy of a public eqlwiki page, byte-identical on every install, containing nothing about you
    * at all. There is nothing for "off by default" to protect, and a room where everybody has to find
    * a toggle before the network can divide the work is a room that mostly doesn't
@@ -597,6 +601,7 @@ export const SHARE_KINDS: ShareKindSpec[] = [
   {
     key: "mobs",
     family: "observation",
+    defaultOn: true,
     label: "Mob observations",
     blurb: "Drop counts, coin and roam areas — tallies, never your kills or your movements.",
     noun: "tally",
@@ -612,6 +617,7 @@ export const SHARE_KINDS: ShareKindSpec[] = [
   {
     key: "factionObservations",
     family: "observation",
+    defaultOn: true,
     label: "Faction-cause evidence",
     blurb: "Which kills or conversations your own ledger settled on as the cause of a faction change — never the lone guess, only one it's already corroborated.",
     noun: "tally",
@@ -628,6 +634,7 @@ export const SHARE_KINDS: ShareKindSpec[] = [
   {
     key: "kills",
     family: "observation",
+    defaultOn: true,
     label: "Kill positions",
     blurb: "Where things died, for a pooled heatmap. Carries no time and no loot.",
     noun: "position",
@@ -648,6 +655,7 @@ export const SHARE_KINDS: ShareKindSpec[] = [
   {
     key: "respawns",
     family: "observation",
+    defaultOn: true,
     label: "Respawn intervals",
     blurb: "How long a named took to come back, measured at your camp — the shortest gap you saw.",
     noun: "interval",
@@ -662,6 +670,7 @@ export const SHARE_KINDS: ShareKindSpec[] = [
   {
     key: "crafting",
     family: "observation",
+    defaultOn: true,
     label: "Crafting success rates",
     blurb: "How often each craft came out at each skill level — counts only, never when you crafted or what you were doing.",
     noun: "rate",
@@ -821,8 +830,8 @@ export type ShareSettings = Partial<Record<ShareKind, boolean>>;
  * Is this kind switched on?
  *
  * An explicit answer always wins, in both directions — the point of a toggle is that turning it off
- * stays off. Only the *absence* of one falls through to the kind's own default, which is off for
- * everything except public wiki pages (see `ShareKindSpec.defaultOn`).
+ * stays off. Only the *absence* of one falls through to the kind's own default, which is on for public
+ * wiki pages and observations and off for the rest (see `ShareKindSpec.defaultOn`).
  */
 export function sharing(settings: ShareSettings | undefined, key: ShareKind): boolean {
   const said = settings?.[key];

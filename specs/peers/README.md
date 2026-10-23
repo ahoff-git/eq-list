@@ -72,7 +72,8 @@ travels peer-to-peer, on request, over that peer's own connection.
     something and then left is still taught to the next person who asks. A row's origin travels with
     it (`by`/`byId`) so a receiver files it under whoever actually observed it rather than whoever
     happened to relay it, which is what keeps the same sample from being counted twice through two
-    different paths to the same source. **`respawns` also answers your own questions**, not only a
+    different paths to the same source. A row whose origin is **our own** id is dropped on arrival
+    (`groupByOrigin`'s `self`): it is our own log coming back round, already counted once. **`respawns` also answers your own questions**, not only a
     peer's: the Timers tab's `known` list folds a camp's pooled interval in alongside your own
     learning (`mergeRespawns`), so a camp you have never personally sat at can still show a usable
     estimate the moment someone else in the room has
@@ -242,7 +243,8 @@ travels peer-to-peer, on request, over that peer's own connection.
   **Your connection** (connect, the real status light, who you appear as, Retry connection, and the
   bootstrap URL behind a `<details>`), **What you share** (live location first — the one thing that
   is broadcast rather than handed over, and the only share that needs the game running — then a
-  toggle per kind, all off by default except *Item pages* and *Time of day* — see the `mirror`
+  toggle per kind, off by default except *Item pages*, *Time of day* and the observation kinds
+  ([ADR 0336](../decisions/0336-peer-data-is-evidence.md)) — see the `mirror`
   family), **Who's here** (what each peer offers, and their zone as a
   button that opens the map there), **What's arrived**, and the **scoreboard comparison**.
 - **Saying when you are the old one**

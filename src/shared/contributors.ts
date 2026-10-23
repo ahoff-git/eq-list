@@ -142,12 +142,21 @@ export function readContributor(payload: { id?: unknown; name?: unknown }): Cont
  * `byId` **fails closed** the same way `readContributor` does: a value that isn't a shape we mint
  * ourselves is not trusted as somebody else's identity, and falls back to the sender rather than
  * filing an untrusted claim under a stranger's id.
+ *
+ * `self` is **our own** contributor id, and a row whose origin it is gets dropped. Relaying means
+ * our own observations come back to us: a peer pooled them and offers them onward with our `byId` on.
+ * Filing that echo would count every one of our kills twice, once from the log and once as a "peer".
  */
-export function groupByOrigin<T>(rows: readonly T[], sender: Contributor): Map<string, { by: Contributor; rows: T[] }> {
+export function groupByOrigin<T>(
+  rows: readonly T[],
+  sender: Contributor,
+  self?: string,
+): Map<string, { by: Contributor; rows: T[] }> {
   const groups = new Map<string, { by: Contributor; rows: T[] }>();
   for (const row of rows) {
     const r = row as { byId?: unknown; by?: unknown } | null;
     const origin: Contributor = isContributorId(r?.byId) ? { id: r.byId, name: contributorName(r?.by) } : sender;
+    if (origin.id === self) continue;
     const group = groups.get(origin.id);
     if (group) group.rows.push(row);
     else groups.set(origin.id, { by: origin, rows: [row] });

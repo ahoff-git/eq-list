@@ -32,6 +32,8 @@ export interface HuntMob {
    * sufficient reason for a mob to appear.
    */
   target?: boolean;
+  /** The peers whose kills alone put this target in this zone (`HuntTarget.placedBy`). */
+  placedBy?: string[];
 }
 export interface HuntZone {
   zone: string;
@@ -50,15 +52,17 @@ export interface HuntInput {
 /**
  * A mob you've put on the list to hunt for its own sake.
  *
- * `zones` comes from **your own kills**, not the wiki: a mob page carries no `sources` at all
- * (`parseWikiPage` builds one with `sources: []`), so where a named lives is something only
- * observation can answer here — which is
- * [ADR 0025](../../specs/decisions/0025-observation-over-the-wiki.md) arriving at the same place
- * from the other direction. A mob you've never killed has no zone, and says so rather than guessing.
+ * `zones` comes from **kills — yours and peers'** — not the wiki: a mob page carries no `sources`
+ * at all (`parseWikiPage` builds one with `sources: []`), so where a named lives is something only
+ * observation can answer here ([ADR 0025](../../specs/decisions/0025-observation-over-the-wiki.md),
+ * [ADR 0336](../../specs/decisions/0336-peer-data-is-evidence.md)). A mob nobody has killed has no
+ * zone, and says so rather than guessing.
  */
 export interface HuntTarget {
   mob: string;
   zones: string[];
+  /** Zone → the peers whose kills alone place it there; absent where any of them were yours. */
+  placedBy?: Record<string, string[]>;
 }
 
 /**
@@ -135,7 +139,12 @@ export function buildHunt(items: HuntInput[], targets: HuntTarget[] = []): HuntZ
     // No known zone is still worth listing: it's on your list, and "we don't know where" is a more
     // useful answer than leaving it off the page entirely.
     const zones = target.zones.length ? target.zones : ["Unknown zone"];
-    for (const zone of zones) rowFor(zone, mob).target = true;
+    for (const zone of zones) {
+      const hm = rowFor(zone, mob);
+      hm.target = true;
+      const by = target.placedBy?.[zone];
+      if (by?.length) hm.placedBy = by;
+    }
   }
 
   for (const it of items) {
@@ -175,22 +184,36 @@ export function buildHunt(items: HuntInput[], targets: HuntTarget[] = []): HuntZ
 }
 
 /**
- * The mobs on your list, paired with the places **you** have killed them.
+ * The mobs on your list, paired with every place anyone has killed them — you or a peer.
  *
- * `known` is the pooled tally — yours plus peers' — so `myKills` is what enforces the "your own
- * kills" rule `HuntTarget` states. Pooling is right for a *rate*, where many samples of the same
- * question are simply a better sample; it is wrong for a *direction*, because "go to Lower Guk" on
- * somebody else's word reads identically to a camp you have stood in and there is nothing you can
- * check it against. A blank is the honest answer, and `buildHunt` shows it as one.
+ * Peer data is evidence, not hearsay ([ADR 0336](../../specs/decisions/0336-peer-data-is-evidence.md)):
+ * a zone only a peer has killed it in is a real answer, where the alternative is "home unknown". What
+ * stays is provenance — such a zone carries `placedBy`, so the tab can say whose kills put it there.
  */
 export function huntTargetsFor(entries: ShoppingListEntry[], known: MobKnowledge[]): HuntTarget[] {
   const targets = mobEntries(entries);
   if (!targets.length) return [];
-  const seenMyself = known.filter((m) => m.myKills > 0);
-  return targets.map((e) => ({
-    mob: e.name,
-    zones: distinct(seenMyself.filter((m) => mobKey(m.mob) === mobKey(e.name)).map((m) => m.zone)),
-  }));
+  const seen = known.filter((m) => m.kills > 0);
+  return targets.map((e) => {
+    const here = seen.filter((m) => mobKey(m.mob) === mobKey(e.name));
+    // Your own camps first: a place you've stood is still the better first answer.
+    const ordered = [...here.filter((m) => m.myKills > 0), ...here.filter((m) => m.myKills === 0)];
+    const target: HuntTarget = { mob: e.name, zones: distinct(ordered.map((m) => m.zone)) };
+    const placedBy = placedByPeers(here);
+    if (placedBy) target.placedBy = placedBy;
+    return target;
+  });
+}
+
+/** Zone → who placed it, for the zones where none of the kills were yours. */
+function placedByPeers(rows: MobKnowledge[]): Record<string, string[]> | undefined {
+  const mine = new Set(rows.filter((m) => m.myKills > 0).map((m) => m.zone));
+  const out: Record<string, string[]> = {};
+  for (const m of rows) {
+    if (mine.has(m.zone)) continue;
+    out[m.zone] = distinct([...(out[m.zone] ?? []), ...m.contributors]);
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**
@@ -234,6 +257,8 @@ export interface HuntPlace {
   zone: string;
   /** True when the mob is on your list in its own right (`HuntMob.target`). */
   target?: boolean;
+  /** See `HuntMob.placedBy`. */
+  placedBy?: string[];
 }
 
 export interface HuntItemGroup {
@@ -297,7 +322,7 @@ export function huntTargetPlaces(zones: HuntZone[]): HuntPlace[] {
   const places: HuntPlace[] = [];
   for (const zone of zones) {
     for (const mob of zone.mobs) {
-      if (mob.target) places.push({ mob: mob.mob, zone: zone.zone, target: true });
+      if (mob.target) places.push({ mob: mob.mob, zone: zone.zone, target: true, ...(mob.placedBy && { placedBy: mob.placedBy }) });
     }
   }
   return places.sort((a, b) => a.mob.localeCompare(b.mob) || a.zone.localeCompare(b.zone));

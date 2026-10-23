@@ -251,6 +251,15 @@ test("a byId that isn't a shape we'd mint ourselves is not trusted as somebody's
   }
 });
 
+test("our own rows relayed back to us are dropped, not filed as a peer's", () => {
+  // Bob pooled Alice's kills and now offers them onward — Alice must not count them a second time.
+  const echoed = { n: 1, byId: ALICE.id, by: "Alice" };
+  const bobs = { n: 2 };
+  const groups = groupByOrigin([echoed, bobs], BOB, ALICE.id);
+  assert.equal(groups.size, 1);
+  assert.deepEqual(groups.get(BOB.id)?.rows, [bobs]);
+});
+
 test("a relayed origin with no stated name falls back to the unknown label, never the sender's", () => {
   const groups = groupByOrigin([{ n: 1, byId: BOB.id }], ALICE);
   assert.equal(groups.get(BOB.id)?.by.name, UNKNOWN_CONTRIBUTOR);

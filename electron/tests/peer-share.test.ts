@@ -460,7 +460,12 @@ test("public pages share by default; everything of yours does not", () => {
   assert.equal(sharing({}, "items"), true);
   assert.equal(sharing(undefined, "gameTime"), true);
   assert.equal(sharing({}, "gameTime"), true);
-  for (const key of ["watches", "styles", "lists", "pins", "mobs", "kills", "respawns", "timers", "buffs", "scores", "fight", "celebrations"] as const) {
+  // Observations earn it too (ADR 0336): peer data is evidence, and counts and positions are not you.
+  for (const key of ["mobs", "kills", "respawns", "crafting", "factionObservations"] as const) {
+    assert.equal(sharing({}, key), true, `${key} is an observation, shared by default`);
+    assert.equal(sharing({ [key]: false }, key), false, `${key} still turns off`);
+  }
+  for (const key of ["watches", "styles", "lists", "pins", "timers", "buffs", "scores", "fight", "celebrations", "inventory"] as const) {
     assert.equal(sharing({}, key), false, `${key} must stay off by default`);
   }
 });

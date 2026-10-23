@@ -148,7 +148,7 @@ test("a zone worth visiting only for a target still outranks an empty one", () =
   assert.deepEqual(zones.map((z) => z.zone).sort(), ["Aviak Village", "Lower Guk"]);
 });
 
-// ---- a target is placed by your own kills, and counts as work ------------------
+// ---- a target is placed by anyone's kills, and counts as work ------------------
 
 /** A pooled tally for one mob in one zone. `myKills` is the half that says it's yours. */
 function tally(mob: string, zone: string, myKills: number, kills = myKills): MobKnowledge {
@@ -170,15 +170,29 @@ test("a target is placed where you have killed it yourself", () => {
   assert.deepEqual(targets, [{ mob: "Ghoul Lord", zones: ["Lower Guk"] }]);
 });
 
-test("a peer's word is not a direction — a place only they have seen it is not offered", () => {
-  // Pooling is right for a rate; "go here" is something you must be able to check, so a zone you
-  // have never killed it in comes back blank rather than on somebody else's authority.
+test("a place only a peer has killed it is offered, and says whose it is", () => {
+  // Peer data is evidence (ADR 0336): "Lower Guk, by a peer's kills" beats "home unknown".
   const targets = huntTargetsFor(
     [entry({ name: "Ghoul Lord", kind: "mob" })],
     [tally("Ghoul Lord", "Lower Guk", 0, 30)],
   );
-  assert.deepEqual(targets, [{ mob: "Ghoul Lord", zones: [] }]);
-  // ...and it is still listed, with its home unknown.
+  assert.deepEqual(targets, [{ mob: "Ghoul Lord", zones: ["Lower Guk"], placedBy: { "Lower Guk": ["a peer"] } }]);
+  const [zone] = buildHunt([], targets);
+  assert.equal(zone.zone, "Lower Guk");
+  assert.deepEqual(zone.mobs[0].placedBy, ["a peer"]);
+});
+
+test("your own camps come before ones only a peer has seen", () => {
+  const targets = huntTargetsFor(
+    [entry({ name: "Ghoul Lord", kind: "mob" })],
+    [tally("Ghoul Lord", "Upper Guk", 0, 5), tally("Ghoul Lord", "Lower Guk", 2)],
+  );
+  assert.deepEqual(targets[0].zones, ["Lower Guk", "Upper Guk"]);
+  assert.deepEqual(targets[0].placedBy, { "Upper Guk": ["a peer"] });
+});
+
+test("a mob nobody has killed is still listed, with its home unknown", () => {
+  const targets = huntTargetsFor([entry({ name: "Ghoul Lord", kind: "mob" })], []);
   assert.equal(buildHunt([], targets)[0].zone, "Unknown zone");
 });
 

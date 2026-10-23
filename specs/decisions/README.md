@@ -376,6 +376,7 @@ finished, so a number is claimed before a second author can reach for it.
 - [0333: Every area has the same two rows — Craft's Guides and Crafting log become sections — and the trail row is always drawn, so nothing jumps](./0333-every-area-has-the-same-two-rows.md)
 - [0334: A mob you've killed has a page — a miss retries the wiki's articled title ("ghoul sage" → "A ghoul sage"), a mob with no wiki page is built from your log, and every mob page shows your kills, respawn, sightings and faction per kill](./0334-a-mob-you-have-killed-has-a-page.md)
 - [0335: Owned gear only means only owned gear — the loadout builder's switch is Owned gear only / Owned + hunt, and owned-only sets aside a lock on something you don't hold instead of planning it (changes one rule of 0329)](./0335-owned-gear-only-means-only-owned-gear.md)
+- [0336: Peer data is evidence — pooled data fills every gap it can, credited; hunt targets are placed by anyone's kills (supersedes 0098's own-kills clause); observations are shared by default; our own relayed rows are dropped on arrival](./0336-peer-data-is-evidence.md)
 
 ## Open Questions
 
