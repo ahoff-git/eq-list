@@ -146,8 +146,11 @@ export interface BisPlan {
   pinned: Record<number, string>;
   /** Slot index → what could go there, held or to hunt, best first. */
   alternatives: Record<number, BisSlotChoice[]>;
-  /** Locks nothing can satisfy (excluded since, or no copy fits that slot), by slot index. */
-  staleLocks: { slotIndex: number; title: string }[];
+  /**
+   * Locks nothing can satisfy (excluded since, or no copy fits that slot), by slot index. `notHeld`
+   * marks one set aside because it's on something you don't hold and the plan is owned gear only.
+   */
+  staleLocks: { slotIndex: number; title: string; notHeld?: boolean }[];
   /** The catalogue row behind each pick to hunt, by title — where it comes from, what level it is. */
   huntFrom: Record<string, ItemRow>;
   /** Slot index → the pick's numbers at its grade — what its row can explain its value by. */
@@ -396,8 +399,9 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     );
   const hunted = options.includeHunt ? catalogue.flatMap((row) => huntCopiesOf(row, copiesWorn(row))) : [];
 
-  // A lock holds until it's unlocked — on something to hunt too, whether hunting is switched on or the
-  // criteria now hide it. Only an exclusion lets one go, and excluding unlocks it.
+  // A lock holds until it's unlocked — on something to hunt too, even when the criteria now hide it.
+  // Owned gear only (hunting off) is the exception: the plan holds nothing you don't, so a lock on such
+  // a thing is set aside — kept, and back in force the moment hunting is on again (ADR 0335).
   const specs: LockSpec = new Map(
     Object.entries(options.locks).map(([k, l]) => [Number(k), "empty" in l ? null : l.title] as const),
   );
@@ -405,7 +409,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
   const lockCopies = new Map<string, number>();
   for (const title of specs.values()) if (title) lockCopies.set(normalizeItemName(title), (lockCopies.get(normalizeItemName(title)) ?? 0) + 1);
   const lockedToHunt: BisCandidate[] = [];
-  for (const [key, count] of lockCopies) {
+  for (const [key, count] of options.includeHunt ? lockCopies : []) {
     const row = byTitle.get(key);
     if (!row || isOut(row.item.title) || !wearable(row, criteria)) continue;
     for (const c of huntCopiesOf(row, count)) if (!huntedIds.has(c.id)) lockedToHunt.push(c);
@@ -544,7 +548,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
           ? "what could carry it only fits slots you've locked"
           : options.includeHunt
             ? "nothing you hold or could hunt under your criteria carries it, and no stone of it you have fits"
-            : "nothing you hold carries it, and no stone of it fits an open socket — switch on gear to hunt to look further",
+            : "nothing you hold carries it, and no stone of it fits an open socket — choose Owned + hunt to look further",
       );
       continue;
     }
@@ -710,7 +714,7 @@ export function bisPlan({ rows, inventory, criteria, weights, closedZones, optio
     effects,
     pinned,
     alternatives: alternativesFor(usableCandidates()),
-    staleLocks: final.stale,
+    staleLocks: final.stale.map((s) => (!options.includeHunt && !heldCopies.has(rowOf(s.title)?.item.title ?? s.title) ? { ...s, notHeld: true } : s)),
     huntFrom,
     pickStats,
     toHunt: loadout.picks.filter((p) => !p.item.heldAt).length,

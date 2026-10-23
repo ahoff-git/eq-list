@@ -15,6 +15,7 @@ import { parseEqMap, mergeEqMaps, type EqMap } from "@/shared/map/eqmap";
 import { spellRows } from "@/shared/spells/spell-search";
 import type { CachedSpell, MapSourceReport, SearchResult, WikiPage } from "@/shared/types";
 import type { TravelGraph } from "@/shared/travel/types";
+import { articledTitle } from "@/shared/mob/articled-title";
 
 const log = createLogger("web-snapshot");
 
@@ -156,6 +157,15 @@ export function rememberPage(page: WikiPage): void {
  */
 export async function getPage(asked: string): Promise<WikiPage | null> {
   const title = itemBaseName(asked);
+  const page = await heldPage(title);
+  if (page) return page;
+  // A mob linked from your kills is "ghoul sage"; the wiki's page is "A ghoul sage" (ADR 0334).
+  const articled = articledTitle(title, await loadIndex("title-index.json"));
+  return articled ? heldPage(articled) : null;
+}
+
+/** A page by its exact title, from this session's peers or the snapshot. */
+async function heldPage(title: string): Promise<WikiPage | null> {
   const learned = overlay.get(title);
   if (learned) return learned;
   const bucket = await loadBucket(shardOf(title) % PAGE_BUCKETS);

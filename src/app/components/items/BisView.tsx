@@ -5,7 +5,7 @@ import BisWearTable from "@/app/components/items/BisWearTable";
 import BisEffects from "@/app/components/items/BisEffects";
 import BisHuntTable from "@/app/components/items/BisHuntTable";
 import BisStats from "@/app/components/items/BisStats";
-import { CheckField, Empty } from "@/app/components/ui";
+import { Empty, segCls } from "@/app/components/ui";
 import { DumpSection } from "@/app/components/exports/DumpParts";
 import { useInventory } from "@/lib/exports/useGameExports";
 import { copyText } from "@/lib/clipboard";
@@ -94,12 +94,22 @@ export default function BisView({
       </p>
 
       <div className="row wrap bis-steer">
-        <CheckField
-          label="Include gear to hunt"
-          checked={options.includeHunt}
-          onChange={(includeHunt) => onOptions({ ...options, includeHunt })}
-          title="Plan with catalogue items you don't hold yet, beside what you do — off plans from your own gear only"
-        />
+        <div className="segmented" role="group" aria-label="Plan from">
+          <button
+            className={segCls(!options.includeHunt)}
+            onClick={() => onOptions({ ...options, includeHunt: false })}
+            title="Plan only from gear you hold — nothing to hunt goes in the loadout, locked or not. What would beat it is listed under Upgrades to hunt."
+          >
+            Owned gear only
+          </button>
+          <button
+            className={segCls(options.includeHunt)}
+            onClick={() => onOptions({ ...options, includeHunt: true })}
+            title="Plan with catalogue items you don't hold yet, beside what you do"
+          >
+            Owned + hunt
+          </button>
+        </div>
         {options.includeHunt && (
           <label className="muted small" title="Each item to hunt weighed as if merged up to this grade">
             weighed at{" "}
@@ -182,7 +192,7 @@ export default function BisView({
         <DumpSection title="Upgrades to hunt" aside={`${plan.hunt.length}`} defaultOpen={false}>
           <p className="muted small">
             What it would add over what it replaces, at +0 — and at +2, +5 and +10, which take 4, 32 and 1,024 copies merged (hover a figure
-            for the card at that grade). Switch on <i>Include gear to hunt</i> to plan them into the loadout itself.
+            for the card at that grade). Choose <i>Owned + hunt</i> to plan them into the loadout itself.
           </p>
           {plan.hunt.length ? (
             <BisHuntTable hunt={plan.hunt} onSkip={skip} weights={weights} rates={rates} />

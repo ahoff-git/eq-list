@@ -548,7 +548,11 @@ list, hunt, search, damage, session, peers, settings.
     answer is offered beneath its results under *"From your own log · not on the wiki"*, ranked by the
     same scorer from what you have actually held, and opening one gets `ObservedItemView` — a page
     made of your own evidence, with the **+ Add** the search was for
-    ([ADR 0103](../decisions/0103-search-can-answer-from-your-own-log.md)). Both lists share one
+    ([ADR 0103](../decisions/0103-search-can-answer-from-your-own-log.md)). Mobs you've killed are
+    offered there too, and a mob with no wiki page opens `ObservedMobView`. A missed title retries the
+    wiki's articled spelling first ("ghoul sage" → "A ghoul sage"), and every mob page, wiki or not,
+    ends with `MobEvidence`: your kills, respawn, sightings and faction per kill
+    ([ADR 0334](../decisions/0334-a-mob-you-have-killed-has-a-page.md)). Both lists share one
     keyboard cursor, and the local half needs no debounce, so it answers while the wiki lookup is
     still in flight. The open page is whatever `nav.current` points at; a result
     name/row, each **"How to get it"** source, and each component are all in-app links,

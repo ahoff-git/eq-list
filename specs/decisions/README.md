@@ -374,6 +374,8 @@ finished, so a number is claimed before a second author can reach for it.
 - [0331: HP/mana/AC rates are taken where your totals sit — race base + class modifiers + worn gear, AGI's 75 knee, INT/WIS's 200 soft cap, the 510 cap — and mana per point holds at level 50](./0331-a-stat-s-worth-depends-on-where-your-totals-sit.md)
 - [0332: Every number a card prints is read — regen, Endurance, Range, DMG Bonus, SV Void, instrument mods, elemental damage, lenient resist spellings, unlabelled effects — and graded as the slider does](./0332-every-number-a-card-prints-is-read.md)
 - [0333: Every area has the same two rows — Craft's Guides and Crafting log become sections — and the trail row is always drawn, so nothing jumps](./0333-every-area-has-the-same-two-rows.md)
+- [0334: A mob you've killed has a page — a miss retries the wiki's articled title ("ghoul sage" → "A ghoul sage"), a mob with no wiki page is built from your log, and every mob page shows your kills, respawn, sightings and faction per kill](./0334-a-mob-you-have-killed-has-a-page.md)
+- [0335: Owned gear only means only owned gear — the loadout builder's switch is Owned gear only / Owned + hunt, and owned-only sets aside a lock on something you don't hold instead of planning it (changes one rule of 0329)](./0335-owned-gear-only-means-only-owned-gear.md)
 
 ## Open Questions
 

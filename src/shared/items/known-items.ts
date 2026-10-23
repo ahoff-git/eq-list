@@ -45,10 +45,10 @@ export interface KnownItem {
  * default and this is deliberately the same: a player types one query, and a box that answered a
  * typo from one source and not the other would look broken rather than strict.
  */
-const MIN_SCORE = 0.45;
+export const MIN_SCORE = 0.45;
 
 /** What one search will offer from your own records — enough to find it, not a second results page. */
-const DEFAULT_LIMIT = 6;
+export const DEFAULT_LIMIT = 6;
 
 /** Fold the two records into one vocabulary of held things, best-evidenced first. */
 export function knownItems(loot: readonly LootedItem[], known: readonly MobKnowledge[]): KnownItem[] {

@@ -168,23 +168,29 @@ test("a loose exaltation stone in a bag or the bank is offered, not only one in 
 
 const tsvDump = (...lines: string[][]) => [["Location", "Name", "ID", "Count", "Slots"], ...lines].map((r) => r.join("\t")).join("\r\n");
 
-test("locks hold by title — on something to hunt too, with hunting off — and an exclusion keeps a thing out of everything", () => {
+test("locks hold by title — on something to hunt too, with hunting on — and an exclusion keeps a thing out of everything", () => {
   const inventory = parseInventoryDump(dump);
   // FINGER is index 16 in the layout. Lock the Iron Ring there; lock the head to a cap you don't own.
+  const locks = { 16: { title: "Iron Ring" }, 4: { title: "Cap of Mana" } };
   const plan = bisPlan({
     rows,
     inventory,
     criteria: wizard,
     weights: { mana: 1 },
-    options: { ...OWNED, locks: { 16: { title: "Iron Ring" }, 4: { title: "Cap of Mana" } }, wantEffects: [] },
+    options: { ...NO_BIS_OPTIONS, locks, wantEffects: [] },
   });
   assert.equal(plan.loadout.picks.find((p) => p.slotIndex === 16)?.item.title, "Iron Ring");
-  // A lock is the player's decision, and holds until they unlock it: the cap you don't own is planned
-  // in to hunt, even with hunting off — not dropped as stale.
+  // A lock is the player's decision, and holds until they unlock it: the cap you don't own is planned in to hunt.
   const cap = plan.loadout.picks.find((p) => p.slotIndex === 4);
   assert.deepEqual([cap?.item.title, cap?.item.heldAt, plan.staleLocks], ["Cap of Mana", undefined, []]);
-  assert.equal(plan.toHunt, 1);
-  assert.equal(plan.unconstrained, 98, "what no choices would have got — the locked-in cap isn't part of that pool");
+
+  // Owned gear only means only owned gear (ADR 0335): the cap's lock is kept but set aside, said so, and
+  // nothing in the loadout is to hunt.
+  const owned = bisPlan({ rows, inventory, criteria: wizard, weights: { mana: 1 }, options: { ...OWNED, locks, wantEffects: [] } });
+  assert.equal(owned.loadout.picks.find((p) => p.slotIndex === 16)?.item.title, "Iron Ring");
+  assert.ok(owned.loadout.picks.every((p) => p.item.heldAt), "every pick is something you hold");
+  assert.equal(owned.toHunt, 0);
+  assert.deepEqual(owned.staleLocks, [{ slotIndex: 4, title: "Cap of Mana", notHeld: true }]);
 
   const benched = bisPlan({
     rows,

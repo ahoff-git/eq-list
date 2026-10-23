@@ -10,8 +10,7 @@ import QuestPlanView from "@/app/components/items/QuestPlanView";
 import { planFor } from "@/shared/quests/quest-plans";
 import RefreshPage from "@/app/components/items/RefreshPage";
 import MapLink, { ZoneLink } from "@/app/components/map/MapLink";
-import MobKills from "@/app/components/mob/MobKills";
-import NpcSightings from "@/app/components/mob/NpcSightings";
+import MobEvidence from "@/app/components/mob/MobEvidence";
 import { AddButton } from "@/app/components/ui";
 import { addItem, addPage, addPageItself } from "@/lib/items/addToList";
 import { factionRaiseNote, wikiAddAction } from "@/shared/items/wiki-add";
@@ -290,8 +289,7 @@ export default function WikiPageView({
       {/* The wiki's claims are above; this is what killing the thing actually taught us, and it's the
           one place on the page that can open a map (see `MobKills`). `components` travels too, so a
           "Copy for wiki" button can say what the page doesn't already know without a second fetch. */}
-      {page.kind === "mob" && <MobKills mob={page.title} components={page.components} />}
-      {page.kind === "mob" && <NpcSightings name={page.title} />}
+      {page.kind === "mob" && <MobEvidence mob={page.title} components={page.components} />}
       {page.kind === "zone" && (
         <p className="muted small" style={{ marginTop: 12 }}>Zone page — open it on eqlwiki to browse its contents.</p>
       )}

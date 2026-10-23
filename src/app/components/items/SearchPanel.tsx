@@ -1,18 +1,19 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { useCapabilities, useKnownItems, useLucySearch, useSettings } from "@/lib/hooks";
+import { useCapabilities, useKnownRecords, useLucySearch, useSettings } from "@/lib/hooks";
 import { useNav } from "@/lib/chrome/nav";
 import ItemLink from "@/app/components/items/ItemLink";
 import FindAcross from "@/app/components/items/FindAcross";
 import { EraBadge } from "@/app/components/items/LucySays";
-import ObservedItemView from "@/app/components/items/ObservedItemView";
+import ObservedPageView from "@/app/components/items/ObservedPageView";
 import WikiPageView from "@/app/components/items/WikiPageView";
 import { AddButton, CheckField, segCls } from "@/app/components/ui";
 import { LOOKUP_HOTKEY } from "@/shared/constants";
 import { pageForName, unrankedSpellTitle } from "@/shared/upgrade-view";
 import { addByTitle, addItem } from "@/lib/items/addToList";
 import { searchKnownItems, unknownToTheWiki, type KnownItem } from "@/shared/items/known-items";
+import { mobsUnknownToTheWiki, searchKnownMobs, type KnownMob } from "@/shared/mob/known-mobs";
 import { count } from "@/shared/format";
 import type { LucyEra, LucySearchResult, SearchResult, WikiPage } from "@/shared/types";
 import { pickupFor } from "@/shared/quests/quest-pickups";
@@ -119,23 +120,29 @@ export default function SearchPanel({
   // What *you* have held, ranked against the same query and stripped of anything the wiki already
   // answered. Computed here rather than fetched, so it needs no debounce: the vocabulary is already
   // in the renderer, and a local hit appears on the keystroke that names it.
-  const known = useKnownItems();
+  // Items you've held and mobs you've killed (ADR 0334) — either can be a name the wiki doesn't have.
+  const { items: known, mobs: knownMobList } = useKnownRecords();
+  const searching = mode === "name" && term.trim().length >= MIN_QUERY_CHARS;
   const mine = useMemo(
-    () =>
-      mode === "name" && term.trim().length >= MIN_QUERY_CHARS
-        ? unknownToTheWiki(searchKnownItems(term, known), shownResults)
-        : [],
+    () => (searching ? unknownToTheWiki(searchKnownItems(term, known), shownResults) : []),
     // `shownResults` is a fresh array each render; the results it's derived from are what change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mode, term, known, results, hideEra],
+    [searching, term, known, results, hideEra],
   );
+  const mineMobs = useMemo(
+    () => (searching ? mobsUnknownToTheWiki(searchKnownMobs(term, knownMobList), shownResults) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [searching, term, knownMobList, results, hideEra],
+  );
+  /** How many rows your log's list holds — where the keyboard's index moves on to Lucy's. */
+  const mineCount = mine.length + mineMobs.length;
   /**
    * Lucy, the third rung: asked **only** when neither the wiki nor your own log had anything, so an
    * item either of them knows never costs a request to someone else's site
    * ([ADR 0124](../../../specs/decisions/0124-lucy-is-a-second-opinion.md)). It answers after them,
    * since it needs the network and they don't.
    */
-  const askLucy = (settings?.askLucy ?? true) && mode === "name" && !busy && !shownResults.length && !mine.length;
+  const askLucy = (settings?.askLucy ?? true) && mode === "name" && !busy && !shownResults.length && !mineCount;
   const { hits: lucyHits, loading: lucyBusy } = useLucySearch(debounced, askLucy);
   // An out-of-era Lucy hit obeys the same toggle as the wiki's. `unknown` is *not* hidden: it means
   // "we couldn't tell", and hiding what you couldn't judge is how a filter starts lying.
@@ -143,9 +150,14 @@ export default function SearchPanel({
 
   /** One keyboard list over every source — a hit is a hit, whichever record found it. */
   const navTitles = useMemo(
-    () => [...shownResults.map((r) => r.title), ...mine.map((i) => i.item), ...shownLucy.map((h) => h.name)],
+    () => [
+      ...shownResults.map((r) => r.title),
+      ...mine.map((i) => i.item),
+      ...mineMobs.map((m) => m.mob),
+      ...shownLucy.map((h) => h.name),
+    ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [results, mine, shownLucy, hideEra],
+    [results, mine, mineMobs, shownLucy, hideEra],
   );
 
   // Debounced name search. A `cancelled` flag drops a slower in-flight search when a newer
@@ -320,7 +332,7 @@ export default function SearchPanel({
       e.preventDefault();
       // The wiki's rows and your log's open the same way — a title with no wiki page still has a page
       // here. A Lucy row is the exception: it has to be *fetched* before its page has anything on it.
-      const lucyRow = shownLucy[active - shownResults.length - mine.length];
+      const lucyRow = shownLucy[active - shownResults.length - mineCount];
       if (lucyRow) void openLucyItem(lucyRow.id, lucyRow.name);
       else if (navTitles[active]) void openPage(navTitles[active]);
     } else if (e.key === "Escape") {
@@ -399,12 +411,14 @@ export default function SearchPanel({
               </div>
             ))}
           </div>
-          {mine.length > 0 && <MyResults items={mine} active={active - shownResults.length} onOpen={openPage} />}
+          {mineCount > 0 && (
+            <MyResults items={mine} mobs={mineMobs} active={active - shownResults.length} onOpen={openPage} />
+          )}
           {(shownLucy.length > 0 || lucyBusy) && (
             <LucyResults
               items={shownLucy}
               busy={lucyBusy}
-              active={active - shownResults.length - mine.length}
+              active={active - shownResults.length - mineCount}
               onOpen={openLucyItem}
             />
           )}
@@ -482,7 +496,7 @@ export default function SearchPanel({
 
       {/* No wiki page is not the end of the answer: the item may be one your log knows and the wiki
           doesn't, in which case this is its page (ADR 0103). */}
-      {nav.current && !loadingPage && !page && !pickup && <ObservedItemView title={nav.current} known={known} />}
+      {nav.current && !loadingPage && !page && !pickup && <ObservedPageView title={nav.current} known={known} />}
 
       {pickup && <PickupPageView pickup={pickup} />}
       {page && (
@@ -503,10 +517,13 @@ export default function SearchPanel({
  */
 function MyResults({
   items,
+  mobs,
   active,
   onOpen,
 }: {
   items: KnownItem[];
+  /** Mobs you've killed, listed after the items — the keyboard walks them in that order. */
+  mobs: KnownMob[];
   /** Index into *these* rows, or negative when the keyboard is up in the wiki's list. */
   active: number;
   onOpen: (title: string) => void;
@@ -527,6 +544,16 @@ function MyResults({
               {it.mobs.length ? ` · ${count(it.mobs.length, "mob")}` : ""}
             </span>
             <AddButton onAdd={() => void addItem({ name: it.item })}>+ Add</AddButton>
+          </div>
+        ))}
+        {mobs.map((m, i) => (
+          <div className={`result ${items.length + i === active ? "active" : ""}`} key={`mob:${m.mob}`}>
+            <span className="link name" title="Open what your kills know about it" onClick={() => onOpen(m.mob)}>
+              {m.mob}
+            </span>
+            <span className="muted small" title={`Killed in ${m.zones.join(", ")}`}>
+              mob · {count(m.kills, "kill")}
+            </span>
           </div>
         ))}
       </div>

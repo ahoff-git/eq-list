@@ -232,7 +232,7 @@ export default function ItemSearchPanel() {
           onChange={(hideOutOfEra) => set({ hideOutOfEra })}
         />
         {/* Search only: the loadout builder plans from what you hold either way, and says for itself
-            whether it may reach past it (Include gear to hunt) — this box would do nothing there. */}
+            whether it may reach past it (Owned gear only / Owned + hunt) — this box would do nothing there. */}
         {owned && mode === "search" && (
           <CheckField
             label="what I own"

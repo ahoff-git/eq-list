@@ -64,6 +64,7 @@ import {
 } from "@/shared/mob/hunt";
 import { itemDropSources, type ItemDropSource } from "@/shared/items/item-sources";
 import { knownItems, type KnownItem } from "@/shared/items/known-items";
+import { knownMobs, type KnownMob } from "@/shared/mob/known-mobs";
 import type { ItemRow } from "@/shared/items/item-search";
 import type { SpellRow } from "@/shared/spells/spell-search";
 import { clockSkew } from "@/shared/mob/spawn-timers";
@@ -572,6 +573,19 @@ export function useItemDrops(item: string | null, wikiSources: ItemSource[] = NO
  * ledger per loot line during a replayed gap.
  */
 export function useKnownItems(): KnownItem[] {
+  return useKnownRecords().items;
+}
+
+/** The mobs **you have killed** — the pooled kill tally folded to one entry each (`knownMobs`). */
+export function useKnownMobs(): KnownMob[] {
+  return useKnownRecords().mobs;
+}
+
+/**
+ * Both vocabularies off one read of each record, for a caller (Search) that offers items and mobs
+ * from your log side by side and shouldn't pay for the tally twice.
+ */
+export function useKnownRecords(): { items: KnownItem[]; mobs: KnownMob[] } {
   const looted = useFollowedRead<LootedItem[]>(
     (a) => a.loot.items(),
     (a, reload) => a.kills.onChanged(reload),
@@ -579,7 +593,7 @@ export function useKnownItems(): KnownItem[] {
     [],
   );
   const mobs = useAllMobs();
-  return useMemo(() => knownItems(looted, mobs), [looted, mobs]);
+  return useMemo(() => ({ items: knownItems(looted, mobs), mobs: knownMobs(mobs) }), [looted, mobs]);
 }
 
 /**
@@ -984,6 +998,19 @@ function useRenderPulse(): void {
 }
 
 /**
+ * The spawn board without its second hand — for a reader that wants what's *known* about a camp (a
+ * mob page's learned respawn) rather than a countdown. Refetched only when main says it changed.
+ */
+export function useSpawnBoard(): SpawnView {
+  return useFollowedRead<SpawnView>(
+    (a) => a.spawns.view(),
+    (a, reload) => a.spawns.onChanged(reload),
+    NO_SPAWNS,
+    [],
+  );
+}
+
+/**
  * Running respawn countdowns and what's known about each named (ADR 0092).
  *
  * Two clocks, deliberately. The **list** is refetched only when main says it changed — a timer
@@ -997,12 +1024,7 @@ function useRenderPulse(): void {
  * `0:00` on a timer main still calls waiting.
  */
 export function useSpawns(): { view: SpawnView; now: number } {
-  const view = useFollowedRead<SpawnView>(
-    (a) => a.spawns.view(),
-    (a, reload) => a.spawns.onChanged(reload),
-    NO_SPAWNS,
-    [],
-  );
+  const view = useSpawnBoard();
   useRenderPulse(); // so the countdowns move — see its own doc for why the value is never read
   // Captured once per **fetch** — `view` is a new object only when main sends one. Recomputing it
   // every render would pin `now` to the moment of the fetch and the clock would stop dead.

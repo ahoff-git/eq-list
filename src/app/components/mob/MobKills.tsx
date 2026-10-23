@@ -28,12 +28,22 @@ import { dropTableName } from "@/shared/shown-name";
  * kills on an already-open map (the Hunt tab's gesture); it never opens one, since a window that
  * appears because the cursor crossed a name is one nobody asked for.
  */
-export default function MobKills({ mob, components }: { mob: string; components: WikiComponent[] }) {
+export default function MobKills({
+  mob,
+  components,
+  onWiki = true,
+}: {
+  mob: string;
+  components: WikiComponent[];
+  /** False on a page built from your log alone (ADR 0334) — there are no wiki rates to point at. */
+  onWiki?: boolean;
+}) {
   const zones = useMobZones(mob);
   const kills = zones.reduce((n, z) => n + z.kills, 0);
   const character = (useSettings()?.playerName || "").trim() || "you";
 
   if (zones.length === 0) {
+    if (!onWiki) return null;
     return (
       <p className="muted small" style={{ marginTop: 12 }}>
         You haven&apos;t killed this yet — the rates above are the wiki&apos;s, from an older build.

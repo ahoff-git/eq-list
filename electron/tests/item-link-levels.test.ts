@@ -88,6 +88,7 @@ const TRACES: Record<string, string> = {
   "items/WikiPageView.tsx|wikiName(title)": "the catalogue: an item page is the +0 thing, so a level is applied once, never twice",
   "kills/KillList.tsx|notAnItem(group.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "kills/KillList.tsx|notAnItem(kill.mob)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
+  "mob/MobFactionHits.tsx|notAnItem(c.faction)": "not-an-item links: a page that isn't an item, recipe or spell never levels, whatever name opens it",
   "mob/HuntPanel.tsx|heldAsNamed(e.name)": "Hunt tab: an item on your list keeps its name, grade and all, from list entry to the Hunt row",
   "mob/HuntPanel.tsx|heldAsNamed(g.item)": "Hunt tab: an item on your list keeps its name, grade and all, from list entry to the Hunt row",
   "mob/HuntPanel.tsx|heldAsNamed(it.item)": "Hunt tab: an item on your list keeps its name, grade and all, from list entry to the Hunt row",

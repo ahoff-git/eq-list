@@ -31,6 +31,7 @@ import {
 } from "./api";
 import { exploreCategories, EXPLORE_SEEDS } from "./explore";
 import { createMissingPages } from "./missing-pages";
+import { articledTitle } from "../../src/shared/mob/articled-title";
 import { belongsToRoster, planChanges, trackingCurrent } from "./changes";
 import { parseWikiPage } from "./parse";
 import { createPageStore, WIKI_PAGE_MIGRATIONS } from "./page-store";
@@ -809,6 +810,20 @@ export function createWikiClient(
       log.warn("fetch failed, using cache if any:", (e as Error).message);
       return cached?.page ?? null;
     }
+  }
+
+  /**
+   * A page by title, or — when the wiki has none by that name — by the same name with its article:
+   * a mob linked from your kills is "ghoul sage", and its page is "A ghoul sage" (ADR 0334). Asked
+   * only after a miss, so a title the wiki does have never pays for the index scan.
+   */
+  async function getPageOrArticled(asked: string, force = false): Promise<WikiPage | null> {
+    const page = await getPageInternal(asked, force);
+    if (page) return page;
+    const articled = articledTitle(itemBaseName(asked), titleIndex.get() ?? []);
+    if (!articled) return null;
+    log.debug("no page for", asked, "— trying", articled);
+    return getPageInternal(articled, force);
   }
 
   /**
@@ -2362,8 +2377,8 @@ export function createWikiClient(
       }
     },
 
-    getPage: async (title) => servedPage(await getPageInternal(title)),
-    refreshPage: async (title) => servedPage(await getPageInternal(title, true)),
+    getPage: async (title) => servedPage(await getPageOrArticled(title)),
+    refreshPage: async (title) => servedPage(await getPageOrArticled(title, true)),
 
     harvest: harvester,
     onHarvest(listener) {

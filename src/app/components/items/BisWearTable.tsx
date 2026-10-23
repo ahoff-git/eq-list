@@ -33,7 +33,7 @@ interface SlotRow {
   pinnedFor?: string;
   /** The stone a wanted effect put in this slot's item, when one did. */
   stone?: string;
-  stale?: string;
+  stale?: BisPlan["staleLocks"][number];
   choices: BisSlotChoice[];
 }
 
@@ -44,7 +44,7 @@ interface SlotRow {
 function slotRows(plan: BisPlan, options: BisOptions): SlotRow[] {
   const bySlot = new Map(plan.loadout.picks.map((p) => [p.slotIndex, p]));
   const twoHander = plan.loadout.picks.find((p) => p.slot === "PRIMARY" && p.item.twoHanded);
-  const stale = new Map(plan.staleLocks.map((s) => [s.slotIndex, s.title]));
+  const stale = new Map(plan.staleLocks.map((s) => [s.slotIndex, s]));
   return WORN_LAYOUT.map((slot, slotIndex) => {
     const pick = bySlot.get(slotIndex);
     const claim = pick && plan.socketClaims.find((c) => c.host === gradedTitle(pick.item.title, pick.item.grade) || c.host === pick.item.title);
@@ -190,11 +190,16 @@ export default function BisWearTable({
             )}
             {r.pick && <GainNote gains={derivedGains(plan.pickStats[r.slotIndex] ?? {}, weights, rates)} />}
             {r.stone && <div className="small muted">◆ socket: {r.stone}</div>}
-            {r.stale && (
-              <div className="small warn" title="Locks are by name, and hold until unlocked — but nothing by that name can go here now">
-                locked to {r.stale}, which can&apos;t go here — solved without it until you unlock it
-              </div>
-            )}
+            {r.stale &&
+              (r.stale.notHeld ? (
+                <div className="small warn" title="The lock is kept — choose Owned + hunt and it's back in force">
+                  locked to {r.stale.title}, which you don&apos;t hold — set aside while planning owned gear only
+                </div>
+              ) : (
+                <div className="small warn" title="Locks are by name, and hold until unlocked — but nothing by that name can go here now">
+                  locked to {r.stale.title}, which can&apos;t go here — solved without it until you unlock it
+                </div>
+              ))}
           </div>
         ),
       },
