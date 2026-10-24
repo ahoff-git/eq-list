@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { useClosedZones, useLucyCard, useSettings } from "@/lib/hooks";
+import { useClosedZones, useLucyCard, useMobZones, useSettings } from "@/lib/hooks";
 import ItemDrops from "@/app/components/items/ItemDrops";
 import ItemLink from "@/app/components/items/ItemLink";
 import LucySays, { LucyLink } from "@/app/components/items/LucySays";
@@ -15,10 +15,10 @@ import { AddButton } from "@/app/components/ui";
 import { addItem, addPage, addPageItself } from "@/lib/items/addToList";
 import { factionRaiseNote, wikiAddAction } from "@/shared/items/wiki-add";
 import { sourcesByEra } from "@/shared/items/item-era";
-import { countOf } from "@/shared/format";
+import { count, countOf, locText } from "@/shared/format";
 import type { FactionSide, ItemSource, WikiPage, WikiSubQuest } from "@/shared/types";
 import { buildFactionWatch, isFactionWatched } from "@/shared/alerts/faction-watch";
-import { cardZone, statesNothing } from "@/shared/map/mob-place";
+import { cardZone, pagePlace, placeLabel, statesNothing } from "@/shared/map/mob-place";
 import { effectLineParts } from "@/shared/items/item-stats";
 import { cardAtLevel, ladderOf, levelledTitle } from "@/shared/upgrade-view";
 import UpgradeSlider from "@/app/components/items/UpgradeSlider";
@@ -85,6 +85,15 @@ export default function WikiPageView({
   // two readings of one line is how they would start disagreeing about whether "Various" is a place.
   const zoneOfCard = cardZone(page?.card?.lines);
 
+  // Where the mob is by the kills — yours and peers' — in the zone the card names. When anything has
+  // been measured there it replaces the card's stated `Location:` (ADR 0025, ADR 0336); the wiki's
+  // point stays beside it, demoted, so a disagreement is visible rather than hidden.
+  const mobZones = useMobZones(page.kind === "mob" ? page.title : null);
+  const measured = useMemo(() => {
+    const place = page.kind === "mob" ? pagePlace(mobZones, page.card) : undefined;
+    return place && place.source !== "wiki" ? place : undefined;
+  }, [page, mobZones]);
+
   // On a mob's page, every position on the card is a position *of that mob* — so the map can bring
   // its kills up alongside the marker, the same as the observed positions below (ADR 0104).
   const cardFocus = page.kind === "mob" ? { mob: page.title } : undefined;
@@ -109,6 +118,23 @@ export default function WikiPageView({
       return (
         <>
           {zoneM[1]}: <ZoneLink zone={z} focus={cardFocus} />
+        </>
+      );
+    }
+    if (measured && zoneOfCard && /^Location:/i.test(line)) {
+      return (
+        <>
+          Location:{" "}
+          <MapLink target={{ zone: zoneOfCard, loc: measured, label: page.title, focus: cardFocus }}>
+            ({locText(measured)})
+          </MapLink>
+          {measured.spread !== undefined && ` ±${Math.round(measured.spread)}`}{" "}
+          <span className="muted small" title={measured.why}>
+            · {count(measured.samples, "kill")}, {placeLabel(measured.source)}
+          </span>{" "}
+          <span className="muted small" title="What eqlwiki states — shown for comparison, not used">
+            (wiki: {stripLabel(line)})
+          </span>
         </>
       );
     }
@@ -564,4 +590,9 @@ function EffectItems({ titles }: { titles: string[] }) {
       </ul>
     </>
   );
+}
+
+/** A card line's value without its `Label:` — "34% @ (550, -220)" out of "Location: 34% @ (550, -220)". */
+function stripLabel(line: string): string {
+  return line.replace(/^[^:]+:\s*/, "");
 }

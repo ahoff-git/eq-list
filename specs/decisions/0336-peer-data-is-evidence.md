@@ -32,6 +32,10 @@ fill a gap, the app fills it and says whose it is. It does not leave the answer 
   knows. Zones you have killed the mob in yourself come first. A zone only peers have seen carries
   `placedBy`, and the tab flags it "via Bob". This supersedes 0098's "placed by your own kills" clause
   and nothing else in 0098.
+- **A mob page's `Location:` is the measured one.** When kills (yours or peers') place the mob in
+  the zone the card names, the card line shows that position, with its kill count and whose kills
+  they were. The wiki's stated point is shown beside it for comparison (`pagePlace`). Before this,
+  the page printed the wiki's coordinate as fact and buried the measurement further down.
 - **Readers follow pooled data as it arrives.** A view showing pooled figures re-reads when a peer's
   report lands (`peers.onChanged`), not only when your own kills change.
 - **Observations are shared by default.** `mobs`, `kills`, `respawns`, `crafting` and

@@ -5,8 +5,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardLoc, cardZone, mobPlace, placeLabel, statesNothing, wikiPlace } from "../../src/shared/map/mob-place";
-import type { MobArea } from "../../src/shared/mob/mob-stats";
+import { cardLoc, cardZone, mobPlace, pagePlace, placeLabel, statesNothing, wikiPlace } from "../../src/shared/map/mob-place";
+import type { MobArea, MobKnowledge } from "../../src/shared/mob/mob-stats";
 
 const area = (over: Partial<MobArea> = {}): MobArea => ({ y: 100, x: -200, spread: 30, samples: 8, ...over });
 
@@ -108,4 +108,45 @@ test("a decimal coordinate is read as written", () => {
 test("half a card is still half an answer", () => {
   assert.deepEqual(wikiPlace({ title: "x", lines: ["Zone: Lower Guk"] }), { zone: "Lower Guk", loc: undefined });
   assert.deepEqual(wikiPlace({ title: "x", lines: ["Location: (1, 2)"] }), { zone: undefined, loc: { y: 1, x: 2 } });
+});
+
+// ── what a mob page's card says ─────────────────────────────────────────────
+
+/** The real case: eqlwiki's "a ghoul sage" card against eighteen kills in the same zone. */
+const sageCard = { title: "A ghoul sage", lines: ["Level: 37", "Zone: Lower Guk", "Location: 34% @ (550, -220)"] };
+const known = (zone: string, over: Partial<MobKnowledge> = {}): MobKnowledge => ({
+  mob: "ghoul sage",
+  zone,
+  kills: 18,
+  myKills: 18,
+  drops: [],
+  lastAt: "",
+  contributors: [],
+  copper: 0,
+  copperPerKill: 0,
+  area: area({ y: 564, x: -739, spread: 21, samples: 18 }),
+  ...over,
+});
+
+test("a mob page's location is your kills in the card's zone, not the card's stated point", () => {
+  const place = pagePlace([known("The Ruins of Old Guk")], sageCard);
+  assert.equal(place?.source, "yours");
+  assert.deepEqual([place?.y, place?.x, place?.samples], [564, -739, 18]);
+});
+
+test("peers' kills replace the card's point too, and say whose they are", () => {
+  const place = pagePlace([known("Lower Guk", { myKills: 0, contributors: ["Bob"] })], sageCard);
+  assert.equal(place?.source, "peers");
+  assert.equal(place?.y, 564);
+});
+
+test("kills in another zone don't move the card's location", () => {
+  const place = pagePlace([known("Upper Guk")], sageCard);
+  assert.equal(place?.source, "wiki");
+  assert.deepEqual([place?.y, place?.x], [550, -220]);
+});
+
+test("nothing measured leaves the card's point standing", () => {
+  assert.equal(pagePlace([], sageCard)?.source, "wiki");
+  assert.equal(pagePlace([known("Lower Guk", { area: undefined })], sageCard)?.source, "wiki");
 });

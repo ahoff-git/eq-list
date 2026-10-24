@@ -19,8 +19,9 @@
  *
  * Pure and DOM-free; tested in `electron/tests/mob-place.test.ts`.
  */
-import { mobKey, roamWhy, type MobArea } from "../mob/mob-stats";
+import { mobKey, roamWhy, type MobArea, type MobKnowledge } from "../mob/mob-stats";
 import type { ItemCard } from "../types";
+import { zoneMatches } from "../items/sources";
 
 /** What a mob's wiki page states about where it stands. Either half may be missing. */
 export interface WikiPlace {
@@ -157,6 +158,30 @@ export function mobPlace(evidence: PlaceEvidence): MobPlace | undefined {
     };
   }
   return undefined;
+}
+
+/**
+ * **Where a mob page should say the mob is** — the card's stated `Location:` checked against the kills.
+ *
+ * The page used to print the wiki's coordinate verbatim, with eighteen of your own kills a few hundred
+ * units away shown only further down. That is the one place the standing ranking wasn't applied. This
+ * applies it: the kills (`rows`, one per place, from `useMobZones`) in the zone the card names
+ * outrank the card's point, which answers only when nothing has been measured there.
+ *
+ * Only kills in the card's zone count. A mob seen in two places is not "at" the other one. A card that
+ * names no zone takes the best-placed row it can.
+ */
+export function pagePlace(rows: readonly MobKnowledge[], card: ItemCard | undefined): MobPlace | undefined {
+  const wiki = wikiPlace(card);
+  const here = wiki?.zone ? rows.filter((r) => zoneMatches(r.zone, wiki.zone!)) : rows;
+  const best = [...here].filter((r) => r.area).sort((a, b) => (b.area?.samples ?? 0) - (a.area?.samples ?? 0))[0];
+  return mobPlace({
+    pooled: best?.area,
+    // `mobPlace` reads only whether you contributed, to tell "pooled" from "peers' kills".
+    mine: best && best.myKills > 0 ? best.area : undefined,
+    contributors: best?.contributors,
+    wiki,
+  });
 }
 
 /**
