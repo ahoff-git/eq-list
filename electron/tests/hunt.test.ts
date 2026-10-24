@@ -191,6 +191,11 @@ test("your own camps come before ones only a peer has seen", () => {
   assert.deepEqual(targets[0].placedBy, { "Upper Guk": ["a peer"] });
 });
 
+test("a place proven only by others' unlooted kills still places a target", () => {
+  const seenOnly = { ...tally("Ghoul Lord", "Lower Guk", 0), area: { y: 564, x: -739, spread: 20, samples: 3 } };
+  assert.deepEqual(huntTargetsFor([entry({ name: "Ghoul Lord", kind: "mob" })], [seenOnly])[0].zones, ["Lower Guk"]);
+});
+
 test("a mob nobody has killed is still listed, with its home unknown", () => {
   const targets = huntTargetsFor([entry({ name: "Ghoul Lord", kind: "mob" })], []);
   assert.equal(buildHunt([], targets)[0].zone, "Unknown zone");

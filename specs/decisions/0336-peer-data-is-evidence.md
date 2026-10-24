@@ -65,6 +65,13 @@ fill a gap, the app fills it and says whose it is. It does not leave the answer 
   each store declares that excludes the origin. A row in both keeps its heavier version (more kills,
   hits, attempts or samples: a tally only grows). Kill positions repeat, because many kills share one
   `/loc` fix, so they merge as a multiset. Relayed data can add or freshen, never subtract.
+- **A position needs proof, not a corpse.** `observeMobs` dropped other players' kills you didn't
+  loot, which is right for drop rates and wrong for location. Someone else's kill at a trusted
+  position (`AREA_MIN_CONFIDENCE`) is the same proof of where the mob stands as yours. It now shapes
+  the area without counting toward kills or drops, so a row can carry an area with zero kills. Every
+  reader that places a mob (the map's hunt and named-spawn pins, a mob page's `Location:`, hunt
+  targets) prefers that proven area over the wiki's stated point. Positions below the confidence
+  floor are still not proof.
 - **Your own data never counts as a peer's.** A relayed row whose origin is your own contributor id is
   dropped on arrival (`groupByOrigin`'s `self`). Without that, pooling one install's data back into
   itself would double every count.

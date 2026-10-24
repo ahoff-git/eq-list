@@ -78,6 +78,29 @@ test("someone else's kill doesn't count towards your drop rate", () => {
   assert.deepEqual(obs.drops, { "Bone Chips": 1 });
 });
 
+// Where a mob died needs no corpse: a stranger's kill at a trusted position is proof of the spot,
+// even though it is no sample of the drop table (ADR 0336).
+test("someone else's kill still places the mob, without counting toward its rates", () => {
+  const [obs] = observeMobs([
+    kill({ mob: "a kobold", mine: true, y: 100, x: 200 }),
+    kill({ mob: "a kobold", mine: false, y: 110, x: 210 }),
+    kill({ mob: "a kobold", mine: false, y: 90, x: 190, confidence: 0.05 }), // a guess: no proof
+  ]);
+  assert.equal(obs.kills, 1);
+  assert.equal(obs.area?.samples, 2);
+});
+
+test("a mob only ever seen killed by others is placed, with no kills counted", () => {
+  const [obs] = observeMobs([kill({ mob: "Ghoul Lord", mine: false, y: 564, x: -739 })]);
+  assert.equal(obs.kills, 0);
+  assert.deepEqual(obs.drops, {});
+  assert.deepEqual([obs.area?.y, obs.area?.x, obs.area?.samples], [564, -739, 1]);
+});
+
+test("someone else's kill with no trusted position leaves nothing behind", () => {
+  assert.deepEqual(observeMobs([kill({ mob: "a kobold", mine: false })]), []);
+});
+
 test("a kill you looted counts even if someone else landed the blow", () => {
   const [obs] = observeMobs([kill({ mob: "a kobold", mine: false, drops: ["Bone Chips"] })]);
   assert.equal(obs.kills, 1);

@@ -193,7 +193,8 @@ export function buildHunt(items: HuntInput[], targets: HuntTarget[] = []): HuntZ
 export function huntTargetsFor(entries: ShoppingListEntry[], known: MobKnowledge[]): HuntTarget[] {
   const targets = mobEntries(entries);
   if (!targets.length) return [];
-  const seen = known.filter((m) => m.kills > 0);
+  // A row with a measured area places the mob even with no kills counted: others' kills, unlooted (ADR 0336).
+  const seen = known.filter((m) => m.kills > 0 || m.area);
   return targets.map((e) => {
     const here = seen.filter((m) => mobKey(m.mob) === mobKey(e.name));
     // Your own camps first: a place you've stood is still the better first answer.

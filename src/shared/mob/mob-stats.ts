@@ -399,8 +399,14 @@ export function observeMobs(kills: KillRecord[]): MobObservation[] {
 
   for (const kill of kills) {
     if (!kill.zone) continue;
-    // Loot — an item or coin — is proof you had the corpse, whoever landed the killing blow.
-    if (kill.mine === false && !kill.drops?.length && !kill.coin) continue;
+    // Loot — an item or coin — is proof you had the corpse, whoever landed the killing blow. Only such
+    // a kill is a sample of the drop table, so only it is counted.
+    const counted = kill.mine !== false || !!kill.drops?.length || !!kill.coin;
+    // **Where** it died is proof of a different thing, and needs no corpse: somebody else's kill at a
+    // position worth believing places the mob exactly as well as yours does (ADR 0336). So it still
+    // shapes the area, even on a row that has counted no kills at all.
+    const placed = kill.y !== undefined && kill.x !== undefined && kill.confidence >= AREA_MIN_CONFIDENCE;
+    if (!counted && !placed) continue;
     const key = keyOf(kill.mob, kill.zone);
     let obs = byKey.get(key);
     if (!obs) {
@@ -409,6 +415,8 @@ export function observeMobs(kills: KillRecord[]): MobObservation[] {
       obs = { mob: kill.mob, zone: kill.zone.trim(), kills: 0, drops: {}, copper: 0, lastAt: kill.at, points: [] };
       byKey.set(key, obs);
     }
+    if (placed) obs.points.push({ y: kill.y!, x: kill.x! });
+    if (!counted) continue;
     obs.kills += 1;
     obs.copper = (obs.copper ?? 0) + (kill.coin ?? 0);
     if (kill.at > obs.lastAt) obs.lastAt = kill.at;
@@ -416,10 +424,6 @@ export function observeMobs(kills: KillRecord[]): MobObservation[] {
     // a corpse that yielded two of an item is still one kill that dropped it. Otherwise a
     // generous corpse pushes the rate over 100%, which is not a probability.
     for (const item of new Set(kill.drops ?? [])) obs.drops[item] = (obs.drops[item] ?? 0) + 1;
-    // Only positions worth believing shape a location — see AREA_MIN_CONFIDENCE.
-    if (kill.y !== undefined && kill.x !== undefined && kill.confidence >= AREA_MIN_CONFIDENCE) {
-      obs.points.push({ y: kill.y, x: kill.x });
-    }
   }
 
   return [...byKey.values()].map(({ points, ...obs }) => {
