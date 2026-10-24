@@ -1375,7 +1375,11 @@ export function shareSources(context: {
   getList: () => { entries: unknown[] };
   getSettings: () => Settings;
   killLog: {
-    kills: (zone?: string) => KillRecord[];
+    /**
+     * Every positioned kill ever. Not unscoped `kills()`, which is the last `DEFAULT_LIMIT` only and
+     * once quietly limited what peers got to a single evening's kills (ADR 0336).
+     */
+    placedKills: () => KillRecord[];
     observations: () => unknown[];
     /** Moves when a kill, a drop or a coin line is recorded. */
     version: () => number;
@@ -1452,7 +1456,7 @@ export function shareSources(context: {
       version: () => context.factionLog.version() + context.factionObservations.version(),
     },
     kills: {
-      rows: () => [...shareableKills(context.killLog.kills()), ...context.peerKills.all()],
+      rows: () => [...shareableKills(context.killLog.placedKills()), ...context.peerKills.all()],
       version: () => context.killLog.version() + context.peerKills.version(),
     },
     // Read off the Timers tab's own rows rather than re-derived, so there is one rule for what a

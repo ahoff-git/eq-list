@@ -560,6 +560,14 @@ Four of the six are **done** and have left this list: rank-aware spell costs
   against the table before assuming the old number still applies). Patching the rows for that page,
   as the shard index already does, would remove it.
 
+- **Respawn learning reads only your last 200 kills.** `spawn-tracker.ts` calls unscoped
+  `killLog.kills()`, which [ADR 0243](./decisions/0243-remove-the-remaining-storage-caps.md) turned
+  into a `DEFAULT_LIMIT` (200) recent window, believing the Spawn panel was its only unscoped caller.
+  So `provenNamed` and every learned interval see one evening, and `respawns` shares five rows. The
+  share hub had the same bug and now reads `placedKills()` (ADR 0336). The tracker needs the whole
+  history too, but `read()` runs per kill, and a full read is ~40ms at 10k kills, which would undo
+  the log-replay speedup. It wants a cached or incremental read keyed on `killLog.version()`.
+
 ## Build hygiene
 
 - **A stale `out/` looks exactly like a broken feature.** The renderer bundle and `dist-electron` are

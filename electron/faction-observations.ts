@@ -31,10 +31,9 @@ import type { FactionLog } from "./faction-log";
 
 const log = createLogger("faction-observations");
 
-/** Per contributor, so one chatty client can't crowd out everyone else — smaller than
- *  `mob-knowledge.ts`'s 2000, since this is one row per (faction, cause) a career ever produces,
- *  not one per mob+zone. */
-const MAX_OBSERVATIONS_PER_PEER = 1000;
+/** Per contributor, so one chatty client can't crowd out everyone else. One row per (faction, cause)
+ *  a career ever produces; a single long-played character already passes the old 1,000 (ADR 0336). */
+const MAX_OBSERVATIONS_PER_PEER = 5000;
 
 const isFinNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 

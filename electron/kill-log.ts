@@ -261,6 +261,12 @@ export interface KillLog {
    */
   kills(zone?: string): KillRecord[];
   /**
+   * Every kill with a position, ever, newest first — **unbounded**, unlike unscoped `kills()`. For the
+   * share hub: what peers are handed is the whole history, not the last evening's `DEFAULT_LIMIT`
+   * (ADR 0336). Which of these are worth sending is still `shareableKills`' rule.
+   */
+  placedKills(): KillRecord[];
+  /**
    * Full records for exactly these ids — a `SELECT ... WHERE id IN (...)` against `kill_records`'
    * own primary key. The point-lookup half of `kills(zone)`'s incremental refresh path
    * ([ADR 0253](../specs/decisions/0253-the-map-window-patches-in-only-touched-kills.md)):
@@ -430,6 +436,9 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
   `);
   const selectAll = db.prepare(`SELECT * FROM kill_records ORDER BY rowid DESC`);
   const selectRecentKills = db.prepare(`SELECT * FROM kill_records ORDER BY rowid DESC LIMIT ?`);
+  const selectPlacedKills = db.prepare(
+    `SELECT * FROM kill_records WHERE y IS NOT NULL AND x IS NOT NULL ORDER BY rowid DESC`,
+  );
   const selectDistinctKillZones = db.prepare(`SELECT DISTINCT zone FROM kill_records WHERE zone IS NOT NULL`);
   // ORDER BY matters here (see `createNameRegistry`'s first-seen-wins rule below): without it,
   // SQLite's own DISTINCT row order is implementation-defined rather than newest-first, and which
@@ -842,6 +851,10 @@ export function createKillLog(db: Database, userDataDir: string): KillLog {
     // that asks unscoped (`SpawnPanel`'s "recent camps") only wants a recent window, not the whole
     // history, and fetching it all just to look at the front of it would cost real time for nothing
     // a caller ever uses.
+    placedKills() {
+      return (selectPlacedKills.all() as KillRow[]).map(rowToRecord);
+    },
+
     kills(zone) {
       if (!zone) return (selectRecentKills.all(DEFAULT_LIMIT) as KillRow[]).map(rowToRecord);
       const rawZones = (selectDistinctKillZones.all() as { zone: string }[])

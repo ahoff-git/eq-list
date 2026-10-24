@@ -35,7 +35,7 @@ import type { KillLog } from "./kill-log";
 const log = createLogger("mob-knowledge");
 
 /** Per contributor, so one chatty client can't crowd out everyone else. */
-const MAX_OBSERVATIONS_PER_PEER = 2000;
+const MAX_OBSERVATIONS_PER_PEER = 10000;
 
 /**
  * What a kill count may be before it stops being a claim about an evening's play.

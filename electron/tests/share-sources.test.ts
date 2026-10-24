@@ -41,7 +41,7 @@ function rig(over: {
     getList: () => ({ entries: [] }),
     getSettings: () => SETTINGS,
     killLog: {
-      kills: () => over.ownKills ?? [],
+      placedKills: () => over.ownKills ?? [],
       observations: () => over.ownObservations ?? [],
       version: () => over.ownKillVersion ?? 0,
     },

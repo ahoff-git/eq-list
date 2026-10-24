@@ -37,7 +37,7 @@ const log = createLogger("peer-kills");
  * per mob-in-a-zone, and a heatmap is exactly the feature that wants the long tail — but bounded all
  * the same, since a peer decides how many they send and we decide how many we keep.
  */
-const MAX_KILLS_PER_PEER = 5000;
+const MAX_KILLS_PER_PEER = 25000;
 
 /**
  * Below this, a position is a guess about a guess and draws nothing.

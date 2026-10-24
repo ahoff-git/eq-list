@@ -64,7 +64,6 @@ import { ON_PET, ON_UNKNOWN, ON_YOU, instanceKey } from "../buffs/buff-tracking"
 import { decodeWatches } from "../alerts/watch-share";
 import { PIN_TYPES, type MapPin, type PinKind } from "../map/pins";
 import { SHARD_COUNT } from "../items/item-shards";
-import { isPlottable } from "../kills/kill-confidence";
 import { opponentOf } from "../combat/damage-tree";
 import { SELF } from "../combat/combat-parser";
 import { clamp } from "../numbers";
@@ -271,21 +270,28 @@ export interface ShareKindSpec<T = unknown> {
   defaultOn?: boolean;
 }
 
-/** Caps. Generous for real use, small enough that a hostile peer can't be a denial of service. */
+/**
+ * Caps. Generous for real use, small enough that a hostile peer can't be a denial of service.
+ *
+ * An observation kind's cap is per **message**, and a message carries the sender's rows *plus* every
+ * contributor they relay (ADR 0242). So it has to hold a whole room's history, not one player's. At
+ * 1,000/5,000 it was quietly dropping a single long-played character's own faction evidence and kill
+ * positions on arrival (ADR 0336).
+ */
 const MAX_ROWS: Record<ShareKind, number> = {
   watches: 50,
   styles: 50,
   lists: 500,
   pins: 500,
-  mobs: 5000,
+  mobs: 50000,
   // One row per (faction, kind, source) a career ever produces, not one per mob+zone — a far smaller
   // space than `mobs`, so a generous cap here is still a tight one in practice.
-  factionObservations: 1000,
-  kills: 5000,
-  respawns: 2000,
+  factionObservations: 20000,
+  kills: 100000,
+  respawns: 20000,
   // One row per (tradeskill, item, skill level) a career ever produces — a few hundred for a
   // serious crafter across every skill, so this is generous and still bounds a hostile give.
-  crafting: 5000,
+  crafting: 50000,
   timers: 200,
   buffs: 200,
   scores: 200,
@@ -362,23 +368,25 @@ function fieldKey(row: unknown, field: string): string | undefined {
 // ─── Projection, one per kind ───────────────────────────────────────────────
 
 /**
- * The kills worth sharing, reduced to what a receiver can draw.
+ * The kills worth sharing, reduced to a position and how far to trust it.
  *
- * **The one statement of this rule.** It was written twice — once here on the way out and once in
- * the map window to decide what to plot — and two copies of "which kills are worth a dot" is exactly
- * the sort of thing that drifts a threshold at a time.
+ * **Every positioned kill goes, whatever its confidence** (ADR 0336). The confidence travels with
+ * the row, so the receiver applies its own threshold (`isPlottable`, on the map) instead of the
+ * sender deciding for it. A guess the sender throws away is lost to everyone for good. One kept is a
+ * faint dot today, and a better one if the confidence model improves.
  *
- * Two exclusions, and both are about not echoing:
+ * What is still left out:
  *
- *   - **Only your own.** A peer's kill re-shared under our name grows with every hop, and three
- *     clients in a room send it round for ever. `sharedBy` is the guard.
- *   - **Only placeable ones.** A position we haven't got is nothing the receiver can draw, so it is
- *     weight on the wire and a row in their store for no gain.
+ *   - **Somebody else's.** A peer's kill re-shared under our name grows with every hop, and three
+ *     clients in a room send it round for ever. `sharedBy` is the guard. (Relayed rows still travel,
+ *     credited, through the pooled half — ADR 0242.)
+ *   - **No position, or no zone.** There is no place to carry. The kill itself still reaches peers,
+ *     counted, through `mobs`.
  */
 export function shareableKills(kills: readonly KillRecord[]): SharedKill[] {
   const out: SharedKill[] = [];
   for (const k of kills) {
-    if (k.sharedBy || !isPlottable(k)) continue;
+    if (k.sharedBy || k.y === undefined || k.x === undefined) continue;
     const zone = k.zone ?? "";
     if (!zone) continue;
     out.push({ zone, y: k.y, x: k.x, mob: k.mob, confidence: k.confidence });

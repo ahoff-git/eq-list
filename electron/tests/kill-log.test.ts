@@ -1010,3 +1010,18 @@ test("a background refresh eventually confirms the same answer the synchronous p
   assert.ok(changed > 0, "the background worker never confirmed a refresh within 5s");
   assert.equal(k.observations()[0]?.kills, 30, "the background-confirmed answer agrees with the synchronous one");
 });
+
+test("placedKills is every positioned kill ever, past the unscoped window", () => {
+  // Unscoped `kills()` is a recent window (`DEFAULT_LIMIT`). Peers are handed the whole history, and
+  // once only got that window (ADR 0336).
+  const k = freshKillLog();
+  kill(k, "a coyote", 1); // before any fix: no position, so nothing to place
+  k.noteLoc(loc(100, 200, 2), ZONE);
+  for (let i = 0; i < 250; i++) kill(k, `a rat ${i}`, 3 + i);
+
+  assert.equal(k.kills().length, 200);
+  const placed = k.placedKills();
+  assert.equal(placed.length, 250);
+  assert.ok(placed.every((r) => r.y !== undefined && r.x !== undefined));
+  assert.equal(placed[0].mob, "a rat 249"); // newest first
+});

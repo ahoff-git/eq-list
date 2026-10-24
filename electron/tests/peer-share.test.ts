@@ -911,7 +911,7 @@ test("qty is optional, and clamped rather than believed when it's unreasonable",
 
 // ─── Identity, projection, and deltas ───────────────────────────────────────
 
-test("what leaves a kill is where it was, and only for kills we can place and did not borrow", () => {
+test("what leaves a kill is where it was, for every kill with a position that we did not borrow", () => {
   const kill = (over: Partial<KillRecord>): KillRecord =>
     ({ id: "k", logId: 1, at: iso(0), mob: "a gnoll", zone: "Blackburrow", y: 10, x: 20, confidence: 0.9, ...over }) as KillRecord;
 
@@ -919,13 +919,17 @@ test("what leaves a kill is where it was, and only for kills we can place and di
     kill({}),
     // Somebody else's, which would echo round a room of three for ever.
     kill({ sharedBy: "Bran" }),
-    // Nothing a receiver could draw.
+    // No position: nothing to carry (the kill still travels, counted, through `mobs`).
     kill({ y: undefined, x: undefined }),
+    // A guess still goes, with its confidence: the receiver decides what to plot (ADR 0336).
     kill({ confidence: 0.05 }),
     // No zone means no map to put it on.
     kill({ zone: undefined }),
   ]);
-  assert.deepEqual(out, [{ zone: "Blackburrow", y: 10, x: 20, mob: "a gnoll", confidence: 0.9 }]);
+  assert.deepEqual(out, [
+    { zone: "Blackburrow", y: 10, x: 20, mob: "a gnoll", confidence: 0.9 },
+    { zone: "Blackburrow", y: 10, x: 20, mob: "a gnoll", confidence: 0.05 },
+  ]);
 });
 
 test("a shared respawn is the conclusion, never the evidence behind it", () => {

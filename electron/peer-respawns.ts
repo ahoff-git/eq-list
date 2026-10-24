@@ -25,7 +25,7 @@ import { createArrayAdminStore, type AdminStore } from "./admin";
 const log = createLogger("peer-respawns");
 
 /** Per contributor — a camp's worth of intervals is a handful of rows, but a room has many camps. */
-const MAX_RESPAWNS_PER_PEER = 2000;
+const MAX_RESPAWNS_PER_PEER = 5000;
 
 /** A day is longer than any respawn in the game; a gap past it measured something else. */
 const MAX_RESPAWN_SEC = 86_400;

@@ -45,6 +45,19 @@ fill a gap, the app fills it and says whose it is. It does not leave the answer 
   counts, rates and positions: nothing you authored, and nothing live about you. Authored and live
   kinds stay off. An explicit choice still wins in both directions, so a player who switched one off
   keeps it off.
+- **What is shared is the whole history.** `kills` used to read unscoped `killLog.kills()`, which
+  [ADR 0243](./0243-remove-the-remaining-storage-caps.md) had made a 200-kill recent window. Peers
+  got one evening's positions (134 rows from a 10,000-kill log). It now reads `placedKills()`, every
+  positioned kill ever. The caps that bounded a single message and a single contributor were sized
+  for one light player. They are raised to hold a long-played character plus everything relayed
+  (`MAX_ROWS`, and each store's per-contributor cap). The old 1,000 faction-evidence cap was
+  dropping a third of one player's own rows.
+- **Every positioned kill goes, whatever its confidence.** `shareableKills` used to drop any kill
+  below `PLOTTABLE_CONFIDENCE` before sending: the receiver's drawing rule, applied on the sender's
+  machine. Now the confidence travels with the row, and the receiver's map still draws only what
+  passes `isPlottable`. A guess discarded at the source is gone for everyone; one kept can be shown
+  faintly, or reweighed later. A kill with no position still isn't sent as a position, because it
+  has none. It reaches peers, counted, through `mobs`.
 - **Your own data never counts as a peer's.** A relayed row whose origin is your own contributor id is
   dropped on arrival (`groupByOrigin`'s `self`). Without that, pooling one install's data back into
   itself would double every count.
