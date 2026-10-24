@@ -9,8 +9,11 @@
  *
  *   1. **Keyed by contributor id, never by name.** See `contributors.ts` for why a name cannot be a
  *      key. The name rides along as a label and is refreshed on every report.
- *   2. **A report replaces that contributor's set.** Everyone broadcasts their whole current tally,
- *      so adding would double-count everything they had already told us.
+ *   2. **A report replaces that contributor's set — when it comes from them.** Everyone sends their
+ *      whole current tally, so adding would double-count everything they had already told us. A
+ *      **relayed** report (somebody else handing on what that contributor once taught them) is a
+ *      copy of unknown age, though, and must never undo a fresher one. So it is **merged**, row by
+ *      row, by the store's `identity`, and can only add or freshen (`mergeRelayed`, ADR 0336).
  *   3. **An empty report does not erase what they taught.** Un-sharing means "stop counting me from
  *      now on", not "unsay it" — the same rule
  *      [ADR 0056](../specs/decisions/0056-a-dropped-record-keeps-what-it-taught.md) applies to your
@@ -42,9 +45,61 @@ export interface Contributed<T> {
   data: T[];
 }
 
+/** How a report reached us. */
+export interface ReportHow {
+  /** Handed on by someone other than `by` (ADR 0242): merged, never replacing (rule 2). */
+  relayed?: boolean;
+}
+
+/**
+ * What makes two rows of one contributor's set **the same row**, possibly at different ages.
+ *
+ * `key` names the question a row answers (a mob in a zone, a faction cause), never its origin, since
+ * everything in one contributor's set shares that. `weight` is how much evidence the row carries
+ * (kills, hits, samples). Of two versions, the heavier is the newer, because a tally only grows.
+ * A store with no `weight` holds **repeatable** rows (a kill position: many kills share one /loc fix),
+ * and is merged as a multiset: the larger count of a row wins, so a stale copy can't thin a pile out.
+ */
+export interface RowIdentity<T> {
+  key: (item: T) => string;
+  weight?: (item: T) => number;
+}
+
+/**
+ * Fold a relayed copy of a contributor's set into what we already hold, losing nothing from either.
+ *
+ * Rows only `held` stay; rows only `incoming` are added; a row in both keeps its heavier version (or,
+ * for repeatable rows, its larger count). Held order first, then what is new, so the cap trims the
+ * newest arrivals rather than what was already trusted.
+ */
+export function mergeRelayed<T>(held: readonly T[], incoming: readonly T[], identity: RowIdentity<T>): T[] {
+  const groups = new Map<string, { held: T[]; incoming: T[] }>();
+  const group = (key: string) => {
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { held: [], incoming: [] }));
+    return g;
+  };
+  for (const item of held) group(identity.key(item)).held.push(item);
+  for (const item of incoming) group(identity.key(item)).incoming.push(item);
+  const out: T[] = [];
+  for (const g of groups.values()) {
+    if (identity.weight) {
+      const heaviest = (rows: T[]) => rows.reduce<T | undefined>((a, b) => (!a || identity.weight!(b) > identity.weight!(a) ? b : a), undefined);
+      const h = heaviest(g.held);
+      const i = heaviest(g.incoming);
+      // A tie keeps what we hold: same evidence, and no reason to churn the row.
+      const pick = !h ? i : !i ? h : identity.weight(i) > identity.weight(h) ? i : h;
+      if (pick) out.push(pick);
+    } else {
+      out.push(...(g.incoming.length > g.held.length ? g.incoming : g.held));
+    }
+  }
+  return out;
+}
+
 export interface ContributionStore<T> {
-  /** File a contributor's latest set, replacing whatever they told us before. */
-  report(by: Contributor, items: unknown[]): void;
+  /** File a contributor's latest set: replacing what they told us before, or merged if relayed (rule 2). */
+  report(by: Contributor, items: unknown[], how?: ReportHow): void;
   /** Everyone's, newest report first. */
   all(): Contributed<T>[];
   /** Just the data, with each item's contributor already attached by `credit`. */
@@ -89,6 +144,8 @@ export interface ContributionOptions<T> {
   sanitize: (raw: unknown[], trustAdmin: boolean) => T[];
   /** Stamp each item with who said it, so provenance survives being pooled into a list. */
   credit: (item: T, by: Contributor) => T;
+  /** What makes two rows the same row, so a relayed report can be merged instead of replacing (rule 2). */
+  identity?: RowIdentity<T>;
 }
 
 /**
@@ -128,19 +185,25 @@ export function createContributions<T>(opts: ContributionOptions<T>): Contributi
   }
 
   return {
-    report(by, items) {
+    report(by, items, how) {
       if (!by?.id) return;
       // A live report, fresh off the wire — an `__admin` flag in it is only ever a peer's own claim.
       const data = Array.isArray(items) ? opts.sanitize(items, false).slice(0, opts.cap) : [];
       const held = contributors[by.id];
+      const relayed = !!how?.relayed && !!opts.identity && !!held;
       contributors[by.id] = {
         name: by.name,
         seenAt: new Date().toISOString(),
-        // Rule 3: an empty report is a peer going quiet, not a retraction.
-        data: data.length ? data : (held?.data ?? []),
+        // Rule 2: a relayed copy is merged, so it can't undo a fresher one. Rule 3: an empty report
+        // is a peer going quiet, not a retraction.
+        data: relayed
+          ? mergeRelayed(held.data, data, opts.identity!).slice(0, opts.cap)
+          : data.length
+            ? data
+            : (held?.data ?? []),
       };
       rev++;
-      log.debug("contribution filed", { by: by.id, name: by.name, items: contributors[by.id].data.length });
+      log.debug("contribution filed", { by: by.id, name: by.name, relayed, items: contributors[by.id].data.length });
       saver.save();
     },
 

@@ -19,7 +19,7 @@ import { classifyZoneLine, samePlace } from "../src/shared/zones/place";
 import { isAdminAudit, type AdminAudit } from "../src/shared/admin";
 import type { SharedRespawn } from "../src/shared/peers/peer-share";
 import type { Contributor } from "../src/shared/contributors";
-import { createContributions } from "./contributions";
+import { createContributions, type ReportHow } from "./contributions";
 import { createArrayAdminStore, type AdminStore } from "./admin";
 
 const log = createLogger("peer-respawns");
@@ -76,7 +76,7 @@ export interface PeerRespawnStore {
   /** Everyone's shared respawns, each credited to whoever taught it to us. Filtered to a place if asked. */
   all(place?: string): SharedRespawn[];
   /** File a contributor's respawns, replacing whatever they shared before. */
-  report(by: Contributor, respawns: unknown[]): void;
+  report(by: Contributor, respawns: unknown[], how?: ReportHow): void;
   /** Forget one contributor's respawns, or everybody's. */
   forget(id?: string): void;
   flush(): void;
@@ -92,6 +92,7 @@ export function createPeerRespawns(userDataDir: string): PeerRespawnStore {
     cap: MAX_RESPAWNS_PER_PEER,
     sanitize: sanitizeRespawns,
     credit: (respawn, by) => ({ ...respawn, by: by.name, byId: by.id }),
+    identity: { key: (r) => r.key, weight: (r) => r.samples },
   });
 
   return {
@@ -100,8 +101,8 @@ export function createPeerRespawns(userDataDir: string): PeerRespawnStore {
       return place ? respawns.filter((r) => samePlace(r.place, place)) : respawns;
     },
 
-    report(by, respawns) {
-      store.report(by, respawns);
+    report(by, respawns, how) {
+      store.report(by, respawns, how);
       log.debug("peer respawns filed", { by: by.id, name: by.name });
     },
 

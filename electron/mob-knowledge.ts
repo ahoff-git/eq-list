@@ -28,7 +28,7 @@ import { classifyZoneLine, samePlace } from "../src/shared/zones/place";
 import { plausible } from "../src/shared/estimates";
 import { isAdminAudit, type AdminAudit } from "../src/shared/admin";
 import type { Contributor, KnowledgeContributor } from "../src/shared/contributors";
-import { createContributions, type Contributed } from "./contributions";
+import { createContributions, type Contributed, type ReportHow } from "./contributions";
 import { createArrayAdminStore, type AdminStore } from "./admin";
 import type { KillLog } from "./kill-log";
 
@@ -138,7 +138,7 @@ export interface MobKnowledgeStore {
    */
   pooled(): MobObservation[];
   /** File a contributor's observations, replacing whatever they told us before. */
-  report(by: Contributor, observations: unknown[]): void;
+  report(by: Contributor, observations: unknown[], how?: ReportHow): void;
   /** Who has told us what, newest report first. */
   contributors(): KnowledgeContributor[];
   /** Forget one contributor's contributions, or everybody's. Your own are derived and unaffected. */
@@ -164,6 +164,8 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
     // Stamped on the way out rather than on the way in: the id is the key the row is filed under, so
     // storing it inside the row as well would be a second copy of the same fact, free to drift.
     credit: (obs, by) => ({ ...obs, by: by.name, byId: by.id }),
+    // A mob in a zone, as the log spelled both; more kills behind it is the newer tally.
+    identity: { key: (o) => `${o.mob} ${o.zone}`, weight: (o) => o.kills },
   });
 
   // Asked by place, not by string (`samePlace`, ADR 0083): rows are stored with whatever the log — or
@@ -180,8 +182,8 @@ export function createMobKnowledge(userDataDir: string, killLog: KillLog): MobKn
 
     pooled: () => store.pooled(),
 
-    report(by, observations) {
-      store.report(by, observations);
+    report(by, observations, how) {
+      store.report(by, observations, how);
       log.debug("peer observations filed", { by: by.id, name: by.name });
     },
 

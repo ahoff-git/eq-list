@@ -73,7 +73,10 @@ travels peer-to-peer, on request, over that peer's own connection.
     it (`by`/`byId`) so a receiver files it under whoever actually observed it rather than whoever
     happened to relay it, which is what keeps the same sample from being counted twice through two
     different paths to the same source. A row whose origin is **our own** id is dropped on arrival
-    (`groupByOrigin`'s `self`): it is our own log coming back round, already counted once. **`respawns` also answers your own questions**, not only a
+    (`groupByOrigin`'s `self`): it is our own log coming back round, already counted once. And a
+    relayed set is **merged** into what we hold for its origin, never replacing it: only the origin
+    itself replaces its set, so a stale copy passed on late can't undo a fresher one (`mergeRelayed`,
+    ADR 0336). **`respawns` also answers your own questions**, not only a
     peer's: the Timers tab's `known` list folds a camp's pooled interval in alongside your own
     learning (`mergeRespawns`), so a camp you have never personally sat at can still show a usable
     estimate the moment someone else in the room has

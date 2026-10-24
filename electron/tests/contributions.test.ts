@@ -25,7 +25,7 @@ import {
   readContributor,
   UNKNOWN_CONTRIBUTOR,
 } from "../../src/shared/contributors";
-import { createContributions } from "../contributions";
+import { createContributions, mergeRelayed } from "../contributions";
 
 const ALICE = { id: contributorId("11111111-2222-3333-4444-555555555555"), name: "Alice" };
 const BOB = { id: contributorId("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), name: "Bob" };
@@ -280,4 +280,65 @@ test("several relayed origins in one batch each get their own group", () => {
     groups.get(carol)?.rows.map((r) => r.n),
     [2],
   );
+});
+
+// ── a relayed copy merges, never replaces (ADR 0336) ────────────────────────────
+
+/** A tally row: `k` is the question it answers, `n` how much evidence is behind it. */
+interface Tally {
+  k: string;
+  n: number;
+}
+const byWeight = { key: (r: Tally) => r.k, weight: (r: Tally) => r.n };
+const repeatable = { key: (r: Tally) => r.k };
+
+function tallyStore(dir: string) {
+  return createContributions<Tally>({
+    file: path.join(dir, "tallies.json"),
+    what: "test tallies",
+    concern: "peer-knowledge",
+    cap: 100,
+    sanitize: (raw) => raw as Tally[],
+    credit: (row) => row,
+    identity: byWeight,
+  });
+}
+
+test("a relayed row keeps its heavier version, and nothing either side held is lost", () => {
+  const held = [{ k: "gnoll", n: 40 }, { k: "orc", n: 3 }];
+  const stale = [{ k: "gnoll", n: 12 }, { k: "orc", n: 9 }, { k: "bat", n: 1 }];
+  assert.deepEqual(mergeRelayed(held, stale, byWeight), [
+    { k: "gnoll", n: 40 }, // our fresher tally survives the stale copy
+    { k: "orc", n: 9 }, // the relay knew more here, so it wins
+    { k: "bat", n: 1 }, // and what only the relay knew is added
+  ]);
+});
+
+test("repeatable rows merge as a multiset: a stale copy can't thin out a pile", () => {
+  // Five kills at one /loc fix, against a relay that has seen only two of them, plus one elsewhere.
+  const spot = { k: "gnoll@10,20", n: 0 };
+  const held = [spot, spot, spot, spot, spot];
+  const merged = mergeRelayed(held, [spot, spot, { k: "gnoll@99,99", n: 0 }], repeatable);
+  assert.equal(merged.filter((r) => r.k === spot.k).length, 5);
+  assert.equal(merged.length, 6);
+});
+
+test("a stale relay can't undo a fresher report straight from the source", () => {
+  const s = tallyStore(tempDir());
+  s.report(ALICE, [{ k: "gnoll", n: 40 }, { k: "orc", n: 7 }]); // Alice, directly
+  s.report(ALICE, [{ k: "gnoll", n: 2 }], { relayed: true }); // Bob's old copy of her, relayed
+  assert.deepEqual(s.all()[0].data, [{ k: "gnoll", n: 40 }, { k: "orc", n: 7 }]);
+});
+
+test("a report straight from the source still replaces, as rule 2 always said", () => {
+  const s = tallyStore(tempDir());
+  s.report(ALICE, [{ k: "gnoll", n: 40 }, { k: "orc", n: 7 }]);
+  s.report(ALICE, [{ k: "gnoll", n: 41 }]);
+  assert.deepEqual(s.all()[0].data, [{ k: "gnoll", n: 41 }]);
+});
+
+test("a relayed report about someone we hold nothing of is simply filed", () => {
+  const s = tallyStore(tempDir());
+  s.report(ALICE, [{ k: "gnoll", n: 3 }], { relayed: true });
+  assert.deepEqual(s.all()[0].data, [{ k: "gnoll", n: 3 }]);
 });

@@ -60,7 +60,8 @@ import type { AlertStyle, ForgetScope, ShoppingListEntry, WikiPage, DeepPartial,
 import type { AlertRouter } from "./alert-router";
 import type { CelebrationFeed } from "./celebrations";
 import { AWARI_MSG } from "../src/shared/types";
-import { groupByOrigin, readContributor } from "../src/shared/contributors";
+import { groupByOrigin, readContributor, type Contributor } from "../src/shared/contributors";
+import type { ReportHow } from "./contributions";
 import { createPeerShareHub, shareSources } from "../src/shared/peers/peer-share-hub";
 import { createUiState } from "./ui-state";
 import { fightShareOf, matchedFights, shareableHeals, shareableHits, type FightShare, type ShareKind } from "../src/shared/peers/peer-share";
@@ -1081,31 +1082,34 @@ function registerPeerIpc(context: IpcContext): PeerIpc {
    * `contributions.ts` rule 2 ("a report replaces that contributor's set") stays true *per origin*
    * rather than per peer we happen to be talking to.
    */
+  /** A row set is relayed when its origin isn't the peer handing it to us (ADR 0336, `mergeRelayed`). */
+  const relayHow = (origin: Contributor, sender: Contributor): ReportHow => ({ relayed: origin.id !== sender.id });
+
   const fileContribution = (payload: AwariPayload): void => {
     // Fails closed (`readContributor`): a peer who announces no id is not filed under their display
     // name as they used to be — see `contributors.ts` for why a name cannot be a key.
     const by = readContributor(payload as { id?: unknown; name?: unknown });
     if (!by) return void log.debug("contribution ignored - no contributor id", { kind: payload.kind });
     if (payload.kind === AWARI_MSG.mobs && Array.isArray(payload.mobs)) {
-      for (const { by: origin, rows } of groupByOrigin(payload.mobs, by, contributorId).values()) mobs.report(origin, rows);
+      for (const { by: origin, rows } of groupByOrigin(payload.mobs, by, contributorId).values()) mobs.report(origin, rows, relayHow(origin, by));
     } else if (payload.kind === AWARI_MSG.factionObservations && Array.isArray(payload.factionObservations)) {
       for (const { by: origin, rows } of groupByOrigin(payload.factionObservations, by, contributorId).values()) {
-        factionObservations.report(origin, rows);
+        factionObservations.report(origin, rows, relayHow(origin, by));
       }
     } else if (payload.kind === AWARI_MSG.kills && Array.isArray(payload.kills)) {
-      for (const { by: origin, rows } of groupByOrigin(payload.kills, by, contributorId).values()) peerKills.report(origin, rows);
+      for (const { by: origin, rows } of groupByOrigin(payload.kills, by, contributorId).values()) peerKills.report(origin, rows, relayHow(origin, by));
       // `respawns` has no `AWARI_MSG` entry of its own, unlike `mobs`/`kills`: those two reuse a
       // constant that also named a genuine top-level broadcast in the pre-ADR-0141 era, and
       // `respawns` never had one — it has only ever arrived as `keep()`'s synthesized payload.
     } else if (payload.kind === "respawns" && Array.isArray(payload.respawns)) {
-      for (const { by: origin, rows } of groupByOrigin(payload.respawns, by, contributorId).values()) peerRespawns.report(origin, rows);
+      for (const { by: origin, rows } of groupByOrigin(payload.respawns, by, contributorId).values()) peerRespawns.report(origin, rows, relayHow(origin, by));
       // Unlike `mobs`/`kills`, a pooled respawn is folded straight into `spawns.view()`
       // (`spawn-tracker.ts`, ADR 0242) rather than only read back out through `shareSources` — so the
       // Timers tab needs telling the same way a kill or a player edit already tells it, or a fresh
       // pooled interval would sit unseen until something else happened to trigger a refetch.
       broadcast(CH.spawnsChanged, undefined);
     } else if (payload.kind === "crafting" && Array.isArray(payload.crafting)) {
-      for (const { by: origin, rows } of groupByOrigin(payload.crafting, by, contributorId).values()) peerCrafting.report(origin, rows);
+      for (const { by: origin, rows } of groupByOrigin(payload.crafting, by, contributorId).values()) peerCrafting.report(origin, rows, relayHow(origin, by));
       // Shown beside your own rates in the crafting log, so the Tradeskills tab is told directly.
       broadcast(CH.tradeskillProgressChanged, tradeskillView());
     } else return;

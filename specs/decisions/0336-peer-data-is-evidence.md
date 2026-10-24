@@ -58,6 +58,13 @@ fill a gap, the app fills it and says whose it is. It does not leave the answer 
   passes `isPlottable`. A guess discarded at the source is gone for everyone; one kept can be shown
   faintly, or reweighed later. A kill with no position still isn't sent as a position, because it
   has none. It reaches peers, counted, through `mobs`.
+- **A relayed copy merges; only the source replaces.** `contributions.ts` rule 2 replaced a
+  contributor's whole set on every report, whoever delivered it. So a peer holding an old copy of
+  you could relay it after your fresh one arrived and shrink it back. A report that comes straight
+  from the source still replaces. A relayed one is merged row by row (`mergeRelayed`), by an identity
+  each store declares that excludes the origin. A row in both keeps its heavier version (more kills,
+  hits, attempts or samples: a tally only grows). Kill positions repeat, because many kills share one
+  `/loc` fix, so they merge as a multiset. Relayed data can add or freshen, never subtract.
 - **Your own data never counts as a peer's.** A relayed row whose origin is your own contributor id is
   dropped on arrival (`groupByOrigin`'s `self`). Without that, pooling one install's data back into
   itself would double every count.
