@@ -51,6 +51,7 @@ import { logStamp } from "../src/shared/log-clock";
 import { parseSplitLine } from "../src/shared/parse-line";
 import { upgradeWatches } from "../src/shared/alerts/watch-upgrade";
 import { BUILT_IN_STYLES } from "../src/shared/alerts/alert-styles";
+import { repairTellRules } from "../src/shared/alerts/watch-repairs";
 import { classifyZoneLine } from "../src/shared/zones/place";
 import { timerInPlace } from "../src/shared/mob/spawn-timers";
 import type { CastAlertSettings, HighScore, KillRecord, LootRecord, StoredFight } from "../src/shared/types";
@@ -145,6 +146,11 @@ export function runMigrations(userDataDir: string, logDir: string | undefined, d
     seedBuiltInStyles(userDataDir);
   } catch (err) {
     log.error("built-in style seeding failed; settings left untouched", err);
+  }
+  try {
+    repairLibraryRules(userDataDir);
+  } catch (err) {
+    log.error("library rule repair failed; settings left untouched", err);
   }
   try {
     keyKnowledgeByContributor(userDataDir);
@@ -296,6 +302,30 @@ function seedBuiltInStyles(userDataDir: string): void {
   };
   stamped(file, next, "settings");
   log.debug("added built-in styles", missing.map((m) => m.name));
+}
+
+/**
+ * Mend untouched copies of a library rule that shipped wrong (`watch-repairs.ts`) — today, the tell
+ * rule that fired on chat merely saying "tells you". Same shape as `seedBuiltInStyles`: no schema,
+ * because it's idempotent (a mended copy no longer looks broken), and it writes only when it mended one.
+ */
+function repairLibraryRules(userDataDir: string): void {
+  const file = path.join(userDataDir, "settings.json");
+  let stored: StoredSettings | undefined;
+  try {
+    stored = JSON.parse(fs.readFileSync(file, "utf8")) as StoredSettings;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      log.warn("settings won't parse; leaving them exactly as they are", file, String(err));
+    }
+    return;
+  }
+  const watches = stored.castAlerts?.watches;
+  if (!watches?.length) return;
+  const { watches: mended, repaired } = repairTellRules(watches);
+  if (!repaired) return;
+  stamped(file, { ...stored, castAlerts: { ...stored.castAlerts, watches: mended } as CastAlertSettings }, "settings");
+  log.debug("mended library rules", { tell: repaired });
 }
 
 /**

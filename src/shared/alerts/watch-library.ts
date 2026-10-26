@@ -22,6 +22,14 @@
  */
 import type { CastWatch } from "../types";
 
+/**
+ * **A tell, by its shape**: the line *starts* `Name tells you, '`. Matching the words anywhere fired on
+ * channel chat that merely said them — "Kitsch tells General:1, '…it tells you what they are…'" — which
+ * is every false tell in the author's logs (four of them), while every real one has this shape. A
+ * one-word name is what a player's is; your own `You tell Name, '` doesn't start this way either.
+ */
+export const TELL_LINE = "^[a-z]+ tells you, '";
+
 /** A rule as the library holds it: everything but the id and the enabled flag, which are the adder's. */
 export type LibraryWatch = Omit<CastWatch, "id" | "enabled">;
 
@@ -153,7 +161,7 @@ export const WATCH_LIBRARY: readonly LibraryGroup[] = [
       {
         id: "tell-quiet",
         name: "A tell, minus the noise",
-        what: "“<name> tells you” fired 123 times in two weeks of real play, which is a banner every couple of hours. This one drops the auction channel and your own outgoing tells.",
+        what: "“<name> tells you” fired 123 times in two weeks of real play, which is a banner every couple of hours. This one only fires on the tell itself — not on chat that happens to say “tells you” — and drops anything about the auction channel.",
         fill: "Add an exclusion per person or channel you'd rather not hear about.",
         watch: {
           spell: "tells you",
@@ -161,7 +169,7 @@ export const WATCH_LIBRARY: readonly LibraryGroup[] = [
           onLine: true,
           message: "Tell",
           conditions: [
-            { field: "line", op: "starts", text: "You tell", exclude: true },
+            { field: "line", op: "regex", text: TELL_LINE },
             { field: "line", op: "contains", text: "auction", exclude: true },
           ],
         },

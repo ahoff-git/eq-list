@@ -101,3 +101,18 @@ test("a death rule hears your own kills, which the log words differently from an
     assert.ok(matchLine({ message: line, at }, settings), `placeholder not started by “${line}”`);
   }
 });
+
+test("the tell rule fires on a tell, not on chat that merely says “tells you”", () => {
+  // Real lines, timestamps off. The General one raised a "Tell" banner before the rule read the shape.
+  const tells = ["Bunnyslayer tells you, 'yo yo yo'", "Bunnyslayer tells you, 'but Master Yael'"];
+  const notTells = [
+    "Kitsch tells General:1, 'are you on that step of the quest? its weird that people are asking for the text prompts when it tells you what they are if you are on the quest'",
+    "Mule tells General:2, 'it tells you when you hover them'",
+    "You tell Bunnyslayer, 'it tells you what they are'",
+  ];
+  const tell = rules.find((r) => r.id === "tell-quiet")!;
+  const settings = { enabled: true, includeSelf: false, watches: [asWatch(tell)] } as unknown as CastAlertSettings;
+  const at = new Date().toISOString();
+  for (const line of tells) assert.ok(matchLine({ message: line, at }, settings), `no banner for “${line}”`);
+  for (const line of notTells) assert.equal(matchLine({ message: line, at }, settings), null, `banner for “${line}”`);
+});
